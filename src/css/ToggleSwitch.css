@@ -1,0 +1,11 @@
+.settingsToggle {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    justify-content: center;
+    padding: 0px;
+}
+
+.settingsToggle .form-check-input {
+    margin-left: 0px;
+}

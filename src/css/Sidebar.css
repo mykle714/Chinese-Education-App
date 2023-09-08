@@ -1,0 +1,56 @@
+:root {
+    --sidebarHeight: 50px;
+    --sidebarWidth: 250px;
+    --selectedWidth: 5px
+  }
+  
+  
+  .Sidebar {
+    height: 100%;
+    width: var(--sidebarWidth);
+    background-color: lightgray;
+    position: fixed;
+  }
+  
+  .SidebarUL {
+    list-style-type: none;
+    font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    padding: 0px;
+  }
+  
+  .SidebarUL * {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    height: 100%;
+  }
+  
+  .SidebarUL li {
+    height: var(--sidebarHeight);
+  }
+  
+  .SidebarUL #selected {
+    background-color: dimgray;
+  }
+  
+  .SidebarUL #selected .SideBarSelected{
+    background-color: darkseagreen;
+    width: var(--selectedWidth);
+  }
+  
+  .SidebarUL li:hover  {
+    background-color: darkseagreen;
+    cursor: pointer;
+  }
+  
+  .SideBarIcon {
+    width: var(--sidebarHeight);
+    justify-content: center;
+  }
+  
+  .SideBarText {
+    justify-content: left;
+    flex-grow: 1;
+    user-select: none
+  }

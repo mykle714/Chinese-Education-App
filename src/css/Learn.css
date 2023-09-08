@@ -1,0 +1,37 @@
+:root {
+    --dividerMargin: 50px;
+    --cardMargin: 30px
+}
+
+.Learn {
+    width: var(--narrowContentWidth);
+    margin-top: 20px;
+}
+
+.divider {
+    width: 100%;
+    height: 2px;
+    background-color: gray;
+    margin-top: var(--dividerMargin);
+    margin-bottom: var(--dividerMargin);
+    
+}
+
+.LearnTitle {
+    margin-top: var(--titleMargin);
+    margin-bottom: var(--titleMargin);
+}
+
+.LearnDescription {
+    margin: 15px
+}
+
+.Learn .container {
+    margin-top: calc(0px - var(--cardMargin));
+}
+
+.ActivityCardDiv {
+    margin-top: var(--cardMargin);
+    margin-bottom: var(--cardMargin);
+    width: 300px
+}

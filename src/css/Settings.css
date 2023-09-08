@@ -1,0 +1,39 @@
+:root {
+    --settingsItemMargin: 10px
+}
+
+.Settings {
+    width: var(--narrowContentWidth);
+    margin-top: 20px;
+}
+
+.SettingsTitle {
+    margin-top: var(--titleMargin);
+    margin-bottom: var(--titleMargin)
+}
+
+.list-group-item {
+    display: flex;
+    flex-direction: column;
+    flex-wrap: nowrap;
+}
+
+.SettingsLiBody {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: top;
+    margin-bottom: var(--settingsItemMargin);
+    margin-top: var(--settingsItemMargin);
+    justify-content: right;
+}
+
+.SettingsLiBody div {
+    width: 100px;
+}
+
+.Description {
+    margin-bottom: 0px;
+    flex: 1;
+    color: gray;
+}

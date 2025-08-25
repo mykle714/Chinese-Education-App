@@ -1,0 +1,54 @@
+Error getting all vocab entries: ConnectionError: Failed to connect to mykle.database.windows.net:1433 in 15000ms
+    at /home/cow/server/node_modules/mssql/lib/tedious/connection-pool.js:85:17
+    at Connection.onConnect (/home/cow/server/node_modules/tedious/lib/connection.js:1012:9)
+    at Object.onceWrapper (node:events:633:26)
+    at Connection.emit (node:events:518:28)
+    at Connection.emit (/home/cow/server/node_modules/tedious/lib/connection.js:1040:18)
+    at Connection.connectTimeout (/home/cow/server/node_modules/tedious/lib/connection.js:1254:10)
+    at Timeout._onTimeout (/home/cow/server/node_modules/tedious/lib/connection.js:1199:12)
+    at listOnTimeout (node:internal/timers:588:17)
+    at process.processTimers (node:internal/timers:523:7) {
+  code: 'ETIMEOUT',
+  originalError: ConnectionError: Failed to connect to mykle.database.windows.net:1433 in 15000ms
+      at Connection.connectTimeout (/home/cow/server/node_modules/tedious/lib/connection.js:1254:26)
+      at Timeout._onTimeout (/home/cow/server/node_modules/tedious/lib/connection.js:1199:12)
+      at listOnTimeout (node:internal/timers:588:17)
+      at process.processTimers (node:internal/timers:523:7) {
+    code: 'ETIMEOUT',
+    isTransient: undefined
+  }
+}
+Error fetching vocab entries: Error: Failed to retrieve vocabulary entries
+    at Module.getAllVocabEntries (file:///home/cow/server/models/vocabEntryModel.ts:10:29)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async file:///home/cow/server/server.ts:18:22 {
+  code: 'ERR_FETCH_ENTRIES_FAILED',
+  statusCode: 500
+}
+Error getting all vocab entries: ConnectionError: Failed to connect to mykle.database.windows.net:1433 in 15000ms
+    at /home/cow/server/node_modules/mssql/lib/tedious/connection-pool.js:85:17
+    at Connection.onConnect (/home/cow/server/node_modules/tedious/lib/connection.js:1012:9)
+    at Object.onceWrapper (node:events:633:26)
+    at Connection.emit (node:events:518:28)
+    at Connection.emit (/home/cow/server/node_modules/tedious/lib/connection.js:1040:18)
+    at Connection.connectTimeout (/home/cow/server/node_modules/tedious/lib/connection.js:1254:10)
+    at Timeout._onTimeout (/home/cow/server/node_modules/tedious/lib/connection.js:1199:12)
+    at listOnTimeout (node:internal/timers:588:17)
+    at process.processTimers (node:internal/timers:523:7) {
+  code: 'ETIMEOUT',
+  originalError: ConnectionError: Failed to connect to mykle.database.windows.net:1433 in 15000ms
+      at Connection.connectTimeout (/home/cow/server/node_modules/tedious/lib/connection.js:1254:26)
+      at Timeout._onTimeout (/home/cow/server/node_modules/tedious/lib/connection.js:1199:12)
+      at listOnTimeout (node:internal/timers:588:17)
+      at process.processTimers (node:internal/timers:523:7) {
+    code: 'ETIMEOUT',
+    isTransient: undefined
+  }
+}
+Error fetching vocab entries: Error: Failed to retrieve vocabulary entries
+    at Module.getAllVocabEntries (file:///home/cow/server/models/vocabEntryModel.ts:10:29)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async file:///home/cow/server/server.ts:18:22 {
+  code: 'ERR_FETCH_ENTRIES_FAILED',
+  statusCode: 500
+}

@@ -1,0 +1,335 @@
+# Design Guidelines for Vocabulary Entry Manager
+
+## AI Assistant Guidelines
+
+When working on this project, always include:
+
+### Confidence Scores
+- Provide a confidence score (0-100%) for each action you take
+- Example: "I'm creating a new component with 85% confidence based on the existing patterns in the codebase"
+- Lower confidence scores should prompt asking for clarification or validation
+
+### Assumptions Documentation
+- Clearly list all assumptions you're making for each task
+- Example assumptions might include:
+  - "Assuming the user wants Material UI styling based on the design guidelines"
+  - "Assuming TypeScript strict mode is preferred based on the project configuration"
+  - "Assuming the database connection is already configured based on existing files"
+- When assumptions are uncertain, ask for confirmation before proceeding
+
+### Design Questions Requirement
+- **ALWAYS ask questions regarding design details before implementing UI/UX changes**
+- This includes but is not limited to:
+  - Layout and positioning decisions
+  - Color schemes and styling choices
+  - User interaction patterns
+  - Component behavior and state management
+  - Navigation flow and user experience
+- Even when confidence is high, confirm design decisions with the user
+
+### Development Server Management
+- **Only restart the frontend and backend servers if they are not already running**
+- Check for existing running processes before starting new ones
+- Use existing development servers when possible to avoid unnecessary restarts
+- This helps maintain development workflow efficiency and avoids interrupting active sessions
+
+## Application Purpose
+
+This service (internally referred to as cow) is a web application to help non-mandarin speakers learn mandarin. It provides tools and games to engage users with vocabulary learning through interactive features.
+
+## Design Goals
+- The UX should be high quality and intuitive
+- The UI should be engaging and visually appealing
+- The UI should be easy to comprehend for language learners
+- The UI should use "Material UI" where applicable
+- Use TypeScript and use strong typing as much as possible while avoiding errors
+- Lightly comment the code to explain how complicated parts of the code work
+- Maintain consistent design patterns across all pages and components
+
+## Current Features
+- User authentication system (login/register/logout)
+- User profile management with password change functionality
+- Dictionary interface for users to look up and explore vocabulary entries
+- Personal vocabulary entry management (view, add, edit, delete)
+- Flashcards study mode for vocabulary practice
+- **CSV card import functionality** - Bulk import vocabulary entries from CSV files
+- Responsive design with consistent navigation
+- Protected routes requiring authentication
+
+## Technology Stack
+
+### Frontend
+- **Framework**: React 19.1.0 with React Router for client-side routing
+- **UI Library**: Material UI 7.1.1
+- **Build Tool**: Vite 6.3.5
+- **Language**: TypeScript 5.8.3
+- **State Management**: React Context API for authentication and confirmation dialogs
+
+### Backend
+- **Framework**: Express.js 5.1.0
+- **Language**: TypeScript
+- **Database**: MS SQL Server (Azure SQL Database)
+- **Authentication**: JWT-based authentication with bcrypt password hashing
+- **Middleware**: Custom authentication middleware for protected routes
+
+### Development Tools
+- **Linting**: ESLint 9.25.0
+- **Package Manager**: npm
+
+### Frontend Structure
+
+```
+src/
+├── App.tsx                    # Main application component with routing
+├── AuthContext.tsx            # Authentication context provider
+├── constants.ts               # Application-wide constants
+├── DataForm.tsx               # Reusable form for adding/editing entries
+├── Message.tsx                # Message display component
+├── VocabEntryCards.tsx        # Component to display vocabulary entries
+├── main.tsx                   # Application entry point
+├── components/
+│   ├── Layout.tsx             # Main layout wrapper with navigation
+│   └── ProtectedRoute.tsx     # Route protection component
+├── contexts/
+│   └── ConfirmationContext.tsx # Confirmation dialog context
+├── pages/
+│   ├── HomePage.tsx           # Landing/dashboard page
+│   ├── LoginPage.tsx          # User login page
+│   ├── RegisterPage.tsx       # User registration page
+│   ├── ProfilePage.tsx        # User profile management
+│   ├── EntriesPage.tsx        # List all user's vocabulary entries
+│   ├── AddEntryPage.tsx       # Add new vocabulary entry
+│   ├── EditEntryPage.tsx      # Edit existing vocabulary entry
+│   ├── EntryDetailPage.tsx    # Detailed view of single entry
+│   ├── FlashcardsPage.tsx     # Flashcards vocabulary study mode
+│   └── NotFoundPage.tsx       # 404 error page
+└── assets/                    # Static assets
+```
+
+### Backend Structure
+
+```
+server/
+├── authMiddleware.ts          # JWT authentication middleware
+├── models/                    # Data models
+│   ├── userModel.ts           # User CRUD operations and authentication
+│   └── vocabEntryModel.ts     # Vocabulary entry CRUD operations
+├── types/                     # TypeScript type definitions
+│   └── index.ts               # Shared type definitions
+├── tests/                     # Test scripts and SQL queries
+│   ├── test-login.js          # Login functionality tests
+│   ├── test-change-password.js # Password change tests
+│   ├── create-periodic-table-entries.js # Sample data creation
+│   └── README.md              # Documentation for tests
+├── CONTRIBUTING.md            # Contributing guidelines
+├── auth-setup-guide.md        # Authentication setup documentation
+├── login-fix-summary.md       # Authentication troubleshooting guide
+├── db.ts                      # Database connection setup
+├── db-config.ts               # Database configuration
+└── server.ts                  # Main server file with API routes
+```
+
+## Contributing
+
+Please refer to the `server/CONTRIBUTING.md` file for guidelines on contributing to this project, including:
+- Where to place test scripts and SQL queries
+- Code style guidelines
+- How to run tests
+- Authentication setup procedures
+
+## Database Schema
+
+### Overview
+
+Azure SQL Database with Node.js/Express backend, featuring user authentication and vocabulary entry management.
+
+### Connection Details
+
+- **Database Type**: Azure SQL Database
+- **Authentication Method**: Azure Active Directory Service Principal
+- **Environment Variables Required**: Found in .env file (see auth-setup-guide.md)
+
+### Tables
+
+#### Users
+
+| Column Name | Data Type        | Constraints | Nullable | Default           | Description                         |
+| ----------- | ---------------- | ----------- | -------- | ----------------- | ----------------------------------- |
+| id          | uniqueidentifier | PRIMARY KEY | NO       | newsequentialid() | Unique identifier for each user     |
+| email       | varchar(255)     | NOT NULL    | NO       | NULL              | User's email address (unique)       |
+| name        | varchar(100)     | NOT NULL    | NO       | NULL              | User's full name                    |
+| password    | varchar(255)     | NOT NULL    | NO       | NULL              | Bcrypt hashed password              |
+| createdAt   | datetime         |             | YES      | getdate()         | Timestamp when the user was created |
+
+##### Indexes
+
+- Primary Key: `id`
+- Unique Index: `email` (for login functionality)
+
+##### Relationships
+
+- One-to-many relationship with VocabEntries
+
+#### VocabEntries
+
+| Column Name | Data Type        | Constraints | Nullable | Default   | Description                              |
+| ----------- | ---------------- | ----------- | -------- | --------- | ---------------------------------------- |
+| id          | int              | PRIMARY KEY | NO       | NULL      | Unique identifier for each entry         |
+| userId      | uniqueidentifier | FOREIGN KEY | NO       | NULL      | Reference to the user who owns the entry |
+| entryKey    | text             | NOT NULL    | NO       | NULL      | Key for the dictionary entry             |
+| entryValue  | text             | NOT NULL    | NO       | NULL      | Value for the dictionary entry           |
+| createdAt   | datetime         |             | YES      | getdate() | Timestamp when the entry was created     |
+
+##### Indexes
+
+- Primary Key: `id`
+- Foreign Key: `userId` references `Users(id)`
+- Index: `entryKey` (for quick lookups by key)
+
+##### Relationships
+
+- Each entry belongs to a user through the `userId` foreign key
+
+## API Endpoints
+
+### Authentication
+
+- `POST /api/auth/register` - Register a new user (Public)
+- `POST /api/auth/login` - User login (returns JWT token) (Public)
+- `POST /api/auth/change-password` - Change user password (Requires JWT token)
+
+### Vocabulary Entries
+
+- `GET /api/vocabEntries` - Get all vocabulary entries for authenticated user (Requires JWT token)
+- `GET /api/vocabEntries/:id` - Get a specific vocabulary entry by ID (Requires JWT token, user must own entry)
+- `POST /api/vocabEntries` - Create a new vocabulary entry (Requires JWT token)
+- `PUT /api/vocabEntries/:id` - Update a vocabulary entry (Requires JWT token, user must own entry)
+- `DELETE /api/vocabEntries/:id` - Delete a vocabulary entry (Requires JWT token, user must own entry)
+
+### Users
+
+- `GET /api/users/profile` - Get current user profile (Requires JWT token)
+
+## Navigation and Routing
+
+### Current Implementation
+
+The application uses React Router (v6+) for client-side routing with the following structure:
+
+```
+/                   # Home page with overview and navigation
+/login              # User login page
+/register           # User registration page
+/profile            # User profile management (protected)
+/entries            # List of all user's vocabulary entries (protected)
+/entries/:id        # Detailed view of a specific entry (protected)
+/add                # Form to add a new entry (protected)
+/edit/:id           # Form to edit an existing entry (protected)
+/flashcards         # Flashcards study mode (protected)
+/*                  # 404 Not Found page
+```
+
+### Route Protection
+
+- Public routes: `/`, `/login`, `/register`
+- Protected routes: All others require authentication via JWT token
+- Automatic redirect to login page for unauthenticated users
+- Persistent authentication state using localStorage
+
+### Navigation Features
+
+- Consistent header navigation with Material UI AppBar
+- Responsive drawer navigation for mobile devices
+- User authentication status display
+- Logout functionality with context clearing
+
+## CSV Card Import Feature Design Decisions
+
+### Overview
+The CSV import functionality allows users to bulk import vocabulary entries from CSV files with columns: `front,back,hint,publishedAt`.
+
+### Key Design Decisions
+
+#### 1. CSV Format Support
+- **Expected Format**: CSV files with columns: `front,back,hint,publishedAt`
+- **Mapping Strategy**: `front` → `entryKey`, `back` → `entryValue` (hint and publishedAt ignored)
+- **File Validation**: Only `.csv` files accepted, with client-side validation
+- **Character Encoding**: UTF-8 encoding used throughout the system to handle Chinese characters
+
+#### 2. Backend Architecture
+- **Endpoint**: `POST /api/vocabEntries/import`
+- **Authentication**: JWT token required (user-specific imports)
+- **File Processing**: Uses `multer` for file upload handling and `csv-parser` for parsing
+- **Error Handling**: Comprehensive validation with detailed error messages
+- **Database Operations**: Batch insert with transaction support for data integrity
+- **Character Encoding**: UTF-8 encoding for all file processing and database operations
+
+#### 3. Data Processing Strategy
+- **Duplicate Handling**: Override entries that already exist for the user (based on entryKey)
+- **Data Validation**: Validate required fields (front/back) before insertion
+- **Character Encoding**: UTF-8 encoding to handle Chinese characters properly
+- **Memory Efficiency**: Stream-based processing for large files
+
+#### 4. User Experience Design
+- **Integration Location**: Import button placed in EntriesPage header for discoverability
+- **Visual Feedback**: 
+  - Loading spinner during upload
+  - Progress bar with percentage indicator
+  - Success/error alerts with detailed messages
+- **File Selection**: Hidden file input triggered by styled Material UI button
+- **Progress Simulation**: Smooth progress animation during upload for better UX
+
+#### 5. UI/UX Patterns
+- **Material UI Components**: 
+  - `Button` with `Upload` icon for import trigger
+  - `LinearProgress` for progress indication
+  - `Alert` for success/error messaging
+  - `CircularProgress` for loading state
+- **State Management**: Local component state for import progress and status
+- **Auto-refresh**: Page reload after successful import to show new entries
+- **Responsive Design**: Import button adapts to different screen sizes
+
+#### 6. Error Handling Strategy
+- **Client-side Validation**: File type checking before upload
+- **Server-side Validation**: Comprehensive CSV structure and data validation
+- **User Feedback**: Clear error messages for different failure scenarios
+- **Graceful Degradation**: System continues to function if import fails
+
+#### 7. Security Considerations
+- **Authentication**: All imports require valid JWT token
+- **File Size Limits**: Reasonable limits to prevent abuse
+- **User Isolation**: Imports only affect the authenticated user's data
+- **Input Sanitization**: Proper validation of CSV data before database insertion
+
+#### 8. Performance Optimizations
+- **Batch Processing**: Multiple entries inserted in single database transaction
+- **Stream Processing**: Large files processed without loading entirely into memory
+- **Progress Feedback**: Real-time progress updates for better perceived performance
+- **Efficient Queries**: Optimized database operations for duplicate checking
+
+#### 9. API Response Format
+```typescript
+{
+  success: boolean;
+  results: {
+    total: number;      // Total rows processed
+    imported: number;   // Successfully imported entries
+    skipped: number;    // Duplicate entries skipped
+    errors: number;     // Entries with errors
+  };
+  errors?: string[];    // Detailed error messages if any
+}
+```
+
+#### 10. Future Extensibility
+- **Column Mapping**: Easy to modify for different CSV formats
+- **Export Functionality**: Foundation laid for future export features
+- **Batch Operations**: Architecture supports other bulk operations
+- **File Format Support**: Can be extended to support other formats (JSON, Excel, etc.)
+
+### Technical Implementation Notes
+- **Dependencies Added**: `multer`, `csv-parser`, and type definitions
+- **TypeScript Support**: Full type safety with custom type definitions
+- **Error Boundaries**: Proper error handling at all levels
+- **Testing Strategy**: Comprehensive test scripts for validation
+- **Documentation**: Clear API documentation and usage examples

@@ -1,0 +1,48 @@
+{
+  "name": "cow",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "server": "cd server && npm run build && npm run start"
+  },
+  "dependencies": {
+    "@azure/identity": "^4.10.0",
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.0",
+    "@hookform/resolvers": "^5.1.1",
+    "@mui/icons-material": "^7.1.1",
+    "@mui/material": "^7.1.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^5.1.0",
+    "form-data": "^4.0.3",
+    "mssql": "^11.0.1",
+    "node-fetch": "^3.3.2",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-hook-form": "^7.58.1",
+    "react-router-dom": "^7.6.2",
+    "tedious": "^18.6.1",
+    "zod": "^3.25.67"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.25.0",
+    "@types/cors": "^2.8.18",
+    "@types/express": "^5.0.2",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "@vitejs/plugin-react": "^4.4.1",
+    "eslint": "^9.25.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.19",
+    "globals": "^16.0.0",
+    "typescript": "~5.8.3",
+    "typescript-eslint": "^8.30.1",
+    "vite": "^6.3.5"
+  }
+}

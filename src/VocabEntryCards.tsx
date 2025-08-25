@@ -12,9 +12,6 @@ import {
   Divider,
   Chip
 } from '@mui/material';
-import {
-  CircleOutlined
-} from '@mui/icons-material';
 
 // HSK Level type
 type HskLevel = 'HSK1' | 'HSK2' | 'HSK3' | 'HSK4' | 'HSK5' | 'HSK6';
@@ -88,7 +85,7 @@ const VocabEntryCards = ({ refreshTrigger }: VocabEntryCardsProps) => {
   const [loading, setLoading] = useState<boolean>(true);
   const [hasMore, setHasMore] = useState<boolean>(true);
   const [offset, setOffset] = useState<number>(0);
-  const [total, setTotal] = useState<number>(0);
+  const [, setTotal] = useState<number>(0);
 
   const observer = useRef<IntersectionObserver | null>(null);
   const lastEntryElementRef = useCallback((node: HTMLDivElement | null) => {

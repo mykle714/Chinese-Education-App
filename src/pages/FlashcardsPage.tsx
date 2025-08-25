@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "../AuthContext";
 import {
     Container,
@@ -13,21 +13,14 @@ import {
     Chip,
     List,
     ListItem,
-    ListItemText,
-    ListItemIcon,
     Drawer,
     useMediaQuery,
     useTheme,
     Fab,
-    IconButton,
-    Collapse
 } from "@mui/material";
-import ShuffleIcon from "@mui/icons-material/Shuffle";
 import CheckIcon from "@mui/icons-material/Check";
 import CloseIcon from "@mui/icons-material/Close";
 import HistoryIcon from "@mui/icons-material/History";
-import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import SkipNextIcon from "@mui/icons-material/SkipNext";
@@ -212,8 +205,6 @@ function FlashcardsPage() {
     const [completedCardsCount, setCompletedCardsCount] = useState(0);
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [historyIndex, setHistoryIndex] = useState(0); // 0 means current card, 1+ means older cards in history
-    const [isAnimating, setIsAnimating] = useState(false);
-    const [animationDirection, setAnimationDirection] = useState<'next' | 'previous' | null>(null);
     const { token } = useAuth();
 
     // Drawer width consistent with main navigation
@@ -789,9 +780,7 @@ function FlashcardsPage() {
                             <BlankCard
                                 position="previous"
                                 onClick={() => {
-                                    if (!isAnimating) {
-                                        handlePreviousCard();
-                                    }
+                                    handlePreviousCard();
                                 }}
                             />
                         )}
@@ -800,9 +789,7 @@ function FlashcardsPage() {
                         <BlankCard
                             position="next"
                             onClick={() => {
-                                if (!isAnimating) {
-                                    handleNextCard();
-                                }
+                                handleNextCard();
                             }}
                         />
 

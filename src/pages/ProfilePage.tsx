@@ -17,7 +17,7 @@ import { Visibility, VisibilityOff } from "@mui/icons-material";
 import { useAuth } from "../AuthContext";
 
 function ProfilePage() {
-    const { user, isLoading, changePassword, error: authError } = useAuth();
+    const { user, isLoading, changePassword } = useAuth();
 
     // Password form state
     const [currentPassword, setCurrentPassword] = useState("");

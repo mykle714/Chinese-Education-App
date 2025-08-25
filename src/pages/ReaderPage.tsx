@@ -5,7 +5,6 @@ import {
     List,
     ListItem,
     ListItemButton,
-    ListItemText,
     Drawer,
     useMediaQuery,
     useTheme,
@@ -13,19 +12,15 @@ import {
     CircularProgress,
     Alert,
     Chip,
-    Divider,
     TextField,
-    Paper,
     FormControlLabel,
     Checkbox,
-    IconButton,
-    Collapse
+    IconButton
 } from "@mui/material";
 import {
     Article as ArticleIcon,
     Menu as MenuIcon,
     Settings as SettingsIcon,
-    ChevronLeft as ChevronLeftIcon,
     ChevronRight as ChevronRightIcon
 } from "@mui/icons-material";
 import { useAuth } from "../AuthContext";
@@ -96,9 +91,6 @@ function ReaderPage() {
 
             // Clear any existing selections
             selection.removeAllRanges();
-
-            // Create a range at the cursor position
-            const range = document.createRange();
 
             // For textarea, we need to work with the text content
             // Create a temporary text node to work with Selection API

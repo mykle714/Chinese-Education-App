@@ -11,6 +11,9 @@ import * as onDeckVocabModel from './models/onDeckVocabModel.js';
 import { authenticateToken } from './authMiddleware.js';
 import { User, VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, UserCreateData, UserLoginData, Text, OnDeckVocabSetCreateData } from './types/index.js';
 
+// Import new DAL architecture for gradual migration
+import { userController, vocabEntryController, onDeckVocabController } from './dal/setup.js';
+
 // Configure multer for file uploads
 const upload = multer({ 
   storage: multer.memoryStorage(),
@@ -100,7 +103,9 @@ app.use(cors({
       'http://localhost:5174',  // Vite dev server port
       'http://127.0.0.1:5174',  // Also allow 127.0.0.1 equivalent
       'http://localhost:5173',  // Fallback for development
-      'http://127.0.0.1:5173'   // Also allow 127.0.0.1 equivalent for development
+      'http://127.0.0.1:5173',  // Also allow 127.0.0.1 equivalent for development
+      'http://174.127.171.180', // Production frontend URL
+      'https://174.127.171.180' // Production frontend URL with HTTPS
     ];
     
     if(allowedOrigins.indexOf(origin) !== -1) {
@@ -118,191 +123,63 @@ app.use(express.json());
 app.use(cookieParser());
 
 // Add JWT secret to environment variables
-process.env.JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret_key';
+process.env.JWT_SECRET = process.env.JWT_SECRET;
 
-// Get all vocab entries (protected route)
+// Get all vocab entries - USING NEW DAL ARCHITECTURE
 // @ts-ignore
 app.get('/api/vocabEntries', authenticateToken, async (req, res) => {
-  try {
-    const data = await vocabEntryModel.getAllVocabEntries();
-    res.json(data);
-  } catch (error: any) {
-    console.error('Error fetching vocab entries:', error);
-    const errorCode = error.code || 'ERR_FETCH_FAILED';
-    const errorMessage = error.message || 'Failed to retrieve vocab entries';
-    res.status(error.statusCode || 500).json({ 
-      error: errorMessage,
-      code: errorCode
-    });
-  }
+  console.log('🔄 Using NEW DAL architecture for get all vocab entries');
+  await vocabEntryController.getAllEntries(req, res);
 });
 
-// Get paginated vocab entries (protected route)
+// Get paginated vocab entries - USING NEW DAL ARCHITECTURE
 // @ts-ignore
 app.get('/api/vocabEntries/paginated', authenticateToken, async (req, res) => {
-  try {
-    const limit = parseInt(req.query.limit as string) || 10;
-    const offset = parseInt(req.query.offset as string) || 0;
-    
-    const data = await vocabEntryModel.getPaginatedVocabEntries(limit, offset);
-    const total = await vocabEntryModel.getVocabEntriesCount();
-    
-    res.json({
-      entries: data,
-      total,
-      hasMore: offset + data.length < total
-    });
-  } catch (error: any) {
-    console.error('Error fetching paginated vocab entries:', error);
-    const errorCode = error.code || 'ERR_FETCH_FAILED';
-    const errorMessage = error.message || 'Failed to retrieve vocab entries';
-    res.status(error.statusCode || 500).json({ 
-      error: errorMessage,
-      code: errorCode
-    });
-  }
+  console.log('🔄 Using NEW DAL architecture for get paginated vocab entries');
+  await vocabEntryController.getPaginatedEntries(req, res);
 });
 
-// Get vocab entry by ID (protected route)
+// Get vocab entry by ID - USING NEW DAL ARCHITECTURE
 // @ts-ignore
 app.get('/api/vocabEntries/:id', authenticateToken, async (req, res) => {
-  try {
-    const data = await vocabEntryModel.getVocabEntryById(Number(req.params.id));
-    if (!data) {
-      return res.status(404).json({ 
-        error: 'Vocab entry not found',
-        code: 'ERR_ENTRY_NOT_FOUND'
-      });
-    }
-    res.json(data);
-  } catch (error: any) {
-    console.error('Error fetching vocab entry by ID:', error);
-    const errorCode = error.code || 'ERR_FETCH_FAILED';
-    const errorMessage = error.message || 'Failed to retrieve vocab entry';
-    res.status(error.statusCode || 500).json({ 
-      error: errorMessage,
-      code: errorCode
-    });
-  }
+  console.log('🔄 Using NEW DAL architecture for get vocab entry by ID');
+  await vocabEntryController.getEntryById(req, res);
 });
 
-// Create new vocab entry (protected route)
+// Create new vocab entry - USING NEW DAL ARCHITECTURE
 // @ts-ignore
 app.post('/api/vocabEntries', authenticateToken, async (req, res) => {
-  try {
-    const vocabEntryData: VocabEntryCreateData = {
-      userId: req.user.userId, // Use the authenticated user's ID
-      entryKey: req.body.entryKey,
-      entryValue: req.body.entryValue
-    };
-    
-    const newData = await vocabEntryModel.createVocabEntry(vocabEntryData);
-    res.status(201).json(newData);
-  } catch (error: any) {
-    console.error('Error creating vocab entry:', error);
-    const errorCode = error.code || 'ERR_CREATE_ENTRY_FAILED';
-    const errorMessage = error.message || 'Failed to create vocabulary entry';
-    res.status(error.statusCode || 500).json({ 
-      error: errorMessage,
-      code: errorCode
-    });
-  }
+  console.log('🔄 Using NEW DAL architecture for create vocab entry');
+  await vocabEntryController.createEntry(req, res);
 });
 
-// Update vocab entry (protected route)
+// Update vocab entry - USING NEW DAL ARCHITECTURE
 // @ts-ignore
 app.put('/api/vocabEntries/:id', authenticateToken, async (req, res) => {
-  try {
-    const updateData: VocabEntryUpdateData = {
-      entryKey: req.body.entryKey,
-      entryValue: req.body.entryValue
-    };
-    const updatedData = await vocabEntryModel.updateVocabEntry(Number(req.params.id), updateData);
-    if (!updatedData) {
-      return res.status(404).json({ 
-        error: 'Vocab entry not found',
-        code: 'ERR_ENTRY_NOT_FOUND'
-      });
-    }
-    res.json(updatedData);
-  } catch (error: any) {
-    console.error('Error updating vocab entry:', error);
-    const errorCode = error.code || 'ERR_UPDATE_FAILED';
-    const errorMessage = error.message || 'Failed to update vocab entry';
-    res.status(error.statusCode || 500).json({ 
-      error: errorMessage,
-      code: errorCode
-    });
-  }
+  console.log('🔄 Using NEW DAL architecture for update vocab entry');
+  await vocabEntryController.updateEntry(req, res);
 });
 
-// Delete vocab entry (protected route)
+// Delete vocab entry - USING NEW DAL ARCHITECTURE
 // @ts-ignore
 app.delete('/api/vocabEntries/:id', authenticateToken, async (req, res) => {
-  try {
-    await vocabEntryModel.deleteVocabEntry(Number(req.params.id));
-    res.status(204).end();
-  } catch (error: any) {
-    console.error('Error deleting vocab entry:', error);
-    const errorCode = error.code || 'ERR_DELETE_FAILED';
-    const errorMessage = error.message || 'Failed to delete vocab entry';
-    res.status(error.statusCode || 500).json({ 
-      error: errorMessage,
-      code: errorCode
-    });
-  }
+  console.log('🔄 Using NEW DAL architecture for delete vocab entry');
+  await vocabEntryController.deleteEntry(req, res);
 });
 
 // Authentication routes
-// Register a new user
+// Register a new user - USING NEW DAL ARCHITECTURE
 // @ts-ignore
 app.post('/api/auth/register', async (req, res) => {
-  try {
-    const userData: UserCreateData = {
-      email: req.body.email,
-      name: req.body.name,
-      password: req.body.password
-    };
-    const newUser = await userModel.createUser(userData);
-    res.status(201).json(newUser);
-  } catch (error: any) {
-    console.error('Error registering user:', error);
-    const errorCode = error.code || 'ERR_REGISTRATION_FAILED';
-    const errorMessage = error.message || 'Failed to register user';
-    res.status(error.statusCode || 500).json({ 
-      error: errorMessage,
-      code: errorCode
-    });
-  }
+  console.log('🔄 Using NEW DAL architecture for user registration');
+  await userController.register(req, res);
 });
 
-// Login user
+// Login user - USING NEW DAL ARCHITECTURE
 // @ts-ignore
 app.post('/api/auth/login', async (req, res) => {
-  try {
-    const loginData: UserLoginData = {
-      email: req.body.email,
-      password: req.body.password
-    };
-    const { user, token } = await userModel.loginUser(loginData);
-    
-    // Set token in HTTP-only cookie
-    res.cookie('token', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
-      maxAge: 24 * 60 * 60 * 1000 // 24 hours
-    });
-    
-    res.json({ user, token });
-  } catch (error: any) {
-    console.error('Error logging in user:', error);
-    const errorCode = error.code || 'ERR_LOGIN_FAILED';
-    const errorMessage = error.message || 'Failed to login';
-    res.status(error.statusCode || 500).json({ 
-      error: errorMessage,
-      code: errorCode
-    });
-  }
+  console.log('🔄 Using NEW DAL architecture for login');
+  await userController.login(req, res);
 });
 
 // Logout user
@@ -312,128 +189,39 @@ app.post('/api/auth/logout', (req, res) => {
   res.status(200).json({ message: 'Logged out successfully' });
 });
 
-// Get current authenticated user
+// Get current authenticated user - USING NEW DAL ARCHITECTURE
 // @ts-ignore
 app.get('/api/auth/me', authenticateToken, async (req, res) => {
-  try {
-    const user = await userModel.getUserById(req.user.userId);
-    // Don't return the password
-    delete user.password;
-    res.json(user);
-  } catch (error: any) {
-    console.error('Error getting current user:', error);
-    const errorCode = error.code || 'ERR_FETCH_USER_FAILED';
-    const errorMessage = error.message || 'Failed to retrieve user';
-    res.status(error.statusCode || 500).json({ 
-      error: errorMessage,
-      code: errorCode
-    });
-  }
+  console.log('🔄 Using NEW DAL architecture for get current user');
+  await userController.getCurrentUser(req, res);
 });
 
-// Change user password (protected route)
+// Change user password - USING NEW DAL ARCHITECTURE
 // @ts-ignore
 app.post('/api/auth/change-password', authenticateToken, async (req, res) => {
-  try {
-    const { currentPassword, newPassword } = req.body;
-    
-    // Validate required fields
-    if (!currentPassword) {
-      return res.status(400).json({ 
-        error: 'Current password is required',
-        code: 'ERR_MISSING_CURRENT_PASSWORD'
-      });
-    }
-    
-    if (!newPassword) {
-      return res.status(400).json({ 
-        error: 'New password is required',
-        code: 'ERR_MISSING_NEW_PASSWORD'
-      });
-    }
-    
-    // Change the password
-    const updatedUser = await userModel.changeUserPassword(
-      req.user.userId,
-      currentPassword,
-      newPassword
-    );
-    
-    res.json({ 
-      user: updatedUser,
-      message: 'Password changed successfully'
-    });
-  } catch (error: any) {
-    console.error('Error changing password:', error);
-    const errorCode = error.code || 'ERR_PASSWORD_CHANGE_FAILED';
-    const errorMessage = error.message || 'Failed to change password';
-    res.status(error.statusCode || 500).json({ 
-      error: errorMessage,
-      code: errorCode
-    });
-  }
+  console.log('🔄 Using NEW DAL architecture for change password');
+  await userController.changePassword(req, res);
 });
 
-// Get all users (protected route)
+// Get all users - USING NEW DAL ARCHITECTURE
 // @ts-ignore
 app.get('/api/users', authenticateToken, async (req, res) => {
-  try {
-    const users = await userModel.getAllUsers();
-    res.json(users);
-  } catch (error: any) {
-    console.error('Error fetching users:', error);
-    const errorCode = error.code || 'ERR_FETCH_USERS_FAILED';
-    const errorMessage = error.message || 'Failed to retrieve users';
-    res.status(error.statusCode || 500).json({ 
-      error: errorMessage,
-      code: errorCode
-    });
-  }
+  console.log('🔄 Using NEW DAL architecture for get all users');
+  await userController.getAllUsers(req, res);
 });
 
-// Get user by ID (protected route)
+// Get user by ID - USING NEW DAL ARCHITECTURE
 // @ts-ignore
 app.get('/api/users/:id', authenticateToken, async (req, res) => {
-  try {
-    const user = await userModel.getUserById(req.params.id as string);
-    if (!user) {
-      return res.status(404).json({ 
-        error: 'User not found',
-        code: 'ERR_USER_NOT_FOUND'
-      });
-    }
-    res.json(user);
-  } catch (error: any) {
-    console.error('Error fetching user by ID:', error);
-    const errorCode = error.code || 'ERR_FETCH_USER_FAILED';
-    const errorMessage = error.message || 'Failed to retrieve user';
-    res.status(error.statusCode || 500).json({ 
-      error: errorMessage,
-      code: errorCode
-    });
-  }
+  console.log('🔄 Using NEW DAL architecture for get user by ID');
+  await userController.getUserById(req, res);
 });
 
-// Create new user (admin only, protected route)
+// Create new user (admin only) - USING NEW DAL ARCHITECTURE
 // @ts-ignore
 app.post('/api/users', authenticateToken, async (req, res) => {
-  try {
-    const userData: UserCreateData = {
-      email: req.body.email,
-      name: req.body.name,
-      password: req.body.password
-    };
-    const newUser = await userModel.createUser(userData);
-    res.status(201).json(newUser);
-  } catch (error: any) {
-    console.error('Error creating user:', error);
-    const errorCode = error.code || 'ERR_CREATE_USER_FAILED';
-    const errorMessage = error.message || 'Failed to create user';
-    res.status(error.statusCode || 500).json({ 
-      error: errorMessage,
-      code: errorCode
-    });
-  }
+  console.log('🔄 Using NEW DAL architecture for create user');
+  await userController.createUser(req, res);
 });
 
 // Get all texts for reader feature (protected route)
@@ -470,158 +258,76 @@ app.get('/api/texts', authenticateToken, async (req, res) => {
   }
 });
 
-// Import vocab entries from CSV file (protected route)
+// Import vocab entries from CSV file - USING NEW DAL ARCHITECTURE
 // @ts-ignore
 app.post('/api/vocabEntries/import', authenticateToken, upload.single('file'), async (req, res) => {
-  try {
-    // Start timing the entire import process
-    console.time('CSV Import - Total Process');
-    
-    if (!req.file) {
-      return res.status(400).json({ 
-        error: 'No file uploaded',
-        code: 'ERR_NO_FILE'
-      });
-    }
-
-    // Time file validation
-    console.time('CSV Import - File Validation');
-    
-    // Check file type
-    if (!req.file.originalname.toLowerCase().endsWith('.csv')) {
-      console.timeEnd('CSV Import - File Validation');
-      return res.status(400).json({ 
-        error: 'File must be a CSV file',
-        code: 'ERR_INVALID_FILE_TYPE'
-      });
-    }
-
-    console.timeEnd('CSV Import - File Validation');
-
-    // Time CSV parsing
-    console.time('CSV Import - CSV Parsing');
-    
-    // Parse CSV content
-    const csvContent = req.file.buffer.toString('utf-8');
-    const entries = parseCSV(csvContent);
-
-    console.timeEnd('CSV Import - CSV Parsing');
-    console.log(`CSV Import - Parsed ${entries.length} entries from CSV`);
-
-    if (entries.length === 0) {
-      console.timeEnd('CSV Import - Total Process');
-      return res.status(400).json({ 
-        error: 'No valid entries found in CSV file',
-        code: 'ERR_NO_VALID_ENTRIES'
-      });
-    }
-
-    // Time database operations
-    console.time('CSV Import - Database Operations');
-    
-    // Import entries for the authenticated user using batch processing
-    const importResults = {
-      total: entries.length,
-      imported: 0,
-      skipped: 0,
-      errors: [] as string[]
-    };
-
-    console.log(`CSV Import - Starting batch processing of ${entries.length} entries`);
-    
-    // Time the batch operation
-    console.time('CSV Import - Batch Insert');
-    
-    const batchResult = await vocabEntryModel.bulkUpsertVocabEntries(req.user.userId, entries);
-    importResults.imported = batchResult.upserted;
-    console.log(`CSV Import - Batch operation completed: ${batchResult.upserted} entries processed`);
-    
-    console.timeEnd('CSV Import - Batch Insert');
-    console.timeEnd('CSV Import - Database Operations');
-    console.log(`CSV Import - Database Results: ${importResults.imported} imported, ${importResults.skipped} skipped`);
-
-    console.timeEnd('CSV Import - Total Process');
-
-    res.json({
-      message: `Import completed. ${importResults.imported} entries imported, ${importResults.skipped} skipped.`,
-      results: importResults
-    });
-  } catch (error: any) {
-    console.error('Error importing CSV:', error);
-    console.timeEnd('CSV Import - Total Process'); // End timing even on error
-    const errorCode = error.code || 'ERR_IMPORT_FAILED';
-    const errorMessage = error.message || 'Failed to import CSV file';
-    res.status(error.statusCode || 500).json({ 
-      error: errorMessage,
-      code: errorCode
-    });
-  }
+  console.log('🔄 Using NEW DAL architecture for CSV import');
+  await vocabEntryController.importFromCSV(req, res);
 });
 
-// OnDeck Vocab Sets API Routes
+// OnDeck Vocab Sets API Routes - USING NEW DAL ARCHITECTURE
 
 // Get all on-deck vocab sets for authenticated user (protected route)
 // @ts-ignore
 app.get('/api/onDeckPage', authenticateToken, async (req, res) => {
-  try {
-    const data = await onDeckVocabModel.getAllOnDeckSetsForUser(req.user.userId);
-    res.json(data);
-  } catch (error: any) {
-    console.error('Error fetching on-deck vocab sets:', error);
-    const errorCode = error.code || 'ERR_FETCH_ONDECK_SETS_FAILED';
-    const errorMessage = error.message || 'Failed to retrieve on-deck vocab sets';
-    res.status(error.statusCode || 500).json({ 
-      error: errorMessage,
-      code: errorCode
-    });
-  }
+  console.log('🔄 Using NEW DAL architecture for OnDeck getAllSets');
+  await onDeckVocabController.getAllSets(req, res);
+});
+
+// Get a specific on-deck vocab set by feature name (protected route)
+// @ts-ignore
+app.get('/api/onDeckPage/:featureName', authenticateToken, async (req, res) => {
+  console.log('🔄 Using NEW DAL architecture for OnDeck getSetByFeatureName');
+  await onDeckVocabController.getSetByFeatureName(req, res);
 });
 
 // Create or update an on-deck vocab set (protected route)
 // @ts-ignore
 app.put('/api/onDeckPage/:featureName', authenticateToken, async (req, res) => {
-  try {
-    const onDeckSetData: OnDeckVocabSetCreateData = {
-      featureName: req.params.featureName,
-      vocabEntryIds: req.body.vocabEntryIds
-    };
-    
-    const result = await onDeckVocabModel.createOrUpdateOnDeckSet(req.user.userId, onDeckSetData);
-    res.json(result);
-  } catch (error: any) {
-    console.error('Error creating/updating on-deck vocab set:', error);
-    const errorCode = error.code || 'ERR_UPSERT_ONDECK_SET_FAILED';
-    const errorMessage = error.message || 'Failed to create or update on-deck vocab set';
-    res.status(error.statusCode || 500).json({ 
-      error: errorMessage,
-      code: errorCode
-    });
-  }
+  console.log('🔄 Using NEW DAL architecture for OnDeck createOrUpdateSet');
+  await onDeckVocabController.createOrUpdateSet(req, res);
 });
 
 // Delete an on-deck vocab set (protected route)
 // @ts-ignore
 app.delete('/api/onDeckPage/:featureName', authenticateToken, async (req, res) => {
-  try {
-    const deleted = await onDeckVocabModel.deleteOnDeckSet(req.user.userId, req.params.featureName);
-    
-    if (!deleted) {
-      return res.status(404).json({ 
-        error: 'On-deck vocab set not found',
-        code: 'ERR_ONDECK_SET_NOT_FOUND'
-      });
-    }
-    
-    res.status(204).end();
-  } catch (error: any) {
-    console.error('Error deleting on-deck vocab set:', error);
-    const errorCode = error.code || 'ERR_DELETE_ONDECK_SET_FAILED';
-    const errorMessage = error.message || 'Failed to delete on-deck vocab set';
-    res.status(error.statusCode || 500).json({ 
-      error: errorMessage,
-      code: errorCode
-    });
-  }
+  console.log('🔄 Using NEW DAL architecture for OnDeck deleteSet');
+  await onDeckVocabController.deleteSet(req, res);
+});
+
+// Get user's on-deck set statistics (protected route)
+// @ts-ignore
+app.get('/api/onDeckPage/stats', authenticateToken, async (req, res) => {
+  console.log('🔄 Using NEW DAL architecture for OnDeck getUserStats');
+  await onDeckVocabController.getUserStats(req, res);
+});
+
+// Get all feature names for the user (protected route)
+// @ts-ignore
+app.get('/api/onDeckPage/features', authenticateToken, async (req, res) => {
+  console.log('🔄 Using NEW DAL architecture for OnDeck getFeatureNames');
+  await onDeckVocabController.getFeatureNames(req, res);
+});
+
+// Add entries to an existing set (protected route)
+// @ts-ignore
+app.post('/api/onDeckPage/:featureName/add', authenticateToken, async (req, res) => {
+  console.log('🔄 Using NEW DAL architecture for OnDeck addEntriesToSet');
+  await onDeckVocabController.addEntriesToSet(req, res);
+});
+
+// Remove entries from an existing set (protected route)
+// @ts-ignore
+app.post('/api/onDeckPage/:featureName/remove', authenticateToken, async (req, res) => {
+  console.log('🔄 Using NEW DAL architecture for OnDeck removeEntriesFromSet');
+  await onDeckVocabController.removeEntriesFromSet(req, res);
+});
+
+// Clear all entries from a set (protected route)
+// @ts-ignore
+app.post('/api/onDeckPage/:featureName/clear', authenticateToken, async (req, res) => {
+  console.log('🔄 Using NEW DAL architecture for OnDeck clearSet');
+  await onDeckVocabController.clearSet(req, res);
 });
 
 // Start the server

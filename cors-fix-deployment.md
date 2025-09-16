@@ -54,7 +54,7 @@ pm2 logs vocabulary-backend --lines 10
 ### Step 3: Test the Fix
 ```bash
 # Test that your backend is responding
-curl http://localhost:3001/api/
+curl http://localhost:5000/api/
 
 # Should return some response (not "connection refused")
 ```
@@ -99,7 +99,7 @@ pm2 logs vocabulary-backend
 sudo netstat -tlnp | grep :3001
 
 # Test backend directly
-curl -X POST http://localhost:3001/api/auth/login \
+curl -X POST http://localhost:5000/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"test@example.com","password":"testpass"}'
 ```

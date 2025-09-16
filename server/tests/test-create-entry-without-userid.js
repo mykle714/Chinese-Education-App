@@ -1,49 +1,29 @@
 import fetch from 'node-fetch';
 
 // Test configuration
-const API_BASE_URL = 'http://localhost:3001';
-const TEST_USERS = [
-    { email: 'test@example.com', password: 'pw' },
-    { email: 'default@example.com', password: 'password' }
-];
+const API_BASE_URL = 'http://localhost:5000';
+const TEST_USER = { email: 'accounts@test.com', password: 'testpass123' };
 
 async function testCreateEntryWithoutUserId() {
     console.log('🧪 Testing Create Entry API without userID field...\n');
     
-    // Try to login with available test users
-    let token, user;
-    
-    for (const testUser of TEST_USERS) {
-        try {
-            console.log(`1. Attempting login with ${testUser.email}...`);
-            const loginResponse = await fetch(`${API_BASE_URL}/api/auth/login`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(testUser)
-            });
+    // Try to login with test user
+    console.log(`Trying to login with ${TEST_USER.email}...`);
+    const loginResponse = await fetch(`${API_BASE_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(TEST_USER)
+    });
 
-            if (loginResponse.ok) {
-                const loginData = await loginResponse.json();
-                token = loginData.token;
-                user = loginData.user;
-                
-                console.log(`✅ Login successful for user: ${user.name} (${user.email})`);
-                console.log(`   User ID: ${user.id}\n`);
-                break;
-            } else {
-                const errorData = await loginResponse.json();
-                console.log(`❌ Login failed for ${testUser.email}: ${errorData.error}`);
-            }
-        } catch (error) {
-            console.log(`❌ Error logging in with ${testUser.email}: ${error.message}`);
-        }
+    if (!loginResponse.ok) {
+        const errorData = await loginResponse.json();
+        throw new Error(`Login failed: ${errorData.error}`);
     }
-    
-    if (!token) {
-        throw new Error('Could not login with any test user');
-    }
+
+    const loginData = await loginResponse.json();
+    const token = loginData.token;
+    const user = loginData.user;
+    console.log(`✅ Login successful with ${TEST_USER.email}`);
     
     try {
 

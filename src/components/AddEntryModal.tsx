@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Dialog, DialogContent, DialogTitle, IconButton, TextField, Button, Alert, CircularProgress } from "@mui/material";
 import { Close, Add } from "@mui/icons-material";
 import { useAuth } from "../AuthContext";
@@ -23,6 +23,14 @@ const AddEntryModal = ({ open, onClose, onEntryAdded }: AddEntryModalProps) => {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [errorCode, setErrorCode] = useState<string | null>(null);
+    const termFieldRef = useRef<HTMLInputElement>(null);
+
+    // Handle focus when dialog has fully entered (animation complete)
+    const handleDialogEntered = () => {
+        if (termFieldRef.current) {
+            termFieldRef.current.focus();
+        }
+    };
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
@@ -39,7 +47,7 @@ const AddEntryModal = ({ open, onClose, onEntryAdded }: AddEntryModalProps) => {
         setErrorCode(null);
 
         try {
-            const response = await fetch('http://localhost:3001/api/vocabEntries', {
+            const response = await fetch('http://localhost:5000/api/vocabEntries', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -86,6 +94,9 @@ const AddEntryModal = ({ open, onClose, onEntryAdded }: AddEntryModalProps) => {
             onClose={handleClose}
             maxWidth="sm"
             fullWidth
+            TransitionProps={{
+                onEntered: handleDialogEntered
+            }}
             PaperProps={{
                 sx: {
                     borderRadius: 2,
@@ -127,6 +138,7 @@ const AddEntryModal = ({ open, onClose, onEntryAdded }: AddEntryModalProps) => {
                         margin="normal"
                         variant="outlined"
                         autoFocus
+                        inputRef={termFieldRef}
                     />
 
                     <TextField

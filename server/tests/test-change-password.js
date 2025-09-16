@@ -2,7 +2,7 @@
 import fetch from 'node-fetch';
 
 // Configuration
-const API_URL = 'http://localhost:3001';
+const API_URL = 'http://localhost:5000';
 const TEST_USER = {
   email: 'test@example.com',
   password: 'Password123'

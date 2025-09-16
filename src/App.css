@@ -39,3 +39,28 @@
 .read-the-docs {
   color: #888;
 }
+
+/* Flashcard transition styles */
+.flashcard-content {
+  transition: all 0.4s ease-in-out;
+}
+
+.flashcard-front {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.flashcard-front.flipped {
+  opacity: 0;
+  transform: translateY(-20px);
+}
+
+.flashcard-back {
+  opacity: 0;
+  transform: translateY(20px);
+}
+
+.flashcard-back.flipped {
+  opacity: 1;
+  transform: translateY(0);
+}

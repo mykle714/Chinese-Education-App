@@ -49,7 +49,7 @@ const DataForm = ({ onDataAdded }: DataFormProps) => {
       setSuccess(false);
 
       try {
-         const response = await fetch('http://localhost:3001/api/vocabEntries', {
+         const response = await fetch('http://localhost:5000/api/vocabEntries', {
             method: 'POST',
             headers: {
                'Content-Type': 'application/json',

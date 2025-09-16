@@ -11,7 +11,7 @@ async function testTimingAnalysis() {
     try {
         // First, login to get a token
         console.log('Logging in...');
-        const loginResponse = await fetch('http://localhost:3001/api/auth/login', {
+        const loginResponse = await fetch('http://localhost:5000/api/auth/login', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -46,7 +46,7 @@ async function testTimingAnalysis() {
         form.append('file', fs.createReadStream(testCsvPath));
 
         const startTime = Date.now();
-        const importResponse = await fetch('http://localhost:3001/api/vocabEntries/import', {
+        const importResponse = await fetch('http://localhost:5000/api/vocabEntries/import', {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${token}`,

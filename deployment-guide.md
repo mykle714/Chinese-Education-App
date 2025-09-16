@@ -83,8 +83,8 @@ npm run build
 
 ## Step 6: Configure PM2 Process Manager
 ```bash
-# Create PM2 ecosystem file
-cat > ecosystem.config.js << EOF
+# Create PM2 ecosystem file (ES module syntax)
+cat > ecosystem.config.cjs << EOF
 module.exports = {
   apps: [{
     name: 'vocabulary-backend',
@@ -114,8 +114,8 @@ mkdir -p logs
 # Install ts-node for TypeScript support
 npm install -g ts-node
 
-# Start the backend with PM2
-pm2 start ecosystem.config.js
+# Start the backend with PM2 (note the .cjs extension)
+pm2 start ecosystem.config.cjs
 pm2 save
 pm2 startup  # Follow the instructions to enable auto-start
 ```
@@ -143,7 +143,7 @@ server {
 
     # Backend API
     location /api/ {
-        proxy_pass http://localhost:3001;
+        proxy_pass http://localhost:5000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -203,7 +203,7 @@ pm2 status
 sudo systemctl status nginx
 
 # Check if backend is responding
-curl http://localhost:3001/api/
+curl http://localhost:5000/api/
 
 # Test from external network
 # Visit: http://174.127.171.180

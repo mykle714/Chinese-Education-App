@@ -4,25 +4,19 @@ export interface CustomError extends Error {
   statusCode?: number;
 }
 
-// Database configuration type
+// Database configuration type (now using PostgreSQL PoolConfig)
+// The actual config is imported from 'pg' PoolConfig type
+// This interface is kept for backward compatibility if needed
 export interface DbConfig {
-  server: string;
+  host: string;
+  port: number;
   database: string;
-  authentication: {
-    type: string;
-    options: {
-      clientId: string;
-      clientSecret: string;
-      tenantId: string;
-    }
-  };
-  options: {
-    encrypt: boolean;
-    trustServerCertificate: boolean;
-    enableArithAbort?: boolean;
-    charset?: string;
-    collation?: string;
-  };
+  user: string;
+  password: string;
+  max?: number;
+  idleTimeoutMillis?: number;
+  connectionTimeoutMillis?: number;
+  ssl?: boolean | object;
 }
 
 // User model type
@@ -45,6 +39,13 @@ export interface UserCreateData {
 export interface UserLoginData {
   email: string;
   password: string;
+}
+
+// User update data type
+export interface UserUpdateData {
+  email?: string;
+  name?: string;
+  password?: string;
 }
 
 // Auth response type

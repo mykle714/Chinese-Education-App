@@ -127,7 +127,7 @@ const VocabEntryCards = ({ refreshTrigger }: VocabEntryCardsProps) => {
 
     try {
       // Fetch vocabulary entries from our Express API with pagination
-      const response = await fetch(`http://localhost:3001/api/vocabEntries/paginated?limit=${ENTRIES_PER_PAGE}&offset=${currentOffset}`, {
+      const response = await fetch(`http://localhost:5000/api/vocabEntries/paginated?limit=${ENTRIES_PER_PAGE}&offset=${currentOffset}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }

@@ -35,7 +35,7 @@
 ## Security & Network
 - [ ] Configure UFW firewall (allow SSH, 80, 443)
 - [ ] Set up router port forwarding (80 → server)
-- [ ] Test internal access: `curl http://localhost:3001/api/`
+- [ ] Test internal access: `curl http://localhost:5000/api/`
 
 ## Final Testing
 - [ ] Check PM2 status: `pm2 status`
@@ -45,7 +45,7 @@
 
 ## Important Notes
 - **Your App URL:** http://174.127.171.180
-- **Backend runs on:** localhost:3001 (internal only)
+- **Backend runs on:** localhost:5000 (internal only)
 - **Frontend served from:** /var/www/vocabulary-app/dist
 - **Logs location:** /var/www/vocabulary-app/logs/
 

@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, memo } from "react";
 import { useAuth } from "../AuthContext";
+import { FLASHCARD_CONTENT_UPDATE_DELAY } from "../constants";
 import {
     Container,
     Typography,
@@ -9,7 +10,6 @@ import {
     Button,
     CircularProgress,
     Alert,
-    Divider,
     Chip,
     List,
     ListItem,
@@ -26,6 +26,7 @@ import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import SkipNextIcon from "@mui/icons-material/SkipNext";
 import MenuIcon from "@mui/icons-material/Menu";
 import RemoveIcon from "@mui/icons-material/Remove";
+import FlashCard from "../components/FlashCard";
 
 // HSK Level type
 type HskLevel = 'HSK1' | 'HSK2' | 'HSK3' | 'HSK4' | 'HSK5' | 'HSK6';
@@ -63,140 +64,152 @@ const getHskNumber = (hskLevel: HskLevel) => {
     }
 };
 
-// Helper function to render tag badges
-const renderTags = (entry: VocabEntry) => (
-    <Box sx={{ position: 'absolute', top: 8, right: 8, display: 'flex', gap: 0.5 }}>
-        {entry.isCustomTag === true && (
-            <Chip
-                label="Custom"
-                size="small"
-                color="primary"
-                sx={{ fontSize: '0.7rem', height: '20px' }}
-            />
-        )}
-        {entry.hskLevelTag && (
-            <Box
-                sx={{
-                    width: '24px',
-                    height: '24px',
-                    borderRadius: '50%',
-                    backgroundColor: 'secondary.main',
-                    color: 'secondary.contrastText',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '12px',
-                    fontWeight: 'bold'
-                }}
-            >
-                {getHskNumber(entry.hskLevelTag)}
-            </Box>
-        )}
-    </Box>
-);
-
-// Card position definitions for the stack effect
-interface CardPosition {
-    scale: number;
-    translateX: string;
-    translateY: string;
-    zIndex: number;
-    opacity: number;
+// Main content component - moved outside to prevent re-creation on every render
+interface MainContentProps {
+    currentEntry: VocabEntry | null;
+    displayEntry: VocabEntry | null;
+    isFlipped: boolean;
+    handleFlip: () => void;
+    entryKey: string;
+    entryValue: string;
+    handlePreviousCard: () => void;
+    handleIncorrect: () => void;
+    handleCorrect: () => void;
+    handleNextCard: () => void;
+    history: HistoryEntry[];
+    historyIndex: number;
 }
 
-const cardPositions: Record<'previous' | 'current' | 'next', CardPosition> = {
-    previous: {
-        scale: 1,
-        translateX: '-24px',
-        translateY: '-24px',
-        zIndex: 1,
-        opacity: 0.7
-    },
-    current: {
-        scale: 1,
-        translateX: '0px',
-        translateY: '0px',
-        zIndex: 3,
-        opacity: 1
-    },
-    next: {
-        scale: 1,
-        translateX: '24px',
-        translateY: '24px',
-        zIndex: 2,
-        opacity: 0.7
-    }
-};
+const MainContent = memo<MainContentProps>(({
+    currentEntry,
+    displayEntry,
+    isFlipped,
+    handleFlip,
+    entryKey,
+    entryValue,
+    handlePreviousCard,
+    handleIncorrect,
+    handleCorrect,
+    handleNextCard,
+    history,
+    historyIndex
+}) => (
+    <Box
+        className="flashcards-main-content"
+        sx={{
+            flexGrow: 1,
+            p: { xs: 2, sm: 3 },
+            pt: { xs: 1, sm: 2 },
+            display: 'flex',
+            flexDirection: 'column',
+            minHeight: '100vh'
+        }}
+    >
+        {/* Title */}
+        <Typography
+            variant="h3"
+            component="h1"
+            align="center"
+            gutterBottom
+            sx={{ mb: 4 }}
+        >
+            Flashcards
+        </Typography>
 
-// Blank Card Component for previous/next positions
-const BlankCard = ({ position, onClick }: { position: 'previous' | 'next', onClick: () => void }) => {
-    const pos = cardPositions[position];
-
-    return (
-        <Card
-            onClick={onClick}
+        {/* Flashcard */}
+        <Box
+            className="flashcard-section"
             sx={{
-                position: "absolute",
-                width: "100%",
-                height: "100%",
-                borderRadius: 2,
-                boxShadow: 2,
-                cursor: "pointer",
-                backgroundColor: 'grey.100',
-                border: '2px dashed',
-                borderColor: 'grey.300',
                 display: "flex",
                 flexDirection: "column",
-                justifyContent: "center",
                 alignItems: "center",
-                transform: `scale(${pos.scale}) translateX(${pos.translateX}) translateY(${pos.translateY})`,
-                zIndex: pos.zIndex,
-                opacity: pos.opacity,
-                transition: 'all 0.3s ease-in-out',
-                '&:hover': {
-                    opacity: pos.opacity + 0.2,
-                    transform: `scale(${pos.scale + 0.02}) translateX(${pos.translateX}) translateY(${pos.translateY})`,
-                }
+                justifyContent: "center",
+                mb: 4,
+                width: '100%',
             }}
         >
-            <CardContent
-                sx={{
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "center",
-                    alignItems: "center",
-                    width: "100%",
-                    height: "100%",
-                }}
+            {currentEntry && (
+                <Box
+                    className="flashcard-outer-wrapper"
+                    sx={{
+                        width: "100%",
+                        maxWidth: 500,
+                        height: 300,
+                        display: "flex",
+                        justifyContent: "center",
+                        alignItems: "center",
+                    }}
+                >
+                    <FlashCard
+                        entry={currentEntry}
+                        displayEntry={displayEntry || currentEntry}
+                        isFlipped={isFlipped}
+                        onFlip={handleFlip}
+                        entryKey={entryKey}
+                        entryValue={entryValue}
+                    />
+                </Box>
+            )}
+        </Box>
+
+        {/* Navigation Buttons */}
+        <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, width: '100%' }}>
+            {/* Previous Card Button */}
+            <Button
+                variant="outlined"
+                startIcon={<ArrowBackIcon />}
+                onClick={handlePreviousCard}
+                disabled={history.length === 0 || historyIndex >= history.length - 1}
+                size="medium"
             >
-                <Typography
-                    variant="h6"
-                    component="h2"
-                    align="center"
-                    color="text.secondary"
-                    sx={{ mb: 1 }}
+                Previous Card
+            </Button>
+
+            {/* Correct/Incorrect Buttons */}
+            <Box sx={{ display: "flex", gap: 2, justifyContent: "center", alignItems: "center" }}>
+                <Button
+                    variant="contained"
+                    color="error"
+                    startIcon={<CloseIcon />}
+                    onClick={handleIncorrect}
+                    size="large"
                 >
-                    {position === 'previous' ? '← Previous' : 'Next →'}
-                </Typography>
-                <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    align="center"
+                    Incorrect
+                </Button>
+                <Button
+                    variant="contained"
+                    color="success"
+                    startIcon={<CheckIcon />}
+                    onClick={handleCorrect}
+                    size="large"
                 >
-                    Click to navigate
-                </Typography>
-            </CardContent>
-        </Card>
-    );
-};
+                    Correct
+                </Button>
+            </Box>
+
+            {/* Next Card / Skip Card Button */}
+            <Button
+                variant="outlined"
+                startIcon={historyIndex === 0 ? <SkipNextIcon /> : <ArrowForwardIcon />}
+                onClick={handleNextCard}
+                size="medium"
+            >
+                {historyIndex === 0 ? "Skip Card" : "Next Card"}
+            </Button>
+        </Box>
+    </Box>
+));
+
+MainContent.displayName = 'MainContent';
 
 function FlashcardsPage() {
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down("md"));
     const [entries, setEntries] = useState<VocabEntry[]>([]);
     const [currentEntry, setCurrentEntry] = useState<VocabEntry | null>(null);
-    const [frontContent, setFrontContent] = useState<string>("");
-    const [backContent, setBackContent] = useState<string>("");
+    const [displayEntry, setDisplayEntry] = useState<VocabEntry | null>(null);
+    const [entryKey, setentryKey] = useState<string>("");
+    const [entryValue, setentryValue] = useState<string>("");
     const [isFlipped, setIsFlipped] = useState(false);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -220,13 +233,31 @@ function FlashcardsPage() {
         }
     }, [entries]);
 
+    // Centralized delayed update function
+    const updateCardContent = (entry: VocabEntry, immediate = false) => {
+        // Update front content immediately
+        setentryKey(entry.entryKey);
+        setCurrentEntry(entry);
+
+        if (immediate) {
+            // For initial load, update everything immediately
+            setDisplayEntry(entry);
+            setentryValue(entry.entryValue);
+        } else {
+            // For transitions, delay the back face content update
+            setTimeout(() => {
+                setDisplayEntry(entry);
+                setentryValue(entry.entryValue);
+            }, FLASHCARD_CONTENT_UPDATE_DELAY);
+        }
+    };
+
     // Initialize front and back content when first entry is loaded
     useEffect(() => {
-        if (currentEntry && frontContent === "" && backContent === "") {
-            setFrontContent(currentEntry.entryKey);
-            setBackContent(currentEntry.entryValue);
+        if (currentEntry && entryKey === "" && entryValue === "") {
+            updateCardContent(currentEntry, true); // Immediate update for initial load
         }
-    }, [currentEntry, frontContent, backContent]);
+    }, [currentEntry, entryKey, entryValue]);
 
     // Keyboard navigation
     useEffect(() => {
@@ -277,7 +308,7 @@ function FlashcardsPage() {
     const fetchEntries = async () => {
         try {
             setLoading(true);
-            const response = await fetch("http://localhost:3001/api/vocabEntries", {
+            const response = await fetch("http://localhost:5000/api/vocabEntries", {
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }
@@ -328,25 +359,16 @@ function FlashcardsPage() {
 
         const newEntry = entries[randomIndex];
 
-        // Update the front content immediately
-        setFrontContent(newEntry.entryKey);
-
         // If the card is flipped, flip it back
         if (isFlipped) {
             setIsFlipped(false);
         }
 
-        // Store the new entry for reference, but don't update the back content yet
-        setCurrentEntry(newEntry);
+        // Use centralized update function with delay for transitions
+        updateCardContent(newEntry, false);
 
         // Add the new card to history immediately with null status (pending)
         addToHistory(newEntry, null);
-
-        // Update the back content with a delay
-        // This ensures the back content doesn't update until after any flip animation completes
-        setTimeout(() => {
-            setBackContent(newEntry.entryValue);
-        }, 800); // Full flip animation time to ensure it updates only after the animation completes
     };
 
     const handlePreviousCard = () => {
@@ -368,19 +390,11 @@ function FlashcardsPage() {
             createdAt: '' // Not needed for display
         };
 
-        // Update the front content immediately
-        setFrontContent(vocabEntry.entryKey);
-
         // Restore the flip state from history
         setIsFlipped(historyEntry.wasFlipped);
 
-        // Store the entry for reference
-        setCurrentEntry(vocabEntry);
-
-        // Update the back content with a delay
-        setTimeout(() => {
-            setBackContent(vocabEntry.entryValue);
-        }, 800);
+        // Use centralized update function with delay for transitions
+        updateCardContent(vocabEntry, false);
     };
 
     const handleNextCard = () => {
@@ -410,19 +424,11 @@ function FlashcardsPage() {
                 createdAt: '' // Not needed for display
             };
 
-            // Update the front content immediately
-            setFrontContent(vocabEntry.entryKey);
-
             // Restore the flip state from history
             setIsFlipped(historyEntry.wasFlipped);
 
-            // Store the entry for reference
-            setCurrentEntry(vocabEntry);
-
-            // Update the back content with a delay
-            setTimeout(() => {
-                setBackContent(vocabEntry.entryValue);
-            }, 800);
+            // Use centralized update function with delay for transitions
+            updateCardContent(vocabEntry, false);
         }
     };
 
@@ -506,7 +512,13 @@ function FlashcardsPage() {
     };
 
     const handleCorrect = () => {
-        // Always mark as correct regardless of flip state
+        // If card is showing front (not flipped), flip it first
+        if (!isFlipped) {
+            setIsFlipped(true);
+            return;
+        }
+
+        // Card is showing back, now mark as correct
         if (currentEntry) {
             // Add the current entry to history with correct status
             addToHistory(currentEntry, true);
@@ -521,7 +533,13 @@ function FlashcardsPage() {
     };
 
     const handleIncorrect = () => {
-        // Always mark as incorrect regardless of flip state
+        // If card is showing front (not flipped), flip it first
+        if (!isFlipped) {
+            setIsFlipped(true);
+            return;
+        }
+
+        // Card is showing back, now mark as incorrect
         if (currentEntry) {
             // Add the current entry to history with incorrect status
             addToHistory(currentEntry, false);
@@ -557,19 +575,11 @@ function FlashcardsPage() {
             createdAt: '' // Not needed for display
         };
 
-        // Update the front content immediately
-        setFrontContent(vocabEntry.entryKey);
-
         // Restore the flip state from history
         setIsFlipped(historyEntry.wasFlipped);
 
-        // Store the entry for reference
-        setCurrentEntry(vocabEntry);
-
-        // Update the back content with a delay
-        setTimeout(() => {
-            setBackContent(vocabEntry.entryValue);
-        }, 800);
+        // Use centralized update function with delay for transitions
+        updateCardContent(vocabEntry, false);
     };
 
     if (loading) {
@@ -660,7 +670,7 @@ function FlashcardsPage() {
                                             transition: 'all 0.2s ease-in-out',
                                             '&:hover': {
                                                 backgroundColor: 'action.hover',
-                                                transform: 'translateY(-1px)',
+                                                // transform: 'translateY(-1px)',
                                                 boxShadow: 2,
                                             }
                                         }}
@@ -721,225 +731,12 @@ function FlashcardsPage() {
         </Box>
     );
 
-    // Main content component
-    const MainContent = () => (
-        <Box sx={{
-            flexGrow: 1,
-            p: { xs: 2, sm: 3 },
-            pt: { xs: 1, sm: 2 },
-            display: 'flex',
-            flexDirection: 'column',
-            minHeight: '100vh'
-        }}>
-            {/* Title */}
-            <Typography
-                variant="h3"
-                component="h1"
-                align="center"
-                gutterBottom
-                sx={{ mb: 4 }}
-            >
-                Flashcards
-            </Typography>
-
-            {/* Flashcard */}
-            <Box
-                sx={{
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    mb: 4,
-                    width: '100%',
-                }}
-            >
-                <Box
-                    sx={{
-                        width: "100%",
-                        maxWidth: 500,
-                        height: 300,
-                        mb: 4,
-                        perspective: "1000px",
-                        padding: 1,
-                        display: "flex",
-                        justifyContent: "center",
-                        alignItems: "center",
-                        position: "relative",
-                    }}
-                >
-                    {/* Card Stack Container */}
-                    <Box
-                        sx={{
-                            width: "100%",
-                            height: "100%",
-                            position: "relative",
-                        }}
-                    >
-                        {/* Previous Card (behind, top-left) - only show if there's history to go back to */}
-                        {history.length > 0 && historyIndex < history.length - 1 && (
-                            <BlankCard
-                                position="previous"
-                                onClick={() => {
-                                    handlePreviousCard();
-                                }}
-                            />
-                        )}
-
-                        {/* Next Card (behind, bottom-right) */}
-                        <BlankCard
-                            position="next"
-                            onClick={() => {
-                                handleNextCard();
-                            }}
-                        />
-
-                        {/* Current Card (front, center) - with flip functionality */}
-                        <div
-                            style={{
-                                width: "100%",
-                                height: "100%",
-                                position: "absolute",
-                                transition: "transform 0.8s",
-                                transformStyle: "preserve-3d",
-                                transform: isFlipped ? "rotateY(180deg)" : "rotateY(0deg)",
-                                cursor: "pointer",
-                                zIndex: cardPositions.current.zIndex,
-                            }}
-                            onClick={handleFlip}
-                        >
-                            {/* Front of current card */}
-                            <Card
-                                sx={{
-                                    position: "absolute",
-                                    width: "100%",
-                                    height: "100%",
-                                    backfaceVisibility: "hidden",
-                                    display: "flex",
-                                    flexDirection: "column",
-                                    justifyContent: "center",
-                                    alignItems: "center",
-                                    p: 3,
-                                    borderRadius: 2,
-                                    boxShadow: 3,
-                                }}
-                            >
-                                <CardContent
-                                    sx={{
-                                        display: "flex",
-                                        flexDirection: "column",
-                                        justifyContent: "center",
-                                        alignItems: "center",
-                                        width: "100%",
-                                        height: "100%",
-                                    }}
-                                >
-                                    <Typography
-                                        variant="h4"
-                                        component="h2"
-                                        align="center"
-                                        gutterBottom
-                                        sx={{ width: '100%', textAlign: 'center' }}
-                                    >
-                                        {frontContent}
-                                    </Typography>
-                                    <Typography
-                                        variant="caption"
-                                        color="text.secondary"
-                                        sx={{ mt: 2, width: '100%', textAlign: 'center' }}
-                                    >
-                                        (Click card to see the definition)
-                                    </Typography>
-                                </CardContent>
-                            </Card>
-
-                            {/* Back of current card */}
-                            <Card
-                                sx={{
-                                    position: "absolute",
-                                    width: "100%",
-                                    height: "100%",
-                                    backfaceVisibility: "hidden",
-                                    transform: "rotateY(180deg)",
-                                    display: "flex",
-                                    flexDirection: "column",
-                                    borderRadius: 2,
-                                    boxShadow: 3,
-                                }}
-                            >
-                                {currentEntry && renderTags(currentEntry)}
-                                <CardContent sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', p: 2 }}>
-                                    <Typography variant="h5" component="h2" gutterBottom>
-                                        {currentEntry?.entryKey}
-                                    </Typography>
-                                    <Divider sx={{ mb: 2 }} />
-                                    <Typography variant="body1" color="text.secondary" sx={{ flexGrow: 1, mb: 2 }}>
-                                        {backContent}
-                                    </Typography>
-                                    {currentEntry?.createdAt && (
-                                        <>
-                                            <Divider sx={{ mt: 'auto' }} />
-                                            <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
-                                                Added: {new Date(currentEntry.createdAt).toLocaleDateString()}
-                                            </Typography>
-                                        </>
-                                    )}
-                                </CardContent>
-                            </Card>
-                        </div>
-                    </Box>
-                </Box>
-
-                {/* Navigation Buttons */}
-                <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, width: '100%' }}>
-                    {/* Previous Card Button */}
-                    <Button
-                        variant="outlined"
-                        startIcon={<ArrowBackIcon />}
-                        onClick={handlePreviousCard}
-                        disabled={history.length === 0 || historyIndex >= history.length - 1}
-                        size="medium"
-                    >
-                        Previous Card
-                    </Button>
-
-                    {/* Correct/Incorrect Buttons */}
-                    <Box sx={{ display: "flex", gap: 2, justifyContent: "center", alignItems: "center" }}>
-                        <Button
-                            variant="contained"
-                            color="error"
-                            startIcon={<CloseIcon />}
-                            onClick={handleIncorrect}
-                            size="large"
-                        >
-                            Incorrect
-                        </Button>
-                        <Button
-                            variant="contained"
-                            color="success"
-                            startIcon={<CheckIcon />}
-                            onClick={handleCorrect}
-                            size="large"
-                        >
-                            Correct
-                        </Button>
-                    </Box>
-
-                    {/* Next Card / Skip Card Button */}
-                    <Button
-                        variant="outlined"
-                        startIcon={historyIndex === 0 ? <SkipNextIcon /> : <ArrowForwardIcon />}
-                        onClick={handleNextCard}
-                        size="medium"
-                    >
-                        {historyIndex === 0 ? "Skip Card" : "Next Card"}
-                    </Button>
-                </Box>
-            </Box>
-        </Box>
-    );
 
     return (
-        <Box sx={{ display: 'flex', width: '100%', minHeight: 'calc(100vh - 200px)', mt: -2 }}>
+        <Box
+            className="flashcards-page-container"
+            sx={{ display: 'flex', width: '100%', minHeight: 'calc(100vh - 200px)', mt: -2 }}
+        >
             {/* Desktop sidebar */}
             {!isMobile && (
                 <Box sx={{
@@ -979,7 +776,20 @@ function FlashcardsPage() {
                 minWidth: 0,
                 width: isMobile ? '100%' : `calc(100% - ${drawerWidth}px)`
             }}>
-                <MainContent />
+                <MainContent
+                    currentEntry={currentEntry}
+                    displayEntry={displayEntry}
+                    isFlipped={isFlipped}
+                    handleFlip={handleFlip}
+                    entryKey={entryKey}
+                    entryValue={entryValue}
+                    handlePreviousCard={handlePreviousCard}
+                    handleIncorrect={handleIncorrect}
+                    handleCorrect={handleCorrect}
+                    handleNextCard={handleNextCard}
+                    history={history}
+                    historyIndex={historyIndex}
+                />
             </Box>
 
             {/* Mobile FAB */}

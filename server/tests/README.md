@@ -167,5 +167,5 @@ node execute-sql.js check-vocabentries-schema.sql
 
 - Node.js with ES modules support
 - Database connection configured in parent directory
-- Server running on localhost:3001 for API tests
+- Server running on localhost:5000 for API tests
 - Azure SQL Database with proper firewall configuration

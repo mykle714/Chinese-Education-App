@@ -6,7 +6,7 @@ import { OnDeckVocabSet, OnDeckVocabSetCreateData, OnDeckVocabSetUpdateData, Cus
  */
 export async function getAllOnDeckSetsForUser(userId: string): Promise<OnDeckVocabSet[]> {
   try {
-    const pool = await db.poolPromise;
+    const pool = await db.createConnection();
     const result = await pool
       .request()
       .input('userId', db.sql.UniqueIdentifier, userId)
@@ -37,7 +37,7 @@ export async function getAllOnDeckSetsForUser(userId: string): Promise<OnDeckVoc
  */
 export async function getOnDeckSet(userId: string, featureName: string): Promise<OnDeckVocabSet | null> {
   try {
-    const pool = await db.poolPromise;
+    const pool = await db.createConnection();
     const result = await pool
       .request()
       .input('userId', db.sql.UniqueIdentifier, userId)
@@ -77,7 +77,7 @@ export async function validateVocabEntryIds(userId: string, entryIds: number[]):
   }
 
   try {
-    const pool = await db.poolPromise;
+    const pool = await db.createConnection();
     
     // For simplicity, we'll validate each ID individually instead of using table-valued parameters
     // This is less efficient but more straightforward for the validation logic
@@ -143,7 +143,7 @@ export async function createOrUpdateOnDeckSet(userId: string, data: OnDeckVocabS
   await validateVocabEntryIds(userId, data.vocabEntryIds);
 
   try {
-    const pool = await db.poolPromise;
+    const pool = await db.createConnection();
     const result = await pool
       .request()
       .input('userId', db.sql.UniqueIdentifier, userId)
@@ -192,7 +192,7 @@ export async function createOrUpdateOnDeckSet(userId: string, data: OnDeckVocabS
  */
 export async function deleteOnDeckSet(userId: string, featureName: string): Promise<boolean> {
   try {
-    const pool = await db.poolPromise;
+    const pool = await db.createConnection();
     const result = await pool
       .request()
       .input('userId', db.sql.UniqueIdentifier, userId)

@@ -65,7 +65,7 @@
        const fetchEntries = async () => {
          try {
            // Include the token in the Authorization header
-           const response = await fetch('http://localhost:3001/api/vocabEntries', {
+           const response = await fetch('http://localhost:5000/api/vocabEntries', {
              headers: {
                'Authorization': `Bearer ${token}`
              }
@@ -99,7 +99,7 @@
      const fetchEntries = async () => {
        try {
          setLoading(true);
-         const response = await fetch("http://localhost:3001/api/vocabEntries", {
+         const response = await fetch("http://localhost:5000/api/vocabEntries", {
            headers: {
              'Authorization': `Bearer ${token}`
            }

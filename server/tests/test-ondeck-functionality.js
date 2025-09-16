@@ -5,7 +5,7 @@ import https from 'https';
 import http from 'http';
 
 // Configuration
-const BASE_URL = 'http://localhost:3001';
+const BASE_URL = 'http://localhost:5000';
 const TEST_USER_EMAIL = 'test@example.com';
 const TEST_USER_PASSWORD = 'testpassword123';
 

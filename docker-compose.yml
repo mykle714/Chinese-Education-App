@@ -1,0 +1,71 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: cow-postgres-local
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cow_db
+      POSTGRES_USER: cow_user
+      POSTGRES_PASSWORD: cow_password_local
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --lc-collate=C --lc-ctype=C"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d
+    command: >
+      postgres 
+      -c shared_preload_libraries=pg_stat_statements
+      -c pg_stat_statements.track=all
+      -c max_connections=200
+    networks:
+      - cow-network
+
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+      target: development
+    container_name: cow-backend-local
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=development
+    env_file:
+      - ./server/.env.docker
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./server:/app
+      - /app/node_modules
+    depends_on:
+      - postgres
+    networks:
+      - cow-network
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: cow-frontend-local
+    restart: unless-stopped
+    environment:
+      - VITE_API_URL=http://localhost:5000
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - cow-network
+
+volumes:
+  postgres_data:
+
+networks:
+  cow-network:
+    driver: bridge

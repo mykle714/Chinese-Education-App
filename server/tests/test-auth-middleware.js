@@ -1,8 +1,8 @@
 import fetch from 'node-fetch';
 
 // Test configuration
-const API_BASE_URL = 'http://localhost:3001';
-const TEST_USER = { email: 'test@example.com', password: 'pw' };
+const API_BASE_URL = 'http://localhost:5000';
+const TEST_USER = { email: 'accounts@test.com', password: 'testpass123' };
 
 async function testAuthMiddleware() {
     console.log('🧪 Testing Authentication Middleware...\n');

@@ -4,13 +4,14 @@ import jwt from 'jsonwebtoken';
 import { User, UserCreateData, UserLoginData, AuthResponse, CustomError } from '../types/index.js';
 
 // JWT secret key - should be in environment variables in production
-const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret_key';
+const JWT_SECRET = process.env.JWT_SECRET;
 const SALT_ROUNDS = 10;
 
 export async function getAllUsers(): Promise<User[]> {
   try {
-    const pool = await db.poolPromise;
+    const pool = await db.createConnection();
     const result = await pool.request().query('SELECT * FROM Users');
+    await pool.close();
     return result.recordset;
   } catch (error: any) {
     console.error('Error getting all users:', error);
@@ -30,11 +31,12 @@ export async function getUserById(id: string): Promise<User> {
       throw error;
     }
     
-    const pool = await db.poolPromise;
+    const pool = await db.createConnection();
     const result = await pool
       .request()
       .input('id', db.sql.UniqueIdentifier, id)
       .query('SELECT * FROM Users WHERE id = @id');
+    await pool.close();
     
     if (result.recordset.length === 0) {
       const error: CustomError = new Error('User not found');
@@ -85,13 +87,14 @@ export async function createUser(data: UserCreateData): Promise<User> {
     // Hash the password
     const hashedPassword = await bcrypt.hash(data.password, SALT_ROUNDS);
     
-    const pool = await db.poolPromise;
+    const pool = await db.createConnection();
     const result = await pool
       .request()
       .input('email', db.sql.NVarChar, data.email)
       .input('name', db.sql.NVarChar, data.name)
       .input('password', db.sql.NVarChar, hashedPassword)
       .query('INSERT INTO Users (email, name, password) OUTPUT INSERTED.* VALUES (@email, @name, @password)');
+    await pool.close();
     
     // Don't return the password
     const user = result.recordset[0];
@@ -128,11 +131,12 @@ export async function loginUser(data: UserLoginData): Promise<AuthResponse> {
       throw error;
     }
     
-    const pool = await db.poolPromise;
+    const pool = await db.createConnection();
     const result = await pool
       .request()
       .input('email', db.sql.NVarChar, data.email)
       .query('SELECT * FROM Users WHERE email = @email');
+    await pool.close();
     
     if (result.recordset.length === 0) {
       const error: CustomError = new Error('Invalid email or password');
@@ -251,13 +255,14 @@ export async function changeUserPassword(userId: string, currentPassword: string
     }
     
     // Get the user to verify the current password
-    const pool = await db.poolPromise;
+    const pool = await db.createConnection();
     const userResult = await pool
       .request()
       .input('id', db.sql.UniqueIdentifier, userId)
       .query('SELECT * FROM Users WHERE id = @id');
     
     if (userResult.recordset.length === 0) {
+      await pool.close();
       const error: CustomError = new Error('User not found');
       error.code = 'ERR_USER_NOT_FOUND';
       error.statusCode = 404;
@@ -270,6 +275,7 @@ export async function changeUserPassword(userId: string, currentPassword: string
     const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
     
     if (!isPasswordValid) {
+      await pool.close();
       const error: CustomError = new Error('Current password is incorrect');
       error.code = 'ERR_INVALID_CURRENT_PASSWORD';
       error.statusCode = 401;
@@ -285,6 +291,8 @@ export async function changeUserPassword(userId: string, currentPassword: string
       .input('id', db.sql.UniqueIdentifier, userId)
       .input('password', db.sql.NVarChar, hashedPassword)
       .query('UPDATE Users SET password = @password WHERE id = @id; SELECT * FROM Users WHERE id = @id');
+    
+    await pool.close();
     
     if (updateResult.recordset.length === 0) {
       const error: CustomError = new Error('Failed to update password');

@@ -163,6 +163,56 @@ function ReaderPage() {
         }
     };
 
+    // Helper functions for character type checking at cursor position
+    const isWhitespaceAtPosition = (textarea: HTMLTextAreaElement, position: number): boolean => {
+        if (position < 0 || position >= textarea.value.length) return false;
+        return /\s/.test(textarea.value[position]);
+    };
+
+    const isPunctuationAtPosition = (textarea: HTMLTextAreaElement, position: number): boolean => {
+        if (position < 0 || position >= textarea.value.length) return false;
+        return /\p{P}/u.test(textarea.value[position]);
+    };
+
+    // Move cursor left from given position, skipping whitespace and punctuation
+    const moveCursorLeftFromPosition = (textarea: HTMLTextAreaElement, startPosition: number): void => {
+        let newPosition = startPosition;
+
+        // Skip whitespace characters moving left
+        while (newPosition > 0 && isWhitespaceAtPosition(textarea, newPosition)) {
+            newPosition--;
+        }
+
+        // Skip punctuation characters moving left
+        while (newPosition > 0 && isPunctuationAtPosition(textarea, newPosition)) {
+            newPosition--;
+        }
+
+        textarea.setSelectionRange(newPosition, newPosition);
+    };
+
+    // Move cursor right from given position, skipping punctuation and whitespace
+    const moveCursorRightFromPosition = (textarea: HTMLTextAreaElement, startPosition: number): void => {
+        let newPosition = startPosition;
+
+        // Skip punctuation characters moving right
+        while (newPosition < textarea.value.length && isPunctuationAtPosition(textarea, newPosition)) {
+            newPosition++;
+        }
+
+        // Skip whitespace characters moving right
+        while (newPosition < textarea.value.length && isWhitespaceAtPosition(textarea, newPosition)) {
+            newPosition++;
+        }
+
+        // If we move past the end, select the last selectable position
+        if (newPosition >= textarea.value.length) {
+            moveCursorLeftFromPosition(textarea, --newPosition);
+        } else {
+            textarea.setSelectionRange(newPosition, newPosition);
+        }
+    };
+
     // Helper function to determine word boundaries using native browser logic
     const isWordBoundary = (char: string, nextChar: string): boolean => {
         if (!char || !nextChar) return true;
@@ -528,6 +578,21 @@ function ReaderPage() {
                                             } else if (e.key === 'ArrowRight') {
                                                 selectNextWord(textarea);
                                             }
+                                            return;
+                                        } else {
+                                            // Handle arrow keys when text is selected
+                                            if (e.key === 'ArrowLeft') {
+                                                e.preventDefault();
+                                                const startPosition = Math.max(0, textarea.selectionStart - 1);
+                                                moveCursorLeftFromPosition(textarea, startPosition);
+                                                return;
+                                            } else if (e.key === 'ArrowRight') {
+                                                e.preventDefault();
+                                                const startPosition = textarea.selectionEnd;
+                                                moveCursorRightFromPosition(textarea, startPosition);
+                                                return;
+                                            }
+
                                             return;
                                         }
                                     }

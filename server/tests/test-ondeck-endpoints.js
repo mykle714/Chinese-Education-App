@@ -3,7 +3,7 @@
 
 import http from 'http';
 
-const BASE_URL = 'http://localhost:3001';
+const BASE_URL = 'http://localhost:5000';
 
 // Helper function to make HTTP requests
 function makeRequest(method, path, data = null, token = null) {

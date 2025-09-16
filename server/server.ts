@@ -5,13 +5,10 @@ import cookieParser from 'cookie-parser';
 import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
-import * as vocabEntryModel from './models/vocabEntryModel.js';
-import * as userModel from './models/userModel.js';
-import * as onDeckVocabModel from './models/onDeckVocabModel.js';
 import { authenticateToken } from './authMiddleware.js';
 import { User, VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, UserCreateData, UserLoginData, Text, OnDeckVocabSetCreateData } from './types/index.js';
 
-// Import new DAL architecture for gradual migration
+// Import DAL architecture
 import { userController, vocabEntryController, onDeckVocabController } from './dal/setup.js';
 
 // Configure multer for file uploads
@@ -98,12 +95,17 @@ app.use(cors({
     
     // Define allowed origins
     const allowedOrigins = [
-      process.env.CLIENT_URL || 'http://localhost:5175',
-      'http://127.0.0.1:5175', // Also allow 127.0.0.1 equivalent
+      process.env.CLIENT_URL || 'http://localhost:3000',
+      'http://localhost:5175',  // Original frontend port
+      'http://127.0.0.1:5175',  // Also allow 127.0.0.1 equivalent
       'http://localhost:5174',  // Vite dev server port
       'http://127.0.0.1:5174',  // Also allow 127.0.0.1 equivalent
       'http://localhost:5173',  // Fallback for development
       'http://127.0.0.1:5173',  // Also allow 127.0.0.1 equivalent for development
+      'http://localhost:3000',  // Docker frontend development port
+      'http://127.0.0.1:3000',  // Docker frontend development port
+      'http://frontend:3000',   // Docker container networking
+      'http://cow-frontend-local:3000', // Docker container name
       'http://174.127.171.180', // Production frontend URL
       'https://174.127.171.180' // Production frontend URL with HTTPS
     ];
@@ -328,6 +330,15 @@ app.post('/api/onDeckPage/:featureName/remove', authenticateToken, async (req, r
 app.post('/api/onDeckPage/:featureName/clear', authenticateToken, async (req, res) => {
   console.log('🔄 Using NEW DAL architecture for OnDeck clearSet');
   await onDeckVocabController.clearSet(req, res);
+});
+
+// Health check endpoint for Docker
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'healthy', 
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
 });
 
 // Start the server

@@ -36,7 +36,7 @@ export interface CSVRow {
 
 export async function getPaginatedVocabEntries(limit: number, offset: number): Promise<VocabEntry[]> {
   try {
-    const pool = await db.poolPromise;
+    const pool = await db.createConnection();
     const result = await pool
       .request()
       .input('limit', db.sql.Int, limit)
@@ -54,7 +54,7 @@ export async function getPaginatedVocabEntries(limit: number, offset: number): P
 
 export async function getVocabEntriesCount(): Promise<number> {
   try {
-    const pool = await db.poolPromise;
+    const pool = await db.createConnection();
     const result = await pool
       .request()
       .query('SELECT COUNT(*) as count FROM VocabEntries');
@@ -70,7 +70,7 @@ export async function getVocabEntriesCount(): Promise<number> {
 
 export async function getAllVocabEntries(): Promise<VocabEntry[]> {
   try {
-    const pool = await db.poolPromise;
+    const pool = await db.createConnection();
     const result = await pool.request().query('SELECT id, userId, entryKey, entryValue, isCustomTag, hskLevelTag, createdAt FROM VocabEntries');
     return result.recordset;
   } catch (error: any) {
@@ -91,7 +91,7 @@ export async function getVocabEntryById(id: number): Promise<VocabEntry> {
       throw error;
     }
     
-    const pool = await db.poolPromise;
+    const pool = await db.createConnection();
     const result = await pool
       .request()
       .input('id', db.sql.Int, id)
@@ -155,7 +155,7 @@ export async function createVocabEntry(data: VocabEntryCreateData): Promise<Voca
 
     console.log('🔍 DEBUG - Getting database pool...');
     // First check if the user exists
-    const pool = await db.poolPromise;
+    const pool = await db.createConnection();
     console.log('🔍 DEBUG - Pool obtained, checking if user exists...');
     
     const userCheck = await pool
@@ -246,7 +246,7 @@ export async function updateVocabEntry(id: number, data: VocabEntryUpdateData): 
       throw error;
     }
     
-    const pool = await db.poolPromise;
+    const pool = await db.createConnection();
     
     // Build dynamic query based on provided fields
     let updateFields = ['entryKey = @entryKey', 'entryValue = @entryValue'];
@@ -300,7 +300,7 @@ export async function deleteVocabEntry(id: number): Promise<{ id: number }> {
       throw error;
     }
     
-    const pool = await db.poolPromise;
+    const pool = await db.createConnection();
     const checkResult = await pool
       .request()
       .input('id', db.sql.Int, id)
@@ -357,7 +357,7 @@ export async function importVocabEntriesFromStream(
 
   try {
     // Validate user exists
-    const pool = await db.poolPromise;
+    const pool = await db.createConnection();
     const userCheck = await pool
       .request()
       .input('userId', db.sql.UniqueIdentifier, userId)
@@ -487,7 +487,7 @@ async function processBatch(
     return;
   }
 
-  const pool = await db.poolPromise;
+  const pool = await db.createConnection();
   const transaction = pool.transaction();
 
   try {
@@ -569,7 +569,7 @@ export async function bulkUpsertVocabEntries(userId: string, entries: { entryKey
       }
     }
 
-    const pool = await db.poolPromise;
+    const pool = await db.createConnection();
     
     // First check if the user exists
     const userCheck = await pool

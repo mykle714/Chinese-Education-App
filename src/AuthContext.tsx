@@ -34,7 +34,11 @@ interface AuthProviderProps {
 // Create the AuthProvider component
 export function AuthProvider({ children }: AuthProviderProps) {
     const [user, setUser] = useState<User | null>(null);
-    const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
+    const [token, setToken] = useState<string | null>(() => {
+        const storedToken = localStorage.getItem('token');
+        // Handle both null and string 'null' cases
+        return (!storedToken || storedToken === 'null' || storedToken === 'undefined') ? null : storedToken;
+    });
     const [isLoading, setIsLoading] = useState<boolean>(true);
     const [error, setError] = useState<string | null>(null);
     const navigate = useNavigate();
@@ -42,12 +46,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
     // Check if the user is authenticated on mount
     useEffect(() => {
         const checkAuth = async () => {
-            if (token) {
+            // Only proceed if we have a valid token
+            if (token && token !== 'null' && token !== 'undefined' && token.length > 10) {
                 try {
                     const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
                         headers: {
                             'Authorization': `Bearer ${token}`
-                        }
+                        },
+                        credentials: 'include' // Include cookies for new DAL architecture
                     });
 
                     if (response.ok) {
@@ -55,6 +61,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
                         setUser(userData);
                     } else {
                         // If the token is invalid, clear it
+                        console.log('Token validation failed, clearing stored token');
                         localStorage.removeItem('token');
                         setToken(null);
                     }
@@ -63,6 +70,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
                     localStorage.removeItem('token');
                     setToken(null);
                 }
+            } else if (token) {
+                // If we have an invalid token, clear it immediately
+                console.log('Invalid token detected, clearing:', token);
+                localStorage.removeItem('token');
+                setToken(null);
             }
             setIsLoading(false);
         };
@@ -150,7 +162,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const changePassword = async (currentPassword: string, newPassword: string) => {
         setError(null);
         try {
-            if (!token) {
+            if (!token || token === 'null' || token === 'undefined' || token.length <= 10) {
                 throw new Error('You must be logged in to change your password');
             }
 
@@ -160,6 +172,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
                 },
+                credentials: 'include', // Include cookies for new DAL architecture
                 body: JSON.stringify({ currentPassword, newPassword })
             });
 

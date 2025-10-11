@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../AuthContext";
 import { useConfirmation } from "../contexts/ConfirmationContext";
+import { useVocabularyUpdate } from "../contexts/VocabularyUpdateContext";
 import {
     Container,
     Typography,
@@ -32,7 +33,6 @@ interface VocabEntry {
     id: number;
     entryKey: string;
     entryValue: string;
-    isCustomTag?: boolean | null;
     hskLevelTag?: HskLevel | null;
     createdAt: string;
 }
@@ -53,14 +53,6 @@ const getHskIcon = (hskLevel: HskLevel) => {
 // Helper function to render tag badges
 const renderTags = (entry: VocabEntry) => (
     <Box sx={{ position: 'absolute', top: 16, right: 16, display: 'flex', gap: 0.5 }}>
-        {entry.isCustomTag === true && (
-            <Chip
-                label="Custom"
-                size="small"
-                color="primary"
-                sx={{ fontSize: '0.7rem', height: '20px' }}
-            />
-        )}
         {entry.hskLevelTag && (
             <Chip
                 icon={getHskIcon(entry.hskLevelTag)}
@@ -78,6 +70,7 @@ function EntryDetailPage() {
     const navigate = useNavigate();
     const { token } = useAuth();
     const { confirm } = useConfirmation();
+    const vocabularyUpdate = useVocabularyUpdate();
     const [entry, setEntry] = useState<VocabEntry | null>(null);
     const [loading, setLoading] = useState<boolean>(true);
     const [error, setError] = useState<string | null>(null);
@@ -140,6 +133,9 @@ function EntryDetailPage() {
                     code: errorData.code || "ERR_DELETE_FAILED"
                 };
             }
+
+            // Notify vocabulary update context
+            vocabularyUpdate.removeVocabEntry(parseInt(id!));
 
             // Navigate back to entries page after successful deletion
             navigate("/entries");

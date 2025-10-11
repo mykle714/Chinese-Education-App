@@ -52,55 +52,101 @@ This ensures the application interface is accessible to English-speaking develop
 
 ## Setup Instructions
 
+**This application uses Docker exclusively for development and deployment. Docker ensures consistent environments, eliminates dependency conflicts, and provides automatic database setup.**
+
 ### Prerequisites
-- Node.js (v14 or higher)
-- npm or yarn
-- Access to Azure SQL Database
+- Docker Engine 20.10+
+- Docker Compose 2.0+
+- Git (for cloning the repository)
+
+### Getting Started
+
+1. **Clone the repository**:
+   ```bash
+   git clone <repository-url>
+   cd <project-directory>
+   ```
+
+2. **Start all services**:
+   ```bash
+   docker-compose up --build
+   ```
+
+3. **Access the application**:
+   - Frontend: http://localhost:3000
+   - Backend API: http://localhost:5000
+   - Database: localhost:5432
+
+### Docker Development Environment
+
+The Docker setup provides a complete development environment with:
+
+- **Frontend**: React + Vite with hot reload for instant code changes
+- **Backend**: Express + TypeScript API server with hot reload
+- **Database**: PostgreSQL with automatic schema initialization
+- **Test Data**: Pre-populated with test users and vocabulary entries
+- **Volume Mounting**: Code changes reflect immediately without rebuilds
+- **Isolated Dependencies**: No need to install Node.js, npm, or PostgreSQL locally
+
+### Docker Commands
+
+```bash
+# Start all services (development mode with hot reload)
+docker-compose up --build
+
+# Start services in background
+docker-compose up -d --build
+
+# View real-time logs from all services
+docker-compose logs -f
+
+# View logs from specific service
+docker-compose logs -f frontend
+docker-compose logs -f backend
+docker-compose logs -f database
+
+# Stop all services
+docker-compose down
+
+# Stop and remove all containers, networks, and volumes
+docker-compose down -v
+
+# Rebuild containers after dependency changes
+docker-compose build --no-cache
+```
 
 ### Database Setup
 
-1. Make sure your Azure SQL Database is set up and accessible
-2. Run the SQL script to update the Users table:
-   ```
-   cd server
-   # Connect to your Azure SQL Database and run update-users-table.sql
-   ```
+The database is automatically configured when you start the Docker containers:
 
-### Server Setup
+- **PostgreSQL Database**: Automatically created with proper schema
+- **Test Users**: Pre-populated for immediate testing:
+  - `empty@test.com` (0 vocabulary cards)
+  - `small@test.com` (11 vocabulary cards) 
+  - `large@test.com` (52 vocabulary cards)
+- **Test Password**: All test users use password `testing123`
+- **Data Persistence**: Database data persists between container restarts
+- **Schema Migrations**: Automatically applied on startup
 
-1. Navigate to the server directory:
-   ```
-   cd server
-   ```
+### Development Workflow
 
-2. Install dependencies:
-   ```
-   npm install
-   ```
+1. **Start the application**: `docker-compose up --build`
+2. **Make code changes**: Files are automatically synced to containers
+3. **View changes**: Frontend and backend automatically reload
+4. **Test features**: Use pre-populated test accounts
+5. **View logs**: Monitor application behavior in real-time
+6. **Stop when done**: `docker-compose down`
 
-3. Configure environment variables:
-   - Ensure `.env` file is properly configured with your database credentials
-   - Make sure JWT_SECRET is set to a secure random string
+### Production Deployment
 
-4. Build and start the server:
-   ```
-   npm run build
-   npm run start
-   ```
+For production deployment, use the production Docker Compose configuration:
 
-### Client Setup
+```bash
+# Production build and deployment
+docker-compose -f docker-compose.prod.yml up --build -d
+```
 
-1. From the project root, install dependencies:
-   ```
-   npm install
-   ```
-
-2. Start the development server:
-   ```
-   npm run dev
-   ```
-
-3. The application will be available at http://localhost:5173
+The production setup includes optimized builds, proper environment variables, and production-ready configurations.
 
 ## Authentication Flow
 

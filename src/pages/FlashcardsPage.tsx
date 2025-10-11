@@ -1,6 +1,9 @@
 import { useState, useEffect, memo } from "react";
+import { useLocation } from "react-router-dom";
 import { useAuth } from "../AuthContext";
 import { FLASHCARD_CONTENT_UPDATE_DELAY } from "../constants";
+import { useWorkPoints } from "../hooks/useWorkPoints";
+import WorkPointsBadge from "../components/WorkPointsBadge";
 import {
     Container,
     Typography,
@@ -10,7 +13,6 @@ import {
     Button,
     CircularProgress,
     Alert,
-    Chip,
     List,
     ListItem,
     Drawer,
@@ -23,7 +25,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import HistoryIcon from "@mui/icons-material/History";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
-import SkipNextIcon from "@mui/icons-material/SkipNext";
+import FlipCameraAndroidIcon from "@mui/icons-material/FlipCameraAndroid";
 import MenuIcon from "@mui/icons-material/Menu";
 import RemoveIcon from "@mui/icons-material/Remove";
 import FlashCard from "../components/FlashCard";
@@ -35,7 +37,6 @@ interface VocabEntry {
     id: number;
     entryKey: string;
     entryValue: string;
-    isCustomTag?: boolean | null;
     hskLevelTag?: HskLevel | null;
     createdAt: string;
 }
@@ -46,7 +47,6 @@ interface HistoryEntry {
     entryValue: string;
     isCorrect: boolean | null; // null for skipped cards
     timestamp: Date;
-    isCustomTag?: boolean | null;
     hskLevelTag?: HskLevel | null;
     wasFlipped: boolean; // Track whether the card was flipped when last seen
 }
@@ -147,6 +147,7 @@ const MainContent = memo<MainContentProps>(({
                         onFlip={handleFlip}
                         entryKey={entryKey}
                         entryValue={entryValue}
+                        isFlippable={historyIndex === 0}
                     />
                 </Box>
             )}
@@ -154,15 +155,14 @@ const MainContent = memo<MainContentProps>(({
 
         {/* Navigation Buttons */}
         <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, width: '100%' }}>
-            {/* Previous Card Button */}
+            {/* Flip Card / Next Card Button */}
             <Button
                 variant="outlined"
-                startIcon={<ArrowBackIcon />}
-                onClick={handlePreviousCard}
-                disabled={history.length === 0 || historyIndex >= history.length - 1}
+                startIcon={historyIndex === 0 ? <FlipCameraAndroidIcon /> : <ArrowForwardIcon />}
+                onClick={historyIndex === 0 ? handleFlip : handleNextCard}
                 size="medium"
             >
-                Previous Card
+                {historyIndex === 0 ? "Flip Card" : "Next Card"}
             </Button>
 
             {/* Correct/Incorrect Buttons */}
@@ -173,6 +173,7 @@ const MainContent = memo<MainContentProps>(({
                     startIcon={<CloseIcon />}
                     onClick={handleIncorrect}
                     size="large"
+                    disabled={historyIndex === 0 && !isFlipped}
                 >
                     Incorrect
                 </Button>
@@ -182,19 +183,21 @@ const MainContent = memo<MainContentProps>(({
                     startIcon={<CheckIcon />}
                     onClick={handleCorrect}
                     size="large"
+                    disabled={historyIndex === 0 && !isFlipped}
                 >
                     Correct
                 </Button>
             </Box>
 
-            {/* Next Card / Skip Card Button */}
+            {/* Previous Card Button */}
             <Button
                 variant="outlined"
-                startIcon={historyIndex === 0 ? <SkipNextIcon /> : <ArrowForwardIcon />}
-                onClick={handleNextCard}
+                startIcon={<ArrowBackIcon />}
+                onClick={handlePreviousCard}
+                disabled={history.length === 0 || historyIndex >= history.length - 1}
                 size="medium"
             >
-                {historyIndex === 0 ? "Skip Card" : "Next Card"}
+                Previous Card
             </Button>
         </Box>
     </Box>
@@ -205,6 +208,7 @@ MainContent.displayName = 'MainContent';
 function FlashcardsPage() {
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+    const location = useLocation();
     const [entries, setEntries] = useState<VocabEntry[]>([]);
     const [currentEntry, setCurrentEntry] = useState<VocabEntry | null>(null);
     const [displayEntry, setDisplayEntry] = useState<VocabEntry | null>(null);
@@ -218,14 +222,46 @@ function FlashcardsPage() {
     const [completedCardsCount, setCompletedCardsCount] = useState(0);
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [historyIndex, setHistoryIndex] = useState(0); // 0 means current card, 1+ means older cards in history
+    const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+    const [currentCardFlipState, setCurrentCardFlipState] = useState(false); // Track current card's flip state
     const { token } = useAuth();
+
+    // Work points integration
+    const workPoints = useWorkPoints();
 
     // Drawer width consistent with main navigation
     const drawerWidth = 250;
 
+    // Initial load effect
     useEffect(() => {
         fetchEntries();
     }, [token]);
+
+    // Tab navigation effect - reload cards when user navigates to flashcards page
+    useEffect(() => {
+        if (location.pathname === '/flashcards' && hasLoadedOnce && token) {
+            console.log('loading cards');
+            // Reset all state for a fresh session
+            setCurrentEntry(null);
+            setDisplayEntry(null);
+            setentryKey("");
+            setentryValue("");
+            setIsFlipped(false);
+            setHistory([]);
+            setCompletedCardsCount(0);
+            setHistoryIndex(0);
+            setError(null);
+            setErrorCode(null);
+
+            // Fetch fresh entries
+            fetchEntries();
+        }
+
+        // Mark that we've loaded at least once
+        if (location.pathname === '/flashcards' && !hasLoadedOnce) {
+            setHasLoadedOnce(true);
+        }
+    }, [location.pathname, hasLoadedOnce, token]);
 
     useEffect(() => {
         if (entries.length > 0 && !currentEntry) {
@@ -234,21 +270,32 @@ function FlashcardsPage() {
     }, [entries]);
 
     // Centralized delayed update function
-    const updateCardContent = (entry: VocabEntry, immediate = false) => {
-        // Update front content immediately
-        setentryKey(entry.entryKey);
-        setCurrentEntry(entry);
-
+    const updateCardContent = (entry: VocabEntry, immediate = false, currentFlipState?: boolean, targetFlipState?: boolean) => {
         if (immediate) {
             // For initial load, update everything immediately
+            setentryKey(entry.entryKey);
+            setCurrentEntry(entry);
             setDisplayEntry(entry);
             setentryValue(entry.entryValue);
         } else {
-            // For transitions, delay the back face content update
-            setTimeout(() => {
+            // Only delay if flip states differ (animation will occur)
+            const isFlipAnimation = currentFlipState !== undefined && targetFlipState !== undefined && currentFlipState !== targetFlipState;
+
+            if (isFlipAnimation) {
+                // Delay ALL content updates to sync with flip animation midpoint
+                setTimeout(() => {
+                    setentryKey(entry.entryKey);
+                    setCurrentEntry(entry);
+                    setDisplayEntry(entry);
+                    setentryValue(entry.entryValue);
+                }, FLASHCARD_CONTENT_UPDATE_DELAY);
+            } else {
+                // No flip animation, update everything immediately
+                setentryKey(entry.entryKey);
+                setCurrentEntry(entry);
                 setDisplayEntry(entry);
                 setentryValue(entry.entryValue);
-            }, FLASHCARD_CONTENT_UPDATE_DELAY);
+            }
         }
     };
 
@@ -267,31 +314,32 @@ function FlashcardsPage() {
                 event.preventDefault();
             }
 
-            // Check for right control key using location property
-            if (event.key === 'Control' && event.location === KeyboardEvent.DOM_KEY_LOCATION_RIGHT) {
-                event.preventDefault();
-                handleFlip();
-                return;
-            }
-
             switch (event.key) {
                 case 'ArrowUp':
-                    // Up arrow triggers Previous Card button
+                    // Up arrow triggers Flip Card (current) / Next Card (historical) button
+                    if (historyIndex === 0) {
+                        handleFlip();
+                    } else {
+                        handleNextCard();
+                    }
+                    break;
+                case 'ArrowDown':
+                    // Down arrow triggers Previous Card button
                     if (history.length > 0 && historyIndex < history.length - 1) {
                         handlePreviousCard();
                     }
                     break;
-                case 'ArrowDown':
-                    // Down arrow triggers Next Card / Skip Card button
-                    handleNextCard();
-                    break;
                 case 'ArrowLeft':
-                    // Left arrow triggers left button (Incorrect)
-                    handleIncorrect();
+                    // Left arrow triggers left button (Incorrect) - only if card is flipped or viewing history
+                    if (historyIndex > 0 || isFlipped) {
+                        handleIncorrect();
+                    }
                     break;
                 case 'ArrowRight':
-                    // Right arrow triggers right button (Correct)
-                    handleCorrect();
+                    // Right arrow triggers right button (Correct) - only if card is flipped or viewing history
+                    if (historyIndex > 0 || isFlipped) {
+                        handleCorrect();
+                    }
                     break;
             }
         };
@@ -359,13 +407,14 @@ function FlashcardsPage() {
 
         const newEntry = entries[randomIndex];
 
-        // If the card is flipped, flip it back
-        if (isFlipped) {
-            setIsFlipped(false);
-        }
+        // Reset flip state for new cards
+        const currentFlip = isFlipped;
+        const targetFlip = false;
+        setIsFlipped(targetFlip);
+        setCurrentCardFlipState(targetFlip);
 
-        // Use centralized update function with delay for transitions
-        updateCardContent(newEntry, false);
+        // Use centralized update function with smart delay based on flip state change
+        updateCardContent(newEntry, false, currentFlip, targetFlip);
 
         // Add the new card to history immediately with null status (pending)
         addToHistory(newEntry, null);
@@ -385,16 +434,17 @@ function FlashcardsPage() {
             id: historyEntry.id,
             entryKey: historyEntry.entryKey,
             entryValue: historyEntry.entryValue,
-            isCustomTag: historyEntry.isCustomTag,
             hskLevelTag: historyEntry.hskLevelTag,
             createdAt: '' // Not needed for display
         };
 
-        // Restore the flip state from history
-        setIsFlipped(historyEntry.wasFlipped);
+        // Historical cards always show back side (flipped = true)
+        const currentFlip = isFlipped;
+        const targetFlip = true;
+        setIsFlipped(targetFlip);
 
-        // Use centralized update function with delay for transitions
-        updateCardContent(vocabEntry, false);
+        // Use centralized update function with smart delay based on flip state change
+        updateCardContent(vocabEntry, false, currentFlip, targetFlip);
     };
 
     const handleNextCard = () => {
@@ -412,23 +462,48 @@ function FlashcardsPage() {
             if (newIndex < 0) return; // Can't go further forward
 
             setHistoryIndex(newIndex);
-            const historyEntry = history[newIndex];
 
-            // Convert history entry back to vocab entry format
-            const vocabEntry: VocabEntry = {
-                id: historyEntry.id,
-                entryKey: historyEntry.entryKey,
-                entryValue: historyEntry.entryValue,
-                isCustomTag: historyEntry.isCustomTag,
-                hskLevelTag: historyEntry.hskLevelTag,
-                createdAt: '' // Not needed for display
-            };
+            if (newIndex === 0) {
+                // We're returning to the current card - restore its saved flip state
+                const currentHistoryEntry = history[0];
 
-            // Restore the flip state from history
-            setIsFlipped(historyEntry.wasFlipped);
+                // Convert history entry back to vocab entry format
+                const vocabEntry: VocabEntry = {
+                    id: currentHistoryEntry.id,
+                    entryKey: currentHistoryEntry.entryKey,
+                    entryValue: currentHistoryEntry.entryValue,
+                    hskLevelTag: currentHistoryEntry.hskLevelTag,
+                    createdAt: '' // Not needed for display
+                };
 
-            // Use centralized update function with delay for transitions
-            updateCardContent(vocabEntry, false);
+                // Restore the current card's flip state
+                const currentFlip = isFlipped;
+                const targetFlip = currentCardFlipState;
+                setIsFlipped(targetFlip);
+
+                // Use centralized update function with smart delay based on flip state change
+                updateCardContent(vocabEntry, false, currentFlip, targetFlip);
+            } else {
+                // We're moving to another historical card
+                const historyEntry = history[newIndex];
+
+                // Convert history entry back to vocab entry format
+                const vocabEntry: VocabEntry = {
+                    id: historyEntry.id,
+                    entryKey: historyEntry.entryKey,
+                    entryValue: historyEntry.entryValue,
+                    hskLevelTag: historyEntry.hskLevelTag,
+                    createdAt: '' // Not needed for display
+                };
+
+                // Historical cards always show back side (flipped = true)
+                const currentFlip = isFlipped;
+                const targetFlip = true;
+                setIsFlipped(targetFlip);
+
+                // Use centralized update function with smart delay based on flip state change
+                updateCardContent(vocabEntry, false, currentFlip, targetFlip);
+            }
         }
     };
 
@@ -439,7 +514,6 @@ function FlashcardsPage() {
             entryValue: entry.entryValue,
             isCorrect,
             timestamp: new Date(),
-            isCustomTag: entry.isCustomTag,
             hskLevelTag: entry.hskLevelTag,
             wasFlipped: isFlipped // Track the current flip state
         };
@@ -483,7 +557,6 @@ function FlashcardsPage() {
                 } else {
                     // Add new entry to the front and shift others back
                     newHistory.unshift(historyEntry);
-                    console.log('New entry added, no counter increment');
 
                     // Maintain max size of 6
                     if (newHistory.length > 6) {
@@ -508,17 +581,23 @@ function FlashcardsPage() {
     };
 
     const handleFlip = () => {
-        setIsFlipped(!isFlipped);
+        const currentFlip = isFlipped;
+        const newFlipState = !isFlipped;
+        setIsFlipped(newFlipState);
+
+        // If we're at the current card, also update the current card flip state tracker
+        if (historyIndex === 0) {
+            setCurrentCardFlipState(newFlipState);
+        }
+
+        // Trigger content update with proper animation timing for manual flips
+        if (currentEntry) {
+            updateCardContent(currentEntry, false, currentFlip, newFlipState);
+        }
     };
 
     const handleCorrect = () => {
-        // If card is showing front (not flipped), flip it first
-        if (!isFlipped) {
-            setIsFlipped(true);
-            return;
-        }
-
-        // Card is showing back, now mark as correct
+        // Only mark as correct, no auto-flip behavior
         if (currentEntry) {
             // Add the current entry to history with correct status
             addToHistory(currentEntry, true);
@@ -533,13 +612,7 @@ function FlashcardsPage() {
     };
 
     const handleIncorrect = () => {
-        // If card is showing front (not flipped), flip it first
-        if (!isFlipped) {
-            setIsFlipped(true);
-            return;
-        }
-
-        // Card is showing back, now mark as incorrect
+        // Only mark as incorrect, no auto-flip behavior
         if (currentEntry) {
             // Add the current entry to history with incorrect status
             addToHistory(currentEntry, false);
@@ -554,8 +627,8 @@ function FlashcardsPage() {
     };
 
     const handleHistoryCardClick = (displayIndex: number) => {
-        // Calculate the actual index in the history array (since display is reversed)
-        const actualIndex = history.length - 1 - displayIndex;
+        // Use the displayIndex directly since we're showing chronological order (oldest first)
+        const actualIndex = displayIndex;
 
         if (actualIndex === historyIndex) {
             // Already viewing this card, no need to navigate
@@ -570,16 +643,27 @@ function FlashcardsPage() {
             id: historyEntry.id,
             entryKey: historyEntry.entryKey,
             entryValue: historyEntry.entryValue,
-            isCustomTag: historyEntry.isCustomTag,
             hskLevelTag: historyEntry.hskLevelTag,
             createdAt: '' // Not needed for display
         };
 
-        // Restore the flip state from history
-        setIsFlipped(historyEntry.wasFlipped);
+        if (actualIndex === 0) {
+            // We're navigating back to the current card - restore its saved flip state
+            const currentFlip = isFlipped;
+            const targetFlip = currentCardFlipState;
+            setIsFlipped(targetFlip);
 
-        // Use centralized update function with delay for transitions
-        updateCardContent(vocabEntry, false);
+            // Use centralized update function with smart delay based on flip state change
+            updateCardContent(vocabEntry, false, currentFlip, targetFlip);
+        } else {
+            // Historical cards always show back side (flipped = true)
+            const currentFlip = isFlipped;
+            const targetFlip = true;
+            setIsFlipped(targetFlip);
+
+            // Use centralized update function with smart delay based on flip state change
+            updateCardContent(vocabEntry, false, currentFlip, targetFlip);
+        }
     };
 
     if (loading) {
@@ -653,15 +737,15 @@ function FlashcardsPage() {
                     </Box>
                 ) : (
                     <List sx={{ width: '100%' }}>
-                        {history.slice().reverse().map((entry, index) => {
-                            // Calculate the actual index in the original history array
-                            const actualIndex = history.length - 1 - index;
+                        {history.map((entry, index) => {
+                            // Use the direct index since we're showing chronological order (oldest first)
+                            const actualIndex = index;
                             const isCurrentCard = historyIndex === actualIndex;
 
                             return (
                                 <ListItem key={`${entry.id}-${entry.timestamp.getTime()}`} sx={{ mb: 1, p: 0 }}>
                                     <Card
-                                        onClick={() => handleHistoryCardClick(index)}
+                                        onClick={() => handleHistoryCardClick(actualIndex)}
                                         sx={{
                                             width: '100%',
                                             border: isCurrentCard ? '2px solid' : '1px solid transparent',
@@ -693,14 +777,6 @@ function FlashcardsPage() {
                                                 {entry.entryValue}
                                             </Typography>
                                             <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-                                                {entry.isCustomTag === true && (
-                                                    <Chip
-                                                        label="Custom"
-                                                        size="small"
-                                                        color="primary"
-                                                        sx={{ fontSize: '0.6rem', height: '18px' }}
-                                                    />
-                                                )}
                                                 {entry.hskLevelTag && (
                                                     <Box
                                                         sx={{
@@ -733,82 +809,93 @@ function FlashcardsPage() {
 
 
     return (
-        <Box
-            className="flashcards-page-container"
-            sx={{ display: 'flex', width: '100%', minHeight: 'calc(100vh - 200px)', mt: -2 }}
-        >
-            {/* Desktop sidebar */}
-            {!isMobile && (
-                <Box sx={{
-                    width: drawerWidth,
-                    flexShrink: 0,
-                    borderRight: '1px solid rgba(0, 0, 0, 0.08)',
-                    height: 'fit-content',
-                    minHeight: 'calc(100vh - 200px)'
-                }}>
-                    <SidebarContent />
-                </Box>
-            )}
-
-            {/* Mobile drawer */}
-            {isMobile && (
-                <Drawer
-                    variant="temporary"
-                    open={drawerOpen}
-                    onClose={() => setDrawerOpen(false)}
-                    ModalProps={{
-                        keepMounted: true,
-                    }}
-                    sx={{
-                        [`& .MuiDrawer-paper`]: {
-                            width: drawerWidth,
-                            boxSizing: 'border-box',
-                        },
-                    }}
-                >
-                    <SidebarContent />
-                </Drawer>
-            )}
-
-            {/* Main content */}
-            <Box sx={{
-                flexGrow: 1,
-                minWidth: 0,
-                width: isMobile ? '100%' : `calc(100% - ${drawerWidth}px)`
-            }}>
-                <MainContent
-                    currentEntry={currentEntry}
-                    displayEntry={displayEntry}
-                    isFlipped={isFlipped}
-                    handleFlip={handleFlip}
-                    entryKey={entryKey}
-                    entryValue={entryValue}
-                    handlePreviousCard={handlePreviousCard}
-                    handleIncorrect={handleIncorrect}
-                    handleCorrect={handleCorrect}
-                    handleNextCard={handleNextCard}
-                    history={history}
-                    historyIndex={historyIndex}
+        <>
+            {/* Work Points Badge - only show on eligible pages */}
+            {workPoints.isEligiblePage && (
+                <WorkPointsBadge
+                    points={workPoints.currentPoints}
+                    isActive={workPoints.isActive}
+                    isAnimating={workPoints.isAnimating}
                 />
-            </Box>
-
-            {/* Mobile FAB */}
-            {isMobile && (
-                <Fab
-                    color="primary"
-                    aria-label="open history"
-                    onClick={() => setDrawerOpen(true)}
-                    sx={{
-                        position: 'fixed',
-                        bottom: 80,
-                        right: 16,
-                        zIndex: 1000
-                    }}
-                >
-                    <MenuIcon />
-                </Fab>
             )}
-        </Box>
+
+            <Box
+                className="flashcards-page-container"
+                sx={{ display: 'flex', width: '100%', minHeight: 'calc(100vh - 200px)', mt: -2 }}
+            >
+                {/* Desktop sidebar */}
+                {!isMobile && (
+                    <Box sx={{
+                        width: drawerWidth,
+                        flexShrink: 0,
+                        borderRight: '1px solid rgba(0, 0, 0, 0.08)',
+                        height: 'fit-content',
+                        minHeight: 'calc(100vh - 200px)'
+                    }}>
+                        <SidebarContent />
+                    </Box>
+                )}
+
+                {/* Mobile drawer */}
+                {isMobile && (
+                    <Drawer
+                        variant="temporary"
+                        open={drawerOpen}
+                        onClose={() => setDrawerOpen(false)}
+                        ModalProps={{
+                            keepMounted: true,
+                        }}
+                        sx={{
+                            [`& .MuiDrawer-paper`]: {
+                                width: drawerWidth,
+                                boxSizing: 'border-box',
+                            },
+                        }}
+                    >
+                        <SidebarContent />
+                    </Drawer>
+                )}
+
+                {/* Main content */}
+                <Box sx={{
+                    flexGrow: 1,
+                    minWidth: 0,
+                    width: isMobile ? '100%' : `calc(100% - ${drawerWidth}px)`
+                }}>
+                    <MainContent
+                        currentEntry={currentEntry}
+                        displayEntry={displayEntry}
+                        isFlipped={isFlipped}
+                        handleFlip={handleFlip}
+                        entryKey={entryKey}
+                        entryValue={entryValue}
+                        handlePreviousCard={handlePreviousCard}
+                        handleIncorrect={handleIncorrect}
+                        handleCorrect={handleCorrect}
+                        handleNextCard={handleNextCard}
+                        history={history}
+                        historyIndex={historyIndex}
+                    />
+                </Box>
+
+                {/* Mobile FAB */}
+                {isMobile && (
+                    <Fab
+                        color="primary"
+                        aria-label="open history"
+                        onClick={() => setDrawerOpen(true)}
+                        sx={{
+                            position: 'fixed',
+                            bottom: 80,
+                            right: 16,
+                            zIndex: 1000
+                        }}
+                    >
+                        <MenuIcon />
+                    </Fab>
+                )}
+            </Box>
+        </>
     );
 }
 

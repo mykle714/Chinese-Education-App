@@ -106,19 +106,156 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     return result.recordset;
   }
 
-  /**
-   * Find entries by custom tag status
-   */
-  async findByCustomTag(userId: string, isCustom: boolean): Promise<VocabEntry[]> {
-    if (!userId) {
-      throw new ValidationError('User ID is required');
-    }
 
-    const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
-      return await client.query('SELECT * FROM VocabEntries WHERE "userId" = $1 AND "isCustomTag" = $2 ORDER BY "createdAt" DESC', [userId, isCustom]);
+  /**
+   * Find vocabulary entries by tokens for reader feature
+   */
+  async findByTokens(userId: string, tokens: string[]): Promise<VocabEntry[]> {
+    const dalStart = performance.now();
+    
+    console.log(`[VOCAB-DB] 🗄️ Starting database lookup:`, {
+      userId: `${userId.substring(0, 8)}...`,
+      tokensReceived: tokens?.length || 0,
+      timestamp: new Date().toISOString()
     });
 
-    return result.recordset;
+    if (!userId) {
+      console.error(`[VOCAB-DB] ❌ Validation failed:`, {
+        error: 'User ID is required',
+        dalTime: `${(performance.now() - dalStart).toFixed(2)}ms`
+      });
+      throw new ValidationError('User ID is required');
+    }
+    
+    if (!tokens || tokens.length === 0) {
+      console.log(`[VOCAB-DB] 📝 Empty token array:`, {
+        userId: `${userId.substring(0, 8)}...`,
+        response: 'returning empty array',
+        dalTime: `${(performance.now() - dalStart).toFixed(2)}ms`
+      });
+      return [];
+    }
+
+    console.log(`[VOCAB-DB] 🔍 Processing tokens for database query:`, {
+      userId: `${userId.substring(0, 8)}...`,
+      rawTokenCount: tokens.length,
+      sampleTokens: tokens.slice(0, 10)
+    });
+
+    // Remove duplicates and filter out empty tokens
+    const uniqueTokens = [...new Set(tokens.filter(token => token && token.trim().length > 0))];
+    
+    const duplicatesRemoved = tokens.length - uniqueTokens.length;
+    
+    console.log(`[VOCAB-DB] 🧹 Token preprocessing completed:`, {
+      userId: `${userId.substring(0, 8)}...`,
+      originalTokens: tokens.length,
+      uniqueTokens: uniqueTokens.length,
+      duplicatesRemoved: duplicatesRemoved,
+      preprocessingEfficiency: `${((uniqueTokens.length / tokens.length) * 100).toFixed(1)}%`,
+      finalTokens: uniqueTokens.slice(0, 15) // Show first 15 final tokens
+    });
+    
+    if (uniqueTokens.length === 0) {
+      console.log(`[VOCAB-DB] 📝 No valid tokens after preprocessing:`, {
+        userId: `${userId.substring(0, 8)}...`,
+        reason: 'All tokens were duplicates or empty',
+        dalTime: `${(performance.now() - dalStart).toFixed(2)}ms`
+      });
+      return [];
+    }
+
+    // Prepare SQL query with detailed logging
+    const sqlQuery = `
+      SELECT * FROM VocabEntries 
+      WHERE "userId" = $1 
+      AND "entryKey" = ANY($2)
+      ORDER BY LENGTH("entryKey") DESC, "entryKey" ASC
+    `;
+
+    console.log(`[VOCAB-DB] 🔧 Preparing SQL query:`, {
+      userId: `${userId.substring(0, 8)}...`,
+      query: sqlQuery.replace(/\s+/g, ' ').trim(),
+      parameters: {
+        userId: `${userId.substring(0, 8)}...`,
+        tokenArray: `[${uniqueTokens.length} tokens]`,
+        tokenArraySize: `${JSON.stringify(uniqueTokens).length} bytes`
+      },
+      queryPreparationTime: `${(performance.now() - dalStart).toFixed(2)}ms`
+    });
+
+    try {
+      const queryStart = performance.now();
+      
+      const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
+        console.log(`[VOCAB-DB] 🚀 Executing database query:`, {
+          userId: `${userId.substring(0, 8)}...`,
+          connectionStatus: 'active',
+          queryExecutionStart: new Date().toISOString()
+        });
+
+        const queryResult = await client.query(sqlQuery, [userId, uniqueTokens]);
+        
+        console.log(`[VOCAB-DB] 📊 Raw query result:`, {
+          userId: `${userId.substring(0, 8)}...`,
+          rowsReturned: queryResult.rows?.length || 0,
+          queryFields: queryResult.fields?.map(f => f.name) || [],
+          queryExecutionTime: `${(performance.now() - queryStart).toFixed(2)}ms`
+        });
+
+        return queryResult;
+      });
+
+      const queryTime = performance.now() - queryStart;
+      const totalDalTime = performance.now() - dalStart;
+
+      console.log(`[VOCAB-DB] ✅ Database lookup completed:`, {
+        userId: `${userId.substring(0, 8)}...`,
+        tokensQueried: uniqueTokens.length,
+        entriesFound: result.recordset.length,
+        matchRate: `${(result.recordset.length / uniqueTokens.length * 100).toFixed(1)}%`,
+        queryExecutionTime: `${queryTime.toFixed(2)}ms`,
+        totalDalTime: `${totalDalTime.toFixed(2)}ms`,
+        performance: {
+          tokensPerSecond: Math.round(uniqueTokens.length / (queryTime / 1000)),
+          entriesPerSecond: Math.round(result.recordset.length / (queryTime / 1000)),
+          avgTimePerToken: `${(queryTime / uniqueTokens.length).toFixed(2)}ms`
+        },
+        foundEntries: result.recordset.map(entry => ({
+          id: entry.id,
+          key: entry.entryKey,
+          valuePreview: entry.entryValue?.substring(0, 30) + '...',
+          hskLevel: entry.hskLevelTag
+        })).slice(0, 10), // Show first 10 entries
+        tokenMatchAnalysis: {
+          matchedTokens: result.recordset.map(e => e.entryKey),
+          unmatchedTokens: uniqueTokens.filter(token => 
+            !result.recordset.some(entry => entry.entryKey === token)
+          ).slice(0, 10) // Show first 10 unmatched tokens
+        }
+      });
+
+      return result.recordset;
+    } catch (error) {
+      const errorTime = performance.now() - dalStart;
+      
+      console.error(`[VOCAB-DB] ❌ Database query failed:`, {
+        userId: `${userId.substring(0, 8)}...`,
+        error: error instanceof Error ? error.message : 'Unknown database error',
+        errorCode: (error as any)?.code,
+        errorSeverity: (error as any)?.severity,
+        tokensAttempted: uniqueTokens.length,
+        failureTime: `${errorTime.toFixed(2)}ms`,
+        queryParameters: {
+          userIdLength: userId.length,
+          tokenArrayLength: uniqueTokens.length,
+          sampleTokens: uniqueTokens.slice(0, 5)
+        },
+        stack: error instanceof Error ? error.stack : undefined
+      });
+
+      throw error;
+    }
   }
 
   /**
@@ -180,11 +317,10 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
             // Update existing entry
             await client.query(`
               UPDATE VocabEntries 
-              SET "entryValue" = $1, "isCustomTag" = $2, "hskLevelTag" = $3
-              WHERE "userId" = $4 AND "entryKey" = $5
+              SET "entryValue" = $1, "hskLevelTag" = $2
+              WHERE "userId" = $3 AND "entryKey" = $4
             `, [
               entry.entryValue,
-              entry.isCustomTag ?? true,
               entry.hskLevelTag || null,
               entry.userId,
               entry.entryKey
@@ -193,13 +329,12 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
           } else {
             // Insert new entry
             await client.query(`
-              INSERT INTO VocabEntries ("userId", "entryKey", "entryValue", "isCustomTag", "hskLevelTag")
-              VALUES ($1, $2, $3, $4, $5)
+              INSERT INTO VocabEntries ("userId", "entryKey", "entryValue", "hskLevelTag")
+              VALUES ($1, $2, $3, $4)
             `, [
               entry.userId,
               entry.entryKey,
               entry.entryValue,
-              entry.isCustomTag ?? true,
               entry.hskLevelTag || null
             ]);
             result.inserted++;
@@ -274,7 +409,6 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
    */
   async getUserVocabStats(userId: string): Promise<{
     total: number;
-    customEntries: number;
     hskEntries: number;
     hskBreakdown: Record<HskLevel, number>;
     recentEntries: number;
@@ -287,7 +421,6 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
 
     const result = await this.dbManager.executeQuery<{
       total: string;
-      customentries: string;
       hskentries: string;
       hsk1: string;
       hsk2: string;
@@ -300,7 +433,6 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
       return await client.query(`
         SELECT 
           COUNT(*) as total,
-          SUM(CASE WHEN "isCustomTag" = true THEN 1 ELSE 0 END) as customentries,
           SUM(CASE WHEN "hskLevelTag" IS NOT NULL THEN 1 ELSE 0 END) as hskentries,
           SUM(CASE WHEN "hskLevelTag" = 'HSK1' THEN 1 ELSE 0 END) as hsk1,
           SUM(CASE WHEN "hskLevelTag" = 'HSK2' THEN 1 ELSE 0 END) as hsk2,
@@ -318,7 +450,6 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     
     return {
       total: parseInt(stats.total),
-      customEntries: parseInt(stats.customentries),
       hskEntries: parseInt(stats.hskentries),
       hskBreakdown: {
         HSK1: parseInt(stats.hsk1),

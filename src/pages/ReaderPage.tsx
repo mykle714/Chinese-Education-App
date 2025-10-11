@@ -1,31 +1,37 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
     Box,
-    Typography,
-    List,
-    ListItem,
-    ListItemButton,
     Drawer,
     useMediaQuery,
     useTheme,
     Fab,
-    CircularProgress,
-    Alert,
-    Chip,
-    TextField,
-    FormControlLabel,
-    Checkbox,
     IconButton
 } from "@mui/material";
 import {
-    Article as ArticleIcon,
     Menu as MenuIcon,
-    Settings as SettingsIcon,
-    ChevronRight as ChevronRightIcon
+    Settings as SettingsIcon
 } from "@mui/icons-material";
 import { useAuth } from "../AuthContext";
 import { useTheme as useCustomTheme } from "../contexts/ThemeContext";
 import { API_BASE_URL } from "../constants";
+import { useWorkPoints } from "../hooks/useWorkPoints";
+import WorkPointsBadge from "../components/WorkPointsBadge";
+import VocabDisplayCard from "../components/VocabDisplayCard";
+import { useVocabularyUpdate } from "../contexts/VocabularyUpdateContext";
+import { processDocumentForTokens } from "../utils/tokenUtils";
+import type { VocabEntry } from "../types";
+
+// Extracted components
+import EmptyState from "../components/EmptyState";
+import TextHeader from "../components/TextHeader";
+import TextSidebar from "../components/TextSidebar";
+import TextArea from "../components/TextArea";
+import ReaderSettings from "../components/ReaderSettings";
+
+// Extracted hooks
+import { useVocabularyProcessing } from "../hooks/useVocabularyProcessing";
+import { useTextSelection } from "../hooks/useTextSelection";
+import { useReaderSettings } from "../hooks/useReaderSettings";
 
 // Text interface for TypeScript
 interface Text {
@@ -42,6 +48,10 @@ function ReaderPage() {
     const customTheme = useCustomTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down("md"));
     const { token } = useAuth();
+    const vocabularyUpdate = useVocabularyUpdate();
+
+    // Work points integration
+    const workPoints = useWorkPoints();
 
     // State management
     const [texts, setTexts] = useState<Text[]>([]);
@@ -50,274 +60,13 @@ function ReaderPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    // Reader settings state
-    const [autoSelectEnabled, setAutoSelectEnabled] = useState(false);
-    const [settingsOpen, setSettingsOpen] = useState(true);
+    // Use extracted hooks
+    const vocabularyProcessing = useVocabularyProcessing(token);
+    const readerSettings = useReaderSettings();
+    const textSelection = useTextSelection(vocabularyProcessing.loadedCards, readerSettings.autoSelectEnabled);
 
-    // Handle text change - prevent modifications while maintaining cursor functionality
-    const handleTextChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-        // Prevent any changes to the text content
-        event.preventDefault();
-        return false;
-    };
-
-    // Handle text selection changes for auto word selection using native browser APIs
-    const handleAutoWordSelect = (event: React.SyntheticEvent<HTMLDivElement>) => {
-        if (!autoSelectEnabled) return;
-
-        // Find the textarea element within the TextField
-        const textarea = event.currentTarget.querySelector('textarea') as HTMLTextAreaElement;
-        if (!textarea) return;
-
-        // Get current selection positions
-        const cursorStart = textarea.selectionStart;
-        const cursorEnd = textarea.selectionEnd;
-
-        // Only auto-select if no text is currently selected (just cursor placement)
-        if (cursorStart !== cursorEnd) return;
-
-        const cursorPosition = cursorStart;
-
-        try {
-            // Focus the textarea to ensure selection works properly
-            textarea.focus();
-
-            // Set cursor position first
-            textarea.setSelectionRange(cursorPosition, cursorPosition);
-
-            // Use native browser Selection API for word detection
-            const selection = window.getSelection();
-            if (!selection) return;
-
-            // Clear any existing selections
-            selection.removeAllRanges();
-
-            // For textarea, we need to work with the text content
-            // Create a temporary text node to work with Selection API
-            const textContent = textarea.value;
-            if (!textContent || cursorPosition >= textContent.length) return;
-
-            // Alternative approach: Use the Selection.modify() method
-            // This mimics exactly what Ctrl+Right/Ctrl+Shift+Left does
-
-            // First, we need to create a selection at the cursor position
-            // Since textarea doesn't work directly with Selection API,
-            // we'll use a different approach with textarea's built-in methods
-
-            // Simulate word boundary detection by using the browser's native behavior
-            // We'll use the fact that double-clicking selects a word
-            const originalStart = textarea.selectionStart;
-            const originalEnd = textarea.selectionEnd;
-
-            // Try to find word boundaries by testing character by character
-            // But use a smarter approach that leverages browser behavior
-
-            // Move cursor to find word start
-            let wordStart = cursorPosition;
-            let wordEnd = cursorPosition;
-
-            // Use a more sophisticated approach: simulate Ctrl+Left and Ctrl+Right
-            // by checking if we're at word boundaries
-
-            // Find word start by moving left until we hit a word boundary
-            for (let i = cursorPosition - 1; i >= 0; i--) {
-                textarea.setSelectionRange(i, i);
-                // Simulate Ctrl+Right to see if we jump to our original position
-                // This is a simplified approach - we'll use character classification
-                const char = textContent[i];
-                const nextChar = textContent[i + 1];
-
-                // Check if this is a word boundary using Unicode-aware logic
-                if (isWordBoundary(char, nextChar)) {
-                    wordStart = i + 1;
-                    break;
-                }
-                if (i === 0) {
-                    wordStart = 0;
-                }
-            }
-
-            // Find word end by moving right until we hit a word boundary
-            for (let i = cursorPosition; i < textContent.length; i++) {
-                const char = textContent[i];
-                const nextChar = textContent[i + 1];
-
-                if (isWordBoundary(char, nextChar) || i === textContent.length - 1) {
-                    wordEnd = i + 1;
-                    break;
-                }
-            }
-
-            // Select the word if we found valid boundaries
-            if (wordStart < wordEnd && wordStart !== wordEnd) {
-                textarea.setSelectionRange(wordStart, wordEnd);
-            } else {
-                // Restore original cursor position if no word found
-                textarea.setSelectionRange(originalStart, originalEnd);
-            }
-
-        } catch (error) {
-            console.error('Native word selection failed:', error);
-            // Restore original cursor position on error
-            textarea.setSelectionRange(cursorPosition, cursorPosition);
-        }
-    };
-
-    // Helper functions for character type checking at cursor position
-    const isWhitespaceAtPosition = (textarea: HTMLTextAreaElement, position: number): boolean => {
-        if (position < 0 || position >= textarea.value.length) return false;
-        return /\s/.test(textarea.value[position]);
-    };
-
-    const isPunctuationAtPosition = (textarea: HTMLTextAreaElement, position: number): boolean => {
-        if (position < 0 || position >= textarea.value.length) return false;
-        return /\p{P}/u.test(textarea.value[position]);
-    };
-
-    // Move cursor left from given position, skipping whitespace and punctuation
-    const moveCursorLeftFromPosition = (textarea: HTMLTextAreaElement, startPosition: number): void => {
-        let newPosition = startPosition;
-
-        // Skip whitespace characters moving left
-        while (newPosition > 0 && isWhitespaceAtPosition(textarea, newPosition)) {
-            newPosition--;
-        }
-
-        // Skip punctuation characters moving left
-        while (newPosition > 0 && isPunctuationAtPosition(textarea, newPosition)) {
-            newPosition--;
-        }
-
-        textarea.setSelectionRange(newPosition, newPosition);
-    };
-
-    // Move cursor right from given position, skipping punctuation and whitespace
-    const moveCursorRightFromPosition = (textarea: HTMLTextAreaElement, startPosition: number): void => {
-        let newPosition = startPosition;
-
-        // Skip punctuation characters moving right
-        while (newPosition < textarea.value.length && isPunctuationAtPosition(textarea, newPosition)) {
-            newPosition++;
-        }
-
-        // Skip whitespace characters moving right
-        while (newPosition < textarea.value.length && isWhitespaceAtPosition(textarea, newPosition)) {
-            newPosition++;
-        }
-
-        // If we move past the end, select the last selectable position
-        if (newPosition >= textarea.value.length) {
-            moveCursorLeftFromPosition(textarea, --newPosition);
-        } else {
-            textarea.setSelectionRange(newPosition, newPosition);
-        }
-    };
-
-    // Helper function to determine word boundaries using native browser logic
-    const isWordBoundary = (char: string, nextChar: string): boolean => {
-        if (!char || !nextChar) return true;
-
-        // Use Intl.Segmenter if available (modern browsers)
-        if (typeof Intl !== 'undefined' && 'Segmenter' in Intl) {
-            try {
-                const segmenter = new (Intl as any).Segmenter('en', { granularity: 'word' });
-                const segments = Array.from(segmenter.segment(char + nextChar));
-                return segments.length > 1;
-            } catch (e) {
-                // Fall back to simpler logic
-            }
-        }
-
-        // Fallback: Use basic character classification
-        const isWordChar = (c: string) => /\p{L}|\p{N}/u.test(c);
-        const isWhitespace = (c: string) => /\s/u.test(c);
-        const isPunctuation = (c: string) => /\p{P}/u.test(c);
-
-        // Boundary conditions
-        if (isWhitespace(char) || isWhitespace(nextChar)) return true;
-        if (isPunctuation(char) || isPunctuation(nextChar)) return true;
-        if (isWordChar(char) !== isWordChar(nextChar)) return true;
-
-        return false;
-    };
-
-    // Find previous word: mirror the selectNextWord logic but in reverse direction
-    const selectPreviousWord = (textarea: HTMLTextAreaElement) => {
-        const text = textarea.value;
-        const cursorPos = textarea.selectionStart;
-
-        // Start from cursor position and move backwards
-        let pos = cursorPos - 1; // Start one position back from cursor
-
-        // Skip whitespace/punctuation to find the previous word (moving backwards)
-        while (pos >= 0) {
-            const char = text[pos];
-            const nextChar = text[pos + 1];
-            if (!isWordBoundary(char, nextChar)) {
-                break; // Found a word character
-            }
-            pos--;
-        }
-
-        if (pos < 0) return; // No previous word found
-
-        // Now we're at the end of the previous word, find its start
-        let wordStart = pos;
-        let wordEnd = pos + 1; // End is one position after the last character
-
-        // Find word start by moving backwards from current position
-        for (let i = pos; i >= 0; i--) {
-            const char = text[i];
-            const prevChar = text[i - 1];
-            if (i === 0 || isWordBoundary(prevChar, char)) {
-                wordStart = i;
-                break;
-            }
-        }
-
-        // Select the previous word
-        textarea.setSelectionRange(wordStart, wordEnd);
-    };
-
-    // Reuse existing word boundary logic to find next word
-    const selectNextWord = (textarea: HTMLTextAreaElement) => {
-        const text = textarea.value;
-        const cursorPos = textarea.selectionStart;
-
-        // Cursor default position for a selected text is the end of the selected text
-        let pos = cursorPos;
-
-        // Skip whitespace/punctuation to find the next word
-        while (pos < text.length) {
-            const char = text[pos];
-            const nextChar = text[pos + 1];
-            if (!isWordBoundary(char, nextChar)) {
-                break; // Found a word character
-            }
-            pos++;
-        }
-
-        if (pos >= text.length) return; // No next word found
-
-        // Now find the full word boundaries using existing logic
-        let wordStart = pos;
-        let wordEnd = pos;
-
-        // Find word end (reusing existing boundary logic)
-        for (let i = pos; i < text.length; i++) {
-            const char = text[i];
-            const nextChar = text[i + 1];
-            if (isWordBoundary(char, nextChar) || i === text.length - 1) {
-                wordEnd = i + 1;
-                break;
-            }
-        }
-
-        textarea.setSelectionRange(wordStart, wordEnd);
-    };
-
-    // Get theme-based selection colors
-    const getSelectionColors = () => {
+    // Get theme-based selection colors (memoized to prevent recalculation)
+    const selectionColors = useMemo(() => {
         switch (customTheme.themeMode) {
             case 'dark':
                 return {
@@ -337,9 +86,7 @@ function ReaderPage() {
                     backgroundColor: theme.palette.primary.main + '30', // ~19% opacity
                 };
         }
-    };
-
-    const selectionColors = getSelectionColors();
+    }, [customTheme.themeMode, theme.palette.primary.main]);
 
     // Drawer width consistent with main navigation
     const drawerWidth = 250;
@@ -395,450 +142,305 @@ function ReaderPage() {
         }
     }, [token]);
 
+    // Set up vocabulary update listeners
+    useEffect(() => {
+        if (!selectedText) return;
+
+        // Get current document tokens for filtering
+        const documentTokens = processDocumentForTokens(selectedText.content);
+
+        // Helper function to check if entry is relevant to current document
+        const isEntryRelevantToDocument = (entry: VocabEntry): boolean => {
+            return documentTokens.includes(entry.entryKey);
+        };
+
+        // Add entry listener
+        const unsubscribeAdd = vocabularyUpdate.onVocabAdd((entry: VocabEntry) => {
+            if (isEntryRelevantToDocument(entry)) {
+                console.log('[READER-VOCAB-UPDATE] Adding entry to loadedCards:', entry.entryKey);
+                vocabularyProcessing.setLoadedCards(prev => {
+                    // Check if entry already exists
+                    const exists = prev.some(existing => existing.id === entry.id);
+                    if (exists) return prev;
+                    return [...prev, entry];
+                });
+            }
+        });
+
+        // Update entry listener
+        const unsubscribeUpdate = vocabularyUpdate.onVocabUpdate((entry: VocabEntry) => {
+            vocabularyProcessing.setLoadedCards(prev => {
+                const index = prev.findIndex(existing => existing.id === entry.id);
+                if (index === -1) {
+                    // Entry not in loadedCards, check if it should be added
+                    if (isEntryRelevantToDocument(entry)) {
+                        console.log('[READER-VOCAB-UPDATE] Adding updated entry to loadedCards:', entry.entryKey);
+                        return [...prev, entry];
+                    }
+                    return prev;
+                }
+
+                // Entry exists, update it
+                console.log('[READER-VOCAB-UPDATE] Updating entry in loadedCards:', entry.entryKey);
+                const updated = [...prev];
+                updated[index] = entry;
+
+                // Clear selectedCard if it's the updated entry
+                if (textSelection.selectedCard && textSelection.selectedCard.id === entry.id) {
+                    textSelection.setSelectedCard(entry);
+                }
+
+                return updated;
+            });
+        });
+
+        // Remove entry listener
+        const unsubscribeRemove = vocabularyUpdate.onVocabRemove((entryId: number) => {
+            vocabularyProcessing.setLoadedCards(prev => {
+                const filtered = prev.filter(entry => entry.id !== entryId);
+                if (filtered.length !== prev.length) {
+                    console.log('[READER-VOCAB-UPDATE] Removing entry from loadedCards:', entryId);
+                }
+                return filtered;
+            });
+
+            // Clear selectedCard if it's the deleted entry
+            if (textSelection.selectedCard && textSelection.selectedCard.id === entryId) {
+                console.log('[READER-VOCAB-UPDATE] Clearing selected card (deleted):', entryId);
+                textSelection.setSelectedCard(null);
+            }
+        });
+
+        // Bulk add entries listener (for CSV imports)
+        const unsubscribeBulkAdd = vocabularyUpdate.onVocabBulkAdd((entries: VocabEntry[]) => {
+            const relevantEntries = entries.filter(isEntryRelevantToDocument);
+            if (relevantEntries.length > 0) {
+                console.log('[READER-VOCAB-UPDATE] Bulk adding entries to loadedCards:', relevantEntries.length);
+                vocabularyProcessing.setLoadedCards(prev => {
+                    const existingIds = new Set(prev.map(entry => entry.id));
+                    const newEntries = relevantEntries.filter(entry => !existingIds.has(entry.id));
+                    return [...prev, ...newEntries];
+                });
+            }
+        });
+
+        // Cleanup listeners on unmount or when selectedText changes
+        return () => {
+            unsubscribeAdd();
+            unsubscribeUpdate();
+            unsubscribeRemove();
+            unsubscribeBulkAdd();
+        };
+    }, [selectedText, vocabularyUpdate, textSelection.selectedCard, vocabularyProcessing, textSelection]);
+
     // Handle text selection
-    const handleTextSelect = (text: Text) => {
+    const handleTextSelect = useCallback(async (text: Text) => {
+        console.log("[TEXT-SELECTION] Selected text:", text.title);
         setSelectedText(text);
         if (isMobile) {
             setDrawerOpen(false);
         }
-    };
+
+        // Process vocabulary for the selected document
+        await vocabularyProcessing.processDocumentVocabulary(text);
+    }, [isMobile, vocabularyProcessing]);
 
     // Format date for display
-    const formatDate = (dateString: string) => {
+    const formatDate = useCallback((dateString: string) => {
         return new Date(dateString).toLocaleDateString('en-US', {
             year: 'numeric',
             month: 'long',
             day: 'numeric'
         });
-    };
-
-    // Sidebar content component
-    const SidebarContent = () => (
-        <Box sx={{ width: drawerWidth, height: '100%', display: 'flex', flexDirection: 'column' }}>
-            {/* Header */}
-            <Box sx={{ p: 2, borderBottom: '1px solid rgba(0, 0, 0, 0.08)' }}>
-                <Typography variant="h6" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <ArticleIcon />
-                    Reading Materials
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                    Select a text to begin reading
-                </Typography>
-            </Box>
-
-            {/* Loading state */}
-            {loading && (
-                <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
-                    <CircularProgress size={24} />
-                </Box>
-            )}
-
-            {/* Error state */}
-            {error && (
-                <Box sx={{ p: 2 }}>
-                    <Alert severity="error">
-                        {error}
-                    </Alert>
-                </Box>
-            )}
-
-            {/* Texts list */}
-            {!loading && !error && (
-                <List sx={{ flexGrow: 1, overflow: 'auto', p: 1 }}>
-                    {texts.map((text) => (
-                        <ListItem key={text.id} disablePadding sx={{ mb: 1 }}>
-                            <ListItemButton
-                                onClick={() => handleTextSelect(text)}
-                                selected={selectedText?.id === text.id}
-                                sx={{
-                                    borderRadius: 2,
-                                    flexDirection: 'column',
-                                    alignItems: 'flex-start',
-                                    p: 2,
-                                    '&.Mui-selected': {
-                                        backgroundColor: 'primary.main',
-                                        color: 'white',
-                                        '&:hover': {
-                                            backgroundColor: 'primary.dark',
-                                        },
-                                    },
-                                    '&:hover': {
-                                        backgroundColor: 'action.hover',
-                                    },
-                                }}
-                            >
-                                <Typography
-                                    variant="subtitle2"
-                                    sx={{
-                                        fontWeight: 'bold',
-                                        mb: 0.5,
-                                        color: selectedText?.id === text.id ? 'white' : 'text.primary'
-                                    }}
-                                >
-                                    {text.title}
-                                </Typography>
-                                <Typography
-                                    variant="body2"
-                                    sx={{
-                                        mb: 1,
-                                        color: selectedText?.id === text.id ? 'rgba(255,255,255,0.8)' : 'text.secondary',
-                                        fontSize: '0.875rem'
-                                    }}
-                                >
-                                    {text.description}
-                                </Typography>
-                                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
-                                    <Chip
-                                        label={`${text.characterCount} chars`}
-                                        size="small"
-                                        variant={selectedText?.id === text.id ? "filled" : "outlined"}
-                                        sx={{
-                                            fontSize: '0.75rem',
-                                            height: 20,
-                                            color: selectedText?.id === text.id ? 'white' : 'text.secondary',
-                                            borderColor: selectedText?.id === text.id ? 'rgba(255,255,255,0.5)' : undefined,
-                                            backgroundColor: selectedText?.id === text.id ? 'rgba(255,255,255,0.2)' : undefined
-                                        }}
-                                    />
-                                    <Typography
-                                        variant="caption"
-                                        sx={{
-                                            color: selectedText?.id === text.id ? 'rgba(255,255,255,0.7)' : 'text.secondary'
-                                        }}
-                                    >
-                                        {formatDate(text.createdAt)}
-                                    </Typography>
-                                </Box>
-                            </ListItemButton>
-                        </ListItem>
-                    ))}
-                </List>
-            )}
-        </Box>
-    );
-
-    // Main content component
-    const MainContent = () => (
-        <Box sx={{
-            flexGrow: 1,
-            p: { xs: 2, sm: 3 },
-            pt: { xs: 1, sm: 2 },
-            display: 'flex',
-            flexDirection: 'column',
-            minHeight: '100vh'
-        }}>
-            {selectedText ? (
-                <>
-                    {/* Text header */}
-                    <Box sx={{ mb: 3, pb: 2, borderBottom: '1px solid rgba(0, 0, 0, 0.08)' }}>
-                        <Typography variant="h4" component="h1" sx={{ mb: 1, fontWeight: 'bold' }}>
-                            {selectedText.title}
-                        </Typography>
-                        <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
-                            {selectedText.description}
-                        </Typography>
-                        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-                            <Chip
-                                label={`${selectedText.characterCount} chars`}
-                                size="small"
-                                color="primary"
-                                variant="outlined"
-                            />
-                            <Typography variant="body2" color="text.secondary">
-                                {formatDate(selectedText.createdAt)}
-                            </Typography>
-                        </Box>
-                    </Box>
-
-                    {/* Text content area with settings sidebar */}
-                    <Box sx={{ flexGrow: 1, display: 'flex', gap: 3 }}>
-                        {/* Text content - Editable text field with cursor functionality */}
-                        <Box sx={{ flexGrow: 1 }}>
-                            <TextField
-                                multiline
-                                fullWidth
-                                value={selectedText.content}
-                                onChange={handleTextChange}
-                                onSelect={handleAutoWordSelect}
-                                onKeyDown={(e) => {
-                                    // Handle directional word selection when auto-select is enabled
-                                    if (autoSelectEnabled && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
-                                        // Use e.target directly as it should be the textarea element
-                                        const textarea = e.target as HTMLTextAreaElement;
-                                        if (!textarea || textarea.tagName !== 'TEXTAREA') {
-                                            return;
-                                        }
-
-                                        // Only handle if no text is currently selected
-                                        if (textarea.selectionStart === textarea.selectionEnd) {
-                                            e.preventDefault(); // Prevent default arrow behavior
-
-                                            if (e.key === 'ArrowLeft') {
-                                                selectPreviousWord(textarea);
-                                            } else if (e.key === 'ArrowRight') {
-                                                selectNextWord(textarea);
-                                            }
-                                            return;
-                                        } else {
-                                            // Handle arrow keys when text is selected
-                                            if (e.key === 'ArrowLeft') {
-                                                e.preventDefault();
-                                                const startPosition = Math.max(0, textarea.selectionStart - 1);
-                                                moveCursorLeftFromPosition(textarea, startPosition);
-                                                return;
-                                            } else if (e.key === 'ArrowRight') {
-                                                e.preventDefault();
-                                                const startPosition = textarea.selectionEnd;
-                                                moveCursorRightFromPosition(textarea, startPosition);
-                                                return;
-                                            }
-
-                                            return;
-                                        }
-                                    }
-
-                                    // Allow navigation keys but prevent text modification
-                                    const allowedKeys = [
-                                        'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
-                                        'Home', 'End', 'PageUp', 'PageDown',
-                                        'Tab', 'Escape'
-                                    ];
-
-                                    // Allow Ctrl+A (select all), Ctrl+C (copy)
-                                    if (e.ctrlKey && (e.key === 'a' || e.key === 'c' || e.key === 'A' || e.key === 'C')) {
-                                        return;
-                                    }
-
-                                    // Prevent all other key inputs except navigation
-                                    if (!allowedKeys.includes(e.key)) {
-                                        e.preventDefault();
-                                    }
-                                }}
-                                variant="outlined"
-                                InputProps={{
-                                    sx: {
-                                        lineHeight: 2,
-                                        fontSize: '1.1rem',
-                                        fontFamily: '"Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif',
-                                        letterSpacing: '0.02em',
-                                        padding: 2,
-                                        cursor: 'text',
-                                        '& .MuiInputBase-input': {
-                                            lineHeight: 2,
-                                            fontSize: '1.1rem',
-                                            fontFamily: '"Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif',
-                                            letterSpacing: '0.02em',
-                                            cursor: 'text',
-                                            userSelect: 'text',
-                                            // Custom text selection styling based on theme
-                                            '&::selection': {
-                                                backgroundColor: selectionColors.backgroundColor,
-                                            },
-                                            '&::-moz-selection': {
-                                                backgroundColor: selectionColors.backgroundColor,
-                                            }
-                                        }
-                                    }
-                                }}
-                                sx={{
-                                    '& .MuiOutlinedInput-root': {
-                                        '& fieldset': {
-                                            borderColor: 'rgba(0, 0, 0, 0.12)',
-                                        },
-                                        '&:hover fieldset': {
-                                            borderColor: 'rgba(0, 0, 0, 0.23)',
-                                        },
-                                        '&.Mui-focused fieldset': {
-                                            borderColor: 'primary.main',
-                                        },
-                                    },
-                                    minHeight: '400px'
-                                }}
-                                rows={20}
-                                placeholder="Select a text to begin reading..."
-                            />
-                        </Box>
-
-                        {/* Inline settings sidebar (desktop only) */}
-                        {!isMobile && settingsOpen && (
-                            <Box sx={{
-                                width: settingsWidth,
-                                flexShrink: 0,
-                                pt: 1
-                            }}>
-                                {/* Header */}
-                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
-                                    <Box>
-                                        <Typography variant="h6" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, color: 'text.secondary' }}>
-                                            <SettingsIcon fontSize="small" />
-                                            Settings
-                                        </Typography>
-                                    </Box>
-                                    <IconButton
-                                        onClick={() => setSettingsOpen(false)}
-                                        size="small"
-                                        sx={{ color: 'text.secondary' }}
-                                    >
-                                        <ChevronRightIcon />
-                                    </IconButton>
-                                </Box>
-
-                                {/* Settings content */}
-                                <Box>
-                                    <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 'medium', color: 'text.primary' }}>
-                                        Text Selection
-                                    </Typography>
-
-                                    <FormControlLabel
-                                        control={
-                                            <Checkbox
-                                                checked={autoSelectEnabled}
-                                                onChange={(e) => setAutoSelectEnabled(e.target.checked)}
-                                                size="small"
-                                                color="primary"
-                                            />
-                                        }
-                                        label={
-                                            <Box>
-                                                <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
-                                                    Auto-select words
-                                                </Typography>
-                                                <Typography variant="caption" color="text.secondary">
-                                                    Automatically select words when clicking in text
-                                                </Typography>
-                                            </Box>
-                                        }
-                                        sx={{
-                                            alignItems: 'flex-start',
-                                            mb: 3,
-                                            ml: 0,
-                                            '& .MuiFormControlLabel-label': {
-                                                ml: 1
-                                            }
-                                        }}
-                                    />
-
-                                    <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic', opacity: 0.7 }}>
-                                        More settings will be added here in future updates.
-                                    </Typography>
-                                </Box>
-                            </Box>
-                        )}
-                    </Box>
-                </>
-            ) : (
-                // Default state when no text is selected
-                <Box sx={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    height: '60vh',
-                    textAlign: 'center'
-                }}>
-                    <ArticleIcon sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
-                    <Typography variant="h5" color="text.secondary" sx={{ mb: 1 }}>
-                        Select a text to begin reading
-                    </Typography>
-                    <Typography variant="body1" color="text.secondary">
-                        Choose an article from the sidebar to start reading
-                    </Typography>
-                    {isMobile && (
-                        <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-                            Tap the button in the bottom right to view the text list
-                        </Typography>
-                    )}
-                </Box>
-            )}
-        </Box>
-    );
+    }, []);
 
     return (
-        <Box sx={{ display: 'flex', width: '100%', minHeight: 'calc(100vh - 200px)', mt: -2 }}>
-            {/* Desktop sidebar */}
-            {!isMobile && (
-                <Box sx={{
-                    width: drawerWidth,
-                    flexShrink: 0,
-                    borderRight: '1px solid rgba(0, 0, 0, 0.08)',
-                    height: 'fit-content',
-                    minHeight: 'calc(100vh - 200px)'
-                }}>
-                    <SidebarContent />
+        <>
+            {/* Work Points Badge - only show on eligible pages */}
+            {workPoints.isEligiblePage && (
+                <Box className="reader-page-work-points-wrapper">
+                    <WorkPointsBadge
+                        points={workPoints.currentPoints}
+                        isActive={workPoints.isActive}
+                        isAnimating={workPoints.isAnimating}
+                        millisecondsAccumulated={workPoints.millisecondsAccumulated}
+                    />
                 </Box>
             )}
 
-            {/* Mobile drawer */}
-            {isMobile && (
-                <Drawer
-                    variant="temporary"
-                    open={drawerOpen}
-                    onClose={() => setDrawerOpen(false)}
-                    ModalProps={{
-                        keepMounted: true,
-                    }}
-                    sx={{
-                        [`& .MuiDrawer-paper`]: {
-                            width: drawerWidth,
-                            boxSizing: 'border-box',
-                        },
-                    }}
-                >
-                    <SidebarContent />
-                </Drawer>
-            )}
+            <Box className="reader-page-container" sx={{ display: 'flex', width: '100%', minHeight: 'calc(100vh - 200px)', mt: -2 }}>
+                {/* Desktop sidebar */}
+                {!isMobile && (
+                    <Box className="reader-page-sidebar-desktop" sx={{
+                        width: drawerWidth,
+                        flexShrink: 0,
+                        borderRight: '1px solid rgba(0, 0, 0, 0.08)',
+                        height: 'fit-content',
+                        minHeight: 'calc(100vh - 200px)'
+                    }}>
+                        <TextSidebar
+                            texts={texts}
+                            selectedText={selectedText}
+                            loading={loading}
+                            error={error}
+                            onTextSelect={handleTextSelect}
+                            formatDate={formatDate}
+                            drawerWidth={drawerWidth}
+                        />
+                    </Box>
+                )}
 
-            {/* Main content */}
-            <Box sx={{
-                flexGrow: 1,
-                minWidth: 0,
-                width: isMobile ? '100%' : `calc(100% - ${drawerWidth}px)`
-            }}>
-                <MainContent />
-            </Box>
-
-            {/* Settings toggle button (when sidebar is closed) */}
-            {!isMobile && !settingsOpen && (
-                <Box sx={{
-                    position: 'fixed',
-                    right: 16,
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    zIndex: 1000
-                }}>
-                    <IconButton
-                        onClick={() => setSettingsOpen(true)}
+                {/* Mobile drawer */}
+                {isMobile && (
+                    <Drawer
+                        className="reader-page-mobile-drawer"
+                        variant="temporary"
+                        open={drawerOpen}
+                        onClose={() => setDrawerOpen(false)}
+                        ModalProps={{
+                            keepMounted: true,
+                        }}
                         sx={{
-                            backgroundColor: 'primary.main',
-                            color: 'white',
-                            boxShadow: 3,
-                            '&:hover': {
-                                backgroundColor: 'primary.dark',
-                            }
+                            [`& .MuiDrawer-paper`]: {
+                                width: drawerWidth,
+                                boxSizing: 'border-box',
+                            },
                         }}
                     >
-                        <SettingsIcon />
-                    </IconButton>
-                </Box>
-            )}
+                        <TextSidebar
+                            texts={texts}
+                            selectedText={selectedText}
+                            loading={loading}
+                            error={error}
+                            onTextSelect={handleTextSelect}
+                            formatDate={formatDate}
+                            drawerWidth={drawerWidth}
+                        />
+                    </Drawer>
+                )}
 
-            {/* Mobile FAB */}
-            {isMobile && (
-                <Fab
-                    color="primary"
-                    aria-label="open text selection"
-                    onClick={() => setDrawerOpen(true)}
-                    sx={{
+                {/* Main content */}
+                <Box className="reader-page-main-content-wrapper" sx={{
+                    flexGrow: 1,
+                    minWidth: 0,
+                    width: isMobile ? '100%' : `calc(100% - ${drawerWidth}px)`
+                }}>
+                    <Box className="reader-page-content" sx={{
+                        flexGrow: 1,
+                        p: { xs: 2, sm: 3 },
+                        pt: { xs: 1, sm: 2 },
+                        display: 'flex',
+                        flexDirection: 'column',
+                        minHeight: '100vh'
+                    }}>
+                        {selectedText ? (
+                            <>
+                                {/* Text header */}
+                                <TextHeader
+                                    selectedText={selectedText}
+                                    processingVocab={vocabularyProcessing.processingVocab}
+                                    loadedCards={vocabularyProcessing.loadedCards}
+                                    vocabError={vocabularyProcessing.vocabError}
+                                    formatDate={formatDate}
+                                />
+
+                                {/* Vocabulary card display (mobile only - above text) */}
+                                {isMobile && (
+                                    <Box className="reader-page-mobile-vocab-card-wrapper">
+                                        <VocabDisplayCard entry={textSelection.selectedCard} />
+                                    </Box>
+                                )}
+
+                                {/* Text content area with settings sidebar */}
+                                <Box className="reader-page-text-content-area" sx={{ flexGrow: 1, display: 'flex', gap: 3 }}>
+                                    {/* Text content */}
+                                    <TextArea
+                                        selectedText={selectedText}
+                                        autoSelectEnabled={readerSettings.autoSelectEnabled}
+                                        selectionColors={selectionColors}
+                                        onTextChange={textSelection.handleTextChange}
+                                        onAutoWordSelect={textSelection.handleAutoWordSelect}
+                                        onTextSelectionChange={textSelection.handleTextSelectionChange}
+                                    />
+
+                                    {/* Desktop right sidebar - vocabulary card and settings */}
+                                    {!isMobile && (
+                                        <Box className="reader-page-settings-sidebar" sx={{
+                                            width: settingsWidth + 120, // Fixed width to accommodate card
+                                            flexShrink: 0,
+                                            pt: 1,
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: 2
+                                        }}>
+                                            {/* Vocabulary card display (desktop only - top right) */}
+                                            <Box className="reader-page-desktop-vocab-card-wrapper">
+                                                <VocabDisplayCard entry={textSelection.selectedCard} />
+                                            </Box>
+
+                                            {/* Settings sidebar (desktop only) */}
+                                            <ReaderSettings
+                                                autoSelectEnabled={readerSettings.autoSelectEnabled}
+                                                onAutoSelectChange={readerSettings.handleAutoSelectChange}
+                                                settingsOpen={readerSettings.settingsOpen}
+                                                onSettingsToggle={readerSettings.handleSettingsToggle}
+                                            />
+                                        </Box>
+                                    )}
+                                </Box>
+                            </>
+                        ) : (
+                            // Default state when no text is selected
+                            <EmptyState isMobile={isMobile} />
+                        )}
+                    </Box>
+                </Box>
+
+                {/* Settings toggle button (when sidebar is closed) */}
+                {!isMobile && !readerSettings.settingsOpen && (
+                    <Box className="reader-page-settings-toggle" sx={{
                         position: 'fixed',
-                        bottom: 80,
                         right: 16,
+                        top: '50%',
+                        transform: 'translateY(-50%)',
                         zIndex: 1000
-                    }}
-                >
-                    <MenuIcon />
-                </Fab>
-            )}
-        </Box>
+                    }}>
+                        <IconButton
+                            className="reader-page-settings-toggle-button"
+                            onClick={readerSettings.handleSettingsToggle}
+                            sx={{
+                                backgroundColor: 'primary.main',
+                                color: 'white',
+                                boxShadow: 3,
+                                '&:hover': {
+                                    backgroundColor: 'primary.dark',
+                                }
+                            }}
+                        >
+                            <SettingsIcon className="reader-page-settings-toggle-icon" />
+                        </IconButton>
+                    </Box>
+                )}
+
+                {/* Mobile FAB */}
+                {isMobile && (
+                    <Fab
+                        className="reader-page-mobile-fab"
+                        color="primary"
+                        aria-label="open text selection"
+                        onClick={() => setDrawerOpen(true)}
+                        sx={{
+                            position: 'fixed',
+                            bottom: 80,
+                            right: 16,
+                            zIndex: 1000
+                        }}
+                    >
+                        <MenuIcon className="reader-page-mobile-fab-icon" />
+                    </Fab>
+                )}
+            </Box>
+        </>
     );
 }
 

@@ -1,4 +1,4 @@
-# Deployment Guide for Vocabulary App
+# Docker Deployment Guide for Vocabulary App
 **Target Server IP:** 174.127.171.180
 **Repository:** https://github.com/mykle714/Chinese-Education-App.git
 
@@ -7,25 +7,34 @@
 ssh username@174.127.171.180
 ```
 
-## Step 2: Update System and Install Dependencies
+## Step 2: Update System and Install Docker
 ```bash
 # Update system packages
 sudo apt update && sudo apt upgrade -y
 
-# Install Node.js 22.x
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-sudo apt-get install -y nodejs
+# Install Docker
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+
+# Install Docker Compose
+sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+sudo chmod +x /usr/local/bin/docker-compose
+
+# Add user to docker group
+sudo usermod -aG docker $USER
 
 # Install additional dependencies
 sudo apt install -y nginx git ufw
 
-# Install PM2 globally
-sudo npm install -g pm2
-
 # Verify installations
-node --version  # Should show v22.x.x
-npm --version
+docker --version
+docker-compose --version
 nginx -v
+
+# Log out and back in for docker group changes to take effect
+exit
+# SSH back in
+ssh username@174.127.171.180
 ```
 
 ## Step 3: Clone and Setup Application
@@ -36,112 +45,93 @@ cd /var/www
 sudo git clone https://github.com/mykle714/Chinese-Education-App.git vocabulary-app
 sudo chown -R $USER:$USER /var/www/vocabulary-app
 cd /var/www/vocabulary-app
-
-# Install frontend dependencies
-npm install
-
-# Install backend dependencies
-cd server
-npm install
-cd ..
 ```
 
-## Step 4: Create Environment Files
-
-### Frontend Environment File
+## Step 4: Configure Production Environment
 ```bash
-# Create frontend environment file
+# Create production environment file
 cat > .env.production << EOF
-VITE_API_BASE_URL=http://174.127.171.180
-EOF
-```
+# Database Configuration
+POSTGRES_PASSWORD=your-secure-production-password-here
+DB_HOST=postgres
+DB_PORT=5432
+DB_NAME=cow_db
+DB_USER=cow_user
 
-### Backend Environment File
-```bash
-# Create backend environment file
-cat > server/.env << EOF
-NODE_ENV=production
-PORT=3001
+# Application Configuration
 JWT_SECRET=your-super-secure-jwt-secret-here-make-it-32-plus-characters
-AZURE_SQL_SERVER=your-server.database.windows.net
-AZURE_SQL_DATABASE=your-database-name
-AZURE_CLIENT_ID=your-azure-client-id
-AZURE_CLIENT_SECRET=your-azure-client-secret
-AZURE_TENANT_ID=your-azure-tenant-id
-EOF
-```
-
-**Important:** Replace the Azure database credentials with your actual values!
-
-## Step 5: Build the Application
-```bash
-# Build frontend for production
-npm run build
-
-# The build files will be in the 'dist' directory
-```
-
-## Step 6: Configure PM2 Process Manager
-```bash
-# Create PM2 ecosystem file (ES module syntax)
-cat > ecosystem.config.cjs << EOF
-module.exports = {
-  apps: [{
-    name: 'vocabulary-backend',
-    script: './server/server.ts',
-    cwd: '/var/www/vocabulary-app',
-    interpreter: 'node',
-    interpreter_args: '--loader ts-node/esm',
-    env: {
-      NODE_ENV: 'production',
-      PORT: 3001
-    },
-    instances: 1,
-    autorestart: true,
-    watch: false,
-    max_memory_restart: '1G',
-    error_file: './logs/err.log',
-    out_file: './logs/out.log',
-    log_file: './logs/combined.log',
-    time: true
-  }]
-};
+CLIENT_URL=http://174.127.171.180
+NODE_ENV=production
+PORT=5000
 EOF
 
-# Create logs directory
-mkdir -p logs
-
-# Install ts-node for TypeScript support
-npm install -g ts-node
-
-# Start the backend with PM2 (note the .cjs extension)
-pm2 start ecosystem.config.cjs
-pm2 save
-pm2 startup  # Follow the instructions to enable auto-start
+# Set secure permissions on environment file
+chmod 600 .env.production
 ```
 
-## Step 7: Configure Nginx
+**Important:** Replace the database password and JWT secret with secure values!
+
+## Step 5: Build and Start Docker Services
 ```bash
-# Create Nginx configuration
+# Build and start production services
+docker-compose -f docker-compose.prod.yml up --build -d
+
+# Verify services are running
+docker-compose -f docker-compose.prod.yml ps
+
+# Check service logs
+docker-compose -f docker-compose.prod.yml logs -f
+```
+
+## Step 6: Verify Docker Services
+```bash
+# Check if all containers are running
+docker ps
+
+# Test backend health endpoint
+curl http://localhost:5000/api/health
+
+# Test database connection
+docker-compose -f docker-compose.prod.yml exec backend node -e "
+const { Pool } = require('pg');
+const pool = new Pool({
+  host: 'postgres',
+  port: 5432,
+  database: 'cow_db',
+  user: 'cow_user',
+  password: process.env.POSTGRES_PASSWORD
+});
+pool.query('SELECT NOW()', (err, res) => {
+  console.log(err ? err : 'Database connected successfully');
+  pool.end();
+});
+"
+```
+
+## Step 7: Configure Nginx (Optional - Docker handles this)
+**Note**: The Docker production setup includes Nginx in the container, but you can optionally set up an external reverse proxy:
+
+```bash
+# Create Nginx configuration for external reverse proxy (optional)
 sudo tee /etc/nginx/sites-available/vocabulary-app << EOF
 server {
     listen 80;
     server_name 174.127.171.180;
 
-    # Frontend (React build)
+    # Proxy to Docker frontend container
     location / {
-        root /var/www/vocabulary-app/dist;
-        index index.html;
-        try_files \$uri \$uri/ /index.html;
-        
-        # Cache static assets
-        location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)$ {
-            expires 1y;
-            add_header Cache-Control "public, immutable";
-        }
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_cache_bypass \$http_upgrade;
     }
 
-    # Backend API
+    # Backend API (already handled by frontend container)
     location /api/ {
         proxy_pass http://localhost:5000;
         proxy_http_version 1.1;
@@ -158,12 +148,13 @@ server {
     add_header X-Frame-Options "SAMEORIGIN" always;
     add_header X-XSS-Protection "1; mode=block" always;
     add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Content-Type-Options "nosniff" always;
     add_header Referrer-Policy "no-referrer-when-downgrade" always;
     add_header Content-Security-Policy "default-src 'self' http: https: data: blob: 'unsafe-inline'" always;
 }
 EOF
 
-# Enable the site
+# Enable the site (optional)
 sudo ln -s /etc/nginx/sites-available/vocabulary-app /etc/nginx/sites-enabled/
 sudo nginx -t  # Test configuration
 sudo systemctl reload nginx
@@ -177,6 +168,8 @@ sudo ufw default allow outgoing
 sudo ufw allow ssh
 sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp  # For future HTTPS
+sudo ufw allow 3000/tcp  # Docker frontend
+sudo ufw allow 5000/tcp  # Docker backend
 sudo ufw enable
 
 # Check firewall status
@@ -187,23 +180,26 @@ sudo ufw status
 **On your router admin panel (usually 192.168.1.1 or 192.168.0.1):**
 
 1. Find "Port Forwarding" or "Virtual Server" section
-2. Add this rule:
+2. Add these rules:
    - **Service Name:** Web Server HTTP
    - **External Port:** 80
    - **Internal IP:** [Your server's internal IP]
-   - **Internal Port:** 80
+   - **Internal Port:** 3000 (Docker frontend)
    - **Protocol:** TCP
 
 ## Step 10: Test Deployment
 ```bash
-# Check PM2 status
-pm2 status
+# Check Docker container status
+docker-compose -f docker-compose.prod.yml ps
 
-# Check Nginx status
-sudo systemctl status nginx
+# Check Docker service logs
+docker-compose -f docker-compose.prod.yml logs
 
 # Check if backend is responding
-curl http://localhost:5000/api/
+curl http://localhost:5000/api/health
+
+# Check if frontend is responding
+curl http://localhost:3000
 
 # Test from external network
 # Visit: http://174.127.171.180
@@ -211,16 +207,22 @@ curl http://localhost:5000/api/
 
 ## Troubleshooting Commands
 ```bash
-# View PM2 logs
-pm2 logs
+# View Docker service logs
+docker-compose -f docker-compose.prod.yml logs -f
 
-# Restart services
-pm2 restart all
-sudo systemctl reload nginx
+# Restart Docker services
+docker-compose -f docker-compose.prod.yml restart
+
+# Rebuild and restart services
+docker-compose -f docker-compose.prod.yml up --build -d
+
+# Check container resource usage
+docker stats
 
 # Check ports
 sudo netstat -tlnp | grep :80
-sudo netstat -tlnp | grep :3001
+sudo netstat -tlnp | grep :3000
+sudo netstat -tlnp | grep :5000
 ```
 
 ## Future Updates
@@ -228,10 +230,13 @@ sudo netstat -tlnp | grep :3001
 # To update the application
 cd /var/www/vocabulary-app
 git pull origin main
-npm install
-npm run build
-cd server && npm install
-pm2 restart all
+
+# Rebuild and restart Docker services
+docker-compose -f docker-compose.prod.yml down
+docker-compose -f docker-compose.prod.yml up --build -d
+
+# Check updated services
+docker-compose -f docker-compose.prod.yml ps
 ```
 
 Your vocabulary app will be accessible at: **http://174.127.171.180**

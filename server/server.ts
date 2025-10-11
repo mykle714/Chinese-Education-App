@@ -5,11 +5,16 @@ import cookieParser from 'cookie-parser';
 import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { authenticateToken } from './authMiddleware.js';
 import { User, VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, UserCreateData, UserLoginData, Text, OnDeckVocabSetCreateData } from './types/index.js';
 
+// ES module equivalent of __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 // Import DAL architecture
-import { userController, vocabEntryController, onDeckVocabController } from './dal/setup.js';
+import { userController, vocabEntryController, onDeckVocabController, userWorkPointsController } from './dal/setup.js';
 
 // Configure multer for file uploads
 const upload = multer({ 
@@ -226,17 +231,54 @@ app.post('/api/users', authenticateToken, async (req, res) => {
   await userController.createUser(req, res);
 });
 
+// Get total work points for a user - USING NEW DAL ARCHITECTURE
+// @ts-ignore
+app.get('/api/users/:id/total-work-points', authenticateToken, async (req, res) => {
+  console.log('🔄 Using NEW DAL architecture for get total work points');
+  await userController.getTotalWorkPoints(req, res);
+});
+
 // Get all texts for reader feature (protected route)
 // @ts-ignore
 app.get('/api/texts', authenticateToken, async (req, res) => {
   try {
-    // Read texts from JSON file
-    const textsFilePath = path.join(process.cwd(), '..', 'data', 'sample-texts.json');
+    // Try multiple possible paths for the texts file in Docker environment
+    const possiblePaths = [
+      path.join(process.cwd(), '..', 'data', 'sample-texts.json'),  // Original path
+      path.join(process.cwd(), 'data', 'sample-texts.json'),        // Same level as server
+      path.join(__dirname, '..', '..', 'data', 'sample-texts.json'), // Using __dirname
+      path.join('/app', 'data', 'sample-texts.json'),               // Docker absolute path
+      path.join('/home/cow', 'data', 'sample-texts.json')           // Host absolute path
+    ];
+
+    let textsFilePath = '';
+    let fileFound = false;
+
+    // Debug: Log current working directory and __dirname
+    console.log('Debug - process.cwd():', process.cwd());
+    console.log('Debug - __dirname:', __dirname);
+
+    // Try each possible path
+    for (const testPath of possiblePaths) {
+      console.log('Debug - Testing path:', testPath);
+      if (fs.existsSync(testPath)) {
+        textsFilePath = testPath;
+        fileFound = true;
+        console.log('Debug - Found texts file at:', testPath);
+        break;
+      }
+    }
     
-    if (!fs.existsSync(textsFilePath)) {
+    if (!fileFound) {
+      console.error('Texts file not found in any of the expected locations:', possiblePaths);
       return res.status(404).json({
         error: 'Texts file not found',
-        code: 'ERR_TEXTS_FILE_NOT_FOUND'
+        code: 'ERR_TEXTS_FILE_NOT_FOUND',
+        debug: {
+          cwd: process.cwd(),
+          dirname: __dirname,
+          searchedPaths: possiblePaths
+        }
       });
     }
 
@@ -248,6 +290,7 @@ app.get('/api/texts', authenticateToken, async (req, res) => {
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
 
+    console.log(`Successfully loaded ${sortedTexts.length} texts from ${textsFilePath}`);
     res.json(sortedTexts);
   } catch (error: any) {
     console.error('Error fetching texts:', error);
@@ -255,7 +298,11 @@ app.get('/api/texts', authenticateToken, async (req, res) => {
     const errorMessage = error.message || 'Failed to retrieve texts';
     res.status(error.statusCode || 500).json({
       error: errorMessage,
-      code: errorCode
+      code: errorCode,
+      debug: {
+        cwd: process.cwd(),
+        dirname: __dirname
+      }
     });
   }
 });
@@ -265,6 +312,13 @@ app.get('/api/texts', authenticateToken, async (req, res) => {
 app.post('/api/vocabEntries/import', authenticateToken, upload.single('file'), async (req, res) => {
   console.log('🔄 Using NEW DAL architecture for CSV import');
   await vocabEntryController.importFromCSV(req, res);
+});
+
+// Get vocab entries by tokens - USING NEW DAL ARCHITECTURE
+// @ts-ignore
+app.post('/api/vocabEntries/by-tokens', authenticateToken, async (req, res) => {
+  console.log('🔄 Using NEW DAL architecture for token-based vocab lookup');
+  await vocabEntryController.getEntriesByTokens(req, res);
 });
 
 // OnDeck Vocab Sets API Routes - USING NEW DAL ARCHITECTURE
@@ -330,6 +384,15 @@ app.post('/api/onDeckPage/:featureName/remove', authenticateToken, async (req, r
 app.post('/api/onDeckPage/:featureName/clear', authenticateToken, async (req, res) => {
   console.log('🔄 Using NEW DAL architecture for OnDeck clearSet');
   await onDeckVocabController.clearSet(req, res);
+});
+
+// Work Points API Routes - USING NEW DAL ARCHITECTURE
+
+// Sync work points (main milestone sync endpoint)
+// @ts-ignore
+app.post('/api/users/work-points/sync', authenticateToken, async (req, res) => {
+  console.log('🔄 Using NEW DAL architecture for work points sync');
+  await userWorkPointsController.syncWorkPoints(req, res);
 });
 
 // Health check endpoint for Docker

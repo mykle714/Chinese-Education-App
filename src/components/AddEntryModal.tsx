@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { Dialog, DialogContent, DialogTitle, IconButton, TextField, Button, Alert, CircularProgress } from "@mui/material";
 import { Close, Add } from "@mui/icons-material";
 import { useAuth } from "../AuthContext";
+import { useVocabularyUpdate } from "../contexts/VocabularyUpdateContext";
 
 interface VocabEntryFormData {
     entryKey: string;
@@ -16,6 +17,7 @@ interface AddEntryModalProps {
 
 const AddEntryModal = ({ open, onClose, onEntryAdded }: AddEntryModalProps) => {
     const { token } = useAuth();
+    const vocabularyUpdate = useVocabularyUpdate();
     const [formData, setFormData] = useState<VocabEntryFormData>({
         entryKey: '',
         entryValue: ''
@@ -63,6 +65,12 @@ const AddEntryModal = ({ open, onClose, onEntryAdded }: AddEntryModalProps) => {
                     code: errorData.code || 'ERR_UNKNOWN'
                 };
             }
+
+            // Get the created entry from the response
+            const createdEntry = await response.json();
+
+            // Notify vocabulary update context
+            vocabularyUpdate.addVocabEntry(createdEntry);
 
             setFormData({
                 entryKey: '',

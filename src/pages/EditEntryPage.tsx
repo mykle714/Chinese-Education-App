@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../AuthContext";
+import { useVocabularyUpdate } from "../contexts/VocabularyUpdateContext";
 import {
     Container,
     Typography,
@@ -28,6 +29,7 @@ function EditEntryPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const { token } = useAuth();
+    const vocabularyUpdate = useVocabularyUpdate();
     const [formData, setFormData] = useState<Partial<VocabEntry>>({
         entryKey: "",
         entryValue: "",
@@ -109,6 +111,12 @@ function EditEntryPage() {
                     code: errorData.code || "ERR_UPDATE_FAILED"
                 };
             }
+
+            // Get the updated entry from the response
+            const updatedEntry = await response.json();
+
+            // Notify vocabulary update context
+            vocabularyUpdate.updateVocabEntry(updatedEntry);
 
             // Navigate back to entry detail page after successful update
             navigate(`/entries/${id}`);

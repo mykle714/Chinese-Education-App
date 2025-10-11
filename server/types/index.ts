@@ -60,12 +60,11 @@ export type HskLevel = 'HSK1' | 'HSK2' | 'HSK3' | 'HSK4' | 'HSK5' | 'HSK6';
 // VocabEntry model type
 export interface VocabEntry {
   id: number;
-  userId: string; // uniqueidentifier in SQL
+  userId: string;
   entryKey: string;
   entryValue: string;
-  isCustomTag?: boolean | null;
   hskLevelTag?: HskLevel | null;
-  createdAt?: Date;
+  createdAt: Date;
 }
 
 // VocabEntry creation data type
@@ -73,15 +72,13 @@ export interface VocabEntryCreateData {
   userId: string;
   entryKey: string;
   entryValue: string;
-  isCustomTag?: boolean;
   hskLevelTag?: HskLevel | null;
 }
 
 // VocabEntry update data type
 export interface VocabEntryUpdateData {
-  entryKey: string;
+  entryKey?: string;
   entryValue: string;
-  isCustomTag?: boolean;
   hskLevelTag?: HskLevel | null;
 }
 

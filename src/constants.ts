@@ -1,15 +1,27 @@
-// Application-wide constants
+export const API_BASE_URL = process.env.NODE_ENV === 'production' 
+  ? 'http://174.127.171.180:5000' 
+  : 'http://localhost:5000';
 
-// API base URL
-export const API_BASE_URL = 'http://localhost:5000';
+export const FLASHCARD_CONTENT_UPDATE_DELAY = 300; // milliseconds - halfway through 600ms flip animation
 
-// Client URL
-export const CLIENT_URL = 'http://localhost:5175';
+// Default test user ID for development/testing
+export const DEFAULT_TEST_USER_ID = 'test-user-id';
 
-// Default test user ID for development purposes
-// In a production environment, this would come from authentication
-export const DEFAULT_TEST_USER_ID = 'D3300675-C841-F011-A5F1-7C1E52096DE5';
+// Work Points Configuration
+export const WORK_POINTS_ELIGIBLE_PAGES = [
+  '/flashcards',
+  '/reader'
+];
 
-// Flashcard animation timing constants (in milliseconds)
-export const FLASHCARD_FLIP_DURATION = 600;           // Total flip animation time
-export const FLASHCARD_CONTENT_UPDATE_DELAY = FLASHCARD_FLIP_DURATION / 2;  // Update at animation midpoint (300ms)
+export const WORK_POINTS_CONFIG = {
+  MILLISECONDS_PER_POINT: 60000, // 60 seconds = 1 point
+  ACTIVITY_WINDOW_MS: 10000, // 10 seconds activity window
+  ACTIVITY_TIMEOUT_MS: 10000, // 10 seconds until marked inactive
+  ANIMATION_DURATION_MS: 600, // Badge animation duration
+};
+
+// Streak Configuration
+export const STREAK_CONFIG = {
+  RETENTION_POINTS: parseInt(import.meta.env.VITE_STREAK_RETENTION_POINTS) || 5, // Points needed to retain streak
+  PENALTY_PERCENT: parseInt(import.meta.env.VITE_STREAK_PENALTY_PERCENT) || 20, // Penalty percentage when streak is lost
+};

@@ -211,4 +211,62 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
     
     return result;
   }
+
+  /**
+   * Get total work points for a user
+   */
+  async getTotalWorkPoints(userId: string): Promise<number> {
+    if (!userId) {
+      throw new ValidationError('User ID is required');
+    }
+
+    const result = await this.dbManager.executeQuery<{ totalworkpoints: number }>(async (client) => {
+      return await client.query('SELECT "totalWorkPoints" as totalworkpoints FROM Users WHERE id = $1', [userId]);
+    });
+
+    if (result.recordset.length === 0) {
+      throw new NotFoundError(`User with ID ${userId} not found`);
+    }
+
+    return result.recordset[0].totalworkpoints || 0;
+  }
+
+  /**
+   * Update total work points for a user
+   */
+  async updateTotalWorkPoints(userId: string, totalPoints: number): Promise<boolean> {
+    if (!userId) {
+      throw new ValidationError('User ID is required');
+    }
+    if (totalPoints < 0) {
+      throw new ValidationError('Total points cannot be negative');
+    }
+
+    const result = await this.dbManager.executeQuery(async (client) => {
+      return await client.query('UPDATE Users SET "totalWorkPoints" = $1 WHERE id = $2', [totalPoints, userId]);
+    });
+
+    return result.rowsAffected > 0;
+  }
+
+  /**
+   * Increment total work points for a user
+   */
+  async incrementTotalWorkPoints(userId: string, pointsToAdd: number): Promise<boolean> {
+    if (!userId) {
+      throw new ValidationError('User ID is required');
+    }
+    if (pointsToAdd < 0) {
+      throw new ValidationError('Points to add cannot be negative');
+    }
+
+    const result = await this.dbManager.executeQuery(async (client) => {
+      return await client.query(
+        'UPDATE Users SET "totalWorkPoints" = "totalWorkPoints" + $1 WHERE id = $2',
+        [pointsToAdd, userId]
+      );
+    });
+
+    return result.rowsAffected > 0;
+  }
 }

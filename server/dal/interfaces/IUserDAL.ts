@@ -23,4 +23,8 @@ export interface IUserDAL extends IBaseDAL<User, UserCreateData, UserUpdateData>
   findUsersCreatedAfter(date: Date): Promise<User[]>;
   findUsersWithVocabCount(): Promise<Array<User & { vocabCount: number }>>;
   
+  // Total work points operations
+  getTotalWorkPoints(userId: string): Promise<number>;
+  updateTotalWorkPoints(userId: string, totalPoints: number): Promise<boolean>;
+  incrementTotalWorkPoints(userId: string, pointsToAdd: number): Promise<boolean>;
 }

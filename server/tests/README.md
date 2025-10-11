@@ -64,28 +64,54 @@ CREATE TABLE VocabEntries (
 
 ## Running Tests
 
-### API Tests
+### Docker Environment (Recommended)
 
-To run API tests, make sure the server is running on port 3001, then execute:
+With Docker, the database and server are automatically set up. Run tests from the project root:
 
 ```bash
-node test-login.js
-node test-change-password.js
-node test-auth-middleware.js
-node test-create-entry-without-userid.js
+# Start Docker services first
+docker-compose up -d
+
+# Run API tests inside the backend container
+docker-compose exec backend node tests/test-login.js
+docker-compose exec backend node tests/test-change-password.js
+docker-compose exec backend node tests/test-auth-middleware.js
+docker-compose exec backend node tests/test-create-entry-without-userid.js
+
+# Execute SQL scripts via Docker
+docker-compose exec backend node tests/execute-sql.js check-vocabentries-schema.sql
+
+# Access database directly
+docker-compose exec postgres psql -U cow_user -d cow_db
+```
+
+### Manual Environment (Not Recommended)
+
+If running without Docker, make sure the server is running on port 5000, then execute:
+
+```bash
+cd server
+node tests/test-login.js
+node tests/test-change-password.js
+node tests/test-auth-middleware.js
+node tests/test-create-entry-without-userid.js
 ```
 
 ### Database Operations
 
-To execute SQL scripts:
-
+#### Docker Method (Recommended):
 ```bash
-node execute-sql.js <sql-file-name>
+# Execute SQL scripts via Docker container
+docker-compose exec backend node tests/execute-sql.js <sql-file-name>
+
+# Direct database access
+docker-compose exec postgres psql -U cow_user -d cow_db -c "SELECT * FROM users;"
 ```
 
-Example:
+#### Manual Method:
 ```bash
-node execute-sql.js check-vocabentries-schema.sql
+cd server
+node tests/execute-sql.js <sql-file-name>
 ```
 
 ## Test Files

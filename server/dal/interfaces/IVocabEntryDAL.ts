@@ -15,7 +15,7 @@ export interface IVocabEntryDAL extends IBaseDAL<VocabEntry, VocabEntryCreateDat
   // Search and filtering
   searchEntries(userId: string, searchTerm: string, limit?: number): Promise<VocabEntry[]>;
   findByHskLevel(userId: string, hskLevel: HskLevel): Promise<VocabEntry[]>;
-  findByCustomTag(userId: string, isCustom: boolean): Promise<VocabEntry[]>;
+  findByTokens(userId: string, tokens: string[]): Promise<VocabEntry[]>;
   
   // Bulk operations for CSV import
   bulkCreate(entries: VocabEntryCreateData[]): Promise<VocabEntry[]>;
@@ -29,7 +29,6 @@ export interface IVocabEntryDAL extends IBaseDAL<VocabEntry, VocabEntryCreateDat
   // Statistics
   getUserVocabStats(userId: string): Promise<{
     total: number;
-    customEntries: number;
     hskEntries: number;
     hskBreakdown: Record<HskLevel, number>;
     recentEntries: number; // Last 7 days

@@ -123,6 +123,11 @@ function EntriesPage() {
                     type: 'success',
                     text: successMessage
                 });
+
+                // Note: CSV import doesn't return the actual entries, so we can't call
+                // vocabularyUpdate.bulkAddVocabEntries() here. The ReaderPage will
+                // automatically refresh its vocabulary when the user navigates back to it.
+
                 // Trigger refresh of vocabulary entries
                 setRefreshTrigger(prev => prev + 1);
             } else {

@@ -54,7 +54,6 @@ export class VocabEntryService {
       userId,
       entryKey: entryData.entryKey.trim(),
       entryValue: entryData.entryValue.trim(),
-      isCustomTag: entryData.isCustomTag ?? true, // Default to custom
       hskLevelTag: entryData.hskLevelTag || null
     });
     
@@ -90,7 +89,6 @@ export class VocabEntryService {
     const updatedEntry = await this.vocabEntryDAL.update(entryId, {
       entryKey: updateData.entryKey.trim(),
       entryValue: updateData.entryValue.trim(),
-      isCustomTag: updateData.isCustomTag,
       hskLevelTag: updateData.hskLevelTag
     });
     
@@ -180,19 +178,12 @@ export class VocabEntryService {
     return await this.vocabEntryDAL.findByHskLevel(userId, hskLevel);
   }
 
-  /**
-   * Get custom or non-custom entries
-   */
-  async getEntriesByCustomTag(userId: string, isCustom: boolean): Promise<VocabEntry[]> {
-    return await this.vocabEntryDAL.findByCustomTag(userId, isCustom);
-  }
 
   /**
    * Get comprehensive vocabulary statistics
    */
   async getUserVocabStats(userId: string): Promise<{
     total: number;
-    customEntries: number;
     hskEntries: number;
     hskBreakdown: Record<HskLevel, number>;
     recentEntries: number;
@@ -233,7 +224,6 @@ export class VocabEntryService {
       userId,
       entryKey: entry.front.trim(),
       entryValue: entry.back.trim(),
-      isCustomTag: true, // Business rule: CSV imports are custom by default
       hskLevelTag: null // Business rule: CSV imports don't have HSK levels by default
     }));
     
@@ -306,7 +296,6 @@ export class VocabEntryService {
               userId,
               entryKey: entry.front.trim(),
               entryValue: entry.back.trim(),
-              isCustomTag: true,
               hskLevelTag: null
             }));
             
@@ -336,6 +325,137 @@ export class VocabEntryService {
   async getRecentEntries(userId: string, days: number = 7): Promise<VocabEntry[]> {
     const date = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
     return await this.vocabEntryDAL.findEntriesCreatedAfter(userId, date);
+  }
+
+  /**
+   * Get vocabulary entries by tokens for reader feature
+   */
+  async getEntriesByTokens(userId: string, tokens: string[]): Promise<VocabEntry[]> {
+    const serviceStart = performance.now();
+    
+    console.log(`[VOCAB-SERVICE] 🔄 Processing token lookup request:`, {
+      userId: `${userId.substring(0, 8)}...`,
+      tokensReceived: tokens?.length || 0,
+      timestamp: new Date().toISOString()
+    });
+
+    // Verify user exists
+    const userValidationStart = performance.now();
+    const user = await this.userDAL.findById(userId);
+    const userValidationTime = performance.now() - userValidationStart;
+    
+    if (!user) {
+      console.error(`[VOCAB-SERVICE] ❌ User validation failed:`, {
+        userId: `${userId.substring(0, 8)}...`,
+        error: 'User not found',
+        validationTime: `${userValidationTime.toFixed(2)}ms`
+      });
+      throw new NotFoundError('User not found');
+    }
+
+    console.log(`[VOCAB-SERVICE] ✅ User validation passed:`, {
+      userId: `${userId.substring(0, 8)}...`,
+      userName: user.name,
+      validationTime: `${userValidationTime.toFixed(2)}ms`
+    });
+
+    // Business validation
+    if (!tokens || tokens.length === 0) {
+      console.log(`[VOCAB-SERVICE] 📝 Empty token array received:`, {
+        userId: `${userId.substring(0, 8)}...`,
+        response: 'returning empty array',
+        serviceTime: `${(performance.now() - serviceStart).toFixed(2)}ms`
+      });
+      return [];
+    }
+
+    console.log(`[VOCAB-SERVICE] 🔍 Starting token validation and cleanup:`, {
+      userId: `${userId.substring(0, 8)}...`,
+      rawTokenCount: tokens.length,
+      sampleRawTokens: tokens.slice(0, 10)
+    });
+
+    // Remove duplicates and filter out empty tokens
+    const uniqueTokens = [...new Set(tokens.filter(token => token && token.trim().length > 0))];
+    
+    const duplicatesRemoved = tokens.length - uniqueTokens.length;
+    const emptyTokensFiltered = tokens.filter(token => !token || token.trim().length === 0).length;
+
+    console.log(`[VOCAB-SERVICE] 🧹 Token cleanup completed:`, {
+      userId: `${userId.substring(0, 8)}...`,
+      originalCount: tokens.length,
+      uniqueCount: uniqueTokens.length,
+      duplicatesRemoved: duplicatesRemoved,
+      emptyTokensFiltered: emptyTokensFiltered,
+      cleanupEfficiency: `${((uniqueTokens.length / tokens.length) * 100).toFixed(1)}%`,
+      cleanedTokens: uniqueTokens.slice(0, 15) // Show first 15 cleaned tokens
+    });
+    
+    if (uniqueTokens.length === 0) {
+      console.log(`[VOCAB-SERVICE] 📝 No valid tokens after cleanup:`, {
+        userId: `${userId.substring(0, 8)}...`,
+        reason: 'All tokens were empty or invalid',
+        serviceTime: `${(performance.now() - serviceStart).toFixed(2)}ms`
+      });
+      return [];
+    }
+
+    // Business rule: limit token count to prevent abuse
+    if (uniqueTokens.length > 1000) {
+      console.error(`[VOCAB-SERVICE] ❌ Token limit validation failed:`, {
+        userId: `${userId.substring(0, 8)}...`,
+        tokenCount: uniqueTokens.length,
+        maxAllowed: 1000,
+        serviceTime: `${(performance.now() - serviceStart).toFixed(2)}ms`
+      });
+      throw new ValidationError('Too many tokens requested (maximum 1000)');
+    }
+
+    // Business rule: validate token length
+    const invalidTokens = uniqueTokens.filter(token => token.length > 100);
+    if (invalidTokens.length > 0) {
+      console.error(`[VOCAB-SERVICE] ❌ Token length validation failed:`, {
+        userId: `${userId.substring(0, 8)}...`,
+        invalidTokenCount: invalidTokens.length,
+        maxLength: 100,
+        invalidTokens: invalidTokens.slice(0, 5), // Show first 5 invalid tokens
+        serviceTime: `${(performance.now() - serviceStart).toFixed(2)}ms`
+      });
+      throw new ValidationError('Some tokens are too long (maximum 100 characters per token)');
+    }
+
+    console.log(`[VOCAB-SERVICE] ✅ All validations passed, forwarding to DAL:`, {
+      userId: `${userId.substring(0, 8)}...`,
+      validatedTokens: uniqueTokens.length,
+      tokenLengthStats: {
+        minLength: Math.min(...uniqueTokens.map(t => t.length)),
+        maxLength: Math.max(...uniqueTokens.map(t => t.length)),
+        avgLength: (uniqueTokens.reduce((sum, t) => sum + t.length, 0) / uniqueTokens.length).toFixed(1)
+      },
+      validationTime: `${(performance.now() - serviceStart).toFixed(2)}ms`
+    });
+
+    // Get entries by tokens from DAL
+    const dalStart = performance.now();
+    const entries = await this.vocabEntryDAL.findByTokens(userId, uniqueTokens);
+    const dalTime = performance.now() - dalStart;
+    const totalServiceTime = performance.now() - serviceStart;
+
+    console.log(`[VOCAB-SERVICE] 📊 Service processing completed:`, {
+      userId: `${userId.substring(0, 8)}...`,
+      tokensProcessed: uniqueTokens.length,
+      entriesFound: entries.length,
+      matchRate: `${(entries.length / uniqueTokens.length * 100).toFixed(1)}%`,
+      dalTime: `${dalTime.toFixed(2)}ms`,
+      totalServiceTime: `${totalServiceTime.toFixed(2)}ms`,
+      performance: {
+        tokensPerSecond: Math.round(uniqueTokens.length / (totalServiceTime / 1000)),
+        entriesPerSecond: Math.round(entries.length / (dalTime / 1000))
+      },
+      foundEntries: entries.map(e => ({ id: e.id, key: e.entryKey })).slice(0, 10)
+    });
+
+    return entries;
   }
 
   // Private helper methods

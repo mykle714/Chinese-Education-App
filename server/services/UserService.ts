@@ -231,6 +231,31 @@ export class UserService {
     return await this.userDAL.findUsersWithVocabCount();
   }
 
+  /**
+   * Get total work points for a user
+   */
+  async getTotalWorkPoints(userId: string): Promise<number> {
+    if (!userId) {
+      throw new ValidationError('User ID is required');
+    }
+    
+    return await this.userDAL.getTotalWorkPoints(userId);
+  }
+
+  /**
+   * Increment total work points for a user (used during daily sync)
+   */
+  async incrementTotalWorkPoints(userId: string, pointsToAdd: number): Promise<boolean> {
+    if (!userId) {
+      throw new ValidationError('User ID is required');
+    }
+    if (pointsToAdd < 0) {
+      throw new ValidationError('Points to add must be positive');
+    }
+    
+    return await this.userDAL.incrementTotalWorkPoints(userId, pointsToAdd);
+  }
+
   // Private validation methods (business logic)
 
   /**

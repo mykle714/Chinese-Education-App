@@ -1,109 +1,77 @@
-# Test Users for Docker Development
+# Test Users Documentation
 
-This document lists the test users that are automatically created when you start fresh Docker containers.
+This document describes all test users that are automatically created when the Docker containers are started.
 
 ## Automatic Test User Creation
 
-When you run `docker-compose down -v && docker-compose up --build`, the database initialization scripts automatically create 3 test users with different amounts of vocabulary data for comprehensive testing.
+All test users are created automatically via database initialization scripts in `database/init/` when Docker containers start up. No manual setup is required.
 
-## Test User Credentials
+## Available Test Users
 
-All test users use the same password: **`testing123`**
-
-### 👤 User 1: Empty State Testing
+### 1. Empty User
 - **Email**: `empty@test.com`
 - **Password**: `testing123`
-- **Name**: Empty User
-- **Vocabulary Cards**: 0 entries
-- **Purpose**: Test empty states, onboarding flow, first-time user experience
+- **Vocabulary Entries**: 0
+- **Purpose**: Testing empty state UI and new user experience
 
-### 👤 User 2: Small Dataset Testing  
+### 2. Small User
 - **Email**: `small@test.com`
 - **Password**: `testing123`
-- **Name**: Small User
-- **Vocabulary Cards**: 11 entries (10 basic + 1 custom)
-- **Content**: Basic HSK1-2 vocabulary (你好, 谢谢, 学习, etc.)
-- **Purpose**: Test basic functionality, small list rendering, quick flashcard sessions
+- **Vocabulary Entries**: 11 (10 basic + 1 custom)
+- **Content**: Basic HSK1-2 vocabulary
+- **Purpose**: Testing small dataset functionality
 
-### 👤 User 3: Large Dataset Testing
+### 3. Large User
 - **Email**: `large@test.com`
 - **Password**: `testing123`
-- **Name**: Large User
-- **Vocabulary Cards**: 52 entries (50 varied + 2 custom)
-- **Content**: Mixed HSK levels (HSK1-6), variety of Chinese vocabulary
-- **Features**: Includes OnDeck vocab sets for testing advanced features
-- **Purpose**: Test pagination, performance, longer flashcard sessions
+- **Vocabulary Entries**: 52 (50 varied + 2 custom)
+- **Content**: Mixed HSK levels (1-6) with diverse vocabulary
+- **Purpose**: Testing performance with larger datasets
 
-## Testing Scenarios
+### 4. Reader Vocabulary Test User ⭐ NEW
+- **Email**: `reader-vocab-test@example.com`
+- **Password**: `TestPassword123!`
+- **Vocabulary Entries**: 135 words from reader texts
+- **Content**: All vocabulary from the three reader documents:
+  - **咖啡店的早晨** (Coffee Shop Morning) - 47 words
+  - **春节的准备** (Spring Festival Preparation) - 47 words  
+  - **公园里的太极** (Tai Chi in the Park) - 41 words
+- **Purpose**: Testing reader functionality with authentic text vocabulary
 
-### Empty State Testing (`empty@test.com`)
-- Login and see empty dashboard
-- Test "Add your first entry" flows
-- Test empty flashcards page
-- Test CSV import functionality
-- Verify onboarding experience
+## Reader Vocabulary Details
 
-### Basic Functionality (`small@test.com`)
-- Test entry listing with small dataset
-- Quick flashcard sessions (10 cards)
-- Test CRUD operations on entries
-- Verify search functionality with limited data
-- Test export functionality
+The Reader Vocabulary Test User contains comprehensive vocabulary extracted from all sample texts in the reader documentation (`data/sample-texts.json`). This includes:
 
-### Performance & Features (`large@test.com`)
-- Test pagination with larger dataset
-- Longer flashcard sessions (50+ cards)
-- Test search and filtering with more data
-- Verify OnDeck vocab sets functionality
-- Test bulk operations and CSV import
-- Performance testing with realistic data volume
+### Text Coverage
+1. **Coffee Shop Morning** - Everyday vocabulary about visiting a café
+2. **Spring Festival Preparation** - Family and cultural vocabulary for Chinese New Year
+3. **Tai Chi in the Park** - Health, exercise, and elderly life vocabulary
 
-## Quick Login Commands
+### Sample Vocabulary
+- 今天 → today
+- 咖啡店 → coffee shop
+- 春节 → Spring Festival, Chinese New Year
+- 太极拳 → Tai Chi
+- 市中心 → city center, downtown
+- 年夜饭 → New Year's Eve dinner
+- 强身健体 → to strengthen the body
 
-For easy testing, you can use these credentials:
+## Usage
 
-```bash
-# Empty state testing
-Email: empty@test.com
-Password: testing123
+1. **Start Docker containers**: `docker-compose up`
+2. **Wait for initialization**: Database scripts run automatically
+3. **Login**: Use any of the test accounts above
+4. **Test features**: Each account is designed for different testing scenarios
 
-# Small dataset testing  
-Email: small@test.com
-Password: testing123
+## Development Notes
 
-# Large dataset testing
-Email: large@test.com
-Password: testing123
-```
+- Test users are recreated on every container restart
+- The Reader Vocabulary Test User data is synchronized with `data/sample-texts.json`
+- Password hashes are pre-generated for consistent authentication
+- All accounts use UTF-8 encoding for proper Chinese character support
 
-## Data Reset
+## Files
 
-To get fresh test data:
-
-```bash
-# Reset all containers and data
-docker-compose down -v
-
-# Start fresh with clean test users
-docker-compose up --build
-```
-
-This will recreate all 3 test users with their respective vocabulary data automatically.
-
-## Sample Data Details
-
-### Small User Vocabulary (10 entries)
-- Basic greetings: 你好 (Hello), 谢谢 (Thank you), 再见 (Goodbye)
-- Essential words: 水 (Water), 吃 (To eat), 喝 (To drink)
-- Common verbs: 学习 (To study), 工作 (To work)
-- Basic nouns: 朋友 (Friend), 家 (Home)
-- Plus 1 custom entry for testing custom tags
-
-### Large User Vocabulary (50 entries)
-- Mixed HSK levels (HSK1 through HSK6)
-- Variety of topics: emotions, actions, concepts
-- Advanced vocabulary: 来源 (Source), 斗争 (Struggle), 转折 (twist)
-- Common phrases: 与众不同 (to stand out), 胡言乱语 (yapping)
-- Plus 2 custom entries and OnDeck vocab sets
-
-This setup provides comprehensive testing coverage for all features of your vocabulary learning application.
+- `database/init/02-test-users.sql` - Original 3 test users
+- `database/init/03-reader-vocab-test-user.sql` - Reader vocabulary test user
+- `server/tests/create-reader-vocab-test-account.js` - Manual creation script (backup)

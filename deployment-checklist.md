@@ -1,55 +1,70 @@
-# Deployment Checklist
+# Docker Deployment Checklist
 
 ## Pre-Deployment
 - [ ] SSH access to deployment server (174.127.171.180)
 - [ ] Router admin access for port forwarding
-- [ ] Azure SQL Database credentials ready
+- [ ] Secure database password and JWT secret ready
 
 ## Server Setup (SSH into 174.127.171.180)
 - [ ] Update system: `sudo apt update && sudo apt upgrade -y`
-- [ ] Install Node.js 22.x
-- [ ] Install Nginx, Git, UFW
-- [ ] Install PM2 globally
-- [ ] Verify installations
+- [ ] Install Docker: `curl -fsSL https://get.docker.com -o get-docker.sh && sudo sh get-docker.sh`
+- [ ] Install Docker Compose: `sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose`
+- [ ] Make Docker Compose executable: `sudo chmod +x /usr/local/bin/docker-compose`
+- [ ] Add user to docker group: `sudo usermod -aG docker $USER`
+- [ ] Install Git and UFW: `sudo apt install -y git ufw`
+- [ ] Verify installations: `docker --version && docker-compose --version`
+- [ ] Log out and back in for docker group changes
 
 ## Application Setup
 - [ ] Clone repository to `/var/www/vocabulary-app`
-- [ ] Install frontend dependencies: `npm install`
-- [ ] Install backend dependencies: `cd server && npm install`
-- [ ] Create `.env.production` with IP: 174.127.171.180
-- [ ] Create `server/.env` with Azure credentials
-- [ ] Build frontend: `npm run build`
+- [ ] Set ownership: `sudo chown -R $USER:$USER /var/www/vocabulary-app`
+- [ ] Create `.env.production` with secure credentials
+- [ ] Set secure permissions: `chmod 600 .env.production`
 
-## Process Management
-- [ ] Create PM2 ecosystem config
-- [ ] Install ts-node globally
-- [ ] Start backend with PM2
-- [ ] Configure PM2 auto-startup
+## Docker Services
+- [ ] Build and start services: `docker-compose -f docker-compose.prod.yml up --build -d`
+- [ ] Verify containers running: `docker-compose -f docker-compose.prod.yml ps`
+- [ ] Check service logs: `docker-compose -f docker-compose.prod.yml logs -f`
+- [ ] Test backend health: `curl http://localhost:5000/api/health`
+- [ ] Test frontend: `curl http://localhost:3000`
 
-## Web Server
-- [ ] Create Nginx configuration for IP 174.127.171.180
-- [ ] Enable Nginx site
-- [ ] Test Nginx configuration
-- [ ] Reload Nginx
+## Web Server (Optional - Docker handles this)
+- [ ] Create Nginx reverse proxy configuration (optional)
+- [ ] Enable Nginx site (if using external proxy)
+- [ ] Test Nginx configuration (if used)
+- [ ] Reload Nginx (if used)
 
 ## Security & Network
-- [ ] Configure UFW firewall (allow SSH, 80, 443)
-- [ ] Set up router port forwarding (80 → server)
-- [ ] Test internal access: `curl http://localhost:5000/api/`
+- [ ] Configure UFW firewall: `sudo ufw allow ssh && sudo ufw allow 80/tcp && sudo ufw allow 443/tcp && sudo ufw allow 3000/tcp && sudo ufw allow 5000/tcp && sudo ufw enable`
+- [ ] Set up router port forwarding (80 → 3000 for Docker frontend)
+- [ ] Test internal access: `curl http://localhost:5000/api/health`
+- [ ] Test database connection via Docker
 
 ## Final Testing
-- [ ] Check PM2 status: `pm2 status`
-- [ ] Check Nginx status: `sudo systemctl status nginx`
+- [ ] Check Docker container status: `docker ps`
+- [ ] Check Docker service logs: `docker-compose -f docker-compose.prod.yml logs`
 - [ ] Test external access: http://174.127.171.180
 - [ ] Test from mobile data (outside network)
+- [ ] Verify database connectivity and data persistence
 
 ## Important Notes
 - **Your App URL:** http://174.127.171.180
-- **Backend runs on:** localhost:5000 (internal only)
-- **Frontend served from:** /var/www/vocabulary-app/dist
-- **Logs location:** /var/www/vocabulary-app/logs/
+- **Frontend Container:** localhost:3000 (Docker managed)
+- **Backend Container:** localhost:5000 (Docker managed)
+- **Database Container:** PostgreSQL with automatic setup
+- **Logs:** `docker-compose -f docker-compose.prod.yml logs`
 
 ## If Something Goes Wrong
-- Check PM2 logs: `pm2 logs`
-- Check Nginx logs: `sudo tail -f /var/log/nginx/error.log`
-- Restart services: `pm2 restart all && sudo systemctl reload nginx`
+- Check Docker logs: `docker-compose -f docker-compose.prod.yml logs -f`
+- Check container status: `docker ps`
+- Restart services: `docker-compose -f docker-compose.prod.yml restart`
+- Rebuild services: `docker-compose -f docker-compose.prod.yml up --build -d`
+- Check resource usage: `docker stats`
+- Access container shell: `docker-compose -f docker-compose.prod.yml exec backend sh`
+
+## Docker-Specific Troubleshooting
+- [ ] Verify Docker daemon running: `sudo systemctl status docker`
+- [ ] Check Docker disk usage: `docker system df`
+- [ ] Clean up if needed: `docker system prune -f`
+- [ ] Check container logs individually: `docker logs <container-name>`
+- [ ] Verify environment variables: `docker-compose -f docker-compose.prod.yml config`

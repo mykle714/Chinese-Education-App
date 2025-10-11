@@ -102,7 +102,7 @@ export class VocabEntryController {
   async createEntry(req: Request, res: Response): Promise<void> {
     try {
       const userId = (req as any).user?.userId;
-      const { entryKey, entryValue, isCustomTag, hskLevelTag } = req.body;
+      const { entryKey, entryValue, hskLevelTag } = req.body;
       
       if (!userId) {
         res.status(401).json({ 
@@ -115,7 +115,6 @@ export class VocabEntryController {
       const newEntry = await this.vocabEntryService.createEntry(userId, {
         entryKey,
         entryValue,
-        isCustomTag,
         hskLevelTag
       });
       
@@ -133,7 +132,7 @@ export class VocabEntryController {
     try {
       const userId = (req as any).user?.userId;
       const entryId = parseInt(req.params.id);
-      const { entryKey, entryValue, isCustomTag, hskLevelTag } = req.body;
+      const { entryKey, entryValue, hskLevelTag } = req.body;
       
       if (!userId) {
         res.status(401).json({ 
@@ -154,7 +153,6 @@ export class VocabEntryController {
       const updatedEntry = await this.vocabEntryService.updateEntry(userId, entryId, {
         entryKey,
         entryValue,
-        isCustomTag,
         hskLevelTag
       });
       
@@ -326,6 +324,140 @@ export class VocabEntryController {
         });
       }
     } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  /**
+   * Get vocabulary entries by tokens for reader feature
+   * POST /api/vocabEntries/by-tokens
+   */
+  async getEntriesByTokens(req: Request, res: Response): Promise<void> {
+    const requestStart = performance.now();
+    
+    try {
+      const userId = (req as any).user?.userId;
+      const { tokens } = req.body;
+      
+      console.log(`[VOCAB-SERVER] 📥 Token lookup request received:`, {
+        userId: userId ? `${userId.substring(0, 8)}...` : 'undefined',
+        requestSize: `${JSON.stringify(req.body).length} bytes`,
+        userAgent: req.get('User-Agent')?.substring(0, 50) + '...',
+        timestamp: new Date().toISOString()
+      });
+      
+      if (!userId) {
+        console.warn(`[VOCAB-SERVER] ❌ Authentication failed:`, {
+          error: 'User not authenticated',
+          requestTime: `${(performance.now() - requestStart).toFixed(2)}ms`
+        });
+        res.status(401).json({ 
+          error: 'User not authenticated',
+          code: 'ERR_NOT_AUTHENTICATED'
+        });
+        return;
+      }
+      
+      if (!tokens || !Array.isArray(tokens)) {
+        console.warn(`[VOCAB-SERVER] ❌ Invalid request format:`, {
+          userId: `${userId.substring(0, 8)}...`,
+          error: 'Tokens array is required',
+          receivedType: typeof tokens,
+          requestTime: `${(performance.now() - requestStart).toFixed(2)}ms`
+        });
+        res.status(400).json({ 
+          error: 'Tokens array is required',
+          code: 'ERR_MISSING_TOKENS'
+        });
+        return;
+      }
+      
+      console.log(`[VOCAB-SERVER] 🔍 Processing token lookup:`, {
+        userId: `${userId.substring(0, 8)}...`,
+        tokensReceived: tokens.length,
+        sampleTokens: tokens.slice(0, 10), // Show first 10 tokens
+        allTokens: tokens.length <= 20 ? tokens : `${tokens.slice(0, 20).join(', ')}... (+${tokens.length - 20} more)`,
+        tokenLengthDistribution: {
+          length1: tokens.filter(t => t.length === 1).length,
+          length2: tokens.filter(t => t.length === 2).length,
+          length3: tokens.filter(t => t.length === 3).length,
+          length4: tokens.filter(t => t.length === 4).length,
+          other: tokens.filter(t => t.length > 4).length
+        }
+      });
+      
+      if (tokens.length === 0) {
+        console.log(`[VOCAB-SERVER] 📝 Empty token array:`, {
+          userId: `${userId.substring(0, 8)}...`,
+          response: 'returning empty array',
+          requestTime: `${(performance.now() - requestStart).toFixed(2)}ms`
+        });
+        res.json([]);
+        return;
+      }
+      
+      // Limit the number of tokens to prevent abuse
+      if (tokens.length > 1000) {
+        console.warn(`[VOCAB-SERVER] ⚠️ Token limit exceeded:`, {
+          userId: `${userId.substring(0, 8)}...`,
+          tokensRequested: tokens.length,
+          maxAllowed: 1000,
+          requestTime: `${(performance.now() - requestStart).toFixed(2)}ms`
+        });
+        res.status(400).json({ 
+          error: 'Too many tokens requested (max 1000)',
+          code: 'ERR_TOO_MANY_TOKENS'
+        });
+        return;
+      }
+      
+      // Validate that all tokens are strings
+      const invalidTokens = tokens.filter(token => typeof token !== 'string');
+      if (invalidTokens.length > 0) {
+        console.warn(`[VOCAB-SERVER] ❌ Invalid token types found:`, {
+          userId: `${userId.substring(0, 8)}...`,
+          invalidTokenCount: invalidTokens.length,
+          invalidTokens: invalidTokens.slice(0, 5), // Show first 5 invalid tokens
+          requestTime: `${(performance.now() - requestStart).toFixed(2)}ms`
+        });
+        res.status(400).json({ 
+          error: 'All tokens must be strings',
+          code: 'ERR_INVALID_TOKEN_TYPE'
+        });
+        return;
+      }
+      
+      console.log(`[VOCAB-SERVER] ✅ Request validation passed, forwarding to service layer:`, {
+        userId: `${userId.substring(0, 8)}...`,
+        validatedTokens: tokens.length,
+        validationTime: `${(performance.now() - requestStart).toFixed(2)}ms`
+      });
+      
+      const serviceStart = performance.now();
+      const entries = await this.vocabEntryService.getEntriesByTokens(userId, tokens);
+      const serviceTime = performance.now() - serviceStart;
+      const totalTime = performance.now() - requestStart;
+      
+      console.log(`[VOCAB-SERVER] 📤 Sending response:`, {
+        userId: `${userId.substring(0, 8)}...`,
+        tokensRequested: tokens.length,
+        entriesFound: entries.length,
+        matchRate: `${(entries.length / tokens.length * 100).toFixed(1)}%`,
+        serviceTime: `${serviceTime.toFixed(2)}ms`,
+        totalRequestTime: `${totalTime.toFixed(2)}ms`,
+        responseSize: `${JSON.stringify(entries).length} bytes`,
+        foundEntries: entries.map(e => ({ id: e.id, key: e.entryKey, value: e.entryValue?.substring(0, 20) + '...' })).slice(0, 5)
+      });
+      
+      res.json(entries);
+    } catch (error) {
+      const errorTime = performance.now() - requestStart;
+      console.error(`[VOCAB-SERVER] ❌ Request failed:`, {
+        userId: (req as any).user?.userId ? `${(req as any).user.userId.substring(0, 8)}...` : 'undefined',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        requestTime: `${errorTime.toFixed(2)}ms`,
+        stack: error instanceof Error ? error.stack : undefined
+      });
       this.handleError(error, res);
     }
   }

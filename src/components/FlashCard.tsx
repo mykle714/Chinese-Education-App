@@ -15,7 +15,6 @@ interface VocabEntry {
     id: number;
     entryKey: string;
     entryValue: string;
-    isCustomTag?: boolean | null;
     hskLevelTag?: HskLevel | null;
     createdAt: string;
 }
@@ -27,49 +26,24 @@ interface FlashCardProps {
     onFlip: () => void;
     entryKey: string;
     entryValue: string;
+    isFlippable?: boolean; // New prop to control whether the card can be flipped
 }
 
-// Helper function to get HSK level number
-const getHskNumber = (hskLevel: HskLevel) => {
-    switch (hskLevel) {
-        case 'HSK1': return '1';
-        case 'HSK2': return '2';
-        case 'HSK3': return '3';
-        case 'HSK4': return '4';
-        case 'HSK5': return '5';
-        case 'HSK6': return '6';
-        default: return '1';
-    }
-};
 
 // Helper function to render tag badges
 const renderTags = (entry: VocabEntry) => (
     <Box sx={{ position: 'absolute', top: 8, right: 8, display: 'flex', gap: 0.5, zIndex: 10 }}>
-        {entry.isCustomTag === true && (
-            <Chip
-                label="Custom"
-                size="small"
-                color="primary"
-                sx={{ fontSize: '0.7rem', height: '20px' }}
-            />
-        )}
         {entry.hskLevelTag && (
-            <Box
+            <Chip
+                label={entry.hskLevelTag}
+                size="small"
                 sx={{
-                    width: '24px',
-                    height: '24px',
-                    borderRadius: '50%',
-                    backgroundColor: 'secondary.main',
-                    color: 'secondary.contrastText',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '12px',
-                    fontWeight: 'bold'
+                    backgroundColor: '#2196f3',
+                    color: 'white',
+                    fontSize: '0.7rem',
+                    height: '20px'
                 }}
-            >
-                {getHskNumber(entry.hskLevelTag)}
-            </Box>
+            />
         )}
     </Box>
 );
@@ -80,7 +54,8 @@ const FlashCard: React.FC<FlashCardProps> = ({
     isFlipped,
     onFlip,
     entryKey,
-    entryValue
+    entryValue,
+    isFlippable = true // Default to true for backwards compatibility
 }) => {
     // Content is now updated immediately when props change
     // Timing control is handled by the parent component (FlashcardsPage)
@@ -93,9 +68,9 @@ const FlashCard: React.FC<FlashCardProps> = ({
                 maxWidth: 500,
                 height: 300,
                 perspective: "1000px !important",
-                cursor: "pointer",
+                cursor: isFlippable ? "pointer" : "default",
             }}
-            onClick={onFlip}
+            onClick={isFlippable ? onFlip : undefined}
         >
             {/* Card Wrapper - This rotates in 3D space */}
             <Box

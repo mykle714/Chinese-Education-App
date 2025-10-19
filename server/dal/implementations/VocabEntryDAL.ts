@@ -35,6 +35,29 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
   }
 
   /**
+   * Find vocabulary entries by user ID and language with pagination
+   */
+  async findByUserIdAndLanguage(userId: string, language: string, limit: number = 100, offset: number = 0): Promise<VocabEntry[]> {
+    if (!userId) {
+      throw new ValidationError('User ID is required');
+    }
+    if (!language) {
+      throw new ValidationError('Language is required');
+    }
+
+    const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
+      return await client.query(`
+        SELECT * FROM VocabEntries 
+        WHERE "userId" = $1 AND "language" = $2
+        ORDER BY "createdAt" DESC 
+        LIMIT $3 OFFSET $4
+      `, [userId, language, limit, offset]);
+    });
+
+    return result.recordset;
+  }
+
+  /**
    * Find vocabulary entry by user and key
    */
   async findByUserAndKey(userId: string, entryKey: string): Promise<VocabEntry | null> {
@@ -62,6 +85,24 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
 
     const result = await this.dbManager.executeQuery<{ count: string }>(async (client) => {
       return await client.query('SELECT COUNT(*) as count FROM VocabEntries WHERE "userId" = $1', [userId]);
+    });
+
+    return parseInt(result.recordset[0].count);
+  }
+
+  /**
+   * Count vocabulary entries for a user by language
+   */
+  async countByUserIdAndLanguage(userId: string, language: string): Promise<number> {
+    if (!userId) {
+      throw new ValidationError('User ID is required');
+    }
+    if (!language) {
+      throw new ValidationError('Language is required');
+    }
+
+    const result = await this.dbManager.executeQuery<{ count: string }>(async (client) => {
+      return await client.query('SELECT COUNT(*) as count FROM VocabEntries WHERE "userId" = $1 AND "language" = $2', [userId, language]);
     });
 
     return parseInt(result.recordset[0].count);

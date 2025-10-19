@@ -3,7 +3,7 @@
  * Provides persistent caching of vocabulary entries with real-time updates
  */
 
-import type { VocabEntry } from '../types.js';
+import type { VocabEntry, DictionaryEntry } from '../types.js';
 
 export interface VocabCacheEntry {
   entries: VocabEntry[];
@@ -40,6 +40,7 @@ export const CacheInvalidationReason = {
 export type CacheInvalidationReason = typeof CacheInvalidationReason[keyof typeof CacheInvalidationReason];
 
 const VOCAB_CACHE_KEY = 'cow_vocab_cache';
+const DICT_CACHE_KEY = 'cow_dict_cache';
 const CACHE_VERSION = '1.0.0';
 const MAX_CACHE_SIZE_MB = 10; // Maximum cache size in MB
 const STALE_CACHE_DAYS = 7; // Cache considered stale after 7 days
@@ -460,4 +461,185 @@ export function validateAndRepairCache(): {
     errors,
     repaired
   };
+}
+
+// ========================================
+// DICTIONARY CACHE FUNCTIONS
+// ========================================
+
+export interface DictionaryCacheEntry {
+  entries: DictionaryEntry[];
+  lastAccessed: Date;
+}
+
+export interface DictionaryCacheStorage {
+  [token: string]: DictionaryCacheEntry;
+}
+
+export interface DictionaryCache {
+  data: DictionaryCacheStorage;
+  metadata: VocabCacheMetadata;
+}
+
+/**
+ * Gets the dictionary cache from localStorage
+ */
+function getDictionaryCache(): DictionaryCache | null {
+  try {
+    const cacheData = localStorage.getItem(DICT_CACHE_KEY);
+    if (!cacheData) return null;
+
+    const cache: DictionaryCache = JSON.parse(cacheData);
+    
+    if (!cache.metadata || cache.metadata.version !== CACHE_VERSION) {
+      console.log('[DICT-CACHE] Version mismatch, invalidating');
+      invalidateDictionaryCache(CacheInvalidationReason.VERSION_MISMATCH);
+      return null;
+    }
+
+    cache.metadata.lastUpdated = new Date(cache.metadata.lastUpdated);
+    Object.values(cache.data).forEach(entry => {
+      entry.lastAccessed = new Date(entry.lastAccessed);
+    });
+
+    return cache;
+  } catch (error) {
+    console.error('[DICT-CACHE] Error reading cache:', error);
+    invalidateDictionaryCache(CacheInvalidationReason.CORRUPTION);
+    return null;
+  }
+}
+
+/**
+ * Saves the dictionary cache to localStorage
+ */
+function saveDictionaryCache(cache: DictionaryCache): void {
+  try {
+    const cacheString = JSON.stringify(cache);
+    const cacheSizeMB = new Blob([cacheString]).size / (1024 * 1024);
+    
+    if (cacheSizeMB > MAX_CACHE_SIZE_MB) {
+      console.warn(`[DICT-CACHE] Size (${cacheSizeMB.toFixed(2)}MB) exceeds limit, cleaning up`);
+      cleanupDictionaryCache();
+      return;
+    }
+
+    localStorage.setItem(DICT_CACHE_KEY, cacheString);
+  } catch (error) {
+    console.error('[DICT-CACHE] Error saving:', error);
+    if (error instanceof DOMException && error.code === 22) {
+      invalidateDictionaryCache(CacheInvalidationReason.STORAGE_LIMIT);
+    }
+  }
+}
+
+/**
+ * Gets cached dictionary entries for specific tokens
+ */
+export function getCachedDictionaryEntries(tokens: string[]): {
+  foundEntries: DictionaryEntry[];
+  missingTokens: string[];
+} {
+  const cache = getDictionaryCache();
+  if (!cache) {
+    return { foundEntries: [], missingTokens: tokens };
+  }
+
+  const foundEntries: DictionaryEntry[] = [];
+  const missingTokens: string[] = [];
+  const now = new Date();
+  
+  let cacheHits = 0;
+
+  tokens.forEach(token => {
+    const cacheEntry = cache.data[token];
+    if (cacheEntry) {
+      cacheEntry.lastAccessed = now;
+      foundEntries.push(...cacheEntry.entries);
+      cacheHits++;
+    } else {
+      missingTokens.push(token);
+    }
+  });
+
+  if (cacheHits > 0) {
+    saveDictionaryCache(cache);
+    console.log(`[DICT-CACHE] 📖 ${cacheHits}/${tokens.length} tokens cached (${(cacheHits/tokens.length*100).toFixed(1)}%)`);
+  }
+
+  return { foundEntries, missingTokens };
+}
+
+/**
+ * Caches dictionary entries for specific tokens
+ */
+export function cacheDictionaryEntries(tokenEntries: { [token: string]: DictionaryEntry[] }): void {
+  let cache = getDictionaryCache();
+  
+  if (!cache) {
+    cache = {
+      data: {},
+      metadata: {
+        lastUpdated: new Date(),
+        version: CACHE_VERSION,
+        entryCount: 0,
+        totalTokens: 0
+      }
+    };
+  }
+
+  const now = new Date();
+  let newEntryCount = 0;
+
+  Object.entries(tokenEntries).forEach(([token, entries]) => {
+    cache!.data[token] = {
+      entries,
+      lastAccessed: now
+    };
+    newEntryCount += entries.length;
+  });
+
+  cache.metadata.lastUpdated = now;
+  cache.metadata.entryCount += newEntryCount;
+  cache.metadata.totalTokens = Object.keys(cache.data).length;
+
+  saveDictionaryCache(cache);
+  console.log(`[DICT-CACHE] 💾 Cached ${newEntryCount} entries for ${Object.keys(tokenEntries).length} tokens`);
+}
+
+/**
+ * Invalidates the dictionary cache
+ */
+export function invalidateDictionaryCache(reason: CacheInvalidationReason): void {
+  try {
+    localStorage.removeItem(DICT_CACHE_KEY);
+    console.log(`[DICT-CACHE] Invalidated: ${reason}`);
+  } catch (error) {
+    console.error('[DICT-CACHE] Error invalidating:', error);
+  }
+}
+
+/**
+ * Cleans up dictionary cache by removing LRU entries
+ */
+function cleanupDictionaryCache(): void {
+  const cache = getDictionaryCache();
+  if (!cache) return;
+
+  const sortedTokens = Object.entries(cache.data)
+    .sort(([, a], [, b]) => a.lastAccessed.getTime() - b.lastAccessed.getTime());
+
+  const tokensToRemove = Math.floor(sortedTokens.length * 0.25);
+  
+  for (let i = 0; i < tokensToRemove; i++) {
+    delete cache.data[sortedTokens[i][0]];
+  }
+
+  cache.metadata.lastUpdated = new Date();
+  cache.metadata.totalTokens = Object.keys(cache.data).length;
+  cache.metadata.entryCount = Object.values(cache.data)
+    .reduce((sum, entry) => sum + entry.entries.length, 0);
+
+  saveDictionaryCache(cache);
+  console.log(`[DICT-CACHE] Cleanup: removed ${tokensToRemove} token caches`);
 }

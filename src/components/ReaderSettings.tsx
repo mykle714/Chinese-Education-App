@@ -91,15 +91,6 @@ function ReaderSettings({
                         }
                     }}
                 />
-
-                <Typography
-                    className="reader-page-settings-future-note"
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ fontStyle: 'italic', opacity: 0.7 }}
-                >
-                    More settings will be added here in future updates.
-                </Typography>
             </Box>
         </Box>
     );

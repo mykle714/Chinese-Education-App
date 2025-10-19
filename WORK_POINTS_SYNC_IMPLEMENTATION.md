@@ -4,19 +4,26 @@
 
 This document describes the complete implementation of the daily boundary sync system for the vocabulary learning application. The system synchronizes client-side work points with the server once per day when users start a new day, providing reliable data persistence and preventing data loss during daily resets.
 
-## Design Pattern: Daily Boundary Sync
+## Design Pattern: Real-Time Sync with Daily Boundary Backup
 
 ### Sync Triggers
-1. **Primary**: Daily boundary sync when user returns and new day is detected
-2. **Automatic**: Sync previous day's work before resetting points to zero
-3. **Data protection**: Prevents work points loss during daily reset
+1. **Primary**: Real-time sync on every point earned (every 60 seconds of active work)
+2. **Backup**: Daily boundary sync when user returns and new day is detected
+3. **Automatic**: Sync previous day's work before resetting points to zero
+4. **Data protection**: Prevents work points loss during daily reset
 
 ### Benefits
-- **Natural load distribution** - Users start new days at different times
-- **No data loss** - Always syncs before resetting accumulated work
-- **Simple logic** - One sync per day maximum
-- **Complete coverage** - Captures all activity, even minimal engagement
+- **Real-time accuracy** - Server stays in sync as users earn points
+- **Fire-and-forget** - No blocking, no retries, no user-facing delays
+- **No data loss** - Daily boundary sync catches failed real-time syncs
+- **Simple logic** - Sync on point increment, silent failures
+- **Complete coverage** - Captures all activity with dual sync system
 - **Multi-device support** - Additive accumulation across devices
+
+### Time-to-Point Conversion
+- **60 seconds of active work = 1 point**
+- Defined in `src/constants.ts` as `WORK_POINTS_CONFIG.MILLISECONDS_PER_POINT: 60000`
+- Used consistently across all client-side code
 
 ## Database Schema
 

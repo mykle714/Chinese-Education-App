@@ -23,7 +23,7 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
     }
 
     const result = await this.dbManager.executeQuery<User>(async (client) => {
-      return await client.query('SELECT id, email, name, "createdAt" FROM Users WHERE email = $1', [email]);
+      return await client.query('SELECT id, email, name, "selectedLanguage", "createdAt" FROM Users WHERE email = $1', [email]);
     });
 
     return result.recordset[0] || null;
@@ -153,7 +153,7 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
     }
 
     const result = await this.dbManager.executeQuery<User>(async (client) => {
-      return await client.query('SELECT id, email, name, "createdAt" FROM Users WHERE id = $1', [id]);
+      return await client.query('SELECT id, email, name, "selectedLanguage", "createdAt" FROM Users WHERE id = $1', [id]);
     });
 
     return result.recordset[0] || null;
@@ -268,5 +268,64 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
     });
 
     return result.rowsAffected > 0;
+  }
+
+  /**
+   * Get all users with their total work points for leaderboard
+   */
+  async getAllUsersWithTotalPoints(): Promise<Array<{ userId: string; email: string; name: string; totalWorkPoints: number }>> {
+    const result = await this.dbManager.executeQuery<{
+      id: string;
+      email: string;
+      name: string;
+      totalworkpoints: number;
+    }>(async (client) => {
+      return await client.query(`
+        SELECT 
+          id,
+          email,
+          name,
+          COALESCE("totalWorkPoints", 0) as totalworkpoints
+        FROM Users
+        ORDER BY "totalWorkPoints" DESC NULLS LAST, "createdAt" ASC
+      `);
+    });
+
+    return result.recordset.map(row => ({
+      userId: row.id,
+      email: row.email,
+      name: row.name,
+      totalWorkPoints: row.totalworkpoints || 0
+    }));
+  }
+
+  /**
+   * Get only public users with their total work points for leaderboard
+   */
+  async getPublicUsersWithTotalPoints(): Promise<Array<{ userId: string; email: string; name: string; totalWorkPoints: number }>> {
+    const result = await this.dbManager.executeQuery<{
+      id: string;
+      email: string;
+      name: string;
+      totalworkpoints: number;
+    }>(async (client) => {
+      return await client.query(`
+        SELECT 
+          id,
+          email,
+          name,
+          COALESCE("totalWorkPoints", 0) as totalworkpoints
+        FROM Users
+        WHERE "isPublic" = true
+        ORDER BY "totalWorkPoints" DESC NULLS LAST, "createdAt" ASC
+      `);
+    });
+
+    return result.recordset.map(row => ({
+      userId: row.id,
+      email: row.email,
+      name: row.name,
+      totalWorkPoints: row.totalworkpoints || 0
+    }));
   }
 }

@@ -16,7 +16,7 @@ const pool = new Pool(config);
 async function getClient(): Promise<PoolClient> {
   try {
     const client = await pool.connect();
-    console.log('Connected to PostgreSQL Database');
+    // Client retrieved from pool (not logging to reduce verbosity)
     return client;
   } catch (err: any) {
     // Log full error details server-side for debugging

@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useReducer } from 'react';
 import { useLocation } from 'react-router-dom';
+import { throttle, debounce } from 'lodash';
 import { useAuth } from '../AuthContext';
 import { 
   saveWorkPointsData, 
@@ -11,7 +12,7 @@ import {
 import { WORK_POINTS_ELIGIBLE_PAGES, WORK_POINTS_CONFIG, STREAK_CONFIG } from '../constants';
 import { useActivityDetection } from './useActivityDetection';
 import { checkAndSyncDailyReset } from '../utils/dailyBoundarySync';
-import { type WorkPointsSyncResponse } from '../utils/workPointsSync';
+import { syncWorkPoints, type WorkPointsSyncResponse } from '../utils/workPointsSync';
 
 export interface UseWorkPointsReturn {
   currentPoints: number;
@@ -31,47 +32,172 @@ export interface UseWorkPointsReturn {
   hasMetStreakGoalToday: boolean;
 }
 
+// State type for reducer
+interface WorkPointsState {
+  millisecondsAccumulated: number;
+  totalWorkPoints: number;
+  lastActivity: Date | null;
+  isActive: boolean;
+  isAnimating: boolean;
+  currentStreak: number;
+  longestStreak: number;
+  isSyncing: boolean;
+  lastSyncResult: WorkPointsSyncResponse | null;
+}
+
+// Action types for reducer
+type WorkPointsAction =
+  | { type: 'LOAD_DATA'; payload: Omit<WorkPointsState, 'isActive' | 'isAnimating' | 'isSyncing' | 'lastSyncResult'> }
+  | { type: 'RECORD_ACTIVITY'; payload: { newMilliseconds: number; newTotalPoints: number; now: Date } }
+  | { type: 'START_ANIMATION' }
+  | { type: 'STOP_ANIMATION' }
+  | { type: 'SET_ACTIVE'; payload: boolean }
+  | { type: 'SET_SYNCING'; payload: boolean }
+  | { type: 'SET_SYNC_RESULT'; payload: WorkPointsSyncResponse | null }
+  | { type: 'RESET' };
+
+// Reducer function
+const workPointsReducer = (state: WorkPointsState, action: WorkPointsAction): WorkPointsState => {
+  switch (action.type) {
+    case 'LOAD_DATA':
+      return {
+        ...state,
+        ...action.payload
+      };
+    case 'RECORD_ACTIVITY':
+      return {
+        ...state,
+        millisecondsAccumulated: action.payload.newMilliseconds,
+        totalWorkPoints: action.payload.newTotalPoints,
+        lastActivity: action.payload.now,
+        isActive: true
+      };
+    case 'START_ANIMATION':
+      return {
+        ...state,
+        isAnimating: true
+      };
+    case 'STOP_ANIMATION':
+      return {
+        ...state,
+        isAnimating: false
+      };
+    case 'SET_ACTIVE':
+      return {
+        ...state,
+        isActive: action.payload
+      };
+    case 'SET_SYNCING':
+      return {
+        ...state,
+        isSyncing: action.payload
+      };
+    case 'SET_SYNC_RESULT':
+      return {
+        ...state,
+        lastSyncResult: action.payload
+      };
+    case 'RESET':
+      return {
+        ...state,
+        millisecondsAccumulated: 0,
+        lastActivity: new Date(),
+        isActive: false,
+        isAnimating: false
+      };
+    default:
+      return state;
+  }
+};
+
 export const useWorkPoints = (): UseWorkPointsReturn => {
   const { user } = useAuth();
   const location = useLocation();
   
-  // Core state
-  const [millisecondsAccumulated, setMillisecondsAccumulated] = useState(0);
-  const [totalWorkPoints, setTotalWorkPoints] = useState(0);
-  const [lastActivity, setLastActivity] = useState<Date | null>(null);
-  const [isActive, setIsActive] = useState(false);
-  const [isAnimating, setIsAnimating] = useState(false);
-  
-  // Streak state
-  const [currentStreak, setCurrentStreak] = useState(0);
-  const [longestStreak, setLongestStreak] = useState(0);
-  
-  // Sync state
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [lastSyncResult, setLastSyncResult] = useState<WorkPointsSyncResponse | null>(null);
+  // Use reducer for consolidated state management
+  const [state, dispatch] = useReducer(workPointsReducer, {
+    millisecondsAccumulated: 0,
+    totalWorkPoints: 0,
+    lastActivity: null,
+    isActive: false,
+    isAnimating: false,
+    currentStreak: 0,
+    longestStreak: 0,
+    isSyncing: false,
+    lastSyncResult: null
+  });
   
   // Refs for cleanup
   const activityTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const animationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // Derived state
-  const currentPoints = calculatePointsFromMilliseconds(millisecondsAccumulated);
+  const currentPoints = calculatePointsFromMilliseconds(state.millisecondsAccumulated);
   const isEligiblePage = WORK_POINTS_ELIGIBLE_PAGES.includes(location.pathname);
   
   // Streak derived state
   const streakGoalProgress = Math.min(currentPoints / STREAK_CONFIG.RETENTION_POINTS, 1);
   const hasMetStreakGoalToday = currentPoints >= STREAK_CONFIG.RETENTION_POINTS;
 
+  // Debounced save function - saves to localStorage after user stops activity
+  const debouncedSave = useRef(
+    debounce((userId: string, data: WorkPointsStorage) => {
+      if (process.env.NODE_ENV === 'development') {
+        console.log("[SAVE WORK POINTS] Saving data (debounced):", { 
+          millisecondsAccumulated: data.millisecondsAccumulated, 
+          totalWorkPoints: data.totalWorkPoints 
+        });
+      }
+      saveWorkPointsData(userId, data);
+    }, 2000)
+  ).current;
+
+  // Immediate save function - for when points increment
+  const saveImmediately = useCallback((userId: string, data: WorkPointsStorage) => {
+    if (process.env.NODE_ENV === 'development') {
+      console.log("[SAVE WORK POINTS] Saving data (immediate):", { 
+        millisecondsAccumulated: data.millisecondsAccumulated, 
+        totalWorkPoints: data.totalWorkPoints 
+      });
+    }
+    saveWorkPointsData(userId, data);
+  }, []);
+
   // Load initial data when user changes and check for daily boundary sync
   useEffect(() => {
     if (!user?.id) {
-      setMillisecondsAccumulated(0);
-      setTotalWorkPoints(0);
-      setLastActivity(null);
+      dispatch({
+        type: 'LOAD_DATA',
+        payload: {
+          millisecondsAccumulated: 0,
+          totalWorkPoints: 0,
+          lastActivity: null,
+          currentStreak: 0,
+          longestStreak: 0
+        }
+      });
       return;
     }
     
     const loadDataWithDailyCheck = async () => {
+      // Fetch total work points from server
+      try {
+        const response = await fetch(`${window.location.origin}/api/users/${user.id}/total-work-points`, {
+          credentials: 'include'
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (process.env.NODE_ENV === 'development') {
+            console.log('[WORK POINTS] Fetched total work points from server:', data.totalWorkPoints);
+          }
+        }
+      } catch (error) {
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('[WORK POINTS] Failed to fetch total work points from server, using localStorage:', error);
+        }
+      }
+      
       // Load ORIGINAL unreset data first - this is crucial for streak checking
       const key = `workPoints_${user.id}`;
       const stored = localStorage.getItem(key);
@@ -110,8 +236,8 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
       const resetCheck = await checkAndSyncDailyReset(user.id, originalData);
       
       if (resetCheck.syncResult) {
-        setLastSyncResult(resetCheck.syncResult);
-        setIsSyncing(false); // Ensure sync state is cleared
+        dispatch({ type: 'SET_SYNC_RESULT', payload: resetCheck.syncResult });
+        dispatch({ type: 'SET_SYNCING', payload: false });
       }
       
       if (resetCheck.shouldReset) {
@@ -126,63 +252,66 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
           lastStreakDate: dataToUse.lastStreakDate
         };
         saveWorkPointsData(user.id, freshData);
-        setMillisecondsAccumulated(0);
-        setTotalWorkPoints(dataToUse.totalWorkPoints);
-        setCurrentStreak(dataToUse.currentStreak);
-        setLongestStreak(dataToUse.longestStreak);
-        setLastActivity(new Date());
+        
+        dispatch({
+          type: 'LOAD_DATA',
+          payload: {
+            millisecondsAccumulated: 0,
+            totalWorkPoints: dataToUse.totalWorkPoints,
+            lastActivity: new Date(),
+            currentStreak: dataToUse.currentStreak,
+            longestStreak: dataToUse.longestStreak
+          }
+        });
       } else {
         // No reset needed, use existing data
-        setMillisecondsAccumulated(originalData.millisecondsAccumulated);
-        setTotalWorkPoints(originalData.totalWorkPoints);
-        setCurrentStreak(originalData.currentStreak || 0);
-        setLongestStreak(originalData.longestStreak || 0);
-        setLastActivity(new Date(originalData.lastActivity));
+        dispatch({
+          type: 'LOAD_DATA',
+          payload: {
+            millisecondsAccumulated: originalData.millisecondsAccumulated,
+            totalWorkPoints: originalData.totalWorkPoints,
+            lastActivity: new Date(originalData.lastActivity),
+            currentStreak: originalData.currentStreak || 0,
+            longestStreak: originalData.longestStreak || 0
+          }
+        });
       }
     };
     
     loadDataWithDailyCheck();
   }, [user?.id]);
   
-  // Save data to localStorage whenever it changes
-  const saveData = useCallback((newMilliseconds: number, newLastActivity: Date) => {
-    if (!user?.id) return;
-
-    console.log("[SAVE WORK POINTS] Saving data:", {  newMilliseconds, totalWorkPoints });
-    
-    const data: WorkPointsStorage = {
-      millisecondsAccumulated: newMilliseconds,
-      totalWorkPoints: totalWorkPoints, // Preserve existing total
-      lastActivity: newLastActivity.toISOString(),
-      currentStreak: currentStreak,
-      longestStreak: longestStreak,
-      lastStreakDate: '' // Will be updated by streak logic
-    };
-    
-    saveWorkPointsData(user.id, data);
-  }, [user?.id, totalWorkPoints, currentStreak, longestStreak]);
-  
-  // Record user activity
-  const recordActivity = useCallback(() => {
+  // Record user activity - throttled to prevent excessive calls
+  const recordActivityInternal = useCallback(() => {
     if (!user?.id || !isEligiblePage) return;
     
     const now = new Date();
     const nowTime = now.getTime();
-    const lastActivityTime = lastActivity?.getTime() || 0;
+    const lastActivityTime = state.lastActivity?.getTime() || 0;
     
-    // Check if within activity window (10 seconds)
+    // Check if within activity window (15 seconds)
     if (nowTime - lastActivityTime <= WORK_POINTS_CONFIG.ACTIVITY_WINDOW_MS) {
       const timeToAdd = nowTime - lastActivityTime;
-      const newTotal = millisecondsAccumulated + timeToAdd;
-      const oldPoints = calculatePointsFromMilliseconds(millisecondsAccumulated);
+      const newTotal = state.millisecondsAccumulated + timeToAdd;
+      const oldPoints = calculatePointsFromMilliseconds(state.millisecondsAccumulated);
       const newPoints = calculatePointsFromMilliseconds(newTotal);
       
-      // Update accumulated time
-      setMillisecondsAccumulated(newTotal);
+      const pointsEarned = newPoints - oldPoints;
+      const newTotalPoints = state.totalWorkPoints + pointsEarned;
+      
+      // Update state in one dispatch
+      dispatch({
+        type: 'RECORD_ACTIVITY',
+        payload: {
+          newMilliseconds: newTotal,
+          newTotalPoints: newTotalPoints,
+          now: now
+        }
+      });
       
       // Trigger animation if points increased
       if (newPoints > oldPoints) {
-        setIsAnimating(true);
+        dispatch({ type: 'START_ANIMATION' });
         
         // Clear existing animation timeout
         if (animationTimeoutRef.current) {
@@ -191,38 +320,63 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
         
         // Set new animation timeout
         animationTimeoutRef.current = setTimeout(() => {
-          setIsAnimating(false);
+          dispatch({ type: 'STOP_ANIMATION' });
         }, WORK_POINTS_CONFIG.ANIMATION_DURATION_MS);
+        
+        // Sync to server on every point earned (fire-and-forget)
+        if (user?.id) {
+          syncWorkPoints(
+            new Date().toISOString().split('T')[0],
+            newPoints
+          ).catch(() => {
+            // Silently fail, daily boundary sync will catch up
+          });
+        }
+        
+        // Save immediately when points increment
+        const data: WorkPointsStorage = {
+          millisecondsAccumulated: newTotal,
+          totalWorkPoints: newTotalPoints,
+          lastActivity: now.toISOString(),
+          currentStreak: state.currentStreak,
+          longestStreak: state.longestStreak,
+          lastStreakDate: ''
+        };
+        saveImmediately(user.id, data);
+      } else {
+        // Debounce saves when no point increment
+        const data: WorkPointsStorage = {
+          millisecondsAccumulated: newTotal,
+          totalWorkPoints: newTotalPoints,
+          lastActivity: now.toISOString(),
+          currentStreak: state.currentStreak,
+          longestStreak: state.longestStreak,
+          lastStreakDate: ''
+        };
+        debouncedSave(user.id, data);
       }
-      
-      // Save to localStorage
-      saveData(newTotal, now);
     }
     
-    // Update last activity time
-    setLastActivity(now);
-    setIsActive(true);
-    
-    // Clear existing activity timeout
+    // Set user as inactive after timeout
     if (activityTimeoutRef.current) {
       clearTimeout(activityTimeoutRef.current);
     }
     
-    // Set user as inactive after timeout
     activityTimeoutRef.current = setTimeout(() => {
-      setIsActive(false);
+      dispatch({ type: 'SET_ACTIVE', payload: false });
     }, WORK_POINTS_CONFIG.ACTIVITY_TIMEOUT_MS);
-  }, [user?.id, isEligiblePage, millisecondsAccumulated, lastActivity, saveData]);
+  }, [user?.id, isEligiblePage, state.millisecondsAccumulated, state.lastActivity, state.totalWorkPoints, state.currentStreak, state.longestStreak, debouncedSave, saveImmediately]);
+  
+  // Throttled version of recordActivity - only runs once every 2 seconds
+  const recordActivity = useRef(
+    throttle(recordActivityInternal, 2000, { leading: true, trailing: false })
+  ).current;
   
   // Reset points (for testing/debugging)
   const resetPoints = useCallback(() => {
     if (!user?.id) return;
     
-    setMillisecondsAccumulated(0);
-    setLastActivity(new Date());
-    setIsActive(false);
-    setIsAnimating(false);
-    
+    dispatch({ type: 'RESET' });
     clearWorkPointsData(user.id);
     
     // Clear timeouts
@@ -243,13 +397,16 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
       if (animationTimeoutRef.current) {
         clearTimeout(animationTimeoutRef.current);
       }
+      // Cancel pending debounced saves
+      debouncedSave.cancel();
+      recordActivity.cancel();
     };
-  }, []);
+  }, [debouncedSave, recordActivity]);
   
   // Reset active state when leaving eligible page
   useEffect(() => {
     if (!isEligiblePage) {
-      setIsActive(false);
+      dispatch({ type: 'SET_ACTIVE', payload: false });
       if (activityTimeoutRef.current) {
         clearTimeout(activityTimeoutRef.current);
       }
@@ -264,18 +421,18 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
   
   return {
     currentPoints,
-    totalWorkPoints,
-    millisecondsAccumulated,
-    isActive,
-    isAnimating,
+    totalWorkPoints: state.totalWorkPoints,
+    millisecondsAccumulated: state.millisecondsAccumulated,
+    isActive: state.isActive,
+    isAnimating: state.isAnimating,
     isEligiblePage,
-    isSyncing,
-    lastSyncResult,
+    isSyncing: state.isSyncing,
+    lastSyncResult: state.lastSyncResult,
     recordActivity,
     resetPoints,
     // Streak properties
-    currentStreak,
-    longestStreak,
+    currentStreak: state.currentStreak,
+    longestStreak: state.longestStreak,
     streakGoalProgress,
     hasMetStreakGoalToday
   };

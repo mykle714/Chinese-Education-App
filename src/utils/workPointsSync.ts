@@ -181,7 +181,7 @@ export function getUnsyncedWorkPointsData(userId: string): WorkPointsSyncEntry[]
         
         if (dateMatch && data.millisecondsAccumulated > 0) {
           const date = dateMatch[1];
-          const workPoints = Math.floor(data.millisecondsAccumulated / 30000); // 30 seconds = 1 point
+          const workPoints = Math.floor(data.millisecondsAccumulated / 60000); // 60 seconds = 1 point
           
           // Check if already synced
           const syncedKey = `${key}_synced`;

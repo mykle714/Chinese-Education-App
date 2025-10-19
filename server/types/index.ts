@@ -25,6 +25,8 @@ export interface User {
   email: string;
   name: string;
   password?: string; // Not returned to client
+  selectedLanguage?: Language;
+  isPublic?: boolean; // Whether user appears on public leaderboard
   createdAt?: Date;
 }
 
@@ -33,6 +35,7 @@ export interface UserCreateData {
   email: string;
   name: string;
   password: string;
+  isPublic?: boolean; // Defaults to true in database
 }
 
 // User login data type
@@ -46,6 +49,8 @@ export interface UserUpdateData {
   email?: string;
   name?: string;
   password?: string;
+  selectedLanguage?: Language;
+  isPublic?: boolean;
 }
 
 // Auth response type
@@ -54,8 +59,30 @@ export interface AuthResponse {
   token: string;
 }
 
+// Language type for multi-language support
+export type Language = 'zh' | 'ja' | 'ko' | 'vi';
+
 // HSK Level type for vocabulary entries
 export type HskLevel = 'HSK1' | 'HSK2' | 'HSK3' | 'HSK4' | 'HSK5' | 'HSK6';
+
+// Dictionary Entry type for multi-language dictionaries
+export interface DictionaryEntry {
+  id: number;
+  language: Language;
+  word1: string;          // Primary word (simplified/kanji/hangul/word)
+  word2: string | null;   // Secondary word (traditional/kana/hanja/null)
+  pronunciation: string | null; // Pronunciation (pinyin/romaji/romanization/null)
+  definitions: string[];  // Parsed JSON array
+  createdAt: string;
+}
+
+export interface DictionaryEntryCreateData {
+  language: Language;
+  word1: string;
+  word2?: string | null;
+  pronunciation?: string | null;
+  definitions: string; // JSON string
+}
 
 // VocabEntry model type
 export interface VocabEntry {
@@ -63,6 +90,8 @@ export interface VocabEntry {
   userId: string;
   entryKey: string;
   entryValue: string;
+  language: Language;
+  script?: string;
   hskLevelTag?: HskLevel | null;
   createdAt: Date;
 }
@@ -72,6 +101,8 @@ export interface VocabEntryCreateData {
   userId: string;
   entryKey: string;
   entryValue: string;
+  language: Language;
+  script?: string;
   hskLevelTag?: HskLevel | null;
 }
 
@@ -79,6 +110,8 @@ export interface VocabEntryCreateData {
 export interface VocabEntryUpdateData {
   entryKey?: string;
   entryValue: string;
+  language?: Language;
+  script?: string;
   hskLevelTag?: HskLevel | null;
 }
 
@@ -90,11 +123,31 @@ export interface RequestParams {
 // Text model type for reader feature
 export interface Text {
   id: string;
+  userId?: string | null; // uniqueidentifier in SQL, nullable for system texts
   title: string;
   description: string;
   content: string;
-  createdAt: string;
+  language: Language;
   characterCount: number;
+  isUserCreated: boolean; // Flag to distinguish user-created from system texts
+  createdAt: string;
+}
+
+// Text creation data type
+export interface TextCreateData {
+  userId: string;
+  title: string;
+  description?: string;
+  content: string;
+  language?: Language;
+}
+
+// Text update data type
+export interface TextUpdateData {
+  title?: string;
+  description?: string;
+  content?: string;
+  language?: Language;
 }
 
 // OnDeckVocabSet model type

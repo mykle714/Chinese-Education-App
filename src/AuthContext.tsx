@@ -2,12 +2,14 @@ import { createContext, useContext, useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { API_BASE_URL } from './constants';
+import type { Language } from './types';
 
 // Define the User type
 interface User {
     id: string;
     email: string;
     name: string;
+    selectedLanguage?: Language;
 }
 
 // Define the AuthContext type
@@ -20,6 +22,7 @@ interface AuthContextType {
     register: (email: string, name: string, password: string) => Promise<void>;
     logout: () => Promise<void>;
     changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
+    updateLanguage: (language: Language) => Promise<void>;
     error: string | null;
 }
 
@@ -190,6 +193,38 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
     };
 
+    // Update preferred language function
+    const updateLanguage = async (language: Language) => {
+        setError(null);
+        try {
+            if (!token || token === 'null' || token === 'undefined' || token.length <= 10) {
+                throw new Error('You must be logged in to update your language preference');
+            }
+
+            const response = await fetch(`${API_BASE_URL}/api/users/language`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                credentials: 'include',
+                body: JSON.stringify({ selectedLanguage: language })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to update language preference');
+            }
+
+            const data = await response.json();
+            setUser({ ...user!, selectedLanguage: language });
+            return data;
+        } catch (error: any) {
+            setError(error.message);
+            throw error;
+        }
+    };
+
     const value = {
         user,
         token,
@@ -199,6 +234,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         register,
         logout,
         changePassword,
+        updateLanguage,
         error
     };
 

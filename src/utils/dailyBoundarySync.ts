@@ -15,7 +15,8 @@ import {
 import { STREAK_CONFIG } from '../constants';
 
 /**
- * Check streak status and apply penalties if needed
+ * Check streak status and apply daily penalties
+ * Now applies penalties every day that activity threshold is not met
  */
 export function checkStreakAndApplyPenalty(data: WorkPointsStorage): {
   updatedData: WorkPointsStorage;
@@ -44,7 +45,7 @@ export function checkStreakAndApplyPenalty(data: WorkPointsStorage): {
   };
   
   if (streakMaintained) {
-    // User maintained streak - increment or start streak
+    // User maintained streak - increment or start streak (no penalty)
     if (!data.lastStreakDate || data.currentStreak === 0) {
       // Starting new streak
       updatedData.currentStreak = 1;
@@ -67,23 +68,23 @@ export function checkStreakAndApplyPenalty(data: WorkPointsStorage): {
       updatedData.lastStreakDate = yesterdayDateStr;
       console.log(`[STREAK] 🔥 Restarted streak after gap! Current: ${updatedData.currentStreak}`);
     }
-  } else if (data.currentStreak > 0) {
-    // User failed to maintain streak and had an active streak - apply penalty
-    const penaltyAmount = Math.floor(data.totalWorkPoints * (STREAK_CONFIG.PENALTY_PERCENT / 100));
+  } else {
+    // User failed to maintain activity threshold - apply DAILY PENALTY
+    const penaltyAmount = STREAK_CONFIG.DAILY_PENALTY_POINTS;
     updatedData.totalWorkPoints = Math.max(0, data.totalWorkPoints - penaltyAmount);
-    updatedData.currentStreak = 0;
-    updatedData.lastStreakDate = '';
     
-    streakResult.streakLost = true;
+    // Also break streak if one existed
+    if (data.currentStreak > 0) {
+      updatedData.currentStreak = 0;
+      updatedData.lastStreakDate = '';
+      streakResult.streakLost = true;
+      console.log(`[DAILY-PENALTY] 💔 Streak broken! Applied daily penalty: -${penaltyAmount} points (${data.totalWorkPoints} → ${updatedData.totalWorkPoints})`);
+    } else {
+      console.log(`[DAILY-PENALTY] ⚠️ Daily penalty applied: -${penaltyAmount} points (${data.totalWorkPoints} → ${updatedData.totalWorkPoints}) - earned ${yesterdayPoints} points, needed ${STREAK_CONFIG.RETENTION_POINTS}`);
+    }
+    
     streakResult.penaltyApplied = penaltyAmount > 0;
     streakResult.penaltyAmount = penaltyAmount;
-    
-    console.log(`[STREAK] 💔 Streak lost! Applied ${STREAK_CONFIG.PENALTY_PERCENT}% penalty: -${penaltyAmount} points (${data.totalWorkPoints} → ${updatedData.totalWorkPoints})`);
-  } else {
-    // User failed to maintain streak but had no existing streak - keep at 0
-    updatedData.currentStreak = 0;
-    updatedData.lastStreakDate = '';
-    console.log(`[STREAK] ⭕ No streak to maintain - staying at 0 (earned ${yesterdayPoints} points, needed ${STREAK_CONFIG.RETENTION_POINTS})`);
   }
   
   return { updatedData, streakResult };

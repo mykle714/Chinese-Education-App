@@ -23,4 +23,9 @@ export interface IUserWorkPointsDAL {
     workPoints: number,
     transaction: ITransaction
   ): Promise<UserWorkPoints>;
+  
+  // Leaderboard operations
+  getDailyPointsForAllUsers(date: string): Promise<Array<{ userId: string; totalPoints: number }>>;
+  getDailyPointsForUser(userId: string, date: string): Promise<number>;
+  getUserStreakData(userId: string): Promise<{ currentStreak: number; longestStreak: number }>;
 }

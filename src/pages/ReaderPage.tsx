@@ -19,7 +19,7 @@ import WorkPointsBadge from "../components/WorkPointsBadge";
 import VocabDisplayCard from "../components/VocabDisplayCard";
 import { useVocabularyUpdate } from "../contexts/VocabularyUpdateContext";
 import { processDocumentForTokens } from "../utils/tokenUtils";
-import type { VocabEntry } from "../types";
+import type { VocabEntry, Text } from "../types";
 
 // Extracted components
 import EmptyState from "../components/EmptyState";
@@ -27,27 +27,20 @@ import TextHeader from "../components/TextHeader";
 import TextSidebar from "../components/TextSidebar";
 import TextArea from "../components/TextArea";
 import ReaderSettings from "../components/ReaderSettings";
+import CreateDocumentDialog from "../components/CreateDocumentDialog";
+import EditDocumentDialog from "../components/EditDocumentDialog";
+import DeleteDocumentDialog from "../components/DeleteDocumentDialog";
 
 // Extracted hooks
 import { useVocabularyProcessing } from "../hooks/useVocabularyProcessing";
 import { useTextSelection } from "../hooks/useTextSelection";
 import { useReaderSettings } from "../hooks/useReaderSettings";
 
-// Text interface for TypeScript
-interface Text {
-    id: string;
-    title: string;
-    description: string;
-    content: string;
-    createdAt: string;
-    characterCount: number;
-}
-
 function ReaderPage() {
     const theme = useTheme();
     const customTheme = useCustomTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down("md"));
-    const { token } = useAuth();
+    const { token, user } = useAuth();
     const vocabularyUpdate = useVocabularyUpdate();
 
     // Work points integration
@@ -60,10 +53,21 @@ function ReaderPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
+    // Dialog states
+    const [createDialogOpen, setCreateDialogOpen] = useState(false);
+    const [editDialogOpen, setEditDialogOpen] = useState(false);
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [textToEdit, setTextToEdit] = useState<Text | null>(null);
+    const [textToDelete, setTextToDelete] = useState<Text | null>(null);
+
     // Use extracted hooks
     const vocabularyProcessing = useVocabularyProcessing(token);
     const readerSettings = useReaderSettings();
-    const textSelection = useTextSelection(vocabularyProcessing.loadedCards, readerSettings.autoSelectEnabled);
+    const textSelection = useTextSelection(
+        vocabularyProcessing.loadedPersonalCards,
+        vocabularyProcessing.loadedDictionaryCards,
+        readerSettings.autoSelectEnabled
+    );
 
     // Get theme-based selection colors (memoized to prevent recalculation)
     const selectionColors = useMemo(() => {
@@ -115,19 +119,25 @@ function ReaderPage() {
                 const sampleTexts: Text[] = [
                     {
                         id: '1',
+                        userId: null,
                         title: 'Sample Chinese Text',
                         description: 'A sample text for testing auto word selection',
                         content: '这是一个测试文本。我们可以点击任何地方来选择单词。This is a test text. We can click anywhere to select words. 中文和英文都应该工作正常。',
-                        createdAt: new Date().toISOString(),
-                        characterCount: 85
+                        language: 'zh',
+                        characterCount: 85,
+                        isUserCreated: false,
+                        createdAt: new Date().toISOString()
                     },
                     {
                         id: '2',
+                        userId: null,
                         title: 'English Sample Text',
                         description: 'English text for testing word boundaries',
                         content: 'Hello world! This is an English text sample. Click anywhere in this text to test the auto word selection feature. It should work with punctuation, numbers like 123, and various word types.',
-                        createdAt: new Date().toISOString(),
-                        characterCount: 180
+                        language: 'zh',
+                        characterCount: 180,
+                        isUserCreated: false,
+                        createdAt: new Date().toISOString()
                     }
                 ];
                 setTexts(sampleTexts);
@@ -157,8 +167,8 @@ function ReaderPage() {
         // Add entry listener
         const unsubscribeAdd = vocabularyUpdate.onVocabAdd((entry: VocabEntry) => {
             if (isEntryRelevantToDocument(entry)) {
-                console.log('[READER-VOCAB-UPDATE] Adding entry to loadedCards:', entry.entryKey);
-                vocabularyProcessing.setLoadedCards(prev => {
+                console.log('[READER-VOCAB-UPDATE] Adding entry to loadedPersonalCards:', entry.entryKey);
+                vocabularyProcessing.setLoadedPersonalCards(prev => {
                     // Check if entry already exists
                     const exists = prev.some(existing => existing.id === entry.id);
                     if (exists) return prev;
@@ -169,25 +179,25 @@ function ReaderPage() {
 
         // Update entry listener
         const unsubscribeUpdate = vocabularyUpdate.onVocabUpdate((entry: VocabEntry) => {
-            vocabularyProcessing.setLoadedCards(prev => {
+            vocabularyProcessing.setLoadedPersonalCards(prev => {
                 const index = prev.findIndex(existing => existing.id === entry.id);
                 if (index === -1) {
-                    // Entry not in loadedCards, check if it should be added
+                    // Entry not in loadedPersonalCards, check if it should be added
                     if (isEntryRelevantToDocument(entry)) {
-                        console.log('[READER-VOCAB-UPDATE] Adding updated entry to loadedCards:', entry.entryKey);
+                        console.log('[READER-VOCAB-UPDATE] Adding updated entry to loadedPersonalCards:', entry.entryKey);
                         return [...prev, entry];
                     }
                     return prev;
                 }
 
                 // Entry exists, update it
-                console.log('[READER-VOCAB-UPDATE] Updating entry in loadedCards:', entry.entryKey);
+                console.log('[READER-VOCAB-UPDATE] Updating entry in loadedPersonalCards:', entry.entryKey);
                 const updated = [...prev];
                 updated[index] = entry;
 
-                // Clear selectedCard if it's the updated entry
-                if (textSelection.selectedCard && textSelection.selectedCard.id === entry.id) {
-                    textSelection.setSelectedCard(entry);
+                // Clear selectedPersonalCard if it's the updated entry
+                if (textSelection.selectedPersonalCard && textSelection.selectedPersonalCard.id === entry.id) {
+                    textSelection.setSelectedPersonalCard(entry);
                 }
 
                 return updated;
@@ -196,18 +206,18 @@ function ReaderPage() {
 
         // Remove entry listener
         const unsubscribeRemove = vocabularyUpdate.onVocabRemove((entryId: number) => {
-            vocabularyProcessing.setLoadedCards(prev => {
+            vocabularyProcessing.setLoadedPersonalCards(prev => {
                 const filtered = prev.filter(entry => entry.id !== entryId);
                 if (filtered.length !== prev.length) {
-                    console.log('[READER-VOCAB-UPDATE] Removing entry from loadedCards:', entryId);
+                    console.log('[READER-VOCAB-UPDATE] Removing entry from loadedPersonalCards:', entryId);
                 }
                 return filtered;
             });
 
-            // Clear selectedCard if it's the deleted entry
-            if (textSelection.selectedCard && textSelection.selectedCard.id === entryId) {
-                console.log('[READER-VOCAB-UPDATE] Clearing selected card (deleted):', entryId);
-                textSelection.setSelectedCard(null);
+            // Clear selectedPersonalCard if it's the deleted entry
+            if (textSelection.selectedPersonalCard && textSelection.selectedPersonalCard.id === entryId) {
+                console.log('[READER-VOCAB-UPDATE] Clearing selected personal card (deleted):', entryId);
+                textSelection.setSelectedPersonalCard(null);
             }
         });
 
@@ -215,8 +225,8 @@ function ReaderPage() {
         const unsubscribeBulkAdd = vocabularyUpdate.onVocabBulkAdd((entries: VocabEntry[]) => {
             const relevantEntries = entries.filter(isEntryRelevantToDocument);
             if (relevantEntries.length > 0) {
-                console.log('[READER-VOCAB-UPDATE] Bulk adding entries to loadedCards:', relevantEntries.length);
-                vocabularyProcessing.setLoadedCards(prev => {
+                console.log('[READER-VOCAB-UPDATE] Bulk adding entries to loadedPersonalCards:', relevantEntries.length);
+                vocabularyProcessing.setLoadedPersonalCards(prev => {
                     const existingIds = new Set(prev.map(entry => entry.id));
                     const newEntries = relevantEntries.filter(entry => !existingIds.has(entry.id));
                     return [...prev, ...newEntries];
@@ -231,7 +241,7 @@ function ReaderPage() {
             unsubscribeRemove();
             unsubscribeBulkAdd();
         };
-    }, [selectedText, vocabularyUpdate, textSelection.selectedCard, vocabularyProcessing, textSelection]);
+    }, [selectedText, vocabularyUpdate, textSelection.selectedPersonalCard, vocabularyProcessing, textSelection]);
 
     // Handle text selection
     const handleTextSelect = useCallback(async (text: Text) => {
@@ -254,6 +264,56 @@ function ReaderPage() {
         });
     }, []);
 
+    // Dialog handlers
+    const handleCreateNew = useCallback(() => {
+        setCreateDialogOpen(true);
+    }, []);
+
+    const handleEdit = useCallback((text: Text) => {
+        setTextToEdit(text);
+        setEditDialogOpen(true);
+    }, []);
+
+    const handleDelete = useCallback((text: Text) => {
+        setTextToDelete(text);
+        setDeleteDialogOpen(true);
+    }, []);
+
+    const handleDialogSuccess = useCallback(async () => {
+        // Reload texts after create/edit/delete
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/texts`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                },
+            });
+
+            if (response.ok) {
+                const textsData = await response.json();
+                setTexts(textsData);
+
+                // If there's a selected text, update it with the fresh data
+                if (selectedText) {
+                    const updatedText = textsData.find((t: Text) => t.id === selectedText.id);
+                    if (updatedText) {
+                        setSelectedText(updatedText);
+                        console.log('[READER-PAGE] Updated selected text with fresh data after edit');
+                    }
+                }
+            }
+        } catch (err) {
+            console.error('Error reloading texts:', err);
+        }
+    }, [token, selectedText]);
+
+    const handleDeleteSuccess = useCallback(async () => {
+        // If deleted text was selected, clear selection
+        if (selectedText && textToDelete && selectedText.id === textToDelete.id) {
+            setSelectedText(null);
+        }
+        await handleDialogSuccess();
+    }, [selectedText, textToDelete, handleDialogSuccess]);
+
     return (
         <>
             {/* Work Points Badge - only show on eligible pages */}
@@ -263,7 +323,6 @@ function ReaderPage() {
                         points={workPoints.currentPoints}
                         isActive={workPoints.isActive}
                         isAnimating={workPoints.isAnimating}
-                        millisecondsAccumulated={workPoints.millisecondsAccumulated}
                     />
                 </Box>
             )}
@@ -284,6 +343,9 @@ function ReaderPage() {
                             loading={loading}
                             error={error}
                             onTextSelect={handleTextSelect}
+                            onCreateNew={handleCreateNew}
+                            onEdit={handleEdit}
+                            onDelete={handleDelete}
                             formatDate={formatDate}
                             drawerWidth={drawerWidth}
                         />
@@ -313,11 +375,40 @@ function ReaderPage() {
                             loading={loading}
                             error={error}
                             onTextSelect={handleTextSelect}
+                            onCreateNew={handleCreateNew}
+                            onEdit={handleEdit}
+                            onDelete={handleDelete}
                             formatDate={formatDate}
                             drawerWidth={drawerWidth}
                         />
                     </Drawer>
                 )}
+
+                {/* Dialogs */}
+                <CreateDocumentDialog
+                    open={createDialogOpen}
+                    onClose={() => setCreateDialogOpen(false)}
+                    onSuccess={handleDialogSuccess}
+                    language={user?.selectedLanguage || 'zh'}
+                />
+                <EditDocumentDialog
+                    open={editDialogOpen}
+                    text={textToEdit}
+                    onClose={() => {
+                        setEditDialogOpen(false);
+                        setTextToEdit(null);
+                    }}
+                    onSuccess={handleDialogSuccess}
+                />
+                <DeleteDocumentDialog
+                    open={deleteDialogOpen}
+                    text={textToDelete}
+                    onClose={() => {
+                        setDeleteDialogOpen(false);
+                        setTextToDelete(null);
+                    }}
+                    onSuccess={handleDeleteSuccess}
+                />
 
                 {/* Main content */}
                 <Box className="reader-page-main-content-wrapper" sx={{
@@ -339,7 +430,7 @@ function ReaderPage() {
                                 <TextHeader
                                     selectedText={selectedText}
                                     processingVocab={vocabularyProcessing.processingVocab}
-                                    loadedCards={vocabularyProcessing.loadedCards}
+                                    loadedCards={vocabularyProcessing.loadedPersonalCards}
                                     vocabError={vocabularyProcessing.vocabError}
                                     formatDate={formatDate}
                                 />
@@ -347,7 +438,10 @@ function ReaderPage() {
                                 {/* Vocabulary card display (mobile only - above text) */}
                                 {isMobile && (
                                     <Box className="reader-page-mobile-vocab-card-wrapper">
-                                        <VocabDisplayCard entry={textSelection.selectedCard} />
+                                        <VocabDisplayCard
+                                            personalEntry={textSelection.selectedPersonalCard}
+                                            dictionaryEntry={textSelection.selectedDictionaryCard}
+                                        />
                                     </Box>
                                 )}
 
@@ -375,7 +469,10 @@ function ReaderPage() {
                                         }}>
                                             {/* Vocabulary card display (desktop only - top right) */}
                                             <Box className="reader-page-desktop-vocab-card-wrapper">
-                                                <VocabDisplayCard entry={textSelection.selectedCard} />
+                                                <VocabDisplayCard
+                                                    personalEntry={textSelection.selectedPersonalCard}
+                                                    dictionaryEntry={textSelection.selectedDictionaryCard}
+                                                />
                                             </Box>
 
                                             {/* Settings sidebar (desktop only) */}

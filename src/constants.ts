@@ -15,13 +15,14 @@ export const WORK_POINTS_ELIGIBLE_PAGES = [
 
 export const WORK_POINTS_CONFIG = {
   MILLISECONDS_PER_POINT: 60000, // 60 seconds = 1 point
-  ACTIVITY_WINDOW_MS: 10000, // 10 seconds activity window
-  ACTIVITY_TIMEOUT_MS: 10000, // 10 seconds until marked inactive
+  ACTIVITY_WINDOW_MS: 15000, // 15 seconds activity window
+  ACTIVITY_TIMEOUT_MS: 15000, // 15 seconds until marked inactive
   ANIMATION_DURATION_MS: 600, // Badge animation duration
 };
 
 // Streak Configuration
 export const STREAK_CONFIG = {
-  RETENTION_POINTS: parseInt(import.meta.env.VITE_STREAK_RETENTION_POINTS) || 5, // Points needed to retain streak
-  PENALTY_PERCENT: parseInt(import.meta.env.VITE_STREAK_PENALTY_PERCENT) || 20, // Penalty percentage when streak is lost
+  RETENTION_POINTS: parseInt(import.meta.env.VITE_STREAK_RETENTION_POINTS) || 3, // Points needed to retain streak
+  PENALTY_PERCENT: parseInt(import.meta.env.VITE_STREAK_PENALTY_PERCENT) || 10, // Penalty percentage when streak is lost
+  DAILY_PENALTY_POINTS: parseInt(import.meta.env.VITE_DAILY_PENALTY_POINTS) || 10, // Fixed penalty points per missed day
 };

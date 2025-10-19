@@ -38,3 +38,19 @@ export interface WorkPointsSyncResponse {
     synced: boolean;
   };
 }
+
+// Calendar data types
+export interface CalendarDayData {
+  date: string; // YYYY-MM-DD
+  workPointsEarned: number; // Points earned that day
+  penaltyAmount: number; // Points lost due to penalty (0 if no penalty)
+  streakMaintained: boolean; // Whether user met the daily threshold
+  isToday: boolean; // If this is today's date
+  hasData: boolean; // Whether user has started tracking by this date
+}
+
+export interface CalendarDataResponse {
+  month: string; // YYYY-MM
+  days: CalendarDayData[];
+  userFirstActivityDate: string | null; // First date user had any activity (YYYY-MM-DD)
+}

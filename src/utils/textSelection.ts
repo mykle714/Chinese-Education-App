@@ -1,4 +1,4 @@
-import type { VocabEntry } from '../types';
+import type { VocabEntry, DictionaryEntry } from '../types';
 
 /**
  * Finds exact matches for selected text in the loaded vocabulary cards
@@ -23,6 +23,41 @@ export const findExactMatch = (selectedText: string, loadedCards: VocabEntry[]):
             id: m.id,
             entryKey: m.entryKey,
             entryValue: m.entryValue
+        })));
+    }
+    
+    // Return first match or null
+    return matches.length > 0 ? matches[0] : null;
+};
+
+/**
+ * Finds exact matches for selected text in the loaded dictionary entries
+ * @param selectedText The text that was selected by the user
+ * @param loadedDictionaryCards Array of dictionary entries to search through
+ * @returns The first matching DictionaryEntry or null if no match found
+ */
+export const findDictionaryMatch = (selectedText: string, loadedDictionaryCards: DictionaryEntry[]): DictionaryEntry | null => {
+    const trimmedText = selectedText.trim();
+    
+    // Return null if no text selected or no cards loaded
+    if (!trimmedText || loadedDictionaryCards.length === 0) {
+        return null;
+    }
+    
+    // Find all exact matches based on word1 (primary) or word2 (secondary)
+    // For Chinese: word1=simplified, word2=traditional
+    // For Japanese: word1=kanji, word2=kana
+    const matches = loadedDictionaryCards.filter(card => 
+        card.word1 === trimmedText || card.word2 === trimmedText
+    );
+    
+    // Log multiple matches to console
+    if (matches.length > 1) {
+        console.log(`Multiple dictionary matches found for "${trimmedText}":`, matches.map(m => ({
+            id: m.id,
+            word1: m.word1,
+            word2: m.word2,
+            pronunciation: m.pronunciation
         })));
     }
     

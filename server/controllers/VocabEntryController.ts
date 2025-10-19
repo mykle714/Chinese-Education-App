@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { VocabEntryService } from '../services/VocabEntryService.js';
+import { DictionaryService } from '../services/DictionaryService.js';
 import { ValidationError, DuplicateError, NotFoundError, DALError } from '../types/dal.js';
 
 /**
@@ -7,7 +8,10 @@ import { ValidationError, DuplicateError, NotFoundError, DALError } from '../typ
  * Delegates business logic to VocabEntryService
  */
 export class VocabEntryController {
-  constructor(private vocabEntryService: VocabEntryService) {}
+  constructor(
+    private vocabEntryService: VocabEntryService,
+    private dictionaryService?: DictionaryService
+  ) {}
 
   /**
    * Get all vocabulary entries for authenticated user
@@ -112,10 +116,16 @@ export class VocabEntryController {
         return;
       }
       
+      // Get user's language
+      const { userDAL } = await import('../dal/setup.js');
+      const user = await userDAL.findById(userId);
+      const language = user?.selectedLanguage || 'zh';
+      
       const newEntry = await this.vocabEntryService.createEntry(userId, {
         entryKey,
         entryValue,
-        hskLevelTag
+        hskLevelTag,
+        language
       });
       
       res.status(201).json(newEntry);
@@ -389,10 +399,13 @@ export class VocabEntryController {
       if (tokens.length === 0) {
         console.log(`[VOCAB-SERVER] 📝 Empty token array:`, {
           userId: `${userId.substring(0, 8)}...`,
-          response: 'returning empty array',
+          response: 'returning empty response',
           requestTime: `${(performance.now() - requestStart).toFixed(2)}ms`
         });
-        res.json([]);
+        res.json({
+          personalEntries: [],
+          dictionaryEntries: []
+        });
         return;
       }
       
@@ -434,22 +447,37 @@ export class VocabEntryController {
       });
       
       const serviceStart = performance.now();
-      const entries = await this.vocabEntryService.getEntriesByTokens(userId, tokens);
+      
+      // Get user's language for dictionary lookups
+      const { userDAL } = await import('../dal/setup.js');
+      const user = await userDAL.findById(userId);
+      const language = user?.selectedLanguage || 'zh';
+      
+      // Get both personal vocab entries and dictionary entries
+      const [personalEntries, dictionaryEntries] = await Promise.all([
+        this.vocabEntryService.getEntriesByTokens(userId, tokens),
+        this.dictionaryService ? this.dictionaryService.lookupMultipleTerms(tokens, language) : Promise.resolve([])
+      ]);
+      
       const serviceTime = performance.now() - serviceStart;
       const totalTime = performance.now() - requestStart;
       
       console.log(`[VOCAB-SERVER] 📤 Sending response:`, {
         userId: `${userId.substring(0, 8)}...`,
         tokensRequested: tokens.length,
-        entriesFound: entries.length,
-        matchRate: `${(entries.length / tokens.length * 100).toFixed(1)}%`,
+        personalEntriesFound: personalEntries.length,
+        dictionaryEntriesFound: dictionaryEntries.length,
+        personalMatchRate: `${(personalEntries.length / tokens.length * 100).toFixed(1)}%`,
+        dictionaryMatchRate: `${(dictionaryEntries.length / tokens.length * 100).toFixed(1)}%`,
         serviceTime: `${serviceTime.toFixed(2)}ms`,
         totalRequestTime: `${totalTime.toFixed(2)}ms`,
-        responseSize: `${JSON.stringify(entries).length} bytes`,
-        foundEntries: entries.map(e => ({ id: e.id, key: e.entryKey, value: e.entryValue?.substring(0, 20) + '...' })).slice(0, 5)
+        responseSize: `${JSON.stringify({ personalEntries, dictionaryEntries }).length} bytes`
       });
       
-      res.json(entries);
+      res.json({
+        personalEntries,
+        dictionaryEntries
+      });
     } catch (error) {
       const errorTime = performance.now() - requestStart;
       console.error(`[VOCAB-SERVER] ❌ Request failed:`, {

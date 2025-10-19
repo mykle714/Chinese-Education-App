@@ -9,8 +9,10 @@ import { BulkResult, ITransaction } from '../../types/dal.js';
 export interface IVocabEntryDAL extends IBaseDAL<VocabEntry, VocabEntryCreateData, VocabEntryUpdateData> {
   // User-specific queries
   findByUserId(userId: string, limit?: number, offset?: number): Promise<VocabEntry[]>;
+  findByUserIdAndLanguage(userId: string, language: string, limit?: number, offset?: number): Promise<VocabEntry[]>;
   findByUserAndKey(userId: string, entryKey: string): Promise<VocabEntry | null>;
   countByUserId(userId: string): Promise<number>;
+  countByUserIdAndLanguage(userId: string, language: string): Promise<number>;
   
   // Search and filtering
   searchEntries(userId: string, searchTerm: string, limit?: number): Promise<VocabEntry[]>;

@@ -3,23 +3,23 @@
  * Handles communication with the backend API for vocabulary operations
  */
 
-import type { VocabEntry } from '../types';
+import type { VocabEntry, VocabLookupResponse, DictionaryEntry } from '../types';
 import { API_BASE_URL } from '../constants';
-import { getCachedEntries, cacheEntries } from './vocabCache';
+import { getCachedEntries, cacheEntries, getCachedDictionaryEntries, cacheDictionaryEntries } from './vocabCache';
 
 /**
  * Fetches vocabulary entries by tokens with cache integration
  * @param tokens Array of tokens to look up
  * @param token JWT authentication token
- * @returns Promise resolving to vocabulary entries
+ * @returns Promise resolving to both personal and dictionary entries
  */
 export async function fetchVocabEntriesByTokens(
   tokens: string[],
   token: string
-): Promise<VocabEntry[]> {
+): Promise<VocabLookupResponse> {
   if (!tokens || tokens.length === 0) {
     console.log('[VOCAB-CLIENT] 📝 No tokens provided for vocabulary lookup');
-    return [];
+    return { personalEntries: [], dictionaryEntries: [] };
   }
 
   console.log(`[VOCAB-CLIENT] 🔍 Starting vocab lookup for ${tokens.length} tokens:`, {
@@ -28,27 +28,37 @@ export async function fetchVocabEntriesByTokens(
     allTokens: tokens.length <= 20 ? tokens : `${tokens.slice(0, 20).join(', ')}... (+${tokens.length - 20} more)`
   });
 
-  // Check cache first
-  const { foundEntries, missingTokens } = getCachedEntries(tokens);
+  // Check both personal and dictionary caches
+  const { foundEntries: cachedPersonalEntries, missingTokens: personalMissingTokens } = getCachedEntries(tokens);
+  const { foundEntries: cachedDictEntries, missingTokens: dictMissingTokens } = getCachedDictionaryEntries(tokens);
   
   console.log(`[VOCAB-CLIENT] 🎯 Cache analysis:`, {
     totalRequested: tokens.length,
-    cacheHits: tokens.length - missingTokens.length,
-    cacheMisses: missingTokens.length,
-    cacheHitRate: `${((tokens.length - missingTokens.length) / tokens.length * 100).toFixed(1)}%`,
-    cachedEntries: foundEntries.length,
-    missingTokens: missingTokens.length <= 10 ? missingTokens : `${missingTokens.slice(0, 10).join(', ')}... (+${missingTokens.length - 10} more)`
+    personalCacheHits: tokens.length - personalMissingTokens.length,
+    dictionaryCacheHits: tokens.length - dictMissingTokens.length,
+    personalHitRate: `${((tokens.length - personalMissingTokens.length) / tokens.length * 100).toFixed(1)}%`,
+    dictionaryHitRate: `${((tokens.length - dictMissingTokens.length) / tokens.length * 100).toFixed(1)}%`,
+    cachedPersonalEntries: cachedPersonalEntries.length,
+    cachedDictionaryEntries: cachedDictEntries.length
   });
   
-  // If all tokens are cached, return cached results
-  if (missingTokens.length === 0) {
-    console.log(`[VOCAB-CLIENT] ✅ Complete cache hit: All ${tokens.length} tokens found in cache, returning ${foundEntries.length} entries`);
-    return foundEntries;
+  // Determine which tokens need API fetch (union of missing tokens from both caches)
+  const tokensNeedingFetch = Array.from(new Set([...personalMissingTokens, ...dictMissingTokens]));
+  
+  // If all tokens are cached in both caches, return immediately
+  if (tokensNeedingFetch.length === 0) {
+    console.log(`[VOCAB-CLIENT] ✅ Complete cache hit: All ${tokens.length} tokens found in both caches`);
+    return {
+      personalEntries: cachedPersonalEntries,
+      dictionaryEntries: cachedDictEntries
+    };
   }
 
-  console.log(`[VOCAB-CLIENT] 🌐 Preparing API request for ${missingTokens.length} missing tokens:`, {
-    tokensToFetch: missingTokens.length <= 15 ? missingTokens : `${missingTokens.slice(0, 15).join(', ')}... (+${missingTokens.length - 15} more)`,
-    requestSize: `${JSON.stringify({ tokens: missingTokens }).length} bytes`
+  console.log(`[VOCAB-CLIENT] 🌐 Preparing API request for ${tokensNeedingFetch.length} missing tokens:`, {
+    tokensToFetch: tokensNeedingFetch.length <= 15 ? tokensNeedingFetch : `${tokensNeedingFetch.slice(0, 15).join(', ')}... (+${tokensNeedingFetch.length - 15} more)`,
+    requestSize: `${JSON.stringify({ tokens: tokensNeedingFetch }).length} bytes`,
+    missingFromPersonalCache: personalMissingTokens.length,
+    missingFromDictionaryCache: dictMissingTokens.length
   });
 
   try {
@@ -61,7 +71,7 @@ export async function fetchVocabEntriesByTokens(
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
       },
-      body: JSON.stringify({ tokens: missingTokens }),
+      body: JSON.stringify({ tokens: tokensNeedingFetch }),
     });
 
     const requestTime = performance.now() - requestStart;
@@ -73,62 +83,77 @@ export async function fetchVocabEntriesByTokens(
         statusText: response.statusText,
         error: errorData.error,
         requestTime: `${requestTime.toFixed(2)}ms`,
-        tokensRequested: missingTokens.length
+        tokensRequested: tokensNeedingFetch.length
       });
       throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
     }
 
-    const newEntries: VocabEntry[] = await response.json();
+    const responseData: VocabLookupResponse = await response.json();
     
     console.log(`[VOCAB-CLIENT] 📥 API response received:`, {
       requestTime: `${requestTime.toFixed(2)}ms`,
-      tokensRequested: missingTokens.length,
-      entriesReceived: newEntries.length,
-      matchRate: `${(newEntries.length / missingTokens.length * 100).toFixed(1)}%`,
-      entriesFound: newEntries.map(e => e.entryKey).slice(0, 10) // Show first 10 found entries
+      tokensRequested: tokensNeedingFetch.length,
+      personalEntriesReceived: responseData.personalEntries.length,
+      dictionaryEntriesReceived: responseData.dictionaryEntries.length,
+      personalMatchRate: `${(responseData.personalEntries.length / tokensNeedingFetch.length * 100).toFixed(1)}%`,
+      dictionaryMatchRate: `${(responseData.dictionaryEntries.length / tokensNeedingFetch.length * 100).toFixed(1)}%`
     });
 
-    // Cache ALL requested tokens (including those with no entries - negative caching)
-    const tokenEntries: { [token: string]: VocabEntry[] } = {};
-    
-    // Group entries by their matching tokens, including empty arrays for tokens with no matches
-    missingTokens.forEach(token => {
-      const matchingEntries = newEntries.filter(entry => entry.entryKey === token);
-      tokenEntries[token] = matchingEntries; // Cache empty array if no matches (negative caching)
+    // Cache personal entries
+    const personalTokenEntries: { [token: string]: VocabEntry[] } = {};
+    personalMissingTokens.forEach(token => {
+      const matchingEntries = responseData.personalEntries.filter(entry => entry.entryKey === token);
+      personalTokenEntries[token] = matchingEntries;
     });
-
-    // Cache all tokens (both with and without entries)
-    cacheEntries(tokenEntries);
+    cacheEntries(personalTokenEntries);
     
-    // Log negative caching statistics
-    const tokensWithEntries = Object.values(tokenEntries).filter(entries => entries.length > 0).length;
-    const tokensWithoutEntries = missingTokens.length - tokensWithEntries;
+    // Cache dictionary entries
+    const dictTokenEntries: { [token: string]: DictionaryEntry[] } = {};
+    dictMissingTokens.forEach(token => {
+      const matchingEntries = responseData.dictionaryEntries.filter(entry => 
+        entry.word1 === token || entry.word2 === token
+      );
+      dictTokenEntries[token] = matchingEntries;
+    });
+    cacheDictionaryEntries(dictTokenEntries);
     
-    if (tokensWithoutEntries > 0) {
-      console.log(`[VOCAB-CLIENT] 🚫 Negative caching applied:`, {
-        tokensWithEntries,
-        tokensWithoutEntries,
-        negativeCacheRate: `${(tokensWithoutEntries / missingTokens.length * 100).toFixed(1)}%`,
-        sampleEmptyTokens: missingTokens.filter(token => tokenEntries[token].length === 0).slice(0, 5)
-      });
-    }
+    // Log caching statistics
+    const personalTokensWithEntries = Object.values(personalTokenEntries).filter(entries => entries.length > 0).length;
+    const dictTokensWithEntries = Object.values(dictTokenEntries).filter(entries => entries.length > 0).length;
+    
+    console.log(`[VOCAB-CLIENT] 💾 Caching complete:`, {
+      personalTokensCached: Object.keys(personalTokenEntries).length,
+      personalEntriesCached: Object.values(personalTokenEntries).reduce((sum, entries) => sum + entries.length, 0),
+      dictionaryTokensCached: Object.keys(dictTokenEntries).length,
+      dictionaryEntriesCached: Object.values(dictTokenEntries).reduce((sum, entries) => sum + entries.length, 0)
+    });
 
     // Combine cached and new entries
-    const allEntries = [...foundEntries, ...newEntries];
+    const allPersonalEntries = [...cachedPersonalEntries, ...responseData.personalEntries];
+    const allDictionaryEntries = [...cachedDictEntries, ...responseData.dictionaryEntries];
     
-    // Remove duplicates based on entry ID
-    const uniqueEntries = allEntries.filter((entry, index, self) => 
+    // Remove duplicates
+    const uniquePersonalEntries = allPersonalEntries.filter((entry, index, self) => 
+      index === self.findIndex(e => e.id === entry.id)
+    );
+    const uniqueDictionaryEntries = allDictionaryEntries.filter((entry, index, self) => 
       index === self.findIndex(e => e.id === entry.id)
     );
 
-    return uniqueEntries;
+    return {
+      personalEntries: uniquePersonalEntries,
+      dictionaryEntries: uniqueDictionaryEntries
+    };
   } catch (error) {
     console.error('Error fetching vocabulary entries by tokens:', error);
     
     // Return cached entries even if API call fails
-    if (foundEntries.length > 0) {
-      console.log(`⚠️ API failed, returning ${foundEntries.length} cached entries`);
-      return foundEntries;
+    if (cachedPersonalEntries.length > 0 || cachedDictEntries.length > 0) {
+      console.log(`⚠️ API failed, returning cached: ${cachedPersonalEntries.length} personal, ${cachedDictEntries.length} dictionary`);
+      return {
+        personalEntries: cachedPersonalEntries,
+        dictionaryEntries: cachedDictEntries
+      };
     }
     
     throw error;

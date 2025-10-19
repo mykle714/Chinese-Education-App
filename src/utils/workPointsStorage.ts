@@ -1,3 +1,5 @@
+import { WORK_POINTS_CONFIG } from '../constants';
+
 // Work Points Storage Interface
 export interface WorkPointsStorage {
   millisecondsAccumulated: number; // Total active time in milliseconds (daily, resets)
@@ -177,7 +179,7 @@ export const clearWorkPointsData = (userId: string): void => {
 
 // Utility function to calculate points from milliseconds
 export const calculatePointsFromMilliseconds = (milliseconds: number): number => {
-  return Math.floor(milliseconds / 30000); // 30 seconds = 1 point
+  return Math.floor(milliseconds / WORK_POINTS_CONFIG.MILLISECONDS_PER_POINT);
 };
 
 // Streak Utility Functions

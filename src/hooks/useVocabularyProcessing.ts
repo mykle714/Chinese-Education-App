@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import { processDocumentForTokens, estimateTokenCount } from "../utils/tokenUtils";
 import { fetchVocabEntriesByTokens } from "../utils/vocabApi";
-import type { VocabEntry } from "../types";
+import type { VocabEntry, DictionaryEntry } from "../types";
 
 // Text interface for TypeScript
 interface Text {
@@ -14,8 +14,10 @@ interface Text {
 }
 
 interface UseVocabularyProcessingReturn {
-    loadedCards: VocabEntry[];
-    setLoadedCards: React.Dispatch<React.SetStateAction<VocabEntry[]>>;
+    loadedPersonalCards: VocabEntry[];
+    loadedDictionaryCards: DictionaryEntry[];
+    setLoadedPersonalCards: React.Dispatch<React.SetStateAction<VocabEntry[]>>;
+    setLoadedDictionaryCards: React.Dispatch<React.SetStateAction<DictionaryEntry[]>>;
     processingVocab: boolean;
     vocabError: string | null;
     processedDocuments: Set<string>;
@@ -25,7 +27,8 @@ interface UseVocabularyProcessingReturn {
 
 export function useVocabularyProcessing(token: string | null): UseVocabularyProcessingReturn {
     // Vocabulary processing state
-    const [loadedCards, setLoadedCards] = useState<VocabEntry[]>([]);
+    const [loadedPersonalCards, setLoadedPersonalCards] = useState<VocabEntry[]>([]);
+    const [loadedDictionaryCards, setLoadedDictionaryCards] = useState<DictionaryEntry[]>([]);
     const [processingVocab, setProcessingVocab] = useState(false);
     const [vocabError, setVocabError] = useState<string | null>(null);
 
@@ -40,15 +43,16 @@ export function useVocabularyProcessing(token: string | null): UseVocabularyProc
         }
 
         // Check if document has already been processed in this session
-        // OR if loadedCards is empty (which means we need to populate it regardless)
+        // OR if loaded cards are empty (which means we need to populate them regardless)
         const isAlreadyProcessed = processedDocuments.has(text.id);
-        const needsVocabLoading = loadedCards.length === 0;
+        const needsVocabLoading = loadedPersonalCards.length === 0 && loadedDictionaryCards.length === 0;
 
         if (isAlreadyProcessed && !needsVocabLoading) {
-            console.log(`[VOCAB-CLIENT] 📋 Document already processed and loadedCards populated:`, {
+            console.log(`[VOCAB-CLIENT] 📋 Document already processed and cards populated:`, {
                 documentId: text.id,
                 documentTitle: text.title,
-                loadedCardsCount: loadedCards.length,
+                personalCardsCount: loadedPersonalCards.length,
+                dictionaryCardsCount: loadedDictionaryCards.length,
                 action: 'skipping processing'
             });
             return;
@@ -121,17 +125,19 @@ export function useVocabularyProcessing(token: string | null): UseVocabularyProc
                 lookupTime: `${vocabLookupTime.toFixed(2)}ms`,
                 totalProcessingTime: `${totalProcessingTime.toFixed(2)}ms`,
                 tokensRequested: tokens.length,
-                entriesFound: vocabEntries.length,
-                matchRate: `${(vocabEntries.length / tokens.length * 100).toFixed(1)}%`,
-                foundEntries: vocabEntries.map(e => ({ key: e.entryKey, value: e.entryValue })).slice(0, 10),
+                personalEntriesFound: vocabEntries.personalEntries.length,
+                dictionaryEntriesFound: vocabEntries.dictionaryEntries.length,
+                personalMatchRate: `${(vocabEntries.personalEntries.length / tokens.length * 100).toFixed(1)}%`,
+                dictionaryMatchRate: `${(vocabEntries.dictionaryEntries.length / tokens.length * 100).toFixed(1)}%`,
+                samplePersonalEntries: vocabEntries.personalEntries.slice(0, 10).map(e => ({ key: e.entryKey, value: e.entryValue })),
                 performance: {
-                    tokensPerSecond: Math.round(tokens.length / (totalProcessingTime / 1000)),
-                    entriesPerSecond: Math.round(vocabEntries.length / (vocabLookupTime / 1000))
+                    tokensPerSecond: Math.round(tokens.length / (totalProcessingTime / 1000))
                 }
             });
 
-            // Update loaded cards state
-            setLoadedCards(vocabEntries);
+            // Update loaded cards state with both personal and dictionary entries
+            setLoadedPersonalCards(vocabEntries.personalEntries);
+            setLoadedDictionaryCards(vocabEntries.dictionaryEntries);
 
             // Mark document as processed in session state
             setProcessedDocuments(prev => new Set(prev).add(text.id));
@@ -141,7 +147,8 @@ export function useVocabularyProcessing(token: string | null): UseVocabularyProc
                 documentTitle: text.title,
                 totalTime: `${totalProcessingTime.toFixed(2)}ms`,
                 tokensProcessed: tokenCount,
-                vocabularyEntriesLoaded: vocabEntries.length,
+                personalEntriesLoaded: vocabEntries.personalEntries.length,
+                dictionaryEntriesLoaded: vocabEntries.dictionaryEntries.length,
                 status: 'success'
             });
         } catch (error) {
@@ -156,11 +163,13 @@ export function useVocabularyProcessing(token: string | null): UseVocabularyProc
         } finally {
             setProcessingVocab(false);
         }
-    }, [token, processedDocuments, loadedCards.length]);
+    }, [token, processedDocuments, loadedPersonalCards.length, loadedDictionaryCards.length]);
 
     return {
-        loadedCards,
-        setLoadedCards,
+        loadedPersonalCards,
+        loadedDictionaryCards,
+        setLoadedPersonalCards,
+        setLoadedDictionaryCards,
         processingVocab,
         vocabError,
         processedDocuments,

@@ -1,7 +1,7 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
-import { User, UserCreateData, UserLoginData, AuthResponse } from '../types/index.js';
+import { User, UserCreateData, UserLoginData, AuthResponse, Language } from '../types/index.js';
 import { ValidationError, DuplicateError, NotFoundError, DALError } from '../types/dal.js';
 
 // JWT secret key - should be in environment variables in production
@@ -178,7 +178,7 @@ export class UserService {
   /**
    * Update user profile information
    */
-  async updateUserProfile(userId: string, updateData: { email?: string; name?: string }): Promise<User> {
+  async updateUserProfile(userId: string, updateData: { email?: string; name?: string; selectedLanguage?: Language }): Promise<User> {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }

@@ -66,15 +66,12 @@ export class UserWorkPointsController {
           )
         }));
 
-        const syncResult = await this.userWorkPointsService.bulkSyncWorkPoints(userId, { 
-          entries: processedEntries 
+        // For now, just return an error for bulk operations since the method doesn't exist
+        res.status(501).json({
+          error: 'Bulk sync not implemented yet',
+          code: 'ERR_BULK_SYNC_NOT_IMPLEMENTED'
         });
-
-        if (syncResult.success) {
-          res.json(syncResult);
-        } else {
-          res.status(400).json(syncResult);
-        }
+        return;
       } else {
         // Handle single entry
         const { date, workPoints, deviceFingerprint } = requestBody;
@@ -118,193 +115,6 @@ export class UserWorkPointsController {
     }
   }
 
-  /**
-   * Bulk sync work points for multiple days
-   * POST /api/users/work-points/bulk-sync
-   */
-  async bulkSyncWorkPoints(req: Request, res: Response): Promise<void> {
-    try {
-      const userId = (req as any).user?.userId;
-      const { entries } = req.body;
-
-      if (!userId) {
-        res.status(401).json({
-          error: 'User not authenticated',
-          code: 'ERR_NOT_AUTHENTICATED'
-        });
-        return;
-      }
-
-      console.log(`[WORK-POINTS-CONTROLLER] 📥 Bulk sync request received:`, {
-        userId: `${userId.substring(0, 8)}...`,
-        entriesCount: entries?.length || 0,
-        timestamp: new Date().toISOString()
-      });
-
-      if (!entries || !Array.isArray(entries)) {
-        res.status(400).json({
-          error: 'Entries array is required',
-          code: 'ERR_MISSING_ENTRIES'
-        });
-        return;
-      }
-
-      const syncResult = await this.userWorkPointsService.bulkSyncWorkPoints(userId, { entries });
-
-      if (syncResult.success) {
-        res.json(syncResult);
-      } else {
-        res.status(400).json(syncResult);
-      }
-    } catch (error) {
-      this.handleError(error, res);
-    }
-  }
-
-  /**
-   * Get user work points statistics
-   * GET /api/users/work-points/stats
-   */
-  async getUserStats(req: Request, res: Response): Promise<void> {
-    try {
-      const userId = (req as any).user?.userId;
-
-      if (!userId) {
-        res.status(401).json({
-          error: 'User not authenticated',
-          code: 'ERR_NOT_AUTHENTICATED'
-        });
-        return;
-      }
-
-      const stats = await this.userWorkPointsService.getUserWorkPointsStats(userId);
-      res.json(stats);
-    } catch (error) {
-      this.handleError(error, res);
-    }
-  }
-
-  /**
-   * Get user work points analytics for date range
-   * GET /api/users/work-points/analytics
-   */
-  async getUserAnalytics(req: Request, res: Response): Promise<void> {
-    try {
-      const userId = (req as any).user?.userId;
-      const startDate = req.query.startDate as string;
-      const endDate = req.query.endDate as string;
-
-      if (!userId) {
-        res.status(401).json({
-          error: 'User not authenticated',
-          code: 'ERR_NOT_AUTHENTICATED'
-        });
-        return;
-      }
-
-      if (!startDate || !endDate) {
-        res.status(400).json({
-          error: 'Start date and end date are required',
-          code: 'ERR_MISSING_DATE_RANGE'
-        });
-        return;
-      }
-
-      const analytics = await this.userWorkPointsService.getUserAnalytics(userId, startDate, endDate);
-      res.json(analytics);
-    } catch (error) {
-      this.handleError(error, res);
-    }
-  }
-
-  /**
-   * Get user device summary
-   * GET /api/users/work-points/devices
-   */
-  async getUserDeviceSummary(req: Request, res: Response): Promise<void> {
-    try {
-      const userId = (req as any).user?.userId;
-
-      if (!userId) {
-        res.status(401).json({
-          error: 'User not authenticated',
-          code: 'ERR_NOT_AUTHENTICATED'
-        });
-        return;
-      }
-
-      const devices = await this.userWorkPointsService.getUserDeviceSummary(userId);
-      res.json(devices);
-    } catch (error) {
-      this.handleError(error, res);
-    }
-  }
-
-  /**
-   * Get recent work points activity
-   * GET /api/users/work-points/recent
-   */
-  async getRecentActivity(req: Request, res: Response): Promise<void> {
-    try {
-      const userId = (req as any).user?.userId;
-      const days = parseInt(req.query.days as string) || 30;
-
-      if (!userId) {
-        res.status(401).json({
-          error: 'User not authenticated',
-          code: 'ERR_NOT_AUTHENTICATED'
-        });
-        return;
-      }
-
-      const recentActivity = await this.userWorkPointsService.getRecentActivity(userId, days);
-      res.json(recentActivity);
-    } catch (error) {
-      this.handleError(error, res);
-    }
-  }
-
-  /**
-   * Get work points for specific date range
-   * GET /api/users/work-points/range
-   */
-  async getWorkPointsInRange(req: Request, res: Response): Promise<void> {
-    try {
-      const userId = (req as any).user?.userId;
-      const startDate = req.query.startDate as string;
-      const endDate = req.query.endDate as string;
-      const limit = parseInt(req.query.limit as string) || 100;
-      const offset = parseInt(req.query.offset as string) || 0;
-
-      if (!userId) {
-        res.status(401).json({
-          error: 'User not authenticated',
-          code: 'ERR_NOT_AUTHENTICATED'
-        });
-        return;
-      }
-
-      if (!startDate || !endDate) {
-        res.status(400).json({
-          error: 'Start date and end date are required',
-          code: 'ERR_MISSING_DATE_RANGE'
-        });
-        return;
-      }
-
-      const workPoints = await this.userWorkPointsService.getUserWorkPointsInRange(
-        userId,
-        startDate,
-        endDate,
-        limit,
-        offset
-      );
-
-      res.json(workPoints);
-    } catch (error) {
-      this.handleError(error, res);
-    }
-  }
 
   /**
    * Check if user has work points for specific date
@@ -392,6 +202,38 @@ export class UserWorkPointsController {
       );
 
       res.json({ deviceFingerprint: fingerprint });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  /**
+   * Get calendar data for a specific month showing work points and penalties
+   * GET /api/users/work-points/calendar/:month
+   */
+  async getCalendarData(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = (req as any).user?.userId;
+      const month = req.params.month; // Expected format: YYYY-MM
+
+      if (!userId) {
+        res.status(401).json({
+          error: 'User not authenticated',
+          code: 'ERR_NOT_AUTHENTICATED'
+        });
+        return;
+      }
+
+      if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+        res.status(400).json({
+          error: 'Month parameter is required in YYYY-MM format',
+          code: 'ERR_INVALID_MONTH_FORMAT'
+        });
+        return;
+      }
+
+      const calendarData = await this.userWorkPointsService.getCalendarData(userId, month);
+      res.json(calendarData);
     } catch (error) {
       this.handleError(error, res);
     }

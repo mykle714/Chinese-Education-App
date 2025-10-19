@@ -39,6 +39,7 @@ services:
     volumes:
       - ./server:/app
       - ./data:/app/data
+      - .:/app/project-root
       - /app/node_modules
     depends_on:
       - postgres
@@ -53,7 +54,7 @@ services:
     container_name: cow-frontend-local
     restart: unless-stopped
     environment:
-      - VITE_API_URL=http://localhost:5000
+      - VITE_API_URL=http://backend:5000
     ports:
       - "3000:3000"
     volumes:

@@ -37,29 +37,55 @@ export class UserController {
     try {
       const { email, password } = req.body;
       
-      const authResult = await this.userService.authenticateUser(email, password);
+      const authResponse = await this.userService.authenticateUser(email, password);
       
-      // Set token in HTTP-only cookie
-      res.cookie('token', authResult.token, {
+      // Set token as cookie
+      res.cookie('token', authResponse.token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
         maxAge: 24 * 60 * 60 * 1000 // 24 hours
       });
       
-      res.json(authResult);
+      res.json(authResponse);
     } catch (error) {
       this.handleError(error, res);
     }
   }
 
   /**
-   * Logout user
-   * POST /api/auth/logout
+   * Update user's selected language
+   * PUT /api/users/language
    */
-  async logout(req: Request, res: Response): Promise<void> {
+  async updateLanguage(req: Request, res: Response): Promise<void> {
     try {
-      res.clearCookie('token');
-      res.json({ message: 'Logged out successfully' });
+      const userId = (req as any).user?.userId;
+      
+      if (!userId) {
+        res.status(401).json({ 
+          error: 'User not authenticated',
+          code: 'ERR_NOT_AUTHENTICATED'
+        });
+        return;
+      }
+
+      const { selectedLanguage } = req.body;
+      
+      // Validate language
+      const validLanguages = ['zh', 'ja', 'ko', 'vi'];
+      if (!selectedLanguage || !validLanguages.includes(selectedLanguage)) {
+        res.status(400).json({
+          error: 'Invalid language. Must be one of: zh, ja, ko, vi',
+          code: 'ERR_INVALID_LANGUAGE'
+        });
+        return;
+      }
+      
+      const updatedUser = await this.userService.updateUserProfile(userId, {
+        selectedLanguage
+      });
+      
+      res.json(updatedUser);
     } catch (error) {
       this.handleError(error, res);
     }

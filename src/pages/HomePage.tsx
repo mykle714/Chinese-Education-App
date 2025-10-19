@@ -6,6 +6,7 @@ import TimeDisplay from "../components/TimeDisplay";
 import StreakCounter from "../components/StreakCounter";
 import MonthlyCalendar from "../components/MonthlyCalendar";
 import LeaderboardPlaceholder from "../components/LeaderboardPlaceholder";
+import ChangelogDisplay from "../components/ChangelogDisplay";
 
 function HomePage() {
     const { user } = useAuth();
@@ -27,7 +28,7 @@ function HomePage() {
             {user ? (
                 <Box sx={{
                     display: 'grid',
-                    gridTemplateColumns: { xs: '1fr', lg: '2fr 1fr' },
+                    gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr' },
                     gap: 4
                 }}>
                     {/* Left Column - User Dashboard */}
@@ -57,6 +58,7 @@ function HomePage() {
                     {/* Right Column - Leaderboard */}
                     <Box>
                         <LeaderboardPlaceholder />
+                        <ChangelogDisplay />
                     </Box>
                 </Box>
             ) : (

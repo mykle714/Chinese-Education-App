@@ -22,6 +22,12 @@ You can understand the different constructs of this project by inspecting the ta
 - Personal vocabulary entry management (view, add, edit, delete)
 - **Flashcards study mode** for vocabulary practice
 - **CSV card import functionality** - Bulk import vocabulary entries from CSV files
+- **Work Points Calendar System** - Daily activity tracking with penalties and rewards
+  - Real-time work points accumulation during study sessions
+  - Daily penalty system for missed activity (10 points per day)
+  - Streak tracking with visual calendar display
+  - Monthly calendar showing points earned (+15) or penalties applied (-10)
+  - Automatic daily boundary sync and penalty calculation
 - Reader interface for text analysis
 - Responsive design with consistent navigation
 - Protected routes requiring authentication
@@ -160,6 +166,50 @@ The VocabEntries table includes a tag system with the following design principle
 
 - Each entry belongs to a user through the `userId` foreign key
 
+#### UserWorkPoints
+
+| Column Name | Data Type        | Constraints | Nullable | Default           | Description                                    |
+| ----------- | ---------------- | ----------- | -------- | ----------------- | ---------------------------------------------- |
+| userId      | uniqueidentifier | FOREIGN KEY | NO       | NULL              | Reference to the user who owns the work points |
+| date        | date             | NOT NULL    | NO       | NULL              | Date of the work points (YYYY-MM-DD)          |
+| deviceFingerprint | varchar(255) | NOT NULL    | NO       | NULL              | Device identifier for multi-device support    |
+| workPoints  | int              | NOT NULL    | NO       | 0                 | Work points earned for the day on this device |
+| lastSyncTimestamp | datetime    |             | YES      | getdate()         | Timestamp of last sync update                  |
+| createdAt   | datetime         |             | YES      | getdate()         | Timestamp when the record was created          |
+| updatedAt   | datetime         |             | YES      | getdate()         | Timestamp when the record was last updated     |
+
+##### Primary Key
+- Composite Primary Key: `(userId, date, deviceFingerprint)` - Allows one entry per user per day per device
+
+##### Indexes
+- Primary Key: `(userId, date, deviceFingerprint)`
+- Index: `(userId, date)` - For daily work points queries
+- Index: `(date)` - For analytics across all users
+- Index: `(userId, date DESC)` - For recent work points queries
+
+##### Work Points System
+The UserWorkPoints table supports a comprehensive daily activity tracking system:
+
+**Daily Tracking:**
+- Each record represents work points earned on a specific date for a specific device
+- Work points are calculated based on study session duration (60 seconds = 1 point)
+- Supports multi-device usage with device fingerprinting
+
+**Penalty System:**
+- Daily penalties (10 points) applied for days without sufficient activity
+- Streak retention requires 5+ points per day
+- Penalties are calculated and applied during daily boundary sync
+
+**Calendar Integration:**
+- Data powers the monthly calendar display showing daily progress
+- Green days: streak threshold met (+points displayed)
+- Red days: penalty applied (-points displayed)
+- Blank days: before tracking started or future dates
+
+##### Relationships
+- `userId` references `Users(id)` with CASCADE DELETE
+- Each user can have multiple entries per day (one per device)
+
 ## API Endpoints
 
 ### Vocabulary Entries
@@ -175,6 +225,14 @@ The VocabEntries table includes a tag system with the following design principle
 - `GET /api/users` - Get all users
 - `GET /api/users/:id` - Get a specific user by ID
 - `POST /api/users` - Create a new user
+
+### Work Points & Calendar
+
+- `POST /api/users/work-points/sync` - Sync work points for a user's daily activity
+- `GET /api/users/work-points/calendar/:month` - Get calendar data showing work points and penalties (format: YYYY-MM)
+- `GET /api/users/work-points/check/:date` - Check if user has work points for a specific date
+- `GET /api/users/work-points/total/:date` - Get total work points for a specific date
+- `POST /api/users/work-points/generate-fingerprint` - Generate device fingerprint for multi-device support
 
 ## Navigation and Page Transitions
 

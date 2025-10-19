@@ -50,10 +50,14 @@ export class VocabEntryService {
     }
     
     // Create entry with default values (business logic)
+    // Use user's selected language or default to Chinese
+    const language = user.selectedLanguage || 'zh';
+    
     const newEntry = await this.vocabEntryDAL.create({
       userId,
       entryKey: entryData.entryKey.trim(),
       entryValue: entryData.entryValue.trim(),
+      language,
       hskLevelTag: entryData.hskLevelTag || null
     });
     
@@ -131,21 +135,25 @@ export class VocabEntryService {
 
   /**
    * Get all vocabulary entries for a user with pagination
+   * Filters by user's preferred language
    */
   async getUserEntries(userId: string, limit: number = 100, offset: number = 0): Promise<{
     entries: VocabEntry[];
     total: number;
     hasMore: boolean;
   }> {
-    // Verify user exists
+    // Verify user exists and get their preferred language
     const user = await this.userDAL.findById(userId);
     if (!user) {
       throw new NotFoundError('User not found');
     }
     
+    // Use user's selected language or default to Chinese
+    const language = user.selectedLanguage || 'zh';
+    
     const [entries, total] = await Promise.all([
-      this.vocabEntryDAL.findByUserId(userId, limit, offset),
-      this.vocabEntryDAL.countByUserId(userId)
+      this.vocabEntryDAL.findByUserIdAndLanguage(userId, language, limit, offset),
+      this.vocabEntryDAL.countByUserIdAndLanguage(userId, language)
     ]);
     
     return {
@@ -220,10 +228,14 @@ export class VocabEntryService {
     }
     
     // Convert CSV entries to VocabEntryCreateData
+    // Use user's selected language or default to Chinese
+    const language = user.selectedLanguage || 'zh';
+    
     const vocabEntries: VocabEntryCreateData[] = entries.map(entry => ({
       userId,
       entryKey: entry.front.trim(),
       entryValue: entry.back.trim(),
+      language,
       hskLevelTag: null // Business rule: CSV imports don't have HSK levels by default
     }));
     
@@ -292,10 +304,14 @@ export class VocabEntryService {
             }
             
             // Convert to VocabEntryCreateData
+            // Use user's selected language or default to Chinese
+            const language = user.selectedLanguage || 'zh';
+            
             const vocabEntries: VocabEntryCreateData[] = entries.map(entry => ({
               userId,
               entryKey: entry.front.trim(),
               entryValue: entry.back.trim(),
+              language,
               hskLevelTag: null
             }));
             

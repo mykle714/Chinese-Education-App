@@ -3,13 +3,10 @@ import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import {
   UserWorkPoints,
   UserWorkPointsCreateData,
-  UserWorkPointsStats,
-  DeviceWorkPointsSummary,
-  WorkPointsAnalytics,
   WorkPointsSyncRequest,
   WorkPointsSyncResponse,
-  BulkWorkPointsSync,
-  BulkWorkPointsSyncResponse
+  CalendarDataResponse,
+  CalendarDayData
 } from '../types/workPoints.js';
 import { ValidationError, NotFoundError } from '../types/dal.js';
 
@@ -130,16 +127,12 @@ export class UserWorkPointsService {
   }
 
   /**
-   * Bulk sync work points for multiple days (for catch-up syncing)
+   * Get calendar data for a specific month showing work points and penalties
    */
-  async bulkSyncWorkPoints(userId: string, bulkSync: BulkWorkPointsSync): Promise<BulkWorkPointsSyncResponse> {
-    console.log(`[WORK-POINTS-SERVICE] 🔄 Starting bulk work points sync:`, {
+  async getCalendarData(userId: string, month: string): Promise<CalendarDataResponse> {
+    console.log(`[WORK-POINTS-SERVICE] 📅 Getting calendar data:`, {
       userId: `${userId.substring(0, 8)}...`,
-      entriesCount: bulkSync.entries.length,
-      dateRange: {
-        first: bulkSync.entries[0]?.date,
-        last: bulkSync.entries[bulkSync.entries.length - 1]?.date
-      }
+      month
     });
 
     // Verify user exists
@@ -148,159 +141,90 @@ export class UserWorkPointsService {
       throw new NotFoundError('User not found');
     }
 
-    // Business validation
-    if (!bulkSync.entries || bulkSync.entries.length === 0) {
-      throw new ValidationError('No entries provided for bulk sync');
+    // Validate month format (YYYY-MM)
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+      throw new ValidationError('Month must be in YYYY-MM format');
     }
 
-    if (bulkSync.entries.length > 100) {
-      throw new ValidationError('Too many entries for bulk sync (maximum 100)');
-    }
+    const [year, monthNum] = month.split('-').map(Number);
+    const startDate = `${year}-${monthNum.toString().padStart(2, '0')}-01`;
+    const endDate = new Date(year, monthNum, 0).toISOString().split('T')[0]; // Last day of month
 
-    // Validate each entry
-    for (const entry of bulkSync.entries) {
-      this.validateSyncRequest(entry);
-    }
+    // Get all work points data for this month
+    const monthWorkPoints = await this.userWorkPointsDAL.findByUserIdInDateRange(userId, startDate, endDate);
 
-    const results: Array<{
-      date: string;
-      success: boolean;
-      error?: string;
-    }> = [];
+    // Find user's first activity date
+    const allUserData = await this.userWorkPointsDAL.findByUserId(userId, 1000, 0);
+    const firstActivityDate = allUserData.length > 0 ? 
+      allUserData.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0].date : null;
 
-    let totalSynced = 0;
-    let totalFailed = 0;
+    // Generate calendar data for each day of the month
+    // Note: We don't determine "today" on the server - that's done client-side based on user's timezone
+    const daysInMonth = new Date(year, monthNum, 0).getDate();
+    const days: CalendarDayData[] = [];
 
-    // Process each entry individually to ensure partial success
-    for (const entry of bulkSync.entries) {
-      try {
-        const deviceFingerprint = this.validateDeviceFingerprint(entry.deviceFingerprint);
-        
-        await this.userWorkPointsDAL.upsertWorkPoints(
-          userId,
-          entry.date,
-          deviceFingerprint,
-          entry.workPoints
-        );
+    // Import penalty configuration from constants (hardcoded server-side values)
+    const STREAK_RETENTION_POINTS = 5; // Points needed to maintain streak
+    const DAILY_PENALTY_POINTS = 10;   // Fixed penalty points per day
 
-        results.push({
-          date: entry.date,
-          success: true
-        });
-        totalSynced++;
-      } catch (error: any) {
-        results.push({
-          date: entry.date,
-          success: false,
-          error: error.message
-        });
-        totalFailed++;
+    for (let day = 1; day <= daysInMonth; day++) {
+      const currentDate = `${year}-${monthNum.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+      // Server doesn't determine isToday or isFuture - client will do this based on user's timezone
+      const isToday = false; // Client will override this
+      const isFuture = false; // Client will determine this
+      const isBeforeFirstActivity = firstActivityDate ? currentDate < firstActivityDate : true;
 
-        console.warn(`[WORK-POINTS-SERVICE] ⚠️ Bulk sync entry failed:`, {
-          userId: `${userId.substring(0, 8)}...`,
-          date: entry.date,
-          error: error.message
+      // Calculate work points earned for this day
+      // Convert database date to string for comparison since entry.date might be a Date object
+      const dayEntries = monthWorkPoints.filter(entry => {
+        const entryDateStr = typeof entry.date === 'object' && entry.date !== null ? 
+          new Date(entry.date).toISOString().split('T')[0] : 
+          entry.date;
+        return entryDateStr === currentDate;
+      });
+      const workPointsEarned = dayEntries.reduce((sum, entry) => sum + entry.workPoints, 0);
+
+      // Debug log for troubleshooting
+      if (day <= 3) {
+        console.log(`[CALENDAR-DEBUG] Day ${day}:`, {
+          currentDate,
+          dayEntriesFound: dayEntries.length,
+          workPointsEarned,
+          streakThreshold: STREAK_RETENTION_POINTS,
+          firstEntry: dayEntries[0] ? {
+            date: dayEntries[0].date,
+            dateType: typeof dayEntries[0].date,
+            workPoints: dayEntries[0].workPoints
+          } : null
         });
       }
-    }
 
-    console.log(`[WORK-POINTS-SERVICE] 📊 Bulk sync completed:`, {
-      userId: `${userId.substring(0, 8)}...`,
-      totalEntries: bulkSync.entries.length,
-      synced: totalSynced,
-      failed: totalFailed,
-      successRate: `${(totalSynced / bulkSync.entries.length * 100).toFixed(1)}%`
-    });
+      // Determine if streak threshold was met
+      const streakMaintained = workPointsEarned >= STREAK_RETENTION_POINTS;
+
+      // Calculate penalty if applicable
+      // Note: Client will recalculate penalties based on their timezone to determine future dates
+      // We set a base penalty here if threshold not met and not before first activity
+      let penaltyAmount = 0;
+      if (!isBeforeFirstActivity && !streakMaintained) {
+        penaltyAmount = DAILY_PENALTY_POINTS;
+      }
+
+      days.push({
+        date: currentDate,
+        workPointsEarned,
+        penaltyAmount,
+        streakMaintained,
+        isToday,
+        hasData: !isBeforeFirstActivity
+      });
+    }
 
     return {
-      success: totalFailed === 0,
-      results,
-      totalSynced,
-      totalFailed
+      month,
+      days,
+      userFirstActivityDate: firstActivityDate
     };
-  }
-
-  /**
-   * Get comprehensive work points statistics for a user
-   */
-  async getUserWorkPointsStats(userId: string): Promise<UserWorkPointsStats> {
-    // Verify user exists
-    const user = await this.userDAL.findById(userId);
-    if (!user) {
-      throw new NotFoundError('User not found');
-    }
-
-    return await this.userWorkPointsDAL.getUserWorkPointsStats(userId);
-  }
-
-  /**
-   * Get work points analytics for a date range
-   */
-  async getUserAnalytics(userId: string, startDate: string, endDate: string): Promise<WorkPointsAnalytics> {
-    // Verify user exists
-    const user = await this.userDAL.findById(userId);
-    if (!user) {
-      throw new NotFoundError('User not found');
-    }
-
-    // Business validation for date range
-    this.validateDateRange(startDate, endDate);
-
-    return await this.userWorkPointsDAL.getUserWorkPointsAnalytics(userId, startDate, endDate);
-  }
-
-  /**
-   * Get device usage summary for a user
-   */
-  async getUserDeviceSummary(userId: string): Promise<DeviceWorkPointsSummary[]> {
-    // Verify user exists
-    const user = await this.userDAL.findById(userId);
-    if (!user) {
-      throw new NotFoundError('User not found');
-    }
-
-    return await this.userWorkPointsDAL.getDeviceWorkPointsSummary(userId);
-  }
-
-  /**
-   * Get user's recent work points activity
-   */
-  async getRecentActivity(userId: string, days: number = 30): Promise<UserWorkPoints[]> {
-    // Verify user exists
-    const user = await this.userDAL.findById(userId);
-    if (!user) {
-      throw new NotFoundError('User not found');
-    }
-
-    // Business validation
-    if (days < 1 || days > 365) {
-      throw new ValidationError('Days must be between 1 and 365');
-    }
-
-    return await this.userWorkPointsDAL.getRecentWorkPoints(userId, days);
-  }
-
-  /**
-   * Get work points for specific date range with pagination
-   */
-  async getUserWorkPointsInRange(
-    userId: string,
-    startDate: string,
-    endDate: string,
-    limit: number = 100,
-    offset: number = 0
-  ): Promise<UserWorkPoints[]> {
-    // Verify user exists
-    const user = await this.userDAL.findById(userId);
-    if (!user) {
-      throw new NotFoundError('User not found');
-    }
-
-    // Business validation
-    this.validateDateRange(startDate, endDate);
-    this.validatePagination(limit, offset);
-
-    return await this.userWorkPointsDAL.findByUserIdInDateRange(userId, startDate, endDate);
   }
 
   /**

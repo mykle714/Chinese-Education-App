@@ -4,12 +4,41 @@
  */
 
 /**
+ * Detects if text contains Vietnamese diacritical marks
+ */
+function hasVietnameseDiacritics(text: string): boolean {
+  // Vietnamese diacritical marks pattern
+  const vietnameseDiacritics = /[áàảãạăắằẳẵặâấầẩẫậéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵđ]/i;
+  return vietnameseDiacritics.test(text);
+}
+
+/**
+ * Extracts Vietnamese words from text
+ * Vietnamese uses space-separated words with Latin alphabet + diacritical marks
+ */
+function extractVietnameseTokens(text: string): string[] {
+  if (!text) return [];
+  
+  // Pattern to match Vietnamese words (letters with diacritics + đ)
+  const vietnameseWordPattern = /[a-záàảãạăắằẳẵặâấầẩẫậéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵđ]+/gi;
+  
+  const matches = text.match(vietnameseWordPattern);
+  return matches || [];
+}
+
+/**
  * Extracts non-English characters from text
  * Includes Chinese, Japanese, Korean, and other non-Latin scripts
  * Excludes English letters, numbers, spaces, and punctuation
  */
 export function extractNonEnglishTokens(text: string): string[] {
   if (!text) return [];
+
+  // Check if text contains Vietnamese diacritical marks
+  if (hasVietnameseDiacritics(text)) {
+    // Use word-based extraction for Vietnamese
+    return extractVietnameseTokens(text);
+  }
 
   // Regular expression to match non-English characters
   // Includes: Chinese (Han), Japanese (Hiragana, Katakana), Korean (Hangul), 
@@ -50,9 +79,24 @@ export function generateTokenCombinations(tokens: string[], maxLength: number = 
  * @returns Array of unique tokens for vocabulary lookup
  */
 export function processDocumentForTokens(documentText: string): string[] {
-  // Extract non-English characters
+  // Extract non-English characters/words
   const nonEnglishTokens = extractNonEnglishTokens(documentText);
   
+  // Check if text is Vietnamese (word-based) or character-based (Chinese/Japanese/Korean)
+  if (hasVietnameseDiacritics(documentText)) {
+    // Vietnamese: Return unique words directly (no character combinations)
+    const uniqueWords = Array.from(new Set(nonEnglishTokens.map(word => word.toLowerCase())));
+    
+    // Sort by length (longer words first for better matching)
+    return uniqueWords.sort((a, b) => {
+      if (a.length !== b.length) {
+        return b.length - a.length;
+      }
+      return a.localeCompare(b);
+    });
+  }
+  
+  // For character-based languages (Chinese, Japanese, Korean, etc.)
   // Generate token combinations (1-4 characters)
   const tokenCombinations = generateTokenCombinations(nonEnglishTokens, 4);
   

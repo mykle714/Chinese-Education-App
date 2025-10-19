@@ -1,22 +1,26 @@
 import { useState, useCallback } from "react";
-import { findExactMatch, getSelectedText } from "../utils/textSelection";
+import { findExactMatch, findDictionaryMatch, getSelectedText } from "../utils/textSelection";
 import { isWordBoundary } from "../utils/textSelectionUtils";
-import type { VocabEntry } from "../types";
+import type { VocabEntry, DictionaryEntry } from "../types";
 
 interface UseTextSelectionReturn {
-    selectedCard: VocabEntry | null;
-    setSelectedCard: React.Dispatch<React.SetStateAction<VocabEntry | null>>;
+    selectedPersonalCard: VocabEntry | null;
+    selectedDictionaryCard: DictionaryEntry | null;
+    setSelectedPersonalCard: React.Dispatch<React.SetStateAction<VocabEntry | null>>;
+    setSelectedDictionaryCard: React.Dispatch<React.SetStateAction<DictionaryEntry | null>>;
     handleTextChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
     handleTextSelectionChange: (event: React.SyntheticEvent<HTMLDivElement>) => void;
     handleAutoWordSelect: (event: React.SyntheticEvent<HTMLDivElement>) => void;
 }
 
 export function useTextSelection(
-    loadedCards: VocabEntry[],
+    loadedPersonalCards: VocabEntry[],
+    loadedDictionaryCards: DictionaryEntry[],
     autoSelectEnabled: boolean
 ): UseTextSelectionReturn {
     // Text selection card state
-    const [selectedCard, setSelectedCard] = useState<VocabEntry | null>(null);
+    const [selectedPersonalCard, setSelectedPersonalCard] = useState<VocabEntry | null>(null);
+    const [selectedDictionaryCard, setSelectedDictionaryCard] = useState<DictionaryEntry | null>(null);
 
     // Handle text change - prevent modifications while maintaining cursor functionality
     const handleTextChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
@@ -33,25 +37,24 @@ export function useTextSelection(
         // Get the currently selected text
         const selectedTextContent = getSelectedText(textarea);
 
-        // Find matching vocabulary card
-        const matchingCard = findExactMatch(selectedTextContent, loadedCards);
+        // Find matching cards in both personal and dictionary
+        const matchingPersonalCard = findExactMatch(selectedTextContent, loadedPersonalCards);
+        const matchingDictionaryCard = findDictionaryMatch(selectedTextContent, loadedDictionaryCards);
 
-        // Update the selected card state
-        setSelectedCard(matchingCard);
+        // Update the selected card states
+        setSelectedPersonalCard(matchingPersonalCard);
+        setSelectedDictionaryCard(matchingDictionaryCard);
 
         // Log for debugging
         if (selectedTextContent) {
             console.log(`[TEXT-SELECTION] Selected text: "${selectedTextContent}"`, {
-                hasMatch: !!matchingCard,
-                matchedCard: matchingCard ? {
-                    id: matchingCard.id,
-                    entryKey: matchingCard.entryKey,
-                    entryValue: matchingCard.entryValue
-                } : null,
-                totalLoadedCards: loadedCards.length
+                hasPersonalMatch: !!matchingPersonalCard,
+                hasDictionaryMatch: !!matchingDictionaryCard,
+                totalPersonalCards: loadedPersonalCards.length,
+                totalDictionaryCards: loadedDictionaryCards.length
             });
         }
-    }, [loadedCards]);
+    }, [loadedPersonalCards, loadedDictionaryCards]);
 
     // Handle text selection changes for auto word selection using native browser APIs
     const handleAutoWordSelect = useCallback((event: React.SyntheticEvent<HTMLDivElement>) => {
@@ -156,8 +159,10 @@ export function useTextSelection(
     }, [autoSelectEnabled]);
 
     return {
-        selectedCard,
-        setSelectedCard,
+        selectedPersonalCard,
+        selectedDictionaryCard,
+        setSelectedPersonalCard,
+        setSelectedDictionaryCard,
         handleTextChange,
         handleTextSelectionChange,
         handleAutoWordSelect

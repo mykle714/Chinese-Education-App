@@ -14,7 +14,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Import DAL architecture
-import { userController, vocabEntryController, onDeckVocabController, userWorkPointsController } from './dal/setup.js';
+import { userController, vocabEntryController, onDeckVocabController, userWorkPointsController, textController } from './dal/setup.js';
+import { leaderboardController } from './controllers/LeaderboardController.js';
 
 // Configure multer for file uploads
 const upload = multer({ 
@@ -238,73 +239,55 @@ app.get('/api/users/:id/total-work-points', authenticateToken, async (req, res) 
   await userController.getTotalWorkPoints(req, res);
 });
 
-// Get all texts for reader feature (protected route)
+// Update user preferred language - USING NEW DAL ARCHITECTURE
+// @ts-ignore
+app.put('/api/users/language', authenticateToken, async (req, res) => {
+  console.log('🔄 Using NEW DAL architecture for update user language');
+  await userController.updateLanguage(req, res);
+});
+
+// Text API Routes - USING NEW DAL ARCHITECTURE
+
+// Get all texts for authenticated user (protected route)
 // @ts-ignore
 app.get('/api/texts', authenticateToken, async (req, res) => {
-  try {
-    // Try multiple possible paths for the texts file in Docker environment
-    const possiblePaths = [
-      path.join(process.cwd(), '..', 'data', 'sample-texts.json'),  // Original path
-      path.join(process.cwd(), 'data', 'sample-texts.json'),        // Same level as server
-      path.join(__dirname, '..', '..', 'data', 'sample-texts.json'), // Using __dirname
-      path.join('/app', 'data', 'sample-texts.json'),               // Docker absolute path
-      path.join('/home/cow', 'data', 'sample-texts.json')           // Host absolute path
-    ];
+  console.log('🔄 Using NEW DAL architecture for get all texts');
+  await textController.getAllTexts(req, res);
+});
 
-    let textsFilePath = '';
-    let fileFound = false;
+// Get text statistics for authenticated user (protected route)
+// @ts-ignore
+app.get('/api/texts/stats', authenticateToken, async (req, res) => {
+  console.log('🔄 Using NEW DAL architecture for get text stats');
+  await textController.getUserTextStats(req, res);
+});
 
-    // Debug: Log current working directory and __dirname
-    console.log('Debug - process.cwd():', process.cwd());
-    console.log('Debug - __dirname:', __dirname);
+// Get a specific text by ID (protected route)
+// @ts-ignore
+app.get('/api/texts/:id', authenticateToken, async (req, res) => {
+  console.log('🔄 Using NEW DAL architecture for get text by ID');
+  await textController.getTextById(req, res);
+});
 
-    // Try each possible path
-    for (const testPath of possiblePaths) {
-      console.log('Debug - Testing path:', testPath);
-      if (fs.existsSync(testPath)) {
-        textsFilePath = testPath;
-        fileFound = true;
-        console.log('Debug - Found texts file at:', testPath);
-        break;
-      }
-    }
-    
-    if (!fileFound) {
-      console.error('Texts file not found in any of the expected locations:', possiblePaths);
-      return res.status(404).json({
-        error: 'Texts file not found',
-        code: 'ERR_TEXTS_FILE_NOT_FOUND',
-        debug: {
-          cwd: process.cwd(),
-          dirname: __dirname,
-          searchedPaths: possiblePaths
-        }
-      });
-    }
+// Create new text document (protected route)
+// @ts-ignore
+app.post('/api/texts', authenticateToken, async (req, res) => {
+  console.log('🔄 Using NEW DAL architecture for create text');
+  await textController.createText(req, res);
+});
 
-    const fileContent = fs.readFileSync(textsFilePath, 'utf-8');
-    const textsData = JSON.parse(fileContent);
-    
-    // Sort texts by creation date (newest first)
-    const sortedTexts = textsData.texts.sort((a: Text, b: Text) => {
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-    });
+// Update text document (protected route)
+// @ts-ignore
+app.put('/api/texts/:id', authenticateToken, async (req, res) => {
+  console.log('🔄 Using NEW DAL architecture for update text');
+  await textController.updateText(req, res);
+});
 
-    console.log(`Successfully loaded ${sortedTexts.length} texts from ${textsFilePath}`);
-    res.json(sortedTexts);
-  } catch (error: any) {
-    console.error('Error fetching texts:', error);
-    const errorCode = error.code || 'ERR_FETCH_TEXTS_FAILED';
-    const errorMessage = error.message || 'Failed to retrieve texts';
-    res.status(error.statusCode || 500).json({
-      error: errorMessage,
-      code: errorCode,
-      debug: {
-        cwd: process.cwd(),
-        dirname: __dirname
-      }
-    });
-  }
+// Delete text document (protected route)
+// @ts-ignore
+app.delete('/api/texts/:id', authenticateToken, async (req, res) => {
+  console.log('🔄 Using NEW DAL architecture for delete text');
+  await textController.deleteText(req, res);
 });
 
 // Import vocab entries from CSV file - USING NEW DAL ARCHITECTURE
@@ -393,6 +376,94 @@ app.post('/api/onDeckPage/:featureName/clear', authenticateToken, async (req, re
 app.post('/api/users/work-points/sync', authenticateToken, async (req, res) => {
   console.log('🔄 Using NEW DAL architecture for work points sync');
   await userWorkPointsController.syncWorkPoints(req, res);
+});
+
+// Get calendar data for work points visualization
+// @ts-ignore
+app.get('/api/users/work-points/calendar/:month', authenticateToken, async (req, res) => {
+  console.log('🔄 Using NEW DAL architecture for calendar data');
+  await userWorkPointsController.getCalendarData(req, res);
+});
+
+// Leaderboard API Routes - USING NEW DAL ARCHITECTURE
+
+// Get leaderboard data (protected route)
+// @ts-ignore
+app.get('/api/leaderboard', authenticateToken, async (req, res) => {
+  console.log('🔄 Using NEW DAL architecture for leaderboard');
+  await leaderboardController.getLeaderboard(req, res);
+});
+
+// Get top N users from leaderboard (protected route)
+// @ts-ignore
+app.get('/api/leaderboard/top/:limit', authenticateToken, async (req, res) => {
+  console.log('🔄 Using NEW DAL architecture for top users leaderboard');
+  await leaderboardController.getTopUsers(req, res);
+});
+
+// Get leaderboard with specific user highlighted (protected route)
+// @ts-ignore
+app.get('/api/leaderboard/user/:userId', authenticateToken, async (req, res) => {
+  console.log('🔄 Using NEW DAL architecture for user-specific leaderboard');
+  await leaderboardController.getLeaderboardForUser(req, res);
+});
+
+// Get changelog content
+app.get('/api/changelog', (req, res) => {
+  try {
+    // Try multiple possible paths for the changelog file in Docker environment
+    const possiblePaths = [
+      path.join('/app/project-root', 'CHANGELOG.md'),          // Docker mounted project root
+      path.join(process.cwd(), '..', 'CHANGELOG.md'),          // Original path
+      path.join(process.cwd(), 'CHANGELOG.md'),                // Same level as server
+      path.join(__dirname, '..', '..', 'CHANGELOG.md'),        // Using __dirname
+      path.join('/app', 'CHANGELOG.md'),                       // Docker absolute path
+      path.join('/home/cow', 'CHANGELOG.md')                   // Host absolute path
+    ];
+
+    let changelogFilePath = '';
+    let fileFound = false;
+
+    // Try each possible path
+    for (const testPath of possiblePaths) {
+      if (fs.existsSync(testPath)) {
+        changelogFilePath = testPath;
+        fileFound = true;
+        console.log('Found changelog file at:', testPath);
+        break;
+      }
+    }
+    
+    if (!fileFound) {
+      console.error('Changelog file not found in any of the expected locations:', possiblePaths);
+      return res.status(404).json({
+        error: 'Changelog file not found',
+        code: 'ERR_CHANGELOG_FILE_NOT_FOUND',
+        debug: {
+          cwd: process.cwd(),
+          dirname: __dirname,
+          searchedPaths: possiblePaths
+        }
+      });
+    }
+
+    const fileContent = fs.readFileSync(changelogFilePath, 'utf-8');
+    
+    console.log(`Successfully loaded changelog from ${changelogFilePath}`);
+    res.json({ content: fileContent });
+  } catch (error: any) {
+    console.error('Error fetching changelog:', error);
+    const errorCode = error.code || 'ERR_FETCH_CHANGELOG_FAILED';
+    const errorMessage = error.message || 'Failed to retrieve changelog';
+    res.status(error.statusCode || 500).json({
+      error: errorMessage,
+      code: errorCode,
+      debug: {
+        cwd: process.cwd(),
+        dirname: __dirname
+      }
+    });
+  }
 });
 
 // Health check endpoint for Docker

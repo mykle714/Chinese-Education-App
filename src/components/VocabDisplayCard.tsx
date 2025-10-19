@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
     Box,
     Card,
@@ -6,12 +6,41 @@ import {
     Typography,
     Divider,
     useMediaQuery,
-    useTheme
+    useTheme,
+    Tabs,
+    Tab,
+    List,
+    ListItem,
+    Badge
 } from '@mui/material';
-import type { VocabEntry, HskLevel } from '../types';
+import type { VocabEntry, DictionaryEntry, HskLevel } from '../types';
 
 interface VocabDisplayCardProps {
-    entry: VocabEntry | null;
+    personalEntry: VocabEntry | null;
+    dictionaryEntry: DictionaryEntry | null;
+}
+
+interface TabPanelProps {
+    children?: React.ReactNode;
+    index: number;
+    value: number;
+}
+
+// Tab panel component
+function TabPanel(props: TabPanelProps) {
+    const { children, value, index, ...other } = props;
+
+    return (
+        <div
+            role="tabpanel"
+            hidden={value !== index}
+            id={`vocab-tabpanel-${index}`}
+            aria-labelledby={`vocab-tab-${index}`}
+            {...other}
+        >
+            {value === index && <Box sx={{ pt: 2 }}>{children}</Box>}
+        </div>
+    );
 }
 
 // Helper function to get HSK level number
@@ -27,7 +56,7 @@ const getHskNumber = (hskLevel: HskLevel) => {
     }
 };
 
-// Helper function to render tag badges
+// Helper function to render tag badges for personal entries
 const renderTags = (entry: VocabEntry) => (
     <Box sx={{ position: 'absolute', top: 8, right: 8, display: 'flex', gap: 0.5 }}>
         {entry.hskLevelTag && (
@@ -51,9 +80,16 @@ const renderTags = (entry: VocabEntry) => (
     </Box>
 );
 
-const VocabDisplayCard: React.FC<VocabDisplayCardProps> = React.memo(({ entry }) => {
+const VocabDisplayCard: React.FC<VocabDisplayCardProps> = React.memo(({ personalEntry, dictionaryEntry }) => {
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+    const [currentTab, setCurrentTab] = useState(0);
+
+    const hasAnyEntry = personalEntry !== null || dictionaryEntry !== null;
+
+    const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
+        setCurrentTab(newValue);
+    };
 
     return (
         <Box
@@ -65,123 +101,177 @@ const VocabDisplayCard: React.FC<VocabDisplayCardProps> = React.memo(({ entry })
             <Card
                 sx={{
                     position: 'relative',
-                    boxShadow: entry ? 6 : 2,
-                    border: entry
+                    boxShadow: hasAnyEntry ? 6 : 2,
+                    border: hasAnyEntry
                         ? `2px solid ${theme.palette.primary.main}`
                         : `1px solid ${theme.palette.divider}`,
                     backgroundColor: theme.palette.background.paper,
-                    opacity: entry ? 1 : 0.6,
+                    opacity: hasAnyEntry ? 1 : 0.6,
                     ...(isMobile ? {
-                        // Mobile styling
                         borderRadius: 0,
                         borderTop: 'none',
                         borderLeft: 'none',
                         borderRight: 'none',
                     } : {
-                        // Desktop styling
                         borderRadius: 2,
                     }),
                 }}
             >
-                {entry && renderTags(entry)}
+                {/* Tabs - Always visible */}
+                <Tabs
+                    value={currentTab}
+                    onChange={handleTabChange}
+                    aria-label="vocabulary tabs"
+                    sx={{ borderBottom: 1, borderColor: 'divider', px: 2, pt: 1 }}
+                >
+                    <Tab
+                        label={
+                            <Badge badgeContent={personalEntry ? 1 : 0} color="primary">
+                                Personal
+                            </Badge>
+                        }
+                        id="vocab-tab-0"
+                        aria-controls="vocab-tabpanel-0"
+                    />
+                    <Tab
+                        label={
+                            <Badge badgeContent={dictionaryEntry ? 1 : 0} color="secondary">
+                                Dictionary
+                            </Badge>
+                        }
+                        id="vocab-tab-1"
+                        aria-controls="vocab-tabpanel-1"
+                    />
+                </Tabs>
+
                 <CardContent sx={{ pb: 2 }}>
-                    {entry ? (
-                        // Show vocabulary entry content
-                        <>
-                            <Typography
-                                variant={isMobile ? "h5" : "h6"}
-                                component="h3"
-                                gutterBottom
-                                sx={{
-                                    fontWeight: 'bold',
-                                    pr: entry.hskLevelTag ? 6 : 0, // Space for tags
-                                    fontFamily: '"Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif',
-                                }}
-                            >
-                                {entry.entryKey}
+                    {/* Personal Entry Tab */}
+                    <TabPanel value={currentTab} index={0}>
+                        {personalEntry ? (
+                            <>
+                                {personalEntry.hskLevelTag && renderTags(personalEntry)}
+                                <Typography
+                                    variant={isMobile ? "h5" : "h6"}
+                                    component="h3"
+                                    gutterBottom
+                                    sx={{
+                                        fontWeight: 'bold',
+                                        pr: personalEntry.hskLevelTag ? 6 : 0,
+                                        fontFamily: '"Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif',
+                                    }}
+                                >
+                                    {personalEntry.entryKey}
+                                </Typography>
+
+                                <Divider sx={{ mb: 1.5 }} />
+
+                                <Typography
+                                    variant="body1"
+                                    color="text.secondary"
+                                    sx={{
+                                        mb: personalEntry.createdAt ? 1.5 : 0,
+                                        lineHeight: 1.6,
+                                    }}
+                                >
+                                    {personalEntry.entryValue}
+                                </Typography>
+
+                                {personalEntry.createdAt && (
+                                    <>
+                                        <Divider sx={{ mb: 1 }} />
+                                        <Typography
+                                            variant="caption"
+                                            color="text.secondary"
+                                            sx={{
+                                                display: 'block',
+                                                textAlign: 'right',
+                                            }}
+                                        >
+                                            Added: {new Date(personalEntry.createdAt).toLocaleDateString()}
+                                        </Typography>
+                                    </>
+                                )}
+                            </>
+                        ) : (
+                            <Typography variant="body2" color="text.disabled" sx={{ fontStyle: 'italic' }}>
+                                No personal vocabulary entry found.
                             </Typography>
+                        )}
+                    </TabPanel>
 
-                            <Divider sx={{ mb: 1.5 }} />
+                    {/* Dictionary Entry Tab */}
+                    <TabPanel value={currentTab} index={1}>
+                        {dictionaryEntry ? (
+                            <Box sx={{ maxHeight: 400, overflow: 'auto' }}>
+                                <Typography
+                                    variant={isMobile ? "h5" : "h6"}
+                                    component="h3"
+                                    gutterBottom
+                                    sx={{
+                                        fontWeight: 'bold',
+                                        fontFamily: '"Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif',
+                                    }}
+                                >
+                                    {dictionaryEntry.word1}
+                                </Typography>
 
-                            <Typography
-                                variant="body1"
-                                color="text.secondary"
-                                sx={{
-                                    mb: entry.createdAt ? 1.5 : 0,
-                                    lineHeight: 1.6,
-                                }}
-                            >
-                                {entry.entryValue}
+                                <Typography
+                                    variant="body2"
+                                    color="text.secondary"
+                                    sx={{ mb: 1.5, fontStyle: 'italic' }}
+                                >
+                                    {dictionaryEntry.pronunciation}
+                                </Typography>
+
+                                <Divider sx={{ mb: 1.5 }} />
+
+                                <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 'bold' }}>
+                                    Definitions:
+                                </Typography>
+
+                                <List dense sx={{ pt: 0 }}>
+                                    {dictionaryEntry.definitions.map((definition, index) => (
+                                        <ListItem key={index} sx={{ pl: 0, py: 0.5 }}>
+                                            <Typography variant="body2" color="text.secondary">
+                                                {index + 1}. {definition}
+                                            </Typography>
+                                        </ListItem>
+                                    ))}
+                                </List>
+                            </Box>
+                        ) : (
+                            <Typography variant="body2" color="text.disabled" sx={{ fontStyle: 'italic' }}>
+                                No dictionary entry found.
                             </Typography>
-
-                            {entry.createdAt && (
-                                <>
-                                    <Divider sx={{ mb: 1 }} />
-                                    <Typography
-                                        variant="caption"
-                                        color="text.secondary"
-                                        sx={{
-                                            display: 'block',
-                                            textAlign: 'right',
-                                        }}
-                                    >
-                                        Added: {new Date(entry.createdAt).toLocaleDateString()}
-                                    </Typography>
-                                </>
-                            )}
-                        </>
-                    ) : (
-                        // Show empty placeholder content
-                        <>
-                            <Typography
-                                variant={isMobile ? "h5" : "h6"}
-                                component="h3"
-                                gutterBottom
-                                sx={{
-                                    fontWeight: 'bold',
-                                    color: 'text.disabled',
-                                    fontStyle: 'italic',
-                                }}
-                            >
-                                No vocabulary entry found
-                            </Typography>
-
-                            <Divider sx={{ mb: 1.5 }} />
-
-                            <Typography
-                                variant="body2"
-                                color="text.disabled"
-                                sx={{
-                                    lineHeight: 1.6,
-                                    fontStyle: 'italic',
-                                }}
-                            >
-                                Select text to search for matching vocabulary entries in your collection.
-                            </Typography>
-                        </>
-                    )}
+                        )}
+                    </TabPanel>
                 </CardContent>
             </Card>
         </Box>
     );
 }, (prevProps, nextProps) => {
-    // Custom comparison function for better memoization
-    // Only re-render if the entry actually changed
-    if (prevProps.entry === null && nextProps.entry === null) {
-        return true; // Both null, no re-render needed
-    }
+    // Custom comparison for memoization
+    const prevPersonal = prevProps.personalEntry;
+    const nextPersonal = nextProps.personalEntry;
+    const prevDict = prevProps.dictionaryEntry;
+    const nextDict = nextProps.dictionaryEntry;
 
-    if (prevProps.entry === null || nextProps.entry === null) {
-        return false; // One is null, other isn't - re-render needed
-    }
+    // Check personal entry
+    const personalUnchanged =
+        (prevPersonal === null && nextPersonal === null) ||
+        (prevPersonal !== null && nextPersonal !== null &&
+            prevPersonal.id === nextPersonal.id &&
+            prevPersonal.entryKey === nextPersonal.entryKey &&
+            prevPersonal.entryValue === nextPersonal.entryValue);
 
-    // Both entries exist, compare their key properties
-    return (
-        prevProps.entry.id === nextProps.entry.id &&
-        prevProps.entry.entryKey === nextProps.entry.entryKey &&
-        prevProps.entry.entryValue === nextProps.entry.entryValue &&
-        prevProps.entry.hskLevelTag === nextProps.entry.hskLevelTag
-    );
+    // Check dictionary entry
+    const dictUnchanged =
+        (prevDict === null && nextDict === null) ||
+        (prevDict !== null && nextDict !== null &&
+            prevDict.id === nextDict.id &&
+            prevDict.word1 === nextDict.word1);
+
+    return personalUnchanged && dictUnchanged;
 });
 
 VocabDisplayCard.displayName = 'VocabDisplayCard';

@@ -29,7 +29,7 @@ const ENTRIES_PER_PAGE = 10;
 
 // Helper function to render tag badges
 const renderTags = (entry: VocabEntry) => (
-  <Box sx={{ position: 'absolute', top: 8, right: 8, display: 'flex', gap: 0.5 }}>
+  <Box className="vocab-entry-tags" sx={{ position: 'absolute', top: 8, right: 8, display: 'flex', gap: 0.5 }}>
     {entry.hskLevelTag && (
       <Chip
         label={entry.hskLevelTag}
@@ -138,23 +138,27 @@ const VocabEntryCards = ({ refreshTrigger }: VocabEntryCardsProps) => {
   };
 
   if (loading && entries.length === 0) return (
-    <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
+    <Box className="vocab-entries-loading-initial" display="flex" justifyContent="center" alignItems="center" minHeight="200px">
       <CircularProgress />
     </Box>
   );
 
   if (error) return (
-    <Alert severity="error">
-      Error: {error} {errorCode && <span>[Error Code: {errorCode}]</span>}
-    </Alert>
+    <Box className="vocab-entries-error">
+      <Alert severity="error">
+        Error: {error} {errorCode && <span>[Error Code: {errorCode}]</span>}
+      </Alert>
+    </Box>
   );
 
   if (entries.length === 0) return (
-    <Alert severity="info">No vocabulary entries available</Alert>
+    <Box className="vocab-entries-empty">
+      <Alert severity="info">No vocabulary cards available</Alert>
+    </Box>
   );
 
   return (
-    <Box sx={{
+    <Box className="vocab-entries-grid" sx={{
       display: 'grid',
       gridTemplateColumns: {
         xs: '1fr',
@@ -165,6 +169,7 @@ const VocabEntryCards = ({ refreshTrigger }: VocabEntryCardsProps) => {
     }}>
       {entries.map((entry, index) => (
         <Box
+          className="vocab-entry-wrapper"
           key={entry.id}
           ref={index === entries.length - 1 ? lastEntryElementRef : undefined}
         >
@@ -209,7 +214,7 @@ const VocabEntryCards = ({ refreshTrigger }: VocabEntryCardsProps) => {
       ))}
 
       {loading && entries.length > 0 && (
-        <Box gridColumn="1/-1" display="flex" justifyContent="center" p={2}>
+        <Box className="vocab-entries-loading-more" gridColumn="1/-1" display="flex" justifyContent="center" p={2}>
           <CircularProgress size={30} />
         </Box>
       )}

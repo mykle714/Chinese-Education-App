@@ -8,7 +8,7 @@ import {
     IconButton
 } from "@mui/material";
 import {
-    Menu as MenuIcon,
+    LibraryBooks as LibraryBooksIcon,
     Settings as SettingsIcon
 } from "@mui/icons-material";
 import { useAuth } from "../AuthContext";
@@ -68,6 +68,22 @@ function ReaderPage() {
         vocabularyProcessing.loadedDictionaryCards,
         readerSettings.autoSelectEnabled
     );
+
+    // Wrap text selection handlers to record activity
+    const handleTextChangeWithActivity = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+        workPoints.recordActivity();
+        textSelection.handleTextChange(event);
+    }, [workPoints, textSelection]);
+
+    const handleAutoWordSelectWithActivity = useCallback((event: React.SyntheticEvent<HTMLDivElement>) => {
+        workPoints.recordActivity();
+        textSelection.handleAutoWordSelect(event);
+    }, [workPoints, textSelection]);
+
+    const handleTextSelectionChangeWithActivity = useCallback((event: React.SyntheticEvent<HTMLDivElement>) => {
+        workPoints.recordActivity();
+        textSelection.handleTextSelectionChange(event);
+    }, [workPoints, textSelection]);
 
     // Get theme-based selection colors (memoized to prevent recalculation)
     const selectionColors = useMemo(() => {
@@ -292,19 +308,26 @@ function ReaderPage() {
                 const textsData = await response.json();
                 setTexts(textsData);
 
-                // If there's a selected text, update it with the fresh data
+                // If there's a selected text, update it with the fresh data and reprocess vocabulary incrementally
                 if (selectedText) {
                     const updatedText = textsData.find((t: Text) => t.id === selectedText.id);
                     if (updatedText) {
+                        console.log('[READER-PAGE] Processing vocabulary changes after document edit');
+
+                        // Use incremental processing: only fetch vocabulary for newly added tokens
+                        // This handles documents with >1000 tokens by processing only the diff
+                        await vocabularyProcessing.processDocumentVocabularyIncremental(selectedText, updatedText);
+
+                        // Update selected text after vocabulary processing completes
                         setSelectedText(updatedText);
-                        console.log('[READER-PAGE] Updated selected text with fresh data after edit');
+                        console.log('[READER-PAGE] Updated selected text and vocabulary after edit');
                     }
                 }
             }
         } catch (err) {
             console.error('Error reloading texts:', err);
         }
-    }, [token, selectedText]);
+    }, [token, selectedText, vocabularyProcessing]);
 
     const handleDeleteSuccess = useCallback(async () => {
         // If deleted text was selected, clear selection
@@ -452,9 +475,9 @@ function ReaderPage() {
                                         selectedText={selectedText}
                                         autoSelectEnabled={readerSettings.autoSelectEnabled}
                                         selectionColors={selectionColors}
-                                        onTextChange={textSelection.handleTextChange}
-                                        onAutoWordSelect={textSelection.handleAutoWordSelect}
-                                        onTextSelectionChange={textSelection.handleTextSelectionChange}
+                                        onTextChange={handleTextChangeWithActivity}
+                                        onAutoWordSelect={handleAutoWordSelectWithActivity}
+                                        onTextSelectionChange={handleTextSelectionChangeWithActivity}
                                     />
 
                                     {/* Desktop right sidebar - vocabulary card and settings */}
@@ -488,7 +511,36 @@ function ReaderPage() {
                             </>
                         ) : (
                             // Default state when no text is selected
-                            <EmptyState isMobile={isMobile} />
+                            <>
+                                {isMobile ? (
+                                    // On mobile, show the document selection directly in the main content area
+                                    <Box sx={{
+                                        width: '100%',
+                                        maxWidth: '500px',
+                                        mx: 'auto',
+                                        mt: 2,
+                                        '& > *': {
+                                            width: '100% !important'
+                                        }
+                                    }}>
+                                        <TextSidebar
+                                            texts={texts}
+                                            selectedText={selectedText}
+                                            loading={loading}
+                                            error={error}
+                                            onTextSelect={handleTextSelect}
+                                            onCreateNew={handleCreateNew}
+                                            onEdit={handleEdit}
+                                            onDelete={handleDelete}
+                                            formatDate={formatDate}
+                                            drawerWidth={500}
+                                        />
+                                    </Box>
+                                ) : (
+                                    // On desktop, show empty state (sidebar is already visible)
+                                    <EmptyState isMobile={isMobile} />
+                                )}
+                            </>
                         )}
                     </Box>
                 </Box>
@@ -533,7 +585,7 @@ function ReaderPage() {
                             zIndex: 1000
                         }}
                     >
-                        <MenuIcon className="reader-page-mobile-fab-icon" />
+                        <LibraryBooksIcon className="reader-page-mobile-fab-icon" />
                     </Fab>
                 )}
             </Box>

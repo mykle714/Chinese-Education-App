@@ -118,7 +118,7 @@ function EntriesPage() {
             const result = await response.json();
 
             if (response.ok) {
-                const successMessage = `Successfully imported ${result.results.imported} vocabulary entries!`;
+                const successMessage = `Successfully imported ${result.results.imported} vocabulary cards!`;
                 setMessage({
                     type: 'success',
                     text: successMessage
@@ -133,7 +133,7 @@ function EntriesPage() {
             } else {
                 setMessage({
                     type: 'error',
-                    text: result.error || 'Failed to import vocabulary entries.'
+                    text: result.error || 'Failed to import vocabulary cards.'
                 });
             }
         } catch (error) {
@@ -156,17 +156,42 @@ function EntriesPage() {
     };
 
     return (
-        <Container maxWidth="lg" sx={{ py: 4 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
-                <Typography variant="h3" component="h1" gutterBottom sx={{ mb: 0 }}>
-                    Vocabulary Entries
+        <Container className="entries-page-container" maxWidth="lg" sx={{ py: 4 }}>
+            <Box className="entries-page-header" sx={{
+                display: 'flex',
+                flexDirection: { xs: 'column', sm: 'row' },
+                justifyContent: 'space-between',
+                alignItems: { xs: 'stretch', sm: 'center' },
+                gap: { xs: 2, sm: 0 },
+                mb: 4
+            }}>
+                <Typography
+                    variant="h3"
+                    component="h1"
+                    gutterBottom
+                    sx={{
+                        mb: 0,
+                        fontSize: {
+                            xs: 'clamp(2rem, 8vw, 3.5rem)',
+                            sm: 'clamp(1.5rem, 5vw, 3rem)'
+                        }
+                    }}
+                >
+                    Vocabulary Cards
                 </Typography>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Box className="entries-page-actions" sx={{
+                    display: 'flex',
+                    flexDirection: { xs: 'column', sm: 'row' },
+                    alignItems: 'center',
+                    gap: { xs: 1, sm: 2 }
+                }}>
                     {importing && <CircularProgress size={24} />}
                     <Button
                         variant="contained"
                         startIcon={<Add />}
                         onClick={handleAddEntryClick}
+                        fullWidth={true}
+                        sx={{ width: { xs: '100%', sm: 'auto' } }}
                     >
                         Add Entry
                     </Button>
@@ -175,6 +200,11 @@ function EntriesPage() {
                         startIcon={<Upload />}
                         onClick={handleImportClick}
                         disabled={importing}
+                        fullWidth={true}
+                        sx={{
+                            width: { xs: '100%', sm: 'auto' },
+                            display: { xs: 'none', sm: 'flex' }
+                        }}
                     >
                         {importing ? 'Importing...' : 'Import Cards'}
                     </Button>
@@ -199,9 +229,9 @@ function EntriesPage() {
             )}
 
             {importing && (
-                <Box sx={{ mb: 3 }}>
+                <Box className="entries-page-import-progress" sx={{ mb: 3 }}>
                     <Typography variant="body2" sx={{ mb: 1 }}>
-                        Importing vocabulary entries... {Math.round(importProgress)}% - {formatTime(elapsedTime)} elapsed
+                        Importing vocabulary cards... {Math.round(importProgress)}% - {formatTime(elapsedTime)} elapsed
                     </Typography>
                     <LinearProgress
                         variant="determinate"

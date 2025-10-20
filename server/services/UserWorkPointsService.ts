@@ -153,10 +153,37 @@ export class UserWorkPointsService {
     // Get all work points data for this month
     const monthWorkPoints = await this.userWorkPointsDAL.findByUserIdInDateRange(userId, startDate, endDate);
 
+    // Debug: Log what we got from the database
+    console.log(`[CALENDAR-DEBUG] Month work points fetched:`, {
+      count: monthWorkPoints.length,
+      startDate,
+      endDate,
+      firstFew: monthWorkPoints.slice(0, 3).map(entry => ({
+        date: entry.date,
+        dateType: typeof entry.date,
+        workPoints: entry.workPoints
+      }))
+    });
+
     // Find user's first activity date
     const allUserData = await this.userWorkPointsDAL.findByUserId(userId, 1000, 0);
-    const firstActivityDate = allUserData.length > 0 ? 
-      allUserData.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0].date : null;
+    let firstActivityDate: string | null = null;
+    
+    if (allUserData.length > 0) {
+      const sorted = allUserData.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      const firstEntry = sorted[0];
+      
+      // Convert date to string format (handle both Date objects and strings)
+      const dateValue = firstEntry.date as unknown;
+      if (dateValue instanceof Date) {
+        const year = dateValue.getFullYear();
+        const month = (dateValue.getMonth() + 1).toString().padStart(2, '0');
+        const day = dateValue.getDate().toString().padStart(2, '0');
+        firstActivityDate = `${year}-${month}-${day}`;
+      } else if (typeof dateValue === 'string') {
+        firstActivityDate = dateValue.split('T')[0]; // Handle ISO strings
+      }
+    }
 
     // Generate calendar data for each day of the month
     // Note: We don't determine "today" on the server - that's done client-side based on user's timezone
@@ -175,11 +202,27 @@ export class UserWorkPointsService {
       const isBeforeFirstActivity = firstActivityDate ? currentDate < firstActivityDate : true;
 
       // Calculate work points earned for this day
-      // Convert database date to string for comparison since entry.date might be a Date object
+      // Convert database date to string for comparison since entry.date might be a Date object at runtime
       const dayEntries = monthWorkPoints.filter(entry => {
-        const entryDateStr = typeof entry.date === 'object' && entry.date !== null ? 
-          new Date(entry.date).toISOString().split('T')[0] : 
-          entry.date;
+        let entryDateStr: string;
+        
+        // Runtime check - PostgreSQL returns date columns as Date objects despite type definition
+        const dateValue = entry.date as unknown;
+        
+        if (dateValue instanceof Date) {
+          // Extract date components directly without timezone conversion
+          const year = dateValue.getFullYear();
+          const month = (dateValue.getMonth() + 1).toString().padStart(2, '0');
+          const day = dateValue.getDate().toString().padStart(2, '0');
+          entryDateStr = `${year}-${month}-${day}`;
+        } else if (typeof dateValue === 'string') {
+          // Already a string in YYYY-MM-DD format
+          entryDateStr = dateValue.split('T')[0]; // Handle ISO strings
+        } else {
+          // Fallback for unexpected formats
+          entryDateStr = '';
+        }
+        
         return entryDateStr === currentDate;
       });
       const workPointsEarned = dayEntries.reduce((sum, entry) => sum + entry.workPoints, 0);

@@ -29,7 +29,7 @@ export class UserWorkPointsDAL implements IUserWorkPointsDAL {
 
     const result = await dbManager.executeQuery<UserWorkPoints>(async (client) => {
       return await client.query(`
-        SELECT * FROM UserWorkPoints 
+        SELECT * FROM userworkpoints 
         WHERE "userId" = $1 AND date = $2 
         ORDER BY "deviceFingerprint"
       `, [userId, date]);
@@ -54,7 +54,7 @@ export class UserWorkPointsDAL implements IUserWorkPointsDAL {
 
     const result = await dbManager.executeQuery<UserWorkPoints>(async (client) => {
       return await client.query(`
-        SELECT * FROM UserWorkPoints 
+        SELECT * FROM userworkpoints 
         WHERE "userId" = $1 AND date = $2 AND "deviceFingerprint" = $3
       `, [userId, date, deviceFingerprint]);
     });
@@ -82,7 +82,7 @@ export class UserWorkPointsDAL implements IUserWorkPointsDAL {
 
     const result = await dbManager.executeQuery<UserWorkPoints>(async (client) => {
       return await client.query(`
-        INSERT INTO UserWorkPoints ("userId", date, "deviceFingerprint", "workPoints")
+        INSERT INTO userworkpoints ("userId", date, "deviceFingerprint", "workPoints")
         VALUES ($1, $2, $3, $4)
         ON CONFLICT ("userId", date, "deviceFingerprint")
         DO UPDATE SET 
@@ -106,7 +106,7 @@ export class UserWorkPointsDAL implements IUserWorkPointsDAL {
 
     const result = await dbManager.executeQuery<UserWorkPoints>(async (client) => {
       return await client.query(`
-        SELECT * FROM UserWorkPoints 
+        SELECT * FROM userworkpoints 
         WHERE "userId" = $1 
         ORDER BY date DESC, "deviceFingerprint" ASC
         LIMIT $2 OFFSET $3
@@ -129,7 +129,7 @@ export class UserWorkPointsDAL implements IUserWorkPointsDAL {
 
     const result = await dbManager.executeQuery<UserWorkPoints>(async (client) => {
       return await client.query(`
-        SELECT * FROM UserWorkPoints 
+        SELECT * FROM userworkpoints 
         WHERE "userId" = $1 AND date >= $2 AND date <= $3
         ORDER BY date DESC, "deviceFingerprint" ASC
       `, [userId, startDate, endDate]);
@@ -164,7 +164,7 @@ export class UserWorkPointsDAL implements IUserWorkPointsDAL {
     const client = transaction.getClient();
     
     const result = await client.query(`
-      INSERT INTO UserWorkPoints ("userId", date, "deviceFingerprint", "workPoints")
+      INSERT INTO userworkpoints ("userId", date, "deviceFingerprint", "workPoints")
       VALUES ($1, $2, $3, $4)
       ON CONFLICT ("userId", date, "deviceFingerprint")
       DO UPDATE SET 
@@ -194,7 +194,7 @@ export class UserWorkPointsDAL implements IUserWorkPointsDAL {
         SELECT 
           "userId",
           SUM("workPoints") as "totalPoints"
-        FROM UserWorkPoints 
+        FROM userworkpoints 
         WHERE date = $1
         GROUP BY "userId"
         ORDER BY "totalPoints" DESC
@@ -219,7 +219,7 @@ export class UserWorkPointsDAL implements IUserWorkPointsDAL {
       return await client.query(`
         SELECT 
           COALESCE(SUM("workPoints"), 0) as "totalPoints"
-        FROM UserWorkPoints 
+        FROM userworkpoints 
         WHERE "userId" = $1 AND date = $2
       `, [userId, date]);
     });
@@ -241,7 +241,7 @@ export class UserWorkPointsDAL implements IUserWorkPointsDAL {
         SELECT 
           date,
           SUM("workPoints") as "totalPoints"
-        FROM UserWorkPoints 
+        FROM userworkpoints 
         WHERE "userId" = $1
         GROUP BY date
         ORDER BY date DESC

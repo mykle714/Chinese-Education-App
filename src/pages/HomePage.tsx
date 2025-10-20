@@ -19,10 +19,6 @@ function HomePage() {
 
     return (
         <Container maxWidth="xl" sx={{ py: 4 }}>
-            <Typography variant="h3" component="h1" align="center" gutterBottom sx={{ mb: 4 }}>
-                Learning Dashboard
-            </Typography>
-
             <Message />
 
             {user ? (
@@ -64,7 +60,7 @@ function HomePage() {
             ) : (
                 <Box sx={{ textAlign: 'center', py: 8 }}>
                     <Typography variant="h5" gutterBottom>
-                        Welcome to the Learning Dashboard
+                        Welcome to your Dashboard
                     </Typography>
                     <Typography variant="body1" paragraph>
                         Please log in to view your personalized dashboard with study statistics, streak tracking, and progress calendar.

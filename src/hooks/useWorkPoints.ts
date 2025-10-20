@@ -127,17 +127,40 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
     lastSyncResult: null
   });
   
-  // Refs for cleanup
+  // Derived state (must come before refs that use them)
+  const currentPoints = calculatePointsFromMilliseconds(state.millisecondsAccumulated);
+  const isEligiblePage = WORK_POINTS_ELIGIBLE_PAGES.includes(location.pathname);
+  
+  // Refs for cleanup and state access
   const activityTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const animationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
-  // Derived state
-  const currentPoints = calculatePointsFromMilliseconds(state.millisecondsAccumulated);
-  const isEligiblePage = WORK_POINTS_ELIGIBLE_PAGES.includes(location.pathname);
+  // Refs to access current state in throttled function (avoid stale closures)
+  const stateRef = useRef(state);
+  const userIdRef = useRef(user?.id);
+  const isEligiblePageRef = useRef(isEligiblePage);
+  const locationRef = useRef(location);
   
   // Streak derived state
   const streakGoalProgress = Math.min(currentPoints / STREAK_CONFIG.RETENTION_POINTS, 1);
   const hasMetStreakGoalToday = currentPoints >= STREAK_CONFIG.RETENTION_POINTS;
+  
+  // Update refs whenever values change
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+  
+  useEffect(() => {
+    userIdRef.current = user?.id;
+  }, [user?.id]);
+  
+  useEffect(() => {
+    isEligiblePageRef.current = isEligiblePage;
+  }, [isEligiblePage]);
+  
+  useEffect(() => {
+    locationRef.current = location;
+  }, [location]);
 
   // Debounced save function - saves to localStorage after user stops activity
   const debouncedSave = useRef(
@@ -281,23 +304,31 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
     loadDataWithDailyCheck();
   }, [user?.id]);
   
-  // Record user activity - throttled to prevent excessive calls
+  // Record user activity - reads from refs to avoid stale closures
   const recordActivityInternal = useCallback(() => {
-    if (!user?.id || !isEligiblePage) return;
+    // Read current values from refs
+    const currentUserId = userIdRef.current;
+    const currentIsEligiblePage = isEligiblePageRef.current;
+    const currentLocation = locationRef.current;
+    const currentState = stateRef.current;
+    
+    if (!currentUserId || !currentIsEligiblePage) {
+      return;
+    }
     
     const now = new Date();
     const nowTime = now.getTime();
-    const lastActivityTime = state.lastActivity?.getTime() || 0;
+    const lastActivityTime = currentState.lastActivity?.getTime() || 0;
     
     // Check if within activity window (15 seconds)
     if (nowTime - lastActivityTime <= WORK_POINTS_CONFIG.ACTIVITY_WINDOW_MS) {
       const timeToAdd = nowTime - lastActivityTime;
-      const newTotal = state.millisecondsAccumulated + timeToAdd;
-      const oldPoints = calculatePointsFromMilliseconds(state.millisecondsAccumulated);
+      const newTotal = currentState.millisecondsAccumulated + timeToAdd;
+      const oldPoints = calculatePointsFromMilliseconds(currentState.millisecondsAccumulated);
       const newPoints = calculatePointsFromMilliseconds(newTotal);
       
       const pointsEarned = newPoints - oldPoints;
-      const newTotalPoints = state.totalWorkPoints + pointsEarned;
+      const newTotalPoints = currentState.totalWorkPoints + pointsEarned;
       
       // Update state in one dispatch
       dispatch({
@@ -308,6 +339,15 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
           now: now
         }
       });
+      
+      // Immediately update ref to prevent race conditions
+      stateRef.current = {
+        ...currentState,
+        millisecondsAccumulated: newTotal,
+        totalWorkPoints: newTotalPoints,
+        lastActivity: now,
+        isActive: true
+      };
       
       // Trigger animation if points increased
       if (newPoints > oldPoints) {
@@ -338,23 +378,40 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
           millisecondsAccumulated: newTotal,
           totalWorkPoints: newTotalPoints,
           lastActivity: now.toISOString(),
-          currentStreak: state.currentStreak,
-          longestStreak: state.longestStreak,
+          currentStreak: currentState.currentStreak,
+          longestStreak: currentState.longestStreak,
           lastStreakDate: ''
         };
-        saveImmediately(user.id, data);
+        saveImmediately(currentUserId, data);
       } else {
         // Debounce saves when no point increment
         const data: WorkPointsStorage = {
           millisecondsAccumulated: newTotal,
           totalWorkPoints: newTotalPoints,
           lastActivity: now.toISOString(),
-          currentStreak: state.currentStreak,
-          longestStreak: state.longestStreak,
+          currentStreak: currentState.currentStreak,
+          longestStreak: currentState.longestStreak,
           lastStreakDate: ''
         };
-        debouncedSave(user.id, data);
+        debouncedSave(currentUserId, data);
       }
+    } else {
+      // Don't add time, but DO update lastActivity as new baseline for future actions
+      dispatch({
+        type: 'RECORD_ACTIVITY',
+        payload: {
+          newMilliseconds: currentState.millisecondsAccumulated, // Keep current value
+          newTotalPoints: currentState.totalWorkPoints,           // Keep current value
+          now: now                                                // Update to establish new baseline
+        }
+      });
+      
+      // Immediately update ref to prevent race conditions
+      stateRef.current = {
+        ...currentState,
+        lastActivity: now,  // Set new baseline
+        isActive: true
+      };
     }
     
     // Set user as inactive after timeout
@@ -365,12 +422,17 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
     activityTimeoutRef.current = setTimeout(() => {
       dispatch({ type: 'SET_ACTIVE', payload: false });
     }, WORK_POINTS_CONFIG.ACTIVITY_TIMEOUT_MS);
-  }, [user?.id, isEligiblePage, state.millisecondsAccumulated, state.lastActivity, state.totalWorkPoints, state.currentStreak, state.longestStreak, debouncedSave, saveImmediately]);
+  }, [debouncedSave, saveImmediately]);
   
   // Throttled version of recordActivity - only runs once every 2 seconds
-  const recordActivity = useRef(
-    throttle(recordActivityInternal, 2000, { leading: true, trailing: false })
-  ).current;
+  const throttledRecordActivity = throttle(recordActivityInternal, 2000, { leading: true, trailing: false });
+  
+  const recordActivity = useCallback(() => {
+    throttledRecordActivity();
+  }, [throttledRecordActivity]);
+  
+  const recordActivityRef = useRef(recordActivity);
+  recordActivityRef.current = recordActivity;
   
   // Reset points (for testing/debugging)
   const resetPoints = useCallback(() => {
@@ -399,7 +461,7 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
       }
       // Cancel pending debounced saves
       debouncedSave.cancel();
-      recordActivity.cancel();
+      throttledRecordActivity.cancel();
     };
   }, [debouncedSave, recordActivity]);
   
@@ -415,7 +477,7 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
   
   // Set up activity detection
   useActivityDetection({
-    onActivity: recordActivity,
+    onActivity: () => recordActivityRef.current(),
     isEnabled: isEligiblePage && !!user?.id
   });
   

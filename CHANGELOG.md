@@ -1,11 +1,31 @@
-# Changelog
+## [v0.2.1] - 10/19/2025
 
-All notable changes to this project will be documented in this file.
+### Added
+- Added swiping controls for the flashcards page
+- Allowed documents to be viewed when you first arrive on the reader page in mobile
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+### Changed
+- Changed flashcards view history icon
 
-## [v0.2.0]
+### Fixed
+- Fixed viewport scrolling issues on the flashcards page
+- Stopped header word wrap across all pages by setting font size to viewport width
+- Fixed activity not being detected
+- Fixed a timezone issue where work was being saved under a future date
+- Fixed a front end issue where work was not being shown on the calendar
+
+### Removed
+- Removed the Dashboard header in favor of just having it say welcome back
+
+### To-do (major)
+- [Reader] Add multiple card viewers for the selected text
+
+### To-do (minor)
+- [Reader] Document description is running off the card
+- [Reader] Rename Personal tab to Your Cards
+- [Profile] Email runs off the screen in mobile
+
+## [v0.2.0] - 10/18/2025
 
 ### Added
 - Added support for Korean, Japanese, and Vietnamese

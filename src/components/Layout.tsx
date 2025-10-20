@@ -59,7 +59,7 @@ function Layout({ children }: LayoutProps) {
     // Add authenticated-only navigation items
     if (isAuthenticated) {
         navItems.push(
-            { text: "Entries", path: "/entries", icon: <MenuBookIcon /> },
+            { text: "Cards", path: "/entries", icon: <MenuBookIcon /> },
             { text: "Flashcards", path: "/flashcards", icon: <ShuffleIcon /> },
             { text: "Reader", path: "/reader", icon: <ArticleIcon /> },
             { text: "Profile", path: "/profile", icon: <PersonIcon /> },

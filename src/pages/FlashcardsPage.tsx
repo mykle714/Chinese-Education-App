@@ -102,7 +102,8 @@ const MainContent = memo<MainContentProps>(({
             pt: { xs: 1, sm: 2 },
             display: 'flex',
             flexDirection: 'column',
-            minHeight: '100vh'
+            height: '100%',
+            overflow: 'hidden'
         }}
     >
         {/* Title */}
@@ -111,7 +112,7 @@ const MainContent = memo<MainContentProps>(({
             component="h1"
             align="center"
             gutterBottom
-            sx={{ mb: 4 }}
+            sx={{ mb: { xs: 2, sm: 3 }, flexShrink: 0 }}
         >
             Flashcards
         </Typography>
@@ -124,8 +125,11 @@ const MainContent = memo<MainContentProps>(({
                 flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
-                mb: 4,
+                mb: { xs: 1, sm: 2 },
                 width: '100%',
+                flexGrow: 1,
+                minHeight: 0,
+                overflow: 'hidden'
             }}
         >
             {currentEntry && (
@@ -134,10 +138,13 @@ const MainContent = memo<MainContentProps>(({
                     sx={{
                         width: "100%",
                         maxWidth: 500,
-                        height: 300,
+                        height: '100%',
+                        maxHeight: 300,
+                        minHeight: 200,
                         display: "flex",
                         justifyContent: "center",
                         alignItems: "center",
+                        px: { xs: 2, sm: 0 }
                     }}
                 >
                     <FlashCard
@@ -154,7 +161,7 @@ const MainContent = memo<MainContentProps>(({
         </Box>
 
         {/* Navigation Buttons */}
-        <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, width: '100%' }}>
+        <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: { xs: 1, sm: 1.5 }, width: '100%', flexShrink: 0, pb: { xs: 1, sm: 0 } }}>
             {/* Flip Card / Next Card Button */}
             <Button
                 variant="outlined"
@@ -166,7 +173,7 @@ const MainContent = memo<MainContentProps>(({
             </Button>
 
             {/* Correct/Incorrect Buttons */}
-            <Box sx={{ display: "flex", gap: 2, justifyContent: "center", alignItems: "center" }}>
+            <Box sx={{ display: "flex", gap: { xs: 1.5, sm: 2 }, justifyContent: "center", alignItems: "center", flexWrap: "wrap" }}>
                 <Button
                     variant="contained"
                     color="error"
@@ -224,6 +231,8 @@ function FlashcardsPage() {
     const [historyIndex, setHistoryIndex] = useState(0); // 0 means current card, 1+ means older cards in history
     const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
     const [currentCardFlipState, setCurrentCardFlipState] = useState(false); // Track current card's flip state
+    const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null);
+    const [touchEnd, setTouchEnd] = useState<{ x: number; y: number } | null>(null);
     const { token } = useAuth();
 
     // Work points integration
@@ -352,6 +361,87 @@ function FlashcardsPage() {
             window.removeEventListener('keydown', handleKeyDown);
         };
     }, [history.length, historyIndex, isFlipped, currentEntry]); // Dependencies for the handlers
+
+    // Touch/Swipe navigation
+    useEffect(() => {
+        const minSwipeDistance = 50; // Minimum distance in pixels to register as a swipe
+
+        const handleTouchStart = (e: TouchEvent) => {
+            e.preventDefault(); // Prevent default touch behavior (scrolling)
+            // Record activity on touch start
+            workPoints.recordActivity();
+            setTouchEnd(null); // Reset touchEnd
+            setTouchStart({
+                x: e.targetTouches[0].clientX,
+                y: e.targetTouches[0].clientY,
+            });
+        };
+
+        const handleTouchMove = (e: TouchEvent) => {
+            e.preventDefault(); // Prevent default touch behavior (scrolling)
+            setTouchEnd({
+                x: e.targetTouches[0].clientX,
+                y: e.targetTouches[0].clientY,
+            });
+        };
+
+        const handleTouchEnd = () => {
+            if (!touchStart || !touchEnd) return;
+
+            // Record activity on touch end (when swipe is processed)
+            workPoints.recordActivity();
+
+            const deltaX = touchStart.x - touchEnd.x;
+            const deltaY = touchStart.y - touchEnd.y;
+
+            const isHorizontalSwipe = Math.abs(deltaX) > Math.abs(deltaY);
+            const isVerticalSwipe = Math.abs(deltaY) > Math.abs(deltaX);
+
+            // Horizontal swipes (Left/Right)
+            if (isHorizontalSwipe && Math.abs(deltaX) > minSwipeDistance) {
+                if (deltaX > 0) {
+                    // Swiped left - same as ArrowLeft (Incorrect)
+                    if (historyIndex > 0 || isFlipped) {
+                        handleIncorrect();
+                    }
+                } else {
+                    // Swiped right - same as ArrowRight (Correct)
+                    if (historyIndex > 0 || isFlipped) {
+                        handleCorrect();
+                    }
+                }
+            }
+
+            // Vertical swipes (Up/Down)
+            if (isVerticalSwipe && Math.abs(deltaY) > minSwipeDistance) {
+                if (deltaY > 0) {
+                    // Swiped up - same as ArrowUp (Flip/Next Card)
+                    if (historyIndex === 0) {
+                        handleFlip();
+                    } else {
+                        handleNextCard();
+                    }
+                } else {
+                    // Swiped down - same as ArrowDown (Previous Card)
+                    if (history.length > 0 && historyIndex < history.length - 1) {
+                        handlePreviousCard();
+                    }
+                }
+            }
+        };
+
+        // Add event listeners
+        window.addEventListener('touchstart', handleTouchStart);
+        window.addEventListener('touchmove', handleTouchMove);
+        window.addEventListener('touchend', handleTouchEnd);
+
+        // Cleanup event listeners on component unmount
+        return () => {
+            window.removeEventListener('touchstart', handleTouchStart);
+            window.removeEventListener('touchmove', handleTouchMove);
+            window.removeEventListener('touchend', handleTouchEnd);
+        };
+    }, [touchStart, touchEnd, history.length, historyIndex, isFlipped, currentEntry]);
 
     const fetchEntries = async () => {
         try {
@@ -708,7 +798,7 @@ function FlashcardsPage() {
                 <Typography variant="h3" component="h1" align="center" gutterBottom sx={{ mb: 4 }}>
                     Flashcards
                 </Typography>
-                <Alert severity="info">No vocabulary entries available</Alert>
+                <Alert severity="info">No vocabulary cards available</Alert>
             </Container>
         );
     }
@@ -821,7 +911,13 @@ function FlashcardsPage() {
 
             <Box
                 className="flashcards-page-container"
-                sx={{ display: 'flex', width: '100%', minHeight: 'calc(100vh - 200px)', mt: -2 }}
+                sx={{
+                    display: 'flex',
+                    width: '100%',
+                    height: '100%',
+                    overflow: 'hidden',
+                    touchAction: 'none'
+                }}
             >
                 {/* Desktop sidebar */}
                 {!isMobile && (
@@ -829,8 +925,8 @@ function FlashcardsPage() {
                         width: drawerWidth,
                         flexShrink: 0,
                         borderRight: '1px solid rgba(0, 0, 0, 0.08)',
-                        height: 'fit-content',
-                        minHeight: 'calc(100vh - 200px)'
+                        height: '100%',
+                        overflow: 'hidden'
                     }}>
                         <SidebarContent />
                     </Box>
@@ -891,7 +987,7 @@ function FlashcardsPage() {
                             zIndex: 1000
                         }}
                     >
-                        <MenuIcon />
+                        <HistoryIcon />
                     </Fab>
                 )}
             </Box>

@@ -43,16 +43,18 @@ function HomePage() {
                             <MonthlyCalendar />
                         </Box>
 
-                        {/* Debug display for work points */}
-                        <Box sx={{ mt: 3, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
-                            <Typography variant="body2" color="text.secondary">
-                                <strong>Debug Info:</strong> Daily Points: {currentPoints} | Total Work Points: {totalWorkPoints} | Streak: {currentStreak}
-                            </Typography>
-                        </Box>
                     </Box>
 
                     {/* Right Column - Leaderboard */}
                     <Box>
+                        {/* Test User Message */}
+                        {import.meta.env.VITE_TEST_USER_MESSAGE && (
+                            <Box sx={{ mb: 3, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
+                                <Typography variant="body1" color="text.secondary">
+                                    📢 {import.meta.env.VITE_TEST_USER_MESSAGE}
+                                </Typography>
+                            </Box>
+                        )}
                         <LeaderboardPlaceholder />
                         <ChangelogDisplay />
                     </Box>

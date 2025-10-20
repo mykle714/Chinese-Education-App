@@ -2,7 +2,8 @@
  * CC-CEDICT Import Script for PostgreSQL
  * Imports CC-CEDICT Chinese-English dictionary data into PostgreSQL database
  * 
- * Usage: node --loader ts-node/esm server/scripts/import-cedict-pg.ts <file_path>
+ * Usage: node --loader ts-node/esm server/scripts/import-cedict-pg.ts [file_path]
+ * Default path: /home/cow/cedict_ts.u8
  */
 
 import fs from 'fs';
@@ -11,9 +12,9 @@ import pg from 'pg';
 const BATCH_SIZE = 1000;
 
 interface DictionaryEntry {
-    traditional: string;
-    simplified: string;
-    pinyin: string;
+    word1: string;      // simplified Chinese
+    word2: string;      // traditional Chinese
+    pronunciation: string; // pinyin with tone marks
     definitions: string[];
 }
 
@@ -82,9 +83,9 @@ function parseCEDICTLine(line: string): DictionaryEntry | null {
     const definitions = cleanDefs.split('/').filter(d => d.trim().length > 0);
 
     return {
-        traditional,
-        simplified,
-        pinyin,
+        word1: simplified,
+        word2: traditional,
+        pronunciation: pinyin,
         definitions
     };
 }
@@ -99,18 +100,19 @@ async function insertBatch(client: pg.Client, entries: DictionaryEntry[]): Promi
     const placeholders: string[] = [];
     
     entries.forEach((entry, i) => {
-        const base = i * 4;
-        placeholders.push(`($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4})`);
+        const base = i * 5;
+        placeholders.push(`($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5})`);
         values.push(
-            entry.simplified,
-            entry.traditional,
-            entry.pinyin,
+            'zh',  // language
+            entry.word1,
+            entry.word2,
+            entry.pronunciation,
             JSON.stringify(entry.definitions)
         );
     });
 
     const query = `
-        INSERT INTO DictionaryEntries (simplified, traditional, pinyin, definitions)
+        INSERT INTO DictionaryEntries (language, word1, word2, pronunciation, definitions)
         VALUES ${placeholders.join(', ')}
     `;
 
@@ -123,6 +125,9 @@ async function insertBatch(client: pg.Client, entries: DictionaryEntry[]): Promi
  */
 async function importCEDICT() {
     const filePath = process.argv[2] || '/home/cow/cedict_ts.u8';
+    
+    console.log('🇨🇳 CC-CEDICT Chinese Dictionary Import');
+    console.log('========================================\n');
     
     console.log('📄 Reading file:', filePath);
     const content = fs.readFileSync(filePath, 'utf-8');
@@ -153,8 +158,8 @@ async function importCEDICT() {
     await client.connect();
     console.log('✅ Connected');
 
-    console.log('🗑️  Clearing existing entries...');
-    await client.query('DELETE FROM DictionaryEntries');
+    console.log('🗑️  Clearing existing Chinese entries...');
+    await client.query("DELETE FROM DictionaryEntries WHERE language = 'zh'");
     console.log('✅ Cleared');
 
     console.log(`💾 Inserting ${entries.length} entries in batches of ${BATCH_SIZE}...`);

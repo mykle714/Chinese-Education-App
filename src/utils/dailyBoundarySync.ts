@@ -8,7 +8,6 @@ import { syncWorkPoints, type WorkPointsSyncResponse } from './workPointsSync';
 import { 
   calculatePointsFromMilliseconds, 
   type WorkPointsStorage,
-  getTodayDateString,
   getYesterdayDateString,
   isConsecutiveDay
 } from './workPointsStorage';

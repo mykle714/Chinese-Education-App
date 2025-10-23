@@ -45,6 +45,10 @@ RUN npm ci --only=production && npm cache clean --force
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/node_modules ./node_modules
 
+# Copy TypeScript scripts for dictionary imports
+COPY --from=build /app/scripts ./scripts
+COPY --from=build /app/tsconfig.json ./tsconfig.json
+
 # Change ownership to nodejs user
 RUN chown -R nodejs:nodejs /app
 USER nodejs

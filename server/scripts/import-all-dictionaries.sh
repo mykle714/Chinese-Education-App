@@ -233,18 +233,14 @@ import_korean() {
 
 # Import Vietnamese dictionary
 import_vietnamese() {
-    print_header "Importing Vietnamese Dictionary"
+    print_header "Importing Vietnamese Dictionary (OVDP VietAnh)"
     
-    # Check for either filename variant
-    VDICT_FILE=""
-    if [ -f "$DATA_DIR/viet-dict.txt" ]; then
-        VDICT_FILE="/app/data/dictionaries/viet-dict.txt"
-    elif [ -f "$DATA_DIR/viet-dict-full.txt" ]; then
-        VDICT_FILE="/app/data/dictionaries/viet-dict-full.txt"
-    else
-        print_warning "Vietnamese dictionary file not found, skipping..."
+    if [ ! -f "$DATA_DIR/viet-dict-full.txt" ]; then
+        print_warning "Vietnamese dictionary file not found (viet-dict-full.txt), skipping..."
         return
     fi
+    
+    VDICT_FILE="/app/data/dictionaries/viet-dict-full.txt"
     
     print_info "Starting Vietnamese import (~1-2 minutes)..."
     docker exec -i "$BACKEND_CONTAINER" node --loader ts-node/esm /app/scripts/import-vdict.ts "$VDICT_FILE"

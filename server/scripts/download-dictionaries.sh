@@ -21,24 +21,17 @@ else
 fi
 
 echo ""
-echo "🇰🇷 Downloading Korean Dictionary (CC-KEDICT)..."
-if [ ! -f "$DATA_DIR/cc-kedict.txt" ]; then
-    # Try main branch first, fallback to master if needed
-    if curl -f -L -o "$DATA_DIR/cc-kedict.txt" https://raw.githubusercontent.com/mhagiwara/cc-kedict/main/cc-kedict.txt 2>/dev/null; then
-        echo "✅ Downloaded cc-kedict.txt from main branch"
-    elif curl -f -L -o "$DATA_DIR/cc-kedict.txt" https://raw.githubusercontent.com/mhagiwara/cc-kedict/master/cc-kedict.txt 2>/dev/null; then
-        echo "✅ Downloaded cc-kedict.txt from master branch"
+echo "🇰🇷 Downloading Korean Dictionary (KENGDIC)..."
+if [ ! -f "$DATA_DIR/kengdic.tsv" ]; then
+    echo "Downloading from garfieldnate/kengdic repository..."
+    if curl -f -L -o "$DATA_DIR/kengdic.tsv" https://raw.githubusercontent.com/garfieldnate/kengdic/master/kengdic.tsv 2>/dev/null; then
+        echo "✅ Downloaded kengdic.tsv (117,509 entries)"
     else
-        echo "❌ Failed to download cc-kedict.txt - trying alternative source..."
-        # Alternative: Use kengdic as fallback (already in repo)
-        if [ -f "$DATA_DIR/kengdic.tsv" ]; then
-            echo "⚠️  Using kengdic.tsv as fallback"
-        else
-            echo "❌ No Korean dictionary source available"
-        fi
+        echo "❌ Failed to download kengdic.tsv"
+        echo "   Please download manually from: https://github.com/garfieldnate/kengdic"
     fi
 else
-    echo "⏭️  cc-kedict.txt already exists"
+    echo "⏭️  kengdic.tsv already exists"
 fi
 
 echo ""

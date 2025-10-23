@@ -145,8 +145,8 @@ download_dictionaries() {
         MISSING_FILES=$((MISSING_FILES + 1))
     fi
     
-    if [ ! -f "$DATA_DIR/cc-kedict.txt" ] && [ ! -f "$DATA_DIR/cc-kedict.txt.u8" ]; then
-        print_warning "Korean dictionary not found: cc-kedict.txt"
+    if [ ! -f "$DATA_DIR/kengdic.tsv" ]; then
+        print_warning "Korean dictionary not found: kengdic.tsv"
         MISSING_FILES=$((MISSING_FILES + 1))
     fi
     
@@ -206,21 +206,15 @@ import_japanese() {
 
 # Import Korean dictionary
 import_korean() {
-    print_header "Importing Korean Dictionary (CC-KEDICT)"
+    print_header "Importing Korean Dictionary (KENGDIC)"
     
-    # Check for either filename variant
-    KEDICT_FILE=""
-    if [ -f "$DATA_DIR/cc-kedict.txt" ]; then
-        KEDICT_FILE="/app/data/dictionaries/cc-kedict.txt"
-    elif [ -f "$DATA_DIR/cc-kedict.txt.u8" ]; then
-        KEDICT_FILE="/app/data/dictionaries/cc-kedict.txt.u8"
-    else
-        print_warning "Korean dictionary file not found, skipping..."
+    if [ ! -f "$DATA_DIR/kengdic.tsv" ]; then
+        print_warning "Korean dictionary file not found (kengdic.tsv), skipping..."
         return
     fi
     
     print_info "Starting Korean import (~1-2 minutes)..."
-    docker exec -i "$BACKEND_CONTAINER" node --loader ts-node/esm /app/scripts/import-kedict.ts "$KEDICT_FILE"
+    docker exec -i "$BACKEND_CONTAINER" node --loader ts-node/esm /app/scripts/import-kengdic-tsv.ts /app/data/dictionaries/kengdic.tsv
     
     # Verify import
     COUNT=$(docker exec -i "$POSTGRES_CONTAINER" psql -U cow_user -d cow_db -t -c "SELECT COUNT(*) FROM dictionaryentries WHERE language = 'ko';" | tr -d ' ')

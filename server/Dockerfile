@@ -49,10 +49,6 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/scripts ./scripts
 COPY --from=build /app/tsconfig.json ./tsconfig.json
 
-# Copy dictionary files from project root
-COPY cedict_ts.u8 ./cedict_ts.u8
-COPY data/dictionaries ./data/dictionaries
-
 # Change ownership to nodejs user
 RUN chown -R nodejs:nodejs /app
 USER nodejs

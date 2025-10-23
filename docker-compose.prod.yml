@@ -39,7 +39,7 @@ services:
       - CLIENT_URL=${CLIENT_URL}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     env_file:
-      - ./server/.env.production
+      - ./.env
     ports:
       - "127.0.0.1:5000:5000"  # Only bind to localhost for security
     depends_on:

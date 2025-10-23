@@ -99,8 +99,8 @@ run_migrations() {
     docker exec -i "$POSTGRES_CONTAINER" psql -U cow_user -d cow_db < "$MIGRATIONS_DIR/05-add-multi-language-support.sql" 2>&1 | grep -v "already exists" || true
     print_success "Migration 05 completed"
     
-    # Run migrations 06-09 if they exist
-    for i in 06 07 08 09; do
+    # Run migrations 06-10 if they exist
+    for i in 06 07 08 09 10; do
         MIGRATION_FILE="$MIGRATIONS_DIR/${i}-*.sql"
         if ls $MIGRATION_FILE 1> /dev/null 2>&1; then
             for file in $MIGRATION_FILE; do

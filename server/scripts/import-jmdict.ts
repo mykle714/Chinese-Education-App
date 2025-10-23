@@ -169,7 +169,7 @@ async function insertBatch(client: pg.Client, entries: JMdictEntry[]): Promise<n
     });
 
     const query = `
-        INSERT INTO DictionaryEntries (language, word1, word2, pronunciation, definitions)
+        INSERT INTO dictionaryentries (language, word1, word2, pronunciation, definitions)
         VALUES ${placeholders.join(', ')}
     `;
 
@@ -211,7 +211,7 @@ async function importJMdict() {
     console.log('✅ Connected\n');
 
     console.log('🗑️  Clearing existing Japanese entries...');
-    await client.query("DELETE FROM DictionaryEntries WHERE language = 'ja'");
+    await client.query("DELETE FROM dictionaryentries WHERE language = 'ja'");
     console.log('✅ Cleared\n');
 
     console.log(`💾 Inserting ${entries.length} entries in batches of ${BATCH_SIZE}...`);

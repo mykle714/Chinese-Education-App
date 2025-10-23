@@ -69,7 +69,7 @@ async function insertBatch(client: pg.Client, entries: KEdictEntry[]): Promise<n
     });
 
     const query = `
-        INSERT INTO DictionaryEntries (language, word1, word2, pronunciation, definitions)
+        INSERT INTO dictionaryentries (language, word1, word2, pronunciation, definitions)
         VALUES ${placeholders.join(', ')}
     `;
 
@@ -121,7 +121,7 @@ async function importKEDICT() {
     console.log('✅ Connected\n');
 
     console.log('🗑️  Clearing existing Korean entries...');
-    await client.query("DELETE FROM DictionaryEntries WHERE language = 'ko'");
+    await client.query("DELETE FROM dictionaryentries WHERE language = 'ko'");
     console.log('✅ Cleared\n');
 
     console.log(`💾 Inserting ${entries.length} entries in batches of ${BATCH_SIZE}...`);

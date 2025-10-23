@@ -201,16 +201,19 @@ sudo systemctl reload nginx
 # Configure UFW firewall
 sudo ufw default deny incoming
 sudo ufw default allow outgoing
-sudo ufw allow ssh
-sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp  # For future HTTPS
-sudo ufw allow 3000/tcp  # Docker frontend
-sudo ufw allow 5000/tcp  # Docker backend
+sudo ufw allow 22/tcp    # SSH
+sudo ufw allow 80/tcp    # HTTP web server
+sudo ufw allow 443/tcp   # HTTPS (for future SSL)
+sudo ufw allow 25565     # Custom service (Minecraft server or other)
+sudo ufw allow 8181      # Custom service
+sudo ufw allow 9091      # Custom service (Transmission or other)
 sudo ufw enable
 
 # Check firewall status
 sudo ufw status
 ```
+
+**Note:** The production Docker setup binds the frontend to port 80 (not 3000) and the backend to localhost only for security.
 
 ## Step 10: Router Port Forwarding
 **On your router admin panel (usually 192.168.1.1 or 192.168.0.1):**

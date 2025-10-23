@@ -64,8 +64,8 @@ services:
     container_name: cow-frontend-prod
     restart: always
     ports:
-      - "80:80"
-      - "443:443"
+      - "0.0.0.0:80:80"      # Explicitly bind to all network interfaces
+      - "0.0.0.0:443:443"
     depends_on:
       - backend
     networks:

@@ -40,9 +40,10 @@ export class UserController {
       const authResponse = await this.userService.authenticateUser(email, password);
       
       // Set token as cookie
+      // Note: secure flag removed to support HTTP deployment
+      // Add back 'secure: true' when using HTTPS
       res.cookie('token', authResponse.token, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
         maxAge: 24 * 60 * 60 * 1000 // 24 hours
       });

@@ -49,9 +49,6 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/scripts ./scripts
 COPY --from=build /app/tsconfig.json ./tsconfig.json
 
-# Copy CHANGELOG.md from project root
-COPY CHANGELOG.md /app/CHANGELOG.md
-
 # Change ownership to nodejs user
 RUN chown -R nodejs:nodejs /app
 USER nodejs

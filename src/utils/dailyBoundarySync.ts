@@ -28,7 +28,6 @@ export function checkStreakAndApplyPenalty(data: WorkPointsStorage): {
   };
 } {
   const yesterdayDateStr = getYesterdayDateString();
-  const todayDateStr = getTodayDateString();
   
   // Calculate points earned yesterday
   const yesterdayPoints = calculatePointsFromMilliseconds(data.millisecondsAccumulated);
@@ -95,9 +94,9 @@ export function checkStreakAndApplyPenalty(data: WorkPointsStorage): {
  * Now includes streak checking and penalty application
  */
 export async function checkAndSyncDailyReset(
-  userId: string,
+  _userId: string,
   data: WorkPointsStorage
-): Promise<{ 
+): Promise<{
   shouldReset: boolean; 
   syncResult?: WorkPointsSyncResponse;
   streakResult?: {

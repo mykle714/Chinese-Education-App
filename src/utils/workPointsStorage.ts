@@ -18,7 +18,7 @@ export const getWorkPointsStorageKey = (userId: string): string => {
 
 const checkDailyReset = async (
   data: WorkPointsStorage, 
-  userId: string,
+  _userId: string,
   onDailyBoundarySync?: (workPoints: number, date: string) => Promise<boolean>
 ): Promise<WorkPointsStorage> => {
   const lastActivityDate = new Date(data.lastActivity).toDateString();

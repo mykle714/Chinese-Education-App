@@ -11,7 +11,6 @@ import {
     Radio,
     Card,
     CardContent,
-    Divider,
     Alert,
     Chip,
     Snackbar,
@@ -21,7 +20,6 @@ import PaletteIcon from '@mui/icons-material/Palette';
 import LanguageIcon from '@mui/icons-material/Language';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../AuthContext';
-import { LANGUAGE_NAMES } from '../types';
 import type { Language } from '../types';
 
 function SettingsPage() {

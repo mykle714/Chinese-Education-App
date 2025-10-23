@@ -26,7 +26,6 @@ import HistoryIcon from "@mui/icons-material/History";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import FlipCameraAndroidIcon from "@mui/icons-material/FlipCameraAndroid";
-import MenuIcon from "@mui/icons-material/Menu";
 import RemoveIcon from "@mui/icons-material/Remove";
 import FlashCard from "../components/FlashCard";
 

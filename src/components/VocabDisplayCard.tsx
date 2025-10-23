@@ -87,7 +87,7 @@ const VocabDisplayCard: React.FC<VocabDisplayCardProps> = React.memo(({ personal
 
     const hasAnyEntry = personalEntry !== null || dictionaryEntry !== null;
 
-    const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
+    const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
         setCurrentTab(newValue);
     };
 

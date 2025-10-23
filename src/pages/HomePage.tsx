@@ -11,7 +11,6 @@ import ChangelogDisplay from "../components/ChangelogDisplay";
 function HomePage() {
     const { user } = useAuth();
     const {
-        currentPoints,
         totalWorkPoints,
         currentStreak,
         longestStreak

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useReducer } from 'react';
+import { useEffect, useCallback, useRef, useReducer } from 'react';
 import { useLocation } from 'react-router-dom';
 import { throttle, debounce } from 'lodash';
 import { useAuth } from '../AuthContext';
@@ -6,8 +6,7 @@ import {
   saveWorkPointsData, 
   clearWorkPointsData, 
   calculatePointsFromMilliseconds,
-  type WorkPointsStorage,
-  loadWorkPointsDataSync
+  type WorkPointsStorage
 } from '../utils/workPointsStorage';
 import { WORK_POINTS_ELIGIBLE_PAGES, WORK_POINTS_CONFIG, STREAK_CONFIG } from '../constants';
 import { useActivityDetection } from './useActivityDetection';
@@ -309,7 +308,6 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
     // Read current values from refs
     const currentUserId = userIdRef.current;
     const currentIsEligiblePage = isEligiblePageRef.current;
-    const currentLocation = locationRef.current;
     const currentState = stateRef.current;
     
     if (!currentUserId || !currentIsEligiblePage) {

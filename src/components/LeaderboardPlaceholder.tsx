@@ -2,7 +2,7 @@ import { Box, Card, CardContent, Typography, CircularProgress, Alert, Chip, Avat
 import { useLeaderboard } from "../hooks/useLeaderboard";
 
 function LeaderboardPlaceholder() {
-    const { entries, loading, error, hasData, isEmpty, refresh } = useLeaderboard();
+    const { entries, loading, error, isEmpty } = useLeaderboard();
 
     if (loading) {
         return (
@@ -91,7 +91,7 @@ function LeaderboardPlaceholder() {
                 </Box>
 
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                    {entries.map((entry, index) => {
+                    {entries.map((entry) => {
                         const isCurrentUser = entry.isCurrentUser;
                         const getRankEmoji = (rank: number) => {
                             switch (rank) {

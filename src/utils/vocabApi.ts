@@ -118,9 +118,6 @@ export async function fetchVocabEntriesByTokens(
     cacheDictionaryEntries(dictTokenEntries);
     
     // Log caching statistics
-    const personalTokensWithEntries = Object.values(personalTokenEntries).filter(entries => entries.length > 0).length;
-    const dictTokensWithEntries = Object.values(dictTokenEntries).filter(entries => entries.length > 0).length;
-    
     console.log(`[VOCAB-CLIENT] 💾 Caching complete:`, {
       personalTokensCached: Object.keys(personalTokenEntries).length,
       personalEntriesCached: Object.values(personalTokenEntries).reduce((sum, entries) => sum + entries.length, 0),

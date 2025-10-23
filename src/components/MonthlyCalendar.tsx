@@ -36,7 +36,7 @@ function MonthlyCalendar() {
     const getDayNumber = (dayData: CalendarDayData): string => {
         // Parse as local date to avoid UTC timezone shifts
         // Date string format is YYYY-MM-DD, extract day directly
-        const [year, month, day] = dayData.date.split('-').map(Number);
+        const [, , day] = dayData.date.split('-').map(Number);
         return day.toString();
     };
 

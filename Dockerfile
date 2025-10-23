@@ -27,7 +27,7 @@ RUN npm ci
 
 # Copy source code and build
 COPY . .
-RUN npm run build -- --mode production
+RUN NODE_ENV=production npm run build
 
 # Production stage
 FROM nginx:alpine as production

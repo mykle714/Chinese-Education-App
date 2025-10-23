@@ -1,4 +1,4 @@
-export const API_BASE_URL = process.env.NODE_ENV === 'production' 
+export const API_BASE_URL = import.meta.env.MODE === 'production' 
   ? '' 
   : 'http://localhost:5000';
 

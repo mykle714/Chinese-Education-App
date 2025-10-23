@@ -45,7 +45,7 @@ function EditEntryPage() {
         const fetchEntry = async () => {
             try {
                 setLoading(true);
-                const response = await fetch(`http://localhost:5000/api/vocabEntries/${id}`, {
+                const response = await fetch(`${API_BASE_URL}/api/vocabEntries/${id}`, {
                     headers: {
                         'Authorization': `Bearer ${token}`
                     }
@@ -96,7 +96,7 @@ function EditEntryPage() {
         setErrorCode(null);
 
         try {
-            const response = await fetch(`http://localhost:5000/api/vocabEntries/${id}`, {
+            const response = await fetch(`${API_BASE_URL}/api/vocabEntries/${id}`, {
                 method: "PUT",
                 headers: {
                     "Content-Type": "application/json",

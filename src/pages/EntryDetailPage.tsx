@@ -81,7 +81,7 @@ function EntryDetailPage() {
         const fetchEntry = async () => {
             try {
                 setLoading(true);
-                const response = await fetch(`http://localhost:5000/api/vocabEntries/${id}`, {
+                const response = await fetch(`${API_BASE_URL}/api/vocabEntries/${id}`, {
                     headers: {
                         'Authorization': `Bearer ${token}`
                     }
@@ -120,7 +120,7 @@ function EntryDetailPage() {
         }
 
         try {
-            const response = await fetch(`http://localhost:5000/api/vocabEntries/${id}`, {
+            const response = await fetch(`${API_BASE_URL}/api/vocabEntries/${id}`, {
                 method: "DELETE",
                 headers: {
                     'Authorization': `Bearer ${token}`

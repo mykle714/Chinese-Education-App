@@ -23,8 +23,20 @@ fi
 echo ""
 echo "🇰🇷 Downloading Korean Dictionary (CC-KEDICT)..."
 if [ ! -f "$DATA_DIR/cc-kedict.txt" ]; then
-    curl -L -o "$DATA_DIR/cc-kedict.txt" https://raw.githubusercontent.com/mhagiwara/cc-kedict/master/cc-kedict.txt
-    echo "✅ Downloaded cc-kedict.txt"
+    # Try main branch first, fallback to master if needed
+    if curl -f -L -o "$DATA_DIR/cc-kedict.txt" https://raw.githubusercontent.com/mhagiwara/cc-kedict/main/cc-kedict.txt 2>/dev/null; then
+        echo "✅ Downloaded cc-kedict.txt from main branch"
+    elif curl -f -L -o "$DATA_DIR/cc-kedict.txt" https://raw.githubusercontent.com/mhagiwara/cc-kedict/master/cc-kedict.txt 2>/dev/null; then
+        echo "✅ Downloaded cc-kedict.txt from master branch"
+    else
+        echo "❌ Failed to download cc-kedict.txt - trying alternative source..."
+        # Alternative: Use kengdic as fallback (already in repo)
+        if [ -f "$DATA_DIR/kengdic.tsv" ]; then
+            echo "⚠️  Using kengdic.tsv as fallback"
+        else
+            echo "❌ No Korean dictionary source available"
+        fi
+    fi
 else
     echo "⏭️  cc-kedict.txt already exists"
 fi

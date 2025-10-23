@@ -42,6 +42,9 @@ services:
       - ./.env
     ports:
       - "127.0.0.1:5000:5000"  # Only bind to localhost for security
+    volumes:
+      - ./cedict_ts.u8:/app/cedict_ts.u8:ro
+      - ./data/dictionaries:/app/data/dictionaries:ro
     depends_on:
       - postgres
     networks:

@@ -172,7 +172,7 @@ import_chinese() {
     fi
     
     print_info "Starting Chinese import (~2-3 minutes)..."
-    docker exec -i "$BACKEND_CONTAINER" node --loader ts-node/esm /app/server/scripts/import-cedict-pg.ts /app/cedict_ts.u8
+    docker exec -i "$BACKEND_CONTAINER" node --loader ts-node/esm /app/scripts/import-cedict-pg.ts /app/cedict_ts.u8
     
     # Verify import
     COUNT=$(docker exec -i "$POSTGRES_CONTAINER" psql -U cow_user -d cow_db -t -c "SELECT COUNT(*) FROM \"DictionaryEntries\" WHERE language = 'zh';" | tr -d ' ')
@@ -193,7 +193,7 @@ import_japanese() {
     fi
     
     print_info "Starting Japanese import (~5-10 minutes)..."
-    docker exec -i "$BACKEND_CONTAINER" node --loader ts-node/esm /app/server/scripts/import-jmdict.ts /app/data/dictionaries/JMdict_e
+    docker exec -i "$BACKEND_CONTAINER" node --loader ts-node/esm /app/scripts/import-jmdict.ts /app/data/dictionaries/JMdict_e
     
     # Verify import
     COUNT=$(docker exec -i "$POSTGRES_CONTAINER" psql -U cow_user -d cow_db -t -c "SELECT COUNT(*) FROM \"DictionaryEntries\" WHERE language = 'ja';" | tr -d ' ')
@@ -220,7 +220,7 @@ import_korean() {
     fi
     
     print_info "Starting Korean import (~1-2 minutes)..."
-    docker exec -i "$BACKEND_CONTAINER" node --loader ts-node/esm /app/server/scripts/import-kedict.ts "$KEDICT_FILE"
+    docker exec -i "$BACKEND_CONTAINER" node --loader ts-node/esm /app/scripts/import-kedict.ts "$KEDICT_FILE"
     
     # Verify import
     COUNT=$(docker exec -i "$POSTGRES_CONTAINER" psql -U cow_user -d cow_db -t -c "SELECT COUNT(*) FROM \"DictionaryEntries\" WHERE language = 'ko';" | tr -d ' ')
@@ -247,7 +247,7 @@ import_vietnamese() {
     fi
     
     print_info "Starting Vietnamese import (~1-2 minutes)..."
-    docker exec -i "$BACKEND_CONTAINER" node --loader ts-node/esm /app/server/scripts/import-vdict.ts "$VDICT_FILE"
+    docker exec -i "$BACKEND_CONTAINER" node --loader ts-node/esm /app/scripts/import-vdict.ts "$VDICT_FILE"
     
     # Verify import
     COUNT=$(docker exec -i "$POSTGRES_CONTAINER" psql -U cow_user -d cow_db -t -c "SELECT COUNT(*) FROM \"DictionaryEntries\" WHERE language = 'vi';" | tr -d ' ')

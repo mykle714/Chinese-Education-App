@@ -99,7 +99,7 @@ async function parseJMdict(xmlContent: string): Promise<JMdictEntry[]> {
         }
     }
     
-    const jmdictEntries = result?.JMDICT?.entry || [];
+    const jmdictEntries = result?.JMDICT?.ENTRY || [];
     if (jmdictEntries.length === 0) {
         console.error('No entries found.');
         throw new Error('Failed to parse JMdict entries');

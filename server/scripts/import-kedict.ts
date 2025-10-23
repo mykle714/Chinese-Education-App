@@ -93,8 +93,34 @@ async function importKEDICT() {
     }
 
     const content = fs.readFileSync(filePath, 'utf-8');
-    const lines = content.split('\n');
+    console.log(`   File size: ${(content.length / 1024 / 1024).toFixed(2)} MB`);
+    
+    // Try to detect line endings and split appropriately
+    let lines: string[];
+    if (content.includes('\r\n')) {
+        lines = content.split('\r\n');
+        console.log('   Detected Windows line endings (\\r\\n)');
+    } else if (content.includes('\n')) {
+        lines = content.split('\n');
+        console.log('   Detected Unix line endings (\\n)');
+    } else if (content.includes('\r')) {
+        lines = content.split('\r');
+        console.log('   Detected Mac line endings (\\r)');
+    } else {
+        lines = [content];
+        console.log('   No line endings detected');
+    }
+    
     console.log(`   Found ${lines.length} lines`);
+    
+    // Debug: Show first few lines
+    if (lines.length > 0) {
+        console.log('\n🔍 Debug: First 3 lines:');
+        for (let i = 0; i < Math.min(3, lines.length); i++) {
+            console.log(`   Line ${i + 1}: ${lines[i].substring(0, 100)}${lines[i].length > 100 ? '...' : ''}`);
+        }
+        console.log('');
+    }
 
     console.log('🔍 Parsing entries...');
     const entries: KEdictEntry[] = [];

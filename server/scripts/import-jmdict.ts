@@ -106,12 +106,24 @@ async function parseJMdict(xmlContent: string): Promise<JMdictEntry[]> {
     }
     console.log(`   Found ${jmdictEntries.length} entries in XML`);
 
+    // Debug first entry to understand structure
+    if (jmdictEntries.length > 0) {
+        console.log('\n🔍 Debug: First entry structure:');
+        const firstEntry = jmdictEntries[0];
+        console.log('k_ele:', JSON.stringify(firstEntry.k_ele, null, 2));
+        console.log('r_ele:', JSON.stringify(firstEntry.r_ele, null, 2));
+        console.log('sense:', JSON.stringify(firstEntry.sense, null, 2));
+        console.log('');
+    }
+
     for (const entry of jmdictEntries) {
         try {
             // Extract kanji (word1) - may not exist for kana-only words
+            // With explicitArray: true, keb is already an array
             const kanji = entry.k_ele?.[0]?.keb?.[0] || '';
 
             // Extract kana reading (word2) - always exists
+            // With explicitArray: true, reb is already an array
             const kana = entry.r_ele?.[0]?.reb?.[0] || '';
             if (!kana) continue; // Skip if no kana
 
@@ -124,7 +136,21 @@ async function parseJMdict(xmlContent: string): Promise<JMdictEntry[]> {
             for (const sense of senses) {
                 const glosses = sense.gloss || [];
                 for (const gloss of glosses) {
-                    const glossText = typeof gloss === 'string' ? gloss : gloss._;
+                    // With explicitArray: true, gloss is an array containing text or objects
+                    // Try to extract text from various possible structures
+                    let glossText: string | undefined;
+                    if (typeof gloss === 'string') {
+                        glossText = gloss;
+                    } else if (gloss._) {
+                        glossText = gloss._;
+                    } else if (gloss['#text']) {
+                        glossText = gloss['#text'];
+                    } else if (typeof gloss === 'object' && gloss !== null) {
+                        // If it's an object, try to get the first string value
+                        const values = Object.values(gloss);
+                        glossText = values.find(v => typeof v === 'string') as string;
+                    }
+                    
                     if (glossText) {
                         definitions.push(glossText);
                     }
@@ -143,6 +169,8 @@ async function parseJMdict(xmlContent: string): Promise<JMdictEntry[]> {
             console.error('Error parsing entry:', err);
         }
     }
+    
+    console.log(`   Successfully parsed ${entries.length} valid entries`);
 
     return entries;
 }
@@ -214,7 +242,7 @@ async function importJMdict() {
     await client.query("DELETE FROM dictionaryentries WHERE language = 'ja'");
     console.log('✅ Cleared\n');
 
-    console.log(`💾 Inserting ${entries.length} entries in batches of ${BATCH_SIZE}...`);
+    console.log(`� Inserting ${entries.length} entries in batches of ${BATCH_SIZE}...`);
     let totalInserted = 0;
     const startTime = Date.now();
 

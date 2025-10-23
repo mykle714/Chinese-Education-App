@@ -52,6 +52,7 @@ function CreateDocumentDialog({ open, onClose, onSuccess, language }: CreateDocu
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
                 },
+                credentials: 'include',
                 body: JSON.stringify({
                     title: title.trim(),
                     description: description.trim(),

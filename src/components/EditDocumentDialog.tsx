@@ -62,6 +62,7 @@ function EditDocumentDialog({ open, text, onClose, onSuccess }: EditDocumentDial
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
                 },
+                credentials: 'include',
                 body: JSON.stringify({
                     title: title.trim(),
                     description: description.trim(),

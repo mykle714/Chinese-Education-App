@@ -42,7 +42,8 @@ function DeleteDocumentDialog({ open, text, onClose, onSuccess }: DeleteDocument
                 method: 'DELETE',
                 headers: {
                     'Authorization': `Bearer ${token}`
-                }
+                },
+                credentials: 'include'
             });
 
             if (!response.ok) {

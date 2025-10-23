@@ -121,6 +121,7 @@ function ReaderPage() {
                     headers: {
                         'Authorization': `Bearer ${token}`,
                     },
+                    credentials: 'include',
                 });
 
                 if (!response.ok) {
@@ -302,6 +303,7 @@ function ReaderPage() {
                 headers: {
                     'Authorization': `Bearer ${token}`,
                 },
+                credentials: 'include',
             });
 
             if (response.ok) {

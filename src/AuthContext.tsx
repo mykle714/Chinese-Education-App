@@ -128,7 +128,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ email, name, password })
+                body: JSON.stringify({ email, name, password }),
+                credentials: 'include'
             });
 
             if (!response.ok) {

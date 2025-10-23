@@ -71,6 +71,7 @@ export async function fetchVocabEntriesByTokens(
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
       },
+      credentials: 'include',
       body: JSON.stringify({ tokens: tokensNeedingFetch }),
     });
 
@@ -174,6 +175,7 @@ export async function createVocabEntry(
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
       },
+      credentials: 'include',
       body: JSON.stringify(entryData),
     });
 
@@ -214,6 +216,7 @@ export async function updateVocabEntry(
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
       },
+      credentials: 'include',
       body: JSON.stringify(entryData),
     });
 
@@ -248,6 +251,7 @@ export async function deleteVocabEntry(entryId: number, token: string): Promise<
       headers: {
         'Authorization': `Bearer ${token}`,
       },
+      credentials: 'include',
     });
 
     if (!response.ok) {
@@ -294,6 +298,7 @@ export async function importVocabFromCSV(
       headers: {
         'Authorization': `Bearer ${token}`,
       },
+      credentials: 'include',
       body: formData,
     });
 

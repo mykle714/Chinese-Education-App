@@ -12,6 +12,7 @@ import {
   Divider,
   Chip
 } from '@mui/material';
+import { API_BASE_URL } from './constants';
 
 // HSK Level type
 type HskLevel = 'HSK1' | 'HSK2' | 'HSK3' | 'HSK4' | 'HSK5' | 'HSK6';
@@ -100,7 +101,7 @@ const VocabEntryCards = ({ refreshTrigger }: VocabEntryCardsProps) => {
 
     try {
       // Fetch vocabulary entries from our Express API with pagination
-      const response = await fetch(`http://localhost:5000/api/vocabEntries/paginated?limit=${ENTRIES_PER_PAGE}&offset=${currentOffset}`, {
+      const response = await fetch(`${API_BASE_URL}/api/vocabEntries/paginated?limit=${ENTRIES_PER_PAGE}&offset=${currentOffset}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }

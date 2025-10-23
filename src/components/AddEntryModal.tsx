@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogTitle, IconButton, TextField, Button, Aler
 import { Close, Add } from "@mui/icons-material";
 import { useAuth } from "../AuthContext";
 import { useVocabularyUpdate } from "../contexts/VocabularyUpdateContext";
+import { API_BASE_URL } from '../constants';
 
 interface VocabEntryFormData {
     entryKey: string;
@@ -49,7 +50,7 @@ const AddEntryModal = ({ open, onClose, onEntryAdded }: AddEntryModalProps) => {
         setErrorCode(null);
 
         try {
-            const response = await fetch('http://localhost:5000/api/vocabEntries', {
+            const response = await fetch(`${API_BASE_URL}/api/vocabEntries`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

@@ -12,6 +12,7 @@ import {
    CircularProgress
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
+import { API_BASE_URL } from './constants';
 
 interface VocabEntryFormData {
    entryKey: string;
@@ -49,7 +50,7 @@ const DataForm = ({ onDataAdded }: DataFormProps) => {
       setSuccess(false);
 
       try {
-         const response = await fetch('http://localhost:5000/api/vocabEntries', {
+         const response = await fetch(`${API_BASE_URL}/api/vocabEntries`, {
             method: 'POST',
             headers: {
                'Content-Type': 'application/json',

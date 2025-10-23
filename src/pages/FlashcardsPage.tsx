@@ -1,7 +1,7 @@
 import { useState, useEffect, memo } from "react";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "../AuthContext";
-import { FLASHCARD_CONTENT_UPDATE_DELAY } from "../constants";
+import { FLASHCARD_CONTENT_UPDATE_DELAY, API_BASE_URL } from "../constants";
 import { useWorkPoints } from "../hooks/useWorkPoints";
 import WorkPointsBadge from "../components/WorkPointsBadge";
 import {
@@ -445,7 +445,7 @@ function FlashcardsPage() {
     const fetchEntries = async () => {
         try {
             setLoading(true);
-            const response = await fetch("http://localhost:5000/api/vocabEntries", {
+            const response = await fetch(`${API_BASE_URL}/api/vocabEntries`, {
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }

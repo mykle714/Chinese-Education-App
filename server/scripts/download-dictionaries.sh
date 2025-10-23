@@ -5,7 +5,8 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DATA_DIR="/home/cow/data/dictionaries"
+PROJECT_ROOT="$SCRIPT_DIR/../.."
+DATA_DIR="$PROJECT_ROOT/data/dictionaries"
 
 echo "📦 Creating dictionaries directory..."
 mkdir -p "$DATA_DIR"

@@ -113,7 +113,9 @@ app.use(cors({
       'http://frontend:3000',   // Docker container networking
       'http://cow-frontend-local:3000', // Docker container name
       'http://174.127.171.180', // Production frontend URL
-      'https://174.127.171.180' // Production frontend URL with HTTPS
+      'https://174.127.171.180', // Production frontend URL with HTTPS
+      'http://ilikemichael.duckdns.org', // Production domain
+      'https://ilikemichael.duckdns.org' // Production domain with HTTPS
     ];
     
     if(allowedOrigins.indexOf(origin) !== -1) {

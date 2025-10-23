@@ -89,9 +89,19 @@ async function parseJMdict(xmlContent: string): Promise<JMdictEntry[]> {
     const entries: JMdictEntry[] = [];
 
     // Debug: Check the structure
+    console.log('Root keys:', Object.keys(result || {}));
+    if (result?.JMDICT) {
+        console.log('JMDICT keys:', Object.keys(result.JMDICT));
+        console.log('JMDICT type:', typeof result.JMDICT);
+        console.log('JMDICT is array?', Array.isArray(result.JMDICT));
+        if (Array.isArray(result.JMDICT) && result.JMDICT.length > 0) {
+            console.log('First JMDICT element keys:', Object.keys(result.JMDICT[0] || {}));
+        }
+    }
+    
     const jmdictEntries = result?.JMDICT?.entry || [];
     if (jmdictEntries.length === 0) {
-        console.error('No entries found. Result structure:', Object.keys(result || {}));
+        console.error('No entries found.');
         throw new Error('Failed to parse JMdict entries');
     }
     console.log(`   Found ${jmdictEntries.length} entries in XML`);

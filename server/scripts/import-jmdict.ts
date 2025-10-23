@@ -110,49 +110,37 @@ async function parseJMdict(xmlContent: string): Promise<JMdictEntry[]> {
     if (jmdictEntries.length > 0) {
         console.log('\n🔍 Debug: First entry structure:');
         const firstEntry = jmdictEntries[0];
-        console.log('k_ele:', JSON.stringify(firstEntry.k_ele, null, 2));
-        console.log('r_ele:', JSON.stringify(firstEntry.r_ele, null, 2));
-        console.log('sense:', JSON.stringify(firstEntry.sense, null, 2));
+        console.log('Entry keys:', Object.keys(firstEntry));
+        console.log('Entry type:', typeof firstEntry);
+        console.log('Entry is array?:', Array.isArray(firstEntry));
+        console.log('Full first entry:', JSON.stringify(firstEntry, null, 2).substring(0, 1000));
         console.log('');
     }
 
     for (const entry of jmdictEntries) {
         try {
             // Extract kanji (word1) - may not exist for kana-only words
-            // With explicitArray: true, keb is already an array
-            const kanji = entry.k_ele?.[0]?.keb?.[0] || '';
+            // Field names are UPPERCASE: K_ELE, KEB
+            const kanji = entry.K_ELE?.[0]?.KEB?.[0] || '';
 
             // Extract kana reading (word2) - always exists
-            // With explicitArray: true, reb is already an array
-            const kana = entry.r_ele?.[0]?.reb?.[0] || '';
+            // Field names are UPPERCASE: R_ELE, REB
+            const kana = entry.R_ELE?.[0]?.REB?.[0] || '';
             if (!kana) continue; // Skip if no kana
 
             // Generate romaji (pronunciation)
             const romaji = kanaToRomaji(kana);
 
             // Extract definitions
+            // Field names are UPPERCASE: SENSE, GLOSS
             const definitions: string[] = [];
-            const senses = entry.sense || [];
+            const senses = entry.SENSE || [];
             for (const sense of senses) {
-                const glosses = sense.gloss || [];
+                const glosses = sense.GLOSS || [];
                 for (const gloss of glosses) {
-                    // With explicitArray: true, gloss is an array containing text or objects
-                    // Try to extract text from various possible structures
-                    let glossText: string | undefined;
+                    // GLOSS entries are strings in the array
                     if (typeof gloss === 'string') {
-                        glossText = gloss;
-                    } else if (gloss._) {
-                        glossText = gloss._;
-                    } else if (gloss['#text']) {
-                        glossText = gloss['#text'];
-                    } else if (typeof gloss === 'object' && gloss !== null) {
-                        // If it's an object, try to get the first string value
-                        const values = Object.values(gloss);
-                        glossText = values.find(v => typeof v === 'string') as string;
-                    }
-                    
-                    if (glossText) {
-                        definitions.push(glossText);
+                        definitions.push(gloss);
                     }
                 }
             }

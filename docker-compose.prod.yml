@@ -64,8 +64,10 @@ services:
     container_name: cow-frontend-prod
     restart: always
     ports:
-      - "0.0.0.0:8080:80"    # Changed to port 8080 to avoid ISP blocking
-      - "0.0.0.0:443:443"
+      - "0.0.0.0:80:80"      # Standard HTTP port (redirects to HTTPS)
+      - "0.0.0.0:443:443"    # Standard HTTPS port
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt:ro  # Mount SSL certificates
     depends_on:
       - backend
     networks:

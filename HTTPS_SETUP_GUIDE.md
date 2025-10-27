@@ -49,17 +49,17 @@ This will pull the updated `nginx.conf` and `docker-compose.prod.yml` files.
 
 ## Step 4: Update Environment File (if needed)
 
-Check if your `.env.production` file has the correct CLIENT_URL:
+Check if your `.env` file has the correct CLIENT_URL:
 
 ```bash
-cat .env.production | grep CLIENT_URL
+cat .env | grep CLIENT_URL
 ```
 
 If it still shows `http://`, update it to:
 
 ```bash
 # Edit the file
-nano .env.production
+nano .env
 
 # Change this line:
 # CLIENT_URL=http://174.127.171.180

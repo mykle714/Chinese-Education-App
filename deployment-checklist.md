@@ -18,8 +18,8 @@
 ## Application Setup
 - [ ] Clone repository to `/var/www/vocabulary-app`
 - [ ] Set ownership: `sudo chown -R $USER:$USER /var/www/vocabulary-app`
-- [ ] Create `.env.production` with secure credentials
-- [ ] Set secure permissions: `chmod 600 .env.production`
+- [ ] Create `.env` with secure credentials
+- [ ] Set secure permissions: `chmod 600 .env`
 
 ## Docker Services
 - [ ] Build and start services: `docker-compose -f docker-compose.prod.yml up --build -d`

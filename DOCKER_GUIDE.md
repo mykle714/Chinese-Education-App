@@ -76,7 +76,7 @@ docker-compose down --rmi all
 
 1. **Create production environment file**:
    ```bash
-   cp .env.example .env.production
+   cp .env.example .env
    ```
 
 2. **Set required environment variables**:
@@ -168,7 +168,7 @@ PORT=5000
 NODE_ENV=development
 ```
 
-### Production (.env.production)
+### Production (.env)
 ```bash
 DB_HOST=postgres
 DB_PORT=5432

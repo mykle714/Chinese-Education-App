@@ -50,7 +50,7 @@ cd /var/www/vocabulary-app
 ## Step 4: Configure Production Environment
 ```bash
 # Create production environment file
-cat > .env.production << EOF
+cat > .env << EOF
 # Database Configuration
 POSTGRES_PASSWORD=your-secure-production-password-here
 DB_HOST=postgres
@@ -66,7 +66,7 @@ PORT=5000
 EOF
 
 # Set secure permissions on environment file
-chmod 600 .env.production
+chmod 600 .env
 ```
 
 **Important:** Replace the database password and JWT secret with secure values!

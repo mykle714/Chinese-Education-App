@@ -24,7 +24,6 @@ interface DataFormProps {
 }
 
 const DataForm = ({ onDataAdded }: DataFormProps) => {
-   const { token } = useAuth();
    const [formData, setFormData] = useState<VocabEntryFormData>({
       entryKey: '',
       entryValue: ''

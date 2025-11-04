@@ -17,7 +17,6 @@ interface AddEntryModalProps {
 }
 
 const AddEntryModal = ({ open, onClose, onEntryAdded }: AddEntryModalProps) => {
-    const { token } = useAuth();
     const vocabularyUpdate = useVocabularyUpdate();
     const [formData, setFormData] = useState<VocabEntryFormData>({
         entryKey: '',

@@ -1,5 +1,3 @@
-import type { NavigateFunction } from 'react-router-dom';
-
 // Store navigation and auth clearing functions
 let navigateToLogin: (() => void) | null = null;
 let clearAuthState: (() => void) | null = null;

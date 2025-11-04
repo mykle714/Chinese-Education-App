@@ -31,7 +31,6 @@ function MarketViewer({ layers }: MarketViewerProps) {
     // State
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [loadedCount, setLoadedCount] = useState(0);
     const [zoom, setZoom] = useState(1);
     const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
     const [isDragging, setIsDragging] = useState(false);
@@ -71,7 +70,6 @@ function MarketViewer({ layers }: MarketViewerProps) {
         }
 
         setLoading(true);
-        setLoadedCount(0);
         loadedImagesRef.current = [];
 
         let loadedImages: LoadedImage[] = [];
@@ -85,7 +83,6 @@ function MarketViewer({ layers }: MarketViewerProps) {
                 if (errorOccurred) return;
 
                 loadedImages.push({ image: img, layer });
-                setLoadedCount(prev => prev + 1);
 
                 // Check if all images are loaded
                 if (loadedImages.length === layers.length) {

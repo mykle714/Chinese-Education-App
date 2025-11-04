@@ -2,8 +2,8 @@
 -- Adds support for Japanese, Korean, and Vietnamese dictionaries
 -- Created: 2025-01-11
 
--- Step 1: Add preferredLanguage to Users table
-ALTER TABLE Users ADD COLUMN IF NOT EXISTS "preferredLanguage" VARCHAR(10) DEFAULT 'zh';
+-- Step 1: Add selectedLanguage to Users table
+ALTER TABLE Users ADD COLUMN IF NOT EXISTS "selectedLanguage" VARCHAR(10) DEFAULT 'zh';
 
 -- Step 2: Modify DictionaryEntries to support multiple languages
 -- Add language column
@@ -36,4 +36,4 @@ COMMENT ON COLUMN DictionaryEntries.pronunciation IS 'Pronunciation - Chinese: p
 CREATE INDEX IF NOT EXISTS idx_vocabentries_language ON VocabEntries(language);
 CREATE INDEX IF NOT EXISTS idx_vocabentries_userid_language ON VocabEntries("userId", language);
 
-COMMENT ON COLUMN Users."preferredLanguage" IS 'User preferred study language: zh, ja, ko, or vi';
+COMMENT ON COLUMN Users."selectedLanguage" IS 'User selected study language: zh, ja, ko, or vi';

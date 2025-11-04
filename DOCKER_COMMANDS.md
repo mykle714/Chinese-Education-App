@@ -255,7 +255,7 @@ All production commands use `docker-compose -f docker-compose.prod.yml`.
 
 ### Navigate to Project Directory
 ```bash
-cd /var/www/vocabulary-app
+cd ~/vocabulary-app
 ```
 
 ### List Running Containers
@@ -370,7 +370,7 @@ docker-compose -f docker-compose.prod.yml up -d
 
 ### Pull Latest Code and Rebuild
 ```bash
-cd /var/www/vocabulary-app
+cd ~/vocabulary-app
 git pull origin main
 docker-compose -f docker-compose.prod.yml down
 docker-compose -f docker-compose.prod.yml up -d --build
@@ -576,7 +576,7 @@ docker exec cow-frontend-prod wget -O- http://backend:5000/api/health
 
 ### After Deploying Code Changes
 ```bash
-cd /var/www/vocabulary-app
+cd ~/vocabulary-app
 git pull origin main
 docker-compose -f docker-compose.prod.yml down
 docker-compose -f docker-compose.prod.yml up -d --build

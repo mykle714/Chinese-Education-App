@@ -1,6 +1,9 @@
 # Docker Deployment Guide for Vocabulary App
 **Target Server IP:** 174.127.171.180
 **Repository:** https://github.com/mykle714/Chinese-Education-App.git
+**App Location:** /home/michael/vocabulary-app
+
+> **Note:** This app is deployed to `/home/michael/vocabulary-app` instead of `/var/www` due to Snap Docker's security confinement, which restricts access to certain system directories. If you're using Docker installed via Snap (common on Ubuntu), it can only access directories like `/home`, `/tmp`, and `/var/snap` by default.
 
 ## Step 1: SSH into Your Deployment Server
 ```bash
@@ -39,12 +42,10 @@ ssh username@174.127.171.180
 
 ## Step 3: Clone and Setup Application
 ```bash
-# Create web directory and clone repository
-sudo mkdir -p /var/www
-cd /var/www
-sudo git clone https://github.com/mykle714/Chinese-Education-App.git vocabulary-app
-sudo chown -R $USER:$USER /var/www/vocabulary-app
-cd /var/www/vocabulary-app
+# Clone repository to home directory (compatible with Snap Docker)
+cd ~
+git clone https://github.com/mykle714/Chinese-Education-App.git vocabulary-app
+cd vocabulary-app
 ```
 
 ## Step 4: Configure Production Environment
@@ -88,14 +89,14 @@ docker-compose -f docker-compose.prod.yml logs -f
 
 ```bash
 # Make the import script executable
-chmod +x /var/www/vocabulary-app/server/scripts/import-all-dictionaries.sh
+chmod +x ~/vocabulary-app/server/scripts/import-all-dictionaries.sh
 
 # Run the complete dictionary import process
 # This will:
 # - Run all database migrations (including multi-language support)
 # - Download all 4 language dictionary files
 # - Import all dictionaries into the database
-bash /var/www/vocabulary-app/server/scripts/import-all-dictionaries.sh production
+bash ~/vocabulary-app/server/scripts/import-all-dictionaries.sh production
 ```
 
 **What this script does:**
@@ -301,7 +302,7 @@ sudo netstat -tlnp | grep :5000
 If you need to re-import dictionaries (e.g., after a database reset):
 
 ```bash
-cd /var/www/vocabulary-app
+cd ~/vocabulary-app
 
 # Re-run the import script
 bash server/scripts/import-all-dictionaries.sh production
@@ -312,7 +313,7 @@ bash server/scripts/import-all-dictionaries.sh production
 ## Future Updates
 ```bash
 # To update the application
-cd /var/www/vocabulary-app
+cd ~/vocabulary-app
 git pull origin main
 
 # Rebuild and restart Docker services

@@ -16,8 +16,8 @@
 - [ ] Log out and back in for docker group changes
 
 ## Application Setup
-- [ ] Clone repository to `/var/www/vocabulary-app`
-- [ ] Set ownership: `sudo chown -R $USER:$USER /var/www/vocabulary-app`
+- [ ] Clone repository to `~/vocabulary-app`
+- [ ] Navigate to app directory: `cd ~/vocabulary-app`
 - [ ] Create `.env` with secure credentials
 - [ ] Set secure permissions: `chmod 600 .env`
 

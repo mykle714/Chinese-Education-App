@@ -17,7 +17,7 @@ module.exports = {
   apps: [{
     name: 'vocabulary-backend',
     script: './server/server.ts',
-    cwd: '/var/www/vocabulary-app',
+    cwd: '~/vocabulary-app',
     interpreter: 'node',
     interpreter_args: '--loader ts-node/esm',
     env: {
@@ -59,4 +59,3 @@ pm2 startup
 pm2 status
 pm2 logs
 ```
-

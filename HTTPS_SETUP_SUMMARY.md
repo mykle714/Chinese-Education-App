@@ -41,7 +41,7 @@ On your server, you'll run:
 
 ```bash
 # Pull changes
-cd /var/www/vocabulary-app
+cd ~/vocabulary-app
 git pull origin main
 
 # Install Certbot

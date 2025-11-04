@@ -30,7 +30,7 @@ Replace `username` with your actual server username.
 ## Step 2: Navigate to Application Directory
 
 ```bash
-cd /var/www/vocabulary-app
+cd ~/vocabulary-app
 ```
 
 Or wherever your application is located on the server.
@@ -242,7 +242,7 @@ sudo crontab -e
 **Choose an editor (nano is easiest), then add this line at the bottom:**
 
 ```bash
-0 0 1 * * certbot renew --quiet --deploy-hook "docker-compose -f /var/www/vocabulary-app/docker-compose.prod.yml restart frontend"
+0 0 1 * * certbot renew --quiet --deploy-hook "docker-compose -f ~/vocabulary-app/docker-compose.prod.yml restart frontend"
 ```
 
 This will:
@@ -347,7 +347,7 @@ docker-compose -f docker-compose.prod.yml up -d
 **Solution:** Run manual renewal with verbose output:
 ```bash
 sudo certbot renew --force-renewal
-docker-compose -f /var/www/vocabulary-app/docker-compose.prod.yml restart frontend
+docker-compose -f ~/vocabulary-app/docker-compose.prod.yml restart frontend
 ```
 
 ---

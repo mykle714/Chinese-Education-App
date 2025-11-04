@@ -29,7 +29,7 @@ On your deployment server, pull the latest changes:
 ssh username@174.127.171.180
 
 # Navigate to your app directory
-cd /var/www/vocabulary-app
+cd ~/vocabulary-app
 
 # Pull the latest changes from Git
 git pull origin main
@@ -71,7 +71,7 @@ If you can't use Git, manually update the file:
 
 ```bash
 # Edit the server file directly
-nano /var/www/vocabulary-app/server/server.ts
+nano ~/vocabulary-app/server/server.ts
 
 # Find the CORS section and add these two lines to allowedOrigins array:
 # 'http://174.127.171.180',

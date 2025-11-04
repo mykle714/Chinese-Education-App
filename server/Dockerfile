@@ -5,11 +5,11 @@ FROM node:20-alpine as development
 WORKDIR /app
 
 # Install dependencies for development
-COPY package*.json ./
+COPY server/package*.json ./
 RUN npm ci
 
 # Copy server source code
-COPY . .
+COPY server/ .
 
 # Expose port for backend server
 EXPOSE 5000
@@ -22,11 +22,11 @@ FROM node:20-alpine as build
 WORKDIR /app
 
 # Copy package files
-COPY package*.json ./
+COPY server/package*.json ./
 RUN npm ci
 
 # Copy server source code and build
-COPY . .
+COPY server/ .
 RUN npm run build
 
 # Production stage
@@ -38,7 +38,7 @@ RUN addgroup -g 1001 -S nodejs
 RUN adduser -S nodejs -u 1001
 
 # Copy package files and install production dependencies only
-COPY package*.json ./
+COPY server/package*.json ./
 RUN npm ci --only=production && npm cache clean --force
 
 # Copy built application from build stage

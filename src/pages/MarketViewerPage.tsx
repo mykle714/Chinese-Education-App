@@ -49,7 +49,7 @@ function MarketViewerPage() {
     const layers = [
         // Background layer (always present to prevent "no layers" error)
         {
-            imagePath: '/assets/night-market/dirt-background.png',
+            imagePath: '/assets/night-market/7680x4320-dark-green-solid-color-background.jpg',
             x: 0,
             y: 0,
             zIndex: 0,

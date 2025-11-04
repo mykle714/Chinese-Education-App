@@ -63,13 +63,6 @@ export const WorkPointsBadge: React.FC<WorkPointsBadgeProps> = ({
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
-    // Debug: Log isActive prop changes
-    useEffect(() => {
-        console.log('[WORK-POINTS-BADGE-DEBUG] isActive prop:', isActive, {
-            timestamp: new Date().toISOString()
-        });
-    }, [isActive]);
-
     // Always show the badge to display work points, including 0
     // This helps users understand the work points system even when starting
 

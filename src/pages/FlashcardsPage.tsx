@@ -751,7 +751,6 @@ function FlashcardsPage() {
                 // Check if this is a transition from unmarked (null) to marked (true/false)
                 if (oldEntry.isCorrect === null && isCorrect !== null) {
                     shouldIncrementCounter = true;
-                    console.log('Counter increment: null -> marked for existing entry');
                 }
             }
             // Don't increment for new entries
@@ -762,7 +761,6 @@ function FlashcardsPage() {
             // Check if this is a transition from unmarked (null) to marked (true/false)
             if (oldEntry.isCorrect === null && isCorrect !== null) {
                 shouldIncrementCounter = true;
-                console.log('Counter increment: null -> marked for historical entry');
             }
         }
 
@@ -794,10 +792,7 @@ function FlashcardsPage() {
 
         // Update counter separately to avoid race conditions
         if (shouldIncrementCounter) {
-            setCompletedCardsCount(prev => {
-                console.log('Incrementing counter from', prev, 'to', prev + 1);
-                return prev + 1;
-            });
+            setCompletedCardsCount(prev => prev + 1);
         }
     };
 
@@ -826,7 +821,6 @@ function FlashcardsPage() {
         if (currentEntry) {
             // Add the current entry to history with correct status
             addToHistory(currentEntry, true);
-            console.log('Flashcard marked as CORRECT');
         }
 
         // Only get a new random card if we're at the current card (index 0)
@@ -845,7 +839,6 @@ function FlashcardsPage() {
         if (currentEntry) {
             // Add the current entry to history with incorrect status
             addToHistory(currentEntry, false);
-            console.log('Flashcard marked as INCORRECT');
         }
 
         // Only get a new random card if we're at the current card (index 0)

@@ -71,12 +71,6 @@ const workPointsReducer = (state: WorkPointsState, action: WorkPointsAction): Wo
         ...action.payload
       };
     case 'RECORD_ACTIVITY':
-      // Debug: Log state changes when setting isActive to true
-      if (!state.isActive) {
-        console.log(`[WORK-POINTS-DEBUG] isActive changed: ${state.isActive} → true (via RECORD_ACTIVITY)`, {
-          timestamp: new Date().toISOString()
-        });
-      }
       return {
         ...state,
         todaysWorkPointsMilli: action.payload.newMilliseconds,
@@ -96,12 +90,6 @@ const workPointsReducer = (state: WorkPointsState, action: WorkPointsAction): Wo
         isAnimating: false
       };
     case 'SET_ACTIVE':
-      // Debug: Log state changes
-      if (state.isActive !== action.payload) {
-        console.log(`[WORK-POINTS-DEBUG] isActive changed: ${state.isActive} → ${action.payload}`, {
-          timestamp: new Date().toISOString()
-        });
-      }
       return {
         ...state,
         isActive: action.payload
@@ -407,14 +395,6 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
     const lastActivityTime = currentState.lastActivity?.getTime() || 0;
     const timeSinceLastActivity = nowTime - lastActivityTime;
     
-    // Debug: Log activity recording
-    console.log(`[WORK-POINTS-DEBUG] Activity recorded`, {
-      timeSinceLastActivity: `${timeSinceLastActivity}ms`,
-      isFirstActivity: currentState.isFirstActivityOnPage,
-      currentIsActive: currentState.isActive,
-      timestamp: new Date().toISOString()
-    });
-    
     // Handle first activity on page - only update baseline, no points awarded
     if (currentState.isFirstActivityOnPage) {
       dispatch({
@@ -517,11 +497,6 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
     }
     
     activityTimeoutRef.current = setTimeout(() => {
-      console.log(`[WORK-POINTS-DEBUG] Activity timeout fired - setting isActive to false`, {
-        timeoutDuration: `${WORK_POINTS_CONFIG.ACTIVITY_TIMEOUT_MS}ms`,
-        timestamp: new Date().toISOString()
-      });
-      
       // Before going inactive, capture the elapsed time and add it to accumulated
       // This prevents the progress bar from jumping back
       const currentState = stateRef.current;

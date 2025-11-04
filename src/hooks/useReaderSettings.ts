@@ -17,7 +17,6 @@ export function useReaderSettings(): UseReaderSettingsReturn {
     // Handle auto-select setting change
     const handleAutoSelectChange = (enabled: boolean) => {
         setAutoSelectEnabled(enabled);
-        console.log(`[READER-SETTINGS] Auto word selection ${enabled ? 'enabled' : 'disabled'}`);
     };
 
     // Handle settings panel toggle

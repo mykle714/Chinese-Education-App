@@ -44,16 +44,6 @@ export function useTextSelection(
         // Update the selected card states
         setSelectedPersonalCard(matchingPersonalCard);
         setSelectedDictionaryCard(matchingDictionaryCard);
-
-        // Log for debugging
-        if (selectedTextContent) {
-            console.log(`[TEXT-SELECTION] Selected text: "${selectedTextContent}"`, {
-                hasPersonalMatch: !!matchingPersonalCard,
-                hasDictionaryMatch: !!matchingDictionaryCard,
-                totalPersonalCards: loadedPersonalCards.length,
-                totalDictionaryCards: loadedDictionaryCards.length
-            });
-        }
     }, [loadedPersonalCards, loadedDictionaryCards]);
 
     // Handle text selection changes for auto word selection using native browser APIs

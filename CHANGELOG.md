@@ -11,6 +11,7 @@
 ### Added
 - Added night market viewer page
 - Added icons to the flashcard page to indicate inputs
+- Added a delete account button
 
 ### Changed
 - Renamed millisecondsAccumulated to todaysWorkPointsMilli
@@ -21,6 +22,7 @@
 - 
 ### Removed
 - Removed buttons on the flashcard page in mobile view in favor of swiping only
+- Removed cluttering console logs
 
 ## [v0.3.0] - 10/29/2025
 

@@ -17,15 +17,6 @@ export const findExactMatch = (selectedText: string, loadedCards: VocabEntry[]):
     // Find all exact matches
     const matches = loadedCards.filter(card => card.entryKey === trimmedText);
     
-    // Log multiple matches to console as requested
-    if (matches.length > 1) {
-        console.log(`Multiple matches found for "${trimmedText}":`, matches.map(m => ({
-            id: m.id,
-            entryKey: m.entryKey,
-            entryValue: m.entryValue
-        })));
-    }
-    
     // Return first match or null
     return matches.length > 0 ? matches[0] : null;
 };
@@ -50,16 +41,6 @@ export const findDictionaryMatch = (selectedText: string, loadedDictionaryCards:
     const matches = loadedDictionaryCards.filter(card => 
         card.word1 === trimmedText || card.word2 === trimmedText
     );
-    
-    // Log multiple matches to console
-    if (matches.length > 1) {
-        console.log(`Multiple dictionary matches found for "${trimmedText}":`, matches.map(m => ({
-            id: m.id,
-            word1: m.word1,
-            word2: m.word2,
-            pronunciation: m.pronunciation
-        })));
-    }
     
     // Return first match or null
     return matches.length > 0 ? matches[0] : null;

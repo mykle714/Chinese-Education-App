@@ -109,8 +109,6 @@ export async function checkAndSyncDailyReset(
   const lastActivityDate = new Date(data.lastActivity).toDateString();
   const today = new Date().toDateString();
 
-  console.log("checking for daily reset", { lastActivityDate, today });
-
   if (lastActivityDate !== today) {
     // Different day detected - check streak and apply penalties first
     const { updatedData, streakResult } = checkStreakAndApplyPenalty(data);

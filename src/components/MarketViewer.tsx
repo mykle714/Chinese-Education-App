@@ -144,17 +144,6 @@ function MarketViewer({ layers }: MarketViewerProps) {
         const scaleY = containerHeight / sceneHeight;
         const scale = Math.min(scaleX, scaleY) * 0.9; // 90% to add some padding
 
-        console.log('[Fit Scene]', {
-            sceneWidth,
-            sceneHeight,
-            containerWidth,
-            containerHeight,
-            scaleX,
-            scaleY,
-            finalZoom: scale,
-            layerCount: loadedImagesRef.current.length
-        });
-
         setZoom(scale);
         setPan({ x: 0, y: 0 });
         setLastPan({ x: 0, y: 0 });
@@ -165,13 +154,6 @@ function MarketViewer({ layers }: MarketViewerProps) {
         const canvas = canvasRef.current;
         const ctx = canvas?.getContext('2d');
         if (!canvas || !ctx || loadedImagesRef.current.length === 0) return;
-
-        console.log('[Render]', {
-            zoom,
-            pan,
-            canvasSize: { w: canvas.width, h: canvas.height },
-            layerCount: loadedImagesRef.current.length
-        });
 
         // Clear canvas
         ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -210,17 +192,8 @@ function MarketViewer({ layers }: MarketViewerProps) {
         const container = containerRef.current;
         if (!canvas || !container) return;
 
-        console.log('[Canvas Resize]', {
-            containerSize: { w: container.clientWidth, h: container.clientHeight },
-            oldCanvasSize: { w: canvas.width, h: canvas.height }
-        });
-
         canvas.width = container.clientWidth;
         canvas.height = container.clientHeight;
-
-        console.log('[Canvas Resize]', {
-            newCanvasSize: { w: canvas.width, h: canvas.height }
-        });
 
         render();
     }, [render]);

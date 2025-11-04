@@ -233,7 +233,6 @@ function ReaderPage() {
 
             // Clear selectedPersonalCard if it's the deleted entry
             if (textSelection.selectedPersonalCard && textSelection.selectedPersonalCard.id === entryId) {
-                console.log('[READER-VOCAB-UPDATE] Clearing selected personal card (deleted):', entryId);
                 textSelection.setSelectedPersonalCard(null);
             }
         });
@@ -262,7 +261,6 @@ function ReaderPage() {
 
     // Handle text selection
     const handleTextSelect = useCallback(async (text: Text) => {
-        console.log("[TEXT-SELECTION] Selected text:", text.title);
         setSelectedText(text);
         if (isMobile) {
             setDrawerOpen(false);
@@ -314,15 +312,12 @@ function ReaderPage() {
                 if (selectedText) {
                     const updatedText = textsData.find((t: Text) => t.id === selectedText.id);
                     if (updatedText) {
-                        console.log('[READER-PAGE] Processing vocabulary changes after document edit');
-
                         // Use incremental processing: only fetch vocabulary for newly added tokens
                         // This handles documents with >1000 tokens by processing only the diff
                         await vocabularyProcessing.processDocumentVocabularyIncremental(selectedText, updatedText);
 
                         // Update selected text after vocabulary processing completes
                         setSelectedText(updatedText);
-                        console.log('[READER-PAGE] Updated selected text and vocabulary after edit');
                     }
                 }
             }

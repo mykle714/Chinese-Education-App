@@ -51,6 +51,4 @@ export const setupFetchInterceptor = () => {
       throw error;
     }
   };
-
-  console.log('Fetch interceptor initialized - all fetch calls will now check for token expiration');
 };

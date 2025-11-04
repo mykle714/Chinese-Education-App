@@ -1,7 +1,6 @@
 import { useState, useRef } from 'react';
 import { Dialog, DialogContent, DialogTitle, IconButton, TextField, Button, Alert, CircularProgress } from "@mui/material";
 import { Close, Add } from "@mui/icons-material";
-import { useAuth } from "../AuthContext";
 import { useVocabularyUpdate } from "../contexts/VocabularyUpdateContext";
 import { API_BASE_URL } from '../constants';
 

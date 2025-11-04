@@ -13,6 +13,7 @@ import SettingsPage from "./pages/SettingsPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import FlashcardsPage from "./pages/FlashcardsPage";
 import ReaderPage from "./pages/ReaderPage";
+import MarketViewerPage from "./pages/MarketViewerPage";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -51,6 +52,11 @@ function App() {
                 <Route path="/reader" element={
                   <ProtectedRoute>
                     <ReaderPage />
+                  </ProtectedRoute>
+                } />
+                <Route path="/night-market" element={
+                  <ProtectedRoute>
+                    <MarketViewerPage />
                   </ProtectedRoute>
                 } />
                 <Route path="/profile" element={

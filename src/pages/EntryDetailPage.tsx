@@ -1,9 +1,9 @@
-import { API_BASE_URL } from '../constants';
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../AuthContext";
 import { useConfirmation } from "../contexts/ConfirmationContext";
 import { useVocabularyUpdate } from "../contexts/VocabularyUpdateContext";
+import apiClient from "../utils/apiClient";
 import {
     Container,
     Typography,
@@ -81,26 +81,12 @@ function EntryDetailPage() {
         const fetchEntry = async () => {
             try {
                 setLoading(true);
-                const response = await fetch(`${API_BASE_URL}/api/vocabEntries/${id}`, {
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
-                });
-
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw {
-                        message: errorData.error || `Failed to fetch vocabulary entry with ID ${id}`,
-                        code: errorData.code || "ERR_FETCH_FAILED"
-                    };
-                }
-
-                const result = await response.json();
-                setEntry(result);
+                const response = await apiClient.get(`/api/vocabEntries/${id}`);
+                setEntry(response.data);
                 setLoading(false);
             } catch (err: any) {
-                const errorMessage = err.message || `Failed to fetch vocabulary entry with ID ${id}`;
-                const errorCode = err.code || "ERR_UNKNOWN";
+                const errorMessage = err.response?.data?.error || err.message || `Failed to fetch vocabulary entry with ID ${id}`;
+                const errorCode = err.response?.data?.code || "ERR_UNKNOWN";
                 setError(errorMessage);
                 setErrorCode(errorCode);
                 setLoading(false);
@@ -120,20 +106,7 @@ function EntryDetailPage() {
         }
 
         try {
-            const response = await fetch(`${API_BASE_URL}/api/vocabEntries/${id}`, {
-                method: "DELETE",
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw {
-                    message: errorData.error || `Failed to delete vocabulary entry with ID ${id}`,
-                    code: errorData.code || "ERR_DELETE_FAILED"
-                };
-            }
+            await apiClient.delete(`/api/vocabEntries/${id}`);
 
             // Notify vocabulary update context
             vocabularyUpdate.removeVocabEntry(parseInt(id!));
@@ -141,8 +114,8 @@ function EntryDetailPage() {
             // Navigate back to entries page after successful deletion
             navigate("/entries");
         } catch (err: any) {
-            const errorMessage = err.message || `Failed to delete vocabulary entry with ID ${id}`;
-            const errorCode = err.code || "ERR_UNKNOWN";
+            const errorMessage = err.response?.data?.error || err.message || `Failed to delete vocabulary entry with ID ${id}`;
+            const errorCode = err.response?.data?.code || "ERR_UNKNOWN";
             setError(errorMessage);
             setErrorCode(errorCode);
             console.error(err);

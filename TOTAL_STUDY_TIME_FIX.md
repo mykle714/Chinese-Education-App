@@ -11,7 +11,7 @@ The `useWorkPoints` hook had logic to:
 - Track total accumulated points (`totalWorkPoints`) ✗ Broken
 
 When a user earned points, the code:
-1. Incremented `millisecondsAccumulated` ✓
+1. Incremented `todaysWorkPointsMilli` ✓
 2. Calculated `currentPoints` from milliseconds ✓
 3. **Never incremented `totalWorkPoints`** ✗
 

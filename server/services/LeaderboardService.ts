@@ -57,7 +57,7 @@ export class LeaderboardService {
           userId: user.userId,
           email: user.email,
           name: user.name,
-          totalWorkPoints: user.totalWorkPoints,
+          accumulativeWorkPoints: user.totalWorkPoints,
           currentStreak: streakData.currentStreak,
           todaysPoints: todaysPoints,
           yesterdaysPoints: yesterdaysPoints,
@@ -67,7 +67,7 @@ export class LeaderboardService {
 
       // DEBUG: Log data before sorting
       console.log('🏆 [LEADERBOARD-DEBUG] Before sorting:', 
-        leaderboardEntries.map(e => ({ email: e.email, yesterday: e.yesterdaysPoints, total: e.totalWorkPoints }))
+        leaderboardEntries.map(e => ({ email: e.email, yesterday: e.yesterdaysPoints, total: e.accumulativeWorkPoints }))
       );
 
       // Sort by yesterday's work points (descending), with total points as tiebreaker
@@ -75,13 +75,13 @@ export class LeaderboardService {
         if (b.yesterdaysPoints !== a.yesterdaysPoints) {
           return b.yesterdaysPoints - a.yesterdaysPoints;
         }
-        // Tiebreaker: use total work points (descending)
-        return b.totalWorkPoints - a.totalWorkPoints;
+        // Tiebreaker: use accumulative work points (descending)
+        return b.accumulativeWorkPoints - a.accumulativeWorkPoints;
       });
 
       // DEBUG: Log data after sorting
       console.log('🏆 [LEADERBOARD-DEBUG] After sorting:', 
-        leaderboardEntries.map(e => ({ rank: e.rank, email: e.email, yesterday: e.yesterdaysPoints, total: e.totalWorkPoints }))
+        leaderboardEntries.map(e => ({ rank: e.rank, email: e.email, yesterday: e.yesterdaysPoints, total: e.accumulativeWorkPoints }))
       );
 
       // Assign ranks based on sorted position

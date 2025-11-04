@@ -26,3 +26,10 @@ export const STREAK_CONFIG = {
   PENALTY_PERCENT: parseInt(import.meta.env.VITE_STREAK_PENALTY_PERCENT) || 10, // Penalty percentage when streak is lost
   DAILY_PENALTY_POINTS: parseInt(import.meta.env.VITE_DAILY_PENALTY_POINTS) || 10, // Fixed penalty points per missed day
 };
+
+// Vocabulary Search Configuration
+export const VOCAB_SEARCH_CONFIG = {
+  SEARCH_FIELDS: ['entryKey', 'entryValue'] as const, // Fields to search in
+  RESULT_LIMIT: 50, // Maximum number of search results
+  DEBOUNCE_DELAY: 400 // Milliseconds to wait before triggering search
+};

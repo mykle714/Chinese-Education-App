@@ -143,6 +143,7 @@ function LeaderboardPlaceholder() {
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
                                         <Typography
                                             variant="body1"
+                                            title={entry.email}
                                             sx={{
                                                 fontWeight: 'bold',
                                                 overflow: 'hidden',
@@ -182,7 +183,7 @@ function LeaderboardPlaceholder() {
                                 {/* Total Points */}
                                 <Box sx={{ textAlign: 'right' }}>
                                     <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                                        {entry.totalWorkPoints.toLocaleString()}
+                                        {entry.accumulativeWorkPoints.toLocaleString()}
                                     </Typography>
                                     <Typography variant="body2" sx={{ opacity: 0.8, fontSize: '0.75rem' }}>
                                         points

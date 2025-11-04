@@ -11,13 +11,18 @@ import {
     Alert,
     Divider,
     IconButton,
-    InputAdornment
+    InputAdornment,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogContentText,
+    DialogActions
 } from "@mui/material";
-import { Visibility, VisibilityOff } from "@mui/icons-material";
+import { Visibility, VisibilityOff, Warning } from "@mui/icons-material";
 import { useAuth } from "../AuthContext";
 
 function ProfilePage() {
-    const { user, isLoading, changePassword } = useAuth();
+    const { user, isLoading, changePassword, deleteAccount } = useAuth();
 
     // Password form state
     const [currentPassword, setCurrentPassword] = useState("");
@@ -28,6 +33,13 @@ function ProfilePage() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [success, setSuccess] = useState(false);
     const [error, setError] = useState<string | null>(null);
+
+    // Delete account state
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [deletePassword, setDeletePassword] = useState("");
+    const [deleteError, setDeleteError] = useState<string | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
+    const [showDeletePassword, setShowDeletePassword] = useState(false);
 
     // Password visibility state
     const [showCurrentPassword, setShowCurrentPassword] = useState(false);
@@ -65,6 +77,38 @@ function ProfilePage() {
         }
 
         return true;
+    };
+
+    // Handle delete account dialog
+    const handleOpenDeleteDialog = () => {
+        setDeleteDialogOpen(true);
+        setDeletePassword("");
+        setDeleteError(null);
+    };
+
+    const handleCloseDeleteDialog = () => {
+        setDeleteDialogOpen(false);
+        setDeletePassword("");
+        setDeleteError(null);
+    };
+
+    const handleDeleteAccount = async () => {
+        setDeleteError(null);
+
+        if (!deletePassword) {
+            setDeleteError("Password is required to delete your account");
+            return;
+        }
+
+        setIsDeleting(true);
+
+        try {
+            await deleteAccount(deletePassword);
+            // Navigation to login is handled in the deleteAccount function
+        } catch (err: any) {
+            setDeleteError(err.message || "Failed to delete account");
+            setIsDeleting(false);
+        }
     };
 
     // Handle form submission
@@ -248,7 +292,101 @@ function ProfilePage() {
                         {isSubmitting ? "Changing Password..." : "Change Password"}
                     </Button>
                 </Box>
+
+                <Divider sx={{ my: 4 }} />
+
+                <Typography variant="h6" component="h3" gutterBottom color="error">
+                    Delete Account
+                </Typography>
+
+                <Alert severity="warning" icon={<Warning />} sx={{ mb: 2 }}>
+                    This action is permanent and cannot be undone. All your data including vocabulary entries, work points, and study history will be permanently deleted.
+                </Alert>
+
+                <Button
+                    fullWidth
+                    variant="outlined"
+                    color="error"
+                    startIcon={<Warning />}
+                    onClick={handleOpenDeleteDialog}
+                    sx={{ mt: 2 }}
+                >
+                    Delete My Account
+                </Button>
             </Paper>
+
+            {/* Delete Account Confirmation Dialog */}
+            <Dialog
+                open={deleteDialogOpen}
+                onClose={handleCloseDeleteDialog}
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle sx={{ color: 'error.main', display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Warning /> Delete Account
+                </DialogTitle>
+                <DialogContent>
+                    <DialogContentText sx={{ mb: 3 }}>
+                        Are you sure you want to delete your account? This action is permanent and cannot be undone.
+                    </DialogContentText>
+
+                    <DialogContentText sx={{ mb: 2, fontWeight: 'bold' }}>
+                        All of the following will be permanently deleted:
+                    </DialogContentText>
+
+                    <DialogContentText component="ul" sx={{ mb: 3, pl: 2 }}>
+                        <li>Your profile and account information</li>
+                        <li>All vocabulary entries you've created</li>
+                        <li>Your work points and study history</li>
+                        <li>All study deck configurations</li>
+                        <li>Any texts you've saved</li>
+                    </DialogContentText>
+
+                    {deleteError && (
+                        <Alert severity="error" sx={{ mb: 2 }}>
+                            {deleteError}
+                        </Alert>
+                    )}
+
+                    <TextField
+                        autoFocus
+                        margin="dense"
+                        label="Enter your password to confirm"
+                        type={showDeletePassword ? "text" : "password"}
+                        fullWidth
+                        variant="outlined"
+                        value={deletePassword}
+                        onChange={(e) => setDeletePassword(e.target.value)}
+                        InputProps={{
+                            endAdornment: (
+                                <InputAdornment position="end">
+                                    <IconButton
+                                        aria-label="toggle password visibility"
+                                        onClick={() => setShowDeletePassword(!showDeletePassword)}
+                                        edge="end"
+                                    >
+                                        {showDeletePassword ? <VisibilityOff /> : <Visibility />}
+                                    </IconButton>
+                                </InputAdornment>
+                            )
+                        }}
+                    />
+                </DialogContent>
+                <DialogActions sx={{ px: 3, pb: 2 }}>
+                    <Button onClick={handleCloseDeleteDialog} disabled={isDeleting}>
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={handleDeleteAccount}
+                        color="error"
+                        variant="contained"
+                        disabled={isDeleting}
+                        startIcon={isDeleting ? <CircularProgress size={20} /> : <Warning />}
+                    >
+                        {isDeleting ? "Deleting..." : "Delete My Account"}
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Container>
     );
 }

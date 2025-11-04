@@ -2,7 +2,7 @@ import { WORK_POINTS_CONFIG } from '../constants';
 
 // Work Points Storage Interface
 export interface WorkPointsStorage {
-  millisecondsAccumulated: number; // Total active time in milliseconds (daily, resets)
+  todaysWorkPointsMilli: number; // Total active time in milliseconds (daily, resets)
   totalWorkPoints: number; // Lifetime accumulated work points (persists)
   lastActivity: string; // ISO timestamp of last activity
   currentStreak: number; // Current consecutive days streak
@@ -26,11 +26,11 @@ const checkDailyReset = async (
   
   if (lastActivityDate !== today) {
     // Calculate daily points to add to total
-    const dailyPoints = calculatePointsFromMilliseconds(data.millisecondsAccumulated);
+    const dailyPoints = calculatePointsFromMilliseconds(data.todaysWorkPointsMilli);
     const newTotalWorkPoints = (data.totalWorkPoints || 0) + dailyPoints;
     
     // Different day detected - sync before reset to prevent data loss
-    if (data.millisecondsAccumulated > 0 && onDailyBoundarySync) {
+    if (data.todaysWorkPointsMilli > 0 && onDailyBoundarySync) {
       const yesterdayDate = new Date(data.lastActivity).toISOString().split('T')[0];
       
       console.log(`[WORK-POINTS-STORAGE] 📅 Daily reset detected, adding ${dailyPoints} points to total (${data.totalWorkPoints || 0} → ${newTotalWorkPoints}) for ${yesterdayDate}`);
@@ -53,7 +53,7 @@ const checkDailyReset = async (
     
     // Reset daily points but preserve total after adding daily points to it
     return {
-      millisecondsAccumulated: 0,
+      todaysWorkPointsMilli: 0,
       totalWorkPoints: newTotalWorkPoints,
       lastActivity: new Date().toISOString(),
       currentStreak: data.currentStreak || 0,
@@ -74,7 +74,7 @@ export const loadWorkPointsData = async (
   
   if (!stored) {
     return {
-      millisecondsAccumulated: 0,
+      todaysWorkPointsMilli: 0,
       totalWorkPoints: 0,
       lastActivity: new Date().toISOString(),
       currentStreak: 0,
@@ -92,7 +92,7 @@ export const loadWorkPointsData = async (
     console.error('Error parsing work points data:', error);
     // Return fresh data if parsing fails
     return {
-      millisecondsAccumulated: 0,
+      todaysWorkPointsMilli: 0,
       totalWorkPoints: 0,
       lastActivity: new Date().toISOString(),
       currentStreak: 0,
@@ -109,7 +109,7 @@ export const loadWorkPointsDataSync = (userId: string): WorkPointsStorage => {
   
   if (!stored) {
     return {
-      millisecondsAccumulated: 0,
+      todaysWorkPointsMilli: 0,
       totalWorkPoints: 0,
       lastActivity: new Date().toISOString(),
       currentStreak: 0,
@@ -132,11 +132,11 @@ export const loadWorkPointsDataSync = (userId: string): WorkPointsStorage => {
     
     if (lastActivityDate !== today) {
       // Add daily points to total before resetting (local only, no sync)
-      const dailyPoints = calculatePointsFromMilliseconds(data.millisecondsAccumulated);
+      const dailyPoints = calculatePointsFromMilliseconds(data.todaysWorkPointsMilli);
       const newTotalWorkPoints = (data.totalWorkPoints || 0) + dailyPoints;
       
       return {
-        millisecondsAccumulated: 0,
+        todaysWorkPointsMilli: 0,
         totalWorkPoints: newTotalWorkPoints,
         lastActivity: new Date().toISOString(),
         currentStreak: data.currentStreak || 0,
@@ -149,7 +149,7 @@ export const loadWorkPointsDataSync = (userId: string): WorkPointsStorage => {
   } catch (error) {
     console.error('Error parsing work points data:', error);
     return {
-      millisecondsAccumulated: 0,
+      todaysWorkPointsMilli: 0,
       totalWorkPoints: 0,
       lastActivity: new Date().toISOString(),
       currentStreak: 0,
@@ -213,7 +213,7 @@ export const isConsecutiveDay = (lastStreakDate: string, targetDate: string): bo
 
 export const addBackwardCompatibilityToStorageData = (data: any): WorkPointsStorage => {
   return {
-    millisecondsAccumulated: data.millisecondsAccumulated || 0,
+    todaysWorkPointsMilli: data.todaysWorkPointsMilli || 0,
     totalWorkPoints: data.totalWorkPoints || 0,
     lastActivity: data.lastActivity || new Date().toISOString(),
     currentStreak: data.currentStreak || 0,

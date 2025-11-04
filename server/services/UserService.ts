@@ -160,6 +160,40 @@ export class UserService {
   }
 
   /**
+   * Delete user account with password verification
+   */
+  async deleteUser(userId: string, password: string): Promise<void> {
+    // Validation
+    if (!userId) {
+      throw new ValidationError('User ID is required');
+    }
+    if (!password) {
+      throw new ValidationError('Password is required for account deletion');
+    }
+    
+    // Get user with password for verification
+    const user = await this.userDAL.findByEmailWithPassword(
+      (await this.userDAL.findById(userId))?.email || ''
+    );
+    
+    if (!user) {
+      throw new NotFoundError('User not found');
+    }
+    
+    // Verify password before deletion (security check)
+    const isPasswordValid = await bcrypt.compare(password, user.password!);
+    if (!isPasswordValid) {
+      throw new ValidationError('Password is incorrect');
+    }
+    
+    // Delete user (CASCADE DELETE will handle all related data)
+    const success = await this.userDAL.deleteUser(userId);
+    if (!success) {
+      throw new DALError('Failed to delete user account', 'ERR_USER_DELETE_FAILED');
+    }
+  }
+
+  /**
    * Get user profile by ID
    */
   async getUserProfile(userId: string): Promise<User> {

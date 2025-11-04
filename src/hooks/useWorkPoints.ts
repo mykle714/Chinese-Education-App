@@ -15,8 +15,9 @@ import { syncWorkPoints, type WorkPointsSyncResponse } from '../utils/workPoints
 
 export interface UseWorkPointsReturn {
   currentPoints: number;
-  totalWorkPoints: number;
-  millisecondsAccumulated: number;
+  accumulativeWorkPoints: number;
+  totalStudyTimeMinutes: number;
+  todaysWorkPointsMilli: number;
   isActive: boolean;
   isAnimating: boolean;
   isEligiblePage: boolean;
@@ -29,12 +30,14 @@ export interface UseWorkPointsReturn {
   longestStreak: number;
   streakGoalProgress: number; // Progress toward daily streak goal (0-1)
   hasMetStreakGoalToday: boolean;
+  // Progress to next point
+  progressToNextPoint: number; // 0-100 percentage toward earning next point (animated in real-time)
 }
 
 // State type for reducer
 interface WorkPointsState {
-  millisecondsAccumulated: number;
-  totalWorkPoints: number;
+  todaysWorkPointsMilli: number;
+  accumulativeWorkPoints: number;
   lastActivity: Date | null;
   isActive: boolean;
   isAnimating: boolean;
@@ -42,17 +45,21 @@ interface WorkPointsState {
   longestStreak: number;
   isSyncing: boolean;
   lastSyncResult: WorkPointsSyncResponse | null;
+  isFirstActivityOnPage: boolean;
+  animatedProgress: number; // 0-100 for smooth real-time animation
 }
 
 // Action types for reducer
 type WorkPointsAction =
-  | { type: 'LOAD_DATA'; payload: Omit<WorkPointsState, 'isActive' | 'isAnimating' | 'isSyncing' | 'lastSyncResult'> }
-  | { type: 'RECORD_ACTIVITY'; payload: { newMilliseconds: number; newTotalPoints: number; now: Date } }
+  | { type: 'LOAD_DATA'; payload: Omit<WorkPointsState, 'isActive' | 'isAnimating' | 'isSyncing' | 'lastSyncResult' | 'isFirstActivityOnPage' | 'animatedProgress'> }
+  | { type: 'RECORD_ACTIVITY'; payload: { newMilliseconds: number; newAccumulativePoints: number; now: Date } }
   | { type: 'START_ANIMATION' }
   | { type: 'STOP_ANIMATION' }
   | { type: 'SET_ACTIVE'; payload: boolean }
   | { type: 'SET_SYNCING'; payload: boolean }
   | { type: 'SET_SYNC_RESULT'; payload: WorkPointsSyncResponse | null }
+  | { type: 'SET_ANIMATED_PROGRESS'; payload: number }
+  | { type: 'SET_FIRST_ACTIVITY_FLAG'; payload: boolean }
   | { type: 'RESET' };
 
 // Reducer function
@@ -64,12 +71,19 @@ const workPointsReducer = (state: WorkPointsState, action: WorkPointsAction): Wo
         ...action.payload
       };
     case 'RECORD_ACTIVITY':
+      // Debug: Log state changes when setting isActive to true
+      if (!state.isActive) {
+        console.log(`[WORK-POINTS-DEBUG] isActive changed: ${state.isActive} → true (via RECORD_ACTIVITY)`, {
+          timestamp: new Date().toISOString()
+        });
+      }
       return {
         ...state,
-        millisecondsAccumulated: action.payload.newMilliseconds,
-        totalWorkPoints: action.payload.newTotalPoints,
+        todaysWorkPointsMilli: action.payload.newMilliseconds,
+        accumulativeWorkPoints: action.payload.newAccumulativePoints,
         lastActivity: action.payload.now,
-        isActive: true
+        isActive: true,
+        isFirstActivityOnPage: false // Clear flag after first activity
       };
     case 'START_ANIMATION':
       return {
@@ -82,6 +96,12 @@ const workPointsReducer = (state: WorkPointsState, action: WorkPointsAction): Wo
         isAnimating: false
       };
     case 'SET_ACTIVE':
+      // Debug: Log state changes
+      if (state.isActive !== action.payload) {
+        console.log(`[WORK-POINTS-DEBUG] isActive changed: ${state.isActive} → ${action.payload}`, {
+          timestamp: new Date().toISOString()
+        });
+      }
       return {
         ...state,
         isActive: action.payload
@@ -96,13 +116,24 @@ const workPointsReducer = (state: WorkPointsState, action: WorkPointsAction): Wo
         ...state,
         lastSyncResult: action.payload
       };
+    case 'SET_ANIMATED_PROGRESS':
+      return {
+        ...state,
+        animatedProgress: action.payload
+      };
+    case 'SET_FIRST_ACTIVITY_FLAG':
+      return {
+        ...state,
+        isFirstActivityOnPage: action.payload
+      };
     case 'RESET':
       return {
         ...state,
-        millisecondsAccumulated: 0,
+        todaysWorkPointsMilli: 0,
         lastActivity: new Date(),
         isActive: false,
-        isAnimating: false
+        isAnimating: false,
+        isFirstActivityOnPage: true
       };
     default:
       return state;
@@ -115,20 +146,25 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
   
   // Use reducer for consolidated state management
   const [state, dispatch] = useReducer(workPointsReducer, {
-    millisecondsAccumulated: 0,
-    totalWorkPoints: 0,
+    todaysWorkPointsMilli: 0,
+    accumulativeWorkPoints: 0,
     lastActivity: null,
     isActive: false,
     isAnimating: false,
     currentStreak: 0,
     longestStreak: 0,
     isSyncing: false,
-    lastSyncResult: null
+    lastSyncResult: null,
+    isFirstActivityOnPage: true, // First activity on page should award 0 points
+    animatedProgress: 0
   });
   
   // Derived state (must come before refs that use them)
-  const currentPoints = calculatePointsFromMilliseconds(state.millisecondsAccumulated);
+  const currentPoints = calculatePointsFromMilliseconds(state.todaysWorkPointsMilli);
   const isEligiblePage = WORK_POINTS_ELIGIBLE_PAGES.includes(location.pathname);
+  
+  // Calculate total study time including today's partial progress
+  const totalStudyTimeMinutes = state.accumulativeWorkPoints + Math.floor(state.todaysWorkPointsMilli / 60000);
   
   // Refs for cleanup and state access
   const activityTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -161,12 +197,58 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
     locationRef.current = location;
   }, [location]);
 
+  // Real-time animated progress using requestAnimationFrame
+  useEffect(() => {
+    if (!state.isActive) {
+      // When inactive, show progress based only on accumulated time
+      // This ensures the progress bar shows exactly where the user left off
+      const staticProgress = (state.todaysWorkPointsMilli % WORK_POINTS_CONFIG.MILLISECONDS_PER_POINT) / 
+                             WORK_POINTS_CONFIG.MILLISECONDS_PER_POINT * 100;
+      dispatch({ type: 'SET_ANIMATED_PROGRESS', payload: staticProgress });
+      return;
+    }
+
+    let animationFrameId: number;
+    
+    const animate = () => {
+      if (!stateRef.current.isActive || !stateRef.current.lastActivity) {
+        return;
+      }
+
+      const now = Date.now();
+      const lastActivityTime = stateRef.current.lastActivity.getTime();
+      const elapsedSinceLastActivity = now - lastActivityTime;
+      
+      // Cap elapsed time at ACTIVITY_TIMEOUT_MS for visual consistency
+      const cappedElapsed = Math.min(elapsedSinceLastActivity, WORK_POINTS_CONFIG.ACTIVITY_TIMEOUT_MS);
+      
+      // Calculate total milliseconds including elapsed time
+      const totalMs = stateRef.current.todaysWorkPointsMilli + cappedElapsed;
+      
+      // Calculate progress (0-100) for one full revolution = MILLISECONDS_PER_POINT
+      const progress = (totalMs % WORK_POINTS_CONFIG.MILLISECONDS_PER_POINT) / 
+                       WORK_POINTS_CONFIG.MILLISECONDS_PER_POINT * 100;
+      
+      dispatch({ type: 'SET_ANIMATED_PROGRESS', payload: progress });
+      
+      animationFrameId = requestAnimationFrame(animate);
+    };
+
+    animationFrameId = requestAnimationFrame(animate);
+
+    return () => {
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+    };
+  }, [state.isActive, state.todaysWorkPointsMilli, state.lastActivity]);
+
   // Debounced save function - saves to localStorage after user stops activity
   const debouncedSave = useRef(
     debounce((userId: string, data: WorkPointsStorage) => {
       if (process.env.NODE_ENV === 'development') {
         console.log("[SAVE WORK POINTS] Saving data (debounced):", { 
-          millisecondsAccumulated: data.millisecondsAccumulated, 
+          todaysWorkPointsMilli: data.todaysWorkPointsMilli, 
           totalWorkPoints: data.totalWorkPoints 
         });
       }
@@ -178,7 +260,7 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
   const saveImmediately = useCallback((userId: string, data: WorkPointsStorage) => {
     if (process.env.NODE_ENV === 'development') {
       console.log("[SAVE WORK POINTS] Saving data (immediate):", { 
-        millisecondsAccumulated: data.millisecondsAccumulated, 
+        todaysWorkPointsMilli: data.todaysWorkPointsMilli, 
         totalWorkPoints: data.totalWorkPoints 
       });
     }
@@ -191,8 +273,8 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
       dispatch({
         type: 'LOAD_DATA',
         payload: {
-          millisecondsAccumulated: 0,
-          totalWorkPoints: 0,
+          todaysWorkPointsMilli: 0,
+          accumulativeWorkPoints: 0,
           lastActivity: null,
           currentStreak: 0,
           longestStreak: 0
@@ -203,6 +285,7 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
     
     const loadDataWithDailyCheck = async () => {
       // Fetch total work points from server
+      let serverTotalWorkPoints: number | null = null;
       try {
         const response = await fetch(`${window.location.origin}/api/users/${user.id}/total-work-points`, {
           credentials: 'include'
@@ -210,13 +293,14 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
         
         if (response.ok) {
           const data = await response.json();
+          serverTotalWorkPoints = data.totalWorkPoints;
           if (process.env.NODE_ENV === 'development') {
-            console.log('[WORK POINTS] Fetched total work points from server:', data.totalWorkPoints);
+            console.log('[WORK POINTS] Fetched accumulative work points from server:', serverTotalWorkPoints);
           }
         }
       } catch (error) {
         if (process.env.NODE_ENV === 'development') {
-          console.warn('[WORK POINTS] Failed to fetch total work points from server, using localStorage:', error);
+          console.warn('[WORK POINTS] Failed to fetch total work points from server, will fall back to localStorage:', error);
         }
       }
       
@@ -227,7 +311,7 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
       let originalData: WorkPointsStorage;
       if (!stored) {
         originalData = {
-          millisecondsAccumulated: 0,
+          todaysWorkPointsMilli: 0,
           totalWorkPoints: 0,
           lastActivity: new Date().toISOString(),
           currentStreak: 0,
@@ -244,7 +328,7 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
         } catch (error) {
           console.error('Error parsing work points data:', error);
           originalData = {
-            millisecondsAccumulated: 0,
+            todaysWorkPointsMilli: 0,
             totalWorkPoints: 0,
             lastActivity: new Date().toISOString(),
             currentStreak: 0,
@@ -265,9 +349,11 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
       if (resetCheck.shouldReset) {
         // Reset detected and sync completed, use updated data from streak check if available
         const dataToUse = resetCheck.updatedData || originalData;
+        // Use server value if available, otherwise fall back to stored value
+        const accumulativePoints = serverTotalWorkPoints !== null ? serverTotalWorkPoints : dataToUse.totalWorkPoints;
         const freshData: WorkPointsStorage = {
-          millisecondsAccumulated: 0,
-          totalWorkPoints: dataToUse.totalWorkPoints, // May be reduced by penalty
+          todaysWorkPointsMilli: 0,
+          totalWorkPoints: accumulativePoints, // Use server value for storage too
           lastActivity: new Date().toISOString(),
           currentStreak: dataToUse.currentStreak,
           longestStreak: dataToUse.longestStreak,
@@ -278,20 +364,22 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
         dispatch({
           type: 'LOAD_DATA',
           payload: {
-            millisecondsAccumulated: 0,
-            totalWorkPoints: dataToUse.totalWorkPoints,
+            todaysWorkPointsMilli: 0,
+            accumulativeWorkPoints: accumulativePoints, // Use server value if available
             lastActivity: new Date(),
             currentStreak: dataToUse.currentStreak,
             longestStreak: dataToUse.longestStreak
           }
         });
       } else {
-        // No reset needed, use existing data
+        // No reset needed, use server value if available, otherwise use existing data
+        const accumulativePoints = serverTotalWorkPoints !== null ? serverTotalWorkPoints : originalData.totalWorkPoints;
+        
         dispatch({
           type: 'LOAD_DATA',
           payload: {
-            millisecondsAccumulated: originalData.millisecondsAccumulated,
-            totalWorkPoints: originalData.totalWorkPoints,
+            todaysWorkPointsMilli: originalData.todaysWorkPointsMilli,
+            accumulativeWorkPoints: accumulativePoints, // Use server value if available
             lastActivity: new Date(originalData.lastActivity),
             currentStreak: originalData.currentStreak || 0,
             longestStreak: originalData.longestStreak || 0
@@ -317,23 +405,50 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
     const now = new Date();
     const nowTime = now.getTime();
     const lastActivityTime = currentState.lastActivity?.getTime() || 0;
+    const timeSinceLastActivity = nowTime - lastActivityTime;
     
-    // Check if within activity window (15 seconds)
-    if (nowTime - lastActivityTime <= WORK_POINTS_CONFIG.ACTIVITY_WINDOW_MS) {
-      const timeToAdd = nowTime - lastActivityTime;
-      const newTotal = currentState.millisecondsAccumulated + timeToAdd;
-      const oldPoints = calculatePointsFromMilliseconds(currentState.millisecondsAccumulated);
+    // Debug: Log activity recording
+    console.log(`[WORK-POINTS-DEBUG] Activity recorded`, {
+      timeSinceLastActivity: `${timeSinceLastActivity}ms`,
+      isFirstActivity: currentState.isFirstActivityOnPage,
+      currentIsActive: currentState.isActive,
+      timestamp: new Date().toISOString()
+    });
+    
+    // Handle first activity on page - only update baseline, no points awarded
+    if (currentState.isFirstActivityOnPage) {
+      dispatch({
+        type: 'RECORD_ACTIVITY',
+        payload: {
+          newMilliseconds: currentState.todaysWorkPointsMilli, // Keep current value (0)
+          newAccumulativePoints: currentState.accumulativeWorkPoints, // Keep current value
+          now: now // Set baseline for future activities
+        }
+      });
+      
+      // Immediately update ref to prevent race conditions
+      stateRef.current = {
+        ...currentState,
+        lastActivity: now,
+        isActive: true,
+        isFirstActivityOnPage: false
+      };
+    } else {
+      // Subsequent activities: award time capped at ACTIVITY_TIMEOUT_MS
+      const timeToAdd = Math.min(timeSinceLastActivity, WORK_POINTS_CONFIG.ACTIVITY_TIMEOUT_MS);
+      const newTotal = currentState.todaysWorkPointsMilli + timeToAdd;
+      const oldPoints = calculatePointsFromMilliseconds(currentState.todaysWorkPointsMilli);
       const newPoints = calculatePointsFromMilliseconds(newTotal);
       
       const pointsEarned = newPoints - oldPoints;
-      const newTotalPoints = currentState.totalWorkPoints + pointsEarned;
+      const newAccumulativePoints = currentState.accumulativeWorkPoints + pointsEarned;
       
       // Update state in one dispatch
       dispatch({
         type: 'RECORD_ACTIVITY',
         payload: {
           newMilliseconds: newTotal,
-          newTotalPoints: newTotalPoints,
+          newAccumulativePoints: newAccumulativePoints,
           now: now
         }
       });
@@ -341,10 +456,11 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
       // Immediately update ref to prevent race conditions
       stateRef.current = {
         ...currentState,
-        millisecondsAccumulated: newTotal,
-        totalWorkPoints: newTotalPoints,
+        todaysWorkPointsMilli: newTotal,
+        accumulativeWorkPoints: newAccumulativePoints,
         lastActivity: now,
-        isActive: true
+        isActive: true,
+        isFirstActivityOnPage: false
       };
       
       // Trigger animation if points increased
@@ -373,8 +489,8 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
         
         // Save immediately when points increment
         const data: WorkPointsStorage = {
-          millisecondsAccumulated: newTotal,
-          totalWorkPoints: newTotalPoints,
+          todaysWorkPointsMilli: newTotal,
+          totalWorkPoints: newAccumulativePoints,
           lastActivity: now.toISOString(),
           currentStreak: currentState.currentStreak,
           longestStreak: currentState.longestStreak,
@@ -384,8 +500,8 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
       } else {
         // Debounce saves when no point increment
         const data: WorkPointsStorage = {
-          millisecondsAccumulated: newTotal,
-          totalWorkPoints: newTotalPoints,
+          todaysWorkPointsMilli: newTotal,
+          totalWorkPoints: newAccumulativePoints,
           lastActivity: now.toISOString(),
           currentStreak: currentState.currentStreak,
           longestStreak: currentState.longestStreak,
@@ -393,23 +509,6 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
         };
         debouncedSave(currentUserId, data);
       }
-    } else {
-      // Don't add time, but DO update lastActivity as new baseline for future actions
-      dispatch({
-        type: 'RECORD_ACTIVITY',
-        payload: {
-          newMilliseconds: currentState.millisecondsAccumulated, // Keep current value
-          newTotalPoints: currentState.totalWorkPoints,           // Keep current value
-          now: now                                                // Update to establish new baseline
-        }
-      });
-      
-      // Immediately update ref to prevent race conditions
-      stateRef.current = {
-        ...currentState,
-        lastActivity: now,  // Set new baseline
-        isActive: true
-      };
     }
     
     // Set user as inactive after timeout
@@ -418,9 +517,61 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
     }
     
     activityTimeoutRef.current = setTimeout(() => {
+      console.log(`[WORK-POINTS-DEBUG] Activity timeout fired - setting isActive to false`, {
+        timeoutDuration: `${WORK_POINTS_CONFIG.ACTIVITY_TIMEOUT_MS}ms`,
+        timestamp: new Date().toISOString()
+      });
+      
+      // Before going inactive, capture the elapsed time and add it to accumulated
+      // This prevents the progress bar from jumping back
+      const currentState = stateRef.current;
+      const userId = userIdRef.current;
+      
+      if (currentState.lastActivity && userId) {
+        const now = Date.now();
+        const lastActivityTime = currentState.lastActivity.getTime();
+        const elapsedSinceLastActivity = now - lastActivityTime;
+        const cappedElapsed = Math.min(elapsedSinceLastActivity, WORK_POINTS_CONFIG.ACTIVITY_TIMEOUT_MS);
+        
+        const newTotal = currentState.todaysWorkPointsMilli + cappedElapsed;
+        const oldPoints = calculatePointsFromMilliseconds(currentState.todaysWorkPointsMilli);
+        const newPoints = calculatePointsFromMilliseconds(newTotal);
+        const pointsEarned = newPoints - oldPoints;
+        const newAccumulativePoints = currentState.accumulativeWorkPoints + pointsEarned;
+        
+        // Update accumulated time before going inactive
+        dispatch({
+          type: 'RECORD_ACTIVITY',
+          payload: {
+            newMilliseconds: newTotal,
+            newAccumulativePoints: newAccumulativePoints,
+            now: currentState.lastActivity // Keep the same lastActivity
+          }
+        });
+        
+        // Update ref immediately
+        stateRef.current = {
+          ...currentState,
+          todaysWorkPointsMilli: newTotal,
+          accumulativeWorkPoints: newAccumulativePoints
+        };
+        
+        // Save to localStorage
+        const data: WorkPointsStorage = {
+          todaysWorkPointsMilli: newTotal,
+          totalWorkPoints: newAccumulativePoints,
+          lastActivity: currentState.lastActivity.toISOString(),
+          currentStreak: currentState.currentStreak,
+          longestStreak: currentState.longestStreak,
+          lastStreakDate: ''
+        };
+        saveWorkPointsData(userId, data);
+      }
+      
+      // Now set inactive
       dispatch({ type: 'SET_ACTIVE', payload: false });
     }, WORK_POINTS_CONFIG.ACTIVITY_TIMEOUT_MS);
-  }, [debouncedSave, saveImmediately]);
+  }, [debouncedSave, saveImmediately, user?.id]);
   
   // Throttled version of recordActivity - only runs once every 2 seconds
   const throttledRecordActivity = throttle(recordActivityInternal, 2000, { leading: true, trailing: false });
@@ -448,7 +599,15 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
     }
   }, [user?.id]);
   
-  // Cleanup timeouts on unmount
+  // Cleanup debounced/throttled functions when they change
+  useEffect(() => {
+    return () => {
+      debouncedSave.cancel();
+      throttledRecordActivity.cancel();
+    };
+  }, [debouncedSave, throttledRecordActivity]);
+  
+  // Cleanup timeouts only on unmount
   useEffect(() => {
     return () => {
       if (activityTimeoutRef.current) {
@@ -457,21 +616,21 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
       if (animationTimeoutRef.current) {
         clearTimeout(animationTimeoutRef.current);
       }
-      // Cancel pending debounced saves
-      debouncedSave.cancel();
-      throttledRecordActivity.cancel();
     };
-  }, [debouncedSave, recordActivity]);
+  }, []); // Empty dependency array = only runs on unmount
   
-  // Reset active state when leaving eligible page
+  // Reset active state and first activity flag when leaving/entering eligible pages
   useEffect(() => {
     if (!isEligiblePage) {
       dispatch({ type: 'SET_ACTIVE', payload: false });
       if (activityTimeoutRef.current) {
         clearTimeout(activityTimeoutRef.current);
       }
+    } else {
+      // When entering an eligible page, reset the first activity flag
+      dispatch({ type: 'SET_FIRST_ACTIVITY_FLAG', payload: true });
     }
-  }, [isEligiblePage]);
+  }, [isEligiblePage, location.pathname]);
   
   // Set up activity detection
   useActivityDetection({
@@ -481,8 +640,9 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
   
   return {
     currentPoints,
-    totalWorkPoints: state.totalWorkPoints,
-    millisecondsAccumulated: state.millisecondsAccumulated,
+    accumulativeWorkPoints: state.accumulativeWorkPoints,
+    totalStudyTimeMinutes,
+    todaysWorkPointsMilli: state.todaysWorkPointsMilli,
     isActive: state.isActive,
     isAnimating: state.isAnimating,
     isEligiblePage,
@@ -494,6 +654,8 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
     currentStreak: state.currentStreak,
     longestStreak: state.longestStreak,
     streakGoalProgress,
-    hasMetStreakGoalToday
+    hasMetStreakGoalToday,
+    // Progress to next point (animated in real-time)
+    progressToNextPoint: state.animatedProgress
   };
 };

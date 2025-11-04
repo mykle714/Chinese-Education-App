@@ -46,9 +46,7 @@ function EditEntryPage() {
             try {
                 setLoading(true);
                 const response = await fetch(`${API_BASE_URL}/api/vocabEntries/${id}`, {
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
+                    credentials: 'include'
                 });
 
                 if (!response.ok) {
@@ -99,9 +97,9 @@ function EditEntryPage() {
             const response = await fetch(`${API_BASE_URL}/api/vocabEntries/${id}`, {
                 method: "PUT",
                 headers: {
-                    "Content-Type": "application/json",
-                    'Authorization': `Bearer ${token}`
+                    "Content-Type": "application/json"
                 },
+                credentials: 'include',
                 body: JSON.stringify(formData)
             });
 

@@ -348,6 +348,7 @@ function ReaderPage() {
                         points={workPoints.currentPoints}
                         isActive={workPoints.isActive}
                         isAnimating={workPoints.isAnimating}
+                        progressToNextPoint={workPoints.progressToNextPoint}
                     />
                 </Box>
             )}

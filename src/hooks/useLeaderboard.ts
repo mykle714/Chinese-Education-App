@@ -5,7 +5,7 @@ export interface LeaderboardEntry {
   userId: string;
   email: string;
   name: string;
-  totalWorkPoints: number;
+  accumulativeWorkPoints: number;
   currentStreak: number;
   todaysPoints: number;
   yesterdaysPoints: number;

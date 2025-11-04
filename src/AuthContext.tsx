@@ -3,6 +3,8 @@ import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { API_BASE_URL } from './constants';
 import type { Language } from './types';
+import { setAuthHandlers } from './utils/apiClient';
+import { setFetchInterceptorHandlers, setupFetchInterceptor } from './utils/fetchInterceptor';
 
 // Define the User type
 interface User {
@@ -22,6 +24,7 @@ interface AuthContextType {
     register: (email: string, name: string, password: string) => Promise<void>;
     logout: () => Promise<void>;
     changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
+    deleteAccount: (password: string) => Promise<void>;
     updateLanguage: (language: Language) => Promise<void>;
     error: string | null;
 }
@@ -46,6 +49,33 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const [error, setError] = useState<string | null>(null);
     const navigate = useNavigate();
 
+    // Set up auth handlers for the API client and fetch interceptor
+    useEffect(() => {
+        const handleTokenExpiration = () => {
+            // Clear auth state
+            localStorage.removeItem('token');
+            setToken(null);
+            setUser(null);
+            // Navigate to login
+            navigate('/login');
+        };
+
+        const clearAuth = () => {
+            localStorage.removeItem('token');
+            setToken(null);
+            setUser(null);
+        };
+
+        // Register handlers with apiClient (for axios-based calls)
+        setAuthHandlers(handleTokenExpiration, clearAuth);
+
+        // Register handlers with fetch interceptor (for native fetch calls)
+        setFetchInterceptorHandlers(handleTokenExpiration, clearAuth);
+
+        // Setup the global fetch interceptor
+        setupFetchInterceptor();
+    }, [navigate]);
+
     // Check if the user is authenticated on mount
     useEffect(() => {
         const checkAuth = async () => {
@@ -53,9 +83,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
             if (token && token !== 'null' && token !== 'undefined' && token.length > 10) {
                 try {
                     const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
-                        headers: {
-                            'Authorization': `Bearer ${token}`
-                        },
                         credentials: 'include' // Include cookies for new DAL architecture
                     });
 
@@ -162,6 +189,39 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
     };
 
+    // Delete account function
+    const deleteAccount = async (password: string) => {
+        setError(null);
+        try {
+            if (!token || token === 'null' || token === 'undefined' || token.length <= 10) {
+                throw new Error('You must be logged in to delete your account');
+            }
+
+            const response = await fetch(`${API_BASE_URL}/api/auth/delete-account`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                credentials: 'include',
+                body: JSON.stringify({ password })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to delete account');
+            }
+
+            // Clear local state and redirect
+            localStorage.removeItem('token');
+            setToken(null);
+            setUser(null);
+            navigate('/login');
+        } catch (error: any) {
+            setError(error.message);
+            throw error;
+        }
+    };
+
     // Change password function
     const changePassword = async (currentPassword: string, newPassword: string) => {
         setError(null);
@@ -173,8 +233,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             const response = await fetch(`${API_BASE_URL}/api/auth/change-password`, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
+                    'Content-Type': 'application/json'
                 },
                 credentials: 'include', // Include cookies for new DAL architecture
                 body: JSON.stringify({ currentPassword, newPassword })
@@ -205,8 +264,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             const response = await fetch(`${API_BASE_URL}/api/users/language`, {
                 method: 'PUT',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
+                    'Content-Type': 'application/json'
                 },
                 credentials: 'include',
                 body: JSON.stringify({ selectedLanguage: language })
@@ -235,6 +293,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         register,
         logout,
         changePassword,
+        deleteAccount,
         updateLanguage,
         error
     };

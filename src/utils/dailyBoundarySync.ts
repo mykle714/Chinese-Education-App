@@ -29,7 +29,7 @@ export function checkStreakAndApplyPenalty(data: WorkPointsStorage): {
   const yesterdayDateStr = getYesterdayDateString();
   
   // Calculate points earned yesterday
-  const yesterdayPoints = calculatePointsFromMilliseconds(data.millisecondsAccumulated);
+  const yesterdayPoints = calculatePointsFromMilliseconds(data.todaysWorkPointsMilli);
   
   // Check if user hit the streak retention threshold yesterday
   const streakMaintained = yesterdayPoints >= STREAK_CONFIG.RETENTION_POINTS;
@@ -116,8 +116,8 @@ export async function checkAndSyncDailyReset(
     const { updatedData, streakResult } = checkStreakAndApplyPenalty(data);
     
     // Then sync if there's accumulated work
-    if (data.millisecondsAccumulated > 0) {
-      const workPoints = calculatePointsFromMilliseconds(data.millisecondsAccumulated);
+    if (data.todaysWorkPointsMilli > 0) {
+      const workPoints = calculatePointsFromMilliseconds(data.todaysWorkPointsMilli);
       const yesterdayDate = new Date(data.lastActivity).toISOString().split('T')[0];
       
       console.log(`[DAILY-BOUNDARY-SYNC] 📅 Daily reset detected, syncing ${workPoints} points for ${yesterdayDate}`);

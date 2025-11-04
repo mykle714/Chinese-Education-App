@@ -12,7 +12,7 @@ import {
   Divider,
   Chip
 } from '@mui/material';
-import { API_BASE_URL } from './constants';
+import { API_BASE_URL, VOCAB_SEARCH_CONFIG } from './constants';
 
 // HSK Level type
 type HskLevel = 'HSK1' | 'HSK2' | 'HSK3' | 'HSK4' | 'HSK5' | 'HSK6';
@@ -48,9 +48,10 @@ const renderTags = (entry: VocabEntry) => (
 
 interface VocabEntryCardsProps {
   refreshTrigger?: number;
+  searchTerm?: string;
 }
 
-const VocabEntryCards = ({ refreshTrigger }: VocabEntryCardsProps) => {
+const VocabEntryCards = ({ refreshTrigger, searchTerm = '' }: VocabEntryCardsProps) => {
   const navigate = useNavigate();
   const { token } = useAuth();
   const [entries, setEntries] = useState<VocabEntry[]>([]);
@@ -63,7 +64,8 @@ const VocabEntryCards = ({ refreshTrigger }: VocabEntryCardsProps) => {
 
   const observer = useRef<IntersectionObserver | null>(null);
   const lastEntryElementRef = useCallback((node: HTMLDivElement | null) => {
-    if (loading) return;
+    // Disable infinite scroll during search
+    if (loading || searchTerm) return;
     if (observer.current) observer.current.disconnect();
     observer.current = new IntersectionObserver(entries => {
       if (entries[0].isIntersecting && hasMore) {
@@ -71,19 +73,28 @@ const VocabEntryCards = ({ refreshTrigger }: VocabEntryCardsProps) => {
       }
     });
     if (node) observer.current.observe(node);
-  }, [loading, hasMore]);
+  }, [loading, hasMore, searchTerm]);
 
-  // Initial load
+  // Initial load or when search term changes
   useEffect(() => {
-    fetchEntries(0);
-  }, [token]);
+    setOffset(0);
+    setEntries([]);
+    setError(null);
+    setErrorCode(null);
 
-  // Fetch more entries when offset changes
+    if (searchTerm) {
+      searchEntries(searchTerm);
+    } else {
+      fetchEntries(0);
+    }
+  }, [token, searchTerm]);
+
+  // Fetch more entries when offset changes (only when not searching)
   useEffect(() => {
-    if (offset > 0) {
+    if (offset > 0 && !searchTerm) {
       fetchEntries(offset);
     }
-  }, [offset, token]);
+  }, [offset, token, searchTerm]);
 
   // Refresh entries when refreshTrigger changes
   useEffect(() => {
@@ -92,9 +103,14 @@ const VocabEntryCards = ({ refreshTrigger }: VocabEntryCardsProps) => {
       setEntries([]);
       setError(null);
       setErrorCode(null);
-      fetchEntries(0);
+
+      if (searchTerm) {
+        searchEntries(searchTerm);
+      } else {
+        fetchEntries(0);
+      }
     }
-  }, [refreshTrigger, token]);
+  }, [refreshTrigger, token, searchTerm]);
 
   const fetchEntries = async (currentOffset: number) => {
     setLoading(true);
@@ -102,9 +118,7 @@ const VocabEntryCards = ({ refreshTrigger }: VocabEntryCardsProps) => {
     try {
       // Fetch vocabulary entries from our Express API with pagination
       const response = await fetch(`${API_BASE_URL}/api/vocabEntries/paginated?limit=${ENTRIES_PER_PAGE}&offset=${currentOffset}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+        credentials: 'include'
       });
 
       if (!response.ok) {
@@ -138,6 +152,40 @@ const VocabEntryCards = ({ refreshTrigger }: VocabEntryCardsProps) => {
     }
   };
 
+  const searchEntries = async (query: string) => {
+    setLoading(true);
+
+    try {
+      // Use search endpoint with configurable limit
+      const response = await fetch(
+        `${API_BASE_URL}/api/vocabEntries/search?q=${encodeURIComponent(query)}&limit=${VOCAB_SEARCH_CONFIG.RESULT_LIMIT}`,
+        {
+          credentials: 'include'
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw {
+          message: errorData.error || 'Failed to search vocabulary entries',
+          code: errorData.code || 'ERR_SEARCH_FAILED'
+        };
+      }
+
+      const result = await response.json();
+      setEntries(result);
+      setHasMore(false); // Disable pagination during search
+      setLoading(false);
+    } catch (err: any) {
+      const errorMessage = err.message || 'Failed to search vocabulary entries';
+      const errorCode = err.code || 'ERR_UNKNOWN';
+      setError(errorMessage);
+      setErrorCode(errorCode);
+      setLoading(false);
+      console.error(err);
+    }
+  };
+
   if (loading && entries.length === 0) return (
     <Box className="vocab-entries-loading-initial" display="flex" justifyContent="center" alignItems="center" minHeight="200px">
       <CircularProgress />
@@ -154,7 +202,9 @@ const VocabEntryCards = ({ refreshTrigger }: VocabEntryCardsProps) => {
 
   if (entries.length === 0) return (
     <Box className="vocab-entries-empty">
-      <Alert severity="info">No vocabulary cards available</Alert>
+      <Alert severity="info">
+        {searchTerm ? `No results found for "${searchTerm}"` : 'No vocabulary cards available'}
+      </Alert>
     </Box>
   );
 
@@ -172,7 +222,7 @@ const VocabEntryCards = ({ refreshTrigger }: VocabEntryCardsProps) => {
         <Box
           className="vocab-entry-wrapper"
           key={entry.id}
-          ref={index === entries.length - 1 ? lastEntryElementRef : undefined}
+          ref={index === entries.length - 1 && !searchTerm ? lastEntryElementRef : undefined}
         >
           <Card
             sx={{
@@ -214,7 +264,7 @@ const VocabEntryCards = ({ refreshTrigger }: VocabEntryCardsProps) => {
         </Box>
       ))}
 
-      {loading && entries.length > 0 && (
+      {loading && entries.length > 0 && !searchTerm && (
         <Box className="vocab-entries-loading-more" gridColumn="1/-1" display="flex" justifyContent="center" p={2}>
           <CircularProgress size={30} />
         </Box>

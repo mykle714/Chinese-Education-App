@@ -27,6 +27,7 @@ import PersonIcon from "@mui/icons-material/Person";
 import ShuffleIcon from "@mui/icons-material/Shuffle";
 import SettingsIcon from "@mui/icons-material/Settings";
 import ArticleIcon from "@mui/icons-material/Article";
+import NightsStayIcon from "@mui/icons-material/NightsStay";
 import MenuIcon from "@mui/icons-material/Menu";
 import { useState } from "react";
 
@@ -62,6 +63,7 @@ function Layout({ children }: LayoutProps) {
             { text: "Cards", path: "/entries", icon: <MenuBookIcon /> },
             { text: "Flashcards", path: "/flashcards", icon: <ShuffleIcon /> },
             { text: "Reader", path: "/reader", icon: <ArticleIcon /> },
+            { text: "Night Market", path: "/night-market", icon: <NightsStayIcon /> },
             { text: "Profile", path: "/profile", icon: <PersonIcon /> },
             { text: "Settings", path: "/settings", icon: <SettingsIcon /> }
         );

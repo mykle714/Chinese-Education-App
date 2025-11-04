@@ -13,6 +13,9 @@ export interface IUserDAL extends IBaseDAL<User, UserCreateData, UserUpdateData>
   // Password management
   updatePassword(id: string, hashedPassword: string): Promise<boolean>;
   
+  // User deletion
+  deleteUser(userId: string): Promise<boolean>;
+  
   // User statistics and analytics
   getUserStats(id: string): Promise<{
     totalVocabEntries: number;

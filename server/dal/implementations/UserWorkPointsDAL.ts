@@ -6,6 +6,7 @@ import {
   UserWorkPointsCreateData
 } from '../../types/workPoints.js';
 import { ValidationError, NotFoundError, ITransaction } from '../../types/dal.js';
+import { STREAK_CONFIG } from '../../constants.js';
 
 /**
  * UserWorkPoints Data Access Layer implementation
@@ -254,8 +255,8 @@ export class UserWorkPointsDAL implements IUserWorkPointsDAL {
       return { currentStreak: 0, longestStreak: 0 };
     }
 
-    // Calculate streaks based on STREAK_RETENTION_POINTS (5 points needed)
-    const RETENTION_POINTS = 5; // This should match STREAK_CONFIG.RETENTION_POINTS
+    // Calculate streaks based on STREAK_RETENTION_POINTS from config
+    const RETENTION_POINTS = STREAK_CONFIG.RETENTION_POINTS;
     
     let currentStreak = 0;
     let longestStreak = 0;

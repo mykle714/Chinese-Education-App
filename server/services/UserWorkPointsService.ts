@@ -9,6 +9,7 @@ import {
   CalendarDayData
 } from '../types/workPoints.js';
 import { ValidationError, NotFoundError } from '../types/dal.js';
+import { STREAK_CONFIG } from '../constants.js';
 
 /**
  * UserWorkPoints Service - Contains all business logic for work points operations
@@ -190,9 +191,9 @@ export class UserWorkPointsService {
     const daysInMonth = new Date(year, monthNum, 0).getDate();
     const days: CalendarDayData[] = [];
 
-    // Import penalty configuration from constants (hardcoded server-side values)
-    const STREAK_RETENTION_POINTS = 5; // Points needed to maintain streak
-    const DAILY_PENALTY_POINTS = 10;   // Fixed penalty points per day
+    // Import penalty configuration from constants
+    const STREAK_RETENTION_POINTS = STREAK_CONFIG.RETENTION_POINTS;
+    const DAILY_PENALTY_POINTS = STREAK_CONFIG.DAILY_PENALTY_POINTS;
 
     for (let day = 1; day <= daysInMonth; day++) {
       const currentDate = `${year}-${monthNum.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;

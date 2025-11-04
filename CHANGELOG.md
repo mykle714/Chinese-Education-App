@@ -1,3 +1,41 @@
+### To-do (major)
+- [Reader] Add multiple card viewers for the selected text
+- [Market] Add assets
+
+### To-do (minor)
+- [Reader] Document description is running off the card
+- [Reader] Rename Personal tab to Your Cards
+
+## [v0.4.0] - 11/03/2025
+
+### Added
+- Added night market viewer page
+- Added icons to the flashcard page to indicate inputs
+
+### Changed
+- Renamed millisecondsAccumulated to todaysWorkPointsMilli
+- Made all email logins case insensative, but I'm pretty sure I killed some existing accounts
+
+### Fixed
+- Fixed a bug where total study time was not showing the correct number
+- 
+### Removed
+- Removed buttons on the flashcard page in mobile view in favor of swiping only
+
+## [v0.3.0] - 10/29/2025
+
+### Added
+- Added support for HTTPS using Cloudflare
+- Added seeing email when hovering over leaderboard
+- Added a search bar for searching cards
+
+### Changed
+- App redirects you to the login page after detecting expired token.
+
+### Fixed
+- Fixed a bug where some api calls were not including the token
+- Fixed a bug where login was not working
+
 ## [v0.2.1] - 10/19/2025
 
 ### Added
@@ -16,14 +54,6 @@
 
 ### Removed
 - Removed the Dashboard header in favor of just having it say welcome back
-
-### To-do (major)
-- [Reader] Add multiple card viewers for the selected text
-
-### To-do (minor)
-- [Reader] Document description is running off the card
-- [Reader] Rename Personal tab to Your Cards
-- [Profile] Email runs off the screen in mobile
 
 ## [v0.2.0] - 10/18/2025
 

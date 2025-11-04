@@ -179,9 +179,9 @@ export function getUnsyncedWorkPointsData(userId: string): WorkPointsSyncEntry[]
         const data = JSON.parse(localStorage.getItem(key) || '{}');
         const dateMatch = key.match(/_(\d{4}-\d{2}-\d{2})$/);
         
-        if (dateMatch && data.millisecondsAccumulated > 0) {
+        if (dateMatch && data.todaysWorkPointsMilli > 0) {
           const date = dateMatch[1];
-          const workPoints = Math.floor(data.millisecondsAccumulated / 60000); // 60 seconds = 1 point
+          const workPoints = Math.floor(data.todaysWorkPointsMilli / 60000); // 60 seconds = 1 point
           
           // Check if already synced
           const syncedKey = `${key}_synced`;

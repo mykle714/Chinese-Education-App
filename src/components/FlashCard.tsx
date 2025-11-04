@@ -69,6 +69,10 @@ const FlashCard: React.FC<FlashCardProps> = ({
                 height: 300,
                 perspective: "1000px !important",
                 cursor: isFlippable ? "pointer" : "default",
+                touchAction: 'none',
+                userSelect: 'none',
+                WebkitUserSelect: 'none',
+                overflow: 'hidden'
             }}
             onClick={isFlippable ? onFlip : undefined}
         >

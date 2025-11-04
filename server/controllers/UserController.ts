@@ -117,6 +117,45 @@ export class UserController {
   }
 
   /**
+   * Delete user account
+   * DELETE /api/auth/delete-account
+   */
+  async deleteAccount(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = (req as any).user?.userId;
+      const { password } = req.body;
+      
+      if (!userId) {
+        res.status(401).json({ 
+          error: 'User not authenticated',
+          code: 'ERR_NOT_AUTHENTICATED'
+        });
+        return;
+      }
+      
+      if (!password) {
+        res.status(400).json({
+          error: 'Password is required to delete account',
+          code: 'ERR_PASSWORD_REQUIRED'
+        });
+        return;
+      }
+      
+      // Delete user account (this will cascade delete all user data)
+      await this.userService.deleteUser(userId, password);
+      
+      // Clear authentication cookie
+      res.clearCookie('token');
+      
+      res.json({
+        message: 'Account deleted successfully'
+      });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  /**
    * Change user password
    * POST /api/auth/change-password
    */

@@ -22,8 +22,11 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
       throw new ValidationError('Email is required');
     }
 
+    // Normalize email to lowercase for case-insensitive lookup
+    const normalizedEmail = email.toLowerCase();
+
     const result = await this.dbManager.executeQuery<User>(async (client) => {
-      return await client.query('SELECT id, email, name, "preferredLanguage", "createdAt" FROM Users WHERE email = $1', [email]);
+      return await client.query('SELECT id, email, name, "selectedLanguage", "createdAt" FROM Users WHERE email = $1', [normalizedEmail]);
     });
 
     return result.recordset[0] || null;
@@ -37,8 +40,11 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
       throw new ValidationError('Email is required');
     }
 
+    // Normalize email to lowercase for case-insensitive lookup
+    const normalizedEmail = email.toLowerCase();
+
     const result = await this.dbManager.executeQuery<User>(async (client) => {
-      return await client.query('SELECT * FROM Users WHERE email = $1', [email]);
+      return await client.query('SELECT * FROM Users WHERE email = $1', [normalizedEmail]);
     });
 
     return result.recordset[0] || null;
@@ -153,7 +159,7 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
     }
 
     const result = await this.dbManager.executeQuery<User>(async (client) => {
-      return await client.query('SELECT id, email, name, "preferredLanguage", "createdAt" FROM Users WHERE id = $1', [id]);
+      return await client.query('SELECT id, email, name, "selectedLanguage", "createdAt" FROM Users WHERE id = $1', [id]);
     });
 
     return result.recordset[0] || null;
@@ -183,7 +189,7 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
   }
 
   /**
-   * Override update to handle user-specific validation
+   * Override update to handle user-specific validation and email normalization
    */
   protected validateUpdateData(data: UserUpdateData): void {
     super.validateUpdateData(data);
@@ -197,6 +203,21 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
   }
 
   /**
+   * Override update to normalize email to lowercase
+   */
+  async update(id: string, data: UserUpdateData): Promise<User> {
+    // Normalize email to lowercase if provided
+    if (data.email) {
+      data = {
+        ...data,
+        email: data.email.toLowerCase()
+      };
+    }
+    
+    return await super.update(id, data);
+  }
+
+  /**
    * Override buildInsertQuery to exclude sensitive fields from logging
    */
   protected buildInsertQuery(data: UserCreateData): {
@@ -204,10 +225,16 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
     placeholders: string;
     values: any[];
   } {
-    const result = super.buildInsertQuery(data);
+    // Normalize email to lowercase before insertion
+    const normalizedData = {
+      ...data,
+      email: data.email.toLowerCase()
+    };
+    
+    const result = super.buildInsertQuery(normalizedData);
     
     // Log creation without password for security
-    console.log(`Creating user: ${data.email}`);
+    console.log(`Creating user: ${normalizedData.email}`);
     
     return result;
   }
@@ -265,6 +292,21 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
         'UPDATE Users SET "totalWorkPoints" = "totalWorkPoints" + $1 WHERE id = $2',
         [pointsToAdd, userId]
       );
+    });
+
+    return result.rowsAffected > 0;
+  }
+
+  /**
+   * Delete a user and all related data (CASCADE DELETE will handle related records)
+   */
+  async deleteUser(userId: string): Promise<boolean> {
+    if (!userId) {
+      throw new ValidationError('User ID is required');
+    }
+
+    const result = await this.dbManager.executeQuery(async (client) => {
+      return await client.query('DELETE FROM Users WHERE id = $1', [userId]);
     });
 
     return result.rowsAffected > 0;

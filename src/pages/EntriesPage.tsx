@@ -1,10 +1,10 @@
-import { Container, Typography, Box, Button, CircularProgress, Alert, LinearProgress } from "@mui/material";
-import { Upload, Add } from "@mui/icons-material";
-import { useState, useRef } from "react";
+import { Container, Typography, Box, Button, CircularProgress, Alert, LinearProgress, TextField, InputAdornment, IconButton } from "@mui/material";
+import { Upload, Add, Search, Clear } from "@mui/icons-material";
+import { useState, useRef, useEffect } from "react";
 import { useAuth } from "../AuthContext";
 import VocabEntryCards from "../VocabEntryCards";
 import AddEntryModal from "../components/AddEntryModal";
-import { API_BASE_URL } from "../constants";
+import { API_BASE_URL, VOCAB_SEARCH_CONFIG } from "../constants";
 
 function EntriesPage() {
     const { token } = useAuth();
@@ -14,11 +14,31 @@ function EntriesPage() {
     const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
+    const [searchInput, setSearchInput] = useState('');
+    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
 
 
+    // Debounce search input
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearchTerm(searchInput);
+        }, VOCAB_SEARCH_CONFIG.DEBOUNCE_DELAY);
+
+        return () => clearTimeout(timer);
+    }, [searchInput]);
+
     const handleImportClick = () => {
         fileInputRef.current?.click();
+    };
+
+    const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        setSearchInput(event.target.value);
+    };
+
+    const handleClearSearch = () => {
+        setSearchInput('');
+        setDebouncedSearchTerm('');
     };
 
     const handleAddEntryClick = () => {
@@ -242,7 +262,35 @@ function EntriesPage() {
                 </Box>
             )}
 
-            <VocabEntryCards refreshTrigger={refreshTrigger} />
+            <Box className="entries-page-search" sx={{ mb: 3 }}>
+                <TextField
+                    fullWidth
+                    placeholder="Search vocabulary cards..."
+                    value={searchInput}
+                    onChange={handleSearchChange}
+                    InputProps={{
+                        startAdornment: (
+                            <InputAdornment position="start">
+                                <Search />
+                            </InputAdornment>
+                        ),
+                        endAdornment: searchInput && (
+                            <InputAdornment position="end">
+                                <IconButton
+                                    aria-label="clear search"
+                                    onClick={handleClearSearch}
+                                    edge="end"
+                                    size="small"
+                                >
+                                    <Clear />
+                                </IconButton>
+                            </InputAdornment>
+                        ),
+                    }}
+                />
+            </Box>
+
+            <VocabEntryCards refreshTrigger={refreshTrigger} searchTerm={debouncedSearchTerm} />
 
             <AddEntryModal
                 open={isAddModalOpen}

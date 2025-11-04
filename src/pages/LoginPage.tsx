@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
@@ -28,6 +28,7 @@ function LoginPage() {
     const { login, error } = useAuth();
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [loginError, setLoginError] = useState<string | null>(error);
+    const [sessionExpiredMessage, setSessionExpiredMessage] = useState<string | null>(null);
 
     const { control, handleSubmit, formState: { errors } } = useForm<LoginFormData>({
         resolver: zodResolver(loginSchema),
@@ -36,6 +37,16 @@ function LoginPage() {
             password: ''
         }
     });
+
+    // Check for session expiration on mount
+    useEffect(() => {
+        const sessionExpired = localStorage.getItem('sessionExpired');
+        if (sessionExpired === 'true') {
+            setSessionExpiredMessage('Your session has expired. Please log in again.');
+            // Clear the flag
+            localStorage.removeItem('sessionExpired');
+        }
+    }, []);
 
     const onSubmit = async (data: LoginFormData) => {
         setIsSubmitting(true);
@@ -55,6 +66,12 @@ function LoginPage() {
                 <Typography variant="h4" component="h1" align="center" gutterBottom sx={{ mb: 3 }}>
                     Log In
                 </Typography>
+
+                {sessionExpiredMessage && (
+                    <Alert severity="warning" sx={{ mb: 3 }}>
+                        {sessionExpiredMessage}
+                    </Alert>
+                )}
 
                 {loginError && (
                     <Alert severity="error" sx={{ mb: 3 }}>

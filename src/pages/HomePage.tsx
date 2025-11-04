@@ -11,7 +11,7 @@ import ChangelogDisplay from "../components/ChangelogDisplay";
 function HomePage() {
     const { user } = useAuth();
     const {
-        totalWorkPoints,
+        totalStudyTimeMinutes,
         currentStreak,
         longestStreak
     } = useWorkPoints();
@@ -29,8 +29,8 @@ function HomePage() {
                     {/* Left Column - User Dashboard */}
                     <Box>
                         <Box sx={{ mb: 2 }}>
-                            {/* Total Work Points Display */}
-                            <TimeDisplay totalMinutes={totalWorkPoints} />
+                            {/* Total Study Time Display */}
+                            <TimeDisplay totalMinutes={totalStudyTimeMinutes} />
 
                             {/* Streak Counter */}
                             <StreakCounter

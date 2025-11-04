@@ -149,6 +149,13 @@ app.get('/api/vocabEntries/paginated', authenticateToken, async (req, res) => {
   await vocabEntryController.getPaginatedEntries(req, res);
 });
 
+// Search vocab entries - USING NEW DAL ARCHITECTURE
+// @ts-ignore
+app.get('/api/vocabEntries/search', authenticateToken, async (req, res) => {
+  console.log('🔄 Using NEW DAL architecture for search vocab entries');
+  await vocabEntryController.searchEntries(req, res);
+});
+
 // Get vocab entry by ID - USING NEW DAL ARCHITECTURE
 // @ts-ignore
 app.get('/api/vocabEntries/:id', authenticateToken, async (req, res) => {
@@ -211,6 +218,13 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
 app.post('/api/auth/change-password', authenticateToken, async (req, res) => {
   console.log('🔄 Using NEW DAL architecture for change password');
   await userController.changePassword(req, res);
+});
+
+// Delete user account - USING NEW DAL ARCHITECTURE
+// @ts-ignore
+app.delete('/api/auth/delete-account', authenticateToken, async (req, res) => {
+  console.log('🔄 Using NEW DAL architecture for delete account');
+  await userController.deleteAccount(req, res);
 });
 
 // Get all users - USING NEW DAL ARCHITECTURE

@@ -53,9 +53,9 @@ const DataForm = ({ onDataAdded }: DataFormProps) => {
          const response = await fetch(`${API_BASE_URL}/api/vocabEntries`, {
             method: 'POST',
             headers: {
-               'Content-Type': 'application/json',
-               'Authorization': `Bearer ${token}`
+               'Content-Type': 'application/json'
             },
+            credentials: 'include',
             body: JSON.stringify(formData)
          });
 

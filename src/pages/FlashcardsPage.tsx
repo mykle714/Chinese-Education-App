@@ -1,4 +1,4 @@
-import { useState, useEffect, memo } from "react";
+import { useState, useEffect, memo, useRef } from "react";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "../AuthContext";
 import { FLASHCARD_CONTENT_UPDATE_DELAY, API_BASE_URL } from "../constants";
@@ -77,6 +77,10 @@ interface MainContentProps {
     handleNextCard: () => void;
     history: HistoryEntry[];
     historyIndex: number;
+    isMobile: boolean;
+    flashcardContainerRef: React.RefObject<HTMLDivElement | null>;
+    feedbackAnimation: 'correct' | 'incorrect' | null;
+    navigationAnimation: 'previous' | 'next' | null;
 }
 
 const MainContent = memo<MainContentProps>(({
@@ -91,7 +95,11 @@ const MainContent = memo<MainContentProps>(({
     handleCorrect,
     handleNextCard,
     history,
-    historyIndex
+    historyIndex,
+    isMobile,
+    flashcardContainerRef,
+    feedbackAnimation,
+    navigationAnimation
 }) => (
     <Box
         className="flashcards-main-content"
@@ -102,9 +110,92 @@ const MainContent = memo<MainContentProps>(({
             display: 'flex',
             flexDirection: 'column',
             height: '100%',
-            overflow: 'hidden'
+            overflow: 'hidden',
+            position: 'relative'
         }}
     >
+        {/* Floating Feedback Indicator */}
+        {feedbackAnimation && (
+            <Box
+                className="feedback-indicator"
+                sx={{
+                    position: 'absolute',
+                    top: '50%',
+                    ...(feedbackAnimation === 'incorrect'
+                        ? { left: '15%' }
+                        : { right: '15%' }
+                    ),
+                    transform: 'translate(-50%, -50%)',
+                    zIndex: 9999,
+                    pointerEvents: 'none'
+                }}
+            >
+                {feedbackAnimation === 'correct' ? (
+                    <CheckIcon
+                        sx={{
+                            fontSize: '80px',
+                            color: 'success.main',
+                            filter: 'drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3))'
+                        }}
+                    />
+                ) : (
+                    <CloseIcon
+                        sx={{
+                            fontSize: '80px',
+                            color: 'error.main',
+                            filter: 'drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3))'
+                        }}
+                    />
+                )}
+            </Box>
+        )}
+
+        {/* Navigation Indicator - Above card (Next) */}
+        {navigationAnimation === 'next' && (
+            <Box
+                className="navigation-indicator-up"
+                sx={{
+                    position: 'absolute',
+                    top: '35%',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    zIndex: 9999,
+                    pointerEvents: 'none'
+                }}
+            >
+                <ArrowForwardIcon
+                    sx={{
+                        fontSize: '60px',
+                        color: 'primary.main',
+                        filter: 'drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3))'
+                    }}
+                />
+            </Box>
+        )}
+
+        {/* Navigation Indicator - Below card (Previous) */}
+        {navigationAnimation === 'previous' && (
+            <Box
+                className="navigation-indicator-down"
+                sx={{
+                    position: 'absolute',
+                    top: '65%',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    zIndex: 9999,
+                    pointerEvents: 'none'
+                }}
+            >
+                <ArrowBackIcon
+                    sx={{
+                        fontSize: '60px',
+                        color: 'primary.main',
+                        filter: 'drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3))'
+                    }}
+                />
+            </Box>
+        )}
+
         {/* Title */}
         <Typography
             variant="h3"
@@ -128,11 +219,13 @@ const MainContent = memo<MainContentProps>(({
                 width: '100%',
                 flexGrow: 1,
                 minHeight: 0,
-                overflow: 'hidden'
+                overflow: 'hidden',
+                position: 'relative'
             }}
         >
             {currentEntry && (
                 <Box
+                    ref={flashcardContainerRef}
                     className="flashcard-outer-wrapper"
                     sx={{
                         width: "100%",
@@ -159,53 +252,55 @@ const MainContent = memo<MainContentProps>(({
             )}
         </Box>
 
-        {/* Navigation Buttons */}
-        <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: { xs: 1, sm: 1.5 }, width: '100%', flexShrink: 0, pb: { xs: 1, sm: 0 } }}>
-            {/* Flip Card / Next Card Button */}
-            <Button
-                variant="outlined"
-                startIcon={historyIndex === 0 ? <FlipCameraAndroidIcon /> : <ArrowForwardIcon />}
-                onClick={historyIndex === 0 ? handleFlip : handleNextCard}
-                size="medium"
-            >
-                {historyIndex === 0 ? "Flip Card" : "Next Card"}
-            </Button>
-
-            {/* Correct/Incorrect Buttons */}
-            <Box sx={{ display: "flex", gap: { xs: 1.5, sm: 2 }, justifyContent: "center", alignItems: "center", flexWrap: "wrap" }}>
+        {/* Navigation Buttons - Hidden on mobile */}
+        {!isMobile && (
+            <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: { xs: 1, sm: 1.5 }, width: '100%', flexShrink: 0, pb: { xs: 1, sm: 0 } }}>
+                {/* Flip Card / Next Card Button */}
                 <Button
-                    variant="contained"
-                    color="error"
-                    startIcon={<CloseIcon />}
-                    onClick={handleIncorrect}
-                    size="large"
-                    disabled={historyIndex === 0 && !isFlipped}
+                    variant="outlined"
+                    startIcon={historyIndex === 0 ? <FlipCameraAndroidIcon /> : <ArrowForwardIcon />}
+                    onClick={historyIndex === 0 ? handleFlip : handleNextCard}
+                    size="medium"
                 >
-                    Incorrect
+                    {historyIndex === 0 ? "Flip Card" : "Next Card"}
                 </Button>
+
+                {/* Correct/Incorrect Buttons */}
+                <Box sx={{ display: "flex", gap: { xs: 1.5, sm: 2 }, justifyContent: "center", alignItems: "center", flexWrap: "wrap" }}>
+                    <Button
+                        variant="contained"
+                        color="error"
+                        startIcon={<CloseIcon />}
+                        onClick={handleIncorrect}
+                        size="large"
+                        disabled={historyIndex === 0 && !isFlipped}
+                    >
+                        Incorrect
+                    </Button>
+                    <Button
+                        variant="contained"
+                        color="success"
+                        startIcon={<CheckIcon />}
+                        onClick={handleCorrect}
+                        size="large"
+                        disabled={historyIndex === 0 && !isFlipped}
+                    >
+                        Correct
+                    </Button>
+                </Box>
+
+                {/* Previous Card Button */}
                 <Button
-                    variant="contained"
-                    color="success"
-                    startIcon={<CheckIcon />}
-                    onClick={handleCorrect}
-                    size="large"
-                    disabled={historyIndex === 0 && !isFlipped}
+                    variant="outlined"
+                    startIcon={<ArrowBackIcon />}
+                    onClick={handlePreviousCard}
+                    disabled={history.length === 0 || historyIndex >= history.length - 1}
+                    size="medium"
                 >
-                    Correct
+                    Previous Card
                 </Button>
             </Box>
-
-            {/* Previous Card Button */}
-            <Button
-                variant="outlined"
-                startIcon={<ArrowBackIcon />}
-                onClick={handlePreviousCard}
-                disabled={history.length === 0 || historyIndex >= history.length - 1}
-                size="medium"
-            >
-                Previous Card
-            </Button>
-        </Box>
+        )}
     </Box>
 ));
 
@@ -232,7 +327,12 @@ function FlashcardsPage() {
     const [currentCardFlipState, setCurrentCardFlipState] = useState(false); // Track current card's flip state
     const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null);
     const [touchEnd, setTouchEnd] = useState<{ x: number; y: number } | null>(null);
+    const [feedbackAnimation, setFeedbackAnimation] = useState<'correct' | 'incorrect' | null>(null);
+    const [navigationAnimation, setNavigationAnimation] = useState<'previous' | 'next' | null>(null);
     const { token } = useAuth();
+
+    // Ref for the flashcard container to attach touch handlers
+    const flashcardContainerRef = useRef<HTMLDivElement>(null);
 
     // Work points integration
     const workPoints = useWorkPoints();
@@ -361,12 +461,15 @@ function FlashcardsPage() {
         };
     }, [history.length, historyIndex, isFlipped, currentEntry]); // Dependencies for the handlers
 
-    // Touch/Swipe navigation
+    // Touch/Swipe navigation - attached to flashcard container only
     useEffect(() => {
+        const flashcardContainer = flashcardContainerRef.current;
+        if (!flashcardContainer) return;
+
         const minSwipeDistance = 50; // Minimum distance in pixels to register as a swipe
 
         const handleTouchStart = (e: TouchEvent) => {
-            e.preventDefault(); // Prevent default touch behavior (scrolling)
+            // Don't prevent default on touchstart - this allows clicks to work
             // Record activity on touch start
             workPoints.recordActivity();
             setTouchEnd(null); // Reset touchEnd
@@ -377,15 +480,18 @@ function FlashcardsPage() {
         };
 
         const handleTouchMove = (e: TouchEvent) => {
-            e.preventDefault(); // Prevent default touch behavior (scrolling)
+            e.preventDefault(); // Prevent scrolling during touch movement
             setTouchEnd({
                 x: e.targetTouches[0].clientX,
                 y: e.targetTouches[0].clientY,
             });
         };
 
-        const handleTouchEnd = () => {
-            if (!touchStart || !touchEnd) return;
+        const handleTouchEnd = (e: TouchEvent) => {
+            if (!touchStart || !touchEnd) {
+                // No movement detected, this is likely a tap - don't prevent default
+                return;
+            }
 
             // Record activity on touch end (when swipe is processed)
             workPoints.recordActivity();
@@ -395,6 +501,18 @@ function FlashcardsPage() {
 
             const isHorizontalSwipe = Math.abs(deltaX) > Math.abs(deltaY);
             const isVerticalSwipe = Math.abs(deltaY) > Math.abs(deltaX);
+
+            // Check if this is actually a swipe (movement > minSwipeDistance)
+            const isSwipe = Math.abs(deltaX) > minSwipeDistance || Math.abs(deltaY) > minSwipeDistance;
+
+            if (!isSwipe) {
+                // Movement was minimal - this is a tap, not a swipe
+                // Don't prevent default, let the click event fire to flip the card
+                return;
+            }
+
+            // This is a swipe - prevent the click event and handle the swipe
+            e.preventDefault();
 
             // Horizontal swipes (Left/Right)
             if (isHorizontalSwipe && Math.abs(deltaX) > minSwipeDistance) {
@@ -429,16 +547,24 @@ function FlashcardsPage() {
             }
         };
 
-        // Add event listeners
-        window.addEventListener('touchstart', handleTouchStart);
-        window.addEventListener('touchmove', handleTouchMove);
-        window.addEventListener('touchend', handleTouchEnd);
+        // Add event listeners to flashcard container only with passive: false
+        flashcardContainer.addEventListener('touchstart', handleTouchStart, { passive: false });
+        flashcardContainer.addEventListener('touchmove', handleTouchMove, { passive: false });
+        flashcardContainer.addEventListener('touchend', handleTouchEnd, { passive: false });
 
-        // Cleanup event listeners on component unmount
+        // Prevent body scroll while on flashcards page
+        document.body.style.overflow = 'hidden';
+        document.documentElement.style.overflow = 'hidden';
+
+        // Cleanup event listeners and restore scroll on component unmount
         return () => {
-            window.removeEventListener('touchstart', handleTouchStart);
-            window.removeEventListener('touchmove', handleTouchMove);
-            window.removeEventListener('touchend', handleTouchEnd);
+            flashcardContainer.removeEventListener('touchstart', handleTouchStart);
+            flashcardContainer.removeEventListener('touchmove', handleTouchMove);
+            flashcardContainer.removeEventListener('touchend', handleTouchEnd);
+
+            // Restore body scroll
+            document.body.style.overflow = '';
+            document.documentElement.style.overflow = '';
         };
     }, [touchStart, touchEnd, history.length, historyIndex, isFlipped, currentEntry]);
 
@@ -446,9 +572,7 @@ function FlashcardsPage() {
         try {
             setLoading(true);
             const response = await fetch(`${API_BASE_URL}/api/vocabEntries`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
+                credentials: 'include'
             });
 
             if (!response.ok) {
@@ -515,6 +639,10 @@ function FlashcardsPage() {
         const newIndex = historyIndex + 1;
         if (newIndex >= history.length) return; // Can't go further back
 
+        // Trigger navigation animation
+        setNavigationAnimation('previous');
+        setTimeout(() => setNavigationAnimation(null), 1000);
+
         setHistoryIndex(newIndex);
         const historyEntry = history[newIndex];
 
@@ -546,6 +674,10 @@ function FlashcardsPage() {
             }
             getRandomEntry(); // Get a new random card
         } else {
+            // Trigger navigation animation
+            setNavigationAnimation('next');
+            setTimeout(() => setNavigationAnimation(null), 1000);
+
             // We're in history, step forward (toward more recent)
             const newIndex = historyIndex - 1;
             if (newIndex < 0) return; // Can't go further forward
@@ -686,6 +818,10 @@ function FlashcardsPage() {
     };
 
     const handleCorrect = () => {
+        // Trigger feedback animation
+        setFeedbackAnimation('correct');
+        setTimeout(() => setFeedbackAnimation(null), 1000);
+
         // Only mark as correct, no auto-flip behavior
         if (currentEntry) {
             // Add the current entry to history with correct status
@@ -701,6 +837,10 @@ function FlashcardsPage() {
     };
 
     const handleIncorrect = () => {
+        // Trigger feedback animation
+        setFeedbackAnimation('incorrect');
+        setTimeout(() => setFeedbackAnimation(null), 1000);
+
         // Only mark as incorrect, no auto-flip behavior
         if (currentEntry) {
             // Add the current entry to history with incorrect status
@@ -905,6 +1045,7 @@ function FlashcardsPage() {
                     points={workPoints.currentPoints}
                     isActive={workPoints.isActive}
                     isAnimating={workPoints.isAnimating}
+                    progressToNextPoint={workPoints.progressToNextPoint}
                 />
             )}
 
@@ -970,6 +1111,10 @@ function FlashcardsPage() {
                         handleNextCard={handleNextCard}
                         history={history}
                         historyIndex={historyIndex}
+                        isMobile={isMobile}
+                        flashcardContainerRef={flashcardContainerRef}
+                        feedbackAnimation={feedbackAnimation}
+                        navigationAnimation={navigationAnimation}
                     />
                 </Box>
 

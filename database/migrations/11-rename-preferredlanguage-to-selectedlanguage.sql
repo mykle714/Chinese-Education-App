@@ -1,9 +1,9 @@
--- Migration to fix column name mismatch
--- Renames preferredLanguage to selectedLanguage to match backend code expectations
+-- Migration to fix missing selectedLanguage column
+-- Adds selectedLanguage column to Users table to match backend code expectations
 -- Created: 2025-11-04
 
--- Rename the column in Users table
-ALTER TABLE Users RENAME COLUMN "preferredLanguage" TO "selectedLanguage";
+-- Add the selectedLanguage column if it doesn't exist
+ALTER TABLE Users ADD COLUMN IF NOT EXISTS "selectedLanguage" VARCHAR(10) DEFAULT 'zh';
 
--- Update the comment for clarity
+-- Add comment for clarity
 COMMENT ON COLUMN Users."selectedLanguage" IS 'User selected study language: zh, ja, ko, or vi';

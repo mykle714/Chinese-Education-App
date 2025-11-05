@@ -16,6 +16,7 @@
 ### Changed
 - Renamed millisecondsAccumulated to todaysWorkPointsMilli
 - Made all email logins case insensative, but I'm pretty sure I killed some existing accounts
+- Moved the project to be hosted from a different directory on my server for permission reasons
 
 ### Fixed
 - Fixed a bug where total study time was not showing the correct number

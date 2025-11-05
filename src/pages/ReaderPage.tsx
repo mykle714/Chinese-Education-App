@@ -132,33 +132,8 @@ function ReaderPage() {
                 setTexts(textsData);
             } catch (err) {
                 console.error('Error fetching texts:', err);
-                // Use sample data for testing when API is not available
-                const sampleTexts: Text[] = [
-                    {
-                        id: '1',
-                        userId: null,
-                        title: 'Sample Chinese Text',
-                        description: 'A sample text for testing auto word selection',
-                        content: '这是一个测试文本。我们可以点击任何地方来选择单词。This is a test text. We can click anywhere to select words. 中文和英文都应该工作正常。',
-                        language: 'zh',
-                        characterCount: 85,
-                        isUserCreated: false,
-                        createdAt: new Date().toISOString()
-                    },
-                    {
-                        id: '2',
-                        userId: null,
-                        title: 'English Sample Text',
-                        description: 'English text for testing word boundaries',
-                        content: 'Hello world! This is an English text sample. Click anywhere in this text to test the auto word selection feature. It should work with punctuation, numbers like 123, and various word types.',
-                        language: 'zh',
-                        characterCount: 180,
-                        isUserCreated: false,
-                        createdAt: new Date().toISOString()
-                    }
-                ];
-                setTexts(sampleTexts);
-                setError(null);
+                setTexts([]);
+                setError('Failed to load texts. Please try again later.');
             } finally {
                 setLoading(false);
             }

@@ -159,7 +159,7 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
     }
 
     const result = await this.dbManager.executeQuery<User>(async (client) => {
-      return await client.query('SELECT id, email, name, "selectedLanguage", "createdAt" FROM Users WHERE id = $1', [id]);
+      return await client.query('SELECT id, email, name, "selectedLanguage", "lastWorkPointIncrement", "createdAt" FROM Users WHERE id = $1', [id]);
     });
 
     return result.recordset[0] || null;
@@ -291,6 +291,28 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
       return await client.query(
         'UPDATE Users SET "totalWorkPoints" = "totalWorkPoints" + $1 WHERE id = $2',
         [pointsToAdd, userId]
+      );
+    });
+
+    return result.rowsAffected > 0;
+  }
+
+  /**
+   * Update last work point increment timestamp for rate limiting
+   * This is only called after successful work point increment
+   */
+  async updateLastWorkPointIncrement(userId: string, timestamp: Date): Promise<boolean> {
+    if (!userId) {
+      throw new ValidationError('User ID is required');
+    }
+    if (!timestamp) {
+      throw new ValidationError('Timestamp is required');
+    }
+
+    const result = await this.dbManager.executeQuery(async (client) => {
+      return await client.query(
+        'UPDATE Users SET "lastWorkPointIncrement" = $1 WHERE id = $2',
+        [timestamp, userId]
       );
     });
 

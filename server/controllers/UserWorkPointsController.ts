@@ -10,8 +10,50 @@ export class UserWorkPointsController {
   constructor(private userWorkPointsService: UserWorkPointsService) {}
 
   /**
-   * Sync work points for a user (supports single or multiple dates)
+   * NEW: Increment work points by exactly 1
+   * POST /api/users/work-points/increment
+   * Body: { date: "YYYY-MM-DD" }
+   */
+  async incrementWorkPoints(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = (req as any).user?.userId;
+      const { date } = req.body;
+
+      if (!userId) {
+        res.status(401).json({
+          error: 'User not authenticated',
+          code: 'ERR_NOT_AUTHENTICATED'
+        });
+        return;
+      }
+
+      if (!date) {
+        res.status(400).json({
+          error: 'Date is required',
+          code: 'ERR_MISSING_DATE'
+        });
+        return;
+      }
+
+      console.log(`[WORK-POINTS-CONTROLLER] ➕ Increment request received:`, {
+        userId: `${userId.substring(0, 8)}...`,
+        date,
+        userAgent: req.get('User-Agent')?.substring(0, 50) + '...',
+        timestamp: new Date().toISOString()
+      });
+
+      const incrementResult = await this.userWorkPointsService.incrementWorkPoints(userId, { date });
+
+      res.json(incrementResult);
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  /**
+   * DEPRECATED: Sync work points for a user (supports single or multiple dates)
    * POST /api/users/work-points/sync
+   * Use /api/users/work-points/increment instead
    */
   async syncWorkPoints(req: Request, res: Response): Promise<void> {
     try {

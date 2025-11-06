@@ -10,7 +10,7 @@ const API_BASE_URL = 'http://localhost:5000';
 async function testLogin() {
   try {
     // Test credentials
-    const testUser = { email: 'accounts@test.com', password: 'testpass123' };
+    const testUser = { email: 'empty@test.com', password: 'testing123' };
     
     console.log('Testing login functionality...\n');
     

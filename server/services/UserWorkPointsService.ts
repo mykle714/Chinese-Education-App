@@ -5,6 +5,8 @@ import {
   UserWorkPointsCreateData,
   WorkPointsSyncRequest,
   WorkPointsSyncResponse,
+  WorkPointsIncrementRequest,
+  WorkPointsIncrementResponse,
   CalendarDataResponse,
   CalendarDayData
 } from '../types/workPoints.js';
@@ -22,8 +24,109 @@ export class UserWorkPointsService {
   ) {}
 
   /**
-   * Sync work points for a user (main sync operation)
+   * NEW: Increment work points by exactly 1 (replaces sync)
+   * This is called every time a user earns a work point (e.g., completing a vocab review)
+   * Rate limited to 1 call per 59 seconds to prevent abuse
+   */
+  async incrementWorkPoints(userId: string, incrementData: WorkPointsIncrementRequest): Promise<WorkPointsIncrementResponse> {
+    console.log(`[WORK-POINTS-SERVICE] ➕ Starting work points increment:`, {
+      userId: `${userId.substring(0, 8)}...`,
+      date: incrementData.date,
+      timestamp: new Date().toISOString()
+    });
+
+    // Verify user exists and get user data for rate limiting check
+    const user = await this.userDAL.findById(userId);
+    if (!user) {
+      console.error(`[WORK-POINTS-SERVICE] ❌ User validation failed:`, {
+        userId: `${userId.substring(0, 8)}...`,
+        error: 'User not found'
+      });
+      throw new NotFoundError('User not found');
+    }
+
+    // STEP 1: Rate limit check (BEFORE any database writes)
+    const now = new Date();
+    if (user.lastWorkPointIncrement) {
+      const secondsSinceLastIncrement = (now.getTime() - user.lastWorkPointIncrement.getTime()) / 1000;
+      if (secondsSinceLastIncrement < 59) {
+        const waitTime = Math.ceil(59 - secondsSinceLastIncrement);
+        console.warn(`[WORK-POINTS-SERVICE] ⏱️ Rate limit exceeded:`, {
+          userId: `${userId.substring(0, 8)}...`,
+          secondsSinceLastIncrement: secondsSinceLastIncrement.toFixed(2),
+          waitTime
+        });
+        throw new ValidationError(`Please wait ${waitTime} more seconds before incrementing again`);
+      }
+    }
+
+    // STEP 2: Validate date
+    this.validateDateForIncrement(incrementData.date);
+
+    // STEP 3: Generate device fingerprint (server-side, don't trust client)
+    const deviceFingerprint = this.generateDeviceFingerprint(undefined, Date.now());
+
+    try {
+      // STEP 4: Get current points for this date (to know if we're adding new points)
+      const existingEntries = await this.userWorkPointsDAL.findByUserAndDate(userId, incrementData.date);
+      const previousPointsForDate = existingEntries.reduce((total, entry) => total + entry.workPoints, 0);
+
+      // STEP 5: Increment work points by exactly 1 for this date/device
+      // This uses upsert: if entry exists for this date+device, increment it; otherwise create new
+      const updatedEntry = await this.userWorkPointsDAL.upsertWorkPoints(
+        userId,
+        incrementData.date,
+        deviceFingerprint,
+        previousPointsForDate + 1 // Always increment by 1
+      );
+
+      console.log(`[WORK-POINTS-SERVICE] 💾 Work points incremented in database:`, {
+        userId: `${userId.substring(0, 8)}...`,
+        date: incrementData.date,
+        previousTotal: previousPointsForDate,
+        newTotal: previousPointsForDate + 1
+      });
+
+      // STEP 6: Update user's total work points (add 1)
+      await this.userDAL.incrementTotalWorkPoints(userId, 1);
+      console.log(`[WORK-POINTS-SERVICE] 📈 Total work points incremented`);
+
+      // STEP 7: Update lastWorkPointIncrement timestamp (ONLY on complete success)
+      await this.userDAL.updateLastWorkPointIncrement(userId, now);
+      console.log(`[WORK-POINTS-SERVICE] ⏰ Last increment timestamp updated`);
+
+      console.log(`[WORK-POINTS-SERVICE] ✅ Work points increment successful:`, {
+        userId: `${userId.substring(0, 8)}...`,
+        date: incrementData.date,
+        workPointsAdded: 1,
+        newTotalForDate: previousPointsForDate + 1
+      });
+
+      return {
+        success: true,
+        message: `Work point incremented successfully for ${incrementData.date}`,
+        workPointsAdded: 1,
+        date: incrementData.date
+      };
+    } catch (error: any) {
+      // If anything fails, lastWorkPointIncrement is NOT updated
+      // This allows the client to retry immediately
+      console.error(`[WORK-POINTS-SERVICE] ❌ Increment operation failed:`, {
+        userId: `${userId.substring(0, 8)}...`,
+        date: incrementData.date,
+        error: error.message,
+        stack: error.stack
+      });
+
+      // Re-throw the error so client knows it failed
+      throw error;
+    }
+  }
+
+  /**
+   * DEPRECATED: Sync work points for a user (main sync operation)
    * This is called when users hit the 5-point milestone or other sync triggers
+   * Use incrementWorkPoints() instead
    */
   async syncWorkPoints(userId: string, syncData: WorkPointsSyncRequest): Promise<WorkPointsSyncResponse> {
     console.log(`[WORK-POINTS-SERVICE] 🔄 Starting work points sync:`, {
@@ -363,6 +466,38 @@ export class UserWorkPointsService {
     }
 
     return sanitized;
+  }
+
+  /**
+   * Validate date for increment operation (stricter than general date validation)
+   */
+  private validateDateForIncrement(date: string): void {
+    if (!date || typeof date !== 'string') {
+      throw new ValidationError('Date must be a string');
+    }
+
+    // Check YYYY-MM-DD format
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(date)) {
+      throw new ValidationError('Date must be in YYYY-MM-DD format');
+    }
+
+    // Validate actual date
+    const parsedDate = new Date(date);
+    if (isNaN(parsedDate.getTime())) {
+      throw new ValidationError('Invalid date');
+    }
+
+    // Stricter rules for increment: only allow dates within 7 days (past or future)
+    // This prevents abuse while allowing for timezone differences
+    const now = new Date();
+    const maxDaysOffset = 7; // Allow ±7 days for timezone differences
+
+    const daysDiff = Math.floor((now.getTime() - parsedDate.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (Math.abs(daysDiff) > maxDaysOffset) {
+      throw new ValidationError(`Date must be within ${maxDaysOffset} days of today`);
+    }
   }
 
   /**

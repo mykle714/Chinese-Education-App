@@ -36,7 +36,69 @@ export interface BulkSyncResponse {
 }
 
 /**
- * Sync work points for a single date
+ * NEW: Increment work points by exactly 1 (secure endpoint)
+ * Uses the new /increment endpoint with server-side rate limiting
+ */
+export async function incrementWorkPoint(
+  date: string
+): Promise<{ success: boolean; message: string; workPointsAdded?: number }> {
+  console.log(`[WORK-POINTS-INCREMENT] ⬆️ Incrementing work point:`, {
+    date,
+    timestamp: new Date().toISOString()
+  });
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/users/work-points/increment`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include', // Include JWT token
+      body: JSON.stringify({ date })
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      // Handle rate limit specifically
+      if (response.status === 400 && result.error?.includes('wait')) {
+        console.log(`[WORK-POINTS-INCREMENT] ⏱️ Rate limited:`, result.error);
+        return {
+          success: false,
+          message: result.error
+        };
+      }
+      
+      throw new Error(`Increment failed: ${result.error || response.statusText}`);
+    }
+
+    console.log(`[WORK-POINTS-INCREMENT] ✅ Increment successful:`, {
+      date,
+      workPointsAdded: result.workPointsAdded,
+      message: result.message
+    });
+
+    return {
+      success: true,
+      message: result.message,
+      workPointsAdded: result.workPointsAdded
+    };
+  } catch (error) {
+    console.error(`[WORK-POINTS-INCREMENT] ❌ Increment failed:`, {
+      date,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+
+    return {
+      success: false,
+      message: `Failed to increment work point: ${error instanceof Error ? error.message : 'Unknown error'}`
+    };
+  }
+}
+
+/**
+ * DEPRECATED: Sync work points for a single date
+ * Use incrementWorkPoint() instead for new code
  */
 export async function syncWorkPoints(
   date: string,

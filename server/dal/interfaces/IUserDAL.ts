@@ -31,6 +31,9 @@ export interface IUserDAL extends IBaseDAL<User, UserCreateData, UserUpdateData>
   updateTotalWorkPoints(userId: string, totalPoints: number): Promise<boolean>;
   incrementTotalWorkPoints(userId: string, pointsToAdd: number): Promise<boolean>;
   
+  // Work point increment rate limiting
+  updateLastWorkPointIncrement(userId: string, timestamp: Date): Promise<boolean>;
+  
   // Leaderboard operations
   getAllUsersWithTotalPoints(): Promise<Array<{ userId: string; email: string; name: string; totalWorkPoints: number }>>;
   getPublicUsersWithTotalPoints(): Promise<Array<{ userId: string; email: string; name: string; totalWorkPoints: number }>>;

@@ -1,10 +1,24 @@
 ### To-do (major)
 - [Reader] Add multiple card viewers for the selected text
+- [Reader][p2] Change editting to just make the reading space writable, introduce new toggle setting for this. Title and description should be editted by clicking on them in the page. The edit document button should be removed entirely.
 - [Market] Add assets
+- [Security] Private API calls.
 
 ### To-do (minor)
 - [Reader] Document description is running off the card
 - [Reader] Rename Personal tab to Your Cards
+
+## [v0.4.1] - 11/05/2025
+
+### Added
+- werwer
+
+### Changed
+- Changed the sync api to an increment api to prevent users from being able to award themselves work points
+
+### Fixed
+- Fixed the work points progress bar from double counting work points earned during idle time
+- 
 
 ## [v0.4.0] - 11/03/2025
 

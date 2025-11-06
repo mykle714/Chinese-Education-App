@@ -5,7 +5,7 @@ import http from 'http';
 // Test configuration
 const TEST_CONFIG = {
   host: 'localhost',
-  port: 3001,
+  port: 5000,
   path: '/api/auth/login',
   method: 'POST',
   headers: {
@@ -15,8 +15,8 @@ const TEST_CONFIG = {
 
 // Test user credentials (make sure this user exists in your database)
 const TEST_USER = {
-  email: 'test@example.com',
-  password: 'testpassword123'
+  email: 'empty@test.com',
+  password: 'testing123'
 };
 
 function testNewDALLogin() {
@@ -73,7 +73,7 @@ function testNewDALLogin() {
   
   req.on('error', (error) => {
     console.log('❌ Request failed:', error.message);
-    console.log('💡 Make sure the server is running on port 3001');
+    console.log('💡 Make sure the server is running on port 5000');
   });
   
   req.write(postData);

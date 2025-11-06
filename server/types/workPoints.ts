@@ -22,6 +22,20 @@ export interface UserWorkPointsUpdateData {
 }
 
 // API Request/Response types
+
+// NEW: Increment API (replaces sync)
+export interface WorkPointsIncrementRequest {
+  date: string; // ISO date string (YYYY-MM-DD) - client's local date
+}
+
+export interface WorkPointsIncrementResponse {
+  success: boolean;
+  message: string;
+  workPointsAdded: number; // Always 1
+  date: string;
+}
+
+// DEPRECATED: Old sync API types (kept for backward compatibility during transition)
 export interface WorkPointsSyncRequest {
   date: string; // ISO date string (YYYY-MM-DD)
   workPoints: number;

@@ -4,8 +4,8 @@ import fetch from 'node-fetch';
 // Configuration
 const API_URL = 'http://localhost:5000';
 const TEST_USER = {
-  email: 'test@example.com',
-  password: 'Password123'
+  email: 'empty@test.com',
+  password: 'testing123'
 };
 
 // Test the change password functionality

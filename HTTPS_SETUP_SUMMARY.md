@@ -29,11 +29,11 @@ Follow the **HTTPS_SETUP_GUIDE.md** on your server:
 1. **Commit and push** these changes to GitHub
 2. **SSH to server** and pull the changes
 3. **Install Certbot** (Let's Encrypt client)
-4. **Obtain SSL certificate** for ilikemichael.duckdns.org
+4. **Obtain SSL certificate** for mren.me
 5. **Restart Docker** with new configuration
 6. **Set up auto-renewal** via cron job
 7. **Update router** port forwarding (80 and 443)
-8. **Test** your app at https://ilikemichael.duckdns.org
+8. **Test** your app at https://mren.me
 
 ## Quick Command Reference
 
@@ -51,7 +51,7 @@ sudo apt install certbot -y
 docker-compose -f docker-compose.prod.yml down
 
 # Get certificate
-sudo certbot certonly --standalone -d ilikemichael.duckdns.org
+sudo certbot certonly --standalone -d mren.me
 
 # Restart Docker
 docker-compose -f docker-compose.prod.yml up -d --build
@@ -60,8 +60,8 @@ docker-compose -f docker-compose.prod.yml up -d --build
 ## Result
 
 Your app will be accessible at:
-- **https://ilikemichael.duckdns.org** ✅ (secure)
-- **http://ilikemichael.duckdns.org** → automatically redirects to HTTPS
+- **https://mren.me** ✅ (secure)
+- **http://mren.me** → automatically redirects to HTTPS
 
 ## Key Benefits
 

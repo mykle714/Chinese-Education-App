@@ -1,10 +1,10 @@
-# HTTPS Setup Guide for ilikemichael.duckdns.org
+# HTTPS Setup Guide for mren.me
 
 This guide will help you enable HTTPS for your vocabulary app using Let's Encrypt SSL certificates.
 
 ## Prerequisites
-- Your app is currently running at http://174.127.171.180 or http://ilikemichael.duckdns.org
-- DuckDNS domain (ilikemichael.duckdns.org) is pointing to 174.127.171.180
+- Your app is currently running at http://mren.me or http://mren.me
+- DuckDNS domain (mren.me) is pointing to [YOUR_SERVER_IP]
 - You have SSH access to the server
 - Docker containers are running
 
@@ -20,7 +20,7 @@ After completing this guide, your app will:
 ## Step 1: SSH to Your Server
 
 ```bash
-ssh username@174.127.171.180
+ssh username@[YOUR_SERVER_IP]
 ```
 
 Replace `username` with your actual server username.
@@ -62,9 +62,9 @@ If it still shows `http://`, update it to:
 nano .env
 
 # Change this line:
-# CLIENT_URL=http://174.127.171.180
+# CLIENT_URL=http://mren.me
 # To:
-CLIENT_URL=https://ilikemichael.duckdns.org
+CLIENT_URL=https://mren.me
 ```
 
 Save and exit (Ctrl+X, then Y, then Enter).
@@ -111,7 +111,7 @@ You should see no containers running.
 Run Certbot in standalone mode:
 
 ```bash
-sudo certbot certonly --standalone -d ilikemichael.duckdns.org --preferred-challenges http
+sudo certbot certonly --standalone -d mren.me --preferred-challenges http
 ```
 
 **During the process, you'll be asked:**
@@ -123,8 +123,8 @@ sudo certbot certonly --standalone -d ilikemichael.duckdns.org --preferred-chall
 **Expected output:**
 ```
 Successfully received certificate.
-Certificate is saved at: /etc/letsencrypt/live/ilikemichael.duckdns.org/fullchain.pem
-Key is saved at:         /etc/letsencrypt/live/ilikemichael.duckdns.org/privkey.pem
+Certificate is saved at: /etc/letsencrypt/live/mren.me/fullchain.pem
+Key is saved at:         /etc/letsencrypt/live/mren.me/privkey.pem
 ```
 
 ---
@@ -134,7 +134,7 @@ Key is saved at:         /etc/letsencrypt/live/ilikemichael.duckdns.org/privkey.
 Check that certificates were created:
 
 ```bash
-sudo ls -la /etc/letsencrypt/live/ilikemichael.duckdns.org/
+sudo ls -la /etc/letsencrypt/live/mren.me/
 ```
 
 You should see:
@@ -206,19 +206,19 @@ On your router admin panel (typically 192.168.1.1 or 192.168.0.1):
 # Test HTTP redirect
 curl -I http://localhost
 # Should return: HTTP/1.1 301 Moved Permanently
-# Location: https://ilikemichael.duckdns.org/
+# Location: https://mren.me/
 
 # Test HTTPS
-curl -I https://ilikemichael.duckdns.org
+curl -I https://mren.me
 # Should return: HTTP/2 200
 ```
 
 ### Test from your browser:
 
-1. Open: `http://ilikemichael.duckdns.org`
+1. Open: `http://mren.me`
    - Should automatically redirect to HTTPS
    
-2. Open: `https://ilikemichael.duckdns.org`
+2. Open: `https://mren.me`
    - Should show your app with a valid SSL certificate (green padlock)
    - Click the padlock to verify certificate details
 
@@ -272,13 +272,13 @@ docker-compose -f docker-compose.prod.yml ps
 curl http://localhost:5000/api/health
 
 # Check HTTPS
-curl -I https://ilikemichael.duckdns.org
+curl -I https://mren.me
 ```
 
 ### Test in browser:
 
-1. Visit `http://ilikemichael.duckdns.org` → should redirect to HTTPS
-2. Visit `https://ilikemichael.duckdns.org` → should show your app
+1. Visit `http://mren.me` → should redirect to HTTPS
+2. Visit `https://mren.me` → should show your app
 3. Check SSL certificate (click padlock icon)
 4. Test all app functionality (login, dictionary lookups, etc.)
 
@@ -299,7 +299,7 @@ docker-compose -f docker-compose.prod.yml logs frontend
 **Solutions:**
 1. Verify certificate files exist:
    ```bash
-   sudo ls -la /etc/letsencrypt/live/ilikemichael.duckdns.org/
+   sudo ls -la /etc/letsencrypt/live/mren.me/
    ```
 
 2. Check file permissions:
@@ -327,7 +327,7 @@ Should show both HTTP (port 80) and HTTPS (port 443) server blocks.
 **Solution:** Stop Docker containers first:
 ```bash
 docker-compose -f docker-compose.prod.yml down
-sudo certbot certonly --standalone -d ilikemichael.duckdns.org
+sudo certbot certonly --standalone -d mren.me
 docker-compose -f docker-compose.prod.yml up -d
 ```
 
@@ -367,8 +367,8 @@ docker-compose -f ~/vocabulary-app/docker-compose.prod.yml restart frontend
 - **Issuer:** Let's Encrypt
 - **Valid for:** 90 days
 - **Auto-renewal:** Configured via cron job
-- **Domain:** ilikemichael.duckdns.org
-- **Certificate path:** `/etc/letsencrypt/live/ilikemichael.duckdns.org/`
+- **Domain:** mren.me
+- **Certificate path:** `/etc/letsencrypt/live/mren.me/`
 
 ---
 
@@ -385,13 +385,13 @@ sudo certbot renew --force-renewal
 docker-compose -f docker-compose.prod.yml restart frontend
 
 # Check SSL certificate
-openssl s_client -connect ilikemichael.duckdns.org:443 -servername ilikemichael.duckdns.org
+openssl s_client -connect mren.me:443 -servername mren.me
 
 # View container logs
 docker-compose -f docker-compose.prod.yml logs -f frontend
 
 # Test from command line
-curl -I https://ilikemichael.duckdns.org
+curl -I https://mren.me
 ```
 
 ---
@@ -408,15 +408,15 @@ curl -I https://ilikemichael.duckdns.org
 3. ✅ Automatic certificate renewal configured
 
 ### Your App:
-- **Old URL:** `http://174.127.171.180:8080` ❌
-- **New URL:** `https://ilikemichael.duckdns.org` ✅
+- **Old URL:** `http://mren.me:8080` ❌
+- **New URL:** `https://mren.me` ✅
 
 ---
 
 ## Success Indicators
 
 ✅ Green padlock in browser address bar
-✅ URL shows `https://ilikemichael.duckdns.org`
+✅ URL shows `https://mren.me`
 ✅ `http://` automatically redirects to `https://`
 ✅ No security warnings in browser
 ✅ All app features work correctly
@@ -430,7 +430,7 @@ If you encounter issues:
 1. Check the troubleshooting section above
 2. Review Docker logs: `docker-compose -f docker-compose.prod.yml logs`
 3. Verify certificate: `sudo certbot certificates`
-4. Test connectivity: `curl -I https://ilikemichael.duckdns.org`
+4. Test connectivity: `curl -I https://mren.me`
 
 Your vocabulary app should now be securely accessible at:
-**https://ilikemichael.duckdns.org** 🔒
+**https://mren.me** 🔒

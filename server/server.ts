@@ -91,7 +91,7 @@ function parseCSVLine(line: string): string[] {
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = parseInt(process.env.PORT || '5000');
 
 // Enable CORS for all routes with credentials
 app.use(cors({
@@ -112,10 +112,8 @@ app.use(cors({
       'http://127.0.0.1:3000',  // Docker frontend development port
       'http://frontend:3000',   // Docker container networking
       'http://cow-frontend-local:3000', // Docker container name
-      'http://174.127.171.180', // Production frontend URL
-      'https://174.127.171.180', // Production frontend URL with HTTPS
-      'http://ilikemichael.duckdns.org', // Production domain
-      'https://ilikemichael.duckdns.org' // Production domain with HTTPS
+      'http://mren.me', // Production domain
+      'https://mren.me' // Production domain with HTTPS
     ];
     
     if(allowedOrigins.indexOf(origin) !== -1) {
@@ -387,10 +385,18 @@ app.post('/api/onDeckPage/:featureName/clear', authenticateToken, async (req, re
 
 // Work Points API Routes - USING NEW DAL ARCHITECTURE
 
-// Sync work points (main milestone sync endpoint)
+// NEW: Increment work points by 1 (replaces sync)
+// @ts-ignore
+app.post('/api/users/work-points/increment', authenticateToken, async (req, res) => {
+  console.log('🔄 Using NEW DAL architecture for work points increment');
+  await userWorkPointsController.incrementWorkPoints(req, res);
+});
+
+// DEPRECATED: Sync work points (main milestone sync endpoint)
+// This endpoint is deprecated. Use /api/users/work-points/increment instead
 // @ts-ignore
 app.post('/api/users/work-points/sync', authenticateToken, async (req, res) => {
-  console.log('🔄 Using NEW DAL architecture for work points sync');
+  console.log('⚠️  DEPRECATED: Using old sync endpoint. Please migrate to /increment');
   await userWorkPointsController.syncWorkPoints(req, res);
 });
 
@@ -491,7 +497,7 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Start the server
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+// Start the server - bind to 0.0.0.0 to accept connections from all interfaces (required for Docker networking)
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT} on all interfaces (0.0.0.0)`);
 });

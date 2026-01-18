@@ -3,15 +3,17 @@
 - [Reader][p2] Change editting to just make the reading space writable, introduce new toggle setting for this. Title and description should be editted by clicking on them in the page. The edit document button should be removed entirely.
 - [Market] Add assets
 - [Security] Private API calls.
+- [CardFinder] Add a feature for users to find new cards.
+- [Dictionary] In chinese, when you query for the search text, can you omit entries whose next character is a 'g' to stop 'pen' from searching 'peng'
 
 ### To-do (minor)
 - [Reader] Document description is running off the card
 - [Reader] Rename Personal tab to Your Cards
 
-## [v0.4.1] - 11/05/2025
+## [v0.4.1] - 11/08/2025
 
 ### Added
-- werwer
+- Added Dictionary Viewer tab.
 
 ### Changed
 - Changed the sync api to an increment api to prevent users from being able to award themselves work points

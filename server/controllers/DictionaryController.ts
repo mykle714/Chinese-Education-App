@@ -50,6 +50,63 @@ export class DictionaryController {
   }
 
   /**
+   * Search dictionary entries with pagination
+   * GET /api/dictionary/search?term=<query>&language=<lang>&page=<num>&limit=<num>
+   */
+  async search(req: Request, res: Response): Promise<void> {
+    try {
+      const { term, language, page = '1', limit = '50' } = req.query;
+      const userId = (req as any).user?.userId;
+
+      if (!term || typeof term !== 'string') {
+        res.status(400).json({ error: 'Search term is required' });
+        return;
+      }
+
+      if (!userId) {
+        res.status(401).json({ error: 'User not authenticated' });
+        return;
+      }
+
+      // Get user's selected language if not provided
+      let searchLanguage = language as string;
+      if (!searchLanguage) {
+        const user = await this.userDAL.findById(userId);
+        searchLanguage = user?.selectedLanguage || 'zh';
+      }
+
+      const pageNum = parseInt(page as string, 10);
+      const limitNum = parseInt(limit as string, 10);
+
+      if (isNaN(pageNum) || pageNum < 1) {
+        res.status(400).json({ error: 'Invalid page number' });
+        return;
+      }
+
+      if (isNaN(limitNum) || limitNum < 1 || limitNum > 100) {
+        res.status(400).json({ error: 'Invalid limit (must be between 1 and 100)' });
+        return;
+      }
+
+      const offset = (pageNum - 1) * limitNum;
+      const result = await this.dictionaryService.searchDictionary(term, searchLanguage, limitNum, offset);
+
+      res.json({
+        entries: result.entries,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total: result.total,
+          totalPages: Math.ceil(result.total / limitNum)
+        }
+      });
+    } catch (error: any) {
+      console.error('Error searching dictionary:', error);
+      res.status(500).json({ error: error.message || 'Failed to search dictionary' });
+    }
+  }
+
+  /**
    * Get total dictionary entry count
    * GET /api/dictionary/count
    */

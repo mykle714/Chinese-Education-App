@@ -14,7 +14,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Import DAL architecture
-import { userController, vocabEntryController, onDeckVocabController, userWorkPointsController, textController } from './dal/setup.js';
+import { userController, vocabEntryController, onDeckVocabController, userWorkPointsController, textController, dictionaryController } from './dal/setup.js';
 import { leaderboardController } from './controllers/LeaderboardController.js';
 
 // Configure multer for file uploads
@@ -428,6 +428,29 @@ app.get('/api/leaderboard/top/:limit', authenticateToken, async (req, res) => {
 app.get('/api/leaderboard/user/:userId', authenticateToken, async (req, res) => {
   console.log('🔄 Using NEW DAL architecture for user-specific leaderboard');
   await leaderboardController.getLeaderboardForUser(req, res);
+});
+
+// Dictionary API Routes - USING NEW DAL ARCHITECTURE
+
+// Search dictionary entries with pagination (protected route)
+// @ts-ignore
+app.get('/api/dictionary/search', authenticateToken, async (req, res) => {
+  console.log('🔄 Using NEW DAL architecture for dictionary search');
+  await dictionaryController.search(req, res);
+});
+
+// Lookup dictionary term by exact match (protected route)
+// @ts-ignore
+app.get('/api/dictionary/lookup/:term', authenticateToken, async (req, res) => {
+  console.log('🔄 Using NEW DAL architecture for dictionary lookup');
+  await dictionaryController.lookupTerm(req, res);
+});
+
+// Get total dictionary entry count (protected route)
+// @ts-ignore
+app.get('/api/dictionary/count', authenticateToken, async (req, res) => {
+  console.log('🔄 Using NEW DAL architecture for dictionary count');
+  await dictionaryController.getCount(req, res);
 });
 
 // Get changelog content

@@ -3,7 +3,9 @@ import { useLocation } from "react-router-dom";
 import { useAuth } from "../AuthContext";
 import { FLASHCARD_CONTENT_UPDATE_DELAY, API_BASE_URL } from "../constants";
 import { useWorkPoints } from "../hooks/useWorkPoints";
+import { useFlashcardSettings } from "../hooks/useFlashcardSettings";
 import WorkPointsBadge from "../components/WorkPointsBadge";
+import FlashcardSettings from "../components/FlashcardSettings";
 import {
     Container,
     Typography,
@@ -19,6 +21,7 @@ import {
     useMediaQuery,
     useTheme,
     Fab,
+    IconButton,
 } from "@mui/material";
 import CheckIcon from "@mui/icons-material/Check";
 import CloseIcon from "@mui/icons-material/Close";
@@ -27,6 +30,7 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import FlipCameraAndroidIcon from "@mui/icons-material/FlipCameraAndroid";
 import RemoveIcon from "@mui/icons-material/Remove";
+import SettingsIcon from "@mui/icons-material/Settings";
 import FlashCard from "../components/FlashCard";
 
 // HSK Level type
@@ -36,6 +40,7 @@ interface VocabEntry {
     id: number;
     entryKey: string;
     entryValue: string;
+    pronunciation?: string | null;
     hskLevelTag?: HskLevel | null;
     createdAt: string;
 }
@@ -81,6 +86,7 @@ interface MainContentProps {
     flashcardContainerRef: React.RefObject<HTMLDivElement | null>;
     feedbackAnimation: 'correct' | 'incorrect' | null;
     navigationAnimation: 'previous' | 'next' | null;
+    showPronunciation: boolean;
 }
 
 const MainContent = memo<MainContentProps>(({
@@ -99,7 +105,8 @@ const MainContent = memo<MainContentProps>(({
     isMobile,
     flashcardContainerRef,
     feedbackAnimation,
-    navigationAnimation
+    navigationAnimation,
+    showPronunciation
 }) => (
     <Box
         className="flashcards-main-content"
@@ -247,6 +254,7 @@ const MainContent = memo<MainContentProps>(({
                         entryKey={entryKey}
                         entryValue={entryValue}
                         isFlippable={historyIndex === 0}
+                        showPronunciation={showPronunciation}
                     />
                 </Box>
             )}
@@ -310,6 +318,7 @@ function FlashcardsPage() {
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down("md"));
     const location = useLocation();
+    const flashcardSettings = useFlashcardSettings();
     const [entries, setEntries] = useState<VocabEntry[]>([]);
     const [currentEntry, setCurrentEntry] = useState<VocabEntry | null>(null);
     const [displayEntry, setDisplayEntry] = useState<VocabEntry | null>(null);
@@ -339,6 +348,7 @@ function FlashcardsPage() {
 
     // Drawer width consistent with main navigation
     const drawerWidth = 250;
+    const settingsWidth = 200;
 
     // Initial load effect
     useEffect(() => {
@@ -1089,7 +1099,7 @@ function FlashcardsPage() {
                 <Box sx={{
                     flexGrow: 1,
                     minWidth: 0,
-                    width: isMobile ? '100%' : `calc(100% - ${drawerWidth}px)`
+                    width: isMobile ? '100%' : `calc(100% - ${drawerWidth}px - ${flashcardSettings.settingsOpen ? settingsWidth : 0}px)`
                 }}>
                     <MainContent
                         currentEntry={currentEntry}
@@ -1108,24 +1118,107 @@ function FlashcardsPage() {
                         flashcardContainerRef={flashcardContainerRef}
                         feedbackAnimation={feedbackAnimation}
                         navigationAnimation={navigationAnimation}
+                        showPronunciation={flashcardSettings.showPronunciation}
                     />
                 </Box>
 
-                {/* Mobile FAB */}
+                {/* Desktop settings sidebar */}
+                {!isMobile && flashcardSettings.settingsOpen && (
+                    <Box sx={{
+                        width: settingsWidth,
+                        flexShrink: 0,
+                        borderLeft: '1px solid rgba(0, 0, 0, 0.08)',
+                        height: '100%',
+                        overflow: 'auto',
+                        p: 2
+                    }}>
+                        <FlashcardSettings
+                            showPronunciation={flashcardSettings.showPronunciation}
+                            onShowPronunciationChange={flashcardSettings.handleShowPronunciationChange}
+                            settingsOpen={flashcardSettings.settingsOpen}
+                            onSettingsToggle={flashcardSettings.handleSettingsToggle}
+                        />
+                    </Box>
+                )}
+
+                {/* Desktop settings toggle button (when closed) */}
+                {!isMobile && !flashcardSettings.settingsOpen && (
+                    <Box sx={{
+                        position: 'fixed',
+                        right: 16,
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        zIndex: 1000
+                    }}>
+                        <IconButton
+                            onClick={flashcardSettings.handleSettingsToggle}
+                            sx={{
+                                backgroundColor: 'background.paper',
+                                boxShadow: 2,
+                                '&:hover': {
+                                    boxShadow: 4,
+                                }
+                            }}
+                        >
+                            <SettingsIcon />
+                        </IconButton>
+                    </Box>
+                )}
+
+                {/* Mobile FABs */}
                 {isMobile && (
-                    <Fab
-                        color="primary"
-                        aria-label="open history"
-                        onClick={() => setDrawerOpen(true)}
+                    <>
+                        <Fab
+                            color="primary"
+                            aria-label="open history"
+                            onClick={() => setDrawerOpen(true)}
+                            sx={{
+                                position: 'fixed',
+                                bottom: 80,
+                                right: 16,
+                                zIndex: 1000
+                            }}
+                        >
+                            <HistoryIcon />
+                        </Fab>
+                        <Fab
+                            color="secondary"
+                            aria-label="open settings"
+                            onClick={flashcardSettings.handleSettingsToggle}
+                            sx={{
+                                position: 'fixed',
+                                bottom: 80,
+                                right: 88,
+                                zIndex: 1000
+                            }}
+                        >
+                            <SettingsIcon />
+                        </Fab>
+                    </>
+                )}
+
+                {/* Mobile settings drawer */}
+                {isMobile && (
+                    <Drawer
+                        anchor="right"
+                        open={flashcardSettings.settingsOpen}
+                        onClose={flashcardSettings.handleSettingsToggle}
                         sx={{
-                            position: 'fixed',
-                            bottom: 80,
-                            right: 16,
-                            zIndex: 1000
+                            [`& .MuiDrawer-paper`]: {
+                                width: 280,
+                                boxSizing: 'border-box',
+                            },
                         }}
                     >
-                        <HistoryIcon />
-                    </Fab>
+                        <Box sx={{ p: 2 }}>
+                            <FlashcardSettings
+                                showPronunciation={flashcardSettings.showPronunciation}
+                                onShowPronunciationChange={flashcardSettings.handleShowPronunciationChange}
+                                settingsOpen={flashcardSettings.settingsOpen}
+                                onSettingsToggle={flashcardSettings.handleSettingsToggle}
+                            />
+                        </Box>
+                    </Drawer>
                 )}
             </Box>
         </>

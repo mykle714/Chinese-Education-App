@@ -22,6 +22,7 @@ export interface VocabEntry {
   entryValue: string;
   language: Language;
   script?: string;
+  pronunciation?: string | null;
   hskLevelTag?: HskLevel | null;
   createdAt: string;
 }

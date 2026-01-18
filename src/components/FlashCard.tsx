@@ -15,6 +15,7 @@ interface VocabEntry {
     id: number;
     entryKey: string;
     entryValue: string;
+    pronunciation?: string | null;
     hskLevelTag?: HskLevel | null;
     createdAt: string;
 }
@@ -27,6 +28,7 @@ interface FlashCardProps {
     entryKey: string;
     entryValue: string;
     isFlippable?: boolean; // New prop to control whether the card can be flipped
+    showPronunciation?: boolean; // Whether to show pronunciation on front
 }
 
 
@@ -55,7 +57,8 @@ const FlashCard: React.FC<FlashCardProps> = ({
     onFlip,
     entryKey,
     entryValue,
-    isFlippable = true // Default to true for backwards compatibility
+    isFlippable = true, // Default to true for backwards compatibility
+    showPronunciation = true // Default to true
 }) => {
     // Content is now updated immediately when props change
     // Timing control is handled by the parent component (FlashcardsPage)
@@ -128,15 +131,31 @@ const FlashCard: React.FC<FlashCardProps> = ({
                         <Typography
                             variant="h4"
                             component="h2"
-                            gutterBottom
                             sx={{
                                 fontWeight: 'bold',
                                 color: 'primary.main',
-                                mb: 3
+                                mb: showPronunciation && entry.pronunciation ? 1 : 3
                             }}
                         >
                             {entryKey}
                         </Typography>
+
+                        {/* Pronunciation display - only shown if enabled and exists */}
+                        {showPronunciation && entry.pronunciation && (
+                            <Typography
+                                variant="body1"
+                                color="text.secondary"
+                                sx={{
+                                    fontStyle: 'italic',
+                                    fontSize: '1rem',
+                                    mb: 3,
+                                    opacity: 0.8
+                                }}
+                            >
+                                {entry.pronunciation}
+                            </Typography>
+                        )}
+
                         <Typography
                             variant="caption"
                             color="text.secondary"

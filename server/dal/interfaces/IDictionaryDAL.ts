@@ -28,6 +28,16 @@ export interface IDictionaryDAL extends IBaseDAL<DictionaryEntry, DictionaryEntr
   findMultipleBySimplified(simplifiedTerms: string[]): Promise<DictionaryEntry[]>;
 
   /**
+   * Search dictionary entries by word1 with pagination
+   */
+  searchByWord1(
+    searchTerm: string,
+    language: string,
+    limit?: number,
+    offset?: number
+  ): Promise<{ entries: DictionaryEntry[], total: number }>;
+
+  /**
    * Get total count of dictionary entries
    */
   getTotalCount(): Promise<number>;

@@ -29,6 +29,7 @@ import SettingsIcon from "@mui/icons-material/Settings";
 import ArticleIcon from "@mui/icons-material/Article";
 import NightsStayIcon from "@mui/icons-material/NightsStay";
 import MenuIcon from "@mui/icons-material/Menu";
+import BookIcon from "@mui/icons-material/Book";
 import { useState } from "react";
 
 interface LayoutProps {
@@ -61,6 +62,7 @@ function Layout({ children }: LayoutProps) {
     if (isAuthenticated) {
         navItems.push(
             { text: "Cards", path: "/entries", icon: <MenuBookIcon /> },
+            { text: "Dictionary", path: "/dictionary", icon: <BookIcon /> },
             { text: "Flashcards", path: "/flashcards", icon: <ShuffleIcon /> },
             { text: "Reader", path: "/reader", icon: <ArticleIcon /> },
             { text: "Night Market", path: "/night-market", icon: <NightsStayIcon /> },

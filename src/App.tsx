@@ -14,6 +14,7 @@ import NotFoundPage from "./pages/NotFoundPage";
 import FlashcardsPage from "./pages/FlashcardsPage";
 import ReaderPage from "./pages/ReaderPage";
 import MarketViewerPage from "./pages/MarketViewerPage";
+import DictionaryPage from "./pages/DictionaryPage";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -52,6 +53,11 @@ function App() {
                 <Route path="/reader" element={
                   <ProtectedRoute>
                     <ReaderPage />
+                  </ProtectedRoute>
+                } />
+                <Route path="/dictionary" element={
+                  <ProtectedRoute>
+                    <DictionaryPage />
                   </ProtectedRoute>
                 } />
                 <Route path="/night-market" element={

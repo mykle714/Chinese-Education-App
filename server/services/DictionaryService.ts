@@ -85,6 +85,37 @@ export class DictionaryService {
   }
 
   /**
+   * Search dictionary entries with pagination
+   */
+  async searchDictionary(
+    searchTerm: string,
+    language: string,
+    limit: number = 50,
+    offset: number = 0
+  ): Promise<{ entries: DictionaryEntry[], total: number }> {
+    // Validation
+    if (!searchTerm || searchTerm.trim().length === 0) {
+      throw new ValidationError('Search term is required');
+    }
+
+    if (!language || language.trim().length === 0) {
+      throw new ValidationError('Language is required');
+    }
+
+    if (limit < 1 || limit > 100) {
+      throw new ValidationError('Limit must be between 1 and 100');
+    }
+
+    if (offset < 0) {
+      throw new ValidationError('Offset must be non-negative');
+    }
+
+    const trimmedTerm = searchTerm.trim();
+    
+    return await this.dictionaryDAL.searchByWord1(trimmedTerm, language, limit, offset);
+  }
+
+  /**
    * Get total count of dictionary entries
    */
   async getTotalCount(): Promise<number> {

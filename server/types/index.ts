@@ -93,6 +93,7 @@ export interface VocabEntry {
   entryValue: string;
   language: Language;
   script?: string;
+  pronunciation?: string | null;
   hskLevelTag?: HskLevel | null;
   createdAt: Date;
 }
@@ -104,6 +105,7 @@ export interface VocabEntryCreateData {
   entryValue: string;
   language: Language;
   script?: string;
+  pronunciation?: string | null;
   hskLevelTag?: HskLevel | null;
 }
 
@@ -113,6 +115,7 @@ export interface VocabEntryUpdateData {
   entryValue: string;
   language?: Language;
   script?: string;
+  pronunciation?: string | null;
   hskLevelTag?: HskLevel | null;
 }
 

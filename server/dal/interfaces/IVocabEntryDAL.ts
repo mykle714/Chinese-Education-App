@@ -27,6 +27,12 @@ export interface IVocabEntryDAL extends IBaseDAL<VocabEntry, VocabEntryCreateDat
   // Advanced queries
   findDuplicateKeys(userId: string, entryKeys: string[]): Promise<VocabEntry[]>;
   findEntriesCreatedAfter(userId: string, date: Date): Promise<VocabEntry[]>;
+  findRelatedBySharedCharacters(
+    userId: string,
+    word: string,
+    language: string,
+    limit?: number
+  ): Promise<Array<{ id: number; entryKey: string; sharedCharacters: string[]; successRate: number | null }>>;
   
   // Statistics
   getUserVocabStats(userId: string): Promise<{

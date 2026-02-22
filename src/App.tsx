@@ -12,9 +12,14 @@ import ProfilePage from "./pages/ProfilePage";
 import SettingsPage from "./pages/SettingsPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import FlashcardsPage from "./pages/FlashcardsPage";
+import FlashcardsLearnPage from "./pages/FlashcardsLearnPage";
+import FlashcardsDecksPage from "./pages/FlashcardsDecksPage";
 import ReaderPage from "./pages/ReaderPage";
 import MarketViewerPage from "./pages/MarketViewerPage";
 import DictionaryPage from "./pages/DictionaryPage";
+import DiscoverPage from "./pages/DiscoverPage";
+import SortCardsPage from "./pages/SortCardsPage";
+import VocabCardDetailPage from "./pages/VocabCardDetailPage";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -50,6 +55,16 @@ function App() {
                     <FlashcardsPage />
                   </ProtectedRoute>
                 } />
+                <Route path="/flashcards/learn" element={
+                  <ProtectedRoute>
+                    <FlashcardsLearnPage />
+                  </ProtectedRoute>
+                } />
+                <Route path="/flashcards/decks" element={
+                  <ProtectedRoute>
+                    <FlashcardsDecksPage />
+                  </ProtectedRoute>
+                } />
                 <Route path="/reader" element={
                   <ProtectedRoute>
                     <ReaderPage />
@@ -58,6 +73,21 @@ function App() {
                 <Route path="/dictionary" element={
                   <ProtectedRoute>
                     <DictionaryPage />
+                  </ProtectedRoute>
+                } />
+                <Route path="/discover" element={
+                  <ProtectedRoute>
+                    <DiscoverPage />
+                  </ProtectedRoute>
+                } />
+                <Route path="/discover/sort/:language" element={
+                  <ProtectedRoute>
+                    <SortCardsPage />
+                  </ProtectedRoute>
+                } />
+                <Route path="/flashcards/card/:id" element={
+                  <ProtectedRoute>
+                    <VocabCardDetailPage />
                   </ProtectedRoute>
                 } />
                 <Route path="/night-market" element={

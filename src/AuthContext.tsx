@@ -83,6 +83,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
             if (token && token !== 'null' && token !== 'undefined' && token.length > 10) {
                 try {
                     const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        },
                         credentials: 'include' // Include cookies for new DAL architecture
                     });
 

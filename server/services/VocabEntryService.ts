@@ -2,7 +2,8 @@ import { Readable } from 'stream';
 import csv from 'csv-parser';
 import { IVocabEntryDAL } from '../dal/interfaces/IVocabEntryDAL.js';
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
-import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, HskLevel } from '../types/index.js';
+import { DictionaryService } from './DictionaryService.js';
+import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, HskLevel, Language } from '../types/index.js';
 import { ValidationError, NotFoundError, BulkResult } from '../types/dal.js';
 
 // CSV row interface for import processing
@@ -27,7 +28,8 @@ interface ImportResult {
 export class VocabEntryService {
   constructor(
     private vocabEntryDAL: IVocabEntryDAL,
-    private userDAL: IUserDAL
+    private userDAL: IUserDAL,
+    private dictionaryService: DictionaryService
   ) {}
 
   /**
@@ -51,15 +53,49 @@ export class VocabEntryService {
     
     // Create entry with default values (business logic)
     // Use user's selected language or default to Chinese
-    const language = user.selectedLanguage || 'zh';
+    const language: Language = user.selectedLanguage || 'zh';
     
-    const newEntry = await this.vocabEntryDAL.create({
+    let newEntry: VocabEntry = await this.vocabEntryDAL.create({
       userId,
       entryKey: entryData.entryKey.trim(),
       entryValue: entryData.entryValue.trim(),
       language,
       hskLevelTag: entryData.hskLevelTag || null
     });
+    
+    // Generate enrichment data for Chinese entries
+    if (language === 'zh') {
+      try {
+        // Generate all enrichment fields in parallel
+        const [breakdown, synonyms, exampleSentences, partsOfSpeech] = await Promise.all([
+          this.dictionaryService.generateBreakdown(entryData.entryKey.trim(), language),
+          this.dictionaryService.findSynonyms(entryData.entryKey.trim(), language),
+          this.dictionaryService.generateExampleSentences(entryData.entryKey.trim(), language),
+          this.dictionaryService.extractPartsOfSpeech(entryData.entryKey.trim(), language)
+        ]);
+        
+        // Update the entry with all enrichment data
+        if (breakdown || synonyms.length > 0 || exampleSentences.length > 0 || partsOfSpeech.length > 0) {
+          await this.vocabEntryDAL.update(newEntry.id, {
+            entryKey: newEntry.entryKey,
+            entryValue: newEntry.entryValue,
+            breakdown,
+            synonyms,
+            exampleSentences,
+            partsOfSpeech
+          } as any);
+          
+          // Fetch updated entry to return with enrichment data
+          const updatedEntry: VocabEntry | null = await this.vocabEntryDAL.findById(newEntry.id);
+          if (updatedEntry) {
+            newEntry = updatedEntry;
+          }
+        }
+      } catch (error: any) {
+        console.error(`Failed to generate enrichment data for entry "${entryData.entryKey}":`, error);
+        // Don't fail the entire create operation if enrichment generation fails
+      }
+    }
     
     return newEntry;
   }

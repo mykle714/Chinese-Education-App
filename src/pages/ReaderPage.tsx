@@ -69,21 +69,18 @@ function ReaderPage() {
         readerSettings.autoSelectEnabled
     );
 
-    // Wrap text selection handlers to record activity
+    // Text selection handlers (activity detection is handled globally by useActivityDetection in useWorkPoints)
     const handleTextChangeWithActivity = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-        workPoints.recordActivity();
         textSelection.handleTextChange(event);
-    }, [workPoints, textSelection]);
+    }, [textSelection]);
 
     const handleAutoWordSelectWithActivity = useCallback((event: React.SyntheticEvent<HTMLDivElement>) => {
-        workPoints.recordActivity();
         textSelection.handleAutoWordSelect(event);
-    }, [workPoints, textSelection]);
+    }, [textSelection]);
 
     const handleTextSelectionChangeWithActivity = useCallback((event: React.SyntheticEvent<HTMLDivElement>) => {
-        workPoints.recordActivity();
         textSelection.handleTextSelectionChange(event);
-    }, [workPoints, textSelection]);
+    }, [textSelection]);
 
     // Get theme-based selection colors (memoized to prevent recalculation)
     const selectionColors = useMemo(() => {

@@ -10,6 +10,7 @@
     "dev": "nodemon --exec \"tsx server.ts\""
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.77.0",
     "@types/multer": "^2.0.0",
     "@types/pg": "^8.15.5",
     "@types/uuid": "^10.0.0",
@@ -24,7 +25,8 @@
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.1",
     "node-fetch": "^3.3.2",
-    "pg": "^8.16.3",
+    "openai": "^6.22.0",
+    "pg": "^8.18.0",
     "uuid": "^11.1.0",
     "xml2js": "^0.6.2"
   },

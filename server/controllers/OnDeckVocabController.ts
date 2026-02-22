@@ -150,6 +150,102 @@ export class OnDeckVocabController {
   };
 
   /**
+   * Get all library cards (vocab entries from *-library OnDeck sets)
+   * GET /api/onDeck/library-cards
+   */
+  getLibraryCards = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = (req as any).user?.userId;
+      if (!userId) {
+        res.status(401).json({ error: 'User not authenticated' });
+        return;
+      }
+
+      const libraryCards = await this.onDeckVocabService.getLibraryCards(userId);
+      res.json(libraryCards);
+    } catch (error: any) {
+      this.handleError(error, res);
+    }
+  };
+
+  /**
+   * Get all learn later cards (vocab entries from *-learn-later OnDeck sets)
+   * GET /api/onDeck/learn-later-cards
+   */
+  getLearnLaterCards = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = (req as any).user?.userId;
+      if (!userId) {
+        res.status(401).json({ error: 'User not authenticated' });
+        return;
+      }
+
+      const learnLaterCards = await this.onDeckVocabService.getLearnLaterCards(userId);
+      res.json(learnLaterCards);
+    } catch (error: any) {
+      this.handleError(error, res);
+    }
+  };
+
+  /**
+   * Get mastered library cards (library cards with category = 'Mastered')
+   * GET /api/onDeck/mastered-library-cards
+   */
+  getMasteredLibraryCards = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = (req as any).user?.userId;
+      if (!userId) {
+        res.status(401).json({ error: 'User not authenticated' });
+        return;
+      }
+
+      const masteredCards = await this.onDeckVocabService.getMasteredLibraryCards(userId);
+      res.json(masteredCards);
+    } catch (error: any) {
+      this.handleError(error, res);
+    }
+  };
+
+  /**
+   * Get non-mastered library cards (library cards without category = 'Mastered')
+   * GET /api/onDeck/non-mastered-library-cards
+   */
+  getNonMasteredLibraryCards = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = (req as any).user?.userId;
+      if (!userId) {
+        res.status(401).json({ error: 'User not authenticated' });
+        return;
+      }
+
+      const nonMasteredCards = await this.onDeckVocabService.getNonMasteredLibraryCards(userId);
+      res.json(nonMasteredCards);
+    } catch (error: any) {
+      this.handleError(error, res);
+    }
+  };
+
+  /**
+   * Get distributed working loop (1 Mastered, 2 Comfortable, 2 Unfamiliar, 5 Target)
+   * GET /api/onDeck/distributed-working-loop?category=<optional>
+   */
+  getDistributedWorkingLoop = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = (req as any).user?.userId;
+      if (!userId) {
+        res.status(401).json({ error: 'User not authenticated' });
+        return;
+      }
+
+      const categoryFilter = req.query.category as string | undefined;
+      const workingLoop = await this.onDeckVocabService.getDistributedWorkingLoop(userId, categoryFilter);
+      res.json(workingLoop);
+    } catch (error: any) {
+      this.handleError(error, res);
+    }
+  };
+
+  /**
    * Add entries to an existing set
    * POST /api/onDeckPage/:featureName/add
    */

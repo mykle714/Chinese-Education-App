@@ -480,8 +480,6 @@ function FlashcardsPage() {
 
         const handleTouchStart = (e: TouchEvent) => {
             // Don't prevent default on touchstart - this allows clicks to work
-            // Record activity on touch start
-            workPoints.recordActivity();
             setTouchEnd(null); // Reset touchEnd
             setTouchStart({
                 x: e.targetTouches[0].clientX,
@@ -502,9 +500,6 @@ function FlashcardsPage() {
                 // No movement detected, this is likely a tap - don't prevent default
                 return;
             }
-
-            // Record activity on touch end (when swipe is processed)
-            workPoints.recordActivity();
 
             const deltaX = touchStart.x - touchEnd.x;
             const deltaY = touchStart.y - touchEnd.y;

@@ -30,6 +30,7 @@ import ArticleIcon from "@mui/icons-material/Article";
 import NightsStayIcon from "@mui/icons-material/NightsStay";
 import MenuIcon from "@mui/icons-material/Menu";
 import BookIcon from "@mui/icons-material/Book";
+import PhoneIphoneIcon from "@mui/icons-material/PhoneIphone";
 import { useState } from "react";
 
 interface LayoutProps {
@@ -64,6 +65,7 @@ function Layout({ children }: LayoutProps) {
             { text: "Cards", path: "/entries", icon: <MenuBookIcon /> },
             { text: "Dictionary", path: "/dictionary", icon: <BookIcon /> },
             { text: "Flashcards", path: "/flashcards", icon: <ShuffleIcon /> },
+            { text: "Mobile Demo", path: "/flashcards/decks", icon: <PhoneIphoneIcon /> },
             { text: "Reader", path: "/reader", icon: <ArticleIcon /> },
             { text: "Night Market", path: "/night-market", icon: <NightsStayIcon /> },
             { text: "Profile", path: "/profile", icon: <PersonIcon /> },

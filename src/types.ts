@@ -14,6 +14,12 @@ export const LANGUAGE_NAMES: Record<Language, string> = {
 // HSK Level type for vocabulary entries
 export type HskLevel = 'HSK1' | 'HSK2' | 'HSK3' | 'HSK4' | 'HSK5' | 'HSK6';
 
+// Flashcard Category type for spaced repetition
+export type FlashcardCategory = 'Unfamiliar' | 'Target' | 'Comfortable' | 'Mastered';
+
+// Starter pack bucket type
+export type StarterPackBucket = 'library' | 'learn-later' | 'skip';
+
 // VocabEntry model type
 export interface VocabEntry {
   id: number;
@@ -24,6 +30,14 @@ export interface VocabEntry {
   script?: string;
   pronunciation?: string | null;
   hskLevelTag?: HskLevel | null;
+  category?: FlashcardCategory;
+  starterPackBucket?: StarterPackBucket | null;
+  breakdown?: Record<string, { definition: string; pronunciation: string }> | null;
+  synonyms?: string[];
+  expansion?: string | null;
+  exampleSentences?: Array<{ chinese: string; english: string; usage: string }>;
+  partsOfSpeech?: string[];
+  relatedWords?: Array<{ id: number; entryKey: string; sharedCharacters: string[]; successRate: number | null }>;
   createdAt: string;
 }
 

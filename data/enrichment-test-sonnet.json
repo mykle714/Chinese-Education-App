@@ -1,0 +1,2764 @@
+{
+  "model": "Claude Sonnet 4.6",
+  "modelId": "claude-sonnet-4-6",
+  "provider": "anthropic",
+  "timestamp": "2026-02-20T03:24:56.568Z",
+  "statistics": {
+    "totalWords": 117,
+    "inputTokens": 9637,
+    "outputTokens": 26962,
+    "totalTokens": 36599,
+    "inputCost": "0.0289",
+    "outputCost": "0.4044",
+    "totalCost": "0.4333",
+    "totalDuration": "344.2s",
+    "averageTimePerWord": "2942ms"
+  },
+  "entries": [
+    {
+      "word": "㑇",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "古籍中以㑇字形容人之聪慧。",
+          "english": "In ancient texts, the character 㑇 was used to describe a person's cleverness.",
+          "usage": "Academic reference to archaic usage"
+        },
+        {
+          "chinese": "㑇为罕见古字，今已少用。",
+          "english": "㑇 is a rare archaic character seldom used today.",
+          "usage": "Describing the character's rarity"
+        },
+        {
+          "chinese": "学者研究㑇字的历史渊源。",
+          "english": "Scholars study the historical origins of the character 㑇.",
+          "usage": "Academic linguistic research context"
+        }
+      ]
+    },
+    {
+      "word": "人文学",
+      "synonyms": [
+        "人文科学"
+      ],
+      "expansion": "人类文化学科",
+      "exampleSentences": [
+        {
+          "chinese": "她在大学主修人文学专业。",
+          "english": "She majored in humanities at university.",
+          "usage": "Academic study context"
+        },
+        {
+          "chinese": "人文学培养批判性思维能力。",
+          "english": "The humanities cultivate critical thinking skills.",
+          "usage": "Describing the value of humanities education"
+        },
+        {
+          "chinese": "人文学与理工科同样重要。",
+          "english": "The humanities are just as important as science and engineering.",
+          "usage": "Comparing academic disciplines"
+        }
+      ]
+    },
+    {
+      "word": "仁化县",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "仁化县位于广东韶关市境内。",
+          "english": "Renhua County is located within Shaoguan City, Guangdong.",
+          "usage": "Geographic description"
+        },
+        {
+          "chinese": "仁化县以丹霞山风景著名。",
+          "english": "Renhua County is famous for the Danxia Mountain scenery.",
+          "usage": "Tourism and geography context"
+        },
+        {
+          "chinese": "他的老家就在仁化县农村。",
+          "english": "His hometown is in the rural areas of Renhua County.",
+          "usage": "Personal background description"
+        }
+      ]
+    },
+    {
+      "word": "伦敦",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "伦敦是英国的首都城市。",
+          "english": "London is the capital city of the United Kingdom.",
+          "usage": "Geographic fact"
+        },
+        {
+          "chinese": "她计划明年去伦敦留学。",
+          "english": "She plans to go to London to study abroad next year.",
+          "usage": "Personal plan involving travel"
+        },
+        {
+          "chinese": "伦敦的博物馆大多免费参观。",
+          "english": "Most museums in London are free to visit.",
+          "usage": "Travel and tourism context"
+        }
+      ]
+    },
+    {
+      "word": "佛教",
+      "synonyms": [],
+      "expansion": "佛陀教义",
+      "exampleSentences": [
+        {
+          "chinese": "佛教在中国有悠久的历史。",
+          "english": "Buddhism has a long history in China.",
+          "usage": "Historical and cultural context"
+        },
+        {
+          "chinese": "她信仰佛教，每天打坐冥想。",
+          "english": "She follows Buddhism and meditates every day.",
+          "usage": "Describing personal religious practice"
+        },
+        {
+          "chinese": "佛教强调慈悲与内心平静。",
+          "english": "Buddhism emphasizes compassion and inner peace.",
+          "usage": "Explaining Buddhist philosophy"
+        }
+      ]
+    },
+    {
+      "word": "信令",
+      "synonyms": [],
+      "expansion": "信号指令",
+      "exampleSentences": [
+        {
+          "chinese": "该系统采用先进的信令协议。",
+          "english": "The system uses an advanced signaling protocol.",
+          "usage": "Technical engineering context"
+        },
+        {
+          "chinese": "信令故障导致通话中断。",
+          "english": "A signaling failure caused the call to be disconnected.",
+          "usage": "Telecommunications troubleshooting"
+        },
+        {
+          "chinese": "工程师正在调试网络信令系统。",
+          "english": "The engineer is debugging the network signaling system.",
+          "usage": "Technical work context"
+        }
+      ]
+    },
+    {
+      "word": "偶见",
+      "synonyms": [
+        "偶遇",
+        "邂逅"
+      ],
+      "expansion": "偶然见到",
+      "exampleSentences": [
+        {
+          "chinese": "在公园里偶见多年不见的老友。",
+          "english": "I happened upon an old friend I hadn't seen for years in the park.",
+          "usage": "Chance encounter with an acquaintance"
+        },
+        {
+          "chinese": "这种鸟在本地偶见，十分珍稀。",
+          "english": "This bird is occasionally spotted locally and is quite rare.",
+          "usage": "Describing rarity of a wildlife sighting"
+        },
+        {
+          "chinese": "翻阅旧书时偶见一张老照片。",
+          "english": "While flipping through an old book, I happened upon an old photograph.",
+          "usage": "Unexpected discovery while browsing"
+        }
+      ]
+    },
+    {
+      "word": "傻里傻气",
+      "synonyms": [
+        "呆头呆脑",
+        "傻乎乎"
+      ],
+      "expansion": "傻里傻气",
+      "exampleSentences": [
+        {
+          "chinese": "他傻里傻气的样子让人忍俊不禁。",
+          "english": "His foolish manner made people unable to hold back laughter.",
+          "usage": "Describing someone's comically silly behavior"
+        },
+        {
+          "chinese": "别傻里傻气的，快想想办法！",
+          "english": "Stop being so foolish and think of a solution!",
+          "usage": "Urging someone to be more sensible"
+        },
+        {
+          "chinese": "她傻里傻气地笑着，毫不在意。",
+          "english": "She laughed in her silly way, not caring at all.",
+          "usage": "Describing a carefree, goofy demeanor"
+        }
+      ]
+    },
+    {
+      "word": "全南县",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "全南县隶属江西省赣州市管辖。",
+          "english": "Quannan County is under the jurisdiction of Ganzhou City, Jiangxi Province.",
+          "usage": "Administrative geography description"
+        },
+        {
+          "chinese": "全南县的脐橙远近闻名。",
+          "english": "The navel oranges of Quannan County are well known far and wide.",
+          "usage": "Local agricultural product promotion"
+        },
+        {
+          "chinese": "他在全南县投资建设了工厂。",
+          "english": "He invested in building a factory in Quannan County.",
+          "usage": "Business and economic development context"
+        }
+      ]
+    },
+    {
+      "word": "全新纪",
+      "synonyms": [],
+      "expansion": "全新世纪元",
+      "exampleSentences": [
+        {
+          "chinese": "全新纪始于约一万两千年前。",
+          "english": "The Holocene Epoch began approximately 12,000 years ago.",
+          "usage": "Geological time reference"
+        },
+        {
+          "chinese": "人类文明主要发展于全新纪时期。",
+          "english": "Human civilization developed mainly during the Holocene Epoch.",
+          "usage": "Connecting geology with human history"
+        },
+        {
+          "chinese": "地质学家研究全新纪的气候变化。",
+          "english": "Geologists study climate changes during the Holocene Epoch.",
+          "usage": "Scientific research context"
+        }
+      ]
+    },
+    {
+      "word": "判别",
+      "synonyms": [
+        "辨别",
+        "区分"
+      ],
+      "expansion": "判断区别",
+      "exampleSentences": [
+        {
+          "chinese": "他能判别真假古董。",
+          "english": "He can differentiate between genuine and fake antiques.",
+          "usage": "Assessing authenticity"
+        },
+        {
+          "chinese": "这两种植物难以判别。",
+          "english": "These two plants are difficult to differentiate.",
+          "usage": "Comparing similar things"
+        },
+        {
+          "chinese": "专家帮我们判别了方向。",
+          "english": "The expert helped us determine the direction.",
+          "usage": "Seeking expert judgment"
+        }
+      ]
+    },
+    {
+      "word": "利 (Lì)",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "利老师今天没来上课。",
+          "english": "Teacher Li didn't come to class today.",
+          "usage": "Addressing someone with surname Li"
+        },
+        {
+          "chinese": "利先生是公司的创始人。",
+          "english": "Mr. Li is the founder of the company.",
+          "usage": "Formal reference to a person"
+        },
+        {
+          "chinese": "这位利女士很有名望。",
+          "english": "This Ms. Li is very well-respected.",
+          "usage": "Referring to a prominent person"
+        }
+      ]
+    },
+    {
+      "word": "利 (lì)",
+      "synonyms": [
+        "锋利",
+        "锐利"
+      ],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "这把刀刃非常利。",
+          "english": "The blade of this knife is extremely sharp.",
+          "usage": "Describing a sharp tool"
+        },
+        {
+          "chinese": "他的目光犀利如刀。",
+          "english": "His gaze is as sharp as a knife.",
+          "usage": "Metaphorical use describing sharpness"
+        },
+        {
+          "chinese": "工欲善其事，必先利其器。",
+          "english": "A worker must sharpen his tools before he can do his work well.",
+          "usage": "Classical proverb about preparation"
+        }
+      ]
+    },
+    {
+      "word": "功勋",
+      "synonyms": [
+        "功绩",
+        "勋绩"
+      ],
+      "expansion": "功劳勋章",
+      "exampleSentences": [
+        {
+          "chinese": "他为国家立下了功勋。",
+          "english": "He established great achievements for the country.",
+          "usage": "Recognizing national contributions"
+        },
+        {
+          "chinese": "这位将军功勋卓著。",
+          "english": "This general has outstanding achievements.",
+          "usage": "Praising a military figure"
+        },
+        {
+          "chinese": "功勋艺术家受到表彰。",
+          "english": "The meritorious artist was commended.",
+          "usage": "Honoring distinguished individuals"
+        }
+      ]
+    },
+    {
+      "word": "华 (Huá)",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "他是华裔加拿大人。",
+          "english": "He is a Canadian of Chinese descent.",
+          "usage": "Referring to Chinese ethnicity abroad"
+        },
+        {
+          "chinese": "中华文化源远流长。",
+          "english": "Chinese culture has a long and profound history.",
+          "usage": "Referring to Chinese civilization"
+        },
+        {
+          "chinese": "华人遍布世界各地。",
+          "english": "Chinese people are spread all over the world.",
+          "usage": "Referring to the global Chinese community"
+        }
+      ]
+    },
+    {
+      "word": "华 (Huà)",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "华山是五岳之一。",
+          "english": "Mount Hua is one of the Five Sacred Mountains.",
+          "usage": "Geographical reference"
+        },
+        {
+          "chinese": "他攀登华山花了一天。",
+          "english": "It took him a day to climb Mount Hua.",
+          "usage": "Describing a travel experience"
+        },
+        {
+          "chinese": "华山的险峻令人叹为观止。",
+          "english": "The precipitousness of Mount Hua is breathtaking.",
+          "usage": "Describing the mountain's scenery"
+        }
+      ]
+    },
+    {
+      "word": "华 (huā)",
+      "synonyms": [
+        "花"
+      ],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "春华秋实，岁月流转。",
+          "english": "Spring blossoms and autumn fruits — time flows on.",
+          "usage": "Classical literary expression"
+        },
+        {
+          "chinese": "古诗中常以华代花。",
+          "english": "In ancient poetry, 华 is often used in place of 花.",
+          "usage": "Explaining classical usage"
+        },
+        {
+          "chinese": "落华满地无人扫。",
+          "english": "Fallen blossoms cover the ground with no one to sweep them.",
+          "usage": "Classical poetic imagery"
+        }
+      ]
+    },
+    {
+      "word": "华 (huá)",
+      "synonyms": [
+        "华丽",
+        "辉煌"
+      ],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "这座宫殿富丽堂皇。",
+          "english": "This palace is magnificent and splendid.",
+          "usage": "Describing an impressive building"
+        },
+        {
+          "chinese": "她穿着华美的礼服出席。",
+          "english": "She attended wearing a magnificent gown.",
+          "usage": "Describing elegant attire"
+        },
+        {
+          "chinese": "繁华的都市令他着迷。",
+          "english": "The magnificent city fascinated him.",
+          "usage": "Describing a prosperous city"
+        }
+      ]
+    },
+    {
+      "word": "占据",
+      "synonyms": [
+        "占领",
+        "盘踞"
+      ],
+      "expansion": "占有据守",
+      "exampleSentences": [
+        {
+          "chinese": "敌军占据了山顶阵地。",
+          "english": "The enemy troops occupied the hilltop position.",
+          "usage": "Military context"
+        },
+        {
+          "chinese": "工作占据了他大部分时间。",
+          "english": "Work takes up most of his time.",
+          "usage": "Describing time consumption"
+        },
+        {
+          "chinese": "这家店占据了最好的位置。",
+          "english": "This store holds the best location.",
+          "usage": "Describing a prime commercial spot"
+        }
+      ]
+    },
+    {
+      "word": "原平",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "原平市位于山西省。",
+          "english": "Yuanping City is located in Shanxi Province.",
+          "usage": "Geographical identification"
+        },
+        {
+          "chinese": "他老家在原平市。",
+          "english": "His hometown is in Yuanping City.",
+          "usage": "Referring to one's place of origin"
+        },
+        {
+          "chinese": "原平的农产品很有名。",
+          "english": "Yuanping's agricultural products are well-known.",
+          "usage": "Describing local specialties"
+        }
+      ]
+    },
+    {
+      "word": "同行 (tóng háng)",
+      "synonyms": [
+        "同业",
+        "同僚"
+      ],
+      "expansion": "同一行业",
+      "exampleSentences": [
+        {
+          "chinese": "他是我多年的同行。",
+          "english": "He is a colleague in the same profession as me for many years.",
+          "usage": "Referring to someone in the same industry"
+        },
+        {
+          "chinese": "同行之间竞争很激烈。",
+          "english": "Competition among peers in the same trade is fierce.",
+          "usage": "Describing industry competition"
+        },
+        {
+          "chinese": "遇到同行，互相交流经验。",
+          "english": "When meeting someone in the same field, they exchange experiences.",
+          "usage": "Professional networking context"
+        }
+      ]
+    },
+    {
+      "word": "同行 (tóng xíng)",
+      "synonyms": [
+        "同往",
+        "结伴"
+      ],
+      "expansion": "同路而行",
+      "exampleSentences": [
+        {
+          "chinese": "我们一起同行去北京。",
+          "english": "We traveled together to Beijing.",
+          "usage": "Describing traveling as a group"
+        },
+        {
+          "chinese": "他邀请朋友同行出游。",
+          "english": "He invited friends to journey with him on a trip.",
+          "usage": "Inviting someone to travel together"
+        },
+        {
+          "chinese": "两人同行，路上不寂寞。",
+          "english": "Traveling together, the road doesn't feel lonely.",
+          "usage": "Expressing companionship during travel"
+        }
+      ]
+    },
+    {
+      "word": "和平县",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "和平县位于广东省河源市。",
+          "english": "Heping County is located in Heyuan City, Guangdong Province.",
+          "usage": "Describing the geographic location"
+        },
+        {
+          "chinese": "和平县以自然风光著称。",
+          "english": "Heping County is known for its natural scenery.",
+          "usage": "Describing local characteristics"
+        },
+        {
+          "chinese": "他的老家在和平县农村。",
+          "english": "His hometown is in the rural area of Heping County.",
+          "usage": "Referring to someone's place of origin"
+        }
+      ]
+    },
+    {
+      "word": "咔啦",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "这炸鸡吃起来咔啦咔啦的。",
+          "english": "This fried chicken is super crispy when you eat it.",
+          "usage": "Describing the crunchy texture of fried food"
+        },
+        {
+          "chinese": "咔啦鸡是孩子最爱的零食。",
+          "english": "Crispy fried chicken is the kids' favorite snack.",
+          "usage": "Referring to a popular crispy fried food"
+        },
+        {
+          "chinese": "外皮咔啦，里面嫩滑多汁。",
+          "english": "The outside is crispy, while the inside is tender and juicy.",
+          "usage": "Describing the texture contrast of fried food"
+        }
+      ]
+    },
+    {
+      "word": "嗷嗷待哺",
+      "synonyms": [],
+      "expansion": "嗷嗷叫着等待哺育",
+      "exampleSentences": [
+        {
+          "chinese": "巢中雏鸟嗷嗷待哺。",
+          "english": "The chicks in the nest cry out pitifully waiting to be fed.",
+          "usage": "Describing baby birds waiting for food"
+        },
+        {
+          "chinese": "家中老小嗷嗷待哺，他压力很大。",
+          "english": "With the whole family depending on him for food, he is under great pressure.",
+          "usage": "Describing family financial hardship"
+        },
+        {
+          "chinese": "灾区难民嗷嗷待哺，急需救援。",
+          "english": "Disaster victims are desperately waiting for food and urgently need relief.",
+          "usage": "Describing humanitarian crisis situations"
+        }
+      ]
+    },
+    {
+      "word": "嘎 (gā)",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "门嘎的一声打开了。",
+          "english": "The door opened with a sharp creaking sound.",
+          "usage": "Describing a sudden loud short sound from a door"
+        },
+        {
+          "chinese": "车子嘎一声急刹停下。",
+          "english": "The car stopped abruptly with a sharp screeching sound.",
+          "usage": "Describing the sound of sudden braking"
+        },
+        {
+          "chinese": "嘎的一声，树枝断了。",
+          "english": "With a sharp crack, the branch snapped.",
+          "usage": "Describing the sound of something breaking"
+        }
+      ]
+    },
+    {
+      "word": "嘎 (gá)",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "鸭子嘎嘎叫着跑过来。",
+          "english": "The duck came running over with a cackling quack.",
+          "usage": "Describing the sound a duck makes"
+        },
+        {
+          "chinese": "院子里传来嘎嘎的笑声。",
+          "english": "Cackling laughter came from the courtyard.",
+          "usage": "Describing a loud, cackling laugh"
+        },
+        {
+          "chinese": "她嘎嘎大笑，十分开心。",
+          "english": "She laughed with a loud cackle, very happy.",
+          "usage": "Describing someone laughing heartily"
+        }
+      ]
+    },
+    {
+      "word": "嘎 (gǎ)",
+      "synonyms": [
+        "倔",
+        "犟"
+      ],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "这老头脾气嘎，不好惹。",
+          "english": "This old man has a bad temper and is hard to deal with.",
+          "usage": "Describing someone's ornery disposition in dialect"
+        },
+        {
+          "chinese": "他从小就嘎，谁也管不了。",
+          "english": "He has been ill-tempered since childhood, and nobody can control him.",
+          "usage": "Describing a stubborn and difficult personality"
+        },
+        {
+          "chinese": "那孩子真嘎，老跟人闹别扭。",
+          "english": "That kid is really ornery, always picking fights with others.",
+          "usage": "Describing a difficult child in dialect context"
+        }
+      ]
+    },
+    {
+      "word": "嘎 (gá) old variant",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "古籍中此字为嘎的旧写法。",
+          "english": "In ancient texts, this character is an old variant form of 嘎.",
+          "usage": "Academic reference to the archaic variant"
+        },
+        {
+          "chinese": "该字现已少见，多用嘎代替。",
+          "english": "This character is rarely seen now; 嘎 is used in its place.",
+          "usage": "Noting the replacement of the old variant"
+        },
+        {
+          "chinese": "学者研究此字的历史演变。",
+          "english": "Scholars study the historical evolution of this character.",
+          "usage": "Scholarly discussion of character history"
+        }
+      ]
+    },
+    {
+      "word": "国土安全局",
+      "synonyms": [],
+      "expansion": "国家土地安全局",
+      "exampleSentences": [
+        {
+          "chinese": "国土安全局负责保护美国边境。",
+          "english": "The Department of Homeland Security is responsible for protecting US borders.",
+          "usage": "Describing the agency's core function"
+        },
+        {
+          "chinese": "国土安全局加强了机场安检。",
+          "english": "The Department of Homeland Security has strengthened airport security checks.",
+          "usage": "Describing a security policy measure"
+        },
+        {
+          "chinese": "他在国土安全局担任要职。",
+          "english": "He holds an important position at the Department of Homeland Security.",
+          "usage": "Referring to employment at the agency"
+        }
+      ]
+    },
+    {
+      "word": "地标",
+      "synonyms": [
+        "标志性建筑"
+      ],
+      "expansion": "地方标志",
+      "exampleSentences": [
+        {
+          "chinese": "埃菲尔铁塔是巴黎的地标。",
+          "english": "The Eiffel Tower is a landmark of Paris.",
+          "usage": "describing a famous architectural landmark"
+        },
+        {
+          "chinese": "这座桥成了城市新地标。",
+          "english": "This bridge has become the city's new landmark.",
+          "usage": "referring to a newly recognized landmark"
+        },
+        {
+          "chinese": "地标建筑吸引了大批游客。",
+          "english": "Landmark buildings attract large numbers of tourists.",
+          "usage": "discussing tourism around landmarks"
+        }
+      ]
+    },
+    {
+      "word": "好了疮疤忘了痛",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "他真是好了疮疤忘了痛，又犯同样的错。",
+          "english": "He truly forgot the pain once the wound healed and made the same mistake again.",
+          "usage": "criticizing someone who repeats past mistakes"
+        },
+        {
+          "chinese": "别好了疮疤忘了痛，要吸取教训。",
+          "english": "Don't forget the pain once the wound heals — learn from your lessons.",
+          "usage": "warning someone not to repeat past errors"
+        },
+        {
+          "chinese": "好了疮疤忘了痛，这毛病得改。",
+          "english": "Forgetting pain once healed is a bad habit that needs to change.",
+          "usage": "commenting on a person's tendency to ignore past suffering"
+        }
+      ]
+    },
+    {
+      "word": "妻离子散",
+      "synonyms": [
+        "家破人亡"
+      ],
+      "expansion": "妻子离开子女分散",
+      "exampleSentences": [
+        {
+          "chinese": "战争让无数家庭妻离子散。",
+          "english": "War caused countless families to be torn apart.",
+          "usage": "describing the devastating effects of war on families"
+        },
+        {
+          "chinese": "洪灾过后，许多人妻离子散。",
+          "english": "After the flood, many people were separated from their families.",
+          "usage": "describing the aftermath of a natural disaster"
+        },
+        {
+          "chinese": "他的赌博恶习导致妻离子散。",
+          "english": "His gambling addiction led to his family being torn apart.",
+          "usage": "describing consequences of destructive personal behavior"
+        }
+      ]
+    },
+    {
+      "word": "嬿",
+      "synonyms": [
+        "娴",
+        "婉"
+      ],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "嬿字常用于女子名中。",
+          "english": "The character 嬿 is often used in women's names.",
+          "usage": "explaining the usage of the character in naming"
+        },
+        {
+          "chinese": "她名字中有个嬿字，十分雅致。",
+          "english": "Her name contains the character 嬿, which is very elegant.",
+          "usage": "commenting on an elegant name"
+        },
+        {
+          "chinese": "嬿字形容女子温婉可人。",
+          "english": "The character 嬿 describes a woman who is gentle and lovely.",
+          "usage": "explaining the meaning of the character"
+        }
+      ]
+    },
+    {
+      "word": "客家人",
+      "synonyms": [],
+      "expansion": "客家族群的人",
+      "exampleSentences": [
+        {
+          "chinese": "客家人遍布世界各地。",
+          "english": "Hakka people are spread all over the world.",
+          "usage": "describing the global distribution of Hakka people"
+        },
+        {
+          "chinese": "客家人有独特的语言和文化。",
+          "english": "Hakka people have a unique language and culture.",
+          "usage": "introducing Hakka cultural identity"
+        },
+        {
+          "chinese": "他是广东梅州的客家人。",
+          "english": "He is a Hakka person from Meizhou, Guangdong.",
+          "usage": "identifying someone's Hakka heritage and origin"
+        }
+      ]
+    },
+    {
+      "word": "宿豫",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "宿豫区位于江苏省宿迁市。",
+          "english": "Suyu District is located in Suqian City, Jiangsu Province.",
+          "usage": "providing geographic context for the district"
+        },
+        {
+          "chinese": "宿豫区近年来经济发展迅速。",
+          "english": "Suyu District has seen rapid economic development in recent years.",
+          "usage": "discussing economic growth of the district"
+        },
+        {
+          "chinese": "他在宿豫区投资了一家工厂。",
+          "english": "He invested in a factory in Suyu District.",
+          "usage": "mentioning the district in a business context"
+        }
+      ]
+    },
+    {
+      "word": "山中圣训",
+      "synonyms": [],
+      "expansion": "山中的圣经训导",
+      "exampleSentences": [
+        {
+          "chinese": "山中圣训是耶稣的重要讲道。",
+          "english": "The Sermon on the Mount is one of Jesus's most important teachings.",
+          "usage": "introducing the biblical sermon in a religious context"
+        },
+        {
+          "chinese": "山中圣训记载于马太福音中。",
+          "english": "The Sermon on the Mount is recorded in the Gospel of Matthew.",
+          "usage": "citing the biblical source of the sermon"
+        },
+        {
+          "chinese": "他引用了山中圣训的内容。",
+          "english": "He quoted passages from the Sermon on the Mount.",
+          "usage": "referencing the sermon in a speech or discussion"
+        }
+      ]
+    },
+    {
+      "word": "巡洋舰",
+      "synonyms": [],
+      "expansion": "巡逻洋面的战舰",
+      "exampleSentences": [
+        {
+          "chinese": "这艘巡洋舰配备了先进武器。",
+          "english": "This cruiser is equipped with advanced weapons.",
+          "usage": "describing the armament of a naval cruiser"
+        },
+        {
+          "chinese": "海军派遣巡洋舰执行任务。",
+          "english": "The navy dispatched a cruiser to carry out the mission.",
+          "usage": "describing a naval military operation"
+        },
+        {
+          "chinese": "巡洋舰在大洋上巡逻警戒。",
+          "english": "The cruiser patrols and stands guard on the open ocean.",
+          "usage": "describing the patrol function of a cruiser"
+        }
+      ]
+    },
+    {
+      "word": "巧家",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "巧家县位于云南省昭通市。",
+          "english": "Qiaojia County is located in Zhaotong City, Yunnan Province.",
+          "usage": "providing geographic information about the county"
+        },
+        {
+          "chinese": "巧家县以花椒种植闻名。",
+          "english": "Qiaojia County is known for its Sichuan pepper cultivation.",
+          "usage": "describing an agricultural specialty of the county"
+        },
+        {
+          "chinese": "他从巧家县来到城市打工。",
+          "english": "He came from Qiaojia County to work in the city.",
+          "usage": "mentioning the county as someone's place of origin"
+        }
+      ]
+    },
+    {
+      "word": "巨鹿县",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "巨鹿县隶属河北省邢台市。",
+          "english": "Julu County belongs to Xingtai City, Hebei Province.",
+          "usage": "providing administrative context for the county"
+        },
+        {
+          "chinese": "巨鹿县是著名古战场所在地。",
+          "english": "Julu County is the site of a famous ancient battlefield.",
+          "usage": "referencing the historical significance of the county"
+        },
+        {
+          "chinese": "巨鹿县金银花产量居全国前列。",
+          "english": "Julu County ranks among the top producers of honeysuckle in China.",
+          "usage": "describing an agricultural product the county is known for"
+        }
+      ]
+    },
+    {
+      "word": "幔子",
+      "synonyms": [
+        "帷幔",
+        "帘子"
+      ],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "她拉上幔子遮住阳光。",
+          "english": "She pulled the curtain to block out the sunlight.",
+          "usage": "everyday home setting"
+        },
+        {
+          "chinese": "舞台四周挂着红色幔子。",
+          "english": "Red curtains hung around the stage.",
+          "usage": "theatrical or ceremonial setting"
+        },
+        {
+          "chinese": "古代床上常有幔子围绕。",
+          "english": "Ancient beds were often surrounded by curtains.",
+          "usage": "historical or literary description"
+        }
+      ]
+    },
+    {
+      "word": "平分",
+      "synonyms": [
+        "均分",
+        "等分"
+      ],
+      "expansion": "平均分配",
+      "exampleSentences": [
+        {
+          "chinese": "两人把蛋糕平分了。",
+          "english": "The two of them divided the cake evenly.",
+          "usage": "everyday sharing context"
+        },
+        {
+          "chinese": "遗产由三个子女平分。",
+          "english": "The inheritance was divided equally among the three children.",
+          "usage": "legal or family inheritance context"
+        },
+        {
+          "chinese": "比赛结束，双方平分秋色。",
+          "english": "The match ended with both sides evenly matched.",
+          "usage": "sports or competition context"
+        }
+      ]
+    },
+    {
+      "word": "平行六面体",
+      "synonyms": [],
+      "expansion": "平行的六个面组成的立体",
+      "exampleSentences": [
+        {
+          "chinese": "长方体是平行六面体的特例。",
+          "english": "A rectangular box is a special case of a parallelepiped.",
+          "usage": "mathematics classroom explanation"
+        },
+        {
+          "chinese": "他在课上学习平行六面体的体积公式。",
+          "english": "He studied the volume formula of a parallelepiped in class.",
+          "usage": "academic study context"
+        },
+        {
+          "chinese": "平行六面体的六个面都是平行四边形。",
+          "english": "All six faces of a parallelepiped are parallelograms.",
+          "usage": "geometric property description"
+        }
+      ]
+    },
+    {
+      "word": "弯道",
+      "synonyms": [
+        "弯路",
+        "转弯处"
+      ],
+      "expansion": "弯曲的道路",
+      "exampleSentences": [
+        {
+          "chinese": "过弯道时要减速慢行。",
+          "english": "You should slow down when going through a curve.",
+          "usage": "driving safety reminder"
+        },
+        {
+          "chinese": "赛车手在弯道上超越了对手。",
+          "english": "The racing driver overtook his opponent on the bend.",
+          "usage": "racing or sports context"
+        },
+        {
+          "chinese": "山路弯道多，驾驶需小心。",
+          "english": "Mountain roads have many curves, so drive carefully.",
+          "usage": "travel safety warning"
+        }
+      ]
+    },
+    {
+      "word": "抗药能力",
+      "synonyms": [
+        "耐药性",
+        "抗药性"
+      ],
+      "expansion": "抵抗药物的能力",
+      "exampleSentences": [
+        {
+          "chinese": "细菌的抗药能力越来越强。",
+          "english": "Bacteria are developing increasingly strong drug resistance.",
+          "usage": "medical or scientific discussion"
+        },
+        {
+          "chinese": "滥用抗生素会增强细菌抗药能力。",
+          "english": "Overuse of antibiotics enhances bacterial drug resistance.",
+          "usage": "public health warning"
+        },
+        {
+          "chinese": "研究人员正研究如何克服抗药能力。",
+          "english": "Researchers are studying how to overcome drug resistance.",
+          "usage": "scientific research context"
+        }
+      ]
+    },
+    {
+      "word": "排查",
+      "synonyms": [
+        "排除",
+        "检查"
+      ],
+      "expansion": "排列检查",
+      "exampleSentences": [
+        {
+          "chinese": "警方正在排查嫌疑人名单。",
+          "english": "The police are screening through the list of suspects.",
+          "usage": "law enforcement investigation"
+        },
+        {
+          "chinese": "工人对设备进行安全排查。",
+          "english": "Workers conducted a safety inspection of the equipment.",
+          "usage": "workplace safety inspection"
+        },
+        {
+          "chinese": "疫情期间对密接者逐一排查。",
+          "english": "During the epidemic, close contacts were screened one by one.",
+          "usage": "epidemic prevention and control"
+        }
+      ]
+    },
+    {
+      "word": "政治部",
+      "synonyms": [],
+      "expansion": "政治工作部门",
+      "exampleSentences": [
+        {
+          "chinese": "政治部负责部队思想教育工作。",
+          "english": "The political division is responsible for ideological education in the troops.",
+          "usage": "military organizational context"
+        },
+        {
+          "chinese": "他被调到政治部担任主任。",
+          "english": "He was transferred to serve as director of the political division.",
+          "usage": "military personnel assignment"
+        },
+        {
+          "chinese": "政治部发布了新的纪律规定。",
+          "english": "The political division issued new disciplinary regulations.",
+          "usage": "institutional announcement context"
+        }
+      ]
+    },
+    {
+      "word": "旁系",
+      "synonyms": [],
+      "expansion": "旁支系统",
+      "exampleSentences": [
+        {
+          "chinese": "他是我父亲的旁系亲属。",
+          "english": "He is a collateral relative of my father.",
+          "usage": "family relationship description"
+        },
+        {
+          "chinese": "旁系血亲不在直系遗产继承范围内。",
+          "english": "Collateral relatives are not within the scope of direct inheritance.",
+          "usage": "legal inheritance context"
+        },
+        {
+          "chinese": "族谱上记载了旁系各支的信息。",
+          "english": "The genealogy records information about all collateral branches.",
+          "usage": "genealogy or family history context"
+        }
+      ]
+    },
+    {
+      "word": "时运不济",
+      "synonyms": [
+        "命运多舛",
+        "时不我与"
+      ],
+      "expansion": "时机运气不好不顺利",
+      "exampleSentences": [
+        {
+          "chinese": "他时运不济，屡次失败。",
+          "english": "Fate was unfavorable to him, and he failed repeatedly.",
+          "usage": "describing someone's bad luck"
+        },
+        {
+          "chinese": "时运不济，计划只好搁置。",
+          "english": "With the omens unfavorable, the plan had to be shelved.",
+          "usage": "explaining a setback or delay"
+        },
+        {
+          "chinese": "她感叹自己时运不济，怀才不遇。",
+          "english": "She lamented her ill fate and unrecognized talent.",
+          "usage": "expressing frustration about circumstances"
+        }
+      ]
+    },
+    {
+      "word": "普陀山",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "普陀山是观音菩萨的道场。",
+          "english": "Mt. Putuo is the sacred bodhimanda of Guanyin Bodhisattva.",
+          "usage": "religious or cultural introduction"
+        },
+        {
+          "chinese": "每年许多信徒前往普陀山朝圣。",
+          "english": "Every year many devotees make pilgrimages to Mt. Putuo.",
+          "usage": "religious pilgrimage context"
+        },
+        {
+          "chinese": "普陀山风景秀丽，香火旺盛。",
+          "english": "Mt. Putuo is scenic and has thriving incense offerings.",
+          "usage": "travel or tourism description"
+        }
+      ]
+    },
+    {
+      "word": "极端主义",
+      "synonyms": [],
+      "expansion": "极端的主义",
+      "exampleSentences": [
+        {
+          "chinese": "极端主义威胁社会稳定。",
+          "english": "Extremism threatens social stability.",
+          "usage": "General statement about social threat"
+        },
+        {
+          "chinese": "政府严厉打击极端主义。",
+          "english": "The government cracks down hard on extremism.",
+          "usage": "Government policy context"
+        },
+        {
+          "chinese": "教育是对抗极端主义的武器。",
+          "english": "Education is a weapon against extremism.",
+          "usage": "Discussing prevention strategies"
+        }
+      ]
+    },
+    {
+      "word": "桃园市",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "桃园市有台湾最大的机场。",
+          "english": "Taoyuan City has Taiwan's largest airport.",
+          "usage": "Describing the city's key feature"
+        },
+        {
+          "chinese": "他从桃园市搬到了台北。",
+          "english": "He moved from Taoyuan City to Taipei.",
+          "usage": "Personal relocation context"
+        },
+        {
+          "chinese": "桃园市的经济发展很迅速。",
+          "english": "Taoyuan City's economy is developing rapidly.",
+          "usage": "Discussing economic development"
+        }
+      ]
+    },
+    {
+      "word": "正统 (Zhengtong Emperor)",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "正统帝曾被瓦剌俘虏。",
+          "english": "The Zhengtong Emperor was once captured by the Oirats.",
+          "usage": "Historical event reference"
+        },
+        {
+          "chinese": "正统年间发生了土木之变。",
+          "english": "The Tumu Crisis occurred during the Zhengtong reign.",
+          "usage": "Historical period reference"
+        },
+        {
+          "chinese": "正统帝后来复辟称英宗。",
+          "english": "The Zhengtong Emperor later reclaimed the throne and was known as Yingzong.",
+          "usage": "Historical biographical context"
+        }
+      ]
+    },
+    {
+      "word": "正统 (orthodoxy)",
+      "synonyms": [
+        "传统",
+        "正宗"
+      ],
+      "expansion": "正统的传统",
+      "exampleSentences": [
+        {
+          "chinese": "他坚持正统的儒家思想。",
+          "english": "He adheres to orthodox Confucian thought.",
+          "usage": "Describing adherence to traditional ideology"
+        },
+        {
+          "chinese": "这家店做的是正统川菜。",
+          "english": "This restaurant serves authentic Sichuan cuisine.",
+          "usage": "Describing authenticity of food"
+        },
+        {
+          "chinese": "正统观念在现代受到挑战。",
+          "english": "Orthodox views are being challenged in modern times.",
+          "usage": "Discussing tradition versus modernity"
+        }
+      ]
+    },
+    {
+      "word": "汇映 (joint screening)",
+      "synonyms": [],
+      "expansion": "汇合映出",
+      "exampleSentences": [
+        {
+          "chinese": "两部影片将进行汇映活动。",
+          "english": "The two films will hold a joint screening event.",
+          "usage": "Film industry event announcement"
+        },
+        {
+          "chinese": "本次汇映吸引了大批影迷。",
+          "english": "This joint screening attracted a large number of fans.",
+          "usage": "Describing audience turnout"
+        },
+        {
+          "chinese": "汇映活动在影院顺利举行。",
+          "english": "The joint screening event was held smoothly at the cinema.",
+          "usage": "Reporting on a completed event"
+        }
+      ]
+    },
+    {
+      "word": "汇映 (variant)",
+      "synonyms": [],
+      "expansion": "汇合映出",
+      "exampleSentences": [
+        {
+          "chinese": "汇映是匯映的简化写法。",
+          "english": "汇映 is the simplified form of 匯映.",
+          "usage": "Explaining orthographic variant"
+        },
+        {
+          "chinese": "两种写法意思完全相同。",
+          "english": "Both forms have exactly the same meaning.",
+          "usage": "Clarifying usage equivalence"
+        },
+        {
+          "chinese": "大陆地区常用汇映这写法。",
+          "english": "The form 汇映 is commonly used in mainland China.",
+          "usage": "Regional usage context"
+        }
+      ]
+    },
+    {
+      "word": "洗脸",
+      "synonyms": [],
+      "expansion": "洗自己的脸",
+      "exampleSentences": [
+        {
+          "chinese": "她每天早上都认真洗脸。",
+          "english": "She washes her face carefully every morning.",
+          "usage": "Daily routine description"
+        },
+        {
+          "chinese": "洗脸后记得涂上护肤品。",
+          "english": "Remember to apply skincare products after washing your face.",
+          "usage": "Skincare advice context"
+        },
+        {
+          "chinese": "用冷水洗脸能让人清醒。",
+          "english": "Washing your face with cold water can wake you up.",
+          "usage": "Describing a refreshing effect"
+        }
+      ]
+    },
+    {
+      "word": "滋味",
+      "synonyms": [
+        "味道",
+        "口味"
+      ],
+      "expansion": "滋生的味道",
+      "exampleSentences": [
+        {
+          "chinese": "这道菜的滋味真是难忘。",
+          "english": "The taste of this dish is truly unforgettable.",
+          "usage": "Describing food flavor"
+        },
+        {
+          "chinese": "失恋的滋味不好受。",
+          "english": "The feeling of a broken heart is hard to bear.",
+          "usage": "Metaphorical emotional usage"
+        },
+        {
+          "chinese": "她细细品味着茶的滋味。",
+          "english": "She savored the taste of the tea slowly.",
+          "usage": "Describing mindful tasting"
+        }
+      ]
+    },
+    {
+      "word": "炸丸子",
+      "synonyms": [],
+      "expansion": "油炸的丸子",
+      "exampleSentences": [
+        {
+          "chinese": "妈妈做的炸丸子外酥里嫩。",
+          "english": "Mom's fried meatballs are crispy outside and tender inside.",
+          "usage": "Describing homemade food texture"
+        },
+        {
+          "chinese": "过年时家家都会炸丸子。",
+          "english": "Every family makes fried meatballs during the New Year.",
+          "usage": "Cultural tradition context"
+        },
+        {
+          "chinese": "他一口气吃了五个炸丸子。",
+          "english": "He ate five fried meatballs in one go.",
+          "usage": "Describing enthusiastic eating"
+        }
+      ]
+    },
+    {
+      "word": "牛百叶",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "火锅里的牛百叶很爽脆。",
+          "english": "The omasum in hotpot is very crispy and refreshing.",
+          "usage": "Describing hotpot ingredient texture"
+        },
+        {
+          "chinese": "他点了一份牛百叶凉拌菜。",
+          "english": "He ordered a cold dish of omasum.",
+          "usage": "Ordering food at a restaurant"
+        },
+        {
+          "chinese": "牛百叶涮火锅只需几秒钟。",
+          "english": "Omasum only needs a few seconds to cook in hotpot.",
+          "usage": "Cooking instruction context"
+        }
+      ]
+    },
+    {
+      "word": "狮子座",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "她是典型的狮子座，热情又自信。",
+          "english": "She is a typical Leo — passionate and confident.",
+          "usage": "Describing someone's zodiac personality"
+        },
+        {
+          "chinese": "狮子座的守护星是太阳。",
+          "english": "Leo's ruling celestial body is the Sun.",
+          "usage": "Stating an astrology fact"
+        },
+        {
+          "chinese": "我男友是狮子座，很有领导力。",
+          "english": "My boyfriend is a Leo and very leadership-oriented.",
+          "usage": "Casual conversation about zodiac signs"
+        }
+      ]
+    },
+    {
+      "word": "瓿",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "博物馆展出了一件青铜瓿。",
+          "english": "The museum displayed a bronze bù vessel.",
+          "usage": "Museum or historical artifact context"
+        },
+        {
+          "chinese": "这件瓿出土于商代遗址。",
+          "english": "This bù was unearthed from a Shang dynasty site.",
+          "usage": "Archaeological description"
+        },
+        {
+          "chinese": "古人用瓿盛酒或水。",
+          "english": "Ancient people used bù vessels to hold wine or water.",
+          "usage": "Explaining historical use of the artifact"
+        }
+      ]
+    },
+    {
+      "word": "生日贺卡",
+      "synonyms": [
+        "生日卡"
+      ],
+      "expansion": "生日贺喜卡片",
+      "exampleSentences": [
+        {
+          "chinese": "我给她寄了一张生日贺卡。",
+          "english": "I sent her a birthday card.",
+          "usage": "Describing a thoughtful gesture"
+        },
+        {
+          "chinese": "他亲手做了一张生日贺卡。",
+          "english": "He handmade a birthday card himself.",
+          "usage": "Emphasizing a personal, handcrafted effort"
+        },
+        {
+          "chinese": "生日贺卡上写满了祝福语。",
+          "english": "The birthday card was filled with well-wishes.",
+          "usage": "Describing the content of a birthday card"
+        }
+      ]
+    },
+    {
+      "word": "电访",
+      "synonyms": [
+        "电话访问"
+      ],
+      "expansion": "电话访问",
+      "exampleSentences": [
+        {
+          "chinese": "公司派员工对客户进行电访。",
+          "english": "The company sent employees to conduct phone interviews with clients.",
+          "usage": "Business or survey context"
+        },
+        {
+          "chinese": "我接到一通电访，询问满意度。",
+          "english": "I received a phone survey asking about my satisfaction.",
+          "usage": "Receiving an unsolicited survey call"
+        },
+        {
+          "chinese": "电访结果将用于改善服务。",
+          "english": "The phone survey results will be used to improve services.",
+          "usage": "Explaining the purpose of telephone outreach"
+        }
+      ]
+    },
+    {
+      "word": "男人膝下有黄金",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "男人膝下有黄金，岂能随便下跪。",
+          "english": "A man has gold beneath his knees — he should not kneel lightly.",
+          "usage": "Expressing a man's dignity and pride"
+        },
+        {
+          "chinese": "他常说男人膝下有黄金，绝不低头。",
+          "english": "He often said a man's knees are worth gold and he would never bow down.",
+          "usage": "Describing someone's strong sense of integrity"
+        },
+        {
+          "chinese": "男人膝下有黄金，只跪天地父母。",
+          "english": "A man kneels only before heaven, earth, and his parents.",
+          "usage": "Traditional proverb usage in a moral context"
+        }
+      ]
+    },
+    {
+      "word": "相好",
+      "synonyms": [
+        "亲密",
+        "相爱"
+      ],
+      "expansion": "相互要好",
+      "exampleSentences": [
+        {
+          "chinese": "两人相好多年，感情很深。",
+          "english": "The two have been intimate for many years and share a deep bond.",
+          "usage": "Describing a long-term close relationship"
+        },
+        {
+          "chinese": "他们从小相好，青梅竹马。",
+          "english": "They were close since childhood, childhood sweethearts.",
+          "usage": "Describing a childhood friendship turned romance"
+        },
+        {
+          "chinese": "村里人都知道他俩相好。",
+          "english": "Everyone in the village knew the two were involved.",
+          "usage": "Colloquial gossip or social observation"
+        }
+      ]
+    },
+    {
+      "word": "督工",
+      "synonyms": [
+        "监工",
+        "督导"
+      ],
+      "expansion": "督促工人",
+      "exampleSentences": [
+        {
+          "chinese": "工头每天在工地上督工。",
+          "english": "The foreman oversees workers at the construction site every day.",
+          "usage": "Construction site management"
+        },
+        {
+          "chinese": "他被派去督工，确保进度。",
+          "english": "He was assigned to supervise workers and ensure progress.",
+          "usage": "Delegating oversight responsibilities"
+        },
+        {
+          "chinese": "没人督工，工人们就懈怠了。",
+          "english": "Without anyone overseeing them, the workers slacked off.",
+          "usage": "Highlighting the importance of supervision"
+        }
+      ]
+    },
+    {
+      "word": "矮行星",
+      "synonyms": [],
+      "expansion": "矮小行星",
+      "exampleSentences": [
+        {
+          "chinese": "冥王星被重新归类为矮行星。",
+          "english": "Pluto was reclassified as a dwarf planet.",
+          "usage": "Astronomy fact about Pluto's reclassification"
+        },
+        {
+          "chinese": "太阳系中有多颗矮行星。",
+          "english": "There are multiple dwarf planets in the solar system.",
+          "usage": "General astronomy statement"
+        },
+        {
+          "chinese": "矮行星的体积比行星小得多。",
+          "english": "Dwarf planets are much smaller in volume than full planets.",
+          "usage": "Explaining the definition of a dwarf planet"
+        }
+      ]
+    },
+    {
+      "word": "石河子",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "石河子是新疆的一座现代城市。",
+          "english": "Shihezi is a modern city in Xinjiang.",
+          "usage": "Introducing the city geographically"
+        },
+        {
+          "chinese": "他在石河子大学读书。",
+          "english": "He studies at Shihezi University.",
+          "usage": "Mentioning an educational institution in the city"
+        },
+        {
+          "chinese": "石河子以棉花生产闻名全国。",
+          "english": "Shihezi is nationally known for its cotton production.",
+          "usage": "Describing the city's economic characteristic"
+        }
+      ]
+    },
+    {
+      "word": "碟子",
+      "synonyms": [
+        "碟",
+        "小盘子"
+      ],
+      "expansion": "小碟子",
+      "exampleSentences": [
+        {
+          "chinese": "她把饺子蘸料放在碟子里。",
+          "english": "She put the dumpling dipping sauce in a small saucer.",
+          "usage": "Everyday dining context"
+        },
+        {
+          "chinese": "桌上摆了几个空碟子。",
+          "english": "Several empty saucers were placed on the table.",
+          "usage": "Describing a table setting"
+        },
+        {
+          "chinese": "碟子太小，装不了多少菜。",
+          "english": "The saucer is too small to hold much food.",
+          "usage": "Commenting on the size of a dish"
+        }
+      ]
+    },
+    {
+      "word": "端点",
+      "synonyms": [
+        "端头",
+        "终点"
+      ],
+      "expansion": "端部点位",
+      "exampleSentences": [
+        {
+          "chinese": "线段的两个端点已标出。",
+          "english": "The two endpoints of the line segment have been marked.",
+          "usage": "Mathematical/geometric context"
+        },
+        {
+          "chinese": "电缆的端点需要绝缘处理。",
+          "english": "The endpoint of the cable needs to be insulated.",
+          "usage": "Technical/engineering context"
+        },
+        {
+          "chinese": "找到路径的端点很重要。",
+          "english": "Finding the endpoint of the path is important.",
+          "usage": "General descriptive context"
+        }
+      ]
+    },
+    {
+      "word": "答 (dā)",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "他答应明天来帮忙。",
+          "english": "He agreed to come and help tomorrow.",
+          "usage": "答应 - agreeing to a request"
+        },
+        {
+          "chinese": "她不答理那个陌生人。",
+          "english": "She didn't bother responding to that stranger.",
+          "usage": "答理 - acknowledging someone"
+        },
+        {
+          "chinese": "我叫他，他也不答应。",
+          "english": "I called out to him but he didn't respond.",
+          "usage": "答应 - responding to being called"
+        }
+      ]
+    },
+    {
+      "word": "答 (dá)",
+      "synonyms": [
+        "回答",
+        "作答"
+      ],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "他答不上来这道题。",
+          "english": "He couldn't answer this question.",
+          "usage": "Academic/exam context"
+        },
+        {
+          "chinese": "记者一一答了媒体的问题。",
+          "english": "The reporter answered the media's questions one by one.",
+          "usage": "Press/interview context"
+        },
+        {
+          "chinese": "她对此无言以答。",
+          "english": "She had nothing to say in response to this.",
+          "usage": "Formal/literary expression of speechlessness"
+        }
+      ]
+    },
+    {
+      "word": "简练",
+      "synonyms": [
+        "简洁",
+        "精炼"
+      ],
+      "expansion": "简洁精练",
+      "exampleSentences": [
+        {
+          "chinese": "他的文风十分简练。",
+          "english": "His writing style is very terse and concise.",
+          "usage": "Describing writing style"
+        },
+        {
+          "chinese": "发言要简练，别啰嗦。",
+          "english": "Keep your speech concise; don't ramble.",
+          "usage": "Giving advice about communication"
+        },
+        {
+          "chinese": "这篇报道语言简练有力。",
+          "english": "The language in this report is concise and powerful.",
+          "usage": "Evaluating journalistic writing"
+        }
+      ]
+    },
+    {
+      "word": "粒径",
+      "synonyms": [],
+      "expansion": "颗粒直径",
+      "exampleSentences": [
+        {
+          "chinese": "该粉末的粒径约为50纳米。",
+          "english": "The grain size of this powder is approximately 50 nanometers.",
+          "usage": "Scientific/materials science context"
+        },
+        {
+          "chinese": "粒径越小，过滤效果越好。",
+          "english": "The smaller the grain size, the better the filtration effect.",
+          "usage": "Engineering/filtration context"
+        },
+        {
+          "chinese": "实验需要测量颗粒的粒径。",
+          "english": "The experiment requires measuring the grain size of the particles.",
+          "usage": "Laboratory research context"
+        }
+      ]
+    },
+    {
+      "word": "精神训话",
+      "synonyms": [
+        "鼓励讲话"
+      ],
+      "expansion": "振奋精神的训导话语",
+      "exampleSentences": [
+        {
+          "chinese": "教练赛前给队员做了精神训话。",
+          "english": "The coach gave the team a pep talk before the game.",
+          "usage": "Sports/pre-game motivation context"
+        },
+        {
+          "chinese": "经理的精神训话让大家充满干劲。",
+          "english": "The manager's pep talk filled everyone with motivation.",
+          "usage": "Workplace motivational context"
+        },
+        {
+          "chinese": "他的精神训话让士气大振。",
+          "english": "His pep talk greatly boosted morale.",
+          "usage": "Military or team leadership context"
+        }
+      ]
+    },
+    {
+      "word": "红腹灰雀",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "红腹灰雀的胸部呈鲜红色。",
+          "english": "The Eurasian bullfinch has a bright red breast.",
+          "usage": "Describing the bird's physical appearance"
+        },
+        {
+          "chinese": "我在林间看到一只红腹灰雀。",
+          "english": "I spotted a Eurasian bullfinch in the forest.",
+          "usage": "Birdwatching/nature observation context"
+        },
+        {
+          "chinese": "红腹灰雀常见于北方针叶林。",
+          "english": "The Eurasian bullfinch is commonly found in northern coniferous forests.",
+          "usage": "Nature/ornithology description"
+        }
+      ]
+    },
+    {
+      "word": "结了",
+      "synonyms": [
+        "算了",
+        "完了"
+      ],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "你去道个歉，结了！",
+          "english": "Just go apologize and that's that!",
+          "usage": "Resolving a dispute decisively"
+        },
+        {
+          "chinese": "别想那么多，睡觉结了。",
+          "english": "Stop overthinking — just go to sleep, that will do.",
+          "usage": "Casual dismissal of worry"
+        },
+        {
+          "chinese": "签个字结了，别拖了。",
+          "english": "Just sign it and be done with it; stop dragging it out.",
+          "usage": "Urging someone to finish something"
+        }
+      ]
+    },
+    {
+      "word": "结伴而行",
+      "synonyms": [
+        "同行",
+        "结伴同行"
+      ],
+      "expansion": "结成伴侣而一同行走",
+      "exampleSentences": [
+        {
+          "chinese": "几位同学结伴而行去爬山。",
+          "english": "Several classmates went hiking together as a group.",
+          "usage": "Leisure/outdoor activity context"
+        },
+        {
+          "chinese": "夜晚出行最好结伴而行。",
+          "english": "It's best to travel in a group when going out at night.",
+          "usage": "Safety advice context"
+        },
+        {
+          "chinese": "他们结伴而行，一路有说有笑。",
+          "english": "They traveled together, chatting and laughing along the way.",
+          "usage": "Describing a pleasant group journey"
+        }
+      ]
+    },
+    {
+      "word": "绞痛",
+      "synonyms": [
+        "剧痛",
+        "痉挛痛"
+      ],
+      "expansion": "绞扭般的疼痛",
+      "exampleSentences": [
+        {
+          "chinese": "他突然感到腹部一阵绞痛。",
+          "english": "He suddenly felt a sharp, twisting pain in his abdomen.",
+          "usage": "Describing sudden abdominal pain"
+        },
+        {
+          "chinese": "胃绞痛让她无法站立。",
+          "english": "The stomach cramps were so severe she couldn't stand.",
+          "usage": "Medical/symptom description"
+        },
+        {
+          "chinese": "心绞痛发作时需立即就医。",
+          "english": "When angina attacks, you must seek medical attention immediately.",
+          "usage": "Medical advice context"
+        }
+      ]
+    },
+    {
+      "word": "缳",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "以绳缳其颈而毙之",
+          "english": "He bound a rope around its neck and killed it.",
+          "usage": "Classical literary description of execution or binding"
+        },
+        {
+          "chinese": "缳首之刑古已有之",
+          "english": "The punishment of hanging by the neck has existed since ancient times.",
+          "usage": "Historical reference to capital punishment"
+        },
+        {
+          "chinese": "囚犯被缳缚于柱上",
+          "english": "The prisoner was bound to the post with rope.",
+          "usage": "Literary description of restraining a captive"
+        }
+      ]
+    },
+    {
+      "word": "至交",
+      "synonyms": [
+        "挚友",
+        "密友"
+      ],
+      "expansion": "至深之交",
+      "exampleSentences": [
+        {
+          "chinese": "他是我多年的至交",
+          "english": "He has been my closest friend for many years.",
+          "usage": "Describing a long-standing deep friendship"
+        },
+        {
+          "chinese": "两人是莫逆至交",
+          "english": "The two of them are the closest of friends.",
+          "usage": "Emphasizing the depth of a friendship"
+        },
+        {
+          "chinese": "至交难求，要好好珍惜",
+          "english": "True close friends are hard to find — cherish them well.",
+          "usage": "Reflective advice about friendship"
+        }
+      ]
+    },
+    {
+      "word": "致（精细）",
+      "synonyms": [
+        "精致",
+        "细腻"
+      ],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "这件瓷器做工极致精美",
+          "english": "The craftsmanship of this porcelain is exquisitely fine.",
+          "usage": "Describing the quality of an artisan object"
+        },
+        {
+          "chinese": "她的妆容精致无可挑剔",
+          "english": "Her makeup is delicate and flawless.",
+          "usage": "Complimenting someone's refined appearance"
+        },
+        {
+          "chinese": "布置得细致入微，令人叹服",
+          "english": "The arrangement was so delicate and meticulous that it was admirable.",
+          "usage": "Praising meticulous attention to detail"
+        }
+      ]
+    },
+    {
+      "word": "致（传达）",
+      "synonyms": [
+        "传达",
+        "转达"
+      ],
+      "expansion": "传致送达",
+      "exampleSentences": [
+        {
+          "chinese": "请致以我诚挚的问候",
+          "english": "Please convey my sincere regards.",
+          "usage": "Formal expression of sending greetings"
+        },
+        {
+          "chinese": "他致函表达谢意",
+          "english": "He sent a letter to express his gratitude.",
+          "usage": "Formal written communication"
+        },
+        {
+          "chinese": "大会主席致开幕词",
+          "english": "The chairman of the conference delivered the opening address.",
+          "usage": "Formal ceremonial speech context"
+        }
+      ]
+    },
+    {
+      "word": "舒坦",
+      "synonyms": [
+        "舒适",
+        "惬意"
+      ],
+      "expansion": "舒服坦然",
+      "exampleSentences": [
+        {
+          "chinese": "泡完澡感觉浑身舒坦",
+          "english": "After a bath, my whole body felt comfortable and at ease.",
+          "usage": "Describing physical comfort after relaxation"
+        },
+        {
+          "chinese": "说出来心里就舒坦多了",
+          "english": "Once I said it out loud, I felt much more at ease inside.",
+          "usage": "Describing emotional relief after expressing oneself"
+        },
+        {
+          "chinese": "这张椅子坐着真舒坦",
+          "english": "This chair is really comfortable to sit in.",
+          "usage": "Casual comment on physical comfort"
+        }
+      ]
+    },
+    {
+      "word": "苹果手机",
+      "synonyms": [
+        "iPhone"
+      ],
+      "expansion": "苹果牌手机",
+      "exampleSentences": [
+        {
+          "chinese": "她刚买了最新款苹果手机",
+          "english": "She just bought the latest iPhone.",
+          "usage": "Casual mention of purchasing a new phone"
+        },
+        {
+          "chinese": "苹果手机的镜头拍照很清晰",
+          "english": "The iPhone camera takes very clear photos.",
+          "usage": "Commenting on a product feature"
+        },
+        {
+          "chinese": "苹果手机在中国很受欢迎",
+          "english": "iPhones are very popular in China.",
+          "usage": "General statement about market popularity"
+        }
+      ]
+    },
+    {
+      "word": "莱斯沃斯岛",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "莱斯沃斯岛位于爱琴海东部",
+          "english": "Lesbos Island is located in the eastern Aegean Sea.",
+          "usage": "Geographical description of the island's location"
+        },
+        {
+          "chinese": "古代女诗人萨福生于莱斯沃斯岛",
+          "english": "The ancient poetess Sappho was born on the island of Lesbos.",
+          "usage": "Historical and literary reference"
+        },
+        {
+          "chinese": "莱斯沃斯岛是希腊著名旅游胜地",
+          "english": "Lesbos Island is a famous tourist destination in Greece.",
+          "usage": "Travel and tourism context"
+        }
+      ]
+    },
+    {
+      "word": "薄暗",
+      "synonyms": [
+        "黄昏",
+        "暮色"
+      ],
+      "expansion": "薄薄的暗色",
+      "exampleSentences": [
+        {
+          "chinese": "薄暗时分，街灯渐渐亮起",
+          "english": "At dusk, the street lights gradually came on.",
+          "usage": "Describing the transitional moment between day and night"
+        },
+        {
+          "chinese": "薄暗中看不清对方的脸",
+          "english": "In the dim dusk light, I couldn't make out the other person's face.",
+          "usage": "Describing poor visibility at twilight"
+        },
+        {
+          "chinese": "他在薄暗里独自走回家",
+          "english": "He walked home alone in the fading dusk.",
+          "usage": "Literary scene-setting at twilight"
+        }
+      ]
+    },
+    {
+      "word": "蛰",
+      "synonyms": [
+        "冬眠"
+      ],
+      "expansion": "蛰伏冬眠",
+      "exampleSentences": [
+        {
+          "chinese": "熊在冬天会蛰伏于洞中",
+          "english": "Bears hibernate in caves during winter.",
+          "usage": "Describing an animal's hibernation behavior"
+        },
+        {
+          "chinese": "惊蛰一到，万物复苏",
+          "english": "Once the Awakening of Insects arrives, all things revive.",
+          "usage": "Reference to the traditional Chinese solar term Jingzhe"
+        },
+        {
+          "chinese": "他蛰居家中多年不出门",
+          "english": "He secluded himself at home for many years without going out.",
+          "usage": "Figurative use describing a person's reclusive lifestyle"
+        }
+      ]
+    },
+    {
+      "word": "街知巷闻",
+      "synonyms": [
+        "家喻户晓",
+        "人尽皆知"
+      ],
+      "expansion": "街上知道巷里都听闻",
+      "exampleSentences": [
+        {
+          "chinese": "这件丑事已街知巷闻",
+          "english": "This shameful matter has become known to everyone in the neighborhood.",
+          "usage": "Describing how a scandal has spread widely"
+        },
+        {
+          "chinese": "他的善举街知巷闻，备受称赞",
+          "english": "His good deeds are known throughout the neighborhood and widely praised.",
+          "usage": "Describing a positive reputation spreading through a community"
+        },
+        {
+          "chinese": "那家小店的美食街知巷闻",
+          "english": "The delicious food at that little shop is known to everyone around.",
+          "usage": "Praising a local eatery's widespread reputation"
+        }
+      ]
+    },
+    {
+      "word": "袪",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "古衣袪部宽而长。",
+          "english": "The sleeve opening of ancient garments was wide and long.",
+          "usage": "Describing ancient clothing structure"
+        },
+        {
+          "chinese": "此袍袪口绣有花纹。",
+          "english": "The sleeve opening of this robe is embroidered with patterns.",
+          "usage": "Describing decorative details on traditional clothing"
+        },
+        {
+          "chinese": "学者考证古代袪之形制。",
+          "english": "Scholars researched the form and structure of ancient sleeve openings.",
+          "usage": "Academic discussion of historical garment terminology"
+        }
+      ]
+    },
+    {
+      "word": "褀",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "褀为古籍中罕见字。",
+          "english": "褀 is a rarely seen character in ancient texts.",
+          "usage": "Academic reference to the character's rarity"
+        },
+        {
+          "chinese": "此字乃綥之异体字。",
+          "english": "This character is a variant form of 綥.",
+          "usage": "Philological explanation of character variants"
+        },
+        {
+          "chinese": "学者整理古字时见褀字。",
+          "english": "Scholars encountered the character 褀 while compiling ancient scripts.",
+          "usage": "Historical linguistics research context"
+        }
+      ]
+    },
+    {
+      "word": "襁 (string of copper coins)",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "古人以襁穿铜钱携带。",
+          "english": "Ancient people used strings to thread copper coins for carrying.",
+          "usage": "Historical description of coin-carrying method"
+        },
+        {
+          "chinese": "市集上铜钱用襁串成串。",
+          "english": "At the market, copper coins were strung together with a cord.",
+          "usage": "Historical marketplace transaction context"
+        },
+        {
+          "chinese": "典籍记载襁钱之用法。",
+          "english": "Classical texts record the usage of stringing coins with 襁.",
+          "usage": "Academic reference to classical literature"
+        }
+      ]
+    },
+    {
+      "word": "襁 (cloth for carrying baby)",
+      "synonyms": [
+        "背带",
+        "襁褓"
+      ],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "母亲用襁将婴儿背在身上。",
+          "english": "The mother used a cloth carrier to carry the baby on her back.",
+          "usage": "Describing traditional infant-carrying method"
+        },
+        {
+          "chinese": "婴儿裹于襁中安然入睡。",
+          "english": "The baby fell peacefully asleep wrapped in the carrying cloth.",
+          "usage": "Depicting a baby being carried and soothed"
+        },
+        {
+          "chinese": "古时襁褓护婴御寒。",
+          "english": "In ancient times, the baby carrier cloth protected infants from the cold.",
+          "usage": "Historical context of infant care"
+        }
+      ]
+    },
+    {
+      "word": "諆",
+      "synonyms": [
+        "欺骗",
+        "诓骗"
+      ],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "此人惯以諆术骗财。",
+          "english": "This person habitually uses deception to swindle money.",
+          "usage": "Describing a deceitful person's behavior"
+        },
+        {
+          "chinese": "古文中諆字指欺诈之行。",
+          "english": "In classical texts, 諆 refers to acts of fraud and deception.",
+          "usage": "Academic explanation of classical character meaning"
+        },
+        {
+          "chinese": "諆人者终将自食恶果。",
+          "english": "Those who deceive others will ultimately face the consequences.",
+          "usage": "Moral warning about deceptive behavior"
+        }
+      ]
+    },
+    {
+      "word": "记性",
+      "synonyms": [
+        "记忆力",
+        "记忆"
+      ],
+      "expansion": "记忆的性能",
+      "exampleSentences": [
+        {
+          "chinese": "他的记性真好，过目不忘。",
+          "english": "His memory is excellent — he never forgets what he reads.",
+          "usage": "Complimenting someone's strong memory"
+        },
+        {
+          "chinese": "年纪大了，记性越来越差。",
+          "english": "As one gets older, memory becomes worse and worse.",
+          "usage": "Describing age-related memory decline"
+        },
+        {
+          "chinese": "你记性不好就多做笔记。",
+          "english": "If your memory isn't great, take more notes.",
+          "usage": "Practical advice for poor memory"
+        }
+      ]
+    },
+    {
+      "word": "跂 (foot)",
+      "synonyms": [
+        "足",
+        "脚"
+      ],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "古文以跂指人之足部。",
+          "english": "In classical texts, 跂 refers to the human foot.",
+          "usage": "Academic explanation of classical character meaning"
+        },
+        {
+          "chinese": "此字义为足，见于古籍。",
+          "english": "This character meaning 'foot' appears in ancient books.",
+          "usage": "Philological reference context"
+        },
+        {
+          "chinese": "学者辨析跂字诸义项。",
+          "english": "Scholars analyzed the multiple meanings of the character 跂.",
+          "usage": "Linguistic research on polysemous characters"
+        }
+      ]
+    },
+    {
+      "word": "跂 (sixth extra toe)",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "古籍载有人生而有跂。",
+          "english": "Ancient texts record that some people were born with a sixth toe.",
+          "usage": "Historical record of physical anomaly"
+        },
+        {
+          "chinese": "庄子曾以跂喻多余之物。",
+          "english": "Zhuangzi used the extra toe as a metaphor for superfluous things.",
+          "usage": "Reference to Zhuangzi's philosophical metaphor"
+        },
+        {
+          "chinese": "跂者，足之赘生六趾也。",
+          "english": "跂 refers to a sixth toe that grows as an extra digit on the foot.",
+          "usage": "Classical definition of the term"
+        }
+      ]
+    },
+    {
+      "word": "跂 (to climb)",
+      "synonyms": [
+        "攀爬",
+        "攀登"
+      ],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "孩童跂上墙头张望。",
+          "english": "The child climbed up onto the wall to look around.",
+          "usage": "Describing a child climbing to get a better view"
+        },
+        {
+          "chinese": "他跂树而上，摘取果实。",
+          "english": "He climbed up the tree to pick fruit.",
+          "usage": "Describing the act of climbing a tree"
+        },
+        {
+          "chinese": "古人跂高处以望远方。",
+          "english": "Ancient people climbed to high places to gaze into the distance.",
+          "usage": "Classical literary description of climbing for a view"
+        }
+      ]
+    },
+    {
+      "word": "跂 (to stand on tiptoe)",
+      "synonyms": [
+        "踮脚",
+        "踮起脚尖"
+      ],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "她跂脚才能看到台上。",
+          "english": "She had to stand on tiptoe to see the stage.",
+          "usage": "Describing standing on tiptoe to improve sightline"
+        },
+        {
+          "chinese": "孩子跂起脚尖够书架。",
+          "english": "The child stood on tiptoe to reach the bookshelf.",
+          "usage": "Describing a child stretching to reach something high"
+        },
+        {
+          "chinese": "跂而望矣，不如登高。",
+          "english": "Standing on tiptoe to look is not as good as climbing to a height.",
+          "usage": "Classical literary quote about the limits of tiptoe-standing"
+        }
+      ]
+    },
+    {
+      "word": "跂",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "踶跂之态难以描述",
+          "english": "The appearance of struggling on tiptoe is hard to describe.",
+          "usage": "Literary description of labored movement"
+        },
+        {
+          "chinese": "古文中踶跂形容用力之状",
+          "english": "In classical texts, 踶跂 describes the state of exerting great effort.",
+          "usage": "Classical Chinese literary context"
+        },
+        {
+          "chinese": "此字仅见于踶跂一词",
+          "english": "This character appears only in the compound word 踶跂.",
+          "usage": "Explaining the word's limited usage"
+        }
+      ]
+    },
+    {
+      "word": "跃",
+      "synonyms": [
+        "跳",
+        "腾"
+      ],
+      "expansion": "跳跃",
+      "exampleSentences": [
+        {
+          "chinese": "他一跃跳过了栅栏",
+          "english": "He leaped over the fence in one bound.",
+          "usage": "Describing a physical jump"
+        },
+        {
+          "chinese": "鱼儿跃出水面嬉戏",
+          "english": "The fish leaped out of the water playfully.",
+          "usage": "Describing animals jumping"
+        },
+        {
+          "chinese": "她的心情雀跃不已",
+          "english": "Her heart was leaping with joy.",
+          "usage": "Describing an emotional state metaphorically"
+        }
+      ]
+    },
+    {
+      "word": "达官",
+      "synonyms": [
+        "权贵",
+        "显贵"
+      ],
+      "expansion": "显达的官员",
+      "exampleSentences": [
+        {
+          "chinese": "达官贵人出入此地",
+          "english": "High-ranking officials and nobles frequent this place.",
+          "usage": "Describing elite social circles"
+        },
+        {
+          "chinese": "古代达官享有诸多特权",
+          "english": "High-ranking officials in ancient times enjoyed many privileges.",
+          "usage": "Historical context"
+        },
+        {
+          "chinese": "他不攀附达官，清廉自守",
+          "english": "He did not curry favor with high officials and maintained his integrity.",
+          "usage": "Praising someone's moral character"
+        }
+      ]
+    },
+    {
+      "word": "通用性",
+      "synonyms": [
+        "普适性",
+        "通适性"
+      ],
+      "expansion": "通用的性质",
+      "exampleSentences": [
+        {
+          "chinese": "该设计具有较强通用性",
+          "english": "This design has strong universality.",
+          "usage": "Evaluating a product or system design"
+        },
+        {
+          "chinese": "提高软件的通用性很重要",
+          "english": "Improving the universality of software is very important.",
+          "usage": "Technical discussion about software development"
+        },
+        {
+          "chinese": "这套方法通用性不足",
+          "english": "This set of methods lacks sufficient universality.",
+          "usage": "Critiquing a methodology"
+        }
+      ]
+    },
+    {
+      "word": "酒不醉人人自醉，色不迷人人自迷",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "酒不醉人人自醉，色不迷人人自迷，他终究难逃诱惑",
+          "english": "Wine doesn't intoxicate men—men intoxicate themselves; lust doesn't bewitch men—men bewitch themselves. He ultimately could not escape temptation.",
+          "usage": "Commenting on someone's moral downfall"
+        },
+        {
+          "chinese": "古人云酒不醉人人自醉，自制力才是关键",
+          "english": "The ancients said men intoxicate themselves; self-control is the key.",
+          "usage": "Citing the proverb to emphasize self-discipline"
+        },
+        {
+          "chinese": "酒不醉人人自醉，凡事要懂得节制",
+          "english": "Men intoxicate themselves—one must know moderation in all things.",
+          "usage": "Giving advice about restraint"
+        }
+      ]
+    },
+    {
+      "word": "金针菜",
+      "synonyms": [
+        "黄花菜",
+        "萱草"
+      ],
+      "expansion": "金针形的菜蔬",
+      "exampleSentences": [
+        {
+          "chinese": "金针菜炒肉丝味道鲜美",
+          "english": "Stir-fried day lily with shredded pork is delicious.",
+          "usage": "Describing a common Chinese dish"
+        },
+        {
+          "chinese": "金针菜在中医中有安神功效",
+          "english": "Day lily has a calming effect in traditional Chinese medicine.",
+          "usage": "Discussing medicinal properties"
+        },
+        {
+          "chinese": "妈妈买了一把干金针菜",
+          "english": "Mom bought a bunch of dried day lily.",
+          "usage": "Everyday shopping context"
+        }
+      ]
+    },
+    {
+      "word": "钉死",
+      "synonyms": [
+        "固定",
+        "锁死"
+      ],
+      "expansion": "用钉子钉牢固死",
+      "exampleSentences": [
+        {
+          "chinese": "木板被钉死在墙上",
+          "english": "The wooden board was nailed firmly to the wall.",
+          "usage": "Describing physical nailing"
+        },
+        {
+          "chinese": "价格被钉死，无法更改",
+          "english": "The price was fixed and could not be changed.",
+          "usage": "Metaphorical use meaning something is locked in"
+        },
+        {
+          "chinese": "他把箱子盖钉死以防散落",
+          "english": "He nailed the box lid shut to prevent things from falling out.",
+          "usage": "Practical everyday action"
+        }
+      ]
+    },
+    {
+      "word": "铁饭碗",
+      "synonyms": [
+        "稳定工作"
+      ],
+      "expansion": "铁打的饭碗",
+      "exampleSentences": [
+        {
+          "chinese": "考公务员就是为了铁饭碗",
+          "english": "Taking the civil service exam is all about securing a stable job.",
+          "usage": "Discussing motivations for career choices"
+        },
+        {
+          "chinese": "如今铁饭碗也未必保险",
+          "english": "Nowadays, even a so-called iron rice bowl isn't necessarily secure.",
+          "usage": "Commenting on changing job security"
+        },
+        {
+          "chinese": "他放弃铁饭碗去创业了",
+          "english": "He gave up his secure job to start a business.",
+          "usage": "Describing someone's bold career decision"
+        }
+      ]
+    },
+    {
+      "word": "陆羽",
+      "synonyms": [],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "陆羽著有《茶经》传世",
+          "english": "Lu Yu authored 'The Classic of Tea,' which has been passed down through the ages.",
+          "usage": "Introducing Lu Yu's literary contribution"
+        },
+        {
+          "chinese": "陆羽被后人尊为茶圣",
+          "english": "Lu Yu was revered by later generations as the Sage of Tea.",
+          "usage": "Describing his historical status"
+        },
+        {
+          "chinese": "陆羽对茶文化影响深远",
+          "english": "Lu Yu had a profound influence on tea culture.",
+          "usage": "Discussing his cultural legacy"
+        }
+      ]
+    },
+    {
+      "word": "青贮",
+      "synonyms": [
+        "窖藏饲料"
+      ],
+      "expansion": "青草贮存",
+      "exampleSentences": [
+        {
+          "chinese": "农民将玉米秸秆做成青贮",
+          "english": "Farmers turn corn stalks into silage.",
+          "usage": "Agricultural practice description"
+        },
+        {
+          "chinese": "青贮饲料营养丰富适口性好",
+          "english": "Silage is nutritious and highly palatable.",
+          "usage": "Discussing the benefits of silage for livestock"
+        },
+        {
+          "chinese": "冬季牛羊主要靠青贮过冬",
+          "english": "In winter, cattle and sheep mainly rely on silage to get through the season.",
+          "usage": "Describing livestock feeding in winter"
+        }
+      ]
+    },
+    {
+      "word": "顺带",
+      "synonyms": [
+        "顺便",
+        "捎带"
+      ],
+      "expansion": "顺路带上",
+      "exampleSentences": [
+        {
+          "chinese": "你去超市顺带买瓶酱油。",
+          "english": "While you're at the supermarket, pick up a bottle of soy sauce.",
+          "usage": "Making a casual request while someone is already going somewhere"
+        },
+        {
+          "chinese": "我顺带把文件交给了他。",
+          "english": "I handed him the documents while I was at it.",
+          "usage": "Describing doing something extra without extra effort"
+        },
+        {
+          "chinese": "出门顺带把垃圾扔了。",
+          "english": "Toss out the trash on your way out.",
+          "usage": "Asking someone to do a small task in passing"
+        }
+      ]
+    },
+    {
+      "word": "飘渺",
+      "synonyms": [
+        "缥缈",
+        "朦胧"
+      ],
+      "expansion": "飘荡渺茫",
+      "exampleSentences": [
+        {
+          "chinese": "山间云雾飘渺，如仙境。",
+          "english": "Mist drifts faintly through the mountains, like a fairyland.",
+          "usage": "Describing a misty, ethereal natural scene"
+        },
+        {
+          "chinese": "她的未来显得虚无飘渺。",
+          "english": "Her future seemed vague and uncertain.",
+          "usage": "Describing something intangible or uncertain"
+        },
+        {
+          "chinese": "远处传来飘渺的歌声。",
+          "english": "A faint, distant singing drifted over from afar.",
+          "usage": "Describing a barely perceptible sound from a distance"
+        }
+      ]
+    },
+    {
+      "word": "飞扬",
+      "synonyms": [
+        "飘扬",
+        "扬起"
+      ],
+      "expansion": "飞舞飘扬",
+      "exampleSentences": [
+        {
+          "chinese": "风中旗帜迎风飞扬。",
+          "english": "The flag soared and fluttered in the wind.",
+          "usage": "Describing a flag rising and waving in the wind"
+        },
+        {
+          "chinese": "她的长发在风中飞扬。",
+          "english": "Her long hair flew freely in the wind.",
+          "usage": "Describing hair blowing in the breeze"
+        },
+        {
+          "chinese": "他意气飞扬地走上台。",
+          "english": "He walked onto the stage with high spirits.",
+          "usage": "Describing someone's confident, spirited demeanor"
+        }
+      ]
+    },
+    {
+      "word": "馥郁",
+      "synonyms": [
+        "芬芳",
+        "浓郁"
+      ],
+      "expansion": "馥香郁烈",
+      "exampleSentences": [
+        {
+          "chinese": "玫瑰花香馥郁，沁人心脾。",
+          "english": "The rose fragrance was rich and deeply refreshing.",
+          "usage": "Describing the intense scent of flowers"
+        },
+        {
+          "chinese": "这款香水气味馥郁持久。",
+          "english": "This perfume has a rich and long-lasting fragrance.",
+          "usage": "Describing a perfume's scent quality"
+        },
+        {
+          "chinese": "茶香馥郁，令人陶醉。",
+          "english": "The tea's aroma was intensely fragrant and intoxicating.",
+          "usage": "Describing the strong scent of tea"
+        }
+      ]
+    },
+    {
+      "word": "鱼香肉丝",
+      "synonyms": [],
+      "expansion": "鱼香味道肉丝炒菜",
+      "exampleSentences": [
+        {
+          "chinese": "他点了一份鱼香肉丝盖饭。",
+          "english": "He ordered a bowl of rice topped with yuxiang pork strips.",
+          "usage": "Ordering a common Chinese dish at a restaurant"
+        },
+        {
+          "chinese": "鱼香肉丝是川菜的经典菜。",
+          "english": "Yuxiang pork strips is a classic Sichuan dish.",
+          "usage": "Discussing Chinese regional cuisine"
+        },
+        {
+          "chinese": "妈妈做的鱼香肉丝最好吃。",
+          "english": "Mom's yuxiang pork strips taste the best.",
+          "usage": "Expressing fondness for a home-cooked version of the dish"
+        }
+      ]
+    },
+    {
+      "word": "麻豆",
+      "synonyms": [
+        "模特"
+      ],
+      "expansion": null,
+      "exampleSentences": [
+        {
+          "chinese": "她是网红麻豆，粉丝众多。",
+          "english": "She is a popular internet model with many fans.",
+          "usage": "Describing a social media model"
+        },
+        {
+          "chinese": "这次活动邀请了几位麻豆。",
+          "english": "Several models were invited to this event.",
+          "usage": "Referring to models at a fashion or promotional event"
+        },
+        {
+          "chinese": "他想成为时尚界的麻豆。",
+          "english": "He wants to become a model in the fashion industry.",
+          "usage": "Expressing career aspirations in modeling"
+        }
+      ]
+    },
+    {
+      "word": "龙潭区",
+      "synonyms": [],
+      "expansion": "龙潭行政区",
+      "exampleSentences": [
+        {
+          "chinese": "他住在吉林市龙潭区。",
+          "english": "He lives in Longtan District of Jilin City.",
+          "usage": "Stating someone's place of residence"
+        },
+        {
+          "chinese": "龙潭区近年发展迅速。",
+          "english": "Longtan District has developed rapidly in recent years.",
+          "usage": "Discussing urban development of the district"
+        },
+        {
+          "chinese": "龙潭区有丰富的工业资源。",
+          "english": "Longtan District has abundant industrial resources.",
+          "usage": "Describing the economic characteristics of the district"
+        }
+      ]
+    }
+  ]
+}

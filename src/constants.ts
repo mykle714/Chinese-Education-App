@@ -10,6 +10,7 @@ export const DEFAULT_TEST_USER_ID = 'test-user-id';
 // Work Points Configuration
 export const WORK_POINTS_ELIGIBLE_PAGES = [
   '/flashcards',
+  '/flashcards/learn',
   '/reader'
 ];
 

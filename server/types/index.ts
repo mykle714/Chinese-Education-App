@@ -85,6 +85,23 @@ export interface DictionaryEntryCreateData {
   definitions: string; // JSON string
 }
 
+// ReviewMark type for flashcard review history
+export interface ReviewMark {
+  timestamp: string;  // ISO-8601 date string
+  isCorrect: boolean;
+}
+
+// FlashcardCategory enum for categorizing cards based on last 8 performance
+export enum FlashcardCategory {
+  UNFAMILIAR = 'Unfamiliar',
+  TARGET = 'Target',
+  COMFORTABLE = 'Comfortable',
+  MASTERED = 'Mastered'
+}
+
+// Starter pack bucket type
+export type StarterPackBucket = 'library' | 'learn-later' | 'skip';
+
 // VocabEntry model type
 export interface VocabEntry {
   id: number;
@@ -95,6 +112,20 @@ export interface VocabEntry {
   script?: string;
   pronunciation?: string | null;
   hskLevelTag?: HskLevel | null;
+  markHistory?: ReviewMark[];  // Last 16 flashcard mark results
+  totalMarkCount?: number;  // Total cumulative count of all marks
+  totalCorrectCount?: number;  // Lifetime count of correct marks
+  totalSuccessRate?: number;  // Lifetime success rate (0.0 to 1.0)
+  last8SuccessRate?: number;  // Success rate for last 8 marks (0.0 to 1.0)
+  last16SuccessRate?: number;  // Success rate for last 16 marks (0.0 to 1.0)
+  category?: FlashcardCategory;  // Category based on last 8 performance
+  starterPackBucket?: StarterPackBucket | null;  // Starter pack sorting bucket
+  breakdown?: Record<string, { definition: string; pronunciation: string }> | null;  // Character breakdown for Chinese vocab
+  synonyms?: string[];  // Array of Chinese synonym words
+  expansion?: string | null;  // Expanded/fuller form of word (e.g., 不知不觉 → 不知道不觉得)
+  exampleSentences?: Array<{ chinese: string; english: string; usage: string }>;  // Example sentences showing different uses
+  partsOfSpeech?: string[];  // Possible parts of speech (noun, verb, adj, etc.)
+  relatedWords?: Array<{ id: number; entryKey: string; sharedCharacters: string[]; successRate: number | null }>;  // Related library words (computed dynamically)
   createdAt: Date;
 }
 
@@ -154,24 +185,6 @@ export interface TextUpdateData {
   language?: Language;
 }
 
-// OnDeckVocabSet model type
-export interface OnDeckVocabSet {
-  userId: string; // uniqueidentifier in SQL
-  featureName: string;
-  vocabEntryIds: number[]; // Will be JSON.parse'd from database
-  updatedAt: Date;
-}
-
-// OnDeckVocabSet creation data type
-export interface OnDeckVocabSetCreateData {
-  featureName: string;
-  vocabEntryIds: number[];
-}
-
-// OnDeckVocabSet update data type (same as create for this use case)
-export interface OnDeckVocabSetUpdateData {
-  vocabEntryIds: number[];
-}
 
 // API response type
 export interface ApiResponse<T> {

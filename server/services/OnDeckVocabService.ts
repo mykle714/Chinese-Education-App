@@ -1,226 +1,329 @@
-import { OnDeckVocabSet, OnDeckVocabSetCreateData } from '../types/index.js';
-import { IOnDeckVocabDAL } from '../dal/interfaces/IOnDeckVocabDAL.js';
-import { ValidationError, NotFoundError, DALError } from '../types/dal.js';
+import { VocabEntry } from '../types/index.js';
+import { IVocabEntryDAL } from '../dal/interfaces/IVocabEntryDAL.js';
+import { ValidationError } from '../types/dal.js';
+import db from '../db.js';
 
 /**
- * OnDeck Vocabulary Set Service
- * Handles business logic for OnDeck vocabulary set operations
+ * OnDeck Vocabulary Service
+ * Handles business logic for retrieving cards based on their starter pack bucket
+ * Simplified to use starterPackBucket column instead of OnDeckVocabSets
  */
 export class OnDeckVocabService {
-  constructor(private onDeckVocabDAL: IOnDeckVocabDAL) {}
+  constructor(
+    private vocabEntryDAL: IVocabEntryDAL
+  ) {}
 
   /**
-   * Get all on-deck vocab sets for a user
+   * Enrich a vocab entry with related words that share characters
+   * Only applies to Chinese words
    */
-  async getAllSetsForUser(userId: string): Promise<OnDeckVocabSet[]> {
+  private async enrichWithRelatedWords(userId: string, entry: VocabEntry): Promise<VocabEntry> {
+    if (entry.language !== 'zh') {
+      return entry;
+    }
+
+    try {
+      const relatedWords = await this.vocabEntryDAL.findRelatedBySharedCharacters(
+        userId,
+        entry.entryKey,
+        entry.language,
+        4
+      );
+
+      return {
+        ...entry,
+        relatedWords
+      };
+    } catch (error) {
+      console.error(`Failed to find related words for "${entry.entryKey}":`, error);
+      return entry;
+    }
+  }
+
+  /**
+   * Enrich multiple vocab entries with related words
+   */
+  private async enrichMultipleWithRelatedWords(userId: string, entries: VocabEntry[]): Promise<VocabEntry[]> {
+    return Promise.all(entries.map(entry => this.enrichWithRelatedWords(userId, entry)));
+  }
+
+  /**
+   * Get all library cards (cards with starterPackBucket = 'library')
+   */
+  async getLibraryCards(userId: string): Promise<VocabEntry[]> {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
 
-    return await this.onDeckVocabDAL.getAllSetsForUser(userId);
+    const client = await db.getClient();
+    try {
+      const result = await client.query<VocabEntry>(`
+        SELECT * FROM vocabentries
+        WHERE "userId" = $1
+        AND "starterPackBucket" = 'library'
+        ORDER BY "createdAt" DESC
+      `, [userId]);
+
+      return result.rows;
+    } finally {
+      client.release();
+    }
   }
 
   /**
-   * Get a specific on-deck vocab set by user ID and feature name
+   * Get all learn later cards (cards with starterPackBucket = 'learn-later')
    */
-  async getSetByUserAndFeature(userId: string, featureName: string): Promise<OnDeckVocabSet | null> {
-    if (!userId) {
-      throw new ValidationError('User ID is required');
-    }
-    if (!featureName) {
-      throw new ValidationError('Feature name is required');
-    }
-
-    return await this.onDeckVocabDAL.getSetByUserAndFeature(userId, featureName);
-  }
-
-  /**
-   * Create or update an on-deck vocab set
-   */
-  async createOrUpdateSet(userId: string, data: OnDeckVocabSetCreateData): Promise<OnDeckVocabSet> {
-    if (!userId) {
-      throw new ValidationError('User ID is required');
-    }
-
-    // Additional business logic validation
-    this.validateSetData(data);
-
-    return await this.onDeckVocabDAL.upsertSet(userId, data);
-  }
-
-  /**
-   * Delete an on-deck vocab set
-   */
-  async deleteSet(userId: string, featureName: string): Promise<boolean> {
-    if (!userId) {
-      throw new ValidationError('User ID is required');
-    }
-    if (!featureName) {
-      throw new ValidationError('Feature name is required');
-    }
-
-    const deleted = await this.onDeckVocabDAL.deleteSetByUserAndFeature(userId, featureName);
-    
-    if (!deleted) {
-      throw new NotFoundError(`OnDeck set '${featureName}' not found for user`);
-    }
-
-    return deleted;
-  }
-
-  /**
-   * Get user's on-deck set statistics
-   */
-  async getUserSetStats(userId: string): Promise<{
-    totalSets: number;
-    totalEntries: number;
-    averageEntriesPerSet: number;
-    lastUpdated: Date | null;
-  }> {
+  async getLearnLaterCards(userId: string): Promise<VocabEntry[]> {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
 
-    return await this.onDeckVocabDAL.getUserSetStats(userId);
+    const client = await db.getClient();
+    try {
+      const result = await client.query<VocabEntry>(`
+        SELECT * FROM vocabentries
+        WHERE "userId" = $1
+        AND "starterPackBucket" = 'learn-later'
+        ORDER BY "createdAt" DESC
+      `, [userId]);
+
+      return result.rows;
+    } finally {
+      client.release();
+    }
   }
 
   /**
-   * Add entries to an existing set
+   * Get mastered library cards (library cards with category = 'Mastered')
    */
-  async addEntriesToSet(userId: string, featureName: string, entryIds: number[]): Promise<OnDeckVocabSet> {
-    if (!userId) {
-      throw new ValidationError('User ID is required');
-    }
-    if (!featureName) {
-      throw new ValidationError('Feature name is required');
-    }
-    if (!Array.isArray(entryIds) || entryIds.length === 0) {
-      throw new ValidationError('Entry IDs array is required and cannot be empty');
-    }
-
-    // Get existing set
-    const existingSet = await this.onDeckVocabDAL.getSetByUserAndFeature(userId, featureName);
-    if (!existingSet) {
-      throw new NotFoundError(`OnDeck set '${featureName}' not found for user`);
-    }
-
-    // Merge entry IDs (remove duplicates)
-    const mergedEntryIds = [...new Set([...existingSet.vocabEntryIds, ...entryIds])];
-    
-    if (mergedEntryIds.length > 30) {
-      throw new ValidationError('Maximum of 30 vocab entries allowed per set');
-    }
-
-    // Update the set
-    return await this.onDeckVocabDAL.upsertSet(userId, {
-      featureName,
-      vocabEntryIds: mergedEntryIds
-    });
-  }
-
-  /**
-   * Remove entries from an existing set
-   */
-  async removeEntriesFromSet(userId: string, featureName: string, entryIds: number[]): Promise<OnDeckVocabSet> {
-    if (!userId) {
-      throw new ValidationError('User ID is required');
-    }
-    if (!featureName) {
-      throw new ValidationError('Feature name is required');
-    }
-    if (!Array.isArray(entryIds) || entryIds.length === 0) {
-      throw new ValidationError('Entry IDs array is required and cannot be empty');
-    }
-
-    // Get existing set
-    const existingSet = await this.onDeckVocabDAL.getSetByUserAndFeature(userId, featureName);
-    if (!existingSet) {
-      throw new NotFoundError(`OnDeck set '${featureName}' not found for user`);
-    }
-
-    // Remove specified entry IDs
-    const filteredEntryIds = existingSet.vocabEntryIds.filter(id => !entryIds.includes(id));
-
-    // Update the set
-    return await this.onDeckVocabDAL.upsertSet(userId, {
-      featureName,
-      vocabEntryIds: filteredEntryIds
-    });
-  }
-
-  /**
-   * Clear all entries from a set (but keep the set)
-   */
-  async clearSet(userId: string, featureName: string): Promise<OnDeckVocabSet> {
-    if (!userId) {
-      throw new ValidationError('User ID is required');
-    }
-    if (!featureName) {
-      throw new ValidationError('Feature name is required');
-    }
-
-    // Check if set exists
-    const existingSet = await this.onDeckVocabDAL.getSetByUserAndFeature(userId, featureName);
-    if (!existingSet) {
-      throw new NotFoundError(`OnDeck set '${featureName}' not found for user`);
-    }
-
-    // Update with empty array
-    return await this.onDeckVocabDAL.upsertSet(userId, {
-      featureName,
-      vocabEntryIds: []
-    });
-  }
-
-  /**
-   * Get all feature names for a user (for dropdown/selection purposes)
-   */
-  async getFeatureNamesForUser(userId: string): Promise<string[]> {
+  async getMasteredLibraryCards(userId: string): Promise<VocabEntry[]> {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
 
-    const sets = await this.onDeckVocabDAL.getAllSetsForUser(userId);
-    return sets.map(set => set.featureName).sort();
+    const client = await db.getClient();
+    try {
+      const result = await client.query<VocabEntry>(`
+        SELECT * FROM vocabentries
+        WHERE "userId" = $1
+        AND "starterPackBucket" = 'library'
+        AND category = 'Mastered'
+        ORDER BY "createdAt" DESC
+      `, [userId]);
+
+      return result.rows;
+    } finally {
+      client.release();
+    }
   }
 
   /**
-   * Validate set data according to business rules
+   * Get non-mastered library cards (library cards without category = 'Mastered')
    */
-  private validateSetData(data: OnDeckVocabSetCreateData): void {
-    if (!data.featureName || data.featureName.trim() === '') {
-      throw new ValidationError('Feature name is required');
+  async getNonMasteredLibraryCards(userId: string): Promise<VocabEntry[]> {
+    if (!userId) {
+      throw new ValidationError('User ID is required');
     }
 
-    if (data.featureName.length > 100) {
-      throw new ValidationError('Feature name cannot exceed 100 characters');
+    const client = await db.getClient();
+    try {
+      const result = await client.query<VocabEntry>(`
+        SELECT * FROM vocabentries
+        WHERE "userId" = $1
+        AND "starterPackBucket" = 'library'
+        AND (category IS NULL OR category != 'Mastered')
+        ORDER BY "createdAt" DESC
+      `, [userId]);
+
+      return result.rows;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Get library cards filtered by a specific category
+   */
+  async getLibraryCardsByCategory(userId: string, category: string): Promise<VocabEntry[]> {
+    if (!userId) {
+      throw new ValidationError('User ID is required');
+    }
+    if (!category) {
+      throw new ValidationError('Category is required');
     }
 
-    // Check for valid feature name characters (alphanumeric, spaces, hyphens, underscores)
-    const validFeatureNameRegex = /^[a-zA-Z0-9\s\-_]+$/;
-    if (!validFeatureNameRegex.test(data.featureName.trim())) {
-      throw new ValidationError('Feature name can only contain letters, numbers, spaces, hyphens, and underscores');
+    const client = await db.getClient();
+    try {
+      const result = await client.query<VocabEntry>(`
+        SELECT * FROM vocabentries
+        WHERE "userId" = $1
+        AND "starterPackBucket" = 'library'
+        AND category = $2
+        ORDER BY "createdAt" DESC
+      `, [userId, category]);
+
+      return result.rows;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Get next library card with fallback priority
+   * Priority order when preferred category has no cards: Target → Unfamiliar → Comfortable → Mastered
+   */
+  async getNextLibraryCardWithFallback(
+    userId: string,
+    preferredCategory: string
+  ): Promise<VocabEntry | null> {
+    if (!userId) {
+      throw new ValidationError('User ID is required');
+    }
+    if (!preferredCategory) {
+      throw new ValidationError('Preferred category is required');
     }
 
-    if (!Array.isArray(data.vocabEntryIds)) {
-      throw new ValidationError('Vocab entry IDs must be an array');
+    // Try preferred category first
+    let cards: VocabEntry[] = await this.getLibraryCardsByCategory(userId, preferredCategory);
+    if (cards.length > 0) {
+      const randomIndex: number = Math.floor(Math.random() * cards.length);
+      return cards[randomIndex];
     }
 
-    if (data.vocabEntryIds.length > 30) {
-      throw new ValidationError('Maximum of 30 vocab entries allowed per set');
-    }
+    // Fallback priority: Target → Unfamiliar → Comfortable → Mastered
+    const fallbackOrder: string[] = ['Target', 'Unfamiliar', 'Comfortable', 'Mastered']
+      .filter(cat => cat !== preferredCategory);
 
-    // Check for duplicate IDs
-    const uniqueIds = new Set(data.vocabEntryIds);
-    if (uniqueIds.size !== data.vocabEntryIds.length) {
-      throw new ValidationError('Duplicate vocab entry IDs are not allowed');
-    }
-
-    // Check that all IDs are positive integers
-    for (const id of data.vocabEntryIds) {
-      if (!Number.isInteger(id) || id <= 0) {
-        throw new ValidationError('All vocab entry IDs must be positive integers');
+    for (const category of fallbackOrder) {
+      cards = await this.getLibraryCardsByCategory(userId, category);
+      if (cards.length > 0) {
+        const randomIndex: number = Math.floor(Math.random() * cards.length);
+        return cards[randomIndex];
       }
+    }
+
+    // No cards available at all
+    return null;
+  }
+
+  /**
+   * Get distributed working loop with specific card distribution
+   * Distribution: 1 Mastered, 2 Comfortable, 2 Unfamiliar, 5 Target
+   * If category filter is applied, only return cards from that category (up to 10)
+   * Enriches cards with related words that share characters
+   */
+  async getDistributedWorkingLoop(
+    userId: string,
+    categoryFilter?: string | null
+  ): Promise<VocabEntry[]> {
+    if (!userId) {
+      throw new ValidationError('User ID is required');
+    }
+
+    const client = await db.getClient();
+    try {
+      let workingLoop: VocabEntry[];
+
+      // If category filter is applied, just get 10 cards from that category
+      if (categoryFilter) {
+        const result = await client.query<VocabEntry>(`
+          SELECT * FROM vocabentries
+          WHERE "userId" = $1
+          AND "starterPackBucket" = 'library'
+          AND category = $2
+          ORDER BY RANDOM()
+          LIMIT 10
+        `, [userId, categoryFilter]);
+
+        workingLoop = result.rows;
+      } else {
+        // No filter - get distributed cards (1-2-2-5 distribution)
+        workingLoop = [];
+
+        // Fetch 1 Mastered card
+        const masteredResult = await client.query<VocabEntry>(`
+          SELECT * FROM vocabentries
+          WHERE "userId" = $1
+          AND "starterPackBucket" = 'library'
+          AND category = 'Mastered'
+          ORDER BY RANDOM()
+          LIMIT 1
+        `, [userId]);
+        workingLoop.push(...masteredResult.rows);
+
+        // Fetch 2 Comfortable cards
+        const comfortableResult = await client.query<VocabEntry>(`
+          SELECT * FROM vocabentries
+          WHERE "userId" = $1
+          AND "starterPackBucket" = 'library'
+          AND category = 'Comfortable'
+          ORDER BY RANDOM()
+          LIMIT 2
+        `, [userId]);
+        workingLoop.push(...comfortableResult.rows);
+
+        // Fetch 2 Unfamiliar cards
+        const unfamiliarResult = await client.query<VocabEntry>(`
+          SELECT * FROM vocabentries
+          WHERE "userId" = $1
+          AND "starterPackBucket" = 'library'
+          AND category = 'Unfamiliar'
+          ORDER BY RANDOM()
+          LIMIT 2
+        `, [userId]);
+        workingLoop.push(...unfamiliarResult.rows);
+
+        // Fetch 5 Target cards
+        const targetResult = await client.query<VocabEntry>(`
+          SELECT * FROM vocabentries
+          WHERE "userId" = $1
+          AND "starterPackBucket" = 'library'
+          AND category = 'Target'
+          ORDER BY RANDOM()
+          LIMIT 5
+        `, [userId]);
+        workingLoop.push(...targetResult.rows);
+
+        // If we don't have 10 cards, fill remaining slots with any available library cards
+        if (workingLoop.length < 10) {
+          const existingIds: number[] = workingLoop.map(card => card.id);
+          const neededCount: number = 10 - workingLoop.length;
+
+          const fillQuery = existingIds.length > 0
+            ? `
+              SELECT * FROM vocabentries
+              WHERE "userId" = $1
+              AND "starterPackBucket" = 'library'
+              AND id NOT IN (${existingIds.join(',')})
+              ORDER BY RANDOM()
+              LIMIT $2
+            `
+            : `
+              SELECT * FROM vocabentries
+              WHERE "userId" = $1
+              AND "starterPackBucket" = 'library'
+              ORDER BY RANDOM()
+              LIMIT $2
+            `;
+
+          const fillResult = await client.query<VocabEntry>(
+            fillQuery,
+            [userId, neededCount]
+          );
+          workingLoop.push(...fillResult.rows);
+        }
+
+        // Shuffle the working loop to randomize card order
+        for (let i: number = workingLoop.length - 1; i > 0; i--) {
+          const j: number = Math.floor(Math.random() * (i + 1));
+          [workingLoop[i], workingLoop[j]] = [workingLoop[j], workingLoop[i]];
+        }
+      }
+
+      // Enrich all cards with related words
+      return await this.enrichMultipleWithRelatedWords(userId, workingLoop);
+    } finally {
+      client.release();
     }
   }
 }

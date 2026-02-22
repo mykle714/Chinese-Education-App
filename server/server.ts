@@ -7,14 +7,15 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { authenticateToken } from './authMiddleware.js';
-import { User, VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, UserCreateData, UserLoginData, Text, OnDeckVocabSetCreateData } from './types/index.js';
+import { User, VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, UserCreateData, UserLoginData, Text, ReviewMark, FlashcardCategory } from './types/index.js';
+import db from './db.js';
 
 // ES module equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Import DAL architecture
-import { userController, vocabEntryController, onDeckVocabController, userWorkPointsController, textController, dictionaryController } from './dal/setup.js';
+import { userController, vocabEntryController, onDeckVocabController, userWorkPointsController, textController, dictionaryController, starterPacksController, onDeckVocabService } from './dal/setup.js';
 import { leaderboardController } from './controllers/LeaderboardController.js';
 
 // Configure multer for file uploads
@@ -320,6 +321,41 @@ app.post('/api/vocabEntries/by-tokens', authenticateToken, async (req, res) => {
 
 // OnDeck Vocab Sets API Routes - USING NEW DAL ARCHITECTURE
 
+// Get all library cards (vocab entries from *-library OnDeck sets)
+// @ts-ignore
+app.get('/api/onDeck/library-cards', authenticateToken, async (req, res) => {
+  console.log('🔄 Using NEW DAL architecture for OnDeck getLibraryCards');
+  await onDeckVocabController.getLibraryCards(req, res);
+});
+
+// Get all learn later cards (vocab entries from *-learn-later OnDeck sets)
+// @ts-ignore
+app.get('/api/onDeck/learn-later-cards', authenticateToken, async (req, res) => {
+  console.log('🔄 Using NEW DAL architecture for OnDeck getLearnLaterCards');
+  await onDeckVocabController.getLearnLaterCards(req, res);
+});
+
+// Get mastered library cards (library cards with category = 'Mastered')
+// @ts-ignore
+app.get('/api/onDeck/mastered-library-cards', authenticateToken, async (req, res) => {
+  console.log('🔄 Using NEW DAL architecture for OnDeck getMasteredLibraryCards');
+  await onDeckVocabController.getMasteredLibraryCards(req, res);
+});
+
+// Get non-mastered library cards (library cards without category = 'Mastered')
+// @ts-ignore
+app.get('/api/onDeck/non-mastered-library-cards', authenticateToken, async (req, res) => {
+  console.log('🔄 Using NEW DAL architecture for OnDeck getNonMasteredLibraryCards');
+  await onDeckVocabController.getNonMasteredLibraryCards(req, res);
+});
+
+// Get distributed working loop (1 Mastered, 2 Comfortable, 2 Unfamiliar, 5 Target)
+// @ts-ignore
+app.get('/api/onDeck/distributed-working-loop', authenticateToken, async (req, res) => {
+  console.log('🔄 Using NEW DAL architecture for OnDeck getDistributedWorkingLoop');
+  await onDeckVocabController.getDistributedWorkingLoop(req, res);
+});
+
 // Get all on-deck vocab sets for authenticated user (protected route)
 // @ts-ignore
 app.get('/api/onDeckPage', authenticateToken, async (req, res) => {
@@ -428,6 +464,188 @@ app.get('/api/leaderboard/top/:limit', authenticateToken, async (req, res) => {
 app.get('/api/leaderboard/user/:userId', authenticateToken, async (req, res) => {
   console.log('🔄 Using NEW DAL architecture for user-specific leaderboard');
   await leaderboardController.getLeaderboardForUser(req, res);
+});
+
+// Flashcards API Routes - USING NEW DAL ARCHITECTURE
+
+// Mark a flashcard as correct or incorrect (protected route)
+// @ts-ignore
+app.post('/api/flashcards/mark', authenticateToken, async (req, res) => {
+  const client = await db.getClient();
+  
+  try {
+    const userId = (req as any).user?.userId;
+    const { cardId, isCorrect } = req.body;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized', code: 'ERR_UNAUTHORIZED' });
+    }
+
+    if (typeof cardId !== 'number' || typeof isCorrect !== 'boolean') {
+      return res.status(400).json({ 
+        error: 'Invalid request body. Expected { cardId: number, isCorrect: boolean }',
+        code: 'ERR_INVALID_REQUEST'
+      });
+    }
+
+    console.log(`Card ${cardId} marked as ${isCorrect ? 'correct' : 'incorrect'} by user ${userId}`);
+
+    // Fetch the current vocab entry to get its mark history, counts, rates, AND CURRENT CATEGORY
+    const entryQuery = 'SELECT "markHistory", "totalMarkCount", "totalCorrectCount", "totalSuccessRate", "last8SuccessRate", "last16SuccessRate", "category" FROM vocabentries WHERE id = $1 AND "userId" = $2';
+    const entryResult = await client.query(entryQuery, [cardId, userId]);
+
+    if (entryResult.rows.length === 0) {
+      client.release();
+      return res.status(404).json({ 
+        error: 'Vocab entry not found',
+        code: 'ERR_ENTRY_NOT_FOUND'
+      });
+    }
+
+    // Get existing mark history or initialize empty array
+    const existingHistory: ReviewMark[] = entryResult.rows[0].markHistory || [];
+    
+    // Get current counts and rates
+    const currentTotalMarkCount: number = entryResult.rows[0].totalMarkCount || 0;
+    const currentTotalCorrectCount: number = entryResult.rows[0].totalCorrectCount || 0;
+    const currentTotalSuccessRate: number | null = entryResult.rows[0].totalSuccessRate;
+    const currentLast8SuccessRate: number | null = entryResult.rows[0].last8SuccessRate;
+    const currentLast16SuccessRate: number | null = entryResult.rows[0].last16SuccessRate;
+    
+    // CAPTURE THE CATEGORY BEFORE THE MARK IS APPLIED
+    const categoryBeforeMark: string = entryResult.rows[0].category || 'Unfamiliar';
+
+    // Add new mark
+    const newMark: ReviewMark = {
+      timestamp: new Date().toISOString(),
+      isCorrect
+    };
+
+    // Append new mark and keep only last 16
+    const updatedHistory = [...existingHistory, newMark].slice(-16);
+
+    // Calculate new counts
+    const newTotalMarkCount: number = currentTotalMarkCount + 1;
+    const newTotalCorrectCount: number = currentTotalCorrectCount + (isCorrect ? 1 : 0);
+
+    // Calculate success rates
+    const newTotalSuccessRate: number = newTotalCorrectCount / newTotalMarkCount;
+    
+    // Calculate last8SuccessRate from last 8 marks
+    const last8Marks: ReviewMark[] = updatedHistory.slice(-8);
+    const last8Correct: number = last8Marks.filter(m => m.isCorrect).length;
+    const newLast8SuccessRate: number = last8Marks.length > 0 ? last8Correct / last8Marks.length : 0;
+    
+    // Calculate last16SuccessRate from all available marks (up to 16)
+    const last16Correct: number = updatedHistory.filter(m => m.isCorrect).length;
+    const newLast16SuccessRate: number = updatedHistory.length > 0 ? last16Correct / updatedHistory.length : 0;
+
+    // Determine category based on last 8 performance (with zero-padding)
+    // Always treat as out of 8, padding remaining spots with incorrect marks
+    let category: FlashcardCategory;
+    
+    if (last8Correct <= 2) {
+      category = FlashcardCategory.UNFAMILIAR;
+    } else if (last8Correct <= 5) {
+      category = FlashcardCategory.TARGET;
+    } else if (last8Correct <= 7) {
+      category = FlashcardCategory.COMFORTABLE;
+    } else { // last8Correct === 8
+      category = FlashcardCategory.MASTERED;
+    }
+
+    // Update the database with new mark history, counts, success rates, and category
+    const updateQuery = `
+      UPDATE vocabentries 
+      SET "markHistory" = $1, 
+          "totalMarkCount" = $2,
+          "totalCorrectCount" = $3,
+          "totalSuccessRate" = $4,
+          "last8SuccessRate" = $5,
+          "last16SuccessRate" = $6,
+          category = $7
+      WHERE id = $8 AND "userId" = $9
+    `;
+    await client.query(updateQuery, [
+      JSON.stringify(updatedHistory), 
+      newTotalMarkCount,
+      newTotalCorrectCount,
+      newTotalSuccessRate,
+      newLast8SuccessRate,
+      newLast16SuccessRate,
+      category,
+      cardId, 
+      userId
+    ]);
+
+    console.log(`Updated card ${cardId}: ${updatedHistory.length} recent marks, total: ${newTotalMarkCount}, correct: ${newTotalCorrectCount}, rates: ${(newTotalSuccessRate * 100).toFixed(1)}% / ${(newLast8SuccessRate * 100).toFixed(1)}% / ${(newLast16SuccessRate * 100).toFixed(1)}%, category BEFORE: ${categoryBeforeMark}, category AFTER: ${category}`);
+
+    // If correct, return a card from the same category as BEFORE the mark (with fallback priority)
+    if (isCorrect) {
+      const newCard = await onDeckVocabService.getNextLibraryCardWithFallback(userId, categoryBeforeMark);
+      
+      if (!newCard) {
+        client.release();
+        return res.status(404).json({ 
+          error: 'No library cards available',
+          code: 'ERR_NO_CARDS_AVAILABLE'
+        });
+      }
+
+      console.log(`Returning ${newCard.category} card (ID: ${newCard.id}) for user who marked ${categoryBeforeMark} card correct`);
+
+      client.release();
+      return res.status(200).json({ 
+        success: true,
+        category,
+        newCard 
+      });
+    } else {
+      // If incorrect, just return success with category
+      client.release();
+      return res.status(200).json({ 
+        success: true,
+        category
+      });
+    }
+  } catch (error: any) {
+    console.error('Error marking flashcard:', error);
+    client.release();
+    res.status(500).json({ 
+      error: error.message || 'Failed to mark flashcard',
+      code: error.code || 'ERR_MARK_FAILED'
+    });
+  }
+});
+
+// Starter Packs API Routes - USING NEW DAL ARCHITECTURE
+
+// Get starter pack cards for a specific language (protected route)
+// @ts-ignore
+app.get('/api/starter-packs/:language', authenticateToken, async (req, res) => {
+  console.log('🔄 Using NEW DAL architecture for get starter pack cards');
+  await starterPacksController.getStarterPackCards(req, res);
+});
+
+// Get user's progress on a starter pack (protected route)
+// @ts-ignore
+app.get('/api/starter-packs/:language/progress', authenticateToken, async (req, res) => {
+  console.log('🔄 Using NEW DAL architecture for get starter pack progress');
+  await starterPacksController.getProgress(req, res);
+});
+
+// Sort a card into a bucket (protected route)
+// @ts-ignore
+app.post('/api/starter-packs/sort', authenticateToken, async (req, res) => {
+  console.log('🔄 Using NEW DAL architecture for sort card');
+  await starterPacksController.sortCard(req, res);
+});
+
+// Undo last card sort (protected route)
+// @ts-ignore
+app.post('/api/starter-packs/undo', authenticateToken, async (req, res) => {
+  console.log('🔄 Using NEW DAL architecture for undo sort');
+  await starterPacksController.undoSort(req, res);
 });
 
 // Dictionary API Routes - USING NEW DAL ARCHITECTURE

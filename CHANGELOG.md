@@ -10,6 +10,15 @@
 - [Reader] Document description is running off the card
 - [Reader] Rename Personal tab to Your Cards
 
+## [v0.5.0] - 2/2/26
+
+### Added
+- Added the mobile demo. Moving away from the desktop app.
+
+### Mobile Demo Features
+- flashcards with info card
+- discover new vocab via starter packs
+
 ## [v0.4.1] - 11/08/2025
 
 ### Added
@@ -20,7 +29,6 @@
 
 ### Fixed
 - Fixed the work points progress bar from double counting work points earned during idle time
-- 
 
 ## [v0.4.0] - 11/03/2025
 

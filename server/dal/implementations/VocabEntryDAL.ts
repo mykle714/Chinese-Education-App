@@ -1,9 +1,10 @@
-import { PoolClient } from 'pg';
+import { PoolClient, QueryResult } from 'pg';
 import { BaseDAL } from '../base/BaseDAL.js';
 import { IVocabEntryDAL } from '../interfaces/IVocabEntryDAL.js';
 import { dbManager } from '../base/DatabaseManager.js';
 import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, HskLevel } from '../../types/index.js';
-import { ValidationError, NotFoundError, BulkResult, ITransaction } from '../../types/dal.js';
+import { ValidationError, NotFoundError, BulkResult, ITransaction, DALError } from '../../types/dal.js';
+import db from '../../db.js';
 
 /**
  * VocabEntry Data Access Layer implementation
@@ -147,6 +148,29 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     return result.recordset;
   }
 
+  /**
+   * Find vocabulary entries by a list of entry keys
+   */
+  async bulkFindByKeys(userId: string, entryKeys: string[]): Promise<VocabEntry[]> {
+    if (!userId) {
+      throw new ValidationError('User ID is required');
+    }
+
+    if (!entryKeys || entryKeys.length === 0) {
+      return [];
+    }
+
+    const placeholders = entryKeys.map((_, index) => `$${index + 2}`).join(',');
+    
+    const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
+      return await client.query(`
+        SELECT * FROM VocabEntries 
+        WHERE "userId" = $1 AND "entryKey" IN (${placeholders})
+      `, [userId, ...entryKeys]);
+    });
+
+    return result.recordset;
+  }
 
   /**
    * Find vocabulary entries by tokens for reader feature
@@ -394,43 +418,6 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
   }
 
   /**
-   * Bulk create with transaction (for external transaction management)
-   */
-  async bulkCreateWithTransaction(entries: VocabEntryCreateData[], transaction: ITransaction): Promise<VocabEntry[]> {
-    const results: VocabEntry[] = [];
-    
-    for (const entry of entries) {
-      const result = await this.createWithTransaction(entry, transaction);
-      results.push(result);
-    }
-    
-    return results;
-  }
-
-  /**
-   * Find duplicate keys for bulk operations
-   */
-  async findDuplicateKeys(userId: string, entryKeys: string[]): Promise<VocabEntry[]> {
-    if (!userId) {
-      throw new ValidationError('User ID is required');
-    }
-    if (!entryKeys || entryKeys.length === 0) {
-      return [];
-    }
-
-    const placeholders = entryKeys.map((_, index) => `$${index + 2}`).join(',');
-    
-    const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
-      return await client.query(`
-        SELECT * FROM VocabEntries 
-        WHERE "userId" = $1 AND "entryKey" IN (${placeholders})
-      `, [userId, ...entryKeys]);
-    });
-
-    return result.recordset;
-  }
-
-  /**
    * Find entries created after a specific date
    */
   async findEntriesCreatedAfter(userId: string, date: Date): Promise<VocabEntry[]> {
@@ -443,6 +430,73 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     });
 
     return result.recordset;
+  }
+
+  /**
+   * Find related library words that share characters with the given word
+   * Returns words sorted by success rate
+   */
+  async findRelatedBySharedCharacters(
+    userId: string,
+    word: string,
+    language: string,
+    limit: number = 4
+  ): Promise<Array<{ id: number; entryKey: string; sharedCharacters: string[]; successRate: number | null }>> {
+    if (!word || word.trim().length === 0) {
+      return [];
+    }
+
+    // Only works for Chinese
+    if (language !== 'zh') {
+      return [];
+    }
+
+    // Split word into characters
+    const characters: string[] = [...word.trim()];
+    
+    if (characters.length === 0) {
+      return [];
+    }
+
+    // Build regex pattern to match any word containing any of these characters
+    // SIMILAR TO ANY will match if entrykey contains any of the characters
+    const pattern: string = `[${characters.join('')}]`;
+
+    const query: string = `
+      SELECT 
+        id,
+        "entryKey" as entrykey,
+        "last8SuccessRate" as last8successrate
+      FROM VocabEntries
+      WHERE "userId" = $1
+        AND language = $2
+        AND "entryKey" != $3
+        AND "entryKey" ~ $4
+      ORDER BY "last8SuccessRate" DESC NULLS LAST, id ASC
+      LIMIT $5
+    `;
+
+    const result = await this.dbManager.executeQuery<{
+      id: number;
+      entrykey: string;
+      last8successrate: number | null;
+    }>(async (client) => {
+      return await client.query(query, [userId, language, word, pattern, limit]);
+    });
+
+    // For each result, find which characters are shared
+    return result.recordset.map((row) => {
+      const relatedWord: string = row.entrykey;
+      const relatedChars: string[] = [...relatedWord];
+      const shared: string[] = characters.filter(char => relatedChars.includes(char));
+
+      return {
+        id: row.id,
+        entryKey: row.entrykey,
+        sharedCharacters: shared,
+        successRate: row.last8successrate
+      };
+    });
   }
 
   /**
@@ -588,5 +642,112 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     if (data.hskLevelTag && !['HSK1', 'HSK2', 'HSK3', 'HSK4', 'HSK5', 'HSK6'].includes(data.hskLevelTag)) {
       throw new ValidationError('Invalid HSK level. Must be HSK1, HSK2, HSK3, HSK4, HSK5, or HSK6');
     }
+  }
+
+  /**
+   * Update a vocab entry's category
+   */
+  async updateCategory(id: number, category: string): Promise<void> {
+    if (!id) {
+      throw new ValidationError('Entry ID is required');
+    }
+    if (!category) {
+      throw new ValidationError('Category is required');
+    }
+
+    const client = await db.getClient();
+    
+    try {
+      const query = `
+        UPDATE vocabentries 
+        SET category = $1
+        WHERE id = $2
+      `;
+      
+      await client.query(query, [category, id]);
+    } catch (error: any) {
+      console.error('Error updating category:', error);
+      throw new DALError('Failed to update vocab entry category', 'ERR_UPDATE_CATEGORY_FAILED', error);
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Update a vocab entry's mark history and related statistics
+   * Used when marking cards as "already learned" to populate with perfect history
+   */
+  async updateMarkHistory(
+    id: number, 
+    markHistory: any[], 
+    totalMarkCount: number,
+    totalCorrectCount: number,
+    totalSuccessRate: number,
+    last8SuccessRate: number,
+    last16SuccessRate: number
+  ): Promise<void> {
+    if (!id) {
+      throw new ValidationError('Entry ID is required');
+    }
+
+    const client = await db.getClient();
+    
+    try {
+      const query = `
+        UPDATE vocabentries 
+        SET "markHistory" = $1,
+            "totalMarkCount" = $2,
+            "totalCorrectCount" = $3,
+            "totalSuccessRate" = $4,
+            "last8SuccessRate" = $5,
+            "last16SuccessRate" = $6
+        WHERE id = $7
+      `;
+      
+      await client.query(query, [
+        JSON.stringify(markHistory),
+        totalMarkCount,
+        totalCorrectCount,
+        totalSuccessRate,
+        last8SuccessRate,
+        last16SuccessRate,
+        id
+      ]);
+    } catch (error: any) {
+      console.error('Error updating mark history:', error);
+      throw new DALError('Failed to update vocab entry mark history', 'ERR_UPDATE_MARK_HISTORY_FAILED', error);
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Find duplicate keys for a user (helper for data cleanup)
+   */
+  async findDuplicateKeys(userId: string, entryKeys: string[]): Promise<VocabEntry[]> {
+    if (!userId) {
+      throw new ValidationError('User ID is required');
+    }
+    
+    if (!entryKeys || entryKeys.length === 0) {
+      return [];
+    }
+
+    // Use bulkFindByKeys to get actual entries
+    return await this.bulkFindByKeys(userId, entryKeys);
+  }
+
+  /**
+   * Bulk create with transaction support
+   */
+  async bulkCreateWithTransaction(entries: VocabEntryCreateData[], transaction: ITransaction): Promise<VocabEntry[]> {
+    const results: VocabEntry[] = [];
+    
+    for (const entry of entries) {
+      const result = await this.createWithTransaction(entry, transaction);
+      results.push(result);
+    }
+    
+    return results;
   }
 }

@@ -4,7 +4,9 @@ import { IVocabEntryDAL } from '../dal/interfaces/IVocabEntryDAL.js';
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import { DictionaryService } from './DictionaryService.js';
 import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, HskLevel, Language } from '../types/index.js';
+import { extractTones } from '../utils/pinyin.js';
 import { ValidationError, NotFoundError, BulkResult } from '../types/dal.js';
+import db from '../db.js';
 
 // CSV row interface for import processing
 interface CSVRow {
@@ -67,22 +69,30 @@ export class VocabEntryService {
     if (language === 'zh') {
       try {
         // Generate all enrichment fields in parallel
-        const [breakdown, synonyms, exampleSentences, partsOfSpeech] = await Promise.all([
+        const [breakdown, synonyms, exampleSentences, partsOfSpeech, expansion] = await Promise.all([
           this.dictionaryService.generateBreakdown(entryData.entryKey.trim(), language),
           this.dictionaryService.findSynonyms(entryData.entryKey.trim(), language),
           this.dictionaryService.generateExampleSentences(entryData.entryKey.trim(), language),
-          this.dictionaryService.extractPartsOfSpeech(entryData.entryKey.trim(), language)
+          this.dictionaryService.extractPartsOfSpeech(entryData.entryKey.trim(), language),
+          this.dictionaryService.generateExpansion(entryData.entryKey.trim(), language)
         ]);
-        
+
+        // Generate expansionMetadata if expansion was produced
+        const expansionMetadata = expansion
+          ? await this.dictionaryService.generateBreakdown(expansion, language)
+          : null;
+
         // Update the entry with all enrichment data
-        if (breakdown || synonyms.length > 0 || exampleSentences.length > 0 || partsOfSpeech.length > 0) {
+        if (breakdown || synonyms.length > 0 || exampleSentences.length > 0 || partsOfSpeech.length > 0 || expansion) {
           await this.vocabEntryDAL.update(newEntry.id, {
             entryKey: newEntry.entryKey,
             entryValue: newEntry.entryValue,
             breakdown,
             synonyms,
             exampleSentences,
-            partsOfSpeech
+            partsOfSpeech,
+            expansion,
+            expansionMetadata
           } as any);
           
           // Fetch updated entry to return with enrichment data
@@ -125,13 +135,20 @@ export class VocabEntryService {
       }
     }
     
-    // Update entry
-    const updatedEntry = await this.vocabEntryDAL.update(entryId, {
+    // Build update fields; compute tone whenever pronunciation is provided
+    const updateFields: any = {
       entryKey: updateData.entryKey.trim(),
       entryValue: updateData.entryValue.trim(),
       hskLevelTag: updateData.hskLevelTag
-    });
-    
+    };
+    if (updateData.pronunciation !== undefined) {
+      updateFields.pronunciation = updateData.pronunciation;
+      updateFields.tone = updateData.pronunciation ? extractTones(updateData.pronunciation) : null;
+    }
+
+    // Update entry
+    const updatedEntry = await this.vocabEntryDAL.update(entryId, updateFields);
+
     return updatedEntry;
   }
 
@@ -139,16 +156,33 @@ export class VocabEntryService {
    * Delete a vocabulary entry
    */
   async deleteEntry(userId: string, entryId: number): Promise<boolean> {
-    // Verify user owns the entry (business rule)
     const existingEntry = await this.vocabEntryDAL.findById(entryId);
     if (!existingEntry) {
       throw new NotFoundError('Vocabulary entry not found');
     }
-    
+
     if (existingEntry.userId !== userId) {
       throw new ValidationError('You can only delete your own vocabulary entries');
     }
-    
+
+    // Clean up orphaned StarterPackSorts row if one exists
+    try {
+      const client = await db.getClient();
+      try {
+        await client.query(`
+          DELETE FROM StarterPackSorts sps
+          USING DictionaryEntries de
+          WHERE sps."dictionaryEntryId" = de.id
+            AND de.word1 = $1
+            AND sps."userId" = $2
+        `, [existingEntry.entryKey, userId]);
+      } finally {
+        client.release();
+      }
+    } catch (e) {
+      console.warn('Failed to clean up StarterPackSorts for entry', entryId, e);
+    }
+
     return await this.vocabEntryDAL.delete(entryId);
   }
 

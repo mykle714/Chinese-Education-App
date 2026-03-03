@@ -1,3 +1,4 @@
+import Anthropic from '@anthropic-ai/sdk';
 import { IDictionaryDAL } from '../dal/interfaces/IDictionaryDAL.js';
 import { DictionaryEntry } from '../types/index.js';
 import { ValidationError } from '../types/dal.js';
@@ -124,10 +125,11 @@ export class DictionaryService {
 
   /**
    * Generate character breakdown for a Chinese word
-   * Looks up each character in the dictionary and returns a JSON object with definitions and pronunciations
+   * Looks up each character in the dictionary and returns a JSON object with definitions only.
+   * Pronunciation is derived at read time from vocabentries.pronunciation (space-separated pinyin).
    * Returns null for non-Chinese words or if language is not 'zh'
    */
-  async generateBreakdown(word: string, language: string): Promise<Record<string, { definition: string; pronunciation: string }> | null> {
+  async generateBreakdown(word: string, language: string): Promise<Record<string, { definition: string }> | null> {
     // Only generate breakdown for Chinese language
     if (!language || language !== 'zh') {
       return null;
@@ -138,39 +140,35 @@ export class DictionaryService {
     }
 
     const trimmedWord: string = word.trim();
-    
+
     // Split the word into individual characters
     const characters: string[] = [...trimmedWord]; // Spread operator properly handles multi-byte characters
-    
+
     if (characters.length === 0) {
       return null;
     }
 
     // Look up each character in the dictionary
     const characterEntries: DictionaryEntry[] = await this.dictionaryDAL.findMultipleByWord1(characters, 'zh');
-    
-    // Build the breakdown object with definition and pronunciation
-    const breakdown: Record<string, { definition: string; pronunciation: string }> = {};
-    
+
+    // Build the breakdown object with definition only (pronunciation is derived from vocabentries.pronunciation at read time)
+    const breakdown: Record<string, { definition: string }> = {};
+
     for (const char of characters) {
       // Find the dictionary entry for this character
       const entry: DictionaryEntry | undefined = characterEntries.find(e => e.word1 === char);
-      
+
       if (entry && entry.definitions && entry.definitions.length > 0) {
-        // Use the first definition (most common meaning) and pronunciation
         breakdown[char] = {
           definition: entry.definitions[0],
-          pronunciation: entry.pronunciation || ''
         };
       } else {
-        // If no definition found, use placeholders
         breakdown[char] = {
           definition: 'No definition',
-          pronunciation: ''
         };
       }
     }
-    
+
     return breakdown;
   }
 
@@ -294,6 +292,162 @@ export class DictionaryService {
     ];
 
     return sentences;
+  }
+
+  /**
+   * Generate an expanded form of a Chinese word using AI
+   * Each morpheme is expanded by inserting additional characters while preserving all originals in order
+   * Returns null if the word cannot be meaningfully expanded or if AI call fails
+   */
+  async generateExpansion(word: string, language: string): Promise<string | null> {
+    if (!language || language !== 'zh') {
+      return null;
+    }
+
+    if (!word || word.trim().length === 0) {
+      return null;
+    }
+
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      return null;
+    }
+
+    try {
+      const anthropic = new Anthropic({ apiKey });
+      const trimmedWord = word.trim();
+
+      const prompt = `You are a Chinese language expert. Expand the following Chinese word by inserting additional characters to make it more explicit.
+
+Rules:
+- Every character from the original word must appear in the expansion, in their original order
+- You may ONLY add characters between or after the originals — never replace or omit any original character
+- Examples:
+  * 不知不觉 → 不知道不觉得 (added 道 and 得)
+  * 违规 → 违反规矩 (added 反 and 矩)
+  * 早晚 → 早上晚上 (added 上 twice)
+- If the word cannot be meaningfully expanded while preserving all characters, return null
+
+Word: ${trimmedWord}
+
+Respond with ONLY a JSON object in this exact format:
+{"expansion": "expanded form"} or {"expansion": null}`;
+
+      const response = await anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 256,
+        temperature: 0.7,
+        messages: [{ role: 'user', content: prompt }]
+      });
+
+      const content = (response.content[0] as { type: string; text: string }).text.trim();
+      const jsonText = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+      const parsed = JSON.parse(jsonText);
+
+      return parsed.expansion || null;
+    } catch (error: any) {
+      console.error(`Failed to generate expansion for "${word}":`, error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Generate a short definition from an array of definition strings
+   * Deterministic — no AI required
+   * Returns the shortest meaningful token after filtering grammatical notes
+   */
+  generateShortDefinition(definitions: string[]): string | null {
+    if (!definitions || definitions.length === 0) {
+      return null;
+    }
+
+    const candidates: string[] = [];
+
+    for (const def of definitions) {
+      // Skip definitions that are purely grammatical notes
+      const trimmed = def.trim();
+      if (trimmed.startsWith('(') || trimmed.startsWith('CL:')) {
+        continue;
+      }
+
+      // Split by "; " to get individual senses
+      const senses = trimmed.split('; ');
+
+      for (const sense of senses) {
+        // Strip trailing parenthetical content
+        const stripped = sense.replace(/ \([^)]+\)$/, '').trim();
+        if (stripped.length > 0) {
+          candidates.push(stripped);
+        }
+      }
+    }
+
+    // Fall back to unfiltered tokens if all definitions were filtered out
+    if (candidates.length === 0) {
+      for (const def of definitions) {
+        const senses = def.trim().split('; ');
+        for (const sense of senses) {
+          const stripped = sense.replace(/ \([^)]+\)$/, '').trim();
+          if (stripped.length > 0) {
+            candidates.push(stripped);
+          }
+        }
+      }
+    }
+
+    if (candidates.length === 0) {
+      return null;
+    }
+
+    // Return the token with the fewest characters
+    return candidates.reduce((shortest, current) =>
+      current.length < shortest.length ? current : shortest
+    );
+  }
+
+  /**
+   * Generate a long definition (25–75 chars) for a Chinese word using Claude Haiku AI
+   * Returns null for non-Chinese words or if AI call fails
+   */
+  async generateLongDefinition(word: string, language: string, shortDef: string, definitions: string[]): Promise<string | null> {
+    if (!language || language !== 'zh') {
+      return null;
+    }
+
+    if (!word || word.trim().length === 0) {
+      return null;
+    }
+
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      return null;
+    }
+
+    try {
+      const anthropic = new Anthropic({ apiKey });
+
+      const prompt = `You are a Chinese language expert providing dictionary definitions.
+Word: ${word.trim()}
+Short definition: ${shortDef}
+Existing definitions: ${definitions.join(' | ')}
+
+Write a single English definition that is between 25 and 75 characters long.
+It should elaborate on the short definition with key context.
+Respond with only the definition text — no quotes, no extra text.`;
+
+      const response = await anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 128,
+        temperature: 0.3,
+        messages: [{ role: 'user', content: prompt }]
+      });
+
+      const text = (response.content[0] as { type: string; text: string }).text.trim();
+      return text.length > 0 ? text : null;
+    } catch (error: any) {
+      console.error(`Failed to generate long definition for "${word}":`, error.message);
+      return null;
+    }
   }
 
 }

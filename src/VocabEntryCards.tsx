@@ -28,23 +28,6 @@ interface VocabEntry {
 const ENTRIES_PER_PAGE = 10;
 
 
-// Helper function to render tag badges
-const renderTags = (entry: VocabEntry) => (
-  <Box className="vocab-entry-tags" sx={{ position: 'absolute', top: 8, right: 8, display: 'flex', gap: 0.5 }}>
-    {entry.hskLevelTag && (
-      <Chip
-        label={entry.hskLevelTag}
-        size="small"
-        sx={{
-          backgroundColor: '#2196f3',
-          color: 'white',
-          fontSize: '0.7rem',
-          height: '20px'
-        }}
-      />
-    )}
-  </Box>
-);
 
 interface VocabEntryCardsProps {
   refreshTrigger?: number;
@@ -195,7 +178,7 @@ const VocabEntryCards = ({ refreshTrigger, searchTerm = '' }: VocabEntryCardsPro
   if (error) return (
     <Box className="vocab-entries-error">
       <Alert severity="error">
-        Error: {error} {errorCode && <span>[Error Code: {errorCode}]</span>}
+        Error: {error} {errorCode && <span className="vocab-entry-cards__error-code">[Error Code: {errorCode}]</span>}
       </Alert>
     </Box>
   );
@@ -225,6 +208,7 @@ const VocabEntryCards = ({ refreshTrigger, searchTerm = '' }: VocabEntryCardsPro
           ref={index === entries.length - 1 && !searchTerm ? lastEntryElementRef : undefined}
         >
           <Card
+            className="vocab-entry-cards__card"
             sx={{
               height: '100%',
               display: 'flex',
@@ -237,23 +221,23 @@ const VocabEntryCards = ({ refreshTrigger, searchTerm = '' }: VocabEntryCardsPro
               }
             }}
           >
-            {renderTags(entry)}
             <CardActionArea
+              className="vocab-entry-cards__action-area"
               sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', alignItems: 'stretch' }}
               onClick={() => navigate(`/entries/${entry.id}`)}
             >
-              <CardContent sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
-                <Typography variant="h5" component="h2" gutterBottom>
+              <CardContent className="vocab-entry-cards__content" sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
+                <Typography className="vocab-entry-cards__entry-key" variant="h5" component="h2" gutterBottom>
                   {entry.entryKey}
                 </Typography>
-                <Divider sx={{ mb: 2 }} />
-                <Typography variant="body1" color="text.secondary" sx={{ flexGrow: 1, mb: 2 }}>
+                <Divider className="vocab-entry-cards__divider" sx={{ mb: 2 }} />
+                <Typography className="vocab-entry-cards__entry-value" variant="body1" color="text.secondary" sx={{ flexGrow: 1, mb: 2 }}>
                   {entry.entryValue}
                 </Typography>
                 {entry.createdAt && (
                   <>
-                    <Divider sx={{ mt: 'auto' }} />
-                    <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
+                    <Divider className="vocab-entry-cards__date-divider" sx={{ mt: 'auto' }} />
+                    <Typography className="vocab-entry-cards__date" variant="caption" color="text.secondary" sx={{ mt: 1 }}>
                       Added: {new Date(entry.createdAt).toLocaleDateString()}
                     </Typography>
                   </>

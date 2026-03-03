@@ -31,7 +31,7 @@ const vocabEntryService = new VocabEntryService(vocabEntryDAL, userDAL, dictiona
 const onDeckVocabService = new OnDeckVocabService(vocabEntryDAL);
 const userWorkPointsService = new UserWorkPointsService(userWorkPointsDAL, userDAL);
 const textService = new TextService(userDAL);
-const starterPacksService = new StarterPacksService(vocabEntryDAL);
+const starterPacksService = new StarterPacksService(vocabEntryDAL, dictionaryDAL);
 
 // Create Controller instances
 const userController = new UserController(userService);

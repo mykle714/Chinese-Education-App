@@ -33,15 +33,12 @@ import RemoveIcon from "@mui/icons-material/Remove";
 import SettingsIcon from "@mui/icons-material/Settings";
 import FlashCard from "../components/FlashCard";
 
-// HSK Level type
-type HskLevel = 'HSK1' | 'HSK2' | 'HSK3' | 'HSK4' | 'HSK5' | 'HSK6';
 
 interface VocabEntry {
     id: number;
     entryKey: string;
     entryValue: string;
     pronunciation?: string | null;
-    hskLevelTag?: HskLevel | null;
     createdAt: string;
 }
 
@@ -51,22 +48,8 @@ interface HistoryEntry {
     entryValue: string;
     isCorrect: boolean | null; // null for skipped cards
     timestamp: Date;
-    hskLevelTag?: HskLevel | null;
     wasFlipped: boolean; // Track whether the card was flipped when last seen
 }
-
-// Helper function to get HSK level number
-const getHskNumber = (hskLevel: HskLevel) => {
-    switch (hskLevel) {
-        case 'HSK1': return '1';
-        case 'HSK2': return '2';
-        case 'HSK3': return '3';
-        case 'HSK4': return '4';
-        case 'HSK5': return '5';
-        case 'HSK6': return '6';
-        default: return '1'; // Default fallback
-    }
-};
 
 // Main content component - moved outside to prevent re-creation on every render
 interface MainContentProps {
@@ -656,7 +639,6 @@ function FlashcardsPage() {
             id: historyEntry.id,
             entryKey: historyEntry.entryKey,
             entryValue: historyEntry.entryValue,
-            hskLevelTag: historyEntry.hskLevelTag,
             createdAt: '' // Not needed for display
         };
 
@@ -698,7 +680,6 @@ function FlashcardsPage() {
                     id: currentHistoryEntry.id,
                     entryKey: currentHistoryEntry.entryKey,
                     entryValue: currentHistoryEntry.entryValue,
-                    hskLevelTag: currentHistoryEntry.hskLevelTag,
                     createdAt: '' // Not needed for display
                 };
 
@@ -718,8 +699,7 @@ function FlashcardsPage() {
                     id: historyEntry.id,
                     entryKey: historyEntry.entryKey,
                     entryValue: historyEntry.entryValue,
-                    hskLevelTag: historyEntry.hskLevelTag,
-                    createdAt: '' // Not needed for display
+                            createdAt: '' // Not needed for display
                 };
 
                 // Historical cards always show back side (flipped = true)
@@ -740,7 +720,6 @@ function FlashcardsPage() {
             entryValue: entry.entryValue,
             isCorrect,
             timestamp: new Date(),
-            hskLevelTag: entry.hskLevelTag,
             wasFlipped: isFlipped // Track the current flip state
         };
 
@@ -870,7 +849,6 @@ function FlashcardsPage() {
             id: historyEntry.id,
             entryKey: historyEntry.entryKey,
             entryValue: historyEntry.entryValue,
-            hskLevelTag: historyEntry.hskLevelTag,
             createdAt: '' // Not needed for display
         };
 
@@ -1003,26 +981,6 @@ function FlashcardsPage() {
                                             <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
                                                 {entry.entryValue}
                                             </Typography>
-                                            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-                                                {entry.hskLevelTag && (
-                                                    <Box
-                                                        sx={{
-                                                            width: '18px',
-                                                            height: '18px',
-                                                            borderRadius: '50%',
-                                                            backgroundColor: 'secondary.main',
-                                                            color: 'secondary.contrastText',
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'center',
-                                                            fontSize: '10px',
-                                                            fontWeight: 'bold'
-                                                        }}
-                                                    >
-                                                        {getHskNumber(entry.hskLevelTag)}
-                                                    </Box>
-                                                )}
-                                            </Box>
                                         </CardContent>
                                     </Card>
                                 </ListItem>

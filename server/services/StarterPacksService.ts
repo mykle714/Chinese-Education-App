@@ -1,36 +1,59 @@
 import { VocabEntryDAL } from '../dal/implementations/VocabEntryDAL.js';
-import { VocabEntry, StarterPackBucket } from '../types/index.js';
+import { DictionaryDAL } from '../dal/implementations/DictionaryDAL.js';
+import { DiscoverCard, StarterPackBucket } from '../types/index.js';
 import db from '../db.js';
 
 /**
  * Starter Packs Service
  * Business logic for managing language starter packs
- * Now uses starterPackBucket column directly on VocabEntry for simpler architecture
+ * Uses curated DictionaryEntries (discoverable=TRUE) as the card source,
+ * with per-user sort state tracked in vocabentries (starterPackBucket field).
  */
 export class StarterPacksService {
   constructor(
-    private vocabEntryDAL: VocabEntryDAL
+    private vocabEntryDAL: VocabEntryDAL,
+    private dictionaryDAL: DictionaryDAL
   ) {}
 
   /**
-   * Get starter pack cards for a specific language
-   * Returns cards that haven't been sorted yet by the user (starterPackBucket IS NULL)
+   * Get unsorted discoverable cards for a specific language
+   * Returns up to 50 cards that the user has not yet sorted
    */
-  async getStarterPackCards(language: string, userId: string): Promise<VocabEntry[]> {
-    const limit: number = 50;
-    
+  async getStarterPackCards(language: string, userId: string): Promise<DiscoverCard[]> {
     const client = await db.getClient();
     try {
-      const result = await client.query<VocabEntry>(`
-        SELECT * FROM vocabentries
-        WHERE "userId" = $1 
-        AND language = $2
-        AND "starterPackBucket" IS NULL
-        ORDER BY "createdAt" ASC
-        LIMIT $3
-      `, [userId, language, limit]);
-      
-      return result.rows;
+      const result = await client.query(`
+        SELECT de.id, de.word1, de.word2, de.pronunciation, de.tone, de.definitions,
+               de.language, de.script, de."hskLevelTag", de.breakdown, de.synonyms,
+               de."exampleSentences", de."partsOfSpeech", de.expansion, de."expansionMetadata"
+        FROM DictionaryEntries de
+        WHERE de.language = $1
+          AND de.discoverable = TRUE
+          AND NOT EXISTS (
+            SELECT 1 FROM vocabentries ve
+            WHERE ve."userId" = $2 AND ve."entryKey" = de.word1
+          )
+        ORDER BY de.id ASC
+        LIMIT 50
+      `, [language, userId]);
+
+      return result.rows.map(row => ({
+        id: row.id,
+        entryKey: row.word1,
+        entryValue: Array.isArray(row.definitions) ? row.definitions[0] : row.definitions,
+        pronunciation: row.pronunciation,
+        tone: row.tone,
+        language: row.language,
+        word2: row.word2,
+        script: row.script,
+        hskLevelTag: row.hskLevelTag,
+        breakdown: row.breakdown,
+        synonyms: row.synonyms,
+        exampleSentences: row.exampleSentences,
+        partsOfSpeech: row.partsOfSpeech,
+        expansion: row.expansion,
+        expansionMetadata: row.expansionMetadata,
+      }));
     } finally {
       client.release();
     }
@@ -42,22 +65,18 @@ export class StarterPacksService {
   async getProgress(language: string, userId: string): Promise<any> {
     const client = await db.getClient();
     try {
-      // Count total cards for this language
       const totalResult = await client.query<{ count: string }>(`
         SELECT COUNT(*) as count
-        FROM vocabentries
-        WHERE "userId" = $1 AND language = $2
-      `, [userId, language]);
-      
-      // Count sorted cards (non-null bucket)
+        FROM DictionaryEntries
+        WHERE language = $1 AND discoverable = TRUE
+      `, [language]);
+
       const sortedResult = await client.query<{ count: string }>(`
         SELECT COUNT(*) as count
         FROM vocabentries
-        WHERE "userId" = $1 
-        AND language = $2
-        AND "starterPackBucket" IS NOT NULL
+        WHERE "userId" = $1 AND language = $2 AND "starterPackBucket" IS NOT NULL
       `, [userId, language]);
-      
+
       const total: number = parseInt(totalResult.rows[0].count);
       const sorted: number = parseInt(sortedResult.rows[0].count);
       const remaining: number = total - sorted;
@@ -75,59 +94,83 @@ export class StarterPacksService {
 
   /**
    * Sort a card into a bucket
-   * Simply updates the starterPackBucket column
-   * Special handling: "already-learned" sets bucket to 'library' and marks as Mastered
+   * Creates/updates the corresponding vocabentry with starterPackBucket set.
+   * Special handling: "already-learned" → bucket='library' + category='Mastered' + perfect mark history
    */
   async sortCard(userId: string, cardId: number, bucket: string, language: string): Promise<any> {
-    // Validate bucket
     const validBuckets: string[] = ['already-learned', 'library', 'skip', 'learn-later'];
     if (!validBuckets.includes(bucket)) {
       throw new Error(`Invalid bucket: ${bucket}`);
     }
 
-    // Special handling for "already-learned" - add to library and mark as Mastered
     let actualBucket: StarterPackBucket = bucket as StarterPackBucket;
     let shouldMarkMastered: boolean = false;
-    
+
     if (bucket === 'already-learned') {
       actualBucket = 'library';
       shouldMarkMastered = true;
     }
 
+    // Fetch the full dictionary entry
+    const dictEntry = await this.dictionaryDAL.findById(cardId);
+    if (!dictEntry) {
+      throw new Error(`Dictionary entry ${cardId} not found`);
+    }
+
     const client = await db.getClient();
     try {
-      // Update the card's bucket
-      await client.query(`
-        UPDATE vocabentries
-        SET "starterPackBucket" = $1
-        WHERE id = $2 AND "userId" = $3
-      `, [actualBucket, cardId, userId]);
+      // Find or create the corresponding VocabEntry
+      const existing = await this.vocabEntryDAL.findByUserAndKey(userId, dictEntry.word1);
 
-      console.log(`Set card ${cardId} starterPackBucket to: ${actualBucket}`);
+      let vocabEntryId: number;
 
-      // If "already-learned", update category to Mastered and add perfect mark history
+      if (!existing) {
+        const initialCategory = shouldMarkMastered ? 'Mastered' : 'Unfamiliar';
+        const insertResult = await client.query(`
+          INSERT INTO VocabEntries (
+            "userId", "entryKey", "entryValue", language, script, pronunciation, tone,
+            "hskLevelTag", breakdown, synonyms, "exampleSentences", "partsOfSpeech",
+            expansion, "expansionMetadata", "starterPackBucket", category
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+          RETURNING id
+        `, [
+          userId,
+          dictEntry.word1,
+          dictEntry.definitions[0] || '',
+          dictEntry.language,
+          dictEntry.script ?? null,
+          dictEntry.pronunciation ?? null,
+          dictEntry.tone ?? null,
+          dictEntry.hskLevelTag ?? null,
+          dictEntry.breakdown != null ? JSON.stringify(dictEntry.breakdown) : null,
+          dictEntry.synonyms != null ? JSON.stringify(dictEntry.synonyms) : null,
+          dictEntry.exampleSentences != null ? JSON.stringify(dictEntry.exampleSentences) : null,
+          dictEntry.partsOfSpeech != null ? JSON.stringify(dictEntry.partsOfSpeech) : null,
+          dictEntry.expansion ?? null,
+          dictEntry.expansionMetadata != null ? JSON.stringify(dictEntry.expansionMetadata) : null,
+          actualBucket,
+          initialCategory,
+        ]);
+        vocabEntryId = insertResult.rows[0].id;
+        console.log(`[StarterPacks] Created VocabEntry id=${vocabEntryId} for entryKey=${dictEntry.word1}`);
+      } else {
+        vocabEntryId = existing.id;
+        console.log(`[StarterPacks] VocabEntry already exists id=${vocabEntryId} for entryKey=${dictEntry.word1}`);
+      }
+
       if (shouldMarkMastered) {
-        await this.vocabEntryDAL.updateCategory(cardId, 'Mastered');
-        console.log(`Updated card ${cardId} category to Mastered`);
-        
-        // Create 8 correct marks with current timestamp
+        await this.vocabEntryDAL.updateCategory(vocabEntryId, 'Mastered');
         const currentTimestamp: string = new Date().toISOString();
         const perfectMarkHistory: any[] = Array(8).fill(null).map(() => ({
           timestamp: currentTimestamp,
           isCorrect: true
         }));
-        
-        // Update mark history with perfect stats
         await this.vocabEntryDAL.updateMarkHistory(
-          cardId,
+          vocabEntryId,
           perfectMarkHistory,
-          8,  // totalMarkCount
-          8,  // totalCorrectCount
-          1.0,  // totalSuccessRate (100%)
-          1.0,  // last8SuccessRate (100%)
-          1.0   // last16SuccessRate (100%)
+          8, 8, 1.0, 1.0, 1.0
         );
-        console.log(`Updated card ${cardId} with perfect mark history (8/8 correct)`);
+        console.log(`[StarterPacks] Marked VocabEntry id=${vocabEntryId} as Mastered with 8/8 history`);
       }
 
       return {
@@ -142,29 +185,34 @@ export class StarterPacksService {
 
   /**
    * Undo a card sort
-   * Sets starterPackBucket back to NULL
+   * Deletes the vocabentry row (only if created via starter pack, i.e. starterPackBucket IS NOT NULL)
    */
   async undoSort(userId: string, cardId: number, language: string): Promise<any> {
     const client = await db.getClient();
     try {
-      const result = await client.query(`
-        UPDATE vocabentries
-        SET "starterPackBucket" = NULL
-        WHERE id = $1 AND "userId" = $2
-        RETURNING *
-      `, [cardId, userId]);
+      // Get word1 for the dictionary entry
+      const dictResult = await client.query(`
+        SELECT word1 FROM DictionaryEntries WHERE id = $1
+      `, [cardId]);
 
-      if (result.rows.length === 0) {
-        return {
-          success: false,
-          message: 'Card not found'
-        };
+      const word1: string | undefined = dictResult.rows[0]?.word1;
+
+      if (!word1) {
+        return { success: false, message: 'Card not found in sorted list' };
       }
 
-      return {
-        success: true,
-        message: 'Card undo successful'
-      };
+      // Delete the vocabentry only if it was created via starter pack
+      const deleteResult = await client.query(`
+        DELETE FROM vocabentries
+        WHERE "userId" = $1 AND "entryKey" = $2 AND "starterPackBucket" IS NOT NULL
+        RETURNING id
+      `, [userId, word1]);
+
+      if (deleteResult.rows.length === 0) {
+        return { success: false, message: 'Card not found in sorted list' };
+      }
+
+      return { success: true, message: 'Card undo successful' };
     } finally {
       client.release();
     }

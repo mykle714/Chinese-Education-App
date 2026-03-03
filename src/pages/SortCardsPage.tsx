@@ -8,7 +8,7 @@ import { useDrag } from "@use-gesture/react";
 import { useSpring, animated } from "@react-spring/web";
 import MobileFooter from "../components/MobileFooter";
 import { API_BASE_URL } from "../constants";
-import type { Language, VocabEntry } from "../types";
+import type { Language, DiscoverCard } from "../types";
 
 // Design tokens from Figma
 const COLORS = {
@@ -172,12 +172,13 @@ const BUCKETS: BucketZone[] = [
 const SortCardsPage: React.FC = () => {
     const navigate = useNavigate();
     const { language } = useParams<{ language: Language }>();
-    const [cards, setCards] = useState<VocabEntry[]>([]);
+    const [cards, setCards] = useState<DiscoverCard[]>([]);
     const [currentCardIndex, setCurrentCardIndex] = useState(0);
     const [loading, setLoading] = useState(true);
     const [highlightedBucket, setHighlightedBucket] = useState<string | null>(null);
-    const [history, setHistory] = useState<Array<{ card: VocabEntry; bucket: string }>>([]);
+    const [history, setHistory] = useState<Array<{ card: DiscoverCard; bucket: string }>>([]);
     const containerRef = useRef<HTMLDivElement>(null);
+    const isLoadingMoreRef = useRef(false);
 
     const [{ x, y, scale, opacity }, api] = useSpring(() => ({
         x: 0,
@@ -226,6 +227,14 @@ const SortCardsPage: React.FC = () => {
             });
         }
     }, [currentCardIndex, currentCard, api]);
+
+    // Load more cards when 4 remain (marked the 5th-to-last)
+    useEffect(() => {
+        const remaining = cards.length - currentCardIndex;
+        if (remaining === 4 && cards.length > 0) {
+            loadMoreCards();
+        }
+    }, [currentCardIndex, cards.length]);
 
     // Check if card is dropped in a bucket
     const checkBucketCollision = (cardX: number, cardY: number): string | null => {
@@ -311,6 +320,29 @@ const SortCardsPage: React.FC = () => {
         }
     };
 
+    // Silently fetch more unsorted cards and append unique ones
+    const loadMoreCards = async () => {
+        if (isLoadingMoreRef.current) return;
+        isLoadingMoreRef.current = true;
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/starter-packs/${language}`, {
+                credentials: "include",
+            });
+            if (response.ok) {
+                const newCards: DiscoverCard[] = await response.json();
+                setCards((prev) => {
+                    const existingIds = new Set(prev.map((c) => c.id));
+                    const unique = newCards.filter((c) => !existingIds.has(c.id));
+                    return unique.length > 0 ? [...prev, ...unique] : prev;
+                });
+            }
+        } catch (error) {
+            console.error("Error loading more cards:", error);
+        } finally {
+            isLoadingMoreRef.current = false;
+        }
+    };
+
     // Drag gesture handler
     const bind = useDrag(
         ({ down, offset: [ox, oy] }) => {
@@ -345,8 +377,8 @@ const SortCardsPage: React.FC = () => {
 
     if (loading) {
         return (
-            <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100vh" }}>
-                <CircularProgress />
+            <Box className="sort-cards__loading-wrapper" sx={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100vh" }}>
+                <CircularProgress className="sort-cards__spinner" />
             </Box>
         );
     }
@@ -354,15 +386,17 @@ const SortCardsPage: React.FC = () => {
     if (!currentCard) {
         return (
             <Box
+                className="sort-cards__page-wrapper"
                 sx={{ display: "flex", justifyContent: "center", padding: 2, minHeight: "100vh" }}
             >
-                <IPhoneFrame>
-                    <Header>
-                        <Toolbar>
-                            <IconButton onClick={() => navigate("/discover")} size="small">
-                                <ExpandMoreIcon sx={{ transform: "rotate(90deg)" }} />
+                <IPhoneFrame className="sort-cards__frame">
+                    <Header className="sort-cards__header">
+                        <Toolbar className="sort-cards__toolbar">
+                            <IconButton className="sort-cards__back-button" onClick={() => navigate("/flashcards/decks")} size="small">
+                                <ExpandMoreIcon className="sort-cards__back-icon" sx={{ transform: "rotate(90deg)" }} />
                             </IconButton>
                             <Typography
+                                className="sort-cards__title"
                                 sx={{
                                     fontSize: 16,
                                     fontWeight: 400,
@@ -374,9 +408,9 @@ const SortCardsPage: React.FC = () => {
                             </Typography>
                         </Toolbar>
                     </Header>
-                    <ContentArea>
-                        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
-                            <Typography>All cards sorted! 🎉</Typography>
+                    <ContentArea className="sort-cards__content">
+                        <Box className="sort-cards__all-sorted" sx={{ display: "flex", flex: 1, alignItems: "center", justifyContent: "center" }}>
+                            <Typography className="sort-cards__all-sorted-text">All cards sorted! 🎉</Typography>
                         </Box>
                     </ContentArea>
                     <MobileFooter activePage="discover" />
@@ -387,16 +421,18 @@ const SortCardsPage: React.FC = () => {
 
     return (
         <Box
+            className="sort-cards__page-wrapper"
             sx={{ display: "flex", justifyContent: "center", padding: 2, minHeight: "100vh" }}
         >
-            <IPhoneFrame>
+            <IPhoneFrame className="sort-cards__frame">
                 {/* Header */}
-                <Header>
-                    <Toolbar>
-                        <IconButton onClick={() => navigate("/discover")} size="small">
-                            <ExpandMoreIcon sx={{ transform: "rotate(90deg)" }} />
+                <Header className="sort-cards__header">
+                    <Toolbar className="sort-cards__toolbar">
+                        <IconButton className="sort-cards__back-button" onClick={() => navigate("/flashcards/decks")} size="small">
+                            <ExpandMoreIcon className="sort-cards__back-icon" sx={{ transform: "rotate(90deg)" }} />
                         </IconButton>
                         <Typography
+                            className="sort-cards__title"
                             sx={{
                                 fontSize: 16,
                                 fontWeight: 400,
@@ -406,24 +442,26 @@ const SortCardsPage: React.FC = () => {
                         >
                             Sort Cards
                         </Typography>
-                        <Box sx={{ position: "absolute", right: 12 }}>
+                        <Box className="sort-cards__undo-wrapper" sx={{ position: "absolute", right: 12 }}>
                             <IconButton
+                                className="sort-cards__undo-button"
                                 onClick={handleUndo}
                                 size="small"
                                 disabled={history.length === 0}
                             >
-                                <UndoIcon />
+                                <UndoIcon className="sort-cards__undo-icon" />
                             </IconButton>
                         </Box>
                     </Toolbar>
                 </Header>
 
                 {/* Content Area */}
-                <ContentArea ref={containerRef}>
+                <ContentArea className="sort-cards__content" ref={containerRef}>
                     {/* Buckets */}
-                    <BucketsContainer>
+                    <BucketsContainer className="sort-cards__buckets-container">
                         {BUCKETS.map((bucket) => (
                             <Bucket
+                                className="sort-cards__bucket"
                                 key={bucket.id}
                                 mainColor={bucket.mainColor}
                                 accentColor={bucket.accentColor}
@@ -439,8 +477,9 @@ const SortCardsPage: React.FC = () => {
                     </BucketsContainer>
 
                     {/* On Deck Section with Draggable Card */}
-                    <OnDeckSection>
+                    <OnDeckSection className="sort-cards__on-deck">
                         <FlashCard
+                            className="sort-cards__flash-card"
                             {...bind()}
                             style={{
                                 x,
@@ -452,19 +491,19 @@ const SortCardsPage: React.FC = () => {
                                 top: 15.53,
                             }}
                         >
-                            <Box sx={{ width: 106, height: 83, backgroundColor: "#e0e0e0", borderRadius: 1 }} />
-                            <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-                                <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                                    <Typography sx={{ fontSize: 24, fontWeight: 400, letterSpacing: "0.08em" }}>
+                            <Box className="sort-cards__card-image" sx={{ width: 106, height: 83, backgroundColor: "#e0e0e0", borderRadius: 1 }} />
+                            <Box className="sort-cards__card-body" sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                                <Box className="sort-cards__card-key-group" sx={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                                    <Typography className="sort-cards__card-key" sx={{ fontSize: 24, fontWeight: 400, letterSpacing: "0.08em" }}>
                                         {currentCard.entryKey}
                                     </Typography>
                                     {currentCard.pronunciation && (
-                                        <Typography sx={{ fontSize: 10, fontWeight: 400 }}>
+                                        <Typography className="sort-cards__card-pronunciation" sx={{ fontSize: 10, fontWeight: 400 }}>
                                             {currentCard.pronunciation}
                                         </Typography>
                                     )}
                                 </Box>
-                                <Typography sx={{ fontSize: 14, fontWeight: 400, textAlign: "center" }}>
+                                <Typography className="sort-cards__card-value" sx={{ fontSize: 14, fontWeight: 400, textAlign: "center" }}>
                                     {currentCard.entryValue}
                                 </Typography>
                             </Box>

@@ -22,10 +22,6 @@ const COLORS = {
     categoryMastered: "#779BE7",
 };
 
-// Helper function to get HSK level number
-const getHskNumber = (hskLevel: string) => {
-    return hskLevel.replace('HSK', '');
-};
 
 // Helper function to truncate text
 const truncateText = (text: string, maxLength: number) => {
@@ -52,6 +48,7 @@ const getCategoryColor = (category?: string) => {
 const MiniVocabCard: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete, onCycle }) => {
     return (
         <Box
+            className="mini-vocab-card"
             onClick={() => onClick?.(entry)}
             sx={{
                 width: 100,
@@ -96,6 +93,7 @@ const MiniVocabCard: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete,
                 {/* Cycle Button - Top Left */}
                 {onCycle && (
                     <IconButton
+                        className="mini-vocab-card__cycle-button"
                         size="small"
                         onClick={(e) => {
                             e.stopPropagation();
@@ -113,13 +111,14 @@ const MiniVocabCard: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete,
                             },
                         }}
                     >
-                        <RepeatIcon sx={{ fontSize: 18, color: 'white' }} />
+                        <RepeatIcon className="mini-vocab-card__cycle-icon" sx={{ fontSize: 18, color: 'white' }} />
                     </IconButton>
                 )}
 
                 {/* Delete Button - Top Right */}
                 {onDelete && (
                     <IconButton
+                        className="mini-vocab-card__delete-button"
                         size="small"
                         onClick={(e) => {
                             e.stopPropagation();
@@ -137,13 +136,14 @@ const MiniVocabCard: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete,
                             },
                         }}
                     >
-                        <DeleteOutlineIcon sx={{ fontSize: 18, color: 'white' }} />
+                        <DeleteOutlineIcon className="mini-vocab-card__delete-icon" sx={{ fontSize: 18, color: 'white' }} />
                     </IconButton>
                 )}
             </Box>
             {/* Category Badge - top left */}
             {entry.category && (
                 <Box
+                    className="mini-vocab-card__category-wrapper"
                     sx={{
                         position: 'absolute',
                         top: 8,
@@ -152,6 +152,7 @@ const MiniVocabCard: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete,
                     }}
                 >
                     <Chip
+                        className="mini-vocab-card__category-chip"
                         label={entry.category}
                         size="small"
                         sx={{
@@ -168,32 +169,9 @@ const MiniVocabCard: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete,
                 </Box>
             )}
 
-            {/* HSK Badge - top right */}
-            {entry.hskLevelTag && (
-                <Box
-                    sx={{
-                        position: 'absolute',
-                        top: 8,
-                        right: 8,
-                        zIndex: 1,
-                    }}
-                >
-                    <Chip
-                        label={`HSK${getHskNumber(entry.hskLevelTag)}`}
-                        size="small"
-                        sx={{
-                            backgroundColor: '#2196f3',
-                            color: 'white',
-                            fontSize: '0.7rem',
-                            height: '20px',
-                            fontWeight: 'bold',
-                        }}
-                    />
-                </Box>
-            )}
-
             {/* Entry Key (Word/Character) */}
             <Box
+                className="mini-vocab-card__key-wrapper"
                 sx={{
                     display: 'flex',
                     alignItems: 'center',
@@ -204,6 +182,7 @@ const MiniVocabCard: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete,
                 }}
             >
                 <Typography
+                    className="mini-vocab-card__entry-key"
                     sx={{
                         fontSize: entry.entryKey.length > 4 ? '1rem' : '1.25rem',
                         fontWeight: 'bold',
@@ -220,6 +199,7 @@ const MiniVocabCard: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete,
             {/* Pronunciation (if available) */}
             {entry.pronunciation && (
                 <Typography
+                    className="mini-vocab-card__pronunciation"
                     sx={{
                         fontSize: '0.625rem',
                         color: COLORS.textSecondary,
@@ -235,6 +215,7 @@ const MiniVocabCard: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete,
 
             {/* Entry Value (Definition) */}
             <Typography
+                className="mini-vocab-card__entry-value"
                 sx={{
                     fontSize: '0.75rem',
                     color: COLORS.textSecondary,

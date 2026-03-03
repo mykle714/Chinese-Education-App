@@ -7,12 +7,11 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-# Environment variables
+# Environment variables (all .env files and variants)
 .env
-.env.local
-.env.development
-.env.test
-.env.production
+.env.*
+**/.env
+**/.env.*
 
 node_modules
 dist
@@ -32,4 +31,3 @@ dist-ssr
 
 # Environment and credential files
 *env-values*
-*.env.docker

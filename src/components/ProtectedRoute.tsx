@@ -4,10 +4,11 @@ import { CircularProgress, Box } from '@mui/material';
 
 interface ProtectedRouteProps {
     children: React.ReactNode;
+    allowPublic?: boolean;
 }
 
-function ProtectedRoute({ children }: ProtectedRouteProps) {
-    const { isAuthenticated, isLoading } = useAuth();
+function ProtectedRoute({ children, allowPublic }: ProtectedRouteProps) {
+    const { isAuthenticated, isLoading, user } = useAuth();
 
     // Show loading spinner while checking authentication
     if (isLoading) {
@@ -21,6 +22,11 @@ function ProtectedRoute({ children }: ProtectedRouteProps) {
     // Redirect to login if not authenticated
     if (!isAuthenticated) {
         return <Navigate to="/login" />;
+    }
+
+    // Redirect public accounts to home unless this route explicitly allows them
+    if (user?.isPublic && !allowPublic) {
+        return <Navigate to="/" />;
     }
 
     // Render children if authenticated

@@ -1,13 +1,34 @@
 # Docker Deployment Guide for Vocabulary App
-**Target Server IP:** 174.127.171.180
-**Repository:** https://github.com/mykle714/Chinese-Education-App.git
-**App Location:** /home/michael/vocabulary-app
 
-> **Note:** This app is deployed to `/home/michael/vocabulary-app` instead of `/var/www` due to Snap Docker's security confinement, which restricts access to certain system directories. If you're using Docker installed via Snap (common on Ubuntu), it can only access directories like `/home`, `/tmp`, and `/var/snap` by default.
+## Prerequisites
+Before starting, gather the following information:
+- **Server IP Address**: The public or static IP of your deployment server
+- **Server Hostname**: Domain name (optional, for SSL/HTTPS setup)
+- **SSH Access**: Username and password or SSH key for the deployment server
+- **Repository URL**: The Git repository URL for the application
+
+## Configuration Variables
+
+Replace these placeholders with your actual values throughout this guide:
+
+| Variable | Example | Description |
+|----------|---------|-------------|
+| `<SERVER_IP>` | 203.0.113.45 | Public/static IP of your deployment server |
+| `<SERVER_HOSTNAME>` | vocab-app.example.com | Domain name (optional, for SSL) |
+| `<SSH_USER>` | ubuntu | SSH username on deployment server |
+| `<APP_PATH>` | /home/ubuntu/vocabulary-app | Where to clone the repository |
+| `<REPO_URL>` | https://github.com/user/Chinese-Education-App.git | Your Git repository URL |
+
+> **Note on App Location**: The app is deployed to a user directory (e.g., `/home/ubuntu/vocabulary-app`) instead of `/var/www` due to Snap Docker's security confinement, which restricts access to certain system directories. If you're using Docker installed via Snap (common on Ubuntu), it can only access directories like `/home`, `/tmp`, and `/var/snap` by default.
 
 ## Step 1: SSH into Your Deployment Server
 ```bash
-ssh username@174.127.171.180
+ssh <SSH_USER>@<SERVER_IP>
+```
+
+Example:
+```bash
+ssh ubuntu@203.0.113.45
 ```
 
 ## Step 2: Update System and Install Docker
@@ -27,25 +48,29 @@ sudo chmod +x /usr/local/bin/docker-compose
 sudo usermod -aG docker $USER
 
 # Install additional dependencies
-sudo apt install -y nginx git ufw
+sudo apt install -y git ufw
 
 # Verify installations
 docker --version
 docker-compose --version
-nginx -v
 
 # Log out and back in for docker group changes to take effect
 exit
 # SSH back in
-ssh username@174.127.171.180
+ssh <SSH_USER>@<SERVER_IP>
 ```
 
 ## Step 3: Clone and Setup Application
 ```bash
 # Clone repository to home directory (compatible with Snap Docker)
 cd ~
-git clone https://github.com/mykle714/Chinese-Education-App.git vocabulary-app
+git clone <REPO_URL> vocabulary-app
 cd vocabulary-app
+```
+
+Example:
+```bash
+git clone https://github.com/user/Chinese-Education-App.git vocabulary-app
 ```
 
 ## Step 4: Configure Production Environment
@@ -61,7 +86,7 @@ DB_USER=cow_user
 
 # Application Configuration
 JWT_SECRET=your-super-secure-jwt-secret-here-make-it-32-plus-characters
-CLIENT_URL=http://174.127.171.180
+CLIENT_URL=http://<SERVER_IP>
 NODE_ENV=production
 PORT=5000
 EOF
@@ -70,7 +95,12 @@ EOF
 chmod 600 .env
 ```
 
-**Important:** Replace the database password and JWT secret with secure values!
+Replace `<SERVER_IP>` with your actual server IP or domain.
+
+**Important:**
+- Replace the database password with a strong, unique password
+- Replace the JWT secret with a cryptographically random string (minimum 32 characters)
+- Generate secure values: `openssl rand -base64 32`
 
 ## Step 5: Build and Start Docker Services
 ```bash
@@ -89,14 +119,14 @@ docker-compose -f docker-compose.prod.yml logs -f
 
 ```bash
 # Make the import script executable
-chmod +x ~/vocabulary-app/server/scripts/import-all-dictionaries.sh
+chmod +x server/scripts/import-all-dictionaries.sh
 
 # Run the complete dictionary import process
 # This will:
 # - Run all database migrations (including multi-language support)
 # - Download all 4 language dictionary files
 # - Import all dictionaries into the database
-bash ~/vocabulary-app/server/scripts/import-all-dictionaries.sh production
+bash server/scripts/import-all-dictionaries.sh production
 ```
 
 **What this script does:**
@@ -125,7 +155,7 @@ Total dictionary entries: ~390,000
 # Check if all containers are running
 docker ps
 
-# Test backend health endpoint
+# Test backend health endpoint (internal Docker network)
 curl http://localhost:5000/api/health
 
 # Test database connection
@@ -145,59 +175,7 @@ pool.query('SELECT NOW()', (err, res) => {
 "
 ```
 
-## Step 8: Configure Nginx (Optional - Docker handles this)
-**Note**: The Docker production setup includes Nginx in the container, but you can optionally set up an external reverse proxy:
-
-```bash
-# Create Nginx configuration for external reverse proxy (optional)
-sudo tee /etc/nginx/sites-available/vocabulary-app << EOF
-server {
-    listen 80;
-    server_name 174.127.171.180;
-
-    # Proxy to Docker frontend container
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_cache_bypass \$http_upgrade;
-    }
-
-    # Backend API (already handled by frontend container)
-    location /api/ {
-        proxy_pass http://localhost:5000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_cache_bypass \$http_upgrade;
-    }
-
-    # Security headers
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-XSS-Protection "1; mode=block" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header Referrer-Policy "no-referrer-when-downgrade" always;
-    add_header Content-Security-Policy "default-src 'self' http: https: data: blob: 'unsafe-inline'" always;
-}
-EOF
-
-# Enable the site (optional)
-sudo ln -s /etc/nginx/sites-available/vocabulary-app /etc/nginx/sites-enabled/
-sudo nginx -t  # Test configuration
-sudo systemctl reload nginx
-```
-
-## Step 9: Configure Firewall
+## Step 8: Configure Firewall
 ```bash
 # Configure UFW firewall
 sudo ufw default deny incoming
@@ -205,29 +183,34 @@ sudo ufw default allow outgoing
 sudo ufw allow 22/tcp    # SSH
 sudo ufw allow 80/tcp    # HTTP web server
 sudo ufw allow 443/tcp   # HTTPS (for future SSL)
-sudo ufw allow 25565     # Custom service (Minecraft server or other)
-sudo ufw allow 8181      # Custom service
-sudo ufw allow 9091      # Custom service (Transmission or other)
 sudo ufw enable
 
 # Check firewall status
 sudo ufw status
 ```
 
-**Note:** The production Docker setup binds the frontend to port 80 (not 3000) and the backend to localhost only for security.
+**Note:** The production Docker setup binds the frontend to port 80 (HTTP) and 443 (HTTPS).
 
-## Step 10: Router Port Forwarding
-**On your router admin panel (usually 192.168.1.1 or 192.168.0.1):**
+## Step 9: Router Port Forwarding (If Behind NAT)
 
-1. Find "Port Forwarding" or "Virtual Server" section
-2. Add these rules:
+If your deployment server is behind a NAT router, configure port forwarding:
+
+1. Access your router admin panel (usually 192.168.1.1 or 192.168.0.1)
+2. Find "Port Forwarding" or "Virtual Server" section
+3. Add these rules:
    - **Service Name:** Web Server HTTP
    - **External Port:** 80
-   - **Internal IP:** [Your server's internal IP]
-   - **Internal Port:** 3000 (Docker frontend)
+   - **Internal IP:** [Your server's internal IP on your LAN]
+   - **Internal Port:** 80 (Docker frontend)
    - **Protocol:** TCP
 
-## Step 11: Test Deployment
+   - **Service Name:** Web Server HTTPS
+   - **External Port:** 443
+   - **Internal IP:** [Your server's internal IP on your LAN]
+   - **Internal Port:** 443 (Docker frontend)
+   - **Protocol:** TCP
+
+## Step 10: Test Deployment
 ```bash
 # Check Docker container status
 docker-compose -f docker-compose.prod.yml ps
@@ -235,21 +218,21 @@ docker-compose -f docker-compose.prod.yml ps
 # Check Docker service logs
 docker-compose -f docker-compose.prod.yml logs
 
-# Check if backend is responding
+# Check if backend is responding (internal Docker network)
 curl http://localhost:5000/api/health
 
-# Check if frontend is responding
-curl http://localhost:3000
+# Check if frontend is responding (internal Docker network)
+curl http://localhost/
 
 # Test from external network
-# Visit: http://174.127.171.180
+# Visit: http://<SERVER_IP> (replace with your actual server IP or domain)
 ```
 
-## Step 12: Verify Multi-Language Support
+## Step 11: Verify Multi-Language Support
 ```bash
 # Check dictionary counts for each language
 docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "
-    SELECT 
+    SELECT
         language,
         COUNT(*) as entries,
         CASE language
@@ -294,7 +277,7 @@ docker stats
 
 # Check ports
 sudo netstat -tlnp | grep :80
-sudo netstat -tlnp | grep :3000
+sudo netstat -tlnp | grep :443
 sudo netstat -tlnp | grep :5000
 ```
 
@@ -336,4 +319,10 @@ Your dictionary data and user data are stored in Docker volumes:
 - To backup: `docker run --rm -v postgres_data:/data -v $(pwd):/backup alpine tar czf /backup/postgres-backup.tar.gz /data`
 - To restore: `docker run --rm -v postgres_data:/data -v $(pwd):/backup alpine tar xzf /backup/postgres-backup.tar.gz -C /`
 
-Your vocabulary app will be accessible at: **http://174.127.171.180**
+## Access Your Application
+
+Your vocabulary app will be accessible at:
+- **HTTP**: `http://<SERVER_IP>`
+- **HTTPS**: `https://<SERVER_IP>` (after configuring SSL certificates, see HTTPS_SETUP_GUIDE.md)
+
+Replace `<SERVER_IP>` with your actual server IP address or domain name.

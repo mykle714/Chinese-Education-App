@@ -11,6 +11,7 @@ interface User {
     id: string;
     email: string;
     name: string;
+    isPublic?: boolean;
     selectedLanguage?: Language;
 }
 

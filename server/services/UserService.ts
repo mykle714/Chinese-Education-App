@@ -266,13 +266,13 @@ export class UserService {
   }
 
   /**
-   * Get total work points for a user
+   * Get total work points and current streak for a user
    */
-  async getTotalWorkPoints(userId: string): Promise<number> {
+  async getTotalWorkPoints(userId: string): Promise<{ totalWorkPoints: number; currentStreak: number }> {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
-    
+
     return await this.userDAL.getTotalWorkPoints(userId);
   }
 

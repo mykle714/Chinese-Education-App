@@ -43,8 +43,8 @@ You can understand the different constructs of this project by inspecting the ta
 ### Backend
 - **Framework**: Express.js 5.1.0
 - **Language**: TypeScript
-- **Database**: MS SQL Server (Azure SQL Database)
-- **Authentication**: Azure Active Directory Service Principal
+- **Database**: PostgreSQL 15
+- **Authentication**: JWT (JSON Web Tokens)
 
 ### Development Tools
 - **Linting**: ESLint 9.25.0
@@ -93,12 +93,12 @@ Please refer to the `server/CONTRIBUTING.md` file for guidelines on contributing
 
 ### Overview
 
-A brief description of the database, its purpose, and the technology stack (e.g., Azure SQL Database with Node.js/Express backend).
+PostgreSQL 15 database with Node.js/Express backend, managed via Docker Compose.
 
 ### Connection Details
 
-- **Database Type**: Azure SQL Database
-- **Authentication Method**: [e.g., Azure Active Directory Service Principal]
+- **Database Type**: PostgreSQL 15
+- **Authentication Method**: Standard PostgreSQL user/password authentication
 - **Environment Variables Required**: found in .env file
 
 ### Tables

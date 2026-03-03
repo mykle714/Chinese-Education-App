@@ -25,7 +25,19 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
       word1: row.word1,
       word2: row.word2,
       pronunciation: row.pronunciation,
+      tone: row.tone ?? null,
       definitions: Array.isArray(row.definitions) ? row.definitions : (typeof row.definitions === 'string' ? JSON.parse(row.definitions) : [row.definitions]),
+      discoverable: row.discoverable ?? false,
+      script: row.script ?? null,
+      hskLevelTag: row.hskLevelTag ?? null,
+      breakdown: row.breakdown ?? null,
+      synonyms: row.synonyms ?? null,
+      exampleSentences: row.exampleSentences ?? null,
+      partsOfSpeech: row.partsOfSpeech ?? null,
+      expansion: row.expansion ?? null,
+      expansionMetadata: row.expansionMetadata ?? null,
+      shortDefinition: row.shortDefinition ?? null,
+      longDefinition: row.longDefinition ?? null,
       createdAt: row.createdat
     };
   }
@@ -39,14 +51,20 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
     const result = await this.dbManager.executeQuery<any>(async (client) => {
       if (language) {
         return await client.query(`
-          SELECT id, language, word1, word2, pronunciation, definitions, createdat
+          SELECT id, language, word1, word2, pronunciation, tone, definitions,
+                 discoverable, script, "hskLevelTag", breakdown, synonyms,
+                 "exampleSentences", "partsOfSpeech", expansion, "expansionMetadata",
+                 "shortDefinition", "longDefinition", createdat
           FROM ${this.tableName}
           WHERE word1 = $1 AND language = $2
           LIMIT 1
         `, [word1, language]);
       } else {
         return await client.query(`
-          SELECT id, language, word1, word2, pronunciation, definitions, createdat
+          SELECT id, language, word1, word2, pronunciation, tone, definitions,
+                 discoverable, script, "hskLevelTag", breakdown, synonyms,
+                 "exampleSentences", "partsOfSpeech", expansion, "expansionMetadata",
+                 "shortDefinition", "longDefinition", createdat
           FROM ${this.tableName}
           WHERE word1 = $1
           LIMIT 1
@@ -85,13 +103,19 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
     const result = await this.dbManager.executeQuery<any>(async (client) => {
       if (language) {
         return await client.query(`
-          SELECT id, language, word1, word2, pronunciation, definitions, createdat
+          SELECT id, language, word1, word2, pronunciation, tone, definitions,
+                 discoverable, script, "hskLevelTag", breakdown, synonyms,
+                 "exampleSentences", "partsOfSpeech", expansion, "expansionMetadata",
+                 "shortDefinition", "longDefinition", createdat
           FROM ${this.tableName}
           WHERE word1 = ANY($1) AND language = $2
         `, [words, language]);
       } else {
         return await client.query(`
-          SELECT id, language, word1, word2, pronunciation, definitions, createdat
+          SELECT id, language, word1, word2, pronunciation, tone, definitions,
+                 discoverable, script, "hskLevelTag", breakdown, synonyms,
+                 "exampleSentences", "partsOfSpeech", expansion, "expansionMetadata",
+                 "shortDefinition", "longDefinition", createdat
           FROM ${this.tableName}
           WHERE word1 = ANY($1)
         `, [words]);
@@ -177,7 +201,9 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
     // Exclude results where pronunciation ends in 'g' immediately after the search term
     const entriesResult = await this.dbManager.executeQuery<any>(async (client) => {
       return await client.query(`
-        SELECT id, language, word1, word2, pronunciation, definitions, createdat
+        SELECT id, language, word1, word2, pronunciation, tone, definitions,
+               discoverable, script, "hskLevelTag", breakdown, synonyms,
+               "exampleSentences", "partsOfSpeech", expansion, "expansionMetadata", createdat
         FROM ${this.tableName}
         WHERE language = $1 AND (
           word1 ILIKE $2 
@@ -220,7 +246,9 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
       return await client.query(`
         INSERT INTO ${this.tableName} (language, word1, word2, pronunciation, definitions)
         VALUES ($1, $2, $3, $4, $5)
-        RETURNING id, language, word1, word2, pronunciation, definitions, createdat
+        RETURNING id, language, word1, word2, pronunciation, tone, definitions,
+                  discoverable, script, "hskLevelTag", breakdown, synonyms,
+                  "exampleSentences", "partsOfSpeech", expansion, "expansionMetadata", createdat
       `, [
         data.language,
         data.word1,

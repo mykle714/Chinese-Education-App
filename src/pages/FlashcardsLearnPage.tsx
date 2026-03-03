@@ -13,8 +13,6 @@ import {
 } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import { useDrag } from "@use-gesture/react";
-import CheckIcon from "@mui/icons-material/Check";
-import CheckBoxOutlineBlankIcon from "@mui/icons-material/CheckBoxOutlineBlank";
 import UndoIcon from "@mui/icons-material/Undo";
 import SettingsIcon from "@mui/icons-material/Settings";
 import LocalFireDepartmentIcon from "@mui/icons-material/LocalFireDepartment";
@@ -22,6 +20,7 @@ import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import { API_BASE_URL } from "../constants";
+import CharacterPinyinColorDisplay from "../components/CharacterPinyinColorDisplay";
 
 // Types
 type HskLevel = "HSK1" | "HSK2" | "HSK3" | "HSK4" | "HSK5" | "HSK6";
@@ -32,9 +31,10 @@ interface VocabEntry {
     entryValue: string;
     pronunciation?: string | null;
     hskLevelTag?: HskLevel | null;
-    breakdown?: Record<string, { definition: string; pronunciation: string }> | null;
+    breakdown?: Record<string, { definition: string }> | null;
     synonyms?: string[];
     expansion?: string | null;
+    expansionMetadata?: Record<string, { definition: string; pronunciation: string }> | null;
     exampleSentences?: Array<{ chinese: string; english: string; usage: string }>;
     partsOfSpeech?: string[];
     relatedWords?: Array<{ id: number; entryKey: string; sharedCharacters: string[]; successRate: number | null }>;
@@ -74,8 +74,10 @@ const IPhoneFrame = styled(Box)(({ theme }) => ({
     display: "flex",
     flexDirection: "column",
     maxWidth: 393,
+    width: "100%",
     margin: "0 auto",
     height: "100vh",
+    minHeight: "852px",
     maxHeight: "932px",
 }));
 
@@ -172,36 +174,13 @@ const BreakdownLineItem = styled(Box)(({ theme }) => ({
     display: "flex",
     alignItems: "center",
     gap: 36,
-    padding: "5px 8px 5px 2px",
+    padding: "3px 8px 3px 2px",
     borderBottom: `1px dashed ${COLORS.border}`,
     "&:last-child": {
         borderBottom: "none",
     },
 }));
 
-const CharacterColumn = styled(Box)(({ theme }) => ({
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    width: 36,
-    minHeight: 40,
-    textAlign: "center",
-}));
-
-const CharacterText = styled(Typography)(({ theme }) => ({
-    fontSize: 20,
-    fontWeight: 400,
-    lineHeight: 1.21,
-    fontFamily: '"Inter", "Noto Sans JP", sans-serif',
-}));
-
-const PinyinText = styled(Typography)(({ theme }) => ({
-    fontSize: 8,
-    fontWeight: 400,
-    lineHeight: 1.21,
-    fontFamily: '"Inter", sans-serif',
-}));
 
 const DefinitionColumn = styled(Box)(({ theme }) => ({
     flex: 1,
@@ -243,17 +222,15 @@ const BreakdownLineItemComponent: React.FC<{
     character: string;
     pinyin: string;
     definition: string;
-    colorCode: string;
-}> = ({ character, pinyin, definition, colorCode }) => (
+}> = ({ character, pinyin, definition }) => (
     <BreakdownLineItem className="mobile-demo-breakdown-item">
-        <CharacterColumn className="mobile-demo-character-column">
-            <CharacterText className="mobile-demo-character-text" sx={{ color: colorCode }}>
-                {character}
-            </CharacterText>
-            <PinyinText className="mobile-demo-pinyin-text" sx={{ color: colorCode }}>
-                {pinyin}
-            </PinyinText>
-        </CharacterColumn>
+        <CharacterPinyinColorDisplay
+            character={character}
+            pinyin={pinyin}
+            size="sm"
+            useToneColor={true}
+            showPinyin={true}
+        />
         <DefinitionColumn className="mobile-demo-definition-column">
             <DefinitionText className="mobile-demo-definition-text">{definition}</DefinitionText>
         </DefinitionColumn>
@@ -293,18 +270,17 @@ const FlashcardsLearnPage: React.FC = () => {
 
     // Convert breakdown object to array for display
     const getBreakdownItems = (): BreakdownItem[] => {
-        if (!currentEntry || !currentEntry.breakdown) {
-            return [];
-        }
-
+        if (!currentEntry || !currentEntry.breakdown) return [];
         const breakdown = currentEntry.breakdown;
-        const characters = Object.keys(breakdown);
-
-        return characters.map((char) => ({
-            character: char,
-            pinyin: breakdown[char].pronunciation,
-            definition: breakdown[char].definition,
-        }));
+        const allChars = [...currentEntry.entryKey];
+        const pinyinParts = currentEntry.pronunciation ? currentEntry.pronunciation.split(' ') : [];
+        return allChars
+            .map((char, index) => ({
+                character: char,
+                pinyin: pinyinParts[index] ?? '',
+                definition: breakdown[char]?.definition ?? '',
+            }))
+            .filter(item => item.character in breakdown);
     };
 
     const breakdownItems = getBreakdownItems();
@@ -631,20 +607,15 @@ const FlashcardsLearnPage: React.FC = () => {
                         </Typography>
                         <PageTools className="mobile-demo-page-tools">
                             <IconButton className="mobile-demo-tool-button" size="small" sx={{ color: COLORS.onSurface }}>
-                                <CheckIcon />
-                            </IconButton>
-                            <IconButton className="mobile-demo-tool-button" size="small" sx={{ color: COLORS.onSurface }}>
-                                <CheckBoxOutlineBlankIcon />
-                            </IconButton>
-                            <IconButton className="mobile-demo-tool-button" size="small" sx={{ color: COLORS.onSurface }}>
                                 <UndoIcon />
                             </IconButton>
                             <IconButton className="mobile-demo-tool-button" size="small" sx={{ color: COLORS.onSurface }}>
                                 <SettingsIcon />
                             </IconButton>
                             {/* Work Points Fire Icon with Seconds Counter */}
-                            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
+                            <Box className="mobile-demo-work-points" sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
                                 <Badge
+                                    className="mobile-demo-work-points-badge"
                                     badgeContent={workPoints.currentPoints}
                                     color="primary"
                                     max={99}
@@ -669,6 +640,7 @@ const FlashcardsLearnPage: React.FC = () => {
                                         }}
                                     >
                                         <LocalFireDepartmentIcon
+                                            className="mobile-demo-fire-icon"
                                             sx={{
                                                 color: workPoints.isActive ? COLORS.fireActive : COLORS.gray,
                                                 fontSize: '1.25rem',
@@ -684,6 +656,7 @@ const FlashcardsLearnPage: React.FC = () => {
                                 </Badge>
                                 {/* Seconds counter — driven by hook's live 1s timer */}
                                 <Typography
+                                    className="mobile-demo-seconds-counter"
                                     sx={{
                                         fontSize: '0.625rem',
                                         fontWeight: 'bold',
@@ -702,13 +675,14 @@ const FlashcardsLearnPage: React.FC = () => {
                 {/* Content Area */}
                 <ContentArea className="mobile-demo-content">
                     {/* Info Card with breakdown and arrow indicators */}
-                    <Box sx={{ position: "relative", width: 295 }}>
+                    <Box className="mobile-demo-info-card-wrapper" sx={{ position: "relative", width: 295 }}>
                         {/* Left Arrow Indicator */}
                         <ArrowIndicator
+                            className="mobile-demo-left-arrow"
                             sx={{ left: -32 }}
                             onClick={() => setSelectedTab((prev) => (prev === 0 ? 4 : prev - 1))}
                         >
-                            <ChevronLeftIcon sx={{ fontSize: 24 }} />
+                            <ChevronLeftIcon className="mobile-demo-chevron-left" sx={{ fontSize: 24 }} />
                         </ArrowIndicator>
 
                         <InfoCard
@@ -749,12 +723,11 @@ const FlashcardsLearnPage: React.FC = () => {
                                                 character={item.character}
                                                 pinyin={item.pinyin}
                                                 definition={item.definition}
-                                                colorCode={characterColors[index % characterColors.length]}
                                             />
                                         ))
                                     ) : selectedTab === 0 ? (
-                                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 2 }}>
-                                            <Typography sx={{ fontSize: 14, color: COLORS.gray, textAlign: 'center', fontFamily: '"Inter", sans-serif' }}>
+                                        <Box className="mobile-demo-tab-empty" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 2 }}>
+                                            <Typography className="mobile-demo-tab-empty-text" sx={{ fontSize: 14, color: COLORS.gray, textAlign: 'center', fontFamily: '"Inter", sans-serif' }}>
                                                 Breakdown not available for this card
                                             </Typography>
                                         </Box>
@@ -762,9 +735,10 @@ const FlashcardsLearnPage: React.FC = () => {
 
                                     {/* Tab 1: Related Words */}
                                     {selectedTab === 1 && currentEntry?.relatedWords && currentEntry.relatedWords.length > 0 ? (
-                                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                        <Box className="mobile-demo-related-words-list" sx={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                             {currentEntry.relatedWords.map((word, index) => (
                                                 <Box
+                                                    className="mobile-demo-related-word-item"
                                                     key={word.id}
                                                     sx={{
                                                         display: 'flex',
@@ -776,20 +750,20 @@ const FlashcardsLearnPage: React.FC = () => {
                                                         border: `1px solid ${COLORS.border}`,
                                                     }}
                                                 >
-                                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
-                                                        <Typography sx={{ fontSize: 16, fontWeight: 500, color: COLORS.onSurface, fontFamily: '"Inter", "Noto Sans JP", sans-serif' }}>
+                                                    <Box className="mobile-demo-related-word-text" sx={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
+                                                        <Typography className="mobile-demo-related-word-key" sx={{ fontSize: 16, fontWeight: 500, color: COLORS.onSurface, fontFamily: '"Inter", "Noto Sans JP", sans-serif' }}>
                                                             {word.entryKey}
                                                         </Typography>
-                                                        <Typography sx={{ fontSize: 10, color: COLORS.gray, fontFamily: '"Inter", sans-serif' }}>
+                                                        <Typography className="mobile-demo-related-word-shared" sx={{ fontSize: 10, color: COLORS.gray, fontFamily: '"Inter", sans-serif' }}>
                                                             Shared: {word.sharedCharacters.map((char, i) => (
-                                                                <Box component="span" key={i} sx={{ color: characterColors[i % characterColors.length], fontWeight: 600, marginRight: '4px' }}>
+                                                                <Box className="mobile-demo-shared-char" component="span" key={i} sx={{ color: characterColors[i % characterColors.length], fontWeight: 600, marginRight: '4px' }}>
                                                                     {char}
                                                                 </Box>
                                                             ))}
                                                         </Typography>
                                                     </Box>
                                                     {word.successRate !== null && (
-                                                        <Typography sx={{ fontSize: 12, fontWeight: 600, color: COLORS.green, fontFamily: '"Inter", sans-serif' }}>
+                                                        <Typography className="mobile-demo-success-rate" sx={{ fontSize: 12, fontWeight: 600, color: COLORS.green, fontFamily: '"Inter", sans-serif' }}>
                                                             {Math.round(word.successRate * 100)}%
                                                         </Typography>
                                                     )}
@@ -797,8 +771,8 @@ const FlashcardsLearnPage: React.FC = () => {
                                             ))}
                                         </Box>
                                     ) : selectedTab === 1 ? (
-                                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 2 }}>
-                                            <Typography sx={{ fontSize: 14, color: COLORS.gray, textAlign: 'center', fontFamily: '"Inter", sans-serif' }}>
+                                        <Box className="mobile-demo-tab-empty" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 2 }}>
+                                            <Typography className="mobile-demo-tab-empty-text" sx={{ fontSize: 14, color: COLORS.gray, textAlign: 'center', fontFamily: '"Inter", sans-serif' }}>
                                                 No related words found
                                             </Typography>
                                         </Box>
@@ -806,9 +780,10 @@ const FlashcardsLearnPage: React.FC = () => {
 
                                     {/* Tab 2: Synonyms */}
                                     {selectedTab === 2 && currentEntry?.synonyms && currentEntry.synonyms.length > 0 ? (
-                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '8px', padding: '4px' }}>
+                                        <Box className="mobile-demo-synonyms-list" sx={{ display: 'flex', flexWrap: 'wrap', gap: '8px', padding: '4px' }}>
                                             {currentEntry.synonyms.map((synonym, index) => (
                                                 <Box
+                                                    className="mobile-demo-synonym-item"
                                                     key={index}
                                                     sx={{
                                                         padding: '8px 16px',
@@ -817,15 +792,15 @@ const FlashcardsLearnPage: React.FC = () => {
                                                         border: `1px solid ${COLORS.border}`,
                                                     }}
                                                 >
-                                                    <Typography sx={{ fontSize: 16, fontWeight: 400, color: 'white', fontFamily: '"Inter", "Noto Sans JP", sans-serif' }}>
+                                                    <Typography className="mobile-demo-synonym-text" sx={{ fontSize: 16, fontWeight: 400, color: 'white', fontFamily: '"Inter", "Noto Sans JP", sans-serif' }}>
                                                         {synonym}
                                                     </Typography>
                                                 </Box>
                                             ))}
                                         </Box>
                                     ) : selectedTab === 2 ? (
-                                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 2 }}>
-                                            <Typography sx={{ fontSize: 14, color: COLORS.gray, textAlign: 'center', fontFamily: '"Inter", sans-serif' }}>
+                                        <Box className="mobile-demo-tab-empty" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 2 }}>
+                                            <Typography className="mobile-demo-tab-empty-text" sx={{ fontSize: 14, color: COLORS.gray, textAlign: 'center', fontFamily: '"Inter", sans-serif' }}>
                                                 No synonyms available
                                             </Typography>
                                         </Box>
@@ -833,9 +808,10 @@ const FlashcardsLearnPage: React.FC = () => {
 
                                     {/* Tab 3: Example Sentences */}
                                     {selectedTab === 3 && currentEntry?.exampleSentences && currentEntry.exampleSentences.length > 0 ? (
-                                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                        <Box className="mobile-demo-sentences-list" sx={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                                             {currentEntry.exampleSentences.map((sentence, index) => (
                                                 <Box
+                                                    className="mobile-demo-sentence-item"
                                                     key={index}
                                                     sx={{
                                                         display: 'flex',
@@ -847,21 +823,21 @@ const FlashcardsLearnPage: React.FC = () => {
                                                         borderLeft: `4px solid ${COLORS.orange}`,
                                                     }}
                                                 >
-                                                    <Typography sx={{ fontSize: 14, fontWeight: 500, color: COLORS.onSurface, fontFamily: '"Inter", "Noto Sans JP", sans-serif', lineHeight: 1.4 }}>
+                                                    <Typography className="mobile-demo-sentence-chinese" sx={{ fontSize: 14, fontWeight: 500, color: COLORS.onSurface, fontFamily: '"Inter", "Noto Sans JP", sans-serif', lineHeight: 1.4 }}>
                                                         {sentence.chinese}
                                                     </Typography>
-                                                    <Typography sx={{ fontSize: 11, color: COLORS.gray, fontFamily: '"Inter", sans-serif', lineHeight: 1.3 }}>
+                                                    <Typography className="mobile-demo-sentence-english" sx={{ fontSize: 11, color: COLORS.gray, fontFamily: '"Inter", sans-serif', lineHeight: 1.3 }}>
                                                         {sentence.english}
                                                     </Typography>
-                                                    <Typography sx={{ fontSize: 9, color: COLORS.orange, fontFamily: '"Inter", sans-serif', fontStyle: 'italic', textTransform: 'capitalize' }}>
+                                                    <Typography className="mobile-demo-sentence-usage" sx={{ fontSize: 9, color: COLORS.orange, fontFamily: '"Inter", sans-serif', fontStyle: 'italic', textTransform: 'capitalize' }}>
                                                         ({sentence.usage})
                                                     </Typography>
                                                 </Box>
                                             ))}
                                         </Box>
                                     ) : selectedTab === 3 ? (
-                                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 2 }}>
-                                            <Typography sx={{ fontSize: 14, color: COLORS.gray, textAlign: 'center', fontFamily: '"Inter", sans-serif' }}>
+                                        <Box className="mobile-demo-tab-empty" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 2 }}>
+                                            <Typography className="mobile-demo-tab-empty-text" sx={{ fontSize: 14, color: COLORS.gray, textAlign: 'center', fontFamily: '"Inter", sans-serif' }}>
                                                 No example sentences available
                                             </Typography>
                                         </Box>
@@ -869,17 +845,26 @@ const FlashcardsLearnPage: React.FC = () => {
 
                                     {/* Tab 4: Expansion */}
                                     {selectedTab === 4 && currentEntry?.expansion ? (
-                                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 2, gap: 2 }}>
-                                            <Typography sx={{ fontSize: 12, color: COLORS.gray, fontFamily: '"Inter", sans-serif', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                        <Box className="mobile-demo-expansion-wrapper" sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 2, gap: 2 }}>
+                                            <Typography className="mobile-demo-expansion-label" sx={{ fontSize: 12, color: COLORS.gray, fontFamily: '"Inter", sans-serif', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                                                 Expanded Form
                                             </Typography>
-                                            <Typography sx={{ fontSize: 24, fontWeight: 400, color: COLORS.onSurface, fontFamily: '"Inter", "Noto Sans JP", sans-serif', textAlign: 'center', lineHeight: 1.4 }}>
-                                                {currentEntry.expansion}
-                                            </Typography>
+                                            <Box className="mobile-demo-expansion-chars" sx={{ display: 'flex', flexDirection: 'row', gap: 0.5, flexWrap: 'wrap', justifyContent: 'center' }}>
+                                                {[...currentEntry.expansion].map((char, i) => (
+                                                    <CharacterPinyinColorDisplay
+                                                        key={i}
+                                                        character={char}
+                                                        pinyin={currentEntry.expansionMetadata?.[char]?.pronunciation ?? ''}
+                                                        showPinyin={!!currentEntry.expansionMetadata?.[char]?.pronunciation}
+                                                        size="sm"
+                                                        useToneColor={true}
+                                                    />
+                                                ))}
+                                            </Box>
                                         </Box>
                                     ) : selectedTab === 4 ? (
-                                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 2 }}>
-                                            <Typography sx={{ fontSize: 14, color: COLORS.gray, textAlign: 'center', fontFamily: '"Inter", sans-serif' }}>
+                                        <Box className="mobile-demo-tab-empty" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 2 }}>
+                                            <Typography className="mobile-demo-tab-empty-text" sx={{ fontSize: 14, color: COLORS.gray, textAlign: 'center', fontFamily: '"Inter", sans-serif' }}>
                                                 No expansion available
                                             </Typography>
                                         </Box>
@@ -890,10 +875,11 @@ const FlashcardsLearnPage: React.FC = () => {
 
                         {/* Right Arrow Indicator */}
                         <ArrowIndicator
+                            className="mobile-demo-right-arrow"
                             sx={{ right: -32 }}
                             onClick={() => setSelectedTab((prev) => (prev === 4 ? 0 : prev + 1))}
                         >
-                            <ChevronRightIcon sx={{ fontSize: 24 }} />
+                            <ChevronRightIcon className="mobile-demo-chevron-right" sx={{ fontSize: 24 }} />
                         </ArrowIndicator>
                     </Box>
 
@@ -923,54 +909,102 @@ const FlashcardsLearnPage: React.FC = () => {
                                     transform: `translate(${dragPosition.x}px, ${dragPosition.y}px) rotate(${rotation}deg)`,
                                     transition: isDragging ? 'none' : 'transform 0.3s ease-out',
                                     opacity: opacity,
-                                    '&::before': {
-                                        content: '""',
-                                        position: 'absolute',
-                                        top: 0,
-                                        left: 0,
-                                        right: 0,
-                                        bottom: 0,
-                                        backgroundColor: dragPosition.x > 50 ? COLORS.correct : dragPosition.x < -50 ? COLORS.incorrect : 'transparent',
-                                        opacity: Math.min(Math.abs(dragPosition.x) / 150, 0.3),
-                                        borderRadius: "12px",
-                                        pointerEvents: 'none',
-                                        zIndex: 1,
-                                    }
+                                    perspective: "1200px",
                                 }}
                             >
-                                <CardContent className="mobile-demo-flashcard-content" sx={{ padding: "72px 30px", position: 'relative', zIndex: 2 }}>
-                                    <Box className="mobile-demo-flashcard-inner" sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '80px' }}>
-                                        <Box className="mobile-demo-flashcard-image" sx={{ width: 106, height: 83 }} />
-                                        <Box className="mobile-demo-flashcard-text" sx={{ display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'center', width: '100%' }}>
-                                            <Typography
-                                                className="mobile-demo-flashcard-word"
-                                                sx={{
-                                                    fontSize: 30,
-                                                    fontWeight: 400,
-                                                    color: COLORS.onSurface,
-                                                    fontFamily: '"Inter", "Noto Sans JP", sans-serif',
-                                                }}
-                                            >
-                                                {isFlipped ? currentEntry.entryValue : currentEntry.entryKey}
-                                            </Typography>
-                                            {/* Show pronunciation when Chinese is displayed (not flipped) */}
-                                            {!isFlipped && currentEntry.pronunciation && (
+                                {/* FlipInner: remounts on card change so random initial flip has no animation */}
+                                <Box
+                                    key={currentEntry.id}
+                                    sx={{
+                                        position: "relative",
+                                        transformStyle: "preserve-3d",
+                                        transform: isFlipped ? "rotateY(180deg)" : "rotateY(0deg)",
+                                        transition: "transform 0.45s ease",
+                                        borderRadius: "12px",
+                                    }}
+                                >
+                                    {/* Front face */}
+                                    <CardContent
+                                        className="mobile-demo-flashcard-content"
+                                        sx={{
+                                            padding: "72px 30px",
+                                            backfaceVisibility: "hidden",
+                                            WebkitBackfaceVisibility: "hidden",
+                                        }}
+                                    >
+                                        <Box className="mobile-demo-flashcard-inner" sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '80px' }}>
+                                            <Box className="mobile-demo-flashcard-image" sx={{ width: 106, height: 83 }} />
+                                            <Box className="mobile-demo-flashcard-text" sx={{ display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'center', width: '100%' }}>
                                                 <Typography
-                                                    className="mobile-demo-flashcard-pronunciation"
+                                                    className="mobile-demo-flashcard-word"
                                                     sx={{
-                                                        fontSize: 16,
+                                                        fontSize: 30,
+                                                        fontWeight: 400,
                                                         color: COLORS.onSurface,
-                                                        opacity: 0.8,
-                                                        fontFamily: '"Inter", sans-serif',
-                                                        fontStyle: 'italic',
+                                                        fontFamily: '"Inter", "Noto Sans JP", sans-serif',
                                                     }}
                                                 >
-                                                    {currentEntry.pronunciation}
+                                                    {currentEntry.entryKey}
                                                 </Typography>
-                                            )}
+                                                {currentEntry.pronunciation && (
+                                                    <Typography
+                                                        className="mobile-demo-flashcard-pronunciation"
+                                                        sx={{
+                                                            fontSize: 16,
+                                                            color: COLORS.onSurface,
+                                                            opacity: 0.8,
+                                                            fontFamily: '"Inter", sans-serif',
+                                                            fontStyle: 'italic',
+                                                        }}
+                                                    >
+                                                        {currentEntry.pronunciation}
+                                                    </Typography>
+                                                )}
+                                            </Box>
                                         </Box>
+                                    </CardContent>
+
+                                    {/* Back face */}
+                                    <Box sx={{
+                                        position: "absolute",
+                                        top: 0, left: 0, width: "100%", height: "100%",
+                                        backfaceVisibility: "hidden",
+                                        WebkitBackfaceVisibility: "hidden",
+                                        transform: "rotateY(180deg)",
+                                        backgroundColor: COLORS.flashCard,
+                                        borderRadius: "12px",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                    }}>
+                                        <CardContent sx={{ padding: "72px 30px" }}>
+                                            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '80px' }}>
+                                                <Box sx={{ width: 106, height: 83 }} />
+                                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'center', width: '100%' }}>
+                                                    <Typography sx={{
+                                                        fontSize: 30,
+                                                        fontWeight: 400,
+                                                        color: COLORS.onSurface,
+                                                        fontFamily: '"Inter", "Noto Sans JP", sans-serif',
+                                                    }}>
+                                                        {currentEntry.entryValue}
+                                                    </Typography>
+                                                </Box>
+                                            </Box>
+                                        </CardContent>
                                     </Box>
-                                </CardContent>
+                                </Box>
+
+                                {/* Drag overlay — above flip faces */}
+                                <Box sx={{
+                                    position: 'absolute',
+                                    top: 0, left: 0, right: 0, bottom: 0,
+                                    backgroundColor: dragPosition.x > 50 ? COLORS.correct : dragPosition.x < -50 ? COLORS.incorrect : 'transparent',
+                                    opacity: Math.min(Math.abs(dragPosition.x) / 150, 0.3),
+                                    borderRadius: "12px",
+                                    pointerEvents: 'none',
+                                    zIndex: 3,
+                                }} />
                             </Card>
                         ) : (
                             <Card
@@ -989,8 +1023,9 @@ const FlashcardsLearnPage: React.FC = () => {
                                     justifyContent: 'center',
                                 }}
                             >
-                                <CardContent sx={{ padding: "32px", textAlign: 'center' }}>
+                                <CardContent className="mobile-demo-flashcard-empty-content" sx={{ padding: "32px", textAlign: 'center' }}>
                                     <Typography
+                                        className="mobile-demo-flashcard-empty-text"
                                         sx={{
                                             fontSize: 20,
                                             fontWeight: 400,

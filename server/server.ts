@@ -421,26 +421,16 @@ app.post('/api/onDeckPage/:featureName/clear', authenticateToken, async (req, re
 
 // Work Points API Routes - USING NEW DAL ARCHITECTURE
 
-// NEW: Increment work points by 1 (replaces sync)
+// Increment work points by 1
 // @ts-ignore
 app.post('/api/users/work-points/increment', authenticateToken, async (req, res) => {
-  console.log('🔄 Using NEW DAL architecture for work points increment');
   await userWorkPointsController.incrementWorkPoints(req, res);
 });
 
-// DEPRECATED: Sync work points (main milestone sync endpoint)
-// This endpoint is deprecated. Use /api/users/work-points/increment instead
+// Apply new-day boundary (streak penalty if 2+ days gap)
 // @ts-ignore
-app.post('/api/users/work-points/sync', authenticateToken, async (req, res) => {
-  console.log('⚠️  DEPRECATED: Using old sync endpoint. Please migrate to /increment');
-  await userWorkPointsController.syncWorkPoints(req, res);
-});
-
-// Get calendar data for work points visualization
-// @ts-ignore
-app.get('/api/users/work-points/calendar/:month', authenticateToken, async (req, res) => {
-  console.log('🔄 Using NEW DAL architecture for calendar data');
-  await userWorkPointsController.getCalendarData(req, res);
+app.post('/api/users/work-points/new-day', authenticateToken, async (req, res) => {
+  await userWorkPointsController.newDayOperation(req, res);
 });
 
 // Leaderboard API Routes - USING NEW DAL ARCHITECTURE
@@ -674,14 +664,10 @@ app.get('/api/dictionary/count', authenticateToken, async (req, res) => {
 // Get changelog content
 app.get('/api/changelog', (req, res) => {
   try {
-    // Try multiple possible paths for the changelog file in Docker environment
+    // Look for CHANGELOG.md in docs directory
     const possiblePaths = [
-      path.join('/app/project-root', 'CHANGELOG.md'),          // Docker mounted project root
-      path.join(process.cwd(), '..', 'CHANGELOG.md'),          // Original path
-      path.join(process.cwd(), 'CHANGELOG.md'),                // Same level as server
-      path.join(__dirname, '..', '..', 'CHANGELOG.md'),        // Using __dirname
-      path.join('/app', 'CHANGELOG.md'),                       // Docker absolute path
-      path.join('/home/cow', 'CHANGELOG.md')                   // Host absolute path
+      path.join(__dirname, '..', 'docs', 'CHANGELOG.md'),  // Development: relative from server directory
+      path.join('/app', 'docs', 'CHANGELOG.md')                  // Docker: mounted at /app
     ];
 
     let changelogFilePath = '';
@@ -696,35 +682,21 @@ app.get('/api/changelog', (req, res) => {
         break;
       }
     }
-    
+
     if (!fileFound) {
-      console.error('Changelog file not found in any of the expected locations:', possiblePaths);
+      console.error('Changelog file not found. Searched paths:', possiblePaths);
       return res.status(404).json({
-        error: 'Changelog file not found',
-        code: 'ERR_CHANGELOG_FILE_NOT_FOUND',
-        debug: {
-          cwd: process.cwd(),
-          dirname: __dirname,
-          searchedPaths: possiblePaths
-        }
+        error: 'Changelog file not found'
       });
     }
 
     const fileContent = fs.readFileSync(changelogFilePath, 'utf-8');
-    
     console.log(`Successfully loaded changelog from ${changelogFilePath}`);
     res.json({ content: fileContent });
   } catch (error: any) {
     console.error('Error fetching changelog:', error);
-    const errorCode = error.code || 'ERR_FETCH_CHANGELOG_FAILED';
-    const errorMessage = error.message || 'Failed to retrieve changelog';
-    res.status(error.statusCode || 500).json({
-      error: errorMessage,
-      code: errorCode,
-      debug: {
-        cwd: process.cwd(),
-        dirname: __dirname
-      }
+    res.status(500).json({
+      error: 'Failed to retrieve changelog'
     });
   }
 });

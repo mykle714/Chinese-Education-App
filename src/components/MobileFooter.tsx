@@ -1,6 +1,7 @@
 import { useNavigate, useLocation } from "react-router-dom";
 import { Box, Typography } from "@mui/material";
 import { styled } from "@mui/material/styles";
+import { useAuth } from "../AuthContext";
 import HomeIcon from "@mui/icons-material/Home";
 import LanguageIcon from "@mui/icons-material/Language";
 import AccountCircleIcon from "@mui/icons-material/AccountCircle";
@@ -60,17 +61,19 @@ interface MobileFooterProps {
 const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "home" }) => {
     const navigate = useNavigate();
     const location = useLocation();
+    const { user } = useAuth();
 
     const handleHomeClick = () => {
         navigate("/flashcards/decks");
     };
 
     const handleDiscoverClick = () => {
-        navigate("/discover");
+        const language = user?.selectedLanguage || "zh";
+        navigate(`/discover/sort/${language}`);
     };
 
     const handleAccountClick = () => {
-        navigate("/profile");
+        navigate("/account");
     };
 
     return (
@@ -81,8 +84,9 @@ const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "home" }) => {
                     active={activePage === "home"}
                     onClick={handleHomeClick}
                 >
-                    <HomeIcon sx={{ fontSize: 24, color: COLORS.iconColor }} />
+                    <HomeIcon className="mobile-footer__home-icon" sx={{ fontSize: 24, color: COLORS.iconColor }} />
                     <Typography
+                        className="mobile-footer__home-label"
                         sx={{
                             fontSize: 12,
                             fontWeight: 400,
@@ -102,8 +106,9 @@ const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "home" }) => {
                     active={activePage === "discover"}
                     onClick={handleDiscoverClick}
                 >
-                    <LanguageIcon sx={{ fontSize: 24, color: COLORS.iconColor }} />
+                    <LanguageIcon className="mobile-footer__discover-icon" sx={{ fontSize: 24, color: COLORS.iconColor }} />
                     <Typography
+                        className="mobile-footer__discover-label"
                         sx={{
                             fontSize: 12,
                             fontWeight: 400,
@@ -123,8 +128,9 @@ const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "home" }) => {
                     active={activePage === "account"}
                     onClick={handleAccountClick}
                 >
-                    <AccountCircleIcon sx={{ fontSize: 24, color: COLORS.iconColor }} />
+                    <AccountCircleIcon className="mobile-footer__account-icon" sx={{ fontSize: 24, color: COLORS.iconColor }} />
                     <Typography
+                        className="mobile-footer__account-label"
                         sx={{
                             fontSize: 12,
                             fontWeight: 400,

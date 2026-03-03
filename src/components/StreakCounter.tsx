@@ -2,10 +2,9 @@ import { Box, Card, CardContent, Typography } from "@mui/material";
 
 interface StreakCounterProps {
     currentStreak: number;
-    longestStreak: number;
 }
 
-function StreakCounter({ currentStreak, longestStreak }: StreakCounterProps) {
+function StreakCounter({ currentStreak }: StreakCounterProps) {
     return (
         <Card sx={{
             background: 'linear-gradient(135deg, #ff6b6b, #ff8e53)',
@@ -20,9 +19,6 @@ function StreakCounter({ currentStreak, longestStreak }: StreakCounterProps) {
                     <Box>
                         <Typography variant="h6" component="div" sx={{ fontWeight: 'bold', mb: 0.5 }}>
                             Current Streak
-                        </Typography>
-                        <Typography variant="body2" sx={{ opacity: 0.9 }}>
-                            {longestStreak > 0 && `Personal Best: ${longestStreak} days`}
                         </Typography>
                     </Box>
                 </Box>

@@ -6,12 +6,17 @@ This feature adds rich contextual information to vocabulary flashcards, includin
 ## Implementation Summary
 
 ### 1. Database Schema (✅ Complete)
-**Migration**: `database/migrations/22-add-vocab-enrichment-columns.sql`
+
+**Main Enrichment Migration**: `database/migrations/22-add-vocab-enrichment-columns.sql`
 
 Added 3 new JSONB columns to `vocabentries` table:
 - `synonyms` - Array of Chinese synonym words
-- `examplesentences` - Array of example sentence objects
-- `partsofspeech` - Array of possible parts of speech
+- `examplesentences` - Array of example sentence objects (renamed to `exampleSentences` in migration 24)
+- `partsofspeech` - Array of possible parts of speech (renamed to `partsOfSpeech` in migration 24)
+
+**Additional Enrichment Migrations**:
+- **Migration 23**: `23-add-expansion-column.sql` - Adds `expansion` TEXT column for fuller word forms
+- **Migration 24**: `24-rename-enrichment-columns.sql` - Renames columns to camelCase for consistency
 
 ### 2. TypeScript Types (✅ Complete)
 **Files Updated**:
@@ -235,13 +240,93 @@ The response should include enrichment fields for Chinese cards.
 
 ## Migration History
 
-- Migration 21: Added `breakdown` column
-- Migration 22: Added `synonyms`, `examplesentences`, `partsofspeech` columns
+- **Migration 21**: Added `breakdown` column for character analysis
+- **Migration 22**: Added `synonyms`, `examplesentences`, `partsofspeech` columns
+- **Migration 23**: Added `expansion` column for fuller word forms (e.g., 不知不觉 → 不知道不觉得)
+- **Migration 24**: Renamed enrichment columns to camelCase:
+  - `examplesentences` → `exampleSentences`
+  - `partsofspeech` → `partsOfSpeech`
+- **Migration 25**: Added `shortDefinition` and `longDefinition` columns to `dictionaryentries`
+
+## Short and Long Definitions (dictionaryentries)
+
+### Columns
+
+| Column | Type | Table | Derivation |
+|--------|------|-------|------------|
+| `shortDefinition` | TEXT (nullable) | `dictionaryentries` | Deterministic — shortest gloss extracted from `definitions` array |
+| `longDefinition` | TEXT (nullable) | `dictionaryentries` | AI-generated via Claude Haiku, 25–75 characters |
+
+### shortDefinition Algorithm
+
+1. For each definition in the array, skip entries starting with `(` or `CL:` (grammatical/classifier notes)
+2. Split remaining definitions by `"; "`
+3. Strip trailing parenthetical content matching `/ \([^)]+\)$/`
+4. If no tokens survive the filter, fall back to unfiltered tokens
+5. Return the token with the fewest characters
+
+**Examples**:
+- `["no; not so", "(bound form) not; un-"]` → `"no"`
+- `["not just; not limited to", "(as a correlative..."]` → `"not just"`
+- `["you (informal, as opposed to courteous 您[nin2])"]` → `"you"`
+
+### longDefinition Generation
+
+Uses Claude Haiku (`claude-haiku-4-5-20251001`) with a prompt that asks for a 25–75 character elaboration of the short definition. Only generated for `language = 'zh'`.
+
+**Examples**:
+- 不 → `"used to negate verbs and adjectives in Chinese"`
+- 不仅 → `"indicates something is not limited to a given scope"`
+
+### Backfill
+
+```bash
+docker exec cow-backend-local ./node_modules/.bin/tsx scripts/backfill-short-long-definitions.js
+```
+
+Only processes `discoverable = TRUE` zh entries where either column is NULL.
+
+### Service Methods
+
+`server/services/DictionaryService.ts`:
+- `generateShortDefinition(definitions: string[]): string | null` — synchronous, no AI
+- `generateLongDefinition(word, language, shortDef, definitions): Promise<string | null>` — AI call
+
+---
+
+## Expansion Field
+
+### Purpose
+The `expansion` column stores an expanded or fuller form of Chinese words, used to better understand word composition and usage.
+
+**Examples**:
+- 不知不觉 → 不知道不觉得 (More complete form showing individual character usage)
+- 违规 → 违反规矩 (Expansion showing more meaningful form)
+- NULL for words that cannot be meaningfully expanded
+
+### Implementation
+- **Column Type**: TEXT (NULL-able)
+- **Storage**: Direct text value, not JSON
+- **Index**: Sparse index on non-NULL values for performance
+- **Use Case**: Educational insights into word construction and meaning
+
+### Field Definition
+```typescript
+// From server/types/index.ts
+export interface VocabEntry {
+  // ... other fields
+  expansion?: string;  // Fuller/expanded form of the word
+}
+```
 
 ## Files Modified
 
-### Backend
-- `database/migrations/22-add-vocab-enrichment-columns.sql` (new)
+### Backend Migrations
+- `database/migrations/22-add-vocab-enrichment-columns.sql` - Initial enrichment fields
+- `database/migrations/23-add-expansion-column.sql` - Expansion field for word forms
+- `database/migrations/24-rename-enrichment-columns.sql` - Column name normalization
+
+### Backend Code
 - `server/types/index.ts`
 - `server/dal/interfaces/IVocabEntryDAL.ts`
 - `server/dal/implementations/VocabEntryDAL.ts`

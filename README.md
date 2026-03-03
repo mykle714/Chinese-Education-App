@@ -48,7 +48,7 @@ This ensures the application interface is accessible to English-speaking develop
 - TypeScript
 - JWT for authentication
 - bcrypt for password hashing
-- Azure SQL Database for data storage
+- PostgreSQL for data storage
 
 ## Setup Instructions
 

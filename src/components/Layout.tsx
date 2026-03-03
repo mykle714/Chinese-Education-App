@@ -22,7 +22,6 @@ import {
 } from "@mui/material";
 import HomeIcon from "@mui/icons-material/Home";
 import MenuBookIcon from "@mui/icons-material/MenuBook";
-import AddIcon from "@mui/icons-material/Add";
 import PersonIcon from "@mui/icons-material/Person";
 import ShuffleIcon from "@mui/icons-material/Shuffle";
 import SettingsIcon from "@mui/icons-material/Settings";
@@ -59,8 +58,8 @@ function Layout({ children }: LayoutProps) {
         { text: "Home", path: "/", icon: <HomeIcon /> },
     ];
 
-    // Add authenticated-only navigation items
-    if (isAuthenticated) {
+    // Add authenticated-only navigation items (not shown for public/demo accounts)
+    if (isAuthenticated && !user?.isPublic) {
         navItems.push(
             { text: "Cards", path: "/entries", icon: <MenuBookIcon /> },
             { text: "Dictionary", path: "/dictionary", icon: <BookIcon /> },
@@ -73,8 +72,8 @@ function Layout({ children }: LayoutProps) {
         );
     } else {
         navItems.push(
-            { text: "Login", path: "/login", icon: <PersonIcon /> },
-            { text: "Register", path: "/register", icon: <AddIcon /> }
+            { text: "Mobile Demo", path: "/flashcards/decks", icon: <PhoneIphoneIcon /> },
+            { text: "Settings", path: "/settings", icon: <SettingsIcon /> }
         );
     }
 

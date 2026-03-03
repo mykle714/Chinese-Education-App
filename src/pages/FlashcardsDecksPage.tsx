@@ -400,30 +400,21 @@ const FlashcardsDecksPage: React.FC = () => {
         }
     };
 
-    // Handler for skip/delete button - marks card as skip
+    // Handler for skip/delete button - hard-deletes the VocabEntry
     const handleSkipCard = async (entry: VocabEntry) => {
         try {
-            const response = await fetch(`${API_BASE_URL}/api/starter-packs/sort`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+            const response = await fetch(`${API_BASE_URL}/api/vocabEntries/${entry.id}`, {
+                method: 'DELETE',
                 credentials: 'include',
-                body: JSON.stringify({
-                    cardId: entry.id,
-                    bucket: 'skip',
-                    language: entry.language,
-                }),
             });
 
             if (!response.ok) {
-                throw new Error('Failed to skip card');
+                throw new Error('Failed to delete card');
             }
 
-            // Refetch cards to update UI
             await refetchCards();
         } catch (err) {
-            console.error('Error skipping card:', err);
+            console.error('Error deleting card:', err);
         }
     };
 
@@ -484,8 +475,8 @@ const FlashcardsDecksPage: React.FC = () => {
                 {/* Content Area */}
                 <ContentArea className="decks-page-content">
                     {/* Study All Button */}
-                    <Box sx={{ width: '100%', padding: '16px 20px' }}>
-                        <StudyAllButton onClick={() => navigate('/flashcards/learn')}>
+                    <Box className="flashcards-decks__study-all-wrapper" sx={{ width: '100%', padding: '16px 20px' }}>
+                        <StudyAllButton className="flashcards-decks__study-all-button" onClick={() => navigate('/flashcards/learn')}>
                             Study All
                         </StudyAllButton>
                     </Box>
@@ -537,8 +528,9 @@ const FlashcardsDecksPage: React.FC = () => {
                     <LineSeparator className="decks-line-separator" />
 
                     {/* Library Cards Section */}
-                    <Box sx={{ width: '100%', px: 3.5, pt: 2, pb: 1 }}>
+                    <Box className="flashcards-decks__library-header" sx={{ width: '100%', px: 3.5, pt: 2, pb: 1 }}>
                         <Typography
+                            className="flashcards-decks__library-label"
                             sx={{
                                 fontSize: 14,
                                 fontWeight: 500,
@@ -554,18 +546,18 @@ const FlashcardsDecksPage: React.FC = () => {
                     <CardsPreviewContainer className="decks-cards-preview">
                         {loading ? (
                             // Loading state
-                            <Box sx={{ display: 'flex', justifyContent: 'center', width: '100%', py: 4 }}>
-                                <CircularProgress />
+                            <Box className="flashcards-decks__library-loading" sx={{ display: 'flex', justifyContent: 'center', width: '100%', py: 4 }}>
+                                <CircularProgress className="flashcards-decks__library-spinner" />
                             </Box>
                         ) : error ? (
                             // Error state
-                            <Box sx={{ width: '100%', px: 2 }}>
-                                <Alert severity="error">{error}</Alert>
+                            <Box className="flashcards-decks__library-error" sx={{ width: '100%', px: 2 }}>
+                                <Alert className="flashcards-decks__library-error-alert" severity="error">{error}</Alert>
                             </Box>
                         ) : vocabEntries.length === 0 ? (
                             // Empty state
-                            <Box sx={{ width: '100%', px: 2 }}>
-                                <Alert severity="info">
+                            <Box className="flashcards-decks__library-empty" sx={{ width: '100%', px: 2 }}>
+                                <Alert className="flashcards-decks__library-empty-alert" severity="info">
                                     No library cards yet. Add cards from the Discover page to see them here!
                                 </Alert>
                             </Box>
@@ -587,8 +579,9 @@ const FlashcardsDecksPage: React.FC = () => {
                     <LineSeparator className="decks-line-separator" sx={{ mt: 2 }} />
 
                     {/* Learn Later Cards Section */}
-                    <Box sx={{ width: '100%', px: 3.5, pt: 2, pb: 1 }}>
+                    <Box className="flashcards-decks__learn-later-header" sx={{ width: '100%', px: 3.5, pt: 2, pb: 1 }}>
                         <Typography
+                            className="flashcards-decks__learn-later-label"
                             sx={{
                                 fontSize: 14,
                                 fontWeight: 500,
@@ -604,18 +597,18 @@ const FlashcardsDecksPage: React.FC = () => {
                     <CardsPreviewContainer className="decks-learn-later-preview">
                         {learnLaterLoading ? (
                             // Loading state
-                            <Box sx={{ display: 'flex', justifyContent: 'center', width: '100%', py: 4 }}>
-                                <CircularProgress />
+                            <Box className="flashcards-decks__learn-later-loading" sx={{ display: 'flex', justifyContent: 'center', width: '100%', py: 4 }}>
+                                <CircularProgress className="flashcards-decks__learn-later-spinner" />
                             </Box>
                         ) : learnLaterError ? (
                             // Error state
-                            <Box sx={{ width: '100%', px: 2 }}>
-                                <Alert severity="error">{learnLaterError}</Alert>
+                            <Box className="flashcards-decks__learn-later-error" sx={{ width: '100%', px: 2 }}>
+                                <Alert className="flashcards-decks__learn-later-error-alert" severity="error">{learnLaterError}</Alert>
                             </Box>
                         ) : learnLaterEntries.length === 0 ? (
                             // Empty state
-                            <Box sx={{ width: '100%', px: 2 }}>
-                                <Alert severity="info">
+                            <Box className="flashcards-decks__learn-later-empty" sx={{ width: '100%', px: 2 }}>
+                                <Alert className="flashcards-decks__learn-later-empty-alert" severity="info">
                                     No learn later cards yet. Add cards from the Discover page to see them here!
                                 </Alert>
                             </Box>
@@ -637,8 +630,9 @@ const FlashcardsDecksPage: React.FC = () => {
                     <LineSeparator className="decks-line-separator" sx={{ mt: 2 }} />
 
                     {/* Mastered Cards Section */}
-                    <Box sx={{ width: '100%', px: 3.5, pt: 2, pb: 1 }}>
+                    <Box className="flashcards-decks__mastered-header" sx={{ width: '100%', px: 3.5, pt: 2, pb: 1 }}>
                         <Typography
+                            className="flashcards-decks__mastered-label"
                             sx={{
                                 fontSize: 14,
                                 fontWeight: 500,
@@ -654,18 +648,18 @@ const FlashcardsDecksPage: React.FC = () => {
                     <CardsPreviewContainer className="decks-mastered-preview">
                         {masteredLoading ? (
                             // Loading state
-                            <Box sx={{ display: 'flex', justifyContent: 'center', width: '100%', py: 4 }}>
-                                <CircularProgress />
+                            <Box className="flashcards-decks__mastered-loading" sx={{ display: 'flex', justifyContent: 'center', width: '100%', py: 4 }}>
+                                <CircularProgress className="flashcards-decks__mastered-spinner" />
                             </Box>
                         ) : masteredError ? (
                             // Error state
-                            <Box sx={{ width: '100%', px: 2 }}>
-                                <Alert severity="error">{masteredError}</Alert>
+                            <Box className="flashcards-decks__mastered-error" sx={{ width: '100%', px: 2 }}>
+                                <Alert className="flashcards-decks__mastered-error-alert" severity="error">{masteredError}</Alert>
                             </Box>
                         ) : masteredEntries.length === 0 ? (
                             // Empty state
-                            <Box sx={{ width: '100%', px: 2 }}>
-                                <Alert severity="info">
+                            <Box className="flashcards-decks__mastered-empty" sx={{ width: '100%', px: 2 }}>
+                                <Alert className="flashcards-decks__mastered-empty-alert" severity="info">
                                     No mastered cards yet. Cards will appear here when you master them through study!
                                 </Alert>
                             </Box>

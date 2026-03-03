@@ -1,9 +1,9 @@
-# WSL to Windows Native Development Migration Guide
+# Windows Development Setup Guide
 
 ## Overview
-This project is being migrated from WSL2 development environment to native Windows development, while maintaining Docker containerization for all services. The target deployment platform is Ubuntu with Docker containers.
+This project is developed natively on Windows while using Docker containerization for all services. This approach provides a modern development experience on Windows with parity to the production Ubuntu deployment environment.
 
-**Critical Considerations:** This migration introduces several environment-specific challenges that must be carefully managed to ensure parity between development and production environments.
+**Important:** Windows development introduces several environment-specific considerations that must be managed to ensure compatibility between Windows development and Linux production containers. This guide documents these challenges and their solutions.
 
 ---
 

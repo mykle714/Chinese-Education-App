@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd /c/src/Chinese-Education-App && docker compose up -d 2>&1)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(start:*)",
+      "Bash(sleep 5 && curl -s http://localhost:3000 2>&1)",
+      "Bash(grep :3000:*)",
+      "Bash(taskkill:*)",
+      "Bash(cmd:*)",
+      "Bash(powershell:*)",
+      "Bash(cd:*)",
+      "Bash(grep:*)",
+      "Bash(ls:*)",
+      "Bash(cd /c/src/Chinese-Education-App && docker compose up --build 2>&1)",
+      "Bash(cd /c/src/Chinese-Education-App && docker compose down -v 2>&1)",
+      "Bash(sleep 20 && docker compose -f /c/src/Chinese-Education-App/docker-compose.yml logs --tail=30 cow-backend-local cow-postgres-local 2>&1)",
+      "Bash(docker exec:*)",
+      "Bash(curl:*)",
+      "Bash(echo === Migration $f ===:*)",
+      "Bash(cd /c/src/Chinese-Education-App && docker compose restart frontend 2>&1)",
+      "Bash(docker cp:*)",
+      "Bash(docker ps:*)",
+      "Bash(node:*)",
+      "Bash(git:*)",
+      "Bash(PGPASSWORD=cow_password_local psql:*)",
+      "Bash(echo:*)",
+      "Bash(printf KEEP\\\\tid\\\\tword1\\\\tword2\\\\tpronunciation\\\\tlanguage\\\\ttone\\\\thskLevelTag\\\\tdiscoverable\\\\tdefinitions\\\\n:*)",
+      "Bash(python3:*)",
+      "Bash(printf KEEP\\\\tid\\\\tword1\\\\tpronunciation\\\\tlanguage\\\\ttone\\\\thskLevelTag\\\\tdiscoverable\\\\tdefinitions\\\\n:*)",
+      "Bash(npx tsc:*)",
+      "Bash(./node_modules/.bin/tsc:*)",
+      "Bash(node_modules/.bin/vue-tsc:*)",
+      "Bash(docker info:*)"
+    ]
+  }
+}

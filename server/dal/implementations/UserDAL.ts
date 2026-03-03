@@ -159,7 +159,7 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
     }
 
     const result = await this.dbManager.executeQuery<User>(async (client) => {
-      return await client.query('SELECT id, email, name, "selectedLanguage", "lastWorkPointIncrement", "createdAt" FROM Users WHERE id = $1', [id]);
+      return await client.query('SELECT id, email, name, "isPublic", "selectedLanguage", "lastWorkPointIncrement", "createdAt" FROM Users WHERE id = $1', [id]);
     });
 
     return result.recordset[0] || null;
@@ -240,22 +240,28 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
   }
 
   /**
-   * Get total work points for a user
+   * Get total work points and current streak for a user
    */
-  async getTotalWorkPoints(userId: string): Promise<number> {
+  async getTotalWorkPoints(userId: string): Promise<{ totalWorkPoints: number; currentStreak: number }> {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
 
-    const result = await this.dbManager.executeQuery<{ totalworkpoints: number }>(async (client) => {
-      return await client.query('SELECT "totalWorkPoints" as totalworkpoints FROM Users WHERE id = $1', [userId]);
+    const result = await this.dbManager.executeQuery<{ totalworkpoints: number; currentstreak: number }>(async (client) => {
+      return await client.query(
+        'SELECT "totalWorkPoints" as totalworkpoints, "currentStreak" as currentstreak FROM Users WHERE id = $1',
+        [userId]
+      );
     });
 
     if (result.recordset.length === 0) {
       throw new NotFoundError(`User with ID ${userId} not found`);
     }
 
-    return result.recordset[0].totalworkpoints || 0;
+    return {
+      totalWorkPoints: result.recordset[0].totalworkpoints || 0,
+      currentStreak: result.recordset[0].currentstreak || 0
+    };
   }
 
   /**
@@ -364,21 +370,23 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
   }
 
   /**
-   * Get only public users with their total work points for leaderboard
+   * Get only public users with their total work points and current streak for leaderboard
    */
-  async getPublicUsersWithTotalPoints(): Promise<Array<{ userId: string; email: string; name: string; totalWorkPoints: number }>> {
+  async getPublicUsersWithTotalPoints(): Promise<Array<{ userId: string; email: string; name: string; totalWorkPoints: number; currentStreak: number }>> {
     const result = await this.dbManager.executeQuery<{
       id: string;
       email: string;
       name: string;
       totalworkpoints: number;
+      currentstreak: number;
     }>(async (client) => {
       return await client.query(`
-        SELECT 
+        SELECT
           id,
           email,
           name,
-          COALESCE("totalWorkPoints", 0) as totalworkpoints
+          COALESCE("totalWorkPoints", 0) as totalworkpoints,
+          COALESCE("currentStreak", 0) as currentstreak
         FROM Users
         WHERE "isPublic" = true
         ORDER BY "totalWorkPoints" DESC NULLS LAST, "createdAt" ASC
@@ -389,7 +397,69 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
       userId: row.id,
       email: row.email,
       name: row.name,
-      totalWorkPoints: row.totalworkpoints || 0
+      totalWorkPoints: row.totalworkpoints || 0,
+      currentStreak: row.currentstreak || 0
     }));
+  }
+
+  /**
+   * Get streak info for a user (currentStreak and lastStreakIncrement)
+   */
+  async getUserStreakInfo(userId: string): Promise<{ currentStreak: number; lastStreakIncrement: Date | null }> {
+    if (!userId) {
+      throw new ValidationError('User ID is required');
+    }
+
+    const result = await this.dbManager.executeQuery<{ currentstreak: number; laststreakincrement: Date | null }>(async (client) => {
+      return await client.query(
+        'SELECT "currentStreak" as currentstreak, "lastStreakIncrement" as laststreakincrement FROM Users WHERE id = $1',
+        [userId]
+      );
+    });
+
+    if (result.recordset.length === 0) {
+      throw new NotFoundError(`User with ID ${userId} not found`);
+    }
+
+    return {
+      currentStreak: result.recordset[0].currentstreak || 0,
+      lastStreakIncrement: result.recordset[0].laststreakincrement || null
+    };
+  }
+
+  /**
+   * Increment currentStreak by 1 and set lastStreakIncrement to NOW()
+   */
+  async incrementStreak(userId: string): Promise<boolean> {
+    if (!userId) {
+      throw new ValidationError('User ID is required');
+    }
+
+    const result = await this.dbManager.executeQuery(async (client) => {
+      return await client.query(
+        'UPDATE Users SET "currentStreak" = "currentStreak" + 1, "lastStreakIncrement" = NOW() WHERE id = $1',
+        [userId]
+      );
+    });
+
+    return result.rowsAffected > 0;
+  }
+
+  /**
+   * Reset currentStreak to 0 and deduct penaltyPoints from totalWorkPoints (floor 0)
+   */
+  async applyStreakPenalty(userId: string, penaltyPoints: number): Promise<boolean> {
+    if (!userId) {
+      throw new ValidationError('User ID is required');
+    }
+
+    const result = await this.dbManager.executeQuery(async (client) => {
+      return await client.query(
+        'UPDATE Users SET "currentStreak" = 0, "totalWorkPoints" = GREATEST(0, "totalWorkPoints" - $1) WHERE id = $2',
+        [penaltyPoints, userId]
+      );
+    });
+
+    return result.rowsAffected > 0;
   }
 }

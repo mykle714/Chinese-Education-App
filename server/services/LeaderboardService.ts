@@ -43,13 +43,10 @@ export class LeaderboardService {
 
       for (let i = 0; i < usersWithPoints.length; i++) {
         const user = usersWithPoints[i];
-        
-        // Get streak data for this user
-        const streakData = await this.userWorkPointsDAL.getUserStreakData(user.userId);
-        
+
         // Get today's points
         const todaysPoints = await this.userWorkPointsDAL.getDailyPointsForUser(user.userId, todayStr);
-        
+
         // Get yesterday's points
         const yesterdaysPoints = await this.userWorkPointsDAL.getDailyPointsForUser(user.userId, yesterdayStr);
 
@@ -58,7 +55,7 @@ export class LeaderboardService {
           email: user.email,
           name: user.name,
           accumulativeWorkPoints: user.totalWorkPoints,
-          currentStreak: streakData.currentStreak,
+          currentStreak: user.currentStreak,
           todaysPoints: todaysPoints,
           yesterdaysPoints: yesterdaysPoints,
           rank: 0 // Will be assigned after sorting

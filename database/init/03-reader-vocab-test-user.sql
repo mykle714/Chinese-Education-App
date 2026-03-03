@@ -1,7 +1,7 @@
 -- Reader Vocabulary Test User Initialization
 -- This script creates a test user with vocabulary entries from all reader docs
 -- Email: reader-vocab-test@example.com
--- Password: TestPassword123!
+-- Password: password
 -- Hash: $2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi
 
 -- Create the reader vocabulary test user
@@ -160,7 +160,7 @@ DO $$
 BEGIN
     RAISE NOTICE '=== READER VOCABULARY TEST USER CREATED ===';
     RAISE NOTICE 'Email: reader-vocab-test@example.com';
-    RAISE NOTICE 'Password: TestPassword123!';
+    RAISE NOTICE 'Password: password';
     RAISE NOTICE 'Vocabulary entries: 135 words from reader texts';
     RAISE NOTICE 'Texts covered:';
     RAISE NOTICE '  - 咖啡店的早晨 (Coffee Shop Morning)';

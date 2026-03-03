@@ -4,16 +4,13 @@ import { useAuth } from "../AuthContext";
 import { useWorkPoints } from "../hooks/useWorkPoints";
 import TimeDisplay from "../components/TimeDisplay";
 import StreakCounter from "../components/StreakCounter";
-import MonthlyCalendar from "../components/MonthlyCalendar";
 import LeaderboardPlaceholder from "../components/LeaderboardPlaceholder";
-import ChangelogDisplay from "../components/ChangelogDisplay";
 
 function HomePage() {
     const { user } = useAuth();
     const {
         totalStudyTimeMinutes,
-        currentStreak,
-        longestStreak
+        currentStreak
     } = useWorkPoints();
 
     return (
@@ -35,11 +32,8 @@ function HomePage() {
                             {/* Streak Counter */}
                             <StreakCounter
                                 currentStreak={currentStreak}
-                                longestStreak={longestStreak}
                             />
 
-                            {/* Monthly Calendar */}
-                            <MonthlyCalendar />
                         </Box>
 
                     </Box>
@@ -55,7 +49,6 @@ function HomePage() {
                             </Box>
                         )}
                         <LeaderboardPlaceholder />
-                        <ChangelogDisplay />
                     </Box>
                 </Box>
             ) : (

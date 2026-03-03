@@ -272,15 +272,15 @@ export class UserController {
   }
 
   /**
-   * Get total work points for a user
+   * Get total work points and current streak for a user
    * GET /api/users/:id/total-work-points
    */
   async getTotalWorkPoints(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      
-      const totalWorkPoints = await this.userService.getTotalWorkPoints(id);
-      res.json({ totalWorkPoints });
+
+      const result = await this.userService.getTotalWorkPoints(id);
+      res.json(result);
     } catch (error) {
       this.handleError(error, res);
     }

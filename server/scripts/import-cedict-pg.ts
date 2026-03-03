@@ -11,10 +11,29 @@ import pg from 'pg';
 
 const BATCH_SIZE = 1000;
 
+const TONE_MARK_MAP: Record<string, number> = {
+    'ā': 1, 'á': 2, 'ǎ': 3, 'à': 4,
+    'ē': 1, 'é': 2, 'ě': 3, 'è': 4,
+    'ī': 1, 'í': 2, 'ǐ': 3, 'ì': 4,
+    'ō': 1, 'ó': 2, 'ǒ': 3, 'ò': 4,
+    'ū': 1, 'ú': 2, 'ǔ': 3, 'ù': 4,
+    'ǖ': 1, 'ǘ': 2, 'ǚ': 3, 'ǜ': 4,
+};
+
+function extractTones(pronunciation: string): string {
+    return pronunciation.split(' ').map(syllable => {
+        for (const char of syllable) {
+            if (TONE_MARK_MAP[char] !== undefined) return TONE_MARK_MAP[char];
+        }
+        return 0;
+    }).join('');
+}
+
 interface DictionaryEntry {
     word1: string;      // simplified Chinese
     word2: string;      // traditional Chinese
     pronunciation: string; // pinyin with tone marks
+    tone: string;       // tone digits derived from pronunciation (e.g. "12")
     definitions: string[];
 }
 
@@ -86,6 +105,7 @@ function parseCEDICTLine(line: string): DictionaryEntry | null {
         word1: simplified,
         word2: traditional,
         pronunciation: pinyin,
+        tone: extractTones(pinyin),
         definitions
     };
 }
@@ -100,19 +120,20 @@ async function insertBatch(client: pg.Client, entries: DictionaryEntry[]): Promi
     const placeholders: string[] = [];
     
     entries.forEach((entry, i) => {
-        const base = i * 5;
-        placeholders.push(`($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5})`);
+        const base = i * 6;
+        placeholders.push(`($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6})`);
         values.push(
             'zh',  // language
             entry.word1,
             entry.word2,
             entry.pronunciation,
+            entry.tone,
             JSON.stringify(entry.definitions)
         );
     });
 
     const query = `
-        INSERT INTO DictionaryEntries (language, word1, word2, pronunciation, definitions)
+        INSERT INTO DictionaryEntries (language, word1, word2, pronunciation, tone, definitions)
         VALUES ${placeholders.join(', ')}
     `;
 

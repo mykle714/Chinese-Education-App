@@ -29,12 +29,14 @@ export interface VocabEntry {
   language: Language;
   script?: string;
   pronunciation?: string | null;
+  tone?: string | null;
   hskLevelTag?: HskLevel | null;
   category?: FlashcardCategory;
   starterPackBucket?: StarterPackBucket | null;
-  breakdown?: Record<string, { definition: string; pronunciation: string }> | null;
+  breakdown?: Record<string, { definition: string }> | null;
   synonyms?: string[];
   expansion?: string | null;
+  expansionMetadata?: Record<string, { definition: string; pronunciation: string }> | null;
   exampleSentences?: Array<{ chinese: string; english: string; usage: string }>;
   partsOfSpeech?: string[];
   relatedWords?: Array<{ id: number; entryKey: string; sharedCharacters: string[]; successRate: number | null }>;
@@ -48,8 +50,30 @@ export interface DictionaryEntry {
   word1: string;          // Primary word (simplified/kanji/hangul/word)
   word2: string | null;   // Secondary word (traditional/kana/hanja/null)
   pronunciation: string | null; // Pronunciation (pinyin/romaji/romanization/null)
+  tone?: string | null;
   definitions: string[]; // Array of definition strings
+  shortDefinition?: string | null;
+  longDefinition?: string | null;
   createdAt: string;
+}
+
+// Discover Card type — a curated DictionaryEntry shaped for the sort-cards UI
+export interface DiscoverCard {
+  id: number;               // dictionaryEntry.id — sent in sort POST
+  entryKey: string;         // word1
+  entryValue: string;       // definitions[0]
+  pronunciation?: string | null;
+  tone?: string | null;
+  language: Language;
+  word2?: string | null;
+  script?: string | null;
+  hskLevelTag?: string | null;
+  breakdown?: Record<string, { definition: string }> | null;
+  synonyms?: string[] | null;
+  exampleSentences?: Array<{ chinese: string; english: string; usage: string }> | null;
+  partsOfSpeech?: string[] | null;
+  expansion?: string | null;
+  expansionMetadata?: Record<string, { definition: string; pronunciation: string }> | null;
 }
 
 // Combined vocab lookup response
@@ -64,6 +88,7 @@ export interface User {
   email: string;
   name: string;
   password?: string; // Not returned to client
+  isPublic?: boolean;
   selectedLanguage?: Language;
   createdAt?: Date;
 }

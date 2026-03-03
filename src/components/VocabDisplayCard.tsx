@@ -13,7 +13,7 @@ import {
     ListItem,
     Badge
 } from '@mui/material';
-import type { VocabEntry, DictionaryEntry, HskLevel } from '../types';
+import type { VocabEntry, DictionaryEntry } from '../types';
 
 interface VocabDisplayCardProps {
     personalEntry: VocabEntry | null;
@@ -32,53 +32,19 @@ function TabPanel(props: TabPanelProps) {
 
     return (
         <div
+            className="vocab-display-card__tab-panel"
             role="tabpanel"
             hidden={value !== index}
             id={`vocab-tabpanel-${index}`}
             aria-labelledby={`vocab-tab-${index}`}
             {...other}
         >
-            {value === index && <Box sx={{ pt: 2 }}>{children}</Box>}
+            {value === index && <Box className="vocab-display-card__tab-content" sx={{ pt: 2 }}>{children}</Box>}
         </div>
     );
 }
 
-// Helper function to get HSK level number
-const getHskNumber = (hskLevel: HskLevel) => {
-    switch (hskLevel) {
-        case 'HSK1': return '1';
-        case 'HSK2': return '2';
-        case 'HSK3': return '3';
-        case 'HSK4': return '4';
-        case 'HSK5': return '5';
-        case 'HSK6': return '6';
-        default: return '1';
-    }
-};
 
-// Helper function to render tag badges for personal entries
-const renderTags = (entry: VocabEntry) => (
-    <Box sx={{ position: 'absolute', top: 8, right: 8, display: 'flex', gap: 0.5 }}>
-        {entry.hskLevelTag && (
-            <Box
-                sx={{
-                    width: '24px',
-                    height: '24px',
-                    borderRadius: '50%',
-                    backgroundColor: 'secondary.main',
-                    color: 'secondary.contrastText',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '12px',
-                    fontWeight: 'bold'
-                }}
-            >
-                {getHskNumber(entry.hskLevelTag)}
-            </Box>
-        )}
-    </Box>
-);
 
 const VocabDisplayCard: React.FC<VocabDisplayCardProps> = React.memo(({ personalEntry, dictionaryEntry }) => {
     const theme = useTheme();
@@ -93,12 +59,14 @@ const VocabDisplayCard: React.FC<VocabDisplayCardProps> = React.memo(({ personal
 
     return (
         <Box
+            className="vocab-display-card__wrapper"
             sx={{
                 width: isMobile ? '100%' : 320,
                 mb: isMobile ? 2 : 0,
             }}
         >
             <Card
+                className="vocab-display-card__card"
                 sx={{
                     position: 'relative',
                     boxShadow: hasAnyEntry ? 6 : 2,
@@ -119,12 +87,14 @@ const VocabDisplayCard: React.FC<VocabDisplayCardProps> = React.memo(({ personal
             >
                 {/* Tabs - Always visible */}
                 <Tabs
+                    className="vocab-display-card__tabs"
                     value={currentTab}
                     onChange={handleTabChange}
                     aria-label="vocabulary tabs"
                     sx={{ borderBottom: 1, borderColor: 'divider', px: 2, pt: 1 }}
                 >
                     <Tab
+                        className="vocab-display-card__personal-tab"
                         label={
                             <Badge badgeContent={personalEntry ? 1 : 0} color="primary">
                                 Personal
@@ -134,6 +104,7 @@ const VocabDisplayCard: React.FC<VocabDisplayCardProps> = React.memo(({ personal
                         aria-controls="vocab-tabpanel-0"
                     />
                     <Tab
+                        className="vocab-display-card__dictionary-tab"
                         label={
                             <Badge badgeContent={dictionaryEntry ? 1 : 0} color="secondary">
                                 Dictionary
@@ -144,28 +115,28 @@ const VocabDisplayCard: React.FC<VocabDisplayCardProps> = React.memo(({ personal
                     />
                 </Tabs>
 
-                <CardContent sx={{ pb: 2 }}>
+                <CardContent className="vocab-display-card__content" sx={{ pb: 2 }}>
                     {/* Personal Entry Tab */}
                     <TabPanel value={currentTab} index={0}>
                         {personalEntry ? (
                             <>
-                                {personalEntry.hskLevelTag && renderTags(personalEntry)}
                                 <Typography
+                                    className="vocab-display-card__personal-key"
                                     variant={isMobile ? "h5" : "h6"}
                                     component="h3"
                                     gutterBottom
                                     sx={{
                                         fontWeight: 'bold',
-                                        pr: personalEntry.hskLevelTag ? 6 : 0,
                                         fontFamily: '"Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif',
                                     }}
                                 >
                                     {personalEntry.entryKey}
                                 </Typography>
 
-                                <Divider sx={{ mb: 1.5 }} />
+                                <Divider className="vocab-display-card__personal-divider" sx={{ mb: 1.5 }} />
 
                                 <Typography
+                                    className="vocab-display-card__personal-definition"
                                     variant="body1"
                                     color="text.secondary"
                                     sx={{
@@ -178,8 +149,9 @@ const VocabDisplayCard: React.FC<VocabDisplayCardProps> = React.memo(({ personal
 
                                 {personalEntry.createdAt && (
                                     <>
-                                        <Divider sx={{ mb: 1 }} />
+                                        <Divider className="vocab-display-card__personal-date-divider" sx={{ mb: 1 }} />
                                         <Typography
+                                            className="vocab-display-card__personal-date"
                                             variant="caption"
                                             color="text.secondary"
                                             sx={{
@@ -193,7 +165,7 @@ const VocabDisplayCard: React.FC<VocabDisplayCardProps> = React.memo(({ personal
                                 )}
                             </>
                         ) : (
-                            <Typography variant="body2" color="text.disabled" sx={{ fontStyle: 'italic' }}>
+                            <Typography className="vocab-display-card__no-personal-entry" variant="body2" color="text.disabled" sx={{ fontStyle: 'italic' }}>
                                 No personal vocabulary entry found.
                             </Typography>
                         )}
@@ -202,8 +174,9 @@ const VocabDisplayCard: React.FC<VocabDisplayCardProps> = React.memo(({ personal
                     {/* Dictionary Entry Tab */}
                     <TabPanel value={currentTab} index={1}>
                         {dictionaryEntry ? (
-                            <Box sx={{ maxHeight: 400, overflow: 'auto' }}>
+                            <Box className="vocab-display-card__dict-scroll" sx={{ maxHeight: 400, overflow: 'auto' }}>
                                 <Typography
+                                    className="vocab-display-card__dict-word"
                                     variant={isMobile ? "h5" : "h6"}
                                     component="h3"
                                     gutterBottom
@@ -216,6 +189,7 @@ const VocabDisplayCard: React.FC<VocabDisplayCardProps> = React.memo(({ personal
                                 </Typography>
 
                                 <Typography
+                                    className="vocab-display-card__dict-pronunciation"
                                     variant="body2"
                                     color="text.secondary"
                                     sx={{ mb: 1.5, fontStyle: 'italic' }}
@@ -223,16 +197,16 @@ const VocabDisplayCard: React.FC<VocabDisplayCardProps> = React.memo(({ personal
                                     {dictionaryEntry.pronunciation}
                                 </Typography>
 
-                                <Divider sx={{ mb: 1.5 }} />
+                                <Divider className="vocab-display-card__dict-divider" sx={{ mb: 1.5 }} />
 
-                                <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 'bold' }}>
+                                <Typography className="vocab-display-card__dict-label" variant="subtitle2" sx={{ mb: 1, fontWeight: 'bold' }}>
                                     Definitions:
                                 </Typography>
 
-                                <List dense sx={{ pt: 0 }}>
+                                <List className="vocab-display-card__dict-list" dense sx={{ pt: 0 }}>
                                     {dictionaryEntry.definitions.map((definition, index) => (
-                                        <ListItem key={index} sx={{ pl: 0, py: 0.5 }}>
-                                            <Typography variant="body2" color="text.secondary">
+                                        <ListItem className="vocab-display-card__dict-item" key={index} sx={{ pl: 0, py: 0.5 }}>
+                                            <Typography className="vocab-display-card__dict-definition" variant="body2" color="text.secondary">
                                                 {index + 1}. {definition}
                                             </Typography>
                                         </ListItem>
@@ -240,7 +214,7 @@ const VocabDisplayCard: React.FC<VocabDisplayCardProps> = React.memo(({ personal
                                 </List>
                             </Box>
                         ) : (
-                            <Typography variant="body2" color="text.disabled" sx={{ fontStyle: 'italic' }}>
+                            <Typography className="vocab-display-card__no-dict-entry" variant="body2" color="text.disabled" sx={{ fontStyle: 'italic' }}>
                                 No dictionary entry found.
                             </Typography>
                         )}

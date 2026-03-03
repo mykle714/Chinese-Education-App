@@ -1,76 +1,301 @@
-# Public/Private Users Implementation Summary
+# Public/Private User Profile Implementation
 
 ## Overview
-Successfully implemented public and private user functionality for the leaderboard system.
 
-## Changes Made
+The vocabulary application supports user privacy controls allowing users to opt-in or opt-out of appearing on the public leaderboard. This feature is implemented using the `isPublic` boolean flag on user accounts.
 
-### 1. Database Migration
-**File:** `database/migrations/07-add-ispublic-column.sql`
-- Added `isPublic` boolean column to Users table
-- Set DEFAULT to `true` for new user registrations
-- Updated all 6 existing users to `isPublic = false` (private)
-- Created index on `isPublic` column for efficient filtering
+## Purpose
 
-### 2. Type Definitions
-**File:** `server/types/index.ts`
-- Added `isPublic?: boolean` to `User` interface
-- Added `isPublic?: boolean` to `UserCreateData` interface (with note about database default)
-- Added `isPublic?: boolean` to `UserUpdateData` interface
+- Allow users to study privately without appearing on leaderboards
+- Default behavior supports opt-out privacy (new users are public by default)
+- Enable competitive features (leaderboards) while respecting user preferences
+- Track work points and streak data regardless of public/private status
 
-### 3. Data Access Layer
-**Files:**
-- `server/dal/interfaces/IUserDAL.ts`
-- `server/dal/implementations/UserDAL.ts`
+## Database Implementation
 
-Added new method:
-- `getPublicUsersWithTotalPoints()` - Filters users to only return those with `isPublic = true`
+### Schema
 
-### 4. Leaderboard Service
-**File:** `server/services/LeaderboardService.ts`
-- Modified `getLeaderboard()` to use `getPublicUsersWithTotalPoints()` instead of `getAllUsersWithTotalPoints()`
-- Leaderboard now automatically filters to show only public users
+#### Users Table
+```sql
+CREATE TABLE Users (
+    id UUID PRIMARY KEY,
+    email VARCHAR UNIQUE NOT NULL,
+    password VARCHAR NOT NULL,
+    createdAt TIMESTAMP DEFAULT now(),
+    updatedAt TIMESTAMP DEFAULT now(),
+    "isPublic" BOOLEAN NOT NULL DEFAULT true,  -- ← Public/private flag
+    -- ... other columns
+);
 
-## Behavior
+CREATE INDEX idx_users_ispublic ON Users("isPublic");
+```
 
-### Existing Users
-- All 6 existing users have been marked as **PRIVATE** (isPublic = false)
-- They will NOT appear on the leaderboard
+### Default Behavior
+- **New Users**: `isPublic = true` (publicly visible on leaderboard)
+- **Existing Users** (migrated): `isPublic = false` (private by default for privacy)
+- **Migration Path**: Applied in migration 07 and again in migration 12 for safety
 
-### New Users
-- All newly registered users will default to **PUBLIC** (isPublic = true)
-- They WILL appear on the leaderboard
+## Type Definitions
+
+```typescript
+// From server/types/index.ts
+export interface User {
+    id: string;
+    email: string;
+    password?: string;
+    createdAt?: Date;
+    updatedAt?: Date;
+    selectedLanguage?: Language;
+    isPublic?: boolean;  // Leaderboard visibility flag
+    // ... other properties
+}
+```
+
+## API Endpoints
+
+### Get Leaderboard
+```
+GET /api/leaderboard
+```
+
+**Response:**
+```json
+{
+    "data": [
+        {
+            "rank": 1,
+            "userId": "uuid",
+            "workPoints": 15000,
+            "streak": 45,
+            "isCurrentUser": false
+        },
+        // ... filtered to only include users where isPublic = true
+    ]
+}
+```
+
+**Filtering**: Only returns users with `isPublic = true`
+
+### Update User Public Status
+```
+PUT /api/users/public
+Request: { isPublic: boolean }
+```
+
+**Response:**
+```json
+{
+    "success": true,
+    "message": "User privacy setting updated",
+    "isPublic": true
+}
+```
+
+## User Interface
+
+### Account Settings
+Users can control their public/private status in the account settings page:
+
+- **Setting**: "Appear on Public Leaderboard"
+- **Type**: Checkbox
+- **Default**: Checked (visible) for new users
+- **Effect**: Immediately removes/adds user from leaderboard when toggled
 
 ### Leaderboard Display
-- Only shows users where `isPublic = true`
-- Current leaderboard is empty since all existing users are private
-- Will populate as new users register
+The leaderboard component displays only users with `isPublic = true`:
 
-## Test Results
-✅ All tests passed:
-- All existing users are marked as private
-- Leaderboard filters to show only public users
-- New users default to public
-- Public users appear in leaderboard
+```typescript
+// From hooks/useLeaderboard.ts
+const [leaderboardData, setLeaderboardData] = useState<LeaderboardData | null>(null);
 
-**Test file:** `server/tests/test-public-private-users.cjs`
-
-## User Control
-As requested, **no user interface** has been added for toggling this setting. Users cannot change their privacy status through the application. This is a backend-only feature that:
-- Protects existing users' privacy (all marked private)
-- Allows new users to participate in leaderboard (default public)
-
-## Database State After Migration
-```
-Total users: 6
-Private users: 6
-Public users: 0
-Leaderboard showing: 0 users (empty until new users register)
+// Fetches from /api/leaderboard
+// Server handles filtering by isPublic = true
 ```
 
-## Implementation Complete
-All requirements have been met:
-- ✅ All new users default to public
-- ✅ All existing users are marked as private
-- ✅ Leaderboard only displays public users
-- ✅ No user control/settings UI added
+### User Profile
+When viewing user profiles:
+- **Public Users**: Full profile visible (work points, streak, vocabulary stats)
+- **Private Users**: Limited information, not listed on leaderboards
+
+## Feature Integration
+
+### Work Points System
+- Work points accumulate for both public and private users
+- Progress tracking works independently of leaderboard visibility
+- Streak data stored and displayed regardless of public/private status
+
+### Flashcard Study
+- Study activity counts toward work points for all users
+- Marks tracked for spaced repetition regardless of visibility
+- Private study remains completely private
+
+### Vocabulary Management
+- Custom vocabulary entries remain private to user
+- Personal vocabulary not shared on leaderboards
+- Starter pack interactions tracked privately
+
+## Migrations
+
+### Migration 07: Initial Implementation
+- File: `database/migrations/07-add-ispublic-column.sql`
+- Adds `isPublic` column with default `true`
+- Sets existing users to `false` (privacy-first for existing data)
+- Creates index for efficient leaderboard queries
+
+### Migration 12: Safety Redundancy
+- File: `database/migrations/12-add-missing-columns-and-tables.sql`
+- Adds `isPublic` column with `IF NOT EXISTS` check
+- Ensures column exists even if migration 07 didn't run
+- Adds index with `IF NOT EXISTS` for idempotency
+
+## API Implementation
+
+### Leaderboard Endpoint
+```typescript
+// From server/server.ts
+app.get('/api/leaderboard', async (req: AuthRequest, res: Response) => {
+    try {
+        const client = await db.connect();
+        try {
+            // Fetch users ordered by work points, filtered by isPublic = true
+            const result = await client.query(`
+                SELECT
+                    id,
+                    email,
+                    "workPoints",
+                    "streak",
+                    email = $1 as "isCurrentUser"
+                FROM Users
+                WHERE "isPublic" = true
+                ORDER BY "workPoints" DESC
+                LIMIT 100
+            `, [userId]);
+
+            const data = result.rows.map((row, index) => ({
+                rank: index + 1,
+                ...row
+            }));
+
+            res.json({ data });
+        } finally {
+            client.release();
+        }
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch leaderboard' });
+    }
+});
+```
+
+### Update Public Status
+```typescript
+// From server/server.ts
+app.put('/api/users/public', async (req: AuthRequest, res: Response) => {
+    const { isPublic } = req.body;
+    const userId = req.user?.id;
+
+    try {
+        const client = await db.connect();
+        try {
+            await client.query(
+                'UPDATE Users SET "isPublic" = $1 WHERE id = $2',
+                [isPublic, userId]
+            );
+
+            res.json({
+                success: true,
+                message: isPublic ? 'Now visible on leaderboard' : 'Now hidden from leaderboard',
+                isPublic
+            });
+        } finally {
+            client.release();
+        }
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to update privacy setting' });
+    }
+});
+```
+
+## Privacy Considerations
+
+### Data Security
+- Private setting is enforced at API level (database filtering)
+- No personal data exposed in leaderboard queries
+- User emails not displayed on leaderboards (only work points and streak)
+
+### Default Behavior
+- **New Users**: Public by default (explicit consent in UX flow recommended)
+- **Existing Users**: Private by default (backward compatibility)
+- **Transparency**: Users must be informed when toggling visibility
+
+### GDPR Compliance
+- Users can opt-out of public display anytime
+- Changes take effect immediately
+- Personal data (email, passwords) never exposed on leaderboard
+- Only aggregate metrics (work points, streak) displayed publicly
+
+## Testing
+
+### Database Verification
+```bash
+# Check isPublic column exists
+docker exec -i cow-postgres-local psql -U cow_user -d cow_db -c \
+  "SELECT column_name FROM information_schema.columns WHERE table_name='users' AND column_name='isPublic';"
+
+# Count public vs private users
+docker exec -i cow-postgres-local psql -U cow_user -d cow_db -c \
+  "SELECT \"isPublic\", COUNT(*) FROM Users GROUP BY \"isPublic\";"
+
+# Check leaderboard index exists
+docker exec -i cow-postgres-local psql -U cow_user -d cow_db -c \
+  "SELECT indexname FROM pg_indexes WHERE tablename='Users' AND indexname LIKE '%ispublic%';"
+```
+
+### API Testing
+```bash
+# Test leaderboard endpoint
+curl -H "Authorization: Bearer <token>" \
+  http://localhost:3001/api/leaderboard
+
+# Test updating privacy setting
+curl -X PUT \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"isPublic": false}' \
+  http://localhost:3001/api/users/public
+```
+
+### Frontend Testing Checklist
+- [ ] Load account settings page
+- [ ] Toggle "Appear on Public Leaderboard" checkbox
+- [ ] Verify setting persists on refresh
+- [ ] Check user appears/disappears from leaderboard
+- [ ] Test with public user visibility toggle
+- [ ] Verify private users don't see private users on leaderboard
+- [ ] Confirm work points accumulate regardless of public/private status
+- [ ] Test leaderboard ranking calculation with mixed public/private users
+
+## Known Limitations
+
+1. **Email Exposure**: User emails are currently returned in some API responses (could be improved)
+2. **No Profile Pages**: Public profiles not yet implemented as standalone pages
+3. **No Social Features**: Leaderboard is read-only, no messaging between users
+4. **Limited Metrics**: Only work points and streak displayed (could add more stats)
+
+## Future Enhancements
+
+Potential improvements to public/private features:
+
+- [ ] Public user profile pages with vocabulary statistics
+- [ ] More granular privacy controls (hide work points, show only streak, etc.)
+- [ ] Anonymous leaderboard mode (hide user identities)
+- [ ] Regional/language-specific leaderboards
+- [ ] Leaderboard filters (weekly, monthly, language-specific)
+- [ ] Social features (follow users, send messages)
+- [ ] Privacy audit log (track when profile was made public/private)
+- [ ] Bulk privacy settings (make all users private with one setting)
+
+## Related Documentation
+
+- [WORK_POINTS_SYSTEM.md](./WORK_POINTS_SYSTEM.md) - Work points tracking system
+- [WORK_POINTS_INCREMENT_IMPLEMENTATION.md](./WORK_POINTS_INCREMENT_IMPLEMENTATION.md) - How work points are earned
+- [POSTGRES_QUERY_GUIDE.md](../POSTGRES_QUERY_GUIDE.md) - Database queries for user data

@@ -5,18 +5,13 @@ import {
     CardContent,
     Typography,
     Divider,
-    Chip,
 } from '@mui/material';
-
-// HSK Level type
-type HskLevel = 'HSK1' | 'HSK2' | 'HSK3' | 'HSK4' | 'HSK5' | 'HSK6';
 
 interface VocabEntry {
     id: number;
     entryKey: string;
     entryValue: string;
     pronunciation?: string | null;
-    hskLevelTag?: HskLevel | null;
     createdAt: string;
 }
 
@@ -30,25 +25,6 @@ interface FlashCardProps {
     isFlippable?: boolean; // New prop to control whether the card can be flipped
     showPronunciation?: boolean; // Whether to show pronunciation on front
 }
-
-
-// Helper function to render tag badges
-const renderTags = (entry: VocabEntry) => (
-    <Box sx={{ position: 'absolute', top: 8, right: 8, display: 'flex', gap: 0.5, zIndex: 10 }}>
-        {entry.hskLevelTag && (
-            <Chip
-                label={entry.hskLevelTag}
-                size="small"
-                sx={{
-                    backgroundColor: '#2196f3',
-                    color: 'white',
-                    fontSize: '0.7rem',
-                    height: '20px'
-                }}
-            />
-        )}
-    </Box>
-);
 
 const FlashCard: React.FC<FlashCardProps> = ({
     entry,
@@ -113,9 +89,6 @@ const FlashCard: React.FC<FlashCardProps> = ({
                         }
                     }}
                 >
-                    {/* Tags for front face */}
-                    {renderTags(entry)}
-
                     <CardContent
                         className="flashcard-front-content"
                         sx={{
@@ -129,6 +102,7 @@ const FlashCard: React.FC<FlashCardProps> = ({
                         }}
                     >
                         <Typography
+                            className="flash-card__front-word"
                             variant="h4"
                             component="h2"
                             sx={{
@@ -143,6 +117,7 @@ const FlashCard: React.FC<FlashCardProps> = ({
                         {/* Pronunciation display - only shown if enabled and exists */}
                         {showPronunciation && entry.pronunciation && (
                             <Typography
+                                className="flash-card__front-pronunciation"
                                 variant="body1"
                                 color="text.secondary"
                                 sx={{
@@ -157,6 +132,7 @@ const FlashCard: React.FC<FlashCardProps> = ({
                         )}
 
                         <Typography
+                            className="flash-card__front-hint"
                             variant="caption"
                             color="text.secondary"
                             sx={{
@@ -191,9 +167,6 @@ const FlashCard: React.FC<FlashCardProps> = ({
                         }
                     }}
                 >
-                    {/* Tags for back face - use displayEntry for delayed content */}
-                    {renderTags(displayEntry)}
-
                     <CardContent
                         className="flashcard-back-content"
                         sx={{
@@ -203,11 +176,12 @@ const FlashCard: React.FC<FlashCardProps> = ({
                             p: 3,
                         }}
                     >
-                        <Typography variant="h5" component="h2" gutterBottom sx={{ fontWeight: 'bold' }}>
+                        <Typography className="flash-card__back-word" variant="h5" component="h2" gutterBottom sx={{ fontWeight: 'bold' }}>
                             {displayEntry.entryKey}
                         </Typography>
-                        <Divider sx={{ mb: 2 }} />
+                        <Divider className="flash-card__back-divider" sx={{ mb: 2 }} />
                         <Typography
+                            className="flash-card__back-definition"
                             variant="body1"
                             color="text.secondary"
                             sx={{
@@ -221,8 +195,8 @@ const FlashCard: React.FC<FlashCardProps> = ({
                         </Typography>
                         {displayEntry.createdAt && (
                             <>
-                                <Divider sx={{ mt: 'auto' }} />
-                                <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
+                                <Divider className="flash-card__back-date-divider" sx={{ mt: 'auto' }} />
+                                <Typography className="flash-card__back-date" variant="caption" color="text.secondary" sx={{ mt: 1 }}>
                                     Added: {new Date(displayEntry.createdAt).toLocaleDateString()}
                                 </Typography>
                             </>

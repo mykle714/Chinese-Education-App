@@ -11,7 +11,7 @@ February 10, 2026
 ### 1. Database Schema (Migration 15)
 **File:** `database/migrations/15-add-flashcard-history.sql`
 
-- Added `reviewHistory` column to `VocabEntries` table
+- Added `markHistory` column to `VocabEntries` table
 - Type: `JSONB` (native PostgreSQL JSON storage)
 - Default: Empty array `[]`
 - Index: GIN index for efficient JSONB queries
@@ -19,9 +19,9 @@ February 10, 2026
 
 ```sql
 ALTER TABLE VocabEntries
-ADD COLUMN "reviewHistory" JSONB DEFAULT '[]';
+ADD COLUMN "markHistory" JSONB DEFAULT '[]';
 
-CREATE INDEX idx_vocabentries_review_history ON VocabEntries USING gin ("reviewHistory");
+CREATE INDEX idx_vocabentries_review_history ON VocabEntries USING gin ("markHistory");
 ```
 
 ### 2. TypeScript Type Definitions
@@ -37,7 +37,7 @@ export interface ReviewMark {
 
 Updated `VocabEntry` interface to include:
 ```typescript
-reviewHistory?: ReviewMark[];  // Last 16 flashcard review marks
+markHistory?: ReviewMark[];  // Last 16 flashcard review marks
 ```
 
 ### 3. API Endpoint Update
@@ -61,7 +61,7 @@ POST /api/flashcards/mark
 **Behavior:**
 - On marking correct: Returns a random library card
 - On marking incorrect: Returns success without new card
-- Always tracks the review in the `reviewHistory` field
+- Always tracks the review in the `markHistory` field
 
 ### 4. Database Connection
 - Added `import db from './db.js'` to use connection pooling
@@ -90,7 +90,7 @@ POST /api/flashcards/mark
 ## How It Works
 
 1. User marks a flashcard as correct/incorrect
-2. Backend fetches current `reviewHistory` for that card
+2. Backend fetches current `markHistory` for that card
 3. Creates new review mark: `{ timestamp: new Date().toISOString(), isCorrect }`
 4. Appends to existing history array
 5. Keeps only last 16 entries: `[...existingHistory, newMark].slice(-16)`
@@ -116,7 +116,7 @@ To test the implementation:
 
 ```bash
 docker exec -i cow-postgres-local psql -U cow_user -d cow_db -c \
-  "SELECT id, \"entryKey\", \"reviewHistory\" FROM vocabentries WHERE \"reviewHistory\" != '[]'::jsonb LIMIT 5;"
+  "SELECT id, \"entryKey\", \"markHistory\" FROM vocabentries WHERE \"markHistory\" != '[]'::jsonb LIMIT 5;"
 ```
 
 ## Migration Status

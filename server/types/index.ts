@@ -73,8 +73,39 @@ export interface DictionaryEntry {
   word1: string;          // Primary word (simplified/kanji/hangul/word)
   word2: string | null;   // Secondary word (traditional/kana/hanja/null)
   pronunciation: string | null; // Pronunciation (pinyin/romaji/romanization/null)
+  tone?: string | null;   // Tone digits derived from pronunciation (e.g. "12" for fēng kuáng)
   definitions: string[];  // Parsed JSON array
+  discoverable: boolean;
+  script?: string | null;
+  hskLevelTag?: string | null;
+  breakdown?: Record<string, { definition: string }> | null;
+  synonyms?: string[] | null;
+  exampleSentences?: Array<{ chinese: string; english: string; usage: string }> | null;
+  partsOfSpeech?: string[] | null;
+  expansion?: string | null;
+  expansionMetadata?: Record<string, { definition: string; pronunciation: string }> | null;
+  shortDefinition?: string | null;
+  longDefinition?: string | null;
   createdAt: string;
+}
+
+// Discover Card type — a curated DictionaryEntry shaped for the sort-cards UI
+export interface DiscoverCard {
+  id: number;               // dictionaryEntry.id — sent in sort POST
+  entryKey: string;         // word1
+  entryValue: string;       // definitions[0]
+  pronunciation?: string | null;
+  tone?: string | null;
+  language: Language;
+  word2?: string | null;
+  script?: string | null;
+  hskLevelTag?: string | null;
+  breakdown?: Record<string, { definition: string }> | null;
+  synonyms?: string[] | null;
+  exampleSentences?: Array<{ chinese: string; english: string; usage: string }> | null;
+  partsOfSpeech?: string[] | null;
+  expansion?: string | null;
+  expansionMetadata?: Record<string, { definition: string; pronunciation: string }> | null;
 }
 
 export interface DictionaryEntryCreateData {
@@ -111,6 +142,7 @@ export interface VocabEntry {
   language: Language;
   script?: string;
   pronunciation?: string | null;
+  tone?: string | null;   // Tone digits derived from pronunciation (e.g. "12" for fēng kuáng)
   hskLevelTag?: HskLevel | null;
   markHistory?: ReviewMark[];  // Last 16 flashcard mark results
   totalMarkCount?: number;  // Total cumulative count of all marks
@@ -120,9 +152,10 @@ export interface VocabEntry {
   last16SuccessRate?: number;  // Success rate for last 16 marks (0.0 to 1.0)
   category?: FlashcardCategory;  // Category based on last 8 performance
   starterPackBucket?: StarterPackBucket | null;  // Starter pack sorting bucket
-  breakdown?: Record<string, { definition: string; pronunciation: string }> | null;  // Character breakdown for Chinese vocab
+  breakdown?: Record<string, { definition: string }> | null;  // Character breakdown for Chinese vocab
   synonyms?: string[];  // Array of Chinese synonym words
   expansion?: string | null;  // Expanded/fuller form of word (e.g., 不知不觉 → 不知道不觉得)
+  expansionMetadata?: Record<string, { definition: string; pronunciation: string }> | null;  // Character breakdown for expansion string
   exampleSentences?: Array<{ chinese: string; english: string; usage: string }>;  // Example sentences showing different uses
   partsOfSpeech?: string[];  // Possible parts of speech (noun, verb, adj, etc.)
   relatedWords?: Array<{ id: number; entryKey: string; sharedCharacters: string[]; successRate: number | null }>;  // Related library words (computed dynamically)

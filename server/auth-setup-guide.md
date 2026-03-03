@@ -1,98 +1,167 @@
 # Authentication Setup Guide
 
-This guide explains how to set up and test the authentication system for the Vocabulary Manager application.
+This guide explains the current JWT-based authentication system for the Vocabulary Manager application.
 
-## Database Setup
+## Authentication Architecture
 
-Before users can log in, you need to update the database schema and add password hashes for existing users.
+The application uses **JWT (JSON Web Tokens)** for authentication:
+- User credentials (email/password) are validated against hashed passwords stored in the database
+- Successful login returns a JWT token stored in localStorage
+- Tokens are included in API requests via the `Authorization` header
+- Tokens expire based on the `JWT_EXPIRATION` setting (default: 7 days)
 
-### 1. Update Database Schema
+## Environment Configuration
 
-First, run the SQL script to add the password column to the Users table:
+Authentication requires the following environment variables (set in `.env`):
 
-```bash
-# Connect to your Azure SQL Database and run:
-# server/update-users-table.sql
+```env
+JWT_SECRET=<your-secret-key-here>
+JWT_EXPIRATION=7d
+NODE_ENV=development
 ```
 
-This script adds a `password` column to the Users table if it doesn't already exist.
+**Important**: `JWT_SECRET` should be a strong, random string (minimum 32 characters recommended).
 
-### 2. Add Password Hashes for Existing Users
+## Database Schema
 
-You have two options to add password hashes for existing users:
+The `users` table contains the following authentication-related columns:
 
-#### Option 1: Using SQL Script (All users get the same password)
-
-```bash
-# Connect to your Azure SQL Database and run:
-# server/update-user-passwords.sql
+```sql
+-- Users table (relevant columns)
+id UUID PRIMARY KEY
+email VARCHAR UNIQUE NOT NULL
+password VARCHAR NOT NULL          -- bcrypt hashed password
+createdAt TIMESTAMP DEFAULT now()
+updatedAt TIMESTAMP DEFAULT now()
 ```
 
-This sets all users to have the same password: `Password123`
+## User Registration
 
-#### Option 2: Using Node.js Script (Each user gets a unique password)
+New users can register through the UI by:
 
+1. Navigating to `/register`
+2. Entering email and password
+3. Password is hashed with bcrypt before storage
+4. User record is created in the `users` table
+
+## Test Users
+
+For development/testing, test users are pre-populated in the database. See [docs/TEST_USERS.md](../docs/TEST_USERS.md) for:
+- Available test user credentials
+- Seeding test data via Docker initialization scripts
+
+To reset test users:
 ```bash
-# Run the Node.js script:
-cd server
-node update-passwords.js
+# Stop and remove containers, then restart with fresh data
+docker-compose down -v
+docker-compose up
 ```
 
-This script:
-1. Connects to the database
-2. Retrieves all users
-3. Generates a unique password for each user based on their ID
-4. Hashes the password using bcrypt
-5. Updates the user record in the database
-6. Outputs the temporary password for each user
+## Testing the Authentication Flow
 
-The temporary password format is: `Password123_[first 8 chars of user ID]`
+### 1. Start the Development Environment
 
-## Testing the Login Flow
+```bash
+# From the project root
+docker-compose up
+```
 
-After setting up the database, you can test the login functionality:
+This starts:
+- React frontend (Vite dev server on port 5175)
+- Express backend (API server on port 3001)
+- PostgreSQL database
 
-1. Start the server:
-   ```bash
-   cd server
-   npm run build
-   npm run start
-   ```
+### 2. Test Login
 
-2. Start the client:
-   ```bash
-   # In a new terminal
-   npm run dev
-   ```
+Navigate to `http://localhost:5175/login` and authenticate with:
+- **Email**: One of the test user emails from TEST_USERS.md
+- **Password**: Corresponding test password
 
-3. Navigate to the login page:
-   ```
-   http://localhost:5175/login
-   ```
+### 3. Verify Token Storage
 
-4. Log in with a user's email and their temporary password:
-   - Email: [user's email from the database]
-   - Password: `Password123` (if using SQL script) or `Password123_[first 8 chars of user ID]` (if using Node.js script)
+After successful login, you should see:
+- User redirected to home page
+- JWT token stored in `localStorage` under key `token`
+- Token sent in `Authorization: Bearer <token>` header for protected API calls
 
-5. After successful login, you should be redirected to the home page and see authenticated content.
+To view the token (in browser console):
+```javascript
+localStorage.getItem('token')
+```
+
+### 4. Test Token Expiration
+
+JWT tokens expire based on the `JWT_EXPIRATION` setting. To test expiration:
+- Set `JWT_EXPIRATION=1m` in `.env` to use 1-minute expiration
+- Login and wait for token to expire
+- Expired token requests return 401 Unauthorized
+- User is automatically redirected to login page
+
+### 5. Test Protected Routes
+
+Verify authentication is enforced on protected routes:
+- Try accessing `/account` without logging in → redirected to `/login`
+- Login successfully → can access `/account`
+- Clear localStorage and refresh → redirected to `/login`
 
 ## Security Considerations
 
-In a production environment:
+### In Development
+- JWT_SECRET can be a simple string
+- HTTPS not required locally
+- Test users are pre-seeded in Docker init scripts
 
-1. Use HTTPS for all communications
-2. Generate truly random passwords for users
-3. Implement a password reset flow
-4. Set up email notifications for password changes
-5. Implement rate limiting for login attempts
-6. Consider adding multi-factor authentication
+### In Production
+
+1. **Strong JWT_SECRET**: Use a cryptographically random string (minimum 32 characters)
+   ```bash
+   # Generate a secure secret
+   openssl rand -base64 32
+   ```
+
+2. **HTTPS/TLS**: Always use HTTPS to protect tokens in transit
+   - See [docs/HTTPS_SETUP_GUIDE.md](../docs/HTTPS_SETUP_GUIDE.md)
+
+3. **Token Management**:
+   - Set appropriate `JWT_EXPIRATION` (7-30 days typical)
+   - Consider implementing refresh tokens for longer sessions
+   - See [docs/TOKEN_EXPIRATION_IMPLEMENTATION.md](../docs/TOKEN_EXPIRATION_IMPLEMENTATION.md)
+
+4. **Password Security**:
+   - Passwords are hashed with bcrypt (not reversible)
+   - bcrypt automatically handles salt generation
+   - Never log or expose unhashed passwords
+
+5. **Additional Protections**:
+   - Implement rate limiting on login attempts
+   - Log authentication events for security auditing
+   - Monitor for suspicious login patterns
+   - Consider adding multi-factor authentication (MFA)
 
 ## Troubleshooting
 
-If you encounter login issues:
+### Login Fails
+- **Check**: User email exists in database
+- **Check**: Password is correct (case-sensitive)
+- **Fix**: Verify test users are seeded in database via Docker init scripts
 
-1. Check the server logs for error messages
-2. Verify the user exists in the database
-3. Ensure the password column is properly populated
-4. Check that the JWT_SECRET is consistent between server restarts
-5. Clear browser cookies and localStorage if you've made changes to the authentication system
+### Token Invalid/Expired
+- **Check**: Browser's localStorage for the token
+- **Check**: Token hasn't been deleted or corrupted
+- **Fix**: Log out and log back in to get a fresh token
+
+### API Requests Rejected (401)
+- **Check**: `Authorization` header is set with `Bearer <token>`
+- **Check**: Token hasn't expired
+- **Fix**: Check `JWT_EXPIRATION` setting and user's login time
+
+### CORS Errors During Login
+- **Check**: Frontend and backend URLs in CORS configuration
+- **Check**: Request includes credentials (`credentials: 'include'`)
+- **Fix**: Verify `REACT_APP_API_URL` matches backend server address
+
+## Related Documentation
+
+- [TOKEN_EXPIRATION_IMPLEMENTATION.md](../docs/TOKEN_EXPIRATION_IMPLEMENTATION.md) - Token lifecycle and expiration
+- [TEST_USERS.md](../docs/TEST_USERS.md) - Available test users for development
+- [HTTPS_SETUP_GUIDE.md](../docs/HTTPS_SETUP_GUIDE.md) - Securing authentication in production

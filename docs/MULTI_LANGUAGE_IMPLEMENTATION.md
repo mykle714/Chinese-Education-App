@@ -37,7 +37,7 @@ The database has been updated to support multiple languages using a unified sche
 - **definitions** (JSONB): Array of English definitions
 
 #### Users Table
-- **preferredLanguage** (VARCHAR): User's preferred study language (default: 'zh')
+- **selectedLanguage** (VARCHAR): User's preferred study language (default: 'zh')
 
 #### VocabEntries Table
 - **language** (VARCHAR): Language of the vocabulary entry
@@ -48,7 +48,7 @@ The database has been updated to support multiple languages using a unified sche
 Updated types in `server/types/index.ts`:
 - Added `Language` type: `'zh' | 'ja' | 'ko' | 'vi'`
 - Updated `DictionaryEntry` interface with new schema fields
-- Updated `User` interface with `preferredLanguage` field
+- Updated `User` interface with `selectedLanguage` field
 - Updated `VocabEntry` interface with `language` field
 
 ### 3. Data Access Layer
@@ -98,7 +98,7 @@ docker exec -i cow-postgres-local psql -U cow_user -d cow_db < database/migratio
 ```
 
 This migration will:
-- Add `preferredLanguage` column to Users table
+- Add `selectedLanguage` column to Users table
 - Add `language` column to DictionaryEntries table
 - Rename columns (simplified→word1, traditional→word2, pinyin→pronunciation)
 - Make word2 and pronunciation nullable
@@ -159,7 +159,7 @@ Users can set their preferred language through the settings page (to be implemen
 ```typescript
 // API: PUT /api/users/language
 {
-  "preferredLanguage": "ja"  // 'zh', 'ja', 'ko', or 'vi'
+  "selectedLanguage": "ja"  // 'zh', 'ja', 'ko', or 'vi'
 }
 ```
 
@@ -229,7 +229,7 @@ const vocabEntry: VocabEntryCreateData = {
 
 -- Check existing data
 SELECT language, COUNT(*) FROM DictionaryEntries GROUP BY language;
-SELECT "preferredLanguage", COUNT(*) FROM Users GROUP BY "preferredLanguage";
+SELECT "selectedLanguage", COUNT(*) FROM Users GROUP BY "selectedLanguage";
 ```
 
 ### Verify Imports
@@ -261,7 +261,7 @@ curl http://localhost:3001/api/dictionary/lookup?word=こんにちは&language=j
 # Test user language preference (to be implemented)
 curl -X PUT http://localhost:3001/api/users/language \
   -H "Content-Type: application/json" \
-  -d '{"preferredLanguage": "ja"}'
+  -d '{"selectedLanguage": "ja"}'
 ```
 
 ## File Structure

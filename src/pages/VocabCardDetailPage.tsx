@@ -5,7 +5,8 @@ import { styled } from "@mui/material/styles";
 import ArrowBackIosNewIcon from "@mui/icons-material/ArrowBackIosNew";
 import MobileFooter from "../components/MobileFooter";
 import { API_BASE_URL } from "../constants";
-import type { VocabEntry } from "../types";
+import type { VocabEntry, DictionaryEntry } from "../types";
+import CharacterPinyinColorDisplay from "../components/CharacterPinyinColorDisplay";
 
 // Design tokens
 const COLORS = {
@@ -111,6 +112,7 @@ const VocabCardDetailPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const [entry, setEntry] = useState<VocabEntry | null>(null);
+    const [dictEntry, setDictEntry] = useState<DictionaryEntry | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -126,6 +128,13 @@ const VocabCardDetailPage: React.FC = () => {
                 }
                 const data = await response.json();
                 setEntry(data);
+                const dictRes = await fetch(`${API_BASE_URL}/api/dictionary/lookup/${encodeURIComponent(data.entryKey)}`, {
+                    credentials: "include",
+                });
+                if (dictRes.ok) {
+                    const dictData = await dictRes.json();
+                    setDictEntry(dictData);
+                }
             } catch (err: any) {
                 setError(err.message || "Failed to load card");
             } finally {
@@ -136,6 +145,8 @@ const VocabCardDetailPage: React.FC = () => {
         if (id) fetchEntry();
     }, [id]);
 
+    const hasShortDef = !!dictEntry?.shortDefinition;
+    const hasLongDef = !!dictEntry?.longDefinition;
     const hasBreakdown = entry?.breakdown && Object.keys(entry.breakdown).length > 0;
     const hasSynonyms = entry?.synonyms && entry.synonyms.length > 0;
     const hasExamples = entry?.exampleSentences && entry.exampleSentences.length > 0;
@@ -144,11 +155,12 @@ const VocabCardDetailPage: React.FC = () => {
     const hasExpansion = !!entry?.expansion;
 
     return (
-        <Box sx={{ display: "flex", justifyContent: "center", padding: 2, minHeight: "100vh" }}>
-            <IPhoneFrame>
-                <Header>
-                    <Toolbar>
+        <Box className="vocab-card-detail__page-wrapper" sx={{ display: "flex", justifyContent: "center", padding: 2, minHeight: "100vh" }}>
+            <IPhoneFrame className="vocab-card-detail__frame">
+                <Header className="vocab-card-detail__header">
+                    <Toolbar className="vocab-card-detail__toolbar">
                         <Box
+                            className="vocab-card-detail__back-button"
                             onClick={() => navigate(-1)}
                             sx={{
                                 display: "flex",
@@ -159,12 +171,13 @@ const VocabCardDetailPage: React.FC = () => {
                                 "&:hover": { opacity: 0.7 },
                             }}
                         >
-                            <ArrowBackIosNewIcon sx={{ fontSize: 16 }} />
-                            <Typography sx={{ fontSize: 14, fontFamily: '"Inter", sans-serif' }}>
+                            <ArrowBackIosNewIcon className="vocab-card-detail__back-icon" sx={{ fontSize: 16 }} />
+                            <Typography className="vocab-card-detail__back-text" sx={{ fontSize: 14, fontFamily: '"Inter", sans-serif' }}>
                                 Back
                             </Typography>
                         </Box>
                         <Typography
+                            className="vocab-card-detail__title"
                             sx={{
                                 fontSize: 16,
                                 fontWeight: 400,
@@ -180,21 +193,22 @@ const VocabCardDetailPage: React.FC = () => {
                     </Toolbar>
                 </Header>
 
-                <ContentArea>
+                <ContentArea className="vocab-card-detail__content">
                     {loading ? (
-                        <Box sx={{ display: "flex", justifyContent: "center", pt: 6 }}>
-                            <CircularProgress />
+                        <Box className="vocab-card-detail__loading" sx={{ display: "flex", justifyContent: "center", pt: 6 }}>
+                            <CircularProgress className="vocab-card-detail__spinner" />
                         </Box>
                     ) : error ? (
-                        <Alert severity="error">{error}</Alert>
+                        <Alert className="vocab-card-detail__error-alert" severity="error">{error}</Alert>
                     ) : entry ? (
                         <>
                             {/* Hero Card */}
-                            <HeroCard>
+                            <HeroCard className="vocab-card-detail__hero-card">
                                 {/* Category + HSK badges row */}
-                                <Box sx={{ display: "flex", justifyContent: "space-between", width: "100%", mb: 1 }}>
+                                <Box className="vocab-card-detail__badges-row" sx={{ display: "flex", justifyContent: "space-between", width: "100%", mb: 1 }}>
                                     {entry.category ? (
                                         <Chip
+                                            className="vocab-card-detail__category-chip"
                                             label={entry.category}
                                             size="small"
                                             sx={{
@@ -205,9 +219,10 @@ const VocabCardDetailPage: React.FC = () => {
                                                 height: 22,
                                             }}
                                         />
-                                    ) : <Box />}
+                                    ) : <Box className="vocab-card-detail__badge-placeholder" />}
                                     {entry.hskLevelTag && (
                                         <Chip
+                                            className="vocab-card-detail__hsk-chip"
                                             label={entry.hskLevelTag}
                                             size="small"
                                             sx={{
@@ -223,6 +238,7 @@ const VocabCardDetailPage: React.FC = () => {
 
                                 {/* Main word */}
                                 <Typography
+                                    className="vocab-card-detail__main-word"
                                     sx={{
                                         fontSize: entry.entryKey.length > 4 ? "3rem" : "4rem",
                                         fontWeight: 700,
@@ -238,6 +254,7 @@ const VocabCardDetailPage: React.FC = () => {
                                 {/* Pronunciation */}
                                 {entry.pronunciation && (
                                     <Typography
+                                        className="vocab-card-detail__pronunciation"
                                         sx={{
                                             fontSize: "1rem",
                                             color: COLORS.textSecondary,
@@ -250,10 +267,11 @@ const VocabCardDetailPage: React.FC = () => {
                                     </Typography>
                                 )}
 
-                                <Divider sx={{ width: "60%", borderColor: COLORS.textSecondary, opacity: 0.3, my: 0.5 }} />
+                                <Divider className="vocab-card-detail__hero-divider" sx={{ width: "60%", borderColor: COLORS.textSecondary, opacity: 0.3, my: 0.5 }} />
 
                                 {/* Definition */}
                                 <Typography
+                                    className="vocab-card-detail__definition"
                                     sx={{
                                         fontSize: "0.95rem",
                                         color: COLORS.onSurface,
@@ -266,13 +284,33 @@ const VocabCardDetailPage: React.FC = () => {
                                 </Typography>
                             </HeroCard>
 
+                            {/* Dictionary Definition */}
+                            {(hasShortDef || hasLongDef) && (
+                                <SectionCard className="vocab-card-detail__dict-definition">
+                                    <SectionLabel>Dictionary Definition</SectionLabel>
+                                    {hasShortDef && (
+                                        <Typography sx={{ fontSize: '1rem', fontWeight: 600, color: COLORS.onSurface, fontFamily: '"Inter", sans-serif' }}>
+                                            {dictEntry!.shortDefinition}
+                                        </Typography>
+                                    )}
+                                    {hasLongDef && (
+                                        <Typography sx={{ fontSize: '0.875rem', color: COLORS.textSecondary, fontFamily: '"Inter", sans-serif', lineHeight: 1.5 }}>
+                                            {dictEntry!.longDefinition}
+                                        </Typography>
+                                    )}
+                                </SectionCard>
+                            )}
+
                             {/* Character Breakdown */}
                             {hasBreakdown && (
-                                <SectionCard>
-                                    <SectionLabel>Character Breakdown</SectionLabel>
-                                    <Box sx={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                                        {Object.entries(entry.breakdown!).map(([char, info]) => (
+                                <SectionCard className="vocab-card-detail__breakdown">
+                                    <SectionLabel className="vocab-card-detail__section-label">Character Breakdown</SectionLabel>
+                                    <Box className="vocab-card-detail__breakdown-list" sx={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                        {[...entry.entryKey].filter(char => entry.breakdown![char]).map(char => {
+                                            const info = entry.breakdown![char];
+                                            return (
                                             <Box
+                                                className="vocab-card-detail__breakdown-item"
                                                 key={char}
                                                 sx={{
                                                     display: "flex",
@@ -280,33 +318,19 @@ const VocabCardDetailPage: React.FC = () => {
                                                     gap: "12px",
                                                     backgroundColor: COLORS.sectionCard,
                                                     borderRadius: "8px",
-                                                    padding: "8px 12px",
+                                                    padding: "6px 10px",
                                                 }}
                                             >
-                                                <Typography
-                                                    sx={{
-                                                        fontSize: "1.75rem",
-                                                        fontWeight: 700,
-                                                        color: COLORS.onSurface,
-                                                        lineHeight: 1,
-                                                        minWidth: 36,
-                                                        fontFamily: '"Noto Serif SC", "Inter", sans-serif',
-                                                    }}
-                                                >
-                                                    {char}
-                                                </Typography>
-                                                <Box>
+                                                <CharacterPinyinColorDisplay
+                                                    character={char}
+                                                    pinyin={info.pronunciation}
+                                                    size="md"
+                                                    useToneColor={true}
+                                                    showPinyin={true}
+                                                />
+                                                <Box className="vocab-card-detail__breakdown-info">
                                                     <Typography
-                                                        sx={{
-                                                            fontSize: "0.8rem",
-                                                            color: COLORS.textSecondary,
-                                                            fontStyle: "italic",
-                                                            fontFamily: '"Inter", sans-serif',
-                                                        }}
-                                                    >
-                                                        {info.pronunciation}
-                                                    </Typography>
-                                                    <Typography
+                                                        className="vocab-card-detail__breakdown-def"
                                                         sx={{
                                                             fontSize: "0.875rem",
                                                             color: COLORS.onSurface,
@@ -317,18 +341,20 @@ const VocabCardDetailPage: React.FC = () => {
                                                     </Typography>
                                                 </Box>
                                             </Box>
-                                        ))}
+                                            );
+                                        })}
                                     </Box>
                                 </SectionCard>
                             )}
 
                             {/* Parts of Speech */}
                             {hasPartsOfSpeech && (
-                                <SectionCard>
-                                    <SectionLabel>Parts of Speech</SectionLabel>
-                                    <Box sx={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                                <SectionCard className="vocab-card-detail__pos">
+                                    <SectionLabel className="vocab-card-detail__section-label">Parts of Speech</SectionLabel>
+                                    <Box className="vocab-card-detail__pos-list" sx={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
                                         {entry.partsOfSpeech!.map((pos) => (
                                             <Chip
+                                                className="vocab-card-detail__pos-chip"
                                                 key={pos}
                                                 label={pos}
                                                 size="small"
@@ -347,28 +373,31 @@ const VocabCardDetailPage: React.FC = () => {
 
                             {/* Expansion */}
                             {hasExpansion && (
-                                <SectionCard>
-                                    <SectionLabel>Extended Definition</SectionLabel>
-                                    <Typography
-                                        sx={{
-                                            fontSize: "0.875rem",
-                                            color: COLORS.onSurface,
-                                            fontFamily: '"Inter", sans-serif',
-                                            lineHeight: 1.6,
-                                        }}
-                                    >
-                                        {entry.expansion}
-                                    </Typography>
+                                <SectionCard className="vocab-card-detail__expansion">
+                                    <SectionLabel className="vocab-card-detail__section-label">Extended Definition</SectionLabel>
+                                    <Box className="vocab-card-detail__expansion-chars" sx={{ display: 'flex', flexDirection: 'row', gap: 1.5, flexWrap: 'wrap' }}>
+                                        {[...entry.expansion!].map((char, i) => (
+                                            <CharacterPinyinColorDisplay
+                                                key={i}
+                                                character={char}
+                                                pinyin={entry.expansionMetadata?.[char]?.pronunciation ?? ''}
+                                                showPinyin={!!entry.expansionMetadata?.[char]?.pronunciation}
+                                                size="md"
+                                                useToneColor={true}
+                                            />
+                                        ))}
+                                    </Box>
                                 </SectionCard>
                             )}
 
                             {/* Synonyms */}
                             {hasSynonyms && (
-                                <SectionCard>
-                                    <SectionLabel>Synonyms</SectionLabel>
-                                    <Box sx={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                                <SectionCard className="vocab-card-detail__synonyms">
+                                    <SectionLabel className="vocab-card-detail__section-label">Synonyms</SectionLabel>
+                                    <Box className="vocab-card-detail__synonyms-list" sx={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
                                         {entry.synonyms!.map((syn) => (
                                             <Box
+                                                className="vocab-card-detail__synonym-item"
                                                 key={syn}
                                                 sx={{
                                                     backgroundColor: COLORS.sectionCard,
@@ -377,6 +406,7 @@ const VocabCardDetailPage: React.FC = () => {
                                                 }}
                                             >
                                                 <Typography
+                                                    className="vocab-card-detail__synonym-text"
                                                     sx={{
                                                         fontSize: "1rem",
                                                         fontWeight: 600,
@@ -394,11 +424,12 @@ const VocabCardDetailPage: React.FC = () => {
 
                             {/* Example Sentences */}
                             {hasExamples && (
-                                <SectionCard>
-                                    <SectionLabel>Example Sentences</SectionLabel>
-                                    <Box sx={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                                <SectionCard className="vocab-card-detail__examples">
+                                    <SectionLabel className="vocab-card-detail__section-label">Example Sentences</SectionLabel>
+                                    <Box className="vocab-card-detail__examples-list" sx={{ display: "flex", flexDirection: "column", gap: "10px" }}>
                                         {entry.exampleSentences!.map((ex, i) => (
                                             <Box
+                                                className="vocab-card-detail__example-item"
                                                 key={i}
                                                 sx={{
                                                     backgroundColor: COLORS.sectionCard,
@@ -410,6 +441,7 @@ const VocabCardDetailPage: React.FC = () => {
                                                 }}
                                             >
                                                 <Typography
+                                                    className="vocab-card-detail__example-chinese"
                                                     sx={{
                                                         fontSize: "1rem",
                                                         fontWeight: 500,
@@ -421,6 +453,7 @@ const VocabCardDetailPage: React.FC = () => {
                                                     {ex.chinese}
                                                 </Typography>
                                                 <Typography
+                                                    className="vocab-card-detail__example-english"
                                                     sx={{
                                                         fontSize: "0.8rem",
                                                         color: COLORS.textSecondary,
@@ -433,6 +466,7 @@ const VocabCardDetailPage: React.FC = () => {
                                                 </Typography>
                                                 {ex.usage && (
                                                     <Typography
+                                                        className="vocab-card-detail__example-usage"
                                                         sx={{
                                                             fontSize: "0.72rem",
                                                             color: COLORS.textSecondary,
@@ -451,11 +485,12 @@ const VocabCardDetailPage: React.FC = () => {
 
                             {/* Related Words */}
                             {hasRelatedWords && (
-                                <SectionCard>
-                                    <SectionLabel>Related Words</SectionLabel>
-                                    <Box sx={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                                <SectionCard className="vocab-card-detail__related-words">
+                                    <SectionLabel className="vocab-card-detail__section-label">Related Words</SectionLabel>
+                                    <Box className="vocab-card-detail__related-words-list" sx={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
                                         {entry.relatedWords!.map((rel) => (
                                             <Box
+                                                className="vocab-card-detail__related-word-item"
                                                 key={rel.id}
                                                 sx={{
                                                     backgroundColor: COLORS.sectionCard,
@@ -468,6 +503,7 @@ const VocabCardDetailPage: React.FC = () => {
                                                 }}
                                             >
                                                 <Typography
+                                                    className="vocab-card-detail__related-word-key"
                                                     sx={{
                                                         fontSize: "1rem",
                                                         fontWeight: 600,
@@ -479,6 +515,7 @@ const VocabCardDetailPage: React.FC = () => {
                                                 </Typography>
                                                 {rel.sharedCharacters.length > 0 && (
                                                     <Typography
+                                                        className="vocab-card-detail__related-word-shared"
                                                         sx={{
                                                             fontSize: "0.65rem",
                                                             color: COLORS.textSecondary,
@@ -495,7 +532,7 @@ const VocabCardDetailPage: React.FC = () => {
                             )}
 
                             {/* Bottom padding */}
-                            <Box sx={{ height: 8 }} />
+                            <Box className="vocab-card-detail__bottom-padding" sx={{ height: 8 }} />
                         </>
                     ) : null}
                 </ContentArea>

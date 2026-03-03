@@ -25,8 +25,9 @@
 - [ ] Build and start services: `docker-compose -f docker-compose.prod.yml up --build -d`
 - [ ] Verify containers running: `docker-compose -f docker-compose.prod.yml ps`
 - [ ] Check service logs: `docker-compose -f docker-compose.prod.yml logs -f`
-- [ ] Test backend health: `curl http://localhost:5000/api/health`
-- [ ] Test frontend: `curl http://localhost:3000`
+- [ ] Test backend health: `curl http://localhost:5000/api/health` (internal Docker network)
+- [ ] Test frontend: `curl http://localhost/` (internal Docker network)
+- [ ] Test frontend externally: Visit `http://<server-ip>` (or https:// with SSL)
 
 ## Multi-Language Dictionary Import (CRITICAL - 15-30 minutes)
 - [ ] Make script executable: `chmod +x server/scripts/import-all-dictionaries.sh`
@@ -46,8 +47,9 @@
 - [ ] Reload Nginx (if used)
 
 ## Security & Network
-- [ ] Configure UFW firewall: `sudo ufw allow ssh && sudo ufw allow 80/tcp && sudo ufw allow 443/tcp && sudo ufw allow 3000/tcp && sudo ufw allow 5000/tcp && sudo ufw enable`
-- [ ] Set up router port forwarding (80 → 3000 for Docker frontend)
+- [ ] Configure UFW firewall: `sudo ufw allow ssh && sudo ufw allow 80/tcp && sudo ufw allow 443/tcp && sudo ufw enable`
+- [ ] Verify Docker port bindings: Frontend on 80/443 (public), Backend on 5000 (localhost), Postgres on 5432 (localhost)
+- [ ] If behind NAT router: Configure port forwarding for HTTP (80) and HTTPS (443) to server
 - [ ] Test internal access: `curl http://localhost:5000/api/health`
 - [ ] Test database connection via Docker
 

@@ -9,6 +9,7 @@ import EntriesPage from "./pages/EntriesPage";
 import EntryDetailPage from "./pages/EntryDetailPage";
 import EditEntryPage from "./pages/EditEntryPage";
 import ProfilePage from "./pages/ProfilePage";
+import AccountPage from "./pages/AccountPage";
 import SettingsPage from "./pages/SettingsPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import FlashcardsPage from "./pages/FlashcardsPage";
@@ -17,7 +18,6 @@ import FlashcardsDecksPage from "./pages/FlashcardsDecksPage";
 import ReaderPage from "./pages/ReaderPage";
 import MarketViewerPage from "./pages/MarketViewerPage";
 import DictionaryPage from "./pages/DictionaryPage";
-import DiscoverPage from "./pages/DiscoverPage";
 import SortCardsPage from "./pages/SortCardsPage";
 import VocabCardDetailPage from "./pages/VocabCardDetailPage";
 import LoginPage from "./pages/LoginPage";
@@ -56,15 +56,11 @@ function App() {
                   </ProtectedRoute>
                 } />
                 <Route path="/flashcards/learn" element={
-                  <ProtectedRoute>
+                  <ProtectedRoute allowPublic>
                     <FlashcardsLearnPage />
                   </ProtectedRoute>
                 } />
-                <Route path="/flashcards/decks" element={
-                  <ProtectedRoute>
-                    <FlashcardsDecksPage />
-                  </ProtectedRoute>
-                } />
+                <Route path="/flashcards/decks" element={<FlashcardsDecksPage />} />
                 <Route path="/reader" element={
                   <ProtectedRoute>
                     <ReaderPage />
@@ -75,18 +71,13 @@ function App() {
                     <DictionaryPage />
                   </ProtectedRoute>
                 } />
-                <Route path="/discover" element={
-                  <ProtectedRoute>
-                    <DiscoverPage />
-                  </ProtectedRoute>
-                } />
                 <Route path="/discover/sort/:language" element={
-                  <ProtectedRoute>
+                  <ProtectedRoute allowPublic>
                     <SortCardsPage />
                   </ProtectedRoute>
                 } />
                 <Route path="/flashcards/card/:id" element={
-                  <ProtectedRoute>
+                  <ProtectedRoute allowPublic>
                     <VocabCardDetailPage />
                   </ProtectedRoute>
                 } />
@@ -100,11 +91,12 @@ function App() {
                     <ProfilePage />
                   </ProtectedRoute>
                 } />
-                <Route path="/settings" element={
-                  <ProtectedRoute>
-                    <SettingsPage />
+                <Route path="/account" element={
+                  <ProtectedRoute allowPublic>
+                    <AccountPage />
                   </ProtectedRoute>
                 } />
+                <Route path="/settings" element={<SettingsPage />} />
                 <Route path="*" element={<NotFoundPage />} />
               </Routes>
             </Layout>

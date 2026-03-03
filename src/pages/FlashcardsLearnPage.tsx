@@ -213,6 +213,7 @@ const DraggableCardContainer = styled(Box)(({ theme }) => ({
     width: 295,
     minHeight: 426,
     position: "relative",
+    perspective: "1200px",
     touchAction: "none",
     userSelect: "none",
 }));
@@ -897,7 +898,8 @@ const FlashcardsLearnPage: React.FC = () => {
                                 onMouseUp={handleMouseUp}
                                 onMouseLeave={handleMouseLeave}
                                 sx={{
-                                    backgroundColor: COLORS.flashCard,
+                                    backgroundColor: 'transparent',
+                                    background: 'none',
                                     borderRadius: "12px",
                                     boxShadow: "2px 4px 4px rgba(0, 0, 0, 0.25)",
                                     cursor: "pointer",
@@ -906,63 +908,61 @@ const FlashcardsLearnPage: React.FC = () => {
                                     position: "absolute",
                                     top: 0,
                                     left: 0,
-                                    transform: `translate(${dragPosition.x}px, ${dragPosition.y}px) rotate(${rotation}deg)`,
-                                    transition: isDragging ? 'none' : 'transform 0.3s ease-out',
+                                    transformStyle: "preserve-3d",
+                                    transform: `translate(${dragPosition.x}px, ${dragPosition.y}px) rotate(${rotation}deg) rotateY(${isFlipped ? 180 : 0}deg)`,
+                                    transition: isDragging ? 'none' : 'transform 0.45s ease',
                                     opacity: opacity,
-                                    perspective: "1200px",
+                                    overflow: 'visible',
                                 }}
                             >
-                                {/* FlipInner: remounts on card change so random initial flip has no animation */}
-                                <Box
-                                    key={currentEntry.id}
-                                    sx={{
-                                        position: "relative",
-                                        transformStyle: "preserve-3d",
-                                        transform: isFlipped ? "rotateY(180deg)" : "rotateY(0deg)",
-                                        transition: "transform 0.45s ease",
-                                        borderRadius: "12px",
-                                    }}
-                                >
                                     {/* Front face */}
-                                    <CardContent
-                                        className="mobile-demo-flashcard-content"
-                                        sx={{
-                                            padding: "72px 30px",
-                                            backfaceVisibility: "hidden",
-                                            WebkitBackfaceVisibility: "hidden",
-                                        }}
-                                    >
-                                        <Box className="mobile-demo-flashcard-inner" sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '80px' }}>
-                                            <Box className="mobile-demo-flashcard-image" sx={{ width: 106, height: 83 }} />
-                                            <Box className="mobile-demo-flashcard-text" sx={{ display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'center', width: '100%' }}>
-                                                <Typography
-                                                    className="mobile-demo-flashcard-word"
-                                                    sx={{
-                                                        fontSize: 30,
-                                                        fontWeight: 400,
-                                                        color: COLORS.onSurface,
-                                                        fontFamily: '"Inter", "Noto Sans JP", sans-serif',
-                                                    }}
-                                                >
-                                                    {currentEntry.entryKey}
-                                                </Typography>
-                                                {currentEntry.pronunciation && (
+                                    <Box sx={{
+                                        position: "absolute",
+                                        top: 0, left: 0, width: "100%", height: "100%",
+                                        backfaceVisibility: "hidden",
+                                        WebkitBackfaceVisibility: "hidden",
+                                        backgroundColor: COLORS.flashCard,
+                                        borderRadius: "12px",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                    }}>
+                                        <CardContent
+                                            className="mobile-demo-flashcard-content"
+                                            sx={{ padding: "72px 30px", width: "100%" }}
+                                        >
+                                            <Box className="mobile-demo-flashcard-inner" sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '80px' }}>
+                                                <Box className="mobile-demo-flashcard-image" sx={{ width: 106, height: 83 }} />
+                                                <Box className="mobile-demo-flashcard-text" sx={{ display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'center', width: '100%' }}>
                                                     <Typography
-                                                        className="mobile-demo-flashcard-pronunciation"
+                                                        className="mobile-demo-flashcard-word"
                                                         sx={{
-                                                            fontSize: 16,
+                                                            fontSize: 30,
+                                                            fontWeight: 400,
                                                             color: COLORS.onSurface,
-                                                            opacity: 0.8,
-                                                            fontFamily: '"Inter", sans-serif',
-                                                            fontStyle: 'italic',
+                                                            fontFamily: '"Inter", "Noto Sans JP", sans-serif',
                                                         }}
                                                     >
-                                                        {currentEntry.pronunciation}
+                                                        {currentEntry.entryKey}
                                                     </Typography>
-                                                )}
+                                                    {currentEntry.pronunciation && (
+                                                        <Typography
+                                                            className="mobile-demo-flashcard-pronunciation"
+                                                            sx={{
+                                                                fontSize: 16,
+                                                                color: COLORS.onSurface,
+                                                                opacity: 0.8,
+                                                                fontFamily: '"Inter", sans-serif',
+                                                                fontStyle: 'italic',
+                                                            }}
+                                                        >
+                                                            {currentEntry.pronunciation}
+                                                        </Typography>
+                                                    )}
+                                                </Box>
                                             </Box>
-                                        </Box>
-                                    </CardContent>
+                                        </CardContent>
+                                    </Box>
 
                                     {/* Back face */}
                                     <Box sx={{
@@ -993,7 +993,6 @@ const FlashcardsLearnPage: React.FC = () => {
                                             </Box>
                                         </CardContent>
                                     </Box>
-                                </Box>
 
                                 {/* Drag overlay — above flip faces */}
                                 <Box sx={{

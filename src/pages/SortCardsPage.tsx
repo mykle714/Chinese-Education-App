@@ -387,7 +387,7 @@ const SortCardsPage: React.FC = () => {
         return (
             <Box
                 className="sort-cards__page-wrapper"
-                sx={{ display: "flex", justifyContent: "center", padding: 2, minHeight: "100vh" }}
+                sx={{ display: "flex", justifyContent: "center", padding: 2, minHeight: "100vh", width: "100%" }}
             >
                 <IPhoneFrame className="sort-cards__frame">
                     <Header className="sort-cards__header">

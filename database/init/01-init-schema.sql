@@ -25,7 +25,6 @@ CREATE TABLE VocabEntries (
     "entryValue" TEXT NOT NULL,
     language VARCHAR(10) DEFAULT 'zh',
     script VARCHAR(20),
-    "isCustomTag" BOOLEAN DEFAULT FALSE,
     "hskLevelTag" VARCHAR(10),
     pronunciation VARCHAR(200),
     tone VARCHAR(20),
@@ -45,15 +44,6 @@ CREATE TABLE VocabEntries (
     "expansionMetadata" JSONB DEFAULT NULL,
     "createdAt" TIMESTAMP DEFAULT NOW(),
     CONSTRAINT chk_starter_pack_bucket CHECK ("starterPackBucket" IN ('library', 'learn-later', 'skip') OR "starterPackBucket" IS NULL)
-);
-
--- Create OnDeckVocabSets table
-CREATE TABLE OnDeckVocabSets (
-    "userId" UUID NOT NULL REFERENCES Users(id) ON DELETE CASCADE,
-    "featureName" VARCHAR(100) NOT NULL,
-    "vocabEntryIds" JSONB NOT NULL DEFAULT '[]',
-    "updatedAt" TIMESTAMP DEFAULT NOW(),
-    PRIMARY KEY ("userId", "featureName")
 );
 
 -- Create Texts table
@@ -89,7 +79,6 @@ CREATE INDEX idx_vocabentries_key ON VocabEntries("entryKey");
 CREATE INDEX idx_vocabentries_language ON VocabEntries(language);
 CREATE INDEX idx_vocabentries_key_trgm ON VocabEntries USING gin ("entryKey" gin_trgm_ops);
 CREATE INDEX idx_vocabentries_value_trgm ON VocabEntries USING gin ("entryValue" gin_trgm_ops);
-CREATE INDEX idx_ondeckvocabsets_userid ON OnDeckVocabSets("userId");
 
 -- Insert some sample data for testing
 INSERT INTO Users (id, email, name, password) VALUES 

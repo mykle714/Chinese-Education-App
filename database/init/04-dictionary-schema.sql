@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS DictionaryEntries (
     "partsOfSpeech" JSONB,
     expansion TEXT,
     "expansionMetadata" JSONB,
+    "shortDefinition" TEXT,
+    "longDefinition" TEXT,
     createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

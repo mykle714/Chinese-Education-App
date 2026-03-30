@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { IDictionaryDAL } from '../dal/interfaces/IDictionaryDAL.js';
-import { DictionaryEntry } from '../types/index.js';
+import { DictionaryEntry, VocabEntry } from '../types/index.js';
 import { ValidationError } from '../types/dal.js';
 
 /**
@@ -25,7 +25,11 @@ export class DictionaryService {
 
     const trimmedTerm = term.trim();
     
-    return await this.dictionaryDAL.findByWord1(trimmedTerm, language);
+    const entry = await this.dictionaryDAL.findByWord1(trimmedTerm, language);
+    if (!entry) return null;
+
+    const [withExpansionMeta] = await this.enrichExpansionMetadataBatch([entry], language);
+    return withExpansionMeta;
   }
 
   /**
@@ -72,17 +76,18 @@ export class DictionaryService {
     }
 
     const entries = await this.dictionaryDAL.findMultipleByWord1(uniqueTerms, language);
+    const withExpansionMeta = await this.enrichExpansionMetadataBatch(entries, language);
     
     const totalTime = performance.now() - startTime;
     console.log(`[DICTIONARY-SERVICE] ✅ Lookup complete:`, {
       language: language,
       termsQueried: uniqueTerms.length,
-      entriesFound: entries.length,
-      matchRate: `${(entries.length / uniqueTerms.length * 100).toFixed(1)}%`,
+      entriesFound: withExpansionMeta.length,
+      matchRate: `${(withExpansionMeta.length / uniqueTerms.length * 100).toFixed(1)}%`,
       totalTime: `${totalTime.toFixed(2)}ms`
     });
 
-    return entries;
+    return withExpansionMeta;
   }
 
   /**
@@ -113,7 +118,13 @@ export class DictionaryService {
 
     const trimmedTerm = searchTerm.trim();
     
-    return await this.dictionaryDAL.searchByWord1(trimmedTerm, language, limit, offset);
+    const result = await this.dictionaryDAL.searchByWord1(trimmedTerm, language, limit, offset);
+    const withExpansionMeta = await this.enrichExpansionMetadataBatch(result.entries, language);
+
+    return {
+      entries: withExpansionMeta,
+      total: result.total,
+    };
   }
 
   /**
@@ -322,6 +333,8 @@ export class DictionaryService {
 Rules:
 - Every character from the original word must appear in the expansion, in their original order
 - You may ONLY add characters between or after the originals — never replace or omit any original character
+- The expansion must preserve the same meaning as the original word
+- The expansion must be a natural phrase that a native Mandarin speaker would actually say
 - Examples:
   * 不知不觉 → 不知道不觉得 (added 道 and 得)
   * 违规 → 违反规矩 (added 反 and 矩)
@@ -334,7 +347,7 @@ Respond with ONLY a JSON object in this exact format:
 {"expansion": "expanded form"} or {"expansion": null}`;
 
       const response = await anthropic.messages.create({
-        model: 'claude-haiku-4-5-20251001',
+        model: 'claude-sonnet-4-6',
         max_tokens: 256,
         temperature: 0.7,
         messages: [{ role: 'user', content: prompt }]
@@ -349,60 +362,6 @@ Respond with ONLY a JSON object in this exact format:
       console.error(`Failed to generate expansion for "${word}":`, error.message);
       return null;
     }
-  }
-
-  /**
-   * Generate a short definition from an array of definition strings
-   * Deterministic — no AI required
-   * Returns the shortest meaningful token after filtering grammatical notes
-   */
-  generateShortDefinition(definitions: string[]): string | null {
-    if (!definitions || definitions.length === 0) {
-      return null;
-    }
-
-    const candidates: string[] = [];
-
-    for (const def of definitions) {
-      // Skip definitions that are purely grammatical notes
-      const trimmed = def.trim();
-      if (trimmed.startsWith('(') || trimmed.startsWith('CL:')) {
-        continue;
-      }
-
-      // Split by "; " to get individual senses
-      const senses = trimmed.split('; ');
-
-      for (const sense of senses) {
-        // Strip trailing parenthetical content
-        const stripped = sense.replace(/ \([^)]+\)$/, '').trim();
-        if (stripped.length > 0) {
-          candidates.push(stripped);
-        }
-      }
-    }
-
-    // Fall back to unfiltered tokens if all definitions were filtered out
-    if (candidates.length === 0) {
-      for (const def of definitions) {
-        const senses = def.trim().split('; ');
-        for (const sense of senses) {
-          const stripped = sense.replace(/ \([^)]+\)$/, '').trim();
-          if (stripped.length > 0) {
-            candidates.push(stripped);
-          }
-        }
-      }
-    }
-
-    if (candidates.length === 0) {
-      return null;
-    }
-
-    // Return the token with the fewest characters
-    return candidates.reduce((shortest, current) =>
-      current.length < shortest.length ? current : shortest
-    );
   }
 
   /**
@@ -428,16 +387,17 @@ Respond with ONLY a JSON object in this exact format:
 
       const prompt = `You are a Chinese language expert providing dictionary definitions.
 Word: ${word.trim()}
-Short definition: ${shortDef}
 Existing definitions: ${definitions.join(' | ')}
 
-Write a single English definition that is between 25 and 75 characters long.
-It should elaborate on the short definition with key context.
+Write a single English definition that is between 25 and 150 characters long.
+Goals (address whichever are most relevant to this word):
+- Dispel common misconceptions or mistranslations
+- Clarify how this word differs from similar or easily confused concepts
 Respond with only the definition text — no quotes, no extra text.`;
 
       const response = await anthropic.messages.create({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 128,
+        max_tokens: 256,
         temperature: 0.3,
         messages: [{ role: 'user', content: prompt }]
       });
@@ -448,6 +408,97 @@ Respond with only the definition text — no quotes, no extra text.`;
       console.error(`Failed to generate long definition for "${word}":`, error.message);
       return null;
     }
+  }
+
+  /**
+   * Batch-fetch synonym metadata (pronunciation + first definition) from dictionaryentries.
+   * Returns a map of { [word]: { definition, pronunciation } } for each found synonym.
+   */
+  async buildSynonymMetadata(
+    synonymWords: string[],
+    language: string
+  ): Promise<Record<string, { definition: string; pronunciation: string }>> {
+    if (!synonymWords || synonymWords.length === 0) {
+      return {};
+    }
+
+    const entries = await this.dictionaryDAL.findMultipleByWord1(synonymWords, language);
+
+    const metadata: Record<string, { definition: string; pronunciation: string }> = {};
+    for (const entry of entries) {
+      metadata[entry.word1] = {
+        definition: entry.definitions?.[0] ?? '',
+        pronunciation: entry.pronunciation ?? '',
+      };
+    }
+
+    return metadata;
+  }
+
+  /**
+   * Enrich an array of VocabEntry objects with computed synonymsMetadata.
+   * Collects all synonym words across entries, batch-fetches their metadata
+   * from dictionaryentries, and attaches it to each entry.
+   */
+
+  /**
+   * Enrich each example sentence with `_segments` and `segmentMetadata` on-the-fly.
+   * Delegates to the DAL batch method, which makes one DB query across all sentences.
+   *
+   * @param entries - Objects with optional `exampleSentences` field
+   * @param language - Language filter (default: 'zh')
+   */
+  async enrichExampleSentencesMetadataBatch<T extends {
+    exampleSentences?: Array<{ chinese: string; english: string; [key: string]: any }> | null;
+  }>(entries: T[], language: string = 'zh'): Promise<T[]> {
+    return this.dictionaryDAL.enrichExampleSentencesMetadataBatch(entries, language);
+  }
+
+  /**
+   * Enrich entries with per-character metadata for `expansion`.
+   *
+   * @param entries - Objects with optional `expansion` field
+   * @param language - Language filter (default: 'zh')
+   */
+  async enrichExpansionMetadataBatch<T extends {
+    expansion?: string | null;
+  }>(entries: T[], language: string = 'zh'): Promise<T[]> {
+    return this.dictionaryDAL.enrichExpansionMetadataBatch(entries, language);
+  }
+
+  async enrichEntriesWithSynonymMetadata(entries: VocabEntry[]): Promise<VocabEntry[]> {
+    // Collect all unique synonym words across all entries
+    const allSynonyms = new Set<string>();
+    for (const entry of entries) {
+      if (entry.synonyms?.length) {
+        for (const syn of entry.synonyms) {
+          allSynonyms.add(syn);
+        }
+      }
+    }
+
+    if (allSynonyms.size === 0) return entries;
+
+    // Single batch query for all synonym metadata
+    // Use 'zh' as default since synonyms are currently only for Chinese
+    const metadata = await this.buildSynonymMetadata([...allSynonyms], 'zh');
+
+    // Attach metadata to each entry that has synonyms
+    return entries.map(entry => {
+      if (!entry.synonyms?.length) return entry;
+
+      const entryMetadata: Record<string, { definition: string; pronunciation: string }> = {};
+      for (const syn of entry.synonyms) {
+        if (metadata[syn]) {
+          entryMetadata[syn] = metadata[syn];
+        }
+      }
+
+      return {
+        ...entry,
+        synonymsMetadata: Object.keys(entryMetadata).length > 0 ? entryMetadata : null,
+      };
+    });
   }
 
 }

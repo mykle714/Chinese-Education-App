@@ -33,14 +33,26 @@ export interface VocabEntry {
   hskLevelTag?: HskLevel | null;
   category?: FlashcardCategory;
   starterPackBucket?: StarterPackBucket | null;
-  breakdown?: Record<string, { definition: string }> | null;
+  breakdown?: Record<string, { definition: string; pronunciation?: string }> | null;
   synonyms?: string[];
+  synonymsMetadata?: Record<string, { definition: string; pronunciation: string }> | null; // Computed at runtime by server
   expansion?: string | null;
-  expansionMetadata?: Record<string, { definition: string; pronunciation: string }> | null;
-  exampleSentences?: Array<{ chinese: string; english: string; usage: string }>;
-  partsOfSpeech?: string[];
-  relatedWords?: Array<{ id: number; entryKey: string; sharedCharacters: string[]; successRate: number | null }>;
+  expansionMetadata?: Record<string, { pronunciation?: string; definition?: string }> | null;
+  expansionLiteralTranslation?: string | null;
+  exampleSentences?: Array<{
+    chinese: string;
+    english: string;
+    _segments?: string[];
+    segmentMetadata?: Record<string, { pronunciation?: string; definition?: string }>;
+  }>;
+  relatedWords?: Array<{ id: number; entryKey: string; pronunciation: string | null; definition: string | null }>;
   createdAt: string;
+}
+
+// Manual per-entry override for display fields; mirrors server ShortDefinitionPronunciationOverride
+export interface ShortDefinitionPronunciationOverride {
+  definition?: string | null;    // Replaces computed shortDefinition
+  pronunciation?: string | null; // Replaces DictionaryEntry.pronunciation (space-separated, e.g. "fēng kuáng")
 }
 
 // Dictionary Entry type for multi-language dictionaries
@@ -49,9 +61,12 @@ export interface DictionaryEntry {
   language: Language;
   word1: string;          // Primary word (simplified/kanji/hangul/word)
   word2: string | null;   // Secondary word (traditional/kana/hanja/null)
-  pronunciation: string | null; // Pronunciation (pinyin/romaji/romanization/null)
+  pronunciation: string | null; // Pronunciation — may be overridden by shortDefinitionPronunciationOverride.pronunciation
+  numberedPinyin?: string | null;
   tone?: string | null;
+  partsOfSpeech?: string[] | null;
   definitions: string[]; // Array of definition strings
+  shortDefinitionPronunciationOverride?: ShortDefinitionPronunciationOverride | null; // Raw override object from DB
   shortDefinition?: string | null;
   longDefinition?: string | null;
   createdAt: string;
@@ -68,12 +83,17 @@ export interface DiscoverCard {
   word2?: string | null;
   script?: string | null;
   hskLevelTag?: string | null;
-  breakdown?: Record<string, { definition: string }> | null;
+  breakdown?: Record<string, { definition: string; pronunciation?: string }> | null;
   synonyms?: string[] | null;
-  exampleSentences?: Array<{ chinese: string; english: string; usage: string }> | null;
-  partsOfSpeech?: string[] | null;
+  exampleSentences?: Array<{
+    chinese: string;
+    english: string;
+    _segments?: string[];
+    segmentMetadata?: Record<string, { pronunciation?: string; definition?: string }>;
+  }> | null;
   expansion?: string | null;
-  expansionMetadata?: Record<string, { definition: string; pronunciation: string }> | null;
+  expansionMetadata?: Record<string, { pronunciation?: string; definition?: string }> | null;
+  expansionLiteralTranslation?: string | null;
 }
 
 // Combined vocab lookup response

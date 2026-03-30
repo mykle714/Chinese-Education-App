@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc",
     "start": "tsx server.ts",
-    "dev": "nodemon --exec \"tsx server.ts\""
+    "dev": "nodemon --ext ts,tsx,js,mjs,json --exec \"tsx server.ts\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.77.0",

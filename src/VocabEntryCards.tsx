@@ -9,8 +9,7 @@ import {
   CircularProgress,
   Alert,
   CardActionArea,
-  Divider,
-  Chip
+  Divider
 } from '@mui/material';
 import { API_BASE_URL, VOCAB_SEARCH_CONFIG } from './constants';
 

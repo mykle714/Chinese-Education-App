@@ -45,7 +45,7 @@ const createAppTheme = (mode: ThemeMode): Theme => {
                         paper: '#1e1e1e',
                     },
                     text: {
-                        primary: '#ffffff',
+                        primary: '#eeeeee',
                         secondary: 'rgba(255, 255, 255, 0.7)',
                     },
                 },
@@ -71,7 +71,7 @@ const createAppTheme = (mode: ThemeMode): Theme => {
                         paper: '#ffffff',
                     },
                     text: {
-                        primary: '#1a1a1a',
+                        primary: '#333333',
                         secondary: 'rgba(0, 0, 0, 0.6)',
                     },
                 },
@@ -97,7 +97,7 @@ const createAppTheme = (mode: ThemeMode): Theme => {
                         paper: '#ffffff',
                     },
                     text: {
-                        primary: '#1a1a1a',
+                        primary: '#333333',
                         secondary: 'rgba(0, 0, 0, 0.6)',
                     },
                 },
@@ -124,7 +124,7 @@ const createAppTheme = (mode: ThemeMode): Theme => {
                         paper: '#ffffff',
                     },
                     text: {
-                        primary: '#1a1a1a',
+                        primary: '#333333',
                         secondary: 'rgba(0, 0, 0, 0.6)',
                     },
                 },

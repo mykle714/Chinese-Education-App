@@ -5,6 +5,7 @@ import { dbManager } from '../base/DatabaseManager.js';
 import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, HskLevel } from '../../types/index.js';
 import { ValidationError, NotFoundError, BulkResult, ITransaction, DALError } from '../../types/dal.js';
 import db from '../../db.js';
+import { DICT_COLS, DICT_JOIN } from '../shared/dictJoin.js';
 
 /**
  * VocabEntry Data Access Layer implementation
@@ -13,6 +14,17 @@ import db from '../../db.js';
 export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, VocabEntryUpdateData> implements IVocabEntryDAL {
   constructor() {
     super(dbManager, 'VocabEntries', 'id'); // Use proper table name with camelCase columns
+  }
+
+  async findById(id: string | number): Promise<VocabEntry | null> {
+    const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
+      return await client.query(`
+        SELECT ve.*, ${DICT_COLS}
+        FROM VocabEntries ve ${DICT_JOIN}
+        WHERE ve.id = $1
+      `, [id]);
+    });
+    return result.recordset[0] || null;
   }
 
   /**
@@ -25,9 +37,10 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
 
     const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
       return await client.query(`
-        SELECT * FROM VocabEntries 
-        WHERE "userId" = $1 
-        ORDER BY "createdAt" DESC 
+        SELECT ve.*, ${DICT_COLS}
+        FROM VocabEntries ve ${DICT_JOIN}
+        WHERE ve."userId" = $1
+        ORDER BY ve."createdAt" DESC
         LIMIT $2 OFFSET $3
       `, [userId, limit, offset]);
     });
@@ -48,9 +61,10 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
 
     const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
       return await client.query(`
-        SELECT * FROM VocabEntries 
-        WHERE "userId" = $1 AND "language" = $2
-        ORDER BY "createdAt" DESC 
+        SELECT ve.*, ${DICT_COLS}
+        FROM VocabEntries ve ${DICT_JOIN}
+        WHERE ve."userId" = $1 AND ve."language" = $2
+        ORDER BY ve."createdAt" DESC
         LIMIT $3 OFFSET $4
       `, [userId, language, limit, offset]);
     });
@@ -70,7 +84,11 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     }
 
     const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
-      return await client.query('SELECT * FROM VocabEntries WHERE "userId" = $1 AND "entryKey" = $2', [userId, entryKey]);
+      return await client.query(`
+        SELECT ve.*, ${DICT_COLS}
+        FROM VocabEntries ve ${DICT_JOIN}
+        WHERE ve."userId" = $1 AND ve."entryKey" = $2
+      `, [userId, entryKey]);
     });
 
     return result.recordset[0] || null;
@@ -122,10 +140,11 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
 
     const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
       return await client.query(`
-        SELECT * FROM VocabEntries 
-        WHERE "userId" = $1 
-        AND ("entryKey" ILIKE $2 OR "entryValue" ILIKE $2)
-        ORDER BY "createdAt" DESC
+        SELECT ve.*, ${DICT_COLS}
+        FROM VocabEntries ve ${DICT_JOIN}
+        WHERE ve."userId" = $1
+        AND (ve."entryKey" ILIKE $2 OR ve."entryValue" ILIKE $2)
+        ORDER BY ve."createdAt" DESC
         LIMIT $3
       `, [userId, `%${searchTerm}%`, limit]);
     });
@@ -142,7 +161,12 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     }
 
     const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
-      return await client.query('SELECT * FROM VocabEntries WHERE "userId" = $1 AND "hskLevelTag" = $2 ORDER BY "createdAt" DESC', [userId, hskLevel]);
+      return await client.query(`
+        SELECT ve.*, ${DICT_COLS}
+        FROM VocabEntries ve ${DICT_JOIN}
+        WHERE ve."userId" = $1 AND de."hskLevelTag" = $2
+        ORDER BY ve."createdAt" DESC
+      `, [userId, hskLevel]);
     });
 
     return result.recordset;
@@ -164,8 +188,9 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     
     const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
       return await client.query(`
-        SELECT * FROM VocabEntries 
-        WHERE "userId" = $1 AND "entryKey" IN (${placeholders})
+        SELECT ve.*, ${DICT_COLS}
+        FROM VocabEntries ve ${DICT_JOIN}
+        WHERE ve."userId" = $1 AND ve."entryKey" IN (${placeholders})
       `, [userId, ...entryKeys]);
     });
 
@@ -232,10 +257,11 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
 
     // Prepare SQL query with detailed logging
     const sqlQuery = `
-      SELECT * FROM VocabEntries 
-      WHERE "userId" = $1 
-      AND "entryKey" = ANY($2)
-      ORDER BY LENGTH("entryKey") DESC, "entryKey" ASC
+      SELECT ve.*, ${DICT_COLS}
+      FROM VocabEntries ve ${DICT_JOIN}
+      WHERE ve."userId" = $1
+      AND ve."entryKey" = ANY($2)
+      ORDER BY LENGTH(ve."entryKey") DESC, ve."entryKey" ASC
     `;
 
     console.log(`[VOCAB-DB] 🔧 Preparing SQL query:`, {
@@ -381,12 +407,11 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
           if (existingResult.rows.length > 0) {
             // Update existing entry
             await client.query(`
-              UPDATE VocabEntries 
-              SET "entryValue" = $1, "hskLevelTag" = $2
-              WHERE "userId" = $3 AND "entryKey" = $4
+              UPDATE VocabEntries
+              SET "entryValue" = $1
+              WHERE "userId" = $2 AND "entryKey" = $3
             `, [
               entry.entryValue,
-              entry.hskLevelTag || null,
               entry.userId,
               entry.entryKey
             ]);
@@ -394,13 +419,12 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
           } else {
             // Insert new entry
             await client.query(`
-              INSERT INTO VocabEntries ("userId", "entryKey", "entryValue", "hskLevelTag")
-              VALUES ($1, $2, $3, $4)
+              INSERT INTO VocabEntries ("userId", "entryKey", "entryValue")
+              VALUES ($1, $2, $3)
             `, [
               entry.userId,
               entry.entryKey,
-              entry.entryValue,
-              entry.hskLevelTag || null
+              entry.entryValue
             ]);
             result.inserted++;
           }
@@ -426,7 +450,12 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     }
 
     const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
-      return await client.query('SELECT * FROM VocabEntries WHERE "userId" = $1 AND "createdAt" > $2 ORDER BY "createdAt" DESC', [userId, date]);
+      return await client.query(`
+        SELECT ve.*, ${DICT_COLS}
+        FROM VocabEntries ve ${DICT_JOIN}
+        WHERE ve."userId" = $1 AND ve."createdAt" > $2
+        ORDER BY ve."createdAt" DESC
+      `, [userId, date]);
     });
 
     return result.recordset;
@@ -441,7 +470,7 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     word: string,
     language: string,
     limit: number = 4
-  ): Promise<Array<{ id: number; entryKey: string; sharedCharacters: string[]; successRate: number | null }>> {
+  ): Promise<Array<{ id: number; entryKey: string; pronunciation: string | null; definition: string | null }>> {
     if (!word || word.trim().length === 0) {
       return [];
     }
@@ -463,40 +492,41 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     const pattern: string = `[${characters.join('')}]`;
 
     const query: string = `
-      SELECT 
-        id,
-        "entryKey" as entrykey,
-        "last8SuccessRate" as last8successrate
-      FROM VocabEntries
-      WHERE "userId" = $1
-        AND language = $2
-        AND "entryKey" != $3
-        AND "entryKey" ~ $4
-      ORDER BY "last8SuccessRate" DESC NULLS LAST, id ASC
+      SELECT
+        ve.id,
+        ve."entryKey" as entrykey,
+        de.pronunciation,
+        de.definition
+      FROM VocabEntries ve
+      LEFT JOIN LATERAL (
+        SELECT pronunciation, definitions->>0 as definition
+        FROM dictionaryentries
+        WHERE word1 = ve."entryKey" AND language = ve.language LIMIT 1
+      ) de ON true
+      WHERE ve."userId" = $1
+        AND ve.language = $2
+        AND ve."entryKey" != $3
+        AND ve."entryKey" ~ $4
+        AND (ve."starterPackBucket" IS NULL OR ve."starterPackBucket" NOT IN ('skip', 'learn-later'))
+      ORDER BY ve.id ASC
       LIMIT $5
     `;
 
     const result = await this.dbManager.executeQuery<{
       id: number;
       entrykey: string;
-      last8successrate: number | null;
+      pronunciation: string | null;
+      definition: string | null;
     }>(async (client) => {
       return await client.query(query, [userId, language, word, pattern, limit]);
     });
 
-    // For each result, find which characters are shared
-    return result.recordset.map((row) => {
-      const relatedWord: string = row.entrykey;
-      const relatedChars: string[] = [...relatedWord];
-      const shared: string[] = characters.filter(char => relatedChars.includes(char));
-
-      return {
-        id: row.id,
-        entryKey: row.entrykey,
-        sharedCharacters: shared,
-        successRate: row.last8successrate
-      };
-    });
+    return result.recordset.map((row) => ({
+      id: row.id,
+      entryKey: row.entrykey,
+      pronunciation: row.pronunciation ?? null,
+      definition: row.definition ?? null,
+    }));
   }
 
   /**
@@ -526,18 +556,22 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
       recententries: string;
     }>(async (client) => {
       return await client.query(`
-        SELECT 
+        SELECT
           COUNT(*) as total,
-          SUM(CASE WHEN "hskLevelTag" IS NOT NULL THEN 1 ELSE 0 END) as hskentries,
-          SUM(CASE WHEN "hskLevelTag" = 'HSK1' THEN 1 ELSE 0 END) as hsk1,
-          SUM(CASE WHEN "hskLevelTag" = 'HSK2' THEN 1 ELSE 0 END) as hsk2,
-          SUM(CASE WHEN "hskLevelTag" = 'HSK3' THEN 1 ELSE 0 END) as hsk3,
-          SUM(CASE WHEN "hskLevelTag" = 'HSK4' THEN 1 ELSE 0 END) as hsk4,
-          SUM(CASE WHEN "hskLevelTag" = 'HSK5' THEN 1 ELSE 0 END) as hsk5,
-          SUM(CASE WHEN "hskLevelTag" = 'HSK6' THEN 1 ELSE 0 END) as hsk6,
-          SUM(CASE WHEN "createdAt" > $2 THEN 1 ELSE 0 END) as recententries
-        FROM VocabEntries 
-        WHERE "userId" = $1
+          SUM(CASE WHEN de."hskLevelTag" IS NOT NULL THEN 1 ELSE 0 END) as hskentries,
+          SUM(CASE WHEN de."hskLevelTag" = 'HSK1' THEN 1 ELSE 0 END) as hsk1,
+          SUM(CASE WHEN de."hskLevelTag" = 'HSK2' THEN 1 ELSE 0 END) as hsk2,
+          SUM(CASE WHEN de."hskLevelTag" = 'HSK3' THEN 1 ELSE 0 END) as hsk3,
+          SUM(CASE WHEN de."hskLevelTag" = 'HSK4' THEN 1 ELSE 0 END) as hsk4,
+          SUM(CASE WHEN de."hskLevelTag" = 'HSK5' THEN 1 ELSE 0 END) as hsk5,
+          SUM(CASE WHEN de."hskLevelTag" = 'HSK6' THEN 1 ELSE 0 END) as hsk6,
+          SUM(CASE WHEN ve."createdAt" > $2 THEN 1 ELSE 0 END) as recententries
+        FROM VocabEntries ve
+        LEFT JOIN LATERAL (
+          SELECT "hskLevelTag" FROM dictionaryentries
+          WHERE word1 = ve."entryKey" AND language = ve.language LIMIT 1
+        ) de ON true
+        WHERE ve."userId" = $1
       `, [userId, weekAgo]);
     });
 
@@ -608,7 +642,7 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
    */
   protected validateCreateData(data: VocabEntryCreateData): void {
     super.validateCreateData(data);
-    
+
     if (!data.userId) {
       throw new ValidationError('User ID is required');
     }
@@ -618,11 +652,6 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     if (!data.entryValue) {
       throw new ValidationError('Entry value is required');
     }
-    
-    // Validate HSK level if provided
-    if (data.hskLevelTag && !['HSK1', 'HSK2', 'HSK3', 'HSK4', 'HSK5', 'HSK6'].includes(data.hskLevelTag)) {
-      throw new ValidationError('Invalid HSK level. Must be HSK1, HSK2, HSK3, HSK4, HSK5, or HSK6');
-    }
   }
 
   /**
@@ -630,17 +659,12 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
    */
   protected validateUpdateData(data: VocabEntryUpdateData): void {
     super.validateUpdateData(data);
-    
+
     if (!data.entryKey) {
       throw new ValidationError('Entry key is required');
     }
     if (!data.entryValue) {
       throw new ValidationError('Entry value is required');
-    }
-    
-    // Validate HSK level if provided
-    if (data.hskLevelTag && !['HSK1', 'HSK2', 'HSK3', 'HSK4', 'HSK5', 'HSK6'].includes(data.hskLevelTag)) {
-      throw new ValidationError('Invalid HSK level. Must be HSK1, HSK2, HSK3, HSK4, HSK5, or HSK6');
     }
   }
 

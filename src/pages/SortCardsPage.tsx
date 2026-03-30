@@ -240,7 +240,6 @@ const SortCardsPage: React.FC = () => {
     const checkBucketCollision = (cardX: number, cardY: number): string | null => {
         if (!containerRef.current) return null;
 
-        const containerRect = containerRef.current.getBoundingClientRect();
         const cardCenterX = cardX + 153 / 2; // Card width / 2
         const cardCenterY = cardY + 220.94 / 2; // Card height / 2
 

@@ -110,26 +110,8 @@ async function testLibraryFlow() {
     console.log('✅ Card sorted successfully');
     console.log('   Result:', JSON.stringify(sortData, null, 2));
 
-    // Step 4: Check the OnDeck set directly
-    console.log('\n📝 Step 4: Checking OnDeck set directly...');
-    const featureName = `starter-${testLanguage}-library`;
-    const onDeckResponse = await fetch(`${API_BASE_URL}/api/onDeckPage/${featureName}`, {
-      headers: { 'Cookie': cookies || '' }
-    });
-
-    if (onDeckResponse.ok) {
-      const onDeckData = await onDeckResponse.json();
-      console.log('✅ OnDeck set found:');
-      console.log('   Feature Name:', onDeckData.featureName);
-      console.log('   Vocab Entry IDs:', onDeckData.vocabEntryIds);
-      console.log('   Type of vocabEntryIds:', typeof onDeckData.vocabEntryIds);
-      console.log('   Is Array:', Array.isArray(onDeckData.vocabEntryIds));
-    } else {
-      console.log('⚠️  OnDeck set not found (might not exist yet)');
-    }
-
-    // Step 5: Fetch library cards
-    console.log('\n📝 Step 5: Fetching library cards...');
+    // Step 4: Fetch library cards
+    console.log('\n📝 Step 4: Fetching library cards...');
     const libraryResponse = await fetch(`${API_BASE_URL}/api/onDeck/library-cards`, {
       headers: { 'Cookie': cookies || '' }
     });
@@ -152,8 +134,8 @@ async function testLibraryFlow() {
       console.log('   ⚠️  NO CARDS RETURNED!');
     }
 
-    // Step 6: Verify the card we sorted is in the results
-    console.log('\n📝 Step 6: Verification...');
+    // Step 5: Verify the card we sorted is in the results
+    console.log('\n📝 Step 5: Verification...');
     const foundCard = libraryCards.find(card => card.id === testCardId);
     if (foundCard) {
       console.log('✅ SUCCESS! Card we sorted was found in library cards');

@@ -8,9 +8,10 @@ dotenv.config({ path: path.join(__dirname, '../.env.docker') });
 import db from '../db.js';
 import { DictionaryService } from '../services/DictionaryService.js';
 import { DictionaryDAL } from '../dal/implementations/DictionaryDAL.js';
+import { resolveShortDefinition } from '../utils/definitions.js';
 
-async function backfillShortLongDefinitions() {
-  console.log('Starting shortDefinition / longDefinition backfill...\n');
+async function backfillLongDefinitions() {
+  console.log('Starting longDefinition backfill...\n');
 
   const client = await db.getClient();
   const dictionaryDAL = new DictionaryDAL();
@@ -18,11 +19,11 @@ async function backfillShortLongDefinitions() {
 
   try {
     const result = await client.query(`
-      SELECT id, word1, language, definitions
+      SELECT id, word1, language, definitions, "shortDefinitionPronunciationOverride"
       FROM dictionaryentries
       WHERE language = 'zh'
         AND discoverable = TRUE
-        AND ("shortDefinition" IS NULL OR "longDefinition" IS NULL)
+        AND "longDefinition" IS NULL
       ORDER BY id
     `);
 
@@ -46,11 +47,12 @@ async function backfillShortLongDefinitions() {
           ? entry.definitions
           : JSON.parse(entry.definitions || '[]');
 
-        const shortDef = dictionaryService.generateShortDefinition(definitions);
+        // Resolve shortDefinition: use manual override if set, otherwise compute from definitions
+        const shortDef = resolveShortDefinition(definitions, entry.shortDefinitionPronunciationOverride);
 
         if (!shortDef) {
           failCount++;
-          console.log(`Skipped ID ${entry.id}: "${entry.word1}" (no short definition generated)`);
+          console.log(`Skipped ID ${entry.id}: "${entry.word1}" (no short definition generated for AI input)`);
           continue;
         }
 
@@ -63,9 +65,9 @@ async function backfillShortLongDefinitions() {
 
         await client.query(`
           UPDATE dictionaryentries
-          SET "shortDefinition" = $1, "longDefinition" = $2
-          WHERE id = $3
-        `, [shortDef, longDef, entry.id]);
+          SET "longDefinition" = $1
+          WHERE id = $2
+        `, [longDef, entry.id]);
 
         successCount++;
 
@@ -98,7 +100,7 @@ async function backfillShortLongDefinitions() {
   }
 }
 
-backfillShortLongDefinitions().catch(error => {
+backfillLongDefinitions().catch(error => {
   console.error('Fatal error:', error);
   process.exit(1);
 });

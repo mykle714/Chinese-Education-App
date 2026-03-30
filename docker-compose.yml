@@ -65,6 +65,17 @@ services:
     networks:
       - cow-network
 
+  adminer:
+    image: adminer:latest
+    container_name: cow-adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+    networks:
+      - cow-network
+
 volumes:
   postgres_data:
 

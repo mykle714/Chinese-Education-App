@@ -3,6 +3,22 @@ import { IDictionaryDAL } from '../interfaces/IDictionaryDAL.js';
 import { dbManager } from '../base/DatabaseManager.js';
 import { DictionaryEntry, DictionaryEntryCreateData } from '../../types/index.js';
 import { ValidationError } from '../../types/dal.js';
+import { resolveShortDefinition } from '../../utils/definitions.js';
+import { ShortDefinitionPronunciationOverride } from '../../types/index.js';
+import { getAllSubstrings, buildDictMap, buildExcludeSet, pickDefinitionForTranslatedSentence, segmentWithDict } from '../shared/segmentString.js';
+
+// Standard column list for all dictionary SELECT queries
+const DICTIONARY_COLUMNS = `
+  id, language, script, discoverable, "createdAt",
+  word1, word2, pronunciation, "numberedPinyin", tone,
+  "partsOfSpeech", "hskLevelTag",
+  definitions, "longDefinition",
+  breakdown, synonyms,
+  "exampleSentences",
+  expansion, "expansionLiteralTranslation",
+  "matchException",
+  "shortDefinitionPronunciationOverride"
+`.trim();
 
 /**
  * Dictionary Data Access Layer implementation
@@ -19,26 +35,31 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
   protected mapRowToEntity(row: any): DictionaryEntry {
     // PostgreSQL's pg library automatically parses JSONB to JavaScript objects
     // So row.definitions is already an array, no need to parse
+    const definitions = Array.isArray(row.definitions) ? row.definitions : (typeof row.definitions === 'string' ? JSON.parse(row.definitions) : [row.definitions]);
+
     return {
       id: row.id,
       language: row.language,
+      script: row.script ?? null,
+      discoverable: row.discoverable ?? false,
+      createdAt: row.createdAt,
       word1: row.word1,
       word2: row.word2,
-      pronunciation: row.pronunciation,
+      pronunciation: (row.shortDefinitionPronunciationOverride as ShortDefinitionPronunciationOverride | null)?.pronunciation ?? row.pronunciation,
+      numberedPinyin: row.numberedPinyin ?? null,
       tone: row.tone ?? null,
-      definitions: Array.isArray(row.definitions) ? row.definitions : (typeof row.definitions === 'string' ? JSON.parse(row.definitions) : [row.definitions]),
-      discoverable: row.discoverable ?? false,
-      script: row.script ?? null,
+      partsOfSpeech: row.partsOfSpeech ?? null,
       hskLevelTag: row.hskLevelTag ?? null,
+      definitions,
+      shortDefinitionPronunciationOverride: (row.shortDefinitionPronunciationOverride as ShortDefinitionPronunciationOverride | null) ?? null,
+      shortDefinition: resolveShortDefinition(definitions, row.shortDefinitionPronunciationOverride),
+      longDefinition: row.longDefinition ?? null,
       breakdown: row.breakdown ?? null,
       synonyms: row.synonyms ?? null,
-      exampleSentences: row.exampleSentences ?? null,
-      partsOfSpeech: row.partsOfSpeech ?? null,
+      exampleSentences: row.exampleSentences ?? null, // Enriched on-the-fly via enrichExampleSentencesMetadataBatch
       expansion: row.expansion ?? null,
-      expansionMetadata: row.expansionMetadata ?? null,
-      shortDefinition: row.shortDefinition ?? null,
-      longDefinition: row.longDefinition ?? null,
-      createdAt: row.createdat
+      expansionLiteralTranslation: row.expansionLiteralTranslation ?? null,
+      matchException: row.matchException ?? [],
     };
   }
 
@@ -51,20 +72,14 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
     const result = await this.dbManager.executeQuery<any>(async (client) => {
       if (language) {
         return await client.query(`
-          SELECT id, language, word1, word2, pronunciation, tone, definitions,
-                 discoverable, script, "hskLevelTag", breakdown, synonyms,
-                 "exampleSentences", "partsOfSpeech", expansion, "expansionMetadata",
-                 "shortDefinition", "longDefinition", createdat
+          SELECT ${DICTIONARY_COLUMNS}
           FROM ${this.tableName}
           WHERE word1 = $1 AND language = $2
           LIMIT 1
         `, [word1, language]);
       } else {
         return await client.query(`
-          SELECT id, language, word1, word2, pronunciation, tone, definitions,
-                 discoverable, script, "hskLevelTag", breakdown, synonyms,
-                 "exampleSentences", "partsOfSpeech", expansion, "expansionMetadata",
-                 "shortDefinition", "longDefinition", createdat
+          SELECT ${DICTIONARY_COLUMNS}
           FROM ${this.tableName}
           WHERE word1 = $1
           LIMIT 1
@@ -103,25 +118,19 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
     const result = await this.dbManager.executeQuery<any>(async (client) => {
       if (language) {
         return await client.query(`
-          SELECT id, language, word1, word2, pronunciation, tone, definitions,
-                 discoverable, script, "hskLevelTag", breakdown, synonyms,
-                 "exampleSentences", "partsOfSpeech", expansion, "expansionMetadata",
-                 "shortDefinition", "longDefinition", createdat
+          SELECT ${DICTIONARY_COLUMNS}
           FROM ${this.tableName}
           WHERE word1 = ANY($1) AND language = $2
         `, [words, language]);
       } else {
         return await client.query(`
-          SELECT id, language, word1, word2, pronunciation, tone, definitions,
-                 discoverable, script, "hskLevelTag", breakdown, synonyms,
-                 "exampleSentences", "partsOfSpeech", expansion, "expansionMetadata",
-                 "shortDefinition", "longDefinition", createdat
+          SELECT ${DICTIONARY_COLUMNS}
           FROM ${this.tableName}
           WHERE word1 = ANY($1)
         `, [words]);
       }
     });
-    
+
     const queryTime = performance.now() - startTime;
 
     console.log(`[DICTIONARY-DAL] ✅ Found ${result.recordset.length} matches in ${queryTime.toFixed(2)}ms`);
@@ -168,11 +177,11 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
     // Handle multi-word searches by splitting on spaces and applying vowel expansion to each word
     const words = searchTerm.trim().split(/\s+/);
     const expandedWords = words.map(word => expandVowels(word));
-    
+
     // Create regex pattern that matches only at the start of the pronunciation field
     // Words are joined with flexible space matching (\s+)
     const regexPattern = `^${expandedWords.join('\\s+')}`;
-    
+
     // For LIKE pattern (simple prefix match as fallback for word1)
     const searchPattern = `${searchTerm}%`;
 
@@ -188,7 +197,7 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
         SELECT COUNT(*) as count
         FROM ${this.tableName}
         WHERE language = $1 AND (
-          word1 ILIKE $2 
+          word1 ILIKE $2
           OR pronunciation ~ $3
           OR definitions::text ILIKE $2
         )
@@ -201,12 +210,10 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
     // Exclude results where pronunciation ends in 'g' immediately after the search term
     const entriesResult = await this.dbManager.executeQuery<any>(async (client) => {
       return await client.query(`
-        SELECT id, language, word1, word2, pronunciation, tone, definitions,
-               discoverable, script, "hskLevelTag", breakdown, synonyms,
-               "exampleSentences", "partsOfSpeech", expansion, "expansionMetadata", createdat
+        SELECT ${DICTIONARY_COLUMNS}
         FROM ${this.tableName}
         WHERE language = $1 AND (
-          word1 ILIKE $2 
+          word1 ILIKE $2
           OR pronunciation ~ $3
           OR definitions::text ILIKE $2
         )
@@ -234,8 +241,141 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
     const result = await this.dbManager.executeQuery<{ count: string }>(async (client) => {
       return await client.query(`SELECT COUNT(*) as count FROM ${this.tableName}`);
     });
-    
+
     return parseInt(result.recordset[0].count, 10);
+  }
+
+  /**
+   * Enrich each example sentence in a batch of entries with greedy segmentation data.
+   *
+   * Each sentence object gains:
+   *   - `_segments: string[]`  — greedy-matched word tokens (parallel to the characters)
+   *   - `segmentMetadata: Record<segment, { pronunciation?, definition? }>` — dictionary metadata by segment
+   *
+   * All substring lookups across all entries and sentences are merged into one DB query.
+   *
+   * @param entries - Objects with optional `exampleSentences` array
+   * @param language - Language filter for dictionary lookups (default: 'zh')
+   */
+  async enrichExampleSentencesMetadataBatch<T extends {
+    exampleSentences?: Array<{ chinese: string; english: string; [key: string]: any }> | null;
+  }>(entries: T[], language: string = 'zh'): Promise<T[]> {
+    const withSentences = entries.filter(e => e.exampleSentences?.length);
+    if (withSentences.length === 0) return entries;
+
+    // 1. Collect all candidate substrings across all sentences — one combined set
+    const allCandidates = new Set<string>();
+    for (const entry of withSentences) {
+      for (const sentence of entry.exampleSentences!) {
+        for (const candidate of getAllSubstrings(sentence.chinese)) {
+          allCandidates.add(candidate);
+        }
+      }
+    }
+
+    // 2. Single batch DB query for all candidates
+    const dictEntries = await this.findMultipleByWord1([...allCandidates], language);
+    const dictMap = buildDictMap(dictEntries);
+    // Collect all matchException tokens across loaded entries into one exclusion set
+    const excludeTokens = buildExcludeSet(dictEntries);
+
+    // 3. Enrich each sentence object with _segments and segmentMetadata
+    return entries.map(entry => {
+      if (!entry.exampleSentences?.length) return entry;
+
+      return {
+        ...entry,
+        exampleSentences: entry.exampleSentences.map(sentence => {
+          const segments = segmentWithDict(sentence.chinese, dictMap, excludeTokens);
+          const segmentMetadata: Record<string, { pronunciation?: string; definition?: string }> = {};
+
+          for (const seg of segments) {
+            const segMeta = dictMap.get(seg);
+            if (segMeta) {
+              segmentMetadata[seg] = {};
+              if (segMeta.pronunciation) {
+                segmentMetadata[seg].pronunciation = segMeta.pronunciation;
+              }
+              const bestDefinition = pickDefinitionForTranslatedSentence(segMeta, sentence.english);
+              if (bestDefinition) {
+                segmentMetadata[seg].definition = bestDefinition;
+              }
+            }
+          }
+
+          return { ...sentence, _segments: segments, segmentMetadata };
+        }),
+      };
+    });
+  }
+
+  /**
+   * Enrich each entry with expansionMetadata (per-character pronunciation + definition).
+   *
+   * Expansion metadata is computed on-the-fly from dictionaryentries and is not stored.
+   * All unique expansion characters across the batch are merged into one lookup query.
+   *
+   * @param entries - Objects with optional `expansion` field
+   * @param language - Language filter for dictionary lookups (default: 'zh')
+   */
+  async enrichExpansionMetadataBatch<T extends {
+    expansion?: string | null;
+    expansionLiteralTranslation?: string | null;
+  }>(entries: T[], language: string = 'zh'): Promise<T[]> {
+    const withExpansion = entries.filter(e =>
+      typeof e.expansion === 'string' && e.expansion.trim().length > 0
+    );
+
+    if (withExpansion.length === 0) {
+      return entries.map(entry => ({ ...entry, expansionMetadata: null }));
+    }
+
+    // 1. Collect all unique expansion characters across all entries
+    const allChars = new Set<string>();
+    for (const entry of withExpansion) {
+      for (const char of [...entry.expansion!.trim()]) {
+        if (char.trim().length > 0) {
+          allChars.add(char);
+        }
+      }
+    }
+
+    // 2. Single batch DB query for all characters
+    const dictEntries = await this.findMultipleByWord1([...allChars], language);
+    const dictMap = buildDictMap(dictEntries);
+
+    // 3. Attach per-character metadata for each entry's expansion
+    return entries.map(entry => {
+      const expansion = typeof entry.expansion === 'string' ? entry.expansion.trim() : '';
+      if (!expansion) {
+        return { ...entry, expansionMetadata: null };
+      }
+
+      const expansionMetadata: Record<string, { pronunciation?: string; definition?: string }> = {};
+      const translatedExpansion =
+        typeof entry.expansionLiteralTranslation === 'string'
+          ? entry.expansionLiteralTranslation
+          : null;
+
+      for (const char of [...expansion]) {
+        const charMeta = dictMap.get(char);
+        if (!charMeta) continue;
+
+        expansionMetadata[char] = {};
+        if (charMeta.pronunciation) {
+          expansionMetadata[char].pronunciation = charMeta.pronunciation;
+        }
+        const bestDefinition = pickDefinitionForTranslatedSentence(charMeta, translatedExpansion);
+        if (bestDefinition) {
+          expansionMetadata[char].definition = bestDefinition;
+        }
+      }
+
+      return {
+        ...entry,
+        expansionMetadata: Object.keys(expansionMetadata).length > 0 ? expansionMetadata : null,
+      };
+    });
   }
 
   /**
@@ -246,9 +386,7 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
       return await client.query(`
         INSERT INTO ${this.tableName} (language, word1, word2, pronunciation, definitions)
         VALUES ($1, $2, $3, $4, $5)
-        RETURNING id, language, word1, word2, pronunciation, tone, definitions,
-                  discoverable, script, "hskLevelTag", breakdown, synonyms,
-                  "exampleSentences", "partsOfSpeech", expansion, "expansionMetadata", createdat
+        RETURNING ${DICTIONARY_COLUMNS}
       `, [
         data.language,
         data.word1,

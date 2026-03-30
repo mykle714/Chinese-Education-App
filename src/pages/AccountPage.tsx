@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import {
     Box,
     Typography,
@@ -8,7 +7,6 @@ import {
     TextField,
     Button,
     Alert,
-    Divider,
     IconButton,
     InputAdornment,
     Dialog,
@@ -17,10 +15,11 @@ import {
     DialogContentText,
     DialogActions
 } from "@mui/material";
-import { Visibility, VisibilityOff, Warning } from "@mui/icons-material";
+import { Logout, Visibility, VisibilityOff, Warning } from "@mui/icons-material";
 import { styled } from "@mui/material/styles";
 import MobileFooter from "../components/MobileFooter";
 import { useAuth } from "../AuthContext";
+import { useConfirmation } from "../contexts/ConfirmationContext";
 
 // Design tokens from Figma
 const COLORS = {
@@ -31,7 +30,7 @@ const COLORS = {
 };
 
 // Styled Components
-const IPhoneFrame = styled(Box)(({ theme }) => ({
+const IPhoneFrame = styled(Box)(() => ({
     backgroundColor: COLORS.background,
     borderRadius: "20px",
     overflow: "hidden",
@@ -45,7 +44,7 @@ const IPhoneFrame = styled(Box)(({ theme }) => ({
     maxHeight: "932px",
 }));
 
-const Header = styled(Box)(({ theme }) => ({
+const Header = styled(Box)(() => ({
     backgroundColor: COLORS.header,
     minHeight: 96,
     display: "flex",
@@ -54,7 +53,7 @@ const Header = styled(Box)(({ theme }) => ({
     gap: 10,
 }));
 
-const Toolbar = styled(Box)(({ theme }) => ({
+const Toolbar = styled(Box)(() => ({
     display: "flex",
     gap: 10,
     width: "100%",
@@ -64,7 +63,7 @@ const Toolbar = styled(Box)(({ theme }) => ({
     position: "relative",
 }));
 
-const ContentArea = styled(Box)(({ theme }) => ({
+const ContentArea = styled(Box)(() => ({
     flex: 1,
     overflowY: "auto",
     overflowX: "hidden",
@@ -74,7 +73,7 @@ const ContentArea = styled(Box)(({ theme }) => ({
     padding: "20px",
 }));
 
-const AccountSection = styled(Box)(({ theme }) => ({
+const AccountSection = styled(Box)(() => ({
     width: "100%",
     maxWidth: 350,
     display: "flex",
@@ -82,7 +81,7 @@ const AccountSection = styled(Box)(({ theme }) => ({
     gap: 24,
 }));
 
-const UserInfoSection = styled(Box)(({ theme }) => ({
+const UserInfoSection = styled(Box)(() => ({
     display: "flex",
     flexDirection: "column",
     gap: 12,
@@ -90,29 +89,29 @@ const UserInfoSection = styled(Box)(({ theme }) => ({
     borderBottom: `1px solid ${COLORS.border}`,
 }));
 
-const UserInfoRow = styled(Box)(({ theme }) => ({
+const UserInfoRow = styled(Box)(() => ({
     display: "flex",
     alignItems: "center",
     gap: 12,
 }));
 
-const FormSection = styled(Box)(({ theme }) => ({
+const FormSection = styled(Box)(() => ({
     display: "flex",
     flexDirection: "column",
     gap: 12,
 }));
 
-const FormField = styled(TextField)(({ theme }) => ({
+const FormField = styled(TextField)(() => ({
     width: "100%",
 }));
 
-const DeleteButton = styled(Button)(({ theme }) => ({
+const DeleteButton = styled(Button)(() => ({
     marginTop: 8,
 }));
 
 function AccountPage() {
-    const navigate = useNavigate();
-    const { user, isLoading, changePassword, deleteAccount } = useAuth();
+    const { user, isLoading, changePassword, deleteAccount, logout } = useAuth();
+    const { confirm } = useConfirmation();
 
     // Password form state
     const [currentPassword, setCurrentPassword] = useState("");
@@ -154,6 +153,14 @@ function AccountPage() {
         }
 
         return true;
+    };
+
+    // Handle logout with confirmation
+    const handleLogout = async () => {
+        const confirmed = await confirm("Are you sure you want to log out?");
+        if (confirmed) {
+            logout();
+        }
     };
 
     // Handle delete account dialog
@@ -359,6 +366,19 @@ function AccountPage() {
                                 ID: {userId}
                             </Typography>
                         </UserInfoSection>
+
+                        {/* Logout Button */}
+                        <Button
+                            className="account-page__logout-button"
+                            fullWidth
+                            variant="outlined"
+                            color="primary"
+                            startIcon={<Logout fontSize="small" />}
+                            onClick={handleLogout}
+                            size="small"
+                        >
+                            Log Out
+                        </Button>
 
                         {/* Password Change Section */}
                         <FormSection className="account-page__password-section">

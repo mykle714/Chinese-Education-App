@@ -66,28 +66,50 @@ export type Language = 'zh' | 'ja' | 'ko' | 'vi';
 // HSK Level type for vocabulary entries
 export type HskLevel = 'HSK1' | 'HSK2' | 'HSK3' | 'HSK4' | 'HSK5' | 'HSK6';
 
+// Manual per-entry override for display fields; stored as JSONB in dictionaryentries."shortDefinitionPronunciationOverride"
+export interface ShortDefinitionPronunciationOverride {
+  definition?: string | null;    // Replaces computed shortDefinition
+  pronunciation?: string | null; // Replaces DictionaryEntry.pronunciation (space-separated, e.g. "fēng kuáng")
+}
+
 // Dictionary Entry type for multi-language dictionaries
 export interface DictionaryEntry {
   id: number;
   language: Language;
+  script?: string | null;
+  discoverable: boolean;
+  createdAt: string;
+
+  // Word forms and pronunciation
   word1: string;          // Primary word (simplified/kanji/hangul/word)
   word2: string | null;   // Secondary word (traditional/kana/hanja/null)
   pronunciation: string | null; // Pronunciation (pinyin/romaji/romanization/null)
+  numberedPinyin?: string | null; // Numbered pinyin notation (e.g. "gan1 huo4")
   tone?: string | null;   // Tone digits derived from pronunciation (e.g. "12" for fēng kuáng)
-  definitions: string[];  // Parsed JSON array
-  discoverable: boolean;
-  script?: string | null;
-  hskLevelTag?: string | null;
-  breakdown?: Record<string, { definition: string }> | null;
-  synonyms?: string[] | null;
-  exampleSentences?: Array<{ chinese: string; english: string; usage: string }> | null;
+
+  // Classification
   partsOfSpeech?: string[] | null;
-  expansion?: string | null;
-  expansionMetadata?: Record<string, { definition: string; pronunciation: string }> | null;
-  shortDefinition?: string | null;
+  hskLevelTag?: string | null;
+
+  // Definitions
+  definitions: string[];  // Parsed JSON array
+  shortDefinitionPronunciationOverride?: ShortDefinitionPronunciationOverride | null; // Raw override object from DB
+  shortDefinition?: string | null; // Resolved at runtime: override.definition ?? generateShortDefinition()
   longDefinition?: string | null;
-  createdAt: string;
-}
+
+  // AI-enriched content
+  breakdown?: Record<string, { definition: string; pronunciation?: string }> | null;
+  synonyms?: string[] | null;
+  exampleSentences?: Array<{
+    chinese: string;
+    english: string;
+    _segments?: string[];
+    segmentMetadata?: Record<string, { pronunciation?: string; definition?: string }>;
+  }> | null;
+  expansion?: string | null;
+  expansionMetadata?: Record<string, { pronunciation?: string; definition?: string }> | null;
+  expansionLiteralTranslation?: string | null;
+};
 
 // Discover Card type — a curated DictionaryEntry shaped for the sort-cards UI
 export interface DiscoverCard {
@@ -102,10 +124,16 @@ export interface DiscoverCard {
   hskLevelTag?: string | null;
   breakdown?: Record<string, { definition: string }> | null;
   synonyms?: string[] | null;
-  exampleSentences?: Array<{ chinese: string; english: string; usage: string }> | null;
-  partsOfSpeech?: string[] | null;
+  exampleSentences?: Array<{
+    chinese: string;
+    english: string;
+    _segments?: string[];
+    segmentMetadata?: Record<string, { pronunciation?: string; definition?: string }>;
+  }> | null;
   expansion?: string | null;
-  expansionMetadata?: Record<string, { definition: string; pronunciation: string }> | null;
+  expansionMetadata?: Record<string, { pronunciation?: string; definition?: string }> | null;
+  expansionLiteralTranslation?: string | null;
+  matchException?: string[] | null;  // Multi-char tokens to suppress during GSA segmentation
 }
 
 export interface DictionaryEntryCreateData {
@@ -152,13 +180,19 @@ export interface VocabEntry {
   last16SuccessRate?: number;  // Success rate for last 16 marks (0.0 to 1.0)
   category?: FlashcardCategory;  // Category based on last 8 performance
   starterPackBucket?: StarterPackBucket | null;  // Starter pack sorting bucket
-  breakdown?: Record<string, { definition: string }> | null;  // Character breakdown for Chinese vocab
+  breakdown?: Record<string, { definition: string; pronunciation?: string }> | null;  // Character breakdown for Chinese vocab
   synonyms?: string[];  // Array of Chinese synonym words
+  synonymsMetadata?: Record<string, { definition: string; pronunciation: string }> | null;  // Computed at runtime by batch-reading from dictionaryentries
   expansion?: string | null;  // Expanded/fuller form of word (e.g., 不知不觉 → 不知道不觉得)
-  expansionMetadata?: Record<string, { definition: string; pronunciation: string }> | null;  // Character breakdown for expansion string
-  exampleSentences?: Array<{ chinese: string; english: string; usage: string }>;  // Example sentences showing different uses
-  partsOfSpeech?: string[];  // Possible parts of speech (noun, verb, adj, etc.)
-  relatedWords?: Array<{ id: number; entryKey: string; sharedCharacters: string[]; successRate: number | null }>;  // Related library words (computed dynamically)
+  expansionMetadata?: Record<string, { pronunciation?: string; definition?: string }> | null;  // Computed at runtime from expansion characters
+  expansionLiteralTranslation?: string | null;  // Literal phrase translation derived from expansion components
+  exampleSentences?: Array<{
+    chinese: string;
+    english: string;
+    _segments?: string[];
+    segmentMetadata?: Record<string, { pronunciation?: string; definition?: string }>;
+  }>;  // Example sentences enriched at runtime with greedy segmentation and per-segment metadata
+  relatedWords?: Array<{ id: number; entryKey: string; pronunciation: string | null; definition: string | null }>;  // Related library words (computed dynamically)
   createdAt: Date;
 }
 
@@ -168,8 +202,6 @@ export interface VocabEntryCreateData {
   entryKey: string;
   entryValue: string;
   language: Language;
-  script?: string;
-  pronunciation?: string | null;
   hskLevelTag?: HskLevel | null;
 }
 
@@ -178,8 +210,6 @@ export interface VocabEntryUpdateData {
   entryKey?: string;
   entryValue: string;
   language?: Language;
-  script?: string;
-  pronunciation?: string | null;
   hskLevelTag?: HskLevel | null;
 }
 

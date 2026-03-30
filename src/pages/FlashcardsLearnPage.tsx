@@ -11,7 +11,7 @@ import {
     CircularProgress,
     Badge,
 } from "@mui/material";
-import { styled } from "@mui/material/styles";
+import { styled, alpha } from "@mui/material/styles";
 import { useDrag } from "@use-gesture/react";
 import UndoIcon from "@mui/icons-material/Undo";
 import SettingsIcon from "@mui/icons-material/Settings";
@@ -21,6 +21,8 @@ import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import { API_BASE_URL } from "../constants";
 import CharacterPinyinColorDisplay from "../components/CharacterPinyinColorDisplay";
+import CPCDRow from "../components/CPCDRow";
+import SegmentedSentenceDisplay from "../components/SegmentedSentenceDisplay";
 
 // Types
 type HskLevel = "HSK1" | "HSK2" | "HSK3" | "HSK4" | "HSK5" | "HSK6";
@@ -33,11 +35,17 @@ interface VocabEntry {
     hskLevelTag?: HskLevel | null;
     breakdown?: Record<string, { definition: string }> | null;
     synonyms?: string[];
+    synonymsMetadata?: Record<string, { definition: string; pronunciation: string }> | null;
     expansion?: string | null;
-    expansionMetadata?: Record<string, { definition: string; pronunciation: string }> | null;
-    exampleSentences?: Array<{ chinese: string; english: string; usage: string }>;
-    partsOfSpeech?: string[];
-    relatedWords?: Array<{ id: number; entryKey: string; sharedCharacters: string[]; successRate: number | null }>;
+    expansionMetadata?: Record<string, { pronunciation?: string; definition?: string }> | null;
+    expansionLiteralTranslation?: string | null;
+    exampleSentences?: Array<{
+      chinese: string;
+      english: string;
+      _segments?: string[];
+      segmentMetadata?: Record<string, { pronunciation?: string; definition?: string }>;
+    }>;
+    relatedWords?: Array<{ id: number; entryKey: string; pronunciation: string | null; definition: string | null }>;
     createdAt: string;
 }
 
@@ -45,6 +53,27 @@ interface BreakdownItem {
     character: string;
     pinyin: string;
     definition: string;
+}
+
+interface ReviewMark {
+    timestamp: string;
+    isCorrect: boolean;
+}
+
+interface MarkCardResult {
+    newCard: VocabEntry | null;
+    markTimestamp: string;
+    displacedMark: ReviewMark | null;
+}
+
+interface LastMarkUndoSnapshot {
+    cardId: number;
+    markTimestamp: string;
+    displacedMark: ReviewMark | null;
+    workingLoop: VocabEntry[];
+    currentIndex: number;
+    isFlipped: boolean;
+    selectedTab: number;
 }
 
 // Design tokens from Figma
@@ -60,13 +89,18 @@ const COLORS = {
     pink: "#EF476F",
     blue: "#779BE7",
     gray: "#625F63",
+    textSecondary: "#625F63",
     correct: "#05C793",
     incorrect: "#EF476F",
     fireActive: "#E65100",
 };
 
+
+// Controls vertical alignment of content within both card faces (front + back)
+const CARD_FACE_JUSTIFY = 'flex-start';
+
 // Styled Components
-const IPhoneFrame = styled(Box)(({ theme }) => ({
+const IPhoneFrame = styled(Box)(() => ({
     backgroundColor: COLORS.background,
     border: `1px solid ${COLORS.border}`,
     borderRadius: "20px",
@@ -81,7 +115,7 @@ const IPhoneFrame = styled(Box)(({ theme }) => ({
     maxHeight: "932px",
 }));
 
-const Header = styled(Box)(({ theme }) => ({
+const Header = styled(Box)(() => ({
     backgroundColor: COLORS.header,
     minHeight: 96,
     display: "flex",
@@ -90,7 +124,7 @@ const Header = styled(Box)(({ theme }) => ({
     gap: 10,
 }));
 
-const Toolbar = styled(Box)(({ theme }) => ({
+const Toolbar = styled(Box)(() => ({
     display: "flex",
     gap: 10,
     width: 393,
@@ -100,7 +134,7 @@ const Toolbar = styled(Box)(({ theme }) => ({
     position: "relative",
 }));
 
-const PageTools = styled(Box)(({ theme }) => ({
+const PageTools = styled(Box)(() => ({
     display: "flex",
     gap: 8,
     alignItems: "center",
@@ -111,7 +145,7 @@ const PageTools = styled(Box)(({ theme }) => ({
     padding: "0 12px",
 }));
 
-const InfoCard = styled(Card)(({ theme }) => ({
+const InfoCard = styled(Card)(() => ({
     backgroundColor: COLORS.infoCard,
     borderRadius: "12px",
     boxShadow: "2px 4px 4px rgba(0, 0, 0, 0.25)",
@@ -128,9 +162,9 @@ const InfoCard = styled(Card)(({ theme }) => ({
     },
 }));
 
-const TabsContainer = styled(Box)(({ theme }) => ({
+const TabsContainer = styled(Box)(() => ({
     position: "absolute",
-    top: -10,
+    top: -18,
     left: 0,
     right: 0,
     display: "flex",
@@ -143,17 +177,19 @@ const TabsContainer = styled(Box)(({ theme }) => ({
 
 const Tab = styled(Box)<{ isSelected: boolean; color: string }>(({ isSelected, color }) => ({
     width: 56,
-    height: isSelected ? 12 : 8,
-    backgroundColor: color,
+    height: isSelected ? 18 : 16,
+    backgroundColor: isSelected ? color : alpha(color, 0.5),
     borderRadius: "4px 4px 0 0",
-    opacity: isSelected ? 1 : 0.5,
     transform: isSelected ? "translateY(-4px)" : "translateY(0)",
     transition: "all 0.3s ease-in-out",
     cursor: "pointer",
     pointerEvents: "auto",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
 }));
 
-const ArrowIndicator = styled(Box)(({ theme }) => ({
+const ArrowIndicator = styled(Box)(() => ({
     position: "absolute",
     top: "50%",
     transform: "translateY(-50%)",
@@ -170,7 +206,7 @@ const ArrowIndicator = styled(Box)(({ theme }) => ({
     },
 }));
 
-const BreakdownLineItem = styled(Box)(({ theme }) => ({
+const BreakdownLineItem = styled(Box)(() => ({
     display: "flex",
     alignItems: "center",
     gap: 36,
@@ -182,7 +218,7 @@ const BreakdownLineItem = styled(Box)(({ theme }) => ({
 }));
 
 
-const DefinitionColumn = styled(Box)(({ theme }) => ({
+const DefinitionColumn = styled(Box)(() => ({
     flex: 1,
     display: "flex",
     flexDirection: "column",
@@ -191,14 +227,14 @@ const DefinitionColumn = styled(Box)(({ theme }) => ({
     textAlign: "right",
 }));
 
-const DefinitionText = styled(Typography)(({ theme }) => ({
+const DefinitionText = styled(Typography)(() => ({
     fontSize: 12,
     color: COLORS.onSurface,
     lineHeight: "16px",
     fontFamily: '"Inter", sans-serif',
 }));
 
-const ContentArea = styled(Box)(({ theme }) => ({
+const ContentArea = styled(Box)(() => ({
     flex: 1,
     overflow: "hidden",
     padding: "36px 0",
@@ -209,7 +245,7 @@ const ContentArea = styled(Box)(({ theme }) => ({
 }));
 
 // Draggable card wrapper
-const DraggableCardContainer = styled(Box)(({ theme }) => ({
+const DraggableCardContainer = styled(Box)(() => ({
     width: 295,
     minHeight: 426,
     position: "relative",
@@ -252,7 +288,9 @@ const FlashcardsLearnPage: React.FC = () => {
     const [dragPosition, setDragPosition] = useState({ x: 0, y: 0 });
     const [isDragging, setIsDragging] = useState(false);
     const [isAnimating, setIsAnimating] = useState(false);
+    const [isUndoing, setIsUndoing] = useState(false);
     const [selectedTab, setSelectedTab] = useState(0);
+    const [lastMarkUndoSnapshot, setLastMarkUndoSnapshot] = useState<LastMarkUndoSnapshot | null>(null);
     const cardRef = useRef<HTMLDivElement>(null);
     const dragStart = useRef({ x: 0, y: 0 });
 
@@ -260,11 +298,9 @@ const FlashcardsLearnPage: React.FC = () => {
     // inside useWorkPoints. No need for manual recordActivity() calls.
     const workPoints = useWorkPoints();
 
-    // Tab colors
+    // Tab colors and labels (order matches: bt, sct, st, est, et)
     const tabColors = [COLORS.pink, COLORS.green, COLORS.blue, COLORS.orange, COLORS.gray];
-
-    // Character colors for breakdown display
-    const characterColors = [COLORS.green, COLORS.orange, COLORS.pink, COLORS.blue];
+    const tabLabels = ["breakdown", "similar", "synonyms", "examples", "literal"];
 
     // Current entry derived from working loop
     const currentEntry: VocabEntry | null = workingLoop.length > 0 ? workingLoop[currentIndex] : null;
@@ -288,7 +324,7 @@ const FlashcardsLearnPage: React.FC = () => {
 
     // Swipe handler for InfoCard tabs
     const bindInfoCard = useDrag(
-        ({ swipe: [swipeX], tap, event }) => {
+        ({ swipe: [swipeX], event }) => {
             // Prevent text selection during drag
             if (event) {
                 event.preventDefault();
@@ -337,6 +373,7 @@ const FlashcardsLearnPage: React.FC = () => {
 
                 console.log(`Loaded ${cards.length} cards in distributed working loop${selectedCategory ? ` (category: ${selectedCategory})` : ''}`);
                 setWorkingLoop(cards);
+                setLastMarkUndoSnapshot(null);
 
                 // Randomly set initial flip state
                 setIsFlipped(Math.random() < 0.5);
@@ -353,10 +390,12 @@ const FlashcardsLearnPage: React.FC = () => {
     }, [token, selectedCategory]);
 
     // Mark card with retry logic
-    const markCard = async (cardId: number, isCorrect: boolean, retryCount = 0): Promise<VocabEntry | null> => {
+    const markCard = async (cardId: number, isCorrect: boolean, retryCount = 0): Promise<MarkCardResult | null> => {
         try {
+            const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
             const headers: HeadersInit = {
                 'Content-Type': 'application/json',
+                'x-user-timezone': userTimeZone,
             };
 
             // Add Authorization header if token exists
@@ -376,7 +415,15 @@ const FlashcardsLearnPage: React.FC = () => {
             }
 
             const data = await response.json();
-            return data.newCard || null;
+            if (!data?.markTimestamp) {
+                throw new Error('Mark response missing mark timestamp');
+            }
+
+            return {
+                newCard: data.newCard || null,
+                markTimestamp: data.markTimestamp,
+                displacedMark: data.displacedMark || null,
+            };
         } catch (err) {
             if (retryCount < 3) {
                 // Exponential backoff: wait 500ms, 1s, 2s
@@ -395,6 +442,12 @@ const FlashcardsLearnPage: React.FC = () => {
 
         const currentCard = workingLoop[currentIndex];
         const isCorrect = direction === 'right';
+        const preDismissSnapshot: Omit<LastMarkUndoSnapshot, 'cardId' | 'markTimestamp' | 'displacedMark'> = {
+            workingLoop: [...workingLoop],
+            currentIndex,
+            isFlipped,
+            selectedTab,
+        };
 
         setIsAnimating(true);
 
@@ -403,7 +456,14 @@ const FlashcardsLearnPage: React.FC = () => {
         setDragPosition({ x: exitX, y: 0 });
 
         // Mark card and get response
-        const newCard = await markCard(currentCard.id, isCorrect);
+        const markResult = await markCard(currentCard.id, isCorrect);
+        if (!markResult) {
+            setDragPosition({ x: 0, y: 0 });
+            setIsAnimating(false);
+            return;
+        }
+
+        const { newCard, markTimestamp, displacedMark } = markResult;
 
         console.log(`Card marked: ${currentCard.entryKey} (${isCorrect ? 'correct' : 'incorrect'})`);
         if (newCard) {
@@ -416,7 +476,8 @@ const FlashcardsLearnPage: React.FC = () => {
                 breakdown: newCard.breakdown ?? 'none',
                 synonyms: newCard.synonyms ?? 'none',
                 exampleSentences: newCard.exampleSentences ?? 'none',
-                partsOfSpeech: newCard.partsOfSpeech ?? 'none',
+                expansion: newCard.expansion ?? 'none',
+                expansionMetadata: newCard.expansionMetadata ?? 'none',
                 relatedWords: newCard.relatedWords ?? 'none',
             });
         } else {
@@ -443,7 +504,61 @@ const FlashcardsLearnPage: React.FC = () => {
         // Reset card position and state
         setDragPosition({ x: 0, y: 0 });
         setIsFlipped(Math.random() < 0.5); // Random flip for new card
+        setLastMarkUndoSnapshot({
+            cardId: currentCard.id,
+            markTimestamp,
+            displacedMark,
+            ...preDismissSnapshot,
+        });
         setIsAnimating(false);
+    };
+
+    const handleUndoLastMark = async () => {
+        if (!lastMarkUndoSnapshot || isAnimating || isUndoing) return;
+
+        try {
+            setIsUndoing(true);
+            setError(null);
+
+            const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+            const headers: HeadersInit = {
+                'Content-Type': 'application/json',
+                'x-user-timezone': userTimeZone,
+            };
+
+            if (token && token !== 'null' && token !== 'undefined') {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+
+            const response = await fetch(`${API_BASE_URL}/api/flashcards/undo-last-mark`, {
+                method: 'POST',
+                headers,
+                credentials: 'include',
+                body: JSON.stringify({
+                    cardId: lastMarkUndoSnapshot.cardId,
+                    markTimestamp: lastMarkUndoSnapshot.markTimestamp,
+                    displacedMark: lastMarkUndoSnapshot.displacedMark,
+                }),
+            });
+
+            if (!response.ok) {
+                const responseData = await response.json().catch(() => null);
+                throw new Error(responseData?.error || 'Failed to undo last mark');
+            }
+
+            setWorkingLoop(lastMarkUndoSnapshot.workingLoop);
+            setCurrentIndex(lastMarkUndoSnapshot.currentIndex);
+            setIsFlipped(lastMarkUndoSnapshot.isFlipped);
+            setSelectedTab(lastMarkUndoSnapshot.selectedTab);
+            setDragPosition({ x: 0, y: 0 });
+            setIsDragging(false);
+            setLastMarkUndoSnapshot(null);
+        } catch (err) {
+            console.error('Failed to undo last mark:', err);
+            setError(err instanceof Error ? err.message : 'Failed to undo last mark');
+        } finally {
+            setIsUndoing(false);
+        }
     };
 
     // Touch and Mouse handlers for dragging
@@ -555,9 +670,12 @@ const FlashcardsLearnPage: React.FC = () => {
             console.log('Enrichment data:', {
                 breakdown: entry.breakdown ?? 'none',
                 synonyms: entry.synonyms ?? 'none',
+                synonymsMetadata: entry.synonymsMetadata ?? 'none',
                 exampleSentences: entry.exampleSentences ?? 'none',
-                partsOfSpeech: entry.partsOfSpeech ?? 'none',
                 relatedWords: entry.relatedWords ?? 'none',
+                expansion: entry.expansion ?? 'none',
+                expansionMetadata: entry.expansionMetadata ?? 'none',
+                expansionLiteralTranslation: entry.expansionLiteralTranslation ?? 'none',
             });
         }
     }, [currentIndex, isFlipped, workingLoop]);
@@ -607,7 +725,13 @@ const FlashcardsLearnPage: React.FC = () => {
                             {selectedCategory ? `Learn: ${selectedCategory}` : 'Learn'}
                         </Typography>
                         <PageTools className="mobile-demo-page-tools">
-                            <IconButton className="mobile-demo-tool-button" size="small" sx={{ color: COLORS.onSurface }}>
+                            <IconButton
+                                className="mobile-demo-tool-button"
+                                size="small"
+                                sx={{ color: COLORS.onSurface }}
+                                onClick={handleUndoLastMark}
+                                disabled={!lastMarkUndoSnapshot || isAnimating || isUndoing}
+                            >
                                 <UndoIcon />
                             </IconButton>
                             <IconButton className="mobile-demo-tool-button" size="small" sx={{ color: COLORS.onSurface }}>
@@ -699,7 +823,20 @@ const FlashcardsLearnPage: React.FC = () => {
                                         isSelected={selectedTab === index}
                                         color={color}
                                         onClick={() => setSelectedTab(index)}
-                                    />
+                                    >
+                                        <Typography
+                                            sx={{
+                                                fontSize: "8px",
+                                                fontWeight: selectedTab === index ? 700 : 500,
+                                                color: "text.primary",
+                                                lineHeight: 1,
+                                                userSelect: "none",
+                                                letterSpacing: "0.02em",
+                                            }}
+                                        >
+                                            {tabLabels[index]}
+                                        </Typography>
+                                    </Tab>
                                 ))}
                             </TabsContainer>
 
@@ -736,39 +873,27 @@ const FlashcardsLearnPage: React.FC = () => {
 
                                     {/* Tab 1: Related Words */}
                                     {selectedTab === 1 && currentEntry?.relatedWords && currentEntry.relatedWords.length > 0 ? (
-                                        <Box className="mobile-demo-related-words-list" sx={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                            {currentEntry.relatedWords.map((word, index) => (
-                                                <Box
-                                                    className="mobile-demo-related-word-item"
-                                                    key={word.id}
-                                                    sx={{
-                                                        display: 'flex',
-                                                        justifyContent: 'space-between',
-                                                        alignItems: 'center',
-                                                        padding: '8px 12px',
-                                                        backgroundColor: 'rgba(255, 255, 255, 0.5)',
-                                                        borderRadius: '8px',
-                                                        border: `1px solid ${COLORS.border}`,
-                                                    }}
-                                                >
-                                                    <Box className="mobile-demo-related-word-text" sx={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
-                                                        <Typography className="mobile-demo-related-word-key" sx={{ fontSize: 16, fontWeight: 500, color: COLORS.onSurface, fontFamily: '"Inter", "Noto Sans JP", sans-serif' }}>
-                                                            {word.entryKey}
-                                                        </Typography>
-                                                        <Typography className="mobile-demo-related-word-shared" sx={{ fontSize: 10, color: COLORS.gray, fontFamily: '"Inter", sans-serif' }}>
-                                                            Shared: {word.sharedCharacters.map((char, i) => (
-                                                                <Box className="mobile-demo-shared-char" component="span" key={i} sx={{ color: characterColors[i % characterColors.length], fontWeight: 600, marginRight: '4px' }}>
-                                                                    {char}
-                                                                </Box>
-                                                            ))}
-                                                        </Typography>
-                                                    </Box>
-                                                    {word.successRate !== null && (
-                                                        <Typography className="mobile-demo-success-rate" sx={{ fontSize: 12, fontWeight: 600, color: COLORS.green, fontFamily: '"Inter", sans-serif' }}>
-                                                            {Math.round(word.successRate * 100)}%
-                                                        </Typography>
+                                        <Box className="mobile-demo-related-words-list">
+                                            {currentEntry.relatedWords.map((word) => (
+                                                <BreakdownLineItem className="mobile-demo-related-word-item" key={word.id}>
+                                                    <CPCDRow size="xs">
+                                                        {[...word.entryKey].map((char, i) => (
+                                                            <CharacterPinyinColorDisplay
+                                                                key={i}
+                                                                character={char}
+                                                                pinyin={word.pronunciation?.split(' ')[i] ?? ''}
+                                                                showPinyin={true}
+                                                                useToneColor={true}
+                                                                size="xs"
+                                                            />
+                                                        ))}
+                                                    </CPCDRow>
+                                                    {word.definition && (
+                                                        <DefinitionColumn>
+                                                            <DefinitionText>{word.definition}</DefinitionText>
+                                                        </DefinitionColumn>
                                                     )}
-                                                </Box>
+                                                </BreakdownLineItem>
                                             ))}
                                         </Box>
                                     ) : selectedTab === 1 ? (
@@ -781,23 +906,32 @@ const FlashcardsLearnPage: React.FC = () => {
 
                                     {/* Tab 2: Synonyms */}
                                     {selectedTab === 2 && currentEntry?.synonyms && currentEntry.synonyms.length > 0 ? (
-                                        <Box className="mobile-demo-synonyms-list" sx={{ display: 'flex', flexWrap: 'wrap', gap: '8px', padding: '4px' }}>
-                                            {currentEntry.synonyms.map((synonym, index) => (
-                                                <Box
-                                                    className="mobile-demo-synonym-item"
-                                                    key={index}
-                                                    sx={{
-                                                        padding: '8px 16px',
-                                                        backgroundColor: COLORS.blue,
-                                                        borderRadius: '16px',
-                                                        border: `1px solid ${COLORS.border}`,
-                                                    }}
-                                                >
-                                                    <Typography className="mobile-demo-synonym-text" sx={{ fontSize: 16, fontWeight: 400, color: 'white', fontFamily: '"Inter", "Noto Sans JP", sans-serif' }}>
-                                                        {synonym}
-                                                    </Typography>
-                                                </Box>
-                                            ))}
+                                        <Box className="mobile-demo-synonyms-list">
+                                            {currentEntry.synonyms.map((synonym, index) => {
+                                                const synPronunciations = currentEntry.synonymsMetadata?.[synonym]?.pronunciation?.split(' ') ?? [];
+                                                const synDefinition = currentEntry.synonymsMetadata?.[synonym]?.definition;
+                                                return (
+                                                    <BreakdownLineItem className="mobile-demo-synonym-item" key={index}>
+                                                        <CPCDRow size="xs">
+                                                            {[...synonym].map((char, i) => (
+                                                                <CharacterPinyinColorDisplay
+                                                                    key={i}
+                                                                    character={char}
+                                                                    pinyin={synPronunciations[i] ?? ''}
+                                                                    showPinyin={true}
+                                                                    useToneColor={true}
+                                                                    size="xs"
+                                                                />
+                                                            ))}
+                                                        </CPCDRow>
+                                                        {synDefinition && (
+                                                            <DefinitionColumn>
+                                                                <DefinitionText>{synDefinition}</DefinitionText>
+                                                            </DefinitionColumn>
+                                                        )}
+                                                    </BreakdownLineItem>
+                                                );
+                                            })}
                                         </Box>
                                     ) : selectedTab === 2 ? (
                                         <Box className="mobile-demo-tab-empty" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 2 }}>
@@ -824,14 +958,13 @@ const FlashcardsLearnPage: React.FC = () => {
                                                         borderLeft: `4px solid ${COLORS.orange}`,
                                                     }}
                                                 >
-                                                    <Typography className="mobile-demo-sentence-chinese" sx={{ fontSize: 14, fontWeight: 500, color: COLORS.onSurface, fontFamily: '"Inter", "Noto Sans JP", sans-serif', lineHeight: 1.4 }}>
-                                                        {sentence.chinese}
-                                                    </Typography>
+                                                    <SegmentedSentenceDisplay
+                                                        sentence={sentence}
+                                                        size="xs"
+                                                        flexWrap="wrap"
+                                                    />
                                                     <Typography className="mobile-demo-sentence-english" sx={{ fontSize: 11, color: COLORS.gray, fontFamily: '"Inter", sans-serif', lineHeight: 1.3 }}>
                                                         {sentence.english}
-                                                    </Typography>
-                                                    <Typography className="mobile-demo-sentence-usage" sx={{ fontSize: 9, color: COLORS.orange, fontFamily: '"Inter", sans-serif', fontStyle: 'italic', textTransform: 'capitalize' }}>
-                                                        ({sentence.usage})
                                                     </Typography>
                                                 </Box>
                                             ))}
@@ -850,18 +983,32 @@ const FlashcardsLearnPage: React.FC = () => {
                                             <Typography className="mobile-demo-expansion-label" sx={{ fontSize: 12, color: COLORS.gray, fontFamily: '"Inter", sans-serif', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                                                 Expanded Form
                                             </Typography>
-                                            <Box className="mobile-demo-expansion-chars" sx={{ display: 'flex', flexDirection: 'row', gap: 0.5, flexWrap: 'wrap', justifyContent: 'center' }}>
-                                                {[...currentEntry.expansion].map((char, i) => (
-                                                    <CharacterPinyinColorDisplay
-                                                        key={i}
-                                                        character={char}
-                                                        pinyin={currentEntry.expansionMetadata?.[char]?.pronunciation ?? ''}
-                                                        showPinyin={!!currentEntry.expansionMetadata?.[char]?.pronunciation}
-                                                        size="sm"
-                                                        useToneColor={true}
-                                                    />
-                                                ))}
-                                            </Box>
+                                            <SegmentedSentenceDisplay
+                                                sentence={{
+                                                    chinese: currentEntry.expansion,
+                                                    _segments: [...currentEntry.expansion],
+                                                    segmentMetadata: currentEntry.expansionMetadata ?? undefined,
+                                                }}
+                                                size="md"
+                                                compact
+                                                flexWrap="wrap"
+                                                justifyContent="center"
+                                                className="mobile-demo-expansion-chars"
+                                            />
+                                            {/* Literal translation: segment definitions strung together */}
+                                            {currentEntry.expansionLiteralTranslation && (
+                                                <Typography sx={{
+                                                    fontSize: "0.8rem",
+                                                    color: COLORS.textSecondary,
+                                                    fontFamily: '"Inter", sans-serif',
+                                                    mt: 0.5,
+                                                    lineHeight: 1.4,
+                                                    wordBreak: 'break-word',
+                                                    textAlign: 'center',
+                                                }}>
+                                                    {currentEntry.expansionLiteralTranslation}
+                                                </Typography>
+                                            )}
                                         </Box>
                                     ) : selectedTab === 4 ? (
                                         <Box className="mobile-demo-tab-empty" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 2 }}>
@@ -925,14 +1072,16 @@ const FlashcardsLearnPage: React.FC = () => {
                                         borderRadius: "12px",
                                         display: "flex",
                                         alignItems: "center",
-                                        justifyContent: "center",
+                                        justifyContent: CARD_FACE_JUSTIFY,
                                     }}>
                                         <CardContent
                                             className="mobile-demo-flashcard-content"
                                             sx={{ padding: "72px 30px", width: "100%" }}
                                         >
                                             <Box className="mobile-demo-flashcard-inner" sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '80px' }}>
-                                                <Box className="mobile-demo-flashcard-image" sx={{ width: 106, height: 83 }} />
+                                                <Box className="mobile-demo-flashcard-image" sx={{ width: 106, height: 83, backgroundColor: '#ffffff', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                    <Typography sx={{ fontSize: 11, color: COLORS.gray, fontFamily: '"Inter", sans-serif', textAlign: 'center' }}>insert image here</Typography>
+                                                </Box>
                                                 <Box className="mobile-demo-flashcard-text" sx={{ display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'center', width: '100%' }}>
                                                     <Typography
                                                         className="mobile-demo-flashcard-word"
@@ -975,11 +1124,13 @@ const FlashcardsLearnPage: React.FC = () => {
                                         borderRadius: "12px",
                                         display: "flex",
                                         alignItems: "center",
-                                        justifyContent: "center",
+                                        justifyContent: CARD_FACE_JUSTIFY,
                                     }}>
                                         <CardContent sx={{ padding: "72px 30px" }}>
                                             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '80px' }}>
-                                                <Box sx={{ width: 106, height: 83 }} />
+                                                <Box sx={{ width: 106, height: 83, backgroundColor: '#ffffff', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                    <Typography sx={{ fontSize: 11, color: COLORS.gray, fontFamily: '"Inter", sans-serif', textAlign: 'center' }}>insert image here</Typography>
+                                                </Box>
                                                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'center', width: '100%' }}>
                                                     <Typography sx={{
                                                         fontSize: 30,

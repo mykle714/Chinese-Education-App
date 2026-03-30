@@ -455,7 +455,7 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
 
     const result = await this.dbManager.executeQuery(async (client) => {
       return await client.query(
-        'UPDATE Users SET "currentStreak" = 0, "totalWorkPoints" = GREATEST(0, "totalWorkPoints" - $1) WHERE id = $2',
+        'UPDATE Users SET "currentStreak" = 0, "totalWorkPoints" = GREATEST(0, "totalWorkPoints" - $1), "lastStreakIncrement" = NOW() WHERE id = $2',
         [penaltyPoints, userId]
       );
     });

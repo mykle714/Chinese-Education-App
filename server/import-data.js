@@ -27,8 +27,6 @@ async function importData() {
     // Check if export files exist
     const usersFile = path.join(exportDir, 'users_export.json');
     const vocabFile = path.join(exportDir, 'vocabentries_export.json');
-    const onDeckFile = path.join(exportDir, 'ondeckvocabsets_export.json');
-
     if (!fs.existsSync(usersFile)) {
       console.error('❌ Users export file not found. Run export-azure-data.js first.');
       process.exit(1);
@@ -45,7 +43,6 @@ async function importData() {
 
     // Clear existing sample data
     console.log('🔄 Clearing existing sample data...');
-    await client.query('DELETE FROM ondeckvocabsets');
     await client.query('DELETE FROM vocabentries');
     await client.query('DELETE FROM users');
     console.log('✅ Cleared existing data');
@@ -96,33 +93,6 @@ async function importData() {
     }
     console.log(`✅ Imported ${vocabImported}/${vocabData.totalRecords} vocabulary entries`);
 
-    // Import OnDeckVocabSets (if file exists)
-    let onDeckImported = 0;
-    if (fs.existsSync(onDeckFile)) {
-      console.log('🔄 Importing OnDeckVocabSets...');
-      const onDeckData = JSON.parse(fs.readFileSync(onDeckFile, 'utf8'));
-      
-      for (const set of onDeckData.data) {
-        try {
-          await client.query(`
-            INSERT INTO ondeckvocabsets (userid, featurename, vocabentryids, updatedat)
-            VALUES ($1, $2, $3, $4)
-          `, [
-            set.userId,
-            set.featureName,
-            JSON.stringify(set.vocabEntryIds),
-            set.updatedAt
-          ]);
-          onDeckImported++;
-        } catch (error) {
-          console.warn(`⚠️  Failed to import on-deck set ${set.featureName}:`, error.message);
-        }
-      }
-      console.log(`✅ Imported ${onDeckImported}/${onDeckData.totalRecords} on-deck vocab sets`);
-    } else {
-      console.log('ℹ️  No OnDeckVocabSets export file found - skipping');
-    }
-
     // Update sequence values for auto-increment columns
     console.log('🔄 Updating sequence values...');
     
@@ -142,12 +112,10 @@ async function importData() {
     console.log('🔄 Verifying import...');
     const userCount = await client.query('SELECT COUNT(*) as count FROM users');
     const vocabCount = await client.query('SELECT COUNT(*) as count FROM vocabentries');
-    const onDeckCount = await client.query('SELECT COUNT(*) as count FROM ondeckvocabsets');
     
     console.log('\n🎉 Data import completed successfully!');
     console.log(`👥 Users: ${userCount.rows[0].count}`);
     console.log(`📚 Vocabulary entries: ${vocabCount.rows[0].count}`);
-    console.log(`📋 On-deck sets: ${onDeckCount.rows[0].count}`);
 
     // Test multi-language data
     console.log('\n🔄 Testing multi-language support...');

@@ -7,6 +7,8 @@ import MobileFooter from "../components/MobileFooter";
 import { API_BASE_URL } from "../constants";
 import type { VocabEntry, DictionaryEntry } from "../types";
 import CharacterPinyinColorDisplay from "../components/CharacterPinyinColorDisplay";
+import CPCDRow from "../components/CPCDRow";
+import SegmentedSentenceDisplay from "../components/SegmentedSentenceDisplay";
 
 // Design tokens
 const COLORS = {
@@ -23,6 +25,7 @@ const COLORS = {
     categoryComfortable: "#05C793",
     categoryMastered: "#779BE7",
 };
+
 
 const IPhoneFrame = styled(Box)(() => ({
     backgroundColor: COLORS.background,
@@ -150,7 +153,6 @@ const VocabCardDetailPage: React.FC = () => {
     const hasBreakdown = entry?.breakdown && Object.keys(entry.breakdown).length > 0;
     const hasSynonyms = entry?.synonyms && entry.synonyms.length > 0;
     const hasExamples = entry?.exampleSentences && entry.exampleSentences.length > 0;
-    const hasPartsOfSpeech = entry?.partsOfSpeech && entry.partsOfSpeech.length > 0;
     const hasRelatedWords = entry?.relatedWords && entry.relatedWords.length > 0;
     const hasExpansion = !!entry?.expansion;
 
@@ -323,10 +325,11 @@ const VocabCardDetailPage: React.FC = () => {
                                             >
                                                 <CharacterPinyinColorDisplay
                                                     character={char}
-                                                    pinyin={info.pronunciation}
+                                                    pinyin={info.pronunciation ?? ""}
                                                     size="md"
                                                     useToneColor={true}
                                                     showPinyin={true}
+                                                    compact
                                                 />
                                                 <Box className="vocab-card-detail__breakdown-info">
                                                     <Typography
@@ -347,46 +350,32 @@ const VocabCardDetailPage: React.FC = () => {
                                 </SectionCard>
                             )}
 
-                            {/* Parts of Speech */}
-                            {hasPartsOfSpeech && (
-                                <SectionCard className="vocab-card-detail__pos">
-                                    <SectionLabel className="vocab-card-detail__section-label">Parts of Speech</SectionLabel>
-                                    <Box className="vocab-card-detail__pos-list" sx={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                                        {entry.partsOfSpeech!.map((pos) => (
-                                            <Chip
-                                                className="vocab-card-detail__pos-chip"
-                                                key={pos}
-                                                label={pos}
-                                                size="small"
-                                                sx={{
-                                                    backgroundColor: COLORS.sectionCard,
-                                                    color: COLORS.onSurface,
-                                                    fontSize: "0.8rem",
-                                                    fontFamily: '"Inter", sans-serif',
-                                                    height: 26,
-                                                }}
-                                            />
-                                        ))}
-                                    </Box>
-                                </SectionCard>
-                            )}
-
                             {/* Expansion */}
                             {hasExpansion && (
                                 <SectionCard className="vocab-card-detail__expansion">
                                     <SectionLabel className="vocab-card-detail__section-label">Extended Definition</SectionLabel>
-                                    <Box className="vocab-card-detail__expansion-chars" sx={{ display: 'flex', flexDirection: 'row', gap: 1.5, flexWrap: 'wrap' }}>
-                                        {[...entry.expansion!].map((char, i) => (
-                                            <CharacterPinyinColorDisplay
-                                                key={i}
-                                                character={char}
-                                                pinyin={entry.expansionMetadata?.[char]?.pronunciation ?? ''}
-                                                showPinyin={!!entry.expansionMetadata?.[char]?.pronunciation}
-                                                size="md"
-                                                useToneColor={true}
-                                            />
-                                        ))}
-                                    </Box>
+                                    <SegmentedSentenceDisplay
+                                        sentence={{
+                                            chinese: entry.expansion!,
+                                        }}
+                                        size="md"
+                                        compact
+                                        flexWrap="wrap"
+                                        className="vocab-card-detail__expansion-chars"
+                                    />
+                                    {/* Literal English translation of the expansion */}
+                                    {entry.expansionLiteralTranslation && (
+                                        <Typography sx={{
+                                            fontSize: "0.8rem",
+                                            color: COLORS.textSecondary,
+                                            fontFamily: '"Inter", sans-serif',
+                                            mt: 0.5,
+                                            lineHeight: 1.4,
+                                            wordBreak: 'break-word',
+                                        }}>
+                                            {entry.expansionLiteralTranslation}
+                                        </Typography>
+                                    )}
                                 </SectionCard>
                             )}
 
@@ -395,29 +384,44 @@ const VocabCardDetailPage: React.FC = () => {
                                 <SectionCard className="vocab-card-detail__synonyms">
                                     <SectionLabel className="vocab-card-detail__section-label">Synonyms</SectionLabel>
                                     <Box className="vocab-card-detail__synonyms-list" sx={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-                                        {entry.synonyms!.map((syn) => (
-                                            <Box
-                                                className="vocab-card-detail__synonym-item"
-                                                key={syn}
-                                                sx={{
-                                                    backgroundColor: COLORS.sectionCard,
-                                                    borderRadius: "8px",
-                                                    padding: "4px 12px",
-                                                }}
-                                            >
-                                                <Typography
-                                                    className="vocab-card-detail__synonym-text"
+                                        {entry.synonyms!.map((syn) => {
+                                            const meta = entry.synonymsMetadata?.[syn];
+                                            const pinyinSyllables = meta?.pronunciation ? meta.pronunciation.split(" ") : [];
+                                            return (
+                                                <Box
+                                                    className="vocab-card-detail__synonym-item"
+                                                    key={syn}
                                                     sx={{
-                                                        fontSize: "1rem",
-                                                        fontWeight: 600,
-                                                        color: COLORS.onSurface,
-                                                        fontFamily: '"Noto Serif SC", "Inter", sans-serif',
+                                                        backgroundColor: COLORS.sectionCard,
+                                                        borderRadius: "8px",
+                                                        padding: "6px 12px",
+                                                        display: "flex",
+                                                        flexDirection: "column",
+                                                        alignItems: "center",
+                                                        gap: "2px",
                                                     }}
                                                 >
-                                                    {syn}
-                                                </Typography>
-                                            </Box>
-                                        ))}
+                                                    <CPCDRow size="md">
+                                                        {[...syn].map((char, ci) => (
+                                                            <CharacterPinyinColorDisplay
+                                                                key={ci}
+                                                                character={char}
+                                                                pinyin={pinyinSyllables[ci] ?? ''}
+                                                                showPinyin={!!pinyinSyllables[ci]}
+                                                                size="md"
+                                                                useToneColor={true}
+                                                                compact
+                                                            />
+                                                        ))}
+                                                    </CPCDRow>
+                                                    {meta?.definition && (
+                                                        <Typography sx={{ fontSize: "0.72rem", color: COLORS.textSecondary, fontFamily: '"Inter", sans-serif', fontStyle: "italic" }}>
+                                                            {meta.definition}
+                                                        </Typography>
+                                                    )}
+                                                </Box>
+                                            );
+                                        })}
                                     </Box>
                                 </SectionCard>
                             )}
@@ -440,18 +444,13 @@ const VocabCardDetailPage: React.FC = () => {
                                                     gap: "4px",
                                                 }}
                                             >
-                                                <Typography
+                                                <SegmentedSentenceDisplay
+                                                    sentence={ex}
+                                                    size="sm"
+                                                    compact
+                                                    flexWrap="wrap"
                                                     className="vocab-card-detail__example-chinese"
-                                                    sx={{
-                                                        fontSize: "1rem",
-                                                        fontWeight: 500,
-                                                        color: COLORS.onSurface,
-                                                        fontFamily: '"Noto Serif SC", "Inter", sans-serif',
-                                                        lineHeight: 1.4,
-                                                    }}
-                                                >
-                                                    {ex.chinese}
-                                                </Typography>
+                                                />
                                                 <Typography
                                                     className="vocab-card-detail__example-english"
                                                     sx={{
@@ -464,19 +463,6 @@ const VocabCardDetailPage: React.FC = () => {
                                                 >
                                                     {ex.english}
                                                 </Typography>
-                                                {ex.usage && (
-                                                    <Typography
-                                                        className="vocab-card-detail__example-usage"
-                                                        sx={{
-                                                            fontSize: "0.72rem",
-                                                            color: COLORS.textSecondary,
-                                                            fontFamily: '"Inter", sans-serif',
-                                                            opacity: 0.7,
-                                                        }}
-                                                    >
-                                                        {ex.usage}
-                                                    </Typography>
-                                                )}
                                             </Box>
                                         ))}
                                     </Box>
@@ -488,45 +474,43 @@ const VocabCardDetailPage: React.FC = () => {
                                 <SectionCard className="vocab-card-detail__related-words">
                                     <SectionLabel className="vocab-card-detail__section-label">Related Words</SectionLabel>
                                     <Box className="vocab-card-detail__related-words-list" sx={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-                                        {entry.relatedWords!.map((rel) => (
-                                            <Box
-                                                className="vocab-card-detail__related-word-item"
-                                                key={rel.id}
-                                                sx={{
-                                                    backgroundColor: COLORS.sectionCard,
-                                                    borderRadius: "8px",
-                                                    padding: "6px 12px",
-                                                    display: "flex",
-                                                    flexDirection: "column",
-                                                    alignItems: "center",
-                                                    gap: "2px",
-                                                }}
-                                            >
-                                                <Typography
-                                                    className="vocab-card-detail__related-word-key"
+                                        {entry.relatedWords!.map((rel) => {
+                                            const pinyinSyllables = rel.pronunciation ? rel.pronunciation.split(" ") : [];
+                                            return (
+                                                <Box
+                                                    className="vocab-card-detail__related-word-item"
+                                                    key={rel.id}
                                                     sx={{
-                                                        fontSize: "1rem",
-                                                        fontWeight: 600,
-                                                        color: COLORS.onSurface,
-                                                        fontFamily: '"Noto Serif SC", "Inter", sans-serif',
+                                                        backgroundColor: COLORS.sectionCard,
+                                                        borderRadius: "8px",
+                                                        padding: "6px 12px",
+                                                        display: "flex",
+                                                        flexDirection: "column",
+                                                        alignItems: "center",
+                                                        gap: "2px",
                                                     }}
                                                 >
-                                                    {rel.entryKey}
-                                                </Typography>
-                                                {rel.sharedCharacters.length > 0 && (
-                                                    <Typography
-                                                        className="vocab-card-detail__related-word-shared"
-                                                        sx={{
-                                                            fontSize: "0.65rem",
-                                                            color: COLORS.textSecondary,
-                                                            fontFamily: '"Inter", sans-serif',
-                                                        }}
-                                                    >
-                                                        shares {rel.sharedCharacters.join(", ")}
-                                                    </Typography>
-                                                )}
-                                            </Box>
-                                        ))}
+                                                    <CPCDRow size="md">
+                                                        {[...rel.entryKey].map((char, ci) => (
+                                                            <CharacterPinyinColorDisplay
+                                                                key={ci}
+                                                                character={char}
+                                                                pinyin={pinyinSyllables[ci] ?? ''}
+                                                                showPinyin={!!pinyinSyllables[ci]}
+                                                                size="md"
+                                                                useToneColor={true}
+                                                                compact
+                                                            />
+                                                        ))}
+                                                    </CPCDRow>
+                                                    {rel.definition && (
+                                                        <Typography sx={{ fontSize: "0.72rem", color: COLORS.textSecondary, fontFamily: '"Inter", sans-serif', fontStyle: "italic" }}>
+                                                            {rel.definition}
+                                                        </Typography>
+                                                    )}
+                                                </Box>
+                                            );
+                                        })}
                                     </Box>
                                 </SectionCard>
                             )}

@@ -16,16 +16,55 @@ export class StarterPacksService {
   ) {}
 
   /**
-   * Get unsorted discoverable cards for a specific language
-   * Returns up to 50 cards that the user has not yet sorted
+   * Get unsorted discoverable cards for a specific language.
+   * Returns up to 50 cards that the user has not yet sorted.
+   * If the stack is empty, skip cards are recycled (deleted from vocabentries)
+   * so they re-enter the discover flow.
    */
   async getStarterPackCards(language: string, userId: string): Promise<DiscoverCard[]> {
+    let rows = await this._fetchUnsortedCardRows(language, userId);
+
+    // When the discover stack is exhausted, recycle skip cards so the user
+    // gets another pass at words they previously deferred.
+    if (rows.length === 0) {
+      await this._clearSkipCards(userId, language);
+      rows = await this._fetchUnsortedCardRows(language, userId);
+    }
+
+    const cards: DiscoverCard[] = rows.map(row => ({
+      id: row.id,
+      entryKey: row.word1,
+      entryValue: Array.isArray(row.definitions) ? row.definitions[0] : row.definitions,
+      pronunciation: row.pronunciation,
+      tone: row.tone,
+      language: row.language,
+      word2: row.word2,
+      script: row.script,
+      hskLevelTag: row.hskLevelTag,
+      breakdown: row.breakdown,
+      synonyms: row.synonyms,
+      exampleSentences: row.exampleSentences,
+      exampleSentencesMetadata: null, // Computed below via on-the-fly computation
+      expansion: row.expansion,
+      expansionLiteralTranslation: row.expansionLiteralTranslation ?? null,
+    }));
+
+    // Compute enrichment metadata on-the-fly in batch queries
+    const withExampleMeta = await this.dictionaryDAL.enrichExampleSentencesMetadataBatch(cards, language);
+    return await this.dictionaryDAL.enrichExpansionMetadataBatch(withExampleMeta, language);
+  }
+
+  /**
+   * Fetch raw unsorted discoverable card rows for a user/language.
+   * A card is "unsorted" if the user has no vocabentry for it.
+   */
+  private async _fetchUnsortedCardRows(language: string, userId: string): Promise<any[]> {
     const client = await db.getClient();
     try {
       const result = await client.query(`
         SELECT de.id, de.word1, de.word2, de.pronunciation, de.tone, de.definitions,
                de.language, de.script, de."hskLevelTag", de.breakdown, de.synonyms,
-               de."exampleSentences", de."partsOfSpeech", de.expansion, de."expansionMetadata"
+               de."exampleSentences", de.expansion, de."expansionLiteralTranslation"
         FROM DictionaryEntries de
         WHERE de.language = $1
           AND de.discoverable = TRUE
@@ -36,24 +75,25 @@ export class StarterPacksService {
         ORDER BY de.id ASC
         LIMIT 50
       `, [language, userId]);
+      return result.rows;
+    } finally {
+      client.release();
+    }
+  }
 
-      return result.rows.map(row => ({
-        id: row.id,
-        entryKey: row.word1,
-        entryValue: Array.isArray(row.definitions) ? row.definitions[0] : row.definitions,
-        pronunciation: row.pronunciation,
-        tone: row.tone,
-        language: row.language,
-        word2: row.word2,
-        script: row.script,
-        hskLevelTag: row.hskLevelTag,
-        breakdown: row.breakdown,
-        synonyms: row.synonyms,
-        exampleSentences: row.exampleSentences,
-        partsOfSpeech: row.partsOfSpeech,
-        expansion: row.expansion,
-        expansionMetadata: row.expansionMetadata,
-      }));
+  /**
+   * Delete all skip-bucket vocabentries for a user/language so those cards
+   * re-enter the discover flow on the next fetch.
+   */
+  private async _clearSkipCards(userId: string, language: string): Promise<void> {
+    const client = await db.getClient();
+    try {
+      const result = await client.query(`
+        DELETE FROM vocabentries
+        WHERE "userId" = $1 AND language = $2 AND "starterPackBucket" = 'skip'
+        RETURNING id
+      `, [userId, language]);
+      console.log(`[StarterPacks] Recycled ${result.rowCount} skip card(s) for userId=${userId} language=${language}`);
     } finally {
       client.release();
     }
@@ -128,26 +168,14 @@ export class StarterPacksService {
         const initialCategory = shouldMarkMastered ? 'Mastered' : 'Unfamiliar';
         const insertResult = await client.query(`
           INSERT INTO VocabEntries (
-            "userId", "entryKey", "entryValue", language, script, pronunciation, tone,
-            "hskLevelTag", breakdown, synonyms, "exampleSentences", "partsOfSpeech",
-            expansion, "expansionMetadata", "starterPackBucket", category
-          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+            "userId", "entryKey", "entryValue", language, "starterPackBucket", category
+          ) VALUES ($1, $2, $3, $4, $5, $6)
           RETURNING id
         `, [
           userId,
           dictEntry.word1,
           dictEntry.definitions[0] || '',
           dictEntry.language,
-          dictEntry.script ?? null,
-          dictEntry.pronunciation ?? null,
-          dictEntry.tone ?? null,
-          dictEntry.hskLevelTag ?? null,
-          dictEntry.breakdown != null ? JSON.stringify(dictEntry.breakdown) : null,
-          dictEntry.synonyms != null ? JSON.stringify(dictEntry.synonyms) : null,
-          dictEntry.exampleSentences != null ? JSON.stringify(dictEntry.exampleSentences) : null,
-          dictEntry.partsOfSpeech != null ? JSON.stringify(dictEntry.partsOfSpeech) : null,
-          dictEntry.expansion ?? null,
-          dictEntry.expansionMetadata != null ? JSON.stringify(dictEntry.expansionMetadata) : null,
           actualBucket,
           initialCategory,
         ]);

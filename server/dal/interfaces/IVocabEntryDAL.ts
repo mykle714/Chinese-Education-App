@@ -32,7 +32,7 @@ export interface IVocabEntryDAL extends IBaseDAL<VocabEntry, VocabEntryCreateDat
     word: string,
     language: string,
     limit?: number
-  ): Promise<Array<{ id: number; entryKey: string; sharedCharacters: string[]; successRate: number | null }>>;
+  ): Promise<Array<{ id: number; entryKey: string; pronunciation: string | null; definition: string | null }>>;
   
   // Statistics
   getUserVocabStats(userId: string): Promise<{

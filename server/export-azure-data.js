@@ -72,27 +72,6 @@ async function exportData() {
     );
     console.log(`✅ Exported ${vocabData.totalRecords} vocabulary entries to vocabentries_export.json`);
 
-    // Export OnDeckVocabSets table (if exists)
-    console.log('🔄 Checking for OnDeckVocabSets table...');
-    try {
-      const onDeckResult = await pool.request().query('SELECT * FROM OnDeckVocabSets ORDER BY updatedAt');
-      const onDeckData = {
-        tableName: 'OnDeckVocabSets',
-        exportDate: new Date().toISOString(),
-        totalRecords: onDeckResult.recordset.length,
-        data: onDeckResult.recordset
-      };
-      
-      fs.writeFileSync(
-        path.join(exportDir, 'ondeckvocabsets_export.json'),
-        JSON.stringify(onDeckData, null, 2),
-        'utf8'
-      );
-      console.log(`✅ Exported ${onDeckData.totalRecords} on-deck vocab sets to ondeckvocabsets_export.json`);
-    } catch (error) {
-      console.log('ℹ️  OnDeckVocabSets table not found or empty - skipping');
-    }
-
     // Create summary report
     const summary = {
       exportDate: new Date().toISOString(),
@@ -100,8 +79,7 @@ async function exportData() {
       targetDatabase: 'PostgreSQL (cow_db)',
       tables: {
         users: usersData.totalRecords,
-        vocabentries: vocabData.totalRecords,
-        ondeckvocabsets: 0 // Will be updated if table exists
+        vocabentries: vocabData.totalRecords
       },
       exportLocation: exportDir,
       nextSteps: [

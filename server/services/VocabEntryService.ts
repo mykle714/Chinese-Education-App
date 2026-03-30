@@ -4,7 +4,6 @@ import { IVocabEntryDAL } from '../dal/interfaces/IVocabEntryDAL.js';
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import { DictionaryService } from './DictionaryService.js';
 import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, HskLevel, Language } from '../types/index.js';
-import { extractTones } from '../utils/pinyin.js';
 import { ValidationError, NotFoundError, BulkResult } from '../types/dal.js';
 import db from '../db.js';
 
@@ -56,57 +55,14 @@ export class VocabEntryService {
     // Create entry with default values (business logic)
     // Use user's selected language or default to Chinese
     const language: Language = user.selectedLanguage || 'zh';
-    
-    let newEntry: VocabEntry = await this.vocabEntryDAL.create({
+
+    const newEntry: VocabEntry = await this.vocabEntryDAL.create({
       userId,
       entryKey: entryData.entryKey.trim(),
       entryValue: entryData.entryValue.trim(),
       language,
-      hskLevelTag: entryData.hskLevelTag || null
     });
-    
-    // Generate enrichment data for Chinese entries
-    if (language === 'zh') {
-      try {
-        // Generate all enrichment fields in parallel
-        const [breakdown, synonyms, exampleSentences, partsOfSpeech, expansion] = await Promise.all([
-          this.dictionaryService.generateBreakdown(entryData.entryKey.trim(), language),
-          this.dictionaryService.findSynonyms(entryData.entryKey.trim(), language),
-          this.dictionaryService.generateExampleSentences(entryData.entryKey.trim(), language),
-          this.dictionaryService.extractPartsOfSpeech(entryData.entryKey.trim(), language),
-          this.dictionaryService.generateExpansion(entryData.entryKey.trim(), language)
-        ]);
 
-        // Generate expansionMetadata if expansion was produced
-        const expansionMetadata = expansion
-          ? await this.dictionaryService.generateBreakdown(expansion, language)
-          : null;
-
-        // Update the entry with all enrichment data
-        if (breakdown || synonyms.length > 0 || exampleSentences.length > 0 || partsOfSpeech.length > 0 || expansion) {
-          await this.vocabEntryDAL.update(newEntry.id, {
-            entryKey: newEntry.entryKey,
-            entryValue: newEntry.entryValue,
-            breakdown,
-            synonyms,
-            exampleSentences,
-            partsOfSpeech,
-            expansion,
-            expansionMetadata
-          } as any);
-          
-          // Fetch updated entry to return with enrichment data
-          const updatedEntry: VocabEntry | null = await this.vocabEntryDAL.findById(newEntry.id);
-          if (updatedEntry) {
-            newEntry = updatedEntry;
-          }
-        }
-      } catch (error: any) {
-        console.error(`Failed to generate enrichment data for entry "${entryData.entryKey}":`, error);
-        // Don't fail the entire create operation if enrichment generation fails
-      }
-    }
-    
     return newEntry;
   }
 
@@ -135,16 +91,10 @@ export class VocabEntryService {
       }
     }
     
-    // Build update fields; compute tone whenever pronunciation is provided
     const updateFields: any = {
       entryKey: updateData.entryKey.trim(),
       entryValue: updateData.entryValue.trim(),
-      hskLevelTag: updateData.hskLevelTag
     };
-    if (updateData.pronunciation !== undefined) {
-      updateFields.pronunciation = updateData.pronunciation;
-      updateFields.tone = updateData.pronunciation ? extractTones(updateData.pronunciation) : null;
-    }
 
     // Update entry
     const updatedEntry = await this.vocabEntryDAL.update(entryId, updateFields);
@@ -194,13 +144,25 @@ export class VocabEntryService {
     if (!entry) {
       throw new NotFoundError('Vocabulary entry not found');
     }
-    
+
     if (entry.userId !== userId) {
       console.log(entry.userId,userId)
       throw new ValidationError('You can only access your own vocabulary entries');
     }
-    
-    return entry;
+
+    // Enrich with computed example sentences and synonym metadata
+    const [withExampleMeta] = await this.dictionaryService.enrichExampleSentencesMetadataBatch([entry]);
+    const [withExpansionMeta] = await this.dictionaryService.enrichExpansionMetadataBatch([withExampleMeta], entry.language);
+    const [enriched] = await this.dictionaryService.enrichEntriesWithSynonymMetadata([withExpansionMeta]);
+
+    // Enrich with related words (library words sharing characters, zh only)
+    const relatedWords = await this.vocabEntryDAL.findRelatedBySharedCharacters(
+      userId,
+      enriched.entryKey,
+      enriched.language,
+      4
+    );
+    return { ...enriched, relatedWords };
   }
 
   /**
@@ -225,9 +187,14 @@ export class VocabEntryService {
       this.vocabEntryDAL.findByUserIdAndLanguage(userId, language, limit, offset),
       this.vocabEntryDAL.countByUserIdAndLanguage(userId, language)
     ]);
-    
+
+    // Enrich with computed example sentences and synonym metadata
+    const withExampleMeta = await this.dictionaryService.enrichExampleSentencesMetadataBatch(entries, language);
+    const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(withExampleMeta, language);
+    const enrichedEntries = await this.dictionaryService.enrichEntriesWithSynonymMetadata(withExpansionMeta);
+
     return {
-      entries,
+      entries: enrichedEntries,
       total,
       hasMore: offset + entries.length < total
     };
@@ -246,14 +213,20 @@ export class VocabEntryService {
       throw new ValidationError('Search term must be at least 2 characters long');
     }
     
-    return await this.vocabEntryDAL.searchEntries(userId, searchTerm.trim(), limit);
+    const results = await this.vocabEntryDAL.searchEntries(userId, searchTerm.trim(), limit);
+    const withExampleMeta = await this.dictionaryService.enrichExampleSentencesMetadataBatch(results);
+    const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(withExampleMeta);
+    return await this.dictionaryService.enrichEntriesWithSynonymMetadata(withExpansionMeta);
   }
 
   /**
    * Get entries by HSK level
    */
   async getEntriesByHskLevel(userId: string, hskLevel: HskLevel): Promise<VocabEntry[]> {
-    return await this.vocabEntryDAL.findByHskLevel(userId, hskLevel);
+    const entries = await this.vocabEntryDAL.findByHskLevel(userId, hskLevel);
+    const withExampleMeta = await this.dictionaryService.enrichExampleSentencesMetadataBatch(entries);
+    const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(withExampleMeta);
+    return await this.dictionaryService.enrichEntriesWithSynonymMetadata(withExpansionMeta);
   }
 
 
@@ -410,7 +383,9 @@ export class VocabEntryService {
    */
   async getRecentEntries(userId: string, days: number = 7): Promise<VocabEntry[]> {
     const date = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-    return await this.vocabEntryDAL.findEntriesCreatedAfter(userId, date);
+    const entries = await this.vocabEntryDAL.findEntriesCreatedAfter(userId, date);
+    const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(entries);
+    return await this.dictionaryService.enrichEntriesWithSynonymMetadata(withExpansionMeta);
   }
 
   /**
@@ -525,6 +500,10 @@ export class VocabEntryService {
     const dalStart = performance.now();
     const entries = await this.vocabEntryDAL.findByTokens(userId, uniqueTokens);
     const dalTime = performance.now() - dalStart;
+
+    // Enrich with computed expansion metadata + synonym metadata
+    const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(entries);
+    const enrichedEntries = await this.dictionaryService.enrichEntriesWithSynonymMetadata(withExpansionMeta);
     const totalServiceTime = performance.now() - serviceStart;
 
     console.log(`[VOCAB-SERVICE] 📊 Service processing completed:`, {
@@ -538,10 +517,21 @@ export class VocabEntryService {
         tokensPerSecond: Math.round(uniqueTokens.length / (totalServiceTime / 1000)),
         entriesPerSecond: Math.round(entries.length / (dalTime / 1000))
       },
-      foundEntries: entries.map(e => ({ id: e.id, key: e.entryKey })).slice(0, 10)
+      foundEntries: entries.map(e => ({ id: e.id, key: e.entryKey })).slice(0, 10),
+      synonymEnrichment: {
+        entriesWithSynonyms: enrichedEntries.filter(e => e.synonyms?.length).length,
+        totalSynonymsResolved: enrichedEntries.reduce((sum, e) => sum + Object.keys(e.synonymsMetadata || {}).length, 0),
+        synonymMetadataPreview: enrichedEntries
+          .filter(e => e.synonymsMetadata)
+          .slice(0, 5)
+          .map(e => ({
+            entry: e.entryKey,
+            synonyms: e.synonymsMetadata
+          }))
+      }
     });
 
-    return entries;
+    return enrichedEntries;
   }
 
   // Private helper methods
@@ -633,10 +623,6 @@ export class VocabEntryService {
       throw new ValidationError('Entry value is too long (maximum 1000 characters)');
     }
     
-    // Validate HSK level if provided
-    if (data.hskLevelTag && !['HSK1', 'HSK2', 'HSK3', 'HSK4', 'HSK5', 'HSK6'].includes(data.hskLevelTag)) {
-      throw new ValidationError('Invalid HSK level. Must be HSK1, HSK2, HSK3, HSK4, HSK5, or HSK6');
-    }
   }
 
   /**
@@ -660,9 +646,5 @@ export class VocabEntryService {
       throw new ValidationError('Entry value is too long (maximum 1000 characters)');
     }
     
-    // Validate HSK level if provided
-    if (data.hskLevelTag && !['HSK1', 'HSK2', 'HSK3', 'HSK4', 'HSK5', 'HSK6'].includes(data.hskLevelTag)) {
-      throw new ValidationError('Invalid HSK level. Must be HSK1, HSK2, HSK3, HSK4, HSK5, or HSK6');
-    }
   }
 }

@@ -1,4 +1,4 @@
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { Box, Typography } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import { useAuth } from "../AuthContext";
@@ -14,7 +14,7 @@ const COLORS = {
     textColor: "#272727",
 };
 
-const Footer = styled(Box)(({ theme }) => ({
+const Footer = styled(Box)(() => ({
     backgroundColor: COLORS.header,
     width: "100%",
     maxWidth: 393,
@@ -25,14 +25,14 @@ const Footer = styled(Box)(({ theme }) => ({
     flexShrink: 0,
 }));
 
-const FooterContent = styled(Box)(({ theme }) => ({
+const FooterContent = styled(Box)(() => ({
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     height: "100%",
 }));
 
-const FooterItem = styled(Box)<{ active?: boolean }>(({ theme, active }) => ({
+const FooterItem = styled(Box)<{ active?: boolean }>(({ active }) => ({
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
@@ -48,7 +48,7 @@ const FooterItem = styled(Box)<{ active?: boolean }>(({ theme, active }) => ({
     },
 }));
 
-const FooterDivider = styled(Box)(({ theme }) => ({
+const FooterDivider = styled(Box)(() => ({
     width: 1,
     height: 32,
     backgroundColor: COLORS.border,
@@ -60,7 +60,6 @@ interface MobileFooterProps {
 
 const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "home" }) => {
     const navigate = useNavigate();
-    const location = useLocation();
     const { user } = useAuth();
 
     const handleHomeClick = () => {

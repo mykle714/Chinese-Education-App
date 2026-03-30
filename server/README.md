@@ -39,11 +39,12 @@ This is the backend API server for the vocabulary application, providing endpoin
 ### Reading Materials
 - `GET /api/texts` - Get all reading texts (protected)
 
-### OnDeck Vocabulary Sets
-- `GET /api/onDeckPage` - Get all on-deck vocab sets (protected)
-- `GET /api/onDeckPage/:featureName` - Get specific on-deck vocab set (protected)
-- `PUT /api/onDeckPage/:featureName` - Create or update on-deck vocab set (protected)
-- `DELETE /api/onDeckPage/:featureName` - Delete on-deck vocab set (protected)
+### OnDeck Vocabulary
+- `GET /api/onDeck/library-cards` - Get all library cards (protected)
+- `GET /api/onDeck/learn-later-cards` - Get all learn-later cards (protected)
+- `GET /api/onDeck/mastered-library-cards` - Get mastered library cards (protected)
+- `GET /api/onDeck/non-mastered-library-cards` - Get non-mastered library cards (protected)
+- `GET /api/onDeck/distributed-working-loop` - Get distributed working loop cards (protected)
 
 ## Project Structure
 

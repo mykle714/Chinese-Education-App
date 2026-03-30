@@ -7,16 +7,7 @@ This feature adds rich contextual information to vocabulary flashcards, includin
 
 ### 1. Database Schema (✅ Complete)
 
-**Main Enrichment Migration**: `database/migrations/22-add-vocab-enrichment-columns.sql`
-
-Added 3 new JSONB columns to `vocabentries` table:
-- `synonyms` - Array of Chinese synonym words
-- `examplesentences` - Array of example sentence objects (renamed to `exampleSentences` in migration 24)
-- `partsofspeech` - Array of possible parts of speech (renamed to `partsOfSpeech` in migration 24)
-
-**Additional Enrichment Migrations**:
-- **Migration 23**: `23-add-expansion-column.sql` - Adds `expansion` TEXT column for fuller word forms
-- **Migration 24**: `24-rename-enrichment-columns.sql` - Renames columns to camelCase for consistency
+Enrichment columns (breakdown, synonyms, exampleSentences, exampleSentencesMetadata, expansion, expansionMetadata, longDefinition, pronunciation, tone, script, hskLevelTag) live in `dictionaryentries`, not `vocabentries`. They are fetched via LEFT JOIN on `entryKey = word1 AND language`. Note: `shortDefinition` is computed at runtime from the `definitions` column via `generateShortDefinition()` in `server/utils/definitions.ts`. `synonymsMetadata` is computed at runtime by `DictionaryService.enrichEntriesWithSynonymMetadata()` which batch-reads pronunciation and first definition from `dictionaryentries` for each synonym word — neither is stored in the database.
 
 ### 2. TypeScript Types (✅ Complete)
 **Files Updated**:
@@ -27,17 +18,17 @@ Added 3 new JSONB columns to `vocabentries` table:
 ```typescript
 {
   synonyms?: string[];
-  exampleSentences?: Array<{ 
-    chinese: string; 
-    english: string; 
-    usage: string 
+  exampleSentences?: Array<{
+    chinese: string;
+    english: string;
+    usage: string
   }>;
-  partsOfSpeech?: string[];
-  relatedWords?: Array<{ 
-    id: number; 
-    entryKey: string; 
-    sharedCharacters: string[]; 
-    successRate: number | null 
+  exampleSentencesMetadata?: Record<string, { pronunciation: string }> | null;
+  relatedWords?: Array<{
+    id: number;
+    entryKey: string;
+    sharedCharacters: string[];
+    successRate: number | null
   }>;
 }
 ```
@@ -67,7 +58,6 @@ When creating new Chinese vocab entries, automatically generates and stores:
 - Character breakdown
 - Synonyms
 - Example sentences
-- Parts of speech
 
 #### OnDeckVocabService
 **File**: `server/services/OnDeckVocabService.ts`
@@ -117,9 +107,14 @@ docker-compose exec backend-local node server/scripts/backfill-enrichment.js
 ]
 ```
 
-### Parts of Speech
+### exampleSentencesMetadata
 ```json
-["verb", "noun"]
+{
+  "我": { "pronunciation": "wǒ" },
+  "很": { "pronunciation": "hěn" },
+  "喜": { "pronunciation": "xǐ" },
+  "欢": { "pronunciation": "huān" }
+}
 ```
 
 ### Related Words (Computed Dynamically)
@@ -163,12 +158,15 @@ When fetching flashcards from `/api/ondeck/working-loop`, each Chinese vocab ent
   "synonyms": ["喜爱", "热爱"],
   "exampleSentences": [
     {
-      "chinese": "我很喜欢喜欢。",
-      "english": "I really like to like.",
+      "chinese": "我很喜欢看书。",
+      "english": "I really like to read books.",
       "usage": "object"
     }
   ],
-  "partsOfSpeech": ["verb"],
+  "exampleSentencesMetadata": {
+    "我": { "pronunciation": "wǒ" },
+    "很": { "pronunciation": "hěn" }
+  },
   "relatedWords": [
     {
       "id": 123,
@@ -190,21 +188,20 @@ When fetching flashcards from `/api/ondeck/working-loop`, each Chinese vocab ent
 ### Next Steps for Frontend
 The data is now available in `currentEntry` on FlashcardsLearnPage. To display:
 
-1. **Synonyms Tab**: Show `currentEntry.synonyms`
-2. **Example Sentences Tab**: Show `currentEntry.exampleSentences`
-3. **Parts of Speech**: Display `currentEntry.partsOfSpeech` in info section
-4. **Related Words Tab**: Show `currentEntry.relatedWords` with shared character highlighting
+1. **Synonyms**: Show `currentEntry.synonyms`
+2. **Example Sentences**: Show `currentEntry.exampleSentences` with per-character `CharacterPinyinColorDisplay` using `exampleSentencesMetadata`
+3. **Related Words**: Show `currentEntry.relatedWords` with shared character highlighting
 
 ## Testing
 
 ### Verify Database Schema
 ```bash
-docker-compose exec postgres-local psql -U cow_user -d cow_db -c "\d vocabentries" | grep -E "(synonyms|examplesentences|partsofspeech)"
+docker-compose exec postgres-local psql -U cow_user -d cow_db -c "\d dictionaryentries" | grep -E "(synonyms|exampleSentences|longDefinition)"
 ```
 
 ### Verify Data Populated
 ```bash
-docker-compose exec postgres-local psql -U cow_user -d cow_db -c "SELECT id, \"entryKey\", synonyms, partsofspeech FROM vocabentries WHERE language = 'zh' LIMIT 3;"
+docker-compose exec postgres-local psql -U cow_user -d cow_db -c "SELECT word1, language, synonyms, \"exampleSentencesMetadata\" FROM dictionaryentries WHERE language = 'zh' LIMIT 3;"
 ```
 
 ### Test API Response
@@ -240,13 +237,10 @@ The response should include enrichment fields for Chinese cards.
 
 ## Migration History
 
-- **Migration 21**: Added `breakdown` column for character analysis
-- **Migration 22**: Added `synonyms`, `examplesentences`, `partsofspeech` columns
-- **Migration 23**: Added `expansion` column for fuller word forms (e.g., 不知不觉 → 不知道不觉得)
-- **Migration 24**: Renamed enrichment columns to camelCase:
-  - `examplesentences` → `exampleSentences`
-  - `partsofspeech` → `partsOfSpeech`
-- **Migration 25**: Added `shortDefinition` and `longDefinition` columns to `dictionaryentries`
+- **Migrations 21–24**: Historically added and renamed enrichment columns (`breakdown`, `synonyms`, `exampleSentences`, `partsOfSpeech`, `expansion`) on `vocabentries`. Those columns have since been removed from `vocabentries`; all enrichment data now lives in `dictionaryentries`.
+- **exampleSentencesMetadata**: Added to `dictionaryentries`; backfilled via `server/scripts/backfill-example-sentences-metadata.js`. `partsOfSpeech` removed from all application code.
+- **Migration 25**: Added `longDefinition` column to `dictionaryentries`
+- **Migration 27**: Dropped `shortDefinition` column — now computed at runtime via `generateShortDefinition()` in `server/utils/definitions.ts`
 
 ## Short and Long Definitions (dictionaryentries)
 
@@ -254,10 +248,10 @@ The response should include enrichment fields for Chinese cards.
 
 | Column | Type | Table | Derivation |
 |--------|------|-------|------------|
-| `shortDefinition` | TEXT (nullable) | `dictionaryentries` | Deterministic — shortest gloss extracted from `definitions` array |
+| `shortDefinition` | *Not stored* | Computed at runtime | Deterministic — shortest gloss extracted from `definitions` array via `server/utils/definitions.ts` |
 | `longDefinition` | TEXT (nullable) | `dictionaryentries` | AI-generated via Claude Haiku, 25–75 characters |
 
-### shortDefinition Algorithm
+### shortDefinition Algorithm (server/utils/definitions.ts)
 
 1. For each definition in the array, skip entries starting with `(` or `CL:` (grammatical/classifier notes)
 2. Split remaining definitions by `"; "`
@@ -321,11 +315,6 @@ export interface VocabEntry {
 
 ## Files Modified
 
-### Backend Migrations
-- `database/migrations/22-add-vocab-enrichment-columns.sql` - Initial enrichment fields
-- `database/migrations/23-add-expansion-column.sql` - Expansion field for word forms
-- `database/migrations/24-rename-enrichment-columns.sql` - Column name normalization
-
 ### Backend Code
 - `server/types/index.ts`
 - `server/dal/interfaces/IVocabEntryDAL.ts`
@@ -340,7 +329,6 @@ export interface VocabEntry {
 
 ## Completion Status
 
-✅ Database schema
 ✅ Backend types
 ✅ Service layer implementation
 ✅ DAL implementation  

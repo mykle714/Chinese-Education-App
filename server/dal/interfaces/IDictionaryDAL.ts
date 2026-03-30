@@ -41,4 +41,30 @@ export interface IDictionaryDAL extends IBaseDAL<DictionaryEntry, DictionaryEntr
    * Get total count of dictionary entries
    */
   getTotalCount(): Promise<number>;
+
+  /**
+   * Enrich each example sentence in a batch of entries with:
+   * - `_segments` (segment list)
+   * - `segmentMetadata` (per-segment pronunciation + definition)
+   * Merges all substring lookups across all entries and sentences into one DB query.
+   *
+   * @param entries - Array of objects with optional `exampleSentences` field
+   * @param language - Language filter for dictionary lookups
+   */
+  enrichExampleSentencesMetadataBatch<T extends {
+    exampleSentences?: Array<{ chinese: string; english: string; [key: string]: any }> | null;
+  }>(entries: T[], language?: string): Promise<T[]>;
+
+  /**
+   * Enrich entries with per-character expansion metadata derived from dictionary lookups.
+   * The metadata shape is:
+   * - `expansionMetadata: Record<char, { pronunciation?, definition? }>`
+   *
+   * @param entries - Array of objects with optional `expansion` field
+   * @param language - Language filter for dictionary lookups
+   */
+  enrichExpansionMetadataBatch<T extends {
+    expansion?: string | null;
+    expansionLiteralTranslation?: string | null;
+  }>(entries: T[], language?: string): Promise<T[]>;
 }

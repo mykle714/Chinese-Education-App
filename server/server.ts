@@ -356,69 +356,6 @@ app.get('/api/onDeck/distributed-working-loop', authenticateToken, async (req, r
   await onDeckVocabController.getDistributedWorkingLoop(req, res);
 });
 
-// Get all on-deck vocab sets for authenticated user (protected route)
-// @ts-ignore
-app.get('/api/onDeckPage', authenticateToken, async (req, res) => {
-  console.log('🔄 Using NEW DAL architecture for OnDeck getAllSets');
-  await onDeckVocabController.getAllSets(req, res);
-});
-
-// Get a specific on-deck vocab set by feature name (protected route)
-// @ts-ignore
-app.get('/api/onDeckPage/:featureName', authenticateToken, async (req, res) => {
-  console.log('🔄 Using NEW DAL architecture for OnDeck getSetByFeatureName');
-  await onDeckVocabController.getSetByFeatureName(req, res);
-});
-
-// Create or update an on-deck vocab set (protected route)
-// @ts-ignore
-app.put('/api/onDeckPage/:featureName', authenticateToken, async (req, res) => {
-  console.log('🔄 Using NEW DAL architecture for OnDeck createOrUpdateSet');
-  await onDeckVocabController.createOrUpdateSet(req, res);
-});
-
-// Delete an on-deck vocab set (protected route)
-// @ts-ignore
-app.delete('/api/onDeckPage/:featureName', authenticateToken, async (req, res) => {
-  console.log('🔄 Using NEW DAL architecture for OnDeck deleteSet');
-  await onDeckVocabController.deleteSet(req, res);
-});
-
-// Get user's on-deck set statistics (protected route)
-// @ts-ignore
-app.get('/api/onDeckPage/stats', authenticateToken, async (req, res) => {
-  console.log('🔄 Using NEW DAL architecture for OnDeck getUserStats');
-  await onDeckVocabController.getUserStats(req, res);
-});
-
-// Get all feature names for the user (protected route)
-// @ts-ignore
-app.get('/api/onDeckPage/features', authenticateToken, async (req, res) => {
-  console.log('🔄 Using NEW DAL architecture for OnDeck getFeatureNames');
-  await onDeckVocabController.getFeatureNames(req, res);
-});
-
-// Add entries to an existing set (protected route)
-// @ts-ignore
-app.post('/api/onDeckPage/:featureName/add', authenticateToken, async (req, res) => {
-  console.log('🔄 Using NEW DAL architecture for OnDeck addEntriesToSet');
-  await onDeckVocabController.addEntriesToSet(req, res);
-});
-
-// Remove entries from an existing set (protected route)
-// @ts-ignore
-app.post('/api/onDeckPage/:featureName/remove', authenticateToken, async (req, res) => {
-  console.log('🔄 Using NEW DAL architecture for OnDeck removeEntriesFromSet');
-  await onDeckVocabController.removeEntriesFromSet(req, res);
-});
-
-// Clear all entries from a set (protected route)
-// @ts-ignore
-app.post('/api/onDeckPage/:featureName/clear', authenticateToken, async (req, res) => {
-  console.log('🔄 Using NEW DAL architecture for OnDeck clearSet');
-  await onDeckVocabController.clearSet(req, res);
-});
-
 // Work Points API Routes - USING NEW DAL ARCHITECTURE
 
 // Increment work points by 1
@@ -458,6 +395,57 @@ app.get('/api/leaderboard/user/:userId', authenticateToken, async (req, res) => 
 
 // Flashcards API Routes - USING NEW DAL ARCHITECTURE
 
+const DEFAULT_FLASHCARD_TIMEZONE = 'UTC';
+
+function resolveUserTimeZone(rawTimeZone: unknown): string {
+  if (typeof rawTimeZone !== 'string' || rawTimeZone.trim().length === 0) {
+    return DEFAULT_FLASHCARD_TIMEZONE;
+  }
+
+  const timeZone = rawTimeZone.trim();
+  try {
+    // Validate IANA timezone string
+    new Intl.DateTimeFormat('en-US', { timeZone }).format(new Date());
+    return timeZone;
+  } catch {
+    return DEFAULT_FLASHCARD_TIMEZONE;
+  }
+}
+
+function calculateCategoryFromMarkHistory(markHistory: ReviewMark[]): FlashcardCategory {
+  const last8Marks: ReviewMark[] = markHistory.slice(-8);
+  const last8Correct: number = last8Marks.filter(m => m.isCorrect).length;
+
+  if (last8Correct <= 2) {
+    return FlashcardCategory.UNFAMILIAR;
+  } else if (last8Correct <= 5) {
+    return FlashcardCategory.TARGET;
+  } else if (last8Correct <= 7) {
+    return FlashcardCategory.COMFORTABLE;
+  }
+
+  return FlashcardCategory.MASTERED;
+}
+
+function calculateSuccessRates(markHistory: ReviewMark[], totalMarkCount: number, totalCorrectCount: number): {
+  totalSuccessRate: number;
+  last8SuccessRate: number;
+  last16SuccessRate: number;
+} {
+  const totalSuccessRate = totalMarkCount > 0 ? totalCorrectCount / totalMarkCount : 0;
+  const last8Marks: ReviewMark[] = markHistory.slice(-8);
+  const last8Correct: number = last8Marks.filter(m => m.isCorrect).length;
+  const last8SuccessRate = last8Marks.length > 0 ? last8Correct / last8Marks.length : 0;
+  const last16Correct: number = markHistory.filter(m => m.isCorrect).length;
+  const last16SuccessRate = markHistory.length > 0 ? last16Correct / markHistory.length : 0;
+
+  return {
+    totalSuccessRate,
+    last8SuccessRate,
+    last16SuccessRate
+  };
+}
+
 // Mark a flashcard as correct or incorrect (protected route)
 // @ts-ignore
 app.post('/api/flashcards/mark', authenticateToken, async (req, res) => {
@@ -466,12 +454,15 @@ app.post('/api/flashcards/mark', authenticateToken, async (req, res) => {
   try {
     const userId = (req as any).user?.userId;
     const { cardId, isCorrect } = req.body;
+    const userTimeZone = resolveUserTimeZone(req.headers['x-user-timezone']);
 
     if (!userId) {
+      client.release();
       return res.status(401).json({ error: 'Unauthorized', code: 'ERR_UNAUTHORIZED' });
     }
 
     if (typeof cardId !== 'number' || typeof isCorrect !== 'boolean') {
+      client.release();
       return res.status(400).json({ 
         error: 'Invalid request body. Expected { cardId: number, isCorrect: boolean }',
         code: 'ERR_INVALID_REQUEST'
@@ -498,12 +489,11 @@ app.post('/api/flashcards/mark', authenticateToken, async (req, res) => {
     // Get current counts and rates
     const currentTotalMarkCount: number = entryResult.rows[0].totalMarkCount || 0;
     const currentTotalCorrectCount: number = entryResult.rows[0].totalCorrectCount || 0;
-    const currentTotalSuccessRate: number | null = entryResult.rows[0].totalSuccessRate;
-    const currentLast8SuccessRate: number | null = entryResult.rows[0].last8SuccessRate;
-    const currentLast16SuccessRate: number | null = entryResult.rows[0].last16SuccessRate;
-    
     // CAPTURE THE CATEGORY BEFORE THE MARK IS APPLIED
     const categoryBeforeMark: string = entryResult.rows[0].category || 'Unfamiliar';
+
+    // Preserve the displaced oldest mark when history is already at capacity.
+    const displacedMark: ReviewMark | null = existingHistory.length >= 16 ? existingHistory[0] : null;
 
     // Add new mark
     const newMark: ReviewMark = {
@@ -518,31 +508,12 @@ app.post('/api/flashcards/mark', authenticateToken, async (req, res) => {
     const newTotalMarkCount: number = currentTotalMarkCount + 1;
     const newTotalCorrectCount: number = currentTotalCorrectCount + (isCorrect ? 1 : 0);
 
-    // Calculate success rates
-    const newTotalSuccessRate: number = newTotalCorrectCount / newTotalMarkCount;
-    
-    // Calculate last8SuccessRate from last 8 marks
-    const last8Marks: ReviewMark[] = updatedHistory.slice(-8);
-    const last8Correct: number = last8Marks.filter(m => m.isCorrect).length;
-    const newLast8SuccessRate: number = last8Marks.length > 0 ? last8Correct / last8Marks.length : 0;
-    
-    // Calculate last16SuccessRate from all available marks (up to 16)
-    const last16Correct: number = updatedHistory.filter(m => m.isCorrect).length;
-    const newLast16SuccessRate: number = updatedHistory.length > 0 ? last16Correct / updatedHistory.length : 0;
-
-    // Determine category based on last 8 performance (with zero-padding)
-    // Always treat as out of 8, padding remaining spots with incorrect marks
-    let category: FlashcardCategory;
-    
-    if (last8Correct <= 2) {
-      category = FlashcardCategory.UNFAMILIAR;
-    } else if (last8Correct <= 5) {
-      category = FlashcardCategory.TARGET;
-    } else if (last8Correct <= 7) {
-      category = FlashcardCategory.COMFORTABLE;
-    } else { // last8Correct === 8
-      category = FlashcardCategory.MASTERED;
-    }
+    const {
+      totalSuccessRate: newTotalSuccessRate,
+      last8SuccessRate: newLast8SuccessRate,
+      last16SuccessRate: newLast16SuccessRate
+    } = calculateSuccessRates(updatedHistory, newTotalMarkCount, newTotalCorrectCount);
+    const category: FlashcardCategory = calculateCategoryFromMarkHistory(updatedHistory);
 
     // Update the database with new mark history, counts, success rates, and category
     const updateQuery = `
@@ -572,7 +543,7 @@ app.post('/api/flashcards/mark', authenticateToken, async (req, res) => {
 
     // If correct, return a card from the same category as BEFORE the mark (with fallback priority)
     if (isCorrect) {
-      const newCard = await onDeckVocabService.getNextLibraryCardWithFallback(userId, categoryBeforeMark);
+      const newCard = await onDeckVocabService.getNextLibraryCardWithFallback(userId, categoryBeforeMark, userTimeZone);
       
       if (!newCard) {
         client.release();
@@ -588,6 +559,8 @@ app.post('/api/flashcards/mark', authenticateToken, async (req, res) => {
       return res.status(200).json({ 
         success: true,
         category,
+        markTimestamp: newMark.timestamp,
+        displacedMark,
         newCard 
       });
     } else {
@@ -595,7 +568,9 @@ app.post('/api/flashcards/mark', authenticateToken, async (req, res) => {
       client.release();
       return res.status(200).json({ 
         success: true,
-        category
+        category,
+        markTimestamp: newMark.timestamp,
+        displacedMark
       });
     }
   } catch (error: any) {
@@ -604,6 +579,127 @@ app.post('/api/flashcards/mark', authenticateToken, async (req, res) => {
     res.status(500).json({ 
       error: error.message || 'Failed to mark flashcard',
       code: error.code || 'ERR_MARK_FAILED'
+    });
+  }
+});
+
+// Undo the most recently saved flashcard mark (protected route)
+// @ts-ignore
+app.post('/api/flashcards/undo-last-mark', authenticateToken, async (req, res) => {
+  const client = await db.getClient();
+  try {
+    const userId = (req as any).user?.userId;
+    const { cardId, markTimestamp, displacedMark } = req.body || {};
+
+    if (!userId) {
+      client.release();
+      return res.status(401).json({ error: 'Unauthorized', code: 'ERR_UNAUTHORIZED' });
+    }
+
+    if (typeof cardId !== 'number' || typeof markTimestamp !== 'string') {
+      client.release();
+      return res.status(400).json({
+        error: 'Invalid request body. Expected { cardId: number, markTimestamp: string }',
+        code: 'ERR_INVALID_REQUEST'
+      });
+    }
+
+    await client.query('BEGIN');
+
+    const entryQuery = 'SELECT "markHistory", "totalMarkCount", "totalCorrectCount" FROM vocabentries WHERE id = $1 AND "userId" = $2 FOR UPDATE';
+    const entryResult = await client.query(entryQuery, [cardId, userId]);
+
+    if (entryResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      client.release();
+      return res.status(404).json({
+        error: 'Vocab entry not found',
+        code: 'ERR_ENTRY_NOT_FOUND'
+      });
+    }
+
+    const existingHistory: ReviewMark[] = Array.isArray(entryResult.rows[0].markHistory) ? entryResult.rows[0].markHistory : [];
+    if (existingHistory.length === 0) {
+      await client.query('ROLLBACK');
+      client.release();
+      return res.status(409).json({
+        error: 'No mark history available to undo',
+        code: 'ERR_UNDO_NOT_AVAILABLE'
+      });
+    }
+
+    const lastMark: ReviewMark = existingHistory[existingHistory.length - 1];
+    if (lastMark.timestamp !== markTimestamp) {
+      await client.query('ROLLBACK');
+      client.release();
+      return res.status(409).json({
+        error: 'Undo target does not match the latest mark',
+        code: 'ERR_UNDO_TARGET_MISMATCH'
+      });
+    }
+
+    let revertedHistory: ReviewMark[] = existingHistory.slice(0, -1);
+    const shouldRestoreDisplacedMark =
+      displacedMark &&
+      typeof displacedMark.timestamp === 'string' &&
+      typeof displacedMark.isCorrect === 'boolean';
+
+    if (shouldRestoreDisplacedMark) {
+      revertedHistory = [displacedMark as ReviewMark, ...revertedHistory].slice(0, 16);
+    }
+
+    const currentTotalMarkCount: number = entryResult.rows[0].totalMarkCount || 0;
+    const currentTotalCorrectCount: number = entryResult.rows[0].totalCorrectCount || 0;
+    const newTotalMarkCount: number = Math.max(0, currentTotalMarkCount - 1);
+    const newTotalCorrectCount: number = Math.max(0, currentTotalCorrectCount - (lastMark.isCorrect ? 1 : 0));
+    const category: FlashcardCategory = calculateCategoryFromMarkHistory(revertedHistory);
+    const {
+      totalSuccessRate,
+      last8SuccessRate,
+      last16SuccessRate
+    } = calculateSuccessRates(revertedHistory, newTotalMarkCount, newTotalCorrectCount);
+
+    const updateQuery = `
+      UPDATE vocabentries
+      SET "markHistory" = $1,
+          "totalMarkCount" = $2,
+          "totalCorrectCount" = $3,
+          "totalSuccessRate" = $4,
+          "last8SuccessRate" = $5,
+          "last16SuccessRate" = $6,
+          category = $7
+      WHERE id = $8 AND "userId" = $9
+    `;
+
+    await client.query(updateQuery, [
+      JSON.stringify(revertedHistory),
+      newTotalMarkCount,
+      newTotalCorrectCount,
+      totalSuccessRate,
+      last8SuccessRate,
+      last16SuccessRate,
+      category,
+      cardId,
+      userId
+    ]);
+
+    await client.query('COMMIT');
+    client.release();
+    return res.status(200).json({
+      success: true,
+      category
+    });
+  } catch (error: any) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackError) {
+      console.error('Undo rollback failed:', rollbackError);
+    }
+    console.error('Error undoing flashcard mark:', error);
+    client.release();
+    return res.status(500).json({
+      error: error.message || 'Failed to undo flashcard mark',
+      code: error.code || 'ERR_UNDO_MARK_FAILED'
     });
   }
 });

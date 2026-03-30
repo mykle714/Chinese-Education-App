@@ -26,7 +26,7 @@ const COLORS = {
 };
 
 // Styled Components
-const IPhoneFrame = styled(Box)(({ theme }) => ({
+const IPhoneFrame = styled(Box)(() => ({
     backgroundColor: COLORS.background,
     borderRadius: "20px",
     overflow: "hidden",
@@ -40,7 +40,7 @@ const IPhoneFrame = styled(Box)(({ theme }) => ({
     maxHeight: "932px",
 }));
 
-const Header = styled(Box)(({ theme }) => ({
+const Header = styled(Box)(() => ({
     backgroundColor: COLORS.header,
     minHeight: 96,
     display: "flex",
@@ -49,7 +49,7 @@ const Header = styled(Box)(({ theme }) => ({
     gap: 10,
 }));
 
-const Toolbar = styled(Box)(({ theme }) => ({
+const Toolbar = styled(Box)(() => ({
     display: "flex",
     gap: 10,
     width: "100%",
@@ -59,7 +59,7 @@ const Toolbar = styled(Box)(({ theme }) => ({
     position: "relative",
 }));
 
-const ContentArea = styled(Box)(({ theme }) => ({
+const ContentArea = styled(Box)(() => ({
     flex: 1,
     overflowY: "auto",
     overflowX: "hidden",
@@ -68,7 +68,7 @@ const ContentArea = styled(Box)(({ theme }) => ({
     alignItems: "center",
 }));
 
-const BucketsContainer = styled(Box)(({ theme }) => ({
+const BucketsContainer = styled(Box)(() => ({
     width: 393,
     height: 140,
     position: "relative",
@@ -80,30 +80,31 @@ const BucketsContainer = styled(Box)(({ theme }) => ({
     padding: "0 20px",
 }));
 
-const StudyAllButton = styled(Button)(({ theme }) => ({
-    backgroundColor: COLORS.border,
-    color: COLORS.background,
+const StudyAllButton = styled(Button)(() => ({
+    backgroundColor: COLORS.header,
+    color: COLORS.onSurface,
     borderRadius: "8px",
+    border: `2px solid ${COLORS.border}`,
     padding: "36px 32px",
-    fontSize: 16,
+    fontSize: 32,
     fontWeight: 500,
     fontFamily: '"Inter", sans-serif',
     textTransform: "none",
     boxShadow: "2px 4px 4px rgba(0, 0, 0, 0.25)",
     width: "100%",
     "&:hover": {
-        backgroundColor: COLORS.onSurface,
+        backgroundColor: COLORS.header,
     },
 }));
 
-const LineSeparator = styled(Box)(({ theme }) => ({
+const LineSeparator = styled(Box)(() => ({
     width: 280,
     height: 1,
     backgroundColor: COLORS.border,
     margin: "0 auto",
 }));
 
-const CardsPreviewContainer = styled(Box)(({ theme }) => ({
+const CardsPreviewContainer = styled(Box)(() => ({
     width: 393,
     display: "flex",
     flexWrap: "wrap",
@@ -117,8 +118,6 @@ interface DeckCardProps {
     label: string;
     mainColor: string;
     accentColor: string;
-    x: number;
-    y: number;
     onClick: () => void;
 }
 
@@ -196,8 +195,6 @@ const DeckCardComponent: React.FC<DeckCardProps> = ({
     label,
     mainColor,
     accentColor,
-    x,
-    y,
     onClick,
 }) => {
     return (
@@ -230,30 +227,6 @@ const FlashcardsDecksPage: React.FC = () => {
     const [masteredEntries, setMasteredEntries] = useState<VocabEntry[]>([]);
     const [masteredLoading, setMasteredLoading] = useState(true);
     const [masteredError, setMasteredError] = useState<string | null>(null);
-    const [userLanguage, setUserLanguage] = useState<string>('zh'); // Default to Chinese
-
-    // Fetch user's selected language
-    useEffect(() => {
-        const fetchUserLanguage = async () => {
-            try {
-                const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
-                    credentials: 'include',
-                });
-                if (response.ok) {
-                    const userData = await response.json();
-                    if (userData.selectedLanguage) {
-                        setUserLanguage(userData.selectedLanguage);
-                    }
-                }
-            } catch (err) {
-                console.error('Error fetching user language:', err);
-            }
-        };
-
-        if (token) {
-            fetchUserLanguage();
-        }
-    }, [token]);
 
     // Fetch non-mastered library cards from OnDeck vocab sets
     useEffect(() => {
@@ -488,8 +461,6 @@ const FlashcardsDecksPage: React.FC = () => {
                             label="Unfamiliar"
                             mainColor={COLORS.redMain}
                             accentColor={COLORS.redAccent}
-                            x={0}
-                            y={0}
                             onClick={() => handleDeckClick("Unfamiliar")}
                         />
 
@@ -498,8 +469,6 @@ const FlashcardsDecksPage: React.FC = () => {
                             label="Target"
                             mainColor={COLORS.yellowMain}
                             accentColor={COLORS.yellowAccent}
-                            x={0}
-                            y={0}
                             onClick={() => handleDeckClick("Target")}
                         />
 
@@ -508,8 +477,6 @@ const FlashcardsDecksPage: React.FC = () => {
                             label="Comfortable"
                             mainColor={COLORS.greenMain}
                             accentColor={COLORS.greenAccent}
-                            x={0}
-                            y={0}
                             onClick={() => handleDeckClick("Comfortable")}
                         />
 
@@ -518,8 +485,6 @@ const FlashcardsDecksPage: React.FC = () => {
                             label="Mastered"
                             mainColor={COLORS.blueMain}
                             accentColor={COLORS.blueAccent}
-                            x={0}
-                            y={0}
                             onClick={() => handleDeckClick("Mastered")}
                         />
                     </BucketsContainer>

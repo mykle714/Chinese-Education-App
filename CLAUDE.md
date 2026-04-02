@@ -128,3 +128,4 @@ For design guidelines:
 - Describe the design in terms of which layer each component belongs to.
 - When you present information to the user, use nice formatting techniques to make the content easily digestible for the user.
 - Always use descriptive class names for all HTML components
+- When a terminal command should be run on this machine, do not tell the user to run it, you should try to run it yourself first.

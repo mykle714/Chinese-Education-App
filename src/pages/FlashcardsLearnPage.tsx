@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../AuthContext";
 import { useWorkPoints } from "../hooks/useWorkPoints";
@@ -10,6 +10,8 @@ import {
     IconButton,
     CircularProgress,
     Badge,
+    useMediaQuery,
+    useTheme,
 } from "@mui/material";
 import { styled, alpha } from "@mui/material/styles";
 import { useDrag } from "@use-gesture/react";
@@ -102,17 +104,12 @@ const CARD_FACE_JUSTIFY = 'flex-start';
 // Styled Components
 const IPhoneFrame = styled(Box)(() => ({
     backgroundColor: COLORS.background,
-    border: `1px solid ${COLORS.border}`,
-    borderRadius: "20px",
+    borderRadius: 0,
     overflow: "hidden",
     display: "flex",
     flexDirection: "column",
-    maxWidth: 393,
-    width: "100%",
-    margin: "0 auto",
+    width: "100vw",
     height: "100vh",
-    minHeight: "852px",
-    maxHeight: "932px",
 }));
 
 const Header = styled(Box)(() => ({
@@ -278,6 +275,8 @@ const BreakdownLineItemComponent: React.FC<{
 const FlashcardsLearnPage: React.FC = () => {
     const navigate = useNavigate();
     const { token } = useAuth();
+    const theme = useTheme();
+    const isMobile = useMediaQuery(theme.breakpoints.down("md"));
     const [searchParams] = useSearchParams();
     const selectedCategory: string | null = searchParams.get('category');
     const [workingLoop, setWorkingLoop] = useState<VocabEntry[]>([]);
@@ -346,8 +345,9 @@ const FlashcardsLearnPage: React.FC = () => {
                 distance: 50, // Minimum distance to trigger swipe
                 velocity: 0.3,
             },
-            preventDefault: true, // Prevent default behavior
+            preventDefault: true,
             filterTaps: true, // Don't trigger on simple taps
+            eventOptions: { passive: false }, // Required so preventDefault() is honoured on touch events
         }
     );
 
@@ -570,19 +570,32 @@ const FlashcardsLearnPage: React.FC = () => {
         setIsDragging(true);
     };
 
-    const handleTouchMove = (e: React.TouchEvent) => {
+    const handleTouchMove = useCallback((e: TouchEvent) => {
         if (!isDragging || isAnimating) return;
 
-        // Prevent default to avoid scrolling while dragging
+        // Prevent default to avoid scrolling while dragging the card.
+        // Must be a native (non-React) listener registered with { passive: false }
+        // so that preventDefault() is actually honoured by the browser.
         e.preventDefault();
 
         const touch = e.touches[0];
         const deltaX = touch.clientX - dragStart.current.x;
         const deltaY = touch.clientY - dragStart.current.y;
         setDragPosition({ x: deltaX, y: deltaY });
-    };
+    }, [isDragging, isAnimating]);
 
-    const handleTouchEnd = () => {
+    // Attach touchmove as a non-passive native listener so preventDefault works
+    useEffect(() => {
+        const el = cardRef.current;
+        if (!el) return;
+        el.addEventListener('touchmove', handleTouchMove, { passive: false });
+        return () => el.removeEventListener('touchmove', handleTouchMove);
+    }, [handleTouchMove]);
+
+    const handleTouchEnd = (e: React.TouchEvent) => {
+        // Prevent the browser from firing synthetic mouse events (mousedown/mouseup/click)
+        // after this touch interaction, which would cause a double-flip bug.
+        e.preventDefault();
         if (!isDragging || isAnimating) return;
 
         setIsDragging(false);
@@ -655,34 +668,30 @@ const FlashcardsLearnPage: React.FC = () => {
         }
     };
 
-    // Debug logging - only log when card actually changes
-    useEffect(() => {
-        if (workingLoop.length > 0) {
-            const entry: VocabEntry = workingLoop[currentIndex];
-            console.log('Current card:', {
-                id: entry.id,
-                entryKey: entry.entryKey,
-                entryValue: entry.entryValue,
-                pronunciation: entry.pronunciation,
-                isFlipped: isFlipped,
-                shouldShowPronunciation: !isFlipped && entry.pronunciation
-            });
-            console.log('Enrichment data:', {
-                breakdown: entry.breakdown ?? 'none',
-                synonyms: entry.synonyms ?? 'none',
-                synonymsMetadata: entry.synonymsMetadata ?? 'none',
-                exampleSentences: entry.exampleSentences ?? 'none',
-                relatedWords: entry.relatedWords ?? 'none',
-                expansion: entry.expansion ?? 'none',
-                expansionMetadata: entry.expansionMetadata ?? 'none',
-                expansionLiteralTranslation: entry.expansionLiteralTranslation ?? 'none',
-            });
-        }
-    }, [currentIndex, isFlipped, workingLoop]);
+
+    // On desktop the Layout wraps this page normally; restore the phone-frame look
+    const desktopFrameSx = !isMobile ? {
+        maxWidth: 393,
+        width: "100%",
+        borderRadius: "20px",
+        margin: "0 auto",
+        minHeight: "852px",
+        maxHeight: "932px",
+    } : {};
 
     if (loading) {
         return (
-            <Box className="mobile-demo-wrapper" sx={{ display: "flex", justifyContent: "center", alignItems: "center", padding: 2, minHeight: "100vh" }}>
+            <Box
+                className="flashcards-learn__loading-wrapper"
+                sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: isMobile ? "100vw" : "100%",
+                    height: "100vh",
+                    backgroundColor: COLORS.background,
+                }}
+            >
                 <CircularProgress />
             </Box>
         );
@@ -690,7 +699,17 @@ const FlashcardsLearnPage: React.FC = () => {
 
     if (error) {
         return (
-            <Box className="mobile-demo-wrapper" sx={{ display: "flex", justifyContent: "center", alignItems: "center", padding: 2, minHeight: "100vh" }}>
+            <Box
+                className="flashcards-learn__error-wrapper"
+                sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: isMobile ? "100vw" : "100%",
+                    height: "100vh",
+                    backgroundColor: COLORS.background,
+                }}
+            >
                 <Typography color="error">{error}</Typography>
             </Box>
         );
@@ -700,8 +719,7 @@ const FlashcardsLearnPage: React.FC = () => {
     const opacity = 1 - Math.abs(dragPosition.x) / 400;
 
     return (
-        <Box className="mobile-demo-wrapper" sx={{ display: "flex", justifyContent: "center", padding: 2 }}>
-            <IPhoneFrame className="mobile-demo-frame">
+        <IPhoneFrame className="mobile-demo-frame" sx={desktopFrameSx}>
                 {/* Header */}
                 <Header className="mobile-demo-header">
                     <Toolbar className="mobile-demo-toolbar">
@@ -876,7 +894,7 @@ const FlashcardsLearnPage: React.FC = () => {
                                         <Box className="mobile-demo-related-words-list">
                                             {currentEntry.relatedWords.map((word) => (
                                                 <BreakdownLineItem className="mobile-demo-related-word-item" key={word.id}>
-                                                    <CPCDRow size="xs">
+                                                    <CPCDRow size="sm">
                                                         {[...word.entryKey].map((char, i) => (
                                                             <CharacterPinyinColorDisplay
                                                                 key={i}
@@ -884,7 +902,7 @@ const FlashcardsLearnPage: React.FC = () => {
                                                                 pinyin={word.pronunciation?.split(' ')[i] ?? ''}
                                                                 showPinyin={true}
                                                                 useToneColor={true}
-                                                                size="xs"
+                                                                size="sm"
                                                             />
                                                         ))}
                                                     </CPCDRow>
@@ -912,7 +930,7 @@ const FlashcardsLearnPage: React.FC = () => {
                                                 const synDefinition = currentEntry.synonymsMetadata?.[synonym]?.definition;
                                                 return (
                                                     <BreakdownLineItem className="mobile-demo-synonym-item" key={index}>
-                                                        <CPCDRow size="xs">
+                                                        <CPCDRow size="sm">
                                                             {[...synonym].map((char, i) => (
                                                                 <CharacterPinyinColorDisplay
                                                                     key={i}
@@ -920,7 +938,7 @@ const FlashcardsLearnPage: React.FC = () => {
                                                                     pinyin={synPronunciations[i] ?? ''}
                                                                     showPinyin={true}
                                                                     useToneColor={true}
-                                                                    size="xs"
+                                                                    size="sm"
                                                                 />
                                                             ))}
                                                         </CPCDRow>
@@ -1038,7 +1056,6 @@ const FlashcardsLearnPage: React.FC = () => {
                                 className="mobile-demo-flashcard"
                                 ref={cardRef}
                                 onTouchStart={handleTouchStart}
-                                onTouchMove={handleTouchMove}
                                 onTouchEnd={handleTouchEnd}
                                 onMouseDown={handleMouseDown}
                                 onMouseMove={handleMouseMove}
@@ -1193,8 +1210,7 @@ const FlashcardsLearnPage: React.FC = () => {
                         )}
                     </DraggableCardContainer>
                 </ContentArea>
-            </IPhoneFrame>
-        </Box>
+        </IPhoneFrame>
     );
 };
 

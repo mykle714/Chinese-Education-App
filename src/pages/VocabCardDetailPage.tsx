@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Box, Typography, Chip, CircularProgress, Alert, Divider } from "@mui/material";
+import { Box, Typography, Chip, CircularProgress, Alert, Divider, useMediaQuery, useTheme } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import ArrowBackIosNewIcon from "@mui/icons-material/ArrowBackIosNew";
 import MobileFooter from "../components/MobileFooter";
@@ -29,17 +29,12 @@ const COLORS = {
 
 const IPhoneFrame = styled(Box)(() => ({
     backgroundColor: COLORS.background,
-    borderRadius: "20px",
+    borderRadius: 0,
     overflow: "hidden",
     display: "flex",
     flexDirection: "column",
-    maxWidth: 393,
-    minWidth: 393,
-    width: "100%",
-    margin: "0 auto",
-    minHeight: "852px",
+    width: "100vw",
     height: "100vh",
-    maxHeight: "932px",
 }));
 
 const Header = styled(Box)(() => ({
@@ -114,6 +109,8 @@ const getCategoryColor = (category?: string) => {
 const VocabCardDetailPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
+    const theme = useTheme();
+    const isMobile = useMediaQuery(theme.breakpoints.down("md"));
     const [entry, setEntry] = useState<VocabEntry | null>(null);
     const [dictEntry, setDictEntry] = useState<DictionaryEntry | null>(null);
     const [loading, setLoading] = useState(true);
@@ -156,9 +153,18 @@ const VocabCardDetailPage: React.FC = () => {
     const hasRelatedWords = entry?.relatedWords && entry.relatedWords.length > 0;
     const hasExpansion = !!entry?.expansion;
 
+    // On desktop the Layout wraps this page normally; restore the phone-frame look
+    const desktopFrameSx = !isMobile ? {
+        maxWidth: 393,
+        width: "100%",
+        borderRadius: "20px",
+        margin: "0 auto",
+        minHeight: "852px",
+        maxHeight: "932px",
+    } : {};
+
     return (
-        <Box className="vocab-card-detail__page-wrapper" sx={{ display: "flex", justifyContent: "center", padding: 2, minHeight: "100vh" }}>
-            <IPhoneFrame className="vocab-card-detail__frame">
+        <IPhoneFrame className="vocab-card-detail__frame" sx={desktopFrameSx}>
                 <Header className="vocab-card-detail__header">
                     <Toolbar className="vocab-card-detail__toolbar">
                         <Box
@@ -522,8 +528,7 @@ const VocabCardDetailPage: React.FC = () => {
                 </ContentArea>
 
                 <MobileFooter activePage="home" />
-            </IPhoneFrame>
-        </Box>
+        </IPhoneFrame>
     );
 };
 

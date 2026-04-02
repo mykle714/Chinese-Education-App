@@ -26,6 +26,7 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  overflow-x: hidden; /* Never allow horizontal scroll */
   /* Prevent overscroll bounce on mobile */
   overscroll-behavior: none;
   -webkit-overflow-scrolling: auto;
@@ -34,6 +35,7 @@ body {
 html {
   /* Prevent overscroll bounce on mobile */
   overscroll-behavior: none;
+  overflow-x: hidden; /* Never allow horizontal scroll */
 }
 
 /* Targeted touch prevention only for flashcard interaction area */

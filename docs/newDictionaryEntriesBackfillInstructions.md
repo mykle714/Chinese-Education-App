@@ -30,6 +30,7 @@ Every column in `dictionaryentries` and the script responsible for populating it
 | `exampleSentences` | `backfill-example-sentences.js` | AI (Claude) | **Yes** | zh |
 | `exampleSentencesMetadata` | `backfill-example-sentences-metadata.js` | Deterministic (depends on `exampleSentences`) | **Yes** | zh |
 | `breakdown` | `backfill-dictionary-breakdown.js` | Deterministic | **Yes** | zh (multi-char only) |
+| `classifier` | `backfill-classifier.js` | AI (Claude Sonnet) | **Yes** | zh |
 | `expansion` | Manual / AI enrichment pipeline | — | — | zh |
 | `expansionMetadata` | `backfill-enrichment.js` | Deterministic (depends on `expansion`) | No | zh |
 | `createdAt` | DB auto-set | — | — | all |
@@ -117,6 +118,16 @@ Note: Must run after Step 6. Uses greedy longest-match segmentation — no AI co
 
 ---
 
+**Step 8 — Classifier (量词)**
+```bash
+docker exec cow-backend-local npx tsx scripts/backfill-classifier.js
+```
+Populates: `classifier`
+Filter: `language = 'zh' AND discoverable = TRUE AND classifier IS NULL`
+Note: Determines measure words for count nouns. Sets `[]` (not a count noun) or a non-empty array (e.g. `["辆"]`). NULL means not yet processed. Use `--spot-check` flag to preview 5 entries first.
+
+---
+
 ## Section B — One-Time Data Repair Scripts
 
 These are not part of the standard discoverable-entry flow. Run them only when repairing specific data quality issues.
@@ -153,7 +164,8 @@ SELECT
   COUNT(*) FILTER (WHERE "longDefinition" IS NULL)  AS missing_long_def,
   COUNT(*) FILTER (WHERE synonyms IS NULL)           AS missing_synonyms,
   COUNT(*) FILTER (WHERE "exampleSentences" IS NULL) AS missing_sentences,
-  COUNT(*) FILTER (WHERE breakdown IS NULL AND char_length(word1) > 1) AS missing_breakdown
+  COUNT(*) FILTER (WHERE breakdown IS NULL AND char_length(word1) > 1) AS missing_breakdown,
+  COUNT(*) FILTER (WHERE classifier IS NULL) AS missing_classifier
 FROM dictionaryentries
 WHERE language = 'zh' AND discoverable = TRUE;
 
@@ -162,4 +174,40 @@ SELECT pronunciation, "numberedPinyin"
 FROM dictionaryentries
 WHERE pronunciation IS NOT NULL
 LIMIT 20;
+```
+
+---
+
+## Section E — Deploying Enriched Entries to Production
+
+All enrichment scripts run **locally** against your dev database. Production only ever receives data via a committed SQL snapshot — no scripts run in production directly.
+
+### Step 1 — Export the local table to the snapshot file
+```bash
+docker exec cow-postgres-local pg_dump -U cow_user cow_db -t dictionaryentries > database/dictionaryentries-data.sql
+```
+This overwrites `database/dictionaryentries-data.sql`, which is tracked by **Git LFS** (the file is ~18 MB).
+
+### Step 2 — Commit and push
+```bash
+git add database/dictionaryentries-data.sql
+git commit -m "backfill: mark X new entries discoverable"
+git push
+```
+
+### Step 3 — Deploy on the production server
+SSH in, pull the latest commit, and restore:
+```bash
+git pull
+bash database/restore-dictionary.sh
+```
+`restore-dictionary.sh` loads the COPY-format dump into the production PostgreSQL container.
+
+### Data Flow Summary
+```
+Local DB (enriched)
+  → pg_dump → database/dictionaryentries-data.sql (Git LFS)
+  → git commit + push
+  → production: git pull + restore-dictionary.sh
+  → Production DB (enriched)
 ```

@@ -3,7 +3,8 @@
  *
  * For each discoverable zh entry with no exampleSentences, uses Claude AI to generate
  * 3 natural, contextually appropriate example sentences using the word in different
- * grammatical roles. Each sentence includes Chinese, English translation, and a usage label.
+ * grammatical roles. Each sentence includes Chinese, English translation, and
+ * a partOfSpeechDict keyed by sentence tokens (single or multi-character words).
  *
  * Run the metadata backfill after this script completes:
  *   npx tsx /app/scripts/backfill-example-sentences-metadata.js
@@ -30,9 +31,23 @@ const isSpotCheck = process.argv.includes('--spot-check');
 
 /**
  * Ask Claude to generate 3 natural example sentences for a Chinese word.
- * Returns an array of { chinese, english, usage } objects.
+ * Returns an array of { chinese, english, partOfSpeechDict } objects.
  */
 async function generateExampleSentences(word, pronunciation, definitions) {
+  const allowedPosTags = [
+    'noun',
+    'verb',
+    'adjective',
+    'adverb',
+    'pronoun',
+    'numeral',
+    'classifier',
+    'preposition',
+    'conjunction',
+    'particle',
+    'interjection',
+    'onomatopoeia'
+  ];
   const definitionText = Array.isArray(definitions) ? definitions.slice(0, 3).join('; ') : definitions;
 
   const prompt = `You are a Chinese language teacher creating example sentences for a vocabulary app.
@@ -43,16 +58,42 @@ Meaning: ${definitionText}
 Write exactly 3 natural example sentences using "${word}". Each sentence should:
 - Use the word naturally as a native speaker would
 - Be simple enough for an intermediate learner (HSK 3–4 level vocabulary otherwise)
-- Show a different grammatical role or context for the word
+- Show a different grammatical role or context for the word for each sentence
 - Have an accurate English translation
-
-Choose 3 distinct usage labels from: subject, object, verb, modifier, prepositional, question, negation, complement
+- Include a "partOfSpeechDict" object for each sentence
+- partOfSpeechDict keys must be word tokens that appear in the Chinese sentence (single or multi-character words are both allowed)
+- Make sure to include every word in the sentence as a key in partOfSpeechDict
+- partOfSpeechDict values must be one of:
+  ${allowedPosTags.join(', ')}
+- Do not include punctuation as keys
+- Include the target word "${word}" as one of the keys in partOfSpeechDict
 
 Respond with ONLY a JSON array in this exact format (no markdown, no explanation):
 [
-  { "usage": "label", "chinese": "Chinese sentence", "english": "English translation" },
-  { "usage": "label", "chinese": "Chinese sentence", "english": "English translation" },
-  { "usage": "label", "chinese": "Chinese sentence", "english": "English translation" }
+  {
+    "chinese": "Chinese sentence",
+    "english": "English translation",
+    "partOfSpeechDict": {
+      "wordToken1": "pos_tag",
+      "wordToken2": "pos_tag"
+    }
+  },
+  {
+    "chinese": "Chinese sentence",
+    "english": "English translation",
+    "partOfSpeechDict": {
+      "wordToken1": "pos_tag",
+      "wordToken2": "pos_tag"
+    }
+  },
+  {
+    "chinese": "Chinese sentence",
+    "english": "English translation",
+    "partOfSpeechDict": {
+      "wordToken1": "pos_tag",
+      "wordToken2": "pos_tag"
+    }
+  }
 ]`;
 
   const response = await anthropic.messages.create({
@@ -72,11 +113,23 @@ Respond with ONLY a JSON array in this exact format (no markdown, no explanation
   const parsed = JSON.parse(cleaned);
   if (!Array.isArray(parsed) || parsed.length === 0) return null;
 
+  const allowedPosTagSet = new Set(allowedPosTags);
+
   // Validate each sentence has required fields
   const valid = parsed.filter(s =>
     s && typeof s.chinese === 'string' && s.chinese.length > 0 &&
     typeof s.english === 'string' && s.english.length > 0 &&
-    typeof s.usage === 'string' && s.usage.length > 0
+    s.partOfSpeechDict &&
+    typeof s.partOfSpeechDict === 'object' &&
+    !Array.isArray(s.partOfSpeechDict) &&
+    Object.keys(s.partOfSpeechDict).length > 0 &&
+    Object.entries(s.partOfSpeechDict).every(([token, tag]) =>
+      typeof token === 'string' &&
+      token.length > 0 &&
+      !/[\s，。！？；：,.!?;:]/.test(token) &&
+      typeof tag === 'string' &&
+      allowedPosTagSet.has(tag)
+    )
   );
 
   return valid.length > 0 ? valid : null;
@@ -134,8 +187,9 @@ async function run() {
           // Print full sentence details in spot-check mode
           console.log(`✓ (${sentences.length} sentences)`);
           for (const s of sentences) {
-            console.log(`    [${s.usage}] ${s.chinese}`);
+            console.log(`    ${s.chinese}`);
             console.log(`           ${s.english}`);
+            console.log(`           POS: ${JSON.stringify(s.partOfSpeechDict)}`);
           }
         } else {
           console.log(`✓`);

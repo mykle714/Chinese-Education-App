@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Box, Typography, CircularProgress, Alert, Button } from "@mui/material";
+import { Box, Typography, CircularProgress, Alert, Button, useMediaQuery, useTheme } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import MobileFooter from "../components/MobileFooter";
+import MobileNavDrawer from "../components/MobileNavDrawer";
 import MiniVocabCard from "../components/MiniVocabCard";
 import { useAuth } from "../AuthContext";
 import { API_BASE_URL } from "../constants";
@@ -28,16 +29,12 @@ const COLORS = {
 // Styled Components
 const IPhoneFrame = styled(Box)(() => ({
     backgroundColor: COLORS.background,
-    borderRadius: "20px",
+    borderRadius: 0,
     overflow: "hidden",
     display: "flex",
     flexDirection: "column",
-    maxWidth: 393,
-    width: "100%",
-    margin: "0 auto",
-    minHeight: "852px",
+    width: "100vw",
     height: "100vh",
-    maxHeight: "932px",
 }));
 
 const Header = styled(Box)(() => ({
@@ -218,6 +215,8 @@ const DeckCardComponent: React.FC<DeckCardProps> = ({
 const FlashcardsDecksPage: React.FC = () => {
     const navigate = useNavigate();
     const { token } = useAuth();
+    const theme = useTheme();
+    const isMobile = useMediaQuery(theme.breakpoints.down("md"));
     const [vocabEntries, setVocabEntries] = useState<VocabEntry[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -420,30 +419,40 @@ const FlashcardsDecksPage: React.FC = () => {
         }
     };
 
+    // On desktop the Layout wraps this page normally; restore the phone-frame look
+    const desktopFrameSx = !isMobile ? {
+        maxWidth: 393,
+        width: "100%",
+        borderRadius: "20px",
+        margin: "0 auto",
+        minHeight: "852px",
+        maxHeight: "932px",
+    } : {};
+
     return (
-        <Box
-            className="decks-page-wrapper"
-            sx={{ display: "flex", justifyContent: "center", padding: 2, minHeight: "100vh" }}
-        >
-            <IPhoneFrame className="decks-page-frame">
-                {/* Header */}
-                <Header className="decks-page-header">
-                    <Toolbar className="decks-page-toolbar">
-                        <Typography
-                            className="decks-page-title"
-                            sx={{
-                                fontSize: 16,
-                                fontWeight: 400,
-                                color: COLORS.onSurface,
-                                textAlign: "center",
-                                lineHeight: 1.21,
-                                fontFamily: '"Inter", sans-serif',
-                            }}
-                        >
-                            Decks & Cards
-                        </Typography>
-                    </Toolbar>
-                </Header>
+        <IPhoneFrame className="decks-page-frame" sx={desktopFrameSx}>
+            {/* Header */}
+            <Header className="decks-page-header">
+                <Toolbar className="decks-page-toolbar">
+                    {/* Spacer balances the hamburger button on the right */}
+                    <Box sx={{ width: 34 }} />
+                    <Typography
+                        className="decks-page-title"
+                        sx={{
+                            flex: 1,
+                            fontSize: 16,
+                            fontWeight: 400,
+                            color: COLORS.onSurface,
+                            textAlign: "center",
+                            lineHeight: 1.21,
+                            fontFamily: '"Inter", sans-serif',
+                        }}
+                    >
+                        Decks & Cards
+                    </Typography>
+                    <MobileNavDrawer />
+                </Toolbar>
+            </Header>
 
                 {/* Content Area */}
                 <ContentArea className="decks-page-content">
@@ -644,8 +653,7 @@ const FlashcardsDecksPage: React.FC = () => {
 
                 {/* Footer */}
                 <MobileFooter activePage="home" />
-            </IPhoneFrame>
-        </Box>
+        </IPhoneFrame>
     );
 };
 

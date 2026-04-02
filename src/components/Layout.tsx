@@ -77,6 +77,17 @@ function Layout({ children }: LayoutProps) {
         );
     }
 
+    // Mobile demo pages render their own full-screen layout — skip the Layout chrome entirely
+    const MOBILE_DEMO_PATHS = ["/flashcards/decks", "/account", "/flashcards/learn"];
+    const isMobileDemoPage =
+        MOBILE_DEMO_PATHS.includes(location.pathname) ||
+        location.pathname.startsWith("/discover/sort/") ||
+        location.pathname.startsWith("/flashcards/card/");
+
+    if (isMobileDemoPage && isMobile) {
+        return <>{children}</>;
+    }
+
     const toggleDrawer = (open: boolean) => (event: React.KeyboardEvent | React.MouseEvent) => {
         if (
             event.type === "keydown" &&
@@ -240,10 +251,10 @@ function Layout({ children }: LayoutProps) {
                 </Drawer>
             )}
 
-            {/* Main content wrapper */}
+            {/* Main content wrapper — width + ml must sum to 100% to avoid overflow */}
             <Box
                 sx={{
-                    flexGrow: 1,
+                    minWidth: 0,
                     display: 'flex',
                     flexDirection: 'column',
                     width: { xs: '100%', md: `calc(100% - ${drawerWidth}px)` },

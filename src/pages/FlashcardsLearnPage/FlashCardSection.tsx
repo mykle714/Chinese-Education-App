@@ -6,7 +6,7 @@ import type { VocabEntry } from "./types";
 
 interface FlashCardSectionProps {
     currentEntry: VocabEntry | null;
-    cardRef: React.RefObject<HTMLDivElement>;
+    cardRef: React.RefObject<HTMLDivElement | null>;
     dragPosition: { x: number; y: number };
     isDragging: boolean;
     isFlipped: boolean;

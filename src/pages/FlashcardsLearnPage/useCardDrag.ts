@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 interface UseCardDragReturn {
-    cardRef: React.RefObject<HTMLDivElement>;
+    cardRef: React.RefObject<HTMLDivElement | null>;
     dragPosition: { x: number; y: number };
     isDragging: boolean;
     isFlipped: boolean;

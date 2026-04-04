@@ -6,7 +6,7 @@ import { useWorkPoints } from "../../hooks/useWorkPoints";
 import { API_BASE_URL } from "../../constants";
 import { IPhoneFrame, ContentArea } from "./styled";
 import { COLORS } from "./constants";
-import type { VocabEntry, BreakdownItem, ReviewMark, MarkCardResult, LastMarkUndoSnapshot } from "./types";
+import type { VocabEntry, BreakdownItem, MarkCardResult, LastMarkUndoSnapshot } from "./types";
 import { useCardDrag } from "./useCardDrag";
 import FlashcardsLearnHeader from "./FlashcardsLearnHeader";
 import InfoCardSection from "./InfoCardSection";

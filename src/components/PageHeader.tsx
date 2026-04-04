@@ -27,24 +27,29 @@ const Toolbar = styled(Box)(() => ({
 interface PageHeaderProps {
     title: string;
     onBack?: () => void;
+    showBack?: boolean;
     rightItems?: React.ReactNode;
 }
 
-const PageHeader: React.FC<PageHeaderProps> = ({ title, onBack, rightItems }) => {
+const PageHeader: React.FC<PageHeaderProps> = ({ title, onBack, showBack = true, rightItems }) => {
     const navigate = useNavigate();
 
     return (
         <Header className="page-header">
             <Toolbar className="page-header__toolbar">
-                {/* Left: back button */}
-                <IconButton
-                    className="page-header__back-button"
-                    size="small"
-                    sx={{ color: "#1D1B20" }}
-                    onClick={onBack ?? (() => navigate(-1))}
-                >
-                    <ExpandMoreIcon />
-                </IconButton>
+                {/* Left: back button (hidden on top-level pages) */}
+                {showBack ? (
+                    <IconButton
+                        className="page-header__back-button"
+                        size="small"
+                        sx={{ color: "#1D1B20" }}
+                        onClick={onBack ?? (() => navigate(-1))}
+                    >
+                        <ExpandMoreIcon />
+                    </IconButton>
+                ) : (
+                    <Box sx={{ width: 34 }} /> /* spacer to keep title centered */
+                )}
 
                 {/* Center: title, absolutely centered relative to the toolbar */}
                 <Typography

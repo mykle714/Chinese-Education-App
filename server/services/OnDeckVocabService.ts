@@ -229,7 +229,8 @@ export class OnDeckVocabService {
 
       const withExampleMeta = await this.dictionaryService.enrichExampleSentencesMetadataBatch(result.rows);
       const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(withExampleMeta);
-      return await this.dictionaryService.enrichEntriesWithSynonymMetadata(withExpansionMeta);
+      const withSynonymMetadata = await this.dictionaryService.enrichEntriesWithSynonymMetadata(withExpansionMeta);
+      return await this.enrichMultipleWithRelatedWords(userId, withSynonymMetadata);
     } finally {
       client.release();
     }

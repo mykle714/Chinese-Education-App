@@ -75,6 +75,9 @@ For work points increment implementation:
 
 ## 🐳 Deployment & DevOps
 
+### Deploying
+Use the `/deploy` skill. It contains the full deployment procedure, server details, and migration steps.
+
 ### Docker Commands & Setup
 → See [docs/DOCKER_COMMANDS.md](./docs/DOCKER_COMMANDS.md)
 → See [docs/DOCKER_GUIDE.md](./docs/DOCKER_GUIDE.md)

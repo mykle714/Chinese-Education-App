@@ -53,8 +53,8 @@ function LoginPage() {
         setLoginError(null);
         try {
             await login(data.email, data.password);
-        } catch (error: any) {
-            setLoginError(error.message || 'Login failed. Please try again.');
+        } catch (error: unknown) {
+            setLoginError(error instanceof Error ? error.message : 'Login failed. Please try again.');
         } finally {
             setIsSubmitting(false);
         }

@@ -12,10 +12,15 @@ export const isWordBoundary = (char: string, nextChar: string): boolean => {
     // Use Intl.Segmenter if available (modern browsers)
     if (typeof Intl !== 'undefined' && 'Segmenter' in Intl) {
         try {
-            const segmenter = new (Intl as any).Segmenter('en', { granularity: 'word' });
+            type IntlWithSegmenter = typeof Intl & {
+                Segmenter: new (locale: string, options?: { granularity?: string }) => {
+                    segment: (str: string) => Iterable<unknown>;
+                };
+            };
+            const segmenter = new (Intl as IntlWithSegmenter).Segmenter('en', { granularity: 'word' });
             const segments = Array.from(segmenter.segment(char + nextChar));
             return segments.length > 1;
-        } catch (e) {
+        } catch {
             // Fall back to simpler logic
         }
     }
@@ -113,7 +118,7 @@ export const selectPreviousWord = (textarea: HTMLTextAreaElement): void => {
 
     // Now we're at the end of the previous word, find its start
     let wordStart = pos;
-    let wordEnd = pos + 1; // End is one position after the last character
+    const wordEnd = pos + 1; // End is one position after the last character
 
     // Find word start by moving backwards from current position
     for (let i = pos; i >= 0; i--) {
@@ -152,7 +157,7 @@ export const selectNextWord = (textarea: HTMLTextAreaElement): void => {
     if (pos >= text.length) return; // No next word found
 
     // Now find the full word boundaries using existing logic
-    let wordStart = pos;
+    const wordStart = pos;
     let wordEnd = pos;
 
     // Find word end (reusing existing boundary logic)

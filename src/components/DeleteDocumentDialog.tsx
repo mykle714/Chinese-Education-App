@@ -56,9 +56,9 @@ function DeleteDocumentDialog({ open, text, onClose, onSuccess }: DeleteDocument
             // Notify parent and close
             onSuccess();
             onClose();
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('[DELETE-DIALOG] ❌ Error deleting document:', err);
-            setError(err.message || 'Failed to delete document');
+            setError(err instanceof Error ? err.message : 'Failed to delete document');
         } finally {
             setLoading(false);
         }

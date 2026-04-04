@@ -4,6 +4,7 @@ import { Box, Typography, CircularProgress, Alert, Button, useMediaQuery, useThe
 import { styled } from "@mui/material/styles";
 import MobileFooter from "../components/MobileFooter";
 import MobileNavDrawer from "../components/MobileNavDrawer";
+import PageHeader from "../components/PageHeader";
 import MiniVocabCard from "../components/MiniVocabCard";
 import { useAuth } from "../AuthContext";
 import { API_BASE_URL } from "../constants";
@@ -413,7 +414,7 @@ const FlashcardsDecksPage: React.FC = () => {
     return (
         <IPhoneFrame className="decks-page-frame" sx={desktopFrameSx}>
             {/* Header */}
-            <PageHeader title="Decks & Cards" rightItems={<MobileNavDrawer />} />
+            <PageHeader title="Decks & Cards" showBack={false} rightItems={<MobileNavDrawer />} />
 
                 {/* Content Area */}
                 <ContentArea className="decks-page-content">

@@ -18,35 +18,30 @@ export const setupFetchInterceptor = () => {
 
   // Override the global fetch
   window.fetch = async (...args): Promise<Response> => {
-    try {
-      // Call the original fetch
-      const response = await originalFetch(...args);
+    // Call the original fetch — network errors propagate naturally
+    const response = await originalFetch(...args);
 
-      // Check for authentication errors
-      if (response.status === 401 || response.status === 403) {
-        console.log('Token expired or unauthorized (detected by fetch interceptor), redirecting to login...');
-        
-        // Clear auth state
-        if (clearAuthState) {
-          clearAuthState();
-        }
-        
-        // Clear localStorage
-        localStorage.removeItem('token');
-        
-        // Set session expired flag in localStorage for LoginPage to detect
-        localStorage.setItem('sessionExpired', 'true');
-        
-        // Redirect to login
-        if (navigateToLogin) {
-          navigateToLogin();
-        }
+    // Check for authentication errors
+    if (response.status === 401 || response.status === 403) {
+      console.log('Token expired or unauthorized (detected by fetch interceptor), redirecting to login...');
+
+      // Clear auth state
+      if (clearAuthState) {
+        clearAuthState();
       }
 
-      return response;
-    } catch (error) {
-      // Pass through any network errors
-      throw error;
+      // Clear localStorage
+      localStorage.removeItem('token');
+
+      // Set session expired flag in localStorage for LoginPage to detect
+      localStorage.setItem('sessionExpired', 'true');
+
+      // Redirect to login
+      if (navigateToLogin) {
+        navigateToLogin();
+      }
     }
+
+    return response;
   };
 };

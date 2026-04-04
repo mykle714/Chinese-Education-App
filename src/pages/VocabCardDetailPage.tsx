@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { Box, Typography, Chip, CircularProgress, Alert, Divider, useMediaQuery, useTheme } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import MobileFooter from "../components/MobileFooter";
+import PageHeader from "../components/PageHeader";
 import { API_BASE_URL } from "../constants";
 import type { VocabEntry, DictionaryEntry } from "../types";
 import CharacterPinyinColorDisplay from "../components/CharacterPinyinColorDisplay";

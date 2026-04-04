@@ -80,9 +80,9 @@ function EditDocumentDialog({ open, text, onClose, onSuccess }: EditDocumentDial
             // Notify parent and close
             onSuccess();
             onClose();
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('[EDIT-DIALOG] ❌ Error updating document:', err);
-            setError(err.message || 'Failed to update document');
+            setError(err instanceof Error ? err.message : 'Failed to update document');
         } finally {
             setLoading(false);
         }

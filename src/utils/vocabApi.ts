@@ -286,7 +286,7 @@ export async function importVocabFromCSV(
     imported: number;
     updated: number;
     skipped: number;
-    errors: any[];
+    errors: unknown[];
   };
 }> {
   try {

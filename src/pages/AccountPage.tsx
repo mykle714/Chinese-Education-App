@@ -221,7 +221,7 @@ function AccountPage() {
     if (isLoading) {
         return (
             <IPhoneFrame className="account-page__frame" sx={desktopFrameSx}>
-                <PageHeader title="Account" rightItems={<MobileNavDrawer />} />
+                <PageHeader title="Account" showBack={false} rightItems={<MobileNavDrawer />} />
                 <ContentArea className="account-page__content">
                     <CircularProgress className="account-page__spinner" />
                 </ContentArea>
@@ -233,7 +233,7 @@ function AccountPage() {
     if (!user) {
         return (
             <IPhoneFrame className="account-page__frame" sx={desktopFrameSx}>
-                <PageHeader title="Account" rightItems={<MobileNavDrawer />} />
+                <PageHeader title="Account" showBack={false} rightItems={<MobileNavDrawer />} />
                 <ContentArea className="account-page__content">
                     <Typography className="account-page__no-user-text" sx={{ textAlign: "center", color: COLORS.onSurface }}>
                         Please log in to view your account
@@ -252,7 +252,7 @@ function AccountPage() {
         <>
         <IPhoneFrame className="account-page__frame">
             {/* Header */}
-            <PageHeader title="Account" rightItems={<MobileNavDrawer />} />
+            <PageHeader title="Account" showBack={false} rightItems={<MobileNavDrawer />} />
 
                 {/* Content Area */}
                 <ContentArea className="account-page__content">

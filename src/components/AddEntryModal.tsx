@@ -77,9 +77,9 @@ const AddEntryModal = ({ open, onClose, onEntryAdded }: AddEntryModalProps) => {
             });
             onEntryAdded();
             onClose();
-        } catch (err: any) {
-            const errorMessage = err.message || 'Failed to add vocabulary entry. Please try again.';
-            const errorCode = err.code || 'ERR_UNKNOWN';
+        } catch (err: unknown) {
+            const errorMessage = (err as { message?: string }).message ?? 'Failed to add vocabulary entry. Please try again.';
+            const errorCode = (err as { code?: string }).code ?? 'ERR_UNKNOWN';
             setError(errorMessage);
             setErrorCode(errorCode);
             console.error(err);
@@ -161,7 +161,7 @@ const AddEntryModal = ({ open, onClose, onEntryAdded }: AddEntryModalProps) => {
                         onKeyDown={(e) => {
                             if (e.key === 'Enter' && !e.shiftKey) {
                                 e.preventDefault();
-                                handleSubmit(e as any);
+                                handleSubmit(e as unknown as React.FormEvent<HTMLFormElement>);
                             }
                         }}
                     />

@@ -333,7 +333,7 @@ export function shouldInvalidateCache(): CacheInvalidationReason | null {
     if (cacheSizeMB > MAX_CACHE_SIZE_MB) {
       return CacheInvalidationReason.STORAGE_LIMIT;
     }
-  } catch (error) {
+  } catch {
     return CacheInvalidationReason.CORRUPTION;
   }
 

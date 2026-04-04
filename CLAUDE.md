@@ -4,7 +4,7 @@ You are a detail oriented coding assistant with very artistic UI design taste. Y
 
 ## Abbreviations
 cpcd = CharacterPinyinColorDisplay
-eix = Extra Info Card
+eic = Extra Info Card
 fc = Flashcard(s)
 det = dictionary entries table
 vet = vocab entries table
@@ -90,6 +90,24 @@ For work points increment implementation:
 
 ### Windows/WSL Migration
 → See [docs/WSL_TO_WINDOWS_MIGRATION_GUIDE.md](./docs/WSL_TO_WINDOWS_MIGRATION_GUIDE.md)
+
+## 🤖 MCP Servers
+
+### Puppeteer
+The Puppeteer MCP server is available for browser automation and screenshots. Since this environment runs as root, every `navigate` call must include `allowDangerous: true` and the `--no-sandbox` flags:
+
+```json
+{
+  "url": "https://...",
+  "allowDangerous": true,
+  "launchOptions": {
+    "headless": true,
+    "args": ["--no-sandbox", "--disable-setuid-sandbox"]
+  }
+}
+```
+
+Available tools: `puppeteer_navigate`, `puppeteer_screenshot`, `puppeteer_click`, `puppeteer_fill`, `puppeteer_evaluate`, `puppeteer_hover`, `puppeteer_select`.
 
 ## 🧪 Testing & Data
 

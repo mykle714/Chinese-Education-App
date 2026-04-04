@@ -2,12 +2,12 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Box, Typography, IconButton, CircularProgress, useMediaQuery, useTheme } from "@mui/material";
 import { styled } from "@mui/material/styles";
-import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import UndoIcon from "@mui/icons-material/Undo";
 import { useDrag } from "@use-gesture/react";
 import { useSpring, animated } from "@react-spring/web";
 import MobileFooter from "../components/MobileFooter";
 import MobileNavDrawer from "../components/MobileNavDrawer";
+import PageHeader from "../components/PageHeader";
 import { API_BASE_URL } from "../constants";
 import type { Language, DiscoverCard } from "../types";
 
@@ -37,26 +37,7 @@ const IPhoneFrame = styled(Box)({
     display: "flex",
     flexDirection: "column",
     width: "100vw",
-    height: "100vh",
-});
-
-const Header = styled(Box)({
-    backgroundColor: COLORS.header,
-    minHeight: 96,
-    display: "flex",
-    flexDirection: "column",
-    justifyContent: "flex-end",
-    gap: 10,
-});
-
-const Toolbar = styled(Box)({
-    display: "flex",
-    gap: 10,
-    width: "100%",
-    height: 47,
-    alignItems: "center",
-    padding: "0 12px",
-    position: "relative",
+    height: "100dvh",
 });
 
 const ContentArea = styled(Box)({
@@ -64,24 +45,27 @@ const ContentArea = styled(Box)({
     display: "flex",
     flexDirection: "column",
     alignSelf: "stretch",
-    position: "relative",
     overflow: "visible",
 });
 
+// CSS grid distributes the 4 buckets evenly in a 2×2 layout regardless of viewport height
 const BucketsContainer = styled(Box)({
     width: "100vw",
-    height: 452,
-    position: "relative",
-    flexShrink: 0,
+    flex: 2,
+    minHeight: 0, // allow flex to shrink below grid content size on small screens
+    maxHeight: 424, // 2 × 200px buckets + 16px rowGap + 8px paddingBlock
+    paddingBlock: "4px",
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gridTemplateRows: "1fr 1fr",
+    rowGap: "16px",
+    justifyItems: "center",
 });
 
-const Bucket = styled(Box)<{ mainColor: string; accentColor: string; x: number; y: number; highlight?: boolean }>(
-    ({ mainColor, accentColor, x, y, highlight }) => ({
-        position: "absolute",
-        left: x,
-        top: y,
-        width: 136,
-        height: 200,
+const Bucket = styled(Box)<{ mainColor: string; accentColor: string; highlight?: boolean }>(
+    ({ mainColor, accentColor, highlight }) => ({
+        aspectRatio: "136 / 200",
+        minHeight: 0, // override grid item default (auto) so bucket shrinks with 1fr rows
         padding: 8,
         backgroundColor: mainColor,
         borderRadius: 12,
@@ -115,11 +99,11 @@ const Bucket = styled(Box)<{ mainColor: string; accentColor: string; x: number; 
 );
 
 const OnDeckSection = styled(Box)({
-    position: "absolute",
-    left: 0,
-    top: 452,
     width: "100vw",
-    height: 228,
+    flex: 1,
+    minHeight: 0, // allow flex to shrink below card content size on small screens
+    paddingBlock: "4px",
+    position: "relative",
     backgroundColor: COLORS.header,
     borderTop: `2px dashed ${COLORS.border}`,
     display: "flex",
@@ -130,8 +114,9 @@ const OnDeckSection = styled(Box)({
 const AnimatedBox = animated(Box);
 
 const FlashCard = styled(AnimatedBox)({
-    width: 136,
+    aspectRatio: "136 / 200",
     height: 200,
+    maxHeight: "calc(100% - 16px)", // scale down on small screens (8px margin each side)
     backgroundColor: COLORS.cardColor,
     borderRadius: 12,
     boxShadow: "2px 4px 4px rgba(0, 0, 0, 0.25)",
@@ -152,13 +137,9 @@ const FlashCard = styled(AnimatedBox)({
 interface BucketZone {
     id: string;
     label: string;
-    x: number;
-    y: number;
     mainColor: string;
     accentColor: string;
 }
-
-// Bucket x positions are computed dynamically inside the component based on viewport width.
 
 const SortCardsPage: React.FC = () => {
     const navigate = useNavigate();
@@ -170,30 +151,19 @@ const SortCardsPage: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [highlightedBucket, setHighlightedBucket] = useState<string | null>(null);
     const [history, setHistory] = useState<Array<{ card: DiscoverCard; bucket: string }>>([]);
-    const containerRef = useRef<HTMLDivElement>(null);
     const isLoadingMoreRef = useRef(false);
 
-    // Track viewport width so buckets stay evenly distributed across the screen
-    const [viewportWidth, setViewportWidth] = useState(window.innerWidth);
-    useEffect(() => {
-        const handleResize = () => setViewportWidth(window.innerWidth);
-        window.addEventListener("resize", handleResize);
-        return () => window.removeEventListener("resize", handleResize);
-    }, []);
-
-    // Distribute two bucket columns evenly: equal left margin, equal gap, equal right margin
-    const BUCKET_WIDTH = 136;
-    const colSpacing = Math.round((viewportWidth - 2 * BUCKET_WIDTH) / 3);
-    const colX1 = colSpacing;
-    const colX2 = colSpacing + BUCKET_WIDTH + colSpacing;
-    const cardLeft = Math.round((viewportWidth - BUCKET_WIDTH) / 2);
+    // Refs for DOM-based collision detection — CSS grid owns the layout, we read positions on drag
+    const bucketsRef = useRef<HTMLDivElement>(null);
+    const onDeckRef = useRef<HTMLDivElement>(null);
+    const bucketRefs = useRef<Map<string, HTMLElement>>(new Map());
 
     const buckets = useMemo<BucketZone[]>(() => [
-        { id: "already-learned", label: "Already Learned", x: colX1, y: 20, mainColor: COLORS.redMain, accentColor: COLORS.redAccent },
-        { id: "library", label: "Add to\nLibrary", x: colX2, y: 20, mainColor: COLORS.greenMain, accentColor: COLORS.greenAccent },
-        { id: "skip", label: "Skip for now", x: colX1, y: 236, mainColor: COLORS.blueMain, accentColor: COLORS.blueAccent },
-        { id: "learn-later", label: "Add to Learn Later", x: colX2, y: 236, mainColor: COLORS.yellowMain, accentColor: COLORS.yellowAccent },
-    ], [colX1, colX2]);
+        { id: "already-learned", label: "Already Learned", mainColor: COLORS.redMain, accentColor: COLORS.redAccent },
+        { id: "library", label: "Add to\nLibrary", mainColor: COLORS.greenMain, accentColor: COLORS.greenAccent },
+        { id: "skip", label: "Skip for now", mainColor: COLORS.blueMain, accentColor: COLORS.blueAccent },
+        { id: "learn-later", label: "Add to Learn Later", mainColor: COLORS.yellowMain, accentColor: COLORS.yellowAccent },
+    ], []);
 
     const [{ x, y, scale, opacity }, api] = useSpring(() => ({
         x: 0,
@@ -243,7 +213,7 @@ const SortCardsPage: React.FC = () => {
         }
     }, [currentCardIndex, currentCard, api]);
 
-    // Load more cards when 4 remain (marked the 5th-to-last)
+    // Load more cards when 4 remain
     useEffect(() => {
         const remaining = cards.length - currentCardIndex;
         if (remaining === 4 && cards.length > 0) {
@@ -251,26 +221,25 @@ const SortCardsPage: React.FC = () => {
         }
     }, [currentCardIndex, cards.length]);
 
-    // Check if card is dropped in a bucket
-    const checkBucketCollision = (cardX: number, cardY: number): string | null => {
-        if (!containerRef.current) return null;
+    // Check if the dragged card's center overlaps a bucket using actual DOM positions
+    const checkBucketCollision = (ox: number, oy: number): string | null => {
+        const onDeckEl = onDeckRef.current;
+        if (!onDeckEl) return null;
+        const onDeckRect = onDeckEl.getBoundingClientRect();
 
-        const cardCenterX = cardX + BUCKET_WIDTH / 2;
-        const cardCenterY = cardY + 100; // Card height / 2 (200 / 2)
+        // Card rests at center of OnDeckSection (via inset + margin:auto); drag offsets move it
+        const cardCenterX = onDeckRect.left + onDeckRect.width / 2 + ox;
+        const cardCenterY = onDeckRect.top + onDeckRect.height / 2 + oy;
 
-        for (const bucket of buckets) {
-            const bucketLeft = bucket.x;
-            const bucketTop = bucket.y;
-            const bucketRight = bucket.x + BUCKET_WIDTH;
-            const bucketBottom = bucket.y + 200;
-
+        for (const [id, el] of bucketRefs.current) {
+            const rect = el.getBoundingClientRect();
             if (
-                cardCenterX >= bucketLeft &&
-                cardCenterX <= bucketRight &&
-                cardCenterY >= bucketTop &&
-                cardCenterY <= bucketBottom
+                cardCenterX >= rect.left &&
+                cardCenterX <= rect.right &&
+                cardCenterY >= rect.top &&
+                cardCenterY <= rect.bottom
             ) {
-                return bucket.id;
+                return id;
             }
         }
         return null;
@@ -318,7 +287,6 @@ const SortCardsPage: React.FC = () => {
         setHistory((prev) => prev.slice(0, -1));
         setCurrentCardIndex((prev) => Math.max(0, prev - 1));
 
-        // Optionally call backend to undo
         try {
             await fetch(`${API_BASE_URL}/api/starter-packs/undo`, {
                 method: "POST",
@@ -367,31 +335,36 @@ const SortCardsPage: React.FC = () => {
                 immediate: down,
             });
 
+            const bucketId = checkBucketCollision(ox, oy);
             if (down) {
-                // Check collision while dragging
-                // Add 504px offset for OnDeckSection position
-                const bucketId = checkBucketCollision(cardLeft + ox, 452 + 16 + oy);
                 setHighlightedBucket(bucketId);
             } else {
-                // Released - check if dropped in bucket
-                // Add 504px offset for OnDeckSection position
-                const bucketId = checkBucketCollision(cardLeft + ox, 452 + 16 + oy);
                 setHighlightedBucket(null);
-
-                if (bucketId) {
-                    handleCardSort(bucketId);
-                }
+                if (bucketId) handleCardSort(bucketId);
             }
         },
         {
             from: () => [x.get(), y.get()],
-            bounds: { left: -cardLeft, right: viewportWidth - cardLeft - BUCKET_WIDTH, top: -468, bottom: 100 },
+            // Read actual container dimensions from the DOM at gesture start
+            bounds: () => {
+                const bucketsRect = bucketsRef.current?.getBoundingClientRect();
+                const onDeckRect = onDeckRef.current?.getBoundingClientRect();
+                if (!bucketsRect || !onDeckRect) return {};
+                // Offsets are relative to card's rest position (center of OnDeck)
+                const restCenterY = onDeckRect.top + onDeckRect.height / 2;
+                return {
+                    left: -(onDeckRect.width / 2 - 40),
+                    right: onDeckRect.width / 2 - 40,
+                    top: bucketsRect.top - restCenterY,
+                    bottom: onDeckRect.bottom - restCenterY,
+                };
+            },
         }
     );
 
     if (loading) {
         return (
-            <Box className="sort-cards__loading-wrapper" sx={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100vh" }}>
+            <Box className="sort-cards__loading-wrapper" sx={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100dvh" }}>
                 <CircularProgress className="sort-cards__spinner" />
             </Box>
         );
@@ -410,26 +383,11 @@ const SortCardsPage: React.FC = () => {
     if (!currentCard) {
         return (
             <IPhoneFrame className="sort-cards__frame" sx={desktopFrameSx}>
-                <Header className="sort-cards__header">
-                    <Toolbar className="sort-cards__toolbar">
-                        <IconButton className="sort-cards__back-button" onClick={() => navigate("/flashcards/decks")} size="small">
-                            <ExpandMoreIcon className="sort-cards__back-icon" sx={{ transform: "rotate(90deg)" }} />
-                        </IconButton>
-                        <Typography
-                            className="sort-cards__title"
-                            sx={{
-                                flex: 1,
-                                fontSize: 16,
-                                fontWeight: 400,
-                                color: COLORS.onSurface,
-                                fontFamily: '"Inter", sans-serif',
-                            }}
-                        >
-                            Sort Cards
-                        </Typography>
-                        <MobileNavDrawer />
-                    </Toolbar>
-                </Header>
+                <PageHeader
+                    title="Sort Cards"
+                    showBack={false}
+                    rightItems={<MobileNavDrawer />}
+                />
                 <ContentArea className="sort-cards__content">
                     <Box className="sort-cards__all-sorted" sx={{ display: "flex", flex: 1, alignItems: "center", justifyContent: "center" }}>
                         <Typography className="sort-cards__all-sorted-text">All cards sorted! 🎉</Typography>
@@ -443,91 +401,82 @@ const SortCardsPage: React.FC = () => {
     return (
         <IPhoneFrame className="sort-cards__frame" sx={desktopFrameSx}>
             {/* Header */}
-            <Header className="sort-cards__header">
-                <Toolbar className="sort-cards__toolbar">
-                    <IconButton className="sort-cards__back-button" onClick={() => navigate("/flashcards/decks")} size="small">
-                        <ExpandMoreIcon className="sort-cards__back-icon" sx={{ transform: "rotate(90deg)" }} />
-                    </IconButton>
-                    <Typography
-                        className="sort-cards__title"
-                        sx={{
-                            flex: 1,
-                            fontSize: 16,
-                            fontWeight: 400,
-                            color: COLORS.onSurface,
-                            fontFamily: '"Inter", sans-serif',
+            <PageHeader
+                title="Sort Cards"
+                showBack={false}
+                rightItems={
+                    <>
+                        <IconButton
+                            className="sort-cards__undo-button"
+                            onClick={handleUndo}
+                            size="small"
+                            disabled={history.length === 0}
+                            sx={{ color: "#1D1B20" }}
+                        >
+                            <UndoIcon className="sort-cards__undo-icon" />
+                        </IconButton>
+                        <MobileNavDrawer />
+                    </>
+                }
+            />
+
+            {/* Content Area */}
+            <ContentArea className="sort-cards__content">
+                {/* Buckets — CSS grid owns placement, no JS position math needed */}
+                <BucketsContainer className="sort-cards__buckets-container" ref={bucketsRef}>
+                    {buckets.map((bucket) => (
+                        <Bucket
+                            className="sort-cards__bucket"
+                            key={bucket.id}
+                            ref={(el: HTMLElement | null) => {
+                                if (el) bucketRefs.current.set(bucket.id, el);
+                                else bucketRefs.current.delete(bucket.id);
+                            }}
+                            mainColor={bucket.mainColor}
+                            accentColor={bucket.accentColor}
+                            highlight={highlightedBucket === bucket.id}
+                        >
+                            <div className="bucket-inner">
+                                <div className="bucket-text">{bucket.label}</div>
+                            </div>
+                        </Bucket>
+                    ))}
+                </BucketsContainer>
+
+                {/* On Deck Section with Draggable Card */}
+                <OnDeckSection className="sort-cards__on-deck" ref={onDeckRef}>
+                    <FlashCard
+                        className="sort-cards__flash-card"
+                        {...bind()}
+                        style={{
+                            x,
+                            y,
+                            scale,
+                            opacity,
+                            position: "absolute",
+                            inset: 0,
+                            margin: "auto",
                         }}
                     >
-                        Sort Cards
-                    </Typography>
-                    {/* Undo and hamburger on the right */}
-                    <IconButton
-                        className="sort-cards__undo-button"
-                        onClick={handleUndo}
-                        size="small"
-                        disabled={history.length === 0}
-                    >
-                        <UndoIcon className="sort-cards__undo-icon" />
-                    </IconButton>
-                    <MobileNavDrawer />
-                </Toolbar>
-            </Header>
-
-                {/* Content Area */}
-                <ContentArea className="sort-cards__content" ref={containerRef}>
-                    {/* Buckets */}
-                    <BucketsContainer className="sort-cards__buckets-container">
-                        {buckets.map((bucket) => (
-                            <Bucket
-                                className="sort-cards__bucket"
-                                key={bucket.id}
-                                mainColor={bucket.mainColor}
-                                accentColor={bucket.accentColor}
-                                x={bucket.x}
-                                y={bucket.y}
-                                highlight={highlightedBucket === bucket.id}
-                            >
-                                <div className="bucket-inner">
-                                    <div className="bucket-text">{bucket.label}</div>
-                                </div>
-                            </Bucket>
-                        ))}
-                    </BucketsContainer>
-
-                    {/* On Deck Section with Draggable Card */}
-                    <OnDeckSection className="sort-cards__on-deck">
-                        <FlashCard
-                            className="sort-cards__flash-card"
-                            {...bind()}
-                            style={{
-                                x,
-                                y,
-                                scale,
-                                opacity,
-                                position: "absolute",
-                                left: cardLeft,
-                                top: 16,
-                            }}
-                        >
-                            <Box className="sort-cards__card-image" sx={{ width: 96, height: 76, backgroundColor: "#e0e0e0", borderRadius: 1 }} />
-                            <Box className="sort-cards__card-body" sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-                                <Box className="sort-cards__card-key-group" sx={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                                    <Typography className="sort-cards__card-key" sx={{ fontSize: 20, fontWeight: 400, letterSpacing: "0.08em" }}>
-                                        {currentCard.entryKey}
-                                    </Typography>
-                                    {currentCard.pronunciation && (
-                                        <Typography className="sort-cards__card-pronunciation" sx={{ fontSize: 8, fontWeight: 400 }}>
-                                            {currentCard.pronunciation}
-                                        </Typography>
-                                    )}
-                                </Box>
-                                <Typography className="sort-cards__card-value" sx={{ fontSize: 12, fontWeight: 400, textAlign: "center" }}>
-                                    {currentCard.entryValue}
+                        <Box className="sort-cards__card-image" sx={{ width: 96, height: 76, backgroundColor: "#e0e0e0", borderRadius: 1 }} />
+                        <Box className="sort-cards__card-body" sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                            <Box className="sort-cards__card-key-group" sx={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                                <Typography className="sort-cards__card-key" sx={{ fontSize: 20, fontWeight: 400, letterSpacing: "0.08em" }}>
+                                    {currentCard.entryKey}
                                 </Typography>
+                                {currentCard.pronunciation && (
+                                    <Typography className="sort-cards__card-pronunciation" sx={{ fontSize: 8, fontWeight: 400 }}>
+                                        {currentCard.pronunciation}
+                                    </Typography>
+                                )}
                             </Box>
-                        </FlashCard>
-                    </OnDeckSection>
-                </ContentArea>
+                            <Typography className="sort-cards__card-value" sx={{ fontSize: 12, fontWeight: 400, textAlign: "center" }}>
+                                {currentCard.entryValue}
+                            </Typography>
+                        </Box>
+                    </FlashCard>
+                </OnDeckSection>
+            </ContentArea>
 
             {/* Footer */}
             <MobileFooter activePage="discover" />

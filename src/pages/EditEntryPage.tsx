@@ -64,9 +64,9 @@ function EditEntryPage() {
                     userId: result.userId || DEFAULT_TEST_USER_ID
                 });
                 setLoading(false);
-            } catch (err: any) {
-                const errorMessage = err.message || `Failed to fetch vocabulary entry with ID ${id}`;
-                const errorCode = err.code || "ERR_UNKNOWN";
+            } catch (err: unknown) {
+                const errorMessage = (err as { message?: string }).message ?? `Failed to fetch vocabulary entry with ID ${id}`;
+                const errorCode = (err as { code?: string }).code ?? "ERR_UNKNOWN";
                 setError(errorMessage);
                 setErrorCode(errorCode);
                 setLoading(false);
@@ -119,9 +119,9 @@ function EditEntryPage() {
 
             // Navigate back to entry detail page after successful update
             navigate(`/entries/${id}`);
-        } catch (err: any) {
-            const errorMessage = err.message || `Failed to update vocabulary entry with ID ${id}`;
-            const errorCode = err.code || "ERR_UNKNOWN";
+        } catch (err: unknown) {
+            const errorMessage = (err as { message?: string }).message ?? `Failed to update vocabulary entry with ID ${id}`;
+            const errorCode = (err as { code?: string }).code ?? "ERR_UNKNOWN";
             setError(errorMessage);
             setErrorCode(errorCode);
             setSubmitting(false);

@@ -1,7 +1,7 @@
 import { BaseDAL } from '../base/BaseDAL.js';
 import { IDictionaryDAL } from '../interfaces/IDictionaryDAL.js';
 import { dbManager } from '../base/DatabaseManager.js';
-import { DictionaryEntry, DictionaryEntryCreateData } from '../../types/index.js';
+import { DictionaryEntry, DictionaryEntryCreateData, ParticleClassifierEntry } from '../../types/index.js';
 import { ValidationError } from '../../types/dal.js';
 import { resolveShortDefinition } from '../../utils/definitions.js';
 import { ShortDefinitionPronunciationOverride } from '../../types/index.js';
@@ -273,13 +273,20 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
       }
     }
 
-    // 2. Single batch DB query for all candidates
+    // 2. Single batch DB query for all dictionary candidates
     const dictEntries = await this.findMultipleByWord1([...allCandidates], language);
     const dictMap = buildDictMap(dictEntries);
     // Collect all matchException tokens across loaded entries into one exclusion set
     const excludeTokens = buildExcludeSet(dictEntries);
 
-    // 3. Enrich each sentence object with _segments and segmentMetadata
+    // 3. Single batch query for particle/classifier annotations.
+    //    Only single characters can be particles or classifiers, so filter down to length-1 candidates.
+    const singleCharCandidates = new Set<string>(
+      [...allCandidates].filter(s => [...s].length === 1)
+    );
+    const pacMap = await this.fetchParticlesAndClassifiers(singleCharCandidates, language);
+
+    // 4. Enrich each sentence object with _segments and segmentMetadata
     return entries.map(entry => {
       if (!entry.exampleSentences?.length) return entry;
 
@@ -287,18 +294,43 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
         ...entry,
         exampleSentences: entry.exampleSentences.map(sentence => {
           const segments = segmentWithDict(sentence.chinese, dictMap, excludeTokens);
-          const segmentMetadata: Record<string, { pronunciation?: string; definition?: string }> = {};
+          const segmentMetadata: Record<string, {
+            pronunciation?: string;
+            definition?: string;
+            particleOrClassifier?: { type: 'particle' | 'classifier'; definition: string };
+          }> = {};
 
           for (const seg of segments) {
             const segMeta = dictMap.get(seg);
-            if (segMeta) {
+            const pacEntries = pacMap.get(seg);
+
+            // Only create a metadata entry if the segment has at least one data source
+            if (segMeta || pacEntries?.length) {
               segmentMetadata[seg] = {};
-              if (segMeta.pronunciation) {
-                segmentMetadata[seg].pronunciation = segMeta.pronunciation;
+
+              if (segMeta) {
+                if (segMeta.pronunciation) {
+                  segmentMetadata[seg].pronunciation = segMeta.pronunciation;
+                }
+                const bestDefinition = pickDefinitionForTranslatedSentence(segMeta, sentence.english);
+                if (bestDefinition) {
+                  segmentMetadata[seg].definition = bestDefinition;
+                }
               }
-              const bestDefinition = pickDefinitionForTranslatedSentence(segMeta, sentence.english);
-              if (bestDefinition) {
-                segmentMetadata[seg].definition = bestDefinition;
+
+              // Attach particle/classifier annotation if present.
+              // Particle is preferred over classifier when a character qualifies as both,
+              // since the grammatical role is more salient for learner display.
+              if (pacEntries?.length) {
+                const particle = pacEntries.find(e => e.type === 'particle');
+                const classifier = pacEntries.find(e => e.type === 'classifier');
+                const preferred = particle ?? classifier;
+                if (preferred) {
+                  segmentMetadata[seg].particleOrClassifier = {
+                    type: preferred.type,
+                    definition: preferred.definition,
+                  };
+                }
               }
             }
           }
@@ -307,6 +339,46 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
         }),
       };
     });
+  }
+
+  /**
+   * Batch-fetch particle/classifier annotations for a set of single characters.
+   * Issues one DB query regardless of the set size.
+   * Returns a Map keyed by character; each value is an array of entries since a single
+   * character can be both a particle and a classifier (separate rows in the table).
+   *
+   * @param characters - Set of single-character strings to look up
+   * @param language   - Language filter (default: 'zh')
+   */
+  private async fetchParticlesAndClassifiers(
+    characters: Set<string>,
+    language: string = 'zh'
+  ): Promise<Map<string, ParticleClassifierEntry[]>> {
+    if (characters.size === 0) return new Map();
+
+    const result = await this.dbManager.executeQuery<any>(async (client) => {
+      return await client.query(
+        `SELECT id, character, language, type, definition, "createdAt"
+         FROM particlesandclassifiers
+         WHERE character = ANY($1) AND language = $2`,
+        [[...characters], language]
+      );
+    });
+
+    const map = new Map<string, ParticleClassifierEntry[]>();
+    for (const row of result.recordset) {
+      const existing = map.get(row.character) ?? [];
+      existing.push({
+        id: row.id,
+        character: row.character,
+        language: row.language,
+        type: row.type as 'particle' | 'classifier',
+        definition: row.definition,
+        createdAt: row.createdAt,
+      });
+      map.set(row.character, existing);
+    }
+    return map;
   }
 
   /**

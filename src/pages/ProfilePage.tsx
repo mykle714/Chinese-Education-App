@@ -105,8 +105,8 @@ function ProfilePage() {
         try {
             await deleteAccount(deletePassword);
             // Navigation to login is handled in the deleteAccount function
-        } catch (err: any) {
-            setDeleteError(err.message || "Failed to delete account");
+        } catch (err: unknown) {
+            setDeleteError(err instanceof Error ? err.message : "Failed to delete account");
             setIsDeleting(false);
         }
     };
@@ -134,8 +134,8 @@ function ProfilePage() {
             setCurrentPassword("");
             setNewPassword("");
             setConfirmPassword("");
-        } catch (err: any) {
-            setError(err.message || "Failed to change password");
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : "Failed to change password");
         } finally {
             setIsSubmitting(false);
         }

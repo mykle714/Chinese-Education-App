@@ -77,7 +77,10 @@ export function useCardDrag(
             setDragPosition({ x: 0, y: 0 });
             setIsFlipped(prev => !prev);
         } else if (Math.abs(x) > threshold) {
-            // Card dismissed
+            // Card dismissed — reset position first so the transition animates
+            // back to center while the parent awaits its 300ms delay before
+            // swapping in the next card.
+            setDragPosition({ x: 0, y: 0 });
             onDismiss(x < 0 ? 'left' : 'right');
         } else {
             // Snap back
@@ -117,7 +120,10 @@ export function useCardDrag(
             setDragPosition({ x: 0, y: 0 });
             setIsFlipped(prev => !prev);
         } else if (Math.abs(x) > threshold) {
-            // Card dismissed
+            // Card dismissed — reset position first so the transition animates
+            // back to center while the parent awaits its 300ms delay before
+            // swapping in the next card.
+            setDragPosition({ x: 0, y: 0 });
             onDismiss(x < 0 ? 'left' : 'right');
         } else {
             // Snap back

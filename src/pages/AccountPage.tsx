@@ -21,6 +21,7 @@ import { Logout, Visibility, VisibilityOff, Warning } from "@mui/icons-material"
 import { styled } from "@mui/material/styles";
 import MobileFooter from "../components/MobileFooter";
 import MobileNavDrawer from "../components/MobileNavDrawer";
+import PageHeader from "../components/PageHeader";
 import { useAuth } from "../AuthContext";
 import { useConfirmation } from "../contexts/ConfirmationContext";
 
@@ -41,25 +42,6 @@ const IPhoneFrame = styled(Box)(() => ({
     flexDirection: "column",
     width: "100vw",
     height: "100vh",
-}));
-
-const Header = styled(Box)(() => ({
-    backgroundColor: COLORS.header,
-    minHeight: 96,
-    display: "flex",
-    flexDirection: "column",
-    justifyContent: "flex-end",
-    gap: 10,
-}));
-
-const Toolbar = styled(Box)(() => ({
-    display: "flex",
-    gap: 10,
-    width: "100%",
-    height: 47,
-    alignItems: "center",
-    padding: "0 12px 0 28px",
-    position: "relative",
 }));
 
 const ContentArea = styled(Box)(() => ({
@@ -200,8 +182,8 @@ function AccountPage() {
         try {
             await deleteAccount(deletePassword);
             // Navigation to login is handled in the deleteAccount function
-        } catch (err: any) {
-            setDeleteError(err.message || "Failed to delete account");
+        } catch (err: unknown) {
+            setDeleteError(err instanceof Error ? err.message : "Failed to delete account");
             setIsDeleting(false);
         }
     };
@@ -229,8 +211,8 @@ function AccountPage() {
             setCurrentPassword("");
             setNewPassword("");
             setConfirmPassword("");
-        } catch (err: any) {
-            setError(err.message || "Failed to change password");
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : "Failed to change password");
         } finally {
             setIsSubmitting(false);
         }
@@ -239,26 +221,7 @@ function AccountPage() {
     if (isLoading) {
         return (
             <IPhoneFrame className="account-page__frame" sx={desktopFrameSx}>
-                <Header className="account-page__header">
-                    <Toolbar className="account-page__toolbar">
-                        <Box sx={{ width: 34 }} />
-                        <Typography
-                            className="account-page__title"
-                            sx={{
-                                flex: 1,
-                                fontSize: 16,
-                                fontWeight: 400,
-                                color: COLORS.onSurface,
-                                textAlign: "center",
-                                lineHeight: 1.21,
-                                fontFamily: '"Inter", sans-serif',
-                            }}
-                        >
-                            Account
-                        </Typography>
-                        <MobileNavDrawer />
-                    </Toolbar>
-                </Header>
+                <PageHeader title="Account" showBack={false} rightItems={<MobileNavDrawer />} />
                 <ContentArea className="account-page__content">
                     <CircularProgress className="account-page__spinner" />
                 </ContentArea>
@@ -270,26 +233,7 @@ function AccountPage() {
     if (!user) {
         return (
             <IPhoneFrame className="account-page__frame" sx={desktopFrameSx}>
-                <Header className="account-page__header">
-                    <Toolbar className="account-page__toolbar">
-                        <Box sx={{ width: 34 }} />
-                        <Typography
-                            className="account-page__title"
-                            sx={{
-                                flex: 1,
-                                fontSize: 16,
-                                fontWeight: 400,
-                                color: COLORS.onSurface,
-                                textAlign: "center",
-                                lineHeight: 1.21,
-                                fontFamily: '"Inter", sans-serif',
-                            }}
-                        >
-                            Account
-                        </Typography>
-                        <MobileNavDrawer />
-                    </Toolbar>
-                </Header>
+                <PageHeader title="Account" showBack={false} rightItems={<MobileNavDrawer />} />
                 <ContentArea className="account-page__content">
                     <Typography className="account-page__no-user-text" sx={{ textAlign: "center", color: COLORS.onSurface }}>
                         Please log in to view your account
@@ -308,26 +252,7 @@ function AccountPage() {
         <>
         <IPhoneFrame className="account-page__frame">
             {/* Header */}
-            <Header className="account-page__header">
-                <Toolbar className="account-page__toolbar">
-                    <Box sx={{ width: 34 }} />
-                    <Typography
-                        className="account-page__title"
-                        sx={{
-                            flex: 1,
-                            fontSize: 16,
-                            fontWeight: 400,
-                            color: COLORS.onSurface,
-                            textAlign: "center",
-                            lineHeight: 1.21,
-                            fontFamily: '"Inter", sans-serif',
-                        }}
-                    >
-                        Account
-                    </Typography>
-                    <MobileNavDrawer />
-                </Toolbar>
-            </Header>
+            <PageHeader title="Account" showBack={false} rightItems={<MobileNavDrawer />} />
 
                 {/* Content Area */}
                 <ContentArea className="account-page__content">

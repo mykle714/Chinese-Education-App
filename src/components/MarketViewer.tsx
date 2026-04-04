@@ -72,7 +72,7 @@ function MarketViewer({ layers }: MarketViewerProps) {
         setLoading(true);
         loadedImagesRef.current = [];
 
-        let loadedImages: LoadedImage[] = [];
+        const loadedImages: LoadedImage[] = [];
         let errorOccurred = false;
 
         // Load each layer's image

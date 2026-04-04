@@ -17,7 +17,7 @@ export const useActivityDetection = ({
 }: UseActivityDetectionOptions) => {
     
     // Memoized activity handler to prevent unnecessary re-renders
-    const handleActivity = useCallback((_event: Event) => {
+    const handleActivity = useCallback(() => {
         // Only track activity if enabled
         if (!isEnabled) return;
         

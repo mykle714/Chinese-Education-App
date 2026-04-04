@@ -4,6 +4,7 @@ import { Box, Typography, CircularProgress, Alert, Button, useMediaQuery, useThe
 import { styled } from "@mui/material/styles";
 import MobileFooter from "../components/MobileFooter";
 import MobileNavDrawer from "../components/MobileNavDrawer";
+import PageHeader from "../components/PageHeader";
 import MiniVocabCard from "../components/MiniVocabCard";
 import { useAuth } from "../AuthContext";
 import { API_BASE_URL } from "../constants";
@@ -35,25 +36,6 @@ const IPhoneFrame = styled(Box)(() => ({
     flexDirection: "column",
     width: "100vw",
     height: "100vh",
-}));
-
-const Header = styled(Box)(() => ({
-    backgroundColor: COLORS.header,
-    minHeight: 96,
-    display: "flex",
-    flexDirection: "column",
-    justifyContent: "flex-end",
-    gap: 10,
-}));
-
-const Toolbar = styled(Box)(() => ({
-    display: "flex",
-    gap: 10,
-    width: "100%",
-    height: 47,
-    alignItems: "center",
-    padding: "0 12px 0 28px",
-    position: "relative",
 }));
 
 const ContentArea = styled(Box)(() => ({
@@ -244,9 +226,9 @@ const FlashcardsDecksPage: React.FC = () => {
 
                 const data = await response.json();
                 setVocabEntries(Array.isArray(data) ? data : []);
-            } catch (err: any) {
+            } catch (err: unknown) {
                 console.error('Error fetching library cards:', err);
-                setError(err.message || 'Failed to load library cards');
+                setError(err instanceof Error ? err.message : 'Failed to load library cards');
             } finally {
                 setLoading(false);
             }
@@ -274,9 +256,9 @@ const FlashcardsDecksPage: React.FC = () => {
 
                 const data = await response.json();
                 setLearnLaterEntries(Array.isArray(data) ? data : []);
-            } catch (err: any) {
+            } catch (err: unknown) {
                 console.error('Error fetching learn later cards:', err);
-                setLearnLaterError(err.message || 'Failed to load learn later cards');
+                setLearnLaterError(err instanceof Error ? err.message : 'Failed to load learn later cards');
             } finally {
                 setLearnLaterLoading(false);
             }
@@ -304,9 +286,9 @@ const FlashcardsDecksPage: React.FC = () => {
 
                 const data = await response.json();
                 setMasteredEntries(Array.isArray(data) ? data : []);
-            } catch (err: any) {
+            } catch (err: unknown) {
                 console.error('Error fetching mastered cards:', err);
-                setMasteredError(err.message || 'Failed to load mastered cards');
+                setMasteredError(err instanceof Error ? err.message : 'Failed to load mastered cards');
             } finally {
                 setMasteredLoading(false);
             }
@@ -432,27 +414,7 @@ const FlashcardsDecksPage: React.FC = () => {
     return (
         <IPhoneFrame className="decks-page-frame" sx={desktopFrameSx}>
             {/* Header */}
-            <Header className="decks-page-header">
-                <Toolbar className="decks-page-toolbar">
-                    {/* Spacer balances the hamburger button on the right */}
-                    <Box sx={{ width: 34 }} />
-                    <Typography
-                        className="decks-page-title"
-                        sx={{
-                            flex: 1,
-                            fontSize: 16,
-                            fontWeight: 400,
-                            color: COLORS.onSurface,
-                            textAlign: "center",
-                            lineHeight: 1.21,
-                            fontFamily: '"Inter", sans-serif',
-                        }}
-                    >
-                        Decks & Cards
-                    </Typography>
-                    <MobileNavDrawer />
-                </Toolbar>
-            </Header>
+            <PageHeader title="Decks & Cards" showBack={false} rightItems={<MobileNavDrawer />} />
 
                 {/* Content Area */}
                 <ContentArea className="decks-page-content">

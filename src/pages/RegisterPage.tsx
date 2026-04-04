@@ -49,8 +49,8 @@ function RegisterPage() {
         setRegisterError(null);
         try {
             await register(data.email, data.name, data.password);
-        } catch (error: any) {
-            setRegisterError(error.message || 'Registration failed. Please try again.');
+        } catch (error: unknown) {
+            setRegisterError(error instanceof Error ? error.message : 'Registration failed. Please try again.');
         } finally {
             setIsSubmitting(false);
         }

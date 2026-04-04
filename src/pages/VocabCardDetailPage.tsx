@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { Box, Typography, Chip, CircularProgress, Alert, Divider, useMediaQuery, useTheme } from "@mui/material";
 import { styled } from "@mui/material/styles";
-import ArrowBackIosNewIcon from "@mui/icons-material/ArrowBackIosNew";
 import MobileFooter from "../components/MobileFooter";
+import PageHeader from "../components/PageHeader";
 import { API_BASE_URL } from "../constants";
 import type { VocabEntry, DictionaryEntry } from "../types";
 import CharacterPinyinColorDisplay from "../components/CharacterPinyinColorDisplay";
@@ -35,23 +35,6 @@ const IPhoneFrame = styled(Box)(() => ({
     flexDirection: "column",
     width: "100vw",
     height: "100vh",
-}));
-
-const Header = styled(Box)(() => ({
-    backgroundColor: COLORS.header,
-    minHeight: 96,
-    display: "flex",
-    flexDirection: "column",
-    justifyContent: "flex-end",
-    flexShrink: 0,
-}));
-
-const Toolbar = styled(Box)(() => ({
-    display: "flex",
-    alignItems: "center",
-    padding: "0 16px",
-    height: 47,
-    position: "relative",
 }));
 
 const ContentArea = styled(Box)(() => ({
@@ -108,7 +91,6 @@ const getCategoryColor = (category?: string) => {
 
 const VocabCardDetailPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
-    const navigate = useNavigate();
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down("md"));
     const [entry, setEntry] = useState<VocabEntry | null>(null);
@@ -135,8 +117,8 @@ const VocabCardDetailPage: React.FC = () => {
                     const dictData = await dictRes.json();
                     setDictEntry(dictData);
                 }
-            } catch (err: any) {
-                setError(err.message || "Failed to load card");
+            } catch (err: unknown) {
+                setError(err instanceof Error ? err.message : "Failed to load card");
             } finally {
                 setLoading(false);
             }
@@ -165,41 +147,7 @@ const VocabCardDetailPage: React.FC = () => {
 
     return (
         <IPhoneFrame className="vocab-card-detail__frame" sx={desktopFrameSx}>
-                <Header className="vocab-card-detail__header">
-                    <Toolbar className="vocab-card-detail__toolbar">
-                        <Box
-                            className="vocab-card-detail__back-button"
-                            onClick={() => navigate(-1)}
-                            sx={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: "4px",
-                                cursor: "pointer",
-                                color: COLORS.onSurface,
-                                "&:hover": { opacity: 0.7 },
-                            }}
-                        >
-                            <ArrowBackIosNewIcon className="vocab-card-detail__back-icon" sx={{ fontSize: 16 }} />
-                            <Typography className="vocab-card-detail__back-text" sx={{ fontSize: 14, fontFamily: '"Inter", sans-serif' }}>
-                                Back
-                            </Typography>
-                        </Box>
-                        <Typography
-                            className="vocab-card-detail__title"
-                            sx={{
-                                fontSize: 16,
-                                fontWeight: 400,
-                                color: COLORS.onSurface,
-                                fontFamily: '"Inter", sans-serif',
-                                position: "absolute",
-                                left: "50%",
-                                transform: "translateX(-50%)",
-                            }}
-                        >
-                            Card Detail
-                        </Typography>
-                    </Toolbar>
-                </Header>
+                <PageHeader title="Card Detail" />
 
                 <ContentArea className="vocab-card-detail__content">
                     {loading ? (

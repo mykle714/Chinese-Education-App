@@ -124,9 +124,9 @@ const VocabEntryCards = ({ refreshTrigger, searchTerm = '' }: VocabEntryCardsPro
       setTotal(result.total);
       setHasMore(result.hasMore);
       setLoading(false);
-    } catch (err: any) {
-      const errorMessage = err.message || 'Failed to fetch vocabulary entries';
-      const errorCode = err.code || 'ERR_UNKNOWN';
+    } catch (err: unknown) {
+      const errorMessage = (err as { message?: string }).message ?? 'Failed to fetch vocabulary entries';
+      const errorCode = (err as { code?: string }).code ?? 'ERR_UNKNOWN';
       setError(errorMessage);
       setErrorCode(errorCode);
       setLoading(false);
@@ -158,9 +158,9 @@ const VocabEntryCards = ({ refreshTrigger, searchTerm = '' }: VocabEntryCardsPro
       setEntries(result);
       setHasMore(false); // Disable pagination during search
       setLoading(false);
-    } catch (err: any) {
-      const errorMessage = err.message || 'Failed to search vocabulary entries';
-      const errorCode = err.code || 'ERR_UNKNOWN';
+    } catch (err: unknown) {
+      const errorMessage = (err as { message?: string }).message ?? 'Failed to search vocabulary entries';
+      const errorCode = (err as { code?: string }).code ?? 'ERR_UNKNOWN';
       setError(errorMessage);
       setErrorCode(errorCode);
       setLoading(false);

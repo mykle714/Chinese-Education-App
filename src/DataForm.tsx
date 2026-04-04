@@ -71,9 +71,9 @@ const DataForm = ({ onDataAdded }: DataFormProps) => {
          });
          setSuccess(true);
          onDataAdded();
-      } catch (err: any) {
-         const errorMessage = err.message || 'Failed to add vocabulary entry. Please try again.';
-         const errorCode = err.code || 'ERR_UNKNOWN';
+      } catch (err: unknown) {
+         const errorMessage = (err as { message?: string }).message ?? 'Failed to add vocabulary entry. Please try again.';
+         const errorCode = (err as { code?: string }).code ?? 'ERR_UNKNOWN';
          setError(errorMessage);
          setErrorCode(errorCode);
          console.error(err);

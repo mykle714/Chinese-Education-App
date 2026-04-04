@@ -84,9 +84,10 @@ function EntryDetailPage() {
                 const response = await apiClient.get(`/api/vocabEntries/${id}`);
                 setEntry(response.data);
                 setLoading(false);
-            } catch (err: any) {
-                const errorMessage = err.response?.data?.error || err.message || `Failed to fetch vocabulary entry with ID ${id}`;
-                const errorCode = err.response?.data?.code || "ERR_UNKNOWN";
+            } catch (err: unknown) {
+                const e = err as { response?: { data?: { error?: string; code?: string } }; message?: string };
+                const errorMessage = e.response?.data?.error ?? e.message ?? `Failed to fetch vocabulary entry with ID ${id}`;
+                const errorCode = e.response?.data?.code ?? "ERR_UNKNOWN";
                 setError(errorMessage);
                 setErrorCode(errorCode);
                 setLoading(false);
@@ -113,9 +114,10 @@ function EntryDetailPage() {
 
             // Navigate back to entries page after successful deletion
             navigate("/entries");
-        } catch (err: any) {
-            const errorMessage = err.response?.data?.error || err.message || `Failed to delete vocabulary entry with ID ${id}`;
-            const errorCode = err.response?.data?.code || "ERR_UNKNOWN";
+        } catch (err: unknown) {
+            const e = err as { response?: { data?: { error?: string; code?: string } }; message?: string };
+            const errorMessage = e.response?.data?.error ?? e.message ?? `Failed to delete vocabulary entry with ID ${id}`;
+            const errorCode = e.response?.data?.code ?? "ERR_UNKNOWN";
             setError(errorMessage);
             setErrorCode(errorCode);
             console.error(err);

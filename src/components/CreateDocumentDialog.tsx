@@ -75,9 +75,9 @@ function CreateDocumentDialog({ open, onClose, onSuccess, language }: CreateDocu
             // Notify parent and close
             onSuccess();
             onClose();
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('[CREATE-DIALOG] ❌ Error creating document:', err);
-            setError(err.message || 'Failed to create document');
+            setError(err instanceof Error ? err.message : 'Failed to create document');
         } finally {
             setLoading(false);
         }

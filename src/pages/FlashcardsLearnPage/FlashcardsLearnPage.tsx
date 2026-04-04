@@ -36,6 +36,20 @@ const FlashcardsLearnPage: React.FC = () => {
     // Current entry derived from working loop
     const currentEntry: VocabEntry | null = workingLoop.length > 0 ? workingLoop[currentIndex] : null;
 
+    // Log enrichment data for the current card whenever it changes (covers both correct and incorrect advances)
+    useEffect(() => {
+        if (!currentEntry) return;
+        console.log('Current card:', { id: currentEntry.id, entryKey: currentEntry.entryKey });
+        console.log('Current card enrichment:', {
+            breakdown: currentEntry.breakdown ?? 'none',
+            synonyms: currentEntry.synonyms ?? 'none',
+            exampleSentences: currentEntry.exampleSentences ?? 'none',
+            expansion: currentEntry.expansion ?? 'none',
+            expansionMetadata: currentEntry.expansionMetadata ?? 'none',
+            relatedWords: currentEntry.relatedWords ?? 'none',
+        });
+    }, [currentEntry]);
+
     // Convert breakdown object to array for display
     const getBreakdownItems = (): BreakdownItem[] => {
         if (!currentEntry || !currentEntry.breakdown) return [];

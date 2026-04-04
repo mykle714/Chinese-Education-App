@@ -66,6 +66,22 @@ export type Language = 'zh' | 'ja' | 'ko' | 'vi';
 // HSK Level type for vocabulary entries
 export type HskLevel = 'HSK1' | 'HSK2' | 'HSK3' | 'HSK4' | 'HSK5' | 'HSK6';
 
+// Particle or classifier annotation attached to a segmented character in example sentence metadata
+export interface ParticleOrClassifierInfo {
+  type: 'particle' | 'classifier';
+  definition: string;
+}
+
+// Row type for the particlesandclassifiers reference table
+export interface ParticleClassifierEntry {
+  id: number;
+  character: string;
+  language: string;
+  type: 'particle' | 'classifier';
+  definition: string;
+  createdAt: string;
+}
+
 // Manual per-entry override for display fields; stored as JSONB in dictionaryentries."shortDefinitionPronunciationOverride"
 export interface ShortDefinitionPronunciationOverride {
   definition?: string | null;    // Replaces computed shortDefinition
@@ -104,7 +120,7 @@ export interface DictionaryEntry {
     chinese: string;
     english: string;
     _segments?: string[];
-    segmentMetadata?: Record<string, { pronunciation?: string; definition?: string }>;
+    segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo }>;
   }> | null;
   expansion?: string | null;
   expansionMetadata?: Record<string, { pronunciation?: string; definition?: string }> | null;
@@ -129,7 +145,7 @@ export interface DiscoverCard {
     chinese: string;
     english: string;
     _segments?: string[];
-    segmentMetadata?: Record<string, { pronunciation?: string; definition?: string }>;
+    segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo }>;
   }> | null;
   expansion?: string | null;
   expansionMetadata?: Record<string, { pronunciation?: string; definition?: string }> | null;
@@ -191,7 +207,7 @@ export interface VocabEntry {
     chinese: string;
     english: string;
     _segments?: string[];
-    segmentMetadata?: Record<string, { pronunciation?: string; definition?: string }>;
+    segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo }>;
   }>;  // Example sentences enriched at runtime with greedy segmentation and per-segment metadata
   relatedWords?: Array<{ id: number; entryKey: string; pronunciation: string | null; definition: string | null }>;  // Related library words (computed dynamically)
   createdAt: Date;

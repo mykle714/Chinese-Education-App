@@ -18,7 +18,7 @@ import {
 import SettingsIcon from '@mui/icons-material/Settings';
 import PaletteIcon from '@mui/icons-material/Palette';
 import LanguageIcon from '@mui/icons-material/Language';
-import { useTheme } from '../contexts/ThemeContext';
+import { useTheme, type ThemeMode } from '../contexts/ThemeContext';
 import { useAuth } from '../AuthContext';
 import type { Language } from '../types';
 
@@ -29,7 +29,7 @@ function SettingsPage() {
     const [languageError, setLanguageError] = useState<string | null>(null);
 
     const handleThemeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-        setThemeMode(event.target.value as any);
+        setThemeMode(event.target.value as ThemeMode);
     };
 
     const handleLanguageChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -38,8 +38,8 @@ function SettingsPage() {
             await updateLanguage(newLanguage);
             setLanguageSuccess(true);
             setLanguageError(null);
-        } catch (error: any) {
-            setLanguageError(error.message || 'Failed to update language preference');
+        } catch (error: unknown) {
+            setLanguageError(error instanceof Error ? error.message : 'Failed to update language preference');
             setLanguageSuccess(false);
         }
     };
@@ -211,7 +211,7 @@ function SettingsPage() {
                                                 backgroundColor: 'action.hover',
                                             } : {},
                                         }}
-                                        onClick={() => isAvailable && handleLanguageChange({ target: { value: lang.value } } as any)}
+                                        onClick={() => isAvailable && handleLanguageChange({ target: { value: lang.value } } as React.ChangeEvent<HTMLInputElement>)}
                                     >
                                         <CardContent sx={{ py: 2 }}>
                                             <FormControlLabel

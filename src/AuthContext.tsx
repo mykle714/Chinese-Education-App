@@ -144,8 +144,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
             setToken(data.token);
             localStorage.setItem('token', data.token);
             navigate('/');
-        } catch (error: any) {
-            setError(error.message);
+        } catch (error: unknown) {
+            setError(error instanceof Error ? error.message : 'Login failed');
             throw error;
         }
     };
@@ -170,8 +170,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
             // After registration, log the user in
             await login(email, password);
-        } catch (error: any) {
-            setError(error.message);
+        } catch (error: unknown) {
+            setError(error instanceof Error ? error.message : 'Registration failed');
             throw error;
         }
     };
@@ -220,8 +220,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
             setToken(null);
             setUser(null);
             navigate('/login');
-        } catch (error: any) {
-            setError(error.message);
+        } catch (error: unknown) {
+            setError(error instanceof Error ? error.message : 'Failed to delete account');
             throw error;
         }
     };
@@ -251,8 +251,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
             const data = await response.json();
             setUser(data.user);
             return data;
-        } catch (error: any) {
-            setError(error.message);
+        } catch (error: unknown) {
+            setError(error instanceof Error ? error.message : 'Failed to change password');
             throw error;
         }
     };
@@ -282,8 +282,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
             const data = await response.json();
             setUser({ ...user!, selectedLanguage: language });
             return data;
-        } catch (error: any) {
-            setError(error.message);
+        } catch (error: unknown) {
+            setError(error instanceof Error ? error.message : 'Failed to update language preference');
             throw error;
         }
     };

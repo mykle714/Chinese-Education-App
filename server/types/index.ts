@@ -109,6 +109,7 @@ export interface DictionaryEntry {
   expansion?: string | null;
   expansionMetadata?: Record<string, { pronunciation?: string; definition?: string }> | null;
   expansionLiteralTranslation?: string | null;
+  matchException?: string[] | null;  // Multi-char tokens to suppress during GSA segmentation
 };
 
 // Discover Card type — a curated DictionaryEntry shaped for the sort-cards UI

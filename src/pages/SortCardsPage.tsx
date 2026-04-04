@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Box, Typography, IconButton, CircularProgress, useMediaQuery, useTheme } from "@mui/material";
 import { styled } from "@mui/material/styles";
-import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import UndoIcon from "@mui/icons-material/Undo";
 import { useDrag } from "@use-gesture/react";
 import { useSpring, animated } from "@react-spring/web";
@@ -40,25 +39,6 @@ const IPhoneFrame = styled(Box)({
     height: "100vh",
 });
 
-const Header = styled(Box)({
-    backgroundColor: COLORS.header,
-    minHeight: 96,
-    display: "flex",
-    flexDirection: "column",
-    justifyContent: "flex-end",
-    gap: 10,
-});
-
-const Toolbar = styled(Box)({
-    display: "flex",
-    gap: 10,
-    width: "100%",
-    height: 47,
-    alignItems: "center",
-    padding: "0 12px",
-    position: "relative",
-});
-
 const ContentArea = styled(Box)({
     flex: 1,
     display: "flex",
@@ -70,9 +50,8 @@ const ContentArea = styled(Box)({
 
 const BucketsContainer = styled(Box)({
     width: "100vw",
-    height: 452,
+    flex: 1,
     position: "relative",
-    flexShrink: 0,
 });
 
 const Bucket = styled(Box)<{ mainColor: string; accentColor: string; x: number; y: number; highlight?: boolean }>(
@@ -115,11 +94,10 @@ const Bucket = styled(Box)<{ mainColor: string; accentColor: string; x: number; 
 );
 
 const OnDeckSection = styled(Box)({
-    position: "absolute",
-    left: 0,
-    top: 452,
     width: "100vw",
     height: 228,
+    flexShrink: 0,
+    position: "relative",
     backgroundColor: COLORS.header,
     borderTop: `2px dashed ${COLORS.border}`,
     display: "flex",
@@ -173,27 +151,43 @@ const SortCardsPage: React.FC = () => {
     const containerRef = useRef<HTMLDivElement>(null);
     const isLoadingMoreRef = useRef(false);
 
-    // Track viewport width so buckets stay evenly distributed across the screen
+    // Track viewport dimensions so buckets stay evenly distributed and drag math stays in sync
     const [viewportWidth, setViewportWidth] = useState(window.innerWidth);
+    const [viewportHeight, setViewportHeight] = useState(window.innerHeight);
     useEffect(() => {
-        const handleResize = () => setViewportWidth(window.innerWidth);
+        const handleResize = () => {
+            setViewportWidth(window.innerWidth);
+            setViewportHeight(window.innerHeight);
+        };
         window.addEventListener("resize", handleResize);
         return () => window.removeEventListener("resize", handleResize);
     }, []);
 
+    // Derive BucketsContainer height from known fixed heights: header (96) + footer (96) + OnDeckSection (228)
+    const HEADER_HEIGHT = 96;
+    const FOOTER_HEIGHT = 96;
+    const ON_DECK_HEIGHT = 228;
+    const bucketsHeight = viewportHeight - HEADER_HEIGHT - FOOTER_HEIGHT - ON_DECK_HEIGHT;
+
     // Distribute two bucket columns evenly: equal left margin, equal gap, equal right margin
     const BUCKET_WIDTH = 136;
+    const BUCKET_HEIGHT = 200;
+    const ROW_GAP = 16;
     const colSpacing = Math.round((viewportWidth - 2 * BUCKET_WIDTH) / 3);
     const colX1 = colSpacing;
     const colX2 = colSpacing + BUCKET_WIDTH + colSpacing;
     const cardLeft = Math.round((viewportWidth - BUCKET_WIDTH) / 2);
 
+    // Center the two rows vertically within the available BucketsContainer height
+    const rowTopY = Math.max(16, Math.round((bucketsHeight - BUCKET_HEIGHT * 2 - ROW_GAP) / 2));
+    const rowBottomY = rowTopY + BUCKET_HEIGHT + ROW_GAP;
+
     const buckets = useMemo<BucketZone[]>(() => [
-        { id: "already-learned", label: "Already Learned", x: colX1, y: 20, mainColor: COLORS.redMain, accentColor: COLORS.redAccent },
-        { id: "library", label: "Add to\nLibrary", x: colX2, y: 20, mainColor: COLORS.greenMain, accentColor: COLORS.greenAccent },
-        { id: "skip", label: "Skip for now", x: colX1, y: 236, mainColor: COLORS.blueMain, accentColor: COLORS.blueAccent },
-        { id: "learn-later", label: "Add to Learn Later", x: colX2, y: 236, mainColor: COLORS.yellowMain, accentColor: COLORS.yellowAccent },
-    ], [colX1, colX2]);
+        { id: "already-learned", label: "Already Learned", x: colX1, y: rowTopY, mainColor: COLORS.redMain, accentColor: COLORS.redAccent },
+        { id: "library", label: "Add to\nLibrary", x: colX2, y: rowTopY, mainColor: COLORS.greenMain, accentColor: COLORS.greenAccent },
+        { id: "skip", label: "Skip for now", x: colX1, y: rowBottomY, mainColor: COLORS.blueMain, accentColor: COLORS.blueAccent },
+        { id: "learn-later", label: "Add to Learn Later", x: colX2, y: rowBottomY, mainColor: COLORS.yellowMain, accentColor: COLORS.yellowAccent },
+    ], [colX1, colX2, rowTopY, rowBottomY]);
 
     const [{ x, y, scale, opacity }, api] = useSpring(() => ({
         x: 0,
@@ -368,14 +362,12 @@ const SortCardsPage: React.FC = () => {
             });
 
             if (down) {
-                // Check collision while dragging
-                // Add 504px offset for OnDeckSection position
-                const bucketId = checkBucketCollision(cardLeft + ox, 452 + 16 + oy);
+                // Check collision while dragging; card starts at (bucketsHeight + 16) within ContentArea
+                const bucketId = checkBucketCollision(cardLeft + ox, bucketsHeight + 16 + oy);
                 setHighlightedBucket(bucketId);
             } else {
                 // Released - check if dropped in bucket
-                // Add 504px offset for OnDeckSection position
-                const bucketId = checkBucketCollision(cardLeft + ox, 452 + 16 + oy);
+                const bucketId = checkBucketCollision(cardLeft + ox, bucketsHeight + 16 + oy);
                 setHighlightedBucket(null);
 
                 if (bucketId) {
@@ -385,7 +377,7 @@ const SortCardsPage: React.FC = () => {
         },
         {
             from: () => [x.get(), y.get()],
-            bounds: { left: -cardLeft, right: viewportWidth - cardLeft - BUCKET_WIDTH, top: -468, bottom: 100 },
+            bounds: { left: -cardLeft, right: viewportWidth - cardLeft - BUCKET_WIDTH, top: -(bucketsHeight + 16), bottom: 100 },
         }
     );
 
@@ -410,26 +402,11 @@ const SortCardsPage: React.FC = () => {
     if (!currentCard) {
         return (
             <IPhoneFrame className="sort-cards__frame" sx={desktopFrameSx}>
-                <Header className="sort-cards__header">
-                    <Toolbar className="sort-cards__toolbar">
-                        <IconButton className="sort-cards__back-button" onClick={() => navigate("/flashcards/decks")} size="small">
-                            <ExpandMoreIcon className="sort-cards__back-icon" sx={{ transform: "rotate(90deg)" }} />
-                        </IconButton>
-                        <Typography
-                            className="sort-cards__title"
-                            sx={{
-                                flex: 1,
-                                fontSize: 16,
-                                fontWeight: 400,
-                                color: COLORS.onSurface,
-                                fontFamily: '"Inter", sans-serif',
-                            }}
-                        >
-                            Sort Cards
-                        </Typography>
-                        <MobileNavDrawer />
-                    </Toolbar>
-                </Header>
+                <PageHeader
+                    title="Sort Cards"
+                    onBack={() => navigate("/flashcards/decks")}
+                    rightItems={<MobileNavDrawer />}
+                />
                 <ContentArea className="sort-cards__content">
                     <Box className="sort-cards__all-sorted" sx={{ display: "flex", flex: 1, alignItems: "center", justifyContent: "center" }}>
                         <Typography className="sort-cards__all-sorted-text">All cards sorted! 🎉</Typography>
@@ -443,35 +420,24 @@ const SortCardsPage: React.FC = () => {
     return (
         <IPhoneFrame className="sort-cards__frame" sx={desktopFrameSx}>
             {/* Header */}
-            <Header className="sort-cards__header">
-                <Toolbar className="sort-cards__toolbar">
-                    <IconButton className="sort-cards__back-button" onClick={() => navigate("/flashcards/decks")} size="small">
-                        <ExpandMoreIcon className="sort-cards__back-icon" sx={{ transform: "rotate(90deg)" }} />
-                    </IconButton>
-                    <Typography
-                        className="sort-cards__title"
-                        sx={{
-                            flex: 1,
-                            fontSize: 16,
-                            fontWeight: 400,
-                            color: COLORS.onSurface,
-                            fontFamily: '"Inter", sans-serif',
-                        }}
-                    >
-                        Sort Cards
-                    </Typography>
-                    {/* Undo and hamburger on the right */}
-                    <IconButton
-                        className="sort-cards__undo-button"
-                        onClick={handleUndo}
-                        size="small"
-                        disabled={history.length === 0}
-                    >
-                        <UndoIcon className="sort-cards__undo-icon" />
-                    </IconButton>
-                    <MobileNavDrawer />
-                </Toolbar>
-            </Header>
+            <PageHeader
+                title="Sort Cards"
+                onBack={() => navigate("/flashcards/decks")}
+                rightItems={
+                    <>
+                        <IconButton
+                            className="sort-cards__undo-button"
+                            onClick={handleUndo}
+                            size="small"
+                            disabled={history.length === 0}
+                            sx={{ color: "#1D1B20" }}
+                        >
+                            <UndoIcon className="sort-cards__undo-icon" />
+                        </IconButton>
+                        <MobileNavDrawer />
+                    </>
+                }
+            />
 
                 {/* Content Area */}
                 <ContentArea className="sort-cards__content" ref={containerRef}>

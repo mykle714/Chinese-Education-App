@@ -11,37 +11,6 @@ export const IPhoneFrame = styled(Box)(() => ({
     width: "100vw",
 }));
 
-export const Header = styled(Box)(() => ({
-    backgroundColor: COLORS.header,
-    height: 60,
-    minHeight: 60,
-    display: "flex",
-    flexDirection: "row",
-    alignItems: "center",
-    flexShrink: 0,
-}));
-
-export const Toolbar = styled(Box)(() => ({
-    display: "flex",
-    gap: 10,
-    width: "100%",
-    height: 59,
-    alignItems: "center",
-    padding: "0 12px",
-    position: "relative",
-}));
-
-export const PageTools = styled(Box)(() => ({
-    display: "flex",
-    gap: 8,
-    alignItems: "center",
-    position: "absolute",
-    right: 0,
-    width: 224,
-    justifyContent: "flex-end",
-    padding: "0 12px",
-}));
-
 export const InfoCard = styled(Card)(() => ({
     backgroundColor: COLORS.infoCard,
     borderRadius: "12px",

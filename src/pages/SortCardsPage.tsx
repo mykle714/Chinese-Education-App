@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { Box, Typography, IconButton, CircularProgress, useMediaQuery, useTheme } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import UndoIcon from "@mui/icons-material/Undo";
@@ -142,7 +142,6 @@ interface BucketZone {
 }
 
 const SortCardsPage: React.FC = () => {
-    const navigate = useNavigate();
     const { language } = useParams<{ language: Language }>();
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down("md"));

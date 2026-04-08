@@ -398,7 +398,7 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
               wordBreak: "break-word",
             }}
           >
-            {stripParentheses(selectedRange.definition)}
+            {stripParentheses(selectedRange.definition!)}
           </Typography>
         </Box>
       )}

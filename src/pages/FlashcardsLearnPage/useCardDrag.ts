@@ -112,7 +112,7 @@ export function useCardDrag(
         setDragPosition({ x: deltaX, y: deltaY });
     }, [isDragging, isAnimating]);
 
-    const handleDocumentMouseUp = useCallback((_e: MouseEvent) => {
+    const handleDocumentMouseUp = useCallback(() => {
         if (!isDragging || isAnimating) return;
         setIsDragging(false);
 

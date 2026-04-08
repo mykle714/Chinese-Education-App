@@ -11,7 +11,7 @@ import { getAllSubstrings, buildDictMap, buildExcludeSet, pickDefinitionForTrans
 const DICTIONARY_COLUMNS = `
   id, language, script, discoverable, "createdAt",
   word1, word2, pronunciation, "numberedPinyin", tone,
-  "partsOfSpeech", "hskLevelTag",
+  "partsOfSpeech", "hskLevel",
   definitions, "longDefinition",
   breakdown, synonyms,
   "exampleSentences",
@@ -49,7 +49,7 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
       numberedPinyin: row.numberedPinyin ?? null,
       tone: row.tone ?? null,
       partsOfSpeech: row.partsOfSpeech ?? null,
-      hskLevelTag: row.hskLevelTag ?? null,
+      hskLevel: row.hskLevel ?? null,
       definitions,
       shortDefinitionPronunciationOverride: (row.shortDefinitionPronunciationOverride as ShortDefinitionPronunciationOverride | null) ?? null,
       shortDefinition: resolveShortDefinition(definitions, row.shortDefinitionPronunciationOverride),

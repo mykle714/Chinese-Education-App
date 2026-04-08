@@ -116,7 +116,7 @@ CREATE TABLE IF NOT EXISTS dictionaryentries (
 
     -- Classification
     "partsOfSpeech" JSONB,                   -- e.g. ["noun", "verb"]
-    "hskLevelTag"   VARCHAR(10),             -- e.g. "1", "2", "3"
+    "hskLevel"      VARCHAR(10),             -- e.g. "HSK1", "HSK2", "HSK3"
 
     -- Definitions
     definitions     JSONB NOT NULL,          -- array of definition strings from source data

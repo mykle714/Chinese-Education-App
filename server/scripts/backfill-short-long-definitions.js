@@ -8,7 +8,6 @@ dotenv.config({ path: path.join(__dirname, '../.env.docker') });
 import db from '../db.js';
 import { DictionaryService } from '../services/DictionaryService.js';
 import { DictionaryDAL } from '../dal/implementations/DictionaryDAL.js';
-import { resolveShortDefinition } from '../utils/definitions.js';
 
 async function backfillLongDefinitions() {
   console.log('Starting longDefinition backfill...\n');
@@ -19,7 +18,7 @@ async function backfillLongDefinitions() {
 
   try {
     const result = await client.query(`
-      SELECT id, word1, language, definitions, "shortDefinitionPronunciationOverride"
+      SELECT id, word1, language, definitions
       FROM dictionaryentries
       WHERE language = 'zh'
         AND discoverable = TRUE
@@ -47,19 +46,9 @@ async function backfillLongDefinitions() {
           ? entry.definitions
           : JSON.parse(entry.definitions || '[]');
 
-        // Resolve shortDefinition: use manual override if set, otherwise compute from definitions
-        const shortDef = resolveShortDefinition(definitions, entry.shortDefinitionPronunciationOverride);
-
-        if (!shortDef) {
-          failCount++;
-          console.log(`Skipped ID ${entry.id}: "${entry.word1}" (no short definition generated for AI input)`);
-          continue;
-        }
-
         const longDef = await dictionaryService.generateLongDefinition(
           entry.word1,
           entry.language,
-          shortDef,
           definitions
         );
 

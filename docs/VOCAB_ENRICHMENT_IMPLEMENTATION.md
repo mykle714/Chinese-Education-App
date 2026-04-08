@@ -7,7 +7,7 @@ This feature adds rich contextual information to vocabulary flashcards, includin
 
 ### 1. Database Schema (✅ Complete)
 
-Enrichment columns (breakdown, synonyms, exampleSentences, exampleSentencesMetadata, expansion, expansionMetadata, longDefinition, pronunciation, tone, script, hskLevelTag) live in `dictionaryentries`, not `vocabentries`. They are fetched via LEFT JOIN on `entryKey = word1 AND language`. Note: `shortDefinition` is computed at runtime from the `definitions` column via `generateShortDefinition()` in `server/utils/definitions.ts`. `synonymsMetadata` is computed at runtime by `DictionaryService.enrichEntriesWithSynonymMetadata()` which batch-reads pronunciation and first definition from `dictionaryentries` for each synonym word — neither is stored in the database.
+Enrichment columns (breakdown, synonyms, exampleSentences, exampleSentencesMetadata, expansion, expansionMetadata, longDefinition, pronunciation, tone, script, hskLevel) live in `dictionaryentries`, not `vocabentries`. They are fetched via LEFT JOIN on `entryKey = word1 AND language`. Note: `shortDefinition` is computed at runtime from the `definitions` column via `generateShortDefinition()` in `server/utils/definitions.ts`. `synonymsMetadata` is computed at runtime by `DictionaryService.enrichEntriesWithSynonymMetadata()` which batch-reads pronunciation and first definition from `dictionaryentries` for each synonym word — neither is stored in the database.
 
 ### 2. TypeScript Types (✅ Complete)
 **Files Updated**:
@@ -234,6 +234,34 @@ The response should include enrichment fields for Chinese cards.
 3. **Cache Related Words**: Pre-compute and store related words to avoid regex queries
 4. **User Feedback**: Allow users to rate example sentences and suggest better ones
 5. **Multiple Languages**: Extend enrichment to Japanese, Korean, Vietnamese
+
+## Discoverable Entry Enrichment Pipeline
+
+All discoverable zh entries must be processed through the following scripts **in order**. Each script is idempotent — it skips entries that already have the relevant field populated.
+
+### Run the full pipeline
+
+```bash
+bash server/scripts/run-discoverable-enrichment.sh [production|local]
+```
+
+### Pipeline steps
+
+| Step | Script | Output field(s) | Notes |
+|------|--------|-----------------|-------|
+| 1 | `backfill-split-semicolon-definitions.js` | `definitions` | Expands semicolon-delimited elements into separate array entries. Runs on ALL zh entries. |
+| 2 | `backfill-sort-definitions.js` | `definitions` | AI reorders definitions from most prototypical to least. Runs on discoverable zh entries with >1 definition. |
+| 3 | `backfill-hsk-level.js` | `hskLevel` | AI assigns one level token per entry (`HSK1`..`HSK6`). |
+| 4 | `backfill-short-long-definitions.js` | `longDefinition` | AI generates 25–75 char elaboration. Depends on sorted definitions from step 2. |
+| 5 | `backfill-example-sentences.js` | `exampleSentences` | AI generates 3 example sentences. |
+| 6 | `backfill-example-sentences-metadata.js` | `exampleSentencesMetadata` | Segment metadata for example sentences. Must run after step 5. |
+| 7 | `backfill-synonyms.js` | `synonyms` | AI finds validated Chinese synonyms. |
+| 8 | `backfill-expansion.js` | `expansion`, `expansionLiteralTranslation` | AI generates expanded word form. |
+| 9 | `backfill-classifier.js` | `classifier` | AI assigns measure word(s). |
+| 10 | `backfill-dictionary-breakdown.js` | `breakdown` | AI generates per-character breakdown (multi-char words only). |
+| 11 | `backfill-vernacular-score.js` | `vernacularScore` | AI scores vernacular vs. literary register (1–5). |
+
+---
 
 ## Migration History
 

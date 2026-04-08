@@ -22,7 +22,7 @@ Every column in `dictionaryentries` and the script responsible for populating it
 | `definitions` | Import / seed data | — | — | all |
 | `discoverable` | Manual / admin action | — | — | all |
 | `script` | Import / seed data | — | — | all |
-| `hskLevelTag` | Import / seed data | — | — | zh |
+| `hskLevel` | `backfill-hsk-level.js` or import/seed data | AI (Claude Sonnet) or — | **Yes** (for backfill) | zh |
 | `shortDefinition` | *Not stored — computed at runtime* | Deterministic via `server/utils/definitions.ts` | — | all |
 | `longDefinition` | `backfill-short-long-definitions.js` | AI (Claude Haiku) | **Yes** | zh |
 | `synonyms` | `backfill-synonyms.js` | AI (Claude) | **Yes** | zh |
@@ -77,7 +77,17 @@ Note: Only applies to multi-character Chinese entries.
 
 ### 2. AI Scripts (incur API cost — run after deterministic scripts)
 
-**Step 4 — Long Definitions**
+**Step 4 — HSK Level**
+```bash
+docker exec cow-backend-local npx tsx scripts/backfill-hsk-level.js
+```
+Populates: `hskLevel`
+Filter: `language = 'zh' AND discoverable = TRUE AND "hskLevel" IS NULL`
+Note: Assigns one level token per entry (`HSK1`..`HSK6`). Use `--spot-check` to preview 5 entries first.
+
+---
+
+**Step 5 — Long Definitions**
 ```bash
 node server/scripts/backfill-short-long-definitions.js
 ```
@@ -87,7 +97,7 @@ Note: `shortDefinition` is no longer stored — it is computed at runtime from `
 
 ---
 
-**Step 5 — Synonyms**
+**Step 6 — Synonyms**
 ```bash
 docker exec cow-backend-local npx tsx scripts/backfill-synonyms.js
 ```
@@ -97,7 +107,7 @@ Note: Validates each AI-suggested synonym exists in `dictionaryentries` before s
 
 ---
 
-**Step 6 — Example Sentences**
+**Step 7 — Example Sentences**
 ```bash
 node server/scripts/backfill-example-sentences.js
 ```
@@ -107,18 +117,18 @@ Note: Generates 3 sentences per entry (Chinese, English, usage label). Use `--sp
 
 ---
 
-**Step 7 — Example Sentences Metadata** _(depends on Step 6)_
+**Step 8 — Example Sentences Metadata** _(depends on Step 7)_
 ```bash
 node server/scripts/backfill-example-sentences-metadata.js
 ```
 Populates: `exampleSentencesMetadata`
 Reads: `exampleSentences`
 Filter: `discoverable = TRUE AND exampleSentences IS NOT NULL AND exampleSentencesMetadata IS NULL`
-Note: Must run after Step 6. Uses greedy longest-match segmentation — no AI cost.
+Note: Must run after Step 7. Uses greedy longest-match segmentation — no AI cost.
 
 ---
 
-**Step 8 — Classifier (量词)**
+**Step 9 — Classifier (量词)**
 ```bash
 docker exec cow-backend-local npx tsx scripts/backfill-classifier.js
 ```

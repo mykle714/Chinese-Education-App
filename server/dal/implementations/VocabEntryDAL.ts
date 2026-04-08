@@ -164,7 +164,7 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
       return await client.query(`
         SELECT ve.*, ${DICT_COLS}
         FROM VocabEntries ve ${DICT_JOIN}
-        WHERE ve."userId" = $1 AND de."hskLevelTag" = $2
+        WHERE ve."userId" = $1 AND de."hskLevel" = $2
         ORDER BY ve."createdAt" DESC
       `, [userId, hskLevel]);
     });
@@ -316,7 +316,7 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
           id: entry.id,
           key: entry.entryKey,
           valuePreview: entry.entryValue?.substring(0, 30) + '...',
-          hskLevel: entry.hskLevelTag
+          hskLevel: entry.hskLevel
         })).slice(0, 10), // Show first 10 entries
         tokenMatchAnalysis: {
           matchedTokens: result.recordset.map(e => e.entryKey),
@@ -507,7 +507,7 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
         AND ve.language = $2
         AND ve."entryKey" != $3
         AND ve."entryKey" ~ $4
-        AND (ve."starterPackBucket" IS NULL OR ve."starterPackBucket" NOT IN ('skip', 'learn-later'))
+        AND ve."starterPackBucket" NOT IN ('skip', 'learn-later')
       ORDER BY ve.id ASC
       LIMIT $5
     `;
@@ -558,17 +558,17 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
       return await client.query(`
         SELECT
           COUNT(*) as total,
-          SUM(CASE WHEN de."hskLevelTag" IS NOT NULL THEN 1 ELSE 0 END) as hskentries,
-          SUM(CASE WHEN de."hskLevelTag" = 'HSK1' THEN 1 ELSE 0 END) as hsk1,
-          SUM(CASE WHEN de."hskLevelTag" = 'HSK2' THEN 1 ELSE 0 END) as hsk2,
-          SUM(CASE WHEN de."hskLevelTag" = 'HSK3' THEN 1 ELSE 0 END) as hsk3,
-          SUM(CASE WHEN de."hskLevelTag" = 'HSK4' THEN 1 ELSE 0 END) as hsk4,
-          SUM(CASE WHEN de."hskLevelTag" = 'HSK5' THEN 1 ELSE 0 END) as hsk5,
-          SUM(CASE WHEN de."hskLevelTag" = 'HSK6' THEN 1 ELSE 0 END) as hsk6,
+          SUM(CASE WHEN de."hskLevel" IS NOT NULL THEN 1 ELSE 0 END) as hskentries,
+          SUM(CASE WHEN de."hskLevel" = 'HSK1' THEN 1 ELSE 0 END) as hsk1,
+          SUM(CASE WHEN de."hskLevel" = 'HSK2' THEN 1 ELSE 0 END) as hsk2,
+          SUM(CASE WHEN de."hskLevel" = 'HSK3' THEN 1 ELSE 0 END) as hsk3,
+          SUM(CASE WHEN de."hskLevel" = 'HSK4' THEN 1 ELSE 0 END) as hsk4,
+          SUM(CASE WHEN de."hskLevel" = 'HSK5' THEN 1 ELSE 0 END) as hsk5,
+          SUM(CASE WHEN de."hskLevel" = 'HSK6' THEN 1 ELSE 0 END) as hsk6,
           SUM(CASE WHEN ve."createdAt" > $2 THEN 1 ELSE 0 END) as recententries
         FROM VocabEntries ve
         LEFT JOIN LATERAL (
-          SELECT "hskLevelTag" FROM dictionaryentries
+          SELECT "hskLevel" FROM dictionaryentries
           WHERE word1 = ve."entryKey" AND language = ve.language LIMIT 1
         ) de ON true
         WHERE ve."userId" = $1

@@ -1,8 +1,11 @@
 import React from "react";
 import { Box, Card, CardContent, Typography } from "@mui/material";
+import { stripParentheses } from "../../utils/definitionUtils";
 import { DraggableCardContainer } from "./styled";
-import { COLORS, CARD_FACE_JUSTIFY } from "./constants";
+import { COLORS, CARD_FACE_JUSTIFY, CARD_DISMISS_THRESHOLD_VW } from "./constants";
 import type { VocabEntry } from "./types";
+import CharacterPinyinColorDisplay from "../../components/CharacterPinyinColorDisplay";
+import CPCDRow from "../../components/CPCDRow";
 
 interface FlashCardSectionProps {
     currentEntry: VocabEntry | null;
@@ -10,14 +13,13 @@ interface FlashCardSectionProps {
     dragPosition: { x: number; y: number };
     isDragging: boolean;
     isFlipped: boolean;
+    isAnimating: boolean;
     selectedCategory: string | null;
+    showPinyin: boolean;
     handlers: {
         onTouchStart: (e: React.TouchEvent) => void;
         onTouchEnd: (e: React.TouchEvent) => void;
         onMouseDown: (e: React.MouseEvent) => void;
-        onMouseMove: (e: React.MouseEvent) => void;
-        onMouseUp: () => void;
-        onMouseLeave: () => void;
     };
 }
 
@@ -27,11 +29,16 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
     dragPosition,
     isDragging,
     isFlipped,
+    isAnimating,
     selectedCategory,
+    showPinyin,
     handlers,
 }) => {
     const rotation = dragPosition.x * 0.05;
     const opacity = 1 - Math.abs(dragPosition.x) / 400;
+    // Use the card's own rendered width for the overlay threshold so the colour
+    // feedback is consistent on desktop (where the frame is narrower than the viewport).
+    const dismissThreshold = CARD_DISMISS_THRESHOLD_VW * (cardRef.current?.offsetWidth ?? window.innerWidth);
 
     return (
         // Card slot: flex:1 absorbs remaining vertical space, position:relative establishes
@@ -62,15 +69,26 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                     }}
                 >
                     {currentEntry ? (
-                        <Card
-                            className="mobile-demo-flashcard"
+                        // Outer Box: handles drag position (translate + tilt).
+                        // Animates back to center after dismiss; always transitions when not dragging.
+                        <Box
                             ref={cardRef}
                             onTouchStart={handlers.onTouchStart}
                             onTouchEnd={handlers.onTouchEnd}
                             onMouseDown={handlers.onMouseDown}
-                            onMouseMove={handlers.onMouseMove}
-                            onMouseUp={handlers.onMouseUp}
-                            onMouseLeave={handlers.onMouseLeave}
+                            sx={{
+                                position: "absolute",
+                                inset: 0,
+                                transform: `translate(${dragPosition.x}px, ${dragPosition.y}px) rotate(${rotation}deg)`,
+                                transition: isDragging ? 'none' : 'transform 0.45s ease',
+                                opacity: opacity,
+                            }}
+                        >
+                        {/* Inner Card: handles the flip (rotateY only).
+                            Flip transition is disabled during card advance so the new card
+                            snaps to its face instantly while the slide-back animation plays. */}
+                        <Card
+                            className="mobile-demo-flashcard"
                             sx={{
                                 backgroundColor: 'transparent',
                                 background: 'none',
@@ -80,9 +98,8 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                 position: "absolute",
                                 inset: 0,
                                 transformStyle: "preserve-3d",
-                                transform: `translate(${dragPosition.x}px, ${dragPosition.y}px) rotate(${rotation}deg) rotateY(${isFlipped ? 180 : 0}deg)`,
-                                transition: isDragging ? 'none' : 'transform 0.45s ease',
-                                opacity: opacity,
+                                transform: `rotateY(${isFlipped ? 180 : 0}deg)`,
+                                transition: isAnimating ? 'none' : 'transform 0.45s ease',
                                 overflow: 'visible',
                             }}
                         >
@@ -123,31 +140,19 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                             <Typography sx={{ fontSize: 11, color: COLORS.gray, fontFamily: '"Inter", sans-serif', textAlign: 'center' }}>insert image here</Typography>
                                         </Box>
                                         <Box className="mobile-demo-flashcard-text" sx={{ display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'center', width: '100%' }}>
-                                            <Typography
-                                                className="mobile-demo-flashcard-word"
-                                                sx={{
-                                                    fontSize: 30,
-                                                    fontWeight: 400,
-                                                    color: COLORS.onSurface,
-                                                    fontFamily: '"Inter", "Noto Sans JP", sans-serif',
-                                                }}
-                                            >
-                                                {currentEntry.entryKey}
-                                            </Typography>
-                                            {currentEntry.pronunciation && (
-                                                <Typography
-                                                    className="mobile-demo-flashcard-pronunciation"
-                                                    sx={{
-                                                        fontSize: 16,
-                                                        color: COLORS.onSurface,
-                                                        opacity: 0.8,
-                                                        fontFamily: '"Inter", sans-serif',
-                                                        fontStyle: 'italic',
-                                                    }}
-                                                >
-                                                    {currentEntry.pronunciation}
-                                                </Typography>
-                                            )}
+                                            {/* Character-by-character display with tone colors */}
+                                            <CPCDRow size="md" justifyContent="center" className="mobile-demo-flashcard-cpcd-row">
+                                                {[...currentEntry.entryKey].map((char, i) => (
+                                                    <CharacterPinyinColorDisplay
+                                                        key={i}
+                                                        character={char}
+                                                        pinyin={currentEntry.pronunciation?.split(' ')[i] ?? ''}
+                                                        size="md"
+                                                        useToneColor={true}
+                                                        showPinyin={showPinyin}
+                                                    />
+                                                ))}
+                                            </CPCDRow>
                                         </Box>
                                     </Box>
                                 </CardContent>
@@ -195,7 +200,7 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                                 color: COLORS.onSurface,
                                                 fontFamily: '"Inter", "Noto Sans JP", sans-serif',
                                             }}>
-                                                {currentEntry.entryValue}
+                                                {stripParentheses(currentEntry.entryValue)}
                                             </Typography>
                                         </Box>
                                     </Box>
@@ -206,13 +211,14 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                             <Box sx={{
                                 position: 'absolute',
                                 top: 0, left: 0, right: 0, bottom: 0,
-                                backgroundColor: dragPosition.x > 50 ? COLORS.correct : dragPosition.x < -50 ? COLORS.incorrect : 'transparent',
-                                opacity: Math.min(Math.abs(dragPosition.x) / 150, 0.3),
+                                backgroundColor: dragPosition.x > dismissThreshold ? COLORS.correct : dragPosition.x < -dismissThreshold ? COLORS.incorrect : 'transparent',
+                                opacity: Math.min(Math.abs(dragPosition.x) / (dismissThreshold * 3), 0.3),
                                 borderRadius: "12px",
                                 pointerEvents: 'none',
                                 zIndex: 3,
                             }} />
                         </Card>
+                        </Box>
                     ) : (
                         <Card
                             className="mobile-demo-flashcard-empty"

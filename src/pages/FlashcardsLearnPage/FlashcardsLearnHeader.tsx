@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Badge, IconButton } from "@mui/material";
+import { Box, Badge, Button, IconButton } from "@mui/material";
 import UndoIcon from "@mui/icons-material/Undo";
 import SettingsIcon from "@mui/icons-material/Settings";
 import LocalFireDepartmentIcon from "@mui/icons-material/LocalFireDepartment";
@@ -17,6 +17,8 @@ interface FlashcardsLearnHeaderProps {
     onBack: () => void;
     onUndo: () => void;
     workPoints: ReturnType<typeof useWorkPoints>;
+    showPinyin: boolean;
+    onTogglePinyin: () => void;
 }
 
 const FlashcardsLearnHeader: React.FC<FlashcardsLearnHeaderProps> = ({
@@ -27,6 +29,8 @@ const FlashcardsLearnHeader: React.FC<FlashcardsLearnHeaderProps> = ({
     onBack,
     onUndo,
     workPoints,
+    showPinyin,
+    onTogglePinyin,
 }) => {
     const rightItems = (
         <>
@@ -39,6 +43,30 @@ const FlashcardsLearnHeader: React.FC<FlashcardsLearnHeaderProps> = ({
             >
                 <UndoIcon />
             </IconButton>
+            {/* Pinyin visibility toggle */}
+            <Button
+                className="pinyin-toggle-btn"
+                variant={showPinyin ? "contained" : "text"}
+                size="small"
+                onClick={onTogglePinyin}
+                sx={{
+                    minWidth: "unset",
+                    px: 1,
+                    py: 0.25,
+                    height: "30px",
+                    fontSize: "0.65rem",
+                    textTransform: "lowercase",
+                    lineHeight: 1.4,
+                    borderRadius: "6px",
+                    backgroundColor: showPinyin ? COLORS.gray : COLORS.header,
+                    color: showPinyin ? "#fff" : COLORS.onSurface,
+                    "&:hover": {
+                        backgroundColor: showPinyin ? COLORS.gray : COLORS.header,
+                    },
+                }}
+            >
+                pinyin
+            </Button>
             <IconButton className="mobile-demo-tool-button" size="small" sx={{ color: COLORS.onSurface }}>
                 <SettingsIcon />
             </IconButton>

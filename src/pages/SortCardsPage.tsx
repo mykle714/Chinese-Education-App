@@ -9,7 +9,15 @@ import MobileFooter from "../components/MobileFooter";
 import MobileNavDrawer from "../components/MobileNavDrawer";
 import PageHeader from "../components/PageHeader";
 import { API_BASE_URL } from "../constants";
-import type { Language, DiscoverCard } from "../types";
+import { stripParentheses } from "../utils/definitionUtils";
+import type { Language, DiscoverCard, DiscoverFetchResponse, DiscoverSortResponse } from "../types";
+
+// Parses an HSK label like "HSK3" → 3, returns null for missing/malformed values.
+function parseHskLevel(label: string | null | undefined): number | null {
+    if (!label) return null;
+    const m = label.match(/^HSK([1-6])$/);
+    return m ? Number(m[1]) : null;
+}
 
 // Design tokens from Figma
 const COLORS = {
@@ -42,6 +50,7 @@ const IPhoneFrame = styled(Box)({
 
 const ContentArea = styled(Box)({
     flex: 1,
+    minHeight: 0, // allow flex item to shrink below content size
     display: "flex",
     flexDirection: "column",
     alignSelf: "stretch",
@@ -51,7 +60,7 @@ const ContentArea = styled(Box)({
 // CSS grid distributes the 4 buckets evenly in a 2×2 layout regardless of viewport height
 const BucketsContainer = styled(Box)({
     width: "100vw",
-    flex: 2,
+    flex: "2 2 0", // flex-basis: 0 gives grid a definite height so 1fr rows resolve correctly
     minHeight: 0, // allow flex to shrink below grid content size on small screens
     maxHeight: 424, // 2 × 200px buckets + 16px rowGap + 8px paddingBlock
     paddingBlock: "4px",
@@ -145,8 +154,12 @@ const SortCardsPage: React.FC = () => {
     const { language } = useParams<{ language: Language }>();
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down("md"));
-    const [cards, setCards] = useState<DiscoverCard[]>([]);
+    // `allCards` is the append-only master list of every card we've fetched.
+    // `currentCardIndex` advances through it. We never replace `allCards` so the
+    // currently displayed card (and undo history) survive mid-session refetches.
+    const [allCards, setAllCards] = useState<DiscoverCard[]>([]);
     const [currentCardIndex, setCurrentCardIndex] = useState(0);
+    const [userHskLevel, setUserHskLevel] = useState<number | null>(null);
     const [loading, setLoading] = useState(true);
     const [highlightedBucket, setHighlightedBucket] = useState<string | null>(null);
     const [history, setHistory] = useState<Array<{ card: DiscoverCard; bucket: string }>>([]);
@@ -171,7 +184,7 @@ const SortCardsPage: React.FC = () => {
         opacity: 1,
     }));
 
-    // Fetch starter pack cards
+    // Fetch starter pack cards (initial load)
     useEffect(() => {
         const fetchCards = async () => {
             try {
@@ -179,8 +192,9 @@ const SortCardsPage: React.FC = () => {
                     credentials: "include",
                 });
                 if (response.ok) {
-                    const data = await response.json();
-                    setCards(data);
+                    const data: DiscoverFetchResponse = await response.json();
+                    setAllCards(data.cards);
+                    setUserHskLevel(data.userHskLevel);
                 } else {
                     console.error("Failed to fetch starter pack cards");
                 }
@@ -196,9 +210,30 @@ const SortCardsPage: React.FC = () => {
         }
     }, [language]);
 
-    const currentCard = cards[currentCardIndex];
+    // Build the visible queue: the currently displayed card is "frozen" at the
+    // head and is never filtered out — even if a fresh server response shifts
+    // userHskLevel mid-session, we don't want to yank the active card off-screen.
+    // The tail (upcoming cards) is filtered to [userLevel, userLevel + 1].
+    const visibleQueue = useMemo<DiscoverCard[]>(() => {
+        const head = allCards[currentCardIndex];
+        if (userHskLevel == null) {
+            // No level known yet — show everything from the current index
+            return allCards.slice(currentCardIndex);
+        }
+        const min = Math.max(1, userHskLevel);
+        const max = Math.min(6, userHskLevel + 1);
+        const tail = allCards
+            .slice(currentCardIndex + 1)
+            .filter((c) => {
+                const lvl = parseHskLevel(c.hskLevel);
+                return lvl != null && lvl >= min && lvl <= max;
+            });
+        return head ? [head, ...tail] : tail;
+    }, [allCards, currentCardIndex, userHskLevel]);
 
-    // Animate card entrance when card changes
+    const currentCard = visibleQueue[0];
+
+    // Animate card entrance when the active card changes
     useEffect(() => {
         if (currentCard) {
             // Reset to starting position below, invisible
@@ -210,15 +245,47 @@ const SortCardsPage: React.FC = () => {
                 config: { tension: 280, friction: 26 },
             });
         }
-    }, [currentCardIndex, currentCard, api]);
+    }, [currentCard, api]);
 
-    // Load more cards when 4 remain
+    // Diagnostic: log the displayed card + current HSK level whenever either changes
     useEffect(() => {
-        const remaining = cards.length - currentCardIndex;
-        if (remaining === 4 && cards.length > 0) {
+        if (currentCard) {
+            console.log(
+                "[Discover] displaying card:",
+                currentCard.entryKey,
+                currentCard.hskLevel,
+                "| userHskLevel:",
+                userHskLevel
+            );
+        }
+    }, [currentCard, userHskLevel]);
+
+    // Initial-load skip: advance past any leading out-of-band cards. The
+    // frozen-head trick in `visibleQueue` is meant to protect a card already
+    // on screen from being yanked when a mid-session level update arrives —
+    // but on initial load there is no such card to protect, so the head must
+    // honor the filter. The currentCardIndex === 0 guard ensures this only
+    // runs on initial load (after any sort, the index is no longer 0 and
+    // handleCardSort handles the skip).
+    useEffect(() => {
+        if (currentCardIndex !== 0 || allCards.length === 0 || userHskLevel == null) return;
+        const min = Math.max(1, userHskLevel);
+        const max = Math.min(6, userHskLevel + 1);
+        let next = 0;
+        while (next < allCards.length) {
+            const lvl = parseHskLevel(allCards[next].hskLevel);
+            if (lvl != null && lvl >= min && lvl <= max) break;
+            next++;
+        }
+        if (next !== 0) setCurrentCardIndex(next);
+    }, [allCards, userHskLevel, currentCardIndex]);
+
+    // Load more cards when ≤5 remain in the client-filtered visible queue
+    useEffect(() => {
+        if (visibleQueue.length <= 5 && allCards.length > 0 && !isLoadingMoreRef.current) {
             loadMoreCards();
         }
-    }, [currentCardIndex, cards.length]);
+    }, [visibleQueue.length, allCards.length]);
 
     // Check if the dragged card's center overlaps a bucket using actual DOM positions
     const checkBucketCollision = (ox: number, oy: number): string | null => {
@@ -248,43 +315,77 @@ const SortCardsPage: React.FC = () => {
     const handleCardSort = async (bucketId: string) => {
         if (!currentCard) return;
 
-        try {
-            // Animate card exit (fade out + shrink)
-            await api.start({
-                opacity: 0,
-                scale: 0.8,
-                config: { tension: 150, friction: 35 },
-            });
+        const sortedCard = currentCard;
 
-            // Save to backend
-            await fetch(`${API_BASE_URL}/api/starter-packs/sort`, {
+        // Animate card exit (fade out + shrink). We await only the local
+        // animation — the server POST is fire-and-forget so the user never
+        // waits on the network to see the next card.
+        await api.start({
+            opacity: 0,
+            scale: 0.8,
+            config: { tension: 150, friction: 35 },
+        });
+
+        // Add to history for undo
+        setHistory((prev) => [...prev, { card: sortedCard, bucket: bucketId }]);
+
+        // Advance past any out-of-band cards in allCards so the next active
+        // card honors the current [userLevel, userLevel + 1] filter. If we run
+        // off the end, the refetch effect (visibleQueue.length <= 5) will load more.
+        setCurrentCardIndex((prev) => {
+            if (userHskLevel == null) return prev + 1;
+            const min = Math.max(1, userHskLevel);
+            const max = Math.min(6, userHskLevel + 1);
+            let next = prev + 1;
+            while (next < allCards.length) {
+                const lvl = parseHskLevel(allCards[next].hskLevel);
+                if (lvl != null && lvl >= min && lvl <= max) break;
+                next++;
+            }
+            return next;
+        });
+
+        // Fire-and-forget POST. When it returns we update userHskLevel; the
+        // useMemo recomputes visibleQueue against the new level on next render,
+        // but the currently displayed card stays put (frozen head).
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/starter-packs/sort`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 credentials: "include",
                 body: JSON.stringify({
-                    cardId: currentCard.id,
+                    cardId: sortedCard.id,
                     bucket: bucketId,
                     language,
                 }),
             });
-
-            // Add to history for undo
-            setHistory((prev) => [...prev, { card: currentCard, bucket: bucketId }]);
-
-            // Move to next card
-            setCurrentCardIndex((prev) => prev + 1);
+            if (response.ok) {
+                const data: DiscoverSortResponse = await response.json();
+                if (typeof data.userHskLevel === "number") {
+                    setUserHskLevel(data.userHskLevel);
+                }
+            }
         } catch (error) {
             console.error("Error sorting card:", error);
         }
     };
 
-    // Undo last action
+    // Undo last action — restore the just-sorted card. Because handleCardSort
+    // may skip multiple out-of-band indices, we look up the card's actual
+    // index in allCards rather than naively decrementing.
     const handleUndo = async () => {
         if (history.length === 0) return;
 
         const lastAction = history[history.length - 1];
         setHistory((prev) => prev.slice(0, -1));
-        setCurrentCardIndex((prev) => Math.max(0, prev - 1));
+
+        const restoredIndex = allCards.findIndex((c) => c.id === lastAction.card.id);
+        if (restoredIndex >= 0) {
+            setCurrentCardIndex(restoredIndex);
+        } else {
+            // Fallback (shouldn't normally happen since we never remove from allCards)
+            setCurrentCardIndex((prev) => Math.max(0, prev - 1));
+        }
 
         try {
             await fetch(`${API_BASE_URL}/api/starter-packs/undo`, {
@@ -301,7 +402,9 @@ const SortCardsPage: React.FC = () => {
         }
     };
 
-    // Silently fetch more unsorted cards and append unique ones
+    // Silently fetch more unsorted cards and append unique ones to the master
+    // list. We never replace allCards — the active card and undo history must
+    // survive a refetch. Also picks up any updated userHskLevel from the server.
     const loadMoreCards = async () => {
         if (isLoadingMoreRef.current) return;
         isLoadingMoreRef.current = true;
@@ -310,12 +413,15 @@ const SortCardsPage: React.FC = () => {
                 credentials: "include",
             });
             if (response.ok) {
-                const newCards: DiscoverCard[] = await response.json();
-                setCards((prev) => {
+                const data: DiscoverFetchResponse = await response.json();
+                setAllCards((prev) => {
                     const existingIds = new Set(prev.map((c) => c.id));
-                    const unique = newCards.filter((c) => !existingIds.has(c.id));
+                    const unique = data.cards.filter((c) => !existingIds.has(c.id));
                     return unique.length > 0 ? [...prev, ...unique] : prev;
                 });
+                if (typeof data.userHskLevel === "number") {
+                    setUserHskLevel(data.userHskLevel);
+                }
             }
         } catch (error) {
             console.error("Error loading more cards:", error);
@@ -470,7 +576,7 @@ const SortCardsPage: React.FC = () => {
                                 )}
                             </Box>
                             <Typography className="sort-cards__card-value" sx={{ fontSize: 12, fontWeight: 400, textAlign: "center" }}>
-                                {currentCard.entryValue}
+                                {stripParentheses(currentCard.entryValue)}
                             </Typography>
                         </Box>
                     </FlashCard>

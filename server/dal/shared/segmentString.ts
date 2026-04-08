@@ -35,7 +35,7 @@ export function pickDefinitionForTranslatedSentence(
   meta: SegmentMeta,
   translatedSentence?: string | null
 ): string | undefined {
-  const fallback = meta.shortDefinition ?? meta.definition;
+  const fallback = meta.definitions?.[0] ?? meta.definition;
   const definitions = meta.definitions ?? [];
 
   if (!translatedSentence || definitions.length === 0) {

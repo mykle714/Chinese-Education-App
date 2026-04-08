@@ -248,6 +248,16 @@ import_vietnamese() {
     fi
 }
 
+# Expand lexicographic abbreviations in imported definitions
+# Replaces "sth" → "something" and "sb" → "somebody" across all dictionaryentries
+run_abbreviation_expansion() {
+    print_header "Expanding Definition Abbreviations"
+
+    print_info "Replacing 'sth' → 'something' and 'sb' → 'somebody' in definitions..."
+    docker exec -i "$BACKEND_CONTAINER" sh -c 'npx tsx /app/scripts/backfill-expand-abbreviations.js'
+    print_success "Abbreviation expansion complete"
+}
+
 # Display final summary
 show_summary() {
     print_header "Import Summary"
@@ -299,7 +309,8 @@ main() {
     import_japanese
     import_korean
     import_vietnamese
-    
+    run_abbreviation_expansion
+
     show_summary
     
     END_TIME=$(date +%s)

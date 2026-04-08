@@ -48,16 +48,14 @@ const PageHeader: React.FC<PageHeaderProps> = ({ title, onBack, showBack = true,
                         <ExpandMoreIcon />
                     </IconButton>
                 ) : (
-                    <Box sx={{ width: 34 }} /> /* spacer to keep title centered */
+                    <Box sx={{ width: 34 }} /> /* placeholder matching back button size */
                 )}
 
-                {/* Center: title, absolutely centered relative to the toolbar */}
+                {/* Title: left-aligned, touching the back button or its placeholder */}
                 <Typography
                     className="page-header__title"
                     sx={{
-                        position: "absolute",
-                        left: "50%",
-                        transform: "translateX(-50%)",
+                        flex: 1,
                         fontSize: 16,
                         fontWeight: 400,
                         color: "#1D1B20",

@@ -176,6 +176,36 @@ app.put('/api/vocabEntries/:id', authenticateToken, async (req, res) => {
   await vocabEntryController.updateEntry(req, res);
 });
 
+// Update just the starterPackBucket on an existing VocabEntry (e.g. library ↔ learn-later toggle from CDP)
+// @ts-ignore
+app.patch('/api/vocabEntries/:id/bucket', authenticateToken, async (req: any, res: any) => {
+  const userId = req.user?.userId;
+  const entryId = parseInt(req.params.id);
+  const { starterPackBucket } = req.body;
+
+  const validBuckets = ['library', 'learn-later', 'skip', 'already-learned'];
+  if (!userId) return res.status(401).json({ error: 'Not authenticated' });
+  if (isNaN(entryId)) return res.status(400).json({ error: 'Invalid entry ID' });
+  if (!starterPackBucket || !validBuckets.includes(starterPackBucket)) {
+    return res.status(400).json({ error: `Invalid bucket. Must be one of: ${validBuckets.join(', ')}` });
+  }
+
+  const client = await db.getClient();
+  try {
+    const result = await client.query(
+      `UPDATE vocabentries SET "starterPackBucket" = $1 WHERE id = $2 AND "userId" = $3 RETURNING *`,
+      [starterPackBucket, entryId, userId]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Entry not found or not owned by user' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error updating starterPackBucket:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
+  }
+});
+
 // Delete vocab entry - USING NEW DAL ARCHITECTURE
 // @ts-ignore
 app.delete('/api/vocabEntries/:id', authenticateToken, async (req, res) => {

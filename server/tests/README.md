@@ -57,7 +57,7 @@ CREATE TABLE VocabEntries (
     entryValue nvarchar(MAX) NOT NULL,
     createdAt datetime DEFAULT GETDATE(),
     isCustomTag bit DEFAULT 0,
-    hskLevelTag nvarchar(10) NULL,
+    hskLevel nvarchar(10) NULL,
     FOREIGN KEY (userId) REFERENCES Users(id)
 );
 ```

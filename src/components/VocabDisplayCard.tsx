@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { stripParentheses } from '../utils/definitionUtils';
 import {
     Box,
     Card,
@@ -144,7 +145,7 @@ const VocabDisplayCard: React.FC<VocabDisplayCardProps> = React.memo(({ personal
                                         lineHeight: 1.6,
                                     }}
                                 >
-                                    {personalEntry.entryValue}
+                                    {stripParentheses(personalEntry.entryValue)}
                                 </Typography>
 
                                 {personalEntry.createdAt && (
@@ -207,7 +208,7 @@ const VocabDisplayCard: React.FC<VocabDisplayCardProps> = React.memo(({ personal
                                     {dictionaryEntry.definitions.map((definition, index) => (
                                         <ListItem className="vocab-display-card__dict-item" key={index} sx={{ pl: 0, py: 0.5 }}>
                                             <Typography className="vocab-display-card__dict-definition" variant="body2" color="text.secondary">
-                                                {index + 1}. {definition}
+                                                {index + 1}. {stripParentheses(definition)}
                                             </Typography>
                                         </ListItem>
                                     ))}

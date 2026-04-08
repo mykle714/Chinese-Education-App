@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS DictionaryEntries (
 
     -- Classification
     "partsOfSpeech" JSONB,                  -- e.g. ["noun", "verb"]
-    "hskLevelTag"   VARCHAR(10),            -- e.g. "1", "2", "3"
+    "hskLevel"      VARCHAR(10),            -- e.g. "HSK1", "HSK2", "HSK3"
 
     -- Definitions
     definitions     JSONB NOT NULL,          -- array of definition strings from source data
@@ -64,7 +64,7 @@ COMMENT ON COLUMN DictionaryEntries.tone IS 'Tone digit string derived from pron
 
 -- Classification
 COMMENT ON COLUMN DictionaryEntries."partsOfSpeech" IS 'JSONB array of parts of speech (e.g. noun, verb, adj). AI-generated via backfill';
-COMMENT ON COLUMN DictionaryEntries."hskLevelTag" IS 'HSK proficiency level tag (e.g. "1", "2"). Set during data import';
+COMMENT ON COLUMN DictionaryEntries."hskLevel" IS 'HSK proficiency level tag (HSK1-HSK6). Set during data import or AI backfill';
 
 -- Definitions
 COMMENT ON COLUMN DictionaryEntries.definitions IS 'JSON array of definition strings. Set during data import';

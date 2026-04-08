@@ -81,7 +81,7 @@ Database error: error: column "discoverable" does not exist
 docker exec -e PGPASSWORD=cow_password_local cow-postgres-local psql -h localhost -U cow_user -d cow_db << 'EOF'
 ALTER TABLE dictionaryentries ADD COLUMN discoverable BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE dictionaryentries ADD COLUMN script VARCHAR(20);
-ALTER TABLE dictionaryentries ADD COLUMN "hskLevelTag" VARCHAR(10);
+ALTER TABLE dictionaryentries ADD COLUMN "hskLevel" VARCHAR(10);
 ALTER TABLE dictionaryentries ADD COLUMN breakdown JSONB;
 ALTER TABLE dictionaryentries ADD COLUMN synonyms JSONB;
 ALTER TABLE dictionaryentries ADD COLUMN "exampleSentences" JSONB;

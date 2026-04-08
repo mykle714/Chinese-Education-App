@@ -30,6 +30,7 @@ const SIZE_STYLES = {
         pinyinFontStyle: "normal" as const,
         columnWidth: CPCD_XS_WIDTH,
         columnMinHeight: "38px",
+        verticalPadding: "2px",
     },
     sm: {
         characterFontSize: "26px",
@@ -39,6 +40,7 @@ const SIZE_STYLES = {
         pinyinFontStyle: "normal" as const,
         columnWidth: CPCD_SM_WIDTH,
         columnMinHeight: "48px",
+        verticalPadding: "4px",
     },
     md: {
         characterFontSize: "2.25rem",
@@ -48,6 +50,7 @@ const SIZE_STYLES = {
         pinyinFontStyle: "normal" as const,
         columnWidth: CPCD_MD_WIDTH,
         columnMinHeight: "auto",
+        verticalPadding: "8px",
     },
 };
 
@@ -89,11 +92,12 @@ const CharacterPinyinColorDisplay: React.FC<CharacterPinyinColorDisplayProps> = 
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
-                justifyContent: showPinyin ? "center" : "flex-start",
+                justifyContent: "center",
                 width: styles.columnWidth,
                 minHeight: styles.columnMinHeight,
                 textAlign: "center",
                 boxSizing: "border-box",
+                paddingY: styles.verticalPadding,
                 borderRadius: "6px",
                 border: selected ? "1px solid" : "1px solid transparent",
                 borderColor: selected ? "text.primary" : "transparent",
@@ -114,21 +118,21 @@ const CharacterPinyinColorDisplay: React.FC<CharacterPinyinColorDisplayProps> = 
             >
                 {character}
             </Typography>
-            {showPinyin && (
-                <Typography
-                    className="char-pinyin-display__pinyin"
-                    sx={{
-                        fontSize: styles.pinyinFontSize,
-                        fontStyle: styles.pinyinFontStyle,
-                        fontFamily: '"Noto Sans Display", sans-serif',
-                        fontStretch: 'condensed',
-                        color,
-                        lineHeight: 1.21,
-                    }}
-                >
-                    {pinyin}
-                </Typography>
-            )}
+            {/* Always rendered so the box height stays constant; visibility hides it without collapsing layout */}
+            <Typography
+                className="char-pinyin-display__pinyin"
+                sx={{
+                    fontSize: styles.pinyinFontSize,
+                    fontStyle: styles.pinyinFontStyle,
+                    fontFamily: '"Noto Sans Display", sans-serif',
+                    fontStretch: 'condensed',
+                    color,
+                    lineHeight: 1.21,
+                    visibility: showPinyin ? "visible" : "hidden",
+                }}
+            >
+                {pinyin}
+            </Typography>
         </Box>
     );
 };

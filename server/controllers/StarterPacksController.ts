@@ -12,6 +12,7 @@ export class StarterPacksController {
   /**
    * Get starter pack cards for a specific language
    * GET /api/starter-packs/:language
+   * Response: { cards: DiscoverCard[], userHskLevel: number }
    */
   getStarterPackCards = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -28,8 +29,8 @@ export class StarterPacksController {
         return;
       }
 
-      const cards = await this.starterPacksService.getStarterPackCards(language, userId);
-      res.json(cards);
+      const result = await this.starterPacksService.getStarterPackCards(language, userId);
+      res.json(result);
     } catch (error: any) {
       this.handleError(error, res);
     }
@@ -65,6 +66,7 @@ export class StarterPacksController {
    * Sort a card into a bucket
    * POST /api/starter-packs/sort
    * Body: { cardId: number, bucket: string, language: string }
+   * Response: { success, message, bucket, userHskLevel }
    */
   sortCard = async (req: Request, res: Response): Promise<void> => {
     try {

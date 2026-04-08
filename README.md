@@ -187,7 +187,7 @@ The application includes a comprehensive tag system for vocabulary entries:
    - `false`: Entries from official/standard sources
    - `null`: Legacy entries (backward compatibility)
 
-2. **hskLevelTag** (Enum)
+2. **hskLevel** (Enum)
    - Valid values: `HSK1`, `HSK2`, `HSK3`, `HSK4`, `HSK5`, `HSK6`
    - Represents HSK (Hanyu Shuiping Kaoshi) difficulty levels
    - Enforced by database CHECK constraint
@@ -204,7 +204,7 @@ The application includes a comprehensive tag system for vocabulary entries:
 ### Tag Display Rules
 
 - **Custom Badge**: Only visible when `isCustomTag === true`
-- **HSK Badge**: Only visible when `hskLevelTag` is not null
+- **HSK Badge**: Only visible when `hskLevel` is not null
 - **Badge Styling**: Material UI Chip components with appropriate colors and icons
 
 ### Database Migration

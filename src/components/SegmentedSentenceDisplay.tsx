@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Box, Typography } from "@mui/material";
+import { stripParentheses } from "../utils/definitionUtils";
 import CharacterPinyinColorDisplay from "./CharacterPinyinColorDisplay";
 import CPCDRow from "./CPCDRow";
 
@@ -23,6 +24,9 @@ interface SegmentedSentenceDisplayProps {
   flexWrap?: "nowrap" | "wrap";
   justifyContent?: string;
   className?: string;
+  showPinyin?: boolean;
+  // When set, draws a single continuous underline beneath characters belonging to this segment
+  vocabWord?: string;
 }
 
 interface CharRenderData {
@@ -59,12 +63,15 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
   flexWrap = "wrap",
   justifyContent,
   className,
+  showPinyin,
+  vocabWord,
 }) => {
   const rowRef = useRef<HTMLDivElement | null>(null);
   const charRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [selectedRange, setSelectedRange] = useState<{ start: number; end: number; segment: string; definition?: string } | null>(null);
   const [popupPosition, setPopupPosition] = useState<PopupPosition | null>(null);
   const [highlightRects, setHighlightRects] = useState<HighlightRect[]>([]);
+  const [vocabUnderlineRects, setVocabUnderlineRects] = useState<HighlightRect[]>([]);
 
   const chars = useMemo(() => [...sentence.chinese], [sentence.chinese]);
 
@@ -190,6 +197,80 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
     };
   }, []);
 
+  // Measure DOM positions of vocab word chars and compute underline rects.
+  // useLayoutEffect ensures measurement runs after the browser has laid out the DOM,
+  // so charRefs have their final positions on first render.
+  useLayoutEffect(() => {
+    if (!vocabWord || !rowRef.current) {
+      setVocabUnderlineRects([]);
+      return;
+    }
+
+    // Find the first run of consecutive characters that spell out vocabWord.
+    // This works even when the sentence's _segments didn't unify the word
+    // (e.g. because vocabWord has a matchException in the dictionary).
+    const vocabChars = [...vocabWord];
+    let matchStart = -1;
+    for (let i = 0; i <= chars.length - vocabChars.length; i++) {
+      if (vocabChars.every((ch, j) => chars[i + j] === ch)) {
+        matchStart = i;
+        break; // underline only the first occurrence
+      }
+    }
+
+    const vocabIndices: number[] = [];
+    if (matchStart !== -1) {
+      // Expand from the vocab word match to cover the full segment(s) it belongs to.
+      // e.g. if vocabWord is "学" but the segment is "学生", underline "学生".
+      let segStart = matchStart;
+      let segEnd = matchStart + vocabChars.length - 1;
+      for (let j = matchStart; j < matchStart + vocabChars.length; j++) {
+        const info = charData[j];
+        if (info) {
+          segStart = Math.min(segStart, info.start);
+          segEnd = Math.max(segEnd, info.end);
+        }
+      }
+      for (let j = segStart; j <= segEnd; j++) vocabIndices.push(j);
+    }
+
+    if (vocabIndices.length === 0) {
+      setVocabUnderlineRects([]);
+      return;
+    }
+
+    const rowRect = rowRef.current.getBoundingClientRect();
+    const rows: HighlightRow[] = [];
+    const sameRowTolerance = 1;
+
+    for (const index of vocabIndices) {
+      const charEl = charRefs.current[index];
+      if (!charEl) continue;
+      // Measure the character glyph element so the underline sits directly
+      // below the character text, above the pinyin row.
+      const charTextEl = charEl.querySelector('.char-pinyin-display__character');
+      const rect = (charTextEl ?? charEl).getBoundingClientRect();
+      const existingRow = rows.find((row) => Math.abs(row.top - rect.top) <= sameRowTolerance);
+      if (existingRow) {
+        existingRow.left = Math.min(existingRow.left, rect.left);
+        existingRow.right = Math.max(existingRow.right, rect.right);
+        existingRow.top = Math.min(existingRow.top, rect.top);
+        existingRow.bottom = Math.max(existingRow.bottom, rect.bottom);
+      } else {
+        rows.push({ top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right });
+      }
+    }
+
+    setVocabUnderlineRects(
+      rows.map((row) => ({
+        left: Math.floor(row.left - rowRect.left) + 1,
+        top: Math.floor(row.bottom - rowRect.top - 1),
+        width: Math.max(Math.floor(row.right - row.left) - 2, 0),
+        height: 0,
+      }))
+    );
+  }, [vocabWord, charData]);
+
   const selectFromIndex = (charIndex: number) => {
     const info = charData[charIndex];
     setSelectedRange({
@@ -243,6 +324,23 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
         />
       ))}
 
+      {vocabUnderlineRects.map((rect, index) => (
+        <Box
+          key={`vocab-underline-${index}`}
+          sx={{
+            position: "absolute",
+            left: rect.left,
+            top: rect.top,
+            width: rect.width,
+            height: 0,
+            borderTop: "0.5px solid",
+            borderColor: "text.primary",
+            zIndex: 1,
+            pointerEvents: "none",
+          }}
+        />
+      ))}
+
       <CPCDRow size={size} flexWrap={flexWrap} justifyContent={justifyContent} className={className}>
         {chars.map((char, index) => {
           const info = charData[index];
@@ -257,7 +355,7 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
               <CharacterPinyinColorDisplay
                 character={char}
                 pinyin={info.pinyin}
-                showPinyin={!!info.pinyin}
+                showPinyin={showPinyin !== false && !!info.pinyin}
                 size={size}
                 useToneColor={true}
                 compact={compact}
@@ -300,7 +398,7 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
               wordBreak: "break-word",
             }}
           >
-            {selectedRange.definition}
+            {stripParentheses(selectedRange.definition)}
           </Typography>
         </Box>
       )}

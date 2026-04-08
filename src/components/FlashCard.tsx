@@ -1,4 +1,5 @@
 import React from 'react';
+import { stripParentheses } from '../utils/definitionUtils';
 import {
     Box,
     Card,
@@ -191,7 +192,7 @@ const FlashCard: React.FC<FlashCardProps> = ({
                                 lineHeight: 1.6
                             }}
                         >
-                            {entryValue}
+                            {stripParentheses(entryValue)}
                         </Typography>
                         {displayEntry.createdAt && (
                             <>

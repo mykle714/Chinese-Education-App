@@ -306,9 +306,9 @@ export class DictionaryService {
   }
 
   /**
-   * Generate an expanded form of a Chinese word using AI
-   * Each morpheme is expanded by inserting additional characters while preserving all originals in order
-   * Returns null if the word cannot be meaningfully expanded or if AI call fails
+   * Generate an expansion for a Chinese word that reveals why the word is constructed the way it is,
+   * by expanding morphemes into more vernacular/colloquial component forms.
+   * Returns null if the word is already maximally vernacular, or if no illuminating expansion exists.
    */
   async generateExpansion(word: string, language: string): Promise<string | null> {
     if (!language || language !== 'zh') {
@@ -328,36 +328,65 @@ export class DictionaryService {
       const anthropic = new Anthropic({ apiKey });
       const trimmedWord = word.trim();
 
-      const prompt = `You are a Chinese language expert. Expand the following Chinese word by inserting additional characters to make it more explicit.
+      const prompt = `You are a Chinese language expert. Your task is to expand a Chinese word into a more vernacular phrase that reveals *why the word is constructed the way it is* — i.e., what each morpheme means in everyday speech.
 
 Rules:
 - Every character from the original word must appear in the expansion, in their original order
-- You may ONLY add characters between or after the originals — never replace or omit any original character
-- The expansion must preserve the same meaning as the original word
-- The expansion must be a natural phrase that a native Mandarin speaker would actually say
-- Examples:
-  * 不知不觉 → 不知道不觉得 (added 道 and 得)
-  * 违规 → 违反规矩 (added 反 and 矩)
-  * 早晚 → 早上晚上 (added 上 twice)
-- If the word cannot be meaningfully expanded while preserving all characters, return null
+- You may add characters anywhere — before, between, or after the originals — but never replace or omit any original character
+- The expansion must use natural, everyday Mandarin that a native speaker would actually say
+- The expansion must make the word's internal structure more transparent by showing what each morpheme means via its more common vernacular form
+- Be strict: a valid expansion must pass ALL of the following checks:
+  1. Each added chunk meaningfully expands a morpheme into a more common everyday word (e.g. 规 → 规矩, 知 → 知道, 早 → 早上)
+  2. The result sounds like something a native speaker would naturally say — not a dictionary gloss or a sentence
+  3. The expansion reveals insight a learner could not get from seeing the original alone
+
+- Return null if ANY of the following apply:
+  - The word is already maximally vernacular (e.g. 吃饭, 喝水, 走路, 睡觉)
+  - The expansion would be circular or tautological (e.g. 学生 → 学习的学生)
+  - The expansion only appends a weak suffix or classifier (e.g. 太极拳 → 太极拳法, 母亲节 → 母亲节日)
+  - The expansion only reduplicates characters (e.g. 干净 → 干干净净)
+  - The expansion only adds grammatical particles or aspect markers without illuminating a morpheme (e.g. 游泳 → 游着泳)
+  - The expansion just appends a synonym of the whole word rather than unpacking the morphemes (e.g. 重要 → 重要紧要)
+  - No natural-sounding expansion exists that meaningfully explains the structure
+
+Good examples (each morpheme expanded into its everyday form):
+  * 违规 → 违反规矩 (违 → 违反 "to violate", 规 → 规矩 "rules/norms")
+  * 不知不觉 → 不知道不觉得 (知 → 知道, 觉 → 觉得)
+  * 早晚 → 早上晚上 (早 → 早上, 晚 → 晚上)
+  * 规则 → 规矩法则 (规 → 规矩, 则 → 法则)
+  * 客厅 → 客人厅堂 (客 → 客人, 厅 → 厅堂)
+
+Null examples:
+  * 吃饭 → null (maximally vernacular)
+  * 学生 → null (学习的学生 is circular)
+  * 干净 → null (干干净净 is just reduplication)
+  * 重要 → null (no morpheme-level expansion possible)
+  * 今天 → null (今日天天 fails — 今日 is more literary, not more vernacular)
+  * 母亲节 → null (母亲节日 is a weak append of 日 with no morpheme insight)
+  * 网络 → null (网络网络 is circular nonsense)
+  * 感冒 → null (感觉冒出来 changes the meaning)
 
 Word: ${trimmedWord}
 
-Respond with ONLY a JSON object in this exact format:
+Respond with ONLY a JSON object in this exact format, no extra text:
 {"expansion": "expanded form"} or {"expansion": null}`;
 
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-6',
         max_tokens: 256,
-        temperature: 0.7,
+        temperature: 0.3,
+        system: 'You are a Chinese language expert. You respond only with valid JSON — no explanations, no reasoning, no extra text.',
         messages: [{ role: 'user', content: prompt }]
       });
 
       const content = (response.content[0] as { type: string; text: string }).text.trim();
-      const jsonText = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
-      const parsed = JSON.parse(jsonText);
+      const stripped = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+      const objMatch = stripped.match(/\{[\s\S]*?\}/);
+      if (!objMatch) return null;
+      const parsed = JSON.parse(objMatch[0]);
 
-      return parsed.expansion || null;
+      const raw: string | null = parsed.expansion || null;
+      return raw ? this.validateExpansion(trimmedWord, raw) : null;
     } catch (error: any) {
       console.error(`Failed to generate expansion for "${word}":`, error.message);
       return null;
@@ -365,10 +394,49 @@ Respond with ONLY a JSON object in this exact format:
   }
 
   /**
+   * Post-processing validation for AI-generated expansions.
+   * Catches common failure modes the prompt alone doesn't reliably prevent.
+   * Returns null if the expansion is invalid.
+   */
+  private validateExpansion(original: string, expansion: string): string | null {
+    // Must add characters — expansion must be strictly longer
+    if (expansion.length <= original.length) return null;
+
+    // Must not be identical to the original
+    if (expansion === original) return null;
+
+    // Must not contain the original as a contiguous substring (circular)
+    if (expansion.includes(original)) return null;
+
+    // Must not double any original character consecutively (AABB/reduplication pattern)
+    for (const char of original) {
+      if (expansion.includes(char + char)) return null;
+    }
+
+    // No original character may appear MORE times in the expansion than it does in the original.
+    // (Prevents expansions where a morpheme is accidentally echoed, e.g. 加油站 → 加油的油站)
+    for (const char of new Set(original)) {
+      const origCount = [...original].filter(c => c === char).length;
+      const expCount  = [...expansion].filter(c => c === char).length;
+      if (expCount > origCount) return null;
+    }
+
+    // All original characters must appear in the expansion in their original order
+    let pos = 0;
+    for (const char of original) {
+      const idx = expansion.indexOf(char, pos);
+      if (idx === -1) return null;
+      pos = idx + 1;
+    }
+
+    return expansion;
+  }
+
+  /**
    * Generate a long definition (25–75 chars) for a Chinese word using Claude Haiku AI
    * Returns null for non-Chinese words or if AI call fails
    */
-  async generateLongDefinition(word: string, language: string, shortDef: string, definitions: string[]): Promise<string | null> {
+  async generateLongDefinition(word: string, language: string, definitions: string[]): Promise<string | null> {
     if (!language || language !== 'zh') {
       return null;
     }

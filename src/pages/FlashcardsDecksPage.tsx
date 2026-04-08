@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Box, Typography, CircularProgress, Alert, Button, useMediaQuery, useTheme } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import MobileFooter from "../components/MobileFooter";
@@ -196,6 +196,7 @@ const DeckCardComponent: React.FC<DeckCardProps> = ({
 // Main Component
 const FlashcardsDecksPage: React.FC = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const { token } = useAuth();
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -299,6 +300,13 @@ const FlashcardsDecksPage: React.FC = () => {
         }
     }, [token]);
 
+    // Refresh card lists when navigating back from CDP after an action
+    useEffect(() => {
+        if (location.state?.refresh) {
+            refetchCards();
+        }
+    }, [location.state?.refresh]);
+
     const handleDeckClick = (category: string) => {
         navigate(`/flashcards/learn?category=${encodeURIComponent(category)}`);
     };
@@ -351,53 +359,6 @@ const FlashcardsDecksPage: React.FC = () => {
             console.error('Error refetching mastered cards:', err);
         } finally {
             setMasteredLoading(false);
-        }
-    };
-
-    // Handler for skip/delete button - hard-deletes the VocabEntry
-    const handleSkipCard = async (entry: VocabEntry) => {
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/vocabEntries/${entry.id}`, {
-                method: 'DELETE',
-                credentials: 'include',
-            });
-
-            if (!response.ok) {
-                throw new Error('Failed to delete card');
-            }
-
-            await refetchCards();
-        } catch (err) {
-            console.error('Error deleting card:', err);
-        }
-    };
-
-    // Handler for cycle button - toggles between library and learn-later
-    const handleCycleCard = async (entry: VocabEntry, currentBucket: 'library' | 'learn-later') => {
-        try {
-            const targetBucket = currentBucket === 'library' ? 'learn-later' : 'library';
-
-            const response = await fetch(`${API_BASE_URL}/api/starter-packs/sort`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                credentials: 'include',
-                body: JSON.stringify({
-                    cardId: entry.id,
-                    bucket: targetBucket,
-                    language: entry.language,
-                }),
-            });
-
-            if (!response.ok) {
-                throw new Error('Failed to cycle card');
-            }
-
-            // Refetch cards to update UI
-            await refetchCards();
-        } catch (err) {
-            console.error('Error cycling card:', err);
         }
     };
 
@@ -504,8 +465,6 @@ const FlashcardsDecksPage: React.FC = () => {
                                     key={entry.id}
                                     entry={entry}
                                     onClick={(e) => navigate(`/flashcards/card/${e.id}`)}
-                                    onDelete={handleSkipCard}
-                                    onCycle={(e) => handleCycleCard(e, 'library')}
                                 />
                             ))
                         )}
@@ -555,8 +514,6 @@ const FlashcardsDecksPage: React.FC = () => {
                                     key={entry.id}
                                     entry={entry}
                                     onClick={(e) => navigate(`/flashcards/card/${e.id}`)}
-                                    onDelete={handleSkipCard}
-                                    onCycle={(e) => handleCycleCard(e, 'learn-later')}
                                 />
                             ))
                         )}
@@ -600,13 +557,12 @@ const FlashcardsDecksPage: React.FC = () => {
                                 </Alert>
                             </Box>
                         ) : (
-                            // Display mastered cards - NO onCycle prop (mastered cards can't be cycled)
+                            // Display mastered cards
                             masteredEntries.map((entry) => (
                                 <MiniVocabCard
                                     key={entry.id}
                                     entry={entry}
                                     onClick={(e) => navigate(`/flashcards/card/${e.id}`)}
-                                    onDelete={handleSkipCard}
                                 />
                             ))
                         )}

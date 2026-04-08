@@ -39,6 +39,7 @@
 - [ ] Verify Vietnamese dictionary imported (~40,000 entries)
 - [ ] Check total entries: `docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT COUNT(*) FROM \"DictionaryEntries\";"`
 - [ ] Verify multi-language support: Check each language has entries
+- [ ] Abbreviation expansion runs automatically as part of the import script (expands "sth" → "something", "sb" → "somebody" in all definitions)
 
 ## Web Server (Optional - Docker handles this)
 - [ ] Create Nginx reverse proxy configuration (optional)

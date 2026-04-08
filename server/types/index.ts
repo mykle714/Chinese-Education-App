@@ -105,7 +105,7 @@ export interface DictionaryEntry {
 
   // Classification
   partsOfSpeech?: string[] | null;
-  hskLevelTag?: string | null;
+  hskLevel?: string | null;
 
   // Definitions
   definitions: string[];  // Parsed JSON array
@@ -119,6 +119,7 @@ export interface DictionaryEntry {
   exampleSentences?: Array<{
     chinese: string;
     english: string;
+    translatedVocab?: string;  // English word/phrase in the translation that corresponds to the vocab word
     _segments?: string[];
     segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo }>;
   }> | null;
@@ -138,12 +139,13 @@ export interface DiscoverCard {
   language: Language;
   word2?: string | null;
   script?: string | null;
-  hskLevelTag?: string | null;
+  hskLevel?: string | null;
   breakdown?: Record<string, { definition: string }> | null;
   synonyms?: string[] | null;
   exampleSentences?: Array<{
     chinese: string;
     english: string;
+    translatedVocab?: string;  // English word/phrase in the translation that corresponds to the vocab word
     _segments?: string[];
     segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo }>;
   }> | null;
@@ -188,7 +190,7 @@ export interface VocabEntry {
   script?: string;
   pronunciation?: string | null;
   tone?: string | null;   // Tone digits derived from pronunciation (e.g. "12" for fēng kuáng)
-  hskLevelTag?: HskLevel | null;
+  hskLevel?: HskLevel | null;
   markHistory?: ReviewMark[];  // Last 16 flashcard mark results
   totalMarkCount?: number;  // Total cumulative count of all marks
   totalCorrectCount?: number;  // Lifetime count of correct marks
@@ -196,16 +198,18 @@ export interface VocabEntry {
   last8SuccessRate?: number;  // Success rate for last 8 marks (0.0 to 1.0)
   last16SuccessRate?: number;  // Success rate for last 16 marks (0.0 to 1.0)
   category?: FlashcardCategory;  // Category based on last 8 performance
-  starterPackBucket?: StarterPackBucket | null;  // Starter pack sorting bucket
+  starterPackBucket: StarterPackBucket;  // Starter pack sorting bucket (required)
   breakdown?: Record<string, { definition: string; pronunciation?: string }> | null;  // Character breakdown for Chinese vocab
   synonyms?: string[];  // Array of Chinese synonym words
   synonymsMetadata?: Record<string, { definition: string; pronunciation: string }> | null;  // Computed at runtime by batch-reading from dictionaryentries
   expansion?: string | null;  // Expanded/fuller form of word (e.g., 不知不觉 → 不知道不觉得)
   expansionMetadata?: Record<string, { pronunciation?: string; definition?: string }> | null;  // Computed at runtime from expansion characters
   expansionLiteralTranslation?: string | null;  // Literal phrase translation derived from expansion components
+  longDefinition?: string | null;  // AI-generated extended definition (25–150 chars) from dictionaryentries
   exampleSentences?: Array<{
     chinese: string;
     english: string;
+    translatedVocab?: string;  // English word/phrase in the translation that corresponds to the vocab word
     _segments?: string[];
     segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo }>;
   }>;  // Example sentences enriched at runtime with greedy segmentation and per-segment metadata
@@ -219,7 +223,7 @@ export interface VocabEntryCreateData {
   entryKey: string;
   entryValue: string;
   language: Language;
-  hskLevelTag?: HskLevel | null;
+  hskLevel?: HskLevel | null;
 }
 
 // VocabEntry update data type
@@ -227,7 +231,7 @@ export interface VocabEntryUpdateData {
   entryKey?: string;
   entryValue: string;
   language?: Language;
-  hskLevelTag?: HskLevel | null;
+  hskLevel?: HskLevel | null;
 }
 
 // Request parameters type

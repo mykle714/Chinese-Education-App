@@ -4,6 +4,7 @@ import { useAuth } from "../AuthContext";
 import { useConfirmation } from "../contexts/ConfirmationContext";
 import { useVocabularyUpdate } from "../contexts/VocabularyUpdateContext";
 import apiClient from "../utils/apiClient";
+import { stripParentheses } from "../utils/definitionUtils";
 import {
     Container,
     Typography,
@@ -34,7 +35,7 @@ interface VocabEntry {
     id: number;
     entryKey: string;
     entryValue: string;
-    hskLevelTag?: HskLevel | null;
+    hskLevel?: HskLevel | null;
     createdAt: string;
 }
 
@@ -54,10 +55,10 @@ const getHskIcon = (hskLevel: HskLevel) => {
 // Helper function to render tag badges
 const renderTags = (entry: VocabEntry) => (
     <Box sx={{ position: 'absolute', top: 16, right: 16, display: 'flex', gap: 0.5 }}>
-        {entry.hskLevelTag && (
+        {entry.hskLevel && (
             <Chip
-                icon={getHskIcon(entry.hskLevelTag)}
-                label={entry.hskLevelTag}
+                icon={getHskIcon(entry.hskLevel)}
+                label={entry.hskLevel}
                 size="small"
                 color="secondary"
                 sx={{ fontSize: '0.7rem', height: '20px' }}
@@ -207,7 +208,7 @@ function EntryDetailPage() {
                 </Typography>
                 <Divider sx={{ my: 2 }} />
                 <Typography variant="body1" paragraph>
-                    {entry.entryValue}
+                    {stripParentheses(entry.entryValue)}
                 </Typography>
                 {renderTags(entry)}
                 <Divider sx={{ my: 2 }} />

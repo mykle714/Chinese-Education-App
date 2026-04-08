@@ -28,6 +28,7 @@ const FlashcardsLearnPage: React.FC = () => {
     const [isUndoing, setIsUndoing] = useState(false);
     const [selectedTab, setSelectedTab] = useState(0);
     const [lastMarkUndoSnapshot, setLastMarkUndoSnapshot] = useState<LastMarkUndoSnapshot | null>(null);
+    const [showPinyin, setShowPinyin] = useState(true);
 
     // Work points integration — activity detection is handled globally by useActivityDetection
     // inside useWorkPoints. No need for manual recordActivity() calls.
@@ -42,7 +43,7 @@ const FlashcardsLearnPage: React.FC = () => {
         console.log('Current card:', { id: currentEntry.id, entryKey: currentEntry.entryKey });
         console.log('Current card enrichment:', {
             breakdown: currentEntry.breakdown ?? 'none',
-            synonyms: currentEntry.synonyms ?? 'none',
+            longDefinition: currentEntry.longDefinition ?? 'none',
             exampleSentences: currentEntry.exampleSentences ?? 'none',
             expansion: currentEntry.expansion ?? 'none',
             expansionMetadata: currentEntry.expansionMetadata ?? 'none',
@@ -177,59 +178,36 @@ const FlashcardsLearnPage: React.FC = () => {
 
         setIsAnimating(true);
 
-        // Mark card and get response
-        const markResult = await markCard(currentCard.id, isCorrect);
-        if (!markResult) {
-            setIsAnimating(false);
-            return;
-        }
-
-        const { newCard, markTimestamp, displacedMark } = markResult;
-
-        console.log(`Card marked: ${currentCard.entryKey} (${isCorrect ? 'correct' : 'incorrect'})`);
-        if (newCard) {
-            console.log('New replacement card:', {
-                id: newCard.id,
-                entryKey: newCard.entryKey,
-                entryValue: newCard.entryValue,
-            });
-            console.log('New card enrichment:', {
-                breakdown: newCard.breakdown ?? 'none',
-                synonyms: newCard.synonyms ?? 'none',
-                exampleSentences: newCard.exampleSentences ?? 'none',
-                expansion: newCard.expansion ?? 'none',
-                expansionMetadata: newCard.expansionMetadata ?? 'none',
-                relatedWords: newCard.relatedWords ?? 'none',
-            });
-        } else {
-            console.log('No new card received (card stays in loop)');
-        }
-
-        // Wait for animation to complete
-        await new Promise(resolve => setTimeout(resolve, 300));
-
-        // Update working loop
-        setWorkingLoop(prevLoop => {
-            const newLoop = [...prevLoop];
-            if (isCorrect && newCard) {
-                // Replace current card with new card
-                newLoop[currentIndex] = newCard;
-            }
-            // If incorrect, card stays in loop
-            return newLoop;
-        });
-
-        // Move to next card in loop
+        // Advance content immediately — EIC and card face show the next card right away.
+        // The slide-back animation (0.45s) plays out in the background.
         setCurrentIndex(prev => (prev + 1) % workingLoop.length);
+        setIsFlipped(Math.random() < 0.5);
 
-        // Reset card state
-        setIsFlipped(Math.random() < 0.5); // Random flip for new card
-        setLastMarkUndoSnapshot({
-            cardId: currentCard.id,
-            markTimestamp,
-            displacedMark,
-            ...preDismissSnapshot,
+        // Fire mark API in background — newCard replaces the current slot, not the next one,
+        // so the UI doesn't need to wait for the response before advancing.
+        markCard(currentCard.id, isCorrect).then(markResult => {
+            if (!markResult) return;
+            const { newCard, markTimestamp, displacedMark } = markResult;
+            console.log(`Card marked: ${currentCard.entryKey} (${isCorrect ? 'correct' : 'incorrect'})`);
+            if (isCorrect && newCard) {
+                // Patch the slot the dismissed card occupied — user won't see it for a full cycle
+                setWorkingLoop(prevLoop => {
+                    const newLoop = [...prevLoop];
+                    newLoop[preDismissSnapshot.currentIndex] = newCard;
+                    return newLoop;
+                });
+            }
+            setLastMarkUndoSnapshot({
+                cardId: currentCard.id,
+                markTimestamp,
+                displacedMark,
+                ...preDismissSnapshot,
+            });
         });
+
+        // Wait for the CSS transition (transform 0.45s ease) to complete before
+        // allowing the next swipe — previously 300ms was too short.
+        await new Promise(resolve => setTimeout(resolve, 450));
         setIsAnimating(false);
     };
 
@@ -338,6 +316,8 @@ const FlashcardsLearnPage: React.FC = () => {
                 onBack={() => navigate('/flashcards/decks')}
                 onUndo={handleUndoLastMark}
                 workPoints={workPoints}
+                showPinyin={showPinyin}
+                onTogglePinyin={() => setShowPinyin(v => !v)}
             />
             <ContentArea className="mobile-demo-content">
                 <InfoCardSection
@@ -345,6 +325,7 @@ const FlashcardsLearnPage: React.FC = () => {
                     selectedTab={selectedTab}
                     onTabChange={setSelectedTab}
                     breakdownItems={breakdownItems}
+                    showPinyin={showPinyin}
                 />
                 <FlashCardSection
                     currentEntry={currentEntry}
@@ -352,7 +333,9 @@ const FlashcardsLearnPage: React.FC = () => {
                     dragPosition={dragPosition}
                     isDragging={isDragging}
                     isFlipped={isFlipped}
+                    isAnimating={isAnimating}
                     selectedCategory={selectedCategory}
+                    showPinyin={showPinyin}
                     handlers={handlers}
                 />
             </ContentArea>

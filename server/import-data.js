@@ -83,7 +83,7 @@ async function importData() {
           'zh', // Default language for existing entries
           null, // Script will be null for existing entries
           entry.isCustomTag || false,
-          entry.hskLevelTag || null,
+          entry.hskLevel || null,
           entry.createdAt
         ]);
         vocabImported++;

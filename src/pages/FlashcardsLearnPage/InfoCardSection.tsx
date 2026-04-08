@@ -1,4 +1,5 @@
 import React from "react";
+import { stripParentheses } from "../../utils/definitionUtils";
 import { Box, CardContent, Typography } from "@mui/material";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
@@ -19,11 +20,27 @@ import { COLORS, TAB_COLORS, TAB_LABELS } from "./constants";
 import type { VocabEntry, BreakdownItem } from "./types";
 import BreakdownLineItemComponent from "./BreakdownLineItemComponent";
 
+// Renders the English translation with the translatedVocab word/phrase underlined.
+// Falls back to plain text if translatedVocab is absent or not found in the translation.
+function renderEnglishWithVocabUnderline(english: string, translatedVocab?: string): React.ReactNode {
+    if (!translatedVocab) return english;
+    const idx = english.toLowerCase().indexOf(translatedVocab.toLowerCase());
+    if (idx === -1) return english;
+    return (
+        <>
+            {english.slice(0, idx)}
+            <span style={{ textDecoration: 'underline' }}>{english.slice(idx, idx + translatedVocab.length)}</span>
+            {english.slice(idx + translatedVocab.length)}
+        </>
+    );
+}
+
 interface InfoCardSectionProps {
     currentEntry: VocabEntry | null;
     selectedTab: number;
     onTabChange: (tab: number) => void;
     breakdownItems: BreakdownItem[];
+    showPinyin: boolean;
 }
 
 const InfoCardSection: React.FC<InfoCardSectionProps> = ({
@@ -31,6 +48,7 @@ const InfoCardSection: React.FC<InfoCardSectionProps> = ({
     selectedTab,
     onTabChange,
     breakdownItems,
+    showPinyin,
 }) => {
     // Swipe handler for tab navigation on the info card
     const bindInfoCard = useDrag(
@@ -122,6 +140,7 @@ const InfoCardSection: React.FC<InfoCardSectionProps> = ({
                                     character={item.character}
                                     pinyin={item.pinyin}
                                     definition={item.definition}
+                                    showPinyin={showPinyin}
                                 />
                             ))
                         ) : selectedTab === 0 ? (
@@ -143,7 +162,7 @@ const InfoCardSection: React.FC<InfoCardSectionProps> = ({
                                                     key={i}
                                                     character={char}
                                                     pinyin={word.pronunciation?.split(' ')[i] ?? ''}
-                                                    showPinyin={true}
+                                                    showPinyin={showPinyin}
                                                     useToneColor={true}
                                                     size="sm"
                                                 />
@@ -151,7 +170,7 @@ const InfoCardSection: React.FC<InfoCardSectionProps> = ({
                                         </CPCDRow>
                                         {word.definition && (
                                             <DefinitionColumn>
-                                                <DefinitionText>{word.definition}</DefinitionText>
+                                                <DefinitionText>{stripParentheses(word.definition)}</DefinitionText>
                                             </DefinitionColumn>
                                         )}
                                     </BreakdownLineItem>
@@ -165,39 +184,29 @@ const InfoCardSection: React.FC<InfoCardSectionProps> = ({
                             </Box>
                         ) : null}
 
-                        {/* Tab 2: Synonyms */}
-                        {selectedTab === 2 && currentEntry?.synonyms && currentEntry.synonyms.length > 0 ? (
-                            <Box className="mobile-demo-synonyms-list">
-                                {currentEntry.synonyms.map((synonym, index) => {
-                                    const synPronunciations = currentEntry.synonymsMetadata?.[synonym]?.pronunciation?.split(' ') ?? [];
-                                    const synDefinition = currentEntry.synonymsMetadata?.[synonym]?.definition;
-                                    return (
-                                        <BreakdownLineItem className="mobile-demo-synonym-item" key={index}>
-                                            <CPCDRow size="sm">
-                                                {[...synonym].map((char, i) => (
-                                                    <CharacterPinyinColorDisplay
-                                                        key={i}
-                                                        character={char}
-                                                        pinyin={synPronunciations[i] ?? ''}
-                                                        showPinyin={true}
-                                                        useToneColor={true}
-                                                        size="sm"
-                                                    />
-                                                ))}
-                                            </CPCDRow>
-                                            {synDefinition && (
-                                                <DefinitionColumn>
-                                                    <DefinitionText>{synDefinition}</DefinitionText>
-                                                </DefinitionColumn>
-                                            )}
-                                        </BreakdownLineItem>
-                                    );
-                                })}
+                        {/* Tab 2: Long Definition */}
+                        {selectedTab === 2 && currentEntry?.longDefinition ? (
+                            <Box
+                                className="mobile-demo-long-definition-wrapper"
+                                sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 2 }}
+                            >
+                                <Typography
+                                    className="mobile-demo-long-definition-text"
+                                    sx={{
+                                        fontSize: 13,
+                                        color: 'text.primary',
+                                        fontFamily: '"Inter", sans-serif',
+                                        lineHeight: 1.6,
+                                        textAlign: 'center',
+                                    }}
+                                >
+                                    {stripParentheses(currentEntry.longDefinition)}
+                                </Typography>
                             </Box>
                         ) : selectedTab === 2 ? (
                             <Box className="mobile-demo-tab-empty" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 2 }}>
                                 <Typography className="mobile-demo-tab-empty-text" sx={{ fontSize: 14, color: COLORS.gray, textAlign: 'center', fontFamily: '"Inter", sans-serif' }}>
-                                    No synonyms available
+                                    No extended definition available
                                 </Typography>
                             </Box>
                         ) : null}
@@ -223,9 +232,11 @@ const InfoCardSection: React.FC<InfoCardSectionProps> = ({
                                             sentence={sentence}
                                             size="xs"
                                             flexWrap="wrap"
+                                            showPinyin={showPinyin}
+                                            vocabWord={currentEntry?.entryKey}
                                         />
                                         <Typography className="mobile-demo-sentence-english" sx={{ fontSize: 11, color: COLORS.gray, fontFamily: '"Inter", sans-serif', lineHeight: 1.3 }}>
-                                            {sentence.english}
+                                            {renderEnglishWithVocabUnderline(sentence.english, sentence.translatedVocab)}
                                         </Typography>
                                     </Box>
                                 ))}
@@ -255,6 +266,7 @@ const InfoCardSection: React.FC<InfoCardSectionProps> = ({
                                     flexWrap="wrap"
                                     justifyContent="center"
                                     className="mobile-demo-expansion-chars"
+                                    showPinyin={showPinyin}
                                 />
                                 {/* Literal translation: segment definitions strung together */}
                                 {currentEntry.expansionLiteralTranslation && (
@@ -267,7 +279,7 @@ const InfoCardSection: React.FC<InfoCardSectionProps> = ({
                                         wordBreak: 'break-word',
                                         textAlign: 'center',
                                     }}>
-                                        {currentEntry.expansionLiteralTranslation}
+                                        {stripParentheses(currentEntry.expansionLiteralTranslation)}
                                     </Typography>
                                 )}
                             </Box>

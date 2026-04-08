@@ -1,0 +1,13 @@
+import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+import path from 'path';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(__dirname, '../.env.docker') });
+import db from '../db.js';
+const client = await db.getClient();
+const r1 = await client.query("SELECT COUNT(*) FROM dictionaryentries WHERE language = 'zh' AND discoverable = TRUE");
+const r2 = await client.query("SELECT COUNT(*) FROM dictionaryentries WHERE language = 'zh' AND discoverable = TRUE AND expansion IS NULL");
+console.log('total discoverable zh:', r1.rows[0].count);
+console.log('missing expansion:', r2.rows[0].count);
+client.release();
+await db.pool.end();

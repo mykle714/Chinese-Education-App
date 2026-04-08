@@ -60,6 +60,7 @@ Write exactly 3 natural example sentences using "${word}". Each sentence should:
 - Be simple enough for an intermediate learner (HSK 3–4 level vocabulary otherwise)
 - Show a different grammatical role or context for the word for each sentence
 - Have an accurate English translation
+- Include a "translatedVocab" field: the English word or short phrase in your English translation that directly corresponds to "${word}" (e.g. if the word is 贴 and the sentence is "She stuck the photo on the wall.", translatedVocab is "stuck")
 - Include a "partOfSpeechDict" object for each sentence
 - partOfSpeechDict keys must be word tokens that appear in the Chinese sentence (single or multi-character words are both allowed)
 - Make sure to include every word in the sentence as a key in partOfSpeechDict
@@ -73,6 +74,7 @@ Respond with ONLY a JSON array in this exact format (no markdown, no explanation
   {
     "chinese": "Chinese sentence",
     "english": "English translation",
+    "translatedVocab": "english word",
     "partOfSpeechDict": {
       "wordToken1": "pos_tag",
       "wordToken2": "pos_tag"
@@ -81,6 +83,7 @@ Respond with ONLY a JSON array in this exact format (no markdown, no explanation
   {
     "chinese": "Chinese sentence",
     "english": "English translation",
+    "translatedVocab": "english word",
     "partOfSpeechDict": {
       "wordToken1": "pos_tag",
       "wordToken2": "pos_tag"
@@ -89,6 +92,7 @@ Respond with ONLY a JSON array in this exact format (no markdown, no explanation
   {
     "chinese": "Chinese sentence",
     "english": "English translation",
+    "translatedVocab": "english word",
     "partOfSpeechDict": {
       "wordToken1": "pos_tag",
       "wordToken2": "pos_tag"
@@ -98,7 +102,7 @@ Respond with ONLY a JSON array in this exact format (no markdown, no explanation
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 512,
+    max_tokens: 600,
     temperature: 0.7,
     messages: [{ role: 'user', content: prompt }],
   });
@@ -119,6 +123,7 @@ Respond with ONLY a JSON array in this exact format (no markdown, no explanation
   const valid = parsed.filter(s =>
     s && typeof s.chinese === 'string' && s.chinese.length > 0 &&
     typeof s.english === 'string' && s.english.length > 0 &&
+    typeof s.translatedVocab === 'string' && s.translatedVocab.trim().length > 0 &&
     s.partOfSpeechDict &&
     typeof s.partOfSpeechDict === 'object' &&
     !Array.isArray(s.partOfSpeechDict) &&
@@ -189,6 +194,7 @@ async function run() {
           for (const s of sentences) {
             console.log(`    ${s.chinese}`);
             console.log(`           ${s.english}`);
+            console.log(`           translatedVocab: ${s.translatedVocab}`);
             console.log(`           POS: ${JSON.stringify(s.partOfSpeechDict)}`);
           }
         } else {

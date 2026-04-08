@@ -1,4 +1,5 @@
 import { useState, useEffect, memo, useRef } from "react";
+import { stripParentheses } from "../utils/definitionUtils";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "../AuthContext";
 import { FLASHCARD_CONTENT_UPDATE_DELAY, API_BASE_URL } from "../constants";
@@ -979,7 +980,7 @@ function FlashcardsPage() {
                                                 </Typography>
                                             </Box>
                                             <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                                                {entry.entryValue}
+                                                {stripParentheses(entry.entryValue)}
                                             </Typography>
                                         </CardContent>
                                     </Card>

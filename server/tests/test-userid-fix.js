@@ -39,7 +39,7 @@ async function testUserIdFix() {
       entryKey: '测试',
       entryValue: 'test',
       isCustomTag: true,
-      hskLevelTag: 'HSK1'
+      hskLevel: 'HSK1'
     });
     
     console.log('✅ VocabEntry created successfully:');

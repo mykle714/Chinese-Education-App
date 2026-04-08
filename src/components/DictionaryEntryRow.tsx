@@ -1,5 +1,6 @@
 import { Card, CardContent, Typography } from '@mui/material';
 import type { DictionaryEntry } from '../types';
+import { stripParentheses } from '../utils/definitionUtils';
 
 interface DictionaryEntryRowProps {
     entry: DictionaryEntry;
@@ -13,7 +14,7 @@ interface DictionaryEntryRowProps {
  */
 function DictionaryEntryRow({ entry, onClick }: DictionaryEntryRowProps) {
     const firstDefinition = entry.definitions && entry.definitions.length > 0
-        ? entry.definitions[0]
+        ? stripParentheses(entry.definitions[0])
         : 'No definition available';
 
     return (

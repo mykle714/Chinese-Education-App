@@ -165,7 +165,7 @@ export async function fetchVocabEntriesByTokens(
  * @returns Promise resolving to created entry
  */
 export async function createVocabEntry(
-  entryData: { entryKey: string; entryValue: string; hskLevelTag?: string },
+  entryData: { entryKey: string; entryValue: string; hskLevel?: string },
   token: string
 ): Promise<VocabEntry> {
   try {
@@ -206,7 +206,7 @@ export async function createVocabEntry(
  */
 export async function updateVocabEntry(
   entryId: number,
-  entryData: { entryKey: string; entryValue: string; hskLevelTag?: string },
+  entryData: { entryKey: string; entryValue: string; hskLevel?: string },
   token: string
 ): Promise<VocabEntry> {
   try {

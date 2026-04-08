@@ -5,16 +5,16 @@ export interface VocabEntry {
     entryKey: string;
     entryValue: string;
     pronunciation?: string | null;
-    hskLevelTag?: HskLevel | null;
+    hskLevel?: HskLevel | null;
     breakdown?: Record<string, { definition: string }> | null;
-    synonyms?: string[];
-    synonymsMetadata?: Record<string, { definition: string; pronunciation: string }> | null;
     expansion?: string | null;
     expansionMetadata?: Record<string, { pronunciation?: string; definition?: string }> | null;
     expansionLiteralTranslation?: string | null;
+    longDefinition?: string | null;
     exampleSentences?: Array<{
       chinese: string;
       english: string;
+      translatedVocab?: string;  // English word/phrase in the translation that corresponds to the vocab word
       _segments?: string[];
       segmentMetadata?: Record<string, { pronunciation?: string; definition?: string }>;
     }>;

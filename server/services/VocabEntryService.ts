@@ -279,7 +279,7 @@ export class VocabEntryService {
       entryKey: entry.front.trim(),
       entryValue: entry.back.trim(),
       language,
-      hskLevelTag: null // Business rule: CSV imports don't have HSK levels by default
+      hskLevel: null // Business rule: CSV imports don't have HSK levels by default
     }));
     
     // Perform bulk upsert with progress tracking
@@ -355,7 +355,7 @@ export class VocabEntryService {
               entryKey: entry.front.trim(),
               entryValue: entry.back.trim(),
               language,
-              hskLevelTag: null
+              hskLevel: null
             }));
             
             // Perform bulk upsert

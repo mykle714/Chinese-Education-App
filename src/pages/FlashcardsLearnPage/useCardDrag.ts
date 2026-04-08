@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { CARD_DISMISS_THRESHOLD_VW } from "./constants";
 
 interface UseCardDragReturn {
     cardRef: React.RefObject<HTMLDivElement | null>;
@@ -10,9 +11,6 @@ interface UseCardDragReturn {
         onTouchStart: (e: React.TouchEvent) => void;
         onTouchEnd: (e: React.TouchEvent) => void;
         onMouseDown: (e: React.MouseEvent) => void;
-        onMouseMove: (e: React.MouseEvent) => void;
-        onMouseUp: () => void;
-        onMouseLeave: () => void;
     };
 }
 
@@ -26,6 +24,12 @@ export function useCardDrag(
     const [dragPosition, setDragPosition] = useState({ x: 0, y: 0 });
     const [isDragging, setIsDragging] = useState(false);
     const [isFlipped, setIsFlipped] = useState(false);
+
+    // Read the card's rendered pixel width at evaluation time.
+    // On desktop the frame is capped at 393px inside a wider viewport, so using
+    // window.innerWidth would produce a threshold that is far too large.
+    // Falls back to window.innerWidth only before the element has mounted.
+    const getCardWidth = () => cardRef.current?.offsetWidth ?? window.innerWidth;
 
     const handleTouchStart = (e: React.TouchEvent) => {
         if (isAnimating) return;
@@ -65,7 +69,7 @@ export function useCardDrag(
 
         setIsDragging(false);
 
-        const threshold = 150;
+        const threshold = CARD_DISMISS_THRESHOLD_VW * getCardWidth();
         const tapThreshold = 10; // Small movement threshold to distinguish tap from drag
         const { x, y } = dragPosition;
 
@@ -88,7 +92,11 @@ export function useCardDrag(
         }
     };
 
-    // Mouse handlers for desktop
+    // Mouse handlers for desktop.
+    // mousedown is the only React synthetic handler — it just records the start position
+    // and flips isDragging on. mousemove and mouseup are attached to the document via
+    // useEffect below, so rapid drags can never outpace the card's visual bounds and
+    // accidentally fire onMouseLeave, which would otherwise cancel the drag.
     const handleMouseDown = (e: React.MouseEvent) => {
         if (isAnimating) return;
 
@@ -96,19 +104,19 @@ export function useCardDrag(
         setIsDragging(true);
     };
 
-    const handleMouseMove = (e: React.MouseEvent) => {
+    const handleDocumentMouseMove = useCallback((e: MouseEvent) => {
         if (!isDragging || isAnimating) return;
 
         const deltaX = e.clientX - dragStart.current.x;
         const deltaY = e.clientY - dragStart.current.y;
         setDragPosition({ x: deltaX, y: deltaY });
-    };
+    }, [isDragging, isAnimating]);
 
-    const handleMouseUp = () => {
+    const handleDocumentMouseUp = useCallback((_e: MouseEvent) => {
         if (!isDragging || isAnimating) return;
         setIsDragging(false);
 
-        const threshold = 150;
+        const threshold = CARD_DISMISS_THRESHOLD_VW * getCardWidth();
         const tapThreshold = 10; // Small movement threshold to distinguish click from drag
         const { x, y } = dragPosition;
 
@@ -129,15 +137,20 @@ export function useCardDrag(
             // Snap back
             setDragPosition({ x: 0, y: 0 });
         }
-    };
+    }, [isDragging, isAnimating, dragPosition, onDismiss]);
 
-    const handleMouseLeave = () => {
-        // Reset drag state if mouse leaves the card while dragging
-        if (isDragging && !isAnimating) {
-            setIsDragging(false);
-            setDragPosition({ x: 0, y: 0 });
-        }
-    };
+    // Attach document-level mouse listeners only while a drag is in progress.
+    // This prevents the drag from being cancelled if the mouse briefly leaves the
+    // card's hit-test area during a fast swipe.
+    useEffect(() => {
+        if (!isDragging) return;
+        document.addEventListener('mousemove', handleDocumentMouseMove);
+        document.addEventListener('mouseup', handleDocumentMouseUp);
+        return () => {
+            document.removeEventListener('mousemove', handleDocumentMouseMove);
+            document.removeEventListener('mouseup', handleDocumentMouseUp);
+        };
+    }, [isDragging, handleDocumentMouseMove, handleDocumentMouseUp]);
 
     return {
         cardRef,
@@ -149,9 +162,6 @@ export function useCardDrag(
             onTouchStart: handleTouchStart,
             onTouchEnd: handleTouchEnd,
             onMouseDown: handleMouseDown,
-            onMouseMove: handleMouseMove,
-            onMouseUp: handleMouseUp,
-            onMouseLeave: handleMouseLeave,
         },
     };
 }

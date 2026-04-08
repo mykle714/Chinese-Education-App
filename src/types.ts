@@ -30,7 +30,7 @@ export interface VocabEntry {
   script?: string;
   pronunciation?: string | null;
   tone?: string | null;
-  hskLevelTag?: HskLevel | null;
+  hskLevel?: HskLevel | null;
   category?: FlashcardCategory;
   starterPackBucket?: StarterPackBucket | null;
   breakdown?: Record<string, { definition: string; pronunciation?: string }> | null;
@@ -82,7 +82,7 @@ export interface DiscoverCard {
   language: Language;
   word2?: string | null;
   script?: string | null;
-  hskLevelTag?: string | null;
+  hskLevel?: string | null;
   breakdown?: Record<string, { definition: string; pronunciation?: string }> | null;
   synonyms?: string[] | null;
   exampleSentences?: Array<{
@@ -94,6 +94,20 @@ export interface DiscoverCard {
   expansion?: string | null;
   expansionMetadata?: Record<string, { pronunciation?: string; definition?: string }> | null;
   expansionLiteralTranslation?: string | null;
+}
+
+// GET /api/starter-packs/:language response shape
+export interface DiscoverFetchResponse {
+  cards: DiscoverCard[];
+  userHskLevel: number;
+}
+
+// POST /api/starter-packs/sort response shape
+export interface DiscoverSortResponse {
+  success: boolean;
+  message: string;
+  bucket: string;
+  userHskLevel: number;
 }
 
 // Combined vocab lookup response

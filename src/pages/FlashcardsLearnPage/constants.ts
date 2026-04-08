@@ -20,10 +20,15 @@ export const COLORS = {
 // Controls vertical alignment of content within both card faces (front + back)
 export const CARD_FACE_JUSTIFY = 'flex-start';
 
+// Fraction of viewport width the card must be dragged before the color overlay appears
+// and the mark is triggered. Single source of truth for both thresholds.
+// ~15% of vw → ≈59px on a 393px iPhone frame.
+export const CARD_DISMISS_THRESHOLD_VW = 0.15;
+
 // Original card dimensions — source size used for scaling math.
 export const CARD_BASE_WIDTH = 295;
 export const CARD_BASE_HEIGHT = 426;
 
-// Tab config — order matches: bt, sct, st, est, et
+// Tab config — order matches: bt, sct, definition, est, et
 export const TAB_COLORS = [COLORS.pink, COLORS.green, COLORS.blue, COLORS.orange, COLORS.gray];
-export const TAB_LABELS = ["breakdown", "similar", "synonyms", "examples", "literal"];
+export const TAB_LABELS = ["breakdown", "similar", "definition", "examples", "literal"];

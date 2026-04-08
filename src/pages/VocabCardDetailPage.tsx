@@ -1,6 +1,9 @@
 import { useState, useEffect } from "react";
-import { useParams } from "react-router-dom";
-import { Box, Typography, Chip, CircularProgress, Alert, Divider, useMediaQuery, useTheme } from "@mui/material";
+import { stripParentheses } from "../utils/definitionUtils";
+import { useParams, useNavigate } from "react-router-dom";
+import { Box, Typography, Chip, Button, CircularProgress, Alert, Divider, useMediaQuery, useTheme } from "@mui/material";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import RepeatIcon from "@mui/icons-material/Repeat";
 import { styled } from "@mui/material/styles";
 import MobileFooter from "../components/MobileFooter";
 import PageHeader from "../components/PageHeader";
@@ -59,6 +62,16 @@ const HeroCard = styled(Box)(() => ({
     gap: "8px",
 }));
 
+// Action bar above the footer
+const ActionBar = styled(Box)(() => ({
+    display: 'flex',
+    gap: '12px',
+    padding: '12px 16px',
+    backgroundColor: COLORS.background,
+    borderTop: `1px solid rgba(98, 95, 99, 0.2)`,
+    flexShrink: 0,
+}));
+
 // Info section card
 const SectionCard = styled(Box)(() => ({
     backgroundColor: COLORS.infoCard,
@@ -91,12 +104,14 @@ const getCategoryColor = (category?: string) => {
 
 const VocabCardDetailPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
+    const navigate = useNavigate();
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down("md"));
     const [entry, setEntry] = useState<VocabEntry | null>(null);
     const [dictEntry, setDictEntry] = useState<DictionaryEntry | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [actionLoading, setActionLoading] = useState(false);
 
     useEffect(() => {
         const fetchEntry = async () => {
@@ -127,8 +142,44 @@ const VocabCardDetailPage: React.FC = () => {
         if (id) fetchEntry();
     }, [id]);
 
+    // Hard-deletes the VocabEntry and returns to the decks page
+    const handleDelete = async () => {
+        if (!entry) return;
+        try {
+            setActionLoading(true);
+            const response = await fetch(`${API_BASE_URL}/api/vocabEntries/${entry.id}`, {
+                method: 'DELETE',
+                credentials: 'include',
+            });
+            if (!response.ok) throw new Error('Failed to delete card');
+            navigate('/flashcards/decks', { state: { refresh: Date.now() } });
+        } catch (err) {
+            console.error('Error deleting card:', err);
+            setActionLoading(false);
+        }
+    };
+
+    // Toggles card between library and learn-later buckets, then returns to decks page
+    const handleCycleCard = async () => {
+        if (!entry) return;
+        const targetBucket = entry.starterPackBucket === 'library' ? 'learn-later' : 'library';
+        try {
+            setActionLoading(true);
+            const response = await fetch(`${API_BASE_URL}/api/vocabEntries/${entry.id}/bucket`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ starterPackBucket: targetBucket }),
+            });
+            if (!response.ok) throw new Error('Failed to move card');
+            navigate('/flashcards/decks', { state: { refresh: Date.now() } });
+        } catch (err) {
+            console.error('Error moving card:', err);
+            setActionLoading(false);
+        }
+    };
+
     const hasShortDef = !!dictEntry?.shortDefinition;
-    const hasLongDef = !!dictEntry?.longDefinition;
     const hasBreakdown = entry?.breakdown && Object.keys(entry.breakdown).length > 0;
     const hasSynonyms = entry?.synonyms && entry.synonyms.length > 0;
     const hasExamples = entry?.exampleSentences && entry.exampleSentences.length > 0;
@@ -176,10 +227,10 @@ const VocabCardDetailPage: React.FC = () => {
                                             }}
                                         />
                                     ) : <Box className="vocab-card-detail__badge-placeholder" />}
-                                    {entry.hskLevelTag && (
+                                    {entry.hskLevel && (
                                         <Chip
                                             className="vocab-card-detail__hsk-chip"
-                                            label={entry.hskLevelTag}
+                                            label={entry.hskLevel}
                                             size="small"
                                             sx={{
                                                 backgroundColor: COLORS.categoryMastered,
@@ -236,24 +287,17 @@ const VocabCardDetailPage: React.FC = () => {
                                         lineHeight: 1.5,
                                     }}
                                 >
-                                    {entry.entryValue}
+                                    {stripParentheses(entry.entryValue)}
                                 </Typography>
                             </HeroCard>
 
                             {/* Dictionary Definition */}
-                            {(hasShortDef || hasLongDef) && (
+                            {hasShortDef && (
                                 <SectionCard className="vocab-card-detail__dict-definition">
                                     <SectionLabel>Dictionary Definition</SectionLabel>
-                                    {hasShortDef && (
-                                        <Typography sx={{ fontSize: '1rem', fontWeight: 600, color: COLORS.onSurface, fontFamily: '"Inter", sans-serif' }}>
-                                            {dictEntry!.shortDefinition}
-                                        </Typography>
-                                    )}
-                                    {hasLongDef && (
-                                        <Typography sx={{ fontSize: '0.875rem', color: COLORS.textSecondary, fontFamily: '"Inter", sans-serif', lineHeight: 1.5 }}>
-                                            {dictEntry!.longDefinition}
-                                        </Typography>
-                                    )}
+                                    <Typography sx={{ fontSize: '1rem', fontWeight: 600, color: COLORS.onSurface, fontFamily: '"Inter", sans-serif' }}>
+                                        {stripParentheses(dictEntry!.shortDefinition!)}
+                                    </Typography>
                                 </SectionCard>
                             )}
 
@@ -294,7 +338,7 @@ const VocabCardDetailPage: React.FC = () => {
                                                             fontFamily: '"Inter", sans-serif',
                                                         }}
                                                     >
-                                                        {info.definition}
+                                                        {stripParentheses(info.definition)}
                                                     </Typography>
                                                 </Box>
                                             </Box>
@@ -327,7 +371,7 @@ const VocabCardDetailPage: React.FC = () => {
                                             lineHeight: 1.4,
                                             wordBreak: 'break-word',
                                         }}>
-                                            {entry.expansionLiteralTranslation}
+                                            {stripParentheses(entry.expansionLiteralTranslation)}
                                         </Typography>
                                     )}
                                 </SectionCard>
@@ -370,7 +414,7 @@ const VocabCardDetailPage: React.FC = () => {
                                                     </CPCDRow>
                                                     {meta?.definition && (
                                                         <Typography sx={{ fontSize: "0.72rem", color: COLORS.textSecondary, fontFamily: '"Inter", sans-serif', fontStyle: "italic" }}>
-                                                            {meta.definition}
+                                                            {stripParentheses(meta.definition)}
                                                         </Typography>
                                                     )}
                                                 </Box>
@@ -459,7 +503,7 @@ const VocabCardDetailPage: React.FC = () => {
                                                     </CPCDRow>
                                                     {rel.definition && (
                                                         <Typography sx={{ fontSize: "0.72rem", color: COLORS.textSecondary, fontFamily: '"Inter", sans-serif', fontStyle: "italic" }}>
-                                                            {rel.definition}
+                                                            {stripParentheses(rel.definition)}
                                                         </Typography>
                                                     )}
                                                 </Box>
@@ -474,6 +518,54 @@ const VocabCardDetailPage: React.FC = () => {
                         </>
                     ) : null}
                 </ContentArea>
+
+                {/* Action bar — only visible when a card is loaded */}
+                {entry && (
+                    <ActionBar className="vocab-card-detail__action-bar">
+                        {/* Cycle button: only for library / learn-later cards */}
+                        {(entry.starterPackBucket === 'library' || entry.starterPackBucket === 'learn-later') && (
+                            <Button
+                                className="vocab-card-detail__cycle-button"
+                                variant="contained"
+                                startIcon={<RepeatIcon />}
+                                disabled={actionLoading}
+                                onClick={handleCycleCard}
+                                sx={{
+                                    flex: 1,
+                                    backgroundColor: '#2196f3',
+                                    textTransform: 'none',
+                                    fontFamily: '"Inter", sans-serif',
+                                    fontWeight: 600,
+                                    fontSize: '0.8rem',
+                                    '&:hover': { backgroundColor: '#1976d2' },
+                                    '&.Mui-disabled': { backgroundColor: '#2196f388' },
+                                }}
+                            >
+                                {entry.starterPackBucket === 'library' ? 'Move to Learn Later' : 'Move to Library'}
+                            </Button>
+                        )}
+                        {/* Delete button: always shown */}
+                        <Button
+                            className="vocab-card-detail__delete-button"
+                            variant="contained"
+                            startIcon={<DeleteOutlineIcon />}
+                            disabled={actionLoading}
+                            onClick={handleDelete}
+                            sx={{
+                                flex: 1,
+                                backgroundColor: '#ef5350',
+                                textTransform: 'none',
+                                fontFamily: '"Inter", sans-serif',
+                                fontWeight: 600,
+                                fontSize: '0.8rem',
+                                '&:hover': { backgroundColor: '#d32f2f' },
+                                '&.Mui-disabled': { backgroundColor: '#ef535088' },
+                            }}
+                        >
+                            Delete Card
+                        </Button>
+                    </ActionBar>
+                )}
 
                 <MobileFooter activePage="home" />
         </IPhoneFrame>

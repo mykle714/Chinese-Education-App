@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { stripParentheses } from '../utils/definitionUtils';
 import {
     Dialog,
     DialogTitle,
@@ -152,7 +153,7 @@ function DictionaryEntryDetailModal({ entry, open, onClose }: DictionaryEntryDet
                                     {index + 1}.
                                 </Typography>
                                 <Typography variant="body2" component="span">
-                                    {definition}
+                                    {stripParentheses(definition)}
                                 </Typography>
                             </ListItem>
                         ))

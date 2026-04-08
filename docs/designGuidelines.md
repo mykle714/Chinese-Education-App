@@ -130,7 +130,7 @@ PostgreSQL 15 database with Node.js/Express backend, managed via Docker Compose.
 | entryKey     | text             | NOT NULL    | NO       | NULL      | Key for the dictionary entry             |
 | entryValue   | text             | NOT NULL    | NO       | NULL      | Value for the dictionary entry           |
 | isCustomTag  | bit              |             | YES      | NULL      | Boolean tag indicating if entry is user-created |
-| hskLevelTag  | varchar(10)      | CHECK       | YES      | NULL      | HSK difficulty level (HSK1-HSK6)        |
+| hskLevel  | varchar(10)      | CHECK       | YES      | NULL      | HSK difficulty level (HSK1-HSK6)        |
 | createdAt    | datetime         |             | YES      | getdate() | Timestamp when the entry was created     |
 
 ##### Indexes
@@ -145,7 +145,7 @@ The VocabEntries table includes a tag system with the following design principle
 
 **Tag Types:**
 - **isCustomTag**: Boolean tag indicating whether an entry was created by the user (true) or imported from a standard source (false/null)
-- **hskLevelTag**: Enum tag for HSK (Hanyu Shuiping Kaoshi) difficulty levels with values: HSK1, HSK2, HSK3, HSK4, HSK5, HSK6
+- **hskLevel**: Enum tag for HSK (Hanyu Shuiping Kaoshi) difficulty levels with values: HSK1, HSK2, HSK3, HSK4, HSK5, HSK6
 
 **Tag Naming Convention:**
 - All tag column names must end with "Tag" suffix
@@ -153,7 +153,7 @@ The VocabEntries table includes a tag system with the following design principle
 - Each tag type can have multiple preset variations (enums) or boolean values
 
 **Tag Constraints:**
-- `hskLevelTag` has a CHECK constraint to enforce valid HSK levels: `CHECK (hskLevelTag IN ('HSK1', 'HSK2', 'HSK3', 'HSK4', 'HSK5', 'HSK6'))`
+- `hskLevel` has a CHECK constraint to enforce valid HSK levels: `CHECK (hskLevel IN ('HSK1', 'HSK2', 'HSK3', 'HSK4', 'HSK5', 'HSK6'))`
 - Both tag fields are nullable for backward compatibility with existing entries
 
 **Tag Behavior:**

@@ -106,7 +106,7 @@ export class VocabEntryController {
   async createEntry(req: Request, res: Response): Promise<void> {
     try {
       const userId = (req as any).user?.userId;
-      const { entryKey, entryValue, hskLevelTag } = req.body;
+      const { entryKey, entryValue, hskLevel } = req.body;
       
       if (!userId) {
         res.status(401).json({ 
@@ -124,7 +124,7 @@ export class VocabEntryController {
       const newEntry = await this.vocabEntryService.createEntry(userId, {
         entryKey,
         entryValue,
-        hskLevelTag,
+        hskLevel,
         language
       });
       
@@ -142,7 +142,7 @@ export class VocabEntryController {
     try {
       const userId = (req as any).user?.userId;
       const entryId = parseInt(req.params.id);
-      const { entryKey, entryValue, hskLevelTag } = req.body;
+      const { entryKey, entryValue, hskLevel } = req.body;
       
       if (!userId) {
         res.status(401).json({ 
@@ -163,7 +163,7 @@ export class VocabEntryController {
       const updatedEntry = await this.vocabEntryService.updateEntry(userId, entryId, {
         entryKey,
         entryValue,
-        hskLevelTag
+        hskLevel
       });
       
       res.json(updatedEntry);

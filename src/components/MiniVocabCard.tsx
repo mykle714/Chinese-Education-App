@@ -1,4 +1,5 @@
 import { Box, Typography, Chip, IconButton } from "@mui/material";
+import { stripParentheses } from "../utils/definitionUtils";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import RepeatIcon from "@mui/icons-material/Repeat";
 import type { VocabEntry } from "../types";
@@ -228,7 +229,7 @@ const MiniVocabCard: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete,
                     minHeight: 24,
                 }}
             >
-                {entry.entryValue}
+                {stripParentheses(entry.entryValue)}
             </Typography>
         </Box>
     );

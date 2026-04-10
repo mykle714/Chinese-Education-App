@@ -4,7 +4,7 @@
 
 A "data deployment" syncs the local `dictionaryentries` table (det) to production, completely overwriting prod's copy. This is done after running backfill scripts locally that enrich dictionary entry data.
 
-The transfer uses **Git LFS** — the SQL dump is committed to the repo as a large file, pushed to GitHub, then pulled on the server. This avoids the need for direct SCP access to the server.
+The transfer uses **Git LFS** — the binary dump is committed to the repo, pushed to GitHub, then pulled and restored on the server. This avoids SCP and all psql meta-command compatibility issues.
 
 **Scope**: `dictionaryentries` table only. No other tables are affected.
 
@@ -16,33 +16,32 @@ The transfer uses **Git LFS** — the SQL dump is committed to the repo as a lar
 
 - Local Docker stack is running (`cow-postgres-local` container up)
 - Code deployment already done (schema migrations already applied to prod)
-- Git LFS is installed and the repo is configured (`.gitattributes` tracks `database/dictionaryentries-data.sql`)
+- Git LFS is installed; `.gitattributes` tracks `database/dictionaryentries-data.dump`
 
 ---
 
 ## Process
 
-### Step 1 — Dump from local Postgres into the LFS file
+### Step 1 — Dump from local Postgres (binary format)
 
 Run locally:
 
 ```bash
-docker exec cow-postgres-local pg_dump -U cow_user -d cow_db -t dictionaryentries --data-only -f /tmp/det_dump.sql
-docker cp cow-postgres-local:/tmp/det_dump.sql /home/cow/database/dictionaryentries-data.sql
-sed -i '/^\\restrict /d; /^\\unrestrict /d' /home/cow/database/dictionaryentries-data.sql
+docker exec cow-postgres-local pg_dump -U cow_user -d cow_db -t dictionaryentries --data-only -F c -f /tmp/det_dump.dump
+docker cp cow-postgres-local:/tmp/det_dump.dump /home/cow/database/dictionaryentries-data.dump
 ```
 
-This overwrites `database/dictionaryentries-data.sql` with a fresh plain-SQL dump (uses `COPY` format). The `sed` strips `\restrict`/`\unrestrict` security headers added by pg_dump 15.17+ that cause psql errors on the prod container.
+This produces a binary custom-format dump (~5MB). Binary format avoids plain-SQL psql meta-command issues (`\N`, `\.`, `\restrict`) that arise from version mismatches between local pg_dump and prod psql.
 
 ### Step 2 — Commit and push via LFS
 
 ```bash
-git add database/dictionaryentries-data.sql
+git add database/dictionaryentries-data.dump
 git commit -m "data: refresh dictionaryentries dump"
 git push origin main
 ```
 
-Git LFS automatically uploads the large file to GitHub's LFS storage. The rest of the repo sees only a pointer file.
+Git LFS uploads the binary file to GitHub LFS storage. The rest of the repo sees only a pointer.
 
 ### Step 3 — Pull on the server and restore
 
@@ -52,11 +51,12 @@ SSH into the server, then run:
 cd ~/vocabulary-app
 git pull origin main
 
-# Truncate prod's dictionaryentries, then restore from the SQL dump
+docker cp database/dictionaryentries-data.dump cow-postgres-prod:/tmp/det_dump.dump
 docker exec cow-postgres-prod psql -U cow_user -d cow_db -c "TRUNCATE TABLE dictionaryentries;"
-docker cp database/dictionaryentries-data.sql cow-postgres-prod:/tmp/det_dump.sql
-docker exec cow-postgres-prod psql -U cow_user -d cow_db -f /tmp/det_dump.sql
+docker exec cow-postgres-prod pg_restore -U cow_user -d cow_db -t dictionaryentries --data-only /tmp/det_dump.dump
 ```
+
+Note: `pg_restore` is used (not `psql -f`) because the dump is in binary custom format.
 
 ### Step 4 — Verify
 
@@ -64,20 +64,17 @@ docker exec cow-postgres-prod psql -U cow_user -d cow_db -f /tmp/det_dump.sql
 docker exec cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT COUNT(*) FROM dictionaryentries;"
 ```
 
-Cross-check the count against local:
+Cross-check against local (should match):
 
 ```bash
-# Run locally
 docker exec cow-postgres-local psql -U cow_user -d cow_db -c "SELECT COUNT(*) FROM dictionaryentries;"
 ```
-
-Counts should match.
 
 ---
 
 ## Notes
 
-- `database/dictionaryentries-data.sql` is tracked by Git LFS (see `.gitattributes`). Do not remove this tracking.
-- The dump uses `--data-only` — only row data is transferred, not the table schema. Schema is managed by migrations.
-- If FK references to `dictionaryentries` are added in the future, check whether `TRUNCATE CASCADE` is needed (it would also clear those referencing tables).
-- The `det_dump.dump` binary format file (used in an earlier approach) can be deleted from the project root if present — the LFS SQL approach supersedes it.
+- `database/dictionaryentries-data.dump` is tracked by Git LFS (see `.gitattributes`). Do not remove this tracking or commit without LFS.
+- Binary format (`-F c`) is required — plain SQL (`--data-only` without `-F c`) causes psql compatibility errors on prod due to version skew between local pg_dump 15.17 and the prod container.
+- If FK references to `dictionaryentries` are added in the future, check whether `TRUNCATE CASCADE` is needed.
+- Use the `/data-deploy` skill to run this process interactively.

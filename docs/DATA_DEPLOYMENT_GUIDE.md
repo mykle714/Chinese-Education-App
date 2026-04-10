@@ -29,9 +29,10 @@ Run locally:
 ```bash
 docker exec cow-postgres-local pg_dump -U cow_user -d cow_db -t dictionaryentries --data-only -f /tmp/det_dump.sql
 docker cp cow-postgres-local:/tmp/det_dump.sql /home/cow/database/dictionaryentries-data.sql
+sed -i '/^\\restrict /d; /^\\unrestrict /d' /home/cow/database/dictionaryentries-data.sql
 ```
 
-This overwrites `database/dictionaryentries-data.sql` with a fresh plain-SQL dump (uses `COPY` format).
+This overwrites `database/dictionaryentries-data.sql` with a fresh plain-SQL dump (uses `COPY` format). The `sed` strips `\restrict`/`\unrestrict` security headers added by pg_dump 15.17+ that cause psql errors on the prod container.
 
 ### Step 2 — Commit and push via LFS
 

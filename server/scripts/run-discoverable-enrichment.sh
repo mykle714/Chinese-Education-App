@@ -21,12 +21,16 @@
 #   3. backfill-hsk-level                    — assign HSK1-HSK6 level (AI)
 #   4. backfill-short-long-definitions       — generate longDefinition (AI)
 #   5. backfill-example-sentences            — generate example sentences (AI)
-#   6. backfill-example-sentences-metadata   — segment metadata for sentences
-#   7. backfill-synonyms                     — find synonyms (AI)
-#   8. backfill-expansion                    — generate expansion form (AI)
-#   9. backfill-classifier                   — assign measure words (AI)
-#  10. backfill-dictionary-breakdown         — per-character breakdown (AI)
-#  11. backfill-vernacular-score             — score vernacular register (AI)
+#   6. backfill-synonyms                     — find synonyms (AI)
+#   7. backfill-expansion                    — generate expansion form (AI)
+#   8. backfill-classifier                   — assign measure words (AI)
+#   9. backfill-dictionary-breakdown         — per-character breakdown (AI)
+#  10. backfill-vernacular-score             — score vernacular register (AI)
+#
+# Note: exampleSentencesMetadata is NOT a pipeline step. Segment metadata
+# (pronunciation, definition, particleOrClassifier per token) is computed
+# on-the-fly at the service layer via DictionaryDAL.enrichExampleSentencesMetadataBatch()
+# and attached to each sentence object at query time — never stored in the DB.
 
 set -e
 
@@ -105,23 +109,20 @@ run_script "Step 4: Short + Long Definitions" "backfill-short-long-definitions.j
 # Step 5: Generate example sentences (AI) — uses definitions
 run_script "Step 5: Example Sentences" "backfill-example-sentences.js"
 
-# Step 6: Segment metadata for example sentences — must follow step 5
-run_script "Step 6: Example Sentence Metadata" "backfill-example-sentences-metadata.js"
+# Step 6: Find synonyms (AI)
+run_script "Step 6: Synonyms" "backfill-synonyms.js"
 
-# Step 7: Find synonyms (AI)
-run_script "Step 7: Synonyms" "backfill-synonyms.js"
+# Step 7: Generate expansion form (AI)
+run_script "Step 7: Expansion" "backfill-expansion.js"
 
-# Step 8: Generate expansion form (AI)
-run_script "Step 8: Expansion" "backfill-expansion.js"
+# Step 8: Assign measure words / classifiers (AI)
+run_script "Step 8: Classifiers" "backfill-classifier.js"
 
-# Step 9: Assign measure words / classifiers (AI)
-run_script "Step 9: Classifiers" "backfill-classifier.js"
+# Step 9: Per-character breakdown for multi-character words (AI)
+run_script "Step 9: Dictionary Breakdown" "backfill-dictionary-breakdown.js"
 
-# Step 10: Per-character breakdown for multi-character words (AI)
-run_script "Step 10: Dictionary Breakdown" "backfill-dictionary-breakdown.js"
-
-# Step 11: Vernacular register score (AI)
-run_script "Step 11: Vernacular Score" "backfill-vernacular-score.js"
+# Step 10: Vernacular register score (AI)
+run_script "Step 10: Vernacular Score" "backfill-vernacular-score.js"
 
 END_TIME=$(date +%s)
 DURATION=$((END_TIME - START_TIME))

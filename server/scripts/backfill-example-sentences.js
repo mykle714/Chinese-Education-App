@@ -6,9 +6,6 @@
  * grammatical roles. Each sentence includes Chinese, English translation, and
  * a partOfSpeechDict keyed by sentence tokens (single or multi-character words).
  *
- * Run the metadata backfill after this script completes:
- *   npx tsx /app/scripts/backfill-example-sentences-metadata.js
- *
  * Usage:
  *   npx tsx /app/scripts/backfill-example-sentences.js             # full backfill
  *   npx tsx /app/scripts/backfill-example-sentences.js --spot-check # test 3 entries

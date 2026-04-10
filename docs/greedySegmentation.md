@@ -4,7 +4,7 @@
 
 The greedy segmentation algorithm — formally known as **Forward Maximum Matching (FMM)** — splits a Chinese string into dictionary-matched tokens by scanning left-to-right and always choosing the longest possible match at each position. This is the standard baseline algorithm in Chinese NLP for word segmentation without training data.
 
-The implementation lives in `server/dal/shared/segmentString.ts` and is used to compute `exampleSentencesMetadata` at runtime.
+The implementation lives in `server/dal/shared/segmentString.ts` and drives `DictionaryDAL.enrichExampleSentencesMetadataBatch()`, which computes per-sentence segment metadata on-the-fly at query time.
 
 ---
 
@@ -114,117 +114,93 @@ segmentWithDict("不知不觉", dictMap)
 
 ## Usage in This Codebase
 
-The algorithm drives `DictionaryDAL.enrichExampleSentencesMetadataBatch()`, which computes `exampleSentencesMetadata` on-the-fly for vocab entries returned by the API. The metadata is never stored in the database.
+The algorithm drives `DictionaryDAL.enrichExampleSentencesMetadataBatch()`. This method is called at the service layer before API responses are sent — it is **never stored in the database**. Each sentence object in `exampleSentences` is enriched in-memory with two extra fields:
 
-### Output shape: `ExampleSentencesMetadata`
+- `_segments`: array of segmented tokens for that sentence
+- `segmentMetadata`: per-token map of `{ pronunciation?, definition?, particleOrClassifier? }`
+
+### Output shape per sentence
 
 ```typescript
-type ExampleSentencesMetadata = Record<string, { pronunciation: string }> & {
-  _segments?: string[][];  // _segments[i] = segmented tokens for exampleSentences[i]
-};
-```
-
-Example for entry with `word1 = "中国"` and one example sentence `"我很喜欢中国菜"`:
-
-```json
 {
-  "我":  { "pronunciation": "wǒ" },
-  "很":  { "pronunciation": "hěn" },
-  "喜":  { "pronunciation": "xǐ" },
-  "欢":  { "pronunciation": "huān" },
-  "中":  { "pronunciation": "zhōng" },
-  "国":  { "pronunciation": "guó" },
-  "菜":  { "pronunciation": "cài" },
-  "_segments": [["我", "很", "喜欢", "中国", "菜"]]
+  chinese: string;
+  english: string;
+  translatedVocab: string;
+  partOfSpeechDict: Record<string, string>;
+  // Added at query time by enrichExampleSentencesMetadataBatch():
+  _segments: string[];
+  segmentMetadata: Record<string, {
+    pronunciation?: string;
+    definition?: string;
+    particleOrClassifier?: { type: 'particle' | 'classifier'; definition: string };
+  }>;
 }
 ```
 
-The frontend (`VocabCardDetailPage`, `FlashcardsLearnPage`) iterates over each character in the sentence and looks up `exampleSentencesMetadata[char].pronunciation` to drive `CharacterPinyinColorDisplay` (cpcd) tone-colored rendering.
+Example for a sentence `"我很喜欢中国菜"`:
+
+```json
+{
+  "chinese": "我很喜欢中国菜。",
+  "english": "I really like Chinese food.",
+  "translatedVocab": "like",
+  "partOfSpeechDict": { "我": "pronoun", "很": "adverb", "喜欢": "verb", "中国菜": "noun" },
+  "_segments": ["我", "很", "喜欢", "中国", "菜"],
+  "segmentMetadata": {
+    "我":   { "pronunciation": "wǒ",      "definition": "I; me" },
+    "很":   { "pronunciation": "hěn",     "definition": "very" },
+    "喜欢": { "pronunciation": "xǐ huān", "definition": "to like" },
+    "中国": { "pronunciation": "zhōng guó", "definition": "China" },
+    "菜":   { "pronunciation": "cài",     "definition": "dish; vegetable" }
+  }
+}
+```
+
+The frontend iterates `_segments` and looks up `segmentMetadata[token].pronunciation` to drive `CharacterPinyinColorDisplay` (cpcd) tone-colored rendering.
 
 ---
 
-## API Endpoints That Return exampleSentencesMetadata
+## API Endpoints That Enrich Example Sentences
 
-All endpoints below require a valid JWT cookie (`token`). Metadata is computed server-side before the response is sent.
+All endpoints below compute `segmentMetadata` server-side via `enrichExampleSentencesMetadataBatch()` before the response is sent. Auth requires a valid JWT cookie (`token`).
 
 ### `GET /api/vocabEntries`
 Returns all vocab entries for the authenticated user.
-- **Auth:** JWT cookie
-- **Query params:** none
-- **Response:** `VocabEntry[]` — each entry includes `exampleSentences` and `exampleSentencesMetadata`
+- **Response:** `VocabEntry[]` — each entry's `exampleSentences` includes `_segments` and `segmentMetadata`
 
 ### `GET /api/vocabEntries/paginated`
 Returns a paginated slice of the user's vocab entries.
-- **Auth:** JWT cookie
-- **Query params:**
-  - `limit` (int, default `10`) — entries per page
-  - `offset` (int, default `0`) — number of entries to skip
+- **Query params:** `limit` (default `10`), `offset` (default `0`)
 - **Response:** `{ entries: VocabEntry[], total: number, hasMore: boolean }`
 
 ### `GET /api/vocabEntries/:id`
-Returns a single vocab entry by ID (must belong to the authenticated user).
-- **Auth:** JWT cookie
-- **Path params:**
-  - `id` (int) — vocab entry ID
+Returns a single vocab entry by ID.
 - **Response:** `VocabEntry`
 
 ### `GET /api/vocabEntries/search`
 Searches the user's vocab entries.
-- **Auth:** JWT cookie
-- **Query params:**
-  - `query` (string, min 2 chars) — search term
+- **Query params:** `query` (string, min 2 chars)
 - **Response:** `VocabEntry[]`
 
 ### `GET /api/onDeck/library-cards`
-Returns all library cards (starterPackBucket = `'library'`) for the user.
-- **Auth:** JWT cookie
-- **Query params:** none
+Returns all library cards (`starterPackBucket = 'library'`).
 - **Response:** `VocabEntry[]`
 
 ### `GET /api/onDeck/learn-later-cards`
-Returns all learn-later cards (starterPackBucket = `'learn-later'`) for the user.
-- **Auth:** JWT cookie
-- **Query params:** none
+Returns all learn-later cards (`starterPackBucket = 'learn-later'`).
 - **Response:** `VocabEntry[]`
 
-### `GET /api/onDeck/mastered-library-cards`
-Returns library cards with category = `'Mastered'`.
-- **Auth:** JWT cookie
-- **Query params:** none
-- **Response:** `VocabEntry[]`
-
-### `GET /api/onDeck/non-mastered-library-cards`
-Returns library cards without category = `'Mastered'`.
-- **Auth:** JWT cookie
-- **Query params:** none
+### `GET /api/onDeck/mastered-library-cards` / `non-mastered-library-cards`
+Returns library cards filtered by mastery status.
 - **Response:** `VocabEntry[]`
 
 ### `GET /api/onDeck/distributed-working-loop`
-Returns the distributed working loop — a shuffled blend of cards from multiple categories.
-- **Auth:** JWT cookie
-- **Query params:** none
+Returns the distributed working loop (shuffled blend of cards from multiple categories).
 - **Response:** `VocabEntry[]` (also includes `relatedWords`)
-
-### `GET /api/dictionary/lookup/:term`
-Looks up a single dictionary entry. Language is derived from the user's `selectedLanguage`.
-- **Auth:** JWT cookie
-- **Path params:**
-  - `term` (string) — the Chinese word or character to look up
-- **Response:** `DictionaryEntry` (includes `exampleSentences`; metadata is not enriched on this path — dictionary entries returned directly from the DAL do not go through the enrichment pipeline)
-
-### `GET /api/dictionary/search`
-Searches dictionary entries with pagination.
-- **Auth:** JWT cookie
-- **Query params:**
-  - `term` (string, required) — search term
-  - `language` (string, optional) — defaults to user's `selectedLanguage`
-  - `page` (int, default `1`, min `1`)
-  - `limit` (int, default `50`, range `1–100`)
-- **Response:** `{ entries: DictionaryEntry[], pagination: { page, limit, total, totalPages } }`
 
 ### `GET /api/starter-packs/:language`
 Returns unsorted discoverable cards for the given language (up to 50).
-- **Auth:** JWT cookie
-- **Path params:**
-  - `language` (string, e.g. `'zh'`)
-- **Response:** `DiscoverCard[]` (includes `exampleSentences` and `exampleSentencesMetadata`)
+- **Response:** `DiscoverCard[]` (includes enriched `exampleSentences`)
+
+### `GET /api/dictionary/lookup/:term`
+Looks up a single dictionary entry directly from the DAL — **does not** go through the enrichment pipeline. `exampleSentences` is returned as-stored (no `segmentMetadata`).

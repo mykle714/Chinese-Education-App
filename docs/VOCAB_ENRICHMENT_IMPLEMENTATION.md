@@ -7,7 +7,12 @@ This feature adds rich contextual information to vocabulary flashcards, includin
 
 ### 1. Database Schema (✅ Complete)
 
-Enrichment columns (breakdown, synonyms, exampleSentences, exampleSentencesMetadata, expansion, expansionMetadata, longDefinition, pronunciation, tone, script, hskLevel) live in `dictionaryentries`, not `vocabentries`. They are fetched via LEFT JOIN on `entryKey = word1 AND language`. Note: `shortDefinition` is computed at runtime from the `definitions` column via `generateShortDefinition()` in `server/utils/definitions.ts`. `synonymsMetadata` is computed at runtime by `DictionaryService.enrichEntriesWithSynonymMetadata()` which batch-reads pronunciation and first definition from `dictionaryentries` for each synonym word — neither is stored in the database.
+Enrichment columns (breakdown, synonyms, exampleSentences, expansion, expansionLiteralTranslation, longDefinition, pronunciation, tone, script, hskLevel) live in `dictionaryentries`, not `vocabentries`. They are fetched via LEFT JOIN on `entryKey = word1 AND language`.
+
+Runtime-computed fields (never stored in the DB):
+- `shortDefinition` — deterministic, via `generateShortDefinition()` in `server/utils/definitions.ts`
+- `synonymsMetadata` — batch-reads pronunciation + first definition for each synonym word via `DictionaryService.enrichEntriesWithSynonymMetadata()`
+- `segmentMetadata` per example sentence — greedy segmentation + dictionary lookup for pronunciation, definition, and particle/classifier annotations, via `DictionaryDAL.enrichExampleSentencesMetadataBatch()`
 
 ### 2. TypeScript Types (✅ Complete)
 **Files Updated**:
@@ -21,9 +26,16 @@ Enrichment columns (breakdown, synonyms, exampleSentences, exampleSentencesMetad
   exampleSentences?: Array<{
     chinese: string;
     english: string;
-    usage: string
+    translatedVocab: string;
+    partOfSpeechDict: Record<string, string>;
+    // Added at query time (not stored):
+    _segments?: string[];
+    segmentMetadata?: Record<string, {
+      pronunciation?: string;
+      definition?: string;
+      particleOrClassifier?: { type: 'particle' | 'classifier'; definition: string };
+    }>;
   }>;
-  exampleSentencesMetadata?: Record<string, { pronunciation: string }> | null;
   relatedWords?: Array<{
     id: number;
     entryKey: string;
@@ -107,16 +119,6 @@ docker-compose exec backend-local node server/scripts/backfill-enrichment.js
 ]
 ```
 
-### exampleSentencesMetadata
-```json
-{
-  "我": { "pronunciation": "wǒ" },
-  "很": { "pronunciation": "hěn" },
-  "喜": { "pronunciation": "xǐ" },
-  "欢": { "pronunciation": "huān" }
-}
-```
-
 ### Related Words (Computed Dynamically)
 ```json
 [
@@ -160,13 +162,17 @@ When fetching flashcards from `/api/ondeck/working-loop`, each Chinese vocab ent
     {
       "chinese": "我很喜欢看书。",
       "english": "I really like to read books.",
-      "usage": "object"
+      "translatedVocab": "like",
+      "partOfSpeechDict": { "我": "pronoun", "很": "adverb", "喜欢": "verb", "看书": "verb" },
+      "_segments": ["我", "很", "喜欢", "看书"],
+      "segmentMetadata": {
+        "我":   { "pronunciation": "wǒ",      "definition": "I; me" },
+        "很":   { "pronunciation": "hěn",     "definition": "very" },
+        "喜欢": { "pronunciation": "xǐ huān", "definition": "to like" },
+        "看书": { "pronunciation": "kàn shū", "definition": "to read" }
+      }
     }
   ],
-  "exampleSentencesMetadata": {
-    "我": { "pronunciation": "wǒ" },
-    "很": { "pronunciation": "hěn" }
-  },
   "relatedWords": [
     {
       "id": 123,
@@ -189,7 +195,7 @@ When fetching flashcards from `/api/ondeck/working-loop`, each Chinese vocab ent
 The data is now available in `currentEntry` on FlashcardsLearnPage. To display:
 
 1. **Synonyms**: Show `currentEntry.synonyms`
-2. **Example Sentences**: Show `currentEntry.exampleSentences` with per-character `CharacterPinyinColorDisplay` using `exampleSentencesMetadata`
+2. **Example Sentences**: Show `currentEntry.exampleSentences` with per-token `CharacterPinyinColorDisplay` using `sentence.segmentMetadata`
 3. **Related Words**: Show `currentEntry.relatedWords` with shared character highlighting
 
 ## Testing
@@ -201,7 +207,7 @@ docker-compose exec postgres-local psql -U cow_user -d cow_db -c "\d dictionarye
 
 ### Verify Data Populated
 ```bash
-docker-compose exec postgres-local psql -U cow_user -d cow_db -c "SELECT word1, language, synonyms, \"exampleSentencesMetadata\" FROM dictionaryentries WHERE language = 'zh' LIMIT 3;"
+docker-compose exec postgres-local psql -U cow_user -d cow_db -c "SELECT word1, language, synonyms, \"exampleSentences\" FROM dictionaryentries WHERE language = 'zh' LIMIT 3;"
 ```
 
 ### Test API Response
@@ -253,20 +259,19 @@ bash server/scripts/run-discoverable-enrichment.sh [production|local]
 | 2 | `backfill-sort-definitions.js` | `definitions` | AI reorders definitions from most prototypical to least. Runs on discoverable zh entries with >1 definition. |
 | 3 | `backfill-hsk-level.js` | `hskLevel` | AI assigns one level token per entry (`HSK1`..`HSK6`). |
 | 4 | `backfill-short-long-definitions.js` | `longDefinition` | AI generates 25–75 char elaboration. Depends on sorted definitions from step 2. |
-| 5 | `backfill-example-sentences.js` | `exampleSentences` | AI generates 3 example sentences. |
-| 6 | `backfill-example-sentences-metadata.js` | `exampleSentencesMetadata` | Segment metadata for example sentences. Must run after step 5. |
-| 7 | `backfill-synonyms.js` | `synonyms` | AI finds validated Chinese synonyms. |
-| 8 | `backfill-expansion.js` | `expansion`, `expansionLiteralTranslation` | AI generates expanded word form. |
-| 9 | `backfill-classifier.js` | `classifier` | AI assigns measure word(s). |
-| 10 | `backfill-dictionary-breakdown.js` | `breakdown` | AI generates per-character breakdown (multi-char words only). |
-| 11 | `backfill-vernacular-score.js` | `vernacularScore` | AI scores vernacular vs. literary register (1–5). |
+| 5 | `backfill-example-sentences.js` | `exampleSentences` | AI generates 3 example sentences. Segment metadata (`_segments`, `segmentMetadata`) is computed at runtime — not stored. |
+| 6 | `backfill-synonyms.js` | `synonyms` | AI finds validated Chinese synonyms. |
+| 7 | `backfill-expansion.js` | `expansion`, `expansionLiteralTranslation` | AI generates expanded word form. |
+| 8 | `backfill-classifier.js` | `classifier` | AI assigns measure word(s). |
+| 9 | `backfill-dictionary-breakdown.js` | `breakdown` | AI generates per-character breakdown (multi-char words only). |
+| 10 | `backfill-vernacular-score.js` | `vernacularScore` | AI scores vernacular vs. literary register (1–5). |
 
 ---
 
 ## Migration History
 
 - **Migrations 21–24**: Historically added and renamed enrichment columns (`breakdown`, `synonyms`, `exampleSentences`, `partsOfSpeech`, `expansion`) on `vocabentries`. Those columns have since been removed from `vocabentries`; all enrichment data now lives in `dictionaryentries`.
-- **exampleSentencesMetadata**: Added to `dictionaryentries`; backfilled via `server/scripts/backfill-example-sentences-metadata.js`. `partsOfSpeech` removed from all application code.
+- **Migration 34**: Dropped `exampleSentencesMetadata` column — segment metadata (pronunciation, definition, particle/classifier per token) is now computed on-the-fly via `DictionaryDAL.enrichExampleSentencesMetadataBatch()` and attached to each sentence object at query time as `segmentMetadata`. Never stored in the DB.
 - **Migration 25**: Added `longDefinition` column to `dictionaryentries`
 - **Migration 27**: Dropped `shortDefinition` column — now computed at runtime via `generateShortDefinition()` in `server/utils/definitions.ts`
 

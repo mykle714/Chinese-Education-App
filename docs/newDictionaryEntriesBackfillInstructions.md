@@ -26,14 +26,16 @@ Every column in `dictionaryentries` and the script responsible for populating it
 | `shortDefinition` | *Not stored — computed at runtime* | Deterministic via `server/utils/definitions.ts` | — | all |
 | `longDefinition` | `backfill-short-long-definitions.js` | AI (Claude Haiku) | **Yes** | zh |
 | `synonyms` | `backfill-synonyms.js` | AI (Claude) | **Yes** | zh |
-| `synonymsMetadata` | `backfill-synonyms.js` | AI (Claude) | **Yes** | zh |
+| `synonymsMetadata` | *Not stored — computed at runtime* | Deterministic via `DictionaryService.enrichEntriesWithSynonymMetadata()` | — | zh |
 | `exampleSentences` | `backfill-example-sentences.js` | AI (Claude) | **Yes** | zh |
-| `exampleSentencesMetadata` | `backfill-example-sentences-metadata.js` | Deterministic (depends on `exampleSentences`) | **Yes** | zh |
+| `segmentMetadata` | *Not stored — computed at runtime* | Deterministic via `DictionaryDAL.enrichExampleSentencesMetadataBatch()` | — | zh |
 | `breakdown` | `backfill-dictionary-breakdown.js` | Deterministic | **Yes** | zh (multi-char only) |
 | `classifier` | `backfill-classifier.js` | AI (Claude Sonnet) | **Yes** | zh |
 | `expansion` | Manual / AI enrichment pipeline | — | — | zh |
-| `expansionMetadata` | `backfill-enrichment.js` | Deterministic (depends on `expansion`) | No | zh |
+| `expansionLiteralTranslation` | `backfill-expansion.js` | AI (Claude) | **Yes** | zh |
 | `createdAt` | DB auto-set | — | — | all |
+
+**Note on runtime-computed fields:** `shortDefinition`, `synonymsMetadata`, and `segmentMetadata` (per-sentence pronunciation/definition/particle data for example sentences) are **never stored in the database**. They are computed on-the-fly at the service layer for every API response.
 
 ---
 
@@ -101,9 +103,9 @@ Note: `shortDefinition` is no longer stored — it is computed at runtime from `
 ```bash
 docker exec cow-backend-local npx tsx scripts/backfill-synonyms.js
 ```
-Populates: `synonyms`, `synonymsMetadata`
+Populates: `synonyms`
 Filter: `language = 'zh' AND discoverable = TRUE AND synonyms IS NULL`
-Note: Validates each AI-suggested synonym exists in `dictionaryentries` before saving.
+Note: Validates each AI-suggested synonym exists in `dictionaryentries` before saving. `synonymsMetadata` (pronunciation + first definition per synonym) is computed at runtime — not stored.
 
 ---
 
@@ -113,22 +115,11 @@ node server/scripts/backfill-example-sentences.js
 ```
 Populates: `exampleSentences`
 Filter: `language = 'zh' AND discoverable = TRUE AND exampleSentences IS NULL`
-Note: Generates 3 sentences per entry (Chinese, English, usage label). Use `--spot-check` flag for manual review before full run.
+Note: Generates 3 sentences per entry. Each sentence contains `chinese`, `english`, `translatedVocab`, and `partOfSpeechDict`. Segment metadata (pronunciation, definition, particle/classifier per token) is computed at runtime via `enrichExampleSentencesMetadataBatch()` — not stored. Use `--spot-check` flag for manual review before full run.
 
 ---
 
-**Step 8 — Example Sentences Metadata** _(depends on Step 7)_
-```bash
-node server/scripts/backfill-example-sentences-metadata.js
-```
-Populates: `exampleSentencesMetadata`
-Reads: `exampleSentences`
-Filter: `discoverable = TRUE AND exampleSentences IS NOT NULL AND exampleSentencesMetadata IS NULL`
-Note: Must run after Step 7. Uses greedy longest-match segmentation — no AI cost.
-
----
-
-**Step 9 — Classifier (量词)**
+**Step 8 — Classifier (量词)**
 ```bash
 docker exec cow-backend-local npx tsx scripts/backfill-classifier.js
 ```
@@ -150,8 +141,6 @@ These are not part of the standard discoverable-entry flow. Run them only when r
 ---
 
 ## Section C — DAL / Type Wiring Status
-
-The following columns exist in the database but are **not yet surfaced through the DAL or TypeScript types**. They need to be added to `DictionaryDAL.ts` (SELECT list + `mapRowToEntity`) and `server/types/index.ts` (`DictionaryEntry` interface) before the app layer can use them:
 
 All enrichment columns (`numberedPinyin`, `synonyms`, `exampleSentences`, `breakdown`, etc.) are wired through the DAL and TypeScript types.
 
@@ -190,34 +179,4 @@ LIMIT 20;
 
 ## Section E — Deploying Enriched Entries to Production
 
-All enrichment scripts run **locally** against your dev database. Production only ever receives data via a committed SQL snapshot — no scripts run in production directly.
-
-### Step 1 — Export the local table to the snapshot file
-```bash
-docker exec cow-postgres-local pg_dump -U cow_user cow_db -t dictionaryentries > database/dictionaryentries-data.sql
-```
-This overwrites `database/dictionaryentries-data.sql`, which is tracked by **Git LFS** (the file is ~18 MB).
-
-### Step 2 — Commit and push
-```bash
-git add database/dictionaryentries-data.sql
-git commit -m "backfill: mark X new entries discoverable"
-git push
-```
-
-### Step 3 — Deploy on the production server
-SSH in, pull the latest commit, and restore:
-```bash
-git pull
-bash database/restore-dictionary.sh
-```
-`restore-dictionary.sh` loads the COPY-format dump into the production PostgreSQL container.
-
-### Data Flow Summary
-```
-Local DB (enriched)
-  → pg_dump → database/dictionaryentries-data.sql (Git LFS)
-  → git commit + push
-  → production: git pull + restore-dictionary.sh
-  → Production DB (enriched)
-```
+Use the `/data-deploy` skill. Full reference: `docs/DATA_DEPLOYMENT_GUIDE.md`.

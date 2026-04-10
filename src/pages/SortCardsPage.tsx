@@ -154,16 +154,21 @@ const SortCardsPage: React.FC = () => {
     const { language } = useParams<{ language: Language }>();
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down("md"));
-    // `allCards` is the append-only master list of every card we've fetched.
-    // `currentCardIndex` advances through it. We never replace `allCards` so the
+    // `cardQueue` is the append-only master list of every card we've fetched.
+    // `currentCardIndex` advances through it. We never replace `cardQueue` so the
     // currently displayed card (and undo history) survive mid-session refetches.
-    const [allCards, setAllCards] = useState<DiscoverCard[]>([]);
+    const [cardQueue, setCardQueue] = useState<DiscoverCard[]>([]);
     const [currentCardIndex, setCurrentCardIndex] = useState(0);
     const [userHskLevel, setUserHskLevel] = useState<number | null>(null);
+    // provisionalMode: true when user has <3 Unfamiliar cards; narrows filter to hskLevel+1 only
+    const [provisionalMode, setProvisionalMode] = useState<boolean>(false);
     const [loading, setLoading] = useState(true);
     const [highlightedBucket, setHighlightedBucket] = useState<string | null>(null);
     const [history, setHistory] = useState<Array<{ card: DiscoverCard; bucket: string }>>([]);
-    const isLoadingMoreRef = useRef(false);
+    const [isLoadingMore, setIsLoadingMore] = useState(false);
+    // Set to true when a load-more fetch returns 0 new unique cards — stops infinite retries.
+    // Cleared whenever new cards actually arrive so sorting can resume if state changes.
+    const [loadMoreExhausted, setLoadMoreExhausted] = useState(false);
 
     // Refs for DOM-based collision detection — CSS grid owns the layout, we read positions on drag
     const bucketsRef = useRef<HTMLDivElement>(null);
@@ -171,10 +176,10 @@ const SortCardsPage: React.FC = () => {
     const bucketRefs = useRef<Map<string, HTMLElement>>(new Map());
 
     const buckets = useMemo<BucketZone[]>(() => [
-        { id: "already-learned", label: "Already Learned", mainColor: COLORS.redMain, accentColor: COLORS.redAccent },
-        { id: "library", label: "Add to\nLibrary", mainColor: COLORS.greenMain, accentColor: COLORS.greenAccent },
-        { id: "skip", label: "Skip for now", mainColor: COLORS.blueMain, accentColor: COLORS.blueAccent },
+        { id: "library", label: "Add to\nLibrary", mainColor: COLORS.redMain, accentColor: COLORS.redAccent },
+        { id: "skip", label: "Skip for now", mainColor: COLORS.greenMain, accentColor: COLORS.greenAccent },
         { id: "learn-later", label: "Add to Learn Later", mainColor: COLORS.yellowMain, accentColor: COLORS.yellowAccent },
+        { id: "already-learned", label: "Already Learned", mainColor: COLORS.blueMain, accentColor: COLORS.blueAccent },
     ], []);
 
     const [{ x, y, scale, opacity }, api] = useSpring(() => ({
@@ -193,8 +198,9 @@ const SortCardsPage: React.FC = () => {
                 });
                 if (response.ok) {
                     const data: DiscoverFetchResponse = await response.json();
-                    setAllCards(data.cards);
+                    setCardQueue(data.cards);
                     setUserHskLevel(data.userHskLevel);
+                    setProvisionalMode(data.provisionalMode);
                 } else {
                     console.error("Failed to fetch starter pack cards");
                 }
@@ -213,23 +219,33 @@ const SortCardsPage: React.FC = () => {
     // Build the visible queue: the currently displayed card is "frozen" at the
     // head and is never filtered out — even if a fresh server response shifts
     // userHskLevel mid-session, we don't want to yank the active card off-screen.
-    // The tail (upcoming cards) is filtered to [userLevel, userLevel + 1].
+    // Normal mode: tail filtered to [userLevel, userLevel + 1].
+    // Provisional mode (<3 Unfamiliar cards): tail filtered to only hskLevel+1.
     const visibleQueue = useMemo<DiscoverCard[]>(() => {
-        const head = allCards[currentCardIndex];
+        const head = cardQueue[currentCardIndex];
         if (userHskLevel == null) {
             // No level known yet — show everything from the current index
-            return allCards.slice(currentCardIndex);
+            return cardQueue.slice(currentCardIndex);
         }
-        const min = Math.max(1, userHskLevel);
-        const max = Math.min(6, userHskLevel + 1);
-        const tail = allCards
+        const targetLevel = Math.min(6, userHskLevel + 1);
+        const tail = cardQueue
             .slice(currentCardIndex + 1)
             .filter((c) => {
                 const lvl = parseHskLevel(c.hskLevel);
-                return lvl != null && lvl >= min && lvl <= max;
+                if (lvl == null) return false;
+                if (provisionalMode) {
+                    // Provisional: show cards at or below targetLevel (userHskLevel+1).
+                    // The server's primary query returns only userHskLevel+1..6, so
+                    // lower-level cards only appear via the easier-review fallback
+                    // when the upper band is fully exhausted.
+                    return lvl <= targetLevel;
+                }
+                // Normal: show [userHskLevel, userHskLevel+1]
+                const min = Math.max(1, userHskLevel);
+                return lvl >= min && lvl <= targetLevel;
             });
         return head ? [head, ...tail] : tail;
-    }, [allCards, currentCardIndex, userHskLevel]);
+    }, [cardQueue, currentCardIndex, userHskLevel, provisionalMode]);
 
     const currentCard = visibleQueue[0];
 
@@ -250,42 +266,72 @@ const SortCardsPage: React.FC = () => {
     // Diagnostic: log the displayed card + current HSK level whenever either changes
     useEffect(() => {
         if (currentCard) {
+            const targetLevel = userHskLevel != null ? Math.min(6, userHskLevel + 1) : null;
+            const bandMin = provisionalMode ? targetLevel : (userHskLevel != null ? Math.max(1, userHskLevel) : null);
+            const bandMax = targetLevel;
             console.log(
                 "[Discover] displaying card:",
                 currentCard.entryKey,
                 currentCard.hskLevel,
                 "| userHskLevel:",
-                userHskLevel
+                userHskLevel,
+                "| provisionalMode:",
+                provisionalMode,
+                "| band:",
+                bandMin != null ? `HSK${bandMin}–HSK${bandMax}` : "unfiltered"
             );
         }
     }, [currentCard, userHskLevel]);
 
-    // Initial-load skip: advance past any leading out-of-band cards. The
-    // frozen-head trick in `visibleQueue` is meant to protect a card already
-    // on screen from being yanked when a mid-session level update arrives —
-    // but on initial load there is no such card to protect, so the head must
-    // honor the filter. The currentCardIndex === 0 guard ensures this only
-    // runs on initial load (after any sort, the index is no longer 0 and
-    // handleCardSort handles the skip).
+    // Head-skip effect: whenever `cardQueue` changes (initial load or load-more),
+    // advance past any out-of-band card that landed at the head position.
+    //
+    // This covers two cases the frozen-head design intentionally does NOT handle:
+    //   1. Initial load — first card in the batch may be below the filter band.
+    //   2. Load-more boundary — when the advance-skip exhausts the current batch
+    //      and sets currentCardIndex = cardQueue.length, the next load-more appends
+    //      cards ordered by id ASC (starting at HSK2), making cardQueue[currentCardIndex]
+    //      an out-of-band card that would otherwise be frozen at the head.
+    //
+    // Intentionally depends only on `cardQueue` — NOT on userHskLevel/provisionalMode
+    // — so a mid-session level update alone does not yank the active card (frozen-head
+    // design is preserved for that case; the stale-closure read of userHskLevel and
+    // provisionalMode below is intentional and correct for the cardQueue-change scenario).
     useEffect(() => {
-        if (currentCardIndex !== 0 || allCards.length === 0 || userHskLevel == null) return;
-        const min = Math.max(1, userHskLevel);
-        const max = Math.min(6, userHskLevel + 1);
-        let next = 0;
-        while (next < allCards.length) {
-            const lvl = parseHskLevel(allCards[next].hskLevel);
-            if (lvl != null && lvl >= min && lvl <= max) break;
+        if (userHskLevel == null || cardQueue.length === 0) return;
+        const head = cardQueue[currentCardIndex];
+        if (!head) return; // index is past end; waiting for more cards
+        const lvl = parseHskLevel(head.hskLevel);
+        if (lvl == null) return;
+        const targetLevel = Math.min(6, userHskLevel + 1);
+        // Provisional mode accepts any card at or below targetLevel (matching
+        // the visibleQueue filter). Normal mode uses [userHskLevel, targetLevel].
+        const min = provisionalMode ? 1 : Math.max(1, userHskLevel);
+        if (lvl >= min && lvl <= targetLevel) return; // head is in-band, nothing to do
+        let next = currentCardIndex + 1;
+        while (next < cardQueue.length) {
+            const nextLvl = parseHskLevel(cardQueue[next].hskLevel);
+            if (nextLvl != null && nextLvl >= min && nextLvl <= targetLevel) break;
             next++;
         }
-        if (next !== 0) setCurrentCardIndex(next);
-    }, [allCards, userHskLevel, currentCardIndex]);
+        if (next !== currentCardIndex) setCurrentCardIndex(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [cardQueue]); // cardQueue only — see comment above
+
+    // Reset exhausted flag when the HSK band changes — the server may have
+    // cards in the new band even though the previous band was exhausted.
+    useEffect(() => {
+        setLoadMoreExhausted(false);
+    }, [userHskLevel, provisionalMode]);
 
     // Load more cards when ≤5 remain in the client-filtered visible queue
     useEffect(() => {
-        if (visibleQueue.length <= 5 && allCards.length > 0 && !isLoadingMoreRef.current) {
+        console.log("[LoadMore] effect fired — visibleQueue:", visibleQueue.length, "cardQueue:", cardQueue.length, "isLoadingMore:", isLoadingMore, "exhausted:", loadMoreExhausted);
+        if (visibleQueue.length <= 5 && cardQueue.length > 0 && !isLoadingMore && !loadMoreExhausted) {
+            console.log("[LoadMore] → calling loadMoreCards()");
             loadMoreCards();
         }
-    }, [visibleQueue.length, allCards.length]);
+    }, [visibleQueue.length, cardQueue.length, isLoadingMore, loadMoreExhausted]);
 
     // Check if the dragged card's center overlaps a bucket using actual DOM positions
     const checkBucketCollision = (ox: number, oy: number): string | null => {
@@ -316,6 +362,7 @@ const SortCardsPage: React.FC = () => {
         if (!currentCard) return;
 
         const sortedCard = currentCard;
+        console.log(`[Sort] "${sortedCard.entryKey}" → ${bucketId}`);
 
         // Animate card exit (fade out + shrink). We await only the local
         // animation — the server POST is fire-and-forget so the user never
@@ -329,17 +376,17 @@ const SortCardsPage: React.FC = () => {
         // Add to history for undo
         setHistory((prev) => [...prev, { card: sortedCard, bucket: bucketId }]);
 
-        // Advance past any out-of-band cards in allCards so the next active
+        // Advance past any out-of-band cards in cardQueue so the next active
         // card honors the current [userLevel, userLevel + 1] filter. If we run
         // off the end, the refetch effect (visibleQueue.length <= 5) will load more.
         setCurrentCardIndex((prev) => {
             if (userHskLevel == null) return prev + 1;
-            const min = Math.max(1, userHskLevel);
-            const max = Math.min(6, userHskLevel + 1);
+            const targetLevel = Math.min(6, userHskLevel + 1);
+            const min = provisionalMode ? 1 : Math.max(1, userHskLevel);
             let next = prev + 1;
-            while (next < allCards.length) {
-                const lvl = parseHskLevel(allCards[next].hskLevel);
-                if (lvl != null && lvl >= min && lvl <= max) break;
+            while (next < cardQueue.length) {
+                const lvl = parseHskLevel(cardQueue[next].hskLevel);
+                if (lvl != null && lvl >= min && lvl <= targetLevel) break;
                 next++;
             }
             return next;
@@ -364,6 +411,9 @@ const SortCardsPage: React.FC = () => {
                 if (typeof data.userHskLevel === "number") {
                     setUserHskLevel(data.userHskLevel);
                 }
+                if (typeof data.provisionalMode === "boolean") {
+                    setProvisionalMode(data.provisionalMode);
+                }
             }
         } catch (error) {
             console.error("Error sorting card:", error);
@@ -372,18 +422,18 @@ const SortCardsPage: React.FC = () => {
 
     // Undo last action — restore the just-sorted card. Because handleCardSort
     // may skip multiple out-of-band indices, we look up the card's actual
-    // index in allCards rather than naively decrementing.
+    // index in cardQueue rather than naively decrementing.
     const handleUndo = async () => {
         if (history.length === 0) return;
 
         const lastAction = history[history.length - 1];
         setHistory((prev) => prev.slice(0, -1));
 
-        const restoredIndex = allCards.findIndex((c) => c.id === lastAction.card.id);
+        const restoredIndex = cardQueue.findIndex((c) => c.id === lastAction.card.id);
         if (restoredIndex >= 0) {
             setCurrentCardIndex(restoredIndex);
         } else {
-            // Fallback (shouldn't normally happen since we never remove from allCards)
+            // Fallback (shouldn't normally happen since we never remove from cardQueue)
             setCurrentCardIndex((prev) => Math.max(0, prev - 1));
         }
 
@@ -402,31 +452,47 @@ const SortCardsPage: React.FC = () => {
         }
     };
 
-    // Silently fetch more unsorted cards and append unique ones to the master
-    // list. We never replace allCards — the active card and undo history must
-    // survive a refetch. Also picks up any updated userHskLevel from the server.
+    // Fetch the next batch of unsorted cards, telling the server which card IDs
+    // the client already holds so they are excluded from the result. This
+    // guarantees every card in the response is genuinely new to the client.
     const loadMoreCards = async () => {
-        if (isLoadingMoreRef.current) return;
-        isLoadingMoreRef.current = true;
+        if (isLoadingMore) return;
+        setIsLoadingMore(true);
+        console.log("[LoadMore] fetching with excludeIds count:", cardQueue.length);
         try {
-            const response = await fetch(`${API_BASE_URL}/api/starter-packs/${language}`, {
+            // Only exclude cards from currentCardIndex onward — these are still
+            // in the visible pipeline. Cards before the index were either sorted
+            // (server excludes via vocabentries) or skipped by the head-skip effect
+            // (we WANT the server to return those since the band may have changed).
+            const excludeIds = cardQueue.slice(currentCardIndex).map((c) => c.id);
+            const response = await fetch(`${API_BASE_URL}/api/starter-packs/${language}/more`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
                 credentials: "include",
+                body: JSON.stringify({ excludeIds }),
             });
+            console.log("[LoadMore] response status:", response.status);
             if (response.ok) {
                 const data: DiscoverFetchResponse = await response.json();
-                setAllCards((prev) => {
-                    const existingIds = new Set(prev.map((c) => c.id));
-                    const unique = data.cards.filter((c) => !existingIds.has(c.id));
-                    return unique.length > 0 ? [...prev, ...unique] : prev;
-                });
+                console.log("[LoadMore] received", data.cards.length, "new cards");
+                if (data.cards.length > 0) {
+                    setCardQueue((prev) => [...prev, ...data.cards]);
+                    setLoadMoreExhausted(false);
+                } else {
+                    console.log("[LoadMore] server returned 0 cards — marking exhausted");
+                    setLoadMoreExhausted(true); // server truly has nothing left
+                }
                 if (typeof data.userHskLevel === "number") {
                     setUserHskLevel(data.userHskLevel);
+                }
+                if (typeof data.provisionalMode === "boolean") {
+                    setProvisionalMode(data.provisionalMode);
                 }
             }
         } catch (error) {
             console.error("Error loading more cards:", error);
         } finally {
-            isLoadingMoreRef.current = false;
+            setIsLoadingMore(false);
         }
     };
 

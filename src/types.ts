@@ -100,6 +100,7 @@ export interface DiscoverCard {
 export interface DiscoverFetchResponse {
   cards: DiscoverCard[];
   userHskLevel: number;
+  provisionalMode: boolean;
 }
 
 // POST /api/starter-packs/sort response shape
@@ -108,6 +109,7 @@ export interface DiscoverSortResponse {
   message: string;
   bucket: string;
   userHskLevel: number;
+  provisionalMode: boolean;
 }
 
 // Combined vocab lookup response

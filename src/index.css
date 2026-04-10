@@ -27,15 +27,16 @@ body {
   min-width: 320px;
   min-height: 100vh;
   overflow-x: hidden; /* Never allow horizontal scroll */
+  overflow-y: auto;   /* Ensure vertical scroll is always enabled */
   /* Prevent overscroll bounce on mobile */
-  overscroll-behavior: none;
-  -webkit-overflow-scrolling: auto;
+  overscroll-behavior-x: none;
+  -webkit-overflow-scrolling: touch; /* Enable momentum scrolling on iOS */
 }
 
 html {
-  /* Prevent overscroll bounce on mobile */
-  overscroll-behavior: none;
-  overflow-x: hidden; /* Never allow horizontal scroll */
+  /* Prevent only horizontal overscroll bounce; leave vertical scroll unrestricted */
+  overscroll-behavior-x: none;
+  /* Do NOT set overflow-x: hidden on html — it suppresses vertical scroll on iOS Safari */
 }
 
 /* Targeted touch prevention only for flashcard interaction area */

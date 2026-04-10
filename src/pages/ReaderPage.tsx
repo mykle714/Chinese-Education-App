@@ -350,6 +350,7 @@ function ReaderPage() {
                     <Drawer
                         className="reader-page-mobile-drawer"
                         variant="temporary"
+                        anchor="right"
                         open={drawerOpen}
                         onClose={() => setDrawerOpen(false)}
                         ModalProps={{

@@ -37,6 +37,40 @@ export class StarterPacksController {
   };
 
   /**
+   * Load more starter pack cards, excluding cards the client already has.
+   * POST /api/starter-packs/:language/more
+   * Body: { excludeIds: number[] }
+   * Response: { cards: DiscoverCard[], userHskLevel: number, provisionalMode: boolean }
+   */
+  loadMoreCards = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = (req as any).user?.userId;
+      const { language } = req.params;
+      const { excludeIds } = req.body;
+
+      if (!userId) {
+        res.status(401).json({ error: 'User not authenticated' });
+        return;
+      }
+
+      if (!language || !['zh', 'ja', 'ko', 'vi'].includes(language)) {
+        res.status(400).json({ error: 'Invalid language parameter' });
+        return;
+      }
+
+      // Validate excludeIds is an array of numbers (default to empty)
+      const validatedExcludeIds: number[] = Array.isArray(excludeIds)
+        ? excludeIds.filter((id: any) => typeof id === 'number' && Number.isInteger(id))
+        : [];
+
+      const result = await this.starterPacksService.getStarterPackCards(language, userId, validatedExcludeIds);
+      res.json(result);
+    } catch (error: any) {
+      this.handleError(error, res);
+    }
+  };
+
+  /**
    * Get user's progress on a starter pack
    * GET /api/starter-packs/:language/progress
    */

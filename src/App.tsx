@@ -32,7 +32,11 @@ function App() {
           <ConfirmationProvider>
             <Layout>
               <Routes>
-                <Route path="/" element={<HomePage />} />
+                <Route path="/" element={
+                  <ProtectedRoute allowPublic>
+                    <HomePage />
+                  </ProtectedRoute>
+                } />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/register" element={<RegisterPage />} />
                 <Route path="/entries" element={

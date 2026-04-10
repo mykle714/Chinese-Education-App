@@ -743,6 +743,12 @@ app.get('/api/starter-packs/:language', authenticateToken, async (req, res) => {
   await starterPacksController.getStarterPackCards(req, res);
 });
 
+// Load more starter pack cards with client-side exclusion list (protected route)
+// @ts-ignore
+app.post('/api/starter-packs/:language/more', authenticateToken, async (req, res) => {
+  await starterPacksController.loadMoreCards(req, res);
+});
+
 // Get user's progress on a starter pack (protected route)
 // @ts-ignore
 app.get('/api/starter-packs/:language/progress', authenticateToken, async (req, res) => {

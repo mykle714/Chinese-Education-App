@@ -1,4 +1,4 @@
-import { type ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
 import { Link as RouterLink, useLocation } from "react-router-dom";
 import { useAuth } from "../AuthContext";
 import { useConfirmation } from "../contexts/ConfirmationContext";
@@ -50,6 +50,13 @@ function Layout({ children }: LayoutProps) {
     const { isAuthenticated, user, logout } = useAuth();
     const { confirm } = useConfirmation();
 
+    // Force-close the drawer whenever the user becomes unauthenticated
+    useEffect(() => {
+        if (!isAuthenticated) {
+            setDrawerOpen(false);
+        }
+    }, [isAuthenticated]);
+
     // Drawer width for both permanent and temporary drawers
     const drawerWidth = 250;
 
@@ -98,8 +105,9 @@ function Layout({ children }: LayoutProps) {
         setDrawerOpen(open);
     };
 
-    // Handle logout with confirmation
+    // Handle logout with confirmation — close the drawer first so it doesn't flash open during navigation
     const handleLogout = async () => {
+        setDrawerOpen(false);
         const confirmed = await confirm("Are you sure you want to log out?");
         if (confirmed) {
             logout();
@@ -195,18 +203,21 @@ function Layout({ children }: LayoutProps) {
                 }}
             >
                 <Toolbar>
-                    <IconButton
-                        color="inherit"
-                        aria-label="open drawer"
-                        edge="start"
-                        onClick={toggleDrawer(true)}
-                        sx={{ mr: 2 }}
-                    >
-                        <MenuIcon />
-                    </IconButton>
-                    <Typography variant="h6" noWrap component="div">
+                    <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
                         Vocabulary Manager
                     </Typography>
+                    {/* Only show the hamburger menu when the user is logged in */}
+                    {isAuthenticated && (
+                        <IconButton
+                            color="inherit"
+                            aria-label="open drawer"
+                            edge="end"
+                            onClick={toggleDrawer(true)}
+                            sx={{ ml: 2 }}
+                        >
+                            <MenuIcon />
+                        </IconButton>
+                    )}
                 </Toolbar>
             </AppBar>
 
@@ -234,6 +245,7 @@ function Layout({ children }: LayoutProps) {
             {isMobile && (
                 <Drawer
                     variant="temporary"
+                    anchor="right"
                     open={drawerOpen}
                     onClose={toggleDrawer(false)}
                     ModalProps={{
@@ -268,13 +280,12 @@ function Layout({ children }: LayoutProps) {
                         flexGrow: 1,
                         display: 'flex',
                         flexDirection: 'column',
-                        alignItems: 'center',    // center content horizontally
+                        alignItems: 'stretch',   // children fill full width; each Container centers itself via margin:auto
                         pt: { xs: 2, sm: 3 },    // top padding
-                        pr: { xs: 2, sm: 3 },    // right padding  
                         pb: { xs: 2, sm: 3 },    // bottom padding
-                        pl: { xs: 2, sm: 3 },    // left padding - now equal to right
+                        // horizontal padding omitted — each page's Container provides its own horizontal padding
                         mt: isMobile ? 8 : 2,
-                        mb: 6 // Add more bottom margin to account for the footer
+                        mb: 6 // bottom margin to account for the footer
                     }}
                 >
                     {children}

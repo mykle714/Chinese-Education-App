@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { Link as RouterLink, useLocation, useNavigate } from "react-router-dom";
 import {
     Box,
@@ -45,6 +45,13 @@ const MobileNavDrawer: React.FC = () => {
     const { isAuthenticated, user, logout } = useAuth();
     const { confirm } = useConfirmation();
 
+    // Force-close the drawer whenever the user becomes unauthenticated
+    useEffect(() => {
+        if (!isAuthenticated) {
+            setOpen(false);
+        }
+    }, [isAuthenticated]);
+
     // Navigation items — same auth-guarded list as Layout.tsx
     const navItems: NavItem[] = [
         { text: "Home", path: "/", icon: <HomeIcon /> },
@@ -77,6 +84,11 @@ const MobileNavDrawer: React.FC = () => {
         }
     };
 
+    // Don't render the hamburger or drawer for unauthenticated users
+    if (!isAuthenticated) {
+        return null;
+    }
+
     return (
         <>
             {/* Hamburger icon button — placed in the page's header toolbar */}
@@ -92,7 +104,7 @@ const MobileNavDrawer: React.FC = () => {
             {/* Navigation drawer */}
             <Drawer
                 className="mobile-nav-drawer__drawer"
-                anchor="left"
+                anchor="right"
                 open={open}
                 onClose={() => setOpen(false)}
                 ModalProps={{ keepMounted: true }}

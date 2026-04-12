@@ -34,8 +34,8 @@ const IPhoneFrame = styled(Box)(() => ({
     overflow: "hidden",
     display: "flex",
     flexDirection: "column",
-    width: "100vw",
-    height: "100vh",
+    width: "100%",
+    height: "100dvh",
 }));
 
 const ContentArea = styled(Box)(() => ({
@@ -48,7 +48,9 @@ const ContentArea = styled(Box)(() => ({
 }));
 
 const BucketsContainer = styled(Box)(() => ({
-    width: 393,
+    width: "fit-content",
+    maxWidth: "100%",
+    margin: "0 auto",
     height: 140,
     position: "relative",
     flexShrink: 0,
@@ -84,7 +86,9 @@ const LineSeparator = styled(Box)(() => ({
 }));
 
 const CardsPreviewContainer = styled(Box)(() => ({
-    width: 393,
+    // 3 cards × 92px + 2 gaps × 16px + 2 sides × 28px padding = 364px
+    width: 364,
+    margin: "0 auto",
     display: "flex",
     flexWrap: "wrap",
     gap: 16,

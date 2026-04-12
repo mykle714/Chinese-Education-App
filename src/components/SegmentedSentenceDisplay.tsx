@@ -9,6 +9,7 @@ type Size = "xs" | "sm" | "md";
 interface SegmentMeta {
   pronunciation?: string;
   definition?: string;
+  particleOrClassifier?: { type: 'particle' | 'classifier'; definition: string };
 }
 
 interface SentenceData {
@@ -67,6 +68,7 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
   vocabWord,
 }) => {
   const rowRef = useRef<HTMLDivElement | null>(null);
+  const popupRef = useRef<HTMLDivElement | null>(null);
   const charRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [selectedRange, setSelectedRange] = useState<{ start: number; end: number; segment: string; definition?: string } | null>(null);
   const [popupPosition, setPopupPosition] = useState<PopupPosition | null>(null);
@@ -87,9 +89,12 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
       if (segmentLength === 0) continue;
       if (cursor >= chars.length) break;
 
-      const pronunciation = segmentMetadata[segment]?.pronunciation ?? "";
+      const meta = segmentMetadata[segment];
+      const pronunciation = meta?.pronunciation ?? "";
       const syllables = pronunciation.split(" ");
       const syllableMatches = pronunciation.length > 0 && syllables.length === segmentLength;
+      // Prefer particle/classifier definition when tagged — it's the contextually correct sense
+      const definition = meta?.particleOrClassifier?.definition ?? meta?.definition;
 
       for (let i = 0; i < segmentLength && cursor + i < chars.length; i++) {
         data[cursor + i] = {
@@ -97,7 +102,7 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
           segment,
           start: cursor,
           end: cursor + segmentLength - 1,
-          definition: segmentMetadata[segment]?.definition,
+          definition,
         };
       }
 
@@ -108,12 +113,13 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
     for (let i = 0; i < chars.length; i++) {
       if (!data[i]) {
         const char = chars[i];
+        const fallbackMeta = sentence.segmentMetadata?.[char];
         data[i] = {
           pinyin: "",
           segment: char,
           start: i,
           end: i,
-          definition: sentence.segmentMetadata?.[char]?.definition,
+          definition: fallbackMeta?.particleOrClassifier?.definition ?? fallbackMeta?.definition,
         };
       }
     }
@@ -184,6 +190,22 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
     });
   }, [selectedRange, chars.length]);
 
+  // After the popup renders, measure its actual width and clamp its left position so it
+  // never overflows the container. useLayoutEffect runs before paint so there's no flicker.
+  // (CSS transform centering can't be used because transforms don't affect layout — the
+  // browser computes available width as containerWidth - left, squeezing content near edges.)
+  useLayoutEffect(() => {
+    if (!selectedRange?.definition || !popupPosition || !popupRef.current || !rowRef.current) return;
+    const popupWidth = popupRef.current.offsetWidth;
+    const rowWidth = rowRef.current.offsetWidth;
+    const midpoint = popupPosition.left;
+    const clamped = Math.min(
+      Math.max(midpoint - popupWidth / 2, 0),
+      rowWidth - popupWidth
+    );
+    popupRef.current.style.left = `${clamped}px`;
+  }, [selectedRange, popupPosition]);
+
   useEffect(() => {
     const handlePointerDown = (event: PointerEvent) => {
       if (!rowRef.current?.contains(event.target as Node)) {
@@ -191,9 +213,11 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
       }
     };
 
-    document.addEventListener("pointerdown", handlePointerDown);
+    // Use capture phase so this fires before any child's stopPropagation()
+    // (e.g. characters in sibling SegmentedSentenceDisplay instances).
+    document.addEventListener("pointerdown", handlePointerDown, true);
     return () => {
-      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("pointerdown", handlePointerDown, true);
     };
   }, []);
 
@@ -303,6 +327,8 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
       ref={rowRef}
       sx={{ position: "relative", width: "100%" }}
       onMouseLeave={() => setSelectedRange(null)}
+      // Deselect when tapping container background (whitespace between/around characters)
+      onPointerDown={() => setSelectedRange(null)}
     >
       {highlightRects.map((highlightRect, index) => (
         <Box
@@ -333,7 +359,7 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
             top: rect.top,
             width: rect.width,
             height: 0,
-            borderTop: "0.5px solid",
+            borderTop: "1.5px solid",
             borderColor: "text.primary",
             zIndex: 1,
             pointerEvents: "none",
@@ -351,6 +377,8 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
               key={index}
               ref={(node: HTMLDivElement | null) => { charRefs.current[index] = node; }}
               sx={{ display: "inline-flex", position: "relative", zIndex: 2 }}
+              // Stop propagation so character taps don't trigger the container's deselect handler
+              onPointerDown={(e) => e.stopPropagation()}
             >
               <CharacterPinyinColorDisplay
                 character={char}
@@ -371,11 +399,11 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
 
       {showPopup && (
         <Box
+          ref={popupRef}
           sx={{
             position: "absolute",
-            left: popupPosition.left,
+            left: 0, // always start at left edge so natural width is measured before useLayoutEffect repositions
             top: popupPosition.top,
-            transform: "translateX(-50%)",
             backgroundColor: "#FFFFFF",
             border: "1px solid",
             borderColor: "divider",

@@ -6,7 +6,6 @@ import { DictionaryEntry } from '../../types/index.js';
 export interface SegmentMeta {
   pronunciation?: string;
   definition?: string;
-  shortDefinition?: string | null;
   definitions?: string[];
 }
 
@@ -29,7 +28,7 @@ function expandDefinitionCandidates(definition: string): string[] {
 
 /**
  * Choose the best definition for a segment by matching dictionary definitions
- * against a translated sentence. If no match is found, fall back to shortDefinition.
+ * against a translated sentence. If no match is found, fall back to the first definition.
  */
 export function pickDefinitionForTranslatedSentence(
   meta: SegmentMeta,
@@ -99,8 +98,7 @@ export function buildDictMap(dictEntries: DictionaryEntry[]): Map<string, Segmen
       const fallbackDefinition = definitions[0];
       map.set(entry.word1, {
         pronunciation: entry.pronunciation || '',
-        definition: entry.shortDefinition ?? fallbackDefinition,
-        shortDefinition: entry.shortDefinition ?? fallbackDefinition ?? null,
+        definition: fallbackDefinition,
         definitions,
       });
     }

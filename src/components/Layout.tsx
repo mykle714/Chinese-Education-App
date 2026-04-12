@@ -8,7 +8,6 @@ import {
     Toolbar,
     Typography,
     Button,
-    Container,
     Drawer,
     List,
     ListItem,
@@ -307,11 +306,9 @@ function Layout({ children }: LayoutProps) {
                     zIndex: (theme) => theme.zIndex.drawer - 1
                 }}
             >
-                <Container maxWidth="lg">
-                    <Typography variant="body2" color="text.secondary" align="center">
-                        © {new Date().getFullYear()} Vocabulary Entry Manager
-                    </Typography>
-                </Container>
+                <Typography variant="body2" color="text.secondary" align="center">
+                    © {new Date().getFullYear()} Vocabulary Entry Manager
+                </Typography>
             </Box>
         </Box>
     );

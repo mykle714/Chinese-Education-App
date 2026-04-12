@@ -1,5 +1,11 @@
 export type HskLevel = "HSK1" | "HSK2" | "HSK3" | "HSK4" | "HSK5" | "HSK6";
 
+// Particle or classifier annotation for a segment in example sentence metadata
+export interface ParticleOrClassifierInfo {
+  type: 'particle' | 'classifier';
+  definition: string;
+}
+
 export interface VocabEntry {
     id: number;
     entryKey: string;
@@ -16,7 +22,7 @@ export interface VocabEntry {
       english: string;
       translatedVocab?: string;  // English word/phrase in the translation that corresponds to the vocab word
       _segments?: string[];
-      segmentMetadata?: Record<string, { pronunciation?: string; definition?: string }>;
+      segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo }>;
     }>;
     relatedWords?: Array<{ id: number; entryKey: string; pronunciation: string | null; definition: string | null }>;
     createdAt: string;

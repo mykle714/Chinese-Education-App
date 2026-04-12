@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useRef, useEffect } from "react";
 import { stripParentheses } from "../../utils/definitionUtils";
 import { Box, CardContent, Typography } from "@mui/material";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
@@ -50,6 +50,15 @@ const InfoCardSection: React.FC<InfoCardSectionProps> = ({
     breakdownItems,
     showPinyin,
 }) => {
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+    // Reset scroll position to top whenever a new card is loaded
+    useEffect(() => {
+        if (scrollContainerRef.current) {
+            scrollContainerRef.current.scrollTop = 0;
+        }
+    }, [currentEntry]);
+
     // Swipe handler for tab navigation on the info card
     const bindInfoCard = useDrag(
         ({ swipe: [swipeX], event }) => {
@@ -131,7 +140,7 @@ const InfoCardSection: React.FC<InfoCardSectionProps> = ({
                         },
                     }}
                 >
-                    <Box className="mobile-demo-breakdown-list" sx={{ flex: 1, overflow: "auto", padding: "8px" }}>
+                    <Box ref={scrollContainerRef} className="mobile-demo-breakdown-list" sx={{ flex: 1, overflow: "auto", padding: "8px" }}>
                         {/* Tab 0: Breakdown */}
                         {selectedTab === 0 && breakdownItems.length > 0 ? (
                             breakdownItems.map((item, index) => (

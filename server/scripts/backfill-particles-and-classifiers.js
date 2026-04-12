@@ -61,12 +61,14 @@ Definitions:
 
 Respond with ONLY a JSON array. Each element must have:
   "type": "particle" or "classifier"
-  "definition": a concise English phrase (max 8 words) describing this specific grammatical role
+  "definition": a concise, learner-friendly English phrase (max 8 words) using EXACTLY these formats:
+    - classifiers: "classifier for [what it counts]"  e.g. "classifier for wheeled vehicles"
+    - particles:   "particle for [grammatical function]"  e.g. "particle for yes-no questions"
 
 Examples:
-  [{"type":"particle","definition":"possessive/attributive structural particle"}]
+  [{"type":"particle","definition":"particle for possession and describing things"}]
   [{"type":"classifier","definition":"classifier for wheeled vehicles"}]
-  [{"type":"particle","definition":"disposal/action particle (bǎ construction)"},{"type":"classifier","definition":"classifier for handfuls or bunches"}]
+  [{"type":"particle","definition":"particle for placing the object before the verb"},{"type":"classifier","definition":"classifier for handfuls or bunches"}]
   []
 
 No markdown, no explanation. Only the JSON array.`;

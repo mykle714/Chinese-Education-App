@@ -258,7 +258,7 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
    * @param language - Language filter for dictionary lookups (default: 'zh')
    */
   async enrichExampleSentencesMetadataBatch<T extends {
-    exampleSentences?: Array<{ chinese: string; english: string; [key: string]: any }> | null;
+    exampleSentences?: Array<{ chinese: string; english: string; partOfSpeechDict?: Record<string, string>; [key: string]: any }> | null;
   }>(entries: T[], language: string = 'zh'): Promise<T[]> {
     const withSentences = entries.filter(e => e.exampleSentences?.length);
     if (withSentences.length === 0) return entries;
@@ -318,18 +318,24 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
                 }
               }
 
-              // Attach particle/classifier annotation if present.
-              // Particle is preferred over classifier when a character qualifies as both,
-              // since the grammatical role is more salient for learner display.
+              // Attach particle/classifier annotation only when the sentence's AI-generated
+              // partOfSpeechDict confirms this token is being used as a particle or classifier
+              // in this specific sentence. This prevents words like 把 from always showing their
+              // grammatical label even when used as a verb in the sentence.
               if (pacEntries?.length) {
-                const particle = pacEntries.find(e => e.type === 'particle');
-                const classifier = pacEntries.find(e => e.type === 'classifier');
-                const preferred = particle ?? classifier;
-                if (preferred) {
-                  segmentMetadata[seg].particleOrClassifier = {
-                    type: preferred.type,
-                    definition: preferred.definition,
-                  };
+                const posTag = sentence.partOfSpeechDict?.[seg];
+                if (posTag === 'particle' || posTag === 'classifier') {
+                  // Particle is preferred over classifier when a character qualifies as both,
+                  // since the grammatical role is more salient for learner display.
+                  const particle = pacEntries.find(e => e.type === 'particle');
+                  const classifier = pacEntries.find(e => e.type === 'classifier');
+                  const preferred = particle ?? classifier;
+                  if (preferred) {
+                    segmentMetadata[seg].particleOrClassifier = {
+                      type: preferred.type,
+                      definition: preferred.definition,
+                    };
+                  }
                 }
               }
             }

@@ -120,6 +120,7 @@ export interface DictionaryEntry {
     chinese: string;
     english: string;
     translatedVocab?: string;  // English word/phrase in the translation that corresponds to the vocab word
+    partOfSpeechDict: Record<string, string>;  // AI-generated POS tag per sentence token (e.g. "particle", "verb", "noun")
     _segments?: string[];
     segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo }>;
   }> | null;
@@ -146,6 +147,7 @@ export interface DiscoverCard {
     chinese: string;
     english: string;
     translatedVocab?: string;  // English word/phrase in the translation that corresponds to the vocab word
+    partOfSpeechDict: Record<string, string>;  // AI-generated POS tag per sentence token (e.g. "particle", "verb", "noun")
     _segments?: string[];
     segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo }>;
   }> | null;
@@ -210,6 +212,7 @@ export interface VocabEntry {
     chinese: string;
     english: string;
     translatedVocab?: string;  // English word/phrase in the translation that corresponds to the vocab word
+    partOfSpeechDict: Record<string, string>;  // AI-generated POS tag per sentence token (e.g. "particle", "verb", "noun")
     _segments?: string[];
     segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo }>;
   }>;  // Example sentences enriched at runtime with greedy segmentation and per-segment metadata

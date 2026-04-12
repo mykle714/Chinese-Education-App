@@ -14,6 +14,12 @@ export const LANGUAGE_NAMES: Record<Language, string> = {
 // HSK Level type for vocabulary entries
 export type HskLevel = 'HSK1' | 'HSK2' | 'HSK3' | 'HSK4' | 'HSK5' | 'HSK6';
 
+// Particle or classifier annotation for a segment in example sentence metadata
+export interface ParticleOrClassifierInfo {
+  type: 'particle' | 'classifier';
+  definition: string;
+}
+
 // Flashcard Category type for spaced repetition
 export type FlashcardCategory = 'Unfamiliar' | 'Target' | 'Comfortable' | 'Mastered';
 
@@ -42,8 +48,9 @@ export interface VocabEntry {
   exampleSentences?: Array<{
     chinese: string;
     english: string;
+    partOfSpeechDict: Record<string, string>;  // AI-generated POS tag per sentence token (e.g. "particle", "verb", "noun")
     _segments?: string[];
-    segmentMetadata?: Record<string, { pronunciation?: string; definition?: string }>;
+    segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo }>;
   }>;
   relatedWords?: Array<{ id: number; entryKey: string; pronunciation: string | null; definition: string | null }>;
   createdAt: string;
@@ -88,6 +95,7 @@ export interface DiscoverCard {
   exampleSentences?: Array<{
     chinese: string;
     english: string;
+    partOfSpeechDict: Record<string, string>;  // AI-generated POS tag per sentence token (e.g. "particle", "verb", "noun")
     _segments?: string[];
     segmentMetadata?: Record<string, { pronunciation?: string; definition?: string }>;
   }> | null;

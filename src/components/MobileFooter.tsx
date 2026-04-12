@@ -17,7 +17,6 @@ const COLORS = {
 const Footer = styled(Box)(() => ({
     backgroundColor: COLORS.header,
     width: "100%",
-    maxWidth: 393,
     height: 96,
     display: "flex",
     flexDirection: "column",

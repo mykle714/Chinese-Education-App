@@ -19,6 +19,7 @@ fdp = /flashcards/decks page
 gsa = greedy segmentation algorithm
 dp = discover page (aka sort cards page)
 cdp = card detail page
+pct = particles and classifiers table
 
 ## Writing .md files
 Do not write content descibing what you just completed; you should write the status/structure of the service/code. The files are meant to be for future AI  agents.

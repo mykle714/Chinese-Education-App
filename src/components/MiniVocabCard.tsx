@@ -52,8 +52,8 @@ const MiniVocabCard: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete,
             className="mini-vocab-card"
             onClick={() => onClick?.(entry)}
             sx={{
-                width: 100,
-                height: 144,
+                width: 92,
+                height: 132,
                 backgroundColor: COLORS.cardBackground,
                 borderRadius: '8px',
                 boxShadow: '2px 4px 4px rgba(0, 0, 0, 0.25)',

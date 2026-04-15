@@ -26,15 +26,17 @@ Do not write content descibing what you just completed; you should write the sta
 
 ## 🚀 Getting Started
 
+- **Project Goal**: See [docs/PROJECT_GOAL.md](./docs/PROJECT_GOAL.md)
+- **Project Constructs**: See [docs/CONSTRUCTS.md](./docs/CONSTRUCTS.md) — consult this when encountering unfamiliar project-specific terms
 - **Project Overview**: See [README.md](./README.md)
 - **Docker Setup**: See [README_DOCKER.md](./README_DOCKER.md)
 - **Server Development**: See [server/README.md](./server/README.md)
 - **General Reference**: See [AI_REFERENCE.md](./AI_REFERENCE.md)
-- **Am I on prod?**: See [amIOnTheProdMachine.md](./amIOnTheProdMachine.md) — present only on the prod machine (gitignored)
+- **Which machine am I on?**: See [amIOnTheProdMachine.md](./amIOnTheProdMachine.md) — present on all machines (gitignored); read the file to determine if this is dev or prod
 
 ## 💾 Database Tasks
 
-> ⚠️ **Before doing any database work**, check whether you are on the prod machine by looking for [amIOnTheProdMachine.md](./amIOnTheProdMachine.md). If it exists, you are on prod — be especially careful about writes, migrations, and destructive operations. Confirm with the user before proceeding.
+> ⚠️ **Before doing any database work**, read [amIOnTheProdMachine.md](./amIOnTheProdMachine.md) to determine which machine you are on. If it says **PROD**, be especially careful about writes, migrations, and destructive operations — confirm with the user before proceeding. If it says **DEV**, normal local development is safe.
 
 ### PostgreSQL Queries
 When querying or working with the PostgreSQL database:

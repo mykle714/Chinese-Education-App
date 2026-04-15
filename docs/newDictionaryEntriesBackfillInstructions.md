@@ -43,11 +43,15 @@ Every column in `dictionaryentries` and the script responsible for populating it
 
 When a batch of entries has `discoverable` flipped to `TRUE`, run the following scripts in this order. Deterministic scripts first (no API cost, safe to re-run freely), then AI scripts (incur API cost).
 
+All scripts support a `--words=word1,word2` flag to scope the backfill to a specific set of entries (e.g. `--words=未来,摸脉,折裙`). Omitting the flag targets all qualifying discoverable entries. **When marking specific words as discoverable, always use `--words` to limit cost and avoid re-processing the full table.**
+
+Use the `/mark-discoverable` skill to handle the full flow — it sets `discoverable = TRUE` and runs all 8 steps scoped to the specified words.
+
 ### 1. Deterministic Scripts (run first, always safe to re-run)
 
 **Step 1 — Tones**
 ```bash
-node server/scripts/backfill-tones.js
+docker exec cow-backend-local npx tsx scripts/backfill-tones.js --words=word1,word2
 ```
 Populates: `tone`
 Reads: `pronunciation`
@@ -57,7 +61,7 @@ Filter: `language = 'zh' AND pronunciation IS NOT NULL AND tone IS NULL`
 
 **Step 2 — Numbered Pinyin**
 ```bash
-node server/scripts/backfill-numbered-pinyin.js
+docker exec cow-backend-local npx tsx scripts/backfill-numbered-pinyin.js --words=word1,word2
 ```
 Populates: `numberedPinyin`
 Reads: `pronunciation`
@@ -68,7 +72,7 @@ Format: Numbered tone notation (e.g. "gan1 huo4"), ü → v, neutral tone gets n
 
 **Step 3 — Character Breakdown**
 ```bash
-node server/scripts/backfill-dictionary-breakdown.js
+docker exec cow-backend-local npx tsx scripts/backfill-dictionary-breakdown.js --words=word1,word2
 ```
 Populates: `breakdown`
 Reads: `word1`, `language`
@@ -81,7 +85,7 @@ Note: Only applies to multi-character Chinese entries.
 
 **Step 4 — HSK Level**
 ```bash
-docker exec cow-backend-local npx tsx scripts/backfill-hsk-level.js
+docker exec cow-backend-local npx tsx scripts/backfill-hsk-level.js --words=word1,word2
 ```
 Populates: `hskLevel`
 Filter: `language = 'zh' AND discoverable = TRUE AND "hskLevel" IS NULL`
@@ -91,7 +95,7 @@ Note: Assigns one level token per entry (`HSK1`..`HSK6`). Use `--spot-check` to 
 
 **Step 5 — Long Definitions**
 ```bash
-node server/scripts/backfill-short-long-definitions.js
+docker exec cow-backend-local npx tsx scripts/backfill-short-long-definitions.js --words=word1,word2
 ```
 Populates: `longDefinition` (Claude Haiku)
 Filter: `language = 'zh' AND discoverable = TRUE AND longDefinition IS NULL`
@@ -101,7 +105,7 @@ Note: `shortDefinition` is no longer stored — it is computed at runtime from `
 
 **Step 6 — Synonyms**
 ```bash
-docker exec cow-backend-local npx tsx scripts/backfill-synonyms.js
+docker exec cow-backend-local npx tsx scripts/backfill-synonyms.js --words=word1,word2
 ```
 Populates: `synonyms`
 Filter: `language = 'zh' AND discoverable = TRUE AND synonyms IS NULL`
@@ -111,7 +115,7 @@ Note: Validates each AI-suggested synonym exists in `dictionaryentries` before s
 
 **Step 7 — Example Sentences**
 ```bash
-node server/scripts/backfill-example-sentences.js
+docker exec cow-backend-local npx tsx scripts/backfill-example-sentences.js --words=word1,word2
 ```
 Populates: `exampleSentences`
 Filter: `language = 'zh' AND discoverable = TRUE AND exampleSentences IS NULL`
@@ -121,7 +125,7 @@ Note: Generates 3 sentences per entry. Each sentence contains `chinese`, `englis
 
 **Step 8 — Classifier (量词)**
 ```bash
-docker exec cow-backend-local npx tsx scripts/backfill-classifier.js
+docker exec cow-backend-local npx tsx scripts/backfill-classifier.js --words=word1,word2
 ```
 Populates: `classifier`
 Filter: `language = 'zh' AND discoverable = TRUE AND classifier IS NULL`

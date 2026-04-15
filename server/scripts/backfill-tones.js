@@ -9,6 +9,13 @@ import db from '../db.js';
 
 const BATCH_SIZE = 500;
 
+// --words=未来,摸脉 → scope to specific entries only; omit to target all zh entries with tone IS NULL
+const wordsArg = process.argv.find(a => a.startsWith('--words='));
+const targetWords = wordsArg ? wordsArg.slice('--words='.length).split(',').map(s => s.trim()).filter(Boolean) : null;
+const wordsFilter = targetWords?.length
+  ? `AND word1 = ANY(ARRAY[${targetWords.map(w => `'${w.replace(/'/g, "''")}'`).join(', ')}])`
+  : '';
+
 const TONE_MARK_MAP = {
   'ā': 1, 'á': 2, 'ǎ': 3, 'à': 4,
   'ē': 1, 'é': 2, 'ě': 3, 'è': 4,
@@ -29,6 +36,7 @@ function extractTones(pronunciation) {
 
 async function backfillDictionaryTones() {
   console.log('🔊 Starting DictionaryEntries tone backfill...\n');
+  if (targetWords?.length) console.log(`🎯 Scoped to: ${targetWords.join(', ')}\n`);
 
   const client = await db.getClient();
 
@@ -43,7 +51,7 @@ async function backfillDictionaryTones() {
     const countResult = await client.query(`
       SELECT COUNT(*) as count
       FROM dictionaryentries
-      WHERE language = 'zh' AND pronunciation IS NOT NULL AND tone IS NULL
+      WHERE language = 'zh' AND pronunciation IS NOT NULL AND tone IS NULL ${wordsFilter}
     `);
     const total = parseInt(countResult.rows[0].count, 10);
     console.log(`📊 Found ${total} DictionaryEntries needing tone backfill\n`);
@@ -53,31 +61,25 @@ async function backfillDictionaryTones() {
       return;
     }
 
-    let offset = 0;
+    // Cursor-based pagination (id > lastId) avoids the OFFSET sliding-window bug
+    // where updated rows fall out of the WHERE clause and shift subsequent offsets.
+    let lastId = 0;
     let totalUpdated = 0;
 
-    while (offset < total) {
-      // Fetch a batch
+    while (true) {
       const batchResult = await client.query(`
         SELECT id, pronunciation
         FROM dictionaryentries
-        WHERE language = 'zh' AND pronunciation IS NOT NULL AND tone IS NULL
+        WHERE language = 'zh' AND pronunciation IS NOT NULL AND tone IS NULL AND id > $1 ${wordsFilter}
         ORDER BY id ASC
-        LIMIT $1 OFFSET $2
-      `, [BATCH_SIZE, offset]);
+        LIMIT $2
+      `, [lastId, BATCH_SIZE]);
 
       const rows = batchResult.rows;
       if (rows.length === 0) break;
 
-      // Build bulk update values
-      const updates = rows.map(row => ({
-        id: row.id,
-        tone: extractTones(row.pronunciation)
-      }));
-
-      // Execute updates in a single query using unnest
-      const ids = updates.map(u => u.id);
-      const tones = updates.map(u => u.tone);
+      const ids = rows.map(r => r.id);
+      const tones = rows.map(r => extractTones(r.pronunciation));
 
       await client.query(`
         UPDATE dictionaryentries
@@ -89,7 +91,7 @@ async function backfillDictionaryTones() {
       `, [ids, tones]);
 
       totalUpdated += rows.length;
-      offset += rows.length;
+      lastId = ids[ids.length - 1];
 
       const progress = Math.round((totalUpdated / total) * 100);
       console.log(`📈 Progress: ${totalUpdated}/${total} (${progress}%)`);

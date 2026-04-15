@@ -21,6 +21,13 @@ import db from '../db.js';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+// --words=未来,摸脉 → scope to specific entries only; omit to target all discoverable entries with synonyms IS NULL
+const wordsArg = process.argv.find(a => a.startsWith('--words='));
+const targetWords = wordsArg ? wordsArg.slice('--words='.length).split(',').map(s => s.trim()).filter(Boolean) : null;
+const wordsFilter = targetWords?.length
+  ? `AND word1 = ANY(ARRAY[${targetWords.map(w => `'${w.replace(/'/g, "''")}'`).join(', ')}])`
+  : '';
+
 /**
  * Ask Claude for synonyms of a Chinese word.
  * Returns an array of Chinese word strings (may be empty).
@@ -78,6 +85,7 @@ async function validateSynonyms(client, candidates) {
 }
 
 async function run() {
+  if (targetWords?.length) console.log(`🎯 Scoped to: ${targetWords.join(', ')}\n`);
   console.log('🚀 Starting AI-powered synonyms backfill...\n');
 
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -94,6 +102,7 @@ async function run() {
       WHERE language = 'zh'
         AND discoverable = TRUE
         AND (synonyms IS NULL OR synonyms = '[]'::jsonb)
+        ${wordsFilter}
       ORDER BY id ASC
     `);
 

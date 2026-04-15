@@ -20,6 +20,13 @@ import db from '../db.js';
 
 const BATCH_SIZE = 500;
 
+// --words=未来,摸脉 → scope to specific entries only; omit to target all entries with numberedPinyin IS NULL
+const wordsArg = process.argv.find(a => a.startsWith('--words='));
+const targetWords = wordsArg ? wordsArg.slice('--words='.length).split(',').map(s => s.trim()).filter(Boolean) : null;
+const wordsFilter = targetWords?.length
+  ? `AND word1 = ANY(ARRAY[${targetWords.map(w => `'${w.replace(/'/g, "''")}'`).join(', ')}])`
+  : '';
+
 /**
  * Maps every toned diacritic vowel to [base vowel, tone number].
  * Plain ü (no tone mark) is handled separately as 'v' with no tone.
@@ -75,6 +82,7 @@ function toNumberedPinyin(pronunciation) {
 
 async function backfillNumberedPinyin() {
   console.log('🔢 Starting DictionaryEntries numberedPinyin backfill...\n');
+  if (targetWords?.length) console.log(`🎯 Scoped to: ${targetWords.join(', ')}\n`);
 
   const client = await db.getClient();
 
@@ -89,7 +97,7 @@ async function backfillNumberedPinyin() {
     const countResult = await client.query(`
       SELECT COUNT(*) AS count
       FROM dictionaryentries
-      WHERE pronunciation IS NOT NULL AND "numberedPinyin" IS NULL
+      WHERE pronunciation IS NOT NULL AND "numberedPinyin" IS NULL ${wordsFilter}
     `);
     const total = parseInt(countResult.rows[0].count, 10);
     console.log(`📊 Found ${total} DictionaryEntries needing numberedPinyin backfill\n`);
@@ -106,7 +114,7 @@ async function backfillNumberedPinyin() {
       const batchResult = await client.query(`
         SELECT id, pronunciation
         FROM dictionaryentries
-        WHERE pronunciation IS NOT NULL AND "numberedPinyin" IS NULL AND id > $1
+        WHERE pronunciation IS NOT NULL AND "numberedPinyin" IS NULL AND id > $1 ${wordsFilter}
         ORDER BY id ASC
         LIMIT $2
       `, [lastId, BATCH_SIZE]);

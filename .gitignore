@@ -35,7 +35,7 @@ dist-ssr
 # Local data dumps
 /dump
 
-# Machine-specific identity file (not committed — present only on prod)
+# Machine-specific identity file (not committed — each machine has its own copy)
 amIOnTheProdMachine.md
 
 # Local Claude Code settings (may contain secrets)

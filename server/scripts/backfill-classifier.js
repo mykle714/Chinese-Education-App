@@ -29,6 +29,13 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const isSpotCheck = process.argv.includes('--spot-check');
 
+// --words=未来,摸脉 → scope to specific entries only; omit to target all discoverable entries with classifier IS NULL
+const wordsArg = process.argv.find(a => a.startsWith('--words='));
+const targetWords = wordsArg ? wordsArg.slice('--words='.length).split(',').map(s => s.trim()).filter(Boolean) : null;
+const wordsFilter = targetWords?.length
+  ? `AND word1 = ANY(ARRAY[${targetWords.map(w => `'${w.replace(/'/g, "''")}'`).join(', ')}])`
+  : '';
+
 /**
  * Ask Claude Sonnet whether a Chinese word takes a measure word (量词), and if so which ones.
  *
@@ -79,6 +86,7 @@ async function run() {
   if (isSpotCheck) {
     console.log('🔍 SPOT CHECK MODE — processing 5 entries only\n');
   }
+  if (targetWords?.length) console.log(`🎯 Scoped to: ${targetWords.join(', ')}\n`);
   console.log('🚀 Starting AI-powered classifier (量词) backfill...\n');
 
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -95,6 +103,7 @@ async function run() {
       WHERE language = 'zh'
         AND discoverable = TRUE
         AND classifier IS NULL
+        ${wordsFilter}
       ORDER BY id ASC
       ${isSpotCheck ? 'LIMIT 5' : ''}
     `);

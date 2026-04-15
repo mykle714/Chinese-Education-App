@@ -3,7 +3,7 @@
 -- This file reflects the current schema after all migrations have been applied.
 -- For production deployment use database/deploy/01-schema.sql instead.
 
-CREATE TABLE IF NOT EXISTS DictionaryEntries (
+CREATE TABLE IF NOT EXISTS dictionaryentries (
     id SERIAL PRIMARY KEY,
 
     -- Identity
@@ -39,42 +39,42 @@ CREATE TABLE IF NOT EXISTS DictionaryEntries (
     "exampleSentenceDefinitionPronunciationOverride" JSONB DEFAULT NULL -- { definition?, pronunciation? } — manual overrides for example sentence segment popup display
 );
 
-CREATE INDEX IF NOT EXISTS idx_dictionary_word1 ON DictionaryEntries(word1);
-CREATE INDEX IF NOT EXISTS idx_dictionary_word2 ON DictionaryEntries(word2);
-CREATE INDEX IF NOT EXISTS idx_dictionary_language ON DictionaryEntries(language);
-CREATE INDEX IF NOT EXISTS idx_dictionary_word1_language ON DictionaryEntries(word1, language);
+CREATE INDEX IF NOT EXISTS idx_dictionary_word1 ON dictionaryentries(word1);
+CREATE INDEX IF NOT EXISTS idx_dictionary_word2 ON dictionaryentries(word2);
+CREATE INDEX IF NOT EXISTS idx_dictionary_language ON dictionaryentries(language);
+CREATE INDEX IF NOT EXISTS idx_dictionary_word1_language ON dictionaryentries(word1, language);
 CREATE INDEX IF NOT EXISTS idx_dictionary_discoverable_language
-    ON DictionaryEntries(language, discoverable)
+    ON dictionaryentries(language, discoverable)
     WHERE discoverable = TRUE;
 
-COMMENT ON TABLE DictionaryEntries IS 'Multi-language dictionary entries';
+COMMENT ON TABLE dictionaryentries IS 'Multi-language dictionary entries';
 
 -- Identity columns
-COMMENT ON COLUMN DictionaryEntries.id IS 'Auto-incrementing primary key. Populated during data import';
-COMMENT ON COLUMN DictionaryEntries.language IS 'Language code: zh, ja, ko, vi. Set during data import';
-COMMENT ON COLUMN DictionaryEntries.script IS 'Writing script variant (e.g. simplified, traditional). Set during data import';
-COMMENT ON COLUMN DictionaryEntries.discoverable IS 'Whether this entry appears in vocab discovery. Set during data import';
-COMMENT ON COLUMN DictionaryEntries."createdAt" IS 'Row creation timestamp. Auto-populated by DEFAULT CURRENT_TIMESTAMP';
+COMMENT ON COLUMN dictionaryentries.id IS 'Auto-incrementing primary key. Populated during data import';
+COMMENT ON COLUMN dictionaryentries.language IS 'Language code: zh, ja, ko, vi. Set during data import';
+COMMENT ON COLUMN dictionaryentries.script IS 'Writing script variant (e.g. simplified, traditional). Set during data import';
+COMMENT ON COLUMN dictionaryentries.discoverable IS 'Whether this entry appears in vocab discovery. Set during data import';
+COMMENT ON COLUMN dictionaryentries."createdAt" IS 'Row creation timestamp. Auto-populated by DEFAULT CURRENT_TIMESTAMP';
 
 -- Word forms and pronunciation
-COMMENT ON COLUMN DictionaryEntries.word1 IS 'Primary word form (simplified Chinese, kanji, hangul, Vietnamese word). Set during data import';
-COMMENT ON COLUMN DictionaryEntries.word2 IS 'Secondary word form (traditional Chinese, kana, hanja). Set during data import';
-COMMENT ON COLUMN DictionaryEntries.pronunciation IS 'Pronunciation guide (pinyin, romaji, romanization). Set during data import';
-COMMENT ON COLUMN DictionaryEntries."numberedPinyin" IS 'Numbered pinyin notation (e.g. "gan1 huo4" from "gān huò"). ü is represented as v. Neutral tone syllables have no number. Computed by backfill-numbered-pinyin.js';
-COMMENT ON COLUMN DictionaryEntries.tone IS 'Tone digit string derived from pronunciation (e.g. "42" for rèn wu). Computed by backfill-tones.js';
+COMMENT ON COLUMN dictionaryentries.word1 IS 'Primary word form (simplified Chinese, kanji, hangul, Vietnamese word). Set during data import';
+COMMENT ON COLUMN dictionaryentries.word2 IS 'Secondary word form (traditional Chinese, kana, hanja). Set during data import';
+COMMENT ON COLUMN dictionaryentries.pronunciation IS 'Pronunciation guide (pinyin, romaji, romanization). Set during data import';
+COMMENT ON COLUMN dictionaryentries."numberedPinyin" IS 'Numbered pinyin notation (e.g. "gan1 huo4" from "gān huò"). ü is represented as v. Neutral tone syllables have no number. Computed by backfill-numbered-pinyin.js';
+COMMENT ON COLUMN dictionaryentries.tone IS 'Tone digit string derived from pronunciation (e.g. "42" for rèn wu). Computed by backfill-tones.js';
 
 -- Classification
-COMMENT ON COLUMN DictionaryEntries."partsOfSpeech" IS 'JSONB array of parts of speech (e.g. noun, verb, adj). AI-generated via backfill';
-COMMENT ON COLUMN DictionaryEntries."hskLevel" IS 'HSK proficiency level tag (HSK1-HSK6). Set during data import or AI backfill';
+COMMENT ON COLUMN dictionaryentries."partsOfSpeech" IS 'JSONB array of parts of speech (e.g. noun, verb, adj). AI-generated via backfill';
+COMMENT ON COLUMN dictionaryentries."hskLevel" IS 'HSK proficiency level tag (HSK1-HSK6). Set during data import or AI backfill';
 
 -- Definitions
-COMMENT ON COLUMN DictionaryEntries.definitions IS 'JSON array of definition strings. Set during data import';
-COMMENT ON COLUMN DictionaryEntries."longDefinition" IS 'AI-generated concise definition (25-75 chars). Generated via backfill-short-long-definitions.js using Claude Haiku';
+COMMENT ON COLUMN dictionaryentries.definitions IS 'JSON array of definition strings. Set during data import';
+COMMENT ON COLUMN dictionaryentries."longDefinition" IS 'AI-generated concise definition (25-75 chars). Generated via backfill-short-long-definitions.js using Claude Haiku';
 
 -- AI-enriched content
-COMMENT ON COLUMN DictionaryEntries.breakdown IS 'Per-character definitions JSONB. AI-generated via backfill-dictionary-breakdown.js';
-COMMENT ON COLUMN DictionaryEntries.synonyms IS 'JSON array of synonym words. AI-generated via backfill-synonyms.js';
-COMMENT ON COLUMN DictionaryEntries."exampleSentences" IS 'JSON array of example sentence objects. AI-generated via backfill-example-sentences.js';
-COMMENT ON COLUMN DictionaryEntries.expansion IS 'Expanded/fuller form of the word. AI-generated via backfill-enrichment.js';
-COMMENT ON COLUMN DictionaryEntries."expansionLiteralTranslation" IS 'Literal translation phrase of expansion showing how components combine to original meaning. AI-generated via backfill-expansion.js';
-COMMENT ON COLUMN DictionaryEntries.classifier IS 'JSONB array of valid measure word characters for Chinese nouns (e.g. ["辆"] for 车, ["只","条"] for 鱼). NULL for non-nouns or words without a standard classifier. AI-generated via backfill-classifier.js';
+COMMENT ON COLUMN dictionaryentries.breakdown IS 'Per-character definitions JSONB. AI-generated via backfill-dictionary-breakdown.js';
+COMMENT ON COLUMN dictionaryentries.synonyms IS 'JSON array of synonym words. AI-generated via backfill-synonyms.js';
+COMMENT ON COLUMN dictionaryentries."exampleSentences" IS 'JSON array of example sentence objects. AI-generated via backfill-example-sentences.js';
+COMMENT ON COLUMN dictionaryentries.expansion IS 'Expanded/fuller form of the word. AI-generated via backfill-enrichment.js';
+COMMENT ON COLUMN dictionaryentries."expansionLiteralTranslation" IS 'Literal translation phrase of expansion showing how components combine to original meaning. AI-generated via backfill-expansion.js';
+COMMENT ON COLUMN dictionaryentries.classifier IS 'JSONB array of valid measure word characters for Chinese nouns (e.g. ["辆"] for 车, ["只","条"] for 鱼). NULL for non-nouns or words without a standard classifier. AI-generated via backfill-classifier.js';

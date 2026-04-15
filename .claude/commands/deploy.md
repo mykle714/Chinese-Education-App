@@ -35,8 +35,9 @@ git pull origin main
 docker-compose -f docker-compose.prod.yml down
 docker-compose -f docker-compose.prod.yml up --build -d
 
-# Migration(s)
-docker exec -i cow-postgres-prod psql -U cow_user -d cow_db < database/migrations/<migration-file>.sql
+# Migration(s) — copy file into container first, then run with -f (never use < redirect, it breaks in pasted blocks)
+docker cp database/migrations/<migration-file>.sql cow-postgres-prod:/tmp/<migration-file>.sql
+docker exec cow-postgres-prod psql -U cow_user -d cow_db -f /tmp/<migration-file>.sql
 
 # Verify
 docker-compose -f docker-compose.prod.yml ps

@@ -26,6 +26,13 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 // When --spot-check is passed, process only 3 entries and print full sentence output
 const isSpotCheck = process.argv.includes('--spot-check');
 
+// --words=未来,摸脉 → scope to specific entries only; omit to target all discoverable entries with exampleSentences IS NULL
+const wordsArg = process.argv.find(a => a.startsWith('--words='));
+const targetWords = wordsArg ? wordsArg.slice('--words='.length).split(',').map(s => s.trim()).filter(Boolean) : null;
+const wordsFilter = targetWords?.length
+  ? `AND word1 = ANY(ARRAY[${targetWords.map(w => `'${w.replace(/'/g, "''")}'`).join(', ')}])`
+  : '';
+
 /**
  * Ask Claude to generate 3 natural example sentences for a Chinese word.
  * Returns an array of { chinese, english, partOfSpeechDict } objects.
@@ -143,6 +150,7 @@ async function run() {
   if (isSpotCheck) {
     console.log('🔍 SPOT CHECK MODE — processing 3 entries only\n');
   }
+  if (targetWords?.length) console.log(`🎯 Scoped to: ${targetWords.join(', ')}\n`);
   console.log('🚀 Starting AI-powered example sentences backfill...\n');
 
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -159,6 +167,7 @@ async function run() {
       WHERE language = 'zh'
         AND discoverable = TRUE
         AND ("exampleSentences" IS NULL OR "exampleSentences" = '[]'::jsonb)
+        ${wordsFilter}
       ORDER BY id ASC
       ${isSpotCheck ? 'LIMIT 3' : ''}
     `);

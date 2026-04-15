@@ -9,8 +9,16 @@ import db from '../db.js';
 import { DictionaryService } from '../services/DictionaryService.js';
 import { DictionaryDAL } from '../dal/implementations/DictionaryDAL.js';
 
+// --words=未来,摸脉 → scope to specific entries only; omit to target all discoverable entries with longDefinition IS NULL
+const wordsArg = process.argv.find(a => a.startsWith('--words='));
+const targetWords = wordsArg ? wordsArg.slice('--words='.length).split(',').map(s => s.trim()).filter(Boolean) : null;
+const wordsFilter = targetWords?.length
+  ? `AND word1 = ANY(ARRAY[${targetWords.map(w => `'${w.replace(/'/g, "''")}'`).join(', ')}])`
+  : '';
+
 async function backfillLongDefinitions() {
   console.log('Starting longDefinition backfill...\n');
+  if (targetWords?.length) console.log(`🎯 Scoped to: ${targetWords.join(', ')}\n`);
 
   const client = await db.getClient();
   const dictionaryDAL = new DictionaryDAL();
@@ -23,6 +31,7 @@ async function backfillLongDefinitions() {
       WHERE language = 'zh'
         AND discoverable = TRUE
         AND "longDefinition" IS NULL
+        ${wordsFilter}
       ORDER BY id
     `);
 

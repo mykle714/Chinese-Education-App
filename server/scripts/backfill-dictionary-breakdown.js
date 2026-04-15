@@ -2,8 +2,16 @@ import db from '../db.js';
 import { DictionaryService } from '../services/DictionaryService.js';
 import { DictionaryDAL } from '../dal/implementations/DictionaryDAL.js';
 
+// --words=未来,摸脉 → scope to specific entries only; omit to target all discoverable entries with breakdown IS NULL
+const wordsArg = process.argv.find(a => a.startsWith('--words='));
+const targetWords = wordsArg ? wordsArg.slice('--words='.length).split(',').map(s => s.trim()).filter(Boolean) : null;
+const wordsFilter = targetWords?.length
+  ? `AND word1 = ANY(ARRAY[${targetWords.map(w => `'${w.replace(/'/g, "''")}'`).join(', ')}])`
+  : '';
+
 async function backfillDictionaryBreakdown() {
   console.log('Starting dictionary breakdown backfill...\n');
+  if (targetWords?.length) console.log(`🎯 Scoped to: ${targetWords.join(', ')}\n`);
 
   const client = await db.getClient();
   const dictionaryDAL = new DictionaryDAL();
@@ -17,6 +25,7 @@ async function backfillDictionaryBreakdown() {
         AND discoverable = TRUE
         AND char_length(word1) > 1
         AND (breakdown IS NULL OR breakdown = 'null'::jsonb)
+        ${wordsFilter}
       ORDER BY id
     `);
 

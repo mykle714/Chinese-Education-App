@@ -11,13 +11,21 @@ Deploy the current branch to the production server at 174.127.171.180.
 
 ## Steps
 
-### 1. Commit & push (run locally)
+### 1. Build & fix (run locally)
+
+Run `npm run build` locally. If it fails:
+- Read the error output carefully
+- Fix all TypeScript and ESLint errors (warnings are acceptable)
+- Re-run until the build passes
+- Do not proceed to commit/push until the build succeeds
+
+### 3. Commit & push (run locally)
 
 Stage and commit all relevant changes, then push to `origin main`.
 
 Check for new migration files in `database/migrations/` — note them so the user knows to run them.
 
-### 2. Tell the user to run on the server
+### 4. Tell the user to run on the server
 
 Always present ALL server commands as a single copy-pasteable block — never split across multiple steps or prose sections. If there are migrations, include them inline. Example:
 

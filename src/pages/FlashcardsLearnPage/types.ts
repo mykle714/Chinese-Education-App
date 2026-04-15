@@ -1,5 +1,7 @@
 export type HskLevel = "HSK1" | "HSK2" | "HSK3" | "HSK4" | "HSK5" | "HSK6";
 
+export type FlashcardCategory = 'Unfamiliar' | 'Target' | 'Comfortable' | 'Mastered';
+
 // Particle or classifier annotation for a segment in example sentence metadata
 export interface ParticleOrClassifierInfo {
   type: 'particle' | 'classifier';
@@ -12,6 +14,7 @@ export interface VocabEntry {
     entryValue: string;
     pronunciation?: string | null;
     hskLevel?: HskLevel | null;
+    category?: FlashcardCategory;
     breakdown?: Record<string, { definition: string }> | null;
     expansion?: string | null;
     expansionMetadata?: Record<string, { pronunciation?: string; definition?: string }> | null;

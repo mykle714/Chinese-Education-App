@@ -78,7 +78,10 @@ git clone https://github.com/user/Chinese-Education-App.git vocabulary-app
 # Create production environment file
 cat > .env << EOF
 # Database Configuration
+# IMPORTANT: DB_PASSWORD and POSTGRES_PASSWORD must be identical.
+# POSTGRES_PASSWORD initializes the postgres user; DB_PASSWORD is what the backend uses to connect.
 POSTGRES_PASSWORD=your-secure-production-password-here
+DB_PASSWORD=your-secure-production-password-here
 DB_HOST=postgres
 DB_PORT=5432
 DB_NAME=cow_db

@@ -3,9 +3,86 @@
 ## Overview
 This document outlines common issues when querying PostgreSQL in the Chinese Education App and provides best practices for successful queries.
 
+## Quickest Way to Run a Query
+
+The fastest, most reliable method is `docker exec` — no script files, no module issues, no env setup:
+
+```bash
+# Local database
+docker exec cow-postgres-local psql -U cow_user -d cow_db -c "SELECT id, email FROM users;"
+
+# Production database
+docker exec cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT id, email FROM users;"
+```
+
+Use this by default for ad-hoc queries. Only write a `.ts` script (see below) when you need complex logic or data transformation.
+
+## Writing a TypeScript Query Script
+
+When a script is needed, it **must live in the `server/` directory** (for module resolution). The project uses `"type": "module"`, so `ts-node -e` inline eval does **not** work — write a file:
+
+```typescript
+// server/my-query-tmp.ts
+import { Pool } from 'pg';
+import dotenv from 'dotenv';
+
+dotenv.config({ path: '.env.docker' });  // use .env.docker, there is no plain .env
+
+const pool = new Pool({
+  host: process.env.DB_HOST || 'localhost',
+  port: parseInt(process.env.DB_PORT || '5432'),
+  database: process.env.DB_NAME || 'cow_db',
+  user: process.env.DB_USER || 'cow_user',
+  password: process.env.DB_PASSWORD || 'cow_password_local',
+});
+
+const result = await pool.query('SELECT id, email FROM users');
+console.log(result.rows);
+await pool.end();
+```
+
+Run it from the `server/` directory:
+
+```bash
+cd server
+npx ts-node --esm my-query-tmp.ts
+```
+
+## Importing `db.ts`
+
+`db.ts` exports a `DbConnection` object, **not** a Pool directly. Use `db.pool` to access the Pool:
+
+```typescript
+import db from './db.js';                // ✅ correct import path
+const result = await db.pool.query(...); // ✅ use db.pool, not db directly
+```
+
 ## Common Issues Encountered
 
-### 1. **Table Name Case Sensitivity**
+### 1. **Column Name Case Sensitivity (camelCase columns)**
+**Problem**: The `users` table and others use camelCase column names (e.g., `createdAt`, not `created_at`). PostgreSQL requires double-quotes around mixed-case identifiers.
+
+**Error Message**:
+```
+ERROR:  column "created_at" does not exist
+HINT:  Perhaps you meant to reference the column "users.createdAt".
+```
+
+**Solution**: Quote camelCase column names with double quotes:
+
+```sql
+-- ❌ Wrong - snake_case doesn't exist
+SELECT created_at FROM users;
+
+-- ✅ Correct - quote the camelCase column
+SELECT "createdAt" FROM users;
+```
+
+**Affected columns**: `createdAt`, `updatedAt`, and any other camelCase columns created by the ORM/migrations.
+
+---
+
+### 2. **Table Name Case Sensitivity**
 **Problem**: Querying tables with incorrect casing (e.g., `"DictionaryEntries"` instead of `dictionaryentries`)
 
 **Error Message**:
@@ -30,7 +107,7 @@ SELECT * FROM "DictionaryEntries" WHERE ...
 SELECT * FROM dictionaryentries WHERE ...
 ```
 
-### 2. **Missing Dependencies**
+### 3. **Missing Dependencies**
 **Problem**: Node.js modules not installed in the working directory
 
 **Error Message**:
@@ -57,7 +134,30 @@ cd /c/src/Chinese-Education-App
 node query-discoverable.js  # pg module not found
 ```
 
-### 3. **Database Connection Issues**
+### 4. **`ts-node -e` Fails with ESM Modules**
+**Problem**: Using `npx ts-node -e "..."` for inline evaluation fails because the project uses `"type": "module"`.
+
+**Error Message**:
+```
+SyntaxError: Cannot use import statement outside a module
+```
+
+**Solution**: Write the script to a `.ts` file in `server/` and run it with `--esm`:
+```bash
+npx ts-node --esm my-script.ts
+```
+Never use `-e` for inline eval with this project.
+
+---
+
+### 5. **No Plain `.env` File**
+**Problem**: `dotenv.config()` with no path argument looks for `.env`, which doesn't exist in `server/`. Only `.env.docker` exists.
+
+**Solution**: Either use `dotenv.config({ path: '.env.docker' })`, or skip env files entirely and connect via `docker exec psql` (recommended for ad-hoc queries).
+
+---
+
+### 6. **Database Connection Issues**
 **Problem**: PostgreSQL pool not connecting due to:
 - Missing environment variables
 - Incorrect database credentials
@@ -260,11 +360,14 @@ Or they default to the values shown above.
 
 ## Troubleshooting Checklist
 
-- [ ] Is PostgreSQL running? (Check Docker containers)
-- [ ] Are dependencies installed? (Run `npm install` in server directory)
-- [ ] Is `.env` file present with correct credentials?
+- [ ] Is PostgreSQL running? (`docker ps` — look for `cow-postgres-local` / `cow-postgres-prod`)
+- [ ] Are dependencies installed? (Run `npm install` in `server/` directory)
+- [ ] Using `docker exec psql` instead of a script? (preferred for ad-hoc queries)
+- [ ] If writing a script: is it in `server/` and run with `npx ts-node --esm`?
+- [ ] Is `.env.docker` being loaded (not `.env`, which doesn't exist)?
 - [ ] Are table names lowercase?
-- [ ] Are column names spelled correctly?
+- [ ] Are camelCase column names double-quoted (e.g., `"createdAt"`)?
+- [ ] Are you using `db.pool.query()` (not `db.query()`)?
 - [ ] Are you using parameterized queries?
 - [ ] Did you release the database client?
 - [ ] Did you close the pool with `pool.end()`?

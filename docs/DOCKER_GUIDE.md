@@ -30,8 +30,9 @@ The application consists of three main services:
 
 3. **Access the application**:
    - Frontend: http://localhost:3000
-   - Backend API: http://localhost:5000
-   - Database: localhost:5432
+   - Backend API: http://localhost:5001
+   - Database (host): localhost:5433
+   - Adminer UI: http://localhost:8080
 
 ## Development Environment
 
@@ -128,13 +129,13 @@ docker-compose -f docker-compose.prod.yml ps
 ### Backend Service
 
 **Development**:
-- Port: 5000
+- Host port: 5001 → internal port 5000
 - Hot reload with nodemon
 - TypeScript compilation on-the-fly
 - Volume mounted source code
 
 **Production**:
-- Port: 5000 (localhost only)
+- Host port: 5002 (localhost only) → internal port 5000
 - Compiled JavaScript
 - Health check endpoint
 - Non-root user execution
@@ -145,17 +146,17 @@ docker-compose -f docker-compose.prod.yml ps
 - PostgreSQL 15 Alpine
 - UTF-8 encoding
 - Automatic schema initialization
-- Performance optimizations
+- `stop_grace_period: 30s` to allow clean shutdown and prevent zombie processes
 
 **Access**:
-- Host: postgres (container) / localhost (external)
-- Port: 5432
+- Host: `postgres` (Docker-internal) / `localhost` (external)
+- Dev host port: 5433, Prod host port: 127.0.0.1:5432
 - Database: cow_db
 - User: cow_user
 
 ## Environment Variables
 
-### Development (.env.docker)
+### Development (server/.env.docker)
 ```bash
 DB_HOST=postgres
 DB_PORT=5432
@@ -174,12 +175,15 @@ DB_HOST=postgres
 DB_PORT=5432
 DB_NAME=cow_db
 DB_USER=cow_user
-DB_PASSWORD=${POSTGRES_PASSWORD}
-JWT_SECRET=${JWT_SECRET}
-CLIENT_URL=${CLIENT_URL}
+DB_PASSWORD=your-secure-password   # Must be identical to POSTGRES_PASSWORD
+POSTGRES_PASSWORD=your-secure-password
+JWT_SECRET=your-jwt-secret
+CLIENT_URL=https://yourdomain.com
 PORT=5000
 NODE_ENV=production
 ```
+
+**Critical:** `DB_PASSWORD` and `POSTGRES_PASSWORD` in `.env` must always be identical. `DB_PASSWORD` is used by the backend to authenticate, while `POSTGRES_PASSWORD` initializes the postgres user. If they differ, all DB operations will return 500 errors.
 
 ## Container Hard Reset
 

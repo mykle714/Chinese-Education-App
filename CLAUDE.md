@@ -76,6 +76,10 @@ For work points increment implementation:
 ### User Document Feature
 → See [docs/USER_DOCUMENT_FEATURE_SUMMARY.md](./docs/USER_DOCUMENT_FEATURE_SUMMARY.md)
 
+## 🔧 Troubleshooting
+
+→ See [docs/troubleshooting/DOCKER_STARTUP_ISSUES.md](./docs/troubleshooting/DOCKER_STARTUP_ISSUES.md) — port conflicts, zombie processes, compose project name conflicts, network issues, password mismatches
+
 ## 🐳 Deployment & DevOps
 
 ### Deploying

@@ -4,15 +4,18 @@ This document provides essential Docker commands for managing both development a
 
 ## Container Names
 
-### Development Environment
-- `cow-frontend-local` - Frontend Vite dev server (port 3000)
-- `cow-backend-local` - Backend Node.js server (port 5000)
-- `cow-postgres-local` - PostgreSQL database (port 5432)
+### Development Environment (`name: cow-dev`)
+- `cow-frontend-local` - Frontend Vite dev server (host port 3000)
+- `cow-backend-local` - Backend Node.js server (host port 5001 → internal 5000)
+- `cow-postgres-local` - PostgreSQL database (host port 5433 → internal 5432)
+- `cow-adminer` - Adminer DB UI (host port 8080)
 
-### Production Environment
+### Production Environment (`name: cow-prod`)
 - `cow-frontend-prod` - Frontend Nginx server (ports 80, 443)
-- `cow-backend-prod` - Backend Node.js server (port 5000)
-- `cow-postgres-prod` - PostgreSQL database (port 5432)
+- `cow-backend-prod` - Backend Node.js server (host port 5002 → internal 5000)
+- `cow-postgres-prod` - PostgreSQL database (host port 127.0.0.1:5432 → internal 5432)
+
+**Note:** Both compose files have explicit `name:` fields to prevent cross-contamination when run from the same directory. Production commands require `sudo`.
 
 ---
 
@@ -437,7 +440,8 @@ cat backup.sql | docker exec -i cow-postgres-prod psql -U cow_user -d cow_db
 
 ### Check Backend Health Endpoint
 ```bash
-curl http://localhost:5000/api/health
+# Production backend is bound to host port 5002
+curl http://localhost:5002/api/health
 ```
 
 ### Check Frontend
@@ -564,7 +568,10 @@ docker-compose -f docker-compose.prod.yml top
 ### Check Network
 ```bash
 docker network ls
-docker network inspect cow-network
+# Dev network
+docker network inspect cow-dev_cow-network
+# Prod network
+docker network inspect cow-prod_cow-network
 ```
 
 ### Test Backend Connection from Frontend
@@ -588,8 +595,9 @@ docker-compose -f docker-compose.prod.yml logs -f
 # Edit .env file
 nano .env
 
-# Restart containers
-docker-compose -f docker-compose.prod.yml restart
+# IMPORTANT: restart does NOT reload env vars — they are baked in at container creation.
+# You must force-recreate the affected container:
+sudo docker compose -f docker-compose.prod.yml up -d --force-recreate backend
 ```
 
 ### After Updating Nginx Configuration

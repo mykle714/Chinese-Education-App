@@ -30,8 +30,11 @@ Do not write content descibing what you just completed; you should write the sta
 - **Docker Setup**: See [README_DOCKER.md](./README_DOCKER.md)
 - **Server Development**: See [server/README.md](./server/README.md)
 - **General Reference**: See [AI_REFERENCE.md](./AI_REFERENCE.md)
+- **Am I on prod?**: See [amIOnTheProdMachine.md](./amIOnTheProdMachine.md) — present only on the prod machine (gitignored)
 
 ## 💾 Database Tasks
+
+> ⚠️ **Before doing any database work**, check whether you are on the prod machine by looking for [amIOnTheProdMachine.md](./amIOnTheProdMachine.md). If it exists, you are on prod — be especially careful about writes, migrations, and destructive operations. Confirm with the user before proceeding.
 
 ### PostgreSQL Queries
 When querying or working with the PostgreSQL database:

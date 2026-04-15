@@ -57,6 +57,22 @@ import db from './db.js';                // ✅ correct import path
 const result = await db.pool.query(...); // ✅ use db.pool, not db directly
 ```
 
+## Running Migrations
+
+Migrations live in `database/migrations/` and are run by `database/deploy/migrate.sh`. See the `/migrate` skill for full instructions.
+
+```bash
+# Apply all pending migrations
+cd ~/vocabulary-app
+bash database/deploy/migrate.sh
+
+# Check what's been applied
+docker exec cow-postgres-prod psql -U cow_user -d cow_db -c \
+  "SELECT version, name FROM schema_migrations ORDER BY version;"
+```
+
+Do **not** use `server/migrations/` for new migrations — that directory is legacy.
+
 ## Common Issues Encountered
 
 ### 1. **Column Name Case Sensitivity (camelCase columns)**

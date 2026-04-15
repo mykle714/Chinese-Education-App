@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS dictionaryentries (
     "expansionLiteralTranslation" TEXT,      -- literal translation of expansion components
     "matchException" JSONB DEFAULT '[]',                     -- multi-char tokens to skip during GSA matching (manual override)
     "shortDefinitionPronunciationOverride" JSONB DEFAULT NULL, -- { definition?, pronunciation? } — manual overrides for computed shortDefinition and/or pronunciation
+    vernacularScore SMALLINT,                                -- AI-scored vernacular/colloquial usage level
     "exampleSentenceDefinitionPronunciationOverride" JSONB DEFAULT NULL -- { definition?, pronunciation? } — manual overrides for example sentence segment popup display
 );
 

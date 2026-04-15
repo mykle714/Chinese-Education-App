@@ -46,10 +46,8 @@ CREATE TABLE IF NOT EXISTS vocabentries (
     "last8SuccessRate" NUMERIC(5,4),
     "last16SuccessRate" NUMERIC(5,4),
     category           VARCHAR(20) NOT NULL DEFAULT 'Unfamiliar',
-    "starterPackBucket" VARCHAR(20) CHECK (
-        "starterPackBucket" IN ('library', 'learn-later', 'skip')
-        OR "starterPackBucket" IS NULL
-    ),
+    "starterPackBucket" VARCHAR(20) NOT NULL
+        CHECK ("starterPackBucket" IN ('library', 'learn-later', 'skip')),
     "createdAt"        TIMESTAMP DEFAULT NOW()
 );
 
@@ -129,7 +127,10 @@ CREATE TABLE IF NOT EXISTS dictionaryentries (
     expansion       TEXT,                    -- fuller/expanded form of the word
     classifier      JSONB,                   -- measure words for nouns, e.g. ["辆"] for 车
     "expansionLiteralTranslation" TEXT,      -- literal translation of expansion components
-    "matchException" JSONB DEFAULT '[]'      -- multi-char tokens to skip during GSA matching (manual override)
+    "matchException" JSONB DEFAULT '[]',     -- multi-char tokens to skip during GSA matching (manual override)
+    "shortDefinitionPronunciationOverride" JSONB DEFAULT NULL, -- { definition?, pronunciation? } — manual overrides for computed shortDefinition and/or pronunciation
+    vernacularScore SMALLINT,               -- AI-scored vernacular/colloquial usage level
+    "exampleSentenceDefinitionPronunciationOverride" JSONB DEFAULT NULL -- { definition?, pronunciation? } — manual overrides for example sentence segment popup display
 );
 
 CREATE INDEX IF NOT EXISTS idx_dictionary_word1 ON dictionaryentries(word1);

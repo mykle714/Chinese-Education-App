@@ -19,26 +19,20 @@ Check for new migration files in `database/migrations/` — note them so the use
 
 ### 2. Tell the user to run on the server
 
+Always present ALL server commands as a single copy-pasteable block — never split across multiple steps or prose sections. If there are migrations, include them inline. Example:
+
 ```bash
 cd ~/vocabulary-app
 git pull origin main
 docker-compose -f docker-compose.prod.yml down
 docker-compose -f docker-compose.prod.yml up --build -d
-```
 
-### 3. Run any new migrations
-
-If there are new migration files, tell the user to run each one:
-
-```bash
+# Migration(s)
 docker exec -i cow-postgres-prod psql -U cow_user -d cow_db < database/migrations/<migration-file>.sql
-```
 
-### 4. Verify
-
-Tell the user to confirm the deployment:
-
-```bash
+# Verify
 docker-compose -f docker-compose.prod.yml ps
 curl http://localhost:5000/api/health
 ```
+
+If there are no migrations, omit that section but keep everything else in one block.

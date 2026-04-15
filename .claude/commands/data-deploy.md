@@ -37,6 +37,8 @@ Confirm LFS upload completes successfully.
 
 ### 3. Tell the user to run on the server
 
+Always present ALL server commands as a single copy-pasteable block. Example:
+
 ```bash
 cd ~/vocabulary-app
 git pull origin main
@@ -44,13 +46,8 @@ git pull origin main
 docker cp database/dictionaryentries-data.dump cow-postgres-prod:/tmp/det_dump.dump
 docker exec cow-postgres-prod psql -U cow_user -d cow_db -c "TRUNCATE TABLE dictionaryentries;"
 docker exec cow-postgres-prod pg_restore -U cow_user -d cow_db -t dictionaryentries --data-only /tmp/det_dump.dump
-```
 
-### 4. Verify
-
-Tell the user to confirm the row count matches local:
-
-```bash
+# Verify (should match local count)
 docker exec cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT COUNT(*) FROM dictionaryentries;"
 ```
 

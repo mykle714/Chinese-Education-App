@@ -31,3 +31,6 @@ dist-ssr
 
 # Environment and credential files
 *env-values*
+
+# Local data dumps
+/dump

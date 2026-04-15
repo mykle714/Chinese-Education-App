@@ -107,6 +107,41 @@ export class DictionaryController {
   }
 
   /**
+   * Segment input text via the GSA and return matching dictionary entries,
+   * grouped by segment and sorted longest-segment-first.
+   * GET /api/dictionary/segment?text=<input>
+   *
+   * Response shape:
+   *   { segments: Array<{ segment: string; exactEntries: DictionaryEntry[]; prefixEntries: DictionaryEntry[] }> }
+   * exactEntries: word1 === segment exactly. prefixEntries: word1 starts with segment but isn't exact.
+   */
+  async segmentSearch(req: Request, res: Response): Promise<void> {
+    try {
+      const { text } = req.query;
+      const userId = (req as any).user?.userId;
+
+      if (!text || typeof text !== 'string') {
+        res.status(400).json({ error: 'Text parameter is required' });
+        return;
+      }
+
+      if (!userId) {
+        res.status(401).json({ error: 'User not authenticated' });
+        return;
+      }
+
+      const user = await this.userDAL.findById(userId);
+      const language = user?.selectedLanguage || 'zh';
+
+      const segments = await this.dictionaryService.segmentAndLookup(text, language);
+      res.json({ segments });
+    } catch (error: any) {
+      console.error('Error in segment search:', error);
+      res.status(500).json({ error: error.message || 'Failed to perform segment search' });
+    }
+  }
+
+  /**
    * Get total dictionary entry count
    * GET /api/dictionary/count
    */

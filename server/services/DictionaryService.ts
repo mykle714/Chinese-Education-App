@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { IDictionaryDAL } from '../dal/interfaces/IDictionaryDAL.js';
 import { DictionaryEntry, VocabEntry } from '../types/index.js';
 import { ValidationError } from '../types/dal.js';
+import { getAllSubstrings, buildDictMap, buildExcludeSet, segmentWithDict } from '../dal/shared/segmentString.js';
 
 /**
  * Dictionary Service - Contains business logic for dictionary operations
@@ -125,6 +126,71 @@ export class DictionaryService {
       entries: withExpansionMeta,
       total: result.total,
     };
+  }
+
+  /**
+   * Segment input text using the GSA, then for each segment fetch all dictionary entries
+   * whose word1 starts with that segment (prefix search).
+   *
+   * Returns groups ordered by segment character length (longest first). Within each group,
+   * entries are ordered by the DAL's default relevance ordering.
+   * Groups with no matching entries are silently dropped.
+   */
+  async segmentAndLookup(text: string, language: string): Promise<Array<{ segment: string; exactEntries: DictionaryEntry[]; prefixEntries: DictionaryEntry[] }>> {
+    if (!text.trim()) return [];
+
+    const trimmed = text.trim();
+
+    // Step 1: collect all candidate substrings for a single-round-trip DB query to feed the GSA
+    const candidates = getAllSubstrings(trimmed);
+    const exactEntries = await this.dictionaryDAL.findMultipleByWord1(candidates, language);
+
+    // Step 2: build GSA structures and segment the input
+    const dictMap = buildDictMap(exactEntries);
+    const excludeSet = buildExcludeSet(exactEntries);
+    const rawSegments = segmentWithDict(trimmed, dictMap, excludeSet);
+
+    // Step 3: track each segment's character offset in the original string (first occurrence)
+    const segmentPosition = new Map<string, number>();
+    let charOffset = 0;
+    for (const seg of rawSegments) {
+      if (!segmentPosition.has(seg)) {
+        segmentPosition.set(seg, charOffset);
+      }
+      charOffset += [...seg].length;
+    }
+
+    // Step 4: deduplicate, preserving first-occurrence GSA order
+    const seen = new Set<string>();
+    const uniqueSegments: string[] = [];
+    for (const seg of rawSegments) {
+      if (!seen.has(seg)) {
+        seen.add(seg);
+        uniqueSegments.push(seg);
+      }
+    }
+
+    // Step 5: sort by position in the string (ASC), then by segment length (DESC) as tiebreaker
+    uniqueSegments.sort((a, b) => {
+      const posDiff = (segmentPosition.get(a) ?? 0) - (segmentPosition.get(b) ?? 0);
+      if (posDiff !== 0) return posDiff;
+      return [...b].length - [...a].length;
+    });
+
+    // Step 6: for each segment, fetch all entries that start with it (prefix search),
+    // then split into exact matches (word1 === segment) and starts-with matches.
+    const groups: Array<{ segment: string; exactEntries: DictionaryEntry[]; prefixEntries: DictionaryEntry[] }> = [];
+    for (const seg of uniqueSegments) {
+      const { entries } = await this.dictionaryDAL.searchByWord1(seg, language, 50, 0);
+      if (entries.length === 0) continue;
+
+      const enriched = await this.enrichExpansionMetadataBatch(entries, language);
+      const exactEntries = enriched.filter(e => e.word1 === seg);
+      const prefixEntries = enriched.filter(e => e.word1 !== seg);
+      groups.push({ segment: seg, exactEntries, prefixEntries });
+    }
+
+    return groups;
   }
 
   /**

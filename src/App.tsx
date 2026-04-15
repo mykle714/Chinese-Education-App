@@ -66,12 +66,12 @@ function App() {
                 } />
                 <Route path="/flashcards/decks" element={<FlashcardsDecksPage />} />
                 <Route path="/reader" element={
-                  <ProtectedRoute>
+                  <ProtectedRoute allowPublic>
                     <ReaderPage />
                   </ProtectedRoute>
                 } />
                 <Route path="/dictionary" element={
-                  <ProtectedRoute>
+                  <ProtectedRoute allowPublic>
                     <DictionaryPage />
                   </ProtectedRoute>
                 } />

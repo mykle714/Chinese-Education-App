@@ -39,6 +39,7 @@ interface NavItem {
     text: string;
     path: string;
     icon: ReactNode;
+    desktopOnly?: boolean; // if true, hidden in the mobile temporary drawer
 }
 
 function Layout({ children }: LayoutProps) {
@@ -74,6 +75,13 @@ function Layout({ children }: LayoutProps) {
             { text: "Reader", path: "/reader", icon: <ArticleIcon /> },
             { text: "Night Market", path: "/night-market", icon: <NightsStayIcon /> },
             { text: "Profile", path: "/profile", icon: <PersonIcon /> },
+            { text: "Settings", path: "/settings", icon: <SettingsIcon /> }
+        );
+    } else if (isAuthenticated && user?.isPublic) {
+        // Public accounts get Dictionary access plus standard public nav
+        navItems.push(
+            { text: "Dictionary", path: "/dictionary", icon: <BookIcon /> },
+            { text: "Mobile Demo", path: "/flashcards/decks", icon: <PhoneIphoneIcon /> },
             { text: "Settings", path: "/settings", icon: <SettingsIcon /> }
         );
     } else {
@@ -133,7 +141,7 @@ function Layout({ children }: LayoutProps) {
                 </Box>
                 <Divider />
                 <List sx={{ flexGrow: 1, pt: 2 }}>
-                    {navItems.map((item) => (
+                    {navItems.filter((item) => !(item.desktopOnly && isMobile)).map((item) => (
                         <ListItem key={item.text} disablePadding sx={{ mb: 1 }}>
                             <ListItemButton
                                 component={RouterLink}

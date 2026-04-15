@@ -19,6 +19,7 @@ function DictionaryEntryRow({ entry, onClick }: DictionaryEntryRowProps) {
 
     return (
         <Card
+            className="dictionary-entry-row"
             sx={{
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
@@ -33,8 +34,9 @@ function DictionaryEntryRow({ entry, onClick }: DictionaryEntryRowProps) {
             }}
             onClick={() => onClick(entry)}
         >
-            <CardContent>
+            <CardContent className="dictionary-entry-row__content">
                 <Typography
+                    className="dictionary-entry-row__word"
                     variant="h6"
                     component="h3"
                     gutterBottom
@@ -49,6 +51,7 @@ function DictionaryEntryRow({ entry, onClick }: DictionaryEntryRowProps) {
 
                 {entry.pronunciation && (
                     <Typography
+                        className="dictionary-entry-row__pronunciation"
                         variant="body2"
                         color="text.secondary"
                         sx={{
@@ -61,6 +64,7 @@ function DictionaryEntryRow({ entry, onClick }: DictionaryEntryRowProps) {
                 )}
 
                 <Typography
+                    className="dictionary-entry-row__definition"
                     variant="body2"
                     color="text.primary"
                     sx={{

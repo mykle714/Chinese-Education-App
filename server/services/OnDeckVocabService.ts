@@ -356,42 +356,33 @@ export class OnDeckVocabService {
         `, [userId]);
         workingLoop.push(...targetResult.rows);
 
-        // If we don't have 10 cards, fill remaining slots with any available library cards
+        // If we don't have 10 cards, fill remaining slots by priority: Target → Comfortable → Unfamiliar → Mastered
         if (workingLoop.length < 10) {
-          const existingIds: number[] = workingLoop.map(card => card.id);
-          const neededCount: number = 10 - workingLoop.length;
+          const fillPriorityOrder: string[] = ['Target', 'Comfortable', 'Unfamiliar', 'Mastered'];
 
-          const fillQuery = existingIds.length > 0
-            ? `
+          for (const category of fillPriorityOrder) {
+            if (workingLoop.length >= 10) break;
+
+            const existingIds: number[] = workingLoop.map(card => card.id);
+            const neededCount: number = 10 - workingLoop.length;
+
+            const fillResult = await client.query<VocabEntry>(`
               SELECT ve.*, ${DICT_COLS}
               FROM vocabentries ve ${DICT_JOIN}
               WHERE ve."userId" = $1
               AND ve."starterPackBucket" = 'library'
-              AND ve.id NOT IN (${existingIds.join(',')})
+              AND ve.category = $2
+              AND ve.id != ALL($3::int[])
               ORDER BY RANDOM()
-              LIMIT $2
-            `
-            : `
-              SELECT ve.*, ${DICT_COLS}
-              FROM vocabentries ve ${DICT_JOIN}
-              WHERE ve."userId" = $1
-              AND ve."starterPackBucket" = 'library'
-              ORDER BY RANDOM()
-              LIMIT $2
-            `;
+              LIMIT $4
+            `, [userId, category, existingIds, neededCount]);
 
-          const fillResult = await client.query<VocabEntry>(
-            fillQuery,
-            [userId, neededCount]
-          );
-          workingLoop.push(...fillResult.rows);
+            workingLoop.push(...fillResult.rows);
+          }
         }
 
         // Shuffle the working loop to randomize card order
-        for (let i: number = workingLoop.length - 1; i > 0; i--) {
-          const j: number = Math.floor(Math.random() * (i + 1));
-          [workingLoop[i], workingLoop[j]] = [workingLoop[j], workingLoop[i]];
-        }
+        workingLoop.sort(() => Math.random() - 0.5);
       }
 
       // Enrich with computed example sentences, synonym metadata, and related words

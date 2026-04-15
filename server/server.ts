@@ -779,6 +779,12 @@ app.get('/api/dictionary/search', authenticateToken, async (req, res) => {
   await dictionaryController.search(req, res);
 });
 
+// Segment input text via GSA and return dictionary entries grouped by segment (protected route)
+// @ts-ignore
+app.get('/api/dictionary/segment', authenticateToken, async (req, res) => {
+  await dictionaryController.segmentSearch(req, res);
+});
+
 // Lookup dictionary term by exact match (protected route)
 // @ts-ignore
 app.get('/api/dictionary/lookup/:term', authenticateToken, async (req, res) => {

@@ -91,6 +91,7 @@ function DictionaryEntryDetailModal({ entry, open, onClose }: DictionaryEntryDet
 
     return (
         <Dialog
+            className="dictionary-entry-modal"
             open={open}
             onClose={handleClose}
             maxWidth="sm"
@@ -99,8 +100,9 @@ function DictionaryEntryDetailModal({ entry, open, onClose }: DictionaryEntryDet
                 sx: { maxHeight: '80vh' }
             }}
         >
-            <DialogTitle sx={{ pb: 1 }}>
+            <DialogTitle className="dictionary-entry-modal__title" sx={{ pb: 1 }}>
                 <Typography
+                    className="dictionary-entry-modal__primary-word"
                     variant="h5"
                     component="div"
                     sx={{
@@ -112,6 +114,7 @@ function DictionaryEntryDetailModal({ entry, open, onClose }: DictionaryEntryDet
                 </Typography>
                 {entry.word2 && (
                     <Typography
+                        className="dictionary-entry-modal__secondary-word"
                         variant="subtitle1"
                         color="text.secondary"
                         sx={{
@@ -123,10 +126,11 @@ function DictionaryEntryDetailModal({ entry, open, onClose }: DictionaryEntryDet
                 )}
             </DialogTitle>
 
-            <DialogContent dividers>
+            <DialogContent className="dictionary-entry-modal__content" dividers>
                 {entry.pronunciation && (
-                    <Box sx={{ mb: 2 }}>
+                    <Box className="dictionary-entry-modal__pronunciation-section" sx={{ mb: 2 }}>
                         <Typography
+                            className="dictionary-entry-modal__pronunciation"
                             variant="body1"
                             sx={{
                                 fontStyle: 'italic',
@@ -141,18 +145,18 @@ function DictionaryEntryDetailModal({ entry, open, onClose }: DictionaryEntryDet
 
                 <Divider sx={{ my: 2 }} />
 
-                <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 'bold' }}>
+                <Typography className="dictionary-entry-modal__definitions-label" variant="subtitle2" sx={{ mb: 1, fontWeight: 'bold' }}>
                     Definitions:
                 </Typography>
 
-                <List dense sx={{ pt: 0 }}>
+                <List className="dictionary-entry-modal__definitions-list" dense sx={{ pt: 0 }}>
                     {entry.definitions && entry.definitions.length > 0 ? (
                         entry.definitions.map((definition, index) => (
-                            <ListItem key={index} sx={{ pl: 0, py: 0.5, alignItems: 'flex-start' }}>
-                                <Typography variant="body2" component="span" sx={{ mr: 1, fontWeight: 'bold' }}>
+                            <ListItem key={index} className="dictionary-entry-modal__definition-item" sx={{ pl: 0, py: 0.5, alignItems: 'flex-start' }}>
+                                <Typography className="dictionary-entry-modal__definition-number" variant="body2" component="span" sx={{ mr: 1, fontWeight: 'bold' }}>
                                     {index + 1}.
                                 </Typography>
-                                <Typography variant="body2" component="span">
+                                <Typography className="dictionary-entry-modal__definition-text" variant="body2" component="span">
                                     {stripParentheses(definition)}
                                 </Typography>
                             </ListItem>
@@ -165,14 +169,15 @@ function DictionaryEntryDetailModal({ entry, open, onClose }: DictionaryEntryDet
                 </List>
 
                 {message && (
-                    <Alert severity={message.type} sx={{ mt: 2 }} onClose={() => setMessage(null)}>
+                    <Alert className="dictionary-entry-modal__feedback-alert" severity={message.type} sx={{ mt: 2 }} onClose={() => setMessage(null)}>
                         {message.text}
                     </Alert>
                 )}
             </DialogContent>
 
-            <DialogActions sx={{ px: 3, py: 2 }}>
+            <DialogActions className="dictionary-entry-modal__actions" sx={{ px: 3, py: 2 }}>
                 <Button
+                    className="dictionary-entry-modal__close-btn"
                     onClick={handleClose}
                     startIcon={<Close />}
                     color="inherit"
@@ -180,6 +185,7 @@ function DictionaryEntryDetailModal({ entry, open, onClose }: DictionaryEntryDet
                     Close
                 </Button>
                 <Button
+                    className="dictionary-entry-modal__add-to-vocab-btn"
                     onClick={handleAddToVocab}
                     startIcon={adding ? <CircularProgress size={16} /> : <Add />}
                     variant="contained"

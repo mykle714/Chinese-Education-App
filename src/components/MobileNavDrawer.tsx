@@ -68,6 +68,13 @@ const MobileNavDrawer: React.FC = () => {
             { text: "Profile", path: "/profile", icon: <PersonIcon /> },
             { text: "Settings", path: "/settings", icon: <SettingsIcon /> }
         );
+    } else if (isAuthenticated && user?.isPublic) {
+        // Public accounts get Dictionary access plus standard public nav
+        navItems.push(
+            { text: "Dictionary", path: "/dictionary", icon: <BookIcon /> },
+            { text: "Mobile Demo", path: "/flashcards/decks", icon: <PhoneIphoneIcon /> },
+            { text: "Settings", path: "/settings", icon: <SettingsIcon /> }
+        );
     } else {
         navItems.push(
             { text: "Mobile Demo", path: "/flashcards/decks", icon: <PhoneIphoneIcon /> },

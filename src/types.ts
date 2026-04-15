@@ -62,6 +62,12 @@ export interface ShortDefinitionPronunciationOverride {
   pronunciation?: string | null; // Replaces DictionaryEntry.pronunciation (space-separated, e.g. "fēng kuáng")
 }
 
+// Manual per-entry override for example sentence segment popups; mirrors server ExampleSentenceDefinitionPronunciationOverride
+export interface ExampleSentenceDefinitionPronunciationOverride {
+  definition?: string | null;    // Shown verbatim in the segment popup instead of context-matched definition
+  pronunciation?: string | null; // Shown verbatim in the segment popup instead of stored pronunciation
+}
+
 // Dictionary Entry type for multi-language dictionaries
 export interface DictionaryEntry {
   id: number;

@@ -64,7 +64,6 @@ const BucketsContainer = styled(Box)({
     minHeight: 0, // allow flex to shrink below grid content size on small screens
     maxHeight: 424, // 2 × 200px buckets + 16px rowGap + 8px paddingBlock
     paddingBlock: "4px",
-    paddingInline: "8px", // keeps buckets off screen edges
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
     gridTemplateRows: "1fr 1fr",
@@ -74,7 +73,6 @@ const BucketsContainer = styled(Box)({
 
 const Bucket = styled(Box)<{ mainColor: string; accentColor: string; highlight?: boolean }>(
     ({ mainColor, accentColor, highlight }) => ({
-        width: "100%", // fill the 1fr column so all buckets are equal width → equal height via aspect-ratio
         aspectRatio: "136 / 200",
         minHeight: 0, // override grid item default (auto) so bucket shrinks with 1fr rows
         padding: 8,

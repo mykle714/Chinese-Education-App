@@ -4,7 +4,7 @@ import { dbManager } from '../base/DatabaseManager.js';
 import { DictionaryEntry, DictionaryEntryCreateData, ParticleClassifierEntry } from '../../types/index.js';
 import { ValidationError } from '../../types/dal.js';
 import { resolveShortDefinition } from '../../utils/definitions.js';
-import { ShortDefinitionPronunciationOverride } from '../../types/index.js';
+import { ShortDefinitionPronunciationOverride, ExampleSentenceDefinitionPronunciationOverride } from '../../types/index.js';
 import { getAllSubstrings, buildDictMap, buildExcludeSet, pickDefinitionForTranslatedSentence, segmentWithDict } from '../shared/segmentString.js';
 
 // Standard column list for all dictionary SELECT queries
@@ -17,7 +17,8 @@ const DICTIONARY_COLUMNS = `
   "exampleSentences",
   expansion, "expansionLiteralTranslation",
   "matchException",
-  "shortDefinitionPronunciationOverride"
+  "shortDefinitionPronunciationOverride",
+  "exampleSentenceDefinitionPronunciationOverride"
 `.trim();
 
 /**
@@ -53,6 +54,7 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
       definitions,
       shortDefinitionPronunciationOverride: (row.shortDefinitionPronunciationOverride as ShortDefinitionPronunciationOverride | null) ?? null,
       shortDefinition: resolveShortDefinition(definitions, row.shortDefinitionPronunciationOverride),
+      exampleSentenceDefinitionPronunciationOverride: (row.exampleSentenceDefinitionPronunciationOverride as ExampleSentenceDefinitionPronunciationOverride | null) ?? null,
       longDefinition: row.longDefinition ?? null,
       breakdown: row.breakdown ?? null,
       synonyms: row.synonyms ?? null,
@@ -182,12 +184,17 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
     // Words are joined with flexible space matching (\s+)
     const regexPattern = `^${expandedWords.join('\\s+')}`;
 
-    // For LIKE pattern (simple prefix match as fallback for word1)
+    // For LIKE pattern (simple prefix match for word1, definitions, and numberedPinyin)
     const searchPattern = `${searchTerm}%`;
 
     // Create a pattern to exclude results where 'g' immediately follows the search term (without space)
     // This regex matches: start of string + search pattern + 'g' (no space between)
     const excludePattern = `^${expandedWords.join('\\s+')}g`;
+
+    // Detect numbered pinyin input (e.g. "ni3 hao3", "gan1", "lv3") — any letter immediately
+    // followed by a tone digit 1–4. When detected, also search the numberedPinyin column.
+    const isNumberedPinyin = /[a-zA-ZüvÜV][1-4]/.test(searchTerm);
+    const numberedPinyinClause = isNumberedPinyin ? '\n          OR "numberedPinyin" ILIKE $2' : '';
 
     // Get total count for pagination
     // Search with regex for pronunciation (accent-agnostic + word boundaries), LIKE for word1/definitions
@@ -199,7 +206,7 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
         WHERE language = $1 AND (
           word1 ILIKE $2
           OR pronunciation ~ $3
-          OR definitions::text ILIKE $2
+          OR definitions::text ILIKE $2${numberedPinyinClause}
         )
         AND NOT (pronunciation ~ $4)
       `, [language, searchPattern, regexPattern, excludePattern]);
@@ -215,7 +222,7 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
         WHERE language = $1 AND (
           word1 ILIKE $2
           OR pronunciation ~ $3
-          OR definitions::text ILIKE $2
+          OR definitions::text ILIKE $2${numberedPinyinClause}
         )
         AND NOT (pronunciation ~ $4)
         ORDER BY LENGTH(word1), word1
@@ -309,10 +316,14 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
               segmentMetadata[seg] = {};
 
               if (segMeta) {
-                if (segMeta.pronunciation) {
-                  segmentMetadata[seg].pronunciation = segMeta.pronunciation;
+                // exampleSentenceDefinitionPronunciationOverride takes precedence over everything;
+                // fall back to the stored pronunciation / context-matched definition otherwise.
+                const pronunciation = segMeta.overridePronunciation ?? segMeta.pronunciation;
+                if (pronunciation) {
+                  segmentMetadata[seg].pronunciation = pronunciation;
                 }
-                const bestDefinition = pickDefinitionForTranslatedSentence(segMeta, sentence.english);
+                const bestDefinition = segMeta.overrideDefinition
+                  ?? pickDefinitionForTranslatedSentence(segMeta, sentence.english);
                 if (bestDefinition) {
                   segmentMetadata[seg].definition = bestDefinition;
                 }

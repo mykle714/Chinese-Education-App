@@ -7,6 +7,9 @@ export interface SegmentMeta {
   pronunciation?: string;
   definition?: string;
   definitions?: string[];
+  // Verbatim overrides from exampleSentenceDefinitionPronunciationOverride — bypass context-matching when set
+  overridePronunciation?: string;
+  overrideDefinition?: string;
 }
 
 function normalizeText(value: string): string {
@@ -96,10 +99,14 @@ export function buildDictMap(dictEntries: DictionaryEntry[]): Map<string, Segmen
         ? entry.definitions
         : [entry.definitions as unknown as string];
       const fallbackDefinition = definitions[0];
+      const esOverride = entry.exampleSentenceDefinitionPronunciationOverride;
       map.set(entry.word1, {
         pronunciation: entry.pronunciation || '',
         definition: fallbackDefinition,
         definitions,
+        // Carry overrides through so the enrichment loop can apply them verbatim
+        ...(esOverride?.pronunciation != null && { overridePronunciation: esOverride.pronunciation }),
+        ...(esOverride?.definition != null && { overrideDefinition: esOverride.definition }),
       });
     }
   }

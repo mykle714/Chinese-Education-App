@@ -49,7 +49,13 @@ const FlashcardsLearnPage: React.FC = () => {
             expansionMetadata: currentEntry.expansionMetadata ?? 'none',
             relatedWords: currentEntry.relatedWords ?? 'none',
         });
-    }, [currentEntry]);
+        // Working loop cards grouped by category
+        const categories = ['Unfamiliar', 'Target', 'Comfortable', 'Mastered'] as const;
+        const byCategory = Object.fromEntries(
+            categories.map(cat => [cat, workingLoop.filter(c => c.category === cat)])
+        );
+        console.log('Working loop by category:', byCategory);
+    }, [currentEntry, workingLoop]);
 
     // Convert breakdown object to array for display
     const getBreakdownItems = (): BreakdownItem[] => {

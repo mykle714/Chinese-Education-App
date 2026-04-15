@@ -195,7 +195,15 @@ export class StarterPacksController {
       });
       return;
     }
-    
+
+    // FK constraint violation on userId — user's account no longer exists in the DB
+    // but they still hold a valid JWT. Return 401 so the client's fetch interceptor
+    // clears the stale session and redirects to /login automatically.
+    if (error.code === '23503' && error.message?.includes('vocabentries_userId_fkey')) {
+      res.status(401).json({ error: 'Session invalid. Please log in again.' });
+      return;
+    }
+
     res.status(500).json({
       error: 'Internal server error',
       code: 'ERR_INTERNAL_SERVER_ERROR'

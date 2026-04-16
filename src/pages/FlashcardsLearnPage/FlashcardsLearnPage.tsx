@@ -29,6 +29,10 @@ const FlashcardsLearnPage: React.FC = () => {
     const [selectedTab, setSelectedTab] = useState(0);
     const [lastMarkUndoSnapshot, setLastMarkUndoSnapshot] = useState<LastMarkUndoSnapshot | null>(null);
     const [showPinyin, setShowPinyin] = useState(true);
+    // Two-slot card stack: tracks which slot (0 or 1) is the front card and
+    // which slot is currently animating off-screen.
+    const [activeFrontSlot, setActiveFrontSlot] = useState<0 | 1>(0);
+    const [flyOut, setFlyOut] = useState<{ slot: 0 | 1; direction: 'left' | 'right' } | null>(null);
 
     // Work points integration — activity detection is handled globally by useActivityDetection
     // inside useWorkPoints. No need for manual recordActivity() calls.
@@ -36,6 +40,8 @@ const FlashcardsLearnPage: React.FC = () => {
 
     // Current entry derived from working loop
     const currentEntry: VocabEntry | null = workingLoop.length > 0 ? workingLoop[currentIndex] : null;
+    // Next entry pre-rendered in the back card slot
+    const nextEntry: VocabEntry | null = workingLoop.length > 1 ? workingLoop[(currentIndex + 1) % workingLoop.length] : null;
 
     // Log enrichment data for the current card whenever it changes (covers both correct and incorrect advances)
     useEffect(() => {
@@ -81,8 +87,9 @@ const FlashcardsLearnPage: React.FC = () => {
         isDragging,
         isFlipped,
         setIsFlipped,
+        resetDragPosition,
         handlers,
-    } = useCardDrag(isAnimating, (direction) => handleCardDismiss(direction));
+    } = useCardDrag(isAnimating, (direction) => handleCardDismiss(direction), currentIndex);
 
     // Fetch distributed working loop (1 Mastered, 2 Comfortable, 2 Unfamiliar, 5 Target)
     useEffect(() => {
@@ -184,8 +191,10 @@ const FlashcardsLearnPage: React.FC = () => {
 
         setIsAnimating(true);
 
-        // Advance content immediately — EIC and card face show the next card right away.
-        // The slide-back animation (0.45s) plays out in the background.
+        // Begin fly-out: current front slot animates off-screen in the swipe direction.
+        // The back slot (already showing the next card) is immediately promoted to front.
+        setFlyOut({ slot: activeFrontSlot, direction });
+        setActiveFrontSlot(prev => (1 - prev) as 0 | 1);
         setCurrentIndex(prev => (prev + 1) % workingLoop.length);
         setIsFlipped(Math.random() < 0.5);
 
@@ -211,9 +220,12 @@ const FlashcardsLearnPage: React.FC = () => {
             });
         });
 
-        // Wait for the CSS transition (transform 0.45s ease) to complete before
-        // allowing the next swipe — previously 300ms was too short.
+        // Wait for the fly-out CSS transition (0.45s) to complete, then clear the
+        // fly-out state. The flew-out slot snaps back to center (hidden behind the
+        // new front card) and becomes the next back card.
         await new Promise(resolve => setTimeout(resolve, 450));
+        setFlyOut(null);
+        resetDragPosition();
         setIsAnimating(false);
     };
 
@@ -332,9 +344,13 @@ const FlashcardsLearnPage: React.FC = () => {
                     onTabChange={setSelectedTab}
                     breakdownItems={breakdownItems}
                     showPinyin={showPinyin}
+                    isFlipped={isFlipped}
                 />
                 <FlashCardSection
                     currentEntry={currentEntry}
+                    nextEntry={nextEntry}
+                    activeFrontSlot={activeFrontSlot}
+                    flyOut={flyOut}
                     cardRef={cardRef}
                     dragPosition={dragPosition}
                     isDragging={isDragging}

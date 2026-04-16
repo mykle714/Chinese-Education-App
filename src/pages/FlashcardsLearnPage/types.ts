@@ -17,6 +17,7 @@ export interface VocabEntry {
     category?: FlashcardCategory;
     breakdown?: Record<string, { definition: string }> | null;
     expansion?: string | null;
+    expansionSegments?: string[] | null;  // GSA word tokens for the expansion string
     expansionMetadata?: Record<string, { pronunciation?: string; definition?: string }> | null;
     expansionLiteralTranslation?: string | null;
     longDefinition?: string | null;

@@ -132,7 +132,8 @@ export interface DictionaryEntry {
     segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo }>;
   }> | null;
   expansion?: string | null;
-  expansionMetadata?: Record<string, { pronunciation?: string; definition?: string }> | null;
+  expansionSegments?: string[] | null;  // GSA word tokens for the expansion string (e.g. ["不知", "不觉"])
+  expansionMetadata?: Record<string, { pronunciation?: string; definition?: string }> | null;  // Keyed by segment
   expansionLiteralTranslation?: string | null;
   matchException?: string[] | null;  // Multi-char tokens to suppress during GSA segmentation
 };
@@ -159,7 +160,8 @@ export interface DiscoverCard {
     segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo }>;
   }> | null;
   expansion?: string | null;
-  expansionMetadata?: Record<string, { pronunciation?: string; definition?: string }> | null;
+  expansionSegments?: string[] | null;  // GSA word tokens for the expansion string (e.g. ["不知", "不觉"])
+  expansionMetadata?: Record<string, { pronunciation?: string; definition?: string }> | null;  // Keyed by segment
   expansionLiteralTranslation?: string | null;
   matchException?: string[] | null;  // Multi-char tokens to suppress during GSA segmentation
 }
@@ -212,7 +214,8 @@ export interface VocabEntry {
   synonyms?: string[];  // Array of Chinese synonym words
   synonymsMetadata?: Record<string, { definition: string; pronunciation: string }> | null;  // Computed at runtime by batch-reading from dictionaryentries
   expansion?: string | null;  // Expanded/fuller form of word (e.g., 不知不觉 → 不知道不觉得)
-  expansionMetadata?: Record<string, { pronunciation?: string; definition?: string }> | null;  // Computed at runtime from expansion characters
+  expansionSegments?: string[] | null;  // GSA word tokens for the expansion string — computed at runtime
+  expansionMetadata?: Record<string, { pronunciation?: string; definition?: string }> | null;  // Computed at runtime, keyed by segment
   expansionLiteralTranslation?: string | null;  // Literal phrase translation derived from expansion components
   longDefinition?: string | null;  // AI-generated extended definition (25–150 chars) from dictionaryentries
   exampleSentences?: Array<{

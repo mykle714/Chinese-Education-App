@@ -108,7 +108,7 @@ async function backfillDictionaryTones() {
     throw error;
   } finally {
     client.release();
-    await db.end();
+    await db.pool.end();
   }
 }
 

@@ -399,10 +399,15 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
   }
 
   /**
-   * Enrich each entry with expansionMetadata (per-character pronunciation + definition).
+   * Enrich each entry with GSA-segmented expansion data.
    *
-   * Expansion metadata is computed on-the-fly from dictionaryentries and is not stored.
-   * All unique expansion characters across the batch are merged into one lookup query.
+   * Mirrors enrichExampleSentencesMetadataBatch: runs the greedy segmentation algorithm
+   * on each entry's expansion string, then batch-queries dictionaryentries for all candidate
+   * substrings. Computed on-the-fly; not stored in the DB.
+   *
+   * Each entry gains:
+   *   - `expansionSegments: string[]`  — GSA word tokens (e.g. ["不知", "不觉"] for 不知不觉)
+   *   - `expansionMetadata: Record<segment, { pronunciation?, definition? }>` — keyed by segment
    *
    * @param entries - Objects with optional `expansion` field
    * @param language - Language filter for dictionary lookups (default: 'zh')
@@ -416,52 +421,55 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
     );
 
     if (withExpansion.length === 0) {
-      return entries.map(entry => ({ ...entry, expansionMetadata: null }));
+      return entries.map(entry => ({ ...entry, expansionSegments: null, expansionMetadata: null }));
     }
 
-    // 1. Collect all unique expansion characters across all entries
-    const allChars = new Set<string>();
+    // 1. Collect all candidate substrings across all expansion strings
+    const allCandidates = new Set<string>();
     for (const entry of withExpansion) {
-      for (const char of [...entry.expansion!.trim()]) {
-        if (char.trim().length > 0) {
-          allChars.add(char);
-        }
+      for (const candidate of getAllSubstrings(entry.expansion!.trim())) {
+        allCandidates.add(candidate);
       }
     }
 
-    // 2. Single batch DB query for all characters
-    const dictEntries = await this.findMultipleByWord1([...allChars], language);
+    // 2. Single batch DB query for all candidates
+    const dictEntries = await this.findMultipleByWord1([...allCandidates], language);
     const dictMap = buildDictMap(dictEntries);
+    const excludeTokens = buildExcludeSet(dictEntries);
 
-    // 3. Attach per-character metadata for each entry's expansion
+    // 3. Run GSA and build segment-keyed metadata for each entry
     return entries.map(entry => {
       const expansion = typeof entry.expansion === 'string' ? entry.expansion.trim() : '';
       if (!expansion) {
-        return { ...entry, expansionMetadata: null };
+        return { ...entry, expansionSegments: null, expansionMetadata: null };
       }
 
+      const expansionSegments = segmentWithDict(expansion, dictMap, excludeTokens);
       const expansionMetadata: Record<string, { pronunciation?: string; definition?: string }> = {};
       const translatedExpansion =
         typeof entry.expansionLiteralTranslation === 'string'
           ? entry.expansionLiteralTranslation
           : null;
 
-      for (const char of [...expansion]) {
-        const charMeta = dictMap.get(char);
-        if (!charMeta) continue;
+      for (const seg of expansionSegments) {
+        const segMeta = dictMap.get(seg);
+        if (!segMeta) continue;
 
-        expansionMetadata[char] = {};
-        if (charMeta.pronunciation) {
-          expansionMetadata[char].pronunciation = charMeta.pronunciation;
+        expansionMetadata[seg] = {};
+        const pronunciation = segMeta.overridePronunciation ?? segMeta.pronunciation;
+        if (pronunciation) {
+          expansionMetadata[seg].pronunciation = pronunciation;
         }
-        const bestDefinition = pickDefinitionForTranslatedSentence(charMeta, translatedExpansion);
+        const bestDefinition = segMeta.overrideDefinition
+          ?? pickDefinitionForTranslatedSentence(segMeta, translatedExpansion);
         if (bestDefinition) {
-          expansionMetadata[char].definition = bestDefinition;
+          expansionMetadata[seg].definition = bestDefinition;
         }
       }
 
       return {
         ...entry,
+        expansionSegments,
         expansionMetadata: Object.keys(expansionMetadata).length > 0 ? expansionMetadata : null,
       };
     });

@@ -41,6 +41,7 @@ interface InfoCardSectionProps {
     onTabChange: (tab: number) => void;
     breakdownItems: BreakdownItem[];
     showPinyin: boolean;
+    isFlipped: boolean;
 }
 
 const InfoCardSection: React.FC<InfoCardSectionProps> = ({
@@ -49,6 +50,7 @@ const InfoCardSection: React.FC<InfoCardSectionProps> = ({
     onTabChange,
     breakdownItems,
     showPinyin,
+    isFlipped,
 }) => {
     const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -141,8 +143,14 @@ const InfoCardSection: React.FC<InfoCardSectionProps> = ({
                     }}
                 >
                     <Box ref={scrollContainerRef} className="mobile-demo-breakdown-list" sx={{ flex: 1, overflow: "auto", padding: "8px" }}>
-                        {/* Tab 0: Breakdown */}
-                        {selectedTab === 0 && breakdownItems.length > 0 ? (
+                        {/* Tab 0: Breakdown — only shown when the card is flipped to the definition side */}
+                        {selectedTab === 0 && !isFlipped ? (
+                            <Box className="mobile-demo-tab-empty" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 2 }}>
+                                <Typography className="mobile-demo-tab-empty-text" sx={{ fontSize: 14, color: COLORS.gray, textAlign: 'center', fontFamily: '"Inter", sans-serif' }}>
+                                    Flip the card to view the breakdown!
+                                </Typography>
+                            </Box>
+                        ) : selectedTab === 0 && breakdownItems.length > 0 ? (
                             breakdownItems.map((item, index) => (
                                 <BreakdownLineItemComponent
                                     key={index}
@@ -193,8 +201,14 @@ const InfoCardSection: React.FC<InfoCardSectionProps> = ({
                             </Box>
                         ) : null}
 
-                        {/* Tab 2: Long Definition */}
-                        {selectedTab === 2 && currentEntry?.longDefinition ? (
+                        {/* Tab 2: Long Definition — only shown when the card is flipped to the definition side */}
+                        {selectedTab === 2 && !isFlipped ? (
+                            <Box className="mobile-demo-tab-empty" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 2 }}>
+                                <Typography className="mobile-demo-tab-empty-text" sx={{ fontSize: 14, color: COLORS.gray, textAlign: 'center', fontFamily: '"Inter", sans-serif' }}>
+                                    Flip the card to view the definition!
+                                </Typography>
+                            </Box>
+                        ) : selectedTab === 2 && currentEntry?.longDefinition ? (
                             <Box
                                 className="mobile-demo-long-definition-wrapper"
                                 sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 2 }}
@@ -220,8 +234,14 @@ const InfoCardSection: React.FC<InfoCardSectionProps> = ({
                             </Box>
                         ) : null}
 
-                        {/* Tab 3: Example Sentences */}
-                        {selectedTab === 3 && currentEntry?.exampleSentences && currentEntry.exampleSentences.length > 0 ? (
+                        {/* Tab 3: Example Sentences — only shown when the card is flipped to the definition side */}
+                        {selectedTab === 3 && !isFlipped ? (
+                            <Box className="mobile-demo-tab-empty" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 2 }}>
+                                <Typography className="mobile-demo-tab-empty-text" sx={{ fontSize: 14, color: COLORS.gray, textAlign: 'center', fontFamily: '"Inter", sans-serif' }}>
+                                    Flip the card to view example sentences!
+                                </Typography>
+                            </Box>
+                        ) : selectedTab === 3 && currentEntry?.exampleSentences && currentEntry.exampleSentences.length > 0 ? (
                             <Box className="mobile-demo-sentences-list" sx={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                                 {currentEntry.exampleSentences.map((sentence, index) => (
                                     <Box
@@ -267,7 +287,9 @@ const InfoCardSection: React.FC<InfoCardSectionProps> = ({
                                 <SegmentedSentenceDisplay
                                     sentence={{
                                         chinese: currentEntry.expansion,
-                                        _segments: [...currentEntry.expansion],
+                                        // Use GSA-computed word segments when available; fall back to
+                                        // char-by-char for entries enriched before this change.
+                                        _segments: currentEntry.expansionSegments ?? [...currentEntry.expansion],
                                         segmentMetadata: currentEntry.expansionMetadata ?? undefined,
                                     }}
                                     size="md"
@@ -277,8 +299,8 @@ const InfoCardSection: React.FC<InfoCardSectionProps> = ({
                                     className="mobile-demo-expansion-chars"
                                     showPinyin={showPinyin}
                                 />
-                                {/* Literal translation: segment definitions strung together */}
-                                {currentEntry.expansionLiteralTranslation && (
+                                {/* Literal translation: segment definitions strung together — hidden until card is flipped */}
+                                {currentEntry.expansionLiteralTranslation && isFlipped && (
                                     <Typography sx={{
                                         fontSize: "0.8rem",
                                         color: COLORS.textSecondary,

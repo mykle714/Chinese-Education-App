@@ -56,9 +56,10 @@ export interface IDictionaryDAL extends IBaseDAL<DictionaryEntry, DictionaryEntr
   }>(entries: T[], language?: string): Promise<T[]>;
 
   /**
-   * Enrich entries with per-character expansion metadata derived from dictionary lookups.
-   * The metadata shape is:
-   * - `expansionMetadata: Record<char, { pronunciation?, definition? }>`
+   * Enrich entries with GSA-segmented expansion data derived from dictionary lookups.
+   * Each entry gains:
+   * - `expansionSegments: string[]` — GSA word tokens for the expansion string
+   * - `expansionMetadata: Record<segment, { pronunciation?, definition? }>` — keyed by segment
    *
    * @param entries - Array of objects with optional `expansion` field
    * @param language - Language filter for dictionary lookups

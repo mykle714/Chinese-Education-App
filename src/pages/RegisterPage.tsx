@@ -15,6 +15,7 @@ import {
     Alert,
     CircularProgress
 } from '@mui/material';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 // Define the form validation schema
 const registerSchema = z.object({
@@ -30,6 +31,7 @@ const registerSchema = z.object({
 type RegisterFormData = z.infer<typeof registerSchema>;
 
 function RegisterPage() {
+    usePageTitle("Register");
     const { register, error } = useAuth();
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [registerError, setRegisterError] = useState<string | null>(error);

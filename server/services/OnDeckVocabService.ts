@@ -100,6 +100,17 @@ export class OnDeckVocabService {
   }
 
   /**
+   * Run the standard three-stage enrichment pipeline on a list of vocab entries.
+   * Adds example sentence metadata, expansion metadata, and synonym metadata in sequence.
+   * All three stages must run in order since each stage's output feeds the next.
+   */
+  private async enrichEntriesPipeline(entries: VocabEntry[]): Promise<VocabEntry[]> {
+    const withExampleMeta = await this.dictionaryService.enrichExampleSentencesMetadataBatch(entries);
+    const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(withExampleMeta);
+    return this.dictionaryService.enrichEntriesWithSynonymMetadata(withExpansionMeta);
+  }
+
+  /**
    * Get all library cards (cards with starterPackBucket = 'library').
    */
   async getLibraryCards(userId: string): Promise<VocabEntry[]> {
@@ -117,9 +128,7 @@ export class OnDeckVocabService {
         ORDER BY ve."createdAt" DESC
       `, [userId]);
 
-      const withExampleMeta = await this.dictionaryService.enrichExampleSentencesMetadataBatch(result.rows);
-      const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(withExampleMeta);
-      return await this.dictionaryService.enrichEntriesWithSynonymMetadata(withExpansionMeta);
+      return await this.enrichEntriesPipeline(result.rows);
     } finally {
       client.release();
     }
@@ -143,9 +152,7 @@ export class OnDeckVocabService {
         ORDER BY ve."createdAt" DESC
       `, [userId]);
 
-      const withExampleMeta = await this.dictionaryService.enrichExampleSentencesMetadataBatch(result.rows);
-      const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(withExampleMeta);
-      return await this.dictionaryService.enrichEntriesWithSynonymMetadata(withExpansionMeta);
+      return await this.enrichEntriesPipeline(result.rows);
     } finally {
       client.release();
     }
@@ -170,9 +177,7 @@ export class OnDeckVocabService {
         ORDER BY ve."createdAt" DESC
       `, [userId]);
 
-      const withExampleMeta = await this.dictionaryService.enrichExampleSentencesMetadataBatch(result.rows);
-      const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(withExampleMeta);
-      return await this.dictionaryService.enrichEntriesWithSynonymMetadata(withExpansionMeta);
+      return await this.enrichEntriesPipeline(result.rows);
     } finally {
       client.release();
     }
@@ -197,9 +202,7 @@ export class OnDeckVocabService {
         ORDER BY ve."createdAt" DESC
       `, [userId]);
 
-      const withExampleMeta = await this.dictionaryService.enrichExampleSentencesMetadataBatch(result.rows);
-      const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(withExampleMeta);
-      return await this.dictionaryService.enrichEntriesWithSynonymMetadata(withExpansionMeta);
+      return await this.enrichEntriesPipeline(result.rows);
     } finally {
       client.release();
     }
@@ -227,10 +230,9 @@ export class OnDeckVocabService {
         ORDER BY ve."createdAt" DESC
       `, [userId, category]);
 
-      const withExampleMeta = await this.dictionaryService.enrichExampleSentencesMetadataBatch(result.rows);
-      const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(withExampleMeta);
-      const withSynonymMetadata = await this.dictionaryService.enrichEntriesWithSynonymMetadata(withExpansionMeta);
-      return await this.enrichMultipleWithRelatedWords(userId, withSynonymMetadata);
+      // Run the three-stage enrichment pipeline, then add related words
+      const enriched = await this.enrichEntriesPipeline(result.rows);
+      return await this.enrichMultipleWithRelatedWords(userId, enriched);
     } finally {
       client.release();
     }
@@ -385,11 +387,9 @@ export class OnDeckVocabService {
         workingLoop.sort(() => Math.random() - 0.5);
       }
 
-      // Enrich with computed example sentences, synonym metadata, and related words
-      const withExampleMeta = await this.dictionaryService.enrichExampleSentencesMetadataBatch(workingLoop);
-      const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(withExampleMeta);
-      const withSynonymMetadata = await this.dictionaryService.enrichEntriesWithSynonymMetadata(withExpansionMeta);
-      return await this.enrichMultipleWithRelatedWords(userId, withSynonymMetadata);
+      // Run the three-stage enrichment pipeline, then add related words
+      const enriched = await this.enrichEntriesPipeline(workingLoop);
+      return await this.enrichMultipleWithRelatedWords(userId, enriched);
     } finally {
       client.release();
     }

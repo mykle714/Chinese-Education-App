@@ -293,7 +293,7 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
         height: 0,
       }))
     );
-  }, [vocabWord, charData]);
+  }, [vocabWord, charData, chars]);
 
   const selectFromIndex = (charIndex: number) => {
     const info = charData[charIndex];

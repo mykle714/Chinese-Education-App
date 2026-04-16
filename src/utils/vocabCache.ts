@@ -1,30 +1,47 @@
 /**
- * Vocabulary cache management system with CRUD synchronization
- * Provides persistent caching of vocabulary entries with real-time updates
+ * Vocabulary and dictionary cache management.
+ *
+ * Both caches share the same shape:
+ *   { data: { [token]: { entries: T[], lastAccessed: Date } }, metadata: CacheMetadata }
+ *
+ * The shared logic (localStorage read/write, LRU eviction, size limits) lives in
+ * LocalStorageCacheManager<T>. Vocab-specific mutations (add/update/remove a single
+ * entry across all token buckets) are implemented on top using the manager's public API.
  */
 
 import type { VocabEntry, DictionaryEntry } from '../types.js';
 
-export interface VocabCacheEntry {
-  entries: VocabEntry[];
+// ─── Shared Types ────────────────────────────────────────────────────────────
+
+export interface CacheEntry<T> {
+  entries: T[];
   lastAccessed: Date;
 }
 
-export interface VocabCacheStorage {
-  [token: string]: VocabCacheEntry;
+export interface CacheStorage<T> {
+  [token: string]: CacheEntry<T>;
 }
 
-export interface VocabCacheMetadata {
+export interface CacheMetadata {
   lastUpdated: Date;
   version: string;
   entryCount: number;
   totalTokens: number;
 }
 
-export interface VocabCache {
-  data: VocabCacheStorage;
-  metadata: VocabCacheMetadata;
+export interface CacheShape<T> {
+  data: CacheStorage<T>;
+  metadata: CacheMetadata;
 }
+
+// Legacy type aliases kept for external consumers
+export type VocabCacheEntry = CacheEntry<VocabEntry>;
+export type VocabCacheStorage = CacheStorage<VocabEntry>;
+export type VocabCacheMetadata = CacheMetadata;
+export type VocabCache = CacheShape<VocabEntry>;
+export type DictionaryCacheEntry = CacheEntry<DictionaryEntry>;
+export type DictionaryCacheStorage = CacheStorage<DictionaryEntry>;
+export type DictionaryCache = CacheShape<DictionaryEntry>;
 
 // Cache invalidation reasons
 export const CacheInvalidationReason = {
@@ -39,142 +56,196 @@ export const CacheInvalidationReason = {
 
 export type CacheInvalidationReason = typeof CacheInvalidationReason[keyof typeof CacheInvalidationReason];
 
-const VOCAB_CACHE_KEY = 'cow_vocab_cache';
-const DICT_CACHE_KEY = 'cow_dict_cache';
+// ─── Generic Cache Manager ────────────────────────────────────────────────────
+
 const CACHE_VERSION = '1.0.0';
-const MAX_CACHE_SIZE_MB = 10; // Maximum cache size in MB
-const STALE_CACHE_DAYS = 7; // Cache considered stale after 7 days
+const MAX_CACHE_SIZE_MB = 10;
+const STALE_CACHE_DAYS = 7;
 
 /**
- * Gets the current vocabulary cache from localStorage
- * @returns VocabCache object or null if not found/invalid
+ * Generic localStorage cache for token → entry[] mappings.
+ * Handles read/write, LRU eviction, size enforcement, and version gating.
+ * Instantiate once per data type (vocab, dictionary) with a unique storage key.
  */
-function getVocabCache(): VocabCache | null {
-  try {
-    const cacheData = localStorage.getItem(VOCAB_CACHE_KEY);
-    if (!cacheData) return null;
+class LocalStorageCacheManager<T> {
+  private readonly key: string;
+  private readonly logPrefix: string;
 
-    const cache: VocabCache = JSON.parse(cacheData);
-    
-    // Validate cache structure and version
-    if (!cache.metadata || cache.metadata.version !== CACHE_VERSION) {
-      console.log('Cache version mismatch, invalidating cache');
-      invalidateCache(CacheInvalidationReason.VERSION_MISMATCH);
+  constructor(options: { key: string; logPrefix: string }) {
+    this.key = options.key;
+    this.logPrefix = options.logPrefix;
+  }
+
+  // ── Private persistence helpers ──────────────────────────────────────────
+
+  /** Read raw cache from localStorage. Returns null on miss, version mismatch, or parse error. */
+  get(): CacheShape<T> | null {
+    try {
+      const raw = localStorage.getItem(this.key);
+      if (!raw) return null;
+
+      const cache: CacheShape<T> = JSON.parse(raw);
+
+      if (!cache.metadata || cache.metadata.version !== CACHE_VERSION) {
+        console.log(`${this.logPrefix} Version mismatch, invalidating`);
+        this.invalidate(CacheInvalidationReason.VERSION_MISMATCH);
+        return null;
+      }
+
+      // Revive Date strings back to Date objects (JSON.parse gives strings)
+      cache.metadata.lastUpdated = new Date(cache.metadata.lastUpdated);
+      Object.values(cache.data).forEach(entry => {
+        entry.lastAccessed = new Date(entry.lastAccessed);
+      });
+
+      return cache;
+    } catch {
+      console.error(`${this.logPrefix} Error reading cache, invalidating`);
+      this.invalidate(CacheInvalidationReason.CORRUPTION);
       return null;
     }
+  }
 
-    // Convert date strings back to Date objects
-    cache.metadata.lastUpdated = new Date(cache.metadata.lastUpdated);
-    Object.values(cache.data).forEach(entry => {
-      entry.lastAccessed = new Date(entry.lastAccessed);
+  /** Write cache to localStorage, enforcing the size limit. */
+  save(cache: CacheShape<T>): void {
+    try {
+      const json = JSON.stringify(cache);
+      const sizeMB = new Blob([json]).size / (1024 * 1024);
+
+      if (sizeMB > MAX_CACHE_SIZE_MB) {
+        // Evict LRU entries before trying again
+        console.warn(`${this.logPrefix} Size (${sizeMB.toFixed(2)}MB) exceeds limit, running cleanup`);
+        this.cleanup();
+        return;
+      }
+
+      localStorage.setItem(this.key, json);
+    } catch (error) {
+      console.error(`${this.logPrefix} Error saving cache:`, error);
+      if (error instanceof DOMException && error.code === 22) {
+        // QuotaExceededError — storage is full
+        this.invalidate(CacheInvalidationReason.STORAGE_LIMIT);
+      }
+    }
+  }
+
+  // ── Public API ───────────────────────────────────────────────────────────
+
+  /**
+   * Look up a set of tokens in the cache.
+   * Updates lastAccessed timestamps for hits and persists them.
+   */
+  getCachedEntries(tokens: string[]): { foundEntries: T[]; missingTokens: string[] } {
+    const cache = this.get();
+    if (!cache) return { foundEntries: [], missingTokens: tokens };
+
+    const foundEntries: T[] = [];
+    const missingTokens: string[] = [];
+    const now = new Date();
+    let hits = 0;
+
+    tokens.forEach(token => {
+      const entry = cache.data[token];
+      if (entry) {
+        entry.lastAccessed = now;
+        foundEntries.push(...entry.entries);
+        hits++;
+      } else {
+        missingTokens.push(token);
+      }
     });
 
-    return cache;
-  } catch (error) {
-    console.error('Error reading vocabulary cache:', error);
-    invalidateCache(CacheInvalidationReason.CORRUPTION);
+    if (hits > 0) {
+      this.save(cache);
+      console.log(`${this.logPrefix} ${hits}/${tokens.length} tokens cached (${(hits / tokens.length * 100).toFixed(1)}%)`);
+    }
+
+    return { foundEntries, missingTokens };
+  }
+
+  /**
+   * Write a batch of token → entries[] pairs into the cache.
+   */
+  cacheEntries(tokenEntries: { [token: string]: T[] }): void {
+    const cache = this.get() ?? this.createEmpty();
+
+    const now = new Date();
+    let newCount = 0;
+
+    Object.entries(tokenEntries).forEach(([token, entries]) => {
+      cache.data[token] = { entries, lastAccessed: now };
+      newCount += entries.length;
+    });
+
+    cache.metadata.lastUpdated = now;
+    cache.metadata.entryCount += newCount;
+    cache.metadata.totalTokens = Object.keys(cache.data).length;
+
+    this.save(cache);
+    console.log(`${this.logPrefix} Cached ${newCount} entries for ${Object.keys(tokenEntries).length} tokens`);
+  }
+
+  /**
+   * Remove all entries from localStorage.
+   */
+  invalidate(reason: CacheInvalidationReason): void {
+    try {
+      localStorage.removeItem(this.key);
+      console.log(`${this.logPrefix} Invalidated: ${reason}`);
+    } catch (error) {
+      console.error(`${this.logPrefix} Error invalidating:`, error);
+    }
+  }
+
+  /**
+   * Check staleness and size conditions; return the reason to invalidate, or null.
+   */
+  shouldInvalidate(): CacheInvalidationReason | null {
+    const cache = this.get();
+    if (!cache) return null;
+
+    const daysSince = (Date.now() - cache.metadata.lastUpdated.getTime()) / (1000 * 60 * 60 * 24);
+    if (daysSince > STALE_CACHE_DAYS) return CacheInvalidationReason.STALE_DATA;
+
+    try {
+      const sizeMB = new Blob([JSON.stringify(cache)]).size / (1024 * 1024);
+      if (sizeMB > MAX_CACHE_SIZE_MB) return CacheInvalidationReason.STORAGE_LIMIT;
+    } catch {
+      return CacheInvalidationReason.CORRUPTION;
+    }
+
     return null;
   }
-}
 
-/**
- * Saves the vocabulary cache to localStorage
- * @param cache VocabCache object to save
- */
-function saveVocabCache(cache: VocabCache): void {
-  try {
-    // Check cache size before saving
-    const cacheString = JSON.stringify(cache);
-    const cacheSizeMB = new Blob([cacheString]).size / (1024 * 1024);
-    
-    if (cacheSizeMB > MAX_CACHE_SIZE_MB) {
-      console.warn(`Cache size (${cacheSizeMB.toFixed(2)}MB) exceeds limit, cleaning up`);
-      cleanupCache();
-      return;
+  /**
+   * LRU eviction: remove the oldest 25% of token buckets to reclaim space.
+   */
+  cleanup(): void {
+    const cache = this.get();
+    if (!cache) return;
+
+    // Sort token buckets oldest-first by lastAccessed
+    const sorted = Object.entries(cache.data)
+      .sort(([, a], [, b]) => a.lastAccessed.getTime() - b.lastAccessed.getTime());
+
+    const toRemove = Math.floor(sorted.length * 0.25);
+    for (let i = 0; i < toRemove; i++) {
+      delete cache.data[sorted[i][0]];
     }
 
-    localStorage.setItem(VOCAB_CACHE_KEY, cacheString);
-  } catch (error) {
-    console.error('Error saving vocabulary cache:', error);
-    if (error instanceof DOMException && error.code === 22) {
-      // Storage quota exceeded
-      invalidateCache(CacheInvalidationReason.STORAGE_LIMIT);
-    }
-  }
-}
+    cache.metadata.lastUpdated = new Date();
+    cache.metadata.totalTokens = Object.keys(cache.data).length;
+    cache.metadata.entryCount = Object.values(cache.data)
+      .reduce((sum, e) => sum + e.entries.length, 0);
 
-/**
- * Gets cached vocabulary entries for specific tokens
- * @param tokens Array of tokens to look up
- * @returns Object with found entries and missing tokens
- */
-export function getCachedEntries(tokens: string[]): {
-  foundEntries: VocabEntry[];
-  missingTokens: string[];
-} {
-  const cache = getVocabCache();
-  if (!cache) {
-    return { foundEntries: [], missingTokens: tokens };
+    this.save(cache);
+    console.log(`${this.logPrefix} Cleanup: removed ${toRemove} token buckets`);
   }
 
-  const foundEntries: VocabEntry[] = [];
-  const missingTokens: string[] = [];
-  const now = new Date();
-  
-  // Track cache hit statistics for logging
-  let positiveCacheHits = 0; // Tokens with vocabulary entries
-  let negativeCacheHits = 0; // Tokens cached with no entries (negative cache)
-  let cacheMisses = 0; // Tokens not in cache at all
+  // ── Helpers ──────────────────────────────────────────────────────────────
 
-  tokens.forEach(token => {
-    const cacheEntry = cache.data[token];
-    if (cacheEntry) {
-      // Update last accessed time
-      cacheEntry.lastAccessed = now;
-      foundEntries.push(...cacheEntry.entries);
-      
-      // Track cache hit type
-      if (cacheEntry.entries.length > 0) {
-        positiveCacheHits++;
-      } else {
-        negativeCacheHits++;
-      }
-    } else {
-      missingTokens.push(token);
-      cacheMisses++;
-    }
-  });
-
-  // Save updated access times if we accessed any cached entries
-  if (positiveCacheHits > 0 || negativeCacheHits > 0) {
-    saveVocabCache(cache);
-  }
-
-  // Log detailed cache statistics if there are any cache hits
-  if (positiveCacheHits > 0 || negativeCacheHits > 0) {
-    console.log(`[VOCAB-CACHE] 📊 Cache hit breakdown:`, {
-      totalTokens: tokens.length,
-      positiveCacheHits, // Tokens with entries
-      negativeCacheHits, // Tokens with no entries (negative cache)
-      cacheMisses,
-      entriesReturned: foundEntries.length,
-      cacheEfficiency: `${((positiveCacheHits + negativeCacheHits) / tokens.length * 100).toFixed(1)}%`
-    });
-  }
-
-  return { foundEntries, missingTokens };
-}
-
-/**
- * Caches vocabulary entries for specific tokens
- * @param tokenEntries Object mapping tokens to their vocabulary entries
- */
-export function cacheEntries(tokenEntries: { [token: string]: VocabEntry[] }): void {
-  let cache = getVocabCache();
-  
-  if (!cache) {
-    // Initialize new cache
-    cache = {
+  private createEmpty(): CacheShape<T> {
+    return {
       data: {},
       metadata: {
         lastUpdated: new Date(),
@@ -184,74 +255,87 @@ export function cacheEntries(tokenEntries: { [token: string]: VocabEntry[] }): v
       }
     };
   }
+}
 
-  const now = new Date();
-  let newEntryCount = 0;
+// ─── Cache Instances ──────────────────────────────────────────────────────────
 
-  Object.entries(tokenEntries).forEach(([token, entries]) => {
-    cache!.data[token] = {
-      entries,
-      lastAccessed: now
-    };
-    newEntryCount += entries.length;
-  });
+const vocabManager = new LocalStorageCacheManager<VocabEntry>({
+  key: 'cow_vocab_cache',
+  logPrefix: '[VOCAB-CACHE]'
+});
 
-  // Update metadata
-  cache.metadata.lastUpdated = now;
-  cache.metadata.entryCount += newEntryCount;
-  cache.metadata.totalTokens = Object.keys(cache.data).length;
+const dictManager = new LocalStorageCacheManager<DictionaryEntry>({
+  key: 'cow_dict_cache',
+  logPrefix: '[DICT-CACHE]'
+});
 
-  saveVocabCache(cache);
+// ─── Vocab Cache Public API ───────────────────────────────────────────────────
+
+export function getCachedEntries(tokens: string[]) {
+  return vocabManager.getCachedEntries(tokens);
+}
+
+export function cacheEntries(tokenEntries: { [token: string]: VocabEntry[] }) {
+  vocabManager.cacheEntries(tokenEntries);
+}
+
+export function invalidateCache(reason: CacheInvalidationReason) {
+  vocabManager.invalidate(reason);
+}
+
+export function shouldInvalidateCache(): CacheInvalidationReason | null {
+  return vocabManager.shouldInvalidate();
+}
+
+export function cleanupCache() {
+  vocabManager.cleanup();
 }
 
 /**
- * Updates a cached vocabulary entry across all tokens
- * @param updatedEntry The updated vocabulary entry
+ * Update a single VocabEntry across every token bucket that contains it.
+ * Called when the user edits a card's content.
  */
 export function updateCachedEntry(updatedEntry: VocabEntry): void {
-  const cache = getVocabCache();
+  const cache = vocabManager.get();
   if (!cache) return;
 
   let updated = false;
-
-  // Find and update the entry in all token caches
-  Object.values(cache.data).forEach(cacheEntry => {
-    const entryIndex = cacheEntry.entries.findIndex(entry => entry.id === updatedEntry.id);
-    if (entryIndex !== -1) {
-      cacheEntry.entries[entryIndex] = updatedEntry;
+  Object.values(cache.data).forEach(bucket => {
+    const idx = bucket.entries.findIndex(e => e.id === updatedEntry.id);
+    if (idx !== -1) {
+      bucket.entries[idx] = updatedEntry;
       updated = true;
     }
   });
 
   if (updated) {
     cache.metadata.lastUpdated = new Date();
-    saveVocabCache(cache);
+    vocabManager.save(cache);
   }
 }
 
 /**
- * Removes a vocabulary entry from all token caches
- * @param entryId ID of the entry to remove
+ * Remove a VocabEntry by ID from every token bucket that contains it.
+ * Called when the user deletes a card.
  */
 export function removeCachedEntry(entryId: number): void {
-  const cache = getVocabCache();
+  const cache = vocabManager.get();
   if (!cache) return;
 
   let removed = false;
   let removedCount = 0;
 
-  // Remove the entry from all token caches
   Object.keys(cache.data).forEach(token => {
-    const originalLength = cache.data[token].entries.length;
-    cache.data[token].entries = cache.data[token].entries.filter(entry => entry.id !== entryId);
-    const newLength = cache.data[token].entries.length;
-    
-    if (newLength < originalLength) {
+    const before = cache.data[token].entries.length;
+    cache.data[token].entries = cache.data[token].entries.filter(e => e.id !== entryId);
+    const delta = before - cache.data[token].entries.length;
+
+    if (delta > 0) {
       removed = true;
-      removedCount += (originalLength - newLength);
+      removedCount += delta;
     }
 
-    // Remove token cache if it becomes empty
+    // Drop the token bucket entirely if it's now empty
     if (cache.data[token].entries.length === 0) {
       delete cache.data[token];
     }
@@ -261,117 +345,42 @@ export function removeCachedEntry(entryId: number): void {
     cache.metadata.lastUpdated = new Date();
     cache.metadata.entryCount -= removedCount;
     cache.metadata.totalTokens = Object.keys(cache.data).length;
-    saveVocabCache(cache);
+    vocabManager.save(cache);
   }
 }
 
 /**
- * Adds a new vocabulary entry to relevant token caches
- * @param newEntry The new vocabulary entry to add
+ * Add a new VocabEntry to any token buckets whose key overlaps with the entry's key.
+ * Called when the user saves a new card so the reader immediately sees it without a refetch.
  */
 export function addCachedEntry(newEntry: VocabEntry): void {
-  const cache = getVocabCache();
+  const cache = vocabManager.get();
   if (!cache) return;
 
-  // Find tokens that match the new entry's key
   const entryKey = newEntry.entryKey;
-  const relevantTokens: string[] = [];
 
-  // Check all cached tokens to see if they match or are contained in the new entry
-  Object.keys(cache.data).forEach(token => {
-    if (entryKey.includes(token) || token.includes(entryKey)) {
-      relevantTokens.push(token);
+  // A token bucket is relevant if either the token is a substring of the entry key or vice-versa
+  const relevantTokens = Object.keys(cache.data).filter(
+    token => entryKey.includes(token) || token.includes(entryKey)
+  );
+
+  if (relevantTokens.length === 0) return;
+
+  relevantTokens.forEach(token => {
+    const bucket = cache.data[token];
+    const alreadyPresent = bucket.entries.some(e => e.id === newEntry.id);
+    if (!alreadyPresent) {
+      bucket.entries.push(newEntry);
     }
   });
 
-  if (relevantTokens.length > 0) {
-    relevantTokens.forEach(token => {
-      // Check if entry already exists in this token cache
-      const existingIndex = cache.data[token].entries.findIndex(entry => entry.id === newEntry.id);
-      if (existingIndex === -1) {
-        cache.data[token].entries.push(newEntry);
-      }
-    });
-
-    cache.metadata.lastUpdated = new Date();
-    cache.metadata.entryCount += relevantTokens.length;
-    saveVocabCache(cache);
-  }
-}
-
-/**
- * Invalidates the entire vocabulary cache
- * @param reason Reason for cache invalidation
- */
-export function invalidateCache(reason: CacheInvalidationReason): void {
-  try {
-    localStorage.removeItem(VOCAB_CACHE_KEY);
-    console.log(`Vocabulary cache invalidated: ${reason}`);
-  } catch (error) {
-    console.error('Error invalidating vocabulary cache:', error);
-  }
-}
-
-/**
- * Checks if cache should be invalidated based on various conditions
- * @returns CacheInvalidationReason if cache should be invalidated, null otherwise
- */
-export function shouldInvalidateCache(): CacheInvalidationReason | null {
-  const cache = getVocabCache();
-  if (!cache) return null;
-
-  // Check for stale data
-  const daysSinceUpdate = (Date.now() - cache.metadata.lastUpdated.getTime()) / (1000 * 60 * 60 * 24);
-  if (daysSinceUpdate > STALE_CACHE_DAYS) {
-    return CacheInvalidationReason.STALE_DATA;
-  }
-
-  // Check cache size
-  try {
-    const cacheString = JSON.stringify(cache);
-    const cacheSizeMB = new Blob([cacheString]).size / (1024 * 1024);
-    if (cacheSizeMB > MAX_CACHE_SIZE_MB) {
-      return CacheInvalidationReason.STORAGE_LIMIT;
-    }
-  } catch {
-    return CacheInvalidationReason.CORRUPTION;
-  }
-
-  return null;
-}
-
-/**
- * Cleans up the cache by removing least recently accessed entries
- */
-export function cleanupCache(): void {
-  const cache = getVocabCache();
-  if (!cache) return;
-
-  // Sort tokens by last accessed time (oldest first)
-  const sortedTokens = Object.entries(cache.data)
-    .sort(([, a], [, b]) => a.lastAccessed.getTime() - b.lastAccessed.getTime());
-
-  // Remove oldest 25% of tokens
-  const tokensToRemove = Math.floor(sortedTokens.length * 0.25);
-  
-  for (let i = 0; i < tokensToRemove; i++) {
-    const [token] = sortedTokens[i];
-    delete cache.data[token];
-  }
-
-  // Update metadata
   cache.metadata.lastUpdated = new Date();
-  cache.metadata.totalTokens = Object.keys(cache.data).length;
-  cache.metadata.entryCount = Object.values(cache.data)
-    .reduce((sum, entry) => sum + entry.entries.length, 0);
-
-  saveVocabCache(cache);
-  console.log(`Cache cleanup completed, removed ${tokensToRemove} token caches`);
+  cache.metadata.entryCount += relevantTokens.length;
+  vocabManager.save(cache);
 }
 
 /**
- * Gets cache statistics for monitoring and debugging
- * @returns Object with cache statistics
+ * Get size and staleness stats for monitoring/debugging the vocab cache.
  */
 export function getCacheStats(): {
   totalTokens: number;
@@ -381,29 +390,20 @@ export function getCacheStats(): {
   oldestAccess: Date | null;
   newestAccess: Date | null;
 } {
-  const cache = getVocabCache();
+  const cache = vocabManager.get();
   if (!cache) {
-    return {
-      totalTokens: 0,
-      totalEntries: 0,
-      cacheSizeMB: 0,
-      lastUpdated: null,
-      oldestAccess: null,
-      newestAccess: null
-    };
+    return { totalTokens: 0, totalEntries: 0, cacheSizeMB: 0, lastUpdated: null, oldestAccess: null, newestAccess: null };
   }
 
-  const cacheString = JSON.stringify(cache);
-  const cacheSizeMB = new Blob([cacheString]).size / (1024 * 1024);
-  
-  const accessTimes = Object.values(cache.data).map(entry => entry.lastAccessed);
+  const cacheSizeMB = Number((new Blob([JSON.stringify(cache)]).size / (1024 * 1024)).toFixed(2));
+  const accessTimes = Object.values(cache.data).map(e => e.lastAccessed);
   const oldestAccess = accessTimes.length > 0 ? new Date(Math.min(...accessTimes.map(d => d.getTime()))) : null;
   const newestAccess = accessTimes.length > 0 ? new Date(Math.max(...accessTimes.map(d => d.getTime()))) : null;
 
   return {
     totalTokens: cache.metadata.totalTokens,
     totalEntries: cache.metadata.entryCount,
-    cacheSizeMB: Number(cacheSizeMB.toFixed(2)),
+    cacheSizeMB,
     lastUpdated: cache.metadata.lastUpdated,
     oldestAccess,
     newestAccess
@@ -411,39 +411,23 @@ export function getCacheStats(): {
 }
 
 /**
- * Validates cache consistency and repairs if necessary
- * @returns Object with validation results
+ * Validate metadata counts against actual data and repair if mismatched.
+ * Useful for diagnosing cache consistency issues in development.
  */
-export function validateAndRepairCache(): {
-  isValid: boolean;
-  errors: string[];
-  repaired: boolean;
-} {
-  const cache = getVocabCache();
-  if (!cache) {
-    return { isValid: false, errors: ['Cache not found'], repaired: false };
-  }
+export function validateAndRepairCache(): { isValid: boolean; errors: string[]; repaired: boolean } {
+  const cache = vocabManager.get();
+  if (!cache) return { isValid: false, errors: ['Cache not found'], repaired: false };
 
   const errors: string[] = [];
   let repaired = false;
 
-  // Validate metadata
-  if (!cache.metadata) {
-    errors.push('Missing cache metadata');
-    return { isValid: false, errors, repaired: false };
-  }
-
-  // Validate entry counts
-  const actualEntryCount = Object.values(cache.data)
-    .reduce((sum, entry) => sum + entry.entries.length, 0);
-  
+  const actualEntryCount = Object.values(cache.data).reduce((sum, e) => sum + e.entries.length, 0);
   if (cache.metadata.entryCount !== actualEntryCount) {
     errors.push(`Entry count mismatch: expected ${cache.metadata.entryCount}, found ${actualEntryCount}`);
     cache.metadata.entryCount = actualEntryCount;
     repaired = true;
   }
 
-  // Validate token count
   const actualTokenCount = Object.keys(cache.data).length;
   if (cache.metadata.totalTokens !== actualTokenCount) {
     errors.push(`Token count mismatch: expected ${cache.metadata.totalTokens}, found ${actualTokenCount}`);
@@ -451,195 +435,21 @@ export function validateAndRepairCache(): {
     repaired = true;
   }
 
-  // Save repaired cache if needed
-  if (repaired) {
-    saveVocabCache(cache);
-  }
+  if (repaired) vocabManager.save(cache);
 
-  return {
-    isValid: errors.length === 0,
-    errors,
-    repaired
-  };
+  return { isValid: errors.length === 0, errors, repaired };
 }
 
-// ========================================
-// DICTIONARY CACHE FUNCTIONS
-// ========================================
+// ─── Dictionary Cache Public API ──────────────────────────────────────────────
 
-export interface DictionaryCacheEntry {
-  entries: DictionaryEntry[];
-  lastAccessed: Date;
+export function getCachedDictionaryEntries(tokens: string[]) {
+  return dictManager.getCachedEntries(tokens);
 }
 
-export interface DictionaryCacheStorage {
-  [token: string]: DictionaryCacheEntry;
+export function cacheDictionaryEntries(tokenEntries: { [token: string]: DictionaryEntry[] }) {
+  dictManager.cacheEntries(tokenEntries);
 }
 
-export interface DictionaryCache {
-  data: DictionaryCacheStorage;
-  metadata: VocabCacheMetadata;
-}
-
-/**
- * Gets the dictionary cache from localStorage
- */
-function getDictionaryCache(): DictionaryCache | null {
-  try {
-    const cacheData = localStorage.getItem(DICT_CACHE_KEY);
-    if (!cacheData) return null;
-
-    const cache: DictionaryCache = JSON.parse(cacheData);
-    
-    if (!cache.metadata || cache.metadata.version !== CACHE_VERSION) {
-      console.log('[DICT-CACHE] Version mismatch, invalidating');
-      invalidateDictionaryCache(CacheInvalidationReason.VERSION_MISMATCH);
-      return null;
-    }
-
-    cache.metadata.lastUpdated = new Date(cache.metadata.lastUpdated);
-    Object.values(cache.data).forEach(entry => {
-      entry.lastAccessed = new Date(entry.lastAccessed);
-    });
-
-    return cache;
-  } catch (error) {
-    console.error('[DICT-CACHE] Error reading cache:', error);
-    invalidateDictionaryCache(CacheInvalidationReason.CORRUPTION);
-    return null;
-  }
-}
-
-/**
- * Saves the dictionary cache to localStorage
- */
-function saveDictionaryCache(cache: DictionaryCache): void {
-  try {
-    const cacheString = JSON.stringify(cache);
-    const cacheSizeMB = new Blob([cacheString]).size / (1024 * 1024);
-    
-    if (cacheSizeMB > MAX_CACHE_SIZE_MB) {
-      console.warn(`[DICT-CACHE] Size (${cacheSizeMB.toFixed(2)}MB) exceeds limit, cleaning up`);
-      cleanupDictionaryCache();
-      return;
-    }
-
-    localStorage.setItem(DICT_CACHE_KEY, cacheString);
-  } catch (error) {
-    console.error('[DICT-CACHE] Error saving:', error);
-    if (error instanceof DOMException && error.code === 22) {
-      invalidateDictionaryCache(CacheInvalidationReason.STORAGE_LIMIT);
-    }
-  }
-}
-
-/**
- * Gets cached dictionary entries for specific tokens
- */
-export function getCachedDictionaryEntries(tokens: string[]): {
-  foundEntries: DictionaryEntry[];
-  missingTokens: string[];
-} {
-  const cache = getDictionaryCache();
-  if (!cache) {
-    return { foundEntries: [], missingTokens: tokens };
-  }
-
-  const foundEntries: DictionaryEntry[] = [];
-  const missingTokens: string[] = [];
-  const now = new Date();
-  
-  let cacheHits = 0;
-
-  tokens.forEach(token => {
-    const cacheEntry = cache.data[token];
-    if (cacheEntry) {
-      cacheEntry.lastAccessed = now;
-      foundEntries.push(...cacheEntry.entries);
-      cacheHits++;
-    } else {
-      missingTokens.push(token);
-    }
-  });
-
-  if (cacheHits > 0) {
-    saveDictionaryCache(cache);
-    console.log(`[DICT-CACHE] 📖 ${cacheHits}/${tokens.length} tokens cached (${(cacheHits/tokens.length*100).toFixed(1)}%)`);
-  }
-
-  return { foundEntries, missingTokens };
-}
-
-/**
- * Caches dictionary entries for specific tokens
- */
-export function cacheDictionaryEntries(tokenEntries: { [token: string]: DictionaryEntry[] }): void {
-  let cache = getDictionaryCache();
-  
-  if (!cache) {
-    cache = {
-      data: {},
-      metadata: {
-        lastUpdated: new Date(),
-        version: CACHE_VERSION,
-        entryCount: 0,
-        totalTokens: 0
-      }
-    };
-  }
-
-  const now = new Date();
-  let newEntryCount = 0;
-
-  Object.entries(tokenEntries).forEach(([token, entries]) => {
-    cache!.data[token] = {
-      entries,
-      lastAccessed: now
-    };
-    newEntryCount += entries.length;
-  });
-
-  cache.metadata.lastUpdated = now;
-  cache.metadata.entryCount += newEntryCount;
-  cache.metadata.totalTokens = Object.keys(cache.data).length;
-
-  saveDictionaryCache(cache);
-  console.log(`[DICT-CACHE] 💾 Cached ${newEntryCount} entries for ${Object.keys(tokenEntries).length} tokens`);
-}
-
-/**
- * Invalidates the dictionary cache
- */
-export function invalidateDictionaryCache(reason: CacheInvalidationReason): void {
-  try {
-    localStorage.removeItem(DICT_CACHE_KEY);
-    console.log(`[DICT-CACHE] Invalidated: ${reason}`);
-  } catch (error) {
-    console.error('[DICT-CACHE] Error invalidating:', error);
-  }
-}
-
-/**
- * Cleans up dictionary cache by removing LRU entries
- */
-function cleanupDictionaryCache(): void {
-  const cache = getDictionaryCache();
-  if (!cache) return;
-
-  const sortedTokens = Object.entries(cache.data)
-    .sort(([, a], [, b]) => a.lastAccessed.getTime() - b.lastAccessed.getTime());
-
-  const tokensToRemove = Math.floor(sortedTokens.length * 0.25);
-  
-  for (let i = 0; i < tokensToRemove; i++) {
-    delete cache.data[sortedTokens[i][0]];
-  }
-
-  cache.metadata.lastUpdated = new Date();
-  cache.metadata.totalTokens = Object.keys(cache.data).length;
-  cache.metadata.entryCount = Object.values(cache.data)
-    .reduce((sum, entry) => sum + entry.entries.length, 0);
-
-  saveDictionaryCache(cache);
-  console.log(`[DICT-CACHE] Cleanup: removed ${tokensToRemove} token caches`);
+export function invalidateDictionaryCache(reason: CacheInvalidationReason) {
+  dictManager.invalidate(reason);
 }

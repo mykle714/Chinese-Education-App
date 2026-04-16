@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { UserWorkPointsService } from '../services/UserWorkPointsService.js';
-import { ValidationError, NotFoundError, DALError } from '../types/dal.js';
+import { requireUserId, handleControllerError } from '../utils/controllerUtils.js';
 
 /**
  * UserWorkPoints Controller - Handles HTTP requests and responses for work points operations
@@ -15,29 +15,19 @@ export class UserWorkPointsController {
    */
   async incrementWorkPoints(req: Request, res: Response): Promise<void> {
     try {
-      const userId = (req as any).user?.userId;
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
       const { date } = req.body;
-
-      if (!userId) {
-        res.status(401).json({
-          error: 'User not authenticated',
-          code: 'ERR_NOT_AUTHENTICATED'
-        });
-        return;
-      }
-
       if (!date) {
-        res.status(400).json({
-          error: 'Date is required',
-          code: 'ERR_MISSING_DATE'
-        });
+        res.status(400).json({ error: 'Date is required', code: 'ERR_MISSING_DATE' });
         return;
       }
 
       await this.userWorkPointsService.incrementWorkPoints(userId, { date });
       res.status(204).end();
     } catch (error) {
-      this.handleError(error, res);
+      handleControllerError(error, res, 'UserWorkPointsController.incrementWorkPoints');
     }
   }
 
@@ -48,29 +38,19 @@ export class UserWorkPointsController {
    */
   async newDayOperation(req: Request, res: Response): Promise<void> {
     try {
-      const userId = (req as any).user?.userId;
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
       const { date } = req.body;
-
-      if (!userId) {
-        res.status(401).json({
-          error: 'User not authenticated',
-          code: 'ERR_NOT_AUTHENTICATED'
-        });
-        return;
-      }
-
       if (!date) {
-        res.status(400).json({
-          error: 'Date is required',
-          code: 'ERR_MISSING_DATE'
-        });
+        res.status(400).json({ error: 'Date is required', code: 'ERR_MISSING_DATE' });
         return;
       }
 
       await this.userWorkPointsService.newDayOperation(userId, date);
       res.status(204).end();
     } catch (error) {
-      this.handleError(error, res);
+      handleControllerError(error, res, 'UserWorkPointsController.newDayOperation');
     }
   }
 
@@ -80,29 +60,19 @@ export class UserWorkPointsController {
    */
   async hasWorkPointsForDate(req: Request, res: Response): Promise<void> {
     try {
-      const userId = (req as any).user?.userId;
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
       const date = req.params.date;
-
-      if (!userId) {
-        res.status(401).json({
-          error: 'User not authenticated',
-          code: 'ERR_NOT_AUTHENTICATED'
-        });
-        return;
-      }
-
       if (!date) {
-        res.status(400).json({
-          error: 'Date parameter is required',
-          code: 'ERR_MISSING_DATE'
-        });
+        res.status(400).json({ error: 'Date parameter is required', code: 'ERR_MISSING_DATE' });
         return;
       }
 
       const hasPoints = await this.userWorkPointsService.hasWorkPointsForDate(userId, date);
       res.json({ hasWorkPoints: hasPoints });
     } catch (error) {
-      this.handleError(error, res);
+      handleControllerError(error, res, 'UserWorkPointsController.hasWorkPointsForDate');
     }
   }
 
@@ -112,29 +82,19 @@ export class UserWorkPointsController {
    */
   async getTotalWorkPointsForDate(req: Request, res: Response): Promise<void> {
     try {
-      const userId = (req as any).user?.userId;
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
       const date = req.params.date;
-
-      if (!userId) {
-        res.status(401).json({
-          error: 'User not authenticated',
-          code: 'ERR_NOT_AUTHENTICATED'
-        });
-        return;
-      }
-
       if (!date) {
-        res.status(400).json({
-          error: 'Date parameter is required',
-          code: 'ERR_MISSING_DATE'
-        });
+        res.status(400).json({ error: 'Date parameter is required', code: 'ERR_MISSING_DATE' });
         return;
       }
 
       const totalPoints = await this.userWorkPointsService.getTotalWorkPointsForDate(userId, date);
       res.json({ totalWorkPoints: totalPoints, date });
     } catch (error) {
-      this.handleError(error, res);
+      handleControllerError(error, res, 'UserWorkPointsController.getTotalWorkPointsForDate');
     }
   }
 
@@ -144,15 +104,8 @@ export class UserWorkPointsController {
    */
   async generateDeviceFingerprint(req: Request, res: Response): Promise<void> {
     try {
-      const userId = (req as any).user?.userId;
-
-      if (!userId) {
-        res.status(401).json({
-          error: 'User not authenticated',
-          code: 'ERR_NOT_AUTHENTICATED'
-        });
-        return;
-      }
+      const userId = requireUserId(req, res);
+      if (!userId) return;
 
       const fingerprint = this.userWorkPointsService.generateDeviceFingerprint(
         req.get('User-Agent'),
@@ -161,63 +114,7 @@ export class UserWorkPointsController {
 
       res.json({ deviceFingerprint: fingerprint });
     } catch (error) {
-      this.handleError(error, res);
+      handleControllerError(error, res, 'UserWorkPointsController.generateDeviceFingerprint');
     }
-  }
-
-  private handleError(error: any, res: Response): void {
-    console.error('UserWorkPointsController error:', {
-      message: error.message,
-      stack: error.stack,
-      code: error.code,
-      statusCode: error.statusCode,
-      timestamp: new Date().toISOString()
-    });
-
-    if (error instanceof ValidationError) {
-      const clientError = error.toClientError();
-      res.status(clientError.statusCode).json({
-        error: clientError.message,
-        code: clientError.code
-      });
-      return;
-    }
-
-    if (error instanceof NotFoundError) {
-      const clientError = error.toClientError();
-      res.status(clientError.statusCode).json({
-        error: clientError.message,
-        code: clientError.code
-      });
-      return;
-    }
-
-    if (error instanceof DALError) {
-      const clientError = error.toClientError();
-      res.status(clientError.statusCode).json({
-        error: clientError.message,
-        code: clientError.code
-      });
-      return;
-    }
-
-    if (error.code && error.statusCode) {
-      let sanitizedMessage = error.message;
-      sanitizedMessage = sanitizedMessage.replace(/mykle\.database\.windows\.net/gi, '[server]');
-      sanitizedMessage = sanitizedMessage.replace(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, '[server]');
-      sanitizedMessage = sanitizedMessage.replace(/:\d{4,5}/g, '');
-      sanitizedMessage = sanitizedMessage.replace(/in \d+ms/g, '');
-
-      res.status(error.statusCode).json({
-        error: sanitizedMessage,
-        code: error.code
-      });
-      return;
-    }
-
-    res.status(500).json({
-      error: 'Internal server error',
-      code: 'ERR_INTERNAL_SERVER_ERROR'
-    });
   }
 }

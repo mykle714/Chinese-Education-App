@@ -24,6 +24,7 @@ import MobileNavDrawer from "../components/MobileNavDrawer";
 import PageHeader from "../components/PageHeader";
 import { useAuth } from "../AuthContext";
 import { useConfirmation } from "../contexts/ConfirmationContext";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 // Design tokens from Figma
 const COLORS = {
@@ -91,6 +92,7 @@ const DeleteButton = styled(Button)(() => ({
 }));
 
 function AccountPage() {
+    usePageTitle("Account");
     const { user, isLoading, changePassword, deleteAccount, logout } = useAuth();
     const { confirm } = useConfirmation();
     const theme = useTheme();
@@ -356,6 +358,7 @@ function AccountPage() {
                                     label="Current Password"
                                     type={showCurrentPassword ? "text" : "password"}
                                     id="currentPassword"
+                                    autoComplete="current-password"
                                     value={currentPassword}
                                     onChange={(e) => setCurrentPassword(e.target.value)}
                                     size="small"
@@ -383,6 +386,7 @@ function AccountPage() {
                                     label="New Password"
                                     type={showNewPassword ? "text" : "password"}
                                     id="newPassword"
+                                    autoComplete="new-password"
                                     value={newPassword}
                                     onChange={(e) => setNewPassword(e.target.value)}
                                     size="small"
@@ -410,6 +414,7 @@ function AccountPage() {
                                     label="Confirm New Password"
                                     type={showConfirmPassword ? "text" : "password"}
                                     id="confirmPassword"
+                                    autoComplete="new-password"
                                     value={confirmPassword}
                                     onChange={(e) => setConfirmPassword(e.target.value)}
                                     size="small"
@@ -508,6 +513,7 @@ function AccountPage() {
                         margin="dense"
                         label="Enter your password to confirm"
                         type={showDeletePassword ? "text" : "password"}
+                        autoComplete="current-password"
                         fullWidth
                         variant="outlined"
                         value={deletePassword}

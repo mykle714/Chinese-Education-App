@@ -6,8 +6,10 @@ import StreakCounter from "../components/StreakCounter";
 import MonthlyCalendar from "../components/MonthlyCalendar";
 import LeaderboardPlaceholder from "../components/LeaderboardPlaceholder";
 import ChangelogDisplay from "../components/ChangelogDisplay";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 function HomePage() {
+    usePageTitle();
     const {
         totalStudyTimeMinutes,
         currentStreak

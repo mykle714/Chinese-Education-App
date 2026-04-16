@@ -1,8 +1,10 @@
 import { Box, Typography } from '@mui/material';
 import MarketViewer from '../components/MarketViewer';
 import { useWorkPoints } from '../hooks/useWorkPoints';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 function MarketViewerPage() {
+    usePageTitle("Night Market");
     // Single spacing variable for easy adjustment
     const GRID_SPACING = 500;
 

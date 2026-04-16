@@ -17,6 +17,7 @@ import {
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import SaveIcon from "@mui/icons-material/Save";
 import { DEFAULT_TEST_USER_ID } from "../constants";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 interface VocabEntry {
     id: number;
@@ -27,6 +28,7 @@ interface VocabEntry {
 }
 
 function EditEntryPage() {
+    usePageTitle("Edit Entry");
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const { token } = useAuth();

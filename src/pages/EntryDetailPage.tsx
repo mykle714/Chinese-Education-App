@@ -27,6 +27,7 @@ import {
     Looks5 as Looks5Icon,
     Looks6 as Looks6Icon
 } from "@mui/icons-material";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 // HSK Level type
 type HskLevel = 'HSK1' | 'HSK2' | 'HSK3' | 'HSK4' | 'HSK5' | 'HSK6';
@@ -68,6 +69,7 @@ const renderTags = (entry: VocabEntry) => (
 );
 
 function EntryDetailPage() {
+    usePageTitle("Entry");
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const { token } = useAuth();

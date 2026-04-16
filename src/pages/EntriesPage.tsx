@@ -5,8 +5,10 @@ import { useAuth } from "../AuthContext";
 import VocabEntryCards from "../VocabEntryCards";
 import AddEntryModal from "../components/AddEntryModal";
 import { API_BASE_URL, VOCAB_SEARCH_CONFIG } from "../constants";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 function EntriesPage() {
+    usePageTitle("Entries");
     const { token } = useAuth();
     const [importing, setImporting] = useState(false);
     const [importProgress, setImportProgress] = useState(0);

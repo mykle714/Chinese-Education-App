@@ -33,6 +33,7 @@ import FlipCameraAndroidIcon from "@mui/icons-material/FlipCameraAndroid";
 import RemoveIcon from "@mui/icons-material/Remove";
 import SettingsIcon from "@mui/icons-material/Settings";
 import FlashCard from "../components/FlashCard";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 
 interface VocabEntry {
@@ -299,6 +300,7 @@ const MainContent = memo<MainContentProps>(({
 MainContent.displayName = 'MainContent';
 
 function FlashcardsPage() {
+    usePageTitle("Flashcards");
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down("md"));
     const location = useLocation();
@@ -326,6 +328,19 @@ function FlashcardsPage() {
 
     // Ref for the flashcard container to attach touch handlers
     const flashcardContainerRef = useRef<HTMLDivElement>(null);
+
+    // Ref to track the pending card content update timeout so it can be cancelled
+    // if the component unmounts mid-animation, preventing setState on an unmounted component.
+    const contentUpdateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // Cancel any pending card content update on unmount
+    useEffect(() => {
+        return () => {
+            if (contentUpdateTimeoutRef.current !== null) {
+                clearTimeout(contentUpdateTimeoutRef.current);
+            }
+        };
+    }, []);
 
     // Work points integration
     const workPoints = useWorkPoints();
@@ -369,7 +384,11 @@ function FlashcardsPage() {
         if (entries.length > 0 && !currentEntry) {
             getRandomEntry();
         }
-    }, [entries]);
+    // getRandomEntry closes over many state values; wrapping it in useCallback would
+    // require its own deep dep list and cause excess re-triggers. The intent is to
+    // call it only when the entries list itself changes (initial load or refresh).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [entries, currentEntry]);
 
     // Centralized delayed update function
     const updateCardContent = (entry: VocabEntry, immediate = false, currentFlipState?: boolean, targetFlipState?: boolean) => {
@@ -384,8 +403,10 @@ function FlashcardsPage() {
             const isFlipAnimation = currentFlipState !== undefined && targetFlipState !== undefined && currentFlipState !== targetFlipState;
 
             if (isFlipAnimation) {
-                // Delay ALL content updates to sync with flip animation midpoint
-                setTimeout(() => {
+                // Delay ALL content updates to sync with flip animation midpoint.
+                // The timeout id is stored in a ref so it can be cancelled on unmount.
+                if (contentUpdateTimeoutRef.current !== null) clearTimeout(contentUpdateTimeoutRef.current);
+                contentUpdateTimeoutRef.current = setTimeout(() => {
                     setentryKey(entry.entryKey);
                     setCurrentEntry(entry);
                     setDisplayEntry(entry);
@@ -453,7 +474,11 @@ function FlashcardsPage() {
         return () => {
             window.removeEventListener('keydown', handleKeyDown);
         };
-    }, [history.length, historyIndex, isFlipped, currentEntry]); // Dependencies for the handlers
+    // The handler functions (handleFlip, handleCorrect, etc.) are intentionally omitted —
+    // the listed deps cover all state those handlers branch on, so the listener is
+    // re-registered with fresh closures whenever any of them change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [history.length, historyIndex, isFlipped, currentEntry]);
 
     // Touch/Swipe navigation - attached to flashcard container only
     useEffect(() => {
@@ -555,6 +580,9 @@ function FlashcardsPage() {
             document.body.style.overflow = '';
             document.documentElement.style.overflow = '';
         };
+    // Same reasoning as the keyboard effect: handler functions omitted because the listed
+    // state deps already ensure the listener is re-registered with fresh closures.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [touchStart, touchEnd, history.length, historyIndex, isFlipped, currentEntry]);
 
     const fetchEntries = async () => {
@@ -714,6 +742,20 @@ function FlashcardsPage() {
         }
     };
 
+    /**
+     * Record a mark for a flashcard in the local history array.
+     *
+     * History is a sliding window of up to 6 entries displayed in the history drawer.
+     * - historyIndex === 0 means the user is looking at the *current* card.
+     *   - If the front of history is already this card, update it in place (re-marking).
+     *   - Otherwise prepend a new entry and evict the oldest if > 6.
+     * - historyIndex > 0 means the user navigated back and is marking an *older* card;
+     *   patch that specific slot without shifting the array.
+     *
+     * The `shouldIncrementCounter` check ensures the completed-cards counter only
+     * ticks up the *first* time a card transitions from unmarked (null) to marked —
+     * re-marking the same card in the same session does not double-count.
+     */
     const addToHistory = (entry: VocabEntry, isCorrect: boolean | null) => {
         const historyEntry: HistoryEntry = {
             id: entry.id,

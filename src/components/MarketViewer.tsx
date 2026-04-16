@@ -61,6 +61,47 @@ function MarketViewer({ layers }: MarketViewerProps) {
         };
     }, []);
 
+    // Fit scene to viewport (fit to largest image dimensions).
+    // Defined before the image-loading effect so it can be listed as a stable dep.
+    const fitSceneToViewport = useCallback(() => {
+        if (loadedImagesRef.current.length === 0 || !containerRef.current) return;
+
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const container = containerRef.current;
+
+        // Find the bounding box of all layers
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+        loadedImagesRef.current.forEach(({ image, layer }) => {
+            const layerScale = layer.scale || 1.0;
+            const width = image.width * layerScale;
+            const height = image.height * layerScale;
+            const x = layer.x - width / 2;
+            const y = layer.y - height / 2;
+
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+            maxX = Math.max(maxX, x + width);
+            maxY = Math.max(maxY, y + height);
+        });
+
+        const sceneWidth = maxX - minX;
+        const sceneHeight = maxY - minY;
+
+        // Calculate scale to fit scene in viewport
+        const containerWidth = container.clientWidth;
+        const containerHeight = container.clientHeight;
+        const scaleX = containerWidth / sceneWidth;
+        const scaleY = containerHeight / sceneHeight;
+        const scale = Math.min(scaleX, scaleY) * 0.9; // 90% to add some padding
+
+        setZoom(scale);
+        setPan({ x: 0, y: 0 });
+        setLastPan({ x: 0, y: 0 });
+    }, []);
+
     // Load all images
     useEffect(() => {
         if (layers.length === 0) {
@@ -104,47 +145,7 @@ function MarketViewer({ layers }: MarketViewerProps) {
 
             img.src = layer.imagePath;
         });
-    }, [layers]);
-
-    // Fit scene to viewport (fit to largest image dimensions)
-    const fitSceneToViewport = useCallback(() => {
-        if (loadedImagesRef.current.length === 0 || !containerRef.current) return;
-
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-
-        const container = containerRef.current;
-
-        // Find the bounding box of all layers
-        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-
-        loadedImagesRef.current.forEach(({ image, layer }) => {
-            const layerScale = layer.scale || 1.0;
-            const width = image.width * layerScale;
-            const height = image.height * layerScale;
-            const x = layer.x - width / 2;
-            const y = layer.y - height / 2;
-
-            minX = Math.min(minX, x);
-            minY = Math.min(minY, y);
-            maxX = Math.max(maxX, x + width);
-            maxY = Math.max(maxY, y + height);
-        });
-
-        const sceneWidth = maxX - minX;
-        const sceneHeight = maxY - minY;
-
-        // Calculate scale to fit scene in viewport
-        const containerWidth = container.clientWidth;
-        const containerHeight = container.clientHeight;
-        const scaleX = containerWidth / sceneWidth;
-        const scaleY = containerHeight / sceneHeight;
-        const scale = Math.min(scaleX, scaleY) * 0.9; // 90% to add some padding
-
-        setZoom(scale);
-        setPan({ x: 0, y: 0 });
-        setLastPan({ x: 0, y: 0 });
-    }, []);
+    }, [layers, fitSceneToViewport]);
 
     // Render canvas with all layers
     const render = useCallback(() => {

@@ -134,6 +134,10 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
   const tickIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const saveCounterRef = useRef<number>(0);
 
+  // Mirror volatile values into refs so that the tick interval callback (registered
+  // once on mount) can always read the *latest* value without being re-registered
+  // on every render. Without refs, the closure captured by setInterval would hold
+  // stale state from the render it was registered in.
   const stateRef = useRef(state);
   const userIdRef = useRef(user?.id);
   const isEligiblePageRef = useRef(isEligiblePage);

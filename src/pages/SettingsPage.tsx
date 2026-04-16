@@ -21,8 +21,10 @@ import LanguageIcon from '@mui/icons-material/Language';
 import { useTheme, type ThemeMode } from '../contexts/ThemeContext';
 import { useAuth } from '../AuthContext';
 import type { Language } from '../types';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 function SettingsPage() {
+    usePageTitle("Settings");
     const { themeMode, setThemeMode, availableThemes } = useTheme();
     const { user, updateLanguage } = useAuth();
     const [languageSuccess, setLanguageSuccess] = useState(false);

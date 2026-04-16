@@ -11,8 +11,10 @@ import { useCardDrag } from "./useCardDrag";
 import FlashcardsLearnHeader from "./FlashcardsLearnHeader";
 import InfoCardSection from "./InfoCardSection";
 import FlashCardSection from "./FlashCardSection";
+import { usePageTitle } from "../../hooks/usePageTitle";
 
 const FlashcardsLearnPage: React.FC = () => {
+    usePageTitle("Learn");
     const navigate = useNavigate();
     const { token } = useAuth();
     const theme = useTheme();
@@ -127,7 +129,9 @@ const FlashcardsLearnPage: React.FC = () => {
         if (token) {
             fetchInitialCards();
         }
-    }, [token, selectedCategory]);
+    // setIsFlipped is a useState setter from useCardDrag — React guarantees its
+    // reference is stable, so adding it here doesn't cause extra re-runs.
+    }, [token, selectedCategory, setIsFlipped]);
 
     // Mark card with retry logic
     const markCard = async (cardId: number, isCorrect: boolean, retryCount = 0): Promise<MarkCardResult | null> => {
@@ -200,25 +204,33 @@ const FlashcardsLearnPage: React.FC = () => {
 
         // Fire mark API in background — newCard replaces the current slot, not the next one,
         // so the UI doesn't need to wait for the response before advancing.
-        markCard(currentCard.id, isCorrect).then(markResult => {
-            if (!markResult) return;
-            const { newCard, markTimestamp, displacedMark } = markResult;
-            console.log(`Card marked: ${currentCard.entryKey} (${isCorrect ? 'correct' : 'incorrect'})`);
-            if (isCorrect && newCard) {
-                // Patch the slot the dismissed card occupied — user won't see it for a full cycle
-                setWorkingLoop(prevLoop => {
-                    const newLoop = [...prevLoop];
-                    newLoop[preDismissSnapshot.currentIndex] = newCard;
-                    return newLoop;
+        markCard(currentCard.id, isCorrect)
+            .then(markResult => {
+                if (!markResult) return;
+                const { newCard, markTimestamp, displacedMark } = markResult;
+                console.log(`Card marked: ${currentCard.entryKey} (${isCorrect ? 'correct' : 'incorrect'})`);
+                if (isCorrect && newCard) {
+                    // Patch the slot the dismissed card occupied — user won't see it for a full cycle
+                    setWorkingLoop(prevLoop => {
+                        const newLoop = [...prevLoop];
+                        newLoop[preDismissSnapshot.currentIndex] = newCard;
+                        return newLoop;
+                    });
+                }
+                setLastMarkUndoSnapshot({
+                    cardId: currentCard.id,
+                    markTimestamp,
+                    displacedMark,
+                    ...preDismissSnapshot,
                 });
-            }
-            setLastMarkUndoSnapshot({
-                cardId: currentCard.id,
-                markTimestamp,
-                displacedMark,
-                ...preDismissSnapshot,
+            })
+            .catch(err => {
+                // markCard handles retries internally and sets error state on failure,
+                // but this catch prevents an unhandled promise rejection if something
+                // unexpected throws after all retries are exhausted.
+                console.error('Unhandled error in markCard background task:', err);
+                setError('Failed to save progress. Please check your connection.');
             });
-        });
 
         // Wait for the fly-out CSS transition (0.45s) to complete, then clear the
         // fly-out state. The flew-out slot snaps back to center (hidden behind the

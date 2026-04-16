@@ -11,6 +11,7 @@ import PageHeader from "../components/PageHeader";
 import { API_BASE_URL } from "../constants";
 import { stripParentheses } from "../utils/definitionUtils";
 import type { Language, DiscoverCard, DiscoverFetchResponse, DiscoverSortResponse } from "../types";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 // Parses an HSK label like "HSK3" → 3, returns null for missing/malformed values.
 function parseHskLevel(label: string | null | undefined): number | null {
@@ -150,6 +151,7 @@ interface BucketZone {
 }
 
 const SortCardsPage: React.FC = () => {
+    usePageTitle("Discover");
     const { language } = useParams<{ language: Language }>();
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -280,7 +282,7 @@ const SortCardsPage: React.FC = () => {
                 bandMin != null ? `HSK${bandMin}–HSK${bandMax}` : "unfiltered"
             );
         }
-    }, [currentCard, userHskLevel]);
+    }, [currentCard, userHskLevel, provisionalMode]);
 
     // Head-skip effect: whenever `cardQueue` changes (initial load or load-more),
     // advance past any out-of-band card that landed at the head position.
@@ -330,6 +332,10 @@ const SortCardsPage: React.FC = () => {
             console.log("[LoadMore] → calling loadMoreCards()");
             loadMoreCards();
         }
+    // loadMoreCards is intentionally excluded — the trigger conditions (visible queue size,
+    // loading state, exhaustion) are already in deps. Wrapping it in useCallback would
+    // require its own deep dep list (cardQueue, currentCardIndex, language) and cause excess re-runs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [visibleQueue.length, cardQueue.length, isLoadingMore, loadMoreExhausted]);
 
     // Check if the dragged card's center overlaps a bucket using actual DOM positions
@@ -343,6 +349,8 @@ const SortCardsPage: React.FC = () => {
         const cardCenterY = onDeckRect.top + onDeckRect.height / 2 + oy;
 
         for (const [id, el] of bucketRefs.current) {
+            // Guard: el could be null if the bucket unmounted between render and drag
+            if (!el) continue;
             const rect = el.getBoundingClientRect();
             if (
                 cardCenterX >= rect.left &&

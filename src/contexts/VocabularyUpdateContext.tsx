@@ -155,7 +155,8 @@ export const VocabularyUpdateProvider: React.FC<VocabularyUpdateProviderProps> =
     );
 };
 
-// Custom hook to use the vocabulary update context
+// Custom hook to use the vocabulary update context — intentionally co-located with the provider
+// eslint-disable-next-line react-refresh/only-export-components
 export const useVocabularyUpdate = (): VocabularyUpdateContextType => {
     const context = useContext(VocabularyUpdateContext);
     if (context === undefined) {

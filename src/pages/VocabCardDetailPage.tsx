@@ -12,6 +12,7 @@ import type { VocabEntry, DictionaryEntry } from "../types";
 import CharacterPinyinColorDisplay from "../components/CharacterPinyinColorDisplay";
 import CPCDRow from "../components/CPCDRow";
 import SegmentedSentenceDisplay from "../components/SegmentedSentenceDisplay";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 // Design tokens
 const COLORS = {
@@ -103,6 +104,7 @@ const getCategoryColor = (category?: string) => {
 };
 
 const VocabCardDetailPage: React.FC = () => {
+    usePageTitle("Card");
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const theme = useTheme();

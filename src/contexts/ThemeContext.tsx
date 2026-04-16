@@ -136,18 +136,19 @@ interface ThemeContextProviderProps {
     children: ReactNode;
 }
 
+// Static list of available themes — defined outside the component so the array
+// reference is stable and doesn't need to be a dependency in useEffect calls.
+const availableThemes = [
+    { value: 'light' as ThemeMode, label: 'Light', description: 'Clean and bright theme' },
+    { value: 'dark' as ThemeMode, label: 'Dark', description: 'Easy on the eyes in low light' },
+    { value: 'blue' as ThemeMode, label: 'Ocean Blue', description: 'Professional blue theme' },
+    { value: 'green' as ThemeMode, label: 'Nature Green', description: 'Calming green theme' },
+];
+
 export function ThemeContextProvider({ children }: ThemeContextProviderProps) {
     const [themeMode, setThemeModeState] = useState<ThemeMode>('light');
 
-    // Available theme options
-    const availableThemes = [
-        { value: 'light' as ThemeMode, label: 'Light', description: 'Clean and bright theme' },
-        { value: 'dark' as ThemeMode, label: 'Dark', description: 'Easy on the eyes in low light' },
-        { value: 'blue' as ThemeMode, label: 'Ocean Blue', description: 'Professional blue theme' },
-        { value: 'green' as ThemeMode, label: 'Nature Green', description: 'Calming green theme' },
-    ];
-
-    // Load theme from localStorage on mount
+    // Load theme from localStorage on mount — availableThemes is module-level (not reactive)
     useEffect(() => {
         const savedTheme = localStorage.getItem('vocabularyAppTheme') as ThemeMode;
         if (savedTheme && availableThemes.some(theme => theme.value === savedTheme)) {
@@ -179,6 +180,8 @@ export function ThemeContextProvider({ children }: ThemeContextProviderProps) {
     );
 }
 
+// Custom hook to use the theme context — intentionally co-located with the provider
+// eslint-disable-next-line react-refresh/only-export-components
 export function useTheme() {
     const context = useContext(ThemeContext);
     if (context === undefined) {

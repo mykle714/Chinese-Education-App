@@ -35,8 +35,10 @@ import DeleteDocumentDialog from "../components/DeleteDocumentDialog";
 import { useVocabularyProcessing } from "../hooks/useVocabularyProcessing";
 import { useTextSelection } from "../hooks/useTextSelection";
 import { useReaderSettings } from "../hooks/useReaderSettings";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 function ReaderPage() {
+    usePageTitle("Reader");
     const theme = useTheme();
     const customTheme = useCustomTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down("md"));

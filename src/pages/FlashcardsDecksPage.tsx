@@ -9,6 +9,7 @@ import MiniVocabCard from "../components/MiniVocabCard";
 import { useAuth } from "../AuthContext";
 import { API_BASE_URL } from "../constants";
 import type { VocabEntry } from "../types";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 // Design tokens from Figma
 const COLORS = {
@@ -199,6 +200,7 @@ const DeckCardComponent: React.FC<DeckCardProps> = ({
 
 // Main Component
 const FlashcardsDecksPage: React.FC = () => {
+    usePageTitle("Decks");
     const navigate = useNavigate();
     const location = useLocation();
     const { token } = useAuth();

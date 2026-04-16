@@ -165,3 +165,11 @@ For design guidelines:
 - When you present information to the user, use nice formatting techniques to make the content easily digestible for the user.
 - Always use descriptive class names for all HTML components
 - When a terminal command should be run on this machine, do not tell the user to run it, you should try to run it yourself first.
+
+## Code Quality Standards
+When reviewing or writing code, actively look for and address:
+- **Duplicate code** — if the same logic appears 2+ times, extract it into a shared function, hook, or utility
+- **Large files** — files over ~300 lines should be evaluated for splitting into focused modules (controllers, hooks, utils, etc.)
+- **Non-robust patterns** — missing null/undefined guards, unchecked array access, `JSON.parse` without try-catch, fire-and-forget promises without `.catch()`, unvalidated external inputs
+- **Potential failure paths** — database clients not released in all branches, missing error handling in async code, `Promise.all` failing mid-batch without individual error capture
+- **Complex code without comments** — algorithms, non-obvious state management (stale closure workarounds, ref sync patterns), and transaction flows should have inline comments explaining *why*, not just *what*

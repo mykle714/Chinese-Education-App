@@ -155,7 +155,8 @@ export function ConfirmationProvider({ children }: ConfirmationProviderProps) {
     );
 }
 
-// Custom hook to use the confirmation context
+// Custom hook to use the confirmation context — intentionally co-located with the provider
+// eslint-disable-next-line react-refresh/only-export-components
 export function useConfirmation() {
     const context = useContext(ConfirmationContext);
     if (context === undefined) {

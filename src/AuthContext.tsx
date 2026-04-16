@@ -305,7 +305,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-// Create a hook to use the AuthContext
+// Custom hook to use the AuthContext — intentionally co-located with the provider
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
     const context = useContext(AuthContext);
     if (context === undefined) {

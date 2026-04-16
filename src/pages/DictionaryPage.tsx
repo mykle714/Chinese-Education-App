@@ -21,6 +21,7 @@ import { API_BASE_URL } from '../constants';
 import type { DictionaryEntry, Language } from '../types';
 import DictionaryEntryRow from '../components/DictionaryEntryRow';
 import DictionaryEntryDetailModal from '../components/DictionaryEntryDetailModal';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 // Matches any CJK Unified Ideograph (common + extension A/B blocks)
 const hasChinese = (text: string) => /[\u4e00-\u9fff\u3400-\u4dbf]/.test(text);
@@ -47,6 +48,7 @@ const SPECIAL_CHARACTERS: Record<Language, string[]> = {
 };
 
 function DictionaryPage() {
+    usePageTitle("Dictionary");
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('md'));
     const { token, user } = useAuth();

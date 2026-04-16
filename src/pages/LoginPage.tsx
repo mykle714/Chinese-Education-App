@@ -15,6 +15,7 @@ import {
     Alert,
     CircularProgress
 } from '@mui/material';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 // Define the form validation schema
 const loginSchema = z.object({
@@ -25,6 +26,7 @@ const loginSchema = z.object({
 type LoginFormData = z.infer<typeof loginSchema>;
 
 function LoginPage() {
+    usePageTitle("Login");
     const { login, error } = useAuth();
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [loginError, setLoginError] = useState<string | null>(error);

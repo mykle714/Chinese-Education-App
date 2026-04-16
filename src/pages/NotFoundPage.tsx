@@ -1,8 +1,10 @@
 import { Container, Typography, Button, Box, Paper } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import HomeIcon from "@mui/icons-material/Home";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 function NotFoundPage() {
+    usePageTitle("Not Found");
     const navigate = useNavigate();
 
     return (

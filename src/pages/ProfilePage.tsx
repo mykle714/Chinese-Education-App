@@ -20,8 +20,10 @@ import {
 } from "@mui/material";
 import { Visibility, VisibilityOff, Warning } from "@mui/icons-material";
 import { useAuth } from "../AuthContext";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 function ProfilePage() {
+    usePageTitle("Profile");
     const { user, isLoading, changePassword, deleteAccount } = useAuth();
 
     // Password form state

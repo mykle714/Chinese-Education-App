@@ -17,12 +17,16 @@ import { UserWorkPointsController } from '../controllers/UserWorkPointsControlle
 import { DictionaryController } from '../controllers/DictionaryController.js';
 import { TextController } from '../controllers/TextController.js';
 import { StarterPacksController } from '../controllers/StarterPacksController.js';
+import { NightMarketDAL } from './implementations/NightMarketDAL.js';
+import { NightMarketService } from '../services/NightMarketService.js';
+import { NightMarketController } from '../controllers/NightMarketController.js';
 
 // Create DAL instances
 const userDAL = new UserDAL();
 const vocabEntryDAL = new VocabEntryDAL();
 const userWorkPointsDAL = new UserWorkPointsDAL();
 const dictionaryDAL = new DictionaryDAL();
+const nightMarketDAL = new NightMarketDAL();
 
 // Create Service instances with proper dependency injection
 const userService = new UserService(userDAL);
@@ -32,6 +36,7 @@ const onDeckVocabService = new OnDeckVocabService(vocabEntryDAL, dictionaryServi
 const userWorkPointsService = new UserWorkPointsService(userWorkPointsDAL, userDAL);
 const textService = new TextService(userDAL);
 const starterPacksService = new StarterPacksService(vocabEntryDAL, dictionaryDAL);
+const nightMarketService = new NightMarketService(nightMarketDAL, userDAL);
 
 // Create Controller instances
 const userController = new UserController(userService);
@@ -41,6 +46,7 @@ const userWorkPointsController = new UserWorkPointsController(userWorkPointsServ
 const dictionaryController = new DictionaryController(dictionaryService, userDAL);
 const textController = new TextController(textService);
 const starterPacksController = new StarterPacksController(starterPacksService);
+const nightMarketController = new NightMarketController(nightMarketService);
 
 // Export configured instances
 export { 
@@ -61,5 +67,8 @@ export {
   userWorkPointsController,
   dictionaryController,
   textController,
-  starterPacksController
+  starterPacksController,
+  nightMarketDAL,
+  nightMarketService,
+  nightMarketController
 };

@@ -20,6 +20,18 @@ gsa = greedy segmentation algorithm
 dp = discover page (aka sort cards page)
 cdp = card detail page
 pct = particles and classifiers table
+nmp = night market page
+
+## Night Market Coordinate System
+
+When the user mentions coordinates for night market assets, they are always in isometric grid units (isoX, isoY). See `src/utils/isometric.ts` for the full coordinate system definition.
+
+- **isoX** — distance along the isometric X axis (toward bottom-right on screen)
+- **isoY** — distance along the isometric Y axis (toward bottom-left on screen)
+- **Origin (0, 0)** — maps to the center of the viewport
+
+All night market assets live at: `/home/cow/src/assets/`
+(Note: this is different from `public/assets/` — Vite imports these directly as modules.)
 
 ## Writing .md files
 Do not write content descibing what you just completed; you should write the status/structure of the service/code. The files are meant to be for future AI  agents.
@@ -80,6 +92,9 @@ For work points increment implementation:
 
 ### User Document Feature
 → See [docs/USER_DOCUMENT_FEATURE_SUMMARY.md](./docs/USER_DOCUMENT_FEATURE_SUMMARY.md)
+
+### Night Market
+→ See [docs/NIGHT_MARKET_FEATURE.md](./docs/NIGHT_MARKET_FEATURE.md)
 
 ## 🔧 Troubleshooting
 

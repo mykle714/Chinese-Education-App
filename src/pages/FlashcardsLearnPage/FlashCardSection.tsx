@@ -3,7 +3,7 @@ import { Box, Card, CardContent, Typography } from "@mui/material";
 import { stripParentheses } from "../../utils/definitionUtils";
 import { DraggableCardContainer } from "./styled";
 import { COLORS, CARD_FACE_JUSTIFY, CARD_DISMISS_THRESHOLD_VW } from "./constants";
-import type { VocabEntry } from "./types";
+import type { VocabEntry, SideOneLanguage } from "./types";
 import CharacterPinyinColorDisplay from "../../components/CharacterPinyinColorDisplay";
 import CPCDRow from "../../components/CPCDRow";
 
@@ -19,6 +19,11 @@ interface FlashCardSectionProps {
     isAnimating: boolean;
     selectedCategory: string | null;
     showPinyin: boolean;
+    // Side 1 language for the front-slot card. Side 2 always shows both.
+    sideOneLanguage: SideOneLanguage;
+    // Side 1 language for the back-slot (peeking) card — different random value
+    // so promoting it on dismiss doesn't flash the wrong language.
+    nextSideOneLanguage: SideOneLanguage;
     handlers: {
         onTouchStart: (e: React.TouchEvent) => void;
         onTouchEnd: (e: React.TouchEvent) => void;
@@ -26,24 +31,56 @@ interface FlashCardSectionProps {
     };
 }
 
+// Chinese (CPCD) row block reused on both Side 1 (when Chinese) and Side 2.
+const ChineseBlock: React.FC<{ entry: VocabEntry; showPinyin: boolean }> = ({ entry, showPinyin }) => (
+    <CPCDRow size="md" justifyContent="center" className="mobile-demo-flashcard-cpcd-row">
+        {[...entry.entryKey].map((char, i) => (
+            <CharacterPinyinColorDisplay
+                key={i}
+                character={char}
+                pinyin={entry.pronunciation?.split(' ')[i] ?? ''}
+                size="md"
+                useToneColor={true}
+                showPinyin={showPinyin}
+            />
+        ))}
+    </CPCDRow>
+);
+
+// English definition Typography reused on both Side 1 (when English) and Side 2.
+const EnglishBlock: React.FC<{ entry: VocabEntry }> = ({ entry }) => (
+    <Typography sx={{
+        fontSize: 30,
+        fontWeight: 400,
+        color: COLORS.onSurface,
+        fontFamily: '"Inter", "Noto Sans JP", sans-serif',
+        textAlign: 'center',
+    }}>
+        {stripParentheses(entry.entryValue)}
+    </Typography>
+);
+
 // How far off-screen to throw the card (px). 900px safely clears the 393px frame on all viewports.
 const FLY_OUT_X = 900;
 // Rotation (deg) applied when the card flies off — more dramatic than the gentle drag tilt.
 const FLY_OUT_ROTATION = 30;
 
-/** Renders the card face (front + back + drag overlay) for a given entry. */
+/** Renders the card face (Side 1 + Side 2 + drag overlay) for a given entry.
+ *  Side 1 shows only one language (determined by sideOneLanguage).
+ *  Side 2 always shows both Chinese and English stacked. */
 const CardFace: React.FC<{
     entry: VocabEntry;
     isFlipped: boolean;
     isAnimating: boolean;
     showPinyin: boolean;
+    sideOneLanguage: SideOneLanguage;
     dragPosition: { x: number; y: number };
     dismissThreshold: number;
     isFront: boolean;
     // True for both the active front card and the card currently flying off screen —
     // both should show the full shadow and the green/red drag overlay.
     isProminent: boolean;
-}> = ({ entry, isFlipped, isAnimating, showPinyin, dragPosition, dismissThreshold, isProminent }) => (
+}> = ({ entry, isFlipped, isAnimating, showPinyin, sideOneLanguage, dragPosition, dismissThreshold, isProminent }) => (
     <Card
         className="mobile-demo-flashcard"
         sx={{
@@ -63,7 +100,7 @@ const CardFace: React.FC<{
             overflow: 'visible',
         }}
     >
-        {/* Front face */}
+        {/* Side 1 — shows only one language, chosen randomly per card */}
         <Box sx={{
             position: "absolute",
             top: 0, left: 0, width: "100%", height: "100%",
@@ -99,26 +136,16 @@ const CardFace: React.FC<{
                     <Box className="mobile-demo-flashcard-image" sx={{ width: 106, height: 83, backgroundColor: '#ffffff', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <Typography sx={{ fontSize: 11, color: COLORS.gray, fontFamily: '"Inter", sans-serif', textAlign: 'center' }}>insert image here</Typography>
                     </Box>
-                    <Box className="mobile-demo-flashcard-text" sx={{ display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'center', width: '100%' }}>
-                        {/* Character-by-character display with tone colors */}
-                        <CPCDRow size="md" justifyContent="center" className="mobile-demo-flashcard-cpcd-row">
-                            {[...entry.entryKey].map((char, i) => (
-                                <CharacterPinyinColorDisplay
-                                    key={i}
-                                    character={char}
-                                    pinyin={entry.pronunciation?.split(' ')[i] ?? ''}
-                                    size="md"
-                                    useToneColor={true}
-                                    showPinyin={showPinyin}
-                                />
-                            ))}
-                        </CPCDRow>
+                    <Box className="mobile-demo-flashcard-text mobile-demo-flashcard-side-one" sx={{ display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'center', width: '100%' }}>
+                        {sideOneLanguage === 'zh'
+                            ? <ChineseBlock entry={entry} showPinyin={showPinyin} />
+                            : <EnglishBlock entry={entry} />}
                     </Box>
                 </Box>
             </CardContent>
         </Box>
 
-        {/* Back face */}
+        {/* Side 2 — always shows both Chinese and English */}
         <Box sx={{
             position: "absolute",
             top: 0, left: 0, width: "100%", height: "100%",
@@ -153,15 +180,9 @@ const CardFace: React.FC<{
                     <Box sx={{ width: 106, height: 83, backgroundColor: '#ffffff', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <Typography sx={{ fontSize: 11, color: COLORS.gray, fontFamily: '"Inter", sans-serif', textAlign: 'center' }}>insert image here</Typography>
                     </Box>
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'center', width: '100%' }}>
-                        <Typography sx={{
-                            fontSize: 30,
-                            fontWeight: 400,
-                            color: COLORS.onSurface,
-                            fontFamily: '"Inter", "Noto Sans JP", sans-serif',
-                        }}>
-                            {stripParentheses(entry.entryValue)}
-                        </Typography>
+                    <Box className="mobile-demo-flashcard-side-two" sx={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center', width: '100%' }}>
+                        <ChineseBlock entry={entry} showPinyin={showPinyin} />
+                        <EnglishBlock entry={entry} />
                     </Box>
                 </Box>
             </CardContent>
@@ -194,6 +215,8 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
     isAnimating,
     selectedCategory,
     showPinyin,
+    sideOneLanguage,
+    nextSideOneLanguage,
     handlers,
 }) => {
     // Threshold in px, computed against card's actual rendered width for desktop consistency.
@@ -204,6 +227,13 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
         activeFrontSlot === 0
             ? [currentEntry, nextEntry]
             : [nextEntry, currentEntry];
+
+    // Side 1 language pairs with its slot's entry — not its slot index — so the
+    // peeking card behind shows the correct language before promotion.
+    const slotSideOneLanguages: [SideOneLanguage, SideOneLanguage] =
+        activeFrontSlot === 0
+            ? [sideOneLanguage, nextSideOneLanguage]
+            : [nextSideOneLanguage, sideOneLanguage];
 
     return (
         // Card slot: flex:1 absorbs remaining vertical space, position:relative establishes
@@ -303,6 +333,7 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                                 isFlipped={isFront ? isFlipped : false}
                                                 isAnimating={isAnimating}
                                                 showPinyin={showPinyin}
+                                                sideOneLanguage={slotSideOneLanguages[slot]}
                                                 // Suppress the drag overlay on the newly promoted card while
                                                 // the previous card is still flying out (isAnimating window).
                                                 dragPosition={(isFront && isAnimating) ? { x: 0, y: 0 } : dragPosition}

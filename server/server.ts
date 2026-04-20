@@ -15,7 +15,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Import DAL architecture
-import { userController, vocabEntryController, onDeckVocabController, userWorkPointsController, textController, dictionaryController, starterPacksController, onDeckVocabService } from './dal/setup.js';
+import { userController, vocabEntryController, onDeckVocabController, userWorkPointsController, textController, dictionaryController, starterPacksController, onDeckVocabService, nightMarketController } from './dal/setup.js';
 import { leaderboardController } from './controllers/LeaderboardController.js';
 
 // Configure multer for file uploads
@@ -423,6 +423,20 @@ app.get('/api/leaderboard/user/:userId', authenticateToken, async (req, res) => 
   await leaderboardController.getLeaderboardForUser(req, res);
 });
 
+// Night Market API Routes
+
+// Get user's unlocked night market items (seeds base set on first call)
+// @ts-ignore
+app.get('/api/night-market/unlocks', authenticateToken, async (req, res) => {
+  await nightMarketController.getUnlocks(req, res);
+});
+
+// Unlock the next random night market item
+// @ts-ignore
+app.post('/api/night-market/unlock', authenticateToken, async (req, res) => {
+  await nightMarketController.unlockNext(req, res);
+});
+
 // Flashcards API Routes - USING NEW DAL ARCHITECTURE
 
 const DEFAULT_FLASHCARD_TIMEZONE = 'UTC';
@@ -483,8 +497,7 @@ app.post('/api/flashcards/mark', authenticateToken, async (req, res) => {
   
   try {
     const userId = (req as any).user?.userId;
-    const { cardId, isCorrect } = req.body;
-    const userTimeZone = resolveUserTimeZone(req.headers['x-user-timezone']);
+    const { cardId, isCorrect, excludeIds: rawExcludeIds } = req.body;
 
     if (!userId) {
       client.release();
@@ -493,11 +506,17 @@ app.post('/api/flashcards/mark', authenticateToken, async (req, res) => {
 
     if (typeof cardId !== 'number' || typeof isCorrect !== 'boolean') {
       client.release();
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'Invalid request body. Expected { cardId: number, isCorrect: boolean }',
         code: 'ERR_INVALID_REQUEST'
       });
     }
+
+    // excludeIds is the list of card ids currently in the client's working loop,
+    // so the replacement picker avoids handing back a duplicate.
+    const excludeIds: number[] = Array.isArray(rawExcludeIds)
+      ? rawExcludeIds.filter((n): n is number => typeof n === 'number')
+      : [];
 
     console.log(`Card ${cardId} marked as ${isCorrect ? 'correct' : 'incorrect'} by user ${userId}`);
 
@@ -573,7 +592,7 @@ app.post('/api/flashcards/mark', authenticateToken, async (req, res) => {
 
     // If correct, return a card from the same category as BEFORE the mark (with fallback priority)
     if (isCorrect) {
-      const newCard = await onDeckVocabService.getNextLibraryCardWithFallback(userId, categoryBeforeMark, userTimeZone);
+      const newCard = await onDeckVocabService.getNextLibraryCardWithFallback(userId, categoryBeforeMark, excludeIds);
       
       if (!newCard) {
         client.release();

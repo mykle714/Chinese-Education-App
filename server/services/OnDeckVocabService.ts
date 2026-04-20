@@ -15,54 +15,69 @@ export class OnDeckVocabService {
     private dictionaryService: DictionaryService
   ) {}
 
-  private getDateKeyInTimeZone(date: Date, timeZone: string): string {
-    try {
-      return new Intl.DateTimeFormat('en-CA', {
-        timeZone,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-      }).format(date);
-    } catch {
-      return new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'UTC',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-      }).format(date);
-    }
-  }
+  // Per-category cooldown after a correct mark: a card that was recently marked
+  // correct should not reappear in the working loop until its cooldown elapses.
+  // Shorter windows for weaker categories so the user gets more repetition.
+  private static readonly COOLDOWN_MS_BY_CATEGORY: Record<string, number> = {
+    Unfamiliar: 5 * 60 * 1000,            // 5 minutes
+    Target: 24 * 60 * 60 * 1000,          // 24 hours
+    Comfortable: 7 * 24 * 60 * 60 * 1000, // 7 days
+    Mastered: 30 * 24 * 60 * 60 * 1000,   // 30 days
+  };
 
-  private hasCorrectMarkOnDate(markHistory: ReviewMark[] | undefined, dateKey: string, timeZone: string): boolean {
+  private getLastCorrectMarkTimestamp(markHistory: ReviewMark[] | undefined): number | null {
     if (!Array.isArray(markHistory) || markHistory.length === 0) {
-      return false;
+      return null;
     }
 
-    return markHistory.some(mark => {
-      if (!mark?.isCorrect || !mark.timestamp) {
-        return false;
-      }
-
-      const timestampDate = new Date(mark.timestamp);
-      if (Number.isNaN(timestampDate.getTime())) {
-        return false;
-      }
-
-      return this.getDateKeyInTimeZone(timestampDate, timeZone) === dateKey;
-    });
+    let latest: number | null = null;
+    for (const mark of markHistory) {
+      if (!mark?.isCorrect || !mark.timestamp) continue;
+      const ts = new Date(mark.timestamp).getTime();
+      if (Number.isNaN(ts)) continue;
+      if (latest === null || ts > latest) latest = ts;
+    }
+    return latest;
   }
 
-  private pickNewestCardNotCorrectToday(cards: VocabEntry[], timeZone: string): VocabEntry | null {
+  private isCardOnCooldown(card: VocabEntry, now: number): boolean {
+    const cooldownMs = OnDeckVocabService.COOLDOWN_MS_BY_CATEGORY[card.category ?? ''];
+    if (cooldownMs === undefined) return false;
+
+    const lastCorrect = this.getLastCorrectMarkTimestamp(card.markHistory);
+    if (lastCorrect === null) return false;
+
+    return now - lastCorrect < cooldownMs;
+  }
+
+  // Returns the newest eligible card (not on cooldown), or null if every card
+  // in the list is still cooling down. Callers use null to trigger fallback.
+  private pickNewestCardNotOnCooldown(cards: VocabEntry[]): VocabEntry | null {
     if (cards.length === 0) {
       return null;
     }
 
-    const todayDateKey = this.getDateKeyInTimeZone(new Date(), timeZone);
-    const newestNotCorrectToday = cards.find(card => {
-      return !this.hasCorrectMarkOnDate(card.markHistory, todayDateKey, timeZone);
-    });
+    const now = Date.now();
+    return cards.find(card => !this.isCardOnCooldown(card, now)) ?? null;
+  }
 
-    return newestNotCorrectToday ?? cards[0];
+  // Among cooled-down cards, prefer the one whose cooldown is closest to expiring
+  // (smallest remaining cooldown = largest elapsed time since last correct mark).
+  private pickLeastRecentlyCorrect(cards: VocabEntry[]): VocabEntry | null {
+    if (cards.length === 0) return null;
+
+    let best: VocabEntry | null = null;
+    let bestLastCorrect = Infinity;
+    for (const card of cards) {
+      const lastCorrect = this.getLastCorrectMarkTimestamp(card.markHistory);
+      // Treat "never marked correct" as oldest possible.
+      const ts = lastCorrect ?? -Infinity;
+      if (ts < bestLastCorrect) {
+        bestLastCorrect = ts;
+        best = card;
+      }
+    }
+    return best;
   }
 
   /**
@@ -210,8 +225,15 @@ export class OnDeckVocabService {
 
   /**
    * Get library cards filtered by a specific category.
+   * Optionally excludes cards whose ids appear in `excludeIds` — used by the
+   * mark endpoint to avoid handing back cards already present in the client's
+   * working loop.
    */
-  async getLibraryCardsByCategory(userId: string, category: string): Promise<VocabEntry[]> {
+  async getLibraryCardsByCategory(
+    userId: string,
+    category: string,
+    excludeIds: number[] = []
+  ): Promise<VocabEntry[]> {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
@@ -227,8 +249,9 @@ export class OnDeckVocabService {
         WHERE ve."userId" = $1
         AND ve."starterPackBucket" = 'library'
         AND ve.category = $2
+        AND ve.id != ALL($3::int[])
         ORDER BY ve."createdAt" DESC
-      `, [userId, category]);
+      `, [userId, category, excludeIds]);
 
       // Run the three-stage enrichment pipeline, then add related words
       const enriched = await this.enrichEntriesPipeline(result.rows);
@@ -241,11 +264,12 @@ export class OnDeckVocabService {
   /**
    * Get next library card with fallback priority.
    * Priority order when preferred category has no cards: Target -> Unfamiliar -> Comfortable -> Mastered.
+   * Skips cards still on per-category cooldown (see COOLDOWN_MS_BY_CATEGORY).
    */
   async getNextLibraryCardWithFallback(
     userId: string,
     preferredCategory: string,
-    timeZone: string = 'UTC'
+    excludeIds: number[] = []
   ): Promise<VocabEntry | null> {
     if (!userId) {
       throw new ValidationError('User ID is required');
@@ -254,25 +278,32 @@ export class OnDeckVocabService {
       throw new ValidationError('Preferred category is required');
     }
 
-    // Try preferred category first
-    let cards: VocabEntry[] = await this.getLibraryCardsByCategory(userId, preferredCategory);
-    if (cards.length > 0) {
-      return this.pickNewestCardNotCorrectToday(cards, timeZone);
+    // Try the preferred category first, then fall back. At each step we prefer
+    // an eligible (non-cooldown) card. Only if EVERY category's cards are on
+    // cooldown do we emit a cooled-down card, picking the one whose last correct
+    // mark is furthest in the past. `excludeIds` keeps cards already in the
+    // client's working loop out of the replacement pool.
+    const categoryOrder: string[] = [
+      preferredCategory,
+      ...['Target', 'Unfamiliar', 'Comfortable', 'Mastered'].filter(cat => cat !== preferredCategory),
+    ];
+
+    const cooledDownPool: VocabEntry[] = [];
+
+    for (const category of categoryOrder) {
+      const cards = await this.getLibraryCardsByCategory(userId, category, excludeIds);
+      if (cards.length === 0) continue;
+
+      const eligible = this.pickNewestCardNotOnCooldown(cards);
+      if (eligible) return eligible;
+
+      // Every card in this category is on cooldown; remember them for last-resort.
+      cooledDownPool.push(...cards);
     }
 
-    // Fallback priority: Target -> Unfamiliar -> Comfortable -> Mastered
-    const fallbackOrder: string[] = ['Target', 'Unfamiliar', 'Comfortable', 'Mastered']
-      .filter(cat => cat !== preferredCategory);
-
-    for (const category of fallbackOrder) {
-      cards = await this.getLibraryCardsByCategory(userId, category);
-      if (cards.length > 0) {
-        return this.pickNewestCardNotCorrectToday(cards, timeZone);
-      }
-    }
-
-    // No cards available at all
-    return null;
+    // No eligible card anywhere — return the least-recently-correct cooled-down
+    // card so the loop never stalls on an empty response.
+    return this.pickLeastRecentlyCorrect(cooledDownPool);
   }
 
   /**

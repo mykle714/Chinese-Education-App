@@ -35,9 +35,12 @@ export function useCardDrag(
     // Dragging/dismissing is blocked until this is true.
     const [hasFlippedCurrentCard, setHasFlippedCurrentCard] = useState(false);
 
-    // Reset flip-tracking whenever the card changes
+    // Reset flip-tracking whenever the card changes. New cards always start on
+    // Side 1 (isFlipped=false) — the flip is one-way and the Side 1 language
+    // randomization lives in the parent page now.
     useEffect(() => {
         setHasFlippedCurrentCard(false);
+        setIsFlipped(false);
     }, [resetKey]);
 
     // Read the card's rendered pixel width at evaluation time.
@@ -95,8 +98,9 @@ export function useCardDrag(
                 (endTouch.clientX - dragStart.current.x) ** 2 +
                 (endTouch.clientY - dragStart.current.y) ** 2
             );
-            if (dist < 10) {
-                setIsFlipped(prev => !prev);
+            // One-way flip: only Side 1 → Side 2, never back.
+            if (dist < 10 && !hasFlippedCurrentCard) {
+                setIsFlipped(true);
                 setHasFlippedCurrentCard(true);
             }
             return;
@@ -114,10 +118,10 @@ export function useCardDrag(
         const dragDistance = Math.sqrt(x * x + y * y);
 
         if (dragDistance < tapThreshold) {
-            // This was a tap, not a drag - flip the card
+            // Tap on an already-flipped card: flip is one-way so we just snap
+            // back to rest. The Side 1 → Side 2 flip was handled by the
+            // tap-while-dragging-blocked branch above.
             setDragPosition({ x: 0, y: 0 });
-            setIsFlipped(prev => !prev);
-            setHasFlippedCurrentCard(true);
         } else if (Math.abs(x) > threshold) {
             // Card dismissed — leave dragPosition at its current release position so
             // the fly-out animation starts from where the user dropped it. The parent
@@ -156,11 +160,13 @@ export function useCardDrag(
     }, [isDragging, isAnimating]);
 
     const handleDocumentMouseUp = useCallback(() => {
-        // Handle the flip-only case: mousedown was recorded but dragging was blocked
+        // Handle the flip-only case: mousedown was recorded but dragging was blocked.
+        // Reachable only when !hasFlippedCurrentCard (mousedown gate at line 139),
+        // so the one-way Side 1 → Side 2 transition is safe here.
         if (isFlipOnlyMouseDown) {
             setIsFlipOnlyMouseDown(false);
             if (!isAnimating) {
-                setIsFlipped(prev => !prev);
+                setIsFlipped(true);
                 setHasFlippedCurrentCard(true);
             }
             return;
@@ -177,10 +183,10 @@ export function useCardDrag(
         const dragDistance = Math.sqrt(x * x + y * y);
 
         if (dragDistance < tapThreshold) {
-            // This was a click, not a drag - flip the card
+            // Click on an already-flipped card: flip is one-way, so just snap
+            // back to rest. The Side 1 → Side 2 flip was handled by the
+            // isFlipOnlyMouseDown branch above.
             setDragPosition({ x: 0, y: 0 });
-            setIsFlipped(prev => !prev);
-            setHasFlippedCurrentCard(true);
         } else if (Math.abs(x) > threshold) {
             // Card dismissed — leave dragPosition at its release position so the
             // fly-out animation starts from where the user dropped it.

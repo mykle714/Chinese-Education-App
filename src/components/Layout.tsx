@@ -82,6 +82,7 @@ function Layout({ children }: LayoutProps) {
         navItems.push(
             { text: "Dictionary", path: "/dictionary", icon: <BookIcon /> },
             { text: "Mobile Demo", path: "/flashcards/decks", icon: <PhoneIphoneIcon /> },
+            { text: "Night Market", path: "/night-market", icon: <NightsStayIcon /> },
             { text: "Settings", path: "/settings", icon: <SettingsIcon /> }
         );
     } else {
@@ -272,6 +273,7 @@ function Layout({ children }: LayoutProps) {
 
             {/* Main content wrapper — width + ml must sum to 100% to avoid overflow */}
             <Box
+                className="layout-main-wrapper"
                 sx={{
                     minWidth: 0,
                     display: 'flex',
@@ -282,17 +284,13 @@ function Layout({ children }: LayoutProps) {
             >
                 {/* Content area */}
                 <Box
+                    className="layout-main-content"
                     component="main"
                     sx={{
                         flexGrow: 1,
                         display: 'flex',
                         flexDirection: 'column',
                         alignItems: 'stretch',   // children fill full width; each Container centers itself via margin:auto
-                        pt: { xs: 2, sm: 3 },    // top padding
-                        pb: { xs: 2, sm: 3 },    // bottom padding
-                        // horizontal padding omitted — each page's Container provides its own horizontal padding
-                        mt: isMobile ? 8 : 2,
-                        mb: 6 // bottom margin to account for the footer
                     }}
                 >
                     {children}

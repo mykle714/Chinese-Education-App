@@ -6,7 +6,10 @@ import { useWorkPoints } from "../../hooks/useWorkPoints";
 import { API_BASE_URL } from "../../constants";
 import { IPhoneFrame, ContentArea } from "./styled";
 import { COLORS } from "./constants";
-import type { VocabEntry, BreakdownItem, MarkCardResult, LastMarkUndoSnapshot } from "./types";
+import type { VocabEntry, BreakdownItem, MarkCardResult, LastMarkUndoSnapshot, SideOneLanguage } from "./types";
+
+// Pick a random language for a card's Side 1. Side 2 always shows both.
+const randomSideOneLanguage = (): SideOneLanguage => (Math.random() < 0.5 ? 'en' : 'zh');
 import { useCardDrag } from "./useCardDrag";
 import FlashcardsLearnHeader from "./FlashcardsLearnHeader";
 import InfoCardSection from "./InfoCardSection";
@@ -35,6 +38,11 @@ const FlashcardsLearnPage: React.FC = () => {
     // which slot is currently animating off-screen.
     const [activeFrontSlot, setActiveFrontSlot] = useState<0 | 1>(0);
     const [flyOut, setFlyOut] = useState<{ slot: 0 | 1; direction: 'left' | 'right' } | null>(null);
+    // Side 1 language for the current card and the next (back-slot) card.
+    // Rolled forward on dismiss so the peeking card's language matches what it
+    // will be once promoted to front.
+    const [currentSideOneLanguage, setCurrentSideOneLanguage] = useState<SideOneLanguage>('zh');
+    const [nextSideOneLanguage, setNextSideOneLanguage] = useState<SideOneLanguage>('zh');
 
     // Work points integration — activity detection is handled globally by useActivityDetection
     // inside useWorkPoints. No need for manual recordActivity() calls.
@@ -117,8 +125,12 @@ const FlashcardsLearnPage: React.FC = () => {
                 setWorkingLoop(cards);
                 setLastMarkUndoSnapshot(null);
 
-                // Randomly set initial flip state
-                setIsFlipped(Math.random() < 0.5);
+                // New deck: both visible cards start on Side 1 with a freshly
+                // randomized language. useCardDrag also resets isFlipped on
+                // card change, but we set it explicitly here for clarity.
+                setIsFlipped(false);
+                setCurrentSideOneLanguage(randomSideOneLanguage());
+                setNextSideOneLanguage(randomSideOneLanguage());
             } catch (err) {
                 setError(err instanceof Error ? err.message : "Unknown error");
             } finally {
@@ -133,8 +145,15 @@ const FlashcardsLearnPage: React.FC = () => {
     // reference is stable, so adding it here doesn't cause extra re-runs.
     }, [token, selectedCategory, setIsFlipped]);
 
-    // Mark card with retry logic
-    const markCard = async (cardId: number, isCorrect: boolean, retryCount = 0): Promise<MarkCardResult | null> => {
+    // Mark card with retry logic.
+    // `excludeIds` tells the server which cards are already in the working loop,
+    // so the replacement card it returns won't duplicate one the user already has.
+    const markCard = async (
+        cardId: number,
+        isCorrect: boolean,
+        excludeIds: number[],
+        retryCount = 0
+    ): Promise<MarkCardResult | null> => {
         try {
             const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
             const headers: HeadersInit = {
@@ -151,7 +170,7 @@ const FlashcardsLearnPage: React.FC = () => {
                 method: 'POST',
                 headers,
                 credentials: 'include',
-                body: JSON.stringify({ cardId, isCorrect }),
+                body: JSON.stringify({ cardId, isCorrect, excludeIds }),
             });
 
             if (!response.ok) {
@@ -172,7 +191,7 @@ const FlashcardsLearnPage: React.FC = () => {
             if (retryCount < 3) {
                 // Exponential backoff: wait 500ms, 1s, 2s
                 await new Promise(resolve => setTimeout(resolve, 500 * Math.pow(2, retryCount)));
-                return markCard(cardId, isCorrect, retryCount + 1);
+                return markCard(cardId, isCorrect, excludeIds, retryCount + 1);
             }
             console.error('Failed to mark card after retries:', err);
             setError('Failed to save progress. Please check your connection.');
@@ -191,6 +210,8 @@ const FlashcardsLearnPage: React.FC = () => {
             currentIndex,
             isFlipped,
             selectedTab,
+            currentSideOneLanguage,
+            nextSideOneLanguage,
         };
 
         setIsAnimating(true);
@@ -200,11 +221,17 @@ const FlashcardsLearnPage: React.FC = () => {
         setFlyOut({ slot: activeFrontSlot, direction });
         setActiveFrontSlot(prev => (1 - prev) as 0 | 1);
         setCurrentIndex(prev => (prev + 1) % workingLoop.length);
-        setIsFlipped(Math.random() < 0.5);
+        // Promote the peeking card's language to current and generate a fresh
+        // random language for the new back-slot card. useCardDrag resets
+        // isFlipped=false on card change (keyed off currentIndex).
+        setCurrentSideOneLanguage(nextSideOneLanguage);
+        setNextSideOneLanguage(randomSideOneLanguage());
 
         // Fire mark API in background — newCard replaces the current slot, not the next one,
         // so the UI doesn't need to wait for the response before advancing.
-        markCard(currentCard.id, isCorrect)
+        // Send the current working loop's ids so the server doesn't return a duplicate.
+        const excludeIds = workingLoop.map(card => card.id);
+        markCard(currentCard.id, isCorrect, excludeIds)
             .then(markResult => {
                 if (!markResult) return;
                 const { newCard, markTimestamp, displacedMark } = markResult;
@@ -278,6 +305,8 @@ const FlashcardsLearnPage: React.FC = () => {
             setCurrentIndex(lastMarkUndoSnapshot.currentIndex);
             setIsFlipped(lastMarkUndoSnapshot.isFlipped);
             setSelectedTab(lastMarkUndoSnapshot.selectedTab);
+            setCurrentSideOneLanguage(lastMarkUndoSnapshot.currentSideOneLanguage);
+            setNextSideOneLanguage(lastMarkUndoSnapshot.nextSideOneLanguage);
             setLastMarkUndoSnapshot(null);
         } catch (err) {
             console.error('Failed to undo last mark:', err);
@@ -370,6 +399,8 @@ const FlashcardsLearnPage: React.FC = () => {
                     isAnimating={isAnimating}
                     selectedCategory={selectedCategory}
                     showPinyin={showPinyin}
+                    sideOneLanguage={currentSideOneLanguage}
+                    nextSideOneLanguage={nextSideOneLanguage}
                     handlers={handlers}
                 />
             </ContentArea>

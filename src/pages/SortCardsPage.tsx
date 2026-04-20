@@ -60,7 +60,7 @@ const ContentArea = styled(Box)({
 
 // CSS grid distributes the 4 buckets evenly in a 2×2 layout regardless of viewport height
 const BucketsContainer = styled(Box)({
-    width: "100vw",
+    width: "100%",
     flex: "2 2 0", // flex-basis: 0 gives grid a definite height so 1fr rows resolve correctly
     minHeight: 0, // allow flex to shrink below grid content size on small screens
     maxHeight: 424, // 2 × 200px buckets + 16px rowGap + 8px paddingBlock
@@ -109,7 +109,7 @@ const Bucket = styled(Box)<{ mainColor: string; accentColor: string; highlight?:
 );
 
 const OnDeckSection = styled(Box)({
-    width: "100vw",
+    width: "100%",
     flex: 1,
     minHeight: 0, // allow flex to shrink below card content size on small screens
     paddingBlock: "4px",

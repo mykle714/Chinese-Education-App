@@ -49,6 +49,10 @@ export interface MarkCardResult {
     displacedMark: ReviewMark | null;
 }
 
+// Per-card randomized choice of which language is shown on Side 1 of the card.
+// Side 2 always shows both languages.
+export type SideOneLanguage = 'en' | 'zh';
+
 export interface LastMarkUndoSnapshot {
     cardId: number;
     markTimestamp: string;
@@ -57,4 +61,6 @@ export interface LastMarkUndoSnapshot {
     currentIndex: number;
     isFlipped: boolean;
     selectedTab: number;
+    currentSideOneLanguage: SideOneLanguage;
+    nextSideOneLanguage: SideOneLanguage;
 }

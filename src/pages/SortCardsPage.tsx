@@ -12,6 +12,7 @@ import { API_BASE_URL } from "../constants";
 import { stripParentheses } from "../utils/definitionUtils";
 import type { Language, DiscoverCard, DiscoverFetchResponse, DiscoverSortResponse } from "../types";
 import { usePageTitle } from "../hooks/usePageTitle";
+import { useAuth } from "../AuthContext";
 
 // Parses an HSK label like "HSK3" → 3, returns null for missing/malformed values.
 function parseHskLevel(label: string | null | undefined): number | null {
@@ -152,6 +153,7 @@ interface BucketZone {
 
 const SortCardsPage: React.FC = () => {
     usePageTitle("Discover");
+    const { token } = useAuth();
     const { language } = useParams<{ language: Language }>();
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -195,6 +197,7 @@ const SortCardsPage: React.FC = () => {
         const fetchCards = async () => {
             try {
                 const response = await fetch(`${API_BASE_URL}/api/starter-packs/${language}`, {
+                    headers: token ? { 'Authorization': `Bearer ${token}` } : {},
                     credentials: "include",
                 });
                 if (response.ok) {
@@ -405,7 +408,7 @@ const SortCardsPage: React.FC = () => {
         try {
             const response = await fetch(`${API_BASE_URL}/api/starter-packs/sort`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: { "Content-Type": "application/json", ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
                 credentials: "include",
                 body: JSON.stringify({
                     cardId: sortedCard.id,
@@ -447,7 +450,7 @@ const SortCardsPage: React.FC = () => {
         try {
             await fetch(`${API_BASE_URL}/api/starter-packs/undo`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: { "Content-Type": "application/json", ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
                 credentials: "include",
                 body: JSON.stringify({
                     cardId: lastAction.card.id,
@@ -474,7 +477,7 @@ const SortCardsPage: React.FC = () => {
             const excludeIds = cardQueue.slice(currentCardIndex).map((c) => c.id);
             const response = await fetch(`${API_BASE_URL}/api/starter-packs/${language}/more`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: { "Content-Type": "application/json", ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
                 credentials: "include",
                 body: JSON.stringify({ excludeIds }),
             });

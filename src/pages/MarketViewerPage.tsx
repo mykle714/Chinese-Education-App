@@ -15,7 +15,7 @@ import type { NightMarketAssetDef, FrameAnimation, MotionSpec } from '../config/
 import { DEMO_STALLS, WALKWAYS } from '../config/walkwayRegistry';
 import { isoToScreen, computeLayerZ } from '../utils/isometric';
 import { polylineLength, pointAtT } from '../utils/walkwayTraversal';
-import floorTileUrl from '../assets/test assets/floor.png';
+import floorTileUrl from '../assets/test-assets/floor.png';
 
 /**
  * Night Market Page

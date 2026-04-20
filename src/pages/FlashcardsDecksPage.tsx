@@ -225,6 +225,7 @@ const FlashcardsDecksPage: React.FC = () => {
 
                 const response = await fetch(`${API_BASE_URL}/api/onDeck/non-mastered-library-cards`, {
                     credentials: 'include',
+                    headers: { 'Authorization': `Bearer ${token}` },
                 });
 
                 if (!response.ok) {
@@ -255,6 +256,7 @@ const FlashcardsDecksPage: React.FC = () => {
 
                 const response = await fetch(`${API_BASE_URL}/api/onDeck/learn-later-cards`, {
                     credentials: 'include',
+                    headers: { 'Authorization': `Bearer ${token}` },
                 });
 
                 if (!response.ok) {
@@ -285,6 +287,7 @@ const FlashcardsDecksPage: React.FC = () => {
 
                 const response = await fetch(`${API_BASE_URL}/api/onDeck/mastered-library-cards`, {
                     credentials: 'include',
+                    headers: { 'Authorization': `Bearer ${token}` },
                 });
 
                 if (!response.ok) {
@@ -324,6 +327,7 @@ const FlashcardsDecksPage: React.FC = () => {
             setLoading(true);
             const response = await fetch(`${API_BASE_URL}/api/onDeck/non-mastered-library-cards`, {
                 credentials: 'include',
+                headers: { 'Authorization': `Bearer ${token}` },
             });
             if (response.ok) {
                 const data = await response.json();
@@ -340,6 +344,7 @@ const FlashcardsDecksPage: React.FC = () => {
             setLearnLaterLoading(true);
             const response = await fetch(`${API_BASE_URL}/api/onDeck/learn-later-cards`, {
                 credentials: 'include',
+                headers: { 'Authorization': `Bearer ${token}` },
             });
             if (response.ok) {
                 const data = await response.json();
@@ -356,6 +361,7 @@ const FlashcardsDecksPage: React.FC = () => {
             setMasteredLoading(true);
             const response = await fetch(`${API_BASE_URL}/api/onDeck/mastered-library-cards`, {
                 credentials: 'include',
+                headers: { 'Authorization': `Bearer ${token}` },
             });
             if (response.ok) {
                 const data = await response.json();

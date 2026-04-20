@@ -29,10 +29,10 @@ import { buildGraph, bfsRouteStrategy } from '../utils/walkwayGraph';
 import { buildPoisFromStalls } from '../utils/stallPoi';
 
 // Demo stall sprites — reuse existing test assets.
-import baseImgUrl from '../assets/test assets/base.png';
-import floorImgUrl from '../assets/test assets/floor.png';
-import humanImgUrl from '../assets/test assets/human.png';
-import roofImgUrl from '../assets/test assets/roof.png';
+import baseImgUrl from '../assets/test-assets/base.png';
+import floorImgUrl from '../assets/test-assets/floor.png';
+import humanImgUrl from '../assets/test-assets/human.png';
+import roofImgUrl from '../assets/test-assets/roof.png';
 
 // ---------------------------------------------------------------------------
 // Walkways — all single axis-aligned segments (exactly 2 points each).

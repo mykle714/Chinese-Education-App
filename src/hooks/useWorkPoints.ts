@@ -91,9 +91,10 @@ const workPointsReducer = (state: WorkPointsState, action: WorkPointsAction): Wo
 };
 
 /** Fetch totalWorkPoints and currentStreak from the server */
-async function fetchServerTotals(userId: string): Promise<{ totalWorkPoints: number; currentStreak: number } | null> {
+async function fetchServerTotals(userId: string, token?: string | null): Promise<{ totalWorkPoints: number; currentStreak: number } | null> {
   try {
     const response = await fetch(`${window.location.origin}/api/users/${userId}/total-work-points`, {
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
       credentials: 'include'
     });
     if (response.ok) {
@@ -106,7 +107,7 @@ async function fetchServerTotals(userId: string): Promise<{ totalWorkPoints: num
 }
 
 export const useWorkPoints = (): UseWorkPointsReturn => {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const location = useLocation();
 
   const [state, dispatch] = useReducer(workPointsReducer, {
@@ -141,10 +142,12 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
   const stateRef = useRef(state);
   const userIdRef = useRef(user?.id);
   const isEligiblePageRef = useRef(isEligiblePage);
+  const tokenRef = useRef(token);
 
   useEffect(() => { stateRef.current = state; }, [state]);
   useEffect(() => { userIdRef.current = user?.id; }, [user?.id]);
   useEffect(() => { isEligiblePageRef.current = isEligiblePage; }, [isEligiblePage]);
+  useEffect(() => { tokenRef.current = token; }, [token]);
 
   // Load initial data and check daily boundary
   useEffect(() => {
@@ -167,10 +170,10 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
       const stored = loadWorkPointsDataSync(user.id);
 
       // Check if a new day has started; if so, tell the server
-      const resetCheck = await checkAndSyncDailyReset(user.id, stored);
+      const resetCheck = await checkAndSyncDailyReset(user.id, stored, token);
 
       // Fetch authoritative totals from server
-      const serverData = await fetchServerTotals(user.id);
+      const serverData = await fetchServerTotals(user.id, token);
 
       if (resetCheck.shouldReset) {
         const accumulativePoints = serverData?.totalWorkPoints ?? stored.totalWorkPoints;
@@ -286,10 +289,10 @@ export const useWorkPoints = (): UseWorkPointsReturn => {
         const todayDate = new Date().toISOString().split('T')[0];
         const wasAtThreshold = oldPoints < STREAK_CONFIG.RETENTION_POINTS && newPoints >= STREAK_CONFIG.RETENTION_POINTS;
 
-        incrementWorkPoint(todayDate).then((result) => {
+        incrementWorkPoint(todayDate, tokenRef.current).then((result) => {
           if (result.success && wasAtThreshold) {
             // Streak was incremented server-side — pull the updated value
-            fetchServerTotals(currentUserId).then((data) => {
+            fetchServerTotals(currentUserId, tokenRef.current).then((data) => {
               if (data) {
                 dispatch({ type: 'SET_STREAK', payload: data.currentStreak });
               }

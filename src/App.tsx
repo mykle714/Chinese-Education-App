@@ -65,7 +65,11 @@ function App() {
                     <FlashcardsLearnPage />
                   </ProtectedRoute>
                 } />
-                <Route path="/flashcards/decks" element={<FlashcardsDecksPage />} />
+                <Route path="/flashcards/decks" element={
+                  <ProtectedRoute allowPublic>
+                    <FlashcardsDecksPage />
+                  </ProtectedRoute>
+                } />
                 <Route path="/reader" element={
                   <ProtectedRoute allowPublic>
                     <ReaderPage />

@@ -27,7 +27,7 @@ export interface UseCalendarWorkPointsReturn {
 }
 
 export const useCalendarWorkPoints = (initialMonth?: string): UseCalendarWorkPointsReturn => {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const [calendarData, setCalendarData] = useState<CalendarDataResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,11 +55,16 @@ export const useCalendarWorkPoints = (initialMonth?: string): UseCalendarWorkPoi
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        // Silently bail on 404 (endpoint not yet implemented)
+        if (response.status === 404) {
+          return;
+        }
+        const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
       }
 
@@ -107,7 +112,7 @@ export const useCalendarWorkPoints = (initialMonth?: string): UseCalendarWorkPoi
     } finally {
       setIsLoading(false);
     }
-  }, [user?.id]);
+  }, [user?.id, token]);
 
   // Fetch data for current month on mount
   useEffect(() => {

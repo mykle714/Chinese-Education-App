@@ -14,10 +14,10 @@
  */
 
 // Asset imports — Vite resolves these to hashed URLs at build time
-import baseImgUrl from '../assets/test assets/base.png';
-import floorImgUrl from '../assets/test assets/floor.png';
-import humanImgUrl from '../assets/test assets/human.png';
-import roofImgUrl from '../assets/test assets/roof.png';
+import baseImgUrl from '../assets/test-assets/base.png';
+import floorImgUrl from '../assets/test-assets/floor.png';
+import humanImgUrl from '../assets/test-assets/human.png';
+import roofImgUrl from '../assets/test-assets/roof.png';
 
 /**
  * Render slot determines sub-layer ordering within a stand's depth.

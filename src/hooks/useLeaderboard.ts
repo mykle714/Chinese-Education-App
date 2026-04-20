@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '../AuthContext';
 import { API_BASE_URL } from '../constants';
 
 export interface LeaderboardEntry {
@@ -32,6 +33,7 @@ export const useLeaderboard = (options: UseLeaderboardOptions = {}) => {
     autoRefresh = false,
     refreshInterval = 30000 // 30 seconds
   } = options;
+  const { token } = useAuth();
 
   const [leaderboardData, setLeaderboardData] = useState<LeaderboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -51,9 +53,10 @@ export const useLeaderboard = (options: UseLeaderboardOptions = {}) => {
 
       const response = await fetch(url, {
         method: 'GET',
-        credentials: 'include', // Include cookies for authentication
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
       });
 
@@ -79,7 +82,7 @@ export const useLeaderboard = (options: UseLeaderboardOptions = {}) => {
     } finally {
       setLoading(false);
     }
-  }, [limit]);
+  }, [limit, token]);
 
   // Manually refresh the leaderboard
   const refresh = useCallback(() => {

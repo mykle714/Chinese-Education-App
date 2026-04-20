@@ -15,12 +15,13 @@ import { type WorkPointsStorage } from './workPointsStorage';
  */
 export async function checkAndSyncDailyReset(
   _userId: string,
-  data: WorkPointsStorage
+  data: WorkPointsStorage,
+  token?: string | null
 ): Promise<{ shouldReset: boolean }> {
   const todayDateString = getTodayDateString();
 
   // Always notify the server — it decides if a streak penalty applies
-  await newDayOperation(todayDateString);
+  await newDayOperation(todayDateString, token);
 
   // Determine if the local daily timer should reset (last activity was a prior calendar day)
   const lastActivityDate = new Date(data.lastActivity).toDateString();

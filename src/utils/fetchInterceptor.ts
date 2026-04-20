@@ -21,8 +21,13 @@ export const setupFetchInterceptor = () => {
     // Call the original fetch — network errors propagate naturally
     const response = await originalFetch(...args);
 
-    // Check for authentication errors
-    if (response.status === 401 || response.status === 403) {
+    // Auth endpoints handle their own failures — don't treat /api/auth/* 401s as
+    // "session expired" since checkAuth and login manage those paths directly.
+    const url = typeof args[0] === 'string' ? args[0] : (args[0] as Request).url;
+    const isAuthEndpoint = url.includes('/api/auth/');
+
+    // Check for authentication errors on non-auth endpoints only
+    if (!isAuthEndpoint && (response.status === 401 || response.status === 403)) {
       console.log('Token expired or unauthorized (detected by fetch interceptor), redirecting to login...');
 
       // Clear auth state

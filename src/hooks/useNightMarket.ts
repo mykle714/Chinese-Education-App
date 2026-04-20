@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { API_BASE_URL } from '../constants';
+import { useAuth } from '../AuthContext';
 import { useWorkPoints } from './useWorkPoints';
 
 /** A single unlock record from the server */
@@ -60,6 +61,8 @@ export function useNightMarket(): UseNightMarketReturn {
   const [newUnlock, setNewUnlock] = useState<NightMarketUnlock | null>(null);
   const [isUnlocking, setIsUnlocking] = useState(false);
 
+  const { token } = useAuth();
+
   // Get accumulated work points to determine unlock eligibility
   const { accumulativeWorkPoints } = useWorkPoints();
   const canUnlock = accumulativeWorkPoints >= nextThreshold && !isUnlocking;
@@ -73,7 +76,10 @@ export function useNightMarket(): UseNightMarketReturn {
       const response = await fetch(`${API_BASE_URL}/api/night-market/unlocks`, {
         method: 'GET',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
       });
 
       if (!response.ok) {
@@ -95,7 +101,7 @@ export function useNightMarket(): UseNightMarketReturn {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [token]);
 
   /** Unlock the next random item */
   const unlockNext = useCallback(async () => {
@@ -106,7 +112,10 @@ export function useNightMarket(): UseNightMarketReturn {
       const response = await fetch(`${API_BASE_URL}/api/night-market/unlock`, {
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
       });
 
       if (!response.ok) {
@@ -127,7 +136,7 @@ export function useNightMarket(): UseNightMarketReturn {
     } finally {
       setIsUnlocking(false);
     }
-  }, []);
+  }, [token]);
 
   const clearNewUnlock = useCallback(() => {
     setNewUnlock(null);

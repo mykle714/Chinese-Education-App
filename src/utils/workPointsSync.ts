@@ -9,12 +9,16 @@ import { API_BASE_URL } from '../constants';
  * Increment work points by exactly 1 (server-side rate-limited)
  */
 export async function incrementWorkPoint(
-  date: string
+  date: string,
+  token?: string | null
 ): Promise<{ success: boolean; message: string }> {
   try {
     const response = await fetch(`${API_BASE_URL}/api/users/work-points/increment`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      },
       credentials: 'include',
       body: JSON.stringify({ date })
     });
@@ -41,11 +45,14 @@ export async function incrementWorkPoint(
  * The server will reset the streak and apply a penalty if the user missed 2+ days.
  * Fire-and-forget; 204 means the server handled it.
  */
-export async function newDayOperation(date: string): Promise<void> {
+export async function newDayOperation(date: string, token?: string | null): Promise<void> {
   try {
     await fetch(`${API_BASE_URL}/api/users/work-points/new-day`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      },
       credentials: 'include',
       body: JSON.stringify({ date })
     });

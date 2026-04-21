@@ -18,7 +18,8 @@ const DICTIONARY_COLUMNS = `
   expansion, "expansionLiteralTranslation",
   "matchException",
   "shortDefinitionPronunciationOverride",
-  "exampleSentenceDefinitionPronunciationOverride"
+  "exampleSentenceDefinitionPronunciationOverride",
+  "vernacularScore"
 `.trim();
 
 /**

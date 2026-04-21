@@ -238,11 +238,8 @@ const SortCardsPage: React.FC = () => {
                 const lvl = parseHskLevel(c.hskLevel);
                 if (lvl == null) return false;
                 if (provisionalMode) {
-                    // Provisional: show cards at or below targetLevel (userHskLevel+1).
-                    // The server's primary query returns only userHskLevel+1..6, so
-                    // lower-level cards only appear via the easier-review fallback
-                    // when the upper band is fully exhausted.
-                    return lvl <= targetLevel;
+                    // Provisional: show only cards at exactly targetLevel (userHskLevel+1).
+                    return lvl === targetLevel;
                 }
                 // Normal: show [userHskLevel, userHskLevel+1]
                 const min = Math.max(1, userHskLevel);
@@ -287,20 +284,10 @@ const SortCardsPage: React.FC = () => {
         }
     }, [currentCard, userHskLevel, provisionalMode]);
 
-    // Head-skip effect: whenever `cardQueue` changes (initial load or load-more),
-    // advance past any out-of-band card that landed at the head position.
-    //
-    // This covers two cases the frozen-head design intentionally does NOT handle:
-    //   1. Initial load — first card in the batch may be below the filter band.
-    //   2. Load-more boundary — when the advance-skip exhausts the current batch
-    //      and sets currentCardIndex = cardQueue.length, the next load-more appends
-    //      cards ordered by id ASC (starting at HSK2), making cardQueue[currentCardIndex]
-    //      an out-of-band card that would otherwise be frozen at the head.
-    //
-    // Intentionally depends only on `cardQueue` — NOT on userHskLevel/provisionalMode
-    // — so a mid-session level update alone does not yank the active card (frozen-head
-    // design is preserved for that case; the stale-closure read of userHskLevel and
-    // provisionalMode below is intentional and correct for the cardQueue-change scenario).
+    // Head-skip effect: advance past any out-of-band card at the head position.
+    // Runs on cardQueue changes (initial load, load-more) and on band changes
+    // (userHskLevel / provisionalMode updates from the server) so that a
+    // mid-session rank-up updates the displayed card to match the new band.
     useEffect(() => {
         if (userHskLevel == null || cardQueue.length === 0) return;
         const head = cardQueue[currentCardIndex];
@@ -308,9 +295,7 @@ const SortCardsPage: React.FC = () => {
         const lvl = parseHskLevel(head.hskLevel);
         if (lvl == null) return;
         const targetLevel = Math.min(6, userHskLevel + 1);
-        // Provisional mode accepts any card at or below targetLevel (matching
-        // the visibleQueue filter). Normal mode uses [userHskLevel, targetLevel].
-        const min = provisionalMode ? 1 : Math.max(1, userHskLevel);
+        const min = provisionalMode ? targetLevel : Math.max(1, userHskLevel);
         if (lvl >= min && lvl <= targetLevel) return; // head is in-band, nothing to do
         let next = currentCardIndex + 1;
         while (next < cardQueue.length) {
@@ -319,8 +304,7 @@ const SortCardsPage: React.FC = () => {
             next++;
         }
         if (next !== currentCardIndex) setCurrentCardIndex(next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [cardQueue]); // cardQueue only — see comment above
+    }, [cardQueue, currentCardIndex, userHskLevel, provisionalMode]);
 
     // Reset exhausted flag when the HSK band changes — the server may have
     // cards in the new band even though the previous band was exhausted.
@@ -392,7 +376,7 @@ const SortCardsPage: React.FC = () => {
         setCurrentCardIndex((prev) => {
             if (userHskLevel == null) return prev + 1;
             const targetLevel = Math.min(6, userHskLevel + 1);
-            const min = provisionalMode ? 1 : Math.max(1, userHskLevel);
+            const min = provisionalMode ? targetLevel : Math.max(1, userHskLevel);
             let next = prev + 1;
             while (next < cardQueue.length) {
                 const lvl = parseHskLevel(cardQueue[next].hskLevel);

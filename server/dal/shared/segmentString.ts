@@ -10,6 +10,7 @@ export interface SegmentMeta {
   // Verbatim overrides from exampleSentenceDefinitionPronunciationOverride — bypass context-matching when set
   overridePronunciation?: string;
   overrideDefinition?: string;
+  vernacularScore?: number | null;
 }
 
 function normalizeText(value: string): string {
@@ -104,6 +105,7 @@ export function buildDictMap(dictEntries: DictionaryEntry[]): Map<string, Segmen
         pronunciation: entry.pronunciation || '',
         definition: fallbackDefinition,
         definitions,
+        vernacularScore: entry.vernacularScore ?? null,
         // Carry overrides through so the enrichment loop can apply them verbatim
         ...(esOverride?.pronunciation != null && { overridePronunciation: esOverride.pronunciation }),
         ...(esOverride?.definition != null && { overrideDefinition: esOverride.definition }),
@@ -135,10 +137,12 @@ export function buildExcludeSet(dictEntries: DictionaryEntry[]): Set<string> {
 }
 
 /**
- * Greedy longest-match segmentation of a Chinese string using a pre-fetched dictionary map.
- * Tries substring lengths 4→3→2→1, scanning left-to-right at each length tier.
- * The first match found is extracted, then left/right remainders are recursively segmented.
- * Falls back to individual characters when no dictionary match exists.
+ * Best-score segmentation of a Chinese string using a pre-fetched dictionary map.
+ * Tries substring lengths 4→1. At each length tier, all matching substrings are
+ * evaluated and the one with the highest vernacularScore is chosen (null treated as 0).
+ * Tiebreak: later position in the string wins (higher startIdx).
+ * The winner is extracted, then left/right remainders are recursively segmented.
+ * Falls back to individual characters when no dictionary match exists at any length.
  *
  * @param str - The Chinese string to segment
  * @param dictMap - Pre-built lookup map (from buildDictMap)
@@ -155,22 +159,34 @@ export function segmentWithDict(
 
   const chars = [...str];
 
-  // Try longest substrings first (greedy), scanning left-to-right at each length
+  // Try each length tier longest-first; within a tier, pick highest vernacularScore
+  // (null = 0), tiebreaking on later position (higher startIdx = more specific context)
   for (let length = Math.min(4, chars.length); length >= 1; length--) {
+    let bestIdx = -1;
+    let bestScore = -Infinity;
+
     for (let startIdx = 0; startIdx <= chars.length - length; startIdx++) {
       const substring = chars.slice(startIdx, startIdx + length).join('');
-      if (dictMap.has(substring)) {
-        // Skip multi-char tokens listed in matchException — single chars are never excluded
-        if (length > 1 && excludeTokens?.has(substring)) continue;
+      if (!dictMap.has(substring)) continue;
+      // Skip multi-char tokens listed in matchException — single chars are never excluded
+      if (length > 1 && excludeTokens?.has(substring)) continue;
 
-        const left = chars.slice(0, startIdx).join('');
-        const right = chars.slice(startIdx + length).join('');
-        return [
-          ...segmentWithDict(left, dictMap, excludeTokens),
-          substring,
-          ...segmentWithDict(right, dictMap, excludeTokens),
-        ];
+      const score = dictMap.get(substring)!.vernacularScore ?? 0;
+      if (score > bestScore || (score === bestScore && startIdx > bestIdx)) {
+        bestScore = score;
+        bestIdx = startIdx;
       }
+    }
+
+    if (bestIdx !== -1) {
+      const winner = chars.slice(bestIdx, bestIdx + length).join('');
+      const left = chars.slice(0, bestIdx).join('');
+      const right = chars.slice(bestIdx + length).join('');
+      return [
+        ...segmentWithDict(left, dictMap, excludeTokens),
+        winner,
+        ...segmentWithDict(right, dictMap, excludeTokens),
+      ];
     }
   }
 

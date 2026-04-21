@@ -136,6 +136,7 @@ export interface DictionaryEntry {
   expansionMetadata?: Record<string, { pronunciation?: string; definition?: string }> | null;  // Keyed by segment
   expansionLiteralTranslation?: string | null;
   matchException?: string[] | null;  // Multi-char tokens to suppress during GSA segmentation
+  vernacularScore?: number | null;   // Higher = more colloquially common; used by GSA to prefer common words
 };
 
 // Discover Card type — a curated DictionaryEntry shaped for the sort-cards UI

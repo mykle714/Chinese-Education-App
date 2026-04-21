@@ -1,6 +1,6 @@
 # Mark Words as Discoverable
 
-Given a list of Chinese words, set `discoverable = TRUE` and run the full 8-step enrichment pipeline scoped to those words.
+Given a list of Chinese words, set `discoverable = TRUE` and run the full 9-step enrichment pipeline scoped to those words.
 
 ## Arguments
 
@@ -30,7 +30,7 @@ RETURNING id, word1, discoverable;
 
 ### 3. Run the full enrichment pipeline scoped to the words
 
-Run all 8 steps in order with `--words=word1,word2,...`. Use the comma-joined hanzi list as the value.
+Run all 9 steps in order with `--words=word1,word2,...`. Use the comma-joined hanzi list as the value.
 
 **Step 1 — Tones (deterministic)**
 ```bash
@@ -72,6 +72,11 @@ docker exec cow-backend-local npx tsx scripts/backfill-example-sentences.js --wo
 docker exec cow-backend-local npx tsx scripts/backfill-classifier.js --words=未来,摸脉
 ```
 
+**Step 9 — Vernacular Score (AI)**
+```bash
+docker exec cow-backend-local npx tsx scripts/backfill-vernacular-score.js --words=未来,摸脉
+```
+
 ### 4. Verify enrichment
 
 ```sql
@@ -82,6 +87,7 @@ SELECT
   "exampleSentences" IS NOT NULL AS has_examples,
   breakdown IS NOT NULL AS has_breakdown,
   classifier IS NOT NULL AS has_classifier,
+  "vernacularScore" IS NOT NULL AS has_vernacular_score,
   discoverable
 FROM dictionaryentries
 WHERE word1 = ANY(ARRAY['未来', '摸脉']) AND language = 'zh';

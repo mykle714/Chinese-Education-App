@@ -28,11 +28,10 @@ export class StarterPacksService {
    *      all reach the UI; that's OK, they're a safety net.
    */
   async getStarterPackCards(language: string, userId: string, excludeIds: number[] = []): Promise<{ cards: DiscoverCard[]; userHskLevel: number; provisionalMode: boolean }> {
-    // Compute the user's adaptive HSK level and provisional mode in parallel
-    const [userHskLevel, provisionalMode] = await Promise.all([
-      this.computeUserHskLevel(userId, language),
-      this.computeProvisionalMode(userId, language),
-    ]);
+    // Provisional mode must be known before the level calc — the level formula
+    // differs in provisional mode (see computeUserHskLevel).
+    const provisionalMode = await this.computeProvisionalMode(userId, language);
+    const userHskLevel = await this.computeUserHskLevel(userId, language, provisionalMode);
 
     // Step 1: primary query — band matched to the client filter so every fetched card is showable.
     // Provisional mode (< 3 Unfamiliar cards): no HSK band restriction — fetch from all levels so
@@ -97,16 +96,18 @@ export class StarterPacksService {
   /**
    * Compute the user's current adaptive HSK level.
    *
-   * The level is the ceiling of the average HSK level over the 50 hardest
-   * "Mastered" cards (sorted by hskLevel DESC). This anchors the user's level
-   * to the ceiling of what they've already learned.
+   * Normal mode: ceil(avg HSK level of the 50 hardest Mastered cards). Anchors
+   *   the level to the ceiling of what the user has solidly learned.
+   * Provisional mode (<3 Unfamiliar): ceil(1 + avg HSK level of the 5 hardest
+   *   Mastered cards). Pushes the level one band above recent mastery so the
+   *   user encounters harder cards and builds Unfamiliar signal quickly.
    *
-   * Returns 0 if the user has no mastered cards yet. Result is clamped
-   * to [1, 6] when mastered cards exist.
+   * Returns 0 if the user has no mastered cards yet. Otherwise clamped to [1, 6].
    */
-  private async computeUserHskLevel(userId: string, language: string): Promise<number> {
+  private async computeUserHskLevel(userId: string, language: string, provisionalMode: boolean): Promise<number> {
     const client = await db.getClient();
     try {
+      const sampleSize = provisionalMode ? 5 : 50;
       const result = await client.query<{ avg_lvl: number | null }>(`
         SELECT AVG(lvl)::float AS avg_lvl
         FROM (
@@ -119,13 +120,14 @@ export class StarterPacksService {
             AND ve.category = 'Mastered'
             AND de."hskLevel" ~ '^HSK[1-6]$'
           ORDER BY lvl DESC
-          LIMIT 50
+          LIMIT $3
         ) sub
-      `, [userId, language]);
+      `, [userId, language, sampleSize]);
 
       const avg = result.rows[0]?.avg_lvl;
       if (avg == null) return 0; // brand-new user with no mastered cards
-      return Math.max(1, Math.min(6, Math.ceil(avg)));
+      const raw = provisionalMode ? 1 + avg : avg;
+      return Math.max(1, Math.min(6, Math.ceil(raw)));
     } finally {
       client.release();
     }
@@ -330,10 +332,8 @@ export class StarterPacksService {
 
       // Recompute HSK level and provisional mode after the sort so the client
       // can update its filter on the fly. Both queries are cheap; run in parallel.
-      const [userHskLevel, provisionalMode] = await Promise.all([
-        this.computeUserHskLevel(userId, language),
-        this.computeProvisionalMode(userId, language),
-      ]);
+      const provisionalMode = await this.computeProvisionalMode(userId, language);
+      const userHskLevel = await this.computeUserHskLevel(userId, language, provisionalMode);
 
       return {
         success: true,

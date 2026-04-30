@@ -1,8 +1,8 @@
 import { Box, Card, CardContent, Typography, CircularProgress } from "@mui/material";
-import { useCalendarWorkPoints, type CalendarDayData } from "../hooks/useCalendarWorkPoints";
+import { useCalendarMinutePoints, type CalendarDayData } from "../hooks/useCalendarMinutePoints";
 
 function MonthlyCalendar() {
-    const { calendarData, isLoading, error } = useCalendarWorkPoints();
+    const { calendarData, isLoading, error } = useCalendarMinutePoints();
 
     // Get current date information for layout
     const now = new Date();
@@ -43,17 +43,18 @@ function MonthlyCalendar() {
     // Helper function to get points display text
     const getPointsText = (dayData: CalendarDayData): string => {
         if (!dayData.hasData) {
-            // Before user started or future days - no points display
             return '';
         }
 
         if (dayData.streakMaintained) {
-            // Green day - show points earned
-            return `+${dayData.workPointsEarned}`;
-        } else {
-            // Red day - show penalty amount
-            return `-${dayData.penaltyAmount}`;
+            return `+${dayData.minutesEarned}`;
         }
+
+        // Red day — surface a penalty if one was stamped, otherwise show minutes earned (which may be 0).
+        if (dayData.penaltyMinutes > 0) {
+            return `-${dayData.penaltyMinutes}`;
+        }
+        return `+${dayData.minutesEarned}`;
     };
 
     // Helper function to get status stamp emoji
@@ -127,7 +128,7 @@ function MonthlyCalendar() {
                             {currentMonth} {currentYear}
                         </Typography>
                         <Typography variant="body2" sx={{ opacity: 0.9 }}>
-                            {isLoading ? 'Loading activity data...' : 'Work points & penalties'}
+                            {isLoading ? 'Loading activity data...' : 'Minute points & penalties'}
                         </Typography>
                     </Box>
                 </Box>

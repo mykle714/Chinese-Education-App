@@ -12,20 +12,22 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 -- users
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS users (
-    id                     UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    email                  VARCHAR(255) NOT NULL UNIQUE,
-    name                   VARCHAR(100) NOT NULL,
-    password               VARCHAR(255) NOT NULL,
-    "selectedLanguage"     VARCHAR(10) DEFAULT 'zh',
-    "totalWorkPoints"      INTEGER DEFAULT 0,
-    "lastWorkPointIncrement" TIMESTAMP,
-    "isPublic"             BOOLEAN DEFAULT TRUE,
-    "currentStreak"        INTEGER NOT NULL DEFAULT 0,
-    "lastStreakIncrement"  TIMESTAMP,
-    "createdAt"            TIMESTAMP DEFAULT NOW()
+    id                         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    email                      VARCHAR(255) NOT NULL UNIQUE,
+    name                       VARCHAR(100) NOT NULL,
+    password                   VARCHAR(255) NOT NULL,
+    "selectedLanguage"         VARCHAR(10) DEFAULT 'zh',
+    "totalMinutePoints"        INTEGER DEFAULT 0,
+    "lastMinutePointIncrement" TIMESTAMP,
+    "isPublic"                 BOOLEAN DEFAULT TRUE,
+    "currentStreak"            INTEGER NOT NULL DEFAULT 0,
+    "lastStreakDate"           DATE,
+    "createdAt"                TIMESTAMP DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_last_minute_point_increment
+    ON users("lastMinutePointIncrement");
 
 -- ─────────────────────────────────────────────────────────────
 -- vocabentries
@@ -77,18 +79,21 @@ CREATE TABLE IF NOT EXISTS texts (
 CREATE INDEX IF NOT EXISTS idx_texts_userid ON texts("userId");
 
 -- ─────────────────────────────────────────────────────────────
--- userworkpoints
--- Daily work point tracking per user per device.
--- Composite PK prevents duplicate entries for the same user/day/device.
+-- userminutepoints
+-- Daily minute-points tracking per user. Aggregates across devices.
+-- "streakDate" is the user-local 4 AM-bounded day label
+-- (e.g. activity at 03:30 local on the 13th counts toward the 12th).
+-- "penaltyMinutes" records minutes deducted by a streak break that
+-- was attributed to this missed day.
 -- ─────────────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS userworkpoints (
-    "userId"            UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    date                DATE NOT NULL,
-    "deviceFingerprint" VARCHAR(255) NOT NULL,
-    "workPoints"        INTEGER NOT NULL DEFAULT 0,
+CREATE TABLE IF NOT EXISTS userminutepoints (
+    "userId"            UUID    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    "streakDate"        DATE    NOT NULL,
+    "minutesEarned"     INTEGER NOT NULL DEFAULT 0,
+    "penaltyMinutes"    INTEGER NOT NULL DEFAULT 0,
     "lastSyncTimestamp" TIMESTAMP DEFAULT NOW(),
     "updatedAt"         TIMESTAMP DEFAULT NOW(),
-    PRIMARY KEY ("userId", date, "deviceFingerprint")
+    PRIMARY KEY ("userId", "streakDate")
 );
 
 -- ─────────────────────────────────────────────────────────────

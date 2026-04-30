@@ -85,7 +85,7 @@ function LeaderboardPlaceholder() {
                             Leaderboard
                         </Typography>
                         <Typography variant="body2" sx={{ opacity: 0.9 }}>
-                            Top learners by total work points
+                            Top learners by total minute points
                         </Typography>
                     </Box>
                 </Box>
@@ -168,14 +168,16 @@ function LeaderboardPlaceholder() {
                                     </Box>
 
                                     <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
+                                        {entry.currentStreak !== null && (
+                                            <Typography variant="body2" sx={{ opacity: 0.9, fontSize: '0.8rem' }}>
+                                                🔥 {entry.currentStreak} streak
+                                            </Typography>
+                                        )}
                                         <Typography variant="body2" sx={{ opacity: 0.9, fontSize: '0.8rem' }}>
-                                            🔥 {entry.currentStreak} streak
+                                            📅 Today: {entry.todaysMinutes}
                                         </Typography>
                                         <Typography variant="body2" sx={{ opacity: 0.9, fontSize: '0.8rem' }}>
-                                            📅 Today: {entry.todaysPoints}
-                                        </Typography>
-                                        <Typography variant="body2" sx={{ opacity: 0.9, fontSize: '0.8rem' }}>
-                                            📊 Yesterday: {entry.yesterdaysPoints}
+                                            📊 Yesterday: {entry.yesterdaysMinutes}
                                         </Typography>
                                     </Box>
                                 </Box>
@@ -183,7 +185,7 @@ function LeaderboardPlaceholder() {
                                 {/* Total Points */}
                                 <Box sx={{ textAlign: 'right' }}>
                                     <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                                        {entry.accumulativeWorkPoints.toLocaleString()}
+                                        {entry.accumulativeMinutePoints.toLocaleString()}
                                     </Typography>
                                     <Typography variant="body2" sx={{ opacity: 0.8, fontSize: '0.75rem' }}>
                                         points

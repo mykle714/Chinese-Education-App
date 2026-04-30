@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Box, CircularProgress, Typography, useMediaQuery, useTheme } from "@mui/material";
 import { useAuth } from "../../AuthContext";
-import { useWorkPoints } from "../../hooks/useWorkPoints";
+import { useMinutePoints } from "../../hooks/useMinutePoints";
 import { API_BASE_URL } from "../../constants";
 import { IPhoneFrame, ContentArea } from "./styled";
 import { COLORS } from "./constants";
@@ -45,8 +45,8 @@ const FlashcardsLearnPage: React.FC = () => {
     const [nextSideOneLanguage, setNextSideOneLanguage] = useState<SideOneLanguage>('zh');
 
     // Work points integration — activity detection is handled globally by useActivityDetection
-    // inside useWorkPoints. No need for manual recordActivity() calls.
-    const workPoints = useWorkPoints();
+    // inside useMinutePoints. No need for manual recordActivity() calls.
+    const minutePoints = useMinutePoints();
 
     // Current entry derived from working loop
     const currentEntry: VocabEntry | null = workingLoop.length > 0 ? workingLoop[currentIndex] : null;
@@ -374,7 +374,7 @@ const FlashcardsLearnPage: React.FC = () => {
                 isUndoing={isUndoing}
                 onBack={() => navigate('/flashcards/decks')}
                 onUndo={handleUndoLastMark}
-                workPoints={workPoints}
+                minutePoints={minutePoints}
                 showPinyin={showPinyin}
                 onTogglePinyin={() => setShowPinyin(v => !v)}
             />

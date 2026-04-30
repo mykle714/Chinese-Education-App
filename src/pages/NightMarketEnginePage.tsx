@@ -9,7 +9,7 @@ import BugReportIcon from '@mui/icons-material/BugReport';
 import MarketEngineViewer from '../components/MarketEngineViewer';
 import type { EngineLayer } from '../components/MarketEngineViewer';
 import { useNightMarket } from '../hooks/useNightMarket';
-import { useWorkPoints } from '../hooks/useWorkPoints';
+import { useMinutePoints } from '../hooks/useMinutePoints';
 import { usePageTitle } from '../hooks/usePageTitle';
 import { usePixiPedestrians } from '../hooks/usePixiPedestrians';
 import { NIGHT_MARKET_ASSET_MAP } from '../config/nightMarketRegistry';
@@ -47,7 +47,7 @@ function NightMarketEnginePage() {
     isUnlocking,
   } = useNightMarket();
 
-  const { accumulativeWorkPoints } = useWorkPoints();
+  const { accumulativeMinutePoints } = useMinutePoints();
 
   const [selectedAsset, setSelectedAsset] = useState<NightMarketAssetDef | null>(null);
   const [showDebug, setShowDebug] = useState(false);
@@ -214,7 +214,7 @@ function NightMarketEnginePage() {
             variant="body2"
             sx={{ color: 'rgba(255,255,255,0.7)', textShadow: '1px 1px 2px rgba(0,0,0,0.8)', textAlign: 'right', mt: 1 }}
           >
-            Next unlock at {nextThreshold} pts ({accumulativeWorkPoints} / {nextThreshold})
+            Next unlock at {nextThreshold} pts ({accumulativeMinutePoints} / {nextThreshold})
           </Typography>
         )}
         </Box>

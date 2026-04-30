@@ -266,28 +266,28 @@ export class UserService {
   }
 
   /**
-   * Get total work points and current streak for a user
+   * Get total minute points and current streak for a user
    */
-  async getTotalWorkPoints(userId: string): Promise<{ totalWorkPoints: number; currentStreak: number }> {
+  async getTotalMinutePoints(userId: string): Promise<{ totalMinutePoints: number; currentStreak: number }> {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
 
-    return await this.userDAL.getTotalWorkPoints(userId);
+    return await this.userDAL.getTotalMinutePoints(userId);
   }
 
   /**
-   * Increment total work points for a user (used during daily sync)
+   * Increment total minute points for a user (used during daily sync)
    */
-  async incrementTotalWorkPoints(userId: string, pointsToAdd: number): Promise<boolean> {
+  async incrementTotalMinutePoints(userId: string, pointsToAdd: number): Promise<boolean> {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
     if (pointsToAdd < 0) {
       throw new ValidationError('Points to add must be positive');
     }
-    
-    return await this.userDAL.incrementTotalWorkPoints(userId, pointsToAdd);
+
+    return await this.userDAL.incrementTotalMinutePoints(userId, pointsToAdd);
   }
 
   // Private validation methods (business logic)

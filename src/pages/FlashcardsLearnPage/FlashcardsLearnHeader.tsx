@@ -7,7 +7,7 @@ import { Typography } from "@mui/material";
 import PageHeader from "../../components/PageHeader";
 import { COLORS } from "./constants";
 import type { LastMarkUndoSnapshot } from "./types";
-import { useWorkPoints } from "../../hooks/useWorkPoints";
+import { useMinutePoints } from "../../hooks/useMinutePoints";
 
 interface FlashcardsLearnHeaderProps {
     selectedCategory: string | null;
@@ -16,7 +16,7 @@ interface FlashcardsLearnHeaderProps {
     isUndoing: boolean;
     onBack: () => void;
     onUndo: () => void;
-    workPoints: ReturnType<typeof useWorkPoints>;
+    minutePoints: ReturnType<typeof useMinutePoints>;
     showPinyin: boolean;
     onTogglePinyin: () => void;
 }
@@ -28,7 +28,7 @@ const FlashcardsLearnHeader: React.FC<FlashcardsLearnHeaderProps> = ({
     isUndoing,
     onBack,
     onUndo,
-    workPoints,
+    minutePoints,
     showPinyin,
     onTogglePinyin,
 }) => {
@@ -71,10 +71,10 @@ const FlashcardsLearnHeader: React.FC<FlashcardsLearnHeaderProps> = ({
                 <SettingsIcon />
             </IconButton>
             {/* Work Points Fire Icon with Seconds Counter */}
-            <Box className="mobile-demo-work-points" sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0 }}>
+            <Box className="mobile-demo-minute-points" sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0 }}>
                 <Badge
-                    className="mobile-demo-work-points-badge"
-                    badgeContent={workPoints.currentPoints}
+                    className="mobile-demo-minute-points-badge"
+                    badgeContent={minutePoints.currentPoints}
                     color="primary"
                     max={99}
                     sx={{
@@ -84,24 +84,24 @@ const FlashcardsLearnHeader: React.FC<FlashcardsLearnHeaderProps> = ({
                             minWidth: "16px",
                             height: "16px",
                             padding: "0 4px",
-                            backgroundColor: workPoints.isActive ? COLORS.fireActive : COLORS.gray,
+                            backgroundColor: minutePoints.isActive ? COLORS.fireActive : COLORS.gray,
                             color: "white",
                             border: `1px solid ${COLORS.header}`,
                         },
                     }}
                 >
                     <IconButton
-                        className="mobile-demo-tool-button work-points-fire-icon"
+                        className="mobile-demo-tool-button minute-points-fire-icon"
                         size="small"
                         sx={{ padding: "4px" }}
                     >
                         <LocalFireDepartmentIcon
                             className="mobile-demo-fire-icon"
                             sx={{
-                                color: workPoints.isActive ? COLORS.fireActive : COLORS.gray,
+                                color: minutePoints.isActive ? COLORS.fireActive : COLORS.gray,
                                 fontSize: "1.25rem",
-                                filter: workPoints.isActive ? "drop-shadow(0 0 4px rgba(230, 81, 0, 0.6))" : "none",
-                                animation: workPoints.isAnimating ? "pulse 0.6s ease-out" : "none",
+                                filter: minutePoints.isActive ? "drop-shadow(0 0 4px rgba(230, 81, 0, 0.6))" : "none",
+                                animation: minutePoints.isAnimating ? "pulse 0.6s ease-out" : "none",
                                 "@keyframes pulse": {
                                     "0%, 100%": { transform: "scale(1)" },
                                     "50%": { transform: "scale(1.2)", filter: "drop-shadow(0 0 8px rgba(230, 81, 0, 0.8))" },
@@ -116,12 +116,12 @@ const FlashcardsLearnHeader: React.FC<FlashcardsLearnHeaderProps> = ({
                     sx={{
                         fontSize: "0.625rem",
                         fontWeight: "bold",
-                        color: workPoints.isActive ? COLORS.fireActive : COLORS.gray,
+                        color: minutePoints.isActive ? COLORS.fireActive : COLORS.gray,
                         lineHeight: 1,
                         marginTop: "-2px",
                     }}
                 >
-                    {workPoints.liveSeconds}s
+                    {minutePoints.liveSeconds}s
                 </Typography>
             </Box>
         </>

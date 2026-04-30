@@ -75,11 +75,8 @@ For adding a completely new language:
 
 ## 📚 Features
 
-### Work Points System
-→ See [docs/WORK_POINTS_SYSTEM.md](./docs/WORK_POINTS_SYSTEM.md)
-
-For work points increment implementation:
-→ See [docs/WORK_POINTS_INCREMENT_IMPLEMENTATION.md](./docs/WORK_POINTS_INCREMENT_IMPLEMENTATION.md)
+### Minute Points & Streak System
+→ See [docs/MINUTE_POINTS_SYSTEM.md](./docs/MINUTE_POINTS_SYSTEM.md)
 
 ### Flashcards & Review History
 → See [docs/FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md](./docs/FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md)

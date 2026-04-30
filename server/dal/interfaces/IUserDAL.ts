@@ -26,20 +26,20 @@ export interface IUserDAL extends IBaseDAL<User, UserCreateData, UserUpdateData>
   findUsersCreatedAfter(date: Date): Promise<User[]>;
   findUsersWithVocabCount(): Promise<Array<User & { vocabCount: number }>>;
 
-  // Total work points operations
-  getTotalWorkPoints(userId: string): Promise<{ totalWorkPoints: number; currentStreak: number }>;
-  updateTotalWorkPoints(userId: string, totalPoints: number): Promise<boolean>;
-  incrementTotalWorkPoints(userId: string, pointsToAdd: number): Promise<boolean>;
+  // Total minute points operations
+  getTotalMinutePoints(userId: string): Promise<{ totalMinutePoints: number; currentStreak: number }>;
+  updateTotalMinutePoints(userId: string, totalPoints: number): Promise<boolean>;
+  incrementTotalMinutePoints(userId: string, pointsToAdd: number): Promise<boolean>;
 
-  // Work point increment rate limiting
-  updateLastWorkPointIncrement(userId: string, timestamp: Date): Promise<boolean>;
+  // Minute point increment rate limiting
+  updateLastMinutePointIncrement(userId: string, timestamp: Date): Promise<boolean>;
 
   // Streak operations
-  getUserStreakInfo(userId: string): Promise<{ currentStreak: number; lastStreakIncrement: Date | null }>;
-  incrementStreak(userId: string): Promise<boolean>;
-  applyStreakPenalty(userId: string, penaltyPoints: number): Promise<boolean>;
+  getUserStreakInfo(userId: string): Promise<{ currentStreak: number; lastStreakDate: string | null }>;
+  setStreak(userId: string, currentStreak: number, lastStreakDate: string): Promise<boolean>;
+  applyStreakPenalty(userId: string, penaltyPoints: number, lastStreakDate: string): Promise<boolean>;
 
-  // Leaderboard operations
-  getAllUsersWithTotalPoints(): Promise<Array<{ userId: string; email: string; name: string; totalWorkPoints: number }>>;
-  getPublicUsersWithTotalPoints(): Promise<Array<{ userId: string; email: string; name: string; totalWorkPoints: number; currentStreak: number }>>;
+  // Leaderboard operations (returns isPublic so callers can mask streak from non-public users)
+  getAllUsersWithTotalPoints(): Promise<Array<{ userId: string; email: string; name: string; totalMinutePoints: number }>>;
+  getPublicUsersWithTotalPoints(): Promise<Array<{ userId: string; email: string; name: string; totalMinutePoints: number; currentStreak: number; isPublic: boolean }>>;
 }

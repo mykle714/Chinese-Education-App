@@ -14,8 +14,8 @@ import {
 import { useAuth } from "../AuthContext";
 import { useTheme as useCustomTheme } from "../contexts/ThemeContext";
 import { API_BASE_URL } from "../constants";
-import { useWorkPoints } from "../hooks/useWorkPoints";
-import WorkPointsBadge from "../components/WorkPointsBadge";
+import { useMinutePoints } from "../hooks/useMinutePoints";
+import MinutePointsBadge from "../components/MinutePointsBadge";
 import VocabDisplayCard from "../components/VocabDisplayCard";
 import { useVocabularyUpdate } from "../contexts/VocabularyUpdateContext";
 import { processDocumentForTokens } from "../utils/tokenUtils";
@@ -46,7 +46,7 @@ function ReaderPage() {
     const vocabularyUpdate = useVocabularyUpdate();
 
     // Work points integration
-    const workPoints = useWorkPoints();
+    const minutePoints = useMinutePoints();
 
     // State management
     const [texts, setTexts] = useState<Text[]>([]);
@@ -71,7 +71,7 @@ function ReaderPage() {
         readerSettings.autoSelectEnabled
     );
 
-    // Text selection handlers (activity detection is handled globally by useActivityDetection in useWorkPoints)
+    // Text selection handlers (activity detection is handled globally by useActivityDetection in useMinutePoints)
     const handleTextChangeWithActivity = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
         textSelection.handleTextChange(event);
     }, [textSelection]);
@@ -311,13 +311,13 @@ function ReaderPage() {
     return (
         <>
             {/* Work Points Badge - only show on eligible pages */}
-            {workPoints.isEligiblePage && (
+            {minutePoints.isEligiblePage && (
                 <Box className="reader-page-work-points-wrapper">
-                    <WorkPointsBadge
-                        points={workPoints.currentPoints}
-                        isActive={workPoints.isActive}
-                        isAnimating={workPoints.isAnimating}
-                        progressToNextPoint={workPoints.progressToNextPoint}
+                    <MinutePointsBadge
+                        points={minutePoints.currentPoints}
+                        isActive={minutePoints.isActive}
+                        isAnimating={minutePoints.isAnimating}
+                        progressToNextPoint={minutePoints.progressToNextPoint}
                     />
                 </Box>
             )}

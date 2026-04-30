@@ -1,6 +1,6 @@
 import { Box, Container, Typography } from "@mui/material";
 import Message from "../Message";
-import { useWorkPoints } from "../hooks/useWorkPoints";
+import { useMinutePoints } from "../hooks/useMinutePoints";
 import TimeDisplay from "../components/TimeDisplay";
 import StreakCounter from "../components/StreakCounter";
 import MonthlyCalendar from "../components/MonthlyCalendar";
@@ -13,7 +13,7 @@ function HomePage() {
     const {
         totalStudyTimeMinutes,
         currentStreak
-    } = useWorkPoints();
+    } = useMinutePoints();
 
     return (
         <Container maxWidth="xl" sx={{ py: 4 }}>

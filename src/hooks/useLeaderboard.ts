@@ -6,10 +6,11 @@ export interface LeaderboardEntry {
   userId: string;
   email: string;
   name: string;
-  accumulativeWorkPoints: number;
-  currentStreak: number;
-  todaysPoints: number;
-  yesterdaysPoints: number;
+  accumulativeMinutePoints: number;
+  /** null when the user is not public — streak is hidden from other viewers. */
+  currentStreak: number | null;
+  todaysMinutes: number;
+  yesterdaysMinutes: number;
   rank: number;
   isCurrentUser?: boolean;
 }

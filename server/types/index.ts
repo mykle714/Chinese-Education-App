@@ -26,8 +26,8 @@ export interface User {
   name: string;
   password?: string; // Not returned to client
   selectedLanguage?: Language;
-  isPublic?: boolean; // Whether user appears on public leaderboard
-  lastWorkPointIncrement?: Date; // Timestamp of last successful work point increment (for rate limiting)
+  isPublic?: boolean; // Whether user appears on the public leaderboard
+  lastMinutePointIncrement?: Date; // Last successful minute-point increment (for rate limiting)
   createdAt?: Date;
 }
 

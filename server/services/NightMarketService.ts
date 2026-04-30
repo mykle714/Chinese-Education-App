@@ -41,16 +41,16 @@ export class NightMarketService {
 
   /**
    * Attempt to unlock the next random item.
-   * Verifies the user has enough work points, picks a random asset
+   * Verifies the user has enough minute points, picks a random asset
    * not yet unlocked, persists the selection, and returns it.
    * Called by POST /api/night-market/unlock
    */
   async unlockNext(userId: string): Promise<NightMarketNewUnlockResponse> {
-    // Get user's total work points from the server-authoritative source
-    const { totalWorkPoints } = await this.userDAL.getTotalWorkPoints(userId);
+    // Get user's total minute points from the server-authoritative source
+    const { totalMinutePoints } = await this.userDAL.getTotalMinutePoints(userId);
 
     // Calculate how many earned unlocks this user is allowed
-    const allowedUnlocks = Math.floor(totalWorkPoints / NIGHT_MARKET_CONFIG.POINTS_PER_UNLOCK);
+    const allowedUnlocks = Math.floor(totalMinutePoints / NIGHT_MARKET_CONFIG.POINTS_PER_UNLOCK);
 
     // Get current earned unlock count
     const earnedCount = await this.nightMarketDAL.getEarnedUnlockCount(userId);
@@ -58,7 +58,7 @@ export class NightMarketService {
     // Verify the user has earned enough points for a new unlock
     if (earnedCount >= allowedUnlocks) {
       throw new ValidationError(
-        `Not enough work points for next unlock. Need ${(earnedCount + 1) * NIGHT_MARKET_CONFIG.POINTS_PER_UNLOCK} points, have ${totalWorkPoints}.`
+        `Not enough minute points for next unlock. Need ${(earnedCount + 1) * NIGHT_MARKET_CONFIG.POINTS_PER_UNLOCK} points, have ${totalMinutePoints}.`
       );
     }
 

@@ -7,7 +7,7 @@ import { Box, Typography, Button, CircularProgress, Alert, Dialog, DialogTitle, 
 import LockOpenIcon from '@mui/icons-material/LockOpen';
 import MarketViewer from '../components/MarketViewer';
 import { useNightMarket } from '../hooks/useNightMarket';
-import { useWorkPoints } from '../hooks/useWorkPoints';
+import { useMinutePoints } from '../hooks/useMinutePoints';
 import { usePageTitle } from '../hooks/usePageTitle';
 import { usePedestrians } from '../hooks/usePedestrians';
 import { NIGHT_MARKET_ASSET_MAP } from '../config/nightMarketRegistry';
@@ -49,7 +49,7 @@ function MarketViewerPage() {
     isUnlocking,
   } = useNightMarket();
 
-  const { accumulativeWorkPoints } = useWorkPoints();
+  const { accumulativeMinutePoints } = useMinutePoints();
 
   // State for the item info dialog (shown on tap)
   const [selectedAsset, setSelectedAsset] = useState<NightMarketAssetDef | null>(null);
@@ -288,7 +288,7 @@ function MarketViewerPage() {
               mt: 1,
             }}
           >
-            Next unlock at {nextThreshold} pts ({accumulativeWorkPoints} / {nextThreshold})
+            Next unlock at {nextThreshold} pts ({accumulativeMinutePoints} / {nextThreshold})
           </Typography>
         )}
       </Box>

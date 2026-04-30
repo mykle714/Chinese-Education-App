@@ -3,9 +3,9 @@ import { stripParentheses } from "../utils/definitionUtils";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "../AuthContext";
 import { FLASHCARD_CONTENT_UPDATE_DELAY, API_BASE_URL } from "../constants";
-import { useWorkPoints } from "../hooks/useWorkPoints";
+import { useMinutePoints } from "../hooks/useMinutePoints";
 import { useFlashcardSettings } from "../hooks/useFlashcardSettings";
-import WorkPointsBadge from "../components/WorkPointsBadge";
+import MinutePointsBadge from "../components/MinutePointsBadge";
 import FlashcardSettings from "../components/FlashcardSettings";
 import {
     Container,
@@ -343,7 +343,7 @@ function FlashcardsPage() {
     }, []);
 
     // Work points integration
-    const workPoints = useWorkPoints();
+    const minutePoints = useMinutePoints();
 
     // Drawer width consistent with main navigation
     const drawerWidth = 250;
@@ -1039,12 +1039,12 @@ function FlashcardsPage() {
     return (
         <>
             {/* Work Points Badge - only show on eligible pages */}
-            {workPoints.isEligiblePage && (
-                <WorkPointsBadge
-                    points={workPoints.currentPoints}
-                    isActive={workPoints.isActive}
-                    isAnimating={workPoints.isAnimating}
-                    progressToNextPoint={workPoints.progressToNextPoint}
+            {minutePoints.isEligiblePage && (
+                <MinutePointsBadge
+                    points={minutePoints.currentPoints}
+                    isActive={minutePoints.isActive}
+                    isAnimating={minutePoints.isAnimating}
+                    progressToNextPoint={minutePoints.progressToNextPoint}
                 />
             )}
 

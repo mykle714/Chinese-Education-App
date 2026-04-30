@@ -4,12 +4,13 @@ export interface LeaderboardEntry {
   userId: string;
   email: string;
   name: string;
-  accumulativeWorkPoints: number;
-  currentStreak: number;
-  todaysPoints: number;
-  yesterdaysPoints: number;
+  accumulativeMinutePoints: number;
+  // null when the user is not public — streak is hidden from other viewers.
+  currentStreak: number | null;
+  todaysMinutes: number;
+  yesterdaysMinutes: number;
   rank: number;
-  isCurrentUser?: boolean; // Will be set on frontend
+  isCurrentUser?: boolean;
 }
 
 export interface LeaderboardResponse {
@@ -17,24 +18,4 @@ export interface LeaderboardResponse {
   data: LeaderboardEntry[];
   totalUsers: number;
   currentUserRank?: number;
-}
-
-// Internal type for database queries
-export interface UserLeaderboardData {
-  userId: string;
-  email: string;
-  name: string;
-  totalWorkPoints: number;
-}
-
-export interface UserDailyPoints {
-  userId: string;
-  date: string;
-  totalPoints: number; // Sum of all devices for that day
-}
-
-export interface UserStreakData {
-  userId: string;
-  currentStreak: number;
-  longestStreak: number;
 }

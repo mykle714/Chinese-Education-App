@@ -159,7 +159,7 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
     }
 
     const result = await this.dbManager.executeQuery<User>(async (client) => {
-      return await client.query('SELECT id, email, name, "isPublic", "selectedLanguage", "lastWorkPointIncrement", "createdAt" FROM Users WHERE id = $1', [id]);
+      return await client.query('SELECT id, email, name, "isPublic", "selectedLanguage", "lastMinutePointIncrement", "createdAt" FROM Users WHERE id = $1', [id]);
     });
 
     return result.recordset[0] || null;
@@ -240,16 +240,16 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
   }
 
   /**
-   * Get total work points and current streak for a user
+   * Get total minute points and current streak for a user
    */
-  async getTotalWorkPoints(userId: string): Promise<{ totalWorkPoints: number; currentStreak: number }> {
+  async getTotalMinutePoints(userId: string): Promise<{ totalMinutePoints: number; currentStreak: number }> {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
 
-    const result = await this.dbManager.executeQuery<{ totalworkpoints: number; currentstreak: number }>(async (client) => {
+    const result = await this.dbManager.executeQuery<{ totalminutepoints: number; currentstreak: number }>(async (client) => {
       return await client.query(
-        'SELECT "totalWorkPoints" as totalworkpoints, "currentStreak" as currentstreak FROM Users WHERE id = $1',
+        'SELECT "totalMinutePoints" as totalminutepoints, "currentStreak" as currentstreak FROM Users WHERE id = $1',
         [userId]
       );
     });
@@ -259,15 +259,15 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
     }
 
     return {
-      totalWorkPoints: result.recordset[0].totalworkpoints || 0,
+      totalMinutePoints: result.recordset[0].totalminutepoints || 0,
       currentStreak: result.recordset[0].currentstreak || 0
     };
   }
 
   /**
-   * Update total work points for a user
+   * Update total minute points for a user
    */
-  async updateTotalWorkPoints(userId: string, totalPoints: number): Promise<boolean> {
+  async updateTotalMinutePoints(userId: string, totalPoints: number): Promise<boolean> {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
@@ -276,16 +276,16 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
     }
 
     const result = await this.dbManager.executeQuery(async (client) => {
-      return await client.query('UPDATE Users SET "totalWorkPoints" = $1 WHERE id = $2', [totalPoints, userId]);
+      return await client.query('UPDATE Users SET "totalMinutePoints" = $1 WHERE id = $2', [totalPoints, userId]);
     });
 
     return result.rowsAffected > 0;
   }
 
   /**
-   * Increment total work points for a user
+   * Increment total minute points for a user
    */
-  async incrementTotalWorkPoints(userId: string, pointsToAdd: number): Promise<boolean> {
+  async incrementTotalMinutePoints(userId: string, pointsToAdd: number): Promise<boolean> {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
@@ -295,7 +295,7 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
 
     const result = await this.dbManager.executeQuery(async (client) => {
       return await client.query(
-        'UPDATE Users SET "totalWorkPoints" = "totalWorkPoints" + $1 WHERE id = $2',
+        'UPDATE Users SET "totalMinutePoints" = "totalMinutePoints" + $1 WHERE id = $2',
         [pointsToAdd, userId]
       );
     });
@@ -304,10 +304,10 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
   }
 
   /**
-   * Update last work point increment timestamp for rate limiting
-   * This is only called after successful work point increment
+   * Update last minute-point increment timestamp for rate limiting.
+   * Only called after a successful increment.
    */
-  async updateLastWorkPointIncrement(userId: string, timestamp: Date): Promise<boolean> {
+  async updateLastMinutePointIncrement(userId: string, timestamp: Date): Promise<boolean> {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
@@ -317,7 +317,7 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
 
     const result = await this.dbManager.executeQuery(async (client) => {
       return await client.query(
-        'UPDATE Users SET "lastWorkPointIncrement" = $1 WHERE id = $2',
+        'UPDATE Users SET "lastMinutePointIncrement" = $1 WHERE id = $2',
         [timestamp, userId]
       );
     });
@@ -341,55 +341,23 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
   }
 
   /**
-   * Get all users with their total work points for leaderboard
+   * Get all users with their total minute points (used for admin/non-leaderboard queries)
    */
-  async getAllUsersWithTotalPoints(): Promise<Array<{ userId: string; email: string; name: string; totalWorkPoints: number }>> {
+  async getAllUsersWithTotalPoints(): Promise<Array<{ userId: string; email: string; name: string; totalMinutePoints: number }>> {
     const result = await this.dbManager.executeQuery<{
       id: string;
       email: string;
       name: string;
-      totalworkpoints: number;
-    }>(async (client) => {
-      return await client.query(`
-        SELECT 
-          id,
-          email,
-          name,
-          COALESCE("totalWorkPoints", 0) as totalworkpoints
-        FROM Users
-        ORDER BY "totalWorkPoints" DESC NULLS LAST, "createdAt" ASC
-      `);
-    });
-
-    return result.recordset.map(row => ({
-      userId: row.id,
-      email: row.email,
-      name: row.name,
-      totalWorkPoints: row.totalworkpoints || 0
-    }));
-  }
-
-  /**
-   * Get only public users with their total work points and current streak for leaderboard
-   */
-  async getPublicUsersWithTotalPoints(): Promise<Array<{ userId: string; email: string; name: string; totalWorkPoints: number; currentStreak: number }>> {
-    const result = await this.dbManager.executeQuery<{
-      id: string;
-      email: string;
-      name: string;
-      totalworkpoints: number;
-      currentstreak: number;
+      totalminutepoints: number;
     }>(async (client) => {
       return await client.query(`
         SELECT
           id,
           email,
           name,
-          COALESCE("totalWorkPoints", 0) as totalworkpoints,
-          COALESCE("currentStreak", 0) as currentstreak
+          COALESCE("totalMinutePoints", 0) as totalminutepoints
         FROM Users
-        WHERE "isPublic" = true
-        ORDER BY "totalWorkPoints" DESC NULLS LAST, "createdAt" ASC
+        ORDER BY "totalMinutePoints" DESC NULLS LAST, "createdAt" ASC
       `);
     });
 
@@ -397,22 +365,60 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
       userId: row.id,
       email: row.email,
       name: row.name,
-      totalWorkPoints: row.totalworkpoints || 0,
-      currentStreak: row.currentstreak || 0
+      totalMinutePoints: row.totalminutepoints || 0
     }));
   }
 
   /**
-   * Get streak info for a user (currentStreak and lastStreakIncrement)
+   * Get all users that participate in the leaderboard with their totals + streak.
+   * Returns isPublic so callers can mask streak from non-public users at the response layer.
    */
-  async getUserStreakInfo(userId: string): Promise<{ currentStreak: number; lastStreakIncrement: Date | null }> {
+  async getPublicUsersWithTotalPoints(): Promise<Array<{ userId: string; email: string; name: string; totalMinutePoints: number; currentStreak: number; isPublic: boolean }>> {
+    const result = await this.dbManager.executeQuery<{
+      id: string;
+      email: string;
+      name: string;
+      totalminutepoints: number;
+      currentstreak: number;
+      ispublic: boolean;
+    }>(async (client) => {
+      return await client.query(`
+        SELECT
+          id,
+          email,
+          name,
+          COALESCE("totalMinutePoints", 0) as totalminutepoints,
+          COALESCE("currentStreak", 0) as currentstreak,
+          "isPublic" as ispublic
+        FROM Users
+        ORDER BY "totalMinutePoints" DESC NULLS LAST, "createdAt" ASC
+      `);
+    });
+
+    return result.recordset.map(row => ({
+      userId: row.id,
+      email: row.email,
+      name: row.name,
+      totalMinutePoints: row.totalminutepoints || 0,
+      currentStreak: row.currentstreak || 0,
+      isPublic: row.ispublic === true
+    }));
+  }
+
+  /**
+   * Get streak info for a user.
+   */
+  async getUserStreakInfo(userId: string): Promise<{ currentStreak: number; lastStreakDate: string | null }> {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
 
-    const result = await this.dbManager.executeQuery<{ currentstreak: number; laststreakincrement: Date | null }>(async (client) => {
+    const result = await this.dbManager.executeQuery<{ currentstreak: number; laststreakdate: string | null }>(async (client) => {
       return await client.query(
-        'SELECT "currentStreak" as currentstreak, "lastStreakIncrement" as laststreakincrement FROM Users WHERE id = $1',
+        `SELECT
+           "currentStreak" as currentstreak,
+           to_char("lastStreakDate", 'YYYY-MM-DD') as laststreakdate
+         FROM Users WHERE id = $1`,
         [userId]
       );
     });
@@ -423,22 +429,26 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
 
     return {
       currentStreak: result.recordset[0].currentstreak || 0,
-      lastStreakIncrement: result.recordset[0].laststreakincrement || null
+      lastStreakDate: result.recordset[0].laststreakdate || null
     };
   }
 
   /**
-   * Increment currentStreak by 1 and set lastStreakIncrement to NOW()
+   * Set the user's currentStreak to a specific value and stamp lastStreakDate.
+   * Used by the increment-on-threshold-cross path.
    */
-  async incrementStreak(userId: string): Promise<boolean> {
+  async setStreak(userId: string, currentStreak: number, lastStreakDate: string): Promise<boolean> {
     if (!userId) {
       throw new ValidationError('User ID is required');
+    }
+    if (currentStreak < 0) {
+      throw new ValidationError('Streak cannot be negative');
     }
 
     const result = await this.dbManager.executeQuery(async (client) => {
       return await client.query(
-        'UPDATE Users SET "currentStreak" = "currentStreak" + 1, "lastStreakIncrement" = NOW() WHERE id = $1',
-        [userId]
+        'UPDATE Users SET "currentStreak" = $1, "lastStreakDate" = $2 WHERE id = $3',
+        [currentStreak, lastStreakDate, userId]
       );
     });
 
@@ -446,17 +456,22 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
   }
 
   /**
-   * Reset currentStreak to 0 and deduct penaltyPoints from totalWorkPoints (floor 0)
+   * Reset currentStreak to 0, deduct penaltyPoints from totalMinutePoints (floor 0),
+   * and stamp lastStreakDate to mark the penalty as applied for this break.
    */
-  async applyStreakPenalty(userId: string, penaltyPoints: number): Promise<boolean> {
+  async applyStreakPenalty(userId: string, penaltyPoints: number, lastStreakDate: string): Promise<boolean> {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
 
     const result = await this.dbManager.executeQuery(async (client) => {
       return await client.query(
-        'UPDATE Users SET "currentStreak" = 0, "totalWorkPoints" = GREATEST(0, "totalWorkPoints" - $1), "lastStreakIncrement" = NOW() WHERE id = $2',
-        [penaltyPoints, userId]
+        `UPDATE Users
+            SET "currentStreak"     = 0,
+                "totalMinutePoints" = GREATEST(0, "totalMinutePoints" - $1),
+                "lastStreakDate"    = $2
+          WHERE id = $3`,
+        [penaltyPoints, lastStreakDate, userId]
       );
     });
 

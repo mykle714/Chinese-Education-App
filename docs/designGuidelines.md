@@ -23,7 +23,7 @@ You can understand the different constructs of this project by inspecting the ta
 - **Flashcards study mode** for vocabulary practice
 - **CSV card import functionality** - Bulk import vocabulary entries from CSV files
 - **Work Points Calendar System** - Daily activity tracking with penalties and rewards
-  - Real-time work points accumulation during study sessions
+  - Real-time minute points accumulation during study sessions
   - Daily penalty system for missed activity (10 points per day)
   - Streak tracking with visual calendar display
   - Monthly calendar showing points earned (+15) or penalties applied (-10)
@@ -166,49 +166,35 @@ The VocabEntries table includes a tag system with the following design principle
 
 - Each entry belongs to a user through the `userId` foreign key
 
-#### UserWorkPoints
+#### UserMinutePoints
 
-| Column Name | Data Type        | Constraints | Nullable | Default           | Description                                    |
-| ----------- | ---------------- | ----------- | -------- | ----------------- | ---------------------------------------------- |
-| userId      | uniqueidentifier | FOREIGN KEY | NO       | NULL              | Reference to the user who owns the work points |
-| date        | date             | NOT NULL    | NO       | NULL              | Date of the work points (YYYY-MM-DD)          |
-| deviceFingerprint | varchar(255) | NOT NULL    | NO       | NULL              | Device identifier for multi-device support    |
-| workPoints  | int              | NOT NULL    | NO       | 0                 | Work points earned for the day on this device |
-| lastSyncTimestamp | datetime    |             | YES      | getdate()         | Timestamp of last sync update                  |
-| createdAt   | datetime         |             | YES      | getdate()         | Timestamp when the record was created          |
-| updatedAt   | datetime         |             | YES      | getdate()         | Timestamp when the record was last updated     |
+| Column Name | Data Type        | Constraints | Nullable | Default | Description                                                                |
+| ----------- | ---------------- | ----------- | -------- | ------- | -------------------------------------------------------------------------- |
+| userId      | uniqueidentifier | FOREIGN KEY | NO       | NULL    | Reference to the user who owns the row                                     |
+| streakDate  | date             | NOT NULL    | NO       | NULL    | Streak day label (4 AM-bounded local day) in YYYY-MM-DD form               |
+| minutesEarned | int            | NOT NULL    | NO       | 0       | Total minute points earned across all of the user's devices on this day   |
+| penaltyMinutes | int           | NOT NULL    | NO       | 0       | Minutes deducted by a streak break attributed to this missed day          |
+| lastSyncTimestamp | datetime    |             | YES      | now()   | Timestamp of last sync update                                              |
+| updatedAt   | datetime         |             | YES      | now()   | Timestamp when the record was last updated                                  |
 
 ##### Primary Key
-- Composite Primary Key: `(userId, date, deviceFingerprint)` - Allows one entry per user per day per device
+- Composite Primary Key: `(userId, streakDate)` — one row per user per streak day, aggregating activity across all devices.
 
-##### Indexes
-- Primary Key: `(userId, date, deviceFingerprint)`
-- Index: `(userId, date)` - For daily work points queries
-- Index: `(date)` - For analytics across all users
-- Index: `(userId, date DESC)` - For recent work points queries
-
-##### Work Points System
-The UserWorkPoints table supports a comprehensive daily activity tracking system:
-
-**Daily Tracking:**
-- Each record represents work points earned on a specific date for a specific device
-- Work points are calculated based on study session duration (60 seconds = 1 point)
-- Supports multi-device usage with device fingerprinting
-
-**Penalty System:**
-- Daily penalties (10 points) applied for days without sufficient activity
-- Streak retention requires 5+ points per day
-- Penalties are calculated and applied during daily boundary sync
+##### Minute Points System
+- Each row represents a single 4 AM-bounded local day for a user, summed across devices.
+- Minute points accrue at 60s = 1 point in the client and are committed to the server one at a time.
+- A streak break stamps `penaltyMinutes` on the first missed day (`lastStreakDate + 1`), resets `currentStreak` to 0, and deducts `DAILY_PENALTY_MINUTES` from `users.totalMinutePoints`.
+- Streak retention requires `STREAK_CONFIG.RETENTION_MINUTES` (default 3) per day.
 
 **Calendar Integration:**
 - Data powers the monthly calendar display showing daily progress
-- Green days: streak threshold met (+points displayed)
-- Red days: penalty applied (-points displayed)
+- Green days: streak threshold met (+minutes displayed)
+- Red days: penalty applied (-minutes displayed)
 - Blank days: before tracking started or future dates
 
 ##### Relationships
 - `userId` references `Users(id)` with CASCADE DELETE
-- Each user can have multiple entries per day (one per device)
+- One row per user per streak day (no per-device split).
 
 ## API Endpoints
 
@@ -226,13 +212,12 @@ The UserWorkPoints table supports a comprehensive daily activity tracking system
 - `GET /api/users/:id` - Get a specific user by ID
 - `POST /api/users` - Create a new user
 
-### Work Points & Calendar
+### Minute Points & Streak
 
-- `POST /api/users/work-points/sync` - Sync work points for a user's daily activity
-- `GET /api/users/work-points/calendar/:month` - Get calendar data showing work points and penalties (format: YYYY-MM)
-- `GET /api/users/work-points/check/:date` - Check if user has work points for a specific date
-- `GET /api/users/work-points/total/:date` - Get total work points for a specific date
-- `POST /api/users/work-points/generate-fingerprint` - Generate device fingerprint for multi-device support
+- `GET /api/users/:id/total-minute-points` - Get a user's total lifetime minute points and current streak
+- `POST /api/users/minute-points/increment` - Add 1 minute point. Body: `{ timestamp, tz }`. Server resolves the streak day from the timezone.
+- `POST /api/users/minute-points/new-day` - Idempotent streak-break detector. Body: `{ timestamp, tz }`.
+- `GET /api/users/minute-points/calendar/:yearMonth` - Calendar data (per-day minutes earned + penalties) for the given YYYY-MM
 
 ## Navigation and Page Transitions
 

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { API_BASE_URL } from '../constants';
 import { useAuth } from '../AuthContext';
-import { useWorkPoints } from './useWorkPoints';
+import { useMinutePoints } from './useMinutePoints';
 
 /** A single unlock record from the server */
 export interface NightMarketUnlock {
@@ -64,8 +64,8 @@ export function useNightMarket(): UseNightMarketReturn {
   const { token } = useAuth();
 
   // Get accumulated work points to determine unlock eligibility
-  const { accumulativeWorkPoints } = useWorkPoints();
-  const canUnlock = accumulativeWorkPoints >= nextThreshold && !isUnlocking;
+  const { accumulativeMinutePoints } = useMinutePoints();
+  const canUnlock = accumulativeMinutePoints >= nextThreshold && !isUnlocking;
 
   /** Fetch all unlocked items from the server */
   const fetchUnlocks = useCallback(async () => {

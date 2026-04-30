@@ -15,7 +15,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Import DAL architecture
-import { userController, vocabEntryController, onDeckVocabController, userWorkPointsController, textController, dictionaryController, starterPacksController, onDeckVocabService, nightMarketController } from './dal/setup.js';
+import { userController, vocabEntryController, onDeckVocabController, userMinutePointsController, textController, dictionaryController, starterPacksController, onDeckVocabService, nightMarketController } from './dal/setup.js';
 import { leaderboardController } from './controllers/LeaderboardController.js';
 
 // Configure multer for file uploads
@@ -277,11 +277,11 @@ app.post('/api/users', authenticateToken, async (req, res) => {
   await userController.createUser(req, res);
 });
 
-// Get total work points for a user - USING NEW DAL ARCHITECTURE
+// Get total minute points for a user - USING NEW DAL ARCHITECTURE
 // @ts-ignore
-app.get('/api/users/:id/total-work-points', authenticateToken, async (req, res) => {
-  console.log('🔄 Using NEW DAL architecture for get total work points');
-  await userController.getTotalWorkPoints(req, res);
+app.get('/api/users/:id/total-minute-points', authenticateToken, async (req, res) => {
+  console.log('🔄 Using NEW DAL architecture for get total minute points');
+  await userController.getTotalMinutePoints(req, res);
 });
 
 // Update user preferred language - USING NEW DAL ARCHITECTURE
@@ -386,18 +386,24 @@ app.get('/api/onDeck/distributed-working-loop', authenticateToken, async (req, r
   await onDeckVocabController.getDistributedWorkingLoop(req, res);
 });
 
-// Work Points API Routes - USING NEW DAL ARCHITECTURE
+// Minute Points API Routes - USING NEW DAL ARCHITECTURE
 
-// Increment work points by 1
+// Increment minute points by 1
 // @ts-ignore
-app.post('/api/users/work-points/increment', authenticateToken, async (req, res) => {
-  await userWorkPointsController.incrementWorkPoints(req, res);
+app.post('/api/users/minute-points/increment', authenticateToken, async (req, res) => {
+  await userMinutePointsController.incrementMinutePoints(req, res);
 });
 
 // Apply new-day boundary (streak penalty if 2+ days gap)
 // @ts-ignore
-app.post('/api/users/work-points/new-day', authenticateToken, async (req, res) => {
-  await userWorkPointsController.newDayOperation(req, res);
+app.post('/api/users/minute-points/new-day', authenticateToken, async (req, res) => {
+  await userMinutePointsController.newDayOperation(req, res);
+});
+
+// Calendar of minutes earned + penalties for a given month
+// @ts-ignore
+app.get('/api/users/minute-points/calendar/:yearMonth', authenticateToken, async (req, res) => {
+  await userMinutePointsController.getCalendar(req, res);
 });
 
 // Leaderboard API Routes - USING NEW DAL ARCHITECTURE

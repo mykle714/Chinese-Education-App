@@ -9,7 +9,7 @@ import {
 } from '@mui/material';
 import LocalFireDepartmentIcon from '@mui/icons-material/LocalFireDepartment';
 
-interface WorkPointsBadgeProps {
+interface MinutePointsBadgeProps {
     points: number;
     isActive: boolean;
     isAnimating: boolean;
@@ -54,7 +54,7 @@ const activeGlowAnimation = keyframes`
   }
 `;
 
-export const WorkPointsBadge: React.FC<WorkPointsBadgeProps> = ({
+export const MinutePointsBadge: React.FC<MinutePointsBadgeProps> = ({
     points,
     isActive,
     isAnimating,
@@ -196,4 +196,4 @@ export const WorkPointsBadge: React.FC<WorkPointsBadgeProps> = ({
     );
 };
 
-export default WorkPointsBadge;
+export default MinutePointsBadge;

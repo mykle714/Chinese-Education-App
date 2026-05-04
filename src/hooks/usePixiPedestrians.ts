@@ -58,17 +58,33 @@ export function usePixiPedestrians(count?: number): UsePixiPedestriansHandle {
     pedestriansRef.current = makeDemoPedestrians(count);
   }
 
+  // Latest tick time — used by getDrawables to pick the current walk-cycle
+  // frame without needing its own RAF or clock. Updated every tick.
+  const lastTMsRef = useRef<number>(performance.now());
+
   // Stable list of sprite paths derived from the initial pedestrian set.
-  // Computed once — pedestrians don't change their sprite definitions at runtime.
+  // Includes every directional-walk frame so Pixi preloads all textures before
+  // the ped first appears in that pose — otherwise the first frame shown in
+  // each direction would flash blank while its texture loads on demand.
   const spriteImagePaths = useMemo(() => {
     const paths = new Set<string>();
-    for (const p of pedestriansRef.current) paths.add(p.sprite.imagePath);
+    for (const p of pedestriansRef.current) {
+      paths.add(p.sprite.imagePath);
+      const walk = p.sprite.directionalWalk;
+      if (walk) {
+        for (const f of walk.north) paths.add(f);
+        for (const f of walk.east) paths.add(f);
+        for (const f of walk.south) paths.add(f);
+        for (const f of walk.west) paths.add(f);
+      }
+    }
     return Array.from(paths);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const tick = (dtMs: number, tMs: number) => {
     const dt = Math.min(dtMs, MAX_DT_MS);
+    lastTMsRef.current = tMs;
     const ctx: PedestrianTickContext = {
       graph: WALKWAY_GRAPH,
       walkways: WALKWAY_MAP,
@@ -85,8 +101,9 @@ export function usePixiPedestrians(count?: number): UsePixiPedestriansHandle {
 
   const getDrawables = (): PedestrianDrawable[] => {
     const out: PedestrianDrawable[] = [];
+    const tMs = lastTMsRef.current;
     for (const p of pedestriansRef.current) {
-      const d = computeDrawable(p, WALKWAY_MAP, POI_MAP);
+      const d = computeDrawable(p, WALKWAY_MAP, tMs, POI_MAP);
       if (d) out.push(d);
     }
     return out;

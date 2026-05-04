@@ -187,10 +187,28 @@ export function routeBetweenWalkways(
   }
 
   let best: Route | null = null;
+  let bestToNode: string | null = null;
   for (const toNodeId of toEnds) {
     const r = strategy.findRoute(graph, fromNodeId, toNodeId);
     if (!r) continue;
-    if (!best || r.walkways.length < best.walkways.length) best = r;
+    if (!best || r.walkways.length < best.walkways.length) {
+      best = r;
+      bestToNode = toNodeId;
+    }
+  }
+  if (!best || !bestToNode) return best;
+
+  // BFS stops at the target node, so the route ends AT an endpoint of the
+  // target walkway without actually traversing it. Append the target walkway
+  // so the pedestrian walks onto it and can reach the POI via clampT.
+  // Skip if BFS already traversed the target walkway (e.g. entered the target
+  // node from its far endpoint) — that case already has the walkway in the route.
+  if (best.walkways[best.walkways.length - 1] !== toWalkwayId) {
+    const farEnd = otherEndpoint(graph, toWalkwayId, bestToNode);
+    best = {
+      walkways: [...best.walkways, toWalkwayId],
+      nodes: farEnd ? [...best.nodes, farEnd] : best.nodes,
+    };
   }
   return best;
 }

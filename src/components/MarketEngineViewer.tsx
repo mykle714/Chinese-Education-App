@@ -46,6 +46,8 @@ interface SceneProps {
   pedestrians?: UsePixiPedestriansHandle;
   showGrid?: boolean;
   showDebug?: boolean;
+  /** Ref set to true by the outer component during a pinch gesture — suppresses Pixi drag. */
+  isPinchingRef?: React.RefObject<boolean>;
 }
 
 const TAP_MAX_DIST = 5;
@@ -110,7 +112,7 @@ function WalkwayOverlay() {
 // Renders the displayName of each walkway at its midpoint in red text.
 
 const WALKWAY_LABEL_STYLE = {
-  fontSize: 100,
+  fontSize: 150,
   fill: 0xff2222,
   fontFamily: 'sans-serif',
   fontWeight: 'bold' as const,
@@ -129,7 +131,7 @@ function WalkwayLabelOverlay() {
         const { screenX, screenY } = isoToScreen(midIsoX, midIsoY);
         return { walkwayId: w.walkwayId, displayName: w.displayName!, screenX, screenY };
       }),
-  []);
+    []);
 
   return (
     <pixiContainer>
@@ -152,10 +154,10 @@ function WalkwayLabelOverlay() {
 // Gated behind showDebug — only rendered when the debug overlay is active.
 
 const POI_LABEL_STYLE = {
-  fontSize: 110,
+  fontSize: 165,
   fill: 0x000000,
   fontFamily: 'sans-serif',
-  stroke: { color: 0xffffff, width: 3 },
+  stroke: { color: 0xffffff, width: 15 },
   align: 'center' as const,
 };
 
@@ -179,7 +181,7 @@ function PoiOverlay() {
       const { isoPos } = pointAtT(walkway.polyline, poi.t);
       return { ...isoToScreen(isoPos[0], isoPos[1]), displayName: poi.displayName };
     }).filter(Boolean),
-  []);
+    []);
 
   return (
     <pixiContainer>
@@ -204,24 +206,27 @@ function PoiOverlay() {
 // against scene geometry. Gated behind showDebug.
 
 const PED_LABEL_STATE_STYLE = {
-  fontSize: 100,
+  fontSize: 150,
   fill: 0x000000,
   fontFamily: 'monospace',
-  stroke: { color: 0xffffff, width: 3 },
+  stroke: { color: 0xffffff, width: 14 },
   align: 'center' as const,
   fontWeight: 'bold' as const,
 };
 
 const PED_LABEL_POI_STYLE = {
-  fontSize: 90,
+  fontSize: 135,
   fill: 0xffe066,
   fontFamily: 'monospace',
-  stroke: { color: 0x000000, width: 2 },
+  stroke: { color: 0x000000, width: 12 },
   align: 'center' as const,
 };
 
-// Vertical offset above the sprite's anchor point (in screen pixels).
-const PED_LABEL_OFFSET_Y = -90;
+// Offset moves the label container high enough so:
+// - State text (150px, anchor y=1) sits above y=0
+// - POI text (135px, anchor y=0) hangs below y=0
+// Container must be at least 300px above the sprite foot anchor to avoid overlap.
+const PED_LABEL_OFFSET_Y = -300;
 
 interface PedestrianDebugLabelsProps {
   pedestrians: UsePixiPedestriansHandle;
@@ -266,7 +271,7 @@ function PedestrianDebugLabels({ pedestrians }: PedestrianDebugLabelsProps) {
 // Runs inside <Application>. Handles the animation tick, pan/tap events,
 // walkway rendering, static layer sprites, and pedestrian sprites.
 
-function NightMarketScene({ layers, textures, pan, zoom, onPanChange, onLayerTap, pedestrians, showGrid, showDebug }: SceneProps) {
+function NightMarketScene({ layers, textures, pan, zoom, onPanChange, onLayerTap, pedestrians, showGrid, showDebug, isPinchingRef }: SceneProps) {
   const { app } = useApplication();
   const [t, setT] = useState(0);
 
@@ -309,6 +314,7 @@ function NightMarketScene({ layers, textures, pan, zoom, onPanChange, onLayerTap
     };
 
     const onMove = (e: FederatedPointerEvent) => {
+      if (isPinchingRef?.current) return; // suppress drag during pinch gesture
       if (!drag.current.active) return;
       const dx = e.global.x - drag.current.startX;
       const dy = e.global.y - drag.current.startY;
@@ -411,8 +417,8 @@ function NightMarketScene({ layers, textures, pan, zoom, onPanChange, onLayerTap
     }
 
     return items.sort((a, b) => a.zIndex - b.zIndex);
-  // t drives both computedLayers and pedestrian positions, so one dep covers both.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // t drives both computedLayers and pedestrian positions, so one dep covers both.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [computedLayers, pedestrians]);
 
   const cx = app.screen.width / 2 + pan.x;
@@ -422,7 +428,7 @@ function NightMarketScene({ layers, textures, pan, zoom, onPanChange, onLayerTap
     <pixiContainer x={cx} y={cy} scale={zoom}>
       {showGrid && <GridOverlay />}
       <WalkwayOverlay />
-      <WalkwayLabelOverlay />
+      {showDebug && <WalkwayLabelOverlay />}
       {showDebug && <PoiOverlay />}
       {allSprites.map(({ key, x, y, zIndex, texKey, scale, label, tappable }) => {
         const texture = textures.get(texKey);
@@ -452,10 +458,23 @@ function NightMarketScene({ layers, textures, pan, zoom, onPanChange, onLayerTap
 function MarketEngineViewer({ layers, onLayerTap, pedestrians, showGrid, showDebug }: MarketEngineViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoom] = useState(0.25);
   const [textures, setTextures] = useState<Map<string, Texture> | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+
+  // Refs kept in sync with state so event handlers always read the latest values
+  // without needing to be recreated on every render.
+  const panRef = useRef(pan);
+  panRef.current = pan;
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
+
+  // Set to true while a 2-finger pinch is active — suppresses Pixi drag handler.
+  const isPinchingRef = useRef(false);
+
+  // Tracks pinch gesture start state so zoom/pan are computed relative to initial contact.
+  const pinchRef = useRef({ active: false, startDist: 0, startZoom: 1, startPanX: 0, startPanY: 0, midX: 0, midY: 0 });
 
   useEffect(() => {
     if (containerRef.current) setReady(true);
@@ -500,18 +519,107 @@ function MarketEngineViewer({ layers, onLayerTap, pedestrians, showGrid, showDeb
     return () => { cancelled = true; };
   }, [allImagePaths]);
 
-  // Wheel zoom — { passive: false } so we can preventDefault and block page scroll.
+  // Compute new zoom and adjust pan so the focal point (cursor / pinch midpoint)
+  // stays fixed in screen space: pan' = focalOffset * (1 - ratio) + pan * ratio.
+  const applyZoomAtPoint = useCallback((focalX: number, focalY: number, newZoom: number) => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ratio = newZoom / zoomRef.current;
+    const w = el.clientWidth;
+    const h = el.clientHeight;
+    const newPan = {
+      x: (focalX - w / 2) * (1 - ratio) + panRef.current.x * ratio,
+      y: (focalY - h / 2) * (1 - ratio) + panRef.current.y * ratio,
+    };
+    // Sync refs immediately so rapid events read the updated values before re-render.
+    zoomRef.current = newZoom;
+    panRef.current = newPan;
+    setZoom(newZoom);
+    setPan(newPan);
+  }, []);
+
+  // Wheel zoom centered on the cursor position.
   const handleWheel = useCallback((e: WheelEvent) => {
     e.preventDefault();
-    setZoom(z => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z * (1 - e.deltaY * 0.001))));
+    const el = containerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoomRef.current * (1 - e.deltaY * 0.001)));
+    applyZoomAtPoint(mouseX, mouseY, newZoom);
+  }, [applyZoomAtPoint]);
+
+  // Pinch-to-zoom: capture phase so we can preventDefault before Pixi sees the touches.
+  const handleTouchStart = useCallback((e: TouchEvent) => {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      isPinchingRef.current = true;
+      const t0 = e.touches[0];
+      const t1 = e.touches[1];
+      const el = containerRef.current!;
+      const rect = el.getBoundingClientRect();
+      const dx = t1.clientX - t0.clientX;
+      const dy = t1.clientY - t0.clientY;
+      pinchRef.current = {
+        active: true,
+        startDist: Math.sqrt(dx * dx + dy * dy),
+        startZoom: zoomRef.current,
+        startPanX: panRef.current.x,
+        startPanY: panRef.current.y,
+        midX: (t0.clientX + t1.clientX) / 2 - rect.left,
+        midY: (t0.clientY + t1.clientY) / 2 - rect.top,
+      };
+    }
+  }, []);
+
+  const handleTouchMove = useCallback((e: TouchEvent) => {
+    if (!pinchRef.current.active || e.touches.length !== 2) return;
+    e.preventDefault();
+    const t0 = e.touches[0];
+    const t1 = e.touches[1];
+    const dx = t1.clientX - t0.clientX;
+    const dy = t1.clientY - t0.clientY;
+    const newDist = Math.sqrt(dx * dx + dy * dy);
+    const scale = newDist / pinchRef.current.startDist;
+    const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, pinchRef.current.startZoom * scale));
+    const ratio = newZoom / pinchRef.current.startZoom;
+    const { midX, midY, startPanX, startPanY } = pinchRef.current;
+    const el = containerRef.current!;
+    const w = el.clientWidth;
+    const h = el.clientHeight;
+    // Compute pan relative to pinch start (not current), so zoom feels stable.
+    zoomRef.current = newZoom;
+    const newPan = {
+      x: (midX - w / 2) * (1 - ratio) + startPanX * ratio,
+      y: (midY - h / 2) * (1 - ratio) + startPanY * ratio,
+    };
+    panRef.current = newPan;
+    setZoom(newZoom);
+    setPan(newPan);
+  }, []);
+
+  const handleTouchEnd = useCallback(() => {
+    pinchRef.current.active = false;
+    isPinchingRef.current = false;
   }, []);
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     el.addEventListener('wheel', handleWheel, { passive: false });
-    return () => el.removeEventListener('wheel', handleWheel);
-  }, [handleWheel, ready]);
+    el.addEventListener('touchstart', handleTouchStart, { passive: false, capture: true });
+    el.addEventListener('touchmove', handleTouchMove, { passive: false });
+    el.addEventListener('touchend', handleTouchEnd);
+    el.addEventListener('touchcancel', handleTouchEnd);
+    return () => {
+      el.removeEventListener('wheel', handleWheel);
+      el.removeEventListener('touchstart', handleTouchStart, { capture: true });
+      el.removeEventListener('touchmove', handleTouchMove);
+      el.removeEventListener('touchend', handleTouchEnd);
+      el.removeEventListener('touchcancel', handleTouchEnd);
+    };
+  }, [handleWheel, handleTouchStart, handleTouchMove, handleTouchEnd, ready]);
 
   if (loadError) {
     return (
@@ -545,6 +653,7 @@ function MarketEngineViewer({ layers, onLayerTap, pedestrians, showGrid, showDeb
             pedestrians={pedestrians}
             showGrid={showGrid}
             showDebug={showDebug}
+            isPinchingRef={isPinchingRef}
           />
         </Application>
       )}

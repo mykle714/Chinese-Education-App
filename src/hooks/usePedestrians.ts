@@ -94,7 +94,7 @@ export function usePedestrians(options: UsePedestriansOptions = {}): UsePedestri
   const getDrawables = (): PedestrianDrawable[] => {
     const out: PedestrianDrawable[] = [];
     for (const p of pedestriansRef.current) {
-      const d = computeDrawable(p, WALKWAY_MAP, POI_MAP);
+      const d = computeDrawable(p, WALKWAY_MAP, performance.now(), POI_MAP);
       if (d) out.push(d);
     }
     return out;

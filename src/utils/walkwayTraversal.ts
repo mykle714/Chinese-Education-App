@@ -16,9 +16,8 @@
 import type { WalkwayDef, TraversalKind } from '../config/nightMarketRegistry';
 
 /**
- * Result of one traversal step. `t` is progress in [0, 1] along the polyline.
- * `isoPos` is the pedestrian's current iso-space position (already accounting
- * for any strategy-specific offsets like lane shift).
+ * Result of one traversal step. `t` is iso distance from polyline[0] in range
+ * [0, walkwayLength]. `isoPos` is the pedestrian's current iso-space position.
  */
 export interface TraversalStep {
   t: number;
@@ -40,10 +39,10 @@ export interface TraversalStrategy {
   /**
    * Advance one step.
    * @param walkway   the walkway being traversed
-   * @param t         current progress in [0, 1]
+   * @param t         current iso distance from polyline[0], range [0, walkwayLength]
    * @param direction +1 toward polyline[N-1], -1 toward polyline[0]
    * @param dtMs      elapsed time since last step
-   * @param clampT    optional: stop at this progress (used for POI entry points)
+   * @param clampT    optional: stop at this iso distance (POI entry point)
    */
   advance(
     walkway: WalkwayDef,
@@ -71,19 +70,18 @@ export function polylineLength(polyline: Array<[number, number]>): number {
 }
 
 /**
- * Interpolate a point along a polyline at progress t in [0, 1].
+ * Interpolate a point along a polyline at iso distance t from polyline[0].
  * Returns both position and the local segment heading (unit vector).
  */
 export function pointAtT(
   polyline: Array<[number, number]>,
   t: number
 ): { isoPos: [number, number]; headingIso: [number, number] } {
-  const clamped = Math.max(0, Math.min(1, t));
   const total = polylineLength(polyline);
   if (total === 0) {
     return { isoPos: [polyline[0][0], polyline[0][1]], headingIso: [1, 0] };
   }
-  const targetDist = clamped * total;
+  const targetDist = Math.max(0, Math.min(total, t));
   let acc = 0;
   for (let i = 1; i < polyline.length; i++) {
     const [x0, y0] = polyline[i - 1];
@@ -117,8 +115,8 @@ export const linearTraversal: TraversalStrategy = {
       const [x, y] = walkway.polyline[0];
       return { t, isoPos: [x, y], headingIso: [1, 0], reachedEnd: true };
     }
-    // Constant-speed progress in t-space: dt * speed / totalLen.
-    const dt = (dtMs / 1000) * (walkway.speedIsoPerSec / totalLen);
+    // Advance by iso units: dt = elapsed_s * speedIsoPerSec.
+    const dt = (dtMs / 1000) * walkway.speedIsoPerSec;
     let next = t + dt * direction;
 
     // Hard target (POI stop) — clamp if we'd overshoot it.
@@ -132,9 +130,9 @@ export const linearTraversal: TraversalStrategy = {
         reachedEnd = true;
       }
     }
-    // Walkway-end bound.
-    if (next >= 1) {
-      next = 1;
+    // Walkway-end bounds (in iso units).
+    if (next >= totalLen) {
+      next = totalLen;
       reachedEnd = true;
     } else if (next <= 0) {
       next = 0;

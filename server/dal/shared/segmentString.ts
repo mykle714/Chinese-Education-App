@@ -148,16 +148,95 @@ export function buildExcludeSet(dictEntries: DictionaryEntry[]): Set<string> {
  * @param dictMap - Pre-built lookup map (from buildDictMap)
  * @param excludeTokens - Optional set of multi-char tokens to skip (from buildExcludeSet).
  *   Single-char tokens are never excluded — they serve as the last-resort fallback.
+ * @param prioritySegments - Optional ordered list of segments to prefer. When any
+ *   candidate substring appears in this list, it bypasses length-tier and score
+ *   checks. Earlier in the array = higher priority. Ties on priority index break
+ *   on later position (higher startIdx).
+ * @param classifierTokens - Optional set of tokens (typically single characters)
+ *   tagged as classifiers in the source sentence's partOfSpeechDict. Acts as a
+ *   forced-boundary pre-split: any occurrence is extracted as its own segment
+ *   so the post-segmentation flow can attach its classifier annotation.
+ *   Runs after the priority pass and before the main length-tier loop.
  * @returns Array of segments (each segment is 1-4 characters)
  */
 export function segmentWithDict(
   str: string,
   dictMap: Map<string, SegmentMeta>,
-  excludeTokens?: Set<string>
+  excludeTokens?: Set<string>,
+  prioritySegments?: string[],
+  classifierTokens?: Set<string>
 ): string[] {
   if (!str) return [];
 
   const chars = [...str];
+
+  // Priority pass: if any candidate substring (at any length/position) appears in
+  // prioritySegments, the front-most listed one wins outright — bypassing the
+  // length-tier and vernacularScore logic below.
+  if (prioritySegments && prioritySegments.length > 0) {
+    let bestPriorityRank = Infinity;
+    let bestPriorityIdx = -1;
+    let bestPriorityLen = 0;
+
+    for (let length = Math.min(4, chars.length); length >= 1; length--) {
+      for (let startIdx = 0; startIdx <= chars.length - length; startIdx++) {
+        const substring = chars.slice(startIdx, startIdx + length).join('');
+        if (!dictMap.has(substring)) continue;
+        if (length > 1 && excludeTokens?.has(substring)) continue;
+
+        const rank = prioritySegments.indexOf(substring);
+        if (rank === -1) continue;
+
+        if (
+          rank < bestPriorityRank ||
+          (rank === bestPriorityRank && startIdx > bestPriorityIdx)
+        ) {
+          bestPriorityRank = rank;
+          bestPriorityIdx = startIdx;
+          bestPriorityLen = length;
+        }
+      }
+    }
+
+    if (bestPriorityIdx !== -1) {
+      const winner = chars.slice(bestPriorityIdx, bestPriorityIdx + bestPriorityLen).join('');
+      const left = chars.slice(0, bestPriorityIdx).join('');
+      const right = chars.slice(bestPriorityIdx + bestPriorityLen).join('');
+      return [
+        ...segmentWithDict(left, dictMap, excludeTokens, prioritySegments, classifierTokens),
+        winner,
+        ...segmentWithDict(right, dictMap, excludeTokens, prioritySegments, classifierTokens),
+      ];
+    }
+  }
+
+  // Classifier pre-split: any token tagged as 'classifier' in the source sentence's
+  // partOfSpeechDict becomes a forced segment boundary. Scan left-to-right at lengths
+  // 4→1 and split on the first hit so the post-segmentation flow can attach the
+  // classifier annotation reliably (previously these chars could be swallowed by
+  // a longer GSA match). Recursive calls re-enter this pass, so multiple classifiers
+  // in one sentence are all extracted in left-to-right order.
+  if (classifierTokens && classifierTokens.size > 0) {
+    for (let startIdx = 0; startIdx < chars.length; startIdx++) {
+      for (
+        let length = Math.min(4, chars.length - startIdx);
+        length >= 1;
+        length--
+      ) {
+        const substring = chars.slice(startIdx, startIdx + length).join('');
+        if (!classifierTokens.has(substring)) continue;
+        if (length > 1 && excludeTokens?.has(substring)) continue;
+
+        const left = chars.slice(0, startIdx).join('');
+        const right = chars.slice(startIdx + length).join('');
+        return [
+          ...segmentWithDict(left, dictMap, excludeTokens, prioritySegments, classifierTokens),
+          substring,
+          ...segmentWithDict(right, dictMap, excludeTokens, prioritySegments, classifierTokens),
+        ];
+      }
+    }
+  }
 
   // Try each length tier longest-first; within a tier, pick highest vernacularScore
   // (null = 0), tiebreaking on later position (higher startIdx = more specific context)
@@ -183,9 +262,9 @@ export function segmentWithDict(
       const left = chars.slice(0, bestIdx).join('');
       const right = chars.slice(bestIdx + length).join('');
       return [
-        ...segmentWithDict(left, dictMap, excludeTokens),
+        ...segmentWithDict(left, dictMap, excludeTokens, prioritySegments, classifierTokens),
         winner,
-        ...segmentWithDict(right, dictMap, excludeTokens),
+        ...segmentWithDict(right, dictMap, excludeTokens, prioritySegments, classifierTokens),
       ];
     }
   }

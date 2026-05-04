@@ -8,6 +8,8 @@ import { useSpring, animated } from "@react-spring/web";
 import MobileFooter from "../components/MobileFooter";
 import MobileNavDrawer from "../components/MobileNavDrawer";
 import PageHeader from "../components/PageHeader";
+import CharacterPinyinColorDisplay from "../components/CharacterPinyinColorDisplay";
+import CPCDRow from "../components/CPCDRow";
 import { API_BASE_URL } from "../constants";
 import { stripParentheses } from "../utils/definitionUtils";
 import type { Language, DiscoverCard, DiscoverFetchResponse, DiscoverSortResponse } from "../types";
@@ -46,7 +48,7 @@ const IPhoneFrame = styled(Box)({
     overflow: "hidden",
     display: "flex",
     flexDirection: "column",
-    width: "100vw",
+    width: "100%",
     height: "100dvh",
 });
 
@@ -76,6 +78,8 @@ const BucketsContainer = styled(Box)({
 const Bucket = styled(Box)<{ mainColor: string; accentColor: string; highlight?: boolean }>(
     ({ mainColor, accentColor, highlight }) => ({
         aspectRatio: "136 / 200",
+        height: "100%", // fill the 1fr grid row; aspect-ratio then drives width
+        maxWidth: "100%", // guard against narrow+tall rows where ratio would overflow horizontally
         minHeight: 0, // override grid item default (auto) so bucket shrinks with 1fr rows
         padding: 8,
         backgroundColor: mainColor,
@@ -167,7 +171,16 @@ const SortCardsPage: React.FC = () => {
     const [provisionalMode, setProvisionalMode] = useState<boolean>(false);
     const [loading, setLoading] = useState(true);
     const [highlightedBucket, setHighlightedBucket] = useState<string | null>(null);
-    const [history, setHistory] = useState<Array<{ card: DiscoverCard; bucket: string }>>([]);
+    // History entries snapshot the band state (userHskLevel, provisionalMode) at sort time
+    // so undo can restore the same band the card was sorted under. Without this, undo would
+    // restore currentCardIndex but the head-skip effect would immediately re-skip the card
+    // when the current band excludes it (e.g. after a rank-up or in provisional mode).
+    const [history, setHistory] = useState<Array<{
+        card: DiscoverCard;
+        bucket: string;
+        prevUserHskLevel: number | null;
+        prevProvisionalMode: boolean;
+    }>>([]);
     const [isLoadingMore, setIsLoadingMore] = useState(false);
     // Set to true when a load-more fetch returns 0 new unique cards — stops infinite retries.
     // Cleared whenever new cards actually arrive so sorting can resume if state changes.
@@ -367,8 +380,15 @@ const SortCardsPage: React.FC = () => {
             config: { tension: 150, friction: 35 },
         });
 
-        // Add to history for undo
-        setHistory((prev) => [...prev, { card: sortedCard, bucket: bucketId }]);
+        // Add to history for undo. Snapshot the band state *as of sort start* so undo
+        // can restore it before the head-skip effect runs against the restored index.
+        // Bounded to 1: only the most recent sort is undoable.
+        setHistory([{
+            card: sortedCard,
+            bucket: bucketId,
+            prevUserHskLevel: userHskLevel,
+            prevProvisionalMode: provisionalMode,
+        }]);
 
         // Advance past any out-of-band cards in cardQueue so the next active
         // card honors the current [userLevel, userLevel + 1] filter. If we run
@@ -423,6 +443,12 @@ const SortCardsPage: React.FC = () => {
         const lastAction = history[history.length - 1];
         setHistory((prev) => prev.slice(0, -1));
 
+        // Restore the band state *before* the index so the head-skip effect, when it
+        // runs in response to the index change, evaluates the restored card against
+        // the same band it was originally sorted under.
+        setUserHskLevel(lastAction.prevUserHskLevel);
+        setProvisionalMode(lastAction.prevProvisionalMode);
+
         const restoredIndex = cardQueue.findIndex((c) => c.id === lastAction.card.id);
         if (restoredIndex >= 0) {
             setCurrentCardIndex(restoredIndex);
@@ -432,7 +458,7 @@ const SortCardsPage: React.FC = () => {
         }
 
         try {
-            await fetch(`${API_BASE_URL}/api/starter-packs/undo`, {
+            const response = await fetch(`${API_BASE_URL}/api/starter-packs/undo`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json", ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
                 credentials: "include",
@@ -441,6 +467,16 @@ const SortCardsPage: React.FC = () => {
                     language,
                 }),
             });
+            // Sync with server-recomputed band (post-rollback) once it returns.
+            if (response.ok) {
+                const data: Partial<DiscoverSortResponse> = await response.json();
+                if (typeof data.userHskLevel === "number") {
+                    setUserHskLevel(data.userHskLevel);
+                }
+                if (typeof data.provisionalMode === "boolean") {
+                    setProvisionalMode(data.provisionalMode);
+                }
+            }
         } catch (error) {
             console.error("Error undoing action:", error);
         }
@@ -624,16 +660,23 @@ const SortCardsPage: React.FC = () => {
                         }}
                     >
                         <Box className="sort-cards__card-image" sx={{ width: 96, height: 76, backgroundColor: "#e0e0e0", borderRadius: 1 }} />
-                        {/* Characters + pronunciation centered in the middle */}
+                        {/* Characters + pronunciation centered in the middle, rendered per-character via cpcd */}
                         <Box className="sort-cards__card-key-group" sx={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                            <Typography className="sort-cards__card-key" sx={{ fontSize: 20, fontWeight: 400, letterSpacing: "0.08em" }}>
-                                {currentCard.entryKey}
-                            </Typography>
-                            {currentCard.pronunciation && (
-                                <Typography className="sort-cards__card-pronunciation" sx={{ fontSize: 8, fontWeight: 400 }}>
-                                    {currentCard.pronunciation}
-                                </Typography>
-                            )}
+                            <CPCDRow size="xs" className="sort-cards__card-key">
+                                {Array.from(currentCard.entryKey).map((char, i) => {
+                                    const syllables = currentCard.pronunciation ? currentCard.pronunciation.split(/\s+/) : [];
+                                    return (
+                                        <CharacterPinyinColorDisplay
+                                            key={`${char}-${i}`}
+                                            character={char}
+                                            pinyin={syllables[i] ?? ""}
+                                            showPinyin={!!syllables[i]}
+                                            size="xs"
+                                            useToneColor
+                                        />
+                                    );
+                                })}
+                            </CPCDRow>
                         </Box>
                         {/* Definition pinned to the bottom of the card; clamped to 2 lines to prevent overflow */}
                         <Typography

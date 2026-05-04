@@ -21,6 +21,8 @@ dp = discover page (aka sort cards page)
 cdp = card detail page
 pct = particles and classifiers table
 nmp = night market page
+ped = pedestrian
+poi = point of interest
 
 ## Night Market Coordinate System
 

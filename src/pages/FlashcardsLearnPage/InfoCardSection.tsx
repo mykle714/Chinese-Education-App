@@ -278,8 +278,14 @@ const InfoCardSection: React.FC<InfoCardSectionProps> = ({
                             </Box>
                         ) : null}
 
-                        {/* Tab 4: Expansion */}
-                        {selectedTab === 4 && currentEntry?.expansion ? (
+                        {/* Tab 4: Expansion — only shown when the card is flipped to the definition side */}
+                        {selectedTab === 4 && !isFlipped ? (
+                            <Box className="mobile-demo-tab-empty" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 2 }}>
+                                <Typography className="mobile-demo-tab-empty-text" sx={{ fontSize: 14, color: COLORS.gray, textAlign: 'center', fontFamily: '"Inter", sans-serif' }}>
+                                    Flip the card to view the expansion!
+                                </Typography>
+                            </Box>
+                        ) : selectedTab === 4 && currentEntry?.expansion ? (
                             <Box className="mobile-demo-expansion-wrapper" sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 2, gap: 2 }}>
                                 <Typography className="mobile-demo-expansion-label" sx={{ fontSize: 12, color: COLORS.gray, fontFamily: '"Inter", sans-serif', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                                     Expanded Form

@@ -301,7 +301,22 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
       return {
         ...entry,
         exampleSentences: entry.exampleSentences.map(sentence => {
-          const segments = segmentWithDict(sentence.chinese, dictMap, excludeTokens);
+          // Tokens tagged as 'classifier' in this sentence's AI-generated POS dict
+          // become forced segment boundaries — guarantees they surface as standalone
+          // segments so the particle/classifier annotation block below picks them up
+          // even when they would otherwise be absorbed into a longer GSA match.
+          const classifierTokens = new Set<string>(
+            Object.entries(sentence.partOfSpeechDict ?? {})
+              .filter(([, tag]) => tag === 'classifier')
+              .map(([token]) => token)
+          );
+          const segments = segmentWithDict(
+            sentence.chinese,
+            dictMap,
+            excludeTokens,
+            undefined,
+            classifierTokens
+          );
           const segmentMetadata: Record<string, {
             pronunciation?: string;
             definition?: string;

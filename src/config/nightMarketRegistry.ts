@@ -135,35 +135,61 @@ export interface WalkwayDef {
  * The POI position is derived by projecting the stall's iso coordinate onto
  * the walkway segment — no manual t calculation needed.
  *
- * `side` records which side of the walkway the stall sits on (relative to the
- * walkway's positive direction). Used for pedestrian approach offsets and future
- * laned traversal; does not affect the projected t value.
+ * `side` records which side of the walkway the stall sits on in screen space.
+ * 'north' = screen-north (smaller isoY side of the street).
+ * 'south' = screen-south (larger isoY side of the street).
+ * Used for pedestrian approach offsets and duplicate-POI enforcement.
  */
 export interface StallFrontage {
   walkwayId: string;
-  side: 'left' | 'right';
+  side: 'north' | 'south';
 }
 
 /**
  * A point of interest a pedestrian can target (e.g. a stall's entry point).
- * Anchored to exactly one walkway at parameter t in [0, 1] along its polyline.
+ * Anchored to exactly one walkway at parameter t in iso units from polyline[0].
+ * polyline[0] is always the screen-south end (max isoX + isoY).
  * Typically derived via computePoiFromStall() rather than authored by hand.
  */
 export interface PoiDef {
   poiId: string;
   walkwayId: string;
-  /** 0 = polyline[0], 1 = polyline[1]. */
+  /** Iso distance from polyline[0] (the screen-south start of the walkway). */
   t: number;
+  /** Which screen side of the walkway this POI faces. */
+  side: 'north' | 'south';
   /** The stall asset this POI leads to. */
   linkedAssetId?: string;
   displayName?: string;
 }
 
-/** Sprite describing how a pedestrian is rendered. v1 = single static image. */
+/**
+ * 4-direction walk cycle for a pedestrian. Frames are selected by the ped's
+ * isometric heading (see `headingToIsoDir` in pedestrianAgent). Each direction
+ * holds an ordered list of frame URLs; frame 0 is used as the idle pose when
+ * the ped is not Traveling.
+ *
+ * Direction ↔ screen semantics:
+ *   north = backward-left   (isoY increasing)
+ *   east  = backward-right  (isoX increasing)
+ *   south = forward-right   (isoY decreasing)
+ *   west  = forward-left    (isoX decreasing)
+ */
+export interface DirectionalWalkAnimation {
+  north: string[];
+  east: string[];
+  south: string[];
+  west: string[];
+  fps: number;
+}
+
+/** Sprite describing how a pedestrian is rendered. */
 export interface SpriteDef {
   imagePath: string;
   scale?: number;
   frameAnimation?: FrameAnimation;
+  /** Optional per-direction walk cycle. When present, overrides `imagePath` at render. */
+  directionalWalk?: DirectionalWalkAnimation;
 }
 
 /** A single item in a pedestrian's agenda. */
@@ -201,7 +227,17 @@ export interface PedestrianState {
   interactUntilMs?: number;
   /** POI the pedestrian is currently routing toward (set during Planning, cleared on Idle). */
   targetPoiId?: string;
+  /**
+   * IDs of the most recent POIs this pedestrian visited (oldest first, newest last).
+   * Used by `resolveWanderTarget` to suppress repeat visits during local wander —
+   * the global fallback ignores this list so the ped never gets fully blocked.
+   * Capped at `RECENT_POI_HISTORY_LIMIT` entries.
+   */
+  recentlyVisitedPoiIds: string[];
 }
+
+/** Max length of `PedestrianState.recentlyVisitedPoiIds`. */
+export const RECENT_POI_HISTORY_LIMIT = 8;
 
 /** Configuration constants */
 export const NIGHT_MARKET_CONFIG = {

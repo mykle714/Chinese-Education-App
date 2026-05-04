@@ -375,7 +375,11 @@ export class StarterPacksService {
         return { success: false, message: 'Card not found in sorted list' };
       }
 
-      return { success: true, message: 'Card undo successful' };
+      // Recompute band after rollback so the client can re-sync. Mirrors sortCard().
+      const provisionalMode = await this.computeProvisionalMode(userId, language);
+      const userHskLevel = await this.computeUserHskLevel(userId, language, provisionalMode);
+
+      return { success: true, message: 'Card undo successful', userHskLevel, provisionalMode };
     } finally {
       client.release();
     }

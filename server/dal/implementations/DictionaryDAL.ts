@@ -19,7 +19,8 @@ const DICTIONARY_COLUMNS = `
   "matchException",
   "shortDefinitionPronunciationOverride",
   "exampleSentenceDefinitionPronunciationOverride",
-  "vernacularScore"
+  "vernacularScore",
+  "wordForms"
 `.trim();
 
 /**
@@ -63,6 +64,7 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
       expansion: row.expansion ?? null,
       expansionLiteralTranslation: row.expansionLiteralTranslation ?? null,
       matchException: row.matchException ?? [],
+      wordForms: row.wordForms ?? null,
     };
   }
 
@@ -321,6 +323,7 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
             pronunciation?: string;
             definition?: string;
             particleOrClassifier?: { type: 'particle' | 'classifier'; definition: string };
+            wordForms?: Record<string, string>;
           }> = {};
 
           for (const seg of segments) {
@@ -342,6 +345,9 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
                   ?? pickDefinitionForTranslatedSentence(segMeta, sentence.english);
                 if (bestDefinition) {
                   segmentMetadata[seg].definition = bestDefinition;
+                }
+                if (segMeta.wordForms) {
+                  segmentMetadata[seg].wordForms = segMeta.wordForms;
                 }
               }
 

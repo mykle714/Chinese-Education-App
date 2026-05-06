@@ -19,6 +19,33 @@ WHERE language = 'zh' AND "numberedPinyin" = ANY(ARRAY['wei4 lai2', ...]);
 
 Confirm the matches with the user before proceeding.
 
+### 1.5. Verify the chosen pronunciation is the most popular reading
+
+A row in `dictionaryentries` has one `pronunciation` / `numberedPinyin` per word, but cedict often lists multiple readings (e.g. 说 has both `shui4` "persuade" and `shuo1` "speak"). The initial import sometimes picks a less popular reading, which would surface a wrong-meaning card to learners.
+
+For each word about to be made discoverable, look up *all* cedict readings:
+
+```bash
+grep -P "^\S+\s+<HANZI>\s+\[" /home/cow/server/cedict_ts.u8
+```
+
+Compare each row's current `numberedPinyin` against the cedict readings. If the row's reading is **not** the most popular one (heuristic: shorter/sparser definition list, or clearly archaic/literary meaning), flag it to the user with the alternatives and proposed fix. Apply the fix BEFORE setting `discoverable = TRUE` so enrichment runs against the right pronunciation:
+
+```sql
+UPDATE dictionaryentries SET
+  pronunciation = '<diacritic form>',
+  "numberedPinyin" = '<numbered form>',
+  definitions = '<cedict defs JSON for new pinyin>'::jsonb,
+  tone = NULL, "hskLevel" = NULL, "longDefinition" = NULL, breakdown = NULL,
+  synonyms = NULL, "exampleSentences" = NULL, expansion = NULL, classifier = NULL,
+  "expansionLiteralTranslation" = NULL, "vernacularScore" = NULL,
+  "shortDefinitionPronunciationOverride" = NULL,
+  "exampleSentenceDefinitionPronunciationOverride" = NULL
+WHERE id = <id>;
+```
+
+Nulling the enrichment columns lets the Step 3 pipeline regenerate everything against the corrected pronunciation. Skip the fix if the cedict alternatives are clearly archaic, literary, or rare (e.g. 六 has a literary `lu4` reading but `liu4` is correct for "six").
+
 ### 2. Set discoverable = TRUE
 
 ```sql

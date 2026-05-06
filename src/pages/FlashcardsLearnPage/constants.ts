@@ -29,6 +29,24 @@ export const CARD_DISMISS_THRESHOLD_VW = 0.15;
 export const CARD_BASE_WIDTH = 295;
 export const CARD_BASE_HEIGHT = 426;
 
-// Tab config — order matches: bt, sct, definition, est, et
-export const TAB_COLORS = [COLORS.pink, COLORS.green, COLORS.blue, COLORS.orange, COLORS.gray];
-export const TAB_LABELS = ["breakdown", "similar", "definition", "examples", "literal"];
+// Tab config — order matches: info, bt, est
+// "info" consolidates the long definition, HSK level, parts of speech, and the shared-characters list.
+// "breakdown" also shows the expansion / literal-translation block (formerly its own "literal" tab).
+export const TAB_COLORS = [COLORS.blue, COLORS.pink, COLORS.orange];
+export const TAB_LABELS = ["info", "breakdown", "examples"];
+// Human-readable function label rendered in each tab's title component.
+// Indexed parallel to TAB_LABELS.
+export const TAB_FUNCTION_LABELS = ["Overview", "Character Breakdown", "Example Sentences"];
+
+// EIC bottom-sheet snap stops as a fraction of ContentArea height.
+// HALF: first stop after FAB tap. FULL: reached by scrolling further.
+export const EIC_HALF_RATIO = 0.7;
+export const EIC_FULL_RATIO = 0.9;
+// Sheet snaps closed if the user drags it below HALF * this ratio on release.
+export const EIC_DISMISS_THRESHOLD_RATIO = 0.4;
+// Idle gap (ms) between wheel events that splits one wheel "burst" from the next.
+// A fresh burst at scrollTop=0 begins to close the sheet, while continuous momentum stops.
+export const EIC_WHEEL_BURST_IDLE_MS = 150;
+// Min cumulative downward delta (px) of a fresh gesture at scrollTop=0 before the
+// sheet starts shrinking. Prevents tiny accidental scrolls from triggering dismiss.
+export const EIC_DISMISS_FRESH_GESTURE_DELTA_PX = 20;

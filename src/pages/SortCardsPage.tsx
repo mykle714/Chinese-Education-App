@@ -662,7 +662,7 @@ const SortCardsPage: React.FC = () => {
                         <Box className="sort-cards__card-image" sx={{ width: 96, height: 76, backgroundColor: "#e0e0e0", borderRadius: 1 }} />
                         {/* Characters + pronunciation centered in the middle, rendered per-character via cpcd */}
                         <Box className="sort-cards__card-key-group" sx={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                            <CPCDRow size="xs" className="sort-cards__card-key">
+                            <CPCDRow size="sm" className="sort-cards__card-key">
                                 {Array.from(currentCard.entryKey).map((char, i) => {
                                     const syllables = currentCard.pronunciation ? currentCard.pronunciation.split(/\s+/) : [];
                                     return (
@@ -671,7 +671,7 @@ const SortCardsPage: React.FC = () => {
                                             character={char}
                                             pinyin={syllables[i] ?? ""}
                                             showPinyin={!!syllables[i]}
-                                            size="xs"
+                                            size="sm"
                                             useToneColor
                                         />
                                     );

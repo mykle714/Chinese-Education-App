@@ -4,18 +4,21 @@ import { stripParentheses } from "../utils/definitionUtils";
 import CharacterPinyinColorDisplay from "./CharacterPinyinColorDisplay";
 import CPCDRow from "./CPCDRow";
 
-type Size = "xs" | "sm" | "md";
+type Size = "sm" | "md";
 
 interface SegmentMeta {
   pronunciation?: string;
   definition?: string;
   particleOrClassifier?: { type: 'particle' | 'classifier'; definition: string };
+  wordForms?: Record<string, string>;
 }
 
 interface SentenceData {
   chinese: string;
   _segments?: string[];
   segmentMetadata?: Record<string, SegmentMeta>;
+  tense?: 'past' | 'present' | 'future';
+  partOfSpeechDict?: Record<string, string>;
 }
 
 interface SegmentedSentenceDisplayProps {
@@ -57,6 +60,20 @@ interface HighlightRow {
   right: number;
 }
 
+// Selects the contextually appropriate English form from a wordForms map.
+// Verbs prefer tense-specific keys (past/present/future); other POS use their tag directly.
+function resolveWordForm(
+  wordForms: Record<string, string>,
+  pos: string | undefined,
+  tense: string | undefined
+): string | undefined {
+  if (!pos) return undefined;
+  if (tense && (pos === 'verb' || pos === 'auxiliary verb')) {
+    return wordForms[tense] ?? wordForms[pos];
+  }
+  return wordForms[pos];
+}
+
 const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
   sentence,
   size = "sm",
@@ -94,7 +111,13 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
       const syllables = pronunciation.split(" ");
       const syllableMatches = pronunciation.length > 0 && syllables.length === segmentLength;
       // Prefer particle/classifier definition when tagged — it's the contextually correct sense
-      const definition = meta?.particleOrClassifier?.definition ?? meta?.definition;
+      let definition = meta?.particleOrClassifier?.definition ?? meta?.definition;
+      // If the segment has wordForms and POS context is available, use the conjugated form
+      if (meta?.wordForms && sentence.partOfSpeechDict && !meta.particleOrClassifier) {
+        const pos = sentence.partOfSpeechDict[segment];
+        const form = resolveWordForm(meta.wordForms, pos, sentence.tense);
+        if (form) definition = form;
+      }
 
       for (let i = 0; i < segmentLength && cursor + i < chars.length; i++) {
         data[cursor + i] = {
@@ -114,12 +137,18 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
       if (!data[i]) {
         const char = chars[i];
         const fallbackMeta = sentence.segmentMetadata?.[char];
+        let fallbackDefinition = fallbackMeta?.particleOrClassifier?.definition ?? fallbackMeta?.definition;
+        if (fallbackMeta?.wordForms && sentence.partOfSpeechDict && !fallbackMeta.particleOrClassifier) {
+          const pos = sentence.partOfSpeechDict[char];
+          const form = resolveWordForm(fallbackMeta.wordForms, pos, sentence.tense);
+          if (form) fallbackDefinition = form;
+        }
         data[i] = {
           pinyin: "",
           segment: char,
           start: i,
           end: i,
-          definition: fallbackMeta?.particleOrClassifier?.definition ?? fallbackMeta?.definition,
+          definition: fallbackDefinition,
         };
       }
     }

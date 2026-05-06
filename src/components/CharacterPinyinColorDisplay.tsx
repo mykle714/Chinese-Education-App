@@ -7,7 +7,7 @@ interface CharacterPinyinColorDisplayProps {
     pinyin: string;
     showPinyin?: boolean;
     useToneColor?: boolean;
-    size?: "xs" | "sm" | "md";
+    size?: "sm" | "md" | "lg";
     compact?: boolean;
     interactive?: boolean;
     selected?: boolean;
@@ -17,21 +17,11 @@ interface CharacterPinyinColorDisplayProps {
 
 // Fixed column widths — sized to fit the longest common pinyin syllables (e.g. "zhuāng") at each size.
 // Adjust these two constants to resize all cpcd instances across the app simultaneously.
-const CPCD_XS_WIDTH = "28px";
 const CPCD_SM_WIDTH = "32px";
 const CPCD_MD_WIDTH = "50px";
+const CPCD_LG_WIDTH = "54px";
 
 const SIZE_STYLES = {
-    xs: {
-        characterFontSize: "18px",
-        characterFontWeight: 400,
-        characterFontFamily: '"Inter", "Noto Sans JP", sans-serif',
-        pinyinFontSize: "9px",
-        pinyinFontStyle: "normal" as const,
-        columnWidth: CPCD_XS_WIDTH,
-        columnMinHeight: "38px",
-        verticalPadding: "2px",
-    },
     sm: {
         characterFontSize: "26px",
         characterFontWeight: 400,
@@ -52,13 +42,23 @@ const SIZE_STYLES = {
         columnMinHeight: "auto",
         verticalPadding: "8px",
     },
+    lg: {
+        characterFontSize: "2.4rem",
+        characterFontWeight: 400,
+        characterFontFamily: '"Inter", "Noto Sans JP", sans-serif',
+        pinyinFontSize: "1.05rem",
+        pinyinFontStyle: "normal" as const,
+        columnWidth: CPCD_LG_WIDTH,
+        columnMinHeight: "auto",
+        verticalPadding: "8px",
+    },
 };
 
 // Compact overrides reduce font sizes slightly for use in dense info card contexts
 const COMPACT_SIZE_OVERRIDES = {
-    xs: { characterFontSize: "16px", pinyinFontSize: "8px" },
     sm: { characterFontSize: "22px", pinyinFontSize: "11px" },
     md: { characterFontSize: "1.875rem", pinyinFontSize: "0.875rem" },
+    lg: { characterFontSize: "2.25rem", pinyinFontSize: "1rem" },
 };
 
 const CharacterPinyinColorDisplay: React.FC<CharacterPinyinColorDisplayProps> = ({

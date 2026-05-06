@@ -14,6 +14,7 @@ export interface VocabEntry {
     entryValue: string;
     pronunciation?: string | null;
     hskLevel?: HskLevel | null;
+    partsOfSpeech?: string[] | null;
     category?: FlashcardCategory;
     breakdown?: Record<string, { definition: string }> | null;
     expansion?: string | null;

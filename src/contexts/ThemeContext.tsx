@@ -2,6 +2,17 @@ import { createContext, useContext, useState, useEffect, type ReactNode } from '
 import { ThemeProvider, createTheme, type Theme } from '@mui/material/styles';
 import { CssBaseline } from '@mui/material';
 
+// Augment MUI's Palette with custom EIC tokens so each theme can define
+// its own header color for the bottom-sheet tab strip.
+declare module '@mui/material/styles' {
+    interface Palette {
+        eic: { header: string };
+    }
+    interface PaletteOptions {
+        eic?: { header?: string };
+    }
+}
+
 // Define available theme options
 export type ThemeMode = 'light' | 'dark' | 'blue' | 'green';
 
@@ -48,6 +59,7 @@ const createAppTheme = (mode: ThemeMode): Theme => {
                         primary: '#eeeeee',
                         secondary: 'rgba(255, 255, 255, 0.7)',
                     },
+                    eic: { header: '#2c2c2c' },
                 },
             });
 
@@ -74,6 +86,7 @@ const createAppTheme = (mode: ThemeMode): Theme => {
                         primary: '#333333',
                         secondary: 'rgba(0, 0, 0, 0.6)',
                     },
+                    eic: { header: '#B5C7E3' },
                 },
             });
 
@@ -100,6 +113,7 @@ const createAppTheme = (mode: ThemeMode): Theme => {
                         primary: '#333333',
                         secondary: 'rgba(0, 0, 0, 0.6)',
                     },
+                    eic: { header: '#BFD3BF' },
                 },
             });
 
@@ -127,6 +141,7 @@ const createAppTheme = (mode: ThemeMode): Theme => {
                         primary: '#333333',
                         secondary: 'rgba(0, 0, 0, 0.6)',
                     },
+                    eic: { header: '#C9C2B5' },
                 },
             });
     }

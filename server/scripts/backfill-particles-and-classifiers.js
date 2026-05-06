@@ -1,9 +1,9 @@
 /**
  * Backfill Script: AI-powered particle and classifier seeding for particlesandclassifiers table.
  *
- * Queries dictionaryentries for single-character zh words where partsOfSpeech or definitions
- * indicate a particle or classifier role, then asks Claude Sonnet to confirm and provide a
- * concise contextual definition for each role.
+ * Iterates a curated seed list of single-character zh candidates and asks Claude Sonnet to
+ * confirm whether each one functions as a particle, a classifier, both, or neither, and to
+ * provide a concise contextual definition for each confirmed role.
  *
  * The table uses (character, language, type) as a unique key, so a character can have
  * separate rows for both 'particle' and 'classifier' roles.
@@ -39,16 +39,14 @@ const isSpotCheck = process.argv.includes('--spot-check');
  *   - type: 'particle' | 'classifier'
  *   - definition: concise contextual phrase (max ~8 words), e.g. "possessive/attributive particle"
  */
-async function askClaudeForParticleClassifier(word, pronunciation, definitions, partsOfSpeech) {
+async function askClaudeForParticleClassifier(word, pronunciation, definitions) {
   const definitionText = Array.isArray(definitions)
     ? definitions.slice(0, 4).join('; ')
     : definitions;
-  const posText = Array.isArray(partsOfSpeech) ? partsOfSpeech.join(', ') : (partsOfSpeech || '');
 
   const prompt = `You are a Chinese linguistics expert.
 
 Character: ${word} (${pronunciation})
-Parts of speech: ${posText}
 Definitions: ${definitionText}
 
 Task: Determine whether "${word}" functions as a grammatical particle, a classifier (measure word), both, or neither.
@@ -348,7 +346,6 @@ async function run() {
       word1: char,
       pronunciation: dictMap.get(char)?.pronunciation ?? null,
       definitions: dictMap.get(char)?.definitions ?? [],
-      partsOfSpeech: null,
     }));
 
     console.log(`📊 Processing ${candidates.length} characters (${dictRows.length} found in dictionary)\n`);
@@ -376,8 +373,7 @@ async function run() {
         const results = await askClaudeForParticleClassifier(
           row.word1,
           row.pronunciation,
-          row.definitions,
-          row.partsOfSpeech
+          row.definitions
         );
 
         if (results.length === 0) {

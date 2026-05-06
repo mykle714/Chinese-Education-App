@@ -251,16 +251,21 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                 it is absolutely positioned — this is what makes height:100% on
                 CardAspectWrapper resolve correctly (flex-grown heights are not definite). */}
             <DraggableCardContainer className="mobile-demo-draggable-container">
-                {/* CardAspectWrapper: height:100% resolves against DraggableCardContainer's
-                    definite height. aspect-ratio derives the width. max-width:100% constrains
-                    it when the slot is narrower than the aspect-ratio-derived width. */}
+                {/* CardAspectWrapper: fills the larger of the two axes while preserving
+                    aspect-ratio. Default = height-bound (container is wider than card ratio).
+                    The @container rule flips to width-bound when the container is narrower
+                    than 295/426, so the card never overflows either axis. */}
                 <Box
                     sx={{
-                        height: "100%",
                         aspectRatio: "295 / 426",
-                        maxWidth: "calc(100% - 80px)",
+                        height: "100%",
+                        width: "auto",
                         position: "relative",
                         flexShrink: 0,
+                        "@container (max-aspect-ratio: 295/426)": {
+                            width: "100%",
+                            height: "auto",
+                        },
                     }}
                 >
                     {currentEntry ? (

@@ -11,6 +11,7 @@ export interface SegmentMeta {
   overridePronunciation?: string;
   overrideDefinition?: string;
   vernacularScore?: number | null;
+  wordForms?: Record<string, string>;  // AI-generated English conjugation map (e.g. {past: "ran", present: "runs"})
 }
 
 function normalizeText(value: string): string {
@@ -109,6 +110,7 @@ export function buildDictMap(dictEntries: DictionaryEntry[]): Map<string, Segmen
         // Carry overrides through so the enrichment loop can apply them verbatim
         ...(esOverride?.pronunciation != null && { overridePronunciation: esOverride.pronunciation }),
         ...(esOverride?.definition != null && { overrideDefinition: esOverride.definition }),
+        ...(entry.wordForms != null && { wordForms: entry.wordForms }),
       });
     }
   }

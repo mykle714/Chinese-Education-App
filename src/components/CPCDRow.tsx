@@ -3,8 +3,8 @@ import { Box } from "@mui/material";
 
 interface CPCDRowProps {
     children: React.ReactNode;
-    /** Determines the overlap between adjacent CPCDs: xs → -6px, sm → -6px, md → -4px */
-    size?: "xs" | "sm" | "md";
+    /** Determines the overlap between adjacent CPCDs: sm → -6px, md → -4px, lg → -2px */
+    size?: "sm" | "md" | "lg";
     flexWrap?: "nowrap" | "wrap";
     justifyContent?: string;
     className?: string;
@@ -12,9 +12,9 @@ interface CPCDRowProps {
 
 // Negative margin values per size — tighter sizes get more overlap
 const OVERLAP_BY_SIZE = {
-    xs: "-8px",
     sm: "-6px",
     md: "-4px",
+    lg: "-2px",
 };
 
 const CPCDRow: React.FC<CPCDRowProps> = ({

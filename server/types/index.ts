@@ -65,6 +65,7 @@ export type Language = 'zh' | 'ja' | 'ko' | 'vi';
 
 // HSK Level type for vocabulary entries
 export type HskLevel = 'HSK1' | 'HSK2' | 'HSK3' | 'HSK4' | 'HSK5' | 'HSK6';
+export type TenseLabel = 'past' | 'present' | 'future';
 
 // Particle or classifier annotation attached to a segmented character in example sentence metadata
 export interface ParticleOrClassifierInfo {
@@ -127,9 +128,10 @@ export interface DictionaryEntry {
     chinese: string;
     english: string;
     translatedVocab?: string;  // English word/phrase in the translation that corresponds to the vocab word
+    tense?: TenseLabel;        // Temporal meaning of the sentence: past, present, or future
     partOfSpeechDict: Record<string, string>;  // AI-generated POS tag per sentence token (e.g. "particle", "verb", "noun")
     _segments?: string[];
-    segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo }>;
+    segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo; wordForms?: Record<string, string> }>;
   }> | null;
   expansion?: string | null;
   expansionSegments?: string[] | null;  // GSA word tokens for the expansion string (e.g. ["不知", "不觉"])
@@ -137,6 +139,7 @@ export interface DictionaryEntry {
   expansionLiteralTranslation?: string | null;
   matchException?: string[] | null;  // Multi-char tokens to suppress during GSA segmentation
   vernacularScore?: number | null;   // Higher = more colloquially common; used by GSA to prefer common words
+  wordForms?: Record<string, string> | null;  // AI-generated English conjugation map (e.g. {past: "ran", present: "runs"})
 };
 
 // Discover Card type — a curated DictionaryEntry shaped for the sort-cards UI
@@ -156,9 +159,10 @@ export interface DiscoverCard {
     chinese: string;
     english: string;
     translatedVocab?: string;  // English word/phrase in the translation that corresponds to the vocab word
+    tense?: TenseLabel;        // Temporal meaning of the sentence: past, present, or future
     partOfSpeechDict: Record<string, string>;  // AI-generated POS tag per sentence token (e.g. "particle", "verb", "noun")
     _segments?: string[];
-    segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo }>;
+    segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo; wordForms?: Record<string, string> }>;
   }> | null;
   expansion?: string | null;
   expansionSegments?: string[] | null;  // GSA word tokens for the expansion string (e.g. ["不知", "不觉"])
@@ -203,6 +207,7 @@ export interface VocabEntry {
   pronunciation?: string | null;
   tone?: string | null;   // Tone digits derived from pronunciation (e.g. "12" for fēng kuáng)
   hskLevel?: HskLevel | null;
+  partsOfSpeech?: string[] | null;  // POS tags from dictionaryentries (e.g. ["noun", "verb"])
   markHistory?: ReviewMark[];  // Last 16 flashcard mark results
   totalMarkCount?: number;  // Total cumulative count of all marks
   totalCorrectCount?: number;  // Lifetime count of correct marks
@@ -223,9 +228,10 @@ export interface VocabEntry {
     chinese: string;
     english: string;
     translatedVocab?: string;  // English word/phrase in the translation that corresponds to the vocab word
+    tense?: TenseLabel;        // Temporal meaning of the sentence: past, present, or future
     partOfSpeechDict: Record<string, string>;  // AI-generated POS tag per sentence token (e.g. "particle", "verb", "noun")
     _segments?: string[];
-    segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo }>;
+    segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo; wordForms?: Record<string, string> }>;
   }>;  // Example sentences enriched at runtime with greedy segmentation and per-segment metadata
   relatedWords?: Array<{ id: number; entryKey: string; pronunciation: string | null; definition: string | null }>;  // Related library words (computed dynamically)
   createdAt: Date;

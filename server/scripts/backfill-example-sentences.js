@@ -20,6 +20,7 @@ dotenv.config({ path: path.join(__dirname, '../.env.docker') });
 
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../db.js';
+import { ALLOWED_POS_TAGS } from './lib/posTags.js';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -38,20 +39,7 @@ const wordsFilter = targetWords?.length
  * Returns an array of { chinese, english, partOfSpeechDict } objects.
  */
 async function generateExampleSentences(word, pronunciation, definitions) {
-  const allowedPosTags = [
-    'noun',
-    'verb',
-    'adjective',
-    'adverb',
-    'pronoun',
-    'numeral',
-    'classifier',
-    'preposition',
-    'conjunction',
-    'particle',
-    'interjection',
-    'onomatopoeia'
-  ];
+  const allowedPosTags = ALLOWED_POS_TAGS;
   const definitionText = Array.isArray(definitions) ? definitions.slice(0, 3).join('; ') : definitions;
 
   const prompt = `You are a Chinese language teacher creating example sentences for a vocabulary app.
@@ -67,6 +55,7 @@ Write exactly 3 natural example sentences using "${word}". Each sentence should:
 - Mirror the punctuation of the Chinese sentence in the English translation — if the Chinese uses a comma to separate two clauses, use a comma in the same position in English; match question marks, exclamation points, etc.
 - Match the clause structure of the Chinese sentence — if the Chinese has two clauses separated by a conjunction or comma, the English should have two parallel clauses in the same order
 - Include a "translatedVocab" field: the English word or short phrase in your English translation that directly corresponds to "${word}" (e.g. if the word is 贴 and the sentence is "She stuck the photo on the wall.", translatedVocab is "stuck")
+- Include a "tense" field: the temporal meaning of the sentence — one of "past", "present", or "future". Reason from what the sentence *means* in context, not just which grammatical markers are present (e.g. 了 can mark a present state change, progressive aspect can appear in past or future contexts). Use "past" for completed or past actions, "present" for ongoing, habitual, or stative situations, and "future" for intended or upcoming actions.
 - Include a "partOfSpeechDict" object for each sentence
 - partOfSpeechDict keys must be word tokens that appear in the Chinese sentence (single or multi-character words are both allowed)
 - Make sure to include every word in the sentence as a key in partOfSpeechDict
@@ -81,6 +70,7 @@ Respond with ONLY a JSON array in this exact format (no markdown, no explanation
     "chinese": "Chinese sentence",
     "english": "English translation",
     "translatedVocab": "english word",
+    "tense": "past",
     "partOfSpeechDict": {
       "wordToken1": "pos_tag",
       "wordToken2": "pos_tag"
@@ -90,6 +80,7 @@ Respond with ONLY a JSON array in this exact format (no markdown, no explanation
     "chinese": "Chinese sentence",
     "english": "English translation",
     "translatedVocab": "english word",
+    "tense": "present",
     "partOfSpeechDict": {
       "wordToken1": "pos_tag",
       "wordToken2": "pos_tag"
@@ -99,6 +90,7 @@ Respond with ONLY a JSON array in this exact format (no markdown, no explanation
     "chinese": "Chinese sentence",
     "english": "English translation",
     "translatedVocab": "english word",
+    "tense": "future",
     "partOfSpeechDict": {
       "wordToken1": "pos_tag",
       "wordToken2": "pos_tag"
@@ -124,12 +116,14 @@ Respond with ONLY a JSON array in this exact format (no markdown, no explanation
   if (!Array.isArray(parsed) || parsed.length === 0) return null;
 
   const allowedPosTagSet = new Set(allowedPosTags);
+  const allowedTenses = new Set(['past', 'present', 'future']);
 
   // Validate each sentence has required fields
   const valid = parsed.filter(s =>
     s && typeof s.chinese === 'string' && s.chinese.length > 0 &&
     typeof s.english === 'string' && s.english.length > 0 &&
     typeof s.translatedVocab === 'string' && s.translatedVocab.trim().length > 0 &&
+    typeof s.tense === 'string' && allowedTenses.has(s.tense) &&
     s.partOfSpeechDict &&
     typeof s.partOfSpeechDict === 'object' &&
     !Array.isArray(s.partOfSpeechDict) &&
@@ -203,6 +197,7 @@ async function run() {
             console.log(`    ${s.chinese}`);
             console.log(`           ${s.english}`);
             console.log(`           translatedVocab: ${s.translatedVocab}`);
+            console.log(`           tense: ${s.tense}`);
             console.log(`           POS: ${JSON.stringify(s.partOfSpeechDict)}`);
           }
         } else {

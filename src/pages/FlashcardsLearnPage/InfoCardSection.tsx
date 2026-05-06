@@ -1,22 +1,28 @@
-import React, { useRef, useEffect } from "react";
+import React from "react";
 import { stripParentheses } from "../../utils/definitionUtils";
-import { Box, CardContent, Typography } from "@mui/material";
-import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
-import ChevronRightIcon from "@mui/icons-material/ChevronRight";
+import { Box, Typography } from "@mui/material";
 import { useDrag } from "@use-gesture/react";
 import CharacterPinyinColorDisplay from "../../components/CharacterPinyinColorDisplay";
 import CPCDRow from "../../components/CPCDRow";
 import SegmentedSentenceDisplay from "../../components/SegmentedSentenceDisplay";
 import {
-    InfoCard,
-    TabsContainer,
-    Tab,
-    ArrowIndicator,
+    TabHeader,
+    TabPill,
     BreakdownLineItem,
     DefinitionColumn,
     DefinitionText,
+    EicSheet,
+    DragHandle,
+    MetadataChipRow,
+    HskPill,
+    PosChip,
+    SharedCharsLabel,
+    SharedCharsSection,
+    EicTabTitleSection,
+    EicTabTitleEnglish,
+    EicTabTitleFunction,
 } from "./styled";
-import { COLORS, TAB_COLORS, TAB_LABELS } from "./constants";
+import { COLORS, TAB_COLORS, TAB_LABELS, TAB_FUNCTION_LABELS } from "./constants";
 import type { VocabEntry, BreakdownItem } from "./types";
 import BreakdownLineItemComponent from "./BreakdownLineItemComponent";
 
@@ -42,6 +48,18 @@ interface InfoCardSectionProps {
     breakdownItems: BreakdownItem[];
     showPinyin: boolean;
     isFlipped: boolean;
+    // Bottom-sheet integration — managed by useEicSheet in the parent.
+    sheetRef: (el: HTMLDivElement | null) => void;
+    // Ref to the inner scroll container so the parent hook can read scrollTop.
+    scrollContainerRef: (el: HTMLDivElement | null) => void;
+    // Sheet height (px) and current translateY (0 = fully visible, sheetHeightPx = hidden).
+    sheetHeightPx: number;
+    translateY: number;
+    isAnimating: boolean;
+    // Drag binding for the sheet — spread onto the sheet element.
+    bindSheetDrag: (...args: unknown[]) => Record<string, unknown>;
+    // Whether the sheet has been opened (controls visibility + pointer events).
+    isOpen: boolean;
 }
 
 const InfoCardSection: React.FC<InfoCardSectionProps> = ({
@@ -51,295 +69,304 @@ const InfoCardSection: React.FC<InfoCardSectionProps> = ({
     breakdownItems,
     showPinyin,
     isFlipped,
+    sheetRef,
+    scrollContainerRef,
+    sheetHeightPx,
+    translateY,
+    isAnimating,
+    bindSheetDrag,
+    isOpen,
 }) => {
-    const scrollContainerRef = useRef<HTMLDivElement>(null);
-
-    // Reset scroll position to top whenever a new card is loaded
-    useEffect(() => {
-        if (scrollContainerRef.current) {
-            scrollContainerRef.current.scrollTop = 0;
-        }
-    }, [currentEntry]);
-
-    // Swipe handler for tab navigation on the info card
+    // Horizontal swipe handler for tab navigation. Constrained to the X axis so
+    // it doesn't interfere with vertical sheet-drag gestures (different element).
     const bindInfoCard = useDrag(
-        ({ swipe: [swipeX], event }) => {
-            if (event) {
-                event.preventDefault();
-            }
-
-            if (swipeX !== 0) {
-                if (swipeX < 0) {
-                    // Swiped left - move to previous tab (with wrap-around)
-                    onTabChange(selectedTab === 0 ? 4 : selectedTab - 1);
-                } else if (swipeX > 0) {
-                    // Swiped right - move to next tab (with wrap-around)
-                    onTabChange(selectedTab === 4 ? 0 : selectedTab + 1);
-                }
+        ({ swipe: [swipeX] }) => {
+            if (swipeX < 0) {
+                onTabChange(selectedTab === 0 ? 2 : selectedTab - 1);
+            } else if (swipeX > 0) {
+                onTabChange(selectedTab === 2 ? 0 : selectedTab + 1);
             }
         },
         {
-            swipe: {
-                distance: 50, // Minimum distance to trigger swipe
-                velocity: 0.3,
-            },
-            preventDefault: true,
-            filterTaps: true, // Don't trigger on simple taps
-            eventOptions: { passive: false }, // Required so preventDefault() is honoured on touch events
+            swipe: { distance: 50, velocity: 0.3 },
+            axis: "x",
+            filterTaps: true,
         }
     );
 
+    // Info tab is empty only when none of its four content sources is populated.
+    const infoTabHasContent = !!(
+        currentEntry?.longDefinition ||
+        currentEntry?.hskLevel ||
+        currentEntry?.partsOfSpeech?.length ||
+        currentEntry?.relatedWords?.length
+    );
+
+    // Breakdown tab merges per-character rows with the expansion/literal block.
+    // It's empty only when neither source has content.
+    const breakdownTabHasContent = breakdownItems.length > 0 || !!currentEntry?.expansion;
+
+    // Per-tab emptiness — used to grey out pills whose data source has no content
+    // for the current card. Mirrors the empty-state guards in each tab body below.
+    const tabIsEmpty: boolean[] = [
+        !infoTabHasContent,
+        !breakdownTabHasContent,
+        !currentEntry?.exampleSentences?.length,
+    ];
+
     return (
-        <Box className="mobile-demo-info-card-wrapper" sx={{ position: "relative", width: "calc(100% - 80px)" }}>
-            {/* Left Arrow Indicator */}
-            <ArrowIndicator
-                className="mobile-demo-left-arrow"
-                sx={{ left: -32 }}
-                onClick={() => onTabChange(selectedTab === 0 ? 4 : selectedTab - 1)}
-            >
-                <ChevronLeftIcon className="mobile-demo-chevron-left" sx={{ fontSize: 24 }} />
-            </ArrowIndicator>
-
-            {/* Tabs are siblings of InfoCard so z-index layering works correctly */}
-            <TabsContainer className="mobile-demo-tabs">
-                {TAB_COLORS.map((color, index) => (
-                    <Tab
-                        key={index}
-                        isSelected={selectedTab === index}
-                        color={color}
-                        onClick={() => onTabChange(index)}
-                    >
-                        <Typography
-                            sx={{
-                                fontSize: "8px",
-                                fontWeight: 500,
-                                color: "text.primary",
-                                lineHeight: 1,
-                                userSelect: "none",
-                                letterSpacing: "0.02em",
-                            }}
+        <EicSheet
+            ref={sheetRef}
+            className="mobile-demo-eic-sheet"
+            style={{
+                height: `${sheetHeightPx}px`,
+                transform: `translateY(${translateY}px)`,
+                transition: isAnimating ? "transform 0.35s cubic-bezier(0.32, 0.72, 0, 1)" : "none",
+                visibility: isOpen ? "visible" : "hidden",
+            }}
+            {...bindSheetDrag()}
+        >
+            <TabHeader className="mobile-demo-tabs" {...bindInfoCard()}>
+                <DragHandle className="mobile-demo-drag-handle" />
+                <Box sx={{ display: "flex", flexWrap: "wrap", gap: "6px", width: "100%", justifyContent: "flex-start" }}>
+                    {TAB_COLORS.map((color, index) => (
+                        <TabPill
+                            key={index}
+                            isSelected={selectedTab === index}
+                            color={color}
+                            isEmpty={tabIsEmpty[index]}
+                            onClick={() => !tabIsEmpty[index] && onTabChange(index)}
+                            className={`mobile-demo-tab-pill mobile-demo-tab-pill-${TAB_LABELS[index]}`}
                         >
-                            {TAB_LABELS[index]}
-                        </Typography>
-                    </Tab>
-                ))}
-            </TabsContainer>
-
-            <InfoCard
-                className="mobile-demo-info-card"
-                sx={{ width: "100%", aspectRatio: "295 / 203" }}
-                {...bindInfoCard()}
-            >
-                <CardContent
-                    className="mobile-demo-card-content"
-                    sx={{
-                        display: "flex",
-                        flexDirection: "column",
-                        height: "100%",
-                        padding: 0,
-                        "&:last-child": {
-                            paddingBottom: 0,
-                        },
-                    }}
-                >
-                    <Box ref={scrollContainerRef} className="mobile-demo-breakdown-list" sx={{ flex: 1, overflow: "auto", padding: "8px" }}>
-                        {/* Tab 0: Breakdown — only shown when the card is flipped to the definition side */}
-                        {selectedTab === 0 && !isFlipped ? (
-                            <Box className="mobile-demo-tab-empty" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 2 }}>
-                                <Typography className="mobile-demo-tab-empty-text" sx={{ fontSize: 14, color: COLORS.gray, textAlign: 'center', fontFamily: '"Inter", sans-serif' }}>
-                                    Flip the card to view the breakdown!
-                                </Typography>
-                            </Box>
-                        ) : selectedTab === 0 && breakdownItems.length > 0 ? (
-                            breakdownItems.map((item, index) => (
-                                <BreakdownLineItemComponent
-                                    key={index}
-                                    character={item.character}
-                                    pinyin={item.pinyin}
-                                    definition={item.definition}
-                                    showPinyin={showPinyin}
-                                />
-                            ))
-                        ) : selectedTab === 0 ? (
-                            <Box className="mobile-demo-tab-empty" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 2 }}>
-                                <Typography className="mobile-demo-tab-empty-text" sx={{ fontSize: 14, color: COLORS.gray, textAlign: 'center', fontFamily: '"Inter", sans-serif' }}>
-                                    Breakdown not available for this card
-                                </Typography>
-                            </Box>
-                        ) : null}
-
-                        {/* Tab 1: Related Words */}
-                        {selectedTab === 1 && currentEntry?.relatedWords && currentEntry.relatedWords.length > 0 ? (
-                            <Box className="mobile-demo-related-words-list">
-                                {currentEntry.relatedWords.map((word) => (
-                                    <BreakdownLineItem className="mobile-demo-related-word-item" key={word.id}>
-                                        <CPCDRow size="sm">
-                                            {[...word.entryKey].map((char, i) => (
-                                                <CharacterPinyinColorDisplay
-                                                    key={i}
-                                                    character={char}
-                                                    pinyin={word.pronunciation?.split(' ')[i] ?? ''}
-                                                    showPinyin={showPinyin}
-                                                    useToneColor={true}
-                                                    size="sm"
-                                                />
-                                            ))}
-                                        </CPCDRow>
-                                        {word.definition && (
-                                            <DefinitionColumn>
-                                                <DefinitionText>{stripParentheses(word.definition)}</DefinitionText>
-                                            </DefinitionColumn>
-                                        )}
-                                    </BreakdownLineItem>
-                                ))}
-                            </Box>
-                        ) : selectedTab === 1 ? (
-                            <Box className="mobile-demo-tab-empty" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 2 }}>
-                                <Typography className="mobile-demo-tab-empty-text" sx={{ fontSize: 14, color: COLORS.gray, textAlign: 'center', fontFamily: '"Inter", sans-serif' }}>
-                                    No related words found
-                                </Typography>
-                            </Box>
-                        ) : null}
-
-                        {/* Tab 2: Long Definition — only shown when the card is flipped to the definition side */}
-                        {selectedTab === 2 && !isFlipped ? (
-                            <Box className="mobile-demo-tab-empty" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 2 }}>
-                                <Typography className="mobile-demo-tab-empty-text" sx={{ fontSize: 14, color: COLORS.gray, textAlign: 'center', fontFamily: '"Inter", sans-serif' }}>
-                                    Flip the card to view the definition!
-                                </Typography>
-                            </Box>
-                        ) : selectedTab === 2 && currentEntry?.longDefinition ? (
-                            <Box
-                                className="mobile-demo-long-definition-wrapper"
-                                sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 2 }}
+                            <Typography
+                                sx={{
+                                    fontSize: "10px",
+                                    fontWeight: 500,
+                                    lineHeight: 1,
+                                    userSelect: "none",
+                                    letterSpacing: "0.02em",
+                                    color: "inherit",
+                                }}
                             >
-                                <Typography
-                                    className="mobile-demo-long-definition-text"
-                                    sx={{
-                                        fontSize: 13,
-                                        color: 'text.primary',
-                                        fontFamily: '"Inter", sans-serif',
-                                        lineHeight: 1.6,
-                                        textAlign: 'center',
-                                    }}
-                                >
-                                    {stripParentheses(currentEntry.longDefinition)}
-                                </Typography>
-                            </Box>
-                        ) : selectedTab === 2 ? (
-                            <Box className="mobile-demo-tab-empty" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 2 }}>
-                                <Typography className="mobile-demo-tab-empty-text" sx={{ fontSize: 14, color: COLORS.gray, textAlign: 'center', fontFamily: '"Inter", sans-serif' }}>
-                                    No extended definition available
-                                </Typography>
-                            </Box>
-                        ) : null}
-
-                        {/* Tab 3: Example Sentences — only shown when the card is flipped to the definition side */}
-                        {selectedTab === 3 && !isFlipped ? (
-                            <Box className="mobile-demo-tab-empty" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 2 }}>
-                                <Typography className="mobile-demo-tab-empty-text" sx={{ fontSize: 14, color: COLORS.gray, textAlign: 'center', fontFamily: '"Inter", sans-serif' }}>
-                                    Flip the card to view example sentences!
-                                </Typography>
-                            </Box>
-                        ) : selectedTab === 3 && currentEntry?.exampleSentences && currentEntry.exampleSentences.length > 0 ? (
-                            <Box className="mobile-demo-sentences-list" sx={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                {currentEntry.exampleSentences.map((sentence, index) => (
-                                    <Box
-                                        className="mobile-demo-sentence-item"
-                                        key={index}
-                                        sx={{
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                            gap: '4px',
-                                            padding: '8px',
-                                            backgroundColor: 'rgba(255, 255, 255, 0.5)',
-                                            borderRadius: '8px',
-                                            borderLeft: `4px solid ${COLORS.orange}`,
-                                        }}
-                                    >
-                                        <SegmentedSentenceDisplay
-                                            sentence={sentence}
-                                            size="xs"
-                                            flexWrap="wrap"
-                                            showPinyin={showPinyin}
-                                            vocabWord={currentEntry?.entryKey}
-                                        />
-                                        <Typography className="mobile-demo-sentence-english" sx={{ fontSize: 11, color: COLORS.gray, fontFamily: '"Inter", sans-serif', lineHeight: 1.3 }}>
-                                            {renderEnglishWithVocabUnderline(sentence.english, sentence.translatedVocab)}
-                                        </Typography>
-                                    </Box>
-                                ))}
-                            </Box>
-                        ) : selectedTab === 3 ? (
-                            <Box className="mobile-demo-tab-empty" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 2 }}>
-                                <Typography className="mobile-demo-tab-empty-text" sx={{ fontSize: 14, color: COLORS.gray, textAlign: 'center', fontFamily: '"Inter", sans-serif' }}>
-                                    No example sentences available
-                                </Typography>
-                            </Box>
-                        ) : null}
-
-                        {/* Tab 4: Expansion — only shown when the card is flipped to the definition side */}
-                        {selectedTab === 4 && !isFlipped ? (
-                            <Box className="mobile-demo-tab-empty" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 2 }}>
-                                <Typography className="mobile-demo-tab-empty-text" sx={{ fontSize: 14, color: COLORS.gray, textAlign: 'center', fontFamily: '"Inter", sans-serif' }}>
-                                    Flip the card to view the expansion!
-                                </Typography>
-                            </Box>
-                        ) : selectedTab === 4 && currentEntry?.expansion ? (
-                            <Box className="mobile-demo-expansion-wrapper" sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 2, gap: 2 }}>
-                                <Typography className="mobile-demo-expansion-label" sx={{ fontSize: 12, color: COLORS.gray, fontFamily: '"Inter", sans-serif', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                                    Expanded Form
-                                </Typography>
-                                <SegmentedSentenceDisplay
-                                    sentence={{
-                                        chinese: currentEntry.expansion,
-                                        // Use GSA-computed word segments when available; fall back to
-                                        // char-by-char for entries enriched before this change.
-                                        _segments: currentEntry.expansionSegments ?? [...currentEntry.expansion],
-                                        segmentMetadata: currentEntry.expansionMetadata ?? undefined,
-                                    }}
-                                    size="md"
-                                    compact
-                                    flexWrap="wrap"
-                                    justifyContent="center"
-                                    className="mobile-demo-expansion-chars"
+                                {TAB_LABELS[index]}
+                            </Typography>
+                        </TabPill>
+                    ))}
+                </Box>
+            </TabHeader>
+            <Box
+                ref={scrollContainerRef}
+                className="mobile-demo-eic-scroll"
+                sx={{
+                    flex: 1,
+                    minHeight: 0,
+                    overflow: "auto",
+                    padding: "8px",
+                    // Prevent scroll from chaining to ancestors when this element hits a boundary.
+                    overscrollBehavior: "contain",
+                    // Native touch scrolling is disabled — the drag handler in useEicSheet owns
+                    // both sheet movement and content scroll. Setting touch-action: none here
+                    // (in addition to the parent sheet) ensures mobile browsers don't treat this
+                    // as a touch-scrollable region. Wheel/trackpad is still routed manually.
+                    touchAction: "none",
+                }}
+            >
+                {/* Title block — vocab word (CPCD lg) + English + tab function label.
+                    Rendered for every tab, including empty ones (greyed via isEmpty). */}
+                {currentEntry && (
+                    <EicTabTitleSection
+                        className={`mobile-demo-eic-tab-title mobile-demo-eic-tab-title-${TAB_LABELS[selectedTab]}`}
+                        isEmpty={tabIsEmpty[selectedTab]}
+                    >
+                        <CPCDRow size="lg" justifyContent="flex-start" className="mobile-demo-eic-tab-title-cpcd">
+                            {[...currentEntry.entryKey].map((char, i) => (
+                                <CharacterPinyinColorDisplay
+                                    key={i}
+                                    character={char}
+                                    pinyin={currentEntry.pronunciation?.split(' ')[i] ?? ''}
+                                    size="lg"
+                                    useToneColor={true}
                                     showPinyin={showPinyin}
                                 />
-                                {/* Literal translation: segment definitions strung together — hidden until card is flipped */}
-                                {currentEntry.expansionLiteralTranslation && isFlipped && (
-                                    <Typography sx={{
-                                        fontSize: "0.8rem",
-                                        color: COLORS.textSecondary,
-                                        fontFamily: '"Inter", sans-serif',
-                                        mt: 0.5,
-                                        lineHeight: 1.4,
-                                        wordBreak: 'break-word',
-                                        textAlign: 'center',
-                                    }}>
-                                        {stripParentheses(currentEntry.expansionLiteralTranslation)}
-                                    </Typography>
+                            ))}
+                        </CPCDRow>
+                        <EicTabTitleEnglish className="mobile-demo-eic-tab-title-english">
+                            {stripParentheses(currentEntry.entryValue)}
+                        </EicTabTitleEnglish>
+                        <EicTabTitleFunction className="mobile-demo-eic-tab-title-function">
+                            {TAB_FUNCTION_LABELS[selectedTab]}
+                        </EicTabTitleFunction>
+                    </EicTabTitleSection>
+                )}
+
+                {/* Tab 1: Breakdown — per-character rows + expansion / literal-translation block */}
+                {selectedTab === 1 && breakdownTabHasContent ? (
+                    <Box className="mobile-demo-breakdown-wrapper">
+                        {breakdownItems.map((item, index) => (
+                            <BreakdownLineItemComponent
+                                key={index}
+                                character={item.character}
+                                pinyin={item.pinyin}
+                                definition={item.definition}
+                                showPinyin={showPinyin}
+                            />
+                        ))}
+                        {currentEntry?.expansion && (
+                            <SharedCharsSection className="mobile-demo-expansion-section">
+                                <SharedCharsLabel className="mobile-demo-expansion-label">
+                                    Expanded Form
+                                </SharedCharsLabel>
+                                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, padding: 1 }}>
+                                    <SegmentedSentenceDisplay
+                                        sentence={{
+                                            chinese: currentEntry.expansion,
+                                            _segments: currentEntry.expansionSegments ?? [...currentEntry.expansion],
+                                            segmentMetadata: currentEntry.expansionMetadata ?? undefined,
+                                        }}
+                                        size="md"
+                                        compact
+                                        flexWrap="wrap"
+                                        justifyContent="center"
+                                        className="mobile-demo-expansion-chars"
+                                        showPinyin={showPinyin}
+                                    />
+                                    {currentEntry.expansionLiteralTranslation && isFlipped && (
+                                        <Typography sx={{
+                                            fontSize: "0.8rem",
+                                            color: COLORS.textSecondary,
+                                            fontFamily: '"Inter", sans-serif',
+                                            mt: 0.5,
+                                            lineHeight: 1.4,
+                                            wordBreak: 'break-word',
+                                            textAlign: 'center',
+                                        }}>
+                                            {stripParentheses(currentEntry.expansionLiteralTranslation)}
+                                        </Typography>
+                                    )}
+                                </Box>
+                            </SharedCharsSection>
+                        )}
+                    </Box>
+                ) : selectedTab === 1 ? (
+                    <Box className="mobile-demo-tab-empty" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 2 }}>
+                        <Typography className="mobile-demo-tab-empty-text" sx={{ fontSize: 14, color: COLORS.gray, textAlign: 'center', fontFamily: '"Inter", sans-serif' }}>
+                            Breakdown not available for this card
+                        </Typography>
+                    </Box>
+                ) : null}
+
+                {/* Tab 0: Info — HSK + parts of speech, long definition, and shared-character words */}
+                {selectedTab === 0 && infoTabHasContent ? (
+                    <Box
+                        className="mobile-demo-info-wrapper"
+                        sx={{ display: 'flex', flexDirection: 'column', padding: 2 }}
+                    >
+                        {(currentEntry?.hskLevel || (currentEntry?.partsOfSpeech?.length ?? 0) > 0) && (
+                            <MetadataChipRow className="mobile-demo-info-meta-row">
+                                {currentEntry?.hskLevel && (
+                                    <HskPill className="mobile-demo-info-hsk-pill">
+                                        {currentEntry.hskLevel.replace(/^HSK/, 'HSK ')}
+                                    </HskPill>
                                 )}
-                            </Box>
-                        ) : selectedTab === 4 ? (
-                            <Box className="mobile-demo-tab-empty" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 2 }}>
-                                <Typography className="mobile-demo-tab-empty-text" sx={{ fontSize: 14, color: COLORS.gray, textAlign: 'center', fontFamily: '"Inter", sans-serif' }}>
-                                    No expansion available
+                                {currentEntry?.partsOfSpeech?.map((pos) => (
+                                    <PosChip className="mobile-demo-info-pos-chip" key={pos}>
+                                        {pos}
+                                    </PosChip>
+                                ))}
+                            </MetadataChipRow>
+                        )}
+                        {currentEntry?.longDefinition && (
+                            <Typography
+                                className="mobile-demo-long-definition-text"
+                                sx={{
+                                    fontSize: 13,
+                                    color: 'text.primary',
+                                    fontFamily: '"Inter", sans-serif',
+                                    lineHeight: 1.6,
+                                    textAlign: 'center',
+                                }}
+                            >
+                                {stripParentheses(currentEntry.longDefinition)}
+                            </Typography>
+                        )}
+                        {currentEntry?.relatedWords && currentEntry.relatedWords.length > 0 && (
+                            <SharedCharsSection className="mobile-demo-shared-chars-section">
+                                <SharedCharsLabel className="mobile-demo-shared-chars-label">
+                                    Other words you've studied with shared characters
+                                </SharedCharsLabel>
+                                <Box className="mobile-demo-related-words-list">
+                                    {currentEntry.relatedWords.map((word) => (
+                                        <BreakdownLineItem className="mobile-demo-related-word-item" key={word.id}>
+                                            <CPCDRow size="sm">
+                                                {[...word.entryKey].map((char, i) => (
+                                                    <CharacterPinyinColorDisplay
+                                                        key={i}
+                                                        character={char}
+                                                        pinyin={word.pronunciation?.split(' ')[i] ?? ''}
+                                                        showPinyin={showPinyin}
+                                                        useToneColor={true}
+                                                        size="sm"
+                                                    />
+                                                ))}
+                                            </CPCDRow>
+                                            {word.definition && (
+                                                <DefinitionColumn>
+                                                    <DefinitionText>{stripParentheses(word.definition)}</DefinitionText>
+                                                </DefinitionColumn>
+                                            )}
+                                        </BreakdownLineItem>
+                                    ))}
+                                </Box>
+                            </SharedCharsSection>
+                        )}
+                    </Box>
+                ) : selectedTab === 0 ? (
+                    <Box className="mobile-demo-tab-empty" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 2 }}>
+                        <Typography className="mobile-demo-tab-empty-text" sx={{ fontSize: 14, color: COLORS.gray, textAlign: 'center', fontFamily: '"Inter", sans-serif' }}>
+                            No info available for this card
+                        </Typography>
+                    </Box>
+                ) : null}
+
+                {/* Tab 2: Example Sentences */}
+                {selectedTab === 2 && currentEntry?.exampleSentences && currentEntry.exampleSentences.length > 0 ? (
+                    <Box className="mobile-demo-sentences-list" sx={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        {currentEntry.exampleSentences.map((sentence, index) => (
+                            <Box
+                                className="mobile-demo-sentence-item"
+                                key={index}
+                                sx={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '4px',
+                                    padding: '8px',
+                                    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+                                    borderRadius: '8px',
+                                    borderLeft: `4px solid ${COLORS.orange}`,
+                                }}
+                            >
+                                <SegmentedSentenceDisplay
+                                    sentence={sentence}
+                                    size="sm"
+                                    flexWrap="wrap"
+                                    showPinyin={showPinyin}
+                                    vocabWord={currentEntry?.entryKey}
+                                />
+                                <Typography className="mobile-demo-sentence-english" sx={{ fontSize: 13, color: COLORS.gray, fontFamily: '"Inter", sans-serif', lineHeight: 1.3 }}>
+                                    {renderEnglishWithVocabUnderline(sentence.english, sentence.translatedVocab)}
                                 </Typography>
                             </Box>
-                        ) : null}
+                        ))}
                     </Box>
-                </CardContent>
-            </InfoCard>
-
-            {/* Right Arrow Indicator */}
-            <ArrowIndicator
-                className="mobile-demo-right-arrow"
-                sx={{ right: -32 }}
-                onClick={() => onTabChange(selectedTab === 4 ? 0 : selectedTab + 1)}
-            >
-                <ChevronRightIcon className="mobile-demo-chevron-right" sx={{ fontSize: 24 }} />
-            </ArrowIndicator>
-        </Box>
+                ) : selectedTab === 2 ? (
+                    <Box className="mobile-demo-tab-empty" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 2 }}>
+                        <Typography className="mobile-demo-tab-empty-text" sx={{ fontSize: 14, color: COLORS.gray, textAlign: 'center', fontFamily: '"Inter", sans-serif' }}>
+                            No example sentences available
+                        </Typography>
+                    </Box>
+                ) : null}
+            </Box>
+        </EicSheet>
     );
 };
 

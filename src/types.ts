@@ -37,6 +37,7 @@ export interface VocabEntry {
   pronunciation?: string | null;
   tone?: string | null;
   hskLevel?: HskLevel | null;
+  partsOfSpeech?: string[] | null;
   category?: FlashcardCategory;
   starterPackBucket?: StarterPackBucket | null;
   breakdown?: Record<string, { definition: string; pronunciation?: string }> | null;
@@ -48,9 +49,10 @@ export interface VocabEntry {
   exampleSentences?: Array<{
     chinese: string;
     english: string;
+    tense?: 'past' | 'present' | 'future';
     partOfSpeechDict: Record<string, string>;  // AI-generated POS tag per sentence token (e.g. "particle", "verb", "noun")
     _segments?: string[];
-    segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo }>;
+    segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo; wordForms?: Record<string, string> }>;
   }>;
   relatedWords?: Array<{ id: number; entryKey: string; pronunciation: string | null; definition: string | null }>;
   createdAt: string;
@@ -101,9 +103,10 @@ export interface DiscoverCard {
   exampleSentences?: Array<{
     chinese: string;
     english: string;
+    tense?: 'past' | 'present' | 'future';
     partOfSpeechDict: Record<string, string>;  // AI-generated POS tag per sentence token (e.g. "particle", "verb", "noun")
     _segments?: string[];
-    segmentMetadata?: Record<string, { pronunciation?: string; definition?: string }>;
+    segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; wordForms?: Record<string, string> }>;
   }> | null;
   expansion?: string | null;
   expansionMetadata?: Record<string, { pronunciation?: string; definition?: string }> | null;

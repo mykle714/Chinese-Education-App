@@ -1,16 +1,19 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Box, CircularProgress, Typography, useMediaQuery, useTheme } from "@mui/material";
+import { Box, CircularProgress, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
+import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
+import CloseIcon from "@mui/icons-material/Close";
 import { useAuth } from "../../AuthContext";
 import { useMinutePoints } from "../../hooks/useMinutePoints";
 import { API_BASE_URL } from "../../constants";
-import { IPhoneFrame, ContentArea } from "./styled";
+import { IPhoneFrame, ContentArea, EicExpandFab } from "./styled";
 import { COLORS } from "./constants";
 import type { VocabEntry, BreakdownItem, MarkCardResult, LastMarkUndoSnapshot, SideOneLanguage } from "./types";
 
 // Pick a random language for a card's Side 1. Side 2 always shows both.
 const randomSideOneLanguage = (): SideOneLanguage => (Math.random() < 0.5 ? 'en' : 'zh');
 import { useCardDrag } from "./useCardDrag";
+import { useEicSheet } from "./useEicSheet";
 import FlashcardsLearnHeader from "./FlashcardsLearnHeader";
 import InfoCardSection from "./InfoCardSection";
 import FlashCardSection from "./FlashCardSection";
@@ -31,7 +34,8 @@ const FlashcardsLearnPage: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [isAnimating, setIsAnimating] = useState(false);
     const [isUndoing, setIsUndoing] = useState(false);
-    const [selectedTab, setSelectedTab] = useState(0);
+    // -1 = no tab selected (deselected header state); set on tab-tap or sheet open.
+    const [selectedTab, setSelectedTab] = useState(-1);
     const [lastMarkUndoSnapshot, setLastMarkUndoSnapshot] = useState<LastMarkUndoSnapshot | null>(null);
     const [showPinyin, setShowPinyin] = useState(true);
     // Two-slot card stack: tracks which slot (0 or 1) is the front card and
@@ -100,6 +104,64 @@ const FlashcardsLearnPage: React.FC = () => {
         resetDragPosition,
         handlers,
     } = useCardDrag(isAnimating, (direction) => handleCardDismiss(direction), currentIndex);
+
+    // EIC bottom-sheet — hidden by default; opened to HALF (70%) via the FAB.
+    const {
+        sheetState,
+        sheetRef,
+        scrollContainerRef,
+        sheetHeightPx,
+        translateY: sheetTranslateY,
+        isAnimating: isSheetAnimating,
+        bindSheetDrag,
+        open: openEicSheet,
+        close: closeEicSheet,
+    } = useEicSheet({ resetKey: currentIndex });
+
+    // Hint shown when the user taps the EIC FAB before flipping the card.
+    // Auto-dismisses after a couple seconds, and clears immediately on flip.
+    const [showFlipHint, setShowFlipHint] = useState(false);
+    useEffect(() => {
+        if (!showFlipHint) return;
+        const t = setTimeout(() => setShowFlipHint(false), 2000);
+        return () => clearTimeout(t);
+    }, [showFlipHint]);
+    useEffect(() => {
+        if (isFlipped) setShowFlipHint(false);
+    }, [isFlipped]);
+
+    const isEicOpen = sheetState === "OPEN";
+    const handleEicFabClick = () => {
+        if (isEicOpen) {
+            closeEicSheet();
+            return;
+        }
+        if (!isFlipped) {
+            setShowFlipHint(true);
+            return;
+        }
+        openEicSheet();
+    };
+
+    // Lock body scroll while this page is mounted so wheel/touch events that
+    // bubble past the EIC sheet can't shift the iPhone frame.
+    useEffect(() => {
+        const previous = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        return () => { document.body.style.overflow = previous; };
+    }, []);
+
+    // Reset selected tab when a new card loads.
+    useEffect(() => {
+        setSelectedTab(-1);
+    }, [currentIndex]);
+
+    // Default to "info" (index 0) when the sheet opens and no tab has been chosen yet.
+    useEffect(() => {
+        if (sheetState === "OPEN" && selectedTab === -1) {
+            setSelectedTab(0);
+        }
+    }, [sheetState, selectedTab]);
 
     // Fetch distributed working loop (1 Mastered, 2 Comfortable, 2 Unfamiliar, 5 Target)
     useEffect(() => {
@@ -379,14 +441,8 @@ const FlashcardsLearnPage: React.FC = () => {
                 onTogglePinyin={() => setShowPinyin(v => !v)}
             />
             <ContentArea className="mobile-demo-content">
-                <InfoCardSection
-                    currentEntry={currentEntry}
-                    selectedTab={selectedTab}
-                    onTabChange={setSelectedTab}
-                    breakdownItems={breakdownItems}
-                    showPinyin={showPinyin}
-                    isFlipped={isFlipped}
-                />
+                {/* Flashcard fills the full ContentArea. The EIC sheet now overlays
+                    at the bottom rather than stacking above the flashcard. */}
                 <FlashCardSection
                     currentEntry={currentEntry}
                     nextEntry={nextEntry}
@@ -402,6 +458,37 @@ const FlashcardsLearnPage: React.FC = () => {
                     sideOneLanguage={currentSideOneLanguage}
                     nextSideOneLanguage={nextSideOneLanguage}
                     handlers={handlers}
+                />
+                <Tooltip
+                    open={showFlipHint}
+                    title="Flip the card first to see extra info."
+                    placement="top"
+                    arrow
+                >
+                    <EicExpandFab
+                        className="mobile-demo-eic-expand-fab"
+                        disabled={!isFlipped && !isEicOpen}
+                        onClick={handleEicFabClick}
+                        aria-label={isEicOpen ? "Close extra info" : "Open extra info"}
+                        aria-disabled={!isFlipped && !isEicOpen}
+                    >
+                        {isEicOpen ? <CloseIcon /> : <KeyboardArrowUpIcon />}
+                    </EicExpandFab>
+                </Tooltip>
+                <InfoCardSection
+                    currentEntry={currentEntry}
+                    selectedTab={selectedTab}
+                    onTabChange={setSelectedTab}
+                    breakdownItems={breakdownItems}
+                    showPinyin={showPinyin}
+                    isFlipped={isFlipped}
+                    sheetRef={sheetRef}
+                    scrollContainerRef={scrollContainerRef}
+                    sheetHeightPx={sheetHeightPx}
+                    translateY={sheetTranslateY}
+                    isAnimating={isSheetAnimating}
+                    bindSheetDrag={bindSheetDrag}
+                    isOpen={sheetState === "OPEN"}
                 />
             </ContentArea>
         </IPhoneFrame>

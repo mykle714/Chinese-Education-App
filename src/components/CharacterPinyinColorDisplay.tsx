@@ -118,7 +118,9 @@ const CharacterPinyinColorDisplay: React.FC<CharacterPinyinColorDisplayProps> = 
             >
                 {character}
             </Typography>
-            {/* Always rendered so the box height stays constant; visibility hides it without collapsing layout */}
+            {/* Always rendered so the box height stays constant; visibility hides it without collapsing layout.
+                Use undefined (not "visible") when shown so the pinyin inherits visibility from any hidden
+                ancestor (e.g. the closed EIC sheet) — an explicit "visible" would leak the pinyin through. */}
             <Typography
                 className="char-pinyin-display__pinyin"
                 sx={{
@@ -128,7 +130,7 @@ const CharacterPinyinColorDisplay: React.FC<CharacterPinyinColorDisplayProps> = 
                     fontStretch: 'condensed',
                     color,
                     lineHeight: 1.21,
-                    visibility: showPinyin ? "visible" : "hidden",
+                    visibility: showPinyin ? undefined : "hidden",
                 }}
             >
                 {pinyin}

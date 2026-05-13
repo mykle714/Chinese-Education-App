@@ -28,7 +28,9 @@ function expandDefinitionCandidates(definition: string): string[] {
 
   const parts = raw.split(';').map(part => part.trim()).filter(Boolean);
   if (parts.length === 0) return [raw];
-  return parts.map(part => part.replace(/ \([^)]+\)$/, '').trim()).filter(Boolean);
+  return parts
+    .map(part => part.replace(/\([^)]*\)/g, '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
 }
 
 /**

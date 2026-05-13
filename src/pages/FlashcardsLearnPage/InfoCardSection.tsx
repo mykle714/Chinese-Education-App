@@ -164,11 +164,12 @@ const InfoCardSection: React.FC<InfoCardSectionProps> = ({
                     padding: "8px",
                     // Prevent scroll from chaining to ancestors when this element hits a boundary.
                     overscrollBehavior: "contain",
-                    // Native touch scrolling is disabled — the drag handler in useEicSheet owns
-                    // both sheet movement and content scroll. Setting touch-action: none here
-                    // (in addition to the parent sheet) ensures mobile browsers don't treat this
-                    // as a touch-scrollable region. Wheel/trackpad is still routed manually.
-                    touchAction: "none",
+                    // Native vertical scrolling is enabled here so iOS/Android contribute their
+                    // own momentum/inertia for free. The parent sheet still has touch-action: none
+                    // (so useDrag owns gestures that start on the tab header / drag handle), and
+                    // useEicSheet attaches a non-passive touch listener on this element to
+                    // recreate the pull-past-top → drag-the-sheet hand-off.
+                    touchAction: "pan-y",
                 }}
             >
                 {/* Title block — vocab word (CPCD lg) + English + tab function label.

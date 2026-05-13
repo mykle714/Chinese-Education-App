@@ -268,6 +268,7 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
    * @param language - Language filter for dictionary lookups (default: 'zh')
    */
   async enrichExampleSentencesMetadataBatch<T extends {
+    word1?: string;
     exampleSentences?: Array<{ chinese: string; english: string; partOfSpeechDict?: Record<string, string>; [key: string]: any }> | null;
   }>(entries: T[], language: string = 'zh'): Promise<T[]> {
     const withSentences = entries.filter(e => e.exampleSentences?.length);
@@ -312,11 +313,15 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
               .filter(([, tag]) => tag === 'classifier')
               .map(([token]) => token)
           );
+          // Force the entry's own headword to win segmentation when it appears in
+          // the sentence — otherwise a higher-vernacularScore overlap can swallow it
+          // and we'd end up showing the wrong segment's metadata for the vocab word.
+          const prioritySegments = entry.word1 ? [entry.word1] : undefined;
           const segments = segmentWithDict(
             sentence.chinese,
             dictMap,
             excludeTokens,
-            undefined,
+            prioritySegments,
             classifierTokens
           );
           const segmentMetadata: Record<string, {

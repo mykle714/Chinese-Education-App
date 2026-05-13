@@ -80,6 +80,10 @@ For adding a completely new language:
 ### Minute Points & Streak System
 → See [docs/MINUTE_POINTS_SYSTEM.md](./docs/MINUTE_POINTS_SYSTEM.md)
 
+#### Streak expiration cron (prod only)
+An hourly Postgres cron on the prod server expires streaks for users who stop opening the app, mirroring `UserMinutePointsService.newDayOperation`. Not installed on dev.
+→ See [docs/STREAK_EXPIRATION_CRON.md](./docs/STREAK_EXPIRATION_CRON.md)
+
 ### Flashcards & Review History
 → See [docs/FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md](./docs/FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md)
 

@@ -55,6 +55,10 @@ export class UserMinutePointsService {
     const clientTimestamp = this.parseTimestamp(request.timestamp);
     const streakDate = streakDateOf(clientTimestamp, tz);
 
+    // Keep users.timezone fresh so the hourly streak-expiration cron can compute
+    // "today" in this user's local 4 AM-bounded day. No-op when tz is unchanged.
+    await this.userDAL.updateTimezoneIfChanged(userId, tz);
+
     const { previousMinutes, newMinutes } = await this.userMinutePointsDAL.addMinutesForDate(userId, streakDate, 1);
 
     await this.userDAL.incrementTotalMinutePoints(userId, 1);
@@ -79,6 +83,9 @@ export class UserMinutePointsService {
     const tz = resolveTimezone(request.tz);
     const clientTimestamp = this.parseTimestamp(request.timestamp);
     const today = streakDateOf(clientTimestamp, tz);
+
+    // Keep users.timezone fresh for the hourly streak-expiration cron.
+    await this.userDAL.updateTimezoneIfChanged(userId, tz);
 
     const streakInfo = await this.userDAL.getUserStreakInfo(userId);
     if (!streakInfo.lastStreakDate) {

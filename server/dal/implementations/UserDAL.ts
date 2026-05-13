@@ -326,6 +326,27 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
   }
 
   /**
+   * Persist the user's current timezone, but only when it actually differs from
+   * what's stored. IS DISTINCT FROM treats NULL safely. Used by the streak-
+   * expiration cron, which needs each user's local 4 AM-bounded "today".
+   */
+  async updateTimezoneIfChanged(userId: string, timezone: string): Promise<void> {
+    if (!userId) {
+      throw new ValidationError('User ID is required');
+    }
+    if (!timezone) {
+      return;
+    }
+
+    await this.dbManager.executeQuery(async (client) => {
+      return await client.query(
+        'UPDATE Users SET "timezone" = $2 WHERE id = $1 AND "timezone" IS DISTINCT FROM $2',
+        [userId, timezone]
+      );
+    });
+  }
+
+  /**
    * Delete a user and all related data (CASCADE DELETE will handle related records)
    */
   async deleteUser(userId: string): Promise<boolean> {

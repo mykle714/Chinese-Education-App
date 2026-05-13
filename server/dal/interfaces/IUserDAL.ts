@@ -34,6 +34,10 @@ export interface IUserDAL extends IBaseDAL<User, UserCreateData, UserUpdateData>
   // Minute point increment rate limiting
   updateLastMinutePointIncrement(userId: string, timestamp: Date): Promise<boolean>;
 
+  // Timezone tracking — kept fresh from the client so the streak-expiration
+  // cron can compute "today" in each user's local 4 AM-bounded day.
+  updateTimezoneIfChanged(userId: string, timezone: string): Promise<void>;
+
   // Streak operations
   getUserStreakInfo(userId: string): Promise<{ currentStreak: number; lastStreakDate: string | null }>;
   setStreak(userId: string, currentStreak: number, lastStreakDate: string): Promise<boolean>;

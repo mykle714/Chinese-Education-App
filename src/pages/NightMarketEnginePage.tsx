@@ -14,7 +14,7 @@ import { usePageTitle } from '../hooks/usePageTitle';
 import { usePixiPedestrians } from '../hooks/usePixiPedestrians';
 import { NIGHT_MARKET_ASSET_MAP } from '../config/nightMarketRegistry';
 import type { NightMarketAssetDef, MotionSpec } from '../config/nightMarketRegistry';
-import { DEMO_STALLS } from '../config/walkwayRegistry';
+import { DEMO_STALLS } from '../config/tileRegistry';
 import { isoToScreen, computeLayerZ } from '../utils/isometric';
 
 /**

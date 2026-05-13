@@ -18,7 +18,7 @@ import { RENDER_SLOT_Z } from '../config/nightMarketRegistry';
  */
 
 /** Width of one isometric tile in pixels (horizontal span of the diamond) */
-const TILE_WIDTH = 128;
+export const TILE_WIDTH = 128;
 
 /** Height of one isometric tile in pixels (vertical span of the diamond, width ÷ √3 for 30° angle) */
 const TILE_HEIGHT = TILE_WIDTH / Math.sqrt(3); // ~73.86px

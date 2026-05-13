@@ -13,12 +13,6 @@
  * See src/utils/isometric.ts for the coordinate system documentation.
  */
 
-// Asset imports — Vite resolves these to hashed URLs at build time
-import baseImgUrl from '../assets/test-assets/base.png';
-import floorImgUrl from '../assets/test-assets/floor.png';
-import humanImgUrl from '../assets/test-assets/human.png';
-import roofImgUrl from '../assets/test-assets/roof.png';
-
 /**
  * Render slot determines sub-layer ordering within a stand's depth.
  * Back-to-front order: background → entity → foreground → overlay
@@ -91,77 +85,51 @@ export interface NightMarketAssetDef {
   scale: number;
   /** Motion applied to the whole asset (composes with any per-layer motion) */
   motion?: MotionSpec;
-  /** If set, a POI is auto-derived by projecting this asset's iso position onto the walkway. */
-  frontage?: StallFrontage;
+  /**
+   * Tiles this stand occupies in the navigation graph. None of these may
+   * coincide with a walkable tile, and at least one must be 4-adjacent to the
+   * tile that declares this stand in its `connections`. When omitted, the
+   * footprint defaults to a single tile at `snapToTile(isoX, isoY)`.
+   */
+  footprint?: TileCoord[];
 }
 
 // ---------------------------------------------------------------------------
-// Walkway & pedestrian types
+// Tile graph & pedestrian types
 //
-// Two-layer navigation:
-//   1. Macro layer — a graph where each edge is ONE walkway. Pedestrians
-//      consult it only when they need to choose between multiple walkways
-//      at a junction.
-//   2. Micro layer — once on a walkway, a per-walkway TraversalStrategy
-//      decides moment-to-moment position (linear now; laned / collision-aware
-//      later). Keeps pedestrian code agnostic to local motion details.
+// The night market's walkable space is a discrete set of 1×1 iso-unit tiles.
+// Adjacent tiles (4-neighbor: N/E/S/W) form the navigation graph. A stand is
+// only accessible from a tile that explicitly lists it in `connections`; a
+// stand whose footprint tile happens to be adjacent to a walkable tile but is
+// NOT named in that tile's `connections` is unreachable from there.
+//
+// Authoring rule (enforced at graph build time):
+//   - For each connection assetId, the stand's footprint tile (rounded isoX,
+//     isoY) must be a 4-neighbor of the connecting tile.
+//   - Each stand may be referenced by at most one tile (single access point).
+//   - A walkable tile must not coincide with a stand footprint tile.
 // ---------------------------------------------------------------------------
 
-/** Which local traversal strategy a walkway uses. Extend as new strategies land. */
-export type TraversalKind = 'linear';
-
-/**
- * A walkway is a single axis-aligned segment — a straight line running along
- * either the isoX or isoY axis. polyline always has exactly 2 points.
- *
- * Corners and bends are modeled as two walkways sharing an endpoint node;
- * the graph merges coincident endpoints automatically. Keeping walkways
- * single-segment means POI projection is a trivial 1D operation.
- */
-export interface WalkwayDef {
-  walkwayId: string;
-  /** Exactly 2 iso points. Must be axis-aligned: dx=0 or dy=0. */
-  polyline: [[number, number], [number, number]];
-  /** Selects the per-walkway traversal strategy. */
-  traversalKind: TraversalKind;
-  /** Pedestrian speed along this walkway in iso-units per second. */
-  speedIsoPerSec: number;
-  /** Human-readable label for debugging / tooling. */
-  displayName?: string;
+/** Discrete walkable tile. Coordinates are integer iso units. */
+export interface TileDef {
+  isoX: number;
+  isoY: number;
+  /** assetIds of stands accessible from this tile. Each must be a 4-neighbor stand. */
+  connections?: string[];
+  /** Optional override; defaults to PEDESTRIAN_SPEED_ISO_PER_SEC. */
+  speedIsoPerSec?: number;
 }
 
 /**
- * Declares that a stall fronts a specific walkway.
- * The POI position is derived by projecting the stall's iso coordinate onto
- * the walkway segment — no manual t calculation needed.
- *
- * `side` records which side of the walkway the stall sits on in screen space.
- * 'north' = screen-north (smaller isoY side of the street).
- * 'south' = screen-south (larger isoY side of the street).
- * Used for pedestrian approach offsets and duplicate-POI enforcement.
+ * Tile edge length in iso units. A larger TILE_SIZE produces a sparser
+ * navigation graph (fewer tiles per area). Adjacency offsets are ±TILE_SIZE
+ * along each axis. Stand footprints are snapped to the nearest TILE_SIZE
+ * multiple. Must be a positive integer.
  */
-export interface StallFrontage {
-  walkwayId: string;
-  side: 'north' | 'south';
-}
+export const TILE_SIZE = 5;
 
-/**
- * A point of interest a pedestrian can target (e.g. a stall's entry point).
- * Anchored to exactly one walkway at parameter t in iso units from polyline[0].
- * polyline[0] is always the screen-south end (max isoX + isoY).
- * Typically derived via computePoiFromStall() rather than authored by hand.
- */
-export interface PoiDef {
-  poiId: string;
-  walkwayId: string;
-  /** Iso distance from polyline[0] (the screen-south start of the walkway). */
-  t: number;
-  /** Which screen side of the walkway this POI faces. */
-  side: 'north' | 'south';
-  /** The stall asset this POI leads to. */
-  linkedAssetId?: string;
-  displayName?: string;
-}
+/** Default pedestrian speed in iso units per second (independent of TILE_SIZE). */
+export const PEDESTRIAN_SPEED_ISO_PER_SEC = 12;
 
 /**
  * 4-direction walk cycle for a pedestrian. Frames are selected by the ped's
@@ -194,50 +162,51 @@ export interface SpriteDef {
 
 /** A single item in a pedestrian's agenda. */
 export type AgendaGoal =
-  | { kind: 'VisitPoi'; poiId: string; dwellMs: number }
-  /** Pick a random POI from the scene and visit it. Refilled endlessly for ambient crowd. */
-  | { kind: 'Wander'; dwellMs: number }
-  /** Reserved for VIPs: walk to POI and despawn when reached. */
-  | { kind: 'Exit'; poiId: string };
+  /** Walk to a tile that has the given assetId in its `connections`, then dwell. */
+  | { kind: 'VisitStand'; assetId: string; dwellMs: number }
+  /** Pick a random walkable tile (preferring connection tiles) and visit it. Refilled endlessly. */
+  | { kind: 'Wander'; dwellMs: number };
 
 /** Pedestrian FSM states. */
 export type PedestrianFsmState = 'Idle' | 'Planning' | 'Traveling' | 'Interacting';
 
+/** Tile coordinate pair. Always integer iso units. */
+export interface TileCoord {
+  isoX: number;
+  isoY: number;
+}
+
 /**
- * Runtime state of a single pedestrian. A pedestrian is ALWAYS on exactly one
- * walkway (even when idle or interacting) so rendering has a defined position.
+ * Runtime state of a single pedestrian. A pedestrian always occupies a tile;
+ * while traveling it is interpolated between `currentTile` and `pendingPath[0]`
+ * by `localProgress` ∈ [0, 1].
  */
 export interface PedestrianState {
   id: string;
   sprite: SpriteDef;
-  /** Walkway the pedestrian is currently positioned on. */
-  currentWalkwayId: string;
-  /** Position along `currentWalkwayId`'s polyline. */
+  /** The tile the pedestrian is leaving from. */
+  currentTile: TileCoord;
+  /** 0..1 progress between currentTile and pendingPath[0]; 0 when stationary. */
   localProgress: number;
-  /** +1 = progressing toward polyline[N-1], -1 = toward polyline[0]. */
-  direction: 1 | -1;
-  /** Macro route to follow after finishing current walkway. List of walkwayIds. */
-  pendingRoute: string[];
-  /** Final target progress on the final walkway in the route (POI t-value). */
-  routeTargetT: number | null;
+  /** Remaining tiles to visit in order. Empty when idle/interacting. */
+  pendingPath: TileCoord[];
   /** Goals queued; current goal is agenda[0]. */
   agenda: AgendaGoal[];
   fsmState: PedestrianFsmState;
   /** performance.now() timestamp at which Interacting should end. */
   interactUntilMs?: number;
-  /** POI the pedestrian is currently routing toward (set during Planning, cleared on Idle). */
-  targetPoiId?: string;
+  /** Stand the pedestrian is currently routing toward (set during Planning, cleared on Idle). */
+  targetAssetId?: string;
   /**
-   * IDs of the most recent POIs this pedestrian visited (oldest first, newest last).
-   * Used by `resolveWanderTarget` to suppress repeat visits during local wander —
-   * the global fallback ignores this list so the ped never gets fully blocked.
-   * Capped at `RECENT_POI_HISTORY_LIMIT` entries.
+   * AssetIds of the most recent stands this pedestrian visited (oldest first).
+   * Used to suppress repeat visits during local wander. Capped at
+   * `RECENT_VISIT_HISTORY_LIMIT` entries.
    */
-  recentlyVisitedPoiIds: string[];
+  recentlyVisitedAssetIds: string[];
 }
 
-/** Max length of `PedestrianState.recentlyVisitedPoiIds`. */
-export const RECENT_POI_HISTORY_LIMIT = 8;
+/** Max length of `PedestrianState.recentlyVisitedAssetIds`. */
+export const RECENT_VISIT_HISTORY_LIMIT = 8;
 
 /** Configuration constants */
 export const NIGHT_MARKET_CONFIG = {
@@ -248,30 +217,13 @@ export const NIGHT_MARKET_CONFIG = {
 /**
  * Base set — items every user receives automatically on first visit.
  * These are seeded server-side with unlockOrder = 0.
+ *
+ * Currently empty: the demo "Market Ground" stand was rendered outside the
+ * tile-graph system at iso (0,0) and has been removed. Users with stale
+ * `base-ground-01` unlock rows will simply log a one-time "Unknown assetId"
+ * warning and the entry is skipped at render.
  */
-export const NIGHT_MARKET_BASE_SET: NightMarketAssetDef[] = [
-  {
-    assetId: 'base-ground-01',
-    unlockType: 'stall',
-    displayName: 'Market Ground',
-    description: 'The foundation of your night market.',
-    layers: [
-      { imagePath: floorImgUrl, slot: 'background', groupId: 'stand-assembly-01' },
-      {
-        imagePath: humanImgUrl,
-        slot: 'entity',
-        groupId: 'merchant-01',
-        // Demo motion — validates the animation foundation end-to-end.
-        motion: { kind: 'sineBob', amplitudeIsoY: 0.5, periodMs: 2000 },
-      },
-      { imagePath: baseImgUrl, slot: 'foreground', groupId: 'stand-assembly-01' },
-      { imagePath: roofImgUrl, slot: 'foreground', groupId: 'stand-assembly-01' },
-    ],
-    isoX: 0,
-    isoY: 0,
-    scale: 1.0,
-  },
-];
+export const NIGHT_MARKET_BASE_SET: NightMarketAssetDef[] = [];
 
 /**
  * Unlock pool — items available for random unlock as users earn work points.

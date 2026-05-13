@@ -1,52 +1,46 @@
 /**
- * Pedestrian finite state machine.
+ * Pedestrian finite state machine — tile-graph edition.
  *
- *   Idle ──pop agenda──▶ Planning ──route found──▶ Traveling ──reached POI──▶ Interacting ──dwell elapsed──▶ Idle
+ *   Idle ──pop agenda──▶ Planning ──path found──▶ Traveling ──reached goal──▶ Interacting ──dwell──▶ Idle
  *
- * All state transitions are computed here. `tickPedestrian` is a pure function
- * of (prev state, dtMs, ctx) — no React, no timers, no DOM.
- *
- * Ctx provides the graph, walkways, POIs, and (later) peer pedestrians so
- * collision-aware strategies slot in without agent changes.
+ * State transitions are pure functions of (prev state, dtMs, ctx). Pedestrians
+ * walk tile-by-tile across a 4-neighbor adjacency graph; render position is
+ * `lerp(currentTile, pendingPath[0], localProgress)`.
  */
 
 import {
-  RECENT_POI_HISTORY_LIMIT,
-  type PedestrianState,
-  type WalkwayDef,
-  type PoiDef,
+  PEDESTRIAN_SPEED_ISO_PER_SEC,
+  RECENT_VISIT_HISTORY_LIMIT,
   type AgendaGoal,
+  type NightMarketAssetDef,
   type PedestrianFsmState,
+  type PedestrianState,
+  type TileCoord,
+  type TileDef,
 } from '../config/nightMarketRegistry';
 import {
-  getTraversalStrategy,
-  pointAtT,
-  polylineLength,
-  type TraversalContext,
-} from './walkwayTraversal';
+  bfsTilePath,
+  parseTileKey,
+  tileKey,
+  type TileGraph,
+} from './tileGraph';
 import {
-  routeBetweenWalkways,
-  type WalkwayGraph,
-  type RouteStrategy,
-} from './walkwayGraph';
+  advanceLocalProgress,
+  headingBetweenTiles,
+  lerpTile,
+} from './tileTraversal';
 
 export interface PedestrianTickContext {
-  graph: WalkwayGraph;
-  /** walkwayId → WalkwayDef lookup. */
-  walkways: Map<string, WalkwayDef>;
-  /** poiId → PoiDef lookup. */
-  pois: Map<string, PoiDef>;
-  /** Routing strategy — defaults to BFS at call site. */
-  routeStrategy: RouteStrategy;
+  graph: TileGraph;
+  /** assetId → stand definition, used for display names on travel labels. */
+  stands: Map<string, NightMarketAssetDef>;
   /** Current time in ms for dwell timing. */
   tMs: number;
   /** Optional: all pedestrians, for future collision. */
   allPedestrians?: PedestrianState[];
 }
 
-/**
- * Visible output of a pedestrian at render time. Derived from state, not stored.
- */
+/** Visible output of a pedestrian at render time. */
 export interface PedestrianDrawable {
   id: string;
   isoX: number;
@@ -54,9 +48,8 @@ export interface PedestrianDrawable {
   heading: [number, number];
   imagePath: string;
   scale: number;
-  /** Current FSM state — used by debug overlay. */
   fsmState: PedestrianFsmState;
-  /** Display name of the target POI when Traveling; undefined otherwise. */
+  /** Display name of the target stand when Traveling; undefined otherwise. */
   targetPoiDisplayName?: string;
 }
 
@@ -64,10 +57,8 @@ export interface PedestrianDrawable {
 export type IsoDir = 'N' | 'E' | 'S' | 'W';
 
 /**
- * Quantize a heading vector (in iso-space) to the nearest iso cardinal.
- * Larger-magnitude axis wins; ties favor the E/W axis.
- *   +hx → E (backward-right), -hx → W (forward-left)
- *   +hy → N (backward-left),  -hy → S (forward-right)
+ * Quantize a heading vector to the nearest iso cardinal.
+ *   +hx → E, -hx → W, +hy → N, -hy → S
  */
 export function headingToIsoDir(heading: [number, number]): IsoDir {
   const [hx, hy] = heading;
@@ -82,23 +73,29 @@ const DIR_KEY: Record<IsoDir, 'north' | 'east' | 'south' | 'west'> = {
   W: 'west',
 };
 
+/** Speed (iso/sec = tiles/sec) for a pedestrian leaving its current tile. */
+function speedFor(tile: TileDef | undefined): number {
+  return tile?.speedIsoPerSec ?? PEDESTRIAN_SPEED_ISO_PER_SEC;
+}
+
 /** Project a pedestrian's current state to a render-space drawable. */
 export function computeDrawable(
   p: PedestrianState,
-  walkways: Map<string, WalkwayDef>,
+  graph: TileGraph,
   tMs: number,
-  pois?: Map<string, PoiDef>
+  stands?: Map<string, NightMarketAssetDef>,
 ): PedestrianDrawable | null {
-  const w = walkways.get(p.currentWalkwayId);
-  if (!w) return null;
-  const { isoPos, headingIso } = pointAtT(w.polyline, p.localProgress);
-  const heading: [number, number] =
-    p.direction === 1 ? headingIso : [-headingIso[0], -headingIso[1]];
+  const next = p.pendingPath[0];
+  const [isoX, isoY] = next
+    ? lerpTile(p.currentTile, next, p.localProgress)
+    : [p.currentTile.isoX, p.currentTile.isoY];
 
-  // Resolve image path. Directional walk animation (if present) wins over
-  // static imagePath: pick the frame list matching the quantized heading,
-  // then cycle at the configured fps while Traveling. When Idle/Interacting/
-  // Planning, freeze on frame 0 of the last-faced direction.
+  // Heading: toward the next tile while traveling; otherwise preserve last
+  // step direction by looking back at the previous step. Default to E.
+  let heading: [number, number] = [1, 0];
+  if (next) heading = headingBetweenTiles(p.currentTile, next);
+
+  // Resolve image path: directional walk frames if defined.
   let imagePath = p.sprite.imagePath;
   const walk = p.sprite.directionalWalk;
   if (walk) {
@@ -113,14 +110,19 @@ export function computeDrawable(
     }
   }
 
+  // Suppress unused-var warning for `graph` — kept in the signature so a future
+  // collision-aware drawable (e.g. avoidance offset) can read peer positions.
+  void graph;
+
   const targetPoiDisplayName =
-    p.fsmState === 'Traveling' && p.targetPoiId && pois
-      ? pois.get(p.targetPoiId)?.displayName
+    p.fsmState === 'Traveling' && p.targetAssetId && stands
+      ? stands.get(p.targetAssetId)?.displayName
       : undefined;
+
   return {
     id: p.id,
-    isoX: isoPos[0],
-    isoY: isoPos[1],
+    isoX,
+    isoY,
     heading,
     imagePath,
     scale: p.sprite.scale ?? 1.0,
@@ -130,263 +132,166 @@ export function computeDrawable(
 }
 
 /**
- * Resolve an agenda Wander goal.
+ * Resolve a Wander goal. Strategy:
+ *  1. Prefer a connection tile (i.e. a tile whose `connections` is non-empty)
+ *     reachable from the pedestrian, picking one whose linked stands are not
+ *     in `recentlyVisitedAssetIds`.
+ *  2. Fall back to any walkable tile.
  *
- * Candidate set:
- *  - all POIs on the pedestrian's current walkway, PLUS
- *  - POIs on walkways connected at either endpoint of the current walkway,
- *    but only if the POI sits near the shared junction (t <= 0.2 if the
- *    junction is that walkway's polyline[0] end; t >= 0.8 if the junction
- *    is its polyline[N-1] end).
- *
- * This keeps wandering local — peds drift to nearby stalls instead of
- * teleporting goals to the far side of the map. If the local candidate set
- * is empty (e.g. ped is on a walkway with no nearby POIs), falls back to a
- * uniform pick from all POIs so the ped doesn't stall.
+ * Returns the chosen goal-tile key and (if any) the assetId of the linked stand
+ * for visit-history bookkeeping.
  */
-function resolveWanderTarget(
+function resolveWanderGoal(
   p: PedestrianState,
-  pois: Map<string, PoiDef>,
-  ctx: PedestrianTickContext
-): PoiDef | null {
-  const candidates: PoiDef[] = [];
-  const allPois = [...pois.values()];
-  const recentlyVisited = new Set(p.recentlyVisitedPoiIds);
+  ctx: PedestrianTickContext,
+): { goalKey: string; assetId?: string } | null {
+  const recent = new Set(p.recentlyVisitedAssetIds);
+  const fromKey = tileKey(p.currentTile.isoX, p.currentTile.isoY);
 
-  // Same-walkway POIs are always eligible (unless recently visited).
-  for (const poi of allPois) {
-    if (poi.walkwayId !== p.currentWalkwayId) continue;
-    if (recentlyVisited.has(poi.poiId)) continue;
-    candidates.push(poi);
+  // Build candidate list of connection tiles whose stands aren't in recent.
+  const candidates: Array<{ key: string; assetId: string }> = [];
+  for (const [assetId, tileKeys] of ctx.graph.standAccessTiles) {
+    if (recent.has(assetId)) continue;
+    for (const key of tileKeys) candidates.push({ key, assetId });
+  }
+  if (candidates.length > 0) {
+    const pick = candidates[Math.floor(Math.random() * candidates.length)];
+    if (pick.key === fromKey) return { goalKey: pick.key, assetId: pick.assetId };
+    return { goalKey: pick.key, assetId: pick.assetId };
   }
 
-  // Connected walkways via either endpoint of the current walkway.
-  const currentEnds = ctx.graph.walkwayEndpoints.get(p.currentWalkwayId);
-  if (currentEnds) {
-    for (const junctionNodeId of currentEnds) {
-      const incident = ctx.graph.adjacency.get(junctionNodeId) ?? [];
-      for (const neighborWalkwayId of incident) {
-        if (neighborWalkwayId === p.currentWalkwayId) continue;
-        const neighborEnds = ctx.graph.walkwayEndpoints.get(neighborWalkwayId);
-        if (!neighborEnds) continue;
-        // Which end of the neighbor is the shared junction?
-        const junctionAtStart = neighborEnds[0] === junctionNodeId;
-        const junctionAtEnd = neighborEnds[1] === junctionNodeId;
-        if (!junctionAtStart && !junctionAtEnd) continue;
-        // 20% of the neighbor walkway's length — scales with walkway size.
-        const neighborWalkway = ctx.walkways.get(neighborWalkwayId);
-        if (!neighborWalkway) continue;
-        const neighborLen = polylineLength(neighborWalkway.polyline);
-        const nearThreshold = 0.2 * neighborLen;
-        for (const poi of allPois) {
-          if (poi.walkwayId !== neighborWalkwayId) continue;
-          if (recentlyVisited.has(poi.poiId)) continue;
-          if (junctionAtStart && poi.t <= nearThreshold) candidates.push(poi);
-          else if (junctionAtEnd && poi.t >= neighborLen - nearThreshold) candidates.push(poi);
-        }
-      }
-    }
-  }
-
-  if (candidates.length === 0) {
-    if (allPois.length === 0) return null;
-    return allPois[Math.floor(Math.random() * allPois.length)];
-  }
-  return candidates[Math.floor(Math.random() * candidates.length)];
+  // Fallback — any walkable tile.
+  const allTiles = Array.from(ctx.graph.tiles.keys());
+  if (allTiles.length === 0) return null;
+  const pick = allTiles[Math.floor(Math.random() * allTiles.length)];
+  return { goalKey: pick };
 }
 
-/**
- * Plan a route to the current agenda goal. Mutates nothing; returns the new
- * pendingRoute + final-walkway clampT, or null if planning failed (caller
- * should re-queue or drop the goal).
- */
-function planRoute(
+/** Plan a tile path to the current goal. Returns null if planning fails. */
+function planPath(
   p: PedestrianState,
-  ctx: PedestrianTickContext
-): { pendingRoute: string[]; routeTargetT: number; targetPoiId: string } | null {
+  ctx: PedestrianTickContext,
+): { path: TileCoord[]; targetAssetId?: string } | null {
   const goal = p.agenda[0];
   if (!goal) return null;
 
-  let targetPoi: PoiDef | null = null;
-  if (goal.kind === 'VisitPoi' || goal.kind === 'Exit') {
-    targetPoi = ctx.pois.get(goal.poiId) ?? null;
-  } else if (goal.kind === 'Wander') {
-    targetPoi = resolveWanderTarget(p, ctx.pois, ctx);
-  }
-  if (!targetPoi) return null;
+  const fromKey = tileKey(p.currentTile.isoX, p.currentTile.isoY);
 
-  const currentEnds = ctx.graph.walkwayEndpoints.get(p.currentWalkwayId);
-  if (!currentEnds) return null;
+  let goalKeys: Set<string>;
+  let targetAssetId: string | undefined;
 
-  // Same walkway already — no macro routing, just adjust clampT and go.
-  if (targetPoi.walkwayId === p.currentWalkwayId) {
-    // Determine direction to reach POI from current progress.
-    const newDirection: 1 | -1 = targetPoi.t >= p.localProgress ? 1 : -1;
-    p.direction = newDirection;
-    return {
-      pendingRoute: [],
-      routeTargetT: targetPoi.t,
-      targetPoiId: targetPoi.poiId,
-    };
+  if (goal.kind === 'VisitStand') {
+    const access = ctx.graph.standAccessTiles.get(goal.assetId);
+    if (!access || access.length === 0) return null;
+    goalKeys = new Set(access);
+    targetAssetId = goal.assetId;
+  } else {
+    const wander = resolveWanderGoal(p, ctx);
+    if (!wander) return null;
+    goalKeys = new Set([wander.goalKey]);
+    targetAssetId = wander.assetId;
   }
 
-  // Try BOTH endpoints of the current walkway as candidate starting nodes
-  // and pick the shorter route. The pedestrian can reverse on the current
-  // walkway, so committing to the endpoint they happen to be heading toward
-  // forces unnecessary detours (e.g. walking to the end of a walkway and
-  // then doubling all the way back).
-  //
-  // Try the current-direction endpoint first so ties preserve direction.
-  const primary = p.direction === 1 ? currentEnds[1] : currentEnds[0];
-  const secondary = p.direction === 1 ? currentEnds[0] : currentEnds[1];
-  let best: { route: ReturnType<typeof routeBetweenWalkways>; fromNode: string } | null = null;
-  for (const candidate of [primary, secondary]) {
-    const r = routeBetweenWalkways(
-      ctx.graph,
-      p.currentWalkwayId,
-      candidate,
-      targetPoi.walkwayId,
-      ctx.routeStrategy
-    );
-    if (!r) continue;
-    if (!best || r.walkways.length < best.route!.walkways.length) {
-      best = { route: r, fromNode: candidate };
-    }
-  }
-  if (!best || !best.route) return null;
+  const path = bfsTilePath(ctx.graph, fromKey, goalKeys);
+  if (!path) return null;
 
-  // Orient the ped toward the chosen fromNode so local traversal carries them there.
-  p.direction = best.fromNode === currentEnds[1] ? 1 : -1;
-
-  return {
-    pendingRoute: best.route.walkways,
-    routeTargetT: targetPoi.t,
-    targetPoiId: targetPoi.poiId,
-  };
-}
-
-/**
- * Pick travel direction for a freshly-entered walkway so the pedestrian moves
- * AWAY from the endpoint it just entered through.
- */
-function directionForEnteringWalkway(
-  walkway: WalkwayDef,
-  enteredAtNodeId: string,
-  graph: WalkwayGraph
-): 1 | -1 {
-  const ends = graph.walkwayEndpoints.get(walkway.walkwayId);
-  if (!ends) return 1;
-  // If entered at polyline[0] node → go toward polyline[N-1] (direction=1), else reverse.
-  return ends[0] === enteredAtNodeId ? 1 : -1;
+  // Drop the start tile — it's where the ped already stands.
+  const tilePath: TileCoord[] = path.slice(1).map(parseTileKey);
+  return { path: tilePath, targetAssetId };
 }
 
 /** Advance a single pedestrian one tick. Returns a NEW state object. */
 export function tickPedestrian(
   prev: PedestrianState,
   dtMs: number,
-  ctx: PedestrianTickContext
+  ctx: PedestrianTickContext,
 ): PedestrianState {
-  // Work on a shallow clone so the caller can treat the return as immutable.
   const p: PedestrianState = {
     ...prev,
     agenda: [...prev.agenda],
-    pendingRoute: [...prev.pendingRoute],
-    recentlyVisitedPoiIds: [...prev.recentlyVisitedPoiIds],
+    pendingPath: [...prev.pendingPath],
+    recentlyVisitedAssetIds: [...prev.recentlyVisitedAssetIds],
+    currentTile: { ...prev.currentTile },
   };
 
   switch (p.fsmState) {
     case 'Idle': {
-      // Need a goal. Ambient pedestrians always have a Wander refill outside
-      // the FSM (see usePedestrians), so an empty agenda means "stay put".
       if (p.agenda.length === 0) return p;
       p.fsmState = 'Planning';
       return p;
     }
 
     case 'Planning': {
-      const plan = planRoute(p, ctx);
+      const plan = planPath(p, ctx);
       if (!plan) {
-        // Drop this goal; the crowd loop will refill.
         p.agenda.shift();
         p.fsmState = 'Idle';
         return p;
       }
-      p.pendingRoute = plan.pendingRoute;
-      p.routeTargetT = plan.routeTargetT;
-      p.targetPoiId = plan.targetPoiId;
-      p.fsmState = 'Traveling';
+      // If already at the goal (empty path), go straight to Interacting.
+      p.pendingPath = plan.path;
+      p.targetAssetId = plan.targetAssetId;
+      if (plan.path.length === 0) {
+        const goal = p.agenda[0];
+        const dwellMs = goal && (goal.kind === 'VisitStand' || goal.kind === 'Wander')
+          ? goal.dwellMs
+          : 0;
+        p.fsmState = 'Interacting';
+        p.interactUntilMs = ctx.tMs + dwellMs;
+      } else {
+        p.localProgress = 0;
+        p.fsmState = 'Traveling';
+      }
       return p;
     }
 
     case 'Traveling': {
-      const walkway = ctx.walkways.get(p.currentWalkwayId);
-      if (!walkway) {
-        // Data error — reset to Idle; caller can recover.
-        p.fsmState = 'Idle';
+      const next = p.pendingPath[0];
+      if (!next) {
+        // Path exhausted — enter Interacting.
+        const goal = p.agenda[0];
+        const dwellMs = goal && (goal.kind === 'VisitStand' || goal.kind === 'Wander')
+          ? goal.dwellMs
+          : 0;
+        p.fsmState = 'Interacting';
+        p.interactUntilMs = ctx.tMs + dwellMs;
         return p;
       }
-
-      const isFinalWalkway = p.pendingRoute.length === 0;
-      const clampT = isFinalWalkway ? p.routeTargetT : null;
-
-      const traversal = getTraversalStrategy(walkway.traversalKind);
-      const peers = ctx.allPedestrians
-        ?.filter(o => o.id !== p.id && o.currentWalkwayId === p.currentWalkwayId)
-        .map(o => ({ id: o.id, t: o.localProgress, direction: o.direction }));
-      const travCtx: TraversalContext = { peersOnWalkway: peers };
-
-      const step = traversal.advance(walkway, p.localProgress, p.direction, dtMs, clampT, travCtx);
-      p.localProgress = step.t;
-
-      if (step.reachedEnd) {
-        if (isFinalWalkway) {
-          // Reached the POI — enter Interacting.
-          const currentGoal = p.agenda[0];
-          const dwellMs = currentGoal && (currentGoal.kind === 'VisitPoi' || currentGoal.kind === 'Wander')
-            ? currentGoal.dwellMs
+      const tile = ctx.graph.tiles.get(tileKey(p.currentTile.isoX, p.currentTile.isoY));
+      const speed = speedFor(tile);
+      const step = advanceLocalProgress(p.localProgress, dtMs, speed);
+      p.localProgress = step.progress;
+      if (step.completed) {
+        // Step onto the next tile; pop it from the path.
+        p.currentTile = { ...next };
+        p.pendingPath.shift();
+        p.localProgress = 0;
+        if (p.pendingPath.length === 0) {
+          const goal = p.agenda[0];
+          const dwellMs = goal && (goal.kind === 'VisitStand' || goal.kind === 'Wander')
+            ? goal.dwellMs
             : 0;
           p.fsmState = 'Interacting';
           p.interactUntilMs = ctx.tMs + dwellMs;
-          return p;
         }
-        // Cross junction to next walkway in the route.
-        const nextWalkwayId = p.pendingRoute.shift()!;
-        const nextWalkway = ctx.walkways.get(nextWalkwayId);
-        if (!nextWalkway) {
-          p.fsmState = 'Idle';
-          return p;
-        }
-        // The junction node we just arrived at is the endpoint of current walkway
-        // in the direction of travel.
-        const currentEnds = ctx.graph.walkwayEndpoints.get(p.currentWalkwayId);
-        if (!currentEnds) {
-          p.fsmState = 'Idle';
-          return p;
-        }
-        const arrivedNodeId = p.direction === 1 ? currentEnds[1] : currentEnds[0];
-
-        p.currentWalkwayId = nextWalkwayId;
-        p.direction = directionForEnteringWalkway(nextWalkway, arrivedNodeId, ctx.graph);
-        // Reset local progress to the entering endpoint (in iso units).
-        p.localProgress = p.direction === 1 ? 0 : polylineLength(nextWalkway.polyline);
       }
       return p;
     }
 
     case 'Interacting': {
       if (p.interactUntilMs !== undefined && ctx.tMs >= p.interactUntilMs) {
-        // Record this visit so local wander avoids re-picking the same stalls.
-        // Cap the history at RECENT_POI_HISTORY_LIMIT (drop oldest).
-        if (p.targetPoiId) {
-          p.recentlyVisitedPoiIds.push(p.targetPoiId);
-          if (p.recentlyVisitedPoiIds.length > RECENT_POI_HISTORY_LIMIT) {
-            p.recentlyVisitedPoiIds.splice(0, p.recentlyVisitedPoiIds.length - RECENT_POI_HISTORY_LIMIT);
+        if (p.targetAssetId) {
+          p.recentlyVisitedAssetIds.push(p.targetAssetId);
+          if (p.recentlyVisitedAssetIds.length > RECENT_VISIT_HISTORY_LIMIT) {
+            p.recentlyVisitedAssetIds.splice(
+              0,
+              p.recentlyVisitedAssetIds.length - RECENT_VISIT_HISTORY_LIMIT,
+            );
           }
         }
         p.agenda.shift();
         p.interactUntilMs = undefined;
-        p.routeTargetT = null;
-        p.targetPoiId = undefined;
+        p.targetAssetId = undefined;
         p.fsmState = 'Idle';
       }
       return p;
@@ -394,7 +299,7 @@ export function tickPedestrian(
   }
 }
 
-/** Helper: refill agenda for ambient pedestrians so they wander forever. */
+/** Refill a pedestrian's agenda with a Wander goal so it never stalls. */
 export function ensureAmbientAgenda(p: PedestrianState, wanderDwellMs: number): PedestrianState {
   if (p.agenda.length > 0) return p;
   const goal: AgendaGoal = { kind: 'Wander', dwellMs: wanderDwellMs };

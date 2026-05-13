@@ -16,7 +16,6 @@ import FlashcardsPage from "./pages/FlashcardsPage";
 import FlashcardsLearnPage from "./pages/FlashcardsLearnPage";
 import FlashcardsDecksPage from "./pages/FlashcardsDecksPage";
 import ReaderPage from "./pages/ReaderPage";
-import MarketViewerPage from "./pages/MarketViewerPage";
 import NightMarketEnginePage from "./pages/NightMarketEnginePage";
 import DictionaryPage from "./pages/DictionaryPage";
 import SortCardsPage from "./pages/SortCardsPage";
@@ -88,12 +87,6 @@ function App() {
                 <Route path="/flashcards/card/:id" element={
                   <ProtectedRoute allowPublic>
                     <VocabCardDetailPage />
-                  </ProtectedRoute>
-                } />
-                {/* @deprecated — DOM/Canvas2D renderer; use /night-market (Pixi) instead */}
-                <Route path="/night-market-legacy" element={
-                  <ProtectedRoute allowPublic>
-                    <MarketViewerPage />
                   </ProtectedRoute>
                 } />
                 <Route path="/night-market" element={

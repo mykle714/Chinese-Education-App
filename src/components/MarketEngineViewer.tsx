@@ -3,11 +3,10 @@ import { Application, extend, useTick, useApplication } from '@pixi/react';
 import { Container, Sprite, Graphics, Text, Assets, Texture } from 'pixi.js';
 import type { FederatedPointerEvent } from 'pixi.js';
 import { Box, CircularProgress, Alert } from '@mui/material';
-import type { FrameAnimation, MotionSpec } from '../config/nightMarketRegistry';
+import { TILE_SIZE, type FrameAnimation, type MotionSpec } from '../config/nightMarketRegistry';
 import { evaluateMotion } from '../utils/nightMarketMotion';
 import { isoToScreen, computeLayerZ } from '../utils/isometric';
-import { WALKWAYS, POIS, WALKWAY_MAP } from '../config/walkwayRegistry';
-import { pointAtT } from '../utils/walkwayTraversal';
+import { TILES, DEMO_STALLS, FLOOR_TILE_IMAGE_PATH, FLOOR_TILE_SCALE } from '../config/tileRegistry';
 import type { UsePixiPedestriansHandle } from '../hooks/usePixiPedestrians';
 
 // Register Pixi.js classes as pixiContainer / pixiSprite / pixiGraphics / pixiText JSX elements.
@@ -32,7 +31,7 @@ export interface MarketEngineViewerProps {
   pedestrians?: UsePixiPedestriansHandle;
   /** Render the isometric debug grid (fine green + major red lines). Default false. */
   showGrid?: boolean;
-  /** Render POI dots/labels and pedestrian FSM state labels. Default false. */
+  /** Render stand display-name labels and pedestrian FSM state labels. Default false. */
   showDebug?: boolean;
 }
 
@@ -55,7 +54,8 @@ const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 5.0;
 
 // ─── Grid overlay ────────────────────────────────────────────────────────────
-// Static isometric debug grid — fine lines every 10 units (green), major every 100 (red).
+// Static isometric debug grid. Fine lines align with tile boundaries (every
+// TILE_SIZE iso units, green); major lines mark every 10 tiles (red).
 // Drawn once since the grid never changes.
 
 const GRID_MIN = -500;
@@ -82,123 +82,63 @@ function GridOverlay() {
       g.stroke({ color, width: lineWidth, alpha });
     };
 
-    drawGridLines(10, 0x00C800, 0.5, 1);    // fine: green
-    drawGridLines(100, 0xFF0000, 0.9, 1.5); // major: red on top
+    drawGridLines(TILE_SIZE, 0x00C800, 0.5, 1);          // fine: per-tile (green)
+    drawGridLines(TILE_SIZE * 10, 0xFF0000, 0.9, 1.5);   // major: every 10 tiles (red)
   }, []);
 
   return <pixiGraphics draw={draw} />;
 }
 
-// ─── Walkway overlay ─────────────────────────────────────────────────────────
-// Static Graphics element — drawn once since walkways never change.
+// ─── Tile floor overlay ──────────────────────────────────────────────────────
+// Renders one floor.png sprite per walkable tile, z-ordered as background so
+// it sits behind every stand / pedestrian. Computed once since the tile
+// registry is static.
 
-function WalkwayOverlay() {
-  const draw = useCallback((g: Graphics) => {
-    g.clear();
-    for (const walkway of WALKWAYS) {
-      const pts = walkway.polyline.map(([ix, iy]) => isoToScreen(ix, iy));
-      g.moveTo(pts[0].screenX, pts[0].screenY);
-      for (let i = 1; i < pts.length; i++) {
-        g.lineTo(pts[i].screenX, pts[i].screenY);
-      }
-      g.stroke({ color: 0xd2b478, width: 6, alpha: 0.85 });
-    }
-  }, []);
-
-  return <pixiGraphics draw={draw} />;
+interface TileFloorOverlayProps {
+  texture: Texture;
 }
 
-// ─── Walkway label overlay ───────────────────────────────────────────────────
-// Renders the displayName of each walkway at its midpoint in red text.
-
-const WALKWAY_LABEL_STYLE = {
-  fontSize: 150,
-  fill: 0xff2222,
-  fontFamily: 'sans-serif',
-  fontWeight: 'bold' as const,
-  stroke: { color: 0x000000, width: 3 },
-  align: 'center' as const,
-};
-
-function WalkwayLabelOverlay() {
-  const midpoints = useMemo(() =>
-    WALKWAYS
-      .filter(w => w.displayName)
-      .map(w => {
-        const [p0, p1] = w.polyline;
-        const midIsoX = (p0[0] + p1[0]) / 2;
-        const midIsoY = (p0[1] + p1[1]) / 2;
-        const { screenX, screenY } = isoToScreen(midIsoX, midIsoY);
-        return { walkwayId: w.walkwayId, displayName: w.displayName!, screenX, screenY };
+function TileFloorOverlay({ texture }: TileFloorOverlayProps) {
+  const positions = useMemo(
+    () =>
+      TILES.map(t => {
+        const { screenX, screenY } = isoToScreen(t.isoX, t.isoY);
+        return {
+          key: tileKey(t.isoX, t.isoY),
+          x: screenX,
+          y: screenY,
+          // Slightly behind every entity but in front of the page background.
+          zIndex: computeLayerZ(t.isoX, t.isoY, 'background') - 1000,
+          hasConnection: !!t.connections?.length,
+        };
       }),
-    []);
+    [],
+  );
 
+  // No wrapping container — sprites are returned as a fragment so they become
+  // direct children of the scene container and sort against stands / peds via
+  // the scene's `sortableChildren`.
   return (
-    <pixiContainer>
-      {midpoints.map(({ walkwayId, displayName, screenX, screenY }) => (
-        <pixiText
-          key={walkwayId}
-          text={displayName}
-          x={screenX}
-          y={screenY - 10}
+    <>
+      {positions.map(p => (
+        <pixiSprite
+          key={p.key}
+          texture={texture}
+          x={p.x}
+          y={p.y}
+          scale={FLOOR_TILE_SCALE}
           anchor={{ x: 0.5, y: 1 }}
-          style={WALKWAY_LABEL_STYLE}
+          zIndex={p.zIndex}
+          tint={p.hasConnection ? 0xffe6a0 : 0xffffff}
+          eventMode="none"
         />
       ))}
-    </pixiContainer>
+    </>
   );
 }
 
-// ─── POI overlay ─────────────────────────────────────────────────────────────
-// Draws one orange dot + display name per POI at its projected iso position.
-// Gated behind showDebug — only rendered when the debug overlay is active.
-
-const POI_LABEL_STYLE = {
-  fontSize: 165,
-  fill: 0x000000,
-  fontFamily: 'sans-serif',
-  stroke: { color: 0xffffff, width: 15 },
-  align: 'center' as const,
-};
-
-function PoiOverlay() {
-  const draw = useCallback((g: Graphics) => {
-    g.clear();
-    for (const poi of POIS) {
-      const walkway = WALKWAY_MAP.get(poi.walkwayId);
-      if (!walkway) continue;
-      const { isoPos } = pointAtT(walkway.polyline, poi.t);
-      const { screenX, screenY } = isoToScreen(isoPos[0], isoPos[1]);
-      g.circle(screenX, screenY, 8);
-    }
-    g.fill({ color: 0xff6600, alpha: 0.9 });
-  }, []);
-
-  const poiScreenPositions = useMemo(() =>
-    POIS.map(poi => {
-      const walkway = WALKWAY_MAP.get(poi.walkwayId);
-      if (!walkway) return null;
-      const { isoPos } = pointAtT(walkway.polyline, poi.t);
-      return { ...isoToScreen(isoPos[0], isoPos[1]), displayName: poi.displayName };
-    }).filter(Boolean),
-    []);
-
-  return (
-    <pixiContainer>
-      <pixiGraphics draw={draw} />
-      {poiScreenPositions.map((pos, i) => pos?.displayName && (
-        <pixiText
-          key={i}
-          text={pos.displayName}
-          x={pos.screenX}
-          y={pos.screenY - 20}
-          anchor={{ x: 0.5, y: 1 }}
-          style={POI_LABEL_STYLE}
-        />
-      ))}
-    </pixiContainer>
-  );
-}
+// Shared tileKey helper to avoid pulling in the util file just for this.
+const tileKey = (x: number, y: number) => `${x},${y}`;
 
 // ─── Pedestrian debug labels ──────────────────────────────────────────────────
 // Renders one text label per pedestrian showing FSM state + target POI name (if
@@ -238,7 +178,8 @@ function PedestrianDebugLabels({ pedestrians }: PedestrianDebugLabelsProps) {
   return (
     <pixiContainer>
       {drawables.map(d => {
-        const { screenX, screenY } = isoToScreen(d.isoX, d.isoY);
+        // Match the half-tile NE offset used by the ped sprite itself.
+        const { screenX, screenY } = isoToScreen(d.isoX + TILE_SIZE / 2, d.isoY + TILE_SIZE / 2);
         const labelY = screenY + PED_LABEL_OFFSET_Y;
         return (
           <pixiContainer key={d.id} x={screenX} y={labelY}>
@@ -267,6 +208,47 @@ function PedestrianDebugLabels({ pedestrians }: PedestrianDebugLabelsProps) {
   );
 }
 
+// ─── Stand label overlay ─────────────────────────────────────────────────────
+// One text label per stand, placed at the stand's anchor (SW corner of the 2×2
+// footprint) and lifted vertically so it floats above the stall sprite. Gated
+// behind showDebug.
+
+const STAND_LABEL_STYLE = {
+  fontSize: 120,
+  fill: 0xffffff,
+  fontFamily: 'monospace',
+  stroke: { color: 0x000000, width: 12 },
+  align: 'center' as const,
+  fontWeight: 'bold' as const,
+};
+
+const STAND_LABEL_OFFSET_Y = -200;
+
+function StandLabelOverlay() {
+  const positions = useMemo(
+    () =>
+      DEMO_STALLS.map(s => {
+        const { screenX, screenY } = isoToScreen(s.isoX, s.isoY);
+        return { id: s.assetId, name: s.displayName, x: screenX, y: screenY + STAND_LABEL_OFFSET_Y };
+      }),
+    [],
+  );
+  return (
+    <pixiContainer>
+      {positions.map(p => (
+        <pixiText
+          key={p.id}
+          text={p.name}
+          x={p.x}
+          y={p.y}
+          anchor={{ x: 0.5, y: 1 }}
+          style={STAND_LABEL_STYLE}
+        />
+      ))}
+    </pixiContainer>
+  );
+}
+
 // ─── NightMarketScene ────────────────────────────────────────────────────────
 // Runs inside <Application>. Handles the animation tick, pan/tap events,
 // walkway rendering, static layer sprites, and pedestrian sprites.
@@ -274,6 +256,7 @@ function PedestrianDebugLabels({ pedestrians }: PedestrianDebugLabelsProps) {
 function NightMarketScene({ layers, textures, pan, zoom, onPanChange, onLayerTap, pedestrians, showGrid, showDebug, isPinchingRef }: SceneProps) {
   const { app } = useApplication();
   const [t, setT] = useState(0);
+  const floorTexture = textures.get(FLOOR_TILE_IMAGE_PATH);
 
   // Drag tracking in refs — avoids extra re-renders during pan.
   const drag = useRef({ active: false, startX: 0, startY: 0, origPanX: 0, origPanY: 0, totalDist: 0 });
@@ -402,12 +385,16 @@ function NightMarketScene({ layers, textures, pan, zoom, onPanChange, onLayerTap
 
     if (pedestrians) {
       for (const d of pedestrians.getDrawables()) {
-        const { screenX, screenY } = isoToScreen(d.isoX, d.isoY);
+        // Tile coordinates name a tile's SW corner; shift the ped by half a
+        // tile NE so the sprite stands in the visual center of the tile.
+        const cx = d.isoX + TILE_SIZE / 2;
+        const cy = d.isoY + TILE_SIZE / 2;
+        const { screenX, screenY } = isoToScreen(cx, cy);
         items.push({
           key: `ped-${d.id}`,
           x: screenX,
           y: screenY,
-          zIndex: computeLayerZ(d.isoX, d.isoY, 'entity'),
+          zIndex: computeLayerZ(cx, cy, 'entity'),
           texKey: d.imagePath,
           scale: d.scale,
           label: d.id,   // ped IDs don't match any asset — taps won't open a dialog
@@ -416,20 +403,17 @@ function NightMarketScene({ layers, textures, pan, zoom, onPanChange, onLayerTap
       }
     }
 
-    return items.sort((a, b) => a.zIndex - b.zIndex);
-    // t drives both computedLayers and pedestrian positions, so one dep covers both.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // No manual sort — the parent <pixiContainer sortableChildren> handles z-order.
+    return items;
   }, [computedLayers, pedestrians]);
 
   const cx = app.screen.width / 2 + pan.x;
   const cy = app.screen.height / 2 + pan.y;
 
   return (
-    <pixiContainer x={cx} y={cy} scale={zoom}>
+    <pixiContainer x={cx} y={cy} scale={zoom} sortableChildren>
       {showGrid && <GridOverlay />}
-      <WalkwayOverlay />
-      {showDebug && <WalkwayLabelOverlay />}
-      {showDebug && <PoiOverlay />}
+      {floorTexture && <TileFloorOverlay texture={floorTexture} />}
       {allSprites.map(({ key, x, y, zIndex, texKey, scale, label, tappable }) => {
         const texture = textures.get(texKey);
         if (!texture) return null;
@@ -447,6 +431,7 @@ function NightMarketScene({ layers, textures, pan, zoom, onPanChange, onLayerTap
           />
         );
       })}
+      {showDebug && <StandLabelOverlay />}
       {showDebug && pedestrians && <PedestrianDebugLabels pedestrians={pedestrians} />}
     </pixiContainer>
   );
@@ -480,9 +465,11 @@ function MarketEngineViewer({ layers, onLayerTap, pedestrians, showGrid, showDeb
     if (containerRef.current) setReady(true);
   }, []);
 
-  // All unique image paths: static layer images + pedestrian sprite images.
+  // All unique image paths: static layer images + pedestrian sprite images
+  // + the floor-tile sprite used by every walkable tile.
   const allImagePaths = useMemo(() => {
     const paths = new Set<string>();
+    paths.add(FLOOR_TILE_IMAGE_PATH);
     for (const layer of layers) {
       if (layer.frameAnimation) {
         for (const p of layer.frameAnimation.imagePaths) paths.add(p);

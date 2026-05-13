@@ -33,19 +33,29 @@ psql "$DATABASE_URL" -f database/cron/expire-stale-streaks.sql
    Optionally hold the cron install for ~a week so most active users have
    reported their real timezone before the first sweep.
 
-3. **Smoke-test the SQL on prod** before scheduling:
+3. **Smoke-test the SQL on prod** before scheduling. Prod postgres runs in
+   the `cow-postgres-prod` container — pipe the SQL in over stdin instead of
+   needing a `$DATABASE_URL` on the host:
    ```bash
-   psql "$DATABASE_URL" -f database/cron/expire-stale-streaks.sql
+   docker exec -i cow-postgres-prod psql -U cow_user -d cow_db \
+     < /home/michael/vocabulary-app/database/cron/expire-stale-streaks.sql
    ```
-   Safe to re-run.
+   Safe to re-run (idempotent — second run returns `UPDATE 0`).
 
-4. **Install the crontab line** on the prod server:
+4. **Install the crontab line** on the prod server. Note: `/var/log` is not
+   writable by `michael`, so the log lives next to the project (already
+   gitignored by `logs` / `*.log`). The absolute path to `docker` matters
+   because cron's PATH is minimal.
    ```
-   0 * * * * psql "$DATABASE_URL" -f /path/to/repo/database/cron/expire-stale-streaks.sql >> /var/log/streak-expire.log 2>&1
+   # Hourly streak expiration — see docs/STREAK_EXPIRATION_CRON.md
+   0 * * * * /usr/bin/docker exec -i cow-postgres-prod psql -U cow_user -d cow_db < /home/michael/vocabulary-app/database/cron/expire-stale-streaks.sql >> /home/michael/vocabulary-app/logs/streak-expire.log 2>&1
    ```
-   Replace `/path/to/repo` with the prod checkout path.
+   First run `mkdir -p /home/michael/vocabulary-app/logs`.
 
-5. **Verify** `/var/log/streak-expire.log` the morning after install.
+5. **Verify** `/home/michael/vocabulary-app/logs/streak-expire.log` the
+   morning after install — should show one `BEGIN / DO / COMMIT` block per
+   hour, plus a `NOTICE:` line on any tick that actually penalized users
+   (see "Log format" below).
 
 ## Risks to weigh before the first run
 
@@ -63,6 +73,35 @@ psql "$DATABASE_URL" -f database/cron/expire-stale-streaks.sql
   backfills. Edge cases (e.g. UTC-10 users who haven't opened the app since
   the migration) could see the penalty fire up to ~half a day before their
   real local 4 AM.
+
+## Log format
+
+Idle ticks (no users penalized) write only the default psql output:
+
+```
+BEGIN
+DO
+COMMIT
+```
+
+When at least one user is penalized, a single `RAISE NOTICE` line is emitted
+*before* the `DO` line, with the timestamp, affected count, user IDs, and
+missed dates:
+
+```
+NOTICE:  streak-expire 2026-05-13 04:17:02.291416+00 penalized=1 user_ids={30093a9b-8cf4-4005-b7da-fca59686149d} missed_dates={2026-05-10}
+```
+
+To find every cleanup event:
+
+```bash
+grep '^NOTICE:  streak-expire' /home/michael/vocabulary-app/logs/streak-expire.log
+```
+
+The `missed_dates` array is parallel to `user_ids` — same index ⇒ same user.
+Each entry equals `lastStreakDate + 1 day` (the first local day the user
+failed to maintain). The corresponding `userminutepoints` audit row is keyed
+by `(user_id, missed_date)`.
 
 ## Maintenance
 

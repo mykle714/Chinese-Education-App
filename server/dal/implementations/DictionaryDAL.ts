@@ -64,6 +64,7 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
       expansion: row.expansion ?? null,
       expansionLiteralTranslation: row.expansionLiteralTranslation ?? null,
       matchException: row.matchException ?? [],
+      vernacularScore: row.vernacularScore ?? null,
       wordForms: row.wordForms ?? null,
     };
   }

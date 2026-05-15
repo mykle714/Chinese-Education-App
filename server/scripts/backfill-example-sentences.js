@@ -63,6 +63,7 @@ Write exactly 3 natural example sentences using "${word}". Each sentence should:
   ${allowedPosTags.join(', ')}
 - Do not include punctuation as keys
 - Include the target word "${word}" as one of the keys in partOfSpeechDict
+- If the target word is a verb but is used as a gerund or nominal subject/object in this sentence (e.g. 下单很简单 — "Ordering is simple", where 下单 is the sentence subject), tag it as "noun", not "verb"
 
 Respond with ONLY a JSON array in this exact format (no markdown, no explanation):
 [

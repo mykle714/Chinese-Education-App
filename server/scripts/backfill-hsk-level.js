@@ -48,8 +48,16 @@ Task: Assign exactly one HSK level for this word.
 
 Rules:
 - Return one label only: HSK1, HSK2, HSK3, HSK4, HSK5, or HSK6.
-- Choose the level where this word is most appropriate for typical learners.
-- If the word is uncommon, literary, technical, or proper-noun-like, still choose the closest higher level (usually HSK6).
+- Choose the level that best reflects when a typical learner would encounter and need this word.
+- Do NOT default to HSK6 simply because the word is absent from standard HSK word lists.
+  Instead, use these guidelines:
+  · HSK1–2: Basic everyday survival words (greetings, numbers, family, simple verbs).
+  · HSK3–4: Common everyday vocabulary encountered in daily life, travel, shopping, food, modern culture (including frequent loanwords like coffee drinks, technology, etc.).
+  · HSK5: Less common words, academic or formal registers, nuanced vocabulary.
+  · HSK6: Rare, literary, highly technical, or specialized professional vocabulary.
+- Modern loanwords for common everyday items (food, beverages, technology) are typically HSK3–4.
+- Technical jargon, literary idioms, and obscure terms are typically HSK5–6.
+- Proper nouns (place names, people's names) that lack general vocabulary utility should be HSK6.
 - Do not include explanation.
 
 Respond with ONLY the level token.`;

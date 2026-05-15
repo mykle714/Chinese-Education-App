@@ -1,6 +1,6 @@
 # Mark Words as Discoverable
 
-Given a list of Chinese words, set `discoverable = TRUE` and run the full 9-step enrichment pipeline scoped to those words.
+Given a list of Chinese words, set `discoverable = TRUE` and run the full 10-step enrichment pipeline scoped to those words.
 
 ## Arguments
 
@@ -57,7 +57,7 @@ RETURNING id, word1, discoverable;
 
 ### 3. Run the full enrichment pipeline scoped to the words
 
-Run all 9 steps in order with `--words=word1,word2,...`. Use the comma-joined hanzi list as the value.
+Run all 10 steps in order with `--words=word1,word2,...`. Use the comma-joined hanzi list as the value.
 
 **Step 1 — Tones (deterministic)**
 ```bash
@@ -72,6 +72,11 @@ docker exec cow-backend-local npx tsx scripts/backfill-numbered-pinyin.js --word
 **Step 3 — Breakdown (deterministic)**
 ```bash
 docker exec cow-backend-local npx tsx scripts/backfill-dictionary-breakdown.js --words=未来,摸脉
+```
+
+**Step 3.5 — Sort Definitions (AI)**
+```bash
+docker exec cow-backend-local npx tsx scripts/backfill-sort-definitions.js --words=未来,摸脉
 ```
 
 **Step 4 — HSK Level (AI)**

@@ -502,7 +502,7 @@ Respond with ONLY a JSON object in this exact format, no extra text:
    * Generate a long definition (25–75 chars) for a Chinese word using Claude Haiku AI
    * Returns null for non-Chinese words or if AI call fails
    */
-  async generateLongDefinition(word: string, language: string, definitions: string[]): Promise<string | null> {
+  async generateLongDefinition(word: string, language: string): Promise<string | null> {
     if (!language || language !== 'zh') {
       return null;
     }
@@ -521,12 +521,14 @@ Respond with ONLY a JSON object in this exact format, no extra text:
 
       const prompt = `You are a Chinese language expert providing dictionary definitions.
 Word: ${word.trim()}
-Existing definitions: ${definitions.join(' | ')}
 
 Write a single English definition that is between 25 and 150 characters long.
 Goals (address whichever are most relevant to this word):
 - Dispel common misconceptions or mistranslations
 - Clarify how this word differs from similar or easily confused concepts
+Hard constraints (must follow exactly — output will be rejected otherwise):
+- Output English only. The response must not contain any Chinese characters, pinyin, or non-ASCII letters. Do not include the original word, transliterations, or literal-translation glosses in quotes.
+- Do not use the phrase "rather than" anywhere in the output. Also avoid equivalent contrastive constructions like "instead of", "as opposed to", "not just X but Y", or "X, not Y". Describe what the word means directly without contrasting it against what it does not mean.
 Respond with only the definition text — no quotes, no extra text.`;
 
       const response = await anthropic.messages.create({

@@ -390,7 +390,7 @@ async function run() {
       FROM dictionaryentries
       WHERE language = 'zh'
         AND discoverable = TRUE
-        AND "partsOfSpeech" IS NULL
+        AND ("partsOfSpeech" IS NULL OR jsonb_array_length("partsOfSpeech") = 0)
         ${wordsFilter}
       ORDER BY id ASC
       ${isSpotCheck ? 'LIMIT 5' : ''}

@@ -26,7 +26,7 @@ async function backfillLongDefinitions() {
 
   try {
     const result = await client.query(`
-      SELECT id, word1, language, definitions
+      SELECT id, word1, language
       FROM dictionaryentries
       WHERE language = 'zh'
         AND discoverable = TRUE
@@ -51,14 +51,9 @@ async function backfillLongDefinitions() {
       processedCount++;
 
       try {
-        const definitions = Array.isArray(entry.definitions)
-          ? entry.definitions
-          : JSON.parse(entry.definitions || '[]');
-
         const longDef = await dictionaryService.generateLongDefinition(
           entry.word1,
-          entry.language,
-          definitions
+          entry.language
         );
 
         await client.query(`

@@ -38,6 +38,10 @@ const skipCritic  = process.argv.includes('--no-critic');
 const idsArg = process.argv.find(a => a.startsWith('--ids='));
 const targetIds = idsArg ? idsArg.replace('--ids=', '').split(',').map(Number) : null;
 
+// --words=未来,摸脉 → scope to specific entries only
+const wordsArg = process.argv.find(a => a.startsWith('--words='));
+const targetWords = wordsArg ? wordsArg.slice('--words='.length).split(',').map(s => s.trim()).filter(Boolean) : null;
+
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const PASS1_MODEL = 'claude-sonnet-4-6';
@@ -252,7 +256,7 @@ async function run() {
     process.exit(1);
   }
 
-  const modeLabel = isSpotCheck ? 'SPOT CHECK' : includeAll ? 'ALL zh entries' : 'discoverable zh entries';
+  const modeLabel = isSpotCheck ? 'SPOT CHECK' : targetWords?.length ? `scoped to: ${targetWords.join(', ')}` : includeAll ? 'ALL zh entries' : 'discoverable zh entries';
   const criticLabel = skipCritic ? ' (Pass 1 only)' : ' (Pass 1 + critic)';
   console.log(`Starting AI definition sort backfill — ${modeLabel}${criticLabel}\n`);
 
@@ -265,6 +269,13 @@ async function run() {
            FROM dictionaryentries
            WHERE id = ANY($1)
            ORDER BY id ASC`
+        : targetWords?.length
+        ? `SELECT id, word1, pronunciation, definitions
+           FROM dictionaryentries
+           WHERE language = 'zh'
+             AND word1 = ANY($1)
+             AND jsonb_array_length(definitions) > 1
+           ORDER BY id ASC`
         : `SELECT id, word1, pronunciation, definitions
            FROM dictionaryentries
            WHERE language = 'zh'
@@ -272,7 +283,7 @@ async function run() {
              AND jsonb_array_length(definitions) > 1
            ORDER BY id ASC
            ${isSpotCheck ? 'LIMIT 5' : ''}`,
-      targetIds ? [targetIds] : []
+      targetIds ? [targetIds] : targetWords?.length ? [targetWords] : []
     );
 
     console.log(`Found ${entries.length} entries to sort\n`);

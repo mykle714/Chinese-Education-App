@@ -6,6 +6,13 @@ import CPCDRow from "./CPCDRow";
 
 type Size = "sm" | "md";
 
+// CSS gap between segment groups when showSegmentSpaces is true.
+// Sized proportionally to character width at each size — NOT a native space character.
+const SEGMENT_GAP_BY_SIZE: Record<Size, string> = {
+  sm: "4px",
+  md: "6px",
+};
+
 interface SegmentMeta {
   pronunciation?: string;
   definition?: string;
@@ -31,6 +38,8 @@ interface SegmentedSentenceDisplayProps {
   showPinyin?: boolean;
   // When set, draws a single continuous underline beneath characters belonging to this segment
   vocabWord?: string;
+  // When true, renders a CSS gap between segment groups instead of uniform overlap
+  showSegmentSpaces?: boolean;
 }
 
 interface CharRenderData {
@@ -62,6 +71,8 @@ interface HighlightRow {
 
 // Selects the contextually appropriate English form from a wordForms map.
 // Verbs prefer tense-specific keys (past/present/future); other POS use their tag directly.
+// When a verb is used nominally (tagged "noun" in this sentence's partOfSpeechDict),
+// fall back to the gerund form since verb entries have no dedicated "noun" key.
 function resolveWordForm(
   wordForms: Record<string, string>,
   pos: string | undefined,
@@ -70,6 +81,9 @@ function resolveWordForm(
   if (!pos) return undefined;
   if (tense && (pos === 'verb' || pos === 'auxiliary verb')) {
     return wordForms[tense] ?? wordForms[pos];
+  }
+  if (pos === 'noun') {
+    return wordForms['noun'] ?? wordForms['gerund'];
   }
   return wordForms[pos];
 }
@@ -83,6 +97,7 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
   className,
   showPinyin,
   vocabWord,
+  showSegmentSpaces = false,
 }) => {
   const rowRef = useRef<HTMLDivElement | null>(null);
   const popupRef = useRef<HTMLDivElement | null>(null);
@@ -156,6 +171,22 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
     return data as CharRenderData[];
   }, [chars, sentence._segments, sentence.segmentMetadata]);
 
+  // Groups consecutive characters that share the same segment (same `start` index).
+  // Used when showSegmentSpaces is true to render each word as its own CPCDRow.
+  const segmentGroups = useMemo<{ key: number; indices: number[] }[]>(() => {
+    const groups: { key: number; indices: number[] }[] = [];
+    for (let i = 0; i < chars.length; i++) {
+      const start = charData[i].start;
+      const last = groups[groups.length - 1];
+      if (last && last.key === start) {
+        last.indices.push(i);
+      } else {
+        groups.push({ key: start, indices: [i] });
+      }
+    }
+    return groups;
+  }, [chars.length, charData]);
+
   useEffect(() => {
     if (!selectedRange || !rowRef.current) {
       setPopupPosition(null);
@@ -217,7 +248,7 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
       left: ((startRect.left + endRect.right) / 2) - rowRect.left,
       top: popupBottom + 6,
     });
-  }, [selectedRange, chars.length]);
+  }, [selectedRange, chars.length, showSegmentSpaces]);
 
   // After the popup renders, measure its actual width and clamp its left position so it
   // never overflows the container. useLayoutEffect runs before paint so there's no flicker.
@@ -322,7 +353,7 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
         height: 0,
       }))
     );
-  }, [vocabWord, charData, chars]);
+  }, [vocabWord, charData, chars, showSegmentSpaces]);
 
   const selectFromIndex = (charIndex: number) => {
     const info = charData[charIndex];
@@ -396,35 +427,83 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
         />
       ))}
 
-      <CPCDRow size={size} flexWrap={flexWrap} justifyContent={justifyContent} className={className}>
-        {chars.map((char, index) => {
-          const info = charData[index];
-          const isSingleCharSelection = !!selectedRange && selectedRange.start === selectedRange.end && index === selectedRange.start;
+      {showSegmentSpaces ? (
+        // Spaced mode: each segment is its own CPCDRow; the outer Box provides the inter-segment gap.
+        // flexWrap/justifyContent/className belong on the outer container so wrapping happens at
+        // word boundaries, not mid-segment.
+        <Box
+          className={className}
+          sx={{
+            display: "flex",
+            flexDirection: "row",
+            flexWrap,
+            gap: SEGMENT_GAP_BY_SIZE[size],
+            ...(justifyContent && { justifyContent }),
+          }}
+        >
+          {segmentGroups.map((group) => (
+            <CPCDRow key={group.key} size={size} flexWrap="nowrap">
+              {group.indices.map((index) => {
+                const char = chars[index];
+                const info = charData[index];
+                const isSingleCharSelection = !!selectedRange && selectedRange.start === selectedRange.end && index === selectedRange.start;
+                return (
+                  <Box
+                    key={index}
+                    ref={(node: HTMLDivElement | null) => { charRefs.current[index] = node; }}
+                    sx={{ display: "inline-flex", position: "relative", zIndex: 2 }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                  >
+                    <CharacterPinyinColorDisplay
+                      character={char}
+                      pinyin={info.pinyin}
+                      showPinyin={showPinyin !== false && !!info.pinyin}
+                      size={size}
+                      useToneColor={true}
+                      compact={compact}
+                      interactive
+                      selected={isSingleCharSelection}
+                      onHoverStart={() => selectFromIndex(index)}
+                      onTapToggle={() => toggleFromIndex(index)}
+                    />
+                  </Box>
+                );
+              })}
+            </CPCDRow>
+          ))}
+        </Box>
+      ) : (
+        // Default mode: flat single CPCDRow with uniform negative-margin overlap
+        <CPCDRow size={size} flexWrap={flexWrap} justifyContent={justifyContent} className={className}>
+          {chars.map((char, index) => {
+            const info = charData[index];
+            const isSingleCharSelection = !!selectedRange && selectedRange.start === selectedRange.end && index === selectedRange.start;
 
-          return (
-            <Box
-              key={index}
-              ref={(node: HTMLDivElement | null) => { charRefs.current[index] = node; }}
-              sx={{ display: "inline-flex", position: "relative", zIndex: 2 }}
-              // Stop propagation so character taps don't trigger the container's deselect handler
-              onPointerDown={(e) => e.stopPropagation()}
-            >
-              <CharacterPinyinColorDisplay
-                character={char}
-                pinyin={info.pinyin}
-                showPinyin={showPinyin !== false && !!info.pinyin}
-                size={size}
-                useToneColor={true}
-                compact={compact}
-                interactive
-                selected={isSingleCharSelection}
-                onHoverStart={() => selectFromIndex(index)}
-                onTapToggle={() => toggleFromIndex(index)}
-              />
-            </Box>
-          );
-        })}
-      </CPCDRow>
+            return (
+              <Box
+                key={index}
+                ref={(node: HTMLDivElement | null) => { charRefs.current[index] = node; }}
+                sx={{ display: "inline-flex", position: "relative", zIndex: 2 }}
+                // Stop propagation so character taps don't trigger the container's deselect handler
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                <CharacterPinyinColorDisplay
+                  character={char}
+                  pinyin={info.pinyin}
+                  showPinyin={showPinyin !== false && !!info.pinyin}
+                  size={size}
+                  useToneColor={true}
+                  compact={compact}
+                  interactive
+                  selected={isSingleCharSelection}
+                  onHoverStart={() => selectFromIndex(index)}
+                  onTapToggle={() => toggleFromIndex(index)}
+                />
+              </Box>
+            );
+          })}
+        </CPCDRow>
+      )}
 
       {showPopup && (
         <Box

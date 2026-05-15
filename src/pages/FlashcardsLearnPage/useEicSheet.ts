@@ -1,62 +1,74 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useDrag } from "@use-gesture/react";
-import {
-    EIC_HALF_RATIO,
-    EIC_FULL_RATIO,
-    EIC_DISMISS_THRESHOLD_RATIO,
-} from "./constants";
-
-export type SheetState = "HIDDEN" | "OPEN";
+import { EIC_FULL_RATIO } from "./constants";
 
 interface UseEicSheetParams {
-    // Changes when a new card loads — sheet snaps back to HIDDEN.
-    resetKey: number;
+    // Called when the sheet finishes its dismiss animation; parent unmounts the sheet.
+    onDismiss: () => void;
+    // Natural content height of the currently-visible tab (header + body),
+    // in CSS px. Null until the parent has measured it; once provided, the
+    // sheet animates from hidden to this height on first paint.
+    initialContentHeightPx: number | null;
 }
 
-// Flick threshold in px/ms above which release behavior switches from
-// nearest-stop snap to "throw to next stop in flick direction".
+// Flick threshold (px/ms). Above this magnitude, a release decides outcome by
+// flick direction instead of by current position.
 const FLICK_VELOCITY = 0.5;
+// Fraction of the (intrinsicPos → fullHeight) gap past which a slow release
+// dismisses instead of snapping back to default. Higher = less eager to dismiss.
+const DISMISS_BIAS = 0.6;
 
-// Draggable bottom-sheet:
-//   - Sheet has fixed height = fullHeight (90% of ContentArea).
-//   - Position controlled by translateY (0 = fully visible, fullHeight = hidden).
-//   - Snap stops: 0 (FULL/90%), halfPos (HALF/70%), fullHeight (HIDDEN).
-//   - Outer sheet has touch-action: none so useDrag owns header / drag-handle
-//     gestures. The inner scroll body uses touch-action: pan-y so the browser
-//     drives native vertical scroll (and contributes OS-level momentum).
-//   - A non-passive touch listener on the inner scroll body recreates the
-//     "pull past top → drag the sheet down" hand-off and also drives sheet
-//     dragging when the user touches content while below FULL (since native
-//     pan-y would otherwise eat those gestures).
-//   - On release, gestures with |vy| >= FLICK_VELOCITY snap to the next stop
-//     in the flick direction; gentler releases snap to the nearest stop.
-export function useEicSheet({ resetKey }: UseEicSheetParams) {
+// Draggable bottom-sheet with two snap stops: max (sheet touches the page
+// header) and the intrinsic-content "default" position.
+//   - Sheet has fixed height = fullHeight (EIC_FULL_RATIO * container height).
+//   - Position controlled by translateY (0 = max, fullHeight = fully hidden).
+//   - On first paint translateY is set to fullHeight (offscreen); once the
+//     parent has measured the tab's natural content height, the sheet animates
+//     up to intrinsicPos = (fullHeight - contentHeight) — the default stop.
+//   - Releases above default snap to max or default (whichever is nearer);
+//     releases below default snap to default unless dragged past DISMISS_BIAS
+//     of the default→hidden gap, in which case the sheet dismisses.
+//   - Outer sheet has touch-action: none on the header zone so useDrag owns
+//     those gestures. The inner scroll body uses touch-action: pan-y so the
+//     browser drives native scrolling; an imperative touch listener restores
+//     "drag the sheet from the body when at top / when below max" behavior.
+//   - Gestures with |vy| >= FLICK_VELOCITY snap by flick direction.
+export function useEicSheet({ onDismiss, initialContentHeightPx }: UseEicSheetParams) {
     const sheetElRef = useRef<HTMLDivElement | null>(null);
     const containerObsRef = useRef<ResizeObserver | null>(null);
     const [containerHeight, setContainerHeight] = useState(0);
     const scrollElRef = useRef<HTMLDivElement | null>(null);
 
-    const halfHeight = containerHeight * EIC_HALF_RATIO;
     const fullHeight = containerHeight * EIC_FULL_RATIO;
-    const halfPos = fullHeight - halfHeight; // translateY value for HALF state
 
+    // translateY: 0 = max (touches header above), fullHeight = fully hidden.
+    // Initialized to 0 but immediately overwritten to fullHeight when the
+    // sheet element mounts (see sheetRef) so the entry animation can play.
     const [translateY, setTranslateY] = useState(0);
     const [isAnimating, setIsAnimating] = useState(false);
-    const [isOpen, setIsOpen] = useState(false);
+    // Flips true after the first content-driven open animation has been kicked
+    // off. Prevents re-running the entry animation if containerHeight changes
+    // later (e.g., due to viewport resize).
+    const hasOpenedRef = useRef(false);
 
-    // translateY ref kept in sync with state for use inside event listeners.
+    // Refs for use inside imperative event listeners (which capture state at
+    // listener-bind time and would otherwise see stale values).
     const translateYRef = useRef(0);
     useEffect(() => { translateYRef.current = translateY; }, [translateY]);
-
-    // Geometry refs so listeners attached once via the ref callback always read
-    // the current snap-stop positions even after a viewport resize.
     const fullHeightRef = useRef(fullHeight);
-    const halfPosRef = useRef(halfPos);
-    useEffect(() => { fullHeightRef.current = fullHeight; halfPosRef.current = halfPos; }, [fullHeight, halfPos]);
+    useEffect(() => { fullHeightRef.current = fullHeight; }, [fullHeight]);
 
-    // Lock content scroll until the sheet reaches FULL. Whenever translateY > 0
-    // (below FULL), pin scrollTop to 0 so the next time the user reaches FULL
-    // they start from the top of the content.
+    // The "default" snap position — translateY corresponding to the sheet
+    // sized to the tab's natural content. Computed from initialContentHeightPx
+    // and held in a ref so imperative listeners always see the current value.
+    const intrinsicPos = initialContentHeightPx != null && fullHeight > 0
+        ? Math.max(0, fullHeight - Math.min(initialContentHeightPx, fullHeight))
+        : null;
+    const intrinsicPosRef = useRef<number | null>(intrinsicPos);
+    useEffect(() => { intrinsicPosRef.current = intrinsicPos; }, [intrinsicPos]);
+
+    // Lock content scroll while below max. Pin scrollTop=0 so the user
+    // always sees the top of the content when reaching max.
     useEffect(() => {
         if (translateY > 0.5 && scrollElRef.current && scrollElRef.current.scrollTop !== 0) {
             scrollElRef.current.scrollTop = 0;
@@ -71,42 +83,69 @@ export function useEicSheet({ resetKey }: UseEicSheetParams) {
         sheetElRef.current = el;
         if (!el || !el.parentElement) return;
         const parent = el.parentElement;
-        setContainerHeight(parent.clientHeight);
+        const h = parent.clientHeight;
+        setContainerHeight(h);
+        // First mount: start hidden so the entry animation can play.
+        if (!hasOpenedRef.current) setTranslateY(h * EIC_FULL_RATIO);
         const ro = new ResizeObserver(() => setContainerHeight(parent.clientHeight));
         ro.observe(parent);
         containerObsRef.current = ro;
     }, []);
 
-    // Direction-aware snap. Called on every gesture release (drag, touch shim,
-    // wheel idle). `signedVy` is in px/ms — positive = downward flick.
+    // Once containerHeight and the measured content height are both known,
+    // animate from hidden up to the intrinsic-content position.
+    useEffect(() => {
+        if (hasOpenedRef.current) return;
+        if (intrinsicPos == null) return;
+        hasOpenedRef.current = true;
+        // rAF so the initial "hidden" translateY paints first; the transition
+        // then animates from hidden to target.
+        requestAnimationFrame(() => {
+            setIsAnimating(true);
+            setTranslateY(intrinsicPos);
+        });
+    }, [intrinsicPos]);
+
+    // Release-time snap with two snap stops: max (0) and the intrinsic
+    // default position. Below default → snap up to default or dismiss; above
+    // default → snap up to max or back to default. `signedVy` is px/ms —
+    // positive = downward flick.
     const applySnap = useCallback((signedVy: number) => {
         const ty = translateYRef.current;
         const fh = fullHeightRef.current;
-        const hp = halfPosRef.current;
-        const dismissAt = hp + (fh - hp) * EIC_DISMISS_THRESHOLD_RATIO;
+        const ip = intrinsicPosRef.current;
+        if (fh <= 0) return;
+        // If we haven't measured content yet (no intrinsic stop), fall back
+        // to a two-state max-or-dismiss decision.
+        if (ip == null) {
+            const target = signedVy >= FLICK_VELOCITY || ty > fh * 0.5 ? fh : 0;
+            if (target !== ty) { setTranslateY(target); setIsAnimating(true); }
+            else { setIsAnimating(false); }
+            return;
+        }
+        const dismissAt = ip + (fh - ip) * DISMISS_BIAS;
         let target: number;
         if (Math.abs(signedVy) >= FLICK_VELOCITY) {
             // Flick: throw to the next stop in flick direction.
             if (signedVy > 0) {
-                // downward flick
-                target = ty < hp - 0.5 ? hp : fh;
+                // downward flick → either default (if above) or dismiss (if below).
+                target = ty < ip - 0.5 ? ip : fh;
             } else {
-                // upward flick
-                target = ty > hp + 0.5 ? hp : 0;
+                // upward flick → either default (if below) or max (if above).
+                target = ty > ip + 0.5 ? ip : 0;
             }
+        } else if (ty <= ip) {
+            // Above default: snap to nearest of {max, default}.
+            target = ty < ip / 2 ? 0 : ip;
         } else {
-            // Gentle release: nearest stop (with dismiss bias).
-            if (ty < hp / 2) target = 0;
-            else if (ty < dismissAt) target = hp;
-            else target = fh;
+            // Below default: snap to default unless past the dismiss bias.
+            target = ty > dismissAt ? fh : ip;
         }
         if (target !== ty) {
             setTranslateY(target);
             setIsAnimating(true);
-        } else if (target >= fh - 0.5) {
-            // Already at HIDDEN — no transition will run, close directly.
-            setIsOpen(false);
-            if (scrollElRef.current) scrollElRef.current.scrollTop = 0;
+        } else {
+            setIsAnimating(false);
         }
     }, []);
 
@@ -138,37 +177,25 @@ export function useEicSheet({ resetKey }: UseEicSheetParams) {
         el.addEventListener("wheel", wheelAdapter, { passive: false });
         el.addEventListener("touchstart", touchStartAdapter, { passive: true });
         // touchmove must be non-passive so we can preventDefault when hijacking
-        // the gesture (overscroll-past-top hand-off, or below-FULL drag).
+        // the gesture (overscroll-past-top hand-off, or below-max drag).
         el.addEventListener("touchmove", touchMoveAdapter, { passive: false });
         el.addEventListener("touchend", touchEndAdapter, { passive: true });
         el.addEventListener("touchcancel", touchEndAdapter, { passive: true });
     }, [wheelAdapter, touchStartAdapter, touchMoveAdapter, touchEndAdapter]);
 
-    // Reset on new card.
-    useEffect(() => {
-        setIsOpen(false);
-        setTranslateY(0);
-        setIsAnimating(false);
-    }, [resetKey]);
-
     // ---- Touch shim --------------------------------------------------------
-    // Recreates the "drag the sheet by touching the body" UX that's lost when
-    // the inner element uses native pan-y scrolling. Two cases:
-    //   (a) sheet is below FULL (translateY > 0): native scroll would do
-    //       nothing useful (content is locked). Hijack the gesture and drive
-    //       the sheet directly.
-    //   (b) sheet is at FULL with scrollTop === 0 and the user pulls down:
+    // Recreates "drag the sheet from the body" when native pan-y would
+    // otherwise eat the gesture. Two cases:
+    //   (a) sheet is below max (translateY > 0): native scroll is locked, so
+    //       hijack and drive the sheet directly.
+    //   (b) sheet is at max with scrollTop === 0 and the user pulls down:
     //       hand off from native scroll to sheet drag so the sheet collapses.
-    // Velocity is computed from the last few touchmove samples and fed into
-    // applySnap on release.
     interface TouchState {
         startY: number;
         startTranslate: number;
-        // "sheet" = we own the gesture, driving translateY and preventDefault'ing.
-        // "native" = browser is scrolling natively; we keep our hands off.
-        // "undecided" = at FULL with scrollTop=0 — first move decides direction.
+        // "sheet" = we own the gesture; "native" = browser scrolls;
+        // "undecided" = at max + scrollTop=0, first move decides direction.
         mode: "sheet" | "native" | "undecided";
-        // Recent (y, t) samples for release-velocity estimation.
         samples: { y: number; t: number }[];
     }
     const touchStateRef = useRef<TouchState | null>(null);
@@ -183,13 +210,13 @@ export function useEicSheet({ resetKey }: UseEicSheetParams) {
             const startScrollTop = scrollEl.scrollTop;
             let mode: TouchState["mode"];
             if (ty > 0.5) {
-                // Below FULL — sheet drag, regardless of touch position.
+                // Below max — sheet drag, regardless of touch position.
                 mode = "sheet";
             } else if (startScrollTop === 0) {
-                // At FULL, top of content — direction decides on first move.
+                // At max, top of content — direction decides on first move.
                 mode = "undecided";
             } else {
-                // At FULL with scrolled content — let the browser handle it.
+                // At max with scrolled content — let the browser handle it.
                 mode = "native";
             }
             touchStateRef.current = {
@@ -212,7 +239,6 @@ export function useEicSheet({ resetKey }: UseEicSheetParams) {
 
             if (ts.mode === "undecided") {
                 // Need a few px of movement to decide. Pull-down past top → sheet.
-                // Any other direction → native scroll owns the rest of the gesture.
                 if (Math.abs(dy) < 4) return;
                 if (dy > 0 && scrollEl.scrollTop === 0) {
                     ts.mode = "sheet";
@@ -238,7 +264,7 @@ export function useEicSheet({ resetKey }: UseEicSheetParams) {
             const ts = touchStateRef.current;
             touchStateRef.current = null;
             if (!ts || ts.mode !== "sheet") return;
-            // Estimate release velocity from the last ~5 samples (px/ms, signed).
+            // Release velocity from the last ~5 samples (px/ms, signed).
             let signedVy = 0;
             const s = ts.samples;
             if (s.length >= 2) {
@@ -252,9 +278,8 @@ export function useEicSheet({ resetKey }: UseEicSheetParams) {
     });
 
     // ---- useDrag on the outer sheet ---------------------------------------
-    // Only fires for gestures starting on touch-action: none areas (the tab
-    // header / drag handle), or for mouse drags. Pure sheet drag — no scroll
-    // mode, since native scroll on the body is owned by the browser/touch shim.
+    // Fires for gestures starting on touch-action: none areas (the header /
+    // drag handle) and for mouse drags anywhere on the sheet.
     const dragStartRef = useRef<{ startTranslate: number }>({ startTranslate: 0 });
 
     const bindSheetDrag = useDrag(
@@ -270,7 +295,7 @@ export function useEicSheet({ resetKey }: UseEicSheetParams) {
                 return;
             }
             if (last) {
-                // useDrag exposes |velocity| and a separate direction unit vector;
+                // useDrag gives |velocity| and a separate direction unit vector;
                 // multiply for signed velocity (px/ms, positive = downward).
                 applySnap(vyMag * dirY);
             }
@@ -279,8 +304,8 @@ export function useEicSheet({ resetKey }: UseEicSheetParams) {
     );
 
     // ---- Wheel handler ----------------------------------------------------
-    // Desktop wheel/trackpad still routes both sheet resize and content scroll
-    // manually (keeps the "wheel up at top of content collapses sheet" UX).
+    // Wheel up at content-top grows the sheet (toward max); wheel down at
+    // content-top shrinks it. Below max, wheel always drives the sheet.
     useEffect(() => {
         wheelHandlerRef.current = (e: WheelEvent) => {
             const scrollEl = scrollElRef.current;
@@ -290,13 +315,13 @@ export function useEicSheet({ resetKey }: UseEicSheetParams) {
             const scrollTop = scrollEl.scrollTop;
             e.preventDefault();
             if (ty > 0) {
-                // Below FULL — wheel always moves the sheet. Content scroll is locked.
+                // Below max — wheel always moves the sheet. Content scroll is locked.
                 const next = Math.max(0, Math.min(fullHeight, ty - dy));
                 setTranslateY(next);
                 setIsAnimating(false);
                 scheduleWheelSnap();
             } else {
-                // At FULL — content scroll is unlocked.
+                // At max — content scroll is unlocked.
                 if (dy > 0) {
                     scrollEl.scrollTop = Math.min(
                         scrollEl.scrollHeight - scrollEl.clientHeight,
@@ -306,7 +331,7 @@ export function useEicSheet({ resetKey }: UseEicSheetParams) {
                     if (scrollTop > 0) {
                         scrollEl.scrollTop = Math.max(0, scrollEl.scrollTop + dy);
                     } else {
-                        // At FULL + scrollTop=0 + wheel up → collapse sheet.
+                        // At max + scrollTop=0 + wheel up → collapse sheet.
                         const next = Math.min(fullHeight, ty + -dy);
                         setTranslateY(next);
                         setIsAnimating(false);
@@ -317,9 +342,9 @@ export function useEicSheet({ resetKey }: UseEicSheetParams) {
         };
     });
 
-    // Wheel-burst end debounce — snap once the wheel goes idle for ~150ms.
-    // Uses applySnap with vy=0 so wheel always lands on nearest stop (flick
-    // semantics don't translate well to discrete wheel deltas).
+    // Wheel-burst debounce — snap once the wheel goes idle for ~150ms. Use
+    // vy=0 so wheel always lands by position (flick semantics don't fit
+    // discrete wheel deltas well).
     const wheelSnapTimerRef = useRef<number | null>(null);
     const scheduleWheelSnap = () => {
         if (wheelSnapTimerRef.current != null) {
@@ -331,7 +356,7 @@ export function useEicSheet({ resetKey }: UseEicSheetParams) {
         }, 150);
     };
 
-    // After a snap animation ends, sync isOpen if we landed on HIDDEN.
+    // When the dismiss animation ends, notify the parent to unmount the sheet.
     useEffect(() => {
         if (!isAnimating) return;
         const el = sheetElRef.current;
@@ -339,9 +364,8 @@ export function useEicSheet({ resetKey }: UseEicSheetParams) {
         const onEnd = (e: TransitionEvent) => {
             if (e.propertyName !== "transform") return;
             setIsAnimating(false);
-            if (translateYRef.current >= fullHeight - 0.5) {
-                setIsOpen(false);
-                if (scrollElRef.current) scrollElRef.current.scrollTop = 0;
+            if (translateYRef.current >= fullHeightRef.current - 0.5) {
+                onDismiss();
             }
         };
         el.addEventListener("transitionend", onEnd);
@@ -350,38 +374,17 @@ export function useEicSheet({ resetKey }: UseEicSheetParams) {
             el.removeEventListener("transitionend", onEnd);
             window.clearTimeout(timeout);
         };
-    }, [isAnimating, fullHeight]);
-
-    const open = useCallback(() => {
-        setIsOpen(true);
-        setTranslateY(fullHeight);
-        requestAnimationFrame(() => {
-            setIsAnimating(true);
-            setTranslateY(halfPos);
-        });
-    }, [fullHeight, halfPos]);
-
-    const close = useCallback(() => {
-        setIsAnimating(true);
-        setTranslateY(fullHeight);
-    }, [fullHeight]);
-
-    // Derive button-facing state directly from the panel's current position
-    // rather than the isOpen mount flag. This ensures the FAB icon flips back to
-    // "expand" the moment the user drags the panel to (or past) the hidden
-    // position, without waiting on the snap animation's transitionend to fire.
-    const sheetState: SheetState =
-        isOpen && translateY < fullHeight - 0.5 ? "OPEN" : "HIDDEN";
+    }, [isAnimating, onDismiss]);
 
     return {
-        sheetState,
         sheetRef,
         scrollContainerRef,
         translateY,
         sheetHeightPx: fullHeight,
+        // True until the sheet element has measured its container. Used to
+        // hide the sheet on first paint before the entry animation kicks in.
+        hasMeasured: containerHeight > 0,
         isAnimating,
         bindSheetDrag,
-        open,
-        close,
     };
 }

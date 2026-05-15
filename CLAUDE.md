@@ -4,7 +4,7 @@ You are a detail oriented coding assistant with very artistic UI design taste. Y
 
 ## Abbreviations
 cpcd = CharacterPinyinColorDisplay
-eic = Extra Info Card
+eip = Extra Info Panel
 fc = Flashcard(s)
 det = dictionary entries table
 vet = vocab entries table

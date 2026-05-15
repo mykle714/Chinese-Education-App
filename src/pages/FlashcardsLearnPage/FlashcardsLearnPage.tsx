@@ -1,19 +1,15 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Box, CircularProgress, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
-import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
-import CloseIcon from "@mui/icons-material/Close";
 import { useAuth } from "../../AuthContext";
 import { useMinutePoints } from "../../hooks/useMinutePoints";
 import { API_BASE_URL } from "../../constants";
-import { IPhoneFrame, ContentArea, EicExpandFab } from "./styled";
-import { COLORS } from "./constants";
+import { IPhoneFrame, ContentArea, MoreInfoPill } from "./styled";
 import type { VocabEntry, BreakdownItem, MarkCardResult, LastMarkUndoSnapshot, SideOneLanguage } from "./types";
 
 // Pick a random language for a card's Side 1. Side 2 always shows both.
 const randomSideOneLanguage = (): SideOneLanguage => (Math.random() < 0.5 ? 'en' : 'zh');
 import { useCardDrag } from "./useCardDrag";
-import { useEicSheet } from "./useEicSheet";
 import FlashcardsLearnHeader from "./FlashcardsLearnHeader";
 import InfoCardSection from "./InfoCardSection";
 import FlashCardSection from "./FlashCardSection";
@@ -38,6 +34,7 @@ const FlashcardsLearnPage: React.FC = () => {
     const [selectedTab, setSelectedTab] = useState(-1);
     const [lastMarkUndoSnapshot, setLastMarkUndoSnapshot] = useState<LastMarkUndoSnapshot | null>(null);
     const [showPinyin, setShowPinyin] = useState(true);
+    const [showSegmentSpaces, setShowSegmentSpaces] = useState(false);
     // Two-slot card stack: tracks which slot (0 or 1) is the front card and
     // which slot is currently animating off-screen.
     const [activeFrontSlot, setActiveFrontSlot] = useState<0 | 1>(0);
@@ -105,20 +102,20 @@ const FlashcardsLearnPage: React.FC = () => {
         handlers,
     } = useCardDrag(isAnimating, (direction) => handleCardDismiss(direction), currentIndex);
 
-    // EIC bottom-sheet — hidden by default; opened to HALF (70%) via the FAB.
-    const {
-        sheetState,
-        sheetRef,
-        scrollContainerRef,
-        sheetHeightPx,
-        translateY: sheetTranslateY,
-        isAnimating: isSheetAnimating,
-        bindSheetDrag,
-        open: openEicSheet,
-        close: closeEicSheet,
-    } = useEicSheet({ resetKey: currentIndex });
+    // EIC modal sheet — opened by the centered "More Info" pill button.
+    const [isEicOpen, setIsEicOpen] = useState(false);
+    // Tracks whether the sheet has been opened at least once for the current card
+    // to suppress the discoverability pulse animation after first use.
+    const [eicHintConsumed, setEicHintConsumed] = useState(false);
 
-    // Hint shown when the user taps the EIC FAB before flipping the card.
+    const openEicSheet = () => {
+        setIsEicOpen(true);
+        setEicHintConsumed(true);
+        if (selectedTab === -1) setSelectedTab(0);
+    };
+    const closeEicSheet = () => setIsEicOpen(false);
+
+    // Hint shown when the user taps the pill before flipping the card.
     // Auto-dismisses after a couple seconds, and clears immediately on flip.
     const [showFlipHint, setShowFlipHint] = useState(false);
     useEffect(() => {
@@ -130,12 +127,7 @@ const FlashcardsLearnPage: React.FC = () => {
         if (isFlipped) setShowFlipHint(false);
     }, [isFlipped]);
 
-    const isEicOpen = sheetState === "OPEN";
-    const handleEicFabClick = () => {
-        if (isEicOpen) {
-            closeEicSheet();
-            return;
-        }
+    const handleMoreInfoClick = () => {
         if (!isFlipped) {
             setShowFlipHint(true);
             return;
@@ -151,17 +143,12 @@ const FlashcardsLearnPage: React.FC = () => {
         return () => { document.body.style.overflow = previous; };
     }, []);
 
-    // Reset selected tab when a new card loads.
+    // Reset EIC state when a new card loads.
     useEffect(() => {
+        setIsEicOpen(false);
         setSelectedTab(-1);
+        setEicHintConsumed(false);
     }, [currentIndex]);
-
-    // Default to "info" (index 0) when the sheet opens and no tab has been chosen yet.
-    useEffect(() => {
-        if (sheetState === "OPEN" && selectedTab === -1) {
-            setSelectedTab(0);
-        }
-    }, [sheetState, selectedTab]);
 
     // Fetch distributed working loop (1 Mastered, 2 Comfortable, 2 Unfamiliar, 5 Target)
     useEffect(() => {
@@ -401,7 +388,7 @@ const FlashcardsLearnPage: React.FC = () => {
                     justifyContent: "center",
                     width: isMobile ? "100vw" : "100%",
                     height: "100vh",
-                    backgroundColor: COLORS.background,
+                    backgroundColor: theme.palette.flashcard.background,
                 }}
             >
                 <CircularProgress />
@@ -419,7 +406,7 @@ const FlashcardsLearnPage: React.FC = () => {
                     justifyContent: "center",
                     width: isMobile ? "100vw" : "100%",
                     height: "100vh",
-                    backgroundColor: COLORS.background,
+                    backgroundColor: theme.palette.flashcard.background,
                 }}
             >
                 <Typography color="error">{error}</Typography>
@@ -439,6 +426,8 @@ const FlashcardsLearnPage: React.FC = () => {
                 minutePoints={minutePoints}
                 showPinyin={showPinyin}
                 onTogglePinyin={() => setShowPinyin(v => !v)}
+                showSegmentSpaces={showSegmentSpaces}
+                onToggleSegmentSpaces={() => setShowSegmentSpaces(v => !v)}
             />
             <ContentArea className="mobile-demo-content">
                 {/* Flashcard fills the full ContentArea. The EIC sheet now overlays
@@ -459,37 +448,37 @@ const FlashcardsLearnPage: React.FC = () => {
                     nextSideOneLanguage={nextSideOneLanguage}
                     handlers={handlers}
                 />
+                {/* Centered pill button — ghosted before flip, full opacity after */}
                 <Tooltip
                     open={showFlipHint}
                     title="Flip the card first to see extra info."
                     placement="top"
                     arrow
                 >
-                    <EicExpandFab
-                        className="mobile-demo-eic-expand-fab"
-                        disabled={!isFlipped && !isEicOpen}
-                        onClick={handleEicFabClick}
-                        aria-label={isEicOpen ? "Close extra info" : "Open extra info"}
-                        aria-disabled={!isFlipped && !isEicOpen}
+                    <MoreInfoPill
+                        className="mobile-demo-more-info-pill"
+                        isFlipped={isFlipped}
+                        hintActive={isFlipped && !eicHintConsumed}
+                        onClick={handleMoreInfoClick}
+                        aria-label="Open extra info"
                     >
-                        {isEicOpen ? <CloseIcon /> : <KeyboardArrowUpIcon />}
-                    </EicExpandFab>
+                        <Typography sx={{ fontSize: 13, color: theme.palette.flashcard.onSurface, lineHeight: 1, transform: "translateY(-1px)" }}>↑</Typography>
+                        <Typography sx={{ fontSize: 12, fontWeight: 600, color: theme.palette.flashcard.onSurface, letterSpacing: "0.02em", fontFamily: '"Inter", sans-serif' }}>More Info</Typography>
+                    </MoreInfoPill>
                 </Tooltip>
-                <InfoCardSection
-                    currentEntry={currentEntry}
-                    selectedTab={selectedTab}
-                    onTabChange={setSelectedTab}
-                    breakdownItems={breakdownItems}
-                    showPinyin={showPinyin}
-                    isFlipped={isFlipped}
-                    sheetRef={sheetRef}
-                    scrollContainerRef={scrollContainerRef}
-                    sheetHeightPx={sheetHeightPx}
-                    translateY={sheetTranslateY}
-                    isAnimating={isSheetAnimating}
-                    bindSheetDrag={bindSheetDrag}
-                    isOpen={sheetState === "OPEN"}
-                />
+                {/* Modal EIC sheet — only mounted when open to reset animation on reopen */}
+                {isEicOpen && (
+                    <InfoCardSection
+                        currentEntry={currentEntry}
+                        selectedTab={selectedTab === -1 ? 0 : selectedTab}
+                        onTabChange={setSelectedTab}
+                        breakdownItems={breakdownItems}
+                        showPinyin={showPinyin}
+                        showSegmentSpaces={showSegmentSpaces}
+                        isFlipped={isFlipped}
+                        onClose={closeEicSheet}
+                    />
+                )}
             </ContentArea>
         </IPhoneFrame>
     );

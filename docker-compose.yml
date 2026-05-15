@@ -1,5 +1,4 @@
 version: "3.8"
-name: cow-dev
 
 services:
   postgres:

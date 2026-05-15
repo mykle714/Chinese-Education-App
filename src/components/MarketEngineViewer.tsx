@@ -61,6 +61,10 @@ const MAX_ZOOM = 5.0;
 const GRID_MIN = -500;
 const GRID_MAX = 500;
 
+// Sits above the tile floor (which uses background z - 1000) but below any
+// entity (entity z = -(isoX+isoY) + slotFraction, typically >> -999).
+const GRID_Z = -999;
+
 function GridOverlay() {
   const draw = useCallback((g: Graphics) => {
     g.clear();
@@ -86,7 +90,7 @@ function GridOverlay() {
     drawGridLines(TILE_SIZE * 10, 0xFF0000, 0.9, 1.5);   // major: every 10 tiles (red)
   }, []);
 
-  return <pixiGraphics draw={draw} />;
+  return <pixiGraphics draw={draw} zIndex={GRID_Z} />;
 }
 
 // ─── Tile floor overlay ──────────────────────────────────────────────────────

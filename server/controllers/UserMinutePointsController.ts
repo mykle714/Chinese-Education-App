@@ -31,28 +31,6 @@ export class UserMinutePointsController {
   }
 
   /**
-   * POST /api/users/minute-points/new-day
-   * Body: { timestamp: ISO-8601, tz: IANA }
-   */
-  async newDayOperation(req: Request, res: Response): Promise<void> {
-    try {
-      const userId = requireUserId(req, res);
-      if (!userId) return;
-
-      const { timestamp, tz } = req.body || {};
-      if (!timestamp) {
-        res.status(400).json({ error: 'timestamp is required', code: 'ERR_MISSING_TIMESTAMP' });
-        return;
-      }
-
-      await this.userMinutePointsService.newDayOperation(userId, { timestamp, tz });
-      res.status(204).end();
-    } catch (error) {
-      handleControllerError(error, res, 'UserMinutePointsController.newDayOperation');
-    }
-  }
-
-  /**
    * GET /api/users/minute-points/calendar/:yearMonth
    */
   async getCalendar(req: Request, res: Response): Promise<void> {

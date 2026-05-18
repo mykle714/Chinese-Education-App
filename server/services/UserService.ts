@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import { User, UserCreateData, UserLoginData, AuthResponse, Language } from '../types/index.js';
 import { ValidationError, DuplicateError, NotFoundError, DALError } from '../types/dal.js';
+import { resolveTimezone } from '../utils/streakDate.js';
 
 // JWT secret key - should be in environment variables in production
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -288,6 +289,20 @@ export class UserService {
     }
 
     return await this.userDAL.incrementTotalMinutePoints(userId, pointsToAdd);
+  }
+
+  /**
+   * Post-login bookkeeping. Today: refresh users.timezone so the hourly
+   * streak-expiration cron computes the right local-day boundary even for
+   * users who log in without earning any minute points.
+   */
+  async refreshUserContext(userId: string, ctx: { tz?: string }): Promise<void> {
+    if (!userId) {
+      throw new ValidationError('User ID is required');
+    }
+    if (ctx.tz !== undefined) {
+      await this.userDAL.updateTimezoneIfChanged(userId, resolveTimezone(ctx.tz));
+    }
   }
 
   // Private validation methods (business logic)

@@ -54,26 +54,3 @@ export async function incrementMinutePoint(
   }
 }
 
-/**
- * Notify the server that a day boundary may have crossed.
- * The server resolves the streak day from (timestamp, tz) and applies a penalty
- * if the user missed two or more consecutive days. Idempotent.
- */
-export async function newDayOperation(token?: string | null): Promise<void> {
-  try {
-    await fetch(`${API_BASE_URL}/api/users/minute-points/new-day`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-      },
-      credentials: 'include',
-      body: JSON.stringify({
-        timestamp: new Date().toISOString(),
-        tz: getBrowserTimezone(),
-      }),
-    });
-  } catch {
-    // Silent — best-effort
-  }
-}

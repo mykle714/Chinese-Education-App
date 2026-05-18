@@ -5,6 +5,7 @@ import { API_BASE_URL } from './constants';
 import type { Language } from './types';
 import { setAuthHandlers } from './utils/apiClient';
 import { setFetchInterceptorHandlers, setupFetchInterceptor } from './utils/fetchInterceptor';
+import { notifyLogin } from './utils/authSync';
 
 // Define the User type
 interface User {
@@ -93,6 +94,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
                     if (response.ok) {
                         const userData = await response.json();
                         setUser(userData);
+                        notifyLogin(token);
                     } else {
                         // If the token is invalid, clear it
                         console.log('Token validation failed, clearing stored token');
@@ -143,6 +145,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             setUser(data.user);
             setToken(data.token);
             localStorage.setItem('token', data.token);
+            notifyLogin(data.token);
             navigate('/');
         } catch (error: unknown) {
             setError(error instanceof Error ? error.message : 'Login failed');

@@ -55,6 +55,30 @@ export class UserController {
   }
 
   /**
+   * Post-login hook — invoked by the client immediately after a successful
+   * login or session restore. Body: { tz?: IANA }. Returns 204.
+   * POST /api/auth/on-login
+   */
+  async onLogin(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = (req as any).user?.userId;
+      if (!userId) {
+        res.status(401).json({
+          error: 'User not authenticated',
+          code: 'ERR_NOT_AUTHENTICATED'
+        });
+        return;
+      }
+
+      const { tz } = req.body || {};
+      await this.userService.refreshUserContext(userId, { tz });
+      res.status(204).end();
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  /**
    * Update user's selected language
    * PUT /api/users/language
    */

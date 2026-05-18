@@ -2,7 +2,6 @@ import { IUserMinutePointsDAL } from '../dal/interfaces/IUserMinutePointsDAL.js'
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import {
   MinutePointsIncrementRequest,
-  MinutePointsNewDayRequest,
   CalendarResponse,
   CalendarDay,
 } from '../types/minutePoints.js';
@@ -11,9 +10,7 @@ import { STREAK_CONFIG } from '../constants.js';
 import {
   resolveTimezone,
   streakDateOf,
-  addDaysToDateString,
   daysBetween,
-  isValidDateString,
 } from '../utils/streakDate.js';
 
 /**
@@ -22,8 +19,11 @@ import {
  * Streak day = a 4 AM-bounded calendar day in the user's local timezone.
  * Increment ticks the streak the moment a user crosses STREAK_CONFIG.RETENTION_MINUTES
  * for the current streak day.
- * newDayOperation handles streak breaks: if the gap since lastStreakDate is ≥ 2 days,
- * the streak is reset and a penalty is stamped on the day the user first missed.
+ *
+ * Streak breaks (gap ≥ 2 days since lastStreakDate) are handled exclusively by
+ * the hourly Postgres cron at database/cron/expire-stale-streaks.sql — it
+ * stamps the penalty row and rolls users.lastStreakDate / currentStreak /
+ * totalMinutePoints forward.
  */
 export class UserMinutePointsService {
   constructor(
@@ -73,39 +73,6 @@ export class UserMinutePointsService {
     }
 
     await this.userDAL.updateLastMinutePointIncrement(userId, now);
-  }
-
-  /**
-   * Apply day-boundary streak logic.
-   * Idempotent — safe to call on every app load.
-   */
-  async newDayOperation(userId: string, request: MinutePointsNewDayRequest): Promise<void> {
-    const tz = resolveTimezone(request.tz);
-    const clientTimestamp = this.parseTimestamp(request.timestamp);
-    const today = streakDateOf(clientTimestamp, tz);
-
-    // Keep users.timezone fresh for the hourly streak-expiration cron.
-    await this.userDAL.updateTimezoneIfChanged(userId, tz);
-
-    const streakInfo = await this.userDAL.getUserStreakInfo(userId);
-    if (!streakInfo.lastStreakDate) {
-      // No streak history → nothing to break.
-      return;
-    }
-
-    const gap = daysBetween(streakInfo.lastStreakDate, today);
-    if (gap < 2) {
-      // Streak is alive (today is same day, or yesterday at worst).
-      return;
-    }
-
-    // Streak broken. Stamp penalty on the FIRST missed day = lastStreakDate + 1.
-    const missedDate = addDaysToDateString(streakInfo.lastStreakDate, 1);
-
-    console.log(`[MINUTE-POINTS-SERVICE] 💔 Streak broken for ${userId.substring(0, 8)}... gap=${gap} days; penalty stamped on ${missedDate}`);
-
-    await this.userMinutePointsDAL.addPenaltyMinutesForDate(userId, missedDate, STREAK_CONFIG.DAILY_PENALTY_MINUTES);
-    await this.userDAL.applyStreakPenalty(userId, STREAK_CONFIG.DAILY_PENALTY_MINUTES, today);
   }
 
   /**
@@ -181,8 +148,8 @@ export class UserMinutePointsService {
     } else if (daysBetween(info.lastStreakDate, streakDate) === 1) {
       newStreak = info.currentStreak + 1;
     } else {
-      // Gap > 1 day means the user came back after a break before newDayOperation noticed.
-      // Treat this as a fresh streak.
+      // Gap > 1 day means the user came back after a break before the
+      // hourly streak-expiration cron noticed. Treat this as a fresh streak.
       newStreak = 1;
     }
 

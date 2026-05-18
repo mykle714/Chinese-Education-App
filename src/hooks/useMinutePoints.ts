@@ -10,7 +10,6 @@ import {
 } from '../utils/minutePointsStorage';
 import { MINUTE_POINTS_ELIGIBLE_PAGES, MINUTE_POINTS_CONFIG, STREAK_CONFIG } from '../constants';
 import { useActivityDetection } from './useActivityDetection';
-import { checkAndSyncDailyReset } from '../utils/dailyBoundarySync';
 import { incrementMinutePoint } from '../utils/minutePointsSync';
 
 export interface UseMinutePointsReturn {
@@ -165,12 +164,12 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
     const loadData = async () => {
       const stored = loadMinutePointsDataSync(user.id);
 
-      // Notify server of new day (idempotent server-side).
-      const resetCheck = await checkAndSyncDailyReset(user.id, stored, token);
+      const lastActivityDate = new Date(stored.lastActivity).toDateString();
+      const shouldReset = lastActivityDate !== new Date().toDateString();
 
       const serverData = await fetchServerTotals(user.id, token);
 
-      if (resetCheck.shouldReset) {
+      if (shouldReset) {
         const accumulativePoints = serverData?.totalMinutePoints ?? stored.totalMinutePoints;
         const currentStreak = serverData?.currentStreak ?? 0;
 

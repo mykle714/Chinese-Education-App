@@ -25,11 +25,6 @@ export interface MinutePointsIncrementRequest {
   tz: string;        // IANA timezone, e.g. "America/Los_Angeles"
 }
 
-export interface MinutePointsNewDayRequest {
-  timestamp: string;
-  tz: string;
-}
-
 // Calendar response
 
 export interface CalendarDay {

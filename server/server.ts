@@ -235,6 +235,12 @@ app.post('/api/auth/logout', (req, res) => {
   res.status(200).json({ message: 'Logged out successfully' });
 });
 
+// Post-login hook — refresh tz and any other client-supplied session context
+// @ts-ignore
+app.post('/api/auth/on-login', authenticateToken, async (req, res) => {
+  await userController.onLogin(req, res);
+});
+
 // Get current authenticated user - USING NEW DAL ARCHITECTURE
 // @ts-ignore
 app.get('/api/auth/me', authenticateToken, async (req, res) => {
@@ -392,12 +398,6 @@ app.get('/api/onDeck/distributed-working-loop', authenticateToken, async (req, r
 // @ts-ignore
 app.post('/api/users/minute-points/increment', authenticateToken, async (req, res) => {
   await userMinutePointsController.incrementMinutePoints(req, res);
-});
-
-// Apply new-day boundary (streak penalty if 2+ days gap)
-// @ts-ignore
-app.post('/api/users/minute-points/new-day', authenticateToken, async (req, res) => {
-  await userMinutePointsController.newDayOperation(req, res);
 });
 
 // Calendar of minutes earned + penalties for a given month

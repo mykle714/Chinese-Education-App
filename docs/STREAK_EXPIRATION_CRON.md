@@ -1,14 +1,18 @@
 # Streak Expiration Cron (prod only)
 
 An hourly Postgres cron job that expires streaks for users who stop opening the
-app. Mirrors the client-side logic in `UserMinutePointsService.newDayOperation`,
-using each user's stored `users.timezone` against the 4 AM local-day boundary.
+app. This is the **sole authority** for streak breaks — it stamps the penalty
+row, resets `currentStreak`, deducts from `totalMinutePoints`, and rolls
+`lastStreakDate` forward, using each user's stored `users.timezone` against the
+4 AM local-day boundary.
 
 - **SQL**: `database/cron/expire-stale-streaks.sql`
 - **Schema dependency**: `users.timezone` (added by migration
   `database/migrations/50-add-user-timezone.sql`)
-- **Refresh path**: the client writes `users.timezone` on every minute-points
-  increment / new-day call via `UserMinutePointsService`.
+- **Refresh path**: `users.timezone` is written by the client on (a) every
+  successful login or session restore via `POST /api/auth/on-login`
+  (`UserController.onLogin`), and (b) every minute-points increment via
+  `UserMinutePointsService`.
 
 The job is wrapped in a transaction and is idempotent — once `lastStreakDate`
 is bumped to the user's local "today", they fall out of the candidate set until
@@ -48,7 +52,9 @@ psql "$DATABASE_URL" -f database/cron/expire-stale-streaks.sql
    because cron's PATH is minimal.
    ```
    # Hourly streak expiration — see docs/STREAK_EXPIRATION_CRON.md
-   0 * * * * /usr/bin/docker exec -i cow-postgres-prod psql -U cow_user -d cow_db < /home/michael/vocabulary-app/database/cron/expire-stale-streaks.sql >> /home/michael/vocabulary-app/logs/streak-expire.log 2>&1
+   # Runs at HH:01 so the 4 AM local-day boundary has definitely ticked over
+   # for any user whose tz puts their day-rollover exactly on the hour.
+   1 * * * * /usr/bin/docker exec -i cow-postgres-prod psql -U cow_user -d cow_db < /home/michael/vocabulary-app/database/cron/expire-stale-streaks.sql >> /home/michael/vocabulary-app/logs/streak-expire.log 2>&1
    ```
    First run `mkdir -p /home/michael/vocabulary-app/logs`.
 

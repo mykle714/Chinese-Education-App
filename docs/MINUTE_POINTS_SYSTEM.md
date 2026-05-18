@@ -34,15 +34,17 @@ There is **no** device fingerprint and **no** longest-streak field.
 
 - `server/utils/streakDate.ts` — `streakDateOf(timestamp, tz)`, plus tz validation and date-arithmetic helpers.
 - `UserMinutePointsService.incrementMinutePoints` — adds 1 minute, advances the streak when the user crosses `RETENTION_MINUTES` for the current streak day. Rate-limited to ~one call per 59 seconds.
-- `UserMinutePointsService.newDayOperation` — idempotent break detector. If `today - lastStreakDate >= 2`, resets `currentStreak = 0`, deducts `DAILY_PENALTY_MINUTES` from `totalMinutePoints`, and stamps `penaltyMinutes` on `lastStreakDate + 1` (the first missed day).
 - `UserMinutePointsService.getCalendar` — returns one row per day for the requested month, zero-filled.
+- `database/cron/expire-stale-streaks.sql` — hourly Postgres cron, the **sole authority for streak breaks**. If `today - lastStreakDate >= 2` (in the user's stored tz, 4 AM-bounded), resets `currentStreak = 0`, deducts `DAILY_PENALTY_MINUTES` from `totalMinutePoints`, and stamps `penaltyMinutes` on `lastStreakDate + 1`. See `docs/STREAK_EXPIRATION_CRON.md`.
+- `UserController.onLogin` — post-login hook (`POST /api/auth/on-login`). Today: refreshes `users.timezone` from the client so the cron has an up-to-date tz for every active user.
 - `LeaderboardService` — masks `currentStreak` to `null` for non-public users.
 
 ### Client
 
 - `useMinutePoints` (hook) — local accumulating timer + reads server-authoritative streak/total.
 - `useCalendarMinutePoints` (hook) — fetches the calendar endpoint, derives `isToday`/`hasData` in browser tz.
-- `minutePointsSync.incrementMinutePoint` / `newDayOperation` — POSTs include `{ timestamp, tz }`. The tz is taken from `Intl.DateTimeFormat().resolvedOptions().timeZone` and never persisted.
+- `minutePointsSync.incrementMinutePoint` — POSTs include `{ timestamp, tz }`. The tz is taken from `Intl.DateTimeFormat().resolvedOptions().timeZone`.
+- `authSync.notifyLogin` — fired from `AuthContext` after login and session restore; POSTs `{ tz }` to `/api/auth/on-login` so `users.timezone` stays fresh even for users who don't earn points.
 - `MonthlyCalendar` / `StreakCounter` / `LeaderboardPlaceholder` — UI surfaces.
 - `MinutePointsBadge` — fire-icon badge on `/flashcards`, `/flashcards/learn`, `/reader`.
 
@@ -67,17 +69,17 @@ on each call.
 |---|---|---|---|
 | GET  | `/api/users/:id/total-minute-points`            | —                              | `{ totalMinutePoints, currentStreak }` |
 | POST | `/api/users/minute-points/increment`            | `{ timestamp, tz }`            | Adds 1; may advance streak |
-| POST | `/api/users/minute-points/new-day`              | `{ timestamp, tz }`            | Idempotent break detection |
 | GET  | `/api/users/minute-points/calendar/:yearMonth`  | path: `YYYY-MM`                | Dense per-day list with `minutesEarned` and `penaltyMinutes` |
+| POST | `/api/auth/on-login`                            | `{ tz }`                       | Post-login bookkeeping (currently: refresh `users.timezone`) |
 | GET  | `/api/leaderboard`                              | —                              | `currentStreak` is `null` for non-public users |
 
 ## Streak break flow
 
 1. User hits goal on 12/10 → `currentStreak = N`, `lastStreakDate = 2024-12-10`.
 2. User skips 12/11 entirely.
-3. User opens app on 12/12 → client posts to `/new-day` with `{ now, tz }`.
-4. Server computes `today = 2024-12-12`, gap = 2.
-5. Server: stamps `penaltyMinutes = DAILY_PENALTY_MINUTES` on **2024-12-11** (the missed day), resets `currentStreak = 0`, deducts 10 from `totalMinutePoints`, sets `lastStreakDate = today` so the penalty is idempotent.
+3. At the next `HH:01` after the user's local 4 AM on 12/12, the hourly Postgres cron (`expire-stale-streaks.sql`) sweeps every user where `currentStreak > 0` and `today_local - lastStreakDate >= 2`.
+4. For each match: stamps `penaltyMinutes = DAILY_PENALTY_MINUTES` on **2024-12-11** (the missed day) in `userminutepoints`, resets `currentStreak = 0`, deducts 10 from `totalMinutePoints`, and rolls `lastStreakDate` forward to `today_local` so the penalty is idempotent.
+5. The cron reads `users.timezone` directly; the client keeps that column fresh via `/api/auth/on-login` and `/api/users/minute-points/increment`.
 
 ## Configuration
 

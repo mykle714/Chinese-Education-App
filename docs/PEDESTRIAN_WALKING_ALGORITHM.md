@@ -78,10 +78,19 @@ If `currentTile` is a body tile of the target edge when the leg begins, no prelu
 Sidesteps are the *other* mechanism that changes a pedestrian's lane and are orthogonal to node handoff:
 
 - When the forward tile is occupied, the pedestrian attempts an instant teleport to the right tile (90° CW from heading), falling back to the left.
-- A wall-clock cooldown (`SIDESTEP_COOLDOWN_MS`, 2 s) prevents repeat teleports.
+- A wall-clock cooldown (`SIDESTEP_COOLDOWN_MS`, 1 s) prevents repeat teleports.
 - After a sidestep, the next axial step recomputes its perpendicular from the new `currentTile` — no leg state needs patching. This is the core payoff of the lane-free design: sidesteps cost zero bookkeeping.
 
 If neither side is available, the pedestrian stands still and re-tries next tick.
+
+### Stuck recovery: forward jump
+
+Two pedestrians nose-to-nose on a 1-wide leg can't sidestep (both sides are off-edge) and would otherwise deadlock until external state changed. To break this:
+
+- When `isWaiting` flips from false → true, the ped stamps `waitingSinceMs = ctx.tMs`. Subsequent consecutive waiting ticks preserve the original stamp; any successful step (sidestep, forward commit, or the jump itself) clears it.
+- Once `ctx.tMs - waitingSinceMs >= STUCK_FORWARD_JUMP_DELAY_MS` (3 s), on every tick the ped additionally attempts a **forward jump**: an instant teleport to the tile two steps ahead — i.e. directly in front of the blocker.
+- The jump is allowed only if that tile exists in the tile graph, is unoccupied, and lies on the current leg's edge body or one of its endpoint nodes' tile sets (same on-leg predicate as sidestep). Tile-graph adjacency is *not* required (it's a 2-step teleport).
+- The jump runs both when sidestep is on cooldown and when sidestep failed outright — both produce the waiting state the recovery is designed to escape. There is no separate cooldown on the jump itself.
 
 ## What this design intentionally does *not* do
 

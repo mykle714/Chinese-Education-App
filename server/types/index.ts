@@ -196,6 +196,17 @@ export enum FlashcardCategory {
 // Starter pack bucket type
 export type StarterPackBucket = 'library' | 'learn-later' | 'skip';
 
+// Used-in item: a multi-char word that contains a given single character.
+// Returned per single-char zh card by OnDeckVocabService.enrichWithUsedIn.
+// vocabEntryId is null when the item came from the det fallback (not in the user's vet).
+export interface UsedInItem {
+  vocabEntryId: number | null;
+  entryKey: string;
+  pronunciation: string | null;
+  definition: string | null;
+  vernacularScore: number | null;
+}
+
 // VocabEntry model type
 export interface VocabEntry {
   id: number;
@@ -234,6 +245,7 @@ export interface VocabEntry {
     segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo; wordForms?: Record<string, string> }>;
   }>;  // Example sentences enriched at runtime with greedy segmentation and per-segment metadata
   relatedWords?: Array<{ id: number; entryKey: string; pronunciation: string | null; definition: string | null }>;  // Related library words (computed dynamically)
+  usedIn?: UsedInItem[] | null;  // Single-char zh only: multi-char words that contain this character (vet-first, det-fallback). Computed at runtime.
   hasAudio?: boolean;  // Pre-warm result from TTSService.synthesize — false means synthesis failed and the client should fall back to Web Speech for this card
   createdAt: Date;
 }

@@ -55,6 +55,9 @@ export interface VocabEntry {
     segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo; wordForms?: Record<string, string> }>;
   }>;
   relatedWords?: Array<{ id: number; entryKey: string; pronunciation: string | null; definition: string | null }>;
+  // Single-char zh only: up to 5 multi-char words containing this character (vet-first, det-fallback).
+  // vocabEntryId === null marks a det-fallback item (not in the user's vet).
+  usedIn?: Array<{ vocabEntryId: number | null; entryKey: string; pronunciation: string | null; definition: string | null; vernacularScore: number | null }> | null;
   createdAt: string;
 }
 

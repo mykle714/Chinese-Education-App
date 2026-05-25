@@ -13,10 +13,10 @@ import GpsFixedIcon from '@mui/icons-material/GpsFixed';
 import PinDropIcon from '@mui/icons-material/PinDrop';
 import GridOnIcon from '@mui/icons-material/GridOn';
 import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutline';
-import VisibilityIcon from '@mui/icons-material/Visibility';
+import FastForwardIcon from '@mui/icons-material/FastForward';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import MarketEngineViewer, {
-  ALL_DEBUG_OFF, ALL_DEBUG_ON,
+  ALL_DEBUG_OFF,
 } from '../components/MarketEngineViewer';
 import type { EngineLayer, DebugFlags } from '../components/MarketEngineViewer';
 import { useNightMarket } from '../hooks/useNightMarket';
@@ -69,10 +69,12 @@ function NightMarketEnginePage() {
   // Pedestrian simulation driven by Pixi's useTick — no separate RAF loop.
   const pedestrians = usePixiPedestrians(100);
 
-  // Mirror the `frozen` debug flag into the pedestrian sim's speed multiplier.
+  // Mirror the `frozen` / `fast` debug flags into the pedestrian sim's speed
+  // multiplier. `frozen` wins over `fast` when both are on.
   useEffect(() => {
-    pedestrians.setSpeedMultiplier(debug.frozen ? 0 : 1);
-  }, [debug.frozen, pedestrians]);
+    const multiplier = debug.frozen ? 0 : debug.fast ? 2 : 1;
+    pedestrians.setSpeedMultiplier(multiplier);
+  }, [debug.frozen, debug.fast, pedestrians]);
 
   // Build EngineLayer list from user unlocks + demo stalls — same logic as MarketViewerPage.
   const layers = useMemo(() => {
@@ -80,6 +82,12 @@ function NightMarketEnginePage() {
 
     const pushAsset = (assetDef: NightMarketAssetDef, isoX: number, isoY: number, groupIdSuffix = '') => {
       const { screenX, screenY } = isoToScreen(isoX, isoY);
+      // Square footprint edge length, derived from the asset's footprint tile
+      // count (tests in `__tests__/nmp/tileRegistry.test.ts` enforce square 8×8
+      // for all demo stalls). Missing footprint → no strip slicing.
+      const footprintSize = assetDef.footprint
+        ? Math.round(Math.sqrt(assetDef.footprint.length))
+        : undefined;
       for (const sl of assetDef.layers) {
         const motions: MotionSpec[] = [];
         if (assetDef.motion) motions.push(assetDef.motion);
@@ -93,6 +101,9 @@ function NightMarketEnginePage() {
           groupId: (sl.groupId ?? assetDef.assetId) + groupIdSuffix,
           motions: motions.length > 0 ? motions : undefined,
           frameAnimation: sl.frameAnimation,
+          swX: isoX,
+          swY: isoY,
+          footprintSize,
         });
       }
     };
@@ -235,7 +246,6 @@ function NightMarketEnginePage() {
         }}
       >
         {([
-          { key: 'all-on', label: 'Turn all debug overlays on', icon: <VisibilityIcon fontSize="small" />, active: false, onClick: () => setDebug(ALL_DEBUG_ON) },
           { key: 'all-off', label: 'Turn all debug overlays off', icon: <VisibilityOffIcon fontSize="small" />, active: false, onClick: () => setDebug(ALL_DEBUG_OFF) },
           { key: 'footprints', label: 'Toggle stand footprint outlines', icon: <CropFreeIcon fontSize="small" />, active: debug.footprints, onClick: () => toggleDebugFlag('footprints') },
           { key: 'standLabels', label: 'Toggle stand and pedestrian name labels', icon: <StorefrontIcon fontSize="small" />, active: debug.standLabels, onClick: () => toggleDebugFlag('standLabels') },
@@ -245,6 +255,7 @@ function NightMarketEnginePage() {
           { key: 'coordinates', label: 'Toggle (isoX, isoY) coordinates on stands and pedestrians', icon: <PinDropIcon fontSize="small" />, active: debug.coordinates, onClick: () => toggleDebugFlag('coordinates') },
           { key: 'tileInfo', label: 'Toggle per-tile street/edge/node info (small font — zoom in to read)', icon: <GridOnIcon fontSize="small" />, active: debug.tileInfo, onClick: () => toggleDebugFlag('tileInfo') },
           { key: 'frozen', label: 'Freeze all pedestrians', icon: <PauseCircleOutlineIcon fontSize="small" />, active: debug.frozen, onClick: () => toggleDebugFlag('frozen') },
+          { key: 'fast', label: 'Run pedestrians at 2× speed', icon: <FastForwardIcon fontSize="small" />, active: debug.fast, onClick: () => toggleDebugFlag('fast') },
         ] as const).map(({ key, label, icon, active, onClick }) => (
           <Tooltip key={key} title={label} placement="left">
             <Button

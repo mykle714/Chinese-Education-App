@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Box, Typography } from "@mui/material";
+import { Box, Popper, Typography } from "@mui/material";
 import { stripParentheses } from "../utils/definitionUtils";
 import CharacterPinyinColorDisplay from "./CharacterPinyinColorDisplay";
 import CPCDRow from "./CPCDRow";
@@ -50,11 +50,6 @@ interface CharRenderData {
   definition?: string;
 }
 
-interface PopupPosition {
-  left: number;
-  top: number;
-}
-
 interface HighlightRect {
   left: number;
   top: number;
@@ -100,12 +95,34 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
   showSegmentSpaces = false,
 }) => {
   const rowRef = useRef<HTMLDivElement | null>(null);
-  const popupRef = useRef<HTMLDivElement | null>(null);
   const charRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [selectedRange, setSelectedRange] = useState<{ start: number; end: number; segment: string; definition?: string } | null>(null);
-  const [popupPosition, setPopupPosition] = useState<PopupPosition | null>(null);
+  // Viewport-space rect of the highlighted word(s); used as Popper anchor so the
+  // popup escapes any ancestor scroll container's overflow clipping.
+  const [popupAnchorRect, setPopupAnchorRect] = useState<DOMRect | null>(null);
   const [highlightRects, setHighlightRects] = useState<HighlightRect[]>([]);
   const [vocabUnderlineRects, setVocabUnderlineRects] = useState<HighlightRect[]>([]);
+  // Pending dismiss timer. Armed when the mouse leaves the row or popup; cancelled
+  // when the mouse re-enters either, so users can move from word → popup without
+  // the popup disappearing mid-traversal.
+  const dismissTimerRef = useRef<number | null>(null);
+
+  const cancelDismiss = () => {
+    if (dismissTimerRef.current !== null) {
+      window.clearTimeout(dismissTimerRef.current);
+      dismissTimerRef.current = null;
+    }
+  };
+
+  const scheduleDismiss = () => {
+    cancelDismiss();
+    dismissTimerRef.current = window.setTimeout(() => {
+      setSelectedRange(null);
+      dismissTimerRef.current = null;
+    }, 120);
+  };
+
+  useEffect(() => cancelDismiss, []);
 
   const chars = useMemo(() => [...sentence.chinese], [sentence.chinese]);
 
@@ -189,7 +206,7 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
 
   useEffect(() => {
     if (!selectedRange || !rowRef.current) {
-      setPopupPosition(null);
+      setPopupAnchorRect(null);
       setHighlightRects([]);
       return;
     }
@@ -197,14 +214,12 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
     const startEl = charRefs.current[selectedRange.start];
     const endEl = charRefs.current[selectedRange.end];
     if (!startEl || !endEl) {
-      setPopupPosition(null);
+      setPopupAnchorRect(null);
       setHighlightRects([]);
       return;
     }
 
     const rowRect = rowRef.current.getBoundingClientRect();
-    const startRect = startEl.getBoundingClientRect();
-    const endRect = endEl.getBoundingClientRect();
     const rows: HighlightRow[] = [];
     const sameRowTolerance = 1;
 
@@ -240,31 +255,16 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
       }))
     );
 
-    const popupBottom = rows.length > 0
-      ? Math.max(...rows.map((row) => row.bottom)) - rowRect.top
-      : Math.max(startRect.bottom, endRect.bottom) - rowRect.top;
-
-    setPopupPosition({
-      left: ((startRect.left + endRect.right) / 2) - rowRect.left,
-      top: popupBottom + 6,
-    });
+    // Anchor the popup to the topmost highlighted row (in viewport coords) so
+    // Popper can place the popup above it. For multi-line selections this keeps
+    // the popup floating over the first line rather than centered between lines.
+    if (rows.length > 0) {
+      const top = rows[0];
+      setPopupAnchorRect(new DOMRect(top.left, top.top, top.right - top.left, top.bottom - top.top));
+    } else {
+      setPopupAnchorRect(null);
+    }
   }, [selectedRange, chars.length, showSegmentSpaces]);
-
-  // After the popup renders, measure its actual width and clamp its left position so it
-  // never overflows the container. useLayoutEffect runs before paint so there's no flicker.
-  // (CSS transform centering can't be used because transforms don't affect layout — the
-  // browser computes available width as containerWidth - left, squeezing content near edges.)
-  useLayoutEffect(() => {
-    if (!selectedRange?.definition || !popupPosition || !popupRef.current || !rowRef.current) return;
-    const popupWidth = popupRef.current.offsetWidth;
-    const rowWidth = rowRef.current.offsetWidth;
-    const midpoint = popupPosition.left;
-    const clamped = Math.min(
-      Math.max(midpoint - popupWidth / 2, 0),
-      rowWidth - popupWidth
-    );
-    popupRef.current.style.left = `${clamped}px`;
-  }, [selectedRange, popupPosition]);
 
   useEffect(() => {
     const handlePointerDown = (event: PointerEvent) => {
@@ -380,13 +380,21 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
     });
   };
 
-  const showPopup = !!(selectedRange && selectedRange.definition && popupPosition);
+  const showPopup = !!(selectedRange && selectedRange.definition && popupAnchorRect);
+
+  // Popper accepts a "virtual element" anchor — an object with getBoundingClientRect.
+  // We rebuild it whenever popupAnchorRect changes so Popper reflows the popup.
+  const popperAnchorEl = useMemo(
+    () => (popupAnchorRect ? { getBoundingClientRect: () => popupAnchorRect, nodeType: 1 } : null),
+    [popupAnchorRect]
+  );
 
   return (
     <Box
       ref={rowRef}
       sx={{ position: "relative", width: "100%" }}
-      onMouseLeave={() => setSelectedRange(null)}
+      onMouseEnter={cancelDismiss}
+      onMouseLeave={scheduleDismiss}
       // Deselect when tapping container background (whitespace between/around characters)
       onPointerDown={() => setSelectedRange(null)}
     >
@@ -505,13 +513,23 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
         </CPCDRow>
       )}
 
-      {showPopup && (
+      {/* Render into a portal via Popper so the popup escapes any ancestor's
+          overflow:auto/hidden (e.g. the EIP scroll container) and is never clipped. */}
+      <Popper
+        open={showPopup}
+        anchorEl={popperAnchorEl}
+        placement="top"
+        modifiers={[
+          { name: "offset", options: { offset: [0, 6] } },
+          { name: "preventOverflow", options: { boundary: "viewport", padding: 8 } },
+          { name: "flip", options: { fallbackPlacements: ["bottom"] } },
+        ]}
+        sx={{ zIndex: 1300 }}
+      >
         <Box
-          ref={popupRef}
+          onMouseEnter={cancelDismiss}
+          onMouseLeave={scheduleDismiss}
           sx={{
-            position: "absolute",
-            left: 0, // always start at left edge so natural width is measured before useLayoutEffect repositions
-            top: popupPosition.top,
             backgroundColor: "#FFFFFF",
             border: "1px solid",
             borderColor: "divider",
@@ -520,8 +538,6 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
             px: 1.25,
             py: 0.75,
             maxWidth: "220px",
-            zIndex: 10,
-            pointerEvents: "none",
           }}
         >
           <Typography
@@ -534,10 +550,10 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
               wordBreak: "break-word",
             }}
           >
-            {stripParentheses(selectedRange.definition!)}
+            {selectedRange?.definition ? stripParentheses(selectedRange.definition) : ""}
           </Typography>
         </Box>
-      )}
+      </Popper>
     </Box>
   );
 };

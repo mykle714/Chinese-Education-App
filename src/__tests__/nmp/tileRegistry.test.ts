@@ -29,15 +29,18 @@ describe('tileRegistry', () => {
     }
   });
 
-  it('hub at (0,0) is walkable', () => {
-    expect(TILE_GRAPH.tiles.has('0,0')).toBe(true);
+  // Hub = West Spoke (EW) × North Spoke (NS) overlap. After the global
+  // (+25, -25) iso shift applied in tileRegistry.ts, raw (0,0) lands at (25,-25).
+  const HUB_KEY = '25,-25';
+
+  it('hub is walkable', () => {
+    expect(TILE_GRAPH.tiles.has(HUB_KEY)).toBe(true);
   });
 
   it('every walkable tile is reachable from the hub (single connected component)', () => {
-    const start = '0,0';
     const allKeys = new Set(TILE_GRAPH.tiles.keys());
-    const visited = new Set<string>([start]);
-    const queue: string[] = [start];
+    const visited = new Set<string>([HUB_KEY]);
+    const queue: string[] = [HUB_KEY];
     while (queue.length > 0) {
       const cur = queue.shift()!;
       for (const next of TILE_GRAPH.neighbors.get(cur) ?? []) {
@@ -51,14 +54,14 @@ describe('tileRegistry', () => {
     expect(unreachable, `unreachable tiles: ${unreachable.slice(0, 10).join(', ')}`).toEqual([]);
   });
 
-  it('hub center (0,0) sees its four cardinal strip neighbors', () => {
-    // With the plaza removed, (0,0) is the junction of four 1-wide strips:
-    // STRIP_NORTH (south side), STRIP_EAST_TO_BEND, STRIP_WEST, STRIP_SOUTH_TO_NODE.
-    const adj = new Set(TILE_GRAPH.neighbors.get('0,0') ?? []);
-    expect(adj.has(tileKey(TILE_SIZE, 0))).toBe(true);
-    expect(adj.has(tileKey(-TILE_SIZE, 0))).toBe(true);
-    expect(adj.has(tileKey(0, TILE_SIZE))).toBe(true);
-    expect(adj.has(tileKey(0, -TILE_SIZE))).toBe(true);
+  it('a hub interior tile sees its four cardinal neighbors', () => {
+    // Hub spans isoX ∈ [25..28], isoY ∈ [-25..-21] (20-tile rectangle). Pick an
+    // interior tile so all 4 cardinal neighbors are also in the hub.
+    const adj = new Set(TILE_GRAPH.neighbors.get('26,-23') ?? []);
+    expect(adj.has(tileKey(26 + TILE_SIZE, -23))).toBe(true);
+    expect(adj.has(tileKey(26 - TILE_SIZE, -23))).toBe(true);
+    expect(adj.has(tileKey(26, -23 + TILE_SIZE))).toBe(true);
+    expect(adj.has(tileKey(26, -23 - TILE_SIZE))).toBe(true);
   });
 
   it('every stand has an 8×8 square footprint and none of those tiles are walkable', () => {
@@ -73,7 +76,8 @@ describe('tileRegistry', () => {
   });
 
   it('cross-region routing: north spoke tip → market row east end is reachable', () => {
-    const path = bfsTilePath(TILE_GRAPH, '0,-40', new Set(['80,60']));
+    // Raw (0,-40) and (80,60), shifted to (25,-65) and (105,35).
+    const path = bfsTilePath(TILE_GRAPH, '25,-65', new Set(['105,35']));
     expect(path).not.toBeNull();
     expect(path!.length).toBeGreaterThan(0);
   });
@@ -85,16 +89,16 @@ describe('tileRegistry', () => {
   });
 
   it('at an intersection, the thicker street owns the tile', () => {
-    // West Spoke (EW, w=5) overlaps North Spoke (NS, w=4) at the hub region.
-    // West Spoke is processed first (width 5 > 4) → it owns (0,0).
-    const hub = TILES.find(t => t.isoX === 0 && t.isoY === 0);
+    // West Spoke (EW, w=5) overlaps North Spoke (NS, w=4) at the hub.
+    // Width 5 > 4 → West Spoke owns the hub center. Shifted (0,0) → (25,-25).
+    const hub = TILES.find(t => t.isoX === 25 && t.isoY === -25);
     expect(hub?.street?.name).toBe('West Spoke');
   });
 
   it('at equal-width intersections, NS street wins over EW', () => {
-    // South Spur (NS, w=2) and South Cross (EW, w=2) overlap at isoX=20..21, isoY=20..21.
-    // South Spur (NS) wins the tiebreak → it owns (20,20).
-    const tile = TILES.find(t => t.isoX === 20 && t.isoY === 20);
+    // South Spur (NS, w=2) × South Cross (EW, w=2) overlap raw at isoX=20..21,
+    // isoY=20..21. NS wins tie → South Spur owns the overlap. Shifted (20,20) → (45,-5).
+    const tile = TILES.find(t => t.isoX === 45 && t.isoY === -5);
     expect(tile?.street?.name).toBe('South Spur');
   });
 });

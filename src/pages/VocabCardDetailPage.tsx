@@ -171,7 +171,10 @@ const VocabCardDetailPage: React.FC = () => {
     };
 
     const hasShortDef = !!dictEntry?.shortDefinition;
-    const hasBreakdown = entry?.breakdown && Object.keys(entry.breakdown).length > 0;
+    const isSingleChar = !!entry && [...entry.entryKey].length === 1;
+    // For single-char zh, the breakdown section is replaced by a "Used In" list. See OnDeckVocabService.enrichWithUsedIn.
+    const hasUsedIn = isSingleChar && !!entry?.usedIn && entry.usedIn.length > 0;
+    const hasBreakdown = !isSingleChar && entry?.breakdown && Object.keys(entry.breakdown).length > 0;
     const hasSynonyms = entry?.synonyms && entry.synonyms.length > 0;
     const hasExamples = entry?.exampleSentences && entry.exampleSentences.length > 0;
     const hasRelatedWords = entry?.relatedWords && entry.relatedWords.length > 0;
@@ -279,6 +282,50 @@ const VocabCardDetailPage: React.FC = () => {
                                     <Typography sx={{ fontSize: '1rem', fontWeight: 600, color: COLORS.onSurface, fontFamily: '"Inter", sans-serif' }}>
                                         {stripParentheses(dictEntry!.shortDefinition!)}
                                     </Typography>
+                                </SectionCard>
+                            )}
+
+                            {/* Used In (single-char zh only) — replaces Character Breakdown for single-character entries */}
+                            {hasUsedIn && (
+                                <SectionCard className="vocab-card-detail__used-in">
+                                    <SectionLabel className="vocab-card-detail__section-label">Used In</SectionLabel>
+                                    <Box className="vocab-card-detail__used-in-list" sx={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                        {entry!.usedIn!.map((item) => (
+                                            <Box
+                                                className="vocab-card-detail__used-in-item"
+                                                key={`${item.vocabEntryId ?? 'det'}-${item.entryKey}`}
+                                                sx={{
+                                                    display: "flex",
+                                                    alignItems: "flex-start",
+                                                    gap: "12px",
+                                                    backgroundColor: COLORS.sectionCard,
+                                                    borderRadius: "8px",
+                                                    padding: "6px 10px",
+                                                }}
+                                            >
+                                                <CharacterPinyinColorDisplay
+                                                    character={item.entryKey}
+                                                    pinyin={item.pronunciation ?? ""}
+                                                    size="md"
+                                                    useToneColor={true}
+                                                    showPinyin={true}
+                                                    compact
+                                                />
+                                                <Box className="vocab-card-detail__used-in-info">
+                                                    <Typography
+                                                        className="vocab-card-detail__used-in-def"
+                                                        sx={{
+                                                            fontSize: "0.875rem",
+                                                            color: COLORS.onSurface,
+                                                            fontFamily: '"Inter", sans-serif',
+                                                        }}
+                                                    >
+                                                        {stripParentheses(item.definition ?? "")}
+                                                    </Typography>
+                                                </Box>
+                                            </Box>
+                                        ))}
+                                    </Box>
                                 </SectionCard>
                             )}
 

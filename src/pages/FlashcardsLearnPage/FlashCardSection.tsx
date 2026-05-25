@@ -42,7 +42,7 @@ interface FlashCardSectionProps {
 
 // Speaker icon button. Sits to the right of the Chinese block. Stops pointer
 // event propagation so taps don't bubble up to the card's flip/drag handlers.
-const SpeakerButton: React.FC<{ onClick: () => void }> = ({ onClick }) => {
+export const SpeakerButton: React.FC<{ onClick: () => void }> = ({ onClick }) => {
     const theme = useTheme();
     const stop = (e: React.SyntheticEvent) => {
         e.stopPropagation();

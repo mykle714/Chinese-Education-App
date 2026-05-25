@@ -1,5 +1,5 @@
 import { IBaseDAL } from './IBaseDAL.js';
-import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, HskLevel } from '../../types/index.js';
+import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, HskLevel, UsedInItem } from '../../types/index.js';
 import { BulkResult, ITransaction } from '../../types/dal.js';
 
 /**
@@ -33,6 +33,12 @@ export interface IVocabEntryDAL extends IBaseDAL<VocabEntry, VocabEntryCreateDat
     language: string,
     limit?: number
   ): Promise<Array<{ id: number; entryKey: string; pronunciation: string | null; definition: string | null }>>;
+  findUsedInForCharacter(
+    userId: string,
+    character: string,
+    language: string,
+    limit?: number
+  ): Promise<UsedInItem[]>;
   
   // Statistics
   getUserVocabStats(userId: string): Promise<{

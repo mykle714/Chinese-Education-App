@@ -142,3 +142,14 @@ On the first call to `GET /api/night-market/unlocks`, if the user has no unlock 
 | `src/hooks/useNightMarket.ts` | Frontend hook for fetching unlocks and triggering new unlocks |
 | `src/pages/MarketViewerPage.tsx` | Page component — builds layers from unlocks + registry |
 | `src/components/MarketViewer.tsx` | Canvas renderer with pan/zoom and tap interaction |
+
+## Known Bugs
+
+### Ped z-sort against stands at extreme zoom-out (zoom-aware fallback)
+
+**Where:** `src/components/MarketEngineViewer.tsx` strip-emission path, `src/utils/isometric.ts` `computeStripPlacements`.
+
+**Symptom:** When the camera is zoomed far enough that each sprite strip would be under ~8 screen px wide, the renderer falls back to emitting a stand as a single unsliced sprite (instead of 2F strips) to keep the per-frame sprite count bounded. In that mode, the painter's-algorithm foot anchor is the stand's SW corner, so a pedestrian whose `isoX + isoY` exceeds the stand's SW sum renders in front of the entire roof — even when the ped is geometrically *beside* the stand rather than in front of it. Slicing fixes this at normal zoom; the fallback re-exposes the pre-fix behavior.
+
+**Future fix:** Switch the unsliced fallback's foot anchor from the SW corner to the stand's geometric center (`swX + F/2, swY + F/2`). Cheaper than re-enabling slicing and resolves most "ped pops in front of roof" cases by halving the worst-case z-error.
+

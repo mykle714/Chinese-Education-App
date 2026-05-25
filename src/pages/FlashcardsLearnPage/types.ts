@@ -30,11 +30,22 @@ export interface VocabEntry {
       segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo }>;
     }>;
     relatedWords?: Array<{ id: number; entryKey: string; pronunciation: string | null; definition: string | null }>;
+    // Single-char zh only: up to 5 multi-char words containing this character.
+    // vet-first (user's own entries) then det-fallback. vocabEntryId === null ⇒ det fallback.
+    usedIn?: UsedInItem[] | null;
     // Set by the server after pre-warming the TTS cache for this card. `false`
     // means synthesis errored (e.g. Google quota); the client should fall back
     // to Web Speech. Absent means the server didn't run a prewarm — treat as truthy.
     hasAudio?: boolean;
     createdAt: string;
+}
+
+export interface UsedInItem {
+  vocabEntryId: number | null;
+  entryKey: string;
+  pronunciation: string | null;
+  definition: string | null;
+  vernacularScore: number | null;
 }
 
 export interface BreakdownItem {

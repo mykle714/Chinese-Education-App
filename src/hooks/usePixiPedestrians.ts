@@ -70,8 +70,13 @@ export function usePixiPedestrians(count?: number): UsePixiPedestriansHandle {
   }, []);
 
   const tick = (dtMs: number, tMs: number) => {
-    const dt = Math.min(dtMs, MAX_DT_MS) * speedMultiplierRef.current;
     lastTMsRef.current = tMs;
+    // Speed multiplier of 0 = fully paused. Skip the FSM entirely — we can't
+    // just pass dt=0, because the Traveling "between steps" branch advances
+    // tile-by-tile without gating on dt and would teleport peds forward each
+    // frame at framerate speed.
+    if (speedMultiplierRef.current === 0) return;
+    const dt = Math.min(dtMs, MAX_DT_MS) * speedMultiplierRef.current;
     const ctx: PedestrianTickContext = {
       graph: TILE_GRAPH,
       streetGraph: STREET_GRAPH,

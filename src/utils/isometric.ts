@@ -14,38 +14,29 @@ import { RENDER_SLOT_Z } from '../config/nightMarketRegistry';
  *   - Decreasing isoY → bottom-right (south)
  *   - Origin (0, 0) maps to the center of the viewport
  *
- * Z-ordering (axis-minimum rule):
- *   z = -min(isoX, isoY) - max(isoX, isoY) * Z_MAX_TIEBREAK + slot
+ * Z-ordering (painter's algorithm with foot-anchor sort):
+ *   z = -(footIsoX + footIsoY) + slot
  *
- *   Every asset anchors at its SW corner (lowest iso point, bottom screen
- *   vertex) and the sprite extends upward from there. Two sprites only visually
- *   overlap on screen when their anchors' (isoX + isoY) sums are close, which
- *   means their min(isoX, isoY) values are also close — so min-based depth
- *   sorts overlapping sprites correctly. Crucially, a pedestrian "beside" a
- *   wide stand (ahead on one axis, behind on the other) renders correctly:
- *   if the ped is in front on EITHER axis its min is smaller, so it renders
- *   in front. The -(isoX+isoY) sum formula gets this wrong.
+ *   Draw back-to-front along the camera depth axis (isoX + isoY) — larger
+ *   sums sit further into the screen and get a lower z so they render first.
+ *   Pixi's `sortableChildren` then resolves occlusion correctly.
  *
- *   The -max*Z_MAX_TIEBREAK term is a tiebreaker for stands sharing the same
- *   min (e.g., a row of stands at constant isoY where every stand's isoX ≥ isoY
- *   collapses to min=isoY): the stand further along the larger axis sits
- *   slightly further back, matching its true depth ordering.
+ *   Sort key is the sprite's FOOT anchor — the front-corner point closest to
+ *   the camera, not the bounding box. In this codebase every sprite (stand or
+ *   pedestrian) is positioned at its SW corner with Pixi anchor (0.5, 1), so
+ *   the rendered foot already coincides with the (isoX, isoY) passed in — no
+ *   per-sprite anchor metadata needed.
+ *
+ *   The slot term (a small fraction in [0, 1)) layers sub-images of the same
+ *   asset (background → entity → foreground → overlay) without reordering
+ *   anything across asset depths.
  */
 
 /** Width of one isometric tile in pixels (horizontal span of the diamond) */
 export const TILE_WIDTH = 128;
 
 /** Height of one isometric tile in pixels (vertical span of the diamond, width ÷ √3 for 30° angle) */
-const TILE_HEIGHT = TILE_WIDTH / Math.sqrt(3); // ~73.86px
-
-/**
- * Small fractional weight applied to the max-axis coordinate as a z-tiebreaker.
- * Must be small enough that it never reorders pairs that the min-axis term
- * already separates, but large enough to break ties. Stand min values typically
- * span ~hundreds of iso units, so 0.001 keeps the tiebreak well below the
- * smallest meaningful min difference (1.0).
- */
-const Z_MAX_TIEBREAK = 0.001;
+export const TILE_HEIGHT = TILE_WIDTH / Math.sqrt(3); // ~73.86px
 
 export interface ScreenPosition {
   screenX: number;
@@ -56,7 +47,7 @@ export interface ScreenPosition {
  * Convert isometric grid coordinates to screen-space coordinates.
  *
  * Z-index is intentionally not returned here — callers must use computeLayerZ
- * or computePedestrianZ, which encode the axis-minimum depth rule.
+ * or computePedestrianZ, which encode the foot-anchor painter's rule.
  *
  * @param isoX - Position along the isometric X axis (toward top-right / east)
  * @param isoY - Position along the isometric Y axis (toward top-left / north)
@@ -69,21 +60,85 @@ export function isoToScreen(isoX: number, isoY: number): ScreenPosition {
 }
 
 /**
- * Compute the z-index for an asset sub-layer using the axis-minimum rule
- * (see the top-of-file docblock for the rationale).
+ * Compute the z-index for an asset sub-layer.
  *
- * @param isoX - Isometric X position (continuous float)
- * @param isoY - Isometric Y position (continuous float)
+ * @param isoX - Foot-anchor isoX (SW corner of the stand / front-corner of the footprint)
+ * @param isoY - Foot-anchor isoY
  * @param slot - Render slot determining fractional z-offset within the asset
  */
 export function computeLayerZ(isoX: number, isoY: number, slot: RenderSlot): number {
-  return -Math.min(isoX, isoY) - Math.max(isoX, isoY) * Z_MAX_TIEBREAK + RENDER_SLOT_Z[slot];
+  return -(isoX + isoY) + RENDER_SLOT_Z[slot];
 }
 
 /**
- * Compute z-index for a pedestrian. Shares the axis-minimum formula with
- * computeLayerZ; pedestrians always render in the `entity` slot.
+ * Compute z-index for a pedestrian. Same painter's rule as computeLayerZ;
+ * pedestrians always render in the `entity` slot.
  */
 export function computePedestrianZ(isoX: number, isoY: number): number {
-  return -Math.min(isoX, isoY) - Math.max(isoX, isoY) * Z_MAX_TIEBREAK + RENDER_SLOT_Z.entity;
+  return -(isoX + isoY) + RENDER_SLOT_Z.entity;
+}
+
+// ── Sprite-strip slicing ─────────────────────────────────────────────────────
+// Wide stand sprites are rendered as 2F vertical strips so each strip carries
+// its own foot anchor for painter's-algorithm z-sorting.
+//
+// Visual placement is PIXEL-FAITHFUL — each strip occupies the same screen
+// column it would in the unsliced sprite (no horizontal stretching, no
+// vertical shift). The sub-texture frame is just the i-th vertical slice of
+// the source.
+//
+// Z-sort, however, treats each strip as if its bottom sits on the stand's
+// SW/SE diamond edge at that strip's screen-X. We derive an implied "foot
+// iso" by mapping the strip's center-offset (in screen px) back to iso units
+// along the south edges. This decouples z-depth from the sprite's authored
+// pixel width — gaps/overlaps between adjacent strips never appear because
+// the strips render at their natural pixel positions.
+
+export interface StripPlacement {
+  /** 0..2F-1, 0 = leftmost column, F-1 = innermost left, F = innermost right, 2F-1 = rightmost. */
+  stripIndex: number;
+  /** Sub-texture frame within the source. Always full-height; horizontal slice only. */
+  frame: { x: number; y: number; w: number; h: number };
+  /** Screen-X offset of the strip's LEFT edge from the sprite's original anchor (sx0). */
+  offsetX: number;
+  /** Implied foot iso (used only for z-sort). */
+  footIsoX: number;
+  footIsoY: number;
+}
+
+/**
+ * Enumerate `2F` vertical-slice placements for a stand at (swX, swY).
+ * Pass the texture dimensions and render scale so screen offsets and
+ * implied foot positions can be computed from the asset's actual pixel
+ * extent (avoids stretching/gap artifacts when the artwork isn't exactly
+ * 2F·TILE_WIDTH/2 wide).
+ */
+export function computeStripPlacements(
+  swX: number,
+  swY: number,
+  footprintSize: number,
+  texW: number,
+  texH: number,
+  scale: number,
+): StripPlacement[] {
+  const F = footprintSize;
+  const stripTexW = texW / (2 * F);
+  const stripScreenW = stripTexW * scale;
+  const placements: StripPlacement[] = [];
+  for (let i = 0; i < 2 * F; i++) {
+    // Center-offset of this strip (signed screen px from sprite center).
+    const centerOffset = (i + 0.5 - F) * stripScreenW;
+    // Map |centerOffset| back to iso units along the SW/SE diamond edge.
+    // TILE_WIDTH/2 screen px per iso unit on the horizontal axis.
+    const deltaIso = Math.abs(centerOffset) / (TILE_WIDTH / 2);
+    const isLeft = i < F;
+    placements.push({
+      stripIndex: i,
+      frame: { x: i * stripTexW, y: 0, w: stripTexW, h: texH },
+      offsetX: (i - F) * stripScreenW,   // left edge of strip relative to sx0
+      footIsoX: isLeft ? swX : swX + deltaIso,
+      footIsoY: isLeft ? swY + deltaIso : swY,
+    });
+  }
+  return placements;
 }

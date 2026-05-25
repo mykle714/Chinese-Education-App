@@ -116,6 +116,33 @@ export class OnDeckVocabService {
   }
 
   /**
+   * For a single-character zh entry, attach up to 5 multi-char words containing this character
+   * (user's vet first, then det fallback). No-op for multi-char or non-zh entries — those
+   * continue to use the precomputed `breakdown` map for the bt tab.
+   */
+  private async enrichWithUsedIn(userId: string, entry: VocabEntry): Promise<VocabEntry> {
+    if (entry.language !== 'zh') return entry;
+    if ([...entry.entryKey].length !== 1) return entry;
+
+    try {
+      const usedIn = await this.vocabEntryDAL.findUsedInForCharacter(
+        userId,
+        entry.entryKey,
+        entry.language,
+        5
+      );
+      return { ...entry, usedIn };
+    } catch (error) {
+      console.error(`Failed to find usedIn for "${entry.entryKey}":`, error);
+      return entry;
+    }
+  }
+
+  private async enrichMultipleWithUsedIn(userId: string, entries: VocabEntry[]): Promise<VocabEntry[]> {
+    return Promise.all(entries.map(entry => this.enrichWithUsedIn(userId, entry)));
+  }
+
+  /**
    * Run the standard three-stage enrichment pipeline on a list of vocab entries.
    * Adds example sentence metadata, expansion metadata, and synonym metadata in sequence.
    * All three stages must run in order since each stage's output feeds the next.
@@ -254,9 +281,10 @@ export class OnDeckVocabService {
         ORDER BY ve."createdAt" DESC
       `, [userId, category, excludeIds]);
 
-      // Run the three-stage enrichment pipeline, then add related words
+      // Run the three-stage enrichment pipeline, then add related words + single-char usedIn
       const enriched = await this.enrichEntriesPipeline(result.rows);
-      return await this.enrichMultipleWithRelatedWords(userId, enriched);
+      const withRelated = await this.enrichMultipleWithRelatedWords(userId, enriched);
+      return await this.enrichMultipleWithUsedIn(userId, withRelated);
     } finally {
       client.release();
     }
@@ -419,9 +447,10 @@ export class OnDeckVocabService {
         workingLoop.sort(() => Math.random() - 0.5);
       }
 
-      // Run the three-stage enrichment pipeline, then add related words
+      // Run the three-stage enrichment pipeline, then add related words + single-char usedIn
       const enriched = await this.enrichEntriesPipeline(workingLoop);
       const withRelated = await this.enrichMultipleWithRelatedWords(userId, enriched);
+      const withUsedIn = await this.enrichMultipleWithUsedIn(userId, withRelated);
 
       // Pre-warm the TTS disk cache for every card before responding. The client
       // still fetches MP3s via /api/tts/synthesize after this returns, but those
@@ -429,7 +458,7 @@ export class OnDeckVocabService {
       // and auto-play feel instant. Per-entry failures degrade gracefully:
       // hasAudio=false signals the client to fall back to Web Speech for that
       // card. We don't fail the whole loop if Google has a hiccup on one entry.
-      return await this.prewarmAudio(withRelated);
+      return await this.prewarmAudio(withUsedIn);
     } finally {
       client.release();
     }

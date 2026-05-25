@@ -260,13 +260,6 @@ export interface PedestrianState {
   /** Stand the pedestrian is currently routing toward (set during Planning, cleared on Idle). */
   targetAssetId?: string;
   /**
-   * When the active agenda goal is `Wander`, the tile key chosen as the
-   * destination on the first Planning entry. Cached so a mid-journey
-   * replan reuses the same target rather than re-rolling a fresh random
-   * goal. Cleared when the goal completes or is abandoned.
-   */
-  wanderGoalKey?: string;
-  /**
    * AssetIds of the most recent stands this pedestrian visited (oldest first).
    * Used to suppress repeat visits during local wander. Capped at
    * `RECENT_VISIT_HISTORY_LIMIT` entries.
@@ -286,6 +279,14 @@ export interface PedestrianState {
    * cooldown — only fresh teleports are.
    */
   sidestepCooldownUntilMs?: number;
+  /**
+   * Wall-clock timestamp (`ctx.tMs` basis, ms) at which the pedestrian most
+   * recently entered the waiting state. Set when `isWaiting` flips false →
+   * true and preserved across subsequent waiting ticks; cleared when
+   * `isWaiting` flips back to false. Used by the stuck-recovery forward-jump
+   * logic in `pedestrianAgent.ts` (see `STUCK_FORWARD_JUMP_DELAY_MS`).
+   */
+  waitingSinceMs?: number;
 }
 
 /** Max length of `PedestrianState.recentlyVisitedAssetIds`. */

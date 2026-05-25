@@ -108,7 +108,7 @@ run_script "Step 3: Parts of Speech" "backfill-parts-of-speech.js"
 run_script "Step 4: HSK Level" "backfill-hsk-level.js"
 
 # Step 5: Generate longDefinition using sorted definitions (AI)
-run_script "Step 5: Short + Long Definitions" "backfill-short-long-definitions.js"
+run_script "Step 5: Long Definitions" "backfill-long-definitions.js"
 
 # Step 6: Generate example sentences (AI) — uses definitions
 run_script "Step 6: Example Sentences" "backfill-example-sentences.js"
@@ -117,7 +117,7 @@ run_script "Step 6: Example Sentences" "backfill-example-sentences.js"
 run_script "Step 7: Synonyms" "backfill-synonyms.js"
 
 # Step 8: Generate expansion form (AI)
-run_script "Step 8: Expansion" "backfill-expansion.js"
+run_script "Step 8: Expansion" "backfill-expansion-claude.js"
 
 # Step 9: Assign measure words / classifiers (AI)
 run_script "Step 9: Classifiers" "backfill-classifier.js"

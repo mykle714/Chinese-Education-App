@@ -53,7 +53,8 @@ Joined via `LEFT JOIN LATERAL` in `server/dal/shared/dictJoin.ts`, matching on `
 | `script` | `script` | Writing system variant (traditional/simplified/kanji) |
 | `breakdown` | `breakdown` | JSONB `Record<char, { definition: string }>` — per-character decomposition |
 | `longDefinition` | `longDefinition` | AI-generated extended definition (25–150 chars) |
-| `exampleSentences` *(raw)* | `exampleSentences` | JSONB array of `{ chinese, english, translatedVocab, partOfSpeechDict }` |
+| `exampleSentences` *(raw)* | `exampleSentences` | JSONB array of `{ chinese, english, translatedVocab, tense, partOfSpeechDict }`. `tense` is `'past' \| 'present' \| 'future'` — the temporal *meaning* of the sentence, not just which Chinese aspect markers are present. `partOfSpeechDict` keys are word tokens that appear in the Chinese sentence (single- or multi-char); values are POS tags. See "Example-sentence tense-aware popups" below. |
+| `wordForms` | `wordForms` | JSONB `Record<string, string>` — AI-generated English inflection map for the entry, keyed by `past`, `present`, `future`, `gerund`, `adverb`, `adjective`, `noun`. Only the keys relevant to the entry's `partsOfSpeech` are populated. `{}` means "processed, nothing applicable" (so the backfill doesn't retry it). |
 | `expansion` | `expansion` | Fuller/expanded form of the word (e.g., 不知不觉 for 知觉) |
 | `expansionLiteralTranslation` | `expansionLiteralTranslation` | Literal English phrase derived from the expansion's components |
 | `synonyms` | `synonyms` | JSONB string array of synonym words |
@@ -64,14 +65,79 @@ Computed by `OnDeckVocabService` after the DB query, before the API response is 
 
 | Property | How It's Calculated | Service Method |
 |----------|-------------------|----------------|
-| `exampleSentences.segmentMetadata` | Each raw example sentence is greedy-segmented into tokens; each token is looked up in `dictionaryentries` to attach `{ pronunciation, definition, particleOrClassifier }` | `DictionaryService.enrichExampleSentencesMetadataBatch()` |
+| `exampleSentences.segmentMetadata` | Each raw example sentence is greedy-segmented into tokens; each token is looked up in `dictionaryentries` to attach `{ pronunciation, definition, particleOrClassifier, wordForms }`. `wordForms` is carried through verbatim from the matched DET row so the renderer can pick a tense-appropriate form per segment (see below). | `DictionaryService.enrichExampleSentencesMetadataBatch()` → `buildDictMap()` in `server/dal/shared/segmentString.ts` |
 | `expansionMetadata` | For each character in the `expansion` string, looks up `pronunciation` and `definition` in `dictionaryentries`; result: `Record<char, { pronunciation, definition }>` | `DictionaryService.enrichExpansionMetadataBatch()` |
 | `synonymsMetadata` | Collects all unique synonym words from the batch, batch-queries `dictionaryentries`, builds `Record<word, { definition, pronunciation }>` | `DictionaryService.enrichEntriesWithSynonymMetadata()` |
 | `relatedWords` | Finds up to 4 of the user's own library words (VET `starterPackBucket = 'library'`) that share characters with `entryKey`. Chinese only. Returns `Array<{ id, entryKey, pronunciation, definition }>` | `OnDeckVocabService.enrichWithRelatedWords()` → `VocabEntryDAL.findRelatedBySharedCharacters()` |
+| `usedIn` | Single-character zh entries only. Up to 5 multi-char words that contain this character. **Pass 1**: user's vet entries containing the char (excluding the entry itself), ordered by `de."vernacularScore" DESC NULLS LAST, entryKey ASC`. **Pass 2**: if pass 1 returns < 5, top up from `dictionaryentries` (same ordering, same exclusions, skipping pass-1 entryKeys). Pass-2 items have `vocabEntryId === null`. Returns `UsedInItem[]`. | `OnDeckVocabService.enrichWithUsedIn()` → `VocabEntryDAL.findUsedInForCharacter()` |
 
 ---
 
-## Night Market — Tiles, Nodes & Edges
+## Example sentences
+
+Each example sentence is a `{ chinese, english, translatedVocab, tense, partOfSpeechDict }` row in `dictionaryentries.exampleSentences` (JSONB). The Chinese is rendered through `SegmentedSentenceDisplay` — characters are grouped into dictionary-matched segments, and tapping/hovering a segment surfaces a popup with the segment's contextual English meaning.
+
+### Why we need a tense-aware popup, not just the dictionary definition
+
+The English translation field is one fixed string for the whole sentence, so it cannot tell the user what an individual Chinese word means in isolation. The popup on a tapped segment fills that gap, but the *base* DET definition is usually the lemma form (e.g. 跑 → "to run"). If the sentence is "他昨天跑了" / "He ran yesterday", the lemma definition feels disconnected from both the Chinese sentence (which is in past tense) and the English translation (where "run" appears as "ran"). The mechanism below makes the segment popup show the *same* English form that actually appears in the translation — "ran" for the past-tense sentence, "runs" for the present-tense one, "running" if it's used as a gerund subject, etc.
+
+### Authoring time — two AI backfills
+
+1. **`server/scripts/backfill-example-sentences.js`** — for each discoverable zh DET row missing `exampleSentences`, asks Claude Sonnet for **exactly 3** sentences using the headword in a different grammatical role each, one per tense (`past`, `present`, `future`). The prompt requires:
+   - `tense` derived from the sentence's *meaning*, not its surface aspect markers (e.g. 了 can mark a present state change, so it doesn't automatically imply past).
+   - `partOfSpeechDict` covering **every** non-punctuation token in the Chinese sentence, with multi-char tokens allowed. Tags come from `ALLOWED_POS_TAGS`.
+   - A special tagging rule: if the headword is a verb used **nominally** in this sentence (e.g. 下单 as the subject of 下单很简单 / "Ordering is simple"), tag it as `noun` in `partOfSpeechDict`, not `verb`. This is what later lets the renderer pick the gerund form.
+
+2. **`server/scripts/backfill-word-forms.js`** — for each discoverable zh DET row with `partsOfSpeech` and no `wordForms`, asks Claude Sonnet to extract the base English word from `definitions[0]` and emit a `Record<string, string>` keyed by `past`, `present`, `future`, `gerund`, `adverb`, `adjective`, `noun`. Only the keys applicable to the entry's POS are populated; entries that yield no applicable forms are written as `{}` so the backfill doesn't retry them. The prompt explicitly handles two pitfalls:
+   - **Irregular verbs** — actual inflected English, not `{word}ed` templates (e.g. "run" → past `"ran"`).
+   - **Adjectives mistagged as verbs** — Chinese adjectives are often POS-tagged as verbs, but English adjectives like "happy" don't conjugate. In that case only the `adjective` key is returned.
+
+### Request time — carrying `wordForms` onto segment metadata
+
+When the FLP request hits `OnDeckVocabService`, `DictionaryService.enrichExampleSentencesMetadataBatch()` greedy-segments each sentence's Chinese against DET. `buildDictMap()` in `server/dal/shared/segmentString.ts:97` copies the matched entry's `wordForms` (when present) onto each `SegmentMeta`, alongside the existing `pronunciation` / `definition` / `particleOrClassifier`. The result is `exampleSentences[i].segmentMetadata: Record<segment, { pronunciation, definition, particleOrClassifier?, wordForms? }>`.
+
+### Render time — `resolveWordForm` in `SegmentedSentenceDisplay`
+
+`src/components/SegmentedSentenceDisplay.tsx:76` resolves the per-segment popup text from three inputs: the segment's `wordForms`, the segment's POS from `sentence.partOfSpeechDict`, and the sentence's `tense`. Selection rules:
+
+- **Verb / auxiliary verb + tense set** → `wordForms[tense]` (e.g. `wordForms.past = "ran"`); falls back to `wordForms[pos]` if the tense key is missing.
+- **Noun** → `wordForms.noun ?? wordForms.gerund`. The gerund fallback is what makes a verb-used-as-noun (tagged `noun` by the authoring rule above) render as e.g. "running" instead of the lemma.
+- **Anything else** → `wordForms[pos]` directly (covers `adjective`, `adverb`).
+- **Particle / classifier** → bypassed entirely; the contextually correct gloss already lives on `particleOrClassifier.definition`, which wins over both `definition` and any `wordForms` lookup.
+
+When `resolveWordForm` returns a value, it replaces the dictionary base `definition` for that segment's popup; otherwise the base definition is used unchanged. The same resolution is applied in the fallback per-character branch (lines 156–160) so single-character segments that were never unified into a multi-char word still get tense-correct popups.
+
+---
+
+## Extra Info Panel (EIP)
+
+The EIP is the secondary panel on the FLP / mdp that surfaces auxiliary card info (sct, st, bt, est, et). Structurally it is two stacked regions:
+
+### Breakdown tab (bt) — single-char vs multi-char
+
+The bt has two render modes, selected by `[...currentEntry.entryKey].length === 1`:
+
+- **Multi-char** (default): per-character rows backed by `currentEntry.breakdown` (precomputed JSONB on the det row by `backfill-dictionary-breakdown.js`). Each row is tappable when `onBreakdownItemClick` is wired.
+- **Single-char zh**: tab is relabeled **"Used In"** and rows are backed by `currentEntry.usedIn` — up to 5 multi-char words containing this character, computed at request time (see the `usedIn` enrichment in the table above). `vocabEntryId === null` flags a det-fallback item (not in the user's vet). The expansion block still renders below the rows when present.
+
+Empty-state copy differs per mode: "No words use this character yet" for single-char, "Breakdown not available for this card" for multi-char.
+
+
+
+- **Header** — fixed-height; holds the tab strip and any per-tab controls. Never scrolls.
+- **Content area** — the active tab's body. The only scrollable region inside the EIP.
+
+### Scroll-to-resize behavior
+
+The EIP is *resizable*: it has a collapsed/min height and an expanded/max height. Vertical scroll gestures originating inside the content area are interpreted in two modes, switched by panel state and scroll position:
+
+1. **Resize mode (default while not maxed out).** When the content is scrolled to the top of its page, a downward scroll gesture *grows* the EIP toward its max height rather than scrolling the content. The content stays pinned at the top; the panel itself eats the delta.
+2. **Content-scroll mode (only after EIP is fully expanded).** Once the EIP has reached its max height, additional scroll deltas pass through to the content area and scroll it normally.
+
+The reverse direction mirrors this: while the content is at `scrollTop === 0`, an upward gesture *shrinks* the EIP back toward its min height; only once it's at its min does scroll return to content (which, being at top, is a no-op).
+
+This means the user never sees the content scroll past the top of its page while there is still room to expand the panel — resizing always happens first, content scroll second.
+
 
 ### Tile object (`TileDef`)
 

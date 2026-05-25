@@ -1,17 +1,20 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Box, CircularProgress, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
 import { useAuth } from "../../AuthContext";
 import { useMinutePoints } from "../../hooks/useMinutePoints";
 import { API_BASE_URL } from "../../constants";
 import { ContentArea, MoreInfoPill } from "./styled";
-import type { VocabEntry, BreakdownItem, MarkCardResult, LastMarkUndoSnapshot, SideOneLanguage } from "./types";
+import type { VocabEntry, BreakdownItem, UsedInItem, MarkCardResult, LastMarkUndoSnapshot, SideOneLanguage } from "./types";
 
 // Pick a random language for a card's Side 1. Side 2 always shows both.
 const randomSideOneLanguage = (): SideOneLanguage => (Math.random() < 0.5 ? 'en' : 'zh');
 import { useCardDrag } from "./useCardDrag";
 import FlashcardsLearnHeader from "./FlashcardsLearnHeader";
-import InfoCardSection from "./InfoCardSection";
+import InfoCardSection, { type InfoCardSectionHandle } from "./InfoCardSection";
+import { getBreakdownItems as buildBreakdownItems } from "./breakdownUtils";
+import { dictionaryEntryToVocabEntry } from "./dictEntryAdapter";
+import type { DictionaryEntry } from "../../types";
 import FlashCardSection from "./FlashCardSection";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useTTS } from "../../hooks/useTTS";
@@ -75,22 +78,7 @@ const FlashcardsLearnPage: React.FC = () => {
         console.log('Working loop by category:', byCategory);
     }, [currentEntry, workingLoop]);
 
-    // Convert breakdown object to array for display
-    const getBreakdownItems = (): BreakdownItem[] => {
-        if (!currentEntry || !currentEntry.breakdown) return [];
-        const breakdown = currentEntry.breakdown;
-        const allChars = [...currentEntry.entryKey];
-        const pinyinParts = currentEntry.pronunciation ? currentEntry.pronunciation.split(' ') : [];
-        return allChars
-            .map((char, index) => ({
-                character: char,
-                pinyin: pinyinParts[index] ?? '',
-                definition: breakdown[char]?.definition ?? '',
-            }))
-            .filter(item => item.character in breakdown);
-    };
-
-    const breakdownItems = getBreakdownItems();
+    const breakdownItems = buildBreakdownItems(currentEntry);
 
     // Drag/flip logic extracted into a custom hook
     const {
@@ -139,7 +127,116 @@ const FlashcardsLearnPage: React.FC = () => {
         setEicHintConsumed(true);
         if (selectedTab === -1) setSelectedTab(0);
     };
-    const closeEicSheet = () => setIsEicOpen(false);
+    // Stack of child panels opened by tapping a breakdown row. Each entry
+    // carries its own VocabEntry (adapted from a /api/dictionary/lookup
+    // response), its precomputed breakdown items, its own selectedTab, and
+    // the height it should initialize to (= the height the panel beneath
+    // it was at when the row was tapped).
+    type ChildPanel = {
+        entry: VocabEntry;
+        breakdownItems: BreakdownItem[];
+        selectedTab: number;
+        initialHeight: number;
+    };
+    const [childStack, setChildStack] = useState<ChildPanel[]>([]);
+
+    // Refs to each rendered panel (root at index 0, children after) so the
+    // breakdown-tap handler can read the topmost panel's current height
+    // before pushing a new child.
+    const rootPanelRef = useRef<InfoCardSectionHandle | null>(null);
+    const childPanelRefs = useRef<Array<InfoCardSectionHandle | null>>([]);
+
+    // Read the live height of whichever panel is currently on top of the stack.
+    const getTopPanelHeight = useCallback((): number => {
+        if (childStack.length > 0) {
+            const top = childPanelRefs.current[childStack.length - 1];
+            return top?.getCurrentHeight() ?? 0;
+        }
+        return rootPanelRef.current?.getCurrentHeight() ?? 0;
+    }, [childStack.length]);
+
+    // Shared helper: fetch a dictionary entry for an entryKey and push a child
+    // panel onto the stack. Used by both breakdown-row taps (which pass a single
+    // character) and used-in-row taps (which pass a multi-char word).
+    const openChildPanelForEntryKey = useCallback(async (entryKey: string) => {
+        const heightToMatch = getTopPanelHeight();
+        try {
+            const res = await fetch(
+                `${API_BASE_URL}/api/dictionary/lookup/${encodeURIComponent(entryKey)}`,
+                { credentials: "include" }
+            );
+            if (!res.ok) return; // Silently no-op on 404/error — the chevron is a soft affordance.
+            const dictData: DictionaryEntry = await res.json();
+            const adapted = dictionaryEntryToVocabEntry(dictData);
+            // Mirrors the parent flashcard log so the same enrichment fields
+            // can be diff'd between flashcard data and the dictionary lookup.
+            console.log('Child-EIP dict entry:', { id: dictData.id, entryKey: dictData.word1 });
+            const dictAny = dictData as DictionaryEntry & {
+                breakdown?: unknown;
+                exampleSentences?: unknown;
+                expansion?: unknown;
+                expansionMetadata?: unknown;
+                hskLevel?: unknown;
+                usedIn?: unknown;
+            };
+            console.log('Child-EIP raw lookup:', {
+                breakdown: dictAny.breakdown ?? 'none',
+                longDefinition: dictData.longDefinition ?? 'none',
+                exampleSentences: dictAny.exampleSentences ?? 'none',
+                expansion: dictAny.expansion ?? 'none',
+                expansionMetadata: dictAny.expansionMetadata ?? 'none',
+                definitions: dictData.definitions ?? 'none',
+                partsOfSpeech: dictData.partsOfSpeech ?? 'none',
+                hskLevel: dictAny.hskLevel ?? 'none',
+                usedIn: dictAny.usedIn ?? 'none',
+            });
+            console.log('Child-EIP adapted VocabEntry:', {
+                breakdown: adapted.breakdown ?? 'none',
+                longDefinition: adapted.longDefinition ?? 'none',
+                exampleSentences: adapted.exampleSentences ?? 'none',
+                expansion: adapted.expansion ?? 'none',
+                expansionMetadata: adapted.expansionMetadata ?? 'none',
+                usedIn: adapted.usedIn ?? 'none',
+            });
+            setChildStack(prev => [
+                ...prev,
+                {
+                    entry: adapted,
+                    breakdownItems: buildBreakdownItems(adapted),
+                    selectedTab: 0,
+                    initialHeight: heightToMatch,
+                },
+            ]);
+        } catch (err) {
+            console.error(`Failed to look up dictionary entry "${entryKey}":`, err);
+        }
+    }, [getTopPanelHeight]);
+
+    const handleBreakdownItemClick = useCallback(
+        (item: BreakdownItem) => openChildPanelForEntryKey(item.character),
+        [openChildPanelForEntryKey],
+    );
+
+    const handleUsedInItemClick = useCallback(
+        (item: UsedInItem) => openChildPanelForEntryKey(item.entryKey),
+        [openChildPanelForEntryKey],
+    );
+
+    // Pop the topmost child panel (or close the root if stack is empty).
+    const closeTopPanel = useCallback(() => {
+        setChildStack(prev => {
+            if (prev.length === 0) {
+                setIsEicOpen(false);
+                return prev;
+            }
+            return prev.slice(0, -1);
+        });
+    }, []);
+
+    // Tab change handler for a child panel at a given stack index.
+    const setChildTab = useCallback((stackIndex: number, tab: number) => {
+        setChildStack(prev => prev.map((p, i) => i === stackIndex ? { ...p, selectedTab: tab } : p));
+    }, []);
 
     // Hint shown when the user taps the pill before flipping the card.
     // Auto-dismisses after a couple seconds, and clears immediately on flip.
@@ -493,18 +590,47 @@ const FlashcardsLearnPage: React.FC = () => {
                         <Typography sx={{ fontSize: 12, fontWeight: 600, color: theme.palette.flashcard.onSurface, letterSpacing: "0.02em", fontFamily: '"Inter", sans-serif' }}>More Info</Typography>
                     </MoreInfoPill>
                 </Tooltip>
-                {/* Modal EIC sheet — only mounted when open to reset animation on reopen */}
+                {/* Modal EIC sheet — only mounted when open to reset animation on reopen.
+                    When a breakdown row is tapped, a child panel is pushed onto childStack
+                    and rendered above this root panel. Each panel has its own scrim; tapping
+                    a scrim or dragging-to-dismiss closes only the topmost panel. */}
                 {isEicOpen && (
-                    <InfoCardSection
-                        currentEntry={currentEntry}
-                        selectedTab={selectedTab === -1 ? 0 : selectedTab}
-                        onTabChange={setSelectedTab}
-                        breakdownItems={breakdownItems}
-                        showPinyin={showPinyin}
-                        showSegmentSpaces={showSegmentSpaces}
-                        isFlipped={isFlipped}
-                        onClose={closeEicSheet}
-                    />
+                    <>
+                        <InfoCardSection
+                            ref={rootPanelRef}
+                            currentEntry={currentEntry}
+                            selectedTab={selectedTab === -1 ? 0 : selectedTab}
+                            onTabChange={setSelectedTab}
+                            breakdownItems={breakdownItems}
+                            showPinyin={showPinyin}
+                            showSegmentSpaces={showSegmentSpaces}
+                            isFlipped={isFlipped}
+                            onClose={closeTopPanel}
+                            onBreakdownItemClick={handleBreakdownItemClick}
+                            onUsedInItemClick={handleUsedInItemClick}
+                            depth={0}
+                            onSpeak={tts.enabled ? tts.speak : undefined}
+                        />
+                        {childStack.map((panel, i) => (
+                            <InfoCardSection
+                                key={`child-${i}-${panel.entry.id}`}
+                                ref={(h) => { childPanelRefs.current[i] = h; }}
+                                currentEntry={panel.entry}
+                                selectedTab={panel.selectedTab}
+                                onTabChange={(tab) => setChildTab(i, tab)}
+                                breakdownItems={panel.breakdownItems}
+                                showPinyin={showPinyin}
+                                showSegmentSpaces={showSegmentSpaces}
+                                isFlipped={true}
+                                onClose={closeTopPanel}
+                                onBreakdownItemClick={handleBreakdownItemClick}
+                                onUsedInItemClick={handleUsedInItemClick}
+                                initialHeight={panel.initialHeight}
+                                depth={i + 1}
+                                onSpeak={tts.enabled ? tts.speak : undefined}
+                            />
+                        ))}
+                    </>
                 )}
             </ContentArea>
         </>

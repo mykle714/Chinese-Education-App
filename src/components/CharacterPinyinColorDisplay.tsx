@@ -93,7 +93,9 @@ const CharacterPinyinColorDisplay: React.FC<CharacterPinyinColorDisplayProps> = 
                 flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
-                width: styles.columnWidth,
+                // Scale width by character count so multi-char strings (e.g. used-in "朋友")
+                // fit on a single line. Single-char usage stays pixel-identical (1 * columnWidth).
+                width: `calc(${Math.max(1, [...character].length)} * ${styles.columnWidth})`,
                 minHeight: styles.columnMinHeight,
                 textAlign: "center",
                 boxSizing: "border-box",

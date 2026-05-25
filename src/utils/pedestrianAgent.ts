@@ -29,7 +29,14 @@
  * Local collision avoidance: at the start of every step, if the forward
  * tile is occupied, the ped attempts to sidestep right (90° CW from
  * heading); if blocked, then left; if both blocked, stand still. Sidesteps
- * are instant teleports with a 2 s wall-clock cooldown.
+ * are instant teleports with a 1 s wall-clock cooldown.
+ *
+ * Stuck recovery: if a ped has been continuously in the waiting state for at
+ * least `STUCK_FORWARD_JUMP_DELAY_MS`, on every tick it additionally attempts
+ * a "forward jump" — an instant teleport to the tile two steps ahead (i.e.
+ * directly in front of the blocker), if that tile is unoccupied and lies on
+ * the current leg. This breaks nose-to-nose deadlocks on 1-wide legs where
+ * no valid sidestep exists.
  *
  * See docs/PEDESTRIAN_WALKING_ALGORITHM.md for the full algorithm spec and
  * docs/NIGHT_MARKET_GRAPH_ASSUMPTIONS.md for the invariants it relies on.
@@ -66,7 +73,14 @@ import {
  * Wall-clock duration (ms) a pedestrian must wait between consecutive
  * sidestep teleports.
  */
-const SIDESTEP_COOLDOWN_MS = 2000;
+const SIDESTEP_COOLDOWN_MS = 1000;
+
+/**
+ * Continuous wait duration (ms) after which a stuck ped attempts a forward
+ * jump — an instant teleport to the tile two steps ahead, skipping over the
+ * blocker. Re-attempted every tick once the threshold is crossed.
+ */
+const STUCK_FORWARD_JUMP_DELAY_MS = 3000;
 
 export interface PedestrianTickContext {
   graph: TileGraph;
@@ -267,6 +281,70 @@ function pickSidestepTile(
   return { ok: false, rightReason: rightCheck.reason, leftReason: leftCheck.reason };
 }
 
+/**
+ * Is `candidate` a legal forward-jump destination for a ped stuck on `leg`?
+ * Unlike `checkSidestepTile`, we don't require tile-graph adjacency to the
+ * ped's current tile — the jump is two steps away. We still require the
+ * tile exists, is unoccupied, and stays on the current leg's edge or its
+ * endpoint nodes.
+ */
+function isForwardJumpTileValid(
+  candidate: TileCoord,
+  ctx: PedestrianTickContext,
+  leg: NavLeg,
+): boolean {
+  const candKey = tileKey(candidate.isoX, candidate.isoY);
+  const tile = ctx.graph.tiles.get(candKey);
+  if (!tile) return false;
+  if (tile.isOccupied) return false;
+  if (
+    !leg.edge.bodyTileSet.has(candKey) &&
+    !leg.edge.nodeA.tileKeys.has(candKey) &&
+    !leg.edge.nodeB.tileKeys.has(candKey)
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Attempt a forward jump for a ped that has been waiting at least
+ * `STUCK_FORWARD_JUMP_DELAY_MS`. Mutates `p` and tile occupancy and returns
+ * true if the teleport happened; returns false otherwise (caller stays in
+ * the waiting state).
+ */
+function tryForwardJump(
+  p: PedestrianState,
+  next: TileCoord,
+  currentTileDef: import('../config/nightMarketRegistry').TileDef | undefined,
+  ctx: PedestrianTickContext,
+  leg: NavLeg,
+): boolean {
+  if (
+    p.waitingSinceMs === undefined ||
+    ctx.tMs - p.waitingSinceMs < STUCK_FORWARD_JUMP_DELAY_MS
+  ) {
+    return false;
+  }
+  const forward = headingBetweenTiles(p.currentTile, next);
+  const jumpTile: TileCoord = {
+    isoX: next.isoX + forward[0] * TILE_SIZE,
+    isoY: next.isoY + forward[1] * TILE_SIZE,
+  };
+  if (!isForwardJumpTileValid(jumpTile, ctx, leg)) return false;
+
+  if (currentTileDef) currentTileDef.isOccupied = false;
+  const jumpKey = tileKey(jumpTile.isoX, jumpTile.isoY);
+  const jumpTileDef = ctx.graph.tiles.get(jumpKey);
+  if (jumpTileDef) jumpTileDef.isOccupied = true;
+
+  p.isWaiting = false;
+  p.waitingSinceMs = undefined;
+  p.committedFromTile = undefined;
+  p.currentTile = jumpTile;
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // Random-depth sampling at target-node entry
 // ---------------------------------------------------------------------------
@@ -396,7 +474,7 @@ function resolveWanderGoal(
 function planPath(
   p: PedestrianState,
   ctx: PedestrianTickContext,
-): { legs: NavLeg[]; targetAssetId?: string; wanderGoalKey?: string } | null {
+): { legs: NavLeg[]; targetAssetId?: string } | null {
   const goal = p.agenda[0];
   if (!goal) return null;
 
@@ -405,26 +483,20 @@ function planPath(
   // Resolve goal tile + bookkeeping.
   let goalTileKey: string;
   let targetAssetId: string | undefined;
-  let nextWanderGoalKey: string | undefined;
   if (goal.kind === 'VisitStand') {
     const access = ctx.graph.standAccessTiles.get(goal.assetId);
     if (!access || access.length === 0) return null;
     goalTileKey = access[0];
     targetAssetId = goal.assetId;
   } else {
-    if (p.wanderGoalKey && ctx.graph.tiles.has(p.wanderGoalKey)) {
-      goalTileKey = p.wanderGoalKey;
-    } else {
-      const wander = resolveWanderGoal(p, ctx);
-      if (!wander) return null;
-      goalTileKey = wander.goalKey;
-      targetAssetId = wander.assetId;
-      nextWanderGoalKey = wander.goalKey;
-    }
+    const wander = resolveWanderGoal(p, ctx);
+    if (!wander) return null;
+    goalTileKey = wander.goalKey;
+    targetAssetId = wander.assetId;
   }
 
   if (fromKey === goalTileKey) {
-    return { legs: [], targetAssetId, wanderGoalKey: nextWanderGoalKey };
+    return { legs: [], targetAssetId };
   }
 
   const goalTile = parseTileKey(goalTileKey);
@@ -442,7 +514,6 @@ function planPath(
     return {
       legs: [{ edge: startEdge, target: { kind: 'tile', tile: goalTile } }],
       targetAssetId,
-      wanderGoalKey: nextWanderGoalKey,
     };
   }
   if (startEdge && goalNode &&
@@ -450,7 +521,6 @@ function planPath(
     return {
       legs: [{ edge: startEdge, target: { kind: 'tile', tile: goalTile } }],
       targetAssetId,
-      wanderGoalKey: nextWanderGoalKey,
     };
   }
   if (startNode && goalEdge &&
@@ -458,7 +528,6 @@ function planPath(
     return {
       legs: [{ edge: goalEdge, target: { kind: 'tile', tile: goalTile } }],
       targetAssetId,
-      wanderGoalKey: nextWanderGoalKey,
     };
   }
   if (startNode && goalNode && startNode === goalNode) {
@@ -468,7 +537,6 @@ function planPath(
     return {
       legs: [{ edge: adj[0].edge, target: { kind: 'tile', tile: goalTile } }],
       targetAssetId,
-      wanderGoalKey: nextWanderGoalKey,
     };
   }
 
@@ -527,7 +595,7 @@ function planPath(
     }
   }
 
-  return { legs, targetAssetId, wanderGoalKey: nextWanderGoalKey };
+  return { legs, targetAssetId };
 }
 
 // ---------------------------------------------------------------------------
@@ -561,13 +629,11 @@ export function tickPedestrian(
       const plan = planPath(p, ctx);
       if (!plan) {
         p.agenda.shift();
-        p.wanderGoalKey = undefined;
         p.fsmState = 'Idle';
         return p;
       }
       p.pendingLegs = plan.legs;
       p.targetAssetId = plan.targetAssetId;
-      if (plan.wanderGoalKey) p.wanderGoalKey = plan.wanderGoalKey;
       if (plan.legs.length === 0) {
         const dwellMs = goalDwell(p.agenda[0]);
         p.fsmState = 'Interacting';
@@ -575,6 +641,7 @@ export function tickPedestrian(
       } else {
         p.localProgress = 0;
         p.isWaiting = false;
+        p.waitingSinceMs = undefined;
         p.fsmState = 'Traveling';
       }
       return p;
@@ -623,6 +690,7 @@ export function tickPedestrian(
         p.fsmState = 'Interacting';
         p.interactUntilMs = ctx.tMs + dwellMs;
         p.isWaiting = false;
+        p.waitingSinceMs = undefined;
         return p;
       }
 
@@ -638,20 +706,30 @@ export function tickPedestrian(
       const currentTileDef = ctx.graph.tiles.get(currentKey);
       const nextTileDef = ctx.graph.tiles.get(nextKey);
 
-      // Forward blocked: try sidestep (subject to cooldown).
+      // Forward blocked: try sidestep (subject to cooldown), then fall back
+      // to the stuck-recovery forward jump after STUCK_FORWARD_JUMP_DELAY_MS.
       if (nextTileDef?.isOccupied) {
+        const enterWaiting = () => {
+          p.isWaiting = true;
+          if (p.waitingSinceMs === undefined) p.waitingSinceMs = ctx.tMs;
+        };
+
         if (
           p.sidestepCooldownUntilMs !== undefined &&
           ctx.tMs < p.sidestepCooldownUntilMs
         ) {
-          p.isWaiting = true;
+          // Sidestep on cooldown — try forward-jump recovery first.
+          if (tryForwardJump(p, next, currentTileDef, ctx, currentLeg)) return p;
+          enterWaiting();
           return p;
         }
 
         const forward = headingBetweenTiles(p.currentTile, next);
         const decision = pickSidestepTile(p.currentTile, forward, ctx, currentLeg);
         if (!decision.ok) {
-          p.isWaiting = true;
+          // No sidestep available — try forward-jump recovery.
+          if (tryForwardJump(p, next, currentTileDef, ctx, currentLeg)) return p;
+          enterWaiting();
           return p;
         }
 
@@ -662,6 +740,7 @@ export function tickPedestrian(
         if (sideTileDef) sideTileDef.isOccupied = true;
 
         p.isWaiting = false;
+        p.waitingSinceMs = undefined;
         p.sidestepCooldownUntilMs = ctx.tMs + SIDESTEP_COOLDOWN_MS;
         p.committedFromTile = undefined;
         p.currentTile = { ...decision.tile };
@@ -673,6 +752,7 @@ export function tickPedestrian(
       if (nextTileDef) nextTileDef.isOccupied = true;
 
       p.isWaiting = false;
+      p.waitingSinceMs = undefined;
       p.committedFromTile = { ...p.currentTile };
       p.currentTile = { ...next };
 
@@ -699,7 +779,6 @@ export function tickPedestrian(
         p.agenda.shift();
         p.interactUntilMs = undefined;
         p.targetAssetId = undefined;
-        p.wanderGoalKey = undefined;
         p.fsmState = 'Idle';
       }
       return p;

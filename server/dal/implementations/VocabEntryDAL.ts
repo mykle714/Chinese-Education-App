@@ -2,7 +2,7 @@ import { PoolClient, QueryResult } from 'pg';
 import { BaseDAL } from '../base/BaseDAL.js';
 import { IVocabEntryDAL } from '../interfaces/IVocabEntryDAL.js';
 import { dbManager } from '../base/DatabaseManager.js';
-import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, HskLevel } from '../../types/index.js';
+import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, HskLevel, UsedInItem } from '../../types/index.js';
 import { ValidationError, NotFoundError, BulkResult, ITransaction, DALError } from '../../types/dal.js';
 import db from '../../db.js';
 import { DICT_COLS, DICT_JOIN } from '../shared/dictJoin.js';
@@ -526,6 +526,118 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
       pronunciation: row.pronunciation ?? null,
       definition: row.definition ?? null,
     }));
+  }
+
+  /**
+   * For a single Chinese character, find up to `limit` multi-char words that contain it.
+   *
+   * Pass 1: user's own vocabentries (vet). Joined to dictionaryentries (det) so we can sort
+   *   by det."vernacularScore" DESC NULLS LAST (then entryKey ASC for determinism).
+   * Pass 2: if pass 1 returns fewer than `limit`, top up from det (global), skipping any
+   *   entryKeys already returned by pass 1. Same ordering. Pass-2 items have vocabEntryId=null.
+   *
+   * Chinese-only; returns [] for non-single-character input or non-zh language.
+   */
+  async findUsedInForCharacter(
+    userId: string,
+    character: string,
+    language: string,
+    limit: number = 5
+  ): Promise<UsedInItem[]> {
+    if (language !== 'zh') return [];
+    if (!character) return [];
+    const chars: string[] = [...character];
+    if (chars.length !== 1) return [];
+
+    const ch: string = chars[0];
+
+    // Pass 1: user's vet entries containing the char (excluding the single-char itself).
+    // position(...) > 0 is a plain substring check — no regex meta to escape.
+    const vetQuery: string = `
+      SELECT
+        ve.id AS "vocabEntryId",
+        ve."entryKey",
+        de.pronunciation,
+        de.definition,
+        de."vernacularScore"
+      FROM VocabEntries ve
+      LEFT JOIN LATERAL (
+        SELECT pronunciation, definitions->>0 AS definition, "vernacularScore"
+        FROM dictionaryentries
+        WHERE word1 = ve."entryKey" AND language = ve.language
+        LIMIT 1
+      ) de ON true
+      WHERE ve."userId" = $1
+        AND ve.language = $2
+        AND ve."entryKey" <> $3
+        AND position($3 IN ve."entryKey") > 0
+      ORDER BY de."vernacularScore" DESC NULLS LAST, ve."entryKey" ASC
+      LIMIT $4
+    `;
+
+    const vetResult = await this.dbManager.executeQuery<{
+      vocabEntryId: number;
+      entryKey: string;
+      pronunciation: string | null;
+      definition: string | null;
+      vernacularScore: number | null;
+    }>(async (client) => {
+      return await client.query(vetQuery, [userId, language, ch, limit]);
+    });
+
+    const vetItems: UsedInItem[] = vetResult.recordset.map((row) => ({
+      vocabEntryId: row.vocabEntryId,
+      entryKey: row.entryKey,
+      pronunciation: row.pronunciation ?? null,
+      definition: row.definition ?? null,
+      vernacularScore: row.vernacularScore ?? null,
+    }));
+
+    if (vetItems.length >= limit) return vetItems;
+
+    // Pass 2: top up from det, skipping pass-1 entryKeys.
+    const remaining: number = limit - vetItems.length;
+    const excluded: string[] = vetItems.map((i) => i.entryKey);
+
+    const detQuery: string = `
+      SELECT
+        word1 AS "entryKey",
+        pronunciation,
+        definitions->>0 AS definition,
+        "vernacularScore"
+      FROM dictionaryentries
+      WHERE language = $1
+        AND char_length(word1) > 1
+        AND word1 <> $2
+        AND position($2 IN word1) > 0
+        AND ($3::text[] IS NULL OR word1 <> ALL($3::text[]))
+      ORDER BY "vernacularScore" DESC NULLS LAST, word1 ASC
+      LIMIT $4
+    `;
+
+    const detResult = await this.dbManager.executeQuery<{
+      entryKey: string;
+      pronunciation: string | null;
+      definition: string | null;
+      vernacularScore: number | null;
+    }>(async (client) => {
+      return await client.query(detQuery, [
+        language,
+        ch,
+        excluded.length > 0 ? excluded : null,
+        remaining,
+      ]);
+    });
+
+    const detItems: UsedInItem[] = detResult.recordset.map((row) => ({
+      vocabEntryId: null,
+      entryKey: row.entryKey,
+      pronunciation: row.pronunciation ?? null,
+      definition: row.definition ?? null,
+      vernacularScore: row.vernacularScore ?? null,
+    }));
+
+    return [...vetItems, ...detItems];
   }
 
   /**

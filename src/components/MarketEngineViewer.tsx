@@ -1,11 +1,17 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Application, extend, useTick, useApplication } from '@pixi/react';
-import { Container, Sprite, Graphics, Text, Assets, Texture } from 'pixi.js';
+import { Container, Sprite, Graphics, Text, Assets, Texture, Rectangle } from 'pixi.js';
 import type { FederatedPointerEvent } from 'pixi.js';
 import { Box, CircularProgress, Alert } from '@mui/material';
 import { TILE_SIZE, type FrameAnimation, type MotionSpec } from '../config/nightMarketRegistry';
 import { evaluateMotion } from '../utils/nightMarketMotion';
-import { isoToScreen, computeLayerZ, computePedestrianZ } from '../utils/isometric';
+import {
+  isoToScreen,
+  computeLayerZ,
+  computePedestrianZ,
+  computeStripPlacements,
+  type StripPlacement,
+} from '../utils/isometric';
 import { TILES, DEMO_STALLS, STREETS, STREET_GRAPH, FLOOR_TILE_IMAGE_PATH, FLOOR_TILE_SCALE } from '../config/tileRegistry';
 import type { UsePixiPedestriansHandle } from '../hooks/usePixiPedestrians';
 
@@ -21,6 +27,50 @@ export interface EngineLayer {
   groupId: string;
   motions?: MotionSpec[];
   frameAnimation?: FrameAnimation;
+  /**
+   * Iso foot anchor (SW corner) for the stand this layer belongs to. When
+   * paired with `footprintSize`, the renderer slices the sprite into 2F
+   * vertical strips so each strip carries its own foot for painter z-sort.
+   * Omitting either field falls back to a single un-sliced sprite.
+   */
+  swX?: number;
+  swY?: number;
+  /** Square footprint edge length (iso units). Triggers strip-slicing when ≥ 1. */
+  footprintSize?: number;
+}
+
+/**
+ * Sub-texture cache for sprite-strip slicing. Keyed by
+ * `${imagePath}:${footprintSize}:${stripIndex}`. Sub-textures share the base
+ * texture's GPU source, so memory cost is metadata only. Lives at module
+ * scope — cleared only on full reload, which is acceptable since
+ * asset/strip combinations are bounded.
+ */
+const stripTextureCache = new Map<string, Texture>();
+
+function getStripTexture(
+  baseTexture: Texture,
+  imagePath: string,
+  footprintSize: number,
+  frame: { x: number; w: number; h: number },
+  stripIndex: number,
+): Texture {
+  const cacheKey = `${imagePath}:${footprintSize}:${stripIndex}`;
+  const cached = stripTextureCache.get(cacheKey);
+  if (cached) return cached;
+  // Clamp to integer-pixel bounds to avoid sub-pixel sampling artifacts.
+  // Width gets a +1 px overhang on non-rightmost strips to defeat AA seams.
+  const fx = Math.max(0, Math.floor(frame.x));
+  const fwBase = Math.max(1, Math.floor(frame.w));
+  const isRightmost = stripIndex === 2 * footprintSize - 1;
+  const fw = Math.min(baseTexture.width - fx, fwBase + (isRightmost ? 0 : 1));
+  const fh = Math.max(1, Math.floor(frame.h));
+  const tex = new Texture({
+    source: baseTexture.source,
+    frame: new Rectangle(fx, 0, fw, fh),
+  });
+  stripTextureCache.set(cacheKey, tex);
+  return tex;
 }
 
 /** Per-overlay debug flags. Each toggles a single debug label/outline layer. */
@@ -33,20 +83,15 @@ export interface DebugFlags {
   coordinates: boolean;
   tileInfo: boolean;
   frozen: boolean;
+  fast: boolean;
 }
 
 export const DEBUG_FLAG_KEYS: Array<keyof DebugFlags> = [
-  'footprints', 'standLabels', 'streetLabels', 'pedestrianStates', 'origin', 'coordinates', 'tileInfo', 'frozen',
+  'footprints', 'standLabels', 'streetLabels', 'pedestrianStates', 'origin', 'coordinates', 'tileInfo', 'frozen', 'fast',
 ];
 
 export const ALL_DEBUG_OFF: DebugFlags = {
-  footprints: false, standLabels: false, streetLabels: false, pedestrianStates: false, origin: false, coordinates: false, tileInfo: false, frozen: false,
-};
-
-// Note: `frozen` is intentionally excluded from `ALL_DEBUG_ON` — it changes
-// simulation behavior, not just visibility.
-export const ALL_DEBUG_ON: DebugFlags = {
-  footprints: true, standLabels: true, streetLabels: true, pedestrianStates: true, origin: true, coordinates: true, tileInfo: true, frozen: false,
+  footprints: false, standLabels: false, streetLabels: false, pedestrianStates: false, origin: false, coordinates: false, tileInfo: false, frozen: false, fast: false,
 };
 
 export interface MarketEngineViewerProps {
@@ -629,6 +674,7 @@ function NightMarketScene({ layers, textures, pan, zoom, onPanChange, onLayerTap
 
   // Stage pointer events: drag-to-pan + tap detection.
   useEffect(() => {
+    if (!app?.stage || !app.renderer) return;
     const stage = app.stage;
     stage.eventMode = 'static';
     stage.hitArea = app.screen;
@@ -707,7 +753,10 @@ function NightMarketScene({ layers, textures, pan, zoom, onPanChange, onLayerTap
   }, [layers, t]);
 
   // ── Unified render list: static layers + pedestrians, sorted back-to-front ─
-  // Pedestrians carry their own isoX/isoY so they z-sort correctly against stalls.
+  // Stand layers with `footprintSize` are expanded into 2F vertical strips.
+  // Each strip occupies its NATURAL pixel column in the source sprite
+  // (pixel-faithful) but z-sorts as if its bottom sits on the SW/SE diamond
+  // edge at that screen-X. Stripless layers (and pedestrians) emit one entry.
   const allSprites = useMemo(() => {
     type SpriteEntry = {
       key: string;
@@ -718,18 +767,67 @@ function NightMarketScene({ layers, textures, pan, zoom, onPanChange, onLayerTap
       scale: number;
       label: string;
       tappable: boolean;
+      anchorX: number;
+      /** When set, renderer carves a sub-texture from texKey's base texture. */
+      strip?: {
+        stripIndex: number;
+        footprintSize: number;
+        frame: { x: number; w: number; h: number };
+      };
     };
 
-    const items: SpriteEntry[] = computedLayers.map(({ layer, index, finalX, finalY, texKey }) => ({
-      key: `layer-${index}`,
-      x: finalX,
-      y: finalY,
-      zIndex: layer.zIndex,
-      texKey,
-      scale: layer.scale,
-      label: layer.groupId ?? String(index),
-      tappable: true,
-    }));
+    const items: SpriteEntry[] = [];
+
+    for (const { layer, index, finalX, finalY, texKey } of computedLayers) {
+      const layerLabel = layer.groupId ?? String(index);
+      const F = layer.footprintSize;
+      const baseTexture = textures.get(texKey);
+      if (!F || F < 1 || layer.swX === undefined || layer.swY === undefined || !baseTexture) {
+        // No footprint info (or texture not loaded yet) — render the single sprite.
+        items.push({
+          key: `layer-${index}`,
+          x: finalX,
+          y: finalY,
+          zIndex: layer.zIndex,
+          texKey,
+          scale: layer.scale,
+          label: layerLabel,
+          tappable: true,
+          anchorX: 0.5,
+        });
+        continue;
+      }
+
+      // Recover the slot fractional offset from the layer's z (which was
+      // computed as -(swX+swY) + slotZ at registry-build time).
+      const slotZ = layer.zIndex + (layer.swX + layer.swY);
+      const placements: StripPlacement[] = computeStripPlacements(
+        layer.swX,
+        layer.swY,
+        F,
+        baseTexture.width,
+        baseTexture.height,
+        layer.scale,
+      );
+      for (const p of placements) {
+        // Strip's left-edge screen position = finalX (original anchor center) + offsetX.
+        // Y matches the original anchor (no vertical shift — preserves the
+        // sprite's authored silhouette top-to-bottom).
+        const stripZ = -(p.footIsoX + p.footIsoY) + slotZ;
+        items.push({
+          key: `layer-${index}-${p.stripIndex}`,
+          x: finalX + p.offsetX,
+          y: finalY,
+          zIndex: stripZ,
+          texKey,
+          scale: layer.scale,
+          label: layerLabel,
+          tappable: true,
+          anchorX: 0,    // bottom-LEFT for every strip — left edge at x
+          strip: { stripIndex: p.stripIndex, footprintSize: F, frame: p.frame },
+        });
+      }
+    }
 
     if (pedestrians) {
       for (const d of pedestrians.getDrawables()) {
@@ -745,6 +843,7 @@ function NightMarketScene({ layers, textures, pan, zoom, onPanChange, onLayerTap
           scale: d.scale,
           label: d.id,   // ped IDs don't match any asset — taps won't open a dialog
           tappable: false,
+          anchorX: 0.5,
         });
       }
     }
@@ -753,6 +852,11 @@ function NightMarketScene({ layers, textures, pan, zoom, onPanChange, onLayerTap
     return items;
   }, [computedLayers, pedestrians]);
 
+  // app.screen is a getter that reads app.renderer.screen — accessing it
+  // before Pixi's async init() resolves throws because renderer is undefined.
+  // Gate on renderer, not screen.
+  if (!app?.renderer) return null;
+
   const cx = app.screen.width / 2 + pan.x;
   const cy = app.screen.height / 2 + pan.y;
 
@@ -760,9 +864,12 @@ function NightMarketScene({ layers, textures, pan, zoom, onPanChange, onLayerTap
     <pixiContainer x={cx} y={cy} scale={zoom} sortableChildren>
       {showGrid && <GridOverlay />}
       {floorTexture && <TileFloorOverlay texture={floorTexture} />}
-      {allSprites.map(({ key, x, y, zIndex, texKey, scale, label, tappable }) => {
-        const texture = textures.get(texKey);
-        if (!texture) return null;
+      {allSprites.map(({ key, x, y, zIndex, texKey, scale, label, tappable, anchorX, strip }) => {
+        const baseTexture = textures.get(texKey);
+        if (!baseTexture) return null;
+        const texture = strip
+          ? getStripTexture(baseTexture, texKey, strip.footprintSize, strip.frame, strip.stripIndex)
+          : baseTexture;
         return (
           <pixiSprite
             key={key}
@@ -770,7 +877,7 @@ function NightMarketScene({ layers, textures, pan, zoom, onPanChange, onLayerTap
             x={x}
             y={y}
             scale={scale}
-            anchor={{ x: 0.5, y: 1 }}
+            anchor={{ x: anchorX, y: 1 }}
             zIndex={zIndex}
             eventMode={tappable ? 'static' : 'none'}
             label={label}

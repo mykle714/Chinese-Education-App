@@ -109,6 +109,12 @@ const FlashcardsLearnPage: React.FC = () => {
     // the card first becomes visible. Side 1 is randomized per card — when it's
     // 'zh' we play on mount; when it's 'en' we wait for the flip (Side 2 always
     // shows Chinese). Either way, exactly one play per card.
+    //
+    // Note: this effect can briefly see `chineseVisible === true` on a fresh
+    // card before `setCurrentSideOneLanguage(randomSideOneLanguage())` swaps in
+    // the new random value. The cleanup calls tts.cancel(); CloudTTSProvider's
+    // cancel() bumps its generation so any in-flight fetch from this stale-state
+    // render is dropped before it produces audio.
     const tts = useTTS();
     const chineseVisible = currentSideOneLanguage === 'zh' || isFlipped;
     useEffect(() => {

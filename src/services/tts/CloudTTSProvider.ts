@@ -13,6 +13,12 @@ export class CloudTTSProvider implements TTSProvider {
     readonly name = 'cloud' as const;
 
     private currentAudio: HTMLAudioElement | null = null;
+    // Monotonic counter incremented on every speak()/cancel(). A speak() in
+    // flight captures its generation before awaiting the network fetch; when
+    // the fetch resolves, if the generation no longer matches the latest, the
+    // call bails out before constructing an Audio. This closes the race where
+    // cancel() can't pause audio that hasn't been built yet.
+    private generation = 0;
     // In-session blob cache so repeated plays of the same word don't re-hit
     // the server. Server has its own disk cache, but skipping the round-trip
     // is still cheaper. Key: `${lang}:${text}`.
@@ -33,10 +39,17 @@ export class CloudTTSProvider implements TTSProvider {
     async speak(req: TTSRequest): Promise<void> {
         if (!req.text) throw new Error('CloudTTSProvider requires text');
 
-        // Stop any in-flight playback first.
+        // Stop any in-flight playback first. cancel() also bumps `generation`,
+        // so any prior speak() still awaiting its fetch will see the mismatch
+        // below and bail out instead of playing an orphaned utterance.
         this.cancel();
+        const myGeneration = ++this.generation;
 
         const url = await this.getOrFetchAudioUrl(req.text, req.lang, req.pronunciation);
+
+        // Superseded by a newer speak() or a cancel() while the fetch was in
+        // flight — drop this call on the floor.
+        if (myGeneration !== this.generation) return;
 
         const audio = new Audio(url);
         audio.playbackRate = req.rate ?? 1.0;
@@ -57,6 +70,9 @@ export class CloudTTSProvider implements TTSProvider {
     }
 
     cancel(): void {
+        // Bump the generation so any in-flight speak() awaiting its fetch
+        // will see the mismatch when it resumes and skip playback.
+        this.generation++;
         if (this.currentAudio) {
             this.currentAudio.pause();
             this.currentAudio.currentTime = 0;

@@ -41,10 +41,6 @@ function DictionaryEntryDetailModal({ entry, open, onClose }: DictionaryEntryDet
         setMessage(null);
 
         try {
-            const firstDefinition = entry.definitions && entry.definitions.length > 0
-                ? entry.definitions[0]
-                : 'No definition available';
-
             const response = await fetch(`${API_BASE_URL}/api/vocabEntries`, {
                 method: 'POST',
                 headers: {
@@ -54,7 +50,6 @@ function DictionaryEntryDetailModal({ entry, open, onClose }: DictionaryEntryDet
                 credentials: 'include',
                 body: JSON.stringify({
                     entryKey: entry.word1,
-                    entryValue: firstDefinition,
                     language: entry.language,
                 }),
             });

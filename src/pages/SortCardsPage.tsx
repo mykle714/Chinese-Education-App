@@ -1,13 +1,12 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useParams } from "react-router-dom";
-import { Box, Typography, IconButton, CircularProgress, useMediaQuery, useTheme } from "@mui/material";
+import { Box, Typography, IconButton, CircularProgress } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import UndoIcon from "@mui/icons-material/Undo";
 import { useDrag } from "@use-gesture/react";
 import { useSpring, animated } from "@react-spring/web";
+import MobileDemoHeader from "../components/MobileDemoHeader";
 import MobileFooter from "../components/MobileFooter";
-import MobileNavDrawer from "../components/MobileNavDrawer";
-import PageHeader from "../components/PageHeader";
 import CharacterPinyinColorDisplay from "../components/CharacterPinyinColorDisplay";
 import CPCDRow from "../components/CPCDRow";
 import { API_BASE_URL } from "../constants";
@@ -41,16 +40,7 @@ const COLORS = {
     yellowAccent: "#F2E2BA",
 };
 
-// Styled Components
-const IPhoneFrame = styled(Box)({
-    backgroundColor: COLORS.background,
-    borderRadius: 0,
-    overflow: "hidden",
-    display: "flex",
-    flexDirection: "column",
-    width: "100%",
-    height: "100dvh",
-});
+// Styled Components — phone-frame sizing comes from MobileDemoFrame via Layout.tsx
 
 const ContentArea = styled(Box)({
     flex: 1,
@@ -159,8 +149,6 @@ const SortCardsPage: React.FC = () => {
     usePageTitle("Discover");
     const { token } = useAuth();
     const { language } = useParams<{ language: Language }>();
-    const theme = useTheme();
-    const isMobile = useMediaQuery(theme.breakpoints.down("md"));
     // `cardQueue` is the append-only master list of every card we've fetched.
     // `currentCardIndex` advances through it. We never replace `cardQueue` so the
     // currently displayed card (and undo history) survive mid-session refetches.
@@ -571,53 +559,35 @@ const SortCardsPage: React.FC = () => {
         );
     }
 
-    // On desktop the Layout wraps this page normally; restore the phone-frame look
-    const desktopFrameSx = !isMobile ? {
-        maxWidth: 393,
-        width: "100%",
-        borderRadius: "20px",
-        margin: "0 auto",
-        minHeight: "852px",
-        maxHeight: "932px",
-    } : {};
-
     if (!currentCard) {
         return (
-            <IPhoneFrame className="sort-cards__frame" sx={desktopFrameSx}>
-                <PageHeader
-                    title="Sort Cards"
-                    showBack={false}
-                    rightItems={<MobileNavDrawer />}
-                />
+            <>
+                <MobileDemoHeader title="Sort Cards" />
                 <ContentArea className="sort-cards__content">
                     <Box className="sort-cards__all-sorted" sx={{ display: "flex", flex: 1, alignItems: "center", justifyContent: "center" }}>
                         <Typography className="sort-cards__all-sorted-text">All cards sorted! 🎉</Typography>
                     </Box>
                 </ContentArea>
                 <MobileFooter activePage="discover" />
-            </IPhoneFrame>
+            </>
         );
     }
 
     return (
-        <IPhoneFrame className="sort-cards__frame" sx={desktopFrameSx}>
+        <>
             {/* Header */}
-            <PageHeader
+            <MobileDemoHeader
                 title="Sort Cards"
-                showBack={false}
-                rightItems={
-                    <>
-                        <IconButton
-                            className="sort-cards__undo-button"
-                            onClick={handleUndo}
-                            size="small"
-                            disabled={history.length === 0}
-                            sx={{ color: "#1D1B20" }}
-                        >
-                            <UndoIcon className="sort-cards__undo-icon" />
-                        </IconButton>
-                        <MobileNavDrawer />
-                    </>
+                extraActions={
+                    <IconButton
+                        className="sort-cards__undo-button"
+                        onClick={handleUndo}
+                        size="small"
+                        disabled={history.length === 0}
+                        sx={{ color: "#1D1B20" }}
+                    >
+                        <UndoIcon className="sort-cards__undo-icon" />
+                    </IconButton>
                 }
             />
 
@@ -692,7 +662,7 @@ const SortCardsPage: React.FC = () => {
                                 overflow: "hidden",
                             }}
                         >
-                            {stripParentheses(currentCard.entryValue)}
+                            {stripParentheses(currentCard.definition)}
                         </Typography>
                     </FlashCard>
                 </OnDeckSection>
@@ -700,7 +670,7 @@ const SortCardsPage: React.FC = () => {
 
             {/* Footer */}
             <MobileFooter activePage="discover" />
-        </IPhoneFrame>
+        </>
     );
 };
 

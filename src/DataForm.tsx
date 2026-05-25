@@ -15,7 +15,6 @@ import { API_BASE_URL } from './constants';
 
 interface VocabEntryFormData {
    entryKey: string;
-   entryValue: string;
 }
 
 interface DataFormProps {
@@ -24,8 +23,7 @@ interface DataFormProps {
 
 const DataForm = ({ onDataAdded }: DataFormProps) => {
    const [formData, setFormData] = useState<VocabEntryFormData>({
-      entryKey: '',
-      entryValue: ''
+      entryKey: ''
    });
    const [isSubmitting, setIsSubmitting] = useState(false);
    const [error, setError] = useState<string | null>(null);
@@ -66,8 +64,7 @@ const DataForm = ({ onDataAdded }: DataFormProps) => {
          }
 
          setFormData({
-            entryKey: '',
-            entryValue: ''
+            entryKey: ''
          });
          setSuccess(true);
          onDataAdded();
@@ -116,21 +113,6 @@ const DataForm = ({ onDataAdded }: DataFormProps) => {
                      margin="normal"
                      variant="outlined"
                      size="small"
-                  />
-
-                  <TextField
-                     label="Definition"
-                     id="entryValue"
-                     name="entryValue"
-                     value={formData.entryValue}
-                     onChange={handleChange}
-                     required
-                     fullWidth
-                     multiline
-                     rows={3}
-                     margin="normal"
-                     variant="outlined"
-                     sx={{ mb: 2, flexGrow: 1 }}
                   />
 
                   <Divider sx={{ mt: 'auto', mb: 2 }} />

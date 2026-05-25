@@ -1,14 +1,8 @@
 import { Box, Card, Typography } from "@mui/material";
 import { styled, alpha } from "@mui/material/styles";
+import { CORRECT_COLOR, INCORRECT_COLOR } from "./constants";
 
-export const IPhoneFrame = styled(Box)(({ theme }) => ({
-    backgroundColor: theme.palette.flashcard.background,
-    borderRadius: 0,
-    overflow: "hidden",
-    display: "flex",
-    flexDirection: "column",
-    width: "100vw",
-}));
+// IPhoneFrame removed — phone-frame sizing comes from MobileDemoFrame via Layout.tsx.
 
 export const InfoCard = styled(Card)(({ theme }) => ({
     backgroundColor: theme.palette.background.paper,
@@ -39,10 +33,9 @@ export const EicScrim = styled(Box)(({ theme }) => ({
     },
 }));
 
-// Modal bottom sheet for the EIC. Height is set inline by useEicSheet
-// (EIC_FULL_RATIO of the container) and position is driven by an inline
-// translateY transform — entry slide-up, drag, and snap animations all flow
-// through that one transform.
+// Modal bottom sheet for the EIP. Height is set inline by InfoCardSection
+// (measured natural height on mount, adjustable via grabber drag) and
+// position is fixed to the bottom of the parent.
 export const InfoSheetContainer = styled(Box)(({ theme }) => ({
     position: "absolute",
     left: 0,
@@ -264,6 +257,32 @@ export const DraggableCardContainer = styled(Box)(() => ({
     touchAction: "none",
     userSelect: "none",
     containerType: "size",
+}));
+
+// Swipe-direction tutorial label, rendered above the card after the user taps
+// an already-flipped card. Left side reads "← Incorrect" in the incorrect color,
+// right side reads "Correct →" in the correct color. Fade + slight rise on entry.
+export const SwipeHintLabel = styled(Box, {
+    shouldForwardProp: (prop) => prop !== "visible" && prop !== "side",
+})<{ visible: boolean; side: "left" | "right" }>(({ visible, side }) => ({
+    position: "absolute",
+    top: 16,
+    [side === "left" ? "left" : "right"]: 24,
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    fontFamily: "Inter, sans-serif",
+    fontSize: 13,
+    fontWeight: 600,
+    letterSpacing: "0.02em",
+    color: side === "left" ? INCORRECT_COLOR : CORRECT_COLOR,
+    opacity: visible ? 1 : 0,
+    transform: visible ? "translateY(0)" : "translateY(-4px)",
+    transition: "opacity 0.28s ease, transform 0.28s ease",
+    pointerEvents: "none",
+    userSelect: "none",
+    zIndex: 4,
+    whiteSpace: "nowrap",
 }));
 
 // alpha is available for consumers of this module.

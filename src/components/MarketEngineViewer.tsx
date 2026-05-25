@@ -5,8 +5,8 @@ import type { FederatedPointerEvent } from 'pixi.js';
 import { Box, CircularProgress, Alert } from '@mui/material';
 import { TILE_SIZE, type FrameAnimation, type MotionSpec } from '../config/nightMarketRegistry';
 import { evaluateMotion } from '../utils/nightMarketMotion';
-import { isoToScreen, computeLayerZ } from '../utils/isometric';
-import { TILES, DEMO_STALLS, FLOOR_TILE_IMAGE_PATH, FLOOR_TILE_SCALE } from '../config/tileRegistry';
+import { isoToScreen, computeLayerZ, computePedestrianZ } from '../utils/isometric';
+import { TILES, DEMO_STALLS, STREETS, STREET_GRAPH, FLOOR_TILE_IMAGE_PATH, FLOOR_TILE_SCALE } from '../config/tileRegistry';
 import type { UsePixiPedestriansHandle } from '../hooks/usePixiPedestrians';
 
 // Register Pixi.js classes as pixiContainer / pixiSprite / pixiGraphics / pixiText JSX elements.
@@ -23,6 +23,32 @@ export interface EngineLayer {
   frameAnimation?: FrameAnimation;
 }
 
+/** Per-overlay debug flags. Each toggles a single debug label/outline layer. */
+export interface DebugFlags {
+  footprints: boolean;
+  standLabels: boolean;
+  streetLabels: boolean;
+  pedestrianStates: boolean;
+  origin: boolean;
+  coordinates: boolean;
+  tileInfo: boolean;
+  frozen: boolean;
+}
+
+export const DEBUG_FLAG_KEYS: Array<keyof DebugFlags> = [
+  'footprints', 'standLabels', 'streetLabels', 'pedestrianStates', 'origin', 'coordinates', 'tileInfo', 'frozen',
+];
+
+export const ALL_DEBUG_OFF: DebugFlags = {
+  footprints: false, standLabels: false, streetLabels: false, pedestrianStates: false, origin: false, coordinates: false, tileInfo: false, frozen: false,
+};
+
+// Note: `frozen` is intentionally excluded from `ALL_DEBUG_ON` — it changes
+// simulation behavior, not just visibility.
+export const ALL_DEBUG_ON: DebugFlags = {
+  footprints: true, standLabels: true, streetLabels: true, pedestrianStates: true, origin: true, coordinates: true, tileInfo: true, frozen: false,
+};
+
 export interface MarketEngineViewerProps {
   layers: EngineLayer[];
   onLayerTap?: (id: string | number) => void;
@@ -31,8 +57,8 @@ export interface MarketEngineViewerProps {
   pedestrians?: UsePixiPedestriansHandle;
   /** Render the isometric debug grid (fine green + major red lines). Default false. */
   showGrid?: boolean;
-  /** Render stand display-name labels and pedestrian FSM state labels. Default false. */
-  showDebug?: boolean;
+  /** Per-overlay debug toggles. Omitted flags default to off. */
+  debug?: DebugFlags;
 }
 
 interface SceneProps {
@@ -44,7 +70,7 @@ interface SceneProps {
   onLayerTap?: (id: string | number) => void;
   pedestrians?: UsePixiPedestriansHandle;
   showGrid?: boolean;
-  showDebug?: boolean;
+  debug: DebugFlags;
   /** Ref set to true by the outer component during a pinch gesture — suppresses Pixi drag. */
   isPinchingRef?: React.RefObject<boolean>;
 }
@@ -54,8 +80,8 @@ const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 5.0;
 
 // ─── Grid overlay ────────────────────────────────────────────────────────────
-// Static isometric debug grid. Fine lines align with tile boundaries (every
-// TILE_SIZE iso units, green); major lines mark every 10 tiles (red).
+// Static isometric debug grid. Fine lines mark every 5 tiles (green);
+// major lines mark every 25 tiles (red, every 5 green lines).
 // Drawn once since the grid never changes.
 
 const GRID_MIN = -500;
@@ -86,11 +112,71 @@ function GridOverlay() {
       g.stroke({ color, width: lineWidth, alpha });
     };
 
-    drawGridLines(TILE_SIZE, 0x00C800, 0.5, 1);          // fine: per-tile (green)
-    drawGridLines(TILE_SIZE * 10, 0xFF0000, 0.9, 1.5);   // major: every 10 tiles (red)
+    drawGridLines(TILE_SIZE * 5, 0x00C800, 0.5, 1);      // fine: every 5 tiles (green)
+    drawGridLines(TILE_SIZE * 25, 0xFF0000, 0.9, 1.5);   // major: every 25 tiles / 5 green (red)
   }, []);
 
   return <pixiGraphics draw={draw} zIndex={GRID_Z} />;
+}
+
+// ─── Footprint outline overlay ───────────────────────────────────────────────
+// Strokes the outer perimeter of each stand's footprint as an isometric rhombus
+// so the authored tile geometry can be visually inspected against floor tiles
+// and adjacent stalls. Gated behind showDebug.
+//
+// Footprints are rectangular blocks of tiles; the screen-space outline is the
+// rhombus whose vertices are the iso corners of that block. Per-tile sprites
+// anchor at (0.5, 1) — bottom vertex of the diamond at the tile's iso position —
+// so the outer perimeter corners in iso space are (+isoY = north on screen,
+// so the smallest-iso corner sits at the bottom of the diamond):
+//   south  = (minIsoX,     minIsoY)
+//   east   = (maxIsoX + 1, minIsoY)
+//   north  = (maxIsoX + 1, maxIsoY + 1)
+//   west   = (minIsoX,     maxIsoY + 1)
+
+// Sits just above GridOverlay so outlines render over the grid but still
+// below stand sprites (entity z = -(isoX+isoY)+slot, typically >> -998).
+const FOOTPRINT_OUTLINE_Z = -998;
+
+// Labels must always float above every sprite. Sprite z-indices are bounded
+// by -(isoX+isoY)+slot_fraction, with isoX+isoY ranging ~-150..210, so the
+// max sprite z is ~150.5. Use a large constant to guarantee labels are on top.
+const LABEL_Z = 10_000;
+const FOOTPRINT_OUTLINE_COLOR = 0xffd24a;
+
+function FootprintOutlineOverlay() {
+  const rhombi = useMemo(() => {
+    return DEMO_STALLS.map(stand => {
+      const fp = stand.footprint;
+      if (!fp || fp.length === 0) return null;
+      let minIsoX = Infinity, maxIsoX = -Infinity, minIsoY = Infinity, maxIsoY = -Infinity;
+      for (const t of fp) {
+        if (t.isoX < minIsoX) minIsoX = t.isoX;
+        if (t.isoX > maxIsoX) maxIsoX = t.isoX;
+        if (t.isoY < minIsoY) minIsoY = t.isoY;
+        if (t.isoY > maxIsoY) maxIsoY = t.isoY;
+      }
+      const south = isoToScreen(minIsoX,     minIsoY);
+      const east  = isoToScreen(maxIsoX + 1, minIsoY);
+      const north = isoToScreen(maxIsoX + 1, maxIsoY + 1);
+      const west  = isoToScreen(minIsoX,     maxIsoY + 1);
+      return { south, east, north, west };
+    }).filter((r): r is NonNullable<typeof r> => r !== null);
+  }, []);
+
+  const draw = useCallback((g: Graphics) => {
+    g.clear();
+    for (const r of rhombi) {
+      g.moveTo(r.south.screenX, r.south.screenY);
+      g.lineTo(r.east.screenX,  r.east.screenY);
+      g.lineTo(r.north.screenX, r.north.screenY);
+      g.lineTo(r.west.screenX,  r.west.screenY);
+      g.closePath();
+    }
+    g.stroke({ color: FOOTPRINT_OUTLINE_COLOR, width: 2, alpha: 0.9 });
+  }, [rhombi]);
+
+  return <pixiGraphics draw={draw} zIndex={FOOTPRINT_OUTLINE_Z} />;
 }
 
 // ─── Tile floor overlay ──────────────────────────────────────────────────────
@@ -180,10 +266,9 @@ function PedestrianDebugLabels({ pedestrians }: PedestrianDebugLabelsProps) {
   const drawables = pedestrians.getDrawables();
 
   return (
-    <pixiContainer>
+    <pixiContainer zIndex={LABEL_Z}>
       {drawables.map(d => {
-        // Match the half-tile NE offset used by the ped sprite itself.
-        const { screenX, screenY } = isoToScreen(d.isoX + TILE_SIZE / 2, d.isoY + TILE_SIZE / 2);
+        const { screenX, screenY } = isoToScreen(d.isoX, d.isoY);
         const labelY = screenY + PED_LABEL_OFFSET_Y;
         return (
           <pixiContainer key={d.id} x={screenX} y={labelY}>
@@ -208,6 +293,38 @@ function PedestrianDebugLabels({ pedestrians }: PedestrianDebugLabelsProps) {
           </pixiContainer>
         );
       })}
+    </pixiContainer>
+  );
+}
+
+// ─── Origin marker overlay ──────────────────────────────────────────────────
+// Iso-axis crosshair at iso (0, 0) so the coordinate system is visually grounded
+// while debugging. Arms run along the iso X (east↔west) and iso Y (north↔south)
+// axes so they trace two of the major grid lines exactly. Gated behind debug.origin.
+
+// Half-arm length in ISO TILE UNITS. Each arm spans this many tiles outward
+// from the origin (so a value of 5 means the crosshair covers a 10×10-tile area).
+const ORIGIN_MARKER_ARM_ISO = 5;
+const ORIGIN_MARKER_WIDTH = 5;       // stroke thickness in pre-zoom screen px
+
+function OriginOverlay() {
+  const drawMarker = useCallback((g: Graphics) => {
+    g.clear();
+    // Iso-axis arms: east↔west along +/-isoX, north↔south along +/-isoY.
+    const east  = isoToScreen( ORIGIN_MARKER_ARM_ISO, 0);
+    const west  = isoToScreen(-ORIGIN_MARKER_ARM_ISO, 0);
+    const north = isoToScreen(0,  ORIGIN_MARKER_ARM_ISO);
+    const south = isoToScreen(0, -ORIGIN_MARKER_ARM_ISO);
+    g.moveTo(west.screenX,  west.screenY);
+    g.lineTo(east.screenX,  east.screenY);
+    g.moveTo(south.screenX, south.screenY);
+    g.lineTo(north.screenX, north.screenY);
+    g.stroke({ color: 0x00ffff, width: ORIGIN_MARKER_WIDTH, alpha: 1 });
+  }, []);
+
+  return (
+    <pixiContainer zIndex={LABEL_Z}>
+      <pixiGraphics draw={drawMarker} />
     </pixiContainer>
   );
 }
@@ -238,7 +355,7 @@ function StandLabelOverlay() {
     [],
   );
   return (
-    <pixiContainer>
+    <pixiContainer zIndex={LABEL_Z}>
       {positions.map(p => (
         <pixiText
           key={p.id}
@@ -253,11 +370,238 @@ function StandLabelOverlay() {
   );
 }
 
+// ─── Pedestrian name overlay ────────────────────────────────────────────────
+// Renders one text label per pedestrian showing its id. Floated above the
+// sprite anchor so it doesn't z-sort against scene geometry. Gated behind
+// debug.standLabels (the "display names" toggle covers both stands and peds).
+
+const PED_NAME_STYLE = {
+  fontSize: 50,
+  fill: 0xffffff,
+  fontFamily: 'monospace',
+  stroke: { color: 0x000000, width: 6 },
+  align: 'center' as const,
+  fontWeight: 'bold' as const,
+};
+
+// Lifted higher than the FSM state label so the two don't collide when both
+// toggles are active.
+const PED_NAME_OFFSET_Y = -460;
+
+interface PedestrianNameLabelsProps {
+  pedestrians: UsePixiPedestriansHandle;
+}
+
+function PedestrianNameLabels({ pedestrians }: PedestrianNameLabelsProps) {
+  const drawables = pedestrians.getDrawables();
+  return (
+    <pixiContainer zIndex={LABEL_Z}>
+      {drawables.map(d => {
+        const { screenX, screenY } = isoToScreen(d.isoX, d.isoY);
+        return (
+          <pixiText
+            key={d.id}
+            text={d.id}
+            x={screenX}
+            y={screenY + PED_NAME_OFFSET_Y}
+            anchor={{ x: 0.5, y: 1 }}
+            style={PED_NAME_STYLE}
+          />
+        );
+      })}
+    </pixiContainer>
+  );
+}
+
+// ─── Street label overlay ───────────────────────────────────────────────────
+// One text label per Street, placed at the street's iso midpoint and lifted
+// slightly so it floats above the walkway floor. Gated behind showDebug.
+
+const STREET_LABEL_STYLE = {
+  fontSize: 180,
+  fill: 0xff0000,
+  fontFamily: 'monospace',
+  align: 'center' as const,
+  fontStyle: 'italic' as const,
+};
+
+const STREET_LABEL_OFFSET_Y = -40;
+
+function StreetLabelOverlay() {
+  const positions = useMemo(
+    () =>
+      STREETS.map(s => {
+        // Midpoint along the primary axis; centered across the street's width.
+        const mid = (s.start + s.end) / 2;
+        const perpMid = s.offset + (s.width - 1) / 2;
+        const isoX = s.isNorthSouth ? perpMid : mid;
+        const isoY = s.isNorthSouth ? mid : perpMid;
+        const { screenX, screenY } = isoToScreen(isoX, isoY);
+        return { name: s.name, x: screenX, y: screenY + STREET_LABEL_OFFSET_Y };
+      }),
+    [],
+  );
+  return (
+    <pixiContainer zIndex={LABEL_Z}>
+      {positions.map(p => (
+        <pixiText
+          key={p.name}
+          text={p.name}
+          x={p.x}
+          y={p.y}
+          anchor={{ x: 0.5, y: 0.5 }}
+          style={STREET_LABEL_STYLE}
+        />
+      ))}
+    </pixiContainer>
+  );
+}
+
+// ─── Coordinate label overlay ────────────────────────────────────────────────
+// (isoX, isoY) labels for every demo stand (cyan, static) and every pedestrian
+// (green, ticked). Lets you visually verify authored stall placement and watch
+// pedestrian movement in iso space without console logging.
+
+const STAND_COORD_STYLE = {
+  fontSize: 90,
+  fill: 0x66e0ff,
+  fontFamily: 'monospace',
+  stroke: { color: 0x000000, width: 10 },
+  align: 'center' as const,
+  fontWeight: 'bold' as const,
+};
+
+const PED_COORD_STYLE = {
+  fontSize: 90,
+  fill: 0xaaffaa,
+  fontFamily: 'monospace',
+  stroke: { color: 0x000000, width: 10 },
+  align: 'center' as const,
+  fontWeight: 'bold' as const,
+};
+
+// Lifts the stand coord label slightly higher than the name label so the two
+// don't sit on top of each other when both overlays are on.
+const STAND_COORD_OFFSET_Y = -340;
+// Ped coord sits just below the sprite foot so it doesn't fight the FSM-state
+// label that sits well above the head (PED_LABEL_OFFSET_Y = -300).
+const PED_COORD_OFFSET_Y = 30;
+
+interface CoordinateLabelOverlayProps {
+  pedestrians?: UsePixiPedestriansHandle;
+}
+
+function CoordinateLabelOverlay({ pedestrians }: CoordinateLabelOverlayProps) {
+  const standPositions = useMemo(
+    () =>
+      DEMO_STALLS.map(s => {
+        const { screenX, screenY } = isoToScreen(s.isoX, s.isoY);
+        // Stand z shown as the base depth from computeLayerZ at the `background`
+        // slot (which contributes 0). Per-layer slot offsets aren't surfaced
+        // here since a stand is not a single z value.
+        const baseZ = computeLayerZ(s.isoX, s.isoY, 'background');
+        return {
+          id: s.assetId,
+          text: `(${s.isoX}, ${s.isoY}, z=${baseZ.toFixed(2)})`,
+          x: screenX,
+          y: screenY + STAND_COORD_OFFSET_Y,
+        };
+      }),
+    [],
+  );
+
+  const pedDrawables = pedestrians?.getDrawables() ?? [];
+
+  return (
+    <pixiContainer zIndex={LABEL_Z}>
+      {standPositions.map(p => (
+        <pixiText
+          key={`stand-${p.id}`}
+          text={p.text}
+          x={p.x}
+          y={p.y}
+          anchor={{ x: 0.5, y: 1 }}
+          style={STAND_COORD_STYLE}
+        />
+      ))}
+      {pedDrawables.map(d => {
+        const { screenX, screenY } = isoToScreen(d.isoX, d.isoY);
+        const pedZ = computePedestrianZ(d.isoX, d.isoY);
+        return (
+          <pixiText
+            key={`ped-${d.id}`}
+            text={`(${d.isoX.toFixed(1)}, ${d.isoY.toFixed(1)}, z=${pedZ.toFixed(1)})`}
+            x={screenX}
+            y={screenY + PED_COORD_OFFSET_Y}
+            anchor={{ x: 0.5, y: 0 }}
+            style={PED_COORD_STYLE}
+          />
+        );
+      })}
+    </pixiContainer>
+  );
+}
+
+// ─── Tile info overlay ──────────────────────────────────────────────────────
+// Per-tile small-font annotation showing which street graph entity owns the
+// tile: node id, edge id, or just street name(s) for tiles that don't sit on
+// the macro graph. Designed to be readable only when the user zooms in.
+
+const TILE_INFO_STYLE = {
+  fontSize: 12,
+  fill: 0xffffaa,
+  fontFamily: 'monospace',
+  stroke: { color: 0x000000, width: 2 },
+  align: 'center' as const,
+};
+
+/** Strip the long `node:Streets@x,y` prefix down to its `x,y` part. */
+function shortNodeId(id: string): string {
+  const at = id.lastIndexOf('@');
+  return at >= 0 ? `N@${id.slice(at + 1)}` : id;
+}
+
+function TileInfoOverlay() {
+  const labels = useMemo(
+    () =>
+      TILES.map(t => {
+        const k = tileKey(t.isoX, t.isoY);
+        const node = STREET_GRAPH.tileToNode.get(k);
+        const edge = STREET_GRAPH.tileToEdge.get(k);
+        let text: string;
+        if (node) {
+          text = shortNodeId(node.id);
+        } else if (edge) {
+          text = `E:${edge.street.name}`;
+        } else {
+          text = t.intersectingStreets?.map(s => s.name).join('|') || '-';
+        }
+        const { screenX, screenY } = isoToScreen(t.isoX, t.isoY);
+        return { key: k, x: screenX, y: screenY, text };
+      }),
+    [],
+  );
+  return (
+    <pixiContainer zIndex={LABEL_Z}>
+      {labels.map(l => (
+        <pixiText
+          key={l.key}
+          text={l.text}
+          x={l.x}
+          y={l.y}
+          anchor={{ x: 0.5, y: 1 }}
+          style={TILE_INFO_STYLE}
+        />
+      ))}
+    </pixiContainer>
+  );
+}
+
 // ─── NightMarketScene ────────────────────────────────────────────────────────
 // Runs inside <Application>. Handles the animation tick, pan/tap events,
 // walkway rendering, static layer sprites, and pedestrian sprites.
 
-function NightMarketScene({ layers, textures, pan, zoom, onPanChange, onLayerTap, pedestrians, showGrid, showDebug, isPinchingRef }: SceneProps) {
+function NightMarketScene({ layers, textures, pan, zoom, onPanChange, onLayerTap, pedestrians, showGrid, debug, isPinchingRef }: SceneProps) {
   const { app } = useApplication();
   const [t, setT] = useState(0);
   const floorTexture = textures.get(FLOOR_TILE_IMAGE_PATH);
@@ -389,16 +733,14 @@ function NightMarketScene({ layers, textures, pan, zoom, onPanChange, onLayerTap
 
     if (pedestrians) {
       for (const d of pedestrians.getDrawables()) {
-        // Tile coordinates name a tile's SW corner; shift the ped by half a
-        // tile NE so the sprite stands in the visual center of the tile.
-        const cx = d.isoX + TILE_SIZE / 2;
-        const cy = d.isoY + TILE_SIZE / 2;
-        const { screenX, screenY } = isoToScreen(cx, cy);
+        // Peds anchor at the southern (bottom) vertex of their current tile —
+        // same model as stands. d.isoX/d.isoY name the tile's SW corner.
+        const { screenX, screenY } = isoToScreen(d.isoX, d.isoY);
         items.push({
           key: `ped-${d.id}`,
           x: screenX,
           y: screenY,
-          zIndex: computeLayerZ(cx, cy, 'entity'),
+          zIndex: computePedestrianZ(d.isoX, d.isoY),
           texKey: d.imagePath,
           scale: d.scale,
           label: d.id,   // ped IDs don't match any asset — taps won't open a dialog
@@ -435,8 +777,14 @@ function NightMarketScene({ layers, textures, pan, zoom, onPanChange, onLayerTap
           />
         );
       })}
-      {showDebug && <StandLabelOverlay />}
-      {showDebug && pedestrians && <PedestrianDebugLabels pedestrians={pedestrians} />}
+      {debug.footprints && <FootprintOutlineOverlay />}
+      {debug.origin && <OriginOverlay />}
+      {debug.standLabels && <StandLabelOverlay />}
+      {debug.standLabels && pedestrians && <PedestrianNameLabels pedestrians={pedestrians} />}
+      {debug.streetLabels && <StreetLabelOverlay />}
+      {debug.pedestrianStates && pedestrians && <PedestrianDebugLabels pedestrians={pedestrians} />}
+      {debug.coordinates && <CoordinateLabelOverlay pedestrians={pedestrians} />}
+      {debug.tileInfo && <TileInfoOverlay />}
     </pixiContainer>
   );
 }
@@ -444,7 +792,7 @@ function NightMarketScene({ layers, textures, pan, zoom, onPanChange, onLayerTap
 // ─── MarketEngineViewer ───────────────────────────────────────────────────────
 // Outer component: texture loading, pan/zoom state, Application mount.
 
-function MarketEngineViewer({ layers, onLayerTap, pedestrians, showGrid, showDebug }: MarketEngineViewerProps) {
+function MarketEngineViewer({ layers, onLayerTap, pedestrians, showGrid, debug = ALL_DEBUG_OFF }: MarketEngineViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(0.25);
@@ -643,7 +991,7 @@ function MarketEngineViewer({ layers, onLayerTap, pedestrians, showGrid, showDeb
             onLayerTap={onLayerTap}
             pedestrians={pedestrians}
             showGrid={showGrid}
-            showDebug={showDebug}
+            debug={debug}
             isPinchingRef={isPinchingRef}
           />
         </Application>

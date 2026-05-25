@@ -1,7 +1,8 @@
 import React from "react";
-import { Box, Card, CardContent, Typography, useTheme } from "@mui/material";
+import { Box, Card, CardContent, IconButton, Typography, useTheme } from "@mui/material";
+import VolumeUpIcon from "@mui/icons-material/VolumeUp";
 import { stripParentheses } from "../../utils/definitionUtils";
-import { DraggableCardContainer } from "./styled";
+import { DraggableCardContainer, SwipeHintLabel } from "./styled";
 import { CORRECT_COLOR, INCORRECT_COLOR, CARD_FACE_JUSTIFY, CARD_DISMISS_THRESHOLD_VW } from "./constants";
 import type { VocabEntry, SideOneLanguage } from "./types";
 import CharacterPinyinColorDisplay from "../../components/CharacterPinyinColorDisplay";
@@ -24,27 +25,70 @@ interface FlashCardSectionProps {
     // Side 1 language for the back-slot (peeking) card — different random value
     // so promoting it on dismiss doesn't flash the wrong language.
     nextSideOneLanguage: SideOneLanguage;
+    // Swipe-tutorial state from useCardDrag: shake the front card on each new
+    // nonce, and fade the ← Incorrect / Correct → labels in/out with showSwipeHint.
+    showSwipeHint: boolean;
+    shakeNonce: number;
     handlers: {
         onTouchStart: (e: React.TouchEvent) => void;
         onTouchEnd: (e: React.TouchEvent) => void;
         onMouseDown: (e: React.MouseEvent) => void;
     };
+    // Optional speaker callback. When provided, a speaker icon button is
+    // rendered on card sides that contain Chinese text. Undefined when narration
+    // is disabled in settings — icon is hidden entirely.
+    onSpeak?: (entry: VocabEntry) => void;
 }
 
+// Speaker icon button. Sits to the right of the Chinese block. Stops pointer
+// event propagation so taps don't bubble up to the card's flip/drag handlers.
+const SpeakerButton: React.FC<{ onClick: () => void }> = ({ onClick }) => {
+    const theme = useTheme();
+    const stop = (e: React.SyntheticEvent) => {
+        e.stopPropagation();
+    };
+    return (
+        <IconButton
+            className="flashcard-speaker-button"
+            size="small"
+            onClick={(e) => { stop(e); onClick(); }}
+            onMouseDown={stop}
+            onTouchStart={stop}
+            onTouchEnd={stop}
+            aria-label="Play narration"
+            sx={{
+                color: theme.palette.flashcard.textSecondary,
+                '&:hover': { color: theme.palette.flashcard.onSurface },
+            }}
+        >
+            <VolumeUpIcon fontSize="small" />
+        </IconButton>
+    );
+};
+
 // Chinese (CPCD) row block reused on both Side 1 (when Chinese) and Side 2.
-const ChineseBlock: React.FC<{ entry: VocabEntry; showPinyin: boolean }> = ({ entry, showPinyin }) => (
-    <CPCDRow size="md" justifyContent="center" className="mobile-demo-flashcard-cpcd-row">
-        {[...entry.entryKey].map((char, i) => (
-            <CharacterPinyinColorDisplay
-                key={i}
-                character={char}
-                pinyin={entry.pronunciation?.split(' ')[i] ?? ''}
-                size="md"
-                useToneColor={true}
-                showPinyin={showPinyin}
-            />
-        ))}
-    </CPCDRow>
+// When onSpeak is provided, a speaker icon renders alongside the row for
+// manual narration playback.
+const ChineseBlock: React.FC<{
+    entry: VocabEntry;
+    showPinyin: boolean;
+    onSpeak?: (entry: VocabEntry) => void;
+}> = ({ entry, showPinyin, onSpeak }) => (
+    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }} className="mobile-demo-flashcard-chinese-block">
+        <CPCDRow size="md" justifyContent="center" className="mobile-demo-flashcard-cpcd-row">
+            {[...entry.entryKey].map((char, i) => (
+                <CharacterPinyinColorDisplay
+                    key={i}
+                    character={char}
+                    pinyin={entry.pronunciation?.split(' ')[i] ?? ''}
+                    size="md"
+                    useToneColor={true}
+                    showPinyin={showPinyin}
+                />
+            ))}
+        </CPCDRow>
+        {onSpeak && <SpeakerButton onClick={() => onSpeak(entry)} />}
+    </Box>
 );
 
 // English definition Typography reused on both Side 1 (when English) and Side 2.
@@ -58,7 +102,7 @@ const EnglishBlock: React.FC<{ entry: VocabEntry }> = ({ entry }) => {
             fontFamily: '"Inter", "Noto Sans JP", sans-serif',
             textAlign: 'center',
         }}>
-            {stripParentheses(entry.entryValue)}
+            {stripParentheses(entry.definition ?? '')}
         </Typography>
     );
 };
@@ -83,7 +127,8 @@ const CardFace: React.FC<{
     // True for both the active front card and the card currently flying off screen —
     // both should show the full shadow and the green/red drag overlay.
     isProminent: boolean;
-}> = ({ entry, isFlipped, isAnimating, showPinyin, sideOneLanguage, dragPosition, dismissThreshold, isProminent }) => {
+    onSpeak?: (entry: VocabEntry) => void;
+}> = ({ entry, isFlipped, isAnimating, showPinyin, sideOneLanguage, dragPosition, dismissThreshold, isProminent, onSpeak }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
 
@@ -143,7 +188,7 @@ const CardFace: React.FC<{
                         </Box>
                         <Box className="mobile-demo-flashcard-text mobile-demo-flashcard-side-one" sx={{ display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'center', width: '100%' }}>
                             {sideOneLanguage === 'zh'
-                                ? <ChineseBlock entry={entry} showPinyin={showPinyin} />
+                                ? <ChineseBlock entry={entry} showPinyin={showPinyin} onSpeak={onSpeak} />
                                 : <EnglishBlock entry={entry} />}
                         </Box>
                     </Box>
@@ -186,7 +231,7 @@ const CardFace: React.FC<{
                             <Typography sx={{ fontSize: 11, color: fc.textSecondary, fontFamily: '"Inter", sans-serif', textAlign: 'center' }}>insert image here</Typography>
                         </Box>
                         <Box className="mobile-demo-flashcard-side-two" sx={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center', width: '100%' }}>
-                            <ChineseBlock entry={entry} showPinyin={showPinyin} />
+                            <ChineseBlock entry={entry} showPinyin={showPinyin} onSpeak={onSpeak} />
                             <EnglishBlock entry={entry} />
                         </Box>
                     </Box>
@@ -223,7 +268,10 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
     showPinyin,
     sideOneLanguage,
     nextSideOneLanguage,
+    showSwipeHint,
+    shakeNonce,
     handlers,
+    onSpeak,
 }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
@@ -256,6 +304,23 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                 width: "100%",
             }}
         >
+            {/* Swipe-direction tutorial labels — sit above the card in the
+                container's top padding. Outside DraggableCardContainer so the
+                3D perspective / card transforms don't affect them. */}
+            <SwipeHintLabel
+                className="mobile-demo-swipe-hint-incorrect"
+                visible={showSwipeHint}
+                side="left"
+            >
+                ← Incorrect
+            </SwipeHintLabel>
+            <SwipeHintLabel
+                className="mobile-demo-swipe-hint-correct"
+                visible={showSwipeHint}
+                side="right"
+            >
+                Correct →
+            </SwipeHintLabel>
             {/* Fills the slot. DraggableCardContainer has definite px dimensions because
                 it is absolutely positioned — this is what makes height:100% on
                 CardAspectWrapper resolve correctly (flex-grown heights are not definite). */}
@@ -321,9 +386,16 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                     opacity = 0.9;
                                 }
 
+                                // Shake the front card whenever the swipe-tutorial nonce changes.
+                                // Re-mount the wrapper by including shakeNonce in the key so the CSS
+                                // animation restarts cleanly per trigger. The shake only runs when the
+                                // card is at rest (not dragging, not flying out) — otherwise the
+                                // animated transform would conflict with the drag-follow transform.
+                                const shakeActive = isFront && shakeNonce > 0 && !isAnimating && !isDragging;
+
                                 return (
                                     <Box
-                                        key={slot}
+                                        key={isFront ? `front-${shakeNonce}` : `slot-${slot}`}
                                         ref={isFront ? cardRef : undefined}
                                         {...(isFront ? {
                                             onTouchStart: handlers.onTouchStart,
@@ -339,6 +411,16 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                             opacity,
                                             // Back card should never capture pointer events
                                             ...(!isFront && { pointerEvents: 'none', userSelect: 'none' }),
+                                            ...(shakeActive ? {
+                                                animation: "cardShake 0.42s ease-in-out",
+                                                "@keyframes cardShake": {
+                                                    "0%, 100%": { transform: "translate(0px, 0px) rotate(0deg)" },
+                                                    "20%": { transform: "translate(-10px, 0) rotate(-1.2deg)" },
+                                                    "40%": { transform: "translate(10px, 0) rotate(1.2deg)" },
+                                                    "60%": { transform: "translate(-7px, 0) rotate(-0.8deg)" },
+                                                    "80%": { transform: "translate(7px, 0) rotate(0.8deg)" },
+                                                },
+                                            } : {}),
                                         }}
                                     >
                                         {entry && (
@@ -354,6 +436,9 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                                 dismissThreshold={dismissThreshold}
                                                 isFront={isFront}
                                                 isProminent={isFront || isThisSlotFlyingOut}
+                                                // Only show the speaker on the active front card —
+                                                // tapping it on the back/flying-out card would race the animation.
+                                                onSpeak={isFront ? onSpeak : undefined}
                                             />
                                         )}
                                     </Box>

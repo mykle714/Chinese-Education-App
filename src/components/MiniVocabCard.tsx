@@ -229,7 +229,7 @@ const MiniVocabCard: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete,
                     minHeight: 24,
                 }}
             >
-                {stripParentheses(entry.entryValue)}
+                {stripParentheses(entry.definition ?? '')}
             </Typography>
         </Box>
     );

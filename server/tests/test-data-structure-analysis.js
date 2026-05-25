@@ -71,7 +71,7 @@ async function analyzeDataStructure() {
       const fieldVariations = {
         id: sampleEntry.id || sampleEntry.ID || 'NOT_FOUND',
         entryKey: sampleEntry.entryKey || sampleEntry.entrykey || sampleEntry.entry_key || 'NOT_FOUND',
-        entryValue: sampleEntry.entryValue || sampleEntry.entryvalue || sampleEntry.entry_value || 'NOT_FOUND',
+        definition: sampleEntry.definition || 'NOT_FOUND',
         userId: sampleEntry.userId || sampleEntry.userid || sampleEntry.user_id || 'NOT_FOUND',
         createdAt: sampleEntry.createdAt || sampleEntry.createdat || sampleEntry.created_at || 'NOT_FOUND'
       };
@@ -115,7 +115,7 @@ async function analyzeDataStructure() {
       });
       
       if (found) {
-        const entryValue = found.entryValue || found.entryvalue || found.entry_value;
+        const entryValue = found.definition;
         console.log(`   ✅ ${token} → ${entryValue}`);
         console.log(`      Entry structure:`, Object.keys(found));
       } else {
@@ -133,7 +133,7 @@ async function analyzeDataStructure() {
       });
       
       if (foundInAll) {
-        const entryValue = foundInAll.entryValue || foundInAll.entryvalue || foundInAll.entry_value;
+        const entryValue = foundInAll.definition;
         console.log(`   ✅ ${token} found in all entries → ${entryValue}`);
       } else {
         console.log(`   ❌ ${token} not found in all entries either`);
@@ -147,14 +147,14 @@ async function analyzeDataStructure() {
       console.log(`\n   Searching for entries containing "${token}":`);
       const partialMatches = allEntries.filter(entry => {
         const entryKey = entry.entryKey || entry.entrykey || entry.entry_key;
-        const entryValue = entry.entryValue || entry.entryvalue || entry.entry_value;
+        const entryValue = entry.definition;
         return entryKey?.includes(token) || entryValue?.includes(token);
       });
       
       if (partialMatches.length > 0) {
         partialMatches.slice(0, 3).forEach(match => {
           const entryKey = match.entryKey || match.entrykey || match.entry_key;
-          const entryValue = match.entryValue || match.entryvalue || match.entry_value;
+          const entryValue = match.definition;
           console.log(`      📝 ${entryKey} → ${entryValue?.substring(0, 50)}${entryValue?.length > 50 ? '...' : ''}`);
         });
         if (partialMatches.length > 3) {
@@ -176,7 +176,7 @@ async function analyzeDataStructure() {
       console.log('\nRecommended field access pattern:');
       console.log(`  ID: entry.${sampleEntry.id !== undefined ? 'id' : 'ID'}`);
       console.log(`  Key: entry.${sampleEntry.entryKey !== undefined ? 'entryKey' : sampleEntry.entrykey !== undefined ? 'entrykey' : 'entry_key'}`);
-      console.log(`  Value: entry.${sampleEntry.entryValue !== undefined ? 'entryValue' : sampleEntry.entryvalue !== undefined ? 'entryvalue' : 'entry_value'}`);
+      console.log(`  Definition: entry.definition`);
     }
     
   } catch (error) {

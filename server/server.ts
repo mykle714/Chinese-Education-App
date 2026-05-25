@@ -15,8 +15,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Import DAL architecture
-import { userController, vocabEntryController, onDeckVocabController, userMinutePointsController, textController, dictionaryController, starterPacksController, onDeckVocabService, nightMarketController } from './dal/setup.js';
+import { userController, vocabEntryController, onDeckVocabController, userMinutePointsController, textController, dictionaryController, starterPacksController, onDeckVocabService, nightMarketController, gamesController } from './dal/setup.js';
 import { leaderboardController } from './controllers/LeaderboardController.js';
+import { ttsController } from './controllers/TTSController.js';
 
 // Configure multer for file uploads
 const upload = multer({ 
@@ -25,68 +26,6 @@ const upload = multer({
     fileSize: 5 * 1024 * 1024 // 5MB limit
   }
 });
-
-// CSV parsing function
-function parseCSV(csvContent: string): { entryKey: string; entryValue: string }[] {
-  const lines = csvContent.split('\n');
-  const entries: { entryKey: string; entryValue: string }[] = [];
-  
-  // Skip header row (assuming first line is header)
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line) continue;
-    
-    // Parse CSV line - handle quoted fields
-    const fields = parseCSVLine(line);
-    if (fields.length >= 2) {
-      const entryKey = fields[0].trim();
-      const entryValue = fields[1].trim();
-      
-      if (entryKey && entryValue) {
-        entries.push({ entryKey, entryValue });
-      }
-    }
-  }
-  
-  return entries;
-}
-
-// Helper function to parse a single CSV line with proper quote handling
-function parseCSVLine(line: string): string[] {
-  const fields: string[] = [];
-  let current = '';
-  let inQuotes = false;
-  let i = 0;
-  
-  while (i < line.length) {
-    const char = line[i];
-    
-    if (char === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        // Escaped quote
-        current += '"';
-        i += 2;
-      } else {
-        // Toggle quote state
-        inQuotes = !inQuotes;
-        i++;
-      }
-    } else if (char === ',' && !inQuotes) {
-      // Field separator
-      fields.push(current);
-      current = '';
-      i++;
-    } else {
-      current += char;
-      i++;
-    }
-  }
-  
-  // Add the last field
-  fields.push(current);
-  
-  return fields;
-}
 
 // Load environment variables
 dotenv.config();
@@ -443,6 +382,27 @@ app.post('/api/night-market/unlock', authenticateToken, async (req, res) => {
   await nightMarketController.unlockNext(req, res);
 });
 
+// Games framework API Routes
+// One controller serves all games; the :gameId path param scopes each request.
+
+// List assets registered for a game (used by GameStage to preload textures)
+// @ts-ignore
+app.get('/api/games/:gameId/assets', authenticateToken, async (req, res) => {
+  await gamesController.getAssets(req, res);
+});
+
+// Fetch the authenticated user's save state for a game
+// @ts-ignore
+app.get('/api/games/:gameId/progress', authenticateToken, async (req, res) => {
+  await gamesController.getProgress(req, res);
+});
+
+// Upsert the authenticated user's save state for a game
+// @ts-ignore
+app.post('/api/games/:gameId/progress', authenticateToken, async (req, res) => {
+  await gamesController.saveProgress(req, res);
+});
+
 // Flashcards API Routes - USING NEW DAL ARCHITECTURE
 
 const DEFAULT_FLASHCARD_TIMEZONE = 'UTC';
@@ -610,13 +570,18 @@ app.post('/api/flashcards/mark', authenticateToken, async (req, res) => {
 
       console.log(`Returning ${newCard.category} card (ID: ${newCard.id}) for user who marked ${categoryBeforeMark} card correct`);
 
+      // Pre-warm the TTS disk cache for the replacement card so its audio is a
+      // guaranteed cache hit on the client's follow-up /api/tts/synthesize call.
+      // Same graceful-degrade semantics as the working-loop endpoint.
+      await onDeckVocabService.prewarmAudio([newCard]);
+
       client.release();
-      return res.status(200).json({ 
+      return res.status(200).json({
         success: true,
         category,
         markTimestamp: newMark.timestamp,
         displacedMark,
-        newCard 
+        newCard
       });
     } else {
       // If incorrect, just return success with category
@@ -822,6 +787,13 @@ app.get('/api/dictionary/lookup/:term', authenticateToken, async (req, res) => {
 app.get('/api/dictionary/count', authenticateToken, async (req, res) => {
   console.log('🔄 Using NEW DAL architecture for dictionary count');
   await dictionaryController.getCount(req, res);
+});
+
+// TTS: synthesize MP3 audio for a dictionary entry. Disk-cached with infinite TTL —
+// once a given (voice, word) is on disk, all future requests are served from cache.
+// @ts-ignore
+app.post('/api/tts/synthesize', authenticateToken, async (req, res) => {
+  await ttsController.synthesize(req, res);
 });
 
 // Get changelog content

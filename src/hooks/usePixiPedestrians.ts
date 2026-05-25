@@ -12,11 +12,14 @@ import {
   tickPedestrian,
   ensureAmbientAgenda,
   computeDrawable,
+  updateTileOccupancy,
   type PedestrianDrawable,
   type PedestrianTickContext,
 } from '../utils/pedestrianAgent';
 import {
   TILE_GRAPH,
+  TILE_MAP,
+  STREET_GRAPH,
   DEMO_STALLS,
   makeDemoPedestrians,
 } from '../config/tileRegistry';
@@ -35,6 +38,8 @@ export interface UsePixiPedestriansHandle {
   getStates: () => PedestrianState[];
   /** Stable list of every sprite image path used by the initial pedestrian set. */
   spriteImagePaths: string[];
+  /** Global simulation speed multiplier. Pass 0 to freeze all pedestrians in place. */
+  setSpeedMultiplier: (multiplier: number) => void;
 }
 
 export function usePixiPedestrians(count?: number): UsePixiPedestriansHandle {
@@ -44,6 +49,10 @@ export function usePixiPedestrians(count?: number): UsePixiPedestriansHandle {
   }
 
   const lastTMsRef = useRef<number>(performance.now());
+
+  // Ref-backed speed multiplier so external toggles (e.g. a freeze debug button)
+  // can scale or pause progression without triggering a React re-render per tick.
+  const speedMultiplierRef = useRef<number>(1);
 
   const spriteImagePaths = useMemo(() => {
     const paths = new Set<string>();
@@ -61,10 +70,11 @@ export function usePixiPedestrians(count?: number): UsePixiPedestriansHandle {
   }, []);
 
   const tick = (dtMs: number, tMs: number) => {
-    const dt = Math.min(dtMs, MAX_DT_MS);
+    const dt = Math.min(dtMs, MAX_DT_MS) * speedMultiplierRef.current;
     lastTMsRef.current = tMs;
     const ctx: PedestrianTickContext = {
       graph: TILE_GRAPH,
+      streetGraph: STREET_GRAPH,
       stands: STAND_MAP,
       tMs,
       allPedestrians: pedestriansRef.current,
@@ -73,6 +83,7 @@ export function usePixiPedestrians(count?: number): UsePixiPedestriansHandle {
       const refilled = ensureAmbientAgenda(p, WANDER_DWELL_MS);
       return tickPedestrian(refilled, dt, ctx);
     });
+    updateTileOccupancy(pedestriansRef.current, TILE_MAP);
   };
 
   const getDrawables = (): PedestrianDrawable[] => {
@@ -87,5 +98,9 @@ export function usePixiPedestrians(count?: number): UsePixiPedestriansHandle {
 
   const getStates = () => pedestriansRef.current;
 
-  return { tick, getDrawables, getStates, spriteImagePaths };
+  const setSpeedMultiplier = (multiplier: number) => {
+    speedMultiplierRef.current = multiplier;
+  };
+
+  return { tick, getDrawables, getStates, spriteImagePaths, setSpeedMultiplier };
 }

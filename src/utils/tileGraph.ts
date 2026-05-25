@@ -171,11 +171,16 @@ export function buildTileGraph(
  * Breadth-first shortest path from `fromKey` to any tile in `goalKeys`.
  * Returns an inclusive list of tileKeys [fromKey, ..., goalKey], or null if
  * unreachable. Returns [fromKey] when the start is already a goal.
+ *
+ * If `allowedKeys` is provided, BFS expansion is restricted to keys in that
+ * set (the start key is always allowed). Use this to constrain pathfinding to
+ * a specific street-graph edge body + its two intersection nodes.
  */
 export function bfsTilePath(
   graph: TileGraph,
   fromKey: string,
   goalKeys: Set<string>,
+  allowedKeys?: Set<string>,
 ): string[] | null {
   if (goalKeys.has(fromKey)) return [fromKey];
   if (!graph.tiles.has(fromKey)) return null;
@@ -189,6 +194,7 @@ export function bfsTilePath(
     const adj = graph.neighbors.get(cur) ?? [];
     for (const next of adj) {
       if (visited.has(next)) continue;
+      if (allowedKeys && !allowedKeys.has(next)) continue;
       visited.add(next);
       parent.set(next, cur);
       if (goalKeys.has(next)) {

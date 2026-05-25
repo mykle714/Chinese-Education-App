@@ -32,7 +32,7 @@ export const VocabularyUpdateProvider: React.FC<VocabularyUpdateProviderProps> =
         console.log('[VOCAB-UPDATE] Adding vocabulary entry:', {
             id: entry.id,
             entryKey: entry.entryKey,
-            entryValue: entry.entryValue
+            definition: entry.definition
         });
 
         // Update cache
@@ -53,7 +53,7 @@ export const VocabularyUpdateProvider: React.FC<VocabularyUpdateProviderProps> =
         console.log('[VOCAB-UPDATE] Updating vocabulary entry:', {
             id: entry.id,
             entryKey: entry.entryKey,
-            entryValue: entry.entryValue
+            definition: entry.definition
         });
 
         // Update cache

@@ -30,6 +30,8 @@ import MenuIcon from "@mui/icons-material/Menu";
 import BookIcon from "@mui/icons-material/Book";
 import PhoneIphoneIcon from "@mui/icons-material/PhoneIphone";
 import { useState } from "react";
+import MobileDemoFrame from "./MobileDemoFrame";
+import { GAME_ROUTES } from "../games/registry";
 
 interface LayoutProps {
     children: ReactNode;
@@ -92,16 +94,31 @@ function Layout({ children }: LayoutProps) {
         );
     }
 
-    // Mobile demo pages render their own full-screen layout — skip the Layout chrome entirely
-    const MOBILE_DEMO_PATHS = ["/flashcards/decks", "/account", "/flashcards/learn"];
+    // Mobile demo pages share one phone-frame surface (MobileDemoFrame). New
+    // routes that should live inside that surface are added here — pages
+    // themselves should NOT re-define their own IPhoneFrame styled Box.
+    // Every game route is also a mobile-demo surface — derived from the
+    // registry so adding a game requires no edits here.
+    const MOBILE_DEMO_PATHS = [
+        "/flashcards/decks",
+        "/account",
+        "/flashcards/learn",
+        "/games",
+        ...GAME_ROUTES,
+    ];
     const isMobileDemoPage =
         MOBILE_DEMO_PATHS.includes(location.pathname) ||
         location.pathname.startsWith("/discover/sort/") ||
         location.pathname.startsWith("/flashcards/card/");
 
+    // On mobile, demo routes render full-bleed with no Layout chrome.
     if (isMobileDemoPage && isMobile) {
-        return <>{children}</>;
+        return <MobileDemoFrame>{children}</MobileDemoFrame>;
     }
+
+    // On desktop, demo routes still render inside Layout chrome (sidebar drawer
+    // visible) but their content is wrapped in the same phone-shaped frame.
+    const mainContent = isMobileDemoPage ? <MobileDemoFrame>{children}</MobileDemoFrame> : children;
 
     const toggleDrawer = (open: boolean) => (event: React.KeyboardEvent | React.MouseEvent) => {
         if (
@@ -293,7 +310,7 @@ function Layout({ children }: LayoutProps) {
                         alignItems: 'stretch',   // children fill full width; each Container centers itself via margin:auto
                     }}
                 >
-                    {children}
+                    {mainContent}
                 </Box>
             </Box>
 

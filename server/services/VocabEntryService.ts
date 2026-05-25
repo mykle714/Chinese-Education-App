@@ -51,15 +51,25 @@ export class VocabEntryService {
     if (existingEntry) {
       throw new ValidationError(`Entry with key "${entryData.entryKey}" already exists`);
     }
-    
-    // Create entry with default values (business logic)
+
     // Use user's selected language or default to Chinese
     const language: Language = user.selectedLanguage || 'zh';
+    const trimmedKey = entryData.entryKey.trim();
+
+    // Reject orphans: vet rows now derive their definition from det via
+    // entryKey/language. Without a matching det row the entry would render
+    // with no definition, so block creation up front.
+    const dictMatch = await this.dictionaryService.lookupTerm(trimmedKey, language);
+    if (!dictMatch) {
+      throw new ValidationError(
+        `No dictionary entry exists for "${trimmedKey}" in ${language}. ` +
+        `Add it to the dictionary first before saving it to your vocabulary.`
+      );
+    }
 
     const newEntry: VocabEntry = await this.vocabEntryDAL.create({
       userId,
-      entryKey: entryData.entryKey.trim(),
-      entryValue: entryData.entryValue.trim(),
+      entryKey: trimmedKey,
       language,
     });
 
@@ -92,8 +102,7 @@ export class VocabEntryService {
     }
     
     const updateFields: any = {
-      entryKey: updateData.entryKey.trim(),
-      entryValue: updateData.entryValue.trim(),
+      entryKey: updateData.entryKey!.trim(),
     };
 
     // Update entry
@@ -274,10 +283,11 @@ export class VocabEntryService {
     // Use user's selected language or default to Chinese
     const language = user.selectedLanguage || 'zh';
     
+    // NOTE: CSV `back` field (the user's own translation) is intentionally
+    // discarded — definitions now come from det at read time.
     const vocabEntries: VocabEntryCreateData[] = entries.map(entry => ({
       userId,
       entryKey: entry.front.trim(),
-      entryValue: entry.back.trim(),
       language,
       hskLevel: null // Business rule: CSV imports don't have HSK levels by default
     }));
@@ -353,7 +363,6 @@ export class VocabEntryService {
             const vocabEntries: VocabEntryCreateData[] = entries.map(entry => ({
               userId,
               entryKey: entry.front.trim(),
-              entryValue: entry.back.trim(),
               language,
               hskLevel: null
             }));
@@ -609,20 +618,10 @@ export class VocabEntryService {
     if (!data.entryKey || data.entryKey.trim().length === 0) {
       throw new ValidationError('Entry key is required');
     }
-    
-    if (!data.entryValue || data.entryValue.trim().length === 0) {
-      throw new ValidationError('Entry value is required');
-    }
-    
-    // Business rules: length validation
+
     if (data.entryKey.trim().length > 500) {
       throw new ValidationError('Entry key is too long (maximum 500 characters)');
     }
-    
-    if (data.entryValue.trim().length > 1000) {
-      throw new ValidationError('Entry value is too long (maximum 1000 characters)');
-    }
-    
   }
 
   /**
@@ -632,19 +631,9 @@ export class VocabEntryService {
     if (!data.entryKey || data.entryKey.trim().length === 0) {
       throw new ValidationError('Entry key is required');
     }
-    
-    if (!data.entryValue || data.entryValue.trim().length === 0) {
-      throw new ValidationError('Entry value is required');
-    }
-    
-    // Business rules: length validation
+
     if (data.entryKey.trim().length > 500) {
       throw new ValidationError('Entry key is too long (maximum 500 characters)');
     }
-    
-    if (data.entryValue.trim().length > 1000) {
-      throw new ValidationError('Entry value is too long (maximum 1000 characters)');
-    }
-    
   }
 }

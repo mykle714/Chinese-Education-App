@@ -49,7 +49,6 @@ async function testVocabEntries() {
     console.log('1. Testing create vocab entry...');
     const newEntry = {
       entryKey: '测试',
-      entryValue: 'test',
       isCustomTag: true,
       hskLevel: 'HSK1'
     };
@@ -107,7 +106,7 @@ async function testVocabEntries() {
 
       if (getByIdRes.statusCode === 200) {
         console.log('✅ Get vocab entry by ID successful!');
-        console.log(`   Entry: ${getByIdRes.data?.entryKey} = ${getByIdRes.data?.entryValue}`);
+        console.log(`   Entry: ${getByIdRes.data?.entryKey} = ${getByIdRes.data?.definition}`);
       } else {
         console.log(`❌ Get by ID failed with status ${getByIdRes.statusCode}`);
       }
@@ -116,7 +115,6 @@ async function testVocabEntries() {
       console.log('\n5. Testing update vocab entry...');
       const updateData = {
         entryKey: '测试更新',
-        entryValue: 'test updated',
         isCustomTag: true,
         hskLevel: 'HSK2'
       };
@@ -128,7 +126,7 @@ async function testVocabEntries() {
 
       if (updateRes.statusCode === 200) {
         console.log('✅ Update vocab entry successful!');
-        console.log(`   Updated: ${updateRes.data?.entryKey} = ${updateRes.data?.entryValue}`);
+        console.log(`   Updated: ${updateRes.data?.entryKey} = ${updateRes.data?.definition}`);
       } else {
         console.log(`❌ Update failed with status ${updateRes.statusCode}`);
       }

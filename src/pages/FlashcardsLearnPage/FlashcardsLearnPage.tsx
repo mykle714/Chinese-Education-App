@@ -4,7 +4,7 @@ import { Box, CircularProgress, Tooltip, Typography, useMediaQuery, useTheme } f
 import { useAuth } from "../../AuthContext";
 import { useMinutePoints } from "../../hooks/useMinutePoints";
 import { API_BASE_URL } from "../../constants";
-import { IPhoneFrame, ContentArea, MoreInfoPill } from "./styled";
+import { ContentArea, MoreInfoPill } from "./styled";
 import type { VocabEntry, BreakdownItem, MarkCardResult, LastMarkUndoSnapshot, SideOneLanguage } from "./types";
 
 // Pick a random language for a card's Side 1. Side 2 always shows both.
@@ -14,6 +14,7 @@ import FlashcardsLearnHeader from "./FlashcardsLearnHeader";
 import InfoCardSection from "./InfoCardSection";
 import FlashCardSection from "./FlashCardSection";
 import { usePageTitle } from "../../hooks/usePageTitle";
+import { useTTS } from "../../hooks/useTTS";
 
 const FlashcardsLearnPage: React.FC = () => {
     usePageTitle("Learn");
@@ -99,8 +100,27 @@ const FlashcardsLearnPage: React.FC = () => {
         isFlipped,
         setIsFlipped,
         resetDragPosition,
+        showSwipeHint,
+        shakeNonce,
         handlers,
     } = useCardDrag(isAnimating, (direction) => handleCardDismiss(direction), currentIndex);
+
+    // TTS narration: auto-play the Chinese word the moment the Chinese face of
+    // the card first becomes visible. Side 1 is randomized per card — when it's
+    // 'zh' we play on mount; when it's 'en' we wait for the flip (Side 2 always
+    // shows Chinese). Either way, exactly one play per card.
+    const tts = useTTS();
+    const chineseVisible = currentSideOneLanguage === 'zh' || isFlipped;
+    useEffect(() => {
+        if (!tts.enabled) return;
+        if (!chineseVisible || !currentEntry) return;
+        tts.speak(currentEntry);
+        // Cancel narration if the user advances mid-utterance.
+        return () => tts.cancel();
+        // tts.speak/cancel are stable across renders; depending on them would
+        // re-fire narration on every settings change.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [chineseVisible, currentEntry?.id, tts.enabled]);
 
     // EIC modal sheet — opened by the centered "More Info" pill button.
     const [isEicOpen, setIsEicOpen] = useState(false);
@@ -173,6 +193,12 @@ const FlashcardsLearnPage: React.FC = () => {
                 console.log(`Loaded ${cards.length} cards in distributed working loop${selectedCategory ? ` (category: ${selectedCategory})` : ''}`);
                 setWorkingLoop(cards);
                 setLastMarkUndoSnapshot(null);
+
+                // Server pre-warmed the TTS disk cache before responding, so
+                // these prefetches just stream the MP3 bytes across the wire
+                // into the browser's in-session blob cache. Skipped per-card
+                // when hasAudio === false (synthesis errored server-side).
+                cards.forEach((card: VocabEntry) => tts.prefetch(card));
 
                 // New deck: both visible cards start on Side 1 with a freshly
                 // randomized language. useCardDrag also resets isFlipped on
@@ -292,6 +318,9 @@ const FlashcardsLearnPage: React.FC = () => {
                         newLoop[preDismissSnapshot.currentIndex] = newCard;
                         return newLoop;
                     });
+                    // Pull the replacement's audio into the in-session blob
+                    // cache while the user is studying other cards in the loop.
+                    tts.prefetch(newCard);
                 }
                 setLastMarkUndoSnapshot({
                     cardId: currentCard.id,
@@ -365,18 +394,7 @@ const FlashcardsLearnPage: React.FC = () => {
         }
     };
 
-    // On desktop the Layout wraps this page normally; restore the phone-frame look
-    // Height always supplied via sx to avoid specificity conflicts with styled()
-    const frameSx = !isMobile ? {
-        maxWidth: 393,
-        width: "100%",
-        borderRadius: "20px",
-        margin: "0 auto",
-        height: "calc(100dvh - 80px)", // account for Layout chrome (mt + pt top, footer bottom)
-        maxHeight: "932px",
-    } : {
-        height: "100dvh",
-    };
+    // Phone-frame sizing comes from MobileDemoFrame via Layout.tsx
 
     if (loading) {
         return (
@@ -415,7 +433,7 @@ const FlashcardsLearnPage: React.FC = () => {
     }
 
     return (
-        <IPhoneFrame className="mobile-demo-frame" sx={frameSx}>
+        <>
             <FlashcardsLearnHeader
                 selectedCategory={selectedCategory}
                 lastMarkUndoSnapshot={lastMarkUndoSnapshot}
@@ -446,7 +464,10 @@ const FlashcardsLearnPage: React.FC = () => {
                     showPinyin={showPinyin}
                     sideOneLanguage={currentSideOneLanguage}
                     nextSideOneLanguage={nextSideOneLanguage}
+                    showSwipeHint={showSwipeHint}
+                    shakeNonce={shakeNonce}
                     handlers={handlers}
+                    onSpeak={tts.enabled ? tts.speak : undefined}
                 />
                 {/* Centered pill button — ghosted before flip, full opacity after */}
                 <Tooltip
@@ -480,7 +501,7 @@ const FlashcardsLearnPage: React.FC = () => {
                     />
                 )}
             </ContentArea>
-        </IPhoneFrame>
+        </>
     );
 };
 

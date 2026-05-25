@@ -15,6 +15,14 @@ build/
 .env.test.local
 .env.production.local
 
+# Cloud service-account credentials (never commit these)
+google-tts-credentials.json
+*-credentials.json
+*-service-account*.json
+
+# TTS audio cache (regenerable from upstream provider)
+cache/
+
 # IDE files
 .idea/
 .vscode/

@@ -1,10 +1,9 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Box, Typography, CircularProgress, Alert, Button, useMediaQuery, useTheme } from "@mui/material";
+import { Box, Typography, CircularProgress, Alert, Button } from "@mui/material";
 import { styled } from "@mui/material/styles";
+import MobileDemoHeader from "../components/MobileDemoHeader";
 import MobileFooter from "../components/MobileFooter";
-import MobileNavDrawer from "../components/MobileNavDrawer";
-import PageHeader from "../components/PageHeader";
 import MiniVocabCard from "../components/MiniVocabCard";
 import { useAuth } from "../AuthContext";
 import { API_BASE_URL } from "../constants";
@@ -28,17 +27,7 @@ const COLORS = {
     redAccent: "#F2BAC9",
 };
 
-// Styled Components
-const IPhoneFrame = styled(Box)(() => ({
-    backgroundColor: COLORS.background,
-    borderRadius: 0,
-    overflow: "hidden",
-    display: "flex",
-    flexDirection: "column",
-    width: "100%",
-    height: "100dvh",
-}));
-
+// Styled Components — phone-frame sizing comes from MobileDemoFrame via Layout.tsx
 const ContentArea = styled(Box)(() => ({
     flex: 1,
     overflowY: "auto",
@@ -204,8 +193,6 @@ const FlashcardsDecksPage: React.FC = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const { token } = useAuth();
-    const theme = useTheme();
-    const isMobile = useMediaQuery(theme.breakpoints.down("md"));
     const [vocabEntries, setVocabEntries] = useState<VocabEntry[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -374,20 +361,10 @@ const FlashcardsDecksPage: React.FC = () => {
         }
     };
 
-    // On desktop the Layout wraps this page normally; restore the phone-frame look
-    const desktopFrameSx = !isMobile ? {
-        maxWidth: 393,
-        width: "100%",
-        borderRadius: "20px",
-        margin: "0 auto",
-        minHeight: "852px",
-        maxHeight: "932px",
-    } : {};
-
     return (
-        <IPhoneFrame className="decks-page-frame" sx={desktopFrameSx}>
+        <>
             {/* Header */}
-            <PageHeader title="Decks & Cards" showBack={false} rightItems={<MobileNavDrawer />} />
+            <MobileDemoHeader title="Decks & Cards" />
 
                 {/* Content Area */}
                 <ContentArea className="decks-page-content">
@@ -583,7 +560,7 @@ const FlashcardsDecksPage: React.FC = () => {
 
                 {/* Footer */}
                 <MobileFooter activePage="home" />
-        </IPhoneFrame>
+        </>
     );
 };
 

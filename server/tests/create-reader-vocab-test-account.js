@@ -266,8 +266,7 @@ async function createReaderVocabTestAccount() {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            entryKey: entry.chinese,
-            entryValue: entry.english
+            entryKey: entry.chinese
           })
         });
         
@@ -312,10 +311,8 @@ async function createReaderVocabTestAccount() {
         console.log('\n=== SAMPLE ENTRIES ===');
         const sampleEntries = allEntries.slice(0, 10);
         sampleEntries.forEach(entry => {
-          // Try different possible property names
-          const key = entry.entrykey || entry.entryKey || entry.key || entry.chinese;
-          const value = entry.entryvalue || entry.entryValue || entry.value || entry.english;
-          console.log(`${key} → ${value}`);
+          const key = entry.entryKey || entry.chinese;
+          console.log(`${key} → ${entry.definition}`);
         });
         
         console.log('\n✅ Test account is ready for use!');

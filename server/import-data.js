@@ -73,13 +73,12 @@ async function importData() {
     for (const entry of vocabData.data) {
       try {
         await client.query(`
-          INSERT INTO vocabentries (id, userid, entrykey, entryvalue, language, script, iscustomtag, hskleveltag, createdat)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          INSERT INTO vocabentries (id, userid, entrykey, language, script, iscustomtag, hskleveltag, createdat)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         `, [
           entry.id,
           entry.userId,
           entry.entryKey,
-          entry.entryValue,
           'zh', // Default language for existing entries
           null, // Script will be null for existing entries
           entry.isCustomTag || false,
@@ -120,7 +119,7 @@ async function importData() {
     // Test multi-language data
     console.log('\n🔄 Testing multi-language support...');
     const sampleEntries = await client.query(`
-      SELECT entrykey, entryvalue, language, script 
+      SELECT entrykey, language, script
       FROM vocabentries 
       WHERE entrykey ~ '[\\u4e00-\\u9fff]|[\\u3040-\\u309f]|[\\u30a0-\\u30ff]|[\\uac00-\\ud7af]'
       LIMIT 5
@@ -129,7 +128,7 @@ async function importData() {
     if (sampleEntries.rows.length > 0) {
       console.log('✅ Multi-language entries found:');
       sampleEntries.rows.forEach(row => {
-        console.log(`  - ${row.entrykey} (${row.language || 'unknown'}): ${row.entryvalue}`);
+        console.log(`  - ${row.entrykey} (${row.language || 'unknown'})`);
       });
     } else {
       console.log('ℹ️  No multi-language entries found in imported data');

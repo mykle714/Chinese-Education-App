@@ -8,8 +8,8 @@
  * its assetId in the `connections` field of one tile that sits 4-adjacent
  * to the stand's footprint tile.
  *
- * Authoring helpers `lineX` / `lineY` build a strip of tiles inclusive of
- * both endpoints (or with either endpoint excluded when a stand sits there).
+ * Walkways are authored as `Street` records (see below) and expanded into
+ * tile lists via `streetTiles`.
  *
  * The demo reproduces the previous polyline layout:
  *   - Two straight spokes (north, west)
@@ -20,17 +20,23 @@
  */
 
 import {
+  PEDESTRIAN_SPEED_ISO_PER_SEC,
   TILE_SIZE,
   type NightMarketAssetDef,
   type PedestrianState,
   type SpriteDef,
+  type Street,
   type TileCoord,
   type TileDef,
 } from './nightMarketRegistry';
+
+// Re-export Street so consumers can import it from either config module.
+export type { Street };
 import { buildTileGraph, tileKey } from '../utils/tileGraph';
+import { buildStreetGraph } from '../utils/streetGraph';
 import { TILE_WIDTH } from '../utils/isometric';
 
-// Demo stall sprites — reuse existing test assets.
+// Stall sprite layers — reuse existing test assets.
 import baseImgUrl from '../assets/test-assets/base.png';
 import floorImgUrl from '../assets/test-assets/floor.png';
 import humanImgUrl from '../assets/test-assets/human.png';
@@ -49,45 +55,6 @@ import walkFwdRight2 from '../assets/test-assets/test-walk-animation/walk_forwar
 // Tile authoring helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Horizontal strip at fixed isoY from x0..x1 inclusive, emitted at stride TILE_SIZE.
- * All inputs must be TILE_SIZE multiples (dev-time check).
- */
-function lineX(isoY: number, x0: number, x1: number): TileDef[] {
-  assertGridAligned('lineX', isoY, x0, x1);
-  const out: TileDef[] = [];
-  const lo = Math.min(x0, x1);
-  const hi = Math.max(x0, x1);
-  for (let x = lo; x <= hi; x += TILE_SIZE) out.push({ isoX: x, isoY });
-  return out;
-}
-
-/** Vertical strip at fixed isoX from y0..y1 inclusive, emitted at stride TILE_SIZE. */
-function lineY(isoX: number, y0: number, y1: number): TileDef[] {
-  assertGridAligned('lineY', isoX, y0, y1);
-  const out: TileDef[] = [];
-  const lo = Math.min(y0, y1);
-  const hi = Math.max(y0, y1);
-  for (let y = lo; y <= hi; y += TILE_SIZE) out.push({ isoX, isoY: y });
-  return out;
-}
-
-/** Solid rectangle of tiles inclusive of both corners. Used for plazas / wide segments. */
-function rect(x0: number, y0: number, x1: number, y1: number): TileDef[] {
-  assertGridAligned('rect', x0, y0, x1, y1);
-  const out: TileDef[] = [];
-  const xLo = Math.min(x0, x1);
-  const xHi = Math.max(x0, x1);
-  const yLo = Math.min(y0, y1);
-  const yHi = Math.max(y0, y1);
-  for (let y = yLo; y <= yHi; y += TILE_SIZE) {
-    for (let x = xLo; x <= xHi; x += TILE_SIZE) {
-      out.push({ isoX: x, isoY: y });
-    }
-  }
-  return out;
-}
-
 function assertGridAligned(label: string, ...values: number[]): void {
   for (const v of values) {
     if (v % TILE_SIZE !== 0) {
@@ -97,160 +64,126 @@ function assertGridAligned(label: string, ...values: number[]): void {
 }
 
 /**
- * Merge several tile lists. Later-list connections OVERRIDE earlier ones at
- * coincident coordinates, but coordinate duplication itself is allowed because
- * walkway strips share junction tiles. Coordinates are deduplicated, with any
- * non-empty `connections` field winning.
+ * Expand a street into its tiles in priority order, building the final TILES
+ * array. Streets are sorted thickest-first, with NS before EW on ties. The
+ * first street to claim a coordinate slot wins; later streets skip that slot.
+ * This means narrower streets can appear non-contiguous at intersections, but
+ * all coordinates are present in the output exactly once.
  */
-function mergeTiles(...lists: TileDef[][]): TileDef[] {
-  const map = new Map<string, TileDef>();
-  for (const list of lists) {
-    for (const t of list) {
-      const key = tileKey(t.isoX, t.isoY);
-      const existing = map.get(key);
-      if (!existing) {
-        map.set(key, { ...t });
-        continue;
+function buildTilesFromStreets(streets: Street[]): TileDef[] {
+  const sorted = [...streets].sort((a, b) => {
+    if (b.width !== a.width) return b.width - a.width;           // thickest first
+    if (a.isNorthSouth !== b.isNorthSouth) return a.isNorthSouth ? -1 : 1; // NS before EW
+    return 0;
+  });
+  const claimed = new Map<string, TileDef>();
+  // Every street that wanted a given coord, in priority order (winner first).
+  // Tiles whose claim list has length >= 2 are intersection tiles.
+  const allClaimants = new Map<string, Street[]>();
+  for (const street of sorted) {
+    for (const tile of streetTiles(street)) {
+      const key = tileKey(tile.isoX, tile.isoY);
+      const list = allClaimants.get(key);
+      if (list) {
+        list.push(street);
+      } else {
+        allClaimants.set(key, [street]);
+        claimed.set(key, tile); // first (priority winner) gets visual ownership
       }
-      // Merge connections (union of both).
-      const merged: TileDef = { ...existing };
-      const conns = new Set([...(existing.connections ?? []), ...(t.connections ?? [])]);
-      if (conns.size > 0) merged.connections = Array.from(conns);
-      if (t.speedIsoPerSec !== undefined) merged.speedIsoPerSec = t.speedIsoPerSec;
-      map.set(key, merged);
     }
   }
-  return Array.from(map.values());
+  // Attach the full claimant list to each winning tile for street-graph use.
+  for (const [key, tile] of claimed) {
+    tile.intersectingStreets = allClaimants.get(key);
+  }
+  return Array.from(claimed.values());
 }
 
-/** Attach `connections` to a single tile coordinate. Used to overlay onto a strip. */
-function connectTile(isoX: number, isoY: number, ...assetIds: string[]): TileDef {
-  return { isoX, isoY, connections: assetIds };
+/**
+ * Expand a Street into the dense set of TileDefs it covers. Endpoints of the
+ * primary-axis range are inclusive on both ends. Each tile carries a `street`
+ * reference back to `s`; ownership is finalised by `buildTilesFromStreets`.
+ */
+export function streetTiles(s: Street): TileDef[] {
+  if (s.width < 1) {
+    throw new Error(`[tileRegistry] streetTiles: street "${s.name}" has width=${s.width} (< 1)`);
+  }
+  assertGridAligned(`streetTiles(${s.name})`, s.start, s.end, s.offset);
+  const out: TileDef[] = [];
+  const lo = Math.min(s.start, s.end);
+  const hi = Math.max(s.start, s.end);
+  for (let w = 0; w < s.width; w++) {
+    const perp = s.offset + w * TILE_SIZE;
+    for (let m = lo; m <= hi; m += TILE_SIZE) {
+      if (s.isNorthSouth) {
+        out.push({ isoX: perp, isoY: m, street: s });
+      } else {
+        out.push({ isoX: m, isoY: perp, street: s });
+      }
+    }
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
-// Walkable tiles — reproduce the existing demo as discrete strips.
-//
-// Endpoint tiles that previously hosted a stand (e.g. wk-north terminating at
-// (0,-40) where demo-stall-north sat) are EXCLUDED from the strip — the stand
-// now sits at a dedicated footprint tile one step further out, and the strip's
-// last walkable tile carries the `connections`.
+// Walkable tiles — the demo layout, expressed as named streets.
 // ---------------------------------------------------------------------------
 
-// Spokes from the central hub at (0,0). Hub tile is shared by every spoke.
-const STRIP_NORTH = lineY(0, 0, -40);          // (0,0)..(0,-40) — T at (0,-40)
-const STRIP_WEST = lineX(0, 0, -50);           // (0,0)..(-50,0) — junction at (-50,0)
-const STRIP_EAST_TO_BEND = lineX(0, 0, 50);    // (0,0)..(50,0) — bend at (50,0)
-const STRIP_EAST_STUB = lineY(50, 0, 5);       // (50,0)..(50,5); stand at (50,10) is one tile beyond
+// Widths are scaled from each street's length: width = clamp(round(length/10), 1, 8).
+// Streets that were colinear (same orientation + offset) and touching have been
+// merged into the bigger of the two, keeping its name and width.
+// Global translation applied to every authored street + stand position. Lets us
+// shift the entire market in iso space without editing every literal coordinate.
+// (+isoX = east, +isoY = north; so a southward shift is a NEGATIVE isoY delta.)
+const SHIFT_ISO_X = 25;
+const SHIFT_ISO_Y = -25;
 
-// South Z: hub → (0,20) junction → (20,20) junction.
-const STRIP_SOUTH_TO_NODE = lineY(0, 0, 20);
-const STRIP_SOUTH_CROSS = lineX(20, 0, 20);
+const RAW_STREETS: Street[] = [
+  // Main N–S axis through the hub: merged North Spoke + South Spoke (upper+lower).
+  { name: 'North Spoke',        isNorthSouth: true,  start: -40, end: 60,  offset: 0,   width: 4 },
+  // Main E–W axis through the hub: merged West Spoke + East Promenade + East Promenade Ext.
+  { name: 'West Spoke',         isNorthSouth: false, start: -50, end: 80,  offset: 0,   width: 5 },
 
-// Spurs off the (20,20) junction. Each ends one tile short of its terminating stand.
-const STRIP_SE_SPUR = lineX(20, 20, 30);       // stand at (35,20)
-const STRIP_S_SPUR = lineY(20, 20, 35);        // stand at (20,40)
+  // East-side stub off the main E–W axis.
+  { name: 'East Stub',          isNorthSouth: true,  start: 0,   end: 5,   offset: 50,  width: 1 },
 
-// South extension and market row.
-const STRIP_SOUTH_EXT = lineY(0, 20, 60);      // (0,20)..(0,60) — junction at (0,60)
-const STRIP_MARKET_ROW = lineX(60, 0, 80);     // (0,60)..(80,60) — junctions at both ends
+  // South cross + SE spur, now continuous.
+  { name: 'South Cross',        isNorthSouth: false, start: 0,   end: 30,  offset: 20,  width: 2 },
+  { name: 'South Spur',         isNorthSouth: true,  start: 20,  end: 35,  offset: 20,  width: 2 },
 
-// North T-junction at (0,-40) splits east/west.
-const STRIP_N_CROSS_WEST = lineX(-40, 0, -30); // (0,-40)..(-30,-40)
-const STRIP_N_CROSS_EAST = lineX(-40, 0, 30);  // (0,-40)..(30,-40)
+  // Market row, extended in both directions to accommodate scattered stalls.
+  { name: 'Market Row',         isNorthSouth: false, start: -100, end: 130, offset: 60,  width: 8 },
 
-// East loop.
-const STRIP_E_PROM_EXT = lineX(0, 50, 80);     // (50,0)..(80,0)
-const STRIP_E_RETURN = lineY(80, 0, 60);       // (80,0)..(80,60)
+  // North T-junction merged into a single cross-street.
+  { name: 'North Cross (west)', isNorthSouth: false, start: -30, end: 30,  offset: -40, width: 3 },
 
-// West loop.
-const STRIP_W_RETURN = lineY(-50, 0, 60);      // (-50,0)..(-50,60)
-const STRIP_W_ROW_EXT = lineX(60, -50, 0);     // (-50,60)..(0,60)
-
-// ---------------------------------------------------------------------------
-// Variable-thickness areas — exercise the 4-neighbor graph beyond 1-tile lanes.
-// These strips OVERLAP the line strips above; mergeTiles dedupes by coordinate
-// so the resulting walkable set is the union.
-// ---------------------------------------------------------------------------
-
-// Central hub plaza: 3×3 block centered on (0,0). At TILE_SIZE=5 this spans
-// iso (-5,-5) to (5,5) — 15×15 iso. Touches the four spokes at their
-// hub-end tiles so the spokes still connect through the plaza interior.
-const PLAZA_HUB = rect(-5, -5, 5, 5);
-
-// South extension widened to 3 tiles (isoX = -5, 0, 5) over isoY=25..45.
-// Stops short of y=50 so it doesn't collide with the 2×2 footprints of
-// market-row stalls that extend down to y=50.
-const SOUTH_EXT_WIDE = rect(-5, 25, 5, 45);
-
-// Connection overlays — one per stand, placed on the tile that fronts it.
-// Each connecting tile is at TILE_SIZE distance from its stand's footprint.
-const CONNECTION_OVERLAYS: TileDef[] = [
-  // Endpoint stalls — placed two tiles beyond the junction so the 2×2
-  // footprint clears all walkable strips.
-  connectTile(0, -40, 'demo-stall-north'),
-  connectTile(-50, 0, 'demo-stall-west'),
-  connectTile(50, 5, 'demo-stall-east'),
-  connectTile(30, 20, 'demo-stall-se'),
-  connectTile(20, 35, 'demo-stall-s'),
-
-  // Market row stalls. Connecting tiles all lie on the row at isoY=60.
-  // The footprints sit one tile further out: north side at isoY=50..55,
-  // south side at isoY=65..70.
-  connectTile(10, 60, 'market-stall-1'),
-  connectTile(20, 60, 'market-stall-2'),
-  connectTile(30, 60, 'market-stall-3'),
-  connectTile(40, 60, 'market-stall-4', 'market-stall-4-north'),
-  connectTile(50, 60, 'market-stall-5'),
-  connectTile(60, 60, 'market-stall-6'),
-  connectTile(70, 60, 'market-stall-7'),
-  connectTile(80, 60, 'market-stall-8'),
-
-  // North cross-street stalls (north side of isoY=-40 row).
-  connectTile(-20, -40, 'demo-stall-nw'),
-  connectTile(20, -40, 'demo-stall-ne'),
-
-  // East promenade extension.
-  connectTile(65, 0, 'demo-stall-east-promenade'),
-
-  // East return lane.
-  connectTile(80, 20, 'demo-stall-east-return-n'),
-  connectTile(80, 40, 'demo-stall-east-return-s'),
-
-  // West return lane.
-  connectTile(-50, 20, 'demo-stall-west-return-n'),
-  connectTile(-50, 40, 'demo-stall-west-return-s'),
-
-  // Market row west extension.
-  connectTile(-25, 60, 'market-stall-west-ext'),
+  // Return lanes (unchanged).
+  { name: 'East Return',        isNorthSouth: true,  start: 0,   end: 60,  offset: 80,  width: 6 },
+  { name: 'West Return',        isNorthSouth: true,  start: 0,   end: 60,  offset: -50, width: 6 },
 ];
 
-export const TILES: TileDef[] = mergeTiles(
-  STRIP_NORTH,
-  STRIP_WEST,
-  STRIP_EAST_TO_BEND,
-  STRIP_EAST_STUB,
-  STRIP_SOUTH_TO_NODE,
-  STRIP_SOUTH_CROSS,
-  STRIP_SE_SPUR,
-  STRIP_S_SPUR,
-  STRIP_SOUTH_EXT,
-  STRIP_MARKET_ROW,
-  STRIP_N_CROSS_WEST,
-  STRIP_N_CROSS_EAST,
-  STRIP_E_PROM_EXT,
-  STRIP_E_RETURN,
-  STRIP_W_RETURN,
-  STRIP_W_ROW_EXT,
-  PLAZA_HUB,
-  SOUTH_EXT_WIDE,
-  CONNECTION_OVERLAYS,
-);
+// ---------------------------------------------------------------------------
+// Demo stalls
+//
+// Each stand has an 8×8 footprint anchored at its SW corner (lowest isoX/isoY,
+// projecting to the BOTTOM vertex of the footprint diamond on screen). The
+// connection tile must be 4-adjacent at T=1 to one of the footprint tiles and
+// must itself be walkable. `applyConnections` writes the assetId onto the
+// matching walkable tile after streets are expanded.
+// ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
-// Demo stalls — footprints are the rounded (isoX, isoY) of each stand and
-// must be 4-adjacent to that stand's connecting tile (validated by buildTileGraph).
-// ---------------------------------------------------------------------------
+const STALL_FOOTPRINT_TILES = 8;
+const STALL_SPRITE_SCALE = 0.875;
+
+function stallFootprint(swX: number, swY: number): TileCoord[] {
+  const out: TileCoord[] = [];
+  for (let dy = 0; dy < STALL_FOOTPRINT_TILES; dy++) {
+    for (let dx = 0; dx < STALL_FOOTPRINT_TILES; dx++) {
+      out.push({ isoX: swX + dx, isoY: swY + dy });
+    }
+  }
+  return out;
+}
 
 const makeStallLayers = (groupId: string): NightMarketAssetDef['layers'] => [
   { imagePath: floorImgUrl, slot: 'background', groupId },
@@ -259,162 +192,144 @@ const makeStallLayers = (groupId: string): NightMarketAssetDef['layers'] => [
   { imagePath: roofImgUrl, slot: 'foreground', groupId },
 ];
 
-/**
- * Build the 2×2 footprint for a stand whose anchor (isoX, isoY) is the
- * SW corner of the block — the tile with the LOWEST isoX and LOWEST isoY,
- * which projects to the BOTTOM vertex of the footprint diamond on screen.
- *
- * With the sprite anchor at (0.5, 1.0), placing the sprite at the SW corner
- * makes its base sit on the footprint's bottom vertex and rise upward over
- * the rest of the footprint — matching how a building stands on its tiles.
- *
- * Footprint extends NE: { (X, Y), (X+T, Y), (X, Y+T), (X+T, Y+T) }.
- */
-function footprint2x2(swX: number, swY: number): TileCoord[] {
-  return [
-    { isoX: swX, isoY: swY },
-    { isoX: swX + TILE_SIZE, isoY: swY },
-    { isoX: swX, isoY: swY + TILE_SIZE },
-    { isoX: swX + TILE_SIZE, isoY: swY + TILE_SIZE },
-  ];
+interface StandSpec {
+  assetId: string;
+  displayName: string;
+  description: string;
+  /** SW corner of the 8×8 footprint. */
+  swX: number;
+  swY: number;
+  /** Walkable connection tile (must be 4-adjacent to a footprint tile). */
+  connX: number;
+  connY: number;
 }
 
-// Convention for 2×2 stalls:
-//   (isoX, isoY) is the SW corner of the footprint — the tile with the lowest
-//   isoX and lowest isoY, which projects to the BOTTOM vertex of the footprint
-//   diamond on screen. The sprite anchor (0.5, 1.0) sits there so the building
-//   visually rises up over the footprint. The footprint extends NE.
-//
-//   Footprint tiles must NOT coincide with any walkable tile; at least one of
-//   them must be 4-adjacent to the connection tile in CONNECTION_OVERLAYS.
-export const DEMO_STALLS: NightMarketAssetDef[] = [
-  // Endpoint stalls.
-  {
-    assetId: 'demo-stall-north',
-    unlockType: 'stall',
-    displayName: 'Lantern Shop',
-    description: 'At the north end of the plaza.',
-    layers: makeStallLayers('demo-stall-north'),
-    isoX: -5, isoY: -50, scale: 1.0,
-    footprint: footprint2x2(-5, -50),
-  },
-  {
-    assetId: 'demo-stall-west',
-    unlockType: 'stall',
-    displayName: 'Tea House',
-    description: 'At the west end of the plaza.',
-    layers: makeStallLayers('demo-stall-west'),
-    isoX: -60, isoY: -5, scale: 1.0,
-    footprint: footprint2x2(-60, -5),
-  },
-  {
-    assetId: 'demo-stall-east',
-    unlockType: 'stall',
-    displayName: 'Fish Monger',
-    description: 'At the far end of the east stall row.',
-    layers: makeStallLayers('demo-stall-east'),
-    isoX: 45, isoY: 10, scale: 1.0,
-    footprint: footprint2x2(45, 10),
-  },
-  {
-    assetId: 'demo-stall-se',
-    unlockType: 'stall',
-    displayName: 'Spice Merchant',
-    description: 'Down the SE alley.',
-    layers: makeStallLayers('demo-stall-se'),
-    isoX: 35, isoY: 15, scale: 1.0,
-    footprint: footprint2x2(35, 15),
-  },
-  {
-    assetId: 'demo-stall-s',
-    unlockType: 'stall',
-    displayName: 'Silk Weaver',
-    description: 'Down the S alley.',
-    layers: makeStallLayers('demo-stall-s'),
-    isoX: 15, isoY: 40, scale: 1.0,
-    footprint: footprint2x2(15, 40),
-  },
+const RAW_STAND_SPECS: StandSpec[] = [
+  // ─── Market Row, south side (footprint y=52..59, conn at y=60) ───────────
+  // (+isoY = north on screen, so lower isoY values draw further south.)
+  { assetId: 'mn-lantern-maker',   displayName: 'Lantern Maker',       description: 'Far west of the market row.',       swX: -95, swY: 52, connX: -95, connY: 60 },
+  { assetId: 'mn-night-noodles',   displayName: 'Night Noodles',       description: 'Steaming bowls served past midnight.', swX: -80, swY: 52, connX: -80, connY: 60 },
+  { assetId: 'mn-jade-jeweller',   displayName: 'Jade Jeweller',       description: 'Fine jade ornaments and pendants.', swX: -65, swY: 52, connX: -65, connY: 60 },
+  { assetId: 'mn-mooncake',        displayName: 'Moon Cake Bakery',    description: 'Pastries by the lunar calendar.',   swX: -30, swY: 52, connX: -30, connY: 60 },
+  { assetId: 'mn-dragon-kites',    displayName: 'Dragon Kites',        description: 'Handpainted kites in every shape.', swX: 5,   swY: 52, connX: 5,   connY: 60 },
+  { assetId: 'mn-paper-lanterns',  displayName: 'Paper Lanterns',      description: 'Lanterns of every colour and size.', swX: 20,  swY: 52, connX: 20,  connY: 60 },
+  { assetId: 'mn-ink-brush',       displayName: 'Ink & Brush',         description: 'Calligraphy supplies and scrolls.', swX: 40,  swY: 52, connX: 40,  connY: 60 },
+  { assetId: 'mn-fortune-teller',  displayName: 'Fortune Teller',      description: 'Wisdom from the stars, for a fee.', swX: 55,  swY: 52, connX: 55,  connY: 60 },
+  { assetId: 'mn-copper-smith',    displayName: 'Copper Smith',        description: 'Pots, kettles, hammered by hand.',  swX: 95,  swY: 52, connX: 95,  connY: 60 },
+  { assetId: 'mn-bamboo-flute',    displayName: 'Bamboo Flute Maker',  description: 'Reedy notes from carved bamboo.',   swX: 115, swY: 52, connX: 115, connY: 60 },
 
-  // Market row stalls. North-side SW anchors at isoY=50, south-side at isoY=65.
-  { assetId: 'market-stall-1', unlockType: 'stall', displayName: 'Jade Jeweller',
-    description: 'Fine jade ornaments and pendants.',
-    layers: makeStallLayers('market-stall-1'), isoX: 5, isoY: 50, scale: 1.0,
-    footprint: footprint2x2(5, 50) },
-  { assetId: 'market-stall-2', unlockType: 'stall', displayName: 'Dumpling House',
-    description: 'Steamed dumplings, fresh every hour.',
-    layers: makeStallLayers('market-stall-2'), isoX: 15, isoY: 65, scale: 1.0,
-    footprint: footprint2x2(15, 65) },
-  { assetId: 'market-stall-3', unlockType: 'stall', displayName: 'Ink & Brush',
-    description: 'Calligraphy supplies and handmade scrolls.',
-    layers: makeStallLayers('market-stall-3'), isoX: 25, isoY: 50, scale: 1.0,
-    footprint: footprint2x2(25, 50) },
-  { assetId: 'market-stall-4', unlockType: 'stall', displayName: 'Lotus Tea',
-    description: 'Rare teas sourced from mountain gardens.',
-    layers: makeStallLayers('market-stall-4'), isoX: 35, isoY: 65, scale: 1.0,
-    footprint: footprint2x2(35, 65) },
-  { assetId: 'market-stall-4-north', unlockType: 'stall', displayName: 'Lotus Tea North',
-    description: 'Across from Lotus Tea.',
-    layers: makeStallLayers('market-stall-4-north'), isoX: 35, isoY: 50, scale: 1.0,
-    footprint: footprint2x2(35, 50) },
-  { assetId: 'market-stall-5', unlockType: 'stall', displayName: 'Dragon Kites',
-    description: 'Handpainted kites in every shape.',
-    layers: makeStallLayers('market-stall-5'), isoX: 45, isoY: 50, scale: 1.0,
-    footprint: footprint2x2(45, 50) },
-  { assetId: 'market-stall-6', unlockType: 'stall', displayName: 'Five Spice Grill',
-    description: 'Skewers grilled over charcoal.',
-    layers: makeStallLayers('market-stall-6'), isoX: 55, isoY: 65, scale: 1.0,
-    footprint: footprint2x2(55, 65) },
-  { assetId: 'market-stall-7', unlockType: 'stall', displayName: 'Paper Lanterns',
-    description: 'Lanterns of every colour and size.',
-    layers: makeStallLayers('market-stall-7'), isoX: 65, isoY: 50, scale: 1.0,
-    footprint: footprint2x2(65, 50) },
-  { assetId: 'market-stall-8', unlockType: 'stall', displayName: 'Fortune Teller',
-    description: 'Wisdom from the stars, for a small fee.',
-    layers: makeStallLayers('market-stall-8'), isoX: 75, isoY: 65, scale: 1.0,
-    footprint: footprint2x2(75, 65) },
+  // ─── Market Row, north side (footprint y=68..75, conn at y=67) ───────────
+  { assetId: 'ms-dumpling',        displayName: 'Dumpling House',      description: 'Steamed dumplings, fresh every hour.', swX: -95, swY: 68, connX: -95, connY: 67 },
+  { assetId: 'ms-lotus-tea',       displayName: 'Lotus Tea',           description: 'Rare teas from mountain gardens.',   swX: -75, swY: 68, connX: -75, connY: 67 },
+  { assetId: 'ms-fish-monger',     displayName: 'Fish Monger',         description: 'River fish on ice.',                  swX: -55, swY: 68, connX: -55, connY: 67 },
+  { assetId: 'ms-spice-merchant',  displayName: 'Spice Merchant',      description: 'Sacks of star anise and peppercorn.', swX: -30, swY: 68, connX: -30, connY: 67 },
+  { assetId: 'ms-silk-weaver',     displayName: 'Silk Weaver',         description: 'Bolts of patterned silk.',           swX: -10, swY: 68, connX: -10, connY: 67 },
+  { assetId: 'ms-five-spice',      displayName: 'Five Spice Grill',    description: 'Skewers grilled over charcoal.',     swX: 10,  swY: 68, connX: 10,  connY: 67 },
+  { assetId: 'ms-tea-house',       displayName: 'Tea House',           description: 'Quiet pots and small tables.',       swX: 30,  swY: 68, connX: 30,  connY: 67 },
+  { assetId: 'ms-wood-carver',     displayName: 'Wood Carver',         description: 'Whittled animals and beads.',        swX: 50,  swY: 68, connX: 50,  connY: 67 },
+  { assetId: 'ms-porcelain',       displayName: 'Porcelain Works',     description: 'Blue-white pieces, wheel-thrown.',   swX: 70,  swY: 68, connX: 70,  connY: 67 },
+  { assetId: 'ms-herbalist',       displayName: 'Herbalist',           description: 'Dried herbs by the gram.',           swX: 90,  swY: 68, connX: 90,  connY: 67 },
+  { assetId: 'ms-incense',         displayName: 'Incense House',       description: 'Sandalwood and agarwood sticks.',    swX: 110, swY: 68, connX: 110, connY: 67 },
 
-  // North cross-street stalls (row at isoY=-40). SW anchors at isoY=-50.
-  { assetId: 'demo-stall-nw', unlockType: 'stall', displayName: 'Moon Cake Bakery',
-    description: 'At the west arm of the north cross.',
-    layers: makeStallLayers('demo-stall-nw'), isoX: -25, isoY: -50, scale: 1.0,
-    footprint: footprint2x2(-25, -50) },
-  { assetId: 'demo-stall-ne', unlockType: 'stall', displayName: 'Bamboo Flute Maker',
-    description: 'At the east arm of the north cross.',
-    layers: makeStallLayers('demo-stall-ne'), isoX: 15, isoY: -50, scale: 1.0,
-    footprint: footprint2x2(15, -50) },
+  // ─── West Return (x=-50..-45), stalls on the west side ──────────────────
+  { assetId: 'wr-mountain-tea',    displayName: 'Mountain Tea',        description: 'Above the misty stalls.',           swX: -58, swY: 15, connX: -50, connY: 15 },
+  { assetId: 'wr-salt-trader',     displayName: 'Salt Trader',         description: 'Sea and rock salt by weight.',      swX: -58, swY: 30, connX: -50, connY: 30 },
+  { assetId: 'wr-jade-carver',     displayName: 'Jade Carver',         description: 'Carved pendants for sale.',          swX: -58, swY: 42, connX: -50, connY: 42 },
 
-  // East promenade ext (row at isoY=0).
-  { assetId: 'demo-stall-east-promenade', unlockType: 'stall', displayName: 'Copper Smith',
-    description: 'Along the east promenade.',
-    layers: makeStallLayers('demo-stall-east-promenade'), isoX: 60, isoY: -10, scale: 1.0,
-    footprint: footprint2x2(60, -10) },
+  // ─── East Return (x=80..85), stalls on the east side ───────────────────
+  { assetId: 'er-star-reader',     displayName: 'Star Reader',         description: 'Charts the night sky for visitors.', swX: 86,  swY: 10, connX: 85,  connY: 10 },
+  { assetId: 'er-coin-polisher',   displayName: 'Coin Polisher',       description: 'Antique cash coins, restored.',      swX: 86,  swY: 30, connX: 85,  connY: 30 },
+  { assetId: 'er-brass-bell',      displayName: 'Brass Bell',          description: 'Hand-cast bells of every size.',     swX: 86,  swY: 50, connX: 85,  connY: 50 },
 
-  // East return lane (vertical at isoX=80).
-  { assetId: 'demo-stall-east-return-n', unlockType: 'stall', displayName: 'Incense House',
-    description: 'Upper east return lane.',
-    layers: makeStallLayers('demo-stall-east-return-n'), isoX: 85, isoY: 15, scale: 1.0,
-    footprint: footprint2x2(85, 15) },
-  { assetId: 'demo-stall-east-return-s', unlockType: 'stall', displayName: 'Porcelain Works',
-    description: 'Lower east return lane.',
-    layers: makeStallLayers('demo-stall-east-return-s'), isoX: 70, isoY: 35, scale: 1.0,
-    footprint: footprint2x2(70, 35) },
+  // ─── West Spoke (y=0..4), stalls north and south of the main avenue ────
+  { assetId: 'wn-lacquerware',     displayName: 'Lacquerware',         description: 'Glossy red and black trays.',        swX: -40, swY: -8, connX: -40, connY: 0 },
+  { assetId: 'wn-iron-smith',      displayName: 'Iron Smith',          description: 'Knives, tongs, and hooks.',          swX: -20, swY: -8, connX: -20, connY: 0 },
+  { assetId: 'es-tobacco',         displayName: 'Tobacco Stall',       description: 'Pressed leaf and slim pipes.',       swX: 51,  swY: 5,  connX: 50, connY: 5 },
 
-  // West return lane (vertical at isoX=-50).
-  { assetId: 'demo-stall-west-return-n', unlockType: 'stall', displayName: 'Herbalist',
-    description: 'Upper west return lane.',
-    layers: makeStallLayers('demo-stall-west-return-n'), isoX: -60, isoY: 15, scale: 1.0,
-    footprint: footprint2x2(-60, 15) },
-  { assetId: 'demo-stall-west-return-s', unlockType: 'stall', displayName: 'Wood Carver',
-    description: 'Lower west return lane.',
-    layers: makeStallLayers('demo-stall-west-return-s'), isoX: -45, isoY: 35, scale: 1.0,
-    footprint: footprint2x2(-45, 35) },
+  { assetId: 'ws-bone-carver',     displayName: 'Bone Carver',         description: 'Pins, needles, combs.',              swX: -30, swY: 5,  connX: -30, connY: 4 },
+  { assetId: 'ws-persimmon',       displayName: 'Persimmon Stand',     description: 'Sun-dried and fresh.',               swX: -15, swY: 5,  connX: -15, connY: 4 },
+  { assetId: 'ws-cloud-tea',       displayName: 'Cloud Tea',           description: 'High-mountain white tea.',           swX: 5,   swY: 5,  connX: 5,   connY: 4 },
+  { assetId: 'ws-saddle-maker',    displayName: 'Saddle Maker',        description: 'Leather goods for horse and ox.',    swX: 35,  swY: 5,  connX: 35,  connY: 4 },
+  { assetId: 'ws-brushwood',       displayName: 'Brushwood',           description: 'Tied bundles for kitchen fires.',    swX: 60,  swY: 5,  connX: 60,  connY: 4 },
+  { assetId: 'ws-coal-seller',     displayName: 'Coal Seller',         description: 'Hardwood coal by the sack.',         swX: 70,  swY: 5,  connX: 70,  connY: 4 },
 
-  // Market row west extension — SW anchor at (-30, 50).
-  { assetId: 'market-stall-west-ext', unlockType: 'stall', displayName: 'Night Noodles',
-    description: 'West end of market row.',
-    layers: makeStallLayers('market-stall-west-ext'), isoX: -30, isoY: 50, scale: 1.0,
-    footprint: footprint2x2(-30, 50) },
+  // ─── North Spoke (x=0..3), stalls east and west ────────────────────────
+  { assetId: 'ne-paper-maker',     displayName: 'Paper Maker',         description: 'Mulberry-fibre sheets.',             swX: 4,   swY: -33, connX: 3,   connY: -33 },
+  { assetId: 'ne-bronze-forge',    displayName: 'Bronze Forge',        description: 'Cast incense burners.',              swX: 4,   swY: -20, connX: 3,   connY: -20 },
+  { assetId: 'ne-cricket-cages',   displayName: 'Cricket Cages',       description: 'Tiny woven homes for crickets.',     swX: 4,   swY: -12, connX: 3,   connY: -12 },
+  { assetId: 'ne-bamboo-crafts',   displayName: 'Bamboo Crafts',       description: 'Baskets, mats, and steamers.',       swX: 4,   swY: 25,  connX: 3,   connY: 25 },
+  { assetId: 'ne-knife-sharpener', displayName: 'Knife Sharpener',     description: 'Brings your blade back to a edge.',  swX: 4,   swY: 40,  connX: 3,   connY: 40 },
+
+  { assetId: 'nw-tea-master',      displayName: 'Tea Master',          description: 'Pours by appointment.',              swX: -8,  swY: -33, connX: 0,   connY: -33 },
+  { assetId: 'nw-silver-smith',    displayName: 'Silver Smith',        description: 'Filigree pins and earrings.',        swX: -8,  swY: -11, connX: 0,   connY: -11 },
+  { assetId: 'nw-goldfish',        displayName: 'Goldfish Seller',     description: 'Bowls of orange-red fish.',          swX: -8,  swY: 25,  connX: 0,   connY: 25 },
+  { assetId: 'nw-drum-maker',      displayName: 'Drum Maker',          description: 'Skinned barrel drums.',              swX: -8,  swY: 40,  connX: 0,   connY: 40 },
+
+  // ─── South Cross (y=20..21), stalls north and south ────────────────────
+  { assetId: 'sc-tile-glazer',     displayName: 'Tile Glazer',         description: 'Fired roof tiles, jewel-glazed.',    swX: 20,  swY: 12,  connX: 20,  connY: 20 },
+
+  // ─── South Spur (x=20..21), stalls east and west ───────────────────────
+  { assetId: 'sp-kite-painter',    displayName: 'Kite Painter',        description: 'Custom dragons on paper kites.',     swX: 22,  swY: 30,  connX: 21,  connY: 30 },
+
+  // ─── North Cross (y=-40..-38), stalls on either side ──────────────────
+  { assetId: 'nc-sutra-scribe',    displayName: 'Sutra Scribe',        description: 'Copies sacred texts on order.',      swX: -25, swY: -48, connX: -25, connY: -40 },
+  { assetId: 'nc-inkstone',        displayName: 'Inkstone',            description: 'Carved stones for grinding ink.',    swX: 10,  swY: -48, connX: 10,  connY: -40 },
+  { assetId: 'ncs-bird-cage',      displayName: 'Bird Cage',           description: 'Bamboo cages, fittings included.',   swX: -25, swY: -37, connX: -25, connY: -38 },
+  { assetId: 'ncs-fan-maker',      displayName: 'Fan Maker',           description: 'Folding and round fans.',            swX: 15,  swY: -37, connX: 15,  connY: -38 },
 ];
+
+// Apply the global shift. For streets, start/end run along the primary axis and
+// offset runs along the perpendicular — but a uniform (+isoX, +isoY) translation
+// adds the same shift to start, end, and offset regardless of orientation.
+export const STREETS: Street[] = RAW_STREETS.map(s => ({
+  ...s,
+  start:  s.start  + (s.isNorthSouth ? SHIFT_ISO_Y : SHIFT_ISO_X),
+  end:    s.end    + (s.isNorthSouth ? SHIFT_ISO_Y : SHIFT_ISO_X),
+  offset: s.offset + (s.isNorthSouth ? SHIFT_ISO_X : SHIFT_ISO_Y),
+}));
+
+const STAND_SPECS: StandSpec[] = RAW_STAND_SPECS.map(spec => ({
+  ...spec,
+  swX:   spec.swX   + SHIFT_ISO_X,
+  swY:   spec.swY   + SHIFT_ISO_Y,
+  connX: spec.connX + SHIFT_ISO_X,
+  connY: spec.connY + SHIFT_ISO_Y,
+}));
+
+export const DEMO_STALLS: NightMarketAssetDef[] = STAND_SPECS.map(spec => ({
+  assetId: spec.assetId,
+  unlockType: 'stall',
+  displayName: spec.displayName,
+  description: spec.description,
+  layers: makeStallLayers(spec.assetId),
+  isoX: spec.swX,
+  isoY: spec.swY,
+  scale: STALL_SPRITE_SCALE,
+  footprint: stallFootprint(spec.swX, spec.swY),
+}));
+
+/**
+ * Attach each stand's assetId as a connection on its named walkable tile.
+ * Runs after street tiles are expanded so connections survive priority claims.
+ */
+function applyConnections(tiles: TileDef[], specs: StandSpec[]): TileDef[] {
+  const map = new Map<string, TileDef>();
+  for (const t of tiles) map.set(tileKey(t.isoX, t.isoY), { ...t });
+  for (const spec of specs) {
+    const k = tileKey(spec.connX, spec.connY);
+    const t = map.get(k);
+    if (!t) {
+      throw new Error(
+        `[tileRegistry] Stand ${spec.assetId} connection tile (${spec.connX}, ${spec.connY}) is not walkable`,
+      );
+    }
+    t.connections = [...(t.connections ?? []), spec.assetId];
+    map.set(k, t);
+  }
+  return Array.from(map.values());
+}
+
+export const TILES: TileDef[] = applyConnections(buildTilesFromStreets(STREETS), STAND_SPECS);
 
 // ---------------------------------------------------------------------------
 // Derived structures — built once at module load.
@@ -423,6 +338,11 @@ export const DEMO_STALLS: NightMarketAssetDef[] = [
 export const TILE_GRAPH = buildTileGraph(TILES, DEMO_STALLS);
 
 export const TILE_MAP: Map<string, TileDef> = TILE_GRAPH.tiles;
+
+// Coarse traversal graph: intersections-as-nodes, streets-as-edges. Used by
+// the pedestrian planner for high-level routing; the tile graph handles
+// per-tile stepping and the access-tile last-mile.
+export const STREET_GRAPH = buildStreetGraph(STREETS, TILES);
 
 // Floor tile sprite — every walkable tile renders this.
 export const FLOOR_TILE_IMAGE_PATH = floorImgUrl;
@@ -452,19 +372,31 @@ const defaultSprite: SpriteDef = {
 
 export const DEMO_PEDESTRIAN_COUNT = 3;
 
+/** Lower bound for per-pedestrian random speed; PEDESTRIAN_SPEED_ISO_PER_SEC is the upper bound. */
+const MIN_PEDESTRIAN_SPEED_ISO_PER_SEC = 3;
+
 /** Pick a random walkable tile from the registry. */
 function randomTile(): TileCoord {
   const tile = TILES[Math.floor(Math.random() * TILES.length)];
   return { isoX: tile.isoX, isoY: tile.isoY };
 }
 
+/** Random speed in [MIN_PEDESTRIAN_SPEED_ISO_PER_SEC, PEDESTRIAN_SPEED_ISO_PER_SEC]. */
+function randomPedestrianSpeed(): number {
+  return (
+    MIN_PEDESTRIAN_SPEED_ISO_PER_SEC +
+    Math.random() * (PEDESTRIAN_SPEED_ISO_PER_SEC - MIN_PEDESTRIAN_SPEED_ISO_PER_SEC)
+  );
+}
+
 export function makeAmbientPedestrian(id: string, startTile: TileCoord): PedestrianState {
   return {
     id,
     sprite: defaultSprite,
+    speedIsoPerSec: randomPedestrianSpeed(),
     currentTile: startTile,
     localProgress: 0,
-    pendingPath: [],
+    pendingLegs: [],
     agenda: [{ kind: 'Wander', dwellMs: 1500 }],
     fsmState: 'Idle',
     recentlyVisitedAssetIds: [],

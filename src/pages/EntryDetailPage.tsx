@@ -35,7 +35,7 @@ type HskLevel = 'HSK1' | 'HSK2' | 'HSK3' | 'HSK4' | 'HSK5' | 'HSK6';
 interface VocabEntry {
     id: number;
     entryKey: string;
-    entryValue: string;
+    definition?: string | null;
     hskLevel?: HskLevel | null;
     createdAt: string;
 }
@@ -210,7 +210,7 @@ function EntryDetailPage() {
                 </Typography>
                 <Divider sx={{ my: 2 }} />
                 <Typography variant="body1" paragraph>
-                    {stripParentheses(entry.entryValue)}
+                    {stripParentheses(entry.definition ?? '')}
                 </Typography>
                 {renderTags(entry)}
                 <Divider sx={{ my: 2 }} />

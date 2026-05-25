@@ -6,7 +6,6 @@ import { API_BASE_URL } from '../constants';
 
 interface VocabEntryFormData {
     entryKey: string;
-    entryValue: string;
 }
 
 interface AddEntryModalProps {
@@ -18,8 +17,7 @@ interface AddEntryModalProps {
 const AddEntryModal = ({ open, onClose, onEntryAdded }: AddEntryModalProps) => {
     const vocabularyUpdate = useVocabularyUpdate();
     const [formData, setFormData] = useState<VocabEntryFormData>({
-        entryKey: '',
-        entryValue: ''
+        entryKey: ''
     });
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -72,8 +70,7 @@ const AddEntryModal = ({ open, onClose, onEntryAdded }: AddEntryModalProps) => {
             vocabularyUpdate.addVocabEntry(createdEntry);
 
             setFormData({
-                entryKey: '',
-                entryValue: ''
+                entryKey: ''
             });
             onEntryAdded();
             onClose();
@@ -89,7 +86,7 @@ const AddEntryModal = ({ open, onClose, onEntryAdded }: AddEntryModalProps) => {
     };
 
     const handleClose = () => {
-        setFormData({ entryKey: '', entryValue: '' });
+        setFormData({ entryKey: '' });
         setError(null);
         setErrorCode(null);
         onClose();
@@ -146,24 +143,6 @@ const AddEntryModal = ({ open, onClose, onEntryAdded }: AddEntryModalProps) => {
                         variant="outlined"
                         autoFocus
                         inputRef={termFieldRef}
-                    />
-
-                    <TextField
-                        label="Definition"
-                        name="entryValue"
-                        value={formData.entryValue}
-                        onChange={handleChange}
-                        required
-                        fullWidth
-                        margin="normal"
-                        variant="outlined"
-                        sx={{ mb: 3 }}
-                        onKeyDown={(e) => {
-                            if (e.key === 'Enter' && !e.shiftKey) {
-                                e.preventDefault();
-                                handleSubmit(e as unknown as React.FormEvent<HTMLFormElement>);
-                            }
-                        }}
                     />
 
                     <Button

@@ -4,6 +4,7 @@ import { styled } from "@mui/material/styles";
 import { useAuth } from "../AuthContext";
 import HomeIcon from "@mui/icons-material/Home";
 import LanguageIcon from "@mui/icons-material/Language";
+import SportsEsportsIcon from "@mui/icons-material/SportsEsports";
 import AccountCircleIcon from "@mui/icons-material/AccountCircle";
 
 // Design tokens from Figma
@@ -54,7 +55,7 @@ const FooterDivider = styled(Box)(() => ({
 }));
 
 interface MobileFooterProps {
-    activePage?: "home" | "discover" | "account";
+    activePage?: "home" | "discover" | "games" | "account";
 }
 
 const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "home" }) => {
@@ -68,6 +69,10 @@ const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "home" }) => {
     const handleDiscoverClick = () => {
         const language = user?.selectedLanguage || "zh";
         navigate(`/discover/sort/${language}`);
+    };
+
+    const handleGamesClick = () => {
+        navigate("/games");
     };
 
     const handleAccountClick = () => {
@@ -116,6 +121,28 @@ const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "home" }) => {
                         }}
                     >
                         Discover
+                    </Typography>
+                </FooterItem>
+
+                <FooterDivider className="mobile-footer-divider" />
+
+                <FooterItem
+                    className="mobile-footer-item"
+                    active={activePage === "games"}
+                    onClick={handleGamesClick}
+                >
+                    <SportsEsportsIcon className="mobile-footer__games-icon" sx={{ fontSize: 24, color: COLORS.iconColor }} />
+                    <Typography
+                        className="mobile-footer__games-label"
+                        sx={{
+                            fontSize: 12,
+                            fontWeight: 400,
+                            lineHeight: 1.21,
+                            color: COLORS.textColor,
+                            fontFamily: '"Inter", sans-serif',
+                        }}
+                    >
+                        Games
                     </Typography>
                 </FooterItem>
 

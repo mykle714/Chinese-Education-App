@@ -146,7 +146,7 @@ export interface DictionaryEntry {
 export interface DiscoverCard {
   id: number;               // dictionaryEntry.id — sent in sort POST
   entryKey: string;         // word1
-  entryValue: string;       // definitions[0]
+  definition: string;       // definitions[0]
   pronunciation?: string | null;
   tone?: string | null;
   language: Language;
@@ -201,7 +201,7 @@ export interface VocabEntry {
   id: number;
   userId: string;
   entryKey: string;
-  entryValue: string;
+  definition?: string | null;  // det.definitions[0] — joined from dictionaryentries at read time
   language: Language;
   script?: string;
   pronunciation?: string | null;
@@ -234,6 +234,7 @@ export interface VocabEntry {
     segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo; wordForms?: Record<string, string> }>;
   }>;  // Example sentences enriched at runtime with greedy segmentation and per-segment metadata
   relatedWords?: Array<{ id: number; entryKey: string; pronunciation: string | null; definition: string | null }>;  // Related library words (computed dynamically)
+  hasAudio?: boolean;  // Pre-warm result from TTSService.synthesize — false means synthesis failed and the client should fall back to Web Speech for this card
   createdAt: Date;
 }
 
@@ -241,7 +242,6 @@ export interface VocabEntry {
 export interface VocabEntryCreateData {
   userId: string;
   entryKey: string;
-  entryValue: string;
   language: Language;
   hskLevel?: HskLevel | null;
 }
@@ -249,7 +249,6 @@ export interface VocabEntryCreateData {
 // VocabEntry update data type
 export interface VocabEntryUpdateData {
   entryKey?: string;
-  entryValue: string;
   language?: Language;
   hskLevel?: HskLevel | null;
 }

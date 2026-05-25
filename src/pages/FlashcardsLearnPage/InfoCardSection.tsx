@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useLayoutEffect } from "react";
+import React, { useState, useCallback, useRef, useLayoutEffect, useEffect } from "react";
 import { stripParentheses } from "../../utils/definitionUtils";
 import { Box, Typography, useTheme } from "@mui/material";
 import { useDrag } from "@use-gesture/react";
@@ -42,12 +42,10 @@ interface InfoCardSectionProps {
     onClose: () => void;
 }
 
-// Height below which releasing the drag triggers sheet dismissal.
-const DISMISS_HEIGHT_PX = 80;
-// Minimum downward drag distance (px) required before a fast-flick dismisses.
-const DISMISS_MIN_DRAG_PX = 20;
-// Velocity (px/ms) above which a downward flick counts as a dismiss gesture.
-const DISMISS_VELOCITY_THRESHOLD = 0.5;
+// Sheet snaps to one of three stops on drag release: max height, the initial
+// (natural-content) height, or 0 height. Snapping to 0 dismisses after the
+// shrink animation finishes.
+const SNAP_DURATION_MS = 220;
 
 const InfoCardSection: React.FC<InfoCardSectionProps> = ({
     currentEntry,
@@ -70,18 +68,33 @@ const InfoCardSection: React.FC<InfoCardSectionProps> = ({
     const dragStartHeightRef = useRef<number>(0);
     // Parent container height used as the cap for resize drags.
     const parentHeightRef = useRef<number>(0);
+    // Natural content height measured on first paint — one of the snap stops.
+    const initialHeightRef = useRef<number>(0);
+    // True only while a release-snap animation is playing.
+    const [isSnapping, setIsSnapping] = useState(false);
+    // Flag set when the chosen snap target is 0; the transitionend handler
+    // reads this to know it should call handleClose after the shrink finishes.
+    const pendingDismissRef = useRef(false);
 
-    // Measure the sheet's natural height on first render (definition tab is active on open)
-    // and lock it as a fixed height. useLayoutEffect ensures the lock is applied before the
-    // browser's first paint, so there is no visible jump.
+    // Measure the sheet's natural height on first render (definition tab is active
+    // on open), then play an open animation from 0 → measured height.
+    //   - useLayoutEffect runs synchronously before paint, so the first painted
+    //     frame already has height: 0 — no flash of full-height content.
+    //   - requestAnimationFrame defers the target-height update to the next
+    //     frame, with the transition enabled, so the browser animates the change.
     useLayoutEffect(() => {
-        if (sheetContainerRef.current) {
-            const measured = sheetContainerRef.current.offsetHeight;
-            const parentH = sheetContainerRef.current.parentElement?.clientHeight ?? window.innerHeight;
-            parentHeightRef.current = parentH;
+        if (!sheetContainerRef.current) return;
+        const measured = sheetContainerRef.current.offsetHeight;
+        const parentH = sheetContainerRef.current.parentElement?.clientHeight ?? window.innerHeight;
+        parentHeightRef.current = parentH;
+        initialHeightRef.current = measured;
+        sheetHeightRef.current = 0;
+        setSheetHeight(0);
+        requestAnimationFrame(() => {
+            setIsSnapping(true);
             sheetHeightRef.current = measured;
             setSheetHeight(measured);
-        }
+        });
     }, []);
 
     const handleClose = useCallback(() => {
@@ -89,32 +102,64 @@ const InfoCardSection: React.FC<InfoCardSectionProps> = ({
     }, [onClose]);
 
     // Drag the grabber to resize the sheet (drag up = taller, drag down = shorter).
-    // Releasing below DISMISS_HEIGHT_PX or with a fast downward flick dismisses.
+    // While the finger is down the height tracks 1:1; on release the height snaps
+    // to whichever of {0, initial, max} is nearest. Snapping to 0 dismisses.
     const bindHeaderDrag = useDrag(
-        ({ first, last, movement: [, my], velocity: [, vy] }) => {
+        ({ first, last, movement: [, my] }) => {
             if (first) {
                 dragStartHeightRef.current = sheetHeightRef.current ?? 0;
+                setIsSnapping(false);
             }
 
             const maxH = parentHeightRef.current * 0.92;
             // Positive my = dragged down → sheet shrinks; negative = dragged up → grows.
             const newH = dragStartHeightRef.current - my;
-            const clampedH = Math.max(DISMISS_HEIGHT_PX, Math.min(maxH, newH));
+            const clampedH = Math.max(0, Math.min(maxH, newH));
 
-            if (last) {
-                if (newH < DISMISS_HEIGHT_PX || (my > DISMISS_MIN_DRAG_PX && vy > DISMISS_VELOCITY_THRESHOLD)) {
-                    handleClose();
-                    return;
-                }
+            if (!last) {
                 sheetHeightRef.current = clampedH;
                 setSheetHeight(clampedH);
-            } else {
-                sheetHeightRef.current = clampedH;
-                setSheetHeight(clampedH);
+                return;
             }
+
+            // Release: snap to nearest of {0, initial, max} by pixel distance.
+            const stops = [0, initialHeightRef.current, maxH];
+            const target = stops.reduce((best, s) =>
+                Math.abs(s - clampedH) < Math.abs(best - clampedH) ? s : best
+            );
+            if (target === 0) pendingDismissRef.current = true;
+            setIsSnapping(true);
+            sheetHeightRef.current = target;
+            setSheetHeight(target);
         },
         { axis: "y", filterTaps: true }
     );
+
+    // After a snap-to-0, dismiss the sheet once the height transition ends.
+    // Falls back to a timeout in case transitionend doesn't fire (e.g., target
+    // height equals current, so no transition occurs).
+    useEffect(() => {
+        if (!isSnapping) return;
+        const el = sheetContainerRef.current;
+        if (!el) return;
+        const finish = () => {
+            setIsSnapping(false);
+            if (pendingDismissRef.current) {
+                pendingDismissRef.current = false;
+                handleClose();
+            }
+        };
+        const onEnd = (e: TransitionEvent) => {
+            if (e.propertyName !== "height") return;
+            finish();
+        };
+        el.addEventListener("transitionend", onEnd);
+        const timeout = window.setTimeout(finish, SNAP_DURATION_MS + 80);
+        return () => {
+            el.removeEventListener("transitionend", onEnd);
+            window.clearTimeout(timeout);
+        };
+    }, [isSnapping, handleClose]);
 
     // Tab content availability — order matches TAB_LABELS: definition, examples, breakdown
     const definitionTabHasContent = !!(
@@ -129,7 +174,10 @@ const InfoCardSection: React.FC<InfoCardSectionProps> = ({
 
     // Apply locked height once measured; before measurement the sheet sizes naturally
     // so offsetHeight returns the correct content height for the definition tab.
-    const sheetStyle: React.CSSProperties = sheetHeight !== null ? { height: sheetHeight } : {};
+    // Transition is only enabled during snap so finger-drag tracks 1:1.
+    const sheetStyle: React.CSSProperties = sheetHeight !== null
+        ? { height: sheetHeight, transition: isSnapping ? `height ${SNAP_DURATION_MS}ms ease-out` : "none" }
+        : {};
 
     return (
         <>
@@ -145,7 +193,11 @@ const InfoCardSection: React.FC<InfoCardSectionProps> = ({
                 className="mobile-demo-eic-sheet"
                 style={sheetStyle}
             >
-                {/* Draggable header zone: grabber + entry header + tab strip */}
+                {/* Draggable header zone: grabber + entry header only.
+                    The tab strip is intentionally OUTSIDE this zone — taps on
+                    tabs were being processed by useDrag (filterTaps doesn't
+                    catch every jittery tap) and collapsing the sheet to the
+                    DISMISS_HEIGHT_PX clamp. */}
                 <Box
                     className="mobile-demo-eic-drag-zone"
                     {...bindHeaderDrag()}
@@ -185,7 +237,7 @@ const InfoCardSection: React.FC<InfoCardSectionProps> = ({
                                     minWidth: 0,
                                 }}
                             >
-                                {stripParentheses(currentEntry.entryValue)}
+                                {stripParentheses(currentEntry.definition ?? '')}
                             </Typography>
                         )}
                         {/* Audio button — visual placeholder */}
@@ -207,36 +259,35 @@ const InfoCardSection: React.FC<InfoCardSectionProps> = ({
                             <Typography sx={{ fontSize: 12, color: fc.onSurface, lineHeight: 1, ml: "2px" }}>▶</Typography>
                         </Box>
                     </InfoSheetEntryHeader>
-
-                    {/* Underline tab strip */}
-                    <InfoSheetTabStrip className="mobile-demo-tabs">
-                        {TAB_LABELS.map((label, index) => (
-                            <InfoSheetTab
-                                key={index}
-                                isActive={selectedTab === index}
-                                isEmpty={tabIsEmpty[index]}
-                                // Stop propagation so tab taps don't register as drag starts.
-                                onClick={(e: React.MouseEvent) => {
-                                    e.stopPropagation();
-                                    if (!tabIsEmpty[index]) onTabChange(index);
-                                }}
-                                className={`mobile-demo-tab mobile-demo-tab-${label}`}
-                            >
-                                <Typography sx={{
-                                    fontSize: 12,
-                                    fontWeight: selectedTab === index ? 700 : 500,
-                                    color: selectedTab === index ? fc.onSurface : fc.textSecondary,
-                                    fontFamily: '"Inter", sans-serif',
-                                    userSelect: "none",
-                                    textTransform: "capitalize",
-                                    lineHeight: 1,
-                                }}>
-                                    {label.charAt(0).toUpperCase() + label.slice(1)}
-                                </Typography>
-                            </InfoSheetTab>
-                        ))}
-                    </InfoSheetTabStrip>
                 </Box>
+
+                {/* Underline tab strip — outside the drag zone so tab taps
+                    can't be misread as resize gestures. */}
+                <InfoSheetTabStrip className="mobile-demo-tabs">
+                    {TAB_LABELS.map((label, index) => (
+                        <InfoSheetTab
+                            key={index}
+                            isActive={selectedTab === index}
+                            isEmpty={tabIsEmpty[index]}
+                            onClick={() => {
+                                if (!tabIsEmpty[index]) onTabChange(index);
+                            }}
+                            className={`mobile-demo-tab mobile-demo-tab-${label}`}
+                        >
+                            <Typography sx={{
+                                fontSize: 12,
+                                fontWeight: selectedTab === index ? 700 : 500,
+                                color: selectedTab === index ? fc.onSurface : fc.textSecondary,
+                                fontFamily: '"Inter", sans-serif',
+                                userSelect: "none",
+                                textTransform: "capitalize",
+                                lineHeight: 1,
+                            }}>
+                                {label.charAt(0).toUpperCase() + label.slice(1)}
+                            </Typography>
+                        </InfoSheetTab>
+                    ))}
+                </InfoSheetTabStrip>
 
                 {/* Scrollable tab body — touchAction pan-y so native scroll works here */}
                 <Box

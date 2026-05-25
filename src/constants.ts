@@ -29,7 +29,10 @@ export const STREAK_CONFIG = {
 
 // Vocabulary Search Configuration
 export const VOCAB_SEARCH_CONFIG = {
-  SEARCH_FIELDS: ['entryKey', 'entryValue'] as const,
+  // Both 'entryKey' (the vocab word) and 'definition' (joined from det.definitions[0])
+  // are searched server-side; the search query also unnests det.definitions so
+  // any definition phrase can match.
+  SEARCH_FIELDS: ['entryKey', 'definition'] as const,
   RESULT_LIMIT: 50,
   DEBOUNCE_DELAY: 400
 };

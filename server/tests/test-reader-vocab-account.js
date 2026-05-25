@@ -76,8 +76,7 @@ async function testReaderVocabAccount() {
         (entry.entrykey || entry.entryKey) === word
       );
       if (found) {
-        const value = found.entryvalue || found.entryValue;
-        console.log(`✅ ${word} → ${value}`);
+        console.log(`✅ ${word} → ${found.definition}`);
       } else {
         console.log(`❌ ${word} → NOT FOUND`);
       }

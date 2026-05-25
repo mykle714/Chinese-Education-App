@@ -5,9 +5,20 @@ import {
   Tooltip,
 } from '@mui/material';
 import LockOpenIcon from '@mui/icons-material/LockOpen';
-import BugReportIcon from '@mui/icons-material/BugReport';
-import MarketEngineViewer from '../components/MarketEngineViewer';
-import type { EngineLayer } from '../components/MarketEngineViewer';
+import CropFreeIcon from '@mui/icons-material/CropFree';
+import StorefrontIcon from '@mui/icons-material/Storefront';
+import AltRouteIcon from '@mui/icons-material/AltRoute';
+import DirectionsWalkIcon from '@mui/icons-material/DirectionsWalk';
+import GpsFixedIcon from '@mui/icons-material/GpsFixed';
+import PinDropIcon from '@mui/icons-material/PinDrop';
+import GridOnIcon from '@mui/icons-material/GridOn';
+import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutline';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
+import MarketEngineViewer, {
+  ALL_DEBUG_OFF, ALL_DEBUG_ON,
+} from '../components/MarketEngineViewer';
+import type { EngineLayer, DebugFlags } from '../components/MarketEngineViewer';
 import { useNightMarket } from '../hooks/useNightMarket';
 import { useMinutePoints } from '../hooks/useMinutePoints';
 import { usePageTitle } from '../hooks/usePageTitle';
@@ -50,10 +61,18 @@ function NightMarketEnginePage() {
   const { accumulativeMinutePoints } = useMinutePoints();
 
   const [selectedAsset, setSelectedAsset] = useState<NightMarketAssetDef | null>(null);
-  const [showDebug, setShowDebug] = useState(false);
+  const [debug, setDebug] = useState<DebugFlags>(ALL_DEBUG_OFF);
+
+  const toggleDebugFlag = (key: keyof DebugFlags) =>
+    setDebug(prev => ({ ...prev, [key]: !prev[key] }));
 
   // Pedestrian simulation driven by Pixi's useTick — no separate RAF loop.
-  const pedestrians = usePixiPedestrians();
+  const pedestrians = usePixiPedestrians(100);
+
+  // Mirror the `frozen` debug flag into the pedestrian sim's speed multiplier.
+  useEffect(() => {
+    pedestrians.setSpeedMultiplier(debug.frozen ? 0 : 1);
+  }, [debug.frozen, pedestrians]);
 
   // Build EngineLayer list from user unlocks + demo stalls — same logic as MarketViewerPage.
   const layers = useMemo(() => {
@@ -176,24 +195,6 @@ function NightMarketEnginePage() {
         </Box>
 
         <Box className="night-market-engine-header-actions" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-        <Tooltip title={showDebug ? 'Hide debug overlay' : 'Show debug overlay (POI labels + pedestrian states)'}>
-          <Button
-            className="night-market-engine-debug-toggle"
-            variant={showDebug ? 'contained' : 'outlined'}
-            size="small"
-            onClick={() => setShowDebug(v => !v)}
-            sx={{
-              minWidth: 0,
-              color: showDebug ? 'black' : 'rgba(255,255,255,0.7)',
-              borderColor: 'rgba(255,255,255,0.4)',
-              backgroundColor: showDebug ? 'rgba(255,224,102,0.9)' : 'rgba(0,0,0,0.3)',
-              '&:hover': { borderColor: 'white', backgroundColor: showDebug ? 'rgba(255,224,102,1)' : 'rgba(0,0,0,0.5)' },
-            }}
-          >
-            <BugReportIcon fontSize="small" />
-          </Button>
-        </Tooltip>
-
         {canUnlock && (
           <Button
             className="night-market-engine-unlock-button"
@@ -220,12 +221,60 @@ function NightMarketEnginePage() {
         </Box>
       </Box>
 
+      {/* Debug overlay toggle column — accumulates down the right edge */}
+      <Box
+        className="night-market-engine-debug-column"
+        sx={{
+          position: 'absolute',
+          top: 96,
+          right: 16,
+          zIndex: 10,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 1,
+        }}
+      >
+        {([
+          { key: 'all-on', label: 'Turn all debug overlays on', icon: <VisibilityIcon fontSize="small" />, active: false, onClick: () => setDebug(ALL_DEBUG_ON) },
+          { key: 'all-off', label: 'Turn all debug overlays off', icon: <VisibilityOffIcon fontSize="small" />, active: false, onClick: () => setDebug(ALL_DEBUG_OFF) },
+          { key: 'footprints', label: 'Toggle stand footprint outlines', icon: <CropFreeIcon fontSize="small" />, active: debug.footprints, onClick: () => toggleDebugFlag('footprints') },
+          { key: 'standLabels', label: 'Toggle stand and pedestrian name labels', icon: <StorefrontIcon fontSize="small" />, active: debug.standLabels, onClick: () => toggleDebugFlag('standLabels') },
+          { key: 'streetLabels', label: 'Toggle street name labels', icon: <AltRouteIcon fontSize="small" />, active: debug.streetLabels, onClick: () => toggleDebugFlag('streetLabels') },
+          { key: 'pedestrianStates', label: 'Toggle pedestrian FSM state labels', icon: <DirectionsWalkIcon fontSize="small" />, active: debug.pedestrianStates, onClick: () => toggleDebugFlag('pedestrianStates') },
+          { key: 'origin', label: 'Toggle iso (0, 0) origin crosshair', icon: <GpsFixedIcon fontSize="small" />, active: debug.origin, onClick: () => toggleDebugFlag('origin') },
+          { key: 'coordinates', label: 'Toggle (isoX, isoY) coordinates on stands and pedestrians', icon: <PinDropIcon fontSize="small" />, active: debug.coordinates, onClick: () => toggleDebugFlag('coordinates') },
+          { key: 'tileInfo', label: 'Toggle per-tile street/edge/node info (small font — zoom in to read)', icon: <GridOnIcon fontSize="small" />, active: debug.tileInfo, onClick: () => toggleDebugFlag('tileInfo') },
+          { key: 'frozen', label: 'Freeze all pedestrians', icon: <PauseCircleOutlineIcon fontSize="small" />, active: debug.frozen, onClick: () => toggleDebugFlag('frozen') },
+        ] as const).map(({ key, label, icon, active, onClick }) => (
+          <Tooltip key={key} title={label} placement="left">
+            <Button
+              className={`night-market-engine-debug-toggle night-market-engine-debug-toggle-${key}`}
+              variant={active ? 'contained' : 'outlined'}
+              size="small"
+              onClick={onClick}
+              sx={{
+                minWidth: 0,
+                width: 36,
+                height: 36,
+                p: 0,
+                color: active ? 'black' : 'rgba(255,255,255,0.7)',
+                borderColor: 'rgba(255,255,255,0.4)',
+                backgroundColor: active ? 'rgba(255,224,102,0.9)' : 'rgba(0,0,0,0.3)',
+                '&:hover': { borderColor: 'white', backgroundColor: active ? 'rgba(255,224,102,1)' : 'rgba(0,0,0,0.5)' },
+              }}
+            >
+              {icon}
+            </Button>
+          </Tooltip>
+        ))}
+      </Box>
+
       {/* Pixi.js canvas viewer */}
       <Box
         className="night-market-engine-canvas-container"
         sx={{ flexGrow: 1, width: '100%', height: '100%', position: 'relative' }}
       >
-        <MarketEngineViewer layers={layers} onLayerTap={handleLayerTap} pedestrians={pedestrians} showGrid showDebug={showDebug} />
+        <MarketEngineViewer layers={layers} onLayerTap={handleLayerTap} pedestrians={pedestrians} showGrid debug={debug} />
       </Box>
 
       {/* Item info dialog */}

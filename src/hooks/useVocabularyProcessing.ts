@@ -208,7 +208,7 @@ export function useVocabularyProcessing(token: string | null): UseVocabularyProc
                 dictionaryEntriesFound: vocabEntries.dictionaryEntries.length,
                 personalMatchRate: `${(vocabEntries.personalEntries.length / tokens.length * 100).toFixed(1)}%`,
                 dictionaryMatchRate: `${(vocabEntries.dictionaryEntries.length / tokens.length * 100).toFixed(1)}%`,
-                samplePersonalEntries: vocabEntries.personalEntries.slice(0, 10).map(e => ({ key: e.entryKey, value: e.entryValue })),
+                samplePersonalEntries: vocabEntries.personalEntries.slice(0, 10).map(e => ({ key: e.entryKey, definition: e.definition })),
                 performance: {
                     tokensPerSecond: Math.round(tokens.length / (totalProcessingTime / 1000))
                 }

@@ -138,12 +138,22 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
       throw new ValidationError('Search term is required');
     }
 
+    // Search matches on entryKey OR any individual definition phrase from det.
+    // det.definitions is a JSONB array already pre-split into one phrase per
+    // element (see scripts/backfill-split-semicolon-definitions.js), so
+    // unnesting it via jsonb_array_elements_text gives per-phrase matching.
     const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
       return await client.query(`
         SELECT ve.*, ${DICT_COLS}
         FROM VocabEntries ve ${DICT_JOIN}
         WHERE ve."userId" = $1
-        AND (ve."entryKey" ILIKE $2 OR ve."entryValue" ILIKE $2)
+        AND (
+          ve."entryKey" ILIKE $2
+          OR EXISTS (
+            SELECT 1 FROM jsonb_array_elements_text(de.definitions) AS d(def)
+            WHERE d.def ILIKE $2
+          )
+        )
         ORDER BY ve."createdAt" DESC
         LIMIT $3
       `, [userId, `%${searchTerm}%`, limit]);
@@ -315,7 +325,6 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
         foundEntries: result.recordset.map(entry => ({
           id: entry.id,
           key: entry.entryKey,
-          valuePreview: entry.entryValue?.substring(0, 30) + '...',
           hskLevel: entry.hskLevel
         })).slice(0, 10), // Show first 10 entries
         tokenMatchAnalysis: {
@@ -405,26 +414,16 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
           );
 
           if (existingResult.rows.length > 0) {
-            // Update existing entry
+            // Row already present — nothing on vet to update now that the
+            // definition lives on det. Count as skipped.
+            result.skipped++;
+          } else {
             await client.query(`
-              UPDATE VocabEntries
-              SET "entryValue" = $1
-              WHERE "userId" = $2 AND "entryKey" = $3
+              INSERT INTO VocabEntries ("userId", "entryKey")
+              VALUES ($1, $2)
             `, [
-              entry.entryValue,
               entry.userId,
               entry.entryKey
-            ]);
-            result.updated++;
-          } else {
-            // Insert new entry
-            await client.query(`
-              INSERT INTO VocabEntries ("userId", "entryKey", "entryValue")
-              VALUES ($1, $2, $3)
-            `, [
-              entry.userId,
-              entry.entryKey,
-              entry.entryValue
             ]);
             result.inserted++;
           }
@@ -649,9 +648,6 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     if (!data.entryKey) {
       throw new ValidationError('Entry key is required');
     }
-    if (!data.entryValue) {
-      throw new ValidationError('Entry value is required');
-    }
   }
 
   /**
@@ -662,9 +658,6 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
 
     if (!data.entryKey) {
       throw new ValidationError('Entry key is required');
-    }
-    if (!data.entryValue) {
-      throw new ValidationError('Entry value is required');
     }
   }
 

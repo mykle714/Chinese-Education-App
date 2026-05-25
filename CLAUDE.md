@@ -28,8 +28,8 @@ poi = point of interest
 
 When the user mentions coordinates for night market assets, they are always in isometric grid units (isoX, isoY). See `src/utils/isometric.ts` for the full coordinate system definition.
 
-- **isoX** — distance along the isometric X axis (toward bottom-right on screen)
-- **isoY** — distance along the isometric Y axis (toward bottom-left on screen)
+- **isoX** — distance along the isometric X axis (toward top-right on screen / east)
+- **isoY** — distance along the isometric Y axis (toward top-left on screen / north)
 - **Origin (0, 0)** — maps to the center of the viewport
 
 All night market assets live at: `/home/cow/src/assets/`
@@ -98,6 +98,11 @@ An hourly Postgres cron on the prod server expires streaks for users who stop op
 
 ### Night Market
 → See [docs/NIGHT_MARKET_FEATURE.md](./docs/NIGHT_MARKET_FEATURE.md)
+→ Pedestrian movement: [docs/PEDESTRIAN_WALKING_ALGORITHM.md](./docs/PEDESTRIAN_WALKING_ALGORITHM.md)
+→ Tile/street graph invariants: [docs/NIGHT_MARKET_GRAPH_ASSUMPTIONS.md](./docs/NIGHT_MARKET_GRAPH_ASSUMPTIONS.md)
+
+### Games
+→ See [docs/GAMES_FEATURE.md](./docs/GAMES_FEATURE.md)
 
 ## 🔧 Troubleshooting
 

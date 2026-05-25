@@ -27,10 +27,10 @@ async function testConnection() {
     const testResult = await client.query('SELECT COUNT(*) as count FROM vocabentries');
     console.log('✅ Sample data count:', testResult.rows[0].count, 'vocabulary entries');
     
-    const sampleData = await client.query('SELECT entrykey, entryvalue, language, script FROM vocabentries LIMIT 3');
+    const sampleData = await client.query('SELECT entrykey, language FROM vocabentries LIMIT 3');
     console.log('✅ Sample vocabulary entries:');
     sampleData.rows.forEach(row => {
-      console.log(`  - ${row.entrykey} (${row.language}): ${row.entryvalue}`);
+      console.log(`  - ${row.entrykey} (${row.language})`);
     });
     
     client.release();

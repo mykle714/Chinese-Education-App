@@ -58,10 +58,7 @@ async function testLibraryFlow() {
       },
       body: JSON.stringify({
         entryKey: '测试',
-        entryValue: 'test',
         language: testLanguage,
-        notes: 'Test card for library flow',
-        levelOfKnowledge: 1
       })
     });
 
@@ -83,7 +80,7 @@ async function testLibraryFlow() {
     }
     
     console.log('   Test Card ID:', testCardId);
-    console.log('   Test Card:', testCard.entryKey, '→', testCard.entryValue);
+    console.log('   Test Card:', testCard.entryKey, '→', testCard.definition);
     console.log('   Language:', testLanguage);
 
     // Step 3: Sort card to library
@@ -128,7 +125,7 @@ async function testLibraryFlow() {
     if (libraryCards.length > 0) {
       console.log('   Cards:');
       libraryCards.forEach((card, i) => {
-        console.log(`   ${i + 1}. ID:${card.id} - ${card.entryKey} → ${card.entryValue}`);
+        console.log(`   ${i + 1}. ID:${card.id} - ${card.entryKey} → ${card.definition}`);
       });
     } else {
       console.log('   ⚠️  NO CARDS RETURNED!');

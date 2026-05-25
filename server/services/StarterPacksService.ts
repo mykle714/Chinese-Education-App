@@ -71,7 +71,7 @@ export class StarterPacksService {
     const cards: DiscoverCard[] = rows.map(row => ({
       id: row.id,
       entryKey: row.word1,
-      entryValue: Array.isArray(row.definitions) ? row.definitions[0] : row.definitions,
+      definition: Array.isArray(row.definitions) ? row.definitions[0] : row.definitions,
       pronunciation: row.pronunciation,
       tone: row.tone,
       language: row.language,
@@ -297,13 +297,12 @@ export class StarterPacksService {
         const initialCategory = shouldMarkMastered ? 'Mastered' : 'Unfamiliar';
         const insertResult = await client.query(`
           INSERT INTO VocabEntries (
-            "userId", "entryKey", "entryValue", language, "starterPackBucket", category
-          ) VALUES ($1, $2, $3, $4, $5, $6)
+            "userId", "entryKey", language, "starterPackBucket", category
+          ) VALUES ($1, $2, $3, $4, $5)
           RETURNING id
         `, [
           userId,
           dictEntry.word1,
-          dictEntry.definitions[0] || '',
           dictEntry.language,
           actualBucket,
           initialCategory,

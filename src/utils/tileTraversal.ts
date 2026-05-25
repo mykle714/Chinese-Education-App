@@ -1,7 +1,8 @@
 /**
  * Tile traversal helpers — pure math for moving a pedestrian along a tile path.
  *
- * A pedestrian's render position is `lerp(currentTile, pendingPath[0], localProgress)`.
+ * A pedestrian's render position is `lerp(currentTile, nextForwardTile, localProgress)`,
+ * where the next forward tile is derived from the current `NavLeg`.
  * `advanceLocalProgress` advances `localProgress` by elapsed time at the
  * pedestrian's speed. Each tile is 1 iso unit on a side, so the progress delta
  * per tick is simply `dtMs/1000 * speed`.

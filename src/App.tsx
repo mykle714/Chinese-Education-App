@@ -20,6 +20,9 @@ import NightMarketEnginePage from "./pages/NightMarketEnginePage";
 import DictionaryPage from "./pages/DictionaryPage";
 import SortCardsPage from "./pages/SortCardsPage";
 import VocabCardDetailPage from "./pages/VocabCardDetailPage";
+import { Suspense, createElement } from "react";
+import GamesPage from "./pages/GamesPage";
+import { GAME_REGISTRY } from "./games/registry";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -89,6 +92,28 @@ function App() {
                     <VocabCardDetailPage />
                   </ProtectedRoute>
                 } />
+                <Route path="/games" element={
+                  <ProtectedRoute allowPublic>
+                    <GamesPage />
+                  </ProtectedRoute>
+                } />
+                {/* Per-game routes, derived from GAME_REGISTRY. Each game's
+                    page component is lazily loaded; the Suspense fallback is
+                    intentionally null so the parent MobileDemoFrame stays
+                    visible during the brief code-split fetch. */}
+                {GAME_REGISTRY.map((g) => (
+                  <Route
+                    key={g.gameId}
+                    path={g.route}
+                    element={
+                      <ProtectedRoute allowPublic={!g.requiresAuth}>
+                        <Suspense fallback={null}>
+                          {createElement(g.Component)}
+                        </Suspense>
+                      </ProtectedRoute>
+                    }
+                  />
+                ))}
                 <Route path="/night-market" element={
                   <ProtectedRoute allowPublic>
                     <NightMarketEnginePage />

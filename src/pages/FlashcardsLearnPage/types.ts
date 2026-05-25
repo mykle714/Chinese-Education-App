@@ -11,7 +11,7 @@ export interface ParticleOrClassifierInfo {
 export interface VocabEntry {
     id: number;
     entryKey: string;
-    entryValue: string;
+    definition?: string | null;
     pronunciation?: string | null;
     hskLevel?: HskLevel | null;
     partsOfSpeech?: string[] | null;
@@ -30,6 +30,10 @@ export interface VocabEntry {
       segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo }>;
     }>;
     relatedWords?: Array<{ id: number; entryKey: string; pronunciation: string | null; definition: string | null }>;
+    // Set by the server after pre-warming the TTS cache for this card. `false`
+    // means synthesis errored (e.g. Google quota); the client should fall back
+    // to Web Speech. Absent means the server didn't run a prewarm — treat as truthy.
+    hasAudio?: boolean;
     createdAt: string;
 }
 

@@ -145,7 +145,7 @@ const VocabDisplayCard: React.FC<VocabDisplayCardProps> = React.memo(({ personal
                                         lineHeight: 1.6,
                                     }}
                                 >
-                                    {stripParentheses(personalEntry.entryValue)}
+                                    {stripParentheses(personalEntry.definition ?? '')}
                                 </Typography>
 
                                 {personalEntry.createdAt && (
@@ -237,7 +237,7 @@ const VocabDisplayCard: React.FC<VocabDisplayCardProps> = React.memo(({ personal
         (prevPersonal !== null && nextPersonal !== null &&
             prevPersonal.id === nextPersonal.id &&
             prevPersonal.entryKey === nextPersonal.entryKey &&
-            prevPersonal.entryValue === nextPersonal.entryValue);
+            prevPersonal.definition === nextPersonal.definition);
 
     // Check dictionary entry
     const dictUnchanged =

@@ -9,6 +9,12 @@ interface UseCardDragReturn {
     setIsFlipped: React.Dispatch<React.SetStateAction<boolean>>;
     hasFlippedCurrentCard: boolean;
     resetDragPosition: () => void;
+    // Whether the swipe-direction hint labels (← Incorrect / Correct →) should be
+    // visible. Toggles on when the user taps an already-flipped card; off on dismiss.
+    showSwipeHint: boolean;
+    // Incremented every time we want to (re-)play the card-shake animation. The
+    // animated element keys on this value so React re-mounts the keyframe.
+    shakeNonce: number;
     handlers: {
         onTouchStart: (e: React.TouchEvent) => void;
         onTouchEnd: (e: React.TouchEvent) => void;
@@ -34,6 +40,9 @@ export function useCardDrag(
     // Tracks whether the user has flipped the current card at least once.
     // Dragging/dismissing is blocked until this is true.
     const [hasFlippedCurrentCard, setHasFlippedCurrentCard] = useState(false);
+    // Swipe-direction tutorial state: shown after a "wasted" tap on a flipped card.
+    const [showSwipeHint, setShowSwipeHint] = useState(false);
+    const [shakeNonce, setShakeNonce] = useState(0);
 
     // Reset flip-tracking whenever the card changes. New cards always start on
     // Side 1 (isFlipped=false) — the flip is one-way and the Side 1 language
@@ -41,6 +50,8 @@ export function useCardDrag(
     useEffect(() => {
         setHasFlippedCurrentCard(false);
         setIsFlipped(false);
+        setShowSwipeHint(false);
+        setShakeNonce(0);
     }, [resetKey]);
 
     // Read the card's rendered pixel width at evaluation time.
@@ -118,14 +129,19 @@ export function useCardDrag(
         const dragDistance = Math.sqrt(x * x + y * y);
 
         if (dragDistance < tapThreshold) {
-            // Tap on an already-flipped card: flip is one-way so we just snap
-            // back to rest. The Side 1 → Side 2 flip was handled by the
-            // tap-while-dragging-blocked branch above.
+            // Tap on an already-flipped card: trigger the swipe tutorial — shake
+            // the card and fade in the ← Incorrect / Correct → hint labels.
             setDragPosition({ x: 0, y: 0 });
+            if (isFlipped) {
+                setShakeNonce(n => n + 1);
+                setShowSwipeHint(true);
+            }
         } else if (Math.abs(x) > threshold) {
             // Card dismissed — leave dragPosition at its current release position so
             // the fly-out animation starts from where the user dropped it. The parent
             // will call resetDragPosition() after the fly-out completes (450ms).
+            // Fade the hint out in lock-step with the fly-off.
+            setShowSwipeHint(false);
             onDismiss(x < 0 ? 'left' : 'right');
         } else {
             // Snap back
@@ -183,19 +199,23 @@ export function useCardDrag(
         const dragDistance = Math.sqrt(x * x + y * y);
 
         if (dragDistance < tapThreshold) {
-            // Click on an already-flipped card: flip is one-way, so just snap
-            // back to rest. The Side 1 → Side 2 flip was handled by the
-            // isFlipOnlyMouseDown branch above.
+            // Click on an already-flipped card: trigger the swipe tutorial — shake
+            // the card and fade in the ← Incorrect / Correct → hint labels.
             setDragPosition({ x: 0, y: 0 });
+            if (isFlipped) {
+                setShakeNonce(n => n + 1);
+                setShowSwipeHint(true);
+            }
         } else if (Math.abs(x) > threshold) {
             // Card dismissed — leave dragPosition at its release position so the
             // fly-out animation starts from where the user dropped it.
+            setShowSwipeHint(false);
             onDismiss(x < 0 ? 'left' : 'right');
         } else {
             // Snap back
             setDragPosition({ x: 0, y: 0 });
         }
-    }, [isDragging, isFlipOnlyMouseDown, isAnimating, dragPosition, onDismiss]);
+    }, [isDragging, isFlipOnlyMouseDown, isAnimating, dragPosition, isFlipped, onDismiss]);
 
     // Attach document-level mouse listeners while a drag is in progress OR while
     // a flip-only mousedown is pending (so the mouseup can still fire a tap-to-flip).
@@ -216,6 +236,8 @@ export function useCardDrag(
         isFlipped,
         setIsFlipped,
         hasFlippedCurrentCard,
+        showSwipeHint,
+        shakeNonce,
         resetDragPosition: () => setDragPosition({ x: 0, y: 0 }),
         handlers: {
             onTouchStart: handleTouchStart,

@@ -112,7 +112,7 @@ function buildNonZhPrompt(lang, wordsBatch) {
       const def = Array.isArray(w.definitions) ? w.definitions[0] : w.definitions;
       return `${i + 1}. ${w.entryKey} (${w.pronunciation}): ${def}`;
     }
-    return `${i + 1}. ${w.entryKey}: ${w.entryValue || ''}`;
+    return `${i + 1}. ${w.entryKey}`;
   }).join('\n');
 
   return `You are a ${langName} language expert. For each word, provide:
@@ -190,7 +190,7 @@ async function processLanguage(lang, client) {
   // Query words with dict join where available
   // DISTINCT ON (v.id) ensures one row per vocab entry even when dict has multiple entries
   const query = `
-    SELECT DISTINCT ON (v.id) v.id, v."entryKey", v."entryValue", v.language,
+    SELECT DISTINCT ON (v.id) v.id, v."entryKey", v.language,
            d.pronunciation, d.definitions
     FROM vocabentries v
     LEFT JOIN dictionaryentries d

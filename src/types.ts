@@ -31,7 +31,7 @@ export interface VocabEntry {
   id: number;
   userId: string;
   entryKey: string;
-  entryValue: string;
+  definition?: string | null;  // det.definitions[0] — joined from dictionaryentries at read time
   language: Language;
   script?: string;
   pronunciation?: string | null;
@@ -91,7 +91,7 @@ export interface DictionaryEntry {
 export interface DiscoverCard {
   id: number;               // dictionaryEntry.id — sent in sort POST
   entryKey: string;         // word1
-  entryValue: string;       // definitions[0]
+  definition: string;       // definitions[0]
   pronunciation?: string | null;
   tone?: string | null;
   language: Language;

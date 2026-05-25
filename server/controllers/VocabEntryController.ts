@@ -87,7 +87,7 @@ export class VocabEntryController {
       const userId = requireUserId(req, res);
       if (!userId) return;
 
-      const { entryKey, entryValue, hskLevel } = req.body;
+      const { entryKey, hskLevel } = req.body;
 
       // Get user's selected language to tag the new entry
       const { userDAL } = await import('../dal/setup.js');
@@ -96,7 +96,6 @@ export class VocabEntryController {
 
       const newEntry = await this.vocabEntryService.createEntry(userId, {
         entryKey,
-        entryValue,
         hskLevel,
         language
       });
@@ -125,10 +124,9 @@ export class VocabEntryController {
         return;
       }
 
-      const { entryKey, entryValue, hskLevel } = req.body;
+      const { entryKey, hskLevel } = req.body;
       const updatedEntry = await this.vocabEntryService.updateEntry(userId, entryId, {
         entryKey,
-        entryValue,
         hskLevel
       });
 

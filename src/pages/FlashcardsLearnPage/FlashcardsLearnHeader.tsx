@@ -162,7 +162,7 @@ const FlashcardsLearnHeader: React.FC<FlashcardsLearnHeaderProps> = ({
         <PageHeader
             title={selectedCategory ? `Learn: ${selectedCategory}` : "Learn"}
             onBack={onBack}
-            rightItems={rightItems}
+            rightContent={rightItems}
         />
     );
 };

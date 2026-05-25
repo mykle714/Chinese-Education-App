@@ -20,6 +20,11 @@ import { StarterPacksController } from '../controllers/StarterPacksController.js
 import { NightMarketDAL } from './implementations/NightMarketDAL.js';
 import { NightMarketService } from '../services/NightMarketService.js';
 import { NightMarketController } from '../controllers/NightMarketController.js';
+import { GameAssetDAL } from './implementations/GameAssetDAL.js';
+import { GameProgressDAL } from './implementations/GameProgressDAL.js';
+import { GameAssetService } from '../services/GameAssetService.js';
+import { GameProgressService } from '../services/GameProgressService.js';
+import { GamesController } from '../controllers/GamesController.js';
 
 // DAL instances
 const userDAL = new UserDAL();
@@ -27,6 +32,8 @@ const vocabEntryDAL = new VocabEntryDAL();
 const userMinutePointsDAL = new UserMinutePointsDAL();
 const dictionaryDAL = new DictionaryDAL();
 const nightMarketDAL = new NightMarketDAL();
+const gameAssetDAL = new GameAssetDAL();
+const gameProgressDAL = new GameProgressDAL();
 
 // Service instances (with DI)
 const userService = new UserService(userDAL);
@@ -37,6 +44,8 @@ const userMinutePointsService = new UserMinutePointsService(userMinutePointsDAL,
 const textService = new TextService(userDAL);
 const starterPacksService = new StarterPacksService(vocabEntryDAL, dictionaryDAL);
 const nightMarketService = new NightMarketService(nightMarketDAL, userDAL);
+const gameAssetService = new GameAssetService(gameAssetDAL);
+const gameProgressService = new GameProgressService(gameProgressDAL);
 
 // Controller instances
 const userController = new UserController(userService);
@@ -47,6 +56,7 @@ const dictionaryController = new DictionaryController(dictionaryService, userDAL
 const textController = new TextController(textService);
 const starterPacksController = new StarterPacksController(starterPacksService);
 const nightMarketController = new NightMarketController(nightMarketService);
+const gamesController = new GamesController(gameAssetService, gameProgressService);
 
 export {
   userDAL,
@@ -70,4 +80,9 @@ export {
   nightMarketDAL,
   nightMarketService,
   nightMarketController,
+  gameAssetDAL,
+  gameProgressDAL,
+  gameAssetService,
+  gameProgressService,
+  gamesController,
 };

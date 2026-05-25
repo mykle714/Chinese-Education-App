@@ -20,7 +20,7 @@ type HskLevel = 'HSK1' | 'HSK2' | 'HSK3' | 'HSK4' | 'HSK5' | 'HSK6';
 interface VocabEntry {
   id: number;
   entryKey: string;
-  entryValue: string;
+  definition?: string | null;
   hskLevel?: HskLevel | null;
   createdAt: string;
 }
@@ -232,7 +232,7 @@ const VocabEntryCards = ({ refreshTrigger, searchTerm = '' }: VocabEntryCardsPro
                 </Typography>
                 <Divider className="vocab-entry-cards__divider" sx={{ mb: 2 }} />
                 <Typography className="vocab-entry-cards__entry-value" variant="body1" color="text.secondary" sx={{ flexGrow: 1, mb: 2 }}>
-                  {stripParentheses(entry.entryValue)}
+                  {stripParentheses(entry.definition ?? '')}
                 </Typography>
                 {entry.createdAt && (
                   <>

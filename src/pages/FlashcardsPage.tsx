@@ -39,7 +39,7 @@ import { usePageTitle } from "../hooks/usePageTitle";
 interface VocabEntry {
     id: number;
     entryKey: string;
-    entryValue: string;
+    definition?: string | null;  // det.definitions[0] — joined server-side
     pronunciation?: string | null;
     createdAt: string;
 }
@@ -47,7 +47,7 @@ interface VocabEntry {
 interface HistoryEntry {
     id: number;
     entryKey: string;
-    entryValue: string;
+    definition?: string | null;
     isCorrect: boolean | null; // null for skipped cards
     timestamp: Date;
     wasFlipped: boolean; // Track whether the card was flipped when last seen
@@ -60,7 +60,7 @@ interface MainContentProps {
     isFlipped: boolean;
     handleFlip: () => void;
     entryKey: string;
-    entryValue: string;
+    definition: string;
     handlePreviousCard: () => void;
     handleIncorrect: () => void;
     handleCorrect: () => void;
@@ -80,7 +80,7 @@ const MainContent = memo<MainContentProps>(({
     isFlipped,
     handleFlip,
     entryKey,
-    entryValue,
+    definition,
     handlePreviousCard,
     handleIncorrect,
     handleCorrect,
@@ -237,7 +237,7 @@ const MainContent = memo<MainContentProps>(({
                         isFlipped={isFlipped}
                         onFlip={handleFlip}
                         entryKey={entryKey}
-                        entryValue={entryValue}
+                        definition={definition}
                         isFlippable={historyIndex === 0}
                         showPronunciation={showPronunciation}
                     />
@@ -309,7 +309,7 @@ function FlashcardsPage() {
     const [currentEntry, setCurrentEntry] = useState<VocabEntry | null>(null);
     const [displayEntry, setDisplayEntry] = useState<VocabEntry | null>(null);
     const [entryKey, setentryKey] = useState<string>("");
-    const [entryValue, setentryValue] = useState<string>("");
+    const [definition, setDefinition] = useState<string>("");
     const [isFlipped, setIsFlipped] = useState(false);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -362,7 +362,7 @@ function FlashcardsPage() {
             setCurrentEntry(null);
             setDisplayEntry(null);
             setentryKey("");
-            setentryValue("");
+            setDefinition("");
             setIsFlipped(false);
             setHistory([]);
             setCompletedCardsCount(0);
@@ -397,7 +397,7 @@ function FlashcardsPage() {
             setentryKey(entry.entryKey);
             setCurrentEntry(entry);
             setDisplayEntry(entry);
-            setentryValue(entry.entryValue);
+            setDefinition(entry.definition ?? '');
         } else {
             // Only delay if flip states differ (animation will occur)
             const isFlipAnimation = currentFlipState !== undefined && targetFlipState !== undefined && currentFlipState !== targetFlipState;
@@ -410,24 +410,24 @@ function FlashcardsPage() {
                     setentryKey(entry.entryKey);
                     setCurrentEntry(entry);
                     setDisplayEntry(entry);
-                    setentryValue(entry.entryValue);
+                    setDefinition(entry.definition ?? '');
                 }, FLASHCARD_CONTENT_UPDATE_DELAY);
             } else {
                 // No flip animation, update everything immediately
                 setentryKey(entry.entryKey);
                 setCurrentEntry(entry);
                 setDisplayEntry(entry);
-                setentryValue(entry.entryValue);
+                setDefinition(entry.definition ?? '');
             }
         }
     };
 
     // Initialize front and back content when first entry is loaded
     useEffect(() => {
-        if (currentEntry && entryKey === "" && entryValue === "") {
+        if (currentEntry && entryKey === "" && definition === "") {
             updateCardContent(currentEntry, true); // Immediate update for initial load
         }
-    }, [currentEntry, entryKey, entryValue]);
+    }, [currentEntry, entryKey, definition]);
 
     // Keyboard navigation
     useEffect(() => {
@@ -667,7 +667,7 @@ function FlashcardsPage() {
         const vocabEntry: VocabEntry = {
             id: historyEntry.id,
             entryKey: historyEntry.entryKey,
-            entryValue: historyEntry.entryValue,
+            definition: historyEntry.definition,
             createdAt: '' // Not needed for display
         };
 
@@ -708,7 +708,7 @@ function FlashcardsPage() {
                 const vocabEntry: VocabEntry = {
                     id: currentHistoryEntry.id,
                     entryKey: currentHistoryEntry.entryKey,
-                    entryValue: currentHistoryEntry.entryValue,
+                    definition: currentHistoryEntry.definition,
                     createdAt: '' // Not needed for display
                 };
 
@@ -727,7 +727,7 @@ function FlashcardsPage() {
                 const vocabEntry: VocabEntry = {
                     id: historyEntry.id,
                     entryKey: historyEntry.entryKey,
-                    entryValue: historyEntry.entryValue,
+                    definition: historyEntry.definition,
                             createdAt: '' // Not needed for display
                 };
 
@@ -760,7 +760,7 @@ function FlashcardsPage() {
         const historyEntry: HistoryEntry = {
             id: entry.id,
             entryKey: entry.entryKey,
-            entryValue: entry.entryValue,
+            definition: entry.definition,
             isCorrect,
             timestamp: new Date(),
             wasFlipped: isFlipped // Track the current flip state
@@ -891,7 +891,7 @@ function FlashcardsPage() {
         const vocabEntry: VocabEntry = {
             id: historyEntry.id,
             entryKey: historyEntry.entryKey,
-            entryValue: historyEntry.entryValue,
+            definition: historyEntry.definition,
             createdAt: '' // Not needed for display
         };
 
@@ -1022,7 +1022,7 @@ function FlashcardsPage() {
                                                 </Typography>
                                             </Box>
                                             <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                                                {stripParentheses(entry.entryValue)}
+                                                {stripParentheses(entry.definition ?? '')}
                                             </Typography>
                                         </CardContent>
                                     </Card>
@@ -1103,7 +1103,7 @@ function FlashcardsPage() {
                         isFlipped={isFlipped}
                         handleFlip={handleFlip}
                         entryKey={entryKey}
-                        entryValue={entryValue}
+                        definition={definition}
                         handlePreviousCard={handlePreviousCard}
                         handleIncorrect={handleIncorrect}
                         handleCorrect={handleCorrect}

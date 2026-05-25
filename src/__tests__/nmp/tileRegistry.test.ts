@@ -4,7 +4,7 @@
  * across the variable-thickness regions.
  */
 import { describe, it, expect } from 'vitest';
-import { TILES, TILE_GRAPH, DEMO_STALLS } from '../../config/tileRegistry';
+import { TILES, TILE_GRAPH, DEMO_STALLS, STREETS, streetTiles } from '../../config/tileRegistry';
 import { TILE_SIZE } from '../../config/nightMarketRegistry';
 import { bfsTilePath, tileKey } from '../../utils/tileGraph';
 
@@ -51,10 +51,9 @@ describe('tileRegistry', () => {
     expect(unreachable, `unreachable tiles: ${unreachable.slice(0, 10).join(', ')}`).toEqual([]);
   });
 
-  it('plaza adjacency: hub center (0,0) has all 4 neighbors inside the plaza', () => {
-    // The 3×3 plaza spans (-5,-5)..(5,5). Only the center is fully interior;
-    // edge plaza tiles only border 2-3 walkable neighbors. We assert the
-    // center sees its 4 plaza neighbors.
+  it('hub center (0,0) sees its four cardinal strip neighbors', () => {
+    // With the plaza removed, (0,0) is the junction of four 1-wide strips:
+    // STRIP_NORTH (south side), STRIP_EAST_TO_BEND, STRIP_WEST, STRIP_SOUTH_TO_NODE.
     const adj = new Set(TILE_GRAPH.neighbors.get('0,0') ?? []);
     expect(adj.has(tileKey(TILE_SIZE, 0))).toBe(true);
     expect(adj.has(tileKey(-TILE_SIZE, 0))).toBe(true);
@@ -62,27 +61,11 @@ describe('tileRegistry', () => {
     expect(adj.has(tileKey(0, -TILE_SIZE))).toBe(true);
   });
 
-  it('plaza corners exist as walkable tiles', () => {
-    for (const x of [-TILE_SIZE, TILE_SIZE]) {
-      for (const y of [-TILE_SIZE, TILE_SIZE]) {
-        expect(TILE_GRAPH.tiles.has(tileKey(x, y)), `corner (${x},${y}) missing`).toBe(true);
-      }
-    }
-  });
-
-  it('south-ext widened section: side-step across the 3-wide corridor', () => {
-    // SOUTH_EXT_WIDE = rect(-5,25,5,45). A pedestrian on (-5,30) can reach (5,30)
-    // by stepping east through the spine without going around.
-    const path = bfsTilePath(TILE_GRAPH, '-5,30', new Set(['5,30']));
-    expect(path).not.toBeNull();
-    expect(path!.length).toBeLessThanOrEqual(3);
-  });
-
-  it('every stand has a 2×2 footprint and none of those tiles are walkable', () => {
+  it('every stand has an 8×8 square footprint and none of those tiles are walkable', () => {
     for (const stand of DEMO_STALLS) {
       const fp = TILE_GRAPH.standFootprint.get(stand.assetId);
       expect(fp, `stand ${stand.assetId} missing from standFootprint map`).toBeDefined();
-      expect(fp!.length, `stand ${stand.assetId} footprint not 2×2`).toBe(4);
+      expect(fp!.length, `stand ${stand.assetId} footprint not 8×8`).toBe(64);
       for (const k of fp!) {
         expect(TILE_GRAPH.tiles.has(k), `footprint tile ${k} of ${stand.assetId} overlaps walkable`).toBe(false);
       }
@@ -93,5 +76,75 @@ describe('tileRegistry', () => {
     const path = bfsTilePath(TILE_GRAPH, '0,-40', new Set(['80,60']));
     expect(path).not.toBeNull();
     expect(path!.length).toBeGreaterThan(0);
+  });
+
+  it('every tile in TILES has a street reference', () => {
+    for (const t of TILES) {
+      expect(t.street, `tile (${t.isoX},${t.isoY}) missing street`).toBeDefined();
+    }
+  });
+
+  it('at an intersection, the thicker street owns the tile', () => {
+    // West Spoke (EW, w=5) overlaps North Spoke (NS, w=4) at the hub region.
+    // West Spoke is processed first (width 5 > 4) → it owns (0,0).
+    const hub = TILES.find(t => t.isoX === 0 && t.isoY === 0);
+    expect(hub?.street?.name).toBe('West Spoke');
+  });
+
+  it('at equal-width intersections, NS street wins over EW', () => {
+    // South Spur (NS, w=2) and South Cross (EW, w=2) overlap at isoX=20..21, isoY=20..21.
+    // South Spur (NS) wins the tiebreak → it owns (20,20).
+    const tile = TILES.find(t => t.isoX === 20 && t.isoY === 20);
+    expect(tile?.street?.name).toBe('South Spur');
+  });
+});
+
+describe('streetTiles', () => {
+  it('N–S street expands to a width×length block in the +offset direction', () => {
+    // offset=5, width=3 → spans isoX ∈ {5,6,7} (TILE_SIZE=1).
+    const tiles = streetTiles({
+      name: 'test-ns', isNorthSouth: true, start: 0, end: 2, offset: 5, width: 3,
+    });
+    const keys = new Set(tiles.map(t => `${t.isoX},${t.isoY}`));
+    expect(tiles.length).toBe(9);
+    for (const x of [5, 6, 7]) {
+      for (const y of [0, 1, 2]) {
+        expect(keys.has(`${x},${y}`), `missing (${x},${y})`).toBe(true);
+      }
+    }
+  });
+
+  it('E–W street with negative offset still expands toward positive', () => {
+    // offset=-10, width=2 → spans isoY ∈ {-10,-9}.
+    const tiles = streetTiles({
+      name: 'test-ew', isNorthSouth: false, start: 0, end: 0, offset: -10, width: 2,
+    });
+    const keys = new Set(tiles.map(t => `${t.isoX},${t.isoY}`));
+    expect(tiles.length).toBe(2);
+    expect(keys.has('0,-10')).toBe(true);
+    expect(keys.has('0,-9')).toBe(true);
+  });
+
+  it('endpoints are inclusive on both ends', () => {
+    const tiles = streetTiles({
+      name: 'test-incl', isNorthSouth: true, start: -2, end: 2, offset: 0, width: 1,
+    });
+    expect(tiles.length).toBe(5); // -2,-1,0,1,2
+  });
+
+  it('throws on width < 1', () => {
+    expect(() =>
+      streetTiles({ name: 'bad', isNorthSouth: true, start: 0, end: 0, offset: 0, width: 0 }),
+    ).toThrow(/width=0/);
+  });
+
+  it('every Street in STREETS expands entirely into the TILES set', () => {
+    const tileKeys = new Set(TILES.map(t => `${t.isoX},${t.isoY}`));
+    for (const s of STREETS) {
+      for (const t of streetTiles(s)) {
+        const k = `${t.isoX},${t.isoY}`;
+        expect(tileKeys.has(k), `street "${s.name}" tile ${k} missing from TILES`).toBe(true);
+      }
+    }
   });
 });

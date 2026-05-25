@@ -28,10 +28,14 @@ interface PageHeaderProps {
     title: string;
     onBack?: () => void;
     showBack?: boolean;
-    rightItems?: React.ReactNode;
+    // Single ReactNode slot rendered flush-right. The base header has no
+    // opinion about what goes here — footer-tab surfaces should use
+    // `MobileDemoHeader` (which fills this slot with the hamburger menu)
+    // rather than wiring `MobileNavDrawer` into every page.
+    rightContent?: React.ReactNode;
 }
 
-const PageHeader: React.FC<PageHeaderProps> = ({ title, onBack, showBack = true, rightItems }) => {
+const PageHeader: React.FC<PageHeaderProps> = ({ title, onBack, showBack = true, rightContent }) => {
     const navigate = useNavigate();
 
     return (
@@ -66,12 +70,12 @@ const PageHeader: React.FC<PageHeaderProps> = ({ title, onBack, showBack = true,
                     {title}
                 </Typography>
 
-                {/* Right: configurable action items */}
+                {/* Right: configurable content slot */}
                 <Box
-                    className="page-header__right-items"
+                    className="page-header__right-content"
                     sx={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 1 }}
                 >
-                    {rightItems}
+                    {rightContent}
                 </Box>
             </Toolbar>
         </Header>

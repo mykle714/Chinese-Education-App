@@ -11,7 +11,7 @@ import {
 interface VocabEntry {
     id: number;
     entryKey: string;
-    entryValue: string;
+    definition?: string | null;
     pronunciation?: string | null;
     createdAt: string;
 }
@@ -22,7 +22,7 @@ interface FlashCardProps {
     isFlipped: boolean;
     onFlip: () => void;
     entryKey: string;
-    entryValue: string;
+    definition: string;
     isFlippable?: boolean; // New prop to control whether the card can be flipped
     showPronunciation?: boolean; // Whether to show pronunciation on front
 }
@@ -33,7 +33,7 @@ const FlashCard: React.FC<FlashCardProps> = ({
     isFlipped,
     onFlip,
     entryKey,
-    entryValue,
+    definition,
     isFlippable = true, // Default to true for backwards compatibility
     showPronunciation = true // Default to true
 }) => {
@@ -192,7 +192,7 @@ const FlashCard: React.FC<FlashCardProps> = ({
                                 lineHeight: 1.6
                             }}
                         >
-                            {stripParentheses(entryValue)}
+                            {stripParentheses(definition)}
                         </Typography>
                         {displayEntry.createdAt && (
                             <>

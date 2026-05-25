@@ -14,14 +14,11 @@ import {
     DialogContent,
     DialogContentText,
     DialogActions,
-    useMediaQuery,
-    useTheme,
 } from "@mui/material";
 import { Logout, Visibility, VisibilityOff, Warning } from "@mui/icons-material";
 import { styled } from "@mui/material/styles";
+import MobileDemoHeader from "../components/MobileDemoHeader";
 import MobileFooter from "../components/MobileFooter";
-import MobileNavDrawer from "../components/MobileNavDrawer";
-import PageHeader from "../components/PageHeader";
 import { useAuth } from "../AuthContext";
 import { useConfirmation } from "../contexts/ConfirmationContext";
 import { usePageTitle } from "../hooks/usePageTitle";
@@ -34,17 +31,7 @@ const COLORS = {
     border: "#625F63",
 };
 
-// Styled Components
-const IPhoneFrame = styled(Box)(() => ({
-    backgroundColor: COLORS.background,
-    borderRadius: 0,
-    overflow: "hidden",
-    display: "flex",
-    flexDirection: "column",
-    width: "100vw",
-    height: "100vh",
-}));
-
+// Styled Components — phone-frame sizing comes from MobileDemoFrame via Layout.tsx
 const ContentArea = styled(Box)(() => ({
     flex: 1,
     overflowY: "auto",
@@ -95,19 +82,6 @@ function AccountPage() {
     usePageTitle("Account");
     const { user, isLoading, changePassword, deleteAccount, logout } = useAuth();
     const { confirm } = useConfirmation();
-    const theme = useTheme();
-    const isMobile = useMediaQuery(theme.breakpoints.down("md"));
-
-    // On desktop the Layout wraps this page normally; restore the phone-frame look
-    const desktopFrameSx = !isMobile ? {
-        maxWidth: 393,
-        width: "100%",
-        borderRadius: "20px",
-        margin: "0 auto",
-        minHeight: "852px",
-        maxHeight: "932px",
-    } : {};
-
     // Password form state
     const [currentPassword, setCurrentPassword] = useState("");
     const [newPassword, setNewPassword] = useState("");
@@ -222,27 +196,27 @@ function AccountPage() {
 
     if (isLoading) {
         return (
-            <IPhoneFrame className="account-page__frame" sx={desktopFrameSx}>
-                <PageHeader title="Account" showBack={false} rightItems={<MobileNavDrawer />} />
+            <>
+                <MobileDemoHeader title="Account" />
                 <ContentArea className="account-page__content">
                     <CircularProgress className="account-page__spinner" />
                 </ContentArea>
                 <MobileFooter activePage="account" />
-            </IPhoneFrame>
+            </>
         );
     }
 
     if (!user) {
         return (
-            <IPhoneFrame className="account-page__frame" sx={desktopFrameSx}>
-                <PageHeader title="Account" showBack={false} rightItems={<MobileNavDrawer />} />
+            <>
+                <MobileDemoHeader title="Account" />
                 <ContentArea className="account-page__content">
                     <Typography className="account-page__no-user-text" sx={{ textAlign: "center", color: COLORS.onSurface }}>
                         Please log in to view your account
                     </Typography>
                 </ContentArea>
                 <MobileFooter activePage="account" />
-            </IPhoneFrame>
+            </>
         );
     }
 
@@ -252,9 +226,8 @@ function AccountPage() {
 
     return (
         <>
-        <IPhoneFrame className="account-page__frame">
             {/* Header */}
-            <PageHeader title="Account" showBack={false} rightItems={<MobileNavDrawer />} />
+            <MobileDemoHeader title="Account" />
 
                 {/* Content Area */}
                 <ContentArea className="account-page__content">
@@ -483,7 +456,6 @@ function AccountPage() {
 
                 {/* Footer */}
                 <MobileFooter activePage="account" />
-            </IPhoneFrame>
 
             {/* Delete Account Confirmation Dialog */}
             <Dialog

@@ -22,7 +22,6 @@ import { usePageTitle } from "../hooks/usePageTitle";
 interface VocabEntry {
     id: number;
     entryKey: string;
-    entryValue: string;
     userId: string;
     createdAt: string;
 }
@@ -35,7 +34,6 @@ function EditEntryPage() {
     const vocabularyUpdate = useVocabularyUpdate();
     const [formData, setFormData] = useState<Partial<VocabEntry>>({
         entryKey: "",
-        entryValue: "",
         userId: DEFAULT_TEST_USER_ID
     });
     const [loading, setLoading] = useState<boolean>(true);
@@ -62,7 +60,6 @@ function EditEntryPage() {
                 const result = await response.json();
                 setFormData({
                     entryKey: result.entryKey,
-                    entryValue: result.entryValue,
                     userId: result.userId || DEFAULT_TEST_USER_ID
                 });
                 setLoading(false);
@@ -175,21 +172,6 @@ function EditEntryPage() {
                         fullWidth
                         margin="normal"
                         variant="outlined"
-                    />
-
-                    <TextField
-                        label="Definition"
-                        id="entryValue"
-                        name="entryValue"
-                        value={formData.entryValue}
-                        onChange={handleChange}
-                        required
-                        fullWidth
-                        multiline
-                        rows={4}
-                        margin="normal"
-                        variant="outlined"
-                        sx={{ mb: 3 }}
                     />
 
                     <Divider sx={{ my: 3 }} />

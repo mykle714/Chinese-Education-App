@@ -39,7 +39,6 @@ CREATE TABLE IF NOT EXISTS vocabentries (
     id                 SERIAL PRIMARY KEY,
     "userId"           UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     "entryKey"         TEXT NOT NULL,
-    "entryValue"       TEXT NOT NULL,
     language           VARCHAR(10) DEFAULT 'zh',
     "markHistory"      JSONB DEFAULT '[]',
     "totalMarkCount"   INTEGER DEFAULT 0,
@@ -56,9 +55,9 @@ CREATE TABLE IF NOT EXISTS vocabentries (
 CREATE INDEX IF NOT EXISTS idx_vocabentries_userid  ON vocabentries("userId");
 CREATE INDEX IF NOT EXISTS idx_vocabentries_key     ON vocabentries("entryKey");
 CREATE INDEX IF NOT EXISTS idx_vocabentries_language ON vocabentries(language);
--- Trigram indexes for fuzzy search
+-- Trigram index on entryKey for fuzzy search. Definition search joins det
+-- and expands definitions via jsonb_array_elements_text at query time.
 CREATE INDEX IF NOT EXISTS idx_vocabentries_key_trgm   ON vocabentries USING GIN ("entryKey"   gin_trgm_ops);
-CREATE INDEX IF NOT EXISTS idx_vocabentries_value_trgm ON vocabentries USING GIN ("entryValue" gin_trgm_ops);
 
 -- ─────────────────────────────────────────────────────────────
 -- texts

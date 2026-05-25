@@ -4,6 +4,7 @@ import { DictionaryService } from './DictionaryService.js';
 import { ValidationError } from '../types/dal.js';
 import db from '../db.js';
 import { DICT_COLS, DICT_JOIN } from '../dal/shared/dictJoin.js';
+import { ttsService } from './TTSService.js';
 
 /**
  * OnDeck Vocabulary Service
@@ -420,9 +421,63 @@ export class OnDeckVocabService {
 
       // Run the three-stage enrichment pipeline, then add related words
       const enriched = await this.enrichEntriesPipeline(workingLoop);
-      return await this.enrichMultipleWithRelatedWords(userId, enriched);
+      const withRelated = await this.enrichMultipleWithRelatedWords(userId, enriched);
+
+      // Pre-warm the TTS disk cache for every card before responding. The client
+      // still fetches MP3s via /api/tts/synthesize after this returns, but those
+      // calls are now guaranteed cache hits (~1ms each) so the speaker button
+      // and auto-play feel instant. Per-entry failures degrade gracefully:
+      // hasAudio=false signals the client to fall back to Web Speech for that
+      // card. We don't fail the whole loop if Google has a hiccup on one entry.
+      return await this.prewarmAudio(withRelated);
     } finally {
       client.release();
     }
+  }
+
+  /**
+   * Awaits TTS synthesis for each entry's entryKey in parallel, stamping
+   * `hasAudio` on the result. Used to pre-warm both the working-loop endpoint
+   * and the mark endpoint's replacement card.
+   *
+   * Also stamps `dictionaryentries.ttsVoice` so the column accurately reflects
+   * "this row has cached audio". The UPDATE is gated by `ttsVoice IS NULL` so
+   * already-stamped rows are no-ops; this single path handles fresh synths,
+   * cache hits whose column was never written (legacy gap), and is cheap
+   * enough to run unconditionally in parallel with the synth call.
+   */
+  async prewarmAudio<T extends { entryKey: string; language?: string; pronunciation?: string | null; hasAudio?: boolean }>(
+    entries: T[]
+  ): Promise<T[]> {
+    await Promise.all(entries.map(async entry => {
+      const lang = entry.language || 'zh';
+      const ttsLang = lang === 'zh' ? 'zh-CN' : lang;
+      try {
+        // Pass tone-marked pinyin so the audio matches the displayed pronunciation
+        // (and polyphones cache separately). buildPinyinSsml inside TTSService
+        // gracefully falls back to plain text if the pinyin doesn't align.
+        const result = await ttsService.synthesize(entry.entryKey, ttsLang, entry.pronunciation);
+        entry.hasAudio = true;
+        // Stamp the column when it's still NULL — covers new synths and any
+        // pre-existing disk-cached rows that never went through the controller.
+        // Stored language is the short code (e.g. 'zh') to match how the rest
+        // of the schema references languages.
+        const c = await db.getClient();
+        try {
+          await c.query(
+            'UPDATE dictionaryentries SET "ttsVoice" = $1 WHERE word1 = $2 AND language = $3 AND "ttsVoice" IS NULL',
+            [result.voice, entry.entryKey, lang]
+          );
+        } catch (stampErr) {
+          console.warn(`[OnDeckVocabService.prewarmAudio] failed to stamp ttsVoice for "${entry.entryKey}":`, stampErr);
+        } finally {
+          c.release();
+        }
+      } catch (err) {
+        console.warn(`[OnDeckVocabService.prewarmAudio] synthesis failed for "${entry.entryKey}":`, err);
+        entry.hasAudio = false;
+      }
+    }));
+    return entries;
   }
 }

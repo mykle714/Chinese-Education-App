@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { stripParentheses } from "../utils/definitionUtils";
 import { useParams, useNavigate } from "react-router-dom";
-import { Box, Typography, Chip, Button, CircularProgress, Alert, Divider, useMediaQuery, useTheme } from "@mui/material";
+import { Box, Typography, Chip, Button, CircularProgress, Alert, Divider } from "@mui/material";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import RepeatIcon from "@mui/icons-material/Repeat";
 import { styled } from "@mui/material/styles";
@@ -31,16 +31,7 @@ const COLORS = {
 };
 
 
-const IPhoneFrame = styled(Box)(() => ({
-    backgroundColor: COLORS.background,
-    borderRadius: 0,
-    overflow: "hidden",
-    display: "flex",
-    flexDirection: "column",
-    width: "100vw",
-    height: "100vh",
-}));
-
+// Phone-frame sizing comes from MobileDemoFrame via Layout.tsx
 const ContentArea = styled(Box)(() => ({
     flex: 1,
     overflowY: "auto",
@@ -107,8 +98,6 @@ const VocabCardDetailPage: React.FC = () => {
     usePageTitle("Card");
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
-    const theme = useTheme();
-    const isMobile = useMediaQuery(theme.breakpoints.down("md"));
     const [entry, setEntry] = useState<VocabEntry | null>(null);
     const [dictEntry, setDictEntry] = useState<DictionaryEntry | null>(null);
     const [loading, setLoading] = useState(true);
@@ -188,18 +177,8 @@ const VocabCardDetailPage: React.FC = () => {
     const hasRelatedWords = entry?.relatedWords && entry.relatedWords.length > 0;
     const hasExpansion = !!entry?.expansion;
 
-    // On desktop the Layout wraps this page normally; restore the phone-frame look
-    const desktopFrameSx = !isMobile ? {
-        maxWidth: 393,
-        width: "100%",
-        borderRadius: "20px",
-        margin: "0 auto",
-        minHeight: "852px",
-        maxHeight: "932px",
-    } : {};
-
     return (
-        <IPhoneFrame className="vocab-card-detail__frame" sx={desktopFrameSx}>
+        <>
                 <PageHeader title="Card Detail" />
 
                 <ContentArea className="vocab-card-detail__content">
@@ -289,7 +268,7 @@ const VocabCardDetailPage: React.FC = () => {
                                         lineHeight: 1.5,
                                     }}
                                 >
-                                    {stripParentheses(entry.entryValue)}
+                                    {stripParentheses(entry.definition ?? '')}
                                 </Typography>
                             </HeroCard>
 
@@ -570,7 +549,7 @@ const VocabCardDetailPage: React.FC = () => {
                 )}
 
                 <MobileFooter activePage="home" />
-        </IPhoneFrame>
+        </>
     );
 };
 

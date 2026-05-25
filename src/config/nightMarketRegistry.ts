@@ -13,6 +13,10 @@
  * See src/utils/isometric.ts for the coordinate system documentation.
  */
 
+// Type-only import — `streetGraph.ts` imports value types (TILE_SIZE, etc.)
+// from this file. Using `import type` keeps the cycle erased at runtime.
+import type { NavLeg } from '../utils/streetGraph';
+
 /**
  * Render slot determines sub-layer ordering within a stand's depth.
  * Back-to-front order: background → entity → foreground → overlay
@@ -77,9 +81,9 @@ export interface NightMarketAssetDef {
   description: string;
   /** Sub-images composing this asset, each assigned to a render slot */
   layers: StandLayer[];
-  /** Position along the isometric X axis (continuous float, toward bottom-right on screen) */
+  /** Position along the isometric X axis (continuous float, toward top-right on screen / east) */
   isoX: number;
-  /** Position along the isometric Y axis (continuous float, toward bottom-left on screen) */
+  /** Position along the isometric Y axis (continuous float, toward top-left on screen / north) */
   isoY: number;
   /** Default render scale for sub-layers (1.0 = original size) */
   scale: number;
@@ -110,14 +114,52 @@ export interface NightMarketAssetDef {
 //   - A walkable tile must not coincide with a stand footprint tile.
 // ---------------------------------------------------------------------------
 
+/**
+ * A named, oriented walkway segment. Streets are the top-level authoring
+ * primitive for walkable space. Each street is expanded into a dense block of
+ * TileDefs by `streetTiles()`. Width always expands in the +offset direction.
+ */
+export interface Street {
+  name: string;
+  /** true: street runs N–S (varies isoY); false: street runs E–W (varies isoX). */
+  isNorthSouth: boolean;
+  /** Inclusive start coord along the street's primary axis (isoY for N–S, isoX for E–W). */
+  start: number;
+  /** Inclusive end coord along the street's primary axis. */
+  end: number;
+  /** Perpendicular coord of the street's first tile (isoX for N–S, isoY for E–W). */
+  offset: number;
+  /** Number of tiles wide; always expands in +offset direction. Must be ≥ 1. */
+  width: number;
+}
+
 /** Discrete walkable tile. Coordinates are integer iso units. */
 export interface TileDef {
   isoX: number;
   isoY: number;
   /** assetIds of stands accessible from this tile. Each must be a 4-neighbor stand. */
   connections?: string[];
-  /** Optional override; defaults to PEDESTRIAN_SPEED_ISO_PER_SEC. */
-  speedIsoPerSec?: number;
+  /**
+   * The street that owns this tile. Ownership is assigned at build time by
+   * priority (thickest street first, NS before EW on ties). The first street
+   * to claim a coordinate wins; later streets skip that slot.
+   */
+  street?: Street;
+  /**
+   * Every street that tried to claim this tile (including the winner above).
+   * When length >= 2, this tile sits at an intersection — it belongs to
+   * multiple streets and becomes part of a street-graph node. When length
+   * === 1, the tile is on a single street's body. Populated by
+   * `buildTilesFromStreets`.
+   */
+  intersectingStreets?: Street[];
+  /**
+   * True while any pedestrian occupies this tile. Mutated each simulation tick
+   * by `updateTileOccupancy`. A pedestrian in mid-step claims both the tile it
+   * is leaving and the tile it is entering, so both are marked occupied.
+   * Used by the pathfinder to avoid routing through claimed tiles.
+   */
+  isOccupied?: boolean;
 }
 
 /**
@@ -126,10 +168,10 @@ export interface TileDef {
  * along each axis. Stand footprints are snapped to the nearest TILE_SIZE
  * multiple. Must be a positive integer.
  */
-export const TILE_SIZE = 5;
+export const TILE_SIZE = 1;
 
 /** Default pedestrian speed in iso units per second (independent of TILE_SIZE). */
-export const PEDESTRIAN_SPEED_ISO_PER_SEC = 12;
+export const PEDESTRIAN_SPEED_ISO_PER_SEC = 8;
 
 /**
  * 4-direction walk cycle for a pedestrian. Frames are selected by the ped's
@@ -178,18 +220,38 @@ export interface TileCoord {
 
 /**
  * Runtime state of a single pedestrian. A pedestrian always occupies a tile;
- * while traveling it is interpolated between `currentTile` and `pendingPath[0]`
- * by `localProgress` ∈ [0, 1].
+ * while traveling it is interpolated between `currentTile` and the next
+ * forward tile (derived from `pendingLegs[0]`) by `localProgress` ∈ [0, 1].
  */
 export interface PedestrianState {
   id: string;
   sprite: SpriteDef;
-  /** The tile the pedestrian is leaving from. */
+  /** Per-pedestrian walk speed in iso units/sec. */
+  speedIsoPerSec: number;
+  /**
+   * The tile the pedestrian currently *owns*. Under the destination-ownership
+   * model, this is the tile a moving ped has committed to walking toward
+   * (not the tile it visually sits on mid-step). Ownership transfers at step
+   * commit (`localProgress` 0 → >0), so `currentTile` and the rendered
+   * position diverge while `localProgress < 1`; the render position is
+   * `lerp(committedFromTile, currentTile, localProgress)`.
+   */
   currentTile: TileCoord;
-  /** 0..1 progress between currentTile and pendingPath[0]; 0 when stationary. */
+  /**
+   * The tile the pedestrian most recently departed from. Set at step commit
+   * (when `localProgress` flips from 0 → >0) and cleared at step completion
+   * (`localProgress` reaches 1). Also cleared on sidestep teleport.
+   * `computeDrawable` uses it as the lerp origin while a step is in flight.
+   */
+  committedFromTile?: TileCoord;
+  /** 0..1 progress between committedFromTile and currentTile; 0 when stationary. */
   localProgress: number;
-  /** Remaining tiles to visit in order. Empty when idle/interacting. */
-  pendingPath: TileCoord[];
+  /**
+   * Remaining navigation legs in order. Each leg is `(edge, target)` — the
+   * ped walks axially along `edge` until reaching `target` (a node or a
+   * specific tile). Empty when idle/interacting. See NavLeg in streetGraph.ts.
+   */
+  pendingLegs: NavLeg[];
   /** Goals queued; current goal is agenda[0]. */
   agenda: AgendaGoal[];
   fsmState: PedestrianFsmState;
@@ -198,11 +260,32 @@ export interface PedestrianState {
   /** Stand the pedestrian is currently routing toward (set during Planning, cleared on Idle). */
   targetAssetId?: string;
   /**
+   * When the active agenda goal is `Wander`, the tile key chosen as the
+   * destination on the first Planning entry. Cached so a mid-journey
+   * replan reuses the same target rather than re-rolling a fresh random
+   * goal. Cleared when the goal completes or is abandoned.
+   */
+  wanderGoalKey?: string;
+  /**
    * AssetIds of the most recent stands this pedestrian visited (oldest first).
    * Used to suppress repeat visits during local wander. Capped at
    * `RECENT_VISIT_HISTORY_LIMIT` entries.
    */
   recentlyVisitedAssetIds: string[];
+  /**
+   * True when forward + both sidestep candidates are blocked. Forces the
+   * walk-cycle to freeze on the idle frame. Cleared as soon as any
+   * successful step starts.
+   */
+  isWaiting?: boolean;
+  /**
+   * Wall-clock timestamp (`ctx.tMs` basis, ms) until which the pedestrian
+   * is forbidden from sidestepping again. Set at sidestep teleport commit
+   * to `ctx.tMs + SIDESTEP_COOLDOWN_MS`; expires naturally without any
+   * step-completion bookkeeping. Forward motion is not gated by this
+   * cooldown — only fresh teleports are.
+   */
+  sidestepCooldownUntilMs?: number;
 }
 
 /** Max length of `PedestrianState.recentlyVisitedAssetIds`. */

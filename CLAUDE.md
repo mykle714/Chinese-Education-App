@@ -80,8 +80,8 @@ For adding a completely new language:
 ### Minute Points & Streak System
 → See [docs/MINUTE_POINTS_SYSTEM.md](./docs/MINUTE_POINTS_SYSTEM.md)
 
-#### Streak expiration cron (prod only)
-An hourly Postgres cron on the prod server expires streaks for users who stop opening the app, mirroring `UserMinutePointsService.newDayOperation`. Not installed on dev.
+#### Inactivity penalty cron (prod only)
+An hourly Postgres cron on the prod server (a) breaks stale streaks (mirroring `UserMinutePointsService.newDayOperation`) and (b) debits 10 minute points per local day of continued inactivity from any user with `totalMinutePoints > 0`, until they hit zero. Not installed on dev.
 → See [docs/STREAK_EXPIRATION_CRON.md](./docs/STREAK_EXPIRATION_CRON.md)
 
 ### Flashcards & Review History

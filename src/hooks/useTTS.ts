@@ -12,7 +12,11 @@ import { useTTSSettings } from './useTTSSettings';
  */
 export function useTTS() {
     const { settings, update } = useTTSSettings();
-    const [isSpeaking, setIsSpeaking] = useState(false);
+    // The text currently being narrated, or null when idle. Buttons compare
+    // their target text to this to decide whether to show the loading spinner,
+    // so only the clicked button spins when multiple are visible at once.
+    const [speakingKey, setSpeakingKey] = useState<string | null>(null);
+    const isSpeaking = speakingKey !== null;
     // Track the active provider so cancel() hits the right one even after
     // settings change mid-playback.
     const activeProviderRef = useRef<TTSProvider | null>(null);
@@ -25,30 +29,28 @@ export function useTTS() {
         // Belt and suspenders: also cancel both singletons in case state drifted.
         tts.browser.cancel();
         tts.cloud.cancel();
-        setIsSpeaking(false);
+        setSpeakingKey(null);
     }, []);
 
-    const speak = useCallback(async (entry: VocabEntry) => {
+    // Shared playback core for any (text, pronunciation) pair. Used by both
+    // speak(entry) and speakSentence(text, pronunciation) so the cancel +
+    // primary→browser fallback logic lives in one place.
+    const speakText = useCallback(async (text: string, pronunciation?: string | null) => {
         if (!settings.enabled) return;
-        if (!entry || !entry.entryKey) return;
+        if (!text) return;
 
-        // Cancel anything in-flight before starting the next utterance.
         cancel();
 
-        // Map the entry's language to a BCP-47 tag the TTS layer understands.
-        // VocabEntry currently only carries Chinese, but this is the seam where
-        // additional languages would plug in.
         const lang: TTSLang = 'zh-CN';
-
         const primary = getTTSProvider(settings.engine);
         activeProviderRef.current = primary;
-        setIsSpeaking(true);
+        setSpeakingKey(text);
 
         try {
             await primary.speak({
-                text: entry.entryKey,
+                text,
                 lang,
-                pronunciation: entry.pronunciation,
+                pronunciation: pronunciation ?? undefined,
                 rate: settings.rate,
             });
         } catch (err) {
@@ -59,9 +61,9 @@ export function useTTS() {
                 try {
                     activeProviderRef.current = tts.browser;
                     await tts.browser.speak({
-                        text: entry.entryKey,
+                        text,
                         lang,
-                        pronunciation: entry.pronunciation,
+                        pronunciation: pronunciation ?? undefined,
                         rate: settings.rate,
                     });
                 } catch (err2) {
@@ -72,9 +74,25 @@ export function useTTS() {
             if (activeProviderRef.current === primary || activeProviderRef.current === tts.browser) {
                 activeProviderRef.current = null;
             }
-            setIsSpeaking(false);
+            // Only clear if this invocation still owns the speakingKey — a
+            // subsequent speak() may have already overwritten it via cancel()
+            // + setSpeakingKey(newText) before our finally ran.
+            setSpeakingKey(prev => (prev === text ? null : prev));
         }
     }, [settings.enabled, settings.engine, settings.rate, cancel]);
+
+    const speak = useCallback(async (entry: VocabEntry) => {
+        if (!entry || !entry.entryKey) return;
+        await speakText(entry.entryKey, entry.pronunciation);
+    }, [speakText]);
+
+    // Narrate an arbitrary Chinese sentence. Pronunciation is the optional
+    // space-separated pinyin hint (one token per GSA segment) — see
+    // buildSentencePronunciation. Server-side cache is keyed on text+pinyin+voice
+    // so repeat plays of the same sentence reuse the same cached MP3.
+    const speakSentence = useCallback(async (text: string, pronunciation?: string) => {
+        await speakText(text, pronunciation);
+    }, [speakText]);
 
     // Cancel on unmount so a stale utterance can't outlive the page.
     useEffect(() => {
@@ -97,11 +115,22 @@ export function useTTS() {
         tts.cloud.prefetch(entry.entryKey, 'zh-CN', entry.pronunciation);
     }, [settings.enabled, settings.engine]);
 
+    // Sentence variant of prefetch — warm the cloud cache without playing.
+    const prefetchSentence = useCallback((text: string, pronunciation?: string) => {
+        if (!text) return;
+        if (!settings.enabled) return;
+        if (settings.engine === 'browser') return;
+        tts.cloud.prefetch(text, 'zh-CN', pronunciation);
+    }, [settings.enabled, settings.engine]);
+
     return {
         speak,
+        speakSentence,
         cancel,
         prefetch,
+        prefetchSentence,
         isSpeaking,
+        speakingKey,
         enabled: settings.enabled,
         settings,
         updateSettings: update,

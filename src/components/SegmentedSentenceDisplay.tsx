@@ -1,10 +1,14 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Box, Popper, Typography } from "@mui/material";
 import { stripParentheses } from "../utils/definitionUtils";
-import CharacterPinyinColorDisplay from "./CharacterPinyinColorDisplay";
-import CPCDRow from "./CPCDRow";
+import CPCDRow, { type CPCDRowItem } from "./CPCDRow";
 
 type Size = "sm" | "md";
+
+// Punctuation should not be highlightable on hover/tap — it carries no lookup value.
+// Uses Unicode property escapes to cover ASCII, CJK, and fullwidth punctuation/symbols.
+const PUNCTUATION_REGEX = /^[\p{P}\p{S}\s]+$/u;
+const isPunctuation = (ch: string): boolean => PUNCTUATION_REGEX.test(ch);
 
 // CSS gap between segment groups when showSegmentSpaces is true.
 // Sized proportionally to character width at each size — NOT a native space character.
@@ -36,6 +40,8 @@ interface SegmentedSentenceDisplayProps {
   justifyContent?: string;
   className?: string;
   showPinyin?: boolean;
+  // When false, pinyin renders in the inherited text color instead of tone colors.
+  showPinyinColor?: boolean;
   // When set, draws a single continuous underline beneath characters belonging to this segment
   vocabWord?: string;
   // When true, renders a CSS gap between segment groups instead of uniform overlap
@@ -91,6 +97,7 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
   justifyContent,
   className,
   showPinyin,
+  showPinyinColor = true,
   vocabWord,
   showSegmentSpaces = false,
 }) => {
@@ -435,83 +442,66 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
         />
       ))}
 
-      {showSegmentSpaces ? (
-        // Spaced mode: each segment is its own CPCDRow; the outer Box provides the inter-segment gap.
-        // flexWrap/justifyContent/className belong on the outer container so wrapping happens at
-        // word boundaries, not mid-segment.
-        <Box
-          className={className}
-          sx={{
-            display: "flex",
-            flexDirection: "row",
-            flexWrap,
-            gap: SEGMENT_GAP_BY_SIZE[size],
-            ...(justifyContent && { justifyContent }),
-          }}
-        >
-          {segmentGroups.map((group) => (
-            <CPCDRow key={group.key} size={size} flexWrap="nowrap">
-              {group.indices.map((index) => {
-                const char = chars[index];
-                const info = charData[index];
-                const isSingleCharSelection = !!selectedRange && selectedRange.start === selectedRange.end && index === selectedRange.start;
-                return (
-                  <Box
-                    key={index}
-                    ref={(node: HTMLDivElement | null) => { charRefs.current[index] = node; }}
-                    sx={{ display: "inline-flex", position: "relative", zIndex: 2 }}
-                    onPointerDown={(e) => e.stopPropagation()}
-                  >
-                    <CharacterPinyinColorDisplay
-                      character={char}
-                      pinyin={info.pinyin}
-                      showPinyin={showPinyin !== false && !!info.pinyin}
-                      size={size}
-                      useToneColor={true}
-                      compact={compact}
-                      interactive
-                      selected={isSingleCharSelection}
-                      onHoverStart={() => selectFromIndex(index)}
-                      onTapToggle={() => toggleFromIndex(index)}
-                    />
-                  </Box>
-                );
-              })}
-            </CPCDRow>
-          ))}
-        </Box>
-      ) : (
-        // Default mode: flat single CPCDRow with uniform negative-margin overlap
-        <CPCDRow size={size} flexWrap={flexWrap} justifyContent={justifyContent} className={className}>
-          {chars.map((char, index) => {
-            const info = charData[index];
-            const isSingleCharSelection = !!selectedRange && selectedRange.start === selectedRange.end && index === selectedRange.start;
+      {(() => {
+        // Build CPCDRow items for a given range of indices. Wires per-character
+        // refs, interactivity, and selection state from the surrounding component.
+        const buildItems = (indices: number[]): CPCDRowItem[] => indices.map((index) => {
+          const char = chars[index];
+          const info = charData[index];
+          const charIsPunctuation = isPunctuation(char);
+          const isSingleCharSelection = !charIsPunctuation && !!selectedRange && selectedRange.start === selectedRange.end && index === selectedRange.start;
+          return {
+            character: char,
+            pinyin: info.pinyin,
+            showPinyin: showPinyin !== false && !!info.pinyin,
+            useToneColor: showPinyinColor,
+            interactive: !charIsPunctuation,
+            selected: isSingleCharSelection,
+            onHoverStart: charIsPunctuation ? undefined : () => selectFromIndex(index),
+            onTapToggle: charIsPunctuation ? undefined : () => toggleFromIndex(index),
+            cellRef: (node) => { charRefs.current[index] = node; },
+          };
+        });
 
-            return (
-              <Box
-                key={index}
-                ref={(node: HTMLDivElement | null) => { charRefs.current[index] = node; }}
-                sx={{ display: "inline-flex", position: "relative", zIndex: 2 }}
-                // Stop propagation so character taps don't trigger the container's deselect handler
-                onPointerDown={(e) => e.stopPropagation()}
-              >
-                <CharacterPinyinColorDisplay
-                  character={char}
-                  pinyin={info.pinyin}
-                  showPinyin={showPinyin !== false && !!info.pinyin}
+        if (showSegmentSpaces) {
+          // Spaced mode: each segment is its own CPCDRow; the outer Box provides the inter-segment gap.
+          // flexWrap/justifyContent/className belong on the outer container so wrapping happens at
+          // word boundaries, not mid-segment.
+          return (
+            <Box
+              className={className}
+              sx={{
+                display: "flex",
+                flexDirection: "row",
+                flexWrap,
+                gap: SEGMENT_GAP_BY_SIZE[size],
+                ...(justifyContent && { justifyContent }),
+              }}
+            >
+              {segmentGroups.map((group) => (
+                <CPCDRow
+                  key={group.key}
                   size={size}
-                  useToneColor={true}
                   compact={compact}
-                  interactive
-                  selected={isSingleCharSelection}
-                  onHoverStart={() => selectFromIndex(index)}
-                  onTapToggle={() => toggleFromIndex(index)}
+                  flexWrap="nowrap"
+                  items={buildItems(group.indices)}
                 />
-              </Box>
-            );
-          })}
-        </CPCDRow>
-      )}
+              ))}
+            </Box>
+          );
+        }
+
+        return (
+          <CPCDRow
+            size={size}
+            compact={compact}
+            flexWrap={flexWrap}
+            justifyContent={justifyContent}
+            className={className}
+            items={buildItems(chars.map((_, i) => i))}
+          />
+        );
+      })()}
 
       {/* Render into a portal via Popper so the popup escapes any ancestor's
           overflow:auto/hidden (e.g. the EIP scroll container) and is never clipped. */}

@@ -83,6 +83,7 @@ export interface DictionaryEntry {
   numberedPinyin?: string | null;
   tone?: string | null;
   partsOfSpeech?: string[] | null;
+  vernacularScore?: number | null;  // 1=literary … 5=natural colloquial
   definitions: string[]; // Array of definition strings
   shortDefinitionPronunciationOverride?: ShortDefinitionPronunciationOverride | null; // Raw override object from DB
   shortDefinition?: string | null;

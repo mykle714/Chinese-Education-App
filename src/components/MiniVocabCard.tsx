@@ -179,21 +179,29 @@ const MiniVocabCard: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete,
                     justifyContent: 'center',
                     flexGrow: 1,
                     minHeight: 48,
+                    mt: 1.5, // shift down so the category chip doesn't cover the word
                     mb: 0.5,
+                    width: '100%',
+                    minWidth: 0,
                 }}
             >
                 <Typography
                     className="mini-vocab-card__entry-key"
                     sx={{
-                        fontSize: entry.entryKey.length > 4 ? '1rem' : '1.25rem',
+                        // Shrink one step when the word is long; CSS handles ellipsis beyond that
+                        // ≤3 chars: full size; 4+ chars: reduced so 4 chars fit (76px) but 5 don't
+                        fontSize: entry.entryKey.length > 3 ? '0.9375rem' : '1.25rem',
                         fontWeight: 'bold',
                         color: COLORS.onSurface,
                         textAlign: 'center',
-                        wordBreak: 'break-word',
                         lineHeight: 1.2,
+                        width: '100%',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
                     }}
                 >
-                    {truncateText(entry.entryKey, 6)}
+                    {entry.entryKey}
                 </Typography>
             </Box>
 

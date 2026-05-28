@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
     Container,
     Typography,
@@ -14,14 +14,21 @@ import {
     useTheme,
     Chip,
     Divider,
+    Snackbar,
 } from '@mui/material';
 import { Search, Clear } from '@mui/icons-material';
 import { useAuth } from '../AuthContext';
 import { API_BASE_URL } from '../constants';
 import type { DictionaryEntry, Language } from '../types';
 import DictionaryEntryRow from '../components/DictionaryEntryRow';
-import DictionaryEntryDetailModal from '../components/DictionaryEntryDetailModal';
+import InfoCardPopup from './FlashcardsLearnPage/InfoCardPopup';
+import { dictionaryEntryToVocabEntry } from './FlashcardsLearnPage/dictEntryAdapter';
+import type { VocabEntry } from './FlashcardsLearnPage/types';
+import { useEipTabs } from './FlashcardsLearnPage/useEipTabs';
+import EipTabStrip from './FlashcardsLearnPage/EipTabStrip';
+import TooManyTabsSnackbar from './FlashcardsLearnPage/TooManyTabsSnackbar';
 import { usePageTitle } from '../hooks/usePageTitle';
+import { useTTS } from '../hooks/useTTS';
 
 // Matches any CJK Unified Ideograph (common + extension A/B blocks)
 const hasChinese = (text: string) => /[\u4e00-\u9fff\u3400-\u4dbf]/.test(text);
@@ -52,6 +59,7 @@ function DictionaryPage() {
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('md'));
     const { token, user } = useAuth();
+    const tts = useTTS();
 
     const [searchInput, setSearchInput] = useState('');
     const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
@@ -61,8 +69,12 @@ function DictionaryPage() {
     const [segmentGroups, setSegmentGroups] = useState<SegmentGroup[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [selectedEntry, setSelectedEntry] = useState<DictionaryEntry | null>(null);
-    const [modalOpen, setModalOpen] = useState(false);
+    // Entry-tab system: tapping a result-card opens the EIP popup; tapping a
+    // breakdown/used-in row inside it adds a tab instead of stacking another
+    // popup. Scrim tap closes the popup and clears every tab.
+    const [isEipOpen, setIsEipOpen] = useState(false);
+    const eipStripRef = useRef<HTMLDivElement | null>(null);
+    const eip = useEipTabs({ apiBaseUrl: API_BASE_URL, token, stripRef: eipStripRef });
 
     // Pagination state (only used in regular search mode)
     const [page, setPage] = useState(1);
@@ -192,15 +204,63 @@ function DictionaryPage() {
         }, 0);
     };
 
-    const handleEntryClick = (entry: DictionaryEntry) => {
-        setSelectedEntry(entry);
-        setModalOpen(true);
-    };
+    // Open the EIP for a result-card click. Fetches the full dictionary entry
+    // (includes breakdown, exampleSentences, usedIn, expansion — fields the
+    // search endpoint may not return) and seeds it as the root entry-tab.
+    const handleEntryClick = useCallback(async (entry: DictionaryEntry) => {
+        try {
+            const res = await fetch(
+                `${API_BASE_URL}/api/dictionary/lookup/${encodeURIComponent(entry.word1)}`,
+                { headers: { 'Authorization': `Bearer ${token}` }, credentials: 'include' }
+            );
+            if (!res.ok) return;
+            const dictData: DictionaryEntry = await res.json();
+            const adapted = dictionaryEntryToVocabEntry(dictData);
+            setIsEipOpen(true);
+            eip.openForRoot(adapted);
+        } catch (err) {
+            console.error(`Failed to look up dictionary entry "${entry.word1}":`, err);
+        }
+    }, [token, eip]);
 
-    const handleModalClose = () => {
-        setModalOpen(false);
-        setSelectedEntry(null);
-    };
+    const closeEip = useCallback(() => {
+        setIsEipOpen(false);
+        eip.clear();
+    }, [eip]);
+
+    // Snackbar shown after the "+ to library" button in the EIP header is tapped.
+    // Message reflects whether the word was newly added, moved from learn-later,
+    // or was already in the library.
+    const [addToLibSnack, setAddToLibSnack] = useState<string | null>(null);
+
+    const handleAddToLibrary = useCallback(async (entry: VocabEntry) => {
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/vocabEntries/add-to-library`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                },
+                credentials: 'include',
+                body: JSON.stringify({ entryKey: entry.entryKey, language: userLanguage }),
+            });
+            if (!res.ok) {
+                setAddToLibSnack('Failed to add to library');
+                return;
+            }
+            const data: { status: 'added' | 'moved' | 'already-in-library' } = await res.json();
+            if (data.status === 'already-in-library') {
+                setAddToLibSnack('Already in library');
+            } else if (data.status === 'moved') {
+                setAddToLibSnack('Moved from Learn Later to library');
+            } else {
+                setAddToLibSnack('Added to library');
+            }
+        } catch (err) {
+            console.error('Failed to add to library:', err);
+            setAddToLibSnack('Failed to add to library');
+        }
+    }, [token]);
 
     const handlePageChange = (_event: React.ChangeEvent<unknown>, value: number) => {
         setPage(value);
@@ -582,12 +642,60 @@ function DictionaryPage() {
                 </Box>
             )}
 
-            {/* Detail Modal */}
-            <DictionaryEntryDetailModal
-                entry={selectedEntry}
-                open={modalOpen}
-                onClose={handleModalClose}
-            />
+            {/* Extra Info popup — opened on result-card tap. Tapping a breakdown
+                or used-in row inside the popup adds an entry tab above the
+                panel chrome instead of stacking another popup. Scrim tap or
+                drag-dismiss closes the popup and clears every tab. */}
+            {isEipOpen && eip.activeTab && (
+                <Box
+                    className="dictionary-page__eip-overlay"
+                    sx={{ position: 'fixed', inset: 0, zIndex: 1300 }}
+                >
+                    <InfoCardPopup
+                        currentEntry={eip.activeTab.entry}
+                        selectedTab={eip.activeTab.selectedSubTab}
+                        onTabChange={eip.setActiveSubTab}
+                        breakdownItems={eip.activeTab.breakdownItems}
+                        showPinyin={true}
+                        isFlipped={true}
+                        onClose={closeEip}
+                        onBreakdownItemClick={(item) => eip.openForEntryKey(item.character)}
+                        onUsedInItemClick={(item) => eip.openForEntryKey(item.entryKey)}
+                        onSpeak={tts.enabled ? tts.speak : undefined}
+                        onAddToLibrary={handleAddToLibrary}
+                        onSpeakSentence={tts.enabled ? tts.speakSentence : undefined}
+                        speakingKey={tts.speakingKey}
+                        tabStrip={
+                            <EipTabStrip
+                                tabs={eip.tabs}
+                                activeIndex={eip.activeIndex}
+                                onSelect={eip.setActive}
+                                onCloseActiveTab={() => {
+                                    if (eip.closeActiveTab()) closeEip();
+                                }}
+                                isTabbedMode={eip.isTabbedMode}
+                                stripRef={eipStripRef}
+                            />
+                        }
+                    />
+                </Box>
+            )}
+            <TooManyTabsSnackbar signal={eip.overflowSignal} />
+            <Snackbar
+                className="dictionary-page__add-to-library-snackbar"
+                open={addToLibSnack !== null}
+                autoHideDuration={2500}
+                onClose={() => setAddToLibSnack(null)}
+                anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+            >
+                <Alert
+                    severity={addToLibSnack === 'Failed to add to library' ? 'error' : 'success'}
+                    variant="filled"
+                    onClose={() => setAddToLibSnack(null)}
+                >
+                    {addToLibSnack}
+                </Alert>
+            </Snackbar>
         </Container>
     );
 }

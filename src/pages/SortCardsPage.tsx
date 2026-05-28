@@ -7,7 +7,7 @@ import { useDrag } from "@use-gesture/react";
 import { useSpring, animated } from "@react-spring/web";
 import MobileDemoHeader from "../components/MobileDemoHeader";
 import MobileFooter from "../components/MobileFooter";
-import CharacterPinyinColorDisplay from "../components/CharacterPinyinColorDisplay";
+import MinutePointsFireBadge from "../components/MinutePointsFireBadge";
 import CPCDRow from "../components/CPCDRow";
 import { API_BASE_URL } from "../constants";
 import { stripParentheses } from "../utils/definitionUtils";
@@ -125,11 +125,12 @@ const FlashCard = styled(AnimatedBox)({
     backgroundColor: COLORS.cardColor,
     borderRadius: 12,
     boxShadow: "2px 4px 4px rgba(0, 0, 0, 0.25)",
-    padding: 8,
+    padding: 16,
     display: "flex",
     flexDirection: "column",
-    justifyContent: "space-between",
+    justifyContent: "center",
     alignItems: "center",
+    gap: 16,
     cursor: "grab",
     touchAction: "none",
     zIndex: 1000,
@@ -180,9 +181,9 @@ const SortCardsPage: React.FC = () => {
     const bucketRefs = useRef<Map<string, HTMLElement>>(new Map());
 
     const buckets = useMemo<BucketZone[]>(() => [
-        { id: "library", label: "Add to\nLibrary", mainColor: COLORS.redMain, accentColor: COLORS.redAccent },
-        { id: "skip", label: "Skip for now", mainColor: COLORS.greenMain, accentColor: COLORS.greenAccent },
         { id: "learn-later", label: "Add to Learn Later", mainColor: COLORS.yellowMain, accentColor: COLORS.yellowAccent },
+        { id: "skip", label: "Skip for now", mainColor: COLORS.greenMain, accentColor: COLORS.greenAccent },
+        { id: "library", label: "Add to\nLibrary", mainColor: COLORS.redMain, accentColor: COLORS.redAccent },
         { id: "already-learned", label: "Already Learned", mainColor: COLORS.blueMain, accentColor: COLORS.blueAccent },
     ], []);
 
@@ -562,7 +563,10 @@ const SortCardsPage: React.FC = () => {
     if (!currentCard) {
         return (
             <>
-                <MobileDemoHeader title="Sort Cards" />
+                <MobileDemoHeader
+                    title="Sort Cards"
+                    extraActions={<MinutePointsFireBadge />}
+                />
                 <ContentArea className="sort-cards__content">
                     <Box className="sort-cards__all-sorted" sx={{ display: "flex", flex: 1, alignItems: "center", justifyContent: "center" }}>
                         <Typography className="sort-cards__all-sorted-text">All cards sorted! 🎉</Typography>
@@ -579,15 +583,18 @@ const SortCardsPage: React.FC = () => {
             <MobileDemoHeader
                 title="Sort Cards"
                 extraActions={
-                    <IconButton
-                        className="sort-cards__undo-button"
-                        onClick={handleUndo}
-                        size="small"
-                        disabled={history.length === 0}
-                        sx={{ color: "#1D1B20" }}
-                    >
-                        <UndoIcon className="sort-cards__undo-icon" />
-                    </IconButton>
+                    <>
+                        <IconButton
+                            className="sort-cards__undo-button"
+                            onClick={handleUndo}
+                            size="small"
+                            disabled={history.length === 0}
+                            sx={{ color: "#1D1B20" }}
+                        >
+                            <UndoIcon className="sort-cards__undo-icon" />
+                        </IconButton>
+                        <MinutePointsFireBadge />
+                    </>
                 }
             />
 
@@ -629,24 +636,22 @@ const SortCardsPage: React.FC = () => {
                             margin: "auto",
                         }}
                     >
-                        <Box className="sort-cards__card-image" sx={{ width: 96, height: 76, backgroundColor: "#e0e0e0", borderRadius: 1 }} />
                         {/* Characters + pronunciation centered in the middle, rendered per-character via cpcd */}
                         <Box className="sort-cards__card-key-group" sx={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                            <CPCDRow size="sm" className="sort-cards__card-key">
-                                {Array.from(currentCard.entryKey).map((char, i) => {
+                            <CPCDRow
+                                size="sm"
+                                className="sort-cards__card-key"
+                                items={Array.from(currentCard.entryKey).map((char, i) => {
                                     const syllables = currentCard.pronunciation ? currentCard.pronunciation.split(/\s+/) : [];
-                                    return (
-                                        <CharacterPinyinColorDisplay
-                                            key={`${char}-${i}`}
-                                            character={char}
-                                            pinyin={syllables[i] ?? ""}
-                                            showPinyin={!!syllables[i]}
-                                            size="sm"
-                                            useToneColor
-                                        />
-                                    );
+                                    return {
+                                        character: char,
+                                        pinyin: syllables[i] ?? "",
+                                        showPinyin: !!syllables[i],
+                                        useToneColor: true,
+                                    };
                                 })}
-                            </CPCDRow>
+                            />
+
                         </Box>
                         {/* Definition pinned to the bottom of the card; clamped to 2 lines to prevent overflow */}
                         <Typography

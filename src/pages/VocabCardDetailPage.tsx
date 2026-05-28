@@ -303,13 +303,18 @@ const VocabCardDetailPage: React.FC = () => {
                                                     padding: "6px 10px",
                                                 }}
                                             >
-                                                <CharacterPinyinColorDisplay
-                                                    character={item.entryKey}
-                                                    pinyin={item.pronunciation ?? ""}
+                                                {/* One cpcd per character so each pinyin syllable in a multi-char
+                                                    used-in entry (e.g. 朋友 → péng yǒu) gets its own tone color. */}
+                                                <CPCDRow
                                                     size="md"
-                                                    useToneColor={true}
-                                                    showPinyin={true}
+                                                    flexWrap="nowrap"
                                                     compact
+                                                    items={[...item.entryKey].map((ch, i) => ({
+                                                        character: ch,
+                                                        pinyin: (item.pronunciation ?? "").split(" ")[i] ?? "",
+                                                        useToneColor: true,
+                                                        showPinyin: true,
+                                                    }))}
                                                 />
                                                 <Box className="vocab-card-detail__used-in-info">
                                                     <Typography
@@ -427,19 +432,16 @@ const VocabCardDetailPage: React.FC = () => {
                                                         gap: "2px",
                                                     }}
                                                 >
-                                                    <CPCDRow size="md">
-                                                        {[...syn].map((char, ci) => (
-                                                            <CharacterPinyinColorDisplay
-                                                                key={ci}
-                                                                character={char}
-                                                                pinyin={pinyinSyllables[ci] ?? ''}
-                                                                showPinyin={!!pinyinSyllables[ci]}
-                                                                size="md"
-                                                                useToneColor={true}
-                                                                compact
-                                                            />
-                                                        ))}
-                                                    </CPCDRow>
+                                                    <CPCDRow
+                                                        size="md"
+                                                        compact
+                                                        items={[...syn].map((char, ci) => ({
+                                                            character: char,
+                                                            pinyin: pinyinSyllables[ci] ?? '',
+                                                            showPinyin: !!pinyinSyllables[ci],
+                                                            useToneColor: true,
+                                                        }))}
+                                                    />
                                                     {meta?.definition && (
                                                         <Typography sx={{ fontSize: "0.72rem", color: COLORS.textSecondary, fontFamily: '"Inter", sans-serif', fontStyle: "italic" }}>
                                                             {stripParentheses(meta.definition)}
@@ -516,19 +518,16 @@ const VocabCardDetailPage: React.FC = () => {
                                                         gap: "2px",
                                                     }}
                                                 >
-                                                    <CPCDRow size="md">
-                                                        {[...rel.entryKey].map((char, ci) => (
-                                                            <CharacterPinyinColorDisplay
-                                                                key={ci}
-                                                                character={char}
-                                                                pinyin={pinyinSyllables[ci] ?? ''}
-                                                                showPinyin={!!pinyinSyllables[ci]}
-                                                                size="md"
-                                                                useToneColor={true}
-                                                                compact
-                                                            />
-                                                        ))}
-                                                    </CPCDRow>
+                                                    <CPCDRow
+                                                        size="md"
+                                                        compact
+                                                        items={[...rel.entryKey].map((char, ci) => ({
+                                                            character: char,
+                                                            pinyin: pinyinSyllables[ci] ?? '',
+                                                            showPinyin: !!pinyinSyllables[ci],
+                                                            useToneColor: true,
+                                                        }))}
+                                                    />
                                                     {rel.definition && (
                                                         <Typography sx={{ fontSize: "0.72rem", color: COLORS.textSecondary, fontFamily: '"Inter", sans-serif', fontStyle: "italic" }}>
                                                             {stripParentheses(rel.definition)}

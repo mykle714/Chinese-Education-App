@@ -95,7 +95,7 @@ function StageInner({
  * Games render their actor / sprite layout as pixi JSX `children` (e.g.
  * `<pixiContainer>...<pixiSprite texture={textures.get('hero')} /></pixiContainer>`).
  */
-function GameStage({ assets, onReady, onTick, children, background = "#F9F7F2" }: GameStageProps) {
+function GameStage({ assets, onReady, onTick, children, background = "#F7F7F8" }: GameStageProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const [textures, setTextures] = useState<Map<string, Texture> | null>(null);
     const [loadError, setLoadError] = useState<string | null>(null);

@@ -310,6 +310,12 @@ function Layout({ children }: LayoutProps) {
                         alignItems: 'stretch',   // children fill full width; each Container centers itself via margin:auto
                     }}
                 >
+                    {/* Spacer matching the fixed AppBar height so page content
+                        starts below it on mobile. AppBar is only rendered on
+                        mobile, and mobile-demo pages take the full-bleed early
+                        return above, so this only affects non-demo pages on
+                        mobile (the AppBar's only visible context). */}
+                    {isMobile && <Toolbar />}
                     {mainContent}
                 </Box>
             </Box>

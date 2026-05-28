@@ -12,10 +12,10 @@ import { usePageTitle } from "../hooks/usePageTitle";
 
 // Design tokens from Figma
 const COLORS = {
-    background: "#F9F7F2",
-    header: "#D7D7D4",
-    onSurface: "#1D1B20",
-    border: "#625F63",
+    background: "#F7F7F8",
+    header: "#E4E4E7",
+    onSurface: "#1C1C1E",
+    border: "#5C5C66",
     // Deck colors
     blueMain: "#779BE7",
     blueAccent: "#BAD7F2",
@@ -364,7 +364,7 @@ const FlashcardsDecksPage: React.FC = () => {
     return (
         <>
             {/* Header */}
-            <MobileDemoHeader title="Decks & Cards" />
+            <MobileDemoHeader title="Decks & Cards" activePage="home" />
 
                 {/* Content Area */}
                 <ContentArea className="decks-page-content">
@@ -444,7 +444,7 @@ const FlashcardsDecksPage: React.FC = () => {
                             // Empty state
                             <Box className="flashcards-decks__library-empty" sx={{ width: '100%', px: 2 }}>
                                 <Alert className="flashcards-decks__library-empty-alert" severity="info">
-                                    No library cards yet. Add cards from the Discover page to see them here!
+                                    Please go to the Discover tab to select cards you would like to learn
                                 </Alert>
                             </Box>
                         ) : (

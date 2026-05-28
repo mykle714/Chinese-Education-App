@@ -5,7 +5,7 @@ import { styled } from "@mui/material/styles";
 import { useNavigate } from "react-router-dom";
 
 const Header = styled(Box)(() => ({
-    backgroundColor: "#D7D7D4",
+    backgroundColor: "#E4E4E7",
     height: 60,
     minHeight: 60,
     display: "flex",
@@ -33,9 +33,13 @@ interface PageHeaderProps {
     // `MobileDemoHeader` (which fills this slot with the hamburger menu)
     // rather than wiring `MobileNavDrawer` into every page.
     rightContent?: React.ReactNode;
+    // Icon rendered immediately to the left of the title. On footer-tab
+    // surfaces this mirrors the active footer tab's icon as a page-identity
+    // badge. Ignored when `showBack` is true (back button owns the slot).
+    leftIcon?: React.ReactNode;
 }
 
-const PageHeader: React.FC<PageHeaderProps> = ({ title, onBack, showBack = true, rightContent }) => {
+const PageHeader: React.FC<PageHeaderProps> = ({ title, onBack, showBack = true, rightContent, leftIcon }) => {
     const navigate = useNavigate();
 
     return (
@@ -46,11 +50,18 @@ const PageHeader: React.FC<PageHeaderProps> = ({ title, onBack, showBack = true,
                     <IconButton
                         className="page-header__back-button"
                         size="small"
-                        sx={{ color: "#1D1B20" }}
+                        sx={{ color: "#1C1C1E" }}
                         onClick={onBack ?? (() => navigate(-1))}
                     >
                         <ExpandMoreIcon />
                     </IconButton>
+                ) : leftIcon ? (
+                    <Box
+                        className="page-header__left-icon"
+                        sx={{ display: "flex", alignItems: "center", justifyContent: "center", width: 34 }}
+                    >
+                        {leftIcon}
+                    </Box>
                 ) : (
                     <Box sx={{ width: 34 }} /> /* placeholder matching back button size */
                 )}
@@ -62,7 +73,7 @@ const PageHeader: React.FC<PageHeaderProps> = ({ title, onBack, showBack = true,
                         flex: 1,
                         fontSize: 16,
                         fontWeight: 400,
-                        color: "#1D1B20",
+                        color: "#1C1C1E",
                         fontFamily: '"Inter", sans-serif',
                         whiteSpace: "nowrap",
                     }}

@@ -24,11 +24,11 @@ function parseHskLevel(label: string | null | undefined): number | null {
 
 // Design tokens from Figma
 const COLORS = {
-    background: "#F9F7F2",
-    header: "#D7D7D4",
-    onSurface: "#1D1B20",
-    border: "#625F63",
-    cardColor: "#D6CCC2",
+    background: "#F7F7F8",
+    header: "#E4E4E7",
+    onSurface: "#1C1C1E",
+    border: "#5C5C66",
+    cardColor: "#ECECEE",
     // Bucket colors
     redMain: "#EF476F",
     redAccent: "#F2BAC9",
@@ -565,6 +565,7 @@ const SortCardsPage: React.FC = () => {
             <>
                 <MobileDemoHeader
                     title="Sort Cards"
+                    activePage="discover"
                     extraActions={<MinutePointsFireBadge />}
                 />
                 <ContentArea className="sort-cards__content">
@@ -582,6 +583,7 @@ const SortCardsPage: React.FC = () => {
             {/* Header */}
             <MobileDemoHeader
                 title="Sort Cards"
+                activePage="discover"
                 extraActions={
                     <>
                         <IconButton
@@ -589,7 +591,7 @@ const SortCardsPage: React.FC = () => {
                             onClick={handleUndo}
                             size="small"
                             disabled={history.length === 0}
-                            sx={{ color: "#1D1B20" }}
+                            sx={{ color: "#1C1C1E" }}
                         >
                             <UndoIcon className="sort-cards__undo-icon" />
                         </IconButton>

@@ -129,7 +129,7 @@ export const InfoSheetTab = styled(Box, {
     padding: "8px 4px 10px",
     background: "transparent",
     border: "none",
-    cursor: isEmpty ? "default" : "pointer",
+    cursor: "pointer",
     display: "flex",
     flexDirection: "column",
     alignItems: "center",

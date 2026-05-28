@@ -57,23 +57,26 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
             bodyRef={panelRef}
             tabStrip={tabStrip}
         >
-            <InfoCardPanelBody
-                ref={panelRef}
-                currentEntry={currentEntry}
-                selectedTab={selectedTab}
-                onTabChange={onTabChange}
-                breakdownItems={breakdownItems}
-                showPinyin={showPinyin}
-                showPinyinColor={showPinyinColor}
-                showSegmentSpaces={showSegmentSpaces}
-                isFlipped={isFlipped}
-                onBreakdownItemClick={onBreakdownItemClick}
-                onUsedInItemClick={onUsedInItemClick}
-                onSpeak={onSpeak}
-                onSpeakSentence={onSpeakSentence}
-                speakingKey={speakingKey}
-                scrollTouchAction="none"
-            />
+            {({ bindHeaderDrag }) => (
+                <InfoCardPanelBody
+                    ref={panelRef}
+                    currentEntry={currentEntry}
+                    selectedTab={selectedTab}
+                    onTabChange={onTabChange}
+                    breakdownItems={breakdownItems}
+                    showPinyin={showPinyin}
+                    showPinyinColor={showPinyinColor}
+                    showSegmentSpaces={showSegmentSpaces}
+                    isFlipped={isFlipped}
+                    onBreakdownItemClick={onBreakdownItemClick}
+                    onUsedInItemClick={onUsedInItemClick}
+                    onSpeak={onSpeak}
+                    onSpeakSentence={onSpeakSentence}
+                    speakingKey={speakingKey}
+                    scrollTouchAction="none"
+                    headerDragBind={bindHeaderDrag}
+                />
+            )}
         </SheetPanel>
     );
 });

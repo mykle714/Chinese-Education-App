@@ -25,10 +25,10 @@ import { usePageTitle } from "../hooks/usePageTitle";
 
 // Design tokens from Figma
 const COLORS = {
-    background: "#F9F7F2",
-    header: "#D7D7D4",
-    onSurface: "#1D1B20",
-    border: "#625F63",
+    background: "#F7F7F8",
+    header: "#E4E4E7",
+    onSurface: "#1C1C1E",
+    border: "#5C5C66",
 };
 
 // Styled Components — phone-frame sizing comes from MobileDemoFrame via Layout.tsx
@@ -197,7 +197,7 @@ function AccountPage() {
     if (isLoading) {
         return (
             <>
-                <MobileDemoHeader title="Account" />
+                <MobileDemoHeader title="Account" activePage="account" />
                 <ContentArea className="account-page__content">
                     <CircularProgress className="account-page__spinner" />
                 </ContentArea>
@@ -209,7 +209,7 @@ function AccountPage() {
     if (!user) {
         return (
             <>
-                <MobileDemoHeader title="Account" />
+                <MobileDemoHeader title="Account" activePage="account" />
                 <ContentArea className="account-page__content">
                     <Typography className="account-page__no-user-text" sx={{ textAlign: "center", color: COLORS.onSurface }}>
                         Please log in to view your account
@@ -227,7 +227,7 @@ function AccountPage() {
     return (
         <>
             {/* Header */}
-            <MobileDemoHeader title="Account" />
+            <MobileDemoHeader title="Account" activePage="account" />
 
                 {/* Content Area */}
                 <ContentArea className="account-page__content">
@@ -263,7 +263,7 @@ function AccountPage() {
                                         className="account-page__user-email"
                                         sx={{
                                             fontSize: 12,
-                                            color: "#625F63",
+                                            color: "#5C5C66",
                                             fontFamily: '"Inter", sans-serif',
                                         }}
                                     >
@@ -275,7 +275,7 @@ function AccountPage() {
                                 className="account-page__user-id"
                                 sx={{
                                     fontSize: 12,
-                                    color: "#625F63",
+                                    color: "#5C5C66",
                                     fontFamily: '"Inter", sans-serif',
                                 }}
                             >

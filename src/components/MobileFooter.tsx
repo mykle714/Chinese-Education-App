@@ -9,8 +9,8 @@ import AccountCircleIcon from "@mui/icons-material/AccountCircle";
 
 // Design tokens from Figma
 const COLORS = {
-    header: "#D7D7D4",
-    border: "#625F63",
+    header: "#E4E4E7",
+    border: "#5C5C66",
     iconColor: "#323232",
     textColor: "#272727",
 };

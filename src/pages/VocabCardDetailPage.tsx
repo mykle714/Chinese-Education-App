@@ -16,14 +16,14 @@ import { usePageTitle } from "../hooks/usePageTitle";
 
 // Design tokens
 const COLORS = {
-    background: "#F9F7F2",
-    header: "#D7D7D4",
-    card: "#D6CCC2",
+    background: "#F7F7F8",
+    header: "#E4E4E7",
+    card: "#ECECEE",
     infoCard: "#F5EBE0",
     sectionCard: "#EDE7DC",
-    onSurface: "#1D1B20",
-    textSecondary: "#625F63",
-    border: "#625F63",
+    onSurface: "#1C1C1E",
+    textSecondary: "#5C5C66",
+    border: "#5C5C66",
     categoryUnfamiliar: "#EF476F",
     categoryTarget: "#FF8E47",
     categoryComfortable: "#05C793",
@@ -60,7 +60,7 @@ const ActionBar = styled(Box)(() => ({
     gap: '12px',
     padding: '12px 16px',
     backgroundColor: COLORS.background,
-    borderTop: `1px solid rgba(98, 95, 99, 0.2)`,
+    borderTop: `1px solid rgba(92,92,102, 0.2)`,
     flexShrink: 0,
 }));
 

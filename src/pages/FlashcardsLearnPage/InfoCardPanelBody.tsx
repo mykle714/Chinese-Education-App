@@ -58,6 +58,10 @@ export interface InfoCardPanelBodyProps {
     // "none" so it can route touchmove between sheet-resize and content-scroll;
     // popup variant leaves it "auto" for native scrolling.
     scrollTouchAction?: React.CSSProperties["touchAction"];
+    // When provided, the props returned by this call are spread onto the entry
+    // header so it shares the grabber's drag-to-resize gesture. useDrag's
+    // filterTaps keeps icon taps (speaker, +, etc.) working normally.
+    headerDragBind?: () => Record<string, unknown>;
 }
 
 // Imperative handle exposing the two elements the bottom-sheet wrapper needs:
@@ -98,6 +102,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
     onSpeakSentence,
     speakingKey,
     scrollTouchAction = "auto",
+    headerDragBind,
 }, ref) {
     const rootRef = useRef<HTMLDivElement | null>(null);
     const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -159,14 +164,24 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                 // remain selectable so users can copy individual characters.
                 userSelect: "none",
                 WebkitUserSelect: "none",
-                "& .char-pinyin-display, & .char-pinyin-display *": {
+                // CPCD char + pinyin cells live as siblings under cpcd-row, so we
+                // re-enable selection on anything with a cpcd-row__ or
+                // char-pinyin-display class (and their descendants).
+                "& [class*='cpcd-row__'], & [class*='cpcd-row__'] *, & [class*='char-pinyin-display'], & [class*='char-pinyin-display'] *": {
                     userSelect: "text",
                     WebkitUserSelect: "text",
                 },
             }}
         >
-            {/* Entry header: headword + English translation + speaker icon. */}
-            <InfoSheetEntryHeader className="mobile-demo-eic-header">
+            {/* Entry header: headword + English translation + speaker icon.
+                When the bottom-sheet wrapper passes headerDragBind, this row
+                also acts as a drag-to-resize handle (useDrag's filterTaps keeps
+                taps on speaker/+ icons working). */}
+            <InfoSheetEntryHeader
+                className="mobile-demo-eic-header"
+                {...(headerDragBind ? headerDragBind() : {})}
+                sx={headerDragBind ? { touchAction: "none", cursor: "grab" } : undefined}
+            >
                 {currentEntry && (
                     <CPCDRow
                         size="md"
@@ -237,9 +252,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                             key={index}
                             isActive={selectedTab === index}
                             isEmpty={tabIsEmpty[index]}
-                            onClick={() => {
-                                if (!tabIsEmpty[index]) onTabChange(index);
-                            }}
+                            onClick={() => onTabChange(index)}
                             className={`mobile-demo-tab mobile-demo-tab-${displayLabel.replace(/\s+/g, '-')}`}
                         >
                             <Typography sx={{

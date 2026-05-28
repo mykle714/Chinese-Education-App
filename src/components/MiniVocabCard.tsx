@@ -13,9 +13,9 @@ interface MiniVocabCardProps {
 
 // Design tokens
 const COLORS = {
-    cardBackground: "#D6CCC2",
-    onSurface: "#1D1B20",
-    textSecondary: "#625F63",
+    cardBackground: "#ECECEE",
+    onSurface: "#1C1C1E",
+    textSecondary: "#5C5C66",
     // Category colors matching the deck colors
     categoryUnfamiliar: "#EF476F",
     categoryTarget: "#FF8E47",
@@ -23,12 +23,6 @@ const COLORS = {
     categoryMastered: "#779BE7",
 };
 
-
-// Helper function to truncate text
-const truncateText = (text: string, maxLength: number) => {
-    if (text.length <= maxLength) return text;
-    return text.substring(0, maxLength) + '...';
-};
 
 // Helper function to get category color
 const getCategoryColor = (category?: string) => {
@@ -205,20 +199,28 @@ const MiniVocabCard: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete,
                 </Typography>
             </Box>
 
-            {/* Pronunciation (if available) */}
+            {/* Pronunciation (if available) — font size steps down so full pinyin fits the ~76px card width */}
             {entry.pronunciation && (
                 <Typography
                     className="mini-vocab-card__pronunciation"
                     sx={{
-                        fontSize: '0.625rem',
+                        fontSize:
+                            entry.pronunciation.length <= 12 ? '0.625rem'
+                            : entry.pronunciation.length <= 16 ? '0.56rem'
+                            : entry.pronunciation.length <= 22 ? '0.48rem'
+                            : '0.42rem',
                         color: COLORS.textSecondary,
                         textAlign: 'center',
                         mb: 0.5,
                         fontStyle: 'italic',
                         lineHeight: 1.2,
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        width: '100%',
                     }}
                 >
-                    {truncateText(entry.pronunciation, 12)}
+                    {entry.pronunciation}
                 </Typography>
             )}
 

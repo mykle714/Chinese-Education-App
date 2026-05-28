@@ -36,6 +36,14 @@ function expandDefinitionCandidates(definition: string): string[] {
 /**
  * Choose the best definition for a segment by matching dictionary definitions
  * against a translated sentence. If no match is found, fall back to the first definition.
+ *
+ * Match rules:
+ *  - Word-boundary aware: a candidate must align with whitespace boundaries in the
+ *    normalized translation. This prevents short glosses like "to" from matching
+ *    inside unrelated words like "tomorrow".
+ *  - Longest match wins: when multiple candidates match, prefer the one with the
+ *    most normalized characters (e.g. "to give" beats "to"). Definition order is
+ *    the tiebreaker, so earlier/preferred glosses still win at equal length.
  */
 export function pickDefinitionForTranslatedSentence(
   meta: SegmentMeta,
@@ -53,17 +61,30 @@ export function pickDefinitionForTranslatedSentence(
     return fallback ?? undefined;
   }
 
-  for (const definition of definitions) {
+  // Pad with spaces so ` candidate ` substring checks act as word boundaries
+  // (normalizeText already collapses non-letter/number runs to single spaces).
+  const paddedTranslation = ` ${normalizedTranslation} `;
+
+  let best: { candidate: string; length: number; definitionIndex: number } | undefined;
+
+  definitions.forEach((definition, definitionIndex) => {
     for (const candidate of expandDefinitionCandidates(definition)) {
       const normalizedCandidate = normalizeText(candidate);
       if (!normalizedCandidate) continue;
-      if (normalizedTranslation.includes(normalizedCandidate)) {
-        return candidate;
+      if (!paddedTranslation.includes(` ${normalizedCandidate} `)) continue;
+
+      const length = normalizedCandidate.length;
+      if (
+        !best ||
+        length > best.length ||
+        (length === best.length && definitionIndex < best.definitionIndex)
+      ) {
+        best = { candidate, length, definitionIndex };
       }
     }
-  }
+  });
 
-  return fallback ?? undefined;
+  return best?.candidate ?? fallback ?? undefined;
 }
 
 /**

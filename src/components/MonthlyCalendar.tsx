@@ -47,20 +47,25 @@ function MonthlyCalendar() {
         }
 
         if (dayData.streakMaintained) {
-            return `+${dayData.minutesEarned}`;
+            return dayData.minutesEarned === 0 ? '' : `+${dayData.minutesEarned}`;
         }
 
         // Red day — surface a penalty if one was stamped, otherwise show minutes earned (which may be 0).
         if (dayData.penaltyMinutes > 0) {
             return `-${dayData.penaltyMinutes}`;
         }
-        return `+${dayData.minutesEarned}`;
+        return dayData.minutesEarned === 0 ? '' : `+${dayData.minutesEarned}`;
     };
 
     // Helper function to get status stamp emoji
     const getStatusStamp = (dayData: CalendarDayData): string => {
         if (!dayData.hasData) {
             // Before user started or future days - no stamp
+            return '';
+        }
+
+        // Blank cell when there's no point change at all
+        if (dayData.minutesEarned === 0 && dayData.penaltyMinutes === 0) {
             return '';
         }
 
@@ -189,8 +194,8 @@ function MonthlyCalendar() {
                                             {/* Status stamp emoji in center-left */}
                                             <Box sx={{
                                                 position: 'absolute',
-                                                left: 6,
-                                                fontSize: '0.9rem',
+                                                left: 3,
+                                                fontSize: '0.65rem',
                                                 opacity: 0.9
                                             }}>
                                                 {getStatusStamp(dayData)}
@@ -198,10 +203,10 @@ function MonthlyCalendar() {
 
                                             {/* Work points prominently displayed in center-right */}
                                             <Box sx={{
-                                                fontSize: '0.8rem',
+                                                fontSize: '0.75rem',
                                                 fontWeight: dayData.isToday ? 'bold' : 'normal',
                                                 marginLeft: 'auto',
-                                                marginRight: 1
+                                                marginRight: 0.5
                                             }}>
                                                 {getPointsText(dayData)}
                                             </Box>

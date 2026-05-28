@@ -31,7 +31,11 @@ interface SheetPanelProps {
     // Ref attached to the body content; exposes the gesture root + scroll
     // element so SheetPanel can wire its resize/scroll coupling.
     bodyRef: React.RefObject<SheetPanelBodyHandle | null>;
-    children: React.ReactNode;
+    // Children can be a plain node or a render function that receives the
+    // header-drag binder so an inner element (e.g. the EIP entry header) can
+    // share the grabber's drag-to-resize gesture. useDrag's filterTaps option
+    // keeps proper taps on header icons working.
+    children: React.ReactNode | ((api: { bindHeaderDrag: ReturnType<typeof useDrag> }) => React.ReactNode);
     // Optional row rendered above the grabber (e.g. entry-tabs strip). Kept
     // outside the drag zone so taps on tabs aren't captured by useDrag.
     tabStrip?: React.ReactNode;
@@ -109,7 +113,11 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
 
     // Drag the grabber to resize the sheet. Snap-on-release to {0, initial, max}.
     const bindHeaderDrag = useDrag(
-        ({ first, last, movement: [, my] }) => {
+        ({ first, last, tap, movement: [, my] }) => {
+            // A tap on the header is not a resize gesture — skip the
+            // snap-on-release logic so clicking the EIP header doesn't
+            // collapse an expanded sheet back to its initial height.
+            if (tap) return;
             if (first) {
                 dragStartHeightRef.current = sheetHeightRef.current ?? 0;
                 setIsSnapping(false);
@@ -411,7 +419,7 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
                 {/* Entry-tabs strip (optional) sits between the grabber and the
                     entry header so it reads as part of the panel chrome. */}
                 {tabStrip}
-                {children}
+                {typeof children === "function" ? children({ bindHeaderDrag }) : children}
             </InfoSheetContainer>
         </>
     );

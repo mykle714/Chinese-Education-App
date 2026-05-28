@@ -5,7 +5,6 @@ import TimeDisplay from "../components/TimeDisplay";
 import StreakCounter from "../components/StreakCounter";
 import MonthlyCalendar from "../components/MonthlyCalendar";
 import LeaderboardPlaceholder from "../components/LeaderboardPlaceholder";
-import ChangelogDisplay from "../components/ChangelogDisplay";
 import { usePageTitle } from "../hooks/usePageTitle";
 
 function HomePage() {
@@ -27,6 +26,15 @@ function HomePage() {
                 {/* Left Column - User Dashboard */}
                 <Box sx={{ minWidth: 0 }}>
                     <Box sx={{ mb: 2 }}>
+                        {/* Test User Message */}
+                        {import.meta.env.VITE_TEST_USER_MESSAGE && (
+                            <Box className="test-user-message-banner" sx={{ mb: 3, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
+                                <Typography variant="body1" color="text.secondary">
+                                    📢 {import.meta.env.VITE_TEST_USER_MESSAGE}
+                                </Typography>
+                            </Box>
+                        )}
+
                         {/* Total Study Time Display */}
                         <TimeDisplay totalMinutes={totalStudyTimeMinutes} />
 
@@ -38,18 +46,9 @@ function HomePage() {
                     </Box>
                 </Box>
 
-                {/* Right Column - Leaderboard & Changelog */}
+                {/* Right Column - Leaderboard */}
                 <Box sx={{ minWidth: 0 }}>
-                    {/* Test User Message */}
-                    {import.meta.env.VITE_TEST_USER_MESSAGE && (
-                        <Box sx={{ mb: 3, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
-                            <Typography variant="body1" color="text.secondary">
-                                📢 {import.meta.env.VITE_TEST_USER_MESSAGE}
-                            </Typography>
-                        </Box>
-                    )}
                     <LeaderboardPlaceholder />
-                    <ChangelogDisplay />
                 </Box>
             </Box>
         </Container>

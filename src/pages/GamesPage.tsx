@@ -13,8 +13,8 @@ import type { GameDef } from "../games/types";
 // Phone-frame sizing comes from MobileDemoFrame via Layout.tsx — this page
 // only owns its inner layout.
 const COLORS = {
-    onSurface: "#1D1B20",
-    mutedText: "#625F63",
+    onSurface: "#1C1C1E",
+    mutedText: "#5C5C66",
     rowBorder: "rgba(0, 0, 0, 0.08)",
     rowHoverBg: "rgba(0, 0, 0, 0.04)",
     iconBg: "#F1ECE3",
@@ -97,7 +97,7 @@ const GamesPage: React.FC = () => {
 
     return (
         <>
-            <MobileDemoHeader title="Games" />
+            <MobileDemoHeader title="Games" activePage="games" />
 
             <ContentArea className="games-page__content">
                 <GameMenuList className="games-page__menu">

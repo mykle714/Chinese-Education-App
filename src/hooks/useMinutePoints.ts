@@ -124,7 +124,7 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
     (prefix) => location.pathname === prefix || location.pathname.startsWith(prefix + '/')
   );
 
-  const totalStudyTimeMinutes: number = state.accumulativeMinutePoints + Math.floor(state.todaysMinutePointsMilli / 60000);
+  const totalStudyTimeMinutes: number = state.accumulativeMinutePoints;
   const liveSeconds: number = Math.floor((state.todaysMinutePointsMilli % 60000) / 1000);
   const progressToNextPoint: number = (state.todaysMinutePointsMilli % MINUTE_POINTS_CONFIG.MILLISECONDS_PER_POINT) /
                                        MINUTE_POINTS_CONFIG.MILLISECONDS_PER_POINT * 100;

@@ -77,6 +77,72 @@ export class VocabEntryService {
   }
 
   /**
+   * Add a dictionary entry to the user's library from a context that may or
+   * may not already have a vocabentries row.
+   *
+   * Branches:
+   *  - no row → INSERT with starterPackBucket='library', category='Unfamiliar'
+   *  - row already in library → no-op
+   *  - row in 'learn-later' → bucket → 'library' (status='moved')
+   *  - row in 'skip' or NULL → bucket → 'library' (status='added' — skip-undo
+   *    is conceptually the same user action as add)
+   *
+   * Returns the resulting vocabentry id and a status string the client can
+   * translate into a flash message.
+   */
+  async addToLibrary(
+    userId: string,
+    entryKey: string,
+    language: Language,
+  ): Promise<{ status: 'added' | 'moved' | 'already-in-library'; vocabEntryId: number }> {
+    const trimmedKey = entryKey?.trim();
+    if (!trimmedKey) {
+      throw new ValidationError('entryKey is required');
+    }
+
+    // Reject orphans — vet rows derive their definition from det via entryKey/language.
+    const dictMatch = await this.dictionaryService.lookupTerm(trimmedKey, language);
+    if (!dictMatch) {
+      throw new NotFoundError(
+        `No dictionary entry exists for "${trimmedKey}" in ${language}.`,
+      );
+    }
+
+    const client = await db.getClient();
+    try {
+      const existing = await client.query<{ id: number; starterPackBucket: string | null }>(
+        `SELECT id, "starterPackBucket" FROM vocabentries
+         WHERE "userId" = $1 AND "entryKey" = $2 AND language = $3`,
+        [userId, trimmedKey, language],
+      );
+
+      if (existing.rows.length === 0) {
+        const insertResult = await client.query<{ id: number }>(
+          `INSERT INTO vocabentries ("userId", "entryKey", language, "starterPackBucket", category)
+           VALUES ($1, $2, $3, 'library', 'Unfamiliar')
+           RETURNING id`,
+          [userId, trimmedKey, language],
+        );
+        return { status: 'added', vocabEntryId: insertResult.rows[0].id };
+      }
+
+      const row = existing.rows[0];
+      if (row.starterPackBucket === 'library') {
+        return { status: 'already-in-library', vocabEntryId: row.id };
+      }
+
+      const wasLearnLater = row.starterPackBucket === 'learn-later';
+      await client.query(
+        `UPDATE vocabentries SET "starterPackBucket" = 'library' WHERE id = $1`,
+        [row.id],
+      );
+      return { status: wasLearnLater ? 'moved' : 'added', vocabEntryId: row.id };
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
    * Update an existing vocabulary entry
    */
   async updateEntry(userId: string, entryId: number, updateData: VocabEntryUpdateData): Promise<VocabEntry> {

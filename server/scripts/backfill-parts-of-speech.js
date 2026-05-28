@@ -69,41 +69,29 @@ Hard rules — apply formal tests, not English-translation intuition:
      - 第一, 不少, 未来 are NOT adverbs (they don't pre-modify verbs bare).
      - 请 is NOT an adverb (请坐 — 请 is an imperative verb, not an adverb).
 
-4. ADJECTIVE-AS-SUBJECT ≠ NOUN — Chinese adjectives can serve as sentence
-   subjects (健康很重要, 高兴是好事) without becoming nouns.
-   Tag a word as "noun" ONLY if it can be counted with a classifier
-   (e.g. 一个X, 三种X) or directly take a possessive (我的X).
-     - 高兴 is NOT a noun.
-     - 健康 is borderline (健康的人); only tag noun if you'd say 一种健康.
-
-5. NOUN-AS-VERB ≠ VERB — Colloquial verbing of a noun (我们火锅吧) does NOT
+4. NOUN-AS-VERB ≠ VERB — Colloquial verbing of a noun (我们火锅吧) does NOT
    make the noun a verb. Tag "verb" only if the word has a real lexical
    verb sense documented in the definitions.
      - 火锅 is NOT a verb. 同事 is NOT a verb.
 
-6. ORDINALS / QUANTIFIERS — 第N words are numerals (optionally adjectives).
+5. ORDINALS / QUANTIFIERS — 第N words are numerals (optionally adjectives).
    Quantity words like 不少 / 很多 are adjectives or numerals, NOT adverbs.
 
-7. CONJUNCTIVE ADVERBS ARE STILL ADVERBS — Words like 结果 ("as a result"),
+6. CONJUNCTIVE ADVERBS ARE STILL ADVERBS — Words like 结果 ("as a result"),
    一般 ("generally"), 然后 ("then") DO function as discourse-level adverbs
    when they pre-modify a clause. Tag adverb in those cases.
 
-8. DIRECTIONAL COMPLEMENTS — 起来 / 下来 / 出来 etc. are verbs in their
+7. DIRECTIONAL COMPLEMENTS — 起来 / 下来 / 出来 etc. are verbs in their
    literal sense (站起来 = "stand up") and may also be tagged "particle"
    when used as stative/aspectual markers (看起来 = "it seems").
-
-9. DEFINITIONS RULE — Use the provided definitions as the primary signal.
-   If no definition supports a POS, do not include it.
 `;
 
 const VIOLATION_CODE_LABELS = {
   spurious_adverb: 'Tagged as adverb but fails the bare-pre-verbal test (rule 3)',
-  spurious_noun: 'Tagged as noun but only adjective-as-subject usage (rule 4)',
-  spurious_verb: 'Tagged as verb but only noun-as-verb / no lexical verb sense (rule 5)',
+  spurious_verb: 'Tagged as verb but only noun-as-verb / no lexical verb sense (rule 4)',
   spurious_classifier: 'Tagged as classifier but the word is a numeral+classifier phrase (rule 2)',
   compositional: 'Tag inherited from a component character, not the whole word (rule 2)',
   over_tagged: 'List has 3+ tags but the word does not genuinely take that many roles (rule 1)',
-  unsupported_by_definitions: 'Tag has no support in the provided definitions (rule 9)',
   archaic_or_rare: 'Tag reflects an archaic or technical use a learner would never see',
   missing_tag: 'A clearly valid POS is missing from the list',
 };

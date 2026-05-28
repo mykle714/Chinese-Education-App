@@ -46,19 +46,28 @@ const emptinessFilter = isAllDiscoverable
  * Ask Claude to generate 3 natural example sentences for a Chinese word.
  * Returns an array of { chinese, english, partOfSpeechDict } objects.
  */
-async function generateExampleSentences(word, pronunciation, definitions) {
+async function generateExampleSentences(word, pronunciation, definitions, partsOfSpeech) {
   const allowedPosTags = ALLOWED_POS_TAGS;
   const definitionText = Array.isArray(definitions) ? definitions.slice(0, 3).join('; ') : definitions;
+
+  // partsOfSpeech is a JSONB array of POS tags from the dictionaryentries row.
+  // We enforce at least one sentence per listed POS so every grammatical role
+  // the word can take is exemplified.
+  const posList = Array.isArray(partsOfSpeech) ? partsOfSpeech.filter(Boolean) : [];
+  const sentenceCount = Math.max(3, posList.length);
+  const posCoverageClause = posList.length > 0
+    ? `\n- The target word "${word}" must appear used as EACH of these parts of speech across the sentences, with at least one sentence per POS: ${posList.join(', ')}. If a POS has no sentence dedicated to it, add another sentence that demonstrates that role.`
+    : '';
 
   const prompt = `You are a Chinese language teacher creating example sentences for a vocabulary app.
 
 Word: ${word} (${pronunciation})
-Meaning: ${definitionText}
+Meaning: ${definitionText}${posList.length > 0 ? `\nParts of speech this word can take: ${posList.join(', ')}` : ''}
 
-Write exactly 3 natural example sentences using "${word}". Each sentence should:
+Write exactly ${sentenceCount} natural example sentences using "${word}". Each sentence should:
 - Use the word naturally as a native speaker would
 - Be simple enough for an intermediate learner (HSK 3–4 level vocabulary otherwise)
-- Show a different grammatical role or context for the word for each sentence
+- Show a different grammatical role or context for the word for each sentence${posCoverageClause}
 - Have an accurate English translation
 - Mirror the punctuation of the Chinese sentence in the English translation — if the Chinese uses a comma to separate two clauses, use a comma in the same position in English; match question marks, exclamation points, etc.
 - Match the clause structure of the Chinese sentence — if the Chinese has two clauses separated by a conjunction or comma, the English should have two parallel clauses in the same order
@@ -73,33 +82,15 @@ Write exactly 3 natural example sentences using "${word}". Each sentence should:
 - Include the target word "${word}" as one of the keys in partOfSpeechDict
 - If the target word is a verb but is used as a gerund or nominal subject/object in this sentence (e.g. 下单很简单 — "Ordering is simple", where 下单 is the sentence subject), tag it as "noun", not "verb"
 
-Respond with ONLY a JSON array in this exact format (no markdown, no explanation):
+Across the ${sentenceCount} sentences, vary tense — include at least one "past", one "present", and one "future" sentence (assign tense to whichever sentences fit each tense most naturally).
+
+Respond with ONLY a JSON array of exactly ${sentenceCount} objects in this format (no markdown, no explanation):
 [
   {
     "chinese": "Chinese sentence",
     "english": "English translation",
     "translatedVocab": "english word",
-    "tense": "past",
-    "partOfSpeechDict": {
-      "wordToken1": "pos_tag",
-      "wordToken2": "pos_tag"
-    }
-  },
-  {
-    "chinese": "Chinese sentence",
-    "english": "English translation",
-    "translatedVocab": "english word",
-    "tense": "present",
-    "partOfSpeechDict": {
-      "wordToken1": "pos_tag",
-      "wordToken2": "pos_tag"
-    }
-  },
-  {
-    "chinese": "Chinese sentence",
-    "english": "English translation",
-    "translatedVocab": "english word",
-    "tense": "future",
+    "tense": "past" | "present" | "future",
     "partOfSpeechDict": {
       "wordToken1": "pos_tag",
       "wordToken2": "pos_tag"
@@ -109,7 +100,7 @@ Respond with ONLY a JSON array in this exact format (no markdown, no explanation
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 600,
+    max_tokens: Math.max(600, 250 * sentenceCount),
     temperature: 0.7,
     messages: [{ role: 'user', content: prompt }],
   });
@@ -165,7 +156,7 @@ async function run() {
 
   try {
     const { rows: entries } = await client.query(`
-      SELECT id, word1, pronunciation, definitions
+      SELECT id, word1, pronunciation, definitions, "partsOfSpeech"
       FROM dictionaryentries
       WHERE language = 'zh'
         AND discoverable = TRUE
@@ -184,7 +175,7 @@ async function run() {
       try {
         process.stdout.write(`  ${row.word1} (${row.pronunciation}) ... `);
 
-        const sentences = await generateExampleSentences(row.word1, row.pronunciation, row.definitions);
+        const sentences = await generateExampleSentences(row.word1, row.pronunciation, row.definitions, row.partsOfSpeech);
 
         if (!sentences) {
           console.log('no valid sentences returned');

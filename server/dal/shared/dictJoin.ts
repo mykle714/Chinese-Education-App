@@ -4,6 +4,7 @@
 // meaning on flashcards / detail / sort UIs.
 export const DICT_COLS =
   `de.script, de.pronunciation, de.tone, de."hskLevel", de."partsOfSpeech", ` +
+  `de."vernacularScore", ` +
   `de.breakdown, de.synonyms, de."exampleSentences", ` +
   `de.expansion, de."expansionLiteralTranslation", de."longDefinition", ` +
   `de.definition`;
@@ -13,7 +14,8 @@ export const DICT_COLS =
 // definition search) without it being returned in the SELECT list.
 export const DICT_JOIN =
   `LEFT JOIN LATERAL (` +
-  `  SELECT script, pronunciation, tone, "hskLevel", "partsOfSpeech", breakdown, synonyms,` +
+  `  SELECT script, pronunciation, tone, "hskLevel", "partsOfSpeech", "vernacularScore",` +
+  `         breakdown, synonyms,` +
   `         "exampleSentences", expansion, "expansionLiteralTranslation", "longDefinition",` +
   `         definitions, definitions->>0 AS definition` +
   `  FROM dictionaryentries WHERE word1 = ve."entryKey" AND language = ve.language LIMIT 1` +

@@ -542,7 +542,7 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     userId: string,
     character: string,
     language: string,
-    limit: number = 5
+    limit: number = 4
   ): Promise<UsedInItem[]> {
     if (language !== 'zh') return [];
     if (!character) return [];
@@ -571,6 +571,7 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
         AND ve.language = $2
         AND ve."entryKey" <> $3
         AND position($3 IN ve."entryKey") > 0
+        AND char_length(ve."entryKey") <= 4
       ORDER BY de."vernacularScore" DESC NULLS LAST, ve."entryKey" ASC
       LIMIT $4
     `;
@@ -608,6 +609,7 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
       FROM dictionaryentries
       WHERE language = $1
         AND char_length(word1) > 1
+        AND char_length(word1) <= 4
         AND word1 <> $2
         AND position($2 IN word1) > 0
         AND ($3::text[] IS NULL OR word1 <> ALL($3::text[]))

@@ -107,6 +107,31 @@ export class VocabEntryController {
   }
 
   /**
+   * Add a dictionary entry to the user's library. Idempotent across already-in-library,
+   * learn-later, skip, and unsorted states (see VocabEntryService.addToLibrary).
+   * POST /api/vocabEntries/add-to-library
+   * Body: { entryKey, language }
+   * Response: { status: 'added' | 'moved' | 'already-in-library', vocabEntryId }
+   */
+  async addToLibrary(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
+      const { entryKey, language } = req.body;
+      if (!entryKey || !language) {
+        res.status(400).json({ error: 'Missing required fields: entryKey, language' });
+        return;
+      }
+
+      const result = await this.vocabEntryService.addToLibrary(userId, entryKey, language);
+      res.json(result);
+    } catch (error) {
+      handleControllerError(error, res, 'VocabEntryController.addToLibrary');
+    }
+  }
+
+  /**
    * Update vocabulary entry
    * PUT /api/vocabEntries/:id
    */

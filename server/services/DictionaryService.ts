@@ -499,10 +499,12 @@ Respond with ONLY a JSON object in this exact format, no extra text:
   }
 
   /**
-   * Generate a long definition (25–75 chars) for a Chinese word using Claude Haiku AI
-   * Returns null for non-Chinese words or if AI call fails
+   * Generate a long definition (25–150 chars) for a Chinese word using Claude Haiku AI.
+   * When partsOfSpeech is provided, the prompt instructs the model to address each
+   * grammatical role the word can take so the definition is accurate across all its uses.
+   * Returns null for non-Chinese words or if AI call fails.
    */
-  async generateLongDefinition(word: string, language: string): Promise<string | null> {
+  async generateLongDefinition(word: string, language: string, partsOfSpeech?: string[]): Promise<string | null> {
     if (!language || language !== 'zh') {
       return null;
     }
@@ -519,9 +521,14 @@ Respond with ONLY a JSON object in this exact format, no extra text:
     try {
       const anthropic = new Anthropic({ apiKey });
 
+      const posList = Array.isArray(partsOfSpeech) ? partsOfSpeech.filter(Boolean) : [];
+      const posLine = posList.length > 0
+        ? `\nParts of speech: ${posList.join(', ')}\n- Address each grammatical role in the definition where meaningful.`
+        : '';
+
       const prompt = `You are a Chinese language expert providing dictionary definitions.
 Word: ${word.trim()}
-
+${posLine}
 Write a single English definition that is between 25 and 150 characters long.
 Goals (address whichever are most relevant to this word):
 - Dispel common misconceptions or mistranslations

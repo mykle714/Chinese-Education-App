@@ -51,13 +51,14 @@ export class DictionaryController {
       const [enrichedEntry] = await this.dictionaryService.enrichExampleSentencesMetadataBatch([entry], language);
 
       // For single-character zh entries, also attach the per-user "used in"
-      // list (up to 5 multi-char words containing this character). The EIP
-      // swaps the breakdown tab for a "used in" tab on single-char cards,
-      // and without this enrichment that tab is empty for child panels.
+      // list (up to 4 multi-char words containing this character, capped at
+      // 4 chars per entry). The EIP swaps the breakdown tab for a "used in"
+      // tab on single-char cards, and without this enrichment that tab is
+      // empty for child panels.
       let withUsedIn: typeof enrichedEntry & { usedIn?: unknown } = enrichedEntry;
       if (language === 'zh' && [...enrichedEntry.word1].length === 1) {
         try {
-          const usedIn = await this.vocabEntryDAL.findUsedInForCharacter(userId, enrichedEntry.word1, language, 5);
+          const usedIn = await this.vocabEntryDAL.findUsedInForCharacter(userId, enrichedEntry.word1, language, 4);
           withUsedIn = { ...enrichedEntry, usedIn };
         } catch (err) {
           console.error(`Failed to attach usedIn for "${enrichedEntry.word1}":`, err);

@@ -145,6 +145,14 @@ app.patch('/api/vocabEntries/:id/bucket', authenticateToken, async (req: any, re
   }
 });
 
+// Add a dictionary entry to the user's library (idempotent; handles already-in-library,
+// learn-later → library, skip → library, and unsorted → library). Used by the
+// dictionary EIP "+" button.
+// @ts-ignore
+app.post('/api/vocabEntries/add-to-library', authenticateToken, async (req, res) => {
+  await vocabEntryController.addToLibrary(req, res);
+});
+
 // Delete vocab entry - USING NEW DAL ARCHITECTURE
 // @ts-ignore
 app.delete('/api/vocabEntries/:id', authenticateToken, async (req, res) => {

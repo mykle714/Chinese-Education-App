@@ -219,6 +219,7 @@ export interface VocabEntry {
   tone?: string | null;   // Tone digits derived from pronunciation (e.g. "12" for fēng kuáng)
   hskLevel?: HskLevel | null;
   partsOfSpeech?: string[] | null;  // POS tags from dictionaryentries (e.g. ["noun", "verb"])
+  vernacularScore?: number | null;  // 1–5 register score from dictionaryentries (1=literary, 5=natural colloquial)
   markHistory?: ReviewMark[];  // Last 16 flashcard mark results
   totalMarkCount?: number;  // Total cumulative count of all marks
   totalCorrectCount?: number;  // Lifetime count of correct marks

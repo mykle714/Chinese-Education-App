@@ -129,7 +129,7 @@ export class OnDeckVocabService {
         userId,
         entry.entryKey,
         entry.language,
-        5
+        4
       );
       return { ...entry, usedIn };
     } catch (error) {

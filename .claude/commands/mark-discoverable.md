@@ -94,7 +94,12 @@ docker exec cow-backend-local npx tsx scripts/backfill-short-long-definitions.js
 docker exec cow-backend-local npx tsx scripts/backfill-synonyms.js --words=未来,摸脉
 ```
 
-**Step 7 — Example Sentences (AI)**
+**Step 6.5 — Parts of Speech (AI)** — must run before example sentences, since the example-sentence prompt enforces at least one sentence per POS tag listed on the entry.
+```bash
+docker exec cow-backend-local npx tsx scripts/backfill-parts-of-speech.js --words=未来,摸脉
+```
+
+**Step 7 — Example Sentences (AI)** — reads `partsOfSpeech` from Step 6.5 and generates at least one sentence per listed POS (minimum 3 sentences).
 ```bash
 docker exec cow-backend-local npx tsx scripts/backfill-example-sentences.js --words=未来,摸脉
 ```
@@ -116,6 +121,7 @@ SELECT
   word1, tone, "hskLevel",
   "longDefinition" IS NOT NULL AS has_long_def,
   synonyms IS NOT NULL AS has_synonyms,
+  "partsOfSpeech" IS NOT NULL AS has_parts_of_speech,
   "exampleSentences" IS NOT NULL AS has_examples,
   breakdown IS NOT NULL AS has_breakdown,
   classifier IS NOT NULL AS has_classifier,

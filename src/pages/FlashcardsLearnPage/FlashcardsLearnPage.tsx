@@ -2,22 +2,25 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Box, CircularProgress, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
 import { useAuth } from "../../AuthContext";
-import { useMinutePoints } from "../../hooks/useMinutePoints";
 import { API_BASE_URL } from "../../constants";
 import { ContentArea, MoreInfoPill } from "./styled";
-import type { VocabEntry, BreakdownItem, UsedInItem, MarkCardResult, LastMarkUndoSnapshot, SideOneLanguage } from "./types";
+import type { VocabEntry, MarkCardResult, LastMarkUndoSnapshot, SideOneLanguage } from "./types";
 
 // Pick a random language for a card's Side 1. Side 2 always shows both.
 const randomSideOneLanguage = (): SideOneLanguage => (Math.random() < 0.5 ? 'en' : 'zh');
 import { useCardDrag } from "./useCardDrag";
 import FlashcardsLearnHeader from "./FlashcardsLearnHeader";
-import InfoCardSection, { type InfoCardSectionHandle } from "./InfoCardSection";
+import InfoCardSection from "./InfoCardSection";
 import { getBreakdownItems as buildBreakdownItems } from "./breakdownUtils";
-import { dictionaryEntryToVocabEntry } from "./dictEntryAdapter";
-import type { DictionaryEntry } from "../../types";
+import { useEipTabs } from "./useEipTabs";
+import EipTabStrip from "./EipTabStrip";
+import TooManyTabsSnackbar from "./TooManyTabsSnackbar";
 import FlashCardSection from "./FlashCardSection";
+import SheetPanel, { type SheetPanelBodyHandle } from "./SheetPanel";
+import SettingsPanelBody from "./SettingsPanelBody";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useTTS } from "../../hooks/useTTS";
+import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
 
 const FlashcardsLearnPage: React.FC = () => {
     usePageTitle("Learn");
@@ -37,8 +40,13 @@ const FlashcardsLearnPage: React.FC = () => {
     // -1 = no tab selected (deselected header state); set on tab-tap or sheet open.
     const [selectedTab, setSelectedTab] = useState(-1);
     const [lastMarkUndoSnapshot, setLastMarkUndoSnapshot] = useState<LastMarkUndoSnapshot | null>(null);
-    const [showPinyin, setShowPinyin] = useState(true);
-    const [showSegmentSpaces, setShowSegmentSpaces] = useState(false);
+    const { settings: learnSettings, update: updateLearnSettings } = useFlashcardLearnSettings();
+    const { showPinyin, showPinyinColor, showSegmentSpaces, autoplayChinese } = learnSettings;
+    // Settings sheet open/close. Independent from the EIC sheet so the two can
+    // coexist if needed (each one renders its own SheetPanel).
+    const [settingsOpen, setSettingsOpen] = useState(false);
+    // Ref to SettingsPanelBody so SheetPanel can wire its scroll/resize coupling.
+    const settingsBodyRef = useRef<SheetPanelBodyHandle | null>(null);
     // Two-slot card stack: tracks which slot (0 or 1) is the front card and
     // which slot is currently animating off-screen.
     const [activeFrontSlot, setActiveFrontSlot] = useState<0 | 1>(0);
@@ -48,10 +56,6 @@ const FlashcardsLearnPage: React.FC = () => {
     // will be once promoted to front.
     const [currentSideOneLanguage, setCurrentSideOneLanguage] = useState<SideOneLanguage>('zh');
     const [nextSideOneLanguage, setNextSideOneLanguage] = useState<SideOneLanguage>('zh');
-
-    // Work points integration — activity detection is handled globally by useActivityDetection
-    // inside useMinutePoints. No need for manual recordActivity() calls.
-    const minutePoints = useMinutePoints();
 
     // Current entry derived from working loop
     const currentEntry: VocabEntry | null = workingLoop.length > 0 ? workingLoop[currentIndex] : null;
@@ -63,12 +67,22 @@ const FlashcardsLearnPage: React.FC = () => {
         if (!currentEntry) return;
         console.log('Current card:', { id: currentEntry.id, entryKey: currentEntry.entryKey });
         console.log('Current card enrichment:', {
+            definition: currentEntry.definition ?? 'none',
+            pronunciation: currentEntry.pronunciation ?? 'none',
+            hskLevel: currentEntry.hskLevel ?? 'none',
+            partsOfSpeech: currentEntry.partsOfSpeech ?? 'none',
+            vernacularScore: currentEntry.vernacularScore ?? 'none',
+            category: currentEntry.category ?? 'none',
             breakdown: currentEntry.breakdown ?? 'none',
             longDefinition: currentEntry.longDefinition ?? 'none',
             exampleSentences: currentEntry.exampleSentences ?? 'none',
             expansion: currentEntry.expansion ?? 'none',
+            expansionSegments: currentEntry.expansionSegments ?? 'none',
             expansionMetadata: currentEntry.expansionMetadata ?? 'none',
+            expansionLiteralTranslation: currentEntry.expansionLiteralTranslation ?? 'none',
             relatedWords: currentEntry.relatedWords ?? 'none',
+            usedIn: currentEntry.usedIn ?? 'none',
+            hasAudio: currentEntry.hasAudio ?? 'none',
         });
         // Working loop cards grouped by category
         const categories = ['Unfamiliar', 'Target', 'Comfortable', 'Mastered'] as const;
@@ -89,6 +103,7 @@ const FlashcardsLearnPage: React.FC = () => {
         setIsFlipped,
         resetDragPosition,
         showSwipeHint,
+        showTapToFlipHint,
         shakeNonce,
         handlers,
     } = useCardDrag(isAnimating, (direction) => handleCardDismiss(direction), currentIndex);
@@ -106,7 +121,7 @@ const FlashcardsLearnPage: React.FC = () => {
     const tts = useTTS();
     const chineseVisible = currentSideOneLanguage === 'zh' || isFlipped;
     useEffect(() => {
-        if (!tts.enabled) return;
+        if (!tts.enabled || !autoplayChinese) return;
         if (!chineseVisible || !currentEntry) return;
         tts.speak(currentEntry);
         // Cancel narration if the user advances mid-utterance.
@@ -114,7 +129,7 @@ const FlashcardsLearnPage: React.FC = () => {
         // tts.speak/cancel are stable across renders; depending on them would
         // re-fire narration on every settings change.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [chineseVisible, currentEntry?.id, tts.enabled]);
+    }, [chineseVisible, currentEntry?.id, tts.enabled, autoplayChinese]);
 
     // EIC modal sheet — opened by the centered "More Info" pill button.
     const [isEicOpen, setIsEicOpen] = useState(false);
@@ -122,121 +137,32 @@ const FlashcardsLearnPage: React.FC = () => {
     // to suppress the discoverability pulse animation after first use.
     const [eicHintConsumed, setEicHintConsumed] = useState(false);
 
+    // True until the first working-loop fetch resolves. Used to force the very
+    // first card the user sees after navigating to /flashcards/learn to show
+    // English on side one, regardless of the random side-one toggle. Subsequent
+    // fetches (e.g. category swaps without unmounting) go back to random.
+    const isFirstWorkingLoopFetchRef = useRef<boolean>(true);
+
+    // Entry-tab system: tapping a breakdown/used-in row inside the EIP adds a
+    // tab to the panel instead of stacking another panel on top. Each tab is
+    // its own looked-up dictionary entry. Tapping the scrim closes the panel
+    // and clears every tab (see closeEip).
+    const eipStripRef = useRef<HTMLDivElement | null>(null);
+    const eip = useEipTabs({ apiBaseUrl: API_BASE_URL, token, stripRef: eipStripRef });
+
     const openEicSheet = () => {
+        if (!currentEntry) return;
         setIsEicOpen(true);
         setEicHintConsumed(true);
         if (selectedTab === -1) setSelectedTab(0);
+        eip.openForRoot(currentEntry);
     };
-    // Stack of child panels opened by tapping a breakdown row. Each entry
-    // carries its own VocabEntry (adapted from a /api/dictionary/lookup
-    // response), its precomputed breakdown items, its own selectedTab, and
-    // the height it should initialize to (= the height the panel beneath
-    // it was at when the row was tapped).
-    type ChildPanel = {
-        entry: VocabEntry;
-        breakdownItems: BreakdownItem[];
-        selectedTab: number;
-        initialHeight: number;
-    };
-    const [childStack, setChildStack] = useState<ChildPanel[]>([]);
 
-    // Refs to each rendered panel (root at index 0, children after) so the
-    // breakdown-tap handler can read the topmost panel's current height
-    // before pushing a new child.
-    const rootPanelRef = useRef<InfoCardSectionHandle | null>(null);
-    const childPanelRefs = useRef<Array<InfoCardSectionHandle | null>>([]);
-
-    // Read the live height of whichever panel is currently on top of the stack.
-    const getTopPanelHeight = useCallback((): number => {
-        if (childStack.length > 0) {
-            const top = childPanelRefs.current[childStack.length - 1];
-            return top?.getCurrentHeight() ?? 0;
-        }
-        return rootPanelRef.current?.getCurrentHeight() ?? 0;
-    }, [childStack.length]);
-
-    // Shared helper: fetch a dictionary entry for an entryKey and push a child
-    // panel onto the stack. Used by both breakdown-row taps (which pass a single
-    // character) and used-in-row taps (which pass a multi-char word).
-    const openChildPanelForEntryKey = useCallback(async (entryKey: string) => {
-        const heightToMatch = getTopPanelHeight();
-        try {
-            const res = await fetch(
-                `${API_BASE_URL}/api/dictionary/lookup/${encodeURIComponent(entryKey)}`,
-                { credentials: "include" }
-            );
-            if (!res.ok) return; // Silently no-op on 404/error — the chevron is a soft affordance.
-            const dictData: DictionaryEntry = await res.json();
-            const adapted = dictionaryEntryToVocabEntry(dictData);
-            // Mirrors the parent flashcard log so the same enrichment fields
-            // can be diff'd between flashcard data and the dictionary lookup.
-            console.log('Child-EIP dict entry:', { id: dictData.id, entryKey: dictData.word1 });
-            const dictAny = dictData as DictionaryEntry & {
-                breakdown?: unknown;
-                exampleSentences?: unknown;
-                expansion?: unknown;
-                expansionMetadata?: unknown;
-                hskLevel?: unknown;
-                usedIn?: unknown;
-            };
-            console.log('Child-EIP raw lookup:', {
-                breakdown: dictAny.breakdown ?? 'none',
-                longDefinition: dictData.longDefinition ?? 'none',
-                exampleSentences: dictAny.exampleSentences ?? 'none',
-                expansion: dictAny.expansion ?? 'none',
-                expansionMetadata: dictAny.expansionMetadata ?? 'none',
-                definitions: dictData.definitions ?? 'none',
-                partsOfSpeech: dictData.partsOfSpeech ?? 'none',
-                hskLevel: dictAny.hskLevel ?? 'none',
-                usedIn: dictAny.usedIn ?? 'none',
-            });
-            console.log('Child-EIP adapted VocabEntry:', {
-                breakdown: adapted.breakdown ?? 'none',
-                longDefinition: adapted.longDefinition ?? 'none',
-                exampleSentences: adapted.exampleSentences ?? 'none',
-                expansion: adapted.expansion ?? 'none',
-                expansionMetadata: adapted.expansionMetadata ?? 'none',
-                usedIn: adapted.usedIn ?? 'none',
-            });
-            setChildStack(prev => [
-                ...prev,
-                {
-                    entry: adapted,
-                    breakdownItems: buildBreakdownItems(adapted),
-                    selectedTab: 0,
-                    initialHeight: heightToMatch,
-                },
-            ]);
-        } catch (err) {
-            console.error(`Failed to look up dictionary entry "${entryKey}":`, err);
-        }
-    }, [getTopPanelHeight]);
-
-    const handleBreakdownItemClick = useCallback(
-        (item: BreakdownItem) => openChildPanelForEntryKey(item.character),
-        [openChildPanelForEntryKey],
-    );
-
-    const handleUsedInItemClick = useCallback(
-        (item: UsedInItem) => openChildPanelForEntryKey(item.entryKey),
-        [openChildPanelForEntryKey],
-    );
-
-    // Pop the topmost child panel (or close the root if stack is empty).
-    const closeTopPanel = useCallback(() => {
-        setChildStack(prev => {
-            if (prev.length === 0) {
-                setIsEicOpen(false);
-                return prev;
-            }
-            return prev.slice(0, -1);
-        });
-    }, []);
-
-    // Tab change handler for a child panel at a given stack index.
-    const setChildTab = useCallback((stackIndex: number, tab: number) => {
-        setChildStack(prev => prev.map((p, i) => i === stackIndex ? { ...p, selectedTab: tab } : p));
-    }, []);
+    // Closes the EIP entirely and discards every tab (scrim tap or drag-dismiss).
+    const closeEip = useCallback(() => {
+        setIsEicOpen(false);
+        eip.clear();
+    }, [eip]);
 
     // Hint shown when the user taps the pill before flipping the card.
     // Auto-dismisses after a couple seconds, and clears immediately on flip.
@@ -266,11 +192,15 @@ const FlashcardsLearnPage: React.FC = () => {
         return () => { document.body.style.overflow = previous; };
     }, []);
 
-    // Reset EIC state when a new card loads.
+    // Reset EIC state when a new card loads — close the panel and drop all tabs.
     useEffect(() => {
         setIsEicOpen(false);
         setSelectedTab(-1);
         setEicHintConsumed(false);
+        eip.clear();
+    // eip.clear is stable but its identity changes when tabs change; we only
+    // want to react to card changes, not tab changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentIndex]);
 
     // Fetch distributed working loop (1 Mastered, 2 Comfortable, 2 Unfamiliar, 5 Target)
@@ -307,7 +237,15 @@ const FlashcardsLearnPage: React.FC = () => {
                 // randomized language. useCardDrag also resets isFlipped on
                 // card change, but we set it explicitly here for clarity.
                 setIsFlipped(false);
-                setCurrentSideOneLanguage(randomSideOneLanguage());
+                // First time the user lands on /flashcards/learn, force English
+                // on side one so the first card is always the EN prompt. Avoids
+                // the iOS autoplay edge case on Chinese-side-one auto-narration
+                // and gives a consistent initial view. Subsequent fetches
+                // (category swaps without unmount) go back to random.
+                setCurrentSideOneLanguage(
+                    isFirstWorkingLoopFetchRef.current ? 'en' : randomSideOneLanguage()
+                );
+                isFirstWorkingLoopFetchRef.current = false;
                 setNextSideOneLanguage(randomSideOneLanguage());
             } catch (err) {
                 setError(err instanceof Error ? err.message : "Unknown error");
@@ -544,11 +482,11 @@ const FlashcardsLearnPage: React.FC = () => {
                 isUndoing={isUndoing}
                 onBack={() => navigate('/flashcards/decks')}
                 onUndo={handleUndoLastMark}
-                minutePoints={minutePoints}
                 showPinyin={showPinyin}
-                onTogglePinyin={() => setShowPinyin(v => !v)}
-                showSegmentSpaces={showSegmentSpaces}
-                onToggleSegmentSpaces={() => setShowSegmentSpaces(v => !v)}
+                onTogglePinyin={() => updateLearnSettings({ showPinyin: !showPinyin })}
+                autoplayChinese={autoplayChinese}
+                onToggleAutoplayChinese={() => updateLearnSettings({ autoplayChinese: !autoplayChinese })}
+                onSettingsClick={() => setSettingsOpen(true)}
             />
             <ContentArea className="mobile-demo-content">
                 {/* Flashcard fills the full ContentArea. The EIC sheet now overlays
@@ -565,12 +503,15 @@ const FlashcardsLearnPage: React.FC = () => {
                     isAnimating={isAnimating}
                     selectedCategory={selectedCategory}
                     showPinyin={showPinyin}
+                    showPinyinColor={showPinyinColor}
                     sideOneLanguage={currentSideOneLanguage}
                     nextSideOneLanguage={nextSideOneLanguage}
                     showSwipeHint={showSwipeHint}
+                    showTapToFlipHint={showTapToFlipHint}
                     shakeNonce={shakeNonce}
                     handlers={handlers}
                     onSpeak={tts.enabled ? tts.speak : undefined}
+                    speakingKey={tts.speakingKey}
                 />
                 {/* Centered pill button — ghosted before flip, full opacity after */}
                 <Tooltip
@@ -591,46 +532,67 @@ const FlashcardsLearnPage: React.FC = () => {
                     </MoreInfoPill>
                 </Tooltip>
                 {/* Modal EIC sheet — only mounted when open to reset animation on reopen.
-                    When a breakdown row is tapped, a child panel is pushed onto childStack
-                    and rendered above this root panel. Each panel has its own scrim; tapping
-                    a scrim or dragging-to-dismiss closes only the topmost panel. */}
-                {isEicOpen && (
-                    <>
+                    Tapping a breakdown/used-in row inside the panel pushes a tab onto
+                    the entry-tab strip above the grabber instead of stacking another
+                    panel. Scrim/drag-dismiss closes the panel and clears every tab. */}
+                {isEicOpen && (() => {
+                    // Use the active tab's entry/breakdown when present; fall back to
+                    // the current flashcard's data if the hook hasn't seeded yet
+                    // (the openEicSheet path always seeds, so this fallback is only
+                    // a paint-safety net).
+                    const active = eip.activeTab;
+                    const panelEntry = active?.entry ?? currentEntry;
+                    const panelBreakdown = active?.breakdownItems ?? breakdownItems;
+                    const panelSubTab = active ? active.selectedSubTab : (selectedTab === -1 ? 0 : selectedTab);
+                    const onPanelTabChange = active ? eip.setActiveSubTab : setSelectedTab;
+                    return (
                         <InfoCardSection
-                            ref={rootPanelRef}
-                            currentEntry={currentEntry}
-                            selectedTab={selectedTab === -1 ? 0 : selectedTab}
-                            onTabChange={setSelectedTab}
-                            breakdownItems={breakdownItems}
+                            currentEntry={panelEntry}
+                            selectedTab={panelSubTab}
+                            onTabChange={onPanelTabChange}
+                            breakdownItems={panelBreakdown}
                             showPinyin={showPinyin}
+                            showPinyinColor={showPinyinColor}
                             showSegmentSpaces={showSegmentSpaces}
                             isFlipped={isFlipped}
-                            onClose={closeTopPanel}
-                            onBreakdownItemClick={handleBreakdownItemClick}
-                            onUsedInItemClick={handleUsedInItemClick}
+                            onClose={closeEip}
+                            onBreakdownItemClick={(item) => eip.openForEntryKey(item.character)}
+                            onUsedInItemClick={(item) => eip.openForEntryKey(item.entryKey)}
                             depth={0}
                             onSpeak={tts.enabled ? tts.speak : undefined}
+                            onSpeakSentence={tts.enabled ? tts.speakSentence : undefined}
+                            speakingKey={tts.speakingKey}
+                            tabStrip={
+                                <EipTabStrip
+                                    tabs={eip.tabs}
+                                    activeIndex={eip.activeIndex}
+                                    onSelect={eip.setActive}
+                                    onCloseActiveTab={() => {
+                                        if (eip.closeActiveTab()) closeEip();
+                                    }}
+                                    isTabbedMode={eip.isTabbedMode}
+                                    stripRef={eipStripRef}
+                                />
+                            }
                         />
-                        {childStack.map((panel, i) => (
-                            <InfoCardSection
-                                key={`child-${i}-${panel.entry.id}`}
-                                ref={(h) => { childPanelRefs.current[i] = h; }}
-                                currentEntry={panel.entry}
-                                selectedTab={panel.selectedTab}
-                                onTabChange={(tab) => setChildTab(i, tab)}
-                                breakdownItems={panel.breakdownItems}
-                                showPinyin={showPinyin}
-                                showSegmentSpaces={showSegmentSpaces}
-                                isFlipped={true}
-                                onClose={closeTopPanel}
-                                onBreakdownItemClick={handleBreakdownItemClick}
-                                onUsedInItemClick={handleUsedInItemClick}
-                                initialHeight={panel.initialHeight}
-                                depth={i + 1}
-                                onSpeak={tts.enabled ? tts.speak : undefined}
-                            />
-                        ))}
-                    </>
+                    );
+                })()}
+                <TooManyTabsSnackbar signal={eip.overflowSignal} />
+                {/* Settings sheet — same drag/scroll behavior as the EIP. Mounted
+                    only while open so the open animation replays on each invocation.
+                    Depth 99 keeps it above any open EIP panel stack. */}
+                {settingsOpen && (
+                    <SheetPanel
+                        onClose={() => setSettingsOpen(false)}
+                        bodyRef={settingsBodyRef}
+                        depth={99}
+                    >
+                        <SettingsPanelBody
+                            ref={settingsBodyRef}
+                            settings={learnSettings}
+                            update={updateLearnSettings}
+                        />
+                    </SheetPanel>
                 )}
             </ContentArea>
         </>

@@ -15,6 +15,7 @@ export interface VocabEntry {
     pronunciation?: string | null;
     hskLevel?: HskLevel | null;
     partsOfSpeech?: string[] | null;
+    vernacularScore?: number | null;  // 1=literary … 5=natural colloquial
     category?: FlashcardCategory;
     breakdown?: Record<string, { definition: string }> | null;
     expansion?: string | null;

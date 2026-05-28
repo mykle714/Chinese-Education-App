@@ -1,12 +1,14 @@
 import React from "react";
-import { Box, Card, CardContent, IconButton, Typography, useTheme } from "@mui/material";
-import VolumeUpIcon from "@mui/icons-material/VolumeUp";
+import { Box, Card, CardContent, Typography, useTheme } from "@mui/material";
 import { stripParentheses } from "../../utils/definitionUtils";
-import { DraggableCardContainer, SwipeHintLabel } from "./styled";
+import { DraggableCardContainer, SwipeHintLabel, FlipHintLabel } from "./styled";
 import { CORRECT_COLOR, INCORRECT_COLOR, CARD_FACE_JUSTIFY, CARD_DISMISS_THRESHOLD_VW } from "./constants";
 import type { VocabEntry, SideOneLanguage } from "./types";
-import CharacterPinyinColorDisplay from "../../components/CharacterPinyinColorDisplay";
 import CPCDRow from "../../components/CPCDRow";
+import { SpeakerButton } from "../../components/SpeakerButton";
+
+// Re-exported so existing imports `from './FlashCardSection'` keep working.
+export { SpeakerButton };
 
 interface FlashCardSectionProps {
     currentEntry: VocabEntry | null;
@@ -20,6 +22,7 @@ interface FlashCardSectionProps {
     isAnimating: boolean;
     selectedCategory: string | null;
     showPinyin: boolean;
+    showPinyinColor: boolean;
     // Side 1 language for the front-slot card. Side 2 always shows both.
     sideOneLanguage: SideOneLanguage;
     // Side 1 language for the back-slot (peeking) card — different random value
@@ -28,6 +31,9 @@ interface FlashCardSectionProps {
     // Swipe-tutorial state from useCardDrag: shake the front card on each new
     // nonce, and fade the ← Incorrect / Correct → labels in/out with showSwipeHint.
     showSwipeHint: boolean;
+    // "Tap to flip" hint shown when user attempts to drag a card that hasn't
+    // been flipped yet. Mirrors the swipe-direction tutorial.
+    showTapToFlipHint: boolean;
     shakeNonce: number;
     handlers: {
         onTouchStart: (e: React.TouchEvent) => void;
@@ -38,33 +44,11 @@ interface FlashCardSectionProps {
     // rendered on card sides that contain Chinese text. Undefined when narration
     // is disabled in settings — icon is hidden entirely.
     onSpeak?: (entry: VocabEntry) => void;
+    // The text currently being narrated by useTTS, or null when idle. Forwarded
+    // to the speaker button so only the active card's icon shows the loading
+    // spinner during playback.
+    speakingKey?: string | null;
 }
-
-// Speaker icon button. Sits to the right of the Chinese block. Stops pointer
-// event propagation so taps don't bubble up to the card's flip/drag handlers.
-export const SpeakerButton: React.FC<{ onClick: () => void }> = ({ onClick }) => {
-    const theme = useTheme();
-    const stop = (e: React.SyntheticEvent) => {
-        e.stopPropagation();
-    };
-    return (
-        <IconButton
-            className="flashcard-speaker-button"
-            size="small"
-            onClick={(e) => { stop(e); onClick(); }}
-            onMouseDown={stop}
-            onTouchStart={stop}
-            onTouchEnd={stop}
-            aria-label="Play narration"
-            sx={{
-                color: theme.palette.flashcard.textSecondary,
-                '&:hover': { color: theme.palette.flashcard.onSurface },
-            }}
-        >
-            <VolumeUpIcon fontSize="small" />
-        </IconButton>
-    );
-};
 
 // Chinese (CPCD) row block reused on both Side 1 (when Chinese) and Side 2.
 // When onSpeak is provided, a speaker icon renders alongside the row for
@@ -72,24 +56,29 @@ export const SpeakerButton: React.FC<{ onClick: () => void }> = ({ onClick }) =>
 const ChineseBlock: React.FC<{
     entry: VocabEntry;
     showPinyin: boolean;
+    showPinyinColor: boolean;
     onSpeak?: (entry: VocabEntry) => void;
-}> = ({ entry, showPinyin, onSpeak }) => (
-    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }} className="mobile-demo-flashcard-chinese-block">
-        <CPCDRow size="md" justifyContent="center" className="mobile-demo-flashcard-cpcd-row">
-            {[...entry.entryKey].map((char, i) => (
-                <CharacterPinyinColorDisplay
-                    key={i}
-                    character={char}
-                    pinyin={entry.pronunciation?.split(' ')[i] ?? ''}
-                    size="md"
-                    useToneColor={true}
-                    showPinyin={showPinyin}
+    speakingKey?: string | null;
+}> = ({ entry, showPinyin, showPinyinColor, onSpeak, speakingKey }) => {
+    const syllables = entry.pronunciation?.split(' ') ?? [];
+    const items = [...entry.entryKey].map((char, i) => ({
+        character: char,
+        pinyin: syllables[i] ?? '',
+        showPinyin,
+        useToneColor: showPinyinColor,
+    }));
+    return (
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }} className="mobile-demo-flashcard-chinese-block">
+            <CPCDRow size="md" justifyContent="center" className="mobile-demo-flashcard-cpcd-row" items={items} />
+            {onSpeak && (
+                <SpeakerButton
+                    onClick={() => onSpeak(entry)}
+                    isLoading={speakingKey === entry.entryKey}
                 />
-            ))}
-        </CPCDRow>
-        {onSpeak && <SpeakerButton onClick={() => onSpeak(entry)} />}
-    </Box>
-);
+            )}
+        </Box>
+    );
+};
 
 // English definition Typography reused on both Side 1 (when English) and Side 2.
 const EnglishBlock: React.FC<{ entry: VocabEntry }> = ({ entry }) => {
@@ -120,6 +109,7 @@ const CardFace: React.FC<{
     isFlipped: boolean;
     isAnimating: boolean;
     showPinyin: boolean;
+    showPinyinColor: boolean;
     sideOneLanguage: SideOneLanguage;
     dragPosition: { x: number; y: number };
     dismissThreshold: number;
@@ -128,7 +118,8 @@ const CardFace: React.FC<{
     // both should show the full shadow and the green/red drag overlay.
     isProminent: boolean;
     onSpeak?: (entry: VocabEntry) => void;
-}> = ({ entry, isFlipped, isAnimating, showPinyin, sideOneLanguage, dragPosition, dismissThreshold, isProminent, onSpeak }) => {
+    speakingKey?: string | null;
+}> = ({ entry, isFlipped, isAnimating, showPinyin, showPinyinColor, sideOneLanguage, dragPosition, dismissThreshold, isProminent, onSpeak, speakingKey }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
 
@@ -188,7 +179,7 @@ const CardFace: React.FC<{
                         </Box>
                         <Box className="mobile-demo-flashcard-text mobile-demo-flashcard-side-one" sx={{ display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'center', width: '100%' }}>
                             {sideOneLanguage === 'zh'
-                                ? <ChineseBlock entry={entry} showPinyin={showPinyin} onSpeak={onSpeak} />
+                                ? <ChineseBlock entry={entry} showPinyin={showPinyin} showPinyinColor={showPinyinColor} onSpeak={onSpeak} speakingKey={speakingKey} />
                                 : <EnglishBlock entry={entry} />}
                         </Box>
                     </Box>
@@ -231,7 +222,7 @@ const CardFace: React.FC<{
                             <Typography sx={{ fontSize: 11, color: fc.textSecondary, fontFamily: '"Inter", sans-serif', textAlign: 'center' }}>insert image here</Typography>
                         </Box>
                         <Box className="mobile-demo-flashcard-side-two" sx={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center', width: '100%' }}>
-                            <ChineseBlock entry={entry} showPinyin={showPinyin} onSpeak={onSpeak} />
+                            <ChineseBlock entry={entry} showPinyin={showPinyin} showPinyinColor={showPinyinColor} onSpeak={onSpeak} speakingKey={speakingKey} />
                             <EnglishBlock entry={entry} />
                         </Box>
                     </Box>
@@ -266,12 +257,15 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
     isAnimating,
     selectedCategory,
     showPinyin,
+    showPinyinColor,
     sideOneLanguage,
     nextSideOneLanguage,
     showSwipeHint,
+    showTapToFlipHint,
     shakeNonce,
     handlers,
     onSpeak,
+    speakingKey,
 }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
@@ -321,6 +315,15 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
             >
                 Correct →
             </SwipeHintLabel>
+            {/* "Tap to flip" hint — shown when user tries to swipe before flipping.
+                Guarded on !isFlipped so the label disappears the moment the user
+                flips, even before the parent resets the flag on next card. */}
+            <FlipHintLabel
+                className="mobile-demo-flip-hint"
+                visible={showTapToFlipHint && !isFlipped}
+            >
+                Tap to flip
+            </FlipHintLabel>
             {/* Fills the slot. DraggableCardContainer has definite px dimensions because
                 it is absolutely positioned — this is what makes height:100% on
                 CardAspectWrapper resolve correctly (flex-grown heights are not definite). */}
@@ -429,6 +432,7 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                                 isFlipped={isFront ? isFlipped : false}
                                                 isAnimating={isAnimating}
                                                 showPinyin={showPinyin}
+                                                showPinyinColor={showPinyinColor}
                                                 sideOneLanguage={slotSideOneLanguages[slot]}
                                                 // Suppress the drag overlay on the newly promoted card while
                                                 // the previous card is still flying out (isAnimating window).
@@ -439,6 +443,7 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                                 // Only show the speaker on the active front card —
                                                 // tapping it on the back/flying-out card would race the animation.
                                                 onSpeak={isFront ? onSpeak : undefined}
+                                                speakingKey={isFront ? speakingKey : null}
                                             />
                                         )}
                                     </Box>

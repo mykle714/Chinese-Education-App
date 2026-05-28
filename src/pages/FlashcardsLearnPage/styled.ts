@@ -69,6 +69,48 @@ export const InfoSheetEntryHeader = styled(Box)(({ theme }) => ({
     flexShrink: 0,
 }));
 
+// Strip of "entry tabs" sitting above the grabber/header. One tab per looked-up
+// dictionary entry inside the current EIP. The strip is unmounted entirely
+// when only the root entry is open (EipTabStrip handles that). Padding mirrors
+// InfoSheetTabStrip's horizontal padding so tab edges align with the
+// underline tab strip below.
+export const EipTabStripContainer = styled(Box)(({ theme }) => ({
+    display: "flex",
+    gap: 4,
+    padding: "6px 14px 0",
+    borderBottom: `1px solid ${theme.palette.flashcard.border}`,
+    flexShrink: 0,
+    overflow: "hidden",
+}));
+
+// Single "entry tab" pill. Active tab gets a low-alpha fill in its assigned
+// tone color; inactive tabs are transparent. Chinese label only (no pinyin).
+export const EipEntryTab = styled(Box, {
+    shouldForwardProp: (prop) => prop !== "isActive" && prop !== "toneColor",
+})<{ isActive: boolean; toneColor: string }>(({ isActive, toneColor, theme }) => ({
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "6px 12px",
+    borderRadius: "8px 8px 0 0",
+    background: isActive ? alpha(toneColor, 0.22) : "transparent",
+    borderBottom: isActive ? `2px solid ${toneColor}` : "2px solid transparent",
+    marginBottom: -1,
+    cursor: "pointer",
+    fontFamily: '"Noto Sans SC", "Inter", sans-serif',
+    fontSize: 14,
+    fontWeight: 600,
+    color: theme.palette.flashcard.onSurface,
+    lineHeight: 1.1,
+    userSelect: "none",
+    whiteSpace: "nowrap",
+    transition: "background 0.15s ease",
+    flexShrink: 0,
+    "&:hover": {
+        background: alpha(toneColor, isActive ? 0.28 : 0.1),
+    },
+}));
+
 // Flex row of underline-style tab buttons.
 export const InfoSheetTabStrip = styled(Box)(({ theme }) => ({
     display: "flex",
@@ -208,6 +250,15 @@ export const ContentArea = styled(Box)(() => ({
     gap: 6,
     alignItems: "center",
     position: "relative", // containing block for EicSheet/EicBackdrop overlays
+    // Make non-CPCD text within the flashcard area + EIP unselectable so taps,
+    // long-presses, and drags don't accidentally start text selection. CPCD
+    // characters/pinyin remain selectable so users can copy individual chars.
+    userSelect: "none",
+    WebkitUserSelect: "none",
+    "& .char-pinyin-display, & .char-pinyin-display *": {
+        userSelect: "text",
+        WebkitUserSelect: "text",
+    },
 }));
 
 // Centered pill button at the bottom of ContentArea that opens the EIC sheet.
@@ -278,6 +329,32 @@ export const SwipeHintLabel = styled(Box, {
     color: side === "left" ? INCORRECT_COLOR : CORRECT_COLOR,
     opacity: visible ? 1 : 0,
     transform: visible ? "translateY(0)" : "translateY(-4px)",
+    transition: "opacity 0.28s ease, transform 0.28s ease",
+    pointerEvents: "none",
+    userSelect: "none",
+    zIndex: 4,
+    whiteSpace: "nowrap",
+}));
+
+// Flip tutorial label — centered above the card, shown after the user attempts
+// to drag a card that hasn't been flipped yet. Mirrors SwipeHintLabel's entry
+// animation but in a neutral (instructional) color and a centered position.
+export const FlipHintLabel = styled(Box, {
+    shouldForwardProp: (prop) => prop !== "visible",
+})<{ visible: boolean }>(({ visible, theme }) => ({
+    position: "absolute",
+    top: 16,
+    left: "50%",
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    fontFamily: "Inter, sans-serif",
+    fontSize: 13,
+    fontWeight: 600,
+    letterSpacing: "0.02em",
+    color: theme.palette.flashcard.textSecondary,
+    opacity: visible ? 1 : 0,
+    transform: visible ? "translate(-50%, 0)" : "translate(-50%, -4px)",
     transition: "opacity 0.28s ease, transform 0.28s ease",
     pointerEvents: "none",
     userSelect: "none",

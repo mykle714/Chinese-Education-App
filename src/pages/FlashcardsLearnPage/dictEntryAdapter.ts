@@ -24,6 +24,7 @@ export function dictionaryEntryToVocabEntry(dict: DictionaryEntry): VocabEntry {
         definition: dict.definitions?.[0] ?? null,
         longDefinition: dict.longDefinition ?? null,
         partsOfSpeech: dict.partsOfSpeech ?? null,
+        vernacularScore: dict.vernacularScore ?? null,
         hskLevel: (anyDict.hskLevel as HskLevel | null | undefined) ?? null,
         breakdown: anyDict.breakdown
             ? Object.fromEntries(

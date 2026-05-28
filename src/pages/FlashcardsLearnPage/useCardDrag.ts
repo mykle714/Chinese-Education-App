@@ -12,6 +12,9 @@ interface UseCardDragReturn {
     // Whether the swipe-direction hint labels (← Incorrect / Correct →) should be
     // visible. Toggles on when the user taps an already-flipped card; off on dismiss.
     showSwipeHint: boolean;
+    // Whether the "Tap to flip" hint should be visible. Toggles on when the user
+    // attempts to drag a card that has not yet been flipped.
+    showTapToFlipHint: boolean;
     // Incremented every time we want to (re-)play the card-shake animation. The
     // animated element keys on this value so React re-mounts the keyframe.
     shakeNonce: number;
@@ -42,7 +45,14 @@ export function useCardDrag(
     const [hasFlippedCurrentCard, setHasFlippedCurrentCard] = useState(false);
     // Swipe-direction tutorial state: shown after a "wasted" tap on a flipped card.
     const [showSwipeHint, setShowSwipeHint] = useState(false);
+    // Flip tutorial state: shown after a "wasted" drag on a not-yet-flipped card.
+    const [showTapToFlipHint, setShowTapToFlipHint] = useState(false);
     const [shakeNonce, setShakeNonce] = useState(0);
+    // Tracks the latest cursor position while a mouse interaction is in progress.
+    // Used by the flip-only branch to distinguish a click from a swipe attempt
+    // (the drag path uses dragPosition; the flip-only path can't, because we
+    // intentionally don't translate the card before it's been flipped).
+    const lastMousePos = useRef({ x: 0, y: 0 });
 
     // Reset flip-tracking whenever the card changes. New cards always start on
     // Side 1 (isFlipped=false) — the flip is one-way and the Side 1 language
@@ -51,6 +61,7 @@ export function useCardDrag(
         setHasFlippedCurrentCard(false);
         setIsFlipped(false);
         setShowSwipeHint(false);
+        setShowTapToFlipHint(false);
         setShakeNonce(0);
     }, [resetKey]);
 
@@ -113,6 +124,12 @@ export function useCardDrag(
             if (dist < 10 && !hasFlippedCurrentCard) {
                 setIsFlipped(true);
                 setHasFlippedCurrentCard(true);
+                setShowTapToFlipHint(false);
+            } else if (!hasFlippedCurrentCard) {
+                // Drag attempt on an unflipped card: shake the card and fade in
+                // the "Tap to flip" hint. Mirrors the swipe-direction tutorial.
+                setShakeNonce(n => n + 1);
+                setShowTapToFlipHint(true);
             }
             return;
         }
@@ -158,7 +175,10 @@ export function useCardDrag(
         if (isAnimating) return;
         if (!hasFlippedCurrentCard) {
             // Dragging is blocked, but we still need to record the mousedown so that
-            // the document-level mouseup can fire a tap-to-flip.
+            // the document-level mouseup can fire a tap-to-flip — and so we can
+            // measure cursor distance to detect a swipe attempt before flipping.
+            dragStart.current = { x: e.clientX, y: e.clientY };
+            lastMousePos.current = { x: e.clientX, y: e.clientY };
             setIsFlipOnlyMouseDown(true);
             return;
         }
@@ -168,6 +188,10 @@ export function useCardDrag(
     };
 
     const handleDocumentMouseMove = useCallback((e: MouseEvent) => {
+        // Always track latest cursor position while listeners are attached so
+        // the flip-only mouseup can measure distance — but only update
+        // dragPosition (which visually translates the card) when truly dragging.
+        lastMousePos.current = { x: e.clientX, y: e.clientY };
         if (!isDragging || isAnimating) return;
 
         const deltaX = e.clientX - dragStart.current.x;
@@ -182,8 +206,19 @@ export function useCardDrag(
         if (isFlipOnlyMouseDown) {
             setIsFlipOnlyMouseDown(false);
             if (!isAnimating) {
-                setIsFlipped(true);
-                setHasFlippedCurrentCard(true);
+                const dist = Math.sqrt(
+                    (lastMousePos.current.x - dragStart.current.x) ** 2 +
+                    (lastMousePos.current.y - dragStart.current.y) ** 2
+                );
+                if (dist < 10) {
+                    setIsFlipped(true);
+                    setHasFlippedCurrentCard(true);
+                    setShowTapToFlipHint(false);
+                } else {
+                    // Swipe attempt on an unflipped card — same treatment as touch.
+                    setShakeNonce(n => n + 1);
+                    setShowTapToFlipHint(true);
+                }
             }
             return;
         }
@@ -237,6 +272,7 @@ export function useCardDrag(
         setIsFlipped,
         hasFlippedCurrentCard,
         showSwipeHint,
+        showTapToFlipHint,
         shakeNonce,
         resetDragPosition: () => setDragPosition({ x: 0, y: 0 }),
         handlers: {

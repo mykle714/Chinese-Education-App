@@ -120,7 +120,9 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
     isSyncing: false
   });
 
-  const isEligiblePage: boolean = MINUTE_POINTS_ELIGIBLE_PAGES.includes(location.pathname);
+  const isEligiblePage: boolean = MINUTE_POINTS_ELIGIBLE_PAGES.some(
+    (prefix) => location.pathname === prefix || location.pathname.startsWith(prefix + '/')
+  );
 
   const totalStudyTimeMinutes: number = state.accumulativeMinutePoints + Math.floor(state.todaysMinutePointsMilli / 60000);
   const liveSeconds: number = Math.floor((state.todaysMinutePointsMilli % 60000) / 1000);

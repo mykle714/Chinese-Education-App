@@ -8,10 +8,13 @@ export const FLASHCARD_CONTENT_UPDATE_DELAY = 300; // ms — halfway through the
 export const DEFAULT_TEST_USER_ID = 'test-user-id';
 
 // Minute Points Configuration
+// Matched as path prefixes (see useMinutePoints) so parameterized child routes
+// like `/discover/sort/:language` are covered automatically.
 export const MINUTE_POINTS_ELIGIBLE_PAGES = [
   '/flashcards',
   '/flashcards/learn',
-  '/reader'
+  '/reader',
+  '/discover/sort'
 ];
 
 export const MINUTE_POINTS_CONFIG = {

@@ -1,15 +1,6 @@
-import { Box, Typography, Chip, CircularProgress } from "@mui/material";
-import type { VocabEntry } from "../types";
-
-// Text interface for TypeScript
-interface Text {
-    id: string;
-    title: string;
-    description: string;
-    content: string;
-    createdAt: string;
-    characterCount: number;
-}
+import { Box, Typography, Chip, CircularProgress, Button } from "@mui/material";
+import { ArrowBack as ArrowBackIcon, Edit as EditIcon, Delete as DeleteIcon } from "@mui/icons-material";
+import type { VocabEntry, Text } from "../types";
 
 interface TextHeaderProps {
     selectedText: Text;
@@ -17,6 +8,9 @@ interface TextHeaderProps {
     loadedCards: VocabEntry[];
     vocabError: string | null;
     formatDate: (dateString: string) => string;
+    onBack: () => void;
+    onEdit: (text: Text) => void;
+    onDelete: (text: Text) => void;
 }
 
 function TextHeader({
@@ -24,13 +18,49 @@ function TextHeader({
     processingVocab,
     loadedCards,
     vocabError,
-    formatDate
+    formatDate,
+    onBack,
+    onEdit,
+    onDelete
 }: TextHeaderProps) {
     return (
         <Box
             className="reader-page-text-header"
             sx={{ mb: 3, pb: 2, borderBottom: '1px solid rgba(0, 0, 0, 0.08)' }}
         >
+            <Box
+                className="reader-page-text-header-toolbar"
+                sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}
+            >
+                <Button
+                    className="reader-page-text-header-back-button"
+                    size="small"
+                    variant="outlined"
+                    startIcon={<ArrowBackIcon />}
+                    onClick={onBack}
+                >
+                    Back
+                </Button>
+                <Button
+                    className="reader-page-text-header-edit-button"
+                    size="small"
+                    variant="outlined"
+                    startIcon={<EditIcon />}
+                    onClick={() => onEdit(selectedText)}
+                >
+                    Edit
+                </Button>
+                <Button
+                    className="reader-page-text-header-delete-button"
+                    size="small"
+                    variant="outlined"
+                    color="error"
+                    startIcon={<DeleteIcon />}
+                    onClick={() => onDelete(selectedText)}
+                >
+                    Delete
+                </Button>
+            </Box>
             <Typography
                 className="reader-page-text-title"
                 variant="h4"

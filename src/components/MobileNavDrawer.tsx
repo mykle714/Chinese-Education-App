@@ -73,12 +73,14 @@ const MobileNavDrawer: React.FC = () => {
         navItems.push(
             { text: "Dictionary", path: "/dictionary", icon: <BookIcon /> },
             { text: "Mobile Demo", path: "/flashcards/decks", icon: <PhoneIphoneIcon /> },
+            { text: "Reader", path: "/reader", icon: <ArticleIcon /> },
             { text: "Night Market", path: "/night-market", icon: <NightsStayIcon /> },
             { text: "Settings", path: "/settings", icon: <SettingsIcon /> }
         );
     } else {
         navItems.push(
             { text: "Mobile Demo", path: "/flashcards/decks", icon: <PhoneIphoneIcon /> },
+            { text: "Reader", path: "/reader", icon: <ArticleIcon /> },
             { text: "Settings", path: "/settings", icon: <SettingsIcon /> }
         );
     }

@@ -31,6 +31,7 @@ import BookIcon from "@mui/icons-material/Book";
 import PhoneIphoneIcon from "@mui/icons-material/PhoneIphone";
 import { useState } from "react";
 import MobileDemoFrame from "./MobileDemoFrame";
+import MinutePointsFireBadge from "./MinutePointsFireBadge";
 import { GAME_ROUTES } from "../games/registry";
 
 interface LayoutProps {
@@ -84,12 +85,14 @@ function Layout({ children }: LayoutProps) {
         navItems.push(
             { text: "Dictionary", path: "/dictionary", icon: <BookIcon /> },
             { text: "Mobile Demo", path: "/flashcards/decks", icon: <PhoneIphoneIcon /> },
+            { text: "Reader", path: "/reader", icon: <ArticleIcon /> },
             { text: "Night Market", path: "/night-market", icon: <NightsStayIcon /> },
             { text: "Settings", path: "/settings", icon: <SettingsIcon /> }
         );
     } else {
         navItems.push(
             { text: "Mobile Demo", path: "/flashcards/decks", icon: <PhoneIphoneIcon /> },
+            { text: "Reader", path: "/reader", icon: <ArticleIcon /> },
             { text: "Settings", path: "/settings", icon: <SettingsIcon /> }
         );
     }
@@ -139,32 +142,35 @@ function Layout({ children }: LayoutProps) {
         }
     };
 
-    // Navigation content - used in both permanent sidebar and mobile drawer
+    // Navigation content - used in both permanent sidebar and mobile drawer.
+    // The onClickCapture on the outer Box is the single place that dismisses
+    // the mobile drawer for ANY clickable inside (nav items, logout button,
+    // future additions) — individual buttons no longer need their own handler.
     const navigationContent = (
-        <>
-            <Box sx={{
-                display: 'flex',
-                flexDirection: 'column',
-                height: '100%'
-            }}>
-                <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
-                    <Typography variant="h6" noWrap component="div" sx={{ fontWeight: 'bold' }}>
-                        Vocabulary Manager
+        <Box
+            onClickCapture={() => {
+                if (isMobile) setDrawerOpen(false);
+            }}
+            sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}
+        >
+            <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
+                <Typography variant="h6" noWrap component="div" sx={{ fontWeight: 'bold' }}>
+                    Vocabulary Manager
+                </Typography>
+                {isAuthenticated && user && (
+                    <Typography variant="body2" sx={{ mt: 1, color: 'text.secondary' }}>
+                        {user.name}
                     </Typography>
-                    {isAuthenticated && user && (
-                        <Typography variant="body2" sx={{ mt: 1, color: 'text.secondary' }}>
-                            {user.name}
-                        </Typography>
-                    )}
-                </Box>
-                <Divider />
-                <List sx={{ flexGrow: 1, pt: 2 }}>
-                    {navItems.filter((item) => !(item.desktopOnly && isMobile)).map((item) => (
-                        <ListItem key={item.text} disablePadding sx={{ mb: 1 }}>
-                            <ListItemButton
-                                component={RouterLink}
-                                to={item.path}
-                                selected={location.pathname === item.path}
+                )}
+            </Box>
+            <Divider />
+            <List sx={{ flexGrow: 1, pt: 2 }}>
+                {navItems.filter((item) => !(item.desktopOnly && isMobile)).map((item) => (
+                    <ListItem key={item.text} disablePadding sx={{ mb: 1 }}>
+                        <ListItemButton
+                            component={RouterLink}
+                            to={item.path}
+                            selected={location.pathname === item.path}
                                 sx={{
                                     borderRadius: '0 20px 20px 0',
                                     mr: 1,
@@ -191,26 +197,25 @@ function Layout({ children }: LayoutProps) {
                                     {item.icon}
                                 </ListItemIcon>
                                 <ListItemText primary={item.text} />
-                            </ListItemButton>
-                        </ListItem>
-                    ))}
-                </List>
+                        </ListItemButton>
+                    </ListItem>
+                ))}
+            </List>
 
-                {isAuthenticated && (
-                    <Box sx={{ p: 2, borderTop: '1px solid rgba(0, 0, 0, 0.08)' }}>
-                        <Button
-                            fullWidth
-                            variant="outlined"
-                            color="primary"
-                            onClick={handleLogout}
-                            startIcon={<PersonIcon />}
-                        >
-                            Logout
-                        </Button>
-                    </Box>
-                )}
-            </Box>
-        </>
+            {isAuthenticated && (
+                <Box sx={{ p: 2, borderTop: '1px solid rgba(0, 0, 0, 0.08)' }}>
+                    <Button
+                        fullWidth
+                        variant="outlined"
+                        color="primary"
+                        onClick={handleLogout}
+                        startIcon={<PersonIcon />}
+                    >
+                        Logout
+                    </Button>
+                </Box>
+            )}
+        </Box>
     );
 
     return (
@@ -231,6 +236,12 @@ function Layout({ children }: LayoutProps) {
                     <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
                         Vocabulary Manager
                     </Typography>
+                    {/* Streak fire badge in the mobile AppBar, scoped to the Reader route */}
+                    {isAuthenticated && location.pathname.startsWith("/reader") && (
+                        <Box sx={{ mr: 1 }}>
+                            <MinutePointsFireBadge />
+                        </Box>
+                    )}
                     {/* Only show the hamburger menu when the user is logged in */}
                     {isAuthenticated && (
                         <IconButton

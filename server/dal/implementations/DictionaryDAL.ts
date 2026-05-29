@@ -168,6 +168,12 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
     console.log(`[DICTIONARY-DAL] 🔍 Searching for "${searchTerm}" in ${language} (limit: ${limit}, offset: ${offset})`);
     const startTime = performance.now();
 
+    // Pinyin is stored lowercase in the pronunciation/numberedPinyin columns, and
+    // pronunciation is matched with the case-sensitive regex operator (~). Lowercase the
+    // query so uppercased pinyin (e.g. "Ni3 Hao3") still matches; harmless for the
+    // case-insensitive ILIKE paths and leaves Chinese characters in word1 untouched.
+    searchTerm = searchTerm.toLowerCase();
+
     // Expand plain vowels to include all tone variations for accent-agnostic matching
     const expandVowels = (term: string): string => {
       return term
@@ -200,6 +206,37 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
     const isNumberedPinyin = /[a-zA-ZüvÜV][1-4]/.test(searchTerm);
     const numberedPinyinClause = isNumberedPinyin ? '\n          OR "numberedPinyin" ILIKE $2' : '';
 
+    // Word/pinyin match (everything except the English-definition contains search).
+    // Reused both as the WHERE word-match group and as the ORDER BY priority test so
+    // that the ranking mirrors exactly how a row qualified.
+    const wordMatchExpr = `word1 ILIKE $2
+          OR pronunciation ~ $3${numberedPinyinClause}`;
+
+    // English-definition search. We match only the text actually shown on the result
+    // card (DictionaryEntryRow): the FIRST definition with all parenthetical substrings
+    // stripped — i.e. regexp_replace(definitions->>0, '\s*\([^)]*\)', '', 'g'), mirroring
+    // the frontend stripParentheses(definitions[0]). Matching is whole-word only, via the
+    // Postgres word-boundary anchor \y, so "art" matches "art"/"fine art" but not "start".
+    // $5 holds the anchored, regex-escaped pattern. Case-insensitive (~*) since the query
+    // term is lowercased but card text may be capitalised.
+    // Guarded by a minimum length so trivial single-letter searches don't scan the table.
+    const definitionsSearchEnabled = searchTerm.trim().length >= 2;
+    // Escape regex metacharacters in the user term, then anchor it to word boundaries.
+    const escapedTerm = searchTerm.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const wholeWordDefinitionPattern = `\\y${escapedTerm}\\y`;
+    const definitionsClause = definitionsSearchEnabled
+      ? `\n          OR regexp_replace(definitions->>0, '\\s*\\([^)]*\\)', '', 'g') ~* $5`
+      : '';
+
+    // Placeholder indices for LIMIT/OFFSET shift by one when the definition param ($5) is present.
+    const limitPlaceholder = definitionsSearchEnabled ? '$6' : '$5';
+    const offsetPlaceholder = definitionsSearchEnabled ? '$7' : '$6';
+
+    // Build the parameter lists so their count exactly matches the referenced placeholders.
+    const countParams: any[] = [language, searchPattern, regexPattern, excludePattern];
+    if (definitionsSearchEnabled) countParams.push(wholeWordDefinitionPattern);
+    const entriesParams = [...countParams, limit, offset];
+
     // Get total count for pagination
     // Search with regex for pronunciation (accent-agnostic + word boundaries), LIKE for word1/definitions
     // Exclude results where pronunciation ends in 'g' immediately after the search term
@@ -208,12 +245,10 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
         SELECT COUNT(*) as count
         FROM ${this.tableName}
         WHERE language = $1 AND (
-          word1 ILIKE $2
-          OR pronunciation ~ $3
-          OR definitions::text ILIKE $2${numberedPinyinClause}
+          ${wordMatchExpr}${definitionsClause}
         )
         AND NOT (pronunciation ~ $4)
-      `, [language, searchPattern, regexPattern, excludePattern]);
+      `, countParams);
     });
 
     // Get paginated results
@@ -224,14 +259,14 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
         SELECT ${DICTIONARY_COLUMNS}
         FROM ${this.tableName}
         WHERE language = $1 AND (
-          word1 ILIKE $2
-          OR pronunciation ~ $3
-          OR definitions::text ILIKE $2${numberedPinyinClause}
+          ${wordMatchExpr}${definitionsClause}
         )
         AND NOT (pronunciation ~ $4)
-        ORDER BY LENGTH(word1), word1
-        LIMIT $5 OFFSET $6
-      `, [language, searchPattern, regexPattern, excludePattern, limit, offset]);
+        ORDER BY
+          CASE WHEN (${wordMatchExpr}) THEN 0 ELSE 1 END,
+          LENGTH(word1), word1
+        LIMIT ${limitPlaceholder} OFFSET ${offsetPlaceholder}
+      `, entriesParams);
     });
 
     const queryTime = performance.now() - startTime;

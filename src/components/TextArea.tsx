@@ -6,6 +6,7 @@ import {
     moveCursorLeftFromPosition,
     moveCursorRightFromPosition
 } from "../utils/textSelectionUtils";
+import ReaderTapOverlay from "./ReaderTapOverlay";
 
 // Text interface for TypeScript
 interface Text {
@@ -26,6 +27,10 @@ interface TextAreaProps {
     onTextChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
     onAutoWordSelect: (event: React.SyntheticEvent<HTMLDivElement>) => void;
     onTextSelectionChange: (event: React.SyntheticEvent<HTMLDivElement>) => void;
+    // Forwarded to the underlying <textarea> so the page can manage focus.
+    inputRef: React.RefObject<HTMLTextAreaElement | null>;
+    // Re-asserts focus when the reading box is blurred.
+    onBlur: React.FocusEventHandler<HTMLInputElement | HTMLTextAreaElement>;
 }
 
 function TextArea({
@@ -34,19 +39,29 @@ function TextArea({
     selectionColors,
     onTextChange,
     onAutoWordSelect,
-    onTextSelectionChange
+    onTextSelectionChange,
+    inputRef,
+    onBlur
 }: TextAreaProps) {
     // Memoized Text Area Component - isolated from vocab card updates
     const MemoizedTextArea = useMemo(() => {
         if (!selectedText) return null;
 
         return (
-            <Box className="reader-page-text-field-wrapper" sx={{ flexGrow: 1 }}>
+            <Box className="reader-page-text-field-wrapper" sx={{
+                flexGrow: 1,
+                minHeight: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                position: 'relative',
+            }}>
                 <TextField
                     className="reader-page-text-field"
                     multiline
                     fullWidth
                     value={selectedText.content}
+                    inputRef={inputRef}
+                    onBlur={onBlur}
                     onChange={onTextChange}
                     onSelect={(e) => {
                         // Handle both auto word selection and vocabulary card lookup
@@ -134,7 +149,24 @@ function TextArea({
                         }
                     }}
                     sx={{
+                        // Fill the wrapper so the text box always grows to the bottom of the page.
+                        flexGrow: 1,
+                        minHeight: 0,
+                        display: 'flex',
                         '& .MuiOutlinedInput-root': {
+                            flexGrow: 1,
+                            minHeight: 0,
+                            alignItems: 'stretch',
+                            // Inner textarea is the scroll surface — overflow auto so only it scrolls.
+                            // overscrollBehavior 'contain' stops a touch-drag that hits the
+                            // textarea's scroll boundary from chaining up and scrolling the whole
+                            // page on mobile; touchAction 'pan-y' keeps vertical panning inside it.
+                            '& textarea': {
+                                height: '100% !important',
+                                overflow: 'auto !important',
+                                overscrollBehavior: 'contain',
+                                touchAction: 'pan-y',
+                            },
                             '& fieldset': {
                                 borderColor: 'rgba(0, 0, 0, 0.12)',
                             },
@@ -145,14 +177,14 @@ function TextArea({
                                 borderColor: 'primary.main',
                             },
                         },
-                        minHeight: '400px'
                     }}
-                    rows={20}
+                    minRows={2}
                     placeholder="Select a text to begin reading..."
                 />
+                <ReaderTapOverlay inputRef={inputRef} />
             </Box>
         );
-    }, [selectedText, onTextChange, onAutoWordSelect, onTextSelectionChange, autoSelectEnabled, selectionColors]);
+    }, [selectedText, onTextChange, onAutoWordSelect, onTextSelectionChange, autoSelectEnabled, selectionColors, inputRef, onBlur]);
 
     return MemoizedTextArea;
 }

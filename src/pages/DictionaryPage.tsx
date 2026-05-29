@@ -448,7 +448,8 @@ function DictionaryPage() {
                                     size="small"
                                     onClick={() => handleSpecialCharClick(char)}
                                     sx={{
-                                        minWidth: '40px',
+                                        // Width reduced 5% (40px → 38px) per design tweak
+                                        minWidth: '38px',
                                         fontFamily: 'inherit',
                                         textTransform: 'lowercase',
                                         backgroundColor: getVowelColor(char),
@@ -473,7 +474,8 @@ function DictionaryPage() {
                                     size="small"
                                     onClick={() => handleSpecialCharClick(char)}
                                     sx={{
-                                        minWidth: '40px',
+                                        // Width reduced 5% (40px → 38px) per design tweak
+                                        minWidth: '38px',
                                         fontFamily: 'inherit',
                                         textTransform: 'lowercase',
                                         backgroundColor: getVowelColor(char),

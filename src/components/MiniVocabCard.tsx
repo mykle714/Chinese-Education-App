@@ -13,7 +13,7 @@ interface MiniVocabCardProps {
 
 // Design tokens
 const COLORS = {
-    cardBackground: "#ECECEE",
+    cardBackground: "#D8D8DC",
     onSurface: "#1C1C1E",
     textSecondary: "#5C5C66",
     // Category colors matching the deck colors

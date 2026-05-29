@@ -16,9 +16,9 @@ import { usePageTitle } from "../hooks/usePageTitle";
 
 // Design tokens
 const COLORS = {
-    background: "#F7F7F8",
-    header: "#E4E4E7",
-    card: "#ECECEE",
+    background: "#FAFAFB",
+    header: "#F2F2F4",
+    card: "#D8D8DC",
     infoCard: "#F5EBE0",
     sectionCard: "#EDE7DC",
     onSurface: "#1C1C1E",

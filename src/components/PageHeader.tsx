@@ -5,7 +5,7 @@ import { styled } from "@mui/material/styles";
 import { useNavigate } from "react-router-dom";
 
 const Header = styled(Box)(() => ({
-    backgroundColor: "#E4E4E7",
+    backgroundColor: "#F2F2F4",
     height: 60,
     minHeight: 60,
     display: "flex",

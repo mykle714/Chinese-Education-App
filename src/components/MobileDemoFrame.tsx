@@ -10,7 +10,7 @@ import { styled } from "@mui/material/styles";
 // Layout sidebar.
 
 const COLORS = {
-    background: "#F7F7F8",
+    background: "#FAFAFB",
 };
 
 const FrameRoot = styled(Box)(() => ({

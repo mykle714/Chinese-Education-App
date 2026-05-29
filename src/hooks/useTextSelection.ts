@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { findExactMatch, findDictionaryMatch, getSelectedText } from "../utils/textSelection";
 import { isWordBoundary } from "../utils/textSelectionUtils";
 import type { VocabEntry, DictionaryEntry } from "../types";
@@ -9,8 +9,13 @@ interface UseTextSelectionReturn {
     setSelectedPersonalCard: React.Dispatch<React.SetStateAction<VocabEntry | null>>;
     setSelectedDictionaryCard: React.Dispatch<React.SetStateAction<DictionaryEntry | null>>;
     handleTextChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
-    handleTextSelectionChange: (event: React.SyntheticEvent<HTMLDivElement>) => void;
-    handleAutoWordSelect: (event: React.SyntheticEvent<HTMLDivElement>) => void;
+    handleTextSelectionChange: (event?: React.SyntheticEvent<HTMLDivElement>) => void;
+    handleAutoWordSelect: (event?: React.SyntheticEvent<HTMLDivElement>) => void;
+    // Focus management: the reading box should always hold focus so word
+    // navigation/selection stays live.
+    inputRef: React.RefObject<HTMLTextAreaElement | null>;
+    focusTextArea: (restoreSelection?: boolean) => void;
+    handleTextAreaBlur: React.FocusEventHandler<HTMLInputElement | HTMLTextAreaElement>;
 }
 
 export function useTextSelection(
@@ -22,6 +27,15 @@ export function useTextSelection(
     const [selectedPersonalCard, setSelectedPersonalCard] = useState<VocabEntry | null>(null);
     const [selectedDictionaryCard, setSelectedDictionaryCard] = useState<DictionaryEntry | null>(null);
 
+    // Live handle to the underlying <textarea> (forwarded via MUI TextField's
+    // inputRef). Used for both focus management and reading the caret/selection,
+    // replacing the previous querySelector('textarea') lookups.
+    const inputRef = useRef<HTMLTextAreaElement | null>(null);
+
+    // The most recent caret/selection range, persisted so we can restore the
+    // user's place whenever focus returns to the reading box.
+    const lastSelectionRef = useRef<{ start: number; end: number }>({ start: 0, end: 0 });
+
     // Handle text change - prevent modifications while maintaining cursor functionality
     const handleTextChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
         // Prevent any changes to the text content
@@ -30,9 +44,14 @@ export function useTextSelection(
     }, []);
 
     // Handle text selection changes for vocabulary card lookup
-    const handleTextSelectionChange = useCallback((event: React.SyntheticEvent<HTMLDivElement>) => {
-        const textarea = event.currentTarget.querySelector('textarea') as HTMLTextAreaElement;
+    const handleTextSelectionChange = useCallback(() => {
+        const textarea = inputRef.current;
         if (!textarea) return;
+
+        // Persist the live caret/selection so focus restoration returns the user
+        // to their place (this fires after handleAutoWordSelect, so it captures
+        // the auto-selected word range when auto-select is enabled).
+        lastSelectionRef.current = { start: textarea.selectionStart, end: textarea.selectionEnd };
 
         // Get the currently selected text
         const selectedTextContent = getSelectedText(textarea);
@@ -47,11 +66,11 @@ export function useTextSelection(
     }, [loadedPersonalCards, loadedDictionaryCards]);
 
     // Handle text selection changes for auto word selection using native browser APIs
-    const handleAutoWordSelect = useCallback((event: React.SyntheticEvent<HTMLDivElement>) => {
+    const handleAutoWordSelect = useCallback(() => {
         if (!autoSelectEnabled) return;
 
-        // Find the textarea element within the TextField
-        const textarea = event.currentTarget.querySelector('textarea') as HTMLTextAreaElement;
+        // The underlying textarea, forwarded via inputRef
+        const textarea = inputRef.current;
         if (!textarea) return;
 
         // Get current selection positions
@@ -148,6 +167,58 @@ export function useTextSelection(
         }
     }, [autoSelectEnabled]);
 
+    // Focus the reading box. By default we restore the last saved selection;
+    // pass restoreSelection=false on a fresh document to park the caret at the top.
+    //
+    // After focusing we re-run the auto-highlighter so a word is always selected
+    // (when auto-select is on): if the restored range is a collapsed caret,
+    // handleAutoWordSelect expands it to the word at that position; if it's
+    // already a word range it's left intact. handleTextSelectionChange then
+    // persists the resulting range and refreshes the vocab card. Programmatic
+    // setSelectionRange doesn't reliably fire the textarea's `select` event, so
+    // these must be invoked explicitly rather than relied upon to fire. An empty
+    // document yields no word (handleAutoWordSelect bails on empty content).
+    const focusTextArea = useCallback((restoreSelection = true) => {
+        const textarea = inputRef.current;
+        if (!textarea) return;
+
+        textarea.focus();
+
+        if (restoreSelection) {
+            const { start, end } = lastSelectionRef.current;
+            textarea.setSelectionRange(start, end);
+        } else {
+            lastSelectionRef.current = { start: 0, end: 0 };
+            textarea.setSelectionRange(0, 0);
+        }
+
+        handleAutoWordSelect();
+        handleTextSelectionChange();
+    }, [handleAutoWordSelect, handleTextSelectionChange]);
+
+    // When the reading box loses focus we re-assert it on the next frame so the
+    // box is always focused after the user taps elsewhere (vocab card, settings,
+    // displayed text). Two exceptions keep this from fighting legitimate inputs:
+    //   1. focus moving to a real editable field (future-proofing), and
+    //   2. an open modal dialog (create/edit/delete), which needs its own inputs.
+    const handleTextAreaBlur = useCallback((event: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+        const nextTarget = event.relatedTarget as HTMLElement | null;
+        if (nextTarget && (
+            nextTarget.tagName === 'TEXTAREA' ||
+            nextTarget.isContentEditable ||
+            (nextTarget.tagName === 'INPUT' &&
+                /^(text|search|email|password|number|url|tel)$/.test((nextTarget as HTMLInputElement).type))
+        )) {
+            return;
+        }
+
+        requestAnimationFrame(() => {
+            // A MUI Dialog renders role="dialog"; if one is open, let it keep focus.
+            if (document.querySelector('[role="dialog"]')) return;
+            focusTextArea(true);
+        });
+    }, [focusTextArea]);
+
     return {
         selectedPersonalCard,
         selectedDictionaryCard,
@@ -155,6 +226,9 @@ export function useTextSelection(
         setSelectedDictionaryCard,
         handleTextChange,
         handleTextSelectionChange,
-        handleAutoWordSelect
+        handleAutoWordSelect,
+        inputRef,
+        focusTextArea,
+        handleTextAreaBlur
     };
 }

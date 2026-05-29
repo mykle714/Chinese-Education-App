@@ -12,8 +12,8 @@ import { usePageTitle } from "../hooks/usePageTitle";
 
 // Design tokens from Figma
 const COLORS = {
-    background: "#F7F7F8",
-    header: "#E4E4E7",
+    background: "#FAFAFB",
+    header: "#F2F2F4",
     onSurface: "#1C1C1E",
     border: "#5C5C66",
     // Deck colors

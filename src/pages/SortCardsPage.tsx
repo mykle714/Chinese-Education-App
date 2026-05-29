@@ -24,11 +24,11 @@ function parseHskLevel(label: string | null | undefined): number | null {
 
 // Design tokens from Figma
 const COLORS = {
-    background: "#F7F7F8",
-    header: "#E4E4E7",
+    background: "#FAFAFB",
+    header: "#F2F2F4",
     onSurface: "#1C1C1E",
     border: "#5C5C66",
-    cardColor: "#ECECEE",
+    cardColor: "#D8D8DC",
     // Bucket colors
     redMain: "#EF476F",
     redAccent: "#F2BAC9",

@@ -25,32 +25,29 @@ export class TextService {
       throw new NotFoundError('User not found');
     }
     
-    // Generate unique ID
-    const id = `text-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    
     // Get character count
     const characterCount = textData.content.length;
-    
+
     // Use user's selected language or default to Chinese
     const language = textData.language || user.selectedLanguage || 'zh';
-    
-    // Create text in database
+
+    // id and createdAt are filled by Postgres defaults (uuid_generate_v4, now()).
     const result = await dbManager.executeQuery<Text>(async (client) => {
       return await client.query(
-        `INSERT INTO texts (id, "userId", title, description, content, language, "characterCount", "isUserCreated", "createdAt")
-         VALUES ($1, $2, $3, $4, $5, $6, $7, true, NOW())
+        `INSERT INTO texts ("userId", title, description, content, language, "characterCount", "isUserCreated")
+         VALUES ($1, $2, $3, $4, $5, $6, true)
          RETURNING *`,
-        [id, userId, textData.title.trim(), textData.description?.trim() || '', textData.content, language, characterCount]
+        [userId, textData.title.trim(), textData.description?.trim() || '', textData.content, language, characterCount]
       );
     });
-    
+
     if (result.recordset.length === 0) {
       throw new Error('Failed to create text');
     }
-    
+
     console.log(`[TEXT-SERVICE] ✅ Created new user document:`, {
       userId: `${userId.substring(0, 8)}...`,
-      textId: id,
+      textId: result.recordset[0].id,
       title: textData.title,
       language,
       characterCount

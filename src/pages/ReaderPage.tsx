@@ -1,21 +1,19 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
     Box,
-    Drawer,
     useMediaQuery,
     useTheme,
-    Fab,
-    IconButton
+    IconButton,
+    Snackbar,
+    Alert
 } from "@mui/material";
 import {
-    LibraryBooks as LibraryBooksIcon,
-    Settings as SettingsIcon
+    Settings as SettingsIcon,
+    TouchApp as TouchAppIcon
 } from "@mui/icons-material";
 import { useAuth } from "../AuthContext";
 import { useTheme as useCustomTheme } from "../contexts/ThemeContext";
 import { API_BASE_URL } from "../constants";
-import { useMinutePoints } from "../hooks/useMinutePoints";
-import MinutePointsBadge from "../components/MinutePointsBadge";
 import VocabDisplayCard from "../components/VocabDisplayCard";
 import { useVocabularyUpdate } from "../contexts/VocabularyUpdateContext";
 import { processDocumentForTokens } from "../utils/tokenUtils";
@@ -45,13 +43,9 @@ function ReaderPage() {
     const { token, user } = useAuth();
     const vocabularyUpdate = useVocabularyUpdate();
 
-    // Work points integration
-    const minutePoints = useMinutePoints();
-
     // State management
     const [texts, setTexts] = useState<Text[]>([]);
     const [selectedText, setSelectedText] = useState<Text | null>(null);
-    const [drawerOpen, setDrawerOpen] = useState(false);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -61,6 +55,10 @@ function ReaderPage() {
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [textToEdit, setTextToEdit] = useState<Text | null>(null);
     const [textToDelete, setTextToDelete] = useState<Text | null>(null);
+
+    // One-off tap-to-navigate hint, shown as a toast when a document is opened
+    // on mobile (the tap gesture from ReaderTapOverlay only exists there).
+    const [tapHintOpen, setTapHintOpen] = useState(false);
 
     // Use extracted hooks
     const vocabularyProcessing = useVocabularyProcessing(token);
@@ -106,6 +104,34 @@ function ReaderPage() {
                 };
         }
     }, [customTheme.themeMode, theme.palette.primary.main]);
+
+    // Lock the document while the Reader is mounted so the page itself can't
+    // scroll or rubber-band. The reader container is already height-locked, but
+    // the app shell renders body as a normal scroll container (overflow:auto +
+    // min-height:100vh). On mobile the dynamic URL bar makes the body taller than
+    // the visible area, so a touch-drag anywhere — including outside the text box —
+    // pans the whole page. Pinning overflow:hidden + overscroll-behavior:none on
+    // html/body confines scrolling to the inner textarea. Restored on unmount.
+    useEffect(() => {
+        const html = document.documentElement;
+        const body = document.body;
+        const prev = {
+            htmlOverflow: html.style.overflow,
+            htmlOverscroll: html.style.overscrollBehavior,
+            bodyOverflow: body.style.overflow,
+            bodyOverscroll: body.style.overscrollBehavior,
+        };
+        html.style.overflow = 'hidden';
+        html.style.overscrollBehavior = 'none';
+        body.style.overflow = 'hidden';
+        body.style.overscrollBehavior = 'none';
+        return () => {
+            html.style.overflow = prev.htmlOverflow;
+            html.style.overscrollBehavior = prev.htmlOverscroll;
+            body.style.overflow = prev.bodyOverflow;
+            body.style.overscrollBehavior = prev.bodyOverscroll;
+        };
+    }, []);
 
     // Drawer width consistent with main navigation
     const drawerWidth = 250;
@@ -236,13 +262,53 @@ function ReaderPage() {
     // Handle text selection
     const handleTextSelect = useCallback(async (text: Text) => {
         setSelectedText(text);
-        if (isMobile) {
-            setDrawerOpen(false);
-        }
 
         // Process vocabulary for the selected document
         await vocabularyProcessing.processDocumentVocabulary(text);
-    }, [isMobile, vocabularyProcessing]);
+    }, [vocabularyProcessing]);
+
+    const handleBackToList = useCallback(() => {
+        setSelectedText(null);
+    }, []);
+
+    // Focus the reading box whenever a document is opened so it's immediately
+    // ready for word navigation/selection, and auto-highlight the first word.
+    // A new document starts with the caret at the top (restoreSelection=false).
+    // The textarea is committed before this effect runs, so inputRef is populated.
+    // After this, handleTextAreaBlur keeps focus pinned to the box.
+    //
+    // Keyed on the document id only: focusTextArea's identity changes with the
+    // auto-select toggle, but we must NOT re-run (and reset the caret to the top)
+    // on every toggle — only when a different document is opened.
+    const focusTextArea = textSelection.focusTextArea;
+    useEffect(() => {
+        if (selectedText) {
+            focusTextArea(false);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedText?.id]);
+
+    // Surface the tap-to-navigate hint as a toast each time a document is opened
+    // on mobile. Keyed on the document id so re-opening shows it again.
+    useEffect(() => {
+        setTapHintOpen(!!selectedText && isMobile);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedText?.id, isMobile]);
+
+    // Return focus + re-highlight when a dialog closes. The blur that fired when
+    // the dialog opened was deliberately ignored (handleTextAreaBlur skips while a
+    // modal is open), so nothing would otherwise refocus the reading box. We watch
+    // the open->closed transition and restore focus, preserving the user's place
+    // (restoreSelection=true). If MUI restores focus to the edit button on the
+    // dialog's exit transition, handleTextAreaBlur bounces it back here anyway.
+    const anyDialogOpen = createDialogOpen || editDialogOpen || deleteDialogOpen;
+    const prevAnyDialogOpenRef = useRef(anyDialogOpen);
+    useEffect(() => {
+        if (prevAnyDialogOpenRef.current && !anyDialogOpen && selectedText) {
+            focusTextArea(true);
+        }
+        prevAnyDialogOpenRef.current = anyDialogOpen;
+    }, [anyDialogOpen, selectedText, focusTextArea]);
 
     // Format date for display
     const formatDate = useCallback((dateString: string) => {
@@ -310,27 +376,27 @@ function ReaderPage() {
 
     return (
         <>
-            {/* Work Points Badge - only show on eligible pages */}
-            {minutePoints.isEligiblePage && (
-                <Box className="reader-page-work-points-wrapper">
-                    <MinutePointsBadge
-                        points={minutePoints.currentPoints}
-                        isActive={minutePoints.isActive}
-                        isAnimating={minutePoints.isAnimating}
-                        progressToNextPoint={minutePoints.progressToNextPoint}
-                    />
-                </Box>
-            )}
-
-            <Box className="reader-page-container" sx={{ display: 'flex', width: '100%', minHeight: 'calc(100vh - 200px)', mt: -2 }}>
+            {/* Negative top margin tightens the gap below the page chrome on
+                desktop. On mobile a fixed AppBar sits above the content, so we
+                keep mt:0 there — otherwise the content (incl. the text header)
+                is pulled up underneath the AppBar and gets clipped. */}
+            <Box className="reader-page-container" sx={{
+                display: 'flex',
+                width: '100%',
+                // Lock the reader to the viewport so the page itself never scrolls.
+                // Subtract the fixed footer (~48px) and, on mobile, the fixed AppBar Toolbar (~64px).
+                height: { xs: 'calc(100vh - 112px)', md: 'calc(100vh - 48px)' },
+                overflow: 'hidden',
+                mt: { xs: 0, md: -2 }
+            }}>
                 {/* Desktop sidebar */}
                 {!isMobile && (
                     <Box className="reader-page-sidebar-desktop" sx={{
                         width: drawerWidth,
                         flexShrink: 0,
                         borderRight: '1px solid rgba(0, 0, 0, 0.08)',
-                        height: 'fit-content',
-                        minHeight: 'calc(100vh - 200px)'
+                        height: '100%',
+                        overflowY: 'auto'
                     }}>
                         <TextSidebar
                             texts={texts}
@@ -345,39 +411,6 @@ function ReaderPage() {
                             drawerWidth={drawerWidth}
                         />
                     </Box>
-                )}
-
-                {/* Mobile drawer */}
-                {isMobile && (
-                    <Drawer
-                        className="reader-page-mobile-drawer"
-                        variant="temporary"
-                        anchor="right"
-                        open={drawerOpen}
-                        onClose={() => setDrawerOpen(false)}
-                        ModalProps={{
-                            keepMounted: true,
-                        }}
-                        sx={{
-                            [`& .MuiDrawer-paper`]: {
-                                width: drawerWidth,
-                                boxSizing: 'border-box',
-                            },
-                        }}
-                    >
-                        <TextSidebar
-                            texts={texts}
-                            selectedText={selectedText}
-                            loading={loading}
-                            error={error}
-                            onTextSelect={handleTextSelect}
-                            onCreateNew={handleCreateNew}
-                            onEdit={handleEdit}
-                            onDelete={handleDelete}
-                            formatDate={formatDate}
-                            drawerWidth={drawerWidth}
-                        />
-                    </Drawer>
                 )}
 
                 {/* Dialogs */}
@@ -410,15 +443,19 @@ function ReaderPage() {
                 <Box className="reader-page-main-content-wrapper" sx={{
                     flexGrow: 1,
                     minWidth: 0,
+                    height: '100%',
+                    display: 'flex',
+                    flexDirection: 'column',
                     width: isMobile ? '100%' : `calc(100% - ${drawerWidth}px)`
                 }}>
                     <Box className="reader-page-content" sx={{
                         flexGrow: 1,
+                        minHeight: 0,
                         p: { xs: 2, sm: 3 },
                         pt: { xs: 1, sm: 2 },
                         display: 'flex',
                         flexDirection: 'column',
-                        minHeight: '100vh'
+                        overflow: 'hidden'
                     }}>
                         {selectedText ? (
                             <>
@@ -429,20 +466,22 @@ function ReaderPage() {
                                     loadedCards={vocabularyProcessing.loadedPersonalCards}
                                     vocabError={vocabularyProcessing.vocabError}
                                     formatDate={formatDate}
+                                    onBack={handleBackToList}
+                                    onEdit={handleEdit}
+                                    onDelete={handleDelete}
                                 />
 
                                 {/* Vocabulary card display (mobile only - above text) */}
                                 {isMobile && (
                                     <Box className="reader-page-mobile-vocab-card-wrapper">
                                         <VocabDisplayCard
-                                            personalEntry={textSelection.selectedPersonalCard}
                                             dictionaryEntry={textSelection.selectedDictionaryCard}
                                         />
                                     </Box>
                                 )}
 
                                 {/* Text content area with settings sidebar */}
-                                <Box className="reader-page-text-content-area" sx={{ flexGrow: 1, display: 'flex', gap: 3 }}>
+                                <Box className="reader-page-text-content-area" sx={{ flexGrow: 1, minHeight: 0, display: 'flex', gap: 3 }}>
                                     {/* Text content */}
                                     <TextArea
                                         selectedText={selectedText}
@@ -451,6 +490,8 @@ function ReaderPage() {
                                         onTextChange={handleTextChangeWithActivity}
                                         onAutoWordSelect={handleAutoWordSelectWithActivity}
                                         onTextSelectionChange={handleTextSelectionChangeWithActivity}
+                                        inputRef={textSelection.inputRef}
+                                        onBlur={textSelection.handleTextAreaBlur}
                                     />
 
                                     {/* Desktop right sidebar - vocabulary card and settings */}
@@ -466,7 +507,6 @@ function ReaderPage() {
                                             {/* Vocabulary card display (desktop only - top right) */}
                                             <Box className="reader-page-desktop-vocab-card-wrapper">
                                                 <VocabDisplayCard
-                                                    personalEntry={textSelection.selectedPersonalCard}
                                                     dictionaryEntry={textSelection.selectedDictionaryCard}
                                                 />
                                             </Box>
@@ -544,23 +584,27 @@ function ReaderPage() {
                     </Box>
                 )}
 
-                {/* Mobile FAB */}
-                {isMobile && (
-                    <Fab
-                        className="reader-page-mobile-fab"
-                        color="primary"
-                        aria-label="open text selection"
-                        onClick={() => setDrawerOpen(true)}
-                        sx={{
-                            position: 'fixed',
-                            bottom: 80,
-                            right: 16,
-                            zIndex: 1000
-                        }}
+                {/* Tap-to-navigate hint toast (mobile). Mirrors ReaderTapOverlay:
+                    a tap on the left side steps the cursor back, the right side
+                    steps it forward. */}
+                <Snackbar
+                    className="reader-page-tap-hint-snackbar"
+                    open={tapHintOpen}
+                    autoHideDuration={5000}
+                    onClose={() => setTapHintOpen(false)}
+                    anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+                >
+                    <Alert
+                        className="reader-page-tap-hint-alert"
+                        severity="info"
+                        variant="filled"
+                        icon={<TouchAppIcon className="reader-page-tap-hint-icon" />}
+                        onClose={() => setTapHintOpen(false)}
                     >
-                        <LibraryBooksIcon className="reader-page-mobile-fab-icon" />
-                    </Fab>
-                )}
+                        Tap the left or right side of the text to move the cursor back or forward.
+                    </Alert>
+                </Snackbar>
+
             </Box>
         </>
     );

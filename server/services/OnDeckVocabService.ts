@@ -465,6 +465,93 @@ export class OnDeckVocabService {
   }
 
   /**
+   * Count library cards per category for the requested categories. Used by the
+   * decks page (per-bucket counts) and to gate game entry.
+   */
+  async getCategoryCounts(
+    userId: string,
+    categories: string[] = ['Unfamiliar', 'Target', 'Comfortable', 'Mastered']
+  ): Promise<Record<string, number>> {
+    if (!userId) {
+      throw new ValidationError('User ID is required');
+    }
+    const client = await db.getClient();
+    try {
+      const result = await client.query<{ category: string; n: number }>(`
+        SELECT category, COUNT(*)::int AS n
+        FROM vocabentries
+        WHERE "userId" = $1
+        AND "starterPackBucket" = 'library'
+        AND category = ANY($2::text[])
+        GROUP BY category
+      `, [userId, categories]);
+
+      const counts: Record<string, number> = {};
+      for (const cat of categories) counts[cat] = 0;
+      for (const row of result.rows) counts[row.category] = row.n;
+      return counts;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Build the bubble-match game pool: for each requested bucket, pull up to
+   * `count` library cards (same `definition` source + RANDOM ordering as the
+   * category-filtered working loop the flashcards use) and report how many were
+   * available so the client can block entry when the user lacks enough words.
+   * Cards are enriched and have their TTS pre-warmed so in-game autoplay is
+   * instant, mirroring the distributed-working-loop endpoint.
+   */
+  async getGameVocabPool(
+    userId: string,
+    distribution: Record<string, number>
+  ): Promise<{
+    cards: VocabEntry[];
+    requested: Record<string, number>;
+    available: Record<string, number>;
+    sufficient: boolean;
+  }> {
+    if (!userId) {
+      throw new ValidationError('User ID is required');
+    }
+
+    const categories = Object.keys(distribution);
+    const available = await this.getCategoryCounts(userId, categories);
+
+    const client = await db.getClient();
+    try {
+      const cards: VocabEntry[] = [];
+      for (const [category, count] of Object.entries(distribution)) {
+        const result = await client.query<VocabEntry>(`
+          SELECT ve.*, ${DICT_COLS}
+          FROM vocabentries ve ${DICT_JOIN}
+          WHERE ve."userId" = $1
+          AND ve."starterPackBucket" = 'library'
+          AND ve.category = $2
+          ORDER BY RANDOM()
+          LIMIT $3
+        `, [userId, category, count]);
+        cards.push(...result.rows);
+      }
+
+      const sufficient = Object.entries(distribution).every(
+        ([cat, n]) => (available[cat] ?? 0) >= n
+      );
+
+      // Enrich (long defs / parts of speech etc.) then pre-warm audio. We skip
+      // the related-words / used-in passes the EIC needs — the game only renders
+      // the word, its pinyin, and the flashcard definition.
+      const enriched = await this.enrichEntriesPipeline(cards);
+      const withAudio = await this.prewarmAudio(enriched);
+
+      return { cards: withAudio, requested: { ...distribution }, available, sufficient };
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
    * Awaits TTS synthesis for each entry's entryKey in parallel, stamping
    * `hasAudio` on the result. Used to pre-warm both the working-loop endpoint
    * and the mark endpoint's replacement card.

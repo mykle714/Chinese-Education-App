@@ -15,8 +15,10 @@ export interface GameDef {
     iconAsset?: string;
     /** Frontend route, e.g. "/games/memory-match". */
     route: string;
-    /** Lazy-loaded page component for the game. */
-    Component: LazyExoticComponent<ComponentType<unknown>>;
+    /** Lazy-loaded page component for the game. Page components take no props,
+        so the default `ComponentType` ({}-props) is what `React.lazy` of a plain
+        `React.FC` resolves to. */
+    Component: LazyExoticComponent<ComponentType>;
     /** When true, hide the game from public/demo accounts. Defaults to false. */
     requiresAuth?: boolean;
     /** Optional gating rules evaluated at hub render time. */

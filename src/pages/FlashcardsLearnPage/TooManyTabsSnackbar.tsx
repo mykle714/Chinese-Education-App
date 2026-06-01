@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Snackbar, Alert } from "@mui/material";
+import { FC_FONT } from "./constants";
 
 interface TooManyTabsSnackbarProps {
     // Counter from useEipTabs that ticks up each time a tab push is rejected
@@ -22,7 +23,7 @@ function TooManyTabsSnackbar({ signal }: TooManyTabsSnackbarProps) {
             anchorOrigin={{ vertical: "top", horizontal: "center" }}
             sx={{ zIndex: 2000 }}
         >
-            <Alert severity="info" variant="filled" onClose={() => setOpen(false)} sx={{ fontFamily: '"Inter", sans-serif' }}>
+            <Alert severity="info" variant="filled" onClose={() => setOpen(false)} sx={{ fontFamily: FC_FONT }}>
                 Too many tabs open — tap off the panel to start fresh.
             </Alert>
         </Snackbar>

@@ -1,6 +1,7 @@
 import { forwardRef, useImperativeHandle, useRef } from "react";
 import { Box, Switch, Typography, useTheme } from "@mui/material";
 import { InfoSheetEntryHeader } from "./styled";
+import { FC_FONT } from "./constants";
 import type { SheetPanelBodyHandle } from "./SheetPanel";
 import type { FlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
 
@@ -30,10 +31,20 @@ const SettingsPanelBody = forwardRef<SheetPanelBodyHandle, SettingsPanelBodyProp
     const theme = useTheme();
     const fc = theme.palette.flashcard;
 
-    const rows: Array<{ key: keyof FlashcardLearnSettings; label: string; visible: boolean }> = [
+    // Control-placement principle (see also FlashcardsLearnHeader):
+    //   • Header = "quick" toggles flipped often mid-study (pinyin, autoplay).
+    //   • Settings sheet = "setup" prefs set once and rarely changed.
+    // `showPinyin` and `autoplayChinese` also appear in the header by design —
+    // the sheet lists every pref so it stays the single complete control panel,
+    // while the header surfaces only the two high-frequency ones.
+    //
+    // `indented` marks a pref that modifies its predecessor (tone color only
+    // makes sense while pinyin is shown), so it renders as a visually nested
+    // sub-toggle beneath its parent.
+    const rows: Array<{ key: keyof FlashcardLearnSettings; label: string; visible: boolean; indented?: boolean }> = [
         { key: "showPinyin", label: "Show pinyin", visible: true },
-        // Pinyin color is meaningless when pinyin itself is hidden.
-        { key: "showPinyinColor", label: "Color pinyin by tone", visible: settings.showPinyin },
+        // Pinyin color is meaningless when pinyin itself is hidden — nest it under pinyin.
+        { key: "showPinyinColor", label: "Color pinyin by tone", visible: settings.showPinyin, indented: true },
         { key: "showSegmentSpaces", label: "Show spaces between words", visible: true },
         { key: "autoplayChinese", label: "Autoplay audio on Chinese side", visible: true },
     ];
@@ -57,7 +68,7 @@ const SettingsPanelBody = forwardRef<SheetPanelBodyHandle, SettingsPanelBodyProp
                         fontSize: 16,
                         fontWeight: 600,
                         color: fc.onSurface,
-                        fontFamily: '"Inter", sans-serif',
+                        fontFamily: FC_FONT,
                         lineHeight: 1.3,
                         flex: 1,
                     }}
@@ -81,21 +92,28 @@ const SettingsPanelBody = forwardRef<SheetPanelBodyHandle, SettingsPanelBodyProp
                 {rows.filter(r => r.visible).map((row, i, arr) => (
                     <Box
                         key={row.key}
-                        className={`flashcard-settings-row flashcard-settings-row-${row.key}`}
+                        className={`flashcard-settings-row flashcard-settings-row-${row.key}${row.indented ? " flashcard-settings-row-nested" : ""}`}
                         sx={{
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "space-between",
                             padding: "12px 0",
+                            // Nested sub-toggles indent and add a left rule so the
+                            // parent/child relationship reads at a glance.
+                            ...(row.indented && {
+                                paddingLeft: "14px",
+                                marginLeft: "4px",
+                                borderLeft: `2px solid ${fc.border}`,
+                            }),
                             borderBottom: i === arr.length - 1 ? "none" : `1px solid ${fc.border}`,
                         }}
                     >
                         <Typography
                             className="flashcard-settings-row-label"
                             sx={{
-                                fontSize: 14,
-                                color: fc.onSurface,
-                                fontFamily: '"Inter", sans-serif',
+                                fontSize: row.indented ? 13 : 14,
+                                color: row.indented ? fc.textSecondary : fc.onSurface,
+                                fontFamily: FC_FONT,
                             }}
                         >
                             {row.label}

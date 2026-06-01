@@ -339,6 +339,18 @@ app.get('/api/onDeck/distributed-working-loop', authenticateToken, async (req, r
   await onDeckVocabController.getDistributedWorkingLoop(req, res);
 });
 
+// Per-category library card counts (drives the decks page bucket counts)
+// @ts-ignore
+app.get('/api/onDeck/category-counts', authenticateToken, async (req, res) => {
+  await onDeckVocabController.getCategoryCounts(req, res);
+});
+
+// Bubble-match game pool (15 Target + 10 Comfortable by default)
+// @ts-ignore
+app.get('/api/onDeck/game-pool', authenticateToken, async (req, res) => {
+  await onDeckVocabController.getGamePool(req, res);
+});
+
 // Minute Points API Routes - USING NEW DAL ARCHITECTURE
 
 // Increment minute points by 1

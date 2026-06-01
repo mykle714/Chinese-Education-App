@@ -89,4 +89,54 @@ export class OnDeckVocabController {
       handleControllerError(error, res, 'OnDeckVocabController.getDistributedWorkingLoop');
     }
   };
+
+  /**
+   * Get per-category library card counts (Unfamiliar / Target / Comfortable / Mastered).
+   * GET /api/onDeck/category-counts
+   */
+  getCategoryCounts = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
+      const counts = await this.onDeckVocabService.getCategoryCounts(userId);
+      res.json(counts);
+    } catch (error: any) {
+      handleControllerError(error, res, 'OnDeckVocabController.getCategoryCounts');
+    }
+  };
+
+  // Categories the game pool may request counts for (mirrors the SR buckets).
+  private static readonly GAME_POOL_CATEGORIES = ['Unfamiliar', 'Target', 'Comfortable', 'Mastered'];
+
+  /**
+   * Build the bubble-match game pool.
+   * GET /api/onDeck/game-pool?Target=15&Comfortable=10
+   * Defaults to 15 Target + 10 Comfortable when no recognised category params
+   * are supplied. Returns { cards, requested, available, sufficient }.
+   */
+  getGamePool = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
+      const distribution: Record<string, number> = {};
+      for (const cat of OnDeckVocabController.GAME_POOL_CATEGORIES) {
+        const raw = req.query[cat];
+        if (raw != null) {
+          const n = parseInt(String(raw), 10);
+          if (Number.isFinite(n) && n > 0) distribution[cat] = n;
+        }
+      }
+      if (Object.keys(distribution).length === 0) {
+        distribution.Target = 15;
+        distribution.Comfortable = 10;
+      }
+
+      const pool = await this.onDeckVocabService.getGameVocabPool(userId, distribution);
+      res.json(pool);
+    } catch (error: any) {
+      handleControllerError(error, res, 'OnDeckVocabController.getGamePool');
+    }
+  };
 }

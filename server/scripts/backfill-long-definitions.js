@@ -37,7 +37,7 @@ const wordsFilter = targetWords?.length
 
 const GEN_MODEL = 'claude-sonnet-4-6';
 const VALIDATOR_MODEL = 'claude-sonnet-4-6';
-const RETRY_MODEL = 'claude-opus-4-7';
+const RETRY_MODEL = 'claude-opus-4-8';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Shared rule text — injected into generator, validator, and regenerator prompts
@@ -188,7 +188,7 @@ Apply all constraints precisely. You may keep, change, or restructure any part o
   const response = await anthropic.messages.create({
     model: RETRY_MODEL,
     max_tokens: 256,
-    // Note: claude-opus-4-7 does not accept the `temperature` parameter — omit it.
+    // Note: claude-opus-4-8 does not accept the `temperature` parameter — omit it.
     system: 'You are a Chinese language expert writing concise, rule-compliant English definitions. Respond only with the definition text.',
     messages: [{ role: 'user', content: prompt }],
   });
@@ -225,7 +225,7 @@ or
   const response = await anthropic.messages.create({
     model: RETRY_MODEL,
     max_tokens: 200,
-    // Note: claude-opus-4-7 does not accept the `temperature` parameter — omit it.
+    // Note: claude-opus-4-8 does not accept the `temperature` parameter — omit it.
     system: 'You are a strict adjudicator picking between two dictionary definitions. Respond only with valid JSON.',
     messages: [{ role: 'user', content: prompt }],
   });

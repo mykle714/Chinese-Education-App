@@ -3,6 +3,19 @@ export const CORRECT_COLOR   = "#05C793";
 export const INCORRECT_COLOR = "#EF476F";
 export const FIRE_ACTIVE_COLOR = "#E65100";
 
+// Shared font stacks for the learn page. Single source of truth so a font
+// change is a one-line edit instead of ~30 inline literal updates.
+// FC_FONT — Latin UI text (labels, definitions, chips).
+// FC_FONT_CJK — Latin text that may need a CJK fallback glyph (English block).
+export const FC_FONT = '"Inter", sans-serif';
+export const FC_FONT_CJK = '"Inter", "Noto Sans JP", sans-serif';
+
+// Card fly-out animation duration. The JS dismiss timeout (FlashcardsLearnPage)
+// and the CSS transform transition (FlashCardSection) MUST stay in lock-step,
+// so both derive from this single constant. Changing it here changes both.
+export const CARD_FLY_OUT_MS = 450;
+export const CARD_FLY_OUT_TRANSITION = `transform ${CARD_FLY_OUT_MS}ms ease`;
+
 // Tab accent colors — decorative, consistent across all themes
 const TAB_BLUE   = "#779BE7";
 const TAB_ORANGE = "#FF8E47";

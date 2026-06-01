@@ -11,7 +11,7 @@ import {
     InfoSheetTab,
     SharedCharsLabel,
 } from "./styled";
-import { TAB_LABELS } from "./constants";
+import { TAB_LABELS, FC_FONT } from "./constants";
 import { SpeakerButton } from "./FlashCardSection";
 import { buildSentencePronunciation } from "./sentencePronunciation";
 import type { VocabEntry, BreakdownItem, UsedInItem } from "./types";
@@ -202,7 +202,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                             fontSize: 15,
                             fontWeight: 500,
                             color: fc.onSurface,
-                            fontFamily: '"Inter", sans-serif',
+                            fontFamily: FC_FONT,
                             lineHeight: 1.3,
                             flex: 1,
                             minWidth: 0,
@@ -259,7 +259,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                                 fontSize: 12,
                                 fontWeight: selectedTab === index ? 700 : 500,
                                 color: selectedTab === index ? fc.onSurface : fc.textSecondary,
-                                fontFamily: '"Inter", sans-serif',
+                                fontFamily: FC_FONT,
                                 userSelect: "none",
                                 textTransform: "capitalize",
                                 lineHeight: 1,
@@ -293,7 +293,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                                 sx={{
                                     fontSize: 14,
                                     color: fc.onSurface,
-                                    fontFamily: '"Inter", sans-serif',
+                                    fontFamily: FC_FONT,
                                     lineHeight: 1.6,
                                 }}
                             >
@@ -314,27 +314,27 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                             >
                                 {currentEntry?.hskLevel && (
                                     <Box sx={{ display: "flex", flexDirection: "column", gap: "3px" }}>
-                                        <Typography sx={{ fontSize: 9, fontWeight: 700, color: fc.textSecondary, letterSpacing: "0.12em", textTransform: "uppercase", fontFamily: '"Inter", sans-serif' }}>
+                                        <Typography sx={{ fontSize: 9, fontWeight: 700, color: fc.textSecondary, letterSpacing: "0.12em", textTransform: "uppercase", fontFamily: FC_FONT }}>
                                             HSK
                                         </Typography>
-                                        <Typography sx={{ fontSize: 13, fontWeight: 600, color: fc.onSurface, fontFamily: '"Inter", sans-serif' }}>
+                                        <Typography sx={{ fontSize: 13, fontWeight: 600, color: fc.onSurface, fontFamily: FC_FONT }}>
                                             {currentEntry.hskLevel.replace(/^HSK/, 'HSK ')}
                                         </Typography>
                                     </Box>
                                 )}
                                 {(currentEntry?.partsOfSpeech?.length ?? 0) > 0 && (
                                     <Box sx={{ display: "flex", flexDirection: "column", gap: "3px" }}>
-                                        <Typography sx={{ fontSize: 9, fontWeight: 700, color: fc.textSecondary, letterSpacing: "0.12em", textTransform: "uppercase", fontFamily: '"Inter", sans-serif' }}>
+                                        <Typography sx={{ fontSize: 9, fontWeight: 700, color: fc.textSecondary, letterSpacing: "0.12em", textTransform: "uppercase", fontFamily: FC_FONT }}>
                                             Type
                                         </Typography>
-                                        <Typography sx={{ fontSize: 13, fontWeight: 600, color: fc.onSurface, fontFamily: '"Inter", sans-serif' }}>
+                                        <Typography sx={{ fontSize: 13, fontWeight: 600, color: fc.onSurface, fontFamily: FC_FONT }}>
                                             {currentEntry!.partsOfSpeech!.join(', ')}
                                         </Typography>
                                     </Box>
                                 )}
                                 {currentEntry?.vernacularScore != null && (
                                     <Box className="mobile-demo-vernacular-meta" sx={{ display: "flex", flexDirection: "column", gap: "3px" }}>
-                                        <Typography sx={{ fontSize: 9, fontWeight: 700, color: fc.textSecondary, letterSpacing: "0.12em", textTransform: "uppercase", fontFamily: '"Inter", sans-serif' }}>
+                                        <Typography sx={{ fontSize: 9, fontWeight: 700, color: fc.textSecondary, letterSpacing: "0.12em", textTransform: "uppercase", fontFamily: FC_FONT }}>
                                             Vernacular
                                         </Typography>
                                         <Box className="mobile-demo-vernacular-dots" sx={{ display: "flex", alignItems: "center", gap: "4px", height: 19 }}>
@@ -361,7 +361,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                     </Box>
                 ) : effectiveTab === 0 ? (
                     <Box className="mobile-demo-tab-empty" sx={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 2 }}>
-                        <Typography sx={{ fontSize: 14, color: fc.textSecondary, textAlign: "center", fontFamily: '"Inter", sans-serif' }}>
+                        <Typography sx={{ fontSize: 14, color: fc.textSecondary, textAlign: "center", fontFamily: FC_FONT }}>
                             No definition available for this card
                         </Typography>
                     </Box>
@@ -413,7 +413,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                                     showSegmentSpaces={showSegmentSpaces}
                                     vocabWord={currentEntry?.entryKey}
                                 />
-                                <Typography className="mobile-demo-sentence-english" sx={{ fontSize: 12, color: fc.textSecondary, fontFamily: '"Inter", sans-serif', lineHeight: 1.4 }}>
+                                <Typography className="mobile-demo-sentence-english" sx={{ fontSize: 12, color: fc.textSecondary, fontFamily: FC_FONT, lineHeight: 1.4 }}>
                                     {renderEnglishWithVocabUnderline(sentence.english, sentence.translatedVocab)}
                                 </Typography>
                             </Box>
@@ -421,7 +421,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                     </Box>
                 ) : effectiveTab === 1 ? (
                     <Box className="mobile-demo-tab-empty" sx={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 2 }}>
-                        <Typography sx={{ fontSize: 14, color: fc.textSecondary, textAlign: "center", fontFamily: '"Inter", sans-serif' }}>
+                        <Typography sx={{ fontSize: 14, color: fc.textSecondary, textAlign: "center", fontFamily: FC_FONT }}>
                             No example sentences available
                         </Typography>
                     </Box>
@@ -497,7 +497,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                                             <Typography sx={{
                                                 fontSize: 11,
                                                 color: fc.textSecondary,
-                                                fontFamily: '"Inter", sans-serif',
+                                                fontFamily: FC_FONT,
                                                 fontStyle: "italic",
                                                 textAlign: "center",
                                                 lineHeight: 1.4,
@@ -513,7 +513,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                                             fontSize: 14,
                                             color: fc.textSecondary,
                                             textAlign: "center",
-                                            fontFamily: '"Inter", sans-serif',
+                                            fontFamily: FC_FONT,
                                         }}
                                     >
                                         No expansion available
@@ -524,7 +524,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                     </Box>
                 ) : effectiveTab === 2 ? (
                     <Box className="mobile-demo-tab-empty" sx={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 2 }}>
-                        <Typography sx={{ fontSize: 14, color: fc.textSecondary, textAlign: "center", fontFamily: '"Inter", sans-serif' }}>
+                        <Typography sx={{ fontSize: 14, color: fc.textSecondary, textAlign: "center", fontFamily: FC_FONT }}>
                             {isSingleChar ? "No words use this character yet" : "Breakdown not available for this card"}
                         </Typography>
                     </Box>

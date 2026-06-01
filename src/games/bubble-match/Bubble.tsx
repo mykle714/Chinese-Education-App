@@ -1,0 +1,226 @@
+import React from "react";
+import { Box, Typography } from "@mui/material";
+import CPCDRow from "../../components/CPCDRow";
+import { stripParentheses } from "../../utils/definitionUtils";
+import { FC_FONT_CJK } from "../../pages/FlashcardsLearnPage/constants";
+import type { BubbleBody, BubbleStatus } from "./types";
+import {
+    WORD_BUBBLE_BG,
+    WORD_BUBBLE_BORDER,
+    DEFINITION_BUBBLE_BG,
+    DEFINITION_BUBBLE_BORDER,
+    CORRECT_BUBBLE_BG,
+    WRONG_BUBBLE_BG,
+    POP_DURATION_MS,
+    WRONG_FEEDBACK_MS,
+} from "./constants";
+
+interface BubbleProps {
+    body: BubbleBody;
+    /** Passed as a primitive (not read off `body`) so React.memo can detect
+        status transitions — the loop mutates `body` in place, so prev/next.body
+        are the same object and body.status comparisons would always tie. */
+    status: BubbleStatus;
+    showPinyin: boolean;
+    showPinyinColor: boolean;
+    /** Registers the outer node so the rAF loop can write its transform. */
+    registerNode: (id: string, el: HTMLDivElement | null) => void;
+    onPointerDown: (id: string, e: React.PointerEvent) => void;
+    /** Study-mode (game-over, popup minimized) hover highlight on desktop. */
+    onPointerEnter: (id: string, e: React.PointerEvent) => void;
+    onPointerLeave: (id: string, e: React.PointerEvent) => void;
+    /** True while study mode is active — switches the cursor to a tap pointer. */
+    studyMode: boolean;
+}
+
+// Length-based font scale for the definition text, similar in spirit to the
+// flashcard's englishFontSize but tuned to the smaller circular area.
+const definitionFontSize = (text: string, radius: number): number => {
+    const base = radius < 50 ? 11 : 12.5;
+    if (text.length > 42) return base - 3;
+    if (text.length > 26) return base - 1.5;
+    return base;
+};
+
+// Word bubbles shrink their cpcd row to fit longer words inside the circle.
+const wordContentScale = (charCount: number, radius: number): number => {
+    const innerWidth = radius * 2 * 0.82; // usable width inside the circle
+    const approxContentWidth = charCount * 30; // ~30px per char at cpcd "sm"
+    return Math.min(1, innerWidth / approxContentWidth);
+};
+
+/**
+ * A single floating bubble. Two layers by design:
+ *  - The outer node carries the physics transform (translate + scale) written
+ *    every frame by the rAF loop — React never touches it per-frame.
+ *  - The inner node carries status-driven CSS feedback (green pop / red shake),
+ *    remounted via `key={body.status}` so each animation restarts cleanly. Using
+ *    a separate element keeps these transforms from fighting the loop's.
+ */
+const Bubble: React.FC<BubbleProps> = ({
+    body,
+    status,
+    showPinyin,
+    showPinyinColor,
+    registerNode,
+    onPointerDown,
+    onPointerEnter,
+    onPointerLeave,
+    studyMode,
+}) => {
+    const { id, kind, entry, radius } = body;
+    const isWord = kind === "word";
+    const dimmed = status === "held" || status === "hovered";
+
+    let bg: string;
+    let border: string;
+    if (status === "correct" || status === "revealed") {
+        // Study-mode highlight reuses the match-green, minus the pop animation.
+        bg = CORRECT_BUBBLE_BG;
+        border = CORRECT_BUBBLE_BG;
+    } else if (status === "wrong") {
+        bg = WRONG_BUBBLE_BG;
+        border = WRONG_BUBBLE_BG;
+    } else if (isWord) {
+        bg = WORD_BUBBLE_BG;
+        border = WORD_BUBBLE_BORDER;
+    } else {
+        bg = DEFINITION_BUBBLE_BG;
+        border = DEFINITION_BUBBLE_BORDER;
+    }
+
+    // Word content (cpcd row).
+    const syllables = entry.pronunciation?.split(" ") ?? [];
+    const chars = [...entry.entryKey];
+    const items = chars.map((char, i) => ({
+        character: char,
+        pinyin: syllables[i] ?? "",
+        showPinyin,
+        useToneColor: showPinyinColor,
+    }));
+    const contentScale = wordContentScale(chars.length, radius);
+
+    const defText = stripParentheses(entry.definition ?? "");
+
+    return (
+        <Box
+            ref={(el: HTMLDivElement | null) => registerNode(id, el)}
+            className={`bubble bubble--${kind} bubble--${status}`}
+            onPointerDown={(e) => onPointerDown(id, e)}
+            onPointerEnter={(e) => onPointerEnter(id, e)}
+            onPointerLeave={(e) => onPointerLeave(id, e)}
+            sx={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: radius * 2,
+                height: radius * 2,
+                // Initial transform; the rAF loop overwrites this each frame.
+                transform: `translate(${body.x - radius}px, ${body.y - radius}px) scale(${body.scale})`,
+                willChange: "transform",
+                touchAction: "none", // pointer events drive dragging, not scrolling
+                cursor: studyMode ? "pointer" : "grab",
+                zIndex: status === "held" ? 30 : status === "hovered" ? 20 : status === "revealed" ? 15 : 10,
+            }}
+        >
+            <Box
+                key={status}
+                className="bubble__inner"
+                sx={{
+                    width: "100%",
+                    height: "100%",
+                    borderRadius: "50%",
+                    backgroundColor: bg,
+                    border: `2px solid ${border}`,
+                    boxShadow: "0 4px 10px rgba(0,0,0,0.12)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    overflow: "hidden",
+                    boxSizing: "border-box",
+                    padding: "6px",
+                    position: "relative",
+                    transition: "background-color 0.15s ease, border-color 0.15s ease",
+                    ...(status === "correct" && {
+                        animation: `bubblePop ${POP_DURATION_MS}ms ease-out forwards`,
+                        "@keyframes bubblePop": {
+                            "0%": { transform: "scale(1)", opacity: 1 },
+                            "45%": { transform: "scale(1.25)", opacity: 1 },
+                            "100%": { transform: "scale(0.2)", opacity: 0 },
+                        },
+                    }),
+                    ...(status === "wrong" && {
+                        animation: `bubbleShake ${WRONG_FEEDBACK_MS}ms ease-in-out`,
+                        "@keyframes bubbleShake": {
+                            "0%, 100%": { transform: "translateX(0)" },
+                            "20%": { transform: "translateX(-6px)" },
+                            "40%": { transform: "translateX(6px)" },
+                            "60%": { transform: "translateX(-4px)" },
+                            "80%": { transform: "translateX(4px)" },
+                        },
+                    }),
+                }}
+            >
+                {isWord ? (
+                    <Box
+                        className="bubble__word"
+                        sx={{
+                            transform: `scale(${contentScale})`,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                        }}
+                    >
+                        <CPCDRow size="sm" justifyContent="center" items={items} />
+                    </Box>
+                ) : (
+                    <Typography
+                        className="bubble__definition"
+                        sx={{
+                            fontSize: definitionFontSize(defText, radius),
+                            lineHeight: 1.15,
+                            fontWeight: 500,
+                            fontFamily: FC_FONT_CJK,
+                            color: status === "wrong" || status === "correct" || status === "revealed" ? "#fff" : "#3a3a3a",
+                            textAlign: "center",
+                            // Clamp very long definitions so they never overflow the circle.
+                            display: "-webkit-box",
+                            WebkitLineClamp: 4,
+                            WebkitBoxOrient: "vertical",
+                            overflow: "hidden",
+                        }}
+                    >
+                        {defText}
+                    </Typography>
+                )}
+
+                {/* Grey dim overlay shown while held or while a valid drop target. */}
+                {dimmed && (
+                    <Box
+                        className="bubble__dim"
+                        sx={{
+                            position: "absolute",
+                            inset: 0,
+                            borderRadius: "50%",
+                            backgroundColor: "rgba(90,90,90,0.32)",
+                            pointerEvents: "none",
+                        }}
+                    />
+                )}
+            </Box>
+        </Box>
+    );
+};
+
+// Re-render only when something the React layer cares about changes. Position
+// lives in a ref and is written straight to the DOM, so x/y/scale changes must
+// NOT trigger re-renders — only status and identity do.
+export default React.memo(Bubble, (prev, next) => {
+    return (
+        prev.body.id === next.body.id &&
+        prev.status === next.status &&
+        prev.studyMode === next.studyMode &&
+        prev.showPinyin === next.showPinyin &&
+        prev.showPinyinColor === next.showPinyinColor
+    );
+});

@@ -4,12 +4,18 @@
  * Pipeline (mirrors backfill-expansion-claude.js):
  *   1. Generator agent (Sonnet) — proposes a POS list from the canonical 12-tag set.
  *   2. Validator agent (Sonnet) — applies formal Chinese-grammar tests to each
- *      proposed tag and may reject the whole set with a per-tag critique.
- *   3. Regenerator agent (Opus) — on rejection, retries once informed by the
- *      validator's rejected tags + critique.
- *   4. If the second attempt also fails validation, the validator's final verdict
- *      stands and we write whatever Opus produced (validation is advisory at the
- *      final write — recorded in stats but not enforced).
+ *      proposed tag. If it accepts, the generator's list is written and the
+ *      pipeline stops (single attempt).
+ *   3. Regenerator agent (Opus) — only on rejection. Retries once, informed by the
+ *      validator's rejected tags + critique. Free to add, remove, or keep tags.
+ *   4. Chooser agent (Opus) — only after a regeneration. Adjudicates between the
+ *      generator's original list and the regenerator's corrected list and picks
+ *      one of the two verbatim (it cannot propose a third list). The winner is
+ *      what gets written.
+ *
+ * Note: there is no final re-validation. Once a regeneration happens, the
+ * chooser's pick is authoritative regardless of whether it would re-pass the
+ * validator.
  *
  * Usage:
  *   docker exec cow-backend-local npx tsx scripts/backfill-parts-of-speech.js               # full backfill
@@ -37,9 +43,17 @@ const wordsFilter = targetWords?.length
   ? `AND word1 = ANY(ARRAY[${targetWords.map(w => `'${w.replace(/'/g, "''")}'`).join(', ')}])`
   : '';
 
+// Default (untargeted) runs only fill in missing/empty partsOfSpeech. But when
+// the caller names specific words via --words, the intent is to re-evaluate
+// those entries, so we drop the "needs backfill" guard and reprocess them even
+// if they already carry a (possibly wrong) value.
+const posNullFilter = targetWords?.length
+  ? ''
+  : `AND ("partsOfSpeech" IS NULL OR jsonb_array_length("partsOfSpeech") = 0)`;
+
 const GEN_MODEL = 'claude-sonnet-4-6';
 const VALIDATOR_MODEL = 'claude-sonnet-4-6';
-const RETRY_MODEL = 'claude-opus-4-7'; // used when Sonnet's first attempt fails validation
+const RETRY_MODEL = 'claude-opus-4-8'; // used when Sonnet's first attempt fails validation
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Shared rule text — injected into both the generator and validator prompts
@@ -54,10 +68,18 @@ Hard rules — apply formal tests, not English-translation intuition:
 1. CONSERVATIVE TAGGING — Most Chinese words have only 1 or 2 parts of speech.
    3 or more should be rare. Do not pad the list.
 
-2. NO COMPOSITIONAL TAGS — Do not credit a multi-character word with a POS
-   that belongs only to one of its component characters.
-     - 一排 is NOT a classifier (排 is — 一排 itself is a numeral phrase).
-     - 一下 is NOT a classifier (it's an adverbial / verbal-quantity phrase).
+2. NO COMPOSITIONAL TAGS, BUT DO TAG THE WHOLE-WORD FUNCTION — Do not credit a
+   multi-character word with the *classifier* tag that belongs only to one of
+   its component characters. However, a 一X / numeral+classifier phrase is itself
+   a NUMERAL (quantity) phrase: tag it "numeral" for that quantity sense, and add
+   "adverb" ONLY if the whole phrase can stand bare before a verb (rule 3). Do
+   not let the quantity sense fall through to "noun only."
+     - 一排 is NOT a classifier (排 is) — 一排 itself is a numeral phrase → tag "numeral".
+     - 一下 is NOT a classifier — it is a numeral / verbal-quantity phrase → "numeral".
+     - 一点 ("a little / a bit") is NOT a classifier — the quantity sense is a
+       numeral phrase → tag "numeral". It is NOT an adverb (it trails the verb/
+       adjective: 慢一点, 多一点, not *一点慢). Keep "noun" for 点 senses (o'clock,
+       dot, decimal point).
      - 几点 is NOT a classifier (it's an interrogative noun phrase).
 
 3. ADJECTIVE ≠ ADVERB — Chinese adjectives can directly modify verbs and fill
@@ -126,8 +148,11 @@ function normalizeTags(parsed) {
 }
 
 function formatDefinitions(definitions) {
+  // Pass the full definition list to the agents — polysemous words (是, 贴, 和…)
+  // carry senses past the 5th entry that determine valid POS tags, so we no
+  // longer truncate here.
   return Array.isArray(definitions)
-    ? definitions.slice(0, 5).join('; ')
+    ? definitions.join('; ')
     : String(definitions ?? '');
 }
 
@@ -135,18 +160,17 @@ function formatDefinitions(definitions) {
 //  Agent 1: generator (Sonnet)
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function generatePartsOfSpeech(word, pronunciation, definitions, model = GEN_MODEL) {
+async function generatePartsOfSpeech(word, definitions, model = GEN_MODEL) {
   const definitionText = formatDefinitions(definitions);
 
   const prompt = `You are a Chinese linguistics expert assigning parts of speech for a learner dictionary.
 
 Word: ${word}
-Pronunciation: ${pronunciation || 'N/A'}
 Definitions: ${definitionText}
 
 ${POS_RULES_TEXT}
 
-Task: List every part of speech this word genuinely functions as in modern Mandarin, ordered from most to least common.
+Task: List every part of speech this word genuinely functions as in modern Mandarin, across ALL of its pronunciations/readings, ordered from most to least common. The definitions above may span multiple readings — include the POS for every sense that appears, regardless of which reading it belongs to.
 
 Respond with ONLY a JSON array of lowercase strings, e.g. ["noun", "verb"]. No markdown, no explanation.`;
 
@@ -166,7 +190,7 @@ Respond with ONLY a JSON array of lowercase strings, e.g. ["noun", "verb"]. No m
 //  Returns { accept, rejectedTags: string[], violatedRules: string[], critique }
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function validatePartsOfSpeech(word, pronunciation, definitions, proposedTags) {
+async function validatePartsOfSpeech(word, definitions, proposedTags) {
   const definitionText = formatDefinitions(definitions);
 
   const prompt = `You are a strict Chinese-grammar reviewer judging a proposed parts-of-speech assignment for a learner dictionary. Apply the rules formally — do not approve a tag just because the English translation suggests it.
@@ -174,11 +198,10 @@ async function validatePartsOfSpeech(word, pronunciation, definitions, proposedT
 ${POS_RULES_TEXT}
 
 Word: ${word}
-Pronunciation: ${pronunciation || 'N/A'}
 Definitions: ${definitionText}
 Proposed tags: ${JSON.stringify(proposedTags)}
 
-For each proposed tag, judge whether it passes the formal tests above. Also consider whether any clearly valid POS is missing.
+The proposed list should cover every reading/pronunciation represented in the definitions — do not reject a tag merely because it belongs to a different reading than another sense. For each proposed tag, judge whether it passes the formal tests above. Also consider whether any clearly valid POS is missing.
 
 Violation codes you may use (per tag):
 ${Object.entries(VIOLATION_CODE_LABELS).map(([k, v]) => `  - "${k}": ${v}`).join('\n')}
@@ -221,7 +244,7 @@ or
 //  Agent 3: regenerator (Opus) — corrects an attempt that failed validation
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function regeneratePartsOfSpeech(word, pronunciation, definitions, priorTags, rejectedTags, violatedRules, critique) {
+async function regeneratePartsOfSpeech(word, definitions, priorTags, rejectedTags, violatedRules, critique) {
   const definitionText = formatDefinitions(definitions);
   const violationLines = violatedRules
     .map(code => `  - ${code}: ${VIOLATION_CODE_LABELS[code] ?? code}`)
@@ -232,7 +255,6 @@ async function regeneratePartsOfSpeech(word, pronunciation, definitions, priorTa
 ${POS_RULES_TEXT}
 
 Word: ${word}
-Pronunciation: ${pronunciation || 'N/A'}
 Definitions: ${definitionText}
 
 Previous attempt: ${JSON.stringify(priorTags)}
@@ -244,14 +266,14 @@ ${critique || '(none)'}
 
 You are free to ADD, REMOVE, or KEEP any tag. Use your own judgment — the reviewer can be wrong, both by rejecting a legitimate tag and by missing a tag that should have been included. Apply the formal tests directly to each tag (proposed, rejected, or new) and produce the list you believe is correct.
 
-Aim for an accurate list, not a minimal one — most words have 1–2 parts of speech, but multi-category words exist and their extra tags should be retained when justified.
+Aim for an accurate list, not a minimal one — most words have 1–2 parts of speech, but multi-category words exist and their extra tags should be retained when justified. The list must cover every reading/pronunciation represented in the definitions; do not drop a tag merely because its sense belongs to a different reading than the others.
 
 Respond with ONLY a JSON array of lowercase strings, e.g. ["noun", "verb"]. No markdown, no explanation.`;
 
   const response = await anthropic.messages.create({
     model: RETRY_MODEL,
     max_tokens: 64,
-    // Note: claude-opus-4-7 does not accept the `temperature` parameter — omit it.
+    // Note: claude-opus-4-8 does not accept the `temperature` parameter — omit it.
     system: 'You are a Chinese linguistics expert correcting a flawed parts-of-speech assignment. Respond only with a JSON array.',
     messages: [{ role: 'user', content: prompt }],
   });
@@ -265,7 +287,7 @@ Respond with ONLY a JSON array of lowercase strings, e.g. ["noun", "verb"]. No m
 //  Returns { winner: 'sonnet' | 'opus', reason: string }
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function choosePartsOfSpeech(word, pronunciation, definitions, sonnetTags, opusTags) {
+async function choosePartsOfSpeech(word, definitions, sonnetTags, opusTags) {
   const definitionText = formatDefinitions(definitions);
 
   const prompt = `Two parts-of-speech assignments have been proposed for a Chinese word. Pick the better one as written. You must choose exactly one — do not propose a third list.
@@ -273,13 +295,12 @@ async function choosePartsOfSpeech(word, pronunciation, definitions, sonnetTags,
 ${POS_RULES_TEXT}
 
 Word: ${word}
-Pronunciation: ${pronunciation || 'N/A'}
 Definitions: ${definitionText}
 
 Option A (sonnet): ${JSON.stringify(sonnetTags)}
 Option B (opus):   ${JSON.stringify(opusTags)}
 
-Judge which list more accurately reflects the word's parts of speech under the rules above. Penalize over-tagging (rule 1) AND under-tagging (missing a clearly valid POS).
+Judge which list more accurately reflects the word's parts of speech across ALL readings under the rules above. Penalize over-tagging (rule 1) AND under-tagging (missing a clearly valid POS from any reading).
 
 Respond with ONLY:
   {"winner": "sonnet", "reason": "1 short sentence"}
@@ -289,7 +310,7 @@ or
   const response = await anthropic.messages.create({
     model: RETRY_MODEL,
     max_tokens: 200,
-    // Note: claude-opus-4-7 does not accept the `temperature` parameter — omit it.
+    // Note: claude-opus-4-8 does not accept the `temperature` parameter — omit it.
     system: 'You are a strict Chinese-grammar adjudicator picking between two parts-of-speech assignments. Respond only with valid JSON.',
     messages: [{ role: 'user', content: prompt }],
   });
@@ -307,13 +328,13 @@ or
 //  Returns { tags, attempts, model, accepted, finalCritique }
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function runPosPipeline(word, pronunciation, definitions) {
-  const firstTags = await generatePartsOfSpeech(word, pronunciation, definitions, GEN_MODEL);
+async function runPosPipeline(word, definitions) {
+  const firstTags = await generatePartsOfSpeech(word, definitions, GEN_MODEL);
   if (!firstTags) {
     return { tags: null, attempts: 1, model: GEN_MODEL, accepted: false, finalCritique: 'Generator returned unparseable output' };
   }
 
-  const verdict1 = await validatePartsOfSpeech(word, pronunciation, definitions, firstTags);
+  const verdict1 = await validatePartsOfSpeech(word, definitions, firstTags);
   if (verdict1.accept) {
     return { tags: firstTags, attempts: 1, model: GEN_MODEL, accepted: true, finalCritique: '' };
   }
@@ -321,7 +342,6 @@ async function runPosPipeline(word, pronunciation, definitions) {
   // Sonnet's attempt was rejected — retry with Opus, informed by the critique.
   const retryTags = await regeneratePartsOfSpeech(
     word,
-    pronunciation,
     definitions,
     firstTags,
     verdict1.rejectedTags,
@@ -339,7 +359,7 @@ async function runPosPipeline(word, pronunciation, definitions) {
   }
 
   // Opus chooser picks between Sonnet's original and Opus's correction.
-  const choice = await choosePartsOfSpeech(word, pronunciation, definitions, firstTags, retryTags);
+  const choice = await choosePartsOfSpeech(word, definitions, firstTags, retryTags);
   const winnerTags = choice.winner === 'sonnet' ? firstTags : retryTags;
   const winnerModel = choice.winner === 'sonnet' ? GEN_MODEL : RETRY_MODEL;
   return {
@@ -378,7 +398,7 @@ async function run() {
       FROM dictionaryentries
       WHERE language = 'zh'
         AND discoverable = TRUE
-        AND ("partsOfSpeech" IS NULL OR jsonb_array_length("partsOfSpeech") = 0)
+        ${posNullFilter}
         ${wordsFilter}
       ORDER BY id ASC
       ${isSpotCheck ? 'LIMIT 5' : ''}
@@ -402,7 +422,7 @@ async function run() {
       try {
         process.stdout.write(`  ${row.word1} (${row.pronunciation || 'N/A'}) ... `);
 
-        const result = await runPosPipeline(row.word1, row.pronunciation, row.definitions);
+        const result = await runPosPipeline(row.word1, row.definitions);
 
         if (!result.tags) {
           console.log(`FAILED: ${result.finalCritique}`);

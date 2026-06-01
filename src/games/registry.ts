@@ -1,3 +1,4 @@
+import { lazy } from "react";
 import type { GameDef } from "./types";
 
 /**
@@ -11,7 +12,19 @@ import type { GameDef } from "./types";
  * mobile-demo frame allowlist (`src/components/Layout.tsx`) all derive from
  * this array — adding a game requires no edits to those files.
  */
-export const GAME_REGISTRY: GameDef[] = [];
+export const GAME_REGISTRY: GameDef[] = [
+    {
+        gameId: "bubble-match",
+        title: "Bubble Match",
+        subtitle: "Pop word & meaning pairs before the screen fills up",
+        route: "/games/bubble-match",
+        // Always shown in the hub. The game page itself handles the
+        // unauthenticated case ("Sign in to play") and the not-enough-cards case
+        // (shortfall message), so we don't gate it out of the menu with
+        // requiresAuth — that just made the row invisible while debugging.
+        Component: lazy(() => import("./bubble-match/BubbleMatchPage")),
+    },
+];
 
 /** Routes for every registered game; consumed by `MOBILE_DEMO_PATHS`. */
 export const GAME_ROUTES: string[] = GAME_REGISTRY.map((g) => g.route);

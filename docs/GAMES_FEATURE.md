@@ -115,7 +115,10 @@ frontend layers and a thin backend.
 ### Layer 1 — Registry (`src/games/registry.ts`)
 
 ```ts
-export const GAME_REGISTRY: GameDef[] = [];
+export const GAME_REGISTRY: GameDef[] = [
+  { gameId: "bubble-match", title: "Bubble Match", route: "/games/bubble-match",
+    requiresAuth: true, Component: lazy(() => import("./bubble-match/BubbleMatchPage")) },
+];
 ```
 
 Each `GameDef` (`src/games/types.ts`) carries `gameId`, `title`, `subtitle`,
@@ -257,3 +260,50 @@ themselves automatically from the registry.
 - `server/server.ts` — route registration
 - `server/scripts/seedGameAssets.js` — asset seed helper
 - `database/migrations/52-create-game-tables.sql` — `gameassets` + `gameprogress`
+
+## Game: Bubble Match (`/games/bubble-match`)
+
+The first shipped game. **Does not use the Pixi `GameStage`/`useGameActors`
+runtime** — it is a DOM + `requestAnimationFrame` game (absolutely-positioned
+bubbles moved via `transform`), chosen for direct reuse of the colored-pinyin
+`CPCDRow` (cpcd) and cheap circle-circle physics at ~50 bubbles. It still renders
+through the standard page shell (its own flp-style header + `MobileFooter
+activePage="games"`), not `GamePage`.
+
+### Gameplay
+
+- A game uses the **full pool**: 15 Target + 10 Comfortable library cards =
+  **25 pairs → 50 bubbles**. Each pair = one **word** bubble (cpcd) and one
+  **definition** bubble (the flashcard's `stripParentheses(definition)`).
+- Bubbles **launch** on a per-level cadence and **float** with momentum-preserving
+  elastic collisions (`physics.ts`). Drag a bubble onto its partner to match
+  (bidirectional). Correct → green pop + removal; wrong → red shake + release.
+  Picking up / dropping **onto** a Chinese word triggers autoplay TTS.
+- **Levels do not chain** — a level picker selects difficulty (launch cadence
+  only); all use 30s and the full pool. Win = clear all pairs in time. Lose =
+  timer hits 0, or a bubble can't be placed (the border glows red at ≥85% fill
+  as a warning first). Tunables live in `constants.ts` (`LEVEL_CONFIGS`,
+  `GAME_DISTRIBUTION`, sizes, physics).
+- Minute-points: `/games/bubble-match` is in `MINUTE_POINTS_ELIGIBLE_PAGES`
+  (`src/constants.ts`); the header's `MinutePointsFireBadge` works as on flp.
+
+### Files
+
+- `src/games/bubble-match/` — `BubbleMatchPage.tsx` (flow: loading → blocked |
+  picker → playing → won | lost), `BubbleStage.tsx` (rAF loop, launcher,
+  countdown, drag/hover/match, HUD, red glow), `Bubble.tsx` (one bubble; outer
+  node carries the loop's transform, inner node carries CSS pop/shake),
+  `physics.ts`, `BubbleMatchHeader.tsx`, `constants.ts`, `types.ts`.
+- `src/games/registry.ts` — registers the game (`requiresAuth: true`).
+
+### Backend
+
+Reuses the OnDeck vocab stack (no new tables). New endpoints in `server.ts`:
+
+- `GET /api/onDeck/game-pool?Target=15&Comfortable=10` →
+  `{ cards, requested, available, sufficient }`. `OnDeckVocabService.getGameVocabPool`
+  pulls library cards per category (same RANDOM ordering + `definition` source as
+  the working loop), enriches + pre-warms TTS, and reports availability so the
+  client can block entry when the user lacks enough words.
+- `GET /api/onDeck/category-counts` → `{ Unfamiliar, Target, Comfortable, Mastered }`,
+  also surfaced under each bucket label on the decks page.

@@ -115,6 +115,20 @@ export function useTTS() {
         tts.cloud.prefetch(entry.entryKey, 'zh-CN', entry.pronunciation);
     }, [settings.enabled, settings.engine]);
 
+    /**
+     * Prime the cloud provider's shared <audio> element for autoplay. Call this
+     * synchronously from a real user gesture (e.g. a button click) when the next
+     * autoplay will be triggered by code that runs after an `await` — such as a
+     * drag handler that narrates only once playback begins — so mobile autoplay
+     * policy doesn't reject that first programmatic play(). No-op for the browser
+     * engine, which primes itself on its first in-gesture speak().
+     */
+    const unlockAudio = useCallback(() => {
+        if (!settings.enabled) return;
+        if (settings.engine === 'browser') return;
+        tts.cloud.unlock();
+    }, [settings.enabled, settings.engine]);
+
     // Sentence variant of prefetch — warm the cloud cache without playing.
     const prefetchSentence = useCallback((text: string, pronunciation?: string) => {
         if (!text) return;
@@ -129,6 +143,7 @@ export function useTTS() {
         cancel,
         prefetch,
         prefetchSentence,
+        unlockAudio,
         isSpeaking,
         speakingKey,
         enabled: settings.enabled,

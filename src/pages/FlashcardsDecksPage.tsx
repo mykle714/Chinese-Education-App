@@ -92,6 +92,8 @@ interface DeckCardProps {
     mainColor: string;
     accentColor: string;
     onClick: () => void;
+    // Number of library cards in this category, shown under the label.
+    count?: number;
 }
 
 const DeckCard = styled(Box)<{ mainColor: string; accentColor: string }>(
@@ -151,8 +153,10 @@ const DeckCard = styled(Box)<{ mainColor: string; accentColor: string }>(
             left: 6,
             top: 32,
             display: "flex",
+            flexDirection: "column",
             alignItems: "center",
             justifyContent: "center",
+            gap: 2,
             fontSize: 10,
             fontWeight: 400,
             lineHeight: 1.21,
@@ -160,6 +164,13 @@ const DeckCard = styled(Box)<{ mainColor: string; accentColor: string }>(
             color: COLORS.onSurface,
             fontFamily: '"Inter", sans-serif',
             zIndex: 1,
+        },
+        // Card count sits directly under the bucket label.
+        "& .bucket-count": {
+            fontSize: 9,
+            fontWeight: 700,
+            lineHeight: 1,
+            opacity: 0.75,
         },
     })
 );
@@ -169,6 +180,7 @@ const DeckCardComponent: React.FC<DeckCardProps> = ({
     mainColor,
     accentColor,
     onClick,
+    count,
 }) => {
     return (
         <DeckCard
@@ -181,7 +193,10 @@ const DeckCardComponent: React.FC<DeckCardProps> = ({
             <div className="bucket-layer-2" />
             <div className="bucket-layer-1">
                 <div className="bucket-inner" />
-                <div className="bucket-text">{label}</div>
+                <div className="bucket-text">
+                    <span className="bucket-label">{label}</span>
+                    {typeof count === "number" && <span className="bucket-count">{count}</span>}
+                </div>
             </div>
         </DeckCard>
     );
@@ -202,6 +217,8 @@ const FlashcardsDecksPage: React.FC = () => {
     const [masteredEntries, setMasteredEntries] = useState<VocabEntry[]>([]);
     const [masteredLoading, setMasteredLoading] = useState(true);
     const [masteredError, setMasteredError] = useState<string | null>(null);
+    // Per-category library card counts shown under each deck bucket label.
+    const [categoryCounts, setCategoryCounts] = useState<Record<string, number>>({});
 
     // Fetch non-mastered library cards from OnDeck vocab sets
     useEffect(() => {
@@ -296,6 +313,25 @@ const FlashcardsDecksPage: React.FC = () => {
         }
     }, [token]);
 
+    // Fetch per-category library card counts for the deck bucket labels
+    useEffect(() => {
+        if (!token) return;
+        (async () => {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/onDeck/category-counts`, {
+                    credentials: 'include',
+                    headers: { 'Authorization': `Bearer ${token}` },
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    setCategoryCounts(data && typeof data === 'object' ? data : {});
+                }
+            } catch (err) {
+                console.error('Error fetching category counts:', err);
+            }
+        })();
+    }, [token]);
+
     // Refresh card lists when navigating back from CDP after an action
     useEffect(() => {
         if (location.state?.refresh) {
@@ -383,6 +419,7 @@ const FlashcardsDecksPage: React.FC = () => {
                             mainColor={COLORS.redMain}
                             accentColor={COLORS.redAccent}
                             onClick={() => handleDeckClick("Unfamiliar")}
+                            count={categoryCounts["Unfamiliar"]}
                         />
 
                         {/* Target - Yellow */}
@@ -391,6 +428,7 @@ const FlashcardsDecksPage: React.FC = () => {
                             mainColor={COLORS.yellowMain}
                             accentColor={COLORS.yellowAccent}
                             onClick={() => handleDeckClick("Target")}
+                            count={categoryCounts["Target"]}
                         />
 
                         {/* Comfortable - Green */}
@@ -399,6 +437,7 @@ const FlashcardsDecksPage: React.FC = () => {
                             mainColor={COLORS.greenMain}
                             accentColor={COLORS.greenAccent}
                             onClick={() => handleDeckClick("Comfortable")}
+                            count={categoryCounts["Comfortable"]}
                         />
 
                         {/* Mastered - Blue */}
@@ -407,6 +446,7 @@ const FlashcardsDecksPage: React.FC = () => {
                             mainColor={COLORS.blueMain}
                             accentColor={COLORS.blueAccent}
                             onClick={() => handleDeckClick("Mastered")}
+                            count={categoryCounts["Mastered"]}
                         />
                     </BucketsContainer>
 

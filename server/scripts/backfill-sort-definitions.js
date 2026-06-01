@@ -46,7 +46,7 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const PASS1_MODEL = 'claude-sonnet-4-6';
 const PASS2_MODEL = 'claude-sonnet-4-6';
-const RETRY_MODEL = 'claude-opus-4-7'; // used when a Sonnet response fails validation
+const RETRY_MODEL = 'claude-opus-4-8'; // used when a Sonnet response fails validation
 
 const REVIEW_LOG_PATH = `/tmp/sort-definitions-review-${Date.now()}.log`;
 

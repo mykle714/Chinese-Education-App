@@ -2,7 +2,15 @@ import React from "react";
 import { Box, Card, CardContent, Typography, useTheme } from "@mui/material";
 import { stripParentheses } from "../../utils/definitionUtils";
 import { DraggableCardContainer, SwipeHintLabel, FlipHintLabel } from "./styled";
-import { CORRECT_COLOR, INCORRECT_COLOR, CARD_FACE_JUSTIFY, CARD_DISMISS_THRESHOLD_VW } from "./constants";
+import {
+    CORRECT_COLOR,
+    INCORRECT_COLOR,
+    CARD_FACE_JUSTIFY,
+    CARD_DISMISS_THRESHOLD_VW,
+    CARD_FLY_OUT_TRANSITION,
+    FC_FONT,
+    FC_FONT_CJK,
+} from "./constants";
 import type { VocabEntry, SideOneLanguage } from "./types";
 import CPCDRow from "../../components/CPCDRow";
 import { SpeakerButton } from "../../components/SpeakerButton";
@@ -80,19 +88,107 @@ const ChineseBlock: React.FC<{
     );
 };
 
+// Length-based font scale for the English definition. A fixed 30px overflowed
+// the card for long definitions, so we step the size down as the string grows.
+// Returns px. Thresholds chosen to keep the longest common definitions on ≤3
+// lines within the 295px card face.
+const englishFontSize = (text: string): number => {
+    const len = text.length;
+    if (len > 48) return 18;
+    if (len > 32) return 22;
+    if (len > 18) return 26;
+    return 30;
+};
+
 // English definition Typography reused on both Side 1 (when English) and Side 2.
 const EnglishBlock: React.FC<{ entry: VocabEntry }> = ({ entry }) => {
     const theme = useTheme();
+    const text = stripParentheses(entry.definition ?? '');
     return (
         <Typography sx={{
-            fontSize: 30,
+            fontSize: englishFontSize(text),
             fontWeight: 400,
             color: theme.palette.flashcard.onSurface,
-            fontFamily: '"Inter", "Noto Sans JP", sans-serif',
+            fontFamily: FC_FONT_CJK,
             textAlign: 'center',
+            lineHeight: 1.25,
         }}>
-            {stripParentheses(entry.definition ?? '')}
+            {text}
         </Typography>
+    );
+};
+
+// Image placeholder box shown at the top of both card faces. Extracted so the
+// two faces share one definition. (Currently a literal "insert image here"
+// stand-in until card imagery ships.)
+const ImagePlaceholder: React.FC = () => {
+    const theme = useTheme();
+    const fc = theme.palette.flashcard;
+    return (
+        <Box
+            className="mobile-demo-flashcard-image"
+            sx={{ width: 106, height: 83, backgroundColor: fc.imagePlaceholder, borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+            <Typography sx={{ fontSize: 11, color: fc.textSecondary, fontFamily: FC_FONT, textAlign: 'center' }}>
+                insert image here
+            </Typography>
+        </Box>
+    );
+};
+
+// Shared scaffold for a single card face: the absolutely-positioned, backface-
+// hidden face box + its CardContent + the inner flex column holding the image
+// placeholder and a content slot. `rotated` flips the face to the back (Side 2);
+// `contentGap` differs between the single-block front and the stacked back.
+const CardFaceSide: React.FC<{
+    rotated: boolean;
+    contentGap: number;
+    contentClassName?: string;
+    children: React.ReactNode;
+}> = ({ rotated, contentGap, contentClassName, children }) => {
+    const theme = useTheme();
+    const fc = theme.palette.flashcard;
+    return (
+        <Box sx={{
+            position: "absolute",
+            top: 0, left: 0, width: "100%", height: "100%",
+            backfaceVisibility: "hidden",
+            WebkitBackfaceVisibility: "hidden",
+            ...(rotated && { transform: "rotateY(180deg)" }),
+            backgroundColor: fc.flashCard,
+            borderRadius: "12px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: CARD_FACE_JUSTIFY,
+        }}>
+            <CardContent
+                className={rotated ? undefined : "mobile-demo-flashcard-content"}
+                sx={{
+                    width: "100%",
+                    height: "100%",
+                    padding: "clamp(16px, 7%, 72px) 30px",
+                    boxSizing: "border-box",
+                }}
+            >
+                <Box
+                    className={rotated ? undefined : "mobile-demo-flashcard-inner"}
+                    sx={{
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        height: "100%",
+                        minHeight: 0,
+                        gap: "clamp(8px, 2.2vh, 20px)",
+                    }}
+                >
+                    <ImagePlaceholder />
+                    <Box className={contentClassName} sx={{ display: 'flex', flexDirection: 'column', gap: contentGap, alignItems: 'center', width: '100%' }}>
+                        {children}
+                    </Box>
+                </Box>
+            </CardContent>
+        </Box>
     );
 };
 
@@ -137,97 +233,22 @@ const CardFace: React.FC<{
                 inset: 0,
                 transformStyle: "preserve-3d",
                 transform: `rotateY(${isFlipped ? 180 : 0}deg)`,
-                transition: isAnimating ? 'none' : 'transform 0.45s ease',
+                transition: isAnimating ? 'none' : CARD_FLY_OUT_TRANSITION,
                 overflow: 'visible',
             }}
         >
             {/* Side 1 — shows only one language, chosen randomly per card */}
-            <Box sx={{
-                position: "absolute",
-                top: 0, left: 0, width: "100%", height: "100%",
-                backfaceVisibility: "hidden",
-                WebkitBackfaceVisibility: "hidden",
-                backgroundColor: fc.flashCard,
-                borderRadius: "12px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: CARD_FACE_JUSTIFY,
-            }}>
-                <CardContent
-                    className="mobile-demo-flashcard-content"
-                    sx={{
-                        width: "100%",
-                        height: "100%",
-                        padding: "clamp(16px, 7%, 72px) 30px",
-                        boxSizing: "border-box",
-                    }}
-                >
-                    <Box
-                        className="mobile-demo-flashcard-inner"
-                        sx={{
-                            display: "flex",
-                            flexDirection: "column",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                            height: "100%",
-                            minHeight: 0,
-                            gap: "clamp(8px, 2.2vh, 20px)",
-                        }}
-                    >
-                        <Box className="mobile-demo-flashcard-image" sx={{ width: 106, height: 83, backgroundColor: fc.imagePlaceholder, borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <Typography sx={{ fontSize: 11, color: fc.textSecondary, fontFamily: '"Inter", sans-serif', textAlign: 'center' }}>insert image here</Typography>
-                        </Box>
-                        <Box className="mobile-demo-flashcard-text mobile-demo-flashcard-side-one" sx={{ display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'center', width: '100%' }}>
-                            {sideOneLanguage === 'zh'
-                                ? <ChineseBlock entry={entry} showPinyin={showPinyin} showPinyinColor={showPinyinColor} onSpeak={onSpeak} speakingKey={speakingKey} />
-                                : <EnglishBlock entry={entry} />}
-                        </Box>
-                    </Box>
-                </CardContent>
-            </Box>
+            <CardFaceSide rotated={false} contentGap={1} contentClassName="mobile-demo-flashcard-text mobile-demo-flashcard-side-one">
+                {sideOneLanguage === 'zh'
+                    ? <ChineseBlock entry={entry} showPinyin={showPinyin} showPinyinColor={showPinyinColor} onSpeak={onSpeak} speakingKey={speakingKey} />
+                    : <EnglishBlock entry={entry} />}
+            </CardFaceSide>
 
             {/* Side 2 — always shows both Chinese and English */}
-            <Box sx={{
-                position: "absolute",
-                top: 0, left: 0, width: "100%", height: "100%",
-                backfaceVisibility: "hidden",
-                WebkitBackfaceVisibility: "hidden",
-                transform: "rotateY(180deg)",
-                backgroundColor: fc.flashCard,
-                borderRadius: "12px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: CARD_FACE_JUSTIFY,
-            }}>
-                <CardContent
-                    sx={{
-                        width: "100%",
-                        height: "100%",
-                        padding: "clamp(16px, 7%, 72px) 30px",
-                        boxSizing: "border-box",
-                    }}
-                >
-                    <Box
-                        sx={{
-                            display: "flex",
-                            flexDirection: "column",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                            height: "100%",
-                            minHeight: 0,
-                            gap: "clamp(8px, 2.2vh, 20px)",
-                        }}
-                    >
-                        <Box sx={{ width: 106, height: 83, backgroundColor: fc.imagePlaceholder, borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <Typography sx={{ fontSize: 11, color: fc.textSecondary, fontFamily: '"Inter", sans-serif', textAlign: 'center' }}>insert image here</Typography>
-                        </Box>
-                        <Box className="mobile-demo-flashcard-side-two" sx={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center', width: '100%' }}>
-                            <ChineseBlock entry={entry} showPinyin={showPinyin} showPinyinColor={showPinyinColor} onSpeak={onSpeak} speakingKey={speakingKey} />
-                            <EnglishBlock entry={entry} />
-                        </Box>
-                    </Box>
-                </CardContent>
-            </Box>
+            <CardFaceSide rotated contentGap={2} contentClassName="mobile-demo-flashcard-side-two">
+                <ChineseBlock entry={entry} showPinyin={showPinyin} showPinyinColor={showPinyinColor} onSpeak={onSpeak} speakingKey={speakingKey} />
+                <EnglishBlock entry={entry} />
+            </CardFaceSide>
 
             {/* Drag overlay — shown on the front card and the card currently flying off */}
             {isProminent && (
@@ -367,7 +388,7 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                     const targetX = flyOut!.direction === 'right' ? FLY_OUT_X : -FLY_OUT_X;
                                     const targetRotation = flyOut!.direction === 'right' ? FLY_OUT_ROTATION : -FLY_OUT_ROTATION;
                                     transform = `translate(${targetX}px, 0px) rotate(${targetRotation}deg)`;
-                                    transition = 'transform 0.45s ease';
+                                    transition = CARD_FLY_OUT_TRANSITION;
                                     opacity = 1 - Math.abs(dragPosition.x) / 400;
                                 } else if (isFront && isAnimating) {
                                     // Newly promoted back card during the fly-out window: hold at center.
@@ -379,7 +400,7 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                 } else if (isFront) {
                                     const rotation = dragPosition.x * 0.05;
                                     transform = `translate(${dragPosition.x}px, ${dragPosition.y}px) rotate(${rotation}deg)`;
-                                    transition = isDragging ? 'none' : 'transform 0.45s ease';
+                                    transition = isDragging ? 'none' : CARD_FLY_OUT_TRANSITION;
                                     opacity = 1 - Math.abs(dragPosition.x) / 400;
                                 } else {
                                     // Back card: slight scale-down for depth; transition:none so it snaps
@@ -471,7 +492,7 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                         fontSize: 20,
                                         fontWeight: 400,
                                         color: fc.onSurface,
-                                        fontFamily: '"Inter", sans-serif',
+                                        fontFamily: FC_FONT,
                                         lineHeight: 1.5,
                                     }}
                                 >

@@ -14,7 +14,8 @@ export const MINUTE_POINTS_ELIGIBLE_PAGES = [
   '/flashcards',
   '/flashcards/learn',
   '/reader',
-  '/discover/sort'
+  '/discover/sort',
+  '/games/bubble-match'
 ];
 
 export const MINUTE_POINTS_CONFIG = {

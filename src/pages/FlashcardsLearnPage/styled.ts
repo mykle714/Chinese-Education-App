@@ -1,6 +1,6 @@
 import { Box, Card, Typography } from "@mui/material";
 import { styled, alpha } from "@mui/material/styles";
-import { CORRECT_COLOR, INCORRECT_COLOR } from "./constants";
+import { CORRECT_COLOR, INCORRECT_COLOR, FC_FONT } from "./constants";
 
 // IPhoneFrame removed — phone-frame sizing comes from MobileDemoFrame via Layout.tsx.
 
@@ -138,7 +138,7 @@ export const InfoSheetTab = styled(Box, {
         ? `2px solid ${theme.palette.flashcard.tabUnderline}`
         : "2px solid transparent",
     marginBottom: -1,
-    fontFamily: "Inter, sans-serif",
+    fontFamily: FC_FONT,
     userSelect: "none",
     opacity: isEmpty && !isActive ? 0.4 : 1,
     transition: "opacity 0.2s ease",
@@ -185,7 +185,7 @@ export const DefinitionText = styled(Typography)(({ theme }) => ({
     fontSize: 12,
     color: theme.palette.flashcard.onSurface,
     lineHeight: "16px",
-    fontFamily: '"Inter", sans-serif',
+    fontFamily: FC_FONT,
 }));
 
 // Info-tab metadata row: HSK pill + POS chips, centered above the long definition.
@@ -201,7 +201,7 @@ export const MetadataChipRow = styled(Box)(() => ({
 export const HskPill = styled(Box)(({ theme }) => ({
     backgroundColor: theme.palette.flashcard.hskPill,
     color: "#FFFFFF",
-    fontFamily: '"Inter", sans-serif',
+    fontFamily: FC_FONT,
     fontSize: 11,
     fontWeight: 600,
     letterSpacing: "0.02em",
@@ -213,7 +213,7 @@ export const HskPill = styled(Box)(({ theme }) => ({
 export const PosChip = styled(Box)(({ theme }) => ({
     border: `1px solid ${theme.palette.flashcard.border}`,
     color: theme.palette.flashcard.onSurface,
-    fontFamily: '"Inter", sans-serif',
+    fontFamily: FC_FONT,
     fontSize: 11,
     fontWeight: 500,
     padding: "2px 8px",
@@ -226,7 +226,7 @@ export const PosChip = styled(Box)(({ theme }) => ({
 export const SharedCharsLabel = styled(Typography)(({ theme }) => ({
     fontSize: 12,
     color: theme.palette.flashcard.textSecondary,
-    fontFamily: '"Inter", sans-serif',
+    fontFamily: FC_FONT,
     textTransform: "uppercase",
     letterSpacing: "0.5px",
     textAlign: "center",
@@ -279,7 +279,7 @@ export const MoreInfoPill = styled(Box, {
     borderRadius: 999,
     padding: "7px 16px 7px 14px",
     cursor: "pointer",
-    fontFamily: "Inter, sans-serif",
+    fontFamily: FC_FONT,
     zIndex: 2,
     opacity: isFlipped ? 1 : 0.32,
     pointerEvents: isFlipped ? "auto" : "none",
@@ -322,7 +322,7 @@ export const SwipeHintLabel = styled(Box, {
     display: "flex",
     alignItems: "center",
     gap: 6,
-    fontFamily: "Inter, sans-serif",
+    fontFamily: FC_FONT,
     fontSize: 13,
     fontWeight: 600,
     letterSpacing: "0.02em",
@@ -348,7 +348,7 @@ export const FlipHintLabel = styled(Box, {
     display: "flex",
     alignItems: "center",
     gap: 6,
-    fontFamily: "Inter, sans-serif",
+    fontFamily: FC_FONT,
     fontSize: 13,
     fontWeight: 600,
     letterSpacing: "0.02em",

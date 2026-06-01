@@ -77,7 +77,6 @@ export interface LastMarkUndoSnapshot {
     workingLoop: VocabEntry[];
     currentIndex: number;
     isFlipped: boolean;
-    selectedTab: number;
     currentSideOneLanguage: SideOneLanguage;
     nextSideOneLanguage: SideOneLanguage;
 }

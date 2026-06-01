@@ -1,6 +1,7 @@
 import { Box, Typography, useTheme } from "@mui/material";
 import CPCDRow from "../../components/CPCDRow";
 import { stripParentheses } from "../../utils/definitionUtils";
+import { FC_FONT } from "./constants";
 
 export interface InfoCardListRowProps {
     character: string;
@@ -71,7 +72,7 @@ function InfoCardListRow({
                     showPinyin,
                 }))}
             />
-            <Typography sx={{ fontSize: 14, color: fc.onSurface, flex: 1, fontFamily: '"Inter", sans-serif' }}>
+            <Typography sx={{ fontSize: 14, color: fc.onSurface, flex: 1, fontFamily: FC_FONT }}>
                 {stripParentheses(definition)}
             </Typography>
             {clickable && (

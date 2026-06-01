@@ -41,6 +41,10 @@ export class CloudTTSProvider implements TTSProvider {
     // `new Audio()` so it inherits the unlocked element's activation.
     private audioEl: HTMLAudioElement | null = null;
     private unlockListenerInstalled = false;
+    // Flipped true once the silent in-gesture play() resolves, marking the
+    // shared element as user-activated. Guards unlock() so we don't re-run the
+    // silent play (and its element-resetting cleanup) on every gesture.
+    private audioUnlocked = false;
     // 1-frame silent MP3 (≈ 70 bytes) used to satisfy the gesture-bound play()
     // call without making any sound.
     private static SILENT_MP3 =
@@ -70,36 +74,74 @@ export class CloudTTSProvider implements TTSProvider {
         this.unlockListenerInstalled = true;
 
         if (!this.audioEl) this.audioEl = new Audio();
-        const el = this.audioEl;
-
-        const unlock = () => {
-            // Must run synchronously inside the gesture task — no awaits before
-            // play(). Muted + silent src so the user hears nothing; success or
-            // failure, we tear the listener down (capture+once would do it too,
-            // but we remove explicitly for clarity).
-            try {
-                el.muted = true;
-                el.src = CloudTTSProvider.SILENT_MP3;
-                const p = el.play();
-                if (p && typeof p.then === 'function') {
-                    p.catch(() => {
-                        // Even on rejection iOS may still have flagged the
-                        // element as activated.
-                    }).finally(() => {
-                        el.pause();
-                        el.muted = false;
-                        el.removeAttribute('src');
-                        el.load();
-                    });
-                }
-            } catch {
-                // ignore — gesture activation is best-effort
-            }
-        };
 
         // pointerdown fires earliest across mouse + touch + pen. `capture: true`
         // ensures we see the gesture even if a child handler stops propagation.
-        window.addEventListener('pointerdown', unlock, { once: true, capture: true });
+        window.addEventListener('pointerdown', () => this.unlock(), { once: true, capture: true });
+    }
+
+    /**
+     * Prime the shared <audio> element for autoplay by playing a muted silent
+     * clip. MUST be called synchronously inside a real user-gesture task (e.g. a
+     * button click or pointerdown handler) — there must be no `await` between the
+     * gesture and this call. Earns the per-element activation flag so a later
+     * speak() can call play() after its awaited fetch without being rejected by
+     * mobile autoplay policy.
+     *
+     * Idempotent: no-ops once already unlocked. Skipped while a real utterance is
+     * playing so the silent clip's cleanup can't clobber live audio. Safe to call
+     * outside a gesture too — it's best-effort and swallows failures.
+     *
+     * Callers that begin playback only after a fetch (e.g. a game's first
+     * bubble-drag autoplay) should call this from an earlier guaranteed gesture
+     * such as a start/level button so the element is unlocked before that fetch.
+     */
+    unlock(): void {
+        if (typeof window === 'undefined') return;
+        if (this.audioUnlocked) return;
+        // A real utterance is mid-flight; the silent clip's cleanup below would
+        // pause it and strip its src. The active play already proves activation.
+        if (this.currentAudio) return;
+
+        if (!this.audioEl) this.audioEl = new Audio();
+        const el = this.audioEl;
+
+        // Must run synchronously inside the gesture task — no awaits before
+        // play(). Muted + silent src so the user hears nothing.
+        try {
+            el.muted = true;
+            el.src = CloudTTSProvider.SILENT_MP3;
+            const p = el.play();
+            if (p && typeof p.then === 'function') {
+                p.then(() => {
+                    this.audioUnlocked = true;
+                }).catch(() => {
+                    // Even on rejection iOS may still have flagged the element
+                    // as activated; leave audioUnlocked false so a later gesture
+                    // can retry.
+                }).finally(() => {
+                    // CRITICAL: a real speak() can take over this shared element
+                    // while our silent clip is still in flight (e.g. the very
+                    // first bubble grab fires unlock() AND speak() on the same
+                    // pointerdown). speak() swaps in its own src + sets
+                    // currentAudio; if we tore down here we'd pause and strip
+                    // that live narration. Only clean up the silent clip when no
+                    // real utterance owns the element.
+                    if (this.currentAudio) {
+                        el.muted = false;
+                        return;
+                    }
+                    el.pause();
+                    el.muted = false;
+                    el.removeAttribute('src');
+                    el.load();
+                });
+            } else {
+                this.audioUnlocked = true;
+            }
+        } catch {
+            // ignore — gesture activation is best-effort
+        }
     }
 
     async speak(req: TTSRequest): Promise<void> {

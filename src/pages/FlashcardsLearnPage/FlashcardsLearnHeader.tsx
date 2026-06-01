@@ -52,6 +52,11 @@ const FlashcardsLearnHeader: React.FC<FlashcardsLearnHeaderProps> = ({
         },
     });
 
+    // Control-placement principle (see also SettingsPanelBody): the header
+    // surfaces only the two "quick" toggles flipped often mid-study — pinyin and
+    // autoplay. All other learn prefs (tone color, word spacing) live in the
+    // Settings sheet as "setup" prefs. Both toggles here are also mirrored in the
+    // sheet, which remains the single complete control panel.
     const rightItems = (
         <>
             <IconButton

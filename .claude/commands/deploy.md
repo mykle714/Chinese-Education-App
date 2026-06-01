@@ -38,6 +38,34 @@ Deploy the current branch to the production server at 174.127.171.180.
 - **NEVER run** `docker-compose -f docker-compose.prod.yml down -v` — the `-v` flag destroys the volume
 - Dev containers (`cow-*-local`) run on separate ports and do not conflict with prod; leave them running
 
+## Database Migrations & Tracking
+
+Migrations are **tracked** in a `schema_migrations` table (defined in `database/init/01-init-schema.sql`):
+
+| Column | Meaning |
+|--------|---------|
+| `version` | migration number, e.g. `54` (primary key) |
+| `name` | filename, e.g. `54-add-user-last-penalty-date.sql` |
+| `applied_at` | timestamp, defaults to `NOW()` |
+
+**To check which migrations prod has applied** (do this before deploying to learn what's pending):
+
+```bash
+docker exec cow-postgres-prod psql -U cow_user -d cow_db \
+  -c "SELECT version, name, applied_at FROM schema_migrations ORDER BY version;"
+```
+
+The highest `version` is where prod stands. Pending = any migration file in `database/migrations/` numbered higher.
+
+**The canonical runner is `database/deploy/migrate.sh`.** It reads `MAX(version)`, applies every file numbered higher (in `sort -V` order), and **records each one into `schema_migrations`**. It is idempotent — already-applied files are skipped, so re-running is safe.
+
+⚠️ **If you apply a migration by hand** (`psql -f`) instead of via `migrate.sh`, you MUST also insert a tracking row, or `migrate.sh` will try to re-run it next time:
+
+```bash
+docker exec cow-postgres-prod psql -U cow_user -d cow_db \
+  -c "INSERT INTO schema_migrations (version, name) VALUES (54, '54-add-user-last-penalty-date.sql');"
+```
+
 ## Steps
 
 ### 1. Build & fix (run locally)
@@ -58,7 +86,7 @@ If it fails:
 
 Stage and commit all relevant changes, then push to `origin main`.
 
-Check for new migration files in `database/migrations/` — note them so the user knows to run them.
+Determine which migrations are pending by comparing the files in `database/migrations/` against prod's `schema_migrations` table (see the "Database Migrations & Tracking" section above for the query) — note the pending ones so the user knows what will run.
 
 ### 3. Tell the user to run on the server
 
@@ -73,13 +101,16 @@ git pull origin main
 docker-compose -f docker-compose.prod.yml down
 docker-compose -f docker-compose.prod.yml up --build -d
 
-# Migration(s) — copy file into container first, then run with -f (never use < redirect, it breaks in pasted blocks)
+# Migration(s) — copy file into container, run with -f, then RECORD it in schema_migrations
+# (never use < redirect, it breaks in pasted blocks; always insert the tracking row so migrate.sh stays correct)
 docker cp database/migrations/<migration-file>.sql cow-postgres-prod:/tmp/<migration-file>.sql
-docker exec cow-postgres-prod psql -U cow_user -d cow_db -f /tmp/<migration-file>.sql
+docker exec cow-postgres-prod psql -U cow_user -d cow_db -v ON_ERROR_STOP=1 -f /tmp/<migration-file>.sql
+docker exec cow-postgres-prod psql -U cow_user -d cow_db \
+  -c "INSERT INTO schema_migrations (version, name) VALUES (<version>, '<migration-file>.sql');"
 
 # Verify
 docker-compose -f docker-compose.prod.yml ps
 curl http://localhost/api/health
 ```
 
-If there are no migrations, omit that section but keep everything else in one block.
+If there are no pending migrations, omit that section but keep everything else in one block.

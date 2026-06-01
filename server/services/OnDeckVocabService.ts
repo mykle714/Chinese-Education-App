@@ -495,13 +495,29 @@ export class OnDeckVocabService {
     }
   }
 
+  // Fallback buckets (in priority order) used to top the game pool up to its
+  // total when one or more requested categories can't fill their quota. Per the
+  // game design: borrow extra Target cards first, then Comfortable, Unfamiliar,
+  // and finally Mastered.
+  private static readonly GAME_FALLBACK_ORDER = ['Target', 'Comfortable', 'Unfamiliar', 'Mastered'];
+
   /**
-   * Build the bubble-match game pool: for each requested bucket, pull up to
-   * `count` library cards (same `definition` source + RANDOM ordering as the
-   * category-filtered working loop the flashcards use) and report how many were
-   * available so the client can block entry when the user lacks enough words.
-   * Cards are enriched and have their TTS pre-warmed so in-game autoplay is
-   * instant, mirroring the distributed-working-loop endpoint.
+   * Build the bubble-match game pool. The game needs `total` (= sum of the
+   * requested distribution) cards to function, so this is a best-effort fill
+   * rather than a hard per-category gate:
+   *
+   *   1. Pull up to `count` library cards from each requested bucket (same
+   *      `definition` source + RANDOM ordering as the category-filtered working
+   *      loop the flashcards use).
+   *   2. If the buckets came up short (a category had fewer than its quota),
+   *      top the pool up to `total` by borrowing extra cards from the fallback
+   *      buckets in priority order (Target → Comfortable → Unfamiliar →
+   *      Mastered), excluding cards already collected.
+   *
+   * `sufficient` now means "we assembled enough cards to play" (>= total), not
+   * "every requested quota was met exactly". Cards are enriched and have their
+   * TTS pre-warmed so in-game autoplay is instant, mirroring the
+   * distributed-working-loop endpoint.
    */
   async getGameVocabPool(
     userId: string,
@@ -510,34 +526,56 @@ export class OnDeckVocabService {
     cards: VocabEntry[];
     requested: Record<string, number>;
     available: Record<string, number>;
+    total: number;
     sufficient: boolean;
   }> {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
 
-    const categories = Object.keys(distribution);
-    const available = await this.getCategoryCounts(userId, categories);
+    const total = Object.values(distribution).reduce((sum, n) => sum + n, 0);
+    // Count availability across both the requested buckets and the fallback
+    // buckets so the client can show accurate "you have N" hints.
+    const countCategories = Array.from(
+      new Set([...Object.keys(distribution), ...OnDeckVocabService.GAME_FALLBACK_ORDER])
+    );
+    const available = await this.getCategoryCounts(userId, countCategories);
 
     const client = await db.getClient();
     try {
       const cards: VocabEntry[] = [];
-      for (const [category, count] of Object.entries(distribution)) {
+
+      // Pulls up to `limit` library cards from one bucket, excluding ids already
+      // in the pool so fallback passes never re-add the same card.
+      const pullFromCategory = async (category: string, limit: number): Promise<void> => {
+        if (limit <= 0) return;
+        const existingIds = cards.map((c) => c.id);
         const result = await client.query<VocabEntry>(`
           SELECT ve.*, ${DICT_COLS}
           FROM vocabentries ve ${DICT_JOIN}
           WHERE ve."userId" = $1
           AND ve."starterPackBucket" = 'library'
           AND ve.category = $2
+          AND ve.id != ALL($3::int[])
           ORDER BY RANDOM()
-          LIMIT $3
-        `, [userId, category, count]);
+          LIMIT $4
+        `, [userId, category, existingIds, limit]);
         cards.push(...result.rows);
+      };
+
+      // 1. Fill each requested bucket up to its quota.
+      for (const [category, count] of Object.entries(distribution)) {
+        await pullFromCategory(category, count);
       }
 
-      const sufficient = Object.entries(distribution).every(
-        ([cat, n]) => (available[cat] ?? 0) >= n
-      );
+      // 2. Top up to `total` from the fallback buckets
+      //    (Target → Comfortable → Unfamiliar → Mastered).
+      for (const category of OnDeckVocabService.GAME_FALLBACK_ORDER) {
+        if (cards.length >= total) break;
+        await pullFromCategory(category, total - cards.length);
+      }
+
+      const sufficient = cards.length >= total;
 
       // Enrich (long defs / parts of speech etc.) then pre-warm audio. We skip
       // the related-words / used-in passes the EIC needs — the game only renders
@@ -545,7 +583,7 @@ export class OnDeckVocabService {
       const enriched = await this.enrichEntriesPipeline(cards);
       const withAudio = await this.prewarmAudio(enriched);
 
-      return { cards: withAudio, requested: { ...distribution }, available, sufficient };
+      return { cards: withAudio, requested: { ...distribution }, available, total, sufficient };
     } finally {
       client.release();
     }

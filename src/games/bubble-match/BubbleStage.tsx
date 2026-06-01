@@ -29,9 +29,6 @@ import {
     OVERFILL_SUSTAIN_MS,
     POP_DURATION_MS,
     WRONG_FEEDBACK_MS,
-    WRONG_TIME_PENALTY_SEC,
-    PENALTY_FLOAT_MS,
-    TIMER_FLASH_MS,
 } from "./constants";
 
 export type LoseReason = "time" | "full";
@@ -49,6 +46,10 @@ interface BubbleStageProps {
     onSpeak?: (entry: VocabEntry) => void;
     onLevelWin: () => void;
     onLevelLose: (reason: LoseReason) => void;
+    /** Record a flashcard mark for a matched/mismatched bubble's vocab entry.
+        Mirrors the flp mark endpoint: correct match → success, wrong match →
+        incorrect. Not called for study-mode taps after the game ends. */
+    onMark?: (entry: VocabEntry, isCorrect: boolean) => void;
     /** Study mode: the game is over and its popup is minimized, so the player can
         tap (mobile) / hover (desktop) a bubble to highlight it and its match. */
     studyMode: boolean;
@@ -149,6 +150,7 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
     onSpeak,
     onLevelWin,
     onLevelLose,
+    onMark,
     studyMode,
 }) => {
     const stageRef = useRef<HTMLDivElement>(null);
@@ -185,15 +187,6 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
     const [timeLeft, setTimeLeft] = useState(config.durationSec);
     const [danger, setDanger] = useState(false);
     const [matched, setMatched] = useState(0);
-    // Floating "-5s" markers spawned at the drop point of a wrong match; each
-    // rises and fades, then removes itself. Keyed by a monotonic id.
-    const [penaltyMarkers, setPenaltyMarkers] = useState<{ id: number; x: number; y: number }[]>([]);
-    const penaltySeqRef = useRef(0);
-    // Drives the timer's red + shake cue on a wrong match. `timerFlash` toggles the
-    // styling; `timerFlashKey` bumps to remount the node so the shake restarts even
-    // on back-to-back penalties.
-    const [timerFlash, setTimerFlash] = useState(false);
-    const [timerFlashKey, setTimerFlashKey] = useState(0);
 
     const totalPairs = levelPairs.length;
 
@@ -224,38 +217,6 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
         [onLevelWin, onLevelLose]
     );
 
-    // Apply the wrong-match penalty: dock the clock (losing on time if it empties),
-    // float a "-Ns" marker up from the drop point, and flash + shake the HUD timer.
-    // `x`/`y` are stage-relative coordinates (the released bubble's center).
-    const applyTimePenalty = useCallback(
-        (x: number, y: number) => {
-            // Dock the clock; an empty clock ends the run on time, mirroring the countdown.
-            setTimeLeft((t) => {
-                const next = t - WRONG_TIME_PENALTY_SEC;
-                if (next <= 0) {
-                    finishLevel("time");
-                    return 0;
-                }
-                return next;
-            });
-
-            // Spawn a self-removing "-Ns" marker at the drop point.
-            const markerId = penaltySeqRef.current++;
-            setPenaltyMarkers((prev) => [...prev, { id: markerId, x, y }]);
-            const cleanup = setTimeout(() => {
-                setPenaltyMarkers((prev) => prev.filter((m) => m.id !== markerId));
-            }, PENALTY_FLOAT_MS);
-            pendingTimeoutsRef.current.push(cleanup);
-
-            // Flash + shake the timer; the key bump restarts the animation on repeats.
-            setTimerFlash(true);
-            setTimerFlashKey((k) => k + 1);
-            const reset = setTimeout(() => setTimerFlash(false), TIMER_FLASH_MS);
-            pendingTimeoutsRef.current.push(reset);
-        },
-        [finishLevel]
-    );
-
     // ---- Main setup: build queue, start loops. Re-runs per level. -----------
     useEffect(() => {
         phaseRef.current = "playing";
@@ -263,8 +224,6 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
         setMatched(0);
         setTimeLeft(config.durationSec);
         setDanger(false);
-        setPenaltyMarkers([]);
-        setTimerFlash(false);
         bodiesRef.current = [];
         nodeMapRef.current.clear();
         heldIdRef.current = null;
@@ -633,6 +592,10 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
 
                 const correct = held.pairId === target.pairId;
                 if (correct) {
+                    // Record a successful review for the matched pair's card,
+                    // mirroring an flp "got it right" mark (both bubbles in a pair
+                    // carry the same vocab entry, so either one identifies the card).
+                    onMark?.(held.entry, true);
                     setStatus(held, "correct", SCALE_IDLE);
                     setStatus(target, "correct", SCALE_IDLE);
                     forceRender();
@@ -653,11 +616,13 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
                     }, POP_DURATION_MS);
                     pendingTimeoutsRef.current.push(to);
                 } else {
+                    // Record an incorrect review for the card the player was
+                    // dragging (the held bubble) — mirrors an flp "got it wrong"
+                    // mark. The drop target belongs to a different pair, so only
+                    // the held bubble's card is the one the player answered.
+                    onMark?.(held.entry, false);
                     setStatus(held, "wrong", held.targetScale);
                     setStatus(target, "wrong", target.targetScale);
-                    // Penalty cue: dock 5s, float "-5s" up from between the two
-                    // bubbles, and shake the timer red — synced with the red shake.
-                    applyTimePenalty((held.x + target.x) / 2, (held.y + target.y) / 2);
                     forceRender();
                     const to = setTimeout(() => {
                         // Release both back to floating; the held one keeps its throw.
@@ -688,7 +653,7 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
             window.removeEventListener("pointerup", onUp);
             window.removeEventListener("pointercancel", onUp);
         };
-    }, [findHoverTarget, forceRender, onSpeak, setStatus, finishLevel, writeTransform, applyTimePenalty]);
+    }, [findHoverTarget, forceRender, onSpeak, setStatus, finishLevel, writeTransform, onMark]);
 
     return (
         <Box
@@ -730,25 +695,12 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
                     Lv {levelNumber} · {levelLabel}
                 </Typography>
                 <Typography
-                    // Remount on each penalty (key bump) so the shake restarts cleanly.
-                    key={timerFlashKey}
                     className="bubble-stage__timer"
                     sx={{
                         fontSize: 15,
                         fontWeight: 800,
-                        // Red while flashing a penalty or in the final-5s warning.
-                        color: timerFlash || timeLeft <= 5 ? "#F44336" : "#3a3a3a",
-                        ...(timerFlash && {
-                            animation: `timerPenaltyShake ${TIMER_FLASH_MS}ms ease-in-out`,
-                            "@keyframes timerPenaltyShake": {
-                                "0%, 100%": { transform: "translateX(0) scale(1)" },
-                                "15%": { transform: "translateX(-4px) scale(1.18)" },
-                                "30%": { transform: "translateX(4px) scale(1.18)" },
-                                "45%": { transform: "translateX(-3px) scale(1.12)" },
-                                "60%": { transform: "translateX(3px) scale(1.12)" },
-                                "80%": { transform: "translateX(-2px) scale(1.05)" },
-                            },
-                        }),
+                        // Red in the final-5s warning.
+                        color: timeLeft <= 5 ? "#F44336" : "#3a3a3a",
                     }}
                 >
                     {timeLeft}s
@@ -771,34 +723,6 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
                     onPointerLeave={onBubbleLeave}
                     studyMode={studyMode}
                 />
-            ))}
-
-            {/* Wrong-match penalty markers: "-5s" floating up + fading from the drop point. */}
-            {penaltyMarkers.map((m) => (
-                <Typography
-                    key={m.id}
-                    className="bubble-stage__penalty"
-                    sx={{
-                        position: "absolute",
-                        left: m.x,
-                        top: m.y,
-                        fontSize: 28,
-                        fontWeight: 900,
-                        color: "#F44336",
-                        textShadow: "0 2px 8px rgba(0,0,0,0.28)",
-                        pointerEvents: "none",
-                        whiteSpace: "nowrap",
-                        zIndex: 60,
-                        animation: `penaltyFloat ${PENALTY_FLOAT_MS}ms ease-out forwards`,
-                        "@keyframes penaltyFloat": {
-                            "0%": { opacity: 0, transform: "translate(-50%, -50%) scale(0.6)" },
-                            "18%": { opacity: 1, transform: "translate(-50%, -90%) scale(1.12)" },
-                            "100%": { opacity: 0, transform: "translate(-50%, -260%) scale(1)" },
-                        },
-                    }}
-                >
-                    -{WRONG_TIME_PENALTY_SEC}s
-                </Typography>
             ))}
         </Box>
     );

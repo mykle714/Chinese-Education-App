@@ -111,9 +111,11 @@ export class OnDeckVocabController {
 
   /**
    * Build the bubble-match game pool.
-   * GET /api/onDeck/game-pool?Target=15&Comfortable=10
-   * Defaults to 15 Target + 10 Comfortable when no recognised category params
-   * are supplied. Returns { cards, requested, available, sufficient }.
+   * GET /api/onDeck/game-pool?Unfamiliar=2&Target=10&Comfortable=6&Mastered=2
+   * Defaults to 2 Unfamiliar + 10 Target + 6 Comfortable + 2 Mastered (20 total)
+   * when no recognised category params are supplied. The service tops the pool
+   * up to its total from fallback buckets when a quota can't be met, so this is
+   * a best-effort fill. Returns { cards, requested, available, total, sufficient }.
    */
   getGamePool = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -129,8 +131,10 @@ export class OnDeckVocabController {
         }
       }
       if (Object.keys(distribution).length === 0) {
-        distribution.Target = 15;
-        distribution.Comfortable = 10;
+        distribution.Unfamiliar = 2;
+        distribution.Target = 10;
+        distribution.Comfortable = 6;
+        distribution.Mastered = 2;
       }
 
       const pool = await this.onDeckVocabService.getGameVocabPool(userId, distribution);

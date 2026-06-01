@@ -8,11 +8,17 @@ import type { LevelConfig } from "./types";
  * single shuffled pool is split across levels with no repeats.
  */
 
-// Launch config: how many cards the "Play" button pulls from each bucket.
-// 12 Target + 8 Comfortable = 20 pairs total.
+// Launch config: how many cards the "Play" button targets from each bucket.
+// 2 Unfamiliar + 10 Target + 6 Comfortable + 2 Mastered = 20 pairs total.
+// This is the *preferred* mix — the server tops the pool up to 20 from fallback
+// buckets (Target → Comfortable → Unfamiliar → Mastered) when a bucket can't
+// fill its quota, so a run always uses 20 cards as long as the user has 20
+// library cards total.
 export const GAME_DISTRIBUTION: Record<string, number> = {
-    Target: 12,
-    Comfortable: 8,
+    Unfamiliar: 2,
+    Target: 10,
+    Comfortable: 6,
+    Mastered: 2,
 };
 
 // Total pairs in a full run (sum of GAME_DISTRIBUTION). Every game uses them all
@@ -22,7 +28,7 @@ export const TOTAL_PAIRS = Object.values(GAME_DISTRIBUTION).reduce((a, b) => a +
 // Three difficulty levels (picked before play; they do NOT chain). Higher levels
 // launch the 40 bubbles faster, so the field fills quicker — tune freely.
 export const LEVEL_CONFIGS: LevelConfig[] = [
-    { level: 1, label: "Relaxed", launchIntervalMs: 2150, durationSec: 90 },
+    { level: 1, label: "Relaxed", launchIntervalMs: 2150, durationSec: 120 },
     { level: 2, label: "Brisk", launchIntervalMs: 1500, durationSec: 90 },
     { level: 3, label: "Frantic", launchIntervalMs: 700, durationSec: 90 },
 ];
@@ -94,13 +100,6 @@ export const ENTRY_INSET = 12; // px gap between the bubble's edge and the wall 
 // ---- Match feedback timing (ms) ------------------------------------------
 export const POP_DURATION_MS = 280; // green pop before a correct pair is removed
 export const WRONG_FEEDBACK_MS = 420; // red shake before a wrong pair is released
-
-// ---- Wrong-match time penalty --------------------------------------------
-// A wrong match docks the clock and plays two synced cues: a "-5s" marker that
-// rises + fades from the drop point, and a red shake on the HUD timer.
-export const WRONG_TIME_PENALTY_SEC = 5; // seconds removed from the clock on a wrong match
-export const PENALTY_FLOAT_MS = 900; // "-Ns" marker rise + fade duration
-export const TIMER_FLASH_MS = 500; // timer red + shake duration on penalty
 
 // Bubble palette (kept local; harmonizes with the flashcard surface tokens).
 export const WORD_BUBBLE_BG = "#EAF1FF";

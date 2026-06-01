@@ -19,6 +19,8 @@ interface GamePoolResponse {
     cards: VocabEntry[];
     requested: Record<string, number>;
     available: Record<string, number>;
+    /** Number of cards the game needs to run (sum of the requested distribution). */
+    total: number;
     sufficient: boolean;
 }
 
@@ -33,10 +35,17 @@ function shuffle<T>(arr: T[]): T[] {
     return a;
 }
 
-/** Build the `?Target=15&Comfortable=10` query from the launch distribution. */
+/** Build the `?Unfamiliar=2&Target=10&...` query from the launch distribution. */
 const poolQuery = Object.entries(GAME_DISTRIBUTION)
     .map(([cat, n]) => `${encodeURIComponent(cat)}=${n}`)
     .join("&");
+
+/** Human-readable preferred mix, e.g. "2 Unfamiliar, 10 Target, 6 Comfortable, and 2 Mastered". */
+const RECOMMENDED_MIX = (() => {
+    const parts = Object.entries(GAME_DISTRIBUTION).map(([cat, n]) => `${n} ${cat}`);
+    if (parts.length <= 1) return parts.join("");
+    return `${parts.slice(0, -1).join(", ")}, and ${parts[parts.length - 1]}`;
+})();
 
 /**
  * Bubble Match — page shell + game-flow state machine.
@@ -85,10 +94,12 @@ const BubbleMatchPage: React.FC = () => {
             const data: GamePoolResponse = await res.json();
 
             if (!data.sufficient) {
-                const needs = Object.entries(data.requested)
-                    .map(([cat, n]) => `${n} ${cat} (you have ${data.available[cat] ?? 0})`)
-                    .join(" and ");
-                setBlockMessage(`You need ${needs} to play. Study more cards to unlock Bubble Match.`);
+                // The game tops up across buckets, so the only hard requirement is
+                // a total of `data.total` library cards. Report the shortfall.
+                const have = Object.values(data.available).reduce((sum, n) => sum + n, 0);
+                setBlockMessage(
+                    `You need ${data.total} library cards to play Bubble Match — you have ${have}. Study more cards to unlock it.`
+                );
                 setPhase("blocked");
                 return null;
             }
@@ -156,6 +167,33 @@ const BubbleMatchPage: React.FC = () => {
         beginRun(cfg, cards);
     }, [tts.unlockAudio, fetchGamePool, beginRun]);
 
+    // Record a flashcard review mark for a matched/mismatched bubble's vocab
+    // entry, reusing the same endpoint flp's working loop calls. Fire-and-forget:
+    // the game never blocks on it, and a failure only logs (no run interruption).
+    // Only invoked from in-game drag matches — not from study-mode taps after the
+    // game ends (BubbleStage gates those out of the match-resolution path).
+    const markBubbleMatch = useCallback((entry: VocabEntry, isCorrect: boolean) => {
+        const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+        const headers: HeadersInit = {
+            "Content-Type": "application/json",
+            "x-user-timezone": userTimeZone,
+        };
+        if (token && token !== "null" && token !== "undefined") {
+            headers["Authorization"] = `Bearer ${token}`;
+        }
+        console.log(`[BubbleMatch] mark → card ${entry.id} (${entry.entryKey}) as ${isCorrect ? "correct" : "incorrect"}`);
+        fetch(`${API_BASE_URL}/api/flashcards/mark`, {
+            method: "POST",
+            headers,
+            credentials: "include",
+            // excludeIds empty: the game doesn't use the replacement card the
+            // endpoint returns, so there's nothing to dedupe against.
+            body: JSON.stringify({ cardId: entry.id, isCorrect, excludeIds: [] }),
+        })
+            .then((res) => console.log(`[BubbleMatch] mark response → card ${entry.id}: HTTP ${res.status}`))
+            .catch((err) => console.error(`[BubbleMatch] mark failed → card ${entry.id}:`, err));
+    }, [token]);
+
     const onLevelWin = useCallback(() => {
         setPopupMinimized(false);
         setPhase("won");
@@ -215,6 +253,9 @@ const BubbleMatchPage: React.FC = () => {
                 </Typography>
                 <Typography className="bubble-match__rules" sx={{ fontSize: 14, color: fc.textSecondary, lineHeight: 1.5, maxWidth: 300 }}>
                     Match each word to its meaning by dragging one bubble onto the other before the screen fills up. {TOTAL_PAIRS} pairs · {LEVEL_CONFIGS[0].durationSec} seconds.
+                </Typography>
+                <Typography className="bubble-match__recommended-mix" sx={{ fontSize: 13, color: fc.textSecondary, lineHeight: 1.5, maxWidth: 300, fontStyle: "italic" }}>
+                    For the best practice mix, play with at least {RECOMMENDED_MIX} cards in your library.
                 </Typography>
                 <Box className="bubble-match__levels" sx={{ display: "flex", flexDirection: "column", gap: 1.5, width: "100%", maxWidth: 280, mt: 1 }}>
                     {LEVEL_CONFIGS.map((cfg) => (
@@ -358,6 +399,7 @@ const BubbleMatchPage: React.FC = () => {
                             onSpeak={autoplayChinese && tts.enabled ? tts.speak : undefined}
                             onLevelWin={onLevelWin}
                             onLevelLose={onLevelLose}
+                            onMark={markBubbleMatch}
                             // Game-over popup minimized → bubbles become tappable/
                             // hoverable for studying the pairs.
                             studyMode={phase === "lost" && popupMinimized}

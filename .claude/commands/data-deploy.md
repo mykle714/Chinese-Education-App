@@ -9,7 +9,12 @@ Only these tables may be data-deployed. All others contain live user data and mu
 | Table | Dump file |
 |---|---|
 | `dictionaryentries_zh` | `database/dictionaryentries_zh-data.dump` |
+| `dictionaryentries_es` | `database/dictionaryentries_es-data.dump` |
 | `particlesandclassifiers` | `database/particlesandclassifiers-data.dump` |
+
+> **Prereq for `dictionaryentries_es`**: prod must already have the table (migration 58
+> applied) before restoring, or `pg_restore` will fail. Confirm migrations are current
+> on prod first.
 
 ## Environment
 

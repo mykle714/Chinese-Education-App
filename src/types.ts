@@ -1,14 +1,14 @@
 // Frontend types for the vocabulary learning application
 
-// Language type for multi-language support
-export type Language = 'zh' | 'ja' | 'ko' | 'vi';
+// Language type for multi-language support.
+// Only Chinese and Spanish are user-selectable for now; ja/ko/vi are not yet
+// supported (their per-language dictionary tables don't exist — see CLAUDE.md).
+export type Language = 'zh' | 'es';
 
 // Language display names
 export const LANGUAGE_NAMES: Record<Language, string> = {
   zh: 'Chinese (Mandarin)',
-  ja: 'Japanese',
-  ko: 'Korean',
-  vi: 'Vietnamese'
+  es: 'Spanish'
 };
 
 // HSK Level type for vocabulary entries
@@ -26,38 +26,66 @@ export type FlashcardCategory = 'Unfamiliar' | 'Target' | 'Comfortable' | 'Maste
 // Starter pack bucket type
 export type StarterPackBucket = 'library' | 'learn-later' | 'skip';
 
-// VocabEntry model type
+// One "used in" suggestion: a multi-char word containing a single-char headword.
+// vet-first (user's own entries) then det-fallback; vocabEntryId === null ⇒ det fallback.
+export interface UsedInItem {
+  vocabEntryId: number | null;
+  entryKey: string;
+  pronunciation: string | null;
+  definition: string | null;
+  vernacularScore: number | null;
+}
+
+// Canonical VocabEntry model shared across the whole frontend (flashcards,
+// card detail, discover, dictionary adapters, etc.). It is a superset: a
+// server-sourced vet row carries identity fields (userId/language) and synonym
+// metadata, while a synthetic det-fallback entry from dictEntryAdapter omits
+// them — so those identity fields are optional rather than required.
 export interface VocabEntry {
   id: number;
-  userId: string;
+  userId?: string;            // absent on det-fallback (non-vet) entries
   entryKey: string;
   definition?: string | null;  // det.definitions[0] — joined from dictionaryentries at read time
-  language: Language;
+  longDefinition?: string | null;
+  language?: Language;         // absent on det-fallback entries
   script?: string;
   pronunciation?: string | null;
   tone?: string | null;
   hskLevel?: HskLevel | null;
   partsOfSpeech?: string[] | null;
+  // Spanish (es) only: the saved sense's part of speech + whether this word1 has
+  // multiple discoverable POS (so the UI shows a "(v)"/"(n)" disambiguation badge),
+  // plus the secondary gender-homograph gloss. Null/false for Chinese.
+  pos?: string | null;
+  hasMultiplePos?: boolean;
+  alternateGender?: string | null;
+  alternateMeaning?: string | null;
+  vernacularScore?: number | null;  // 1=literary … 5=natural colloquial
   category?: FlashcardCategory;
   starterPackBucket?: StarterPackBucket | null;
   breakdown?: Record<string, { definition: string; pronunciation?: string }> | null;
   synonyms?: string[];
   synonymsMetadata?: Record<string, { definition: string; pronunciation: string }> | null; // Computed at runtime by server
   expansion?: string | null;
+  expansionSegments?: string[] | null;  // GSA word tokens for the expansion string
   expansionMetadata?: Record<string, { pronunciation?: string; definition?: string }> | null;
   expansionLiteralTranslation?: string | null;
   exampleSentences?: Array<{
-    chinese: string;
+    foreignText: string;
     english: string;
     tense?: 'past' | 'present' | 'future';
-    partOfSpeechDict: Record<string, string>;  // AI-generated POS tag per sentence token (e.g. "particle", "verb", "noun")
+    partOfSpeechDict?: Record<string, string>;  // AI-generated POS tag per sentence token; absent on det-adapter entries
+    translatedVocab?: string;  // English word/phrase in the translation corresponding to the vocab word
     _segments?: string[];
     segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo; wordForms?: Record<string, string> }>;
   }>;
   relatedWords?: Array<{ id: number; entryKey: string; pronunciation: string | null; definition: string | null }>;
   // Single-char zh only: up to 5 multi-char words containing this character (vet-first, det-fallback).
-  // vocabEntryId === null marks a det-fallback item (not in the user's vet).
-  usedIn?: Array<{ vocabEntryId: number | null; entryKey: string; pronunciation: string | null; definition: string | null; vernacularScore: number | null }> | null;
+  usedIn?: UsedInItem[] | null;
+  // Set by the server after pre-warming the TTS cache for this card. `false`
+  // means synthesis errored; the client should fall back to Web Speech. Absent
+  // means the server didn't run a prewarm — treat as truthy.
+  hasAudio?: boolean;
   createdAt: string;
 }
 
@@ -102,10 +130,14 @@ export interface DiscoverCard {
   word2?: string | null;
   script?: string | null;
   hskLevel?: string | null;
+  // Spanish (es) only: this card's POS, and whether the word1 has multiple
+  // discoverable POS (→ show a "(v)"/"(n)" badge). Null/false for Chinese.
+  pos?: string | null;
+  hasMultiplePos?: boolean;
   breakdown?: Record<string, { definition: string; pronunciation?: string }> | null;
   synonyms?: string[] | null;
   exampleSentences?: Array<{
-    chinese: string;
+    foreignText: string;
     english: string;
     tense?: 'past' | 'present' | 'future';
     partOfSpeechDict: Record<string, string>;  // AI-generated POS tag per sentence token (e.g. "particle", "verb", "noun")

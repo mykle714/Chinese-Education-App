@@ -82,7 +82,7 @@ async function insertBatch(client: pg.Client, entries: KEngDicEntry[]): Promise<
     });
 
     const query = `
-        INSERT INTO DictionaryEntries (language, word1, word2, pronunciation, definitions)
+        INSERT INTO dictionaryentries_ko (language, word1, word2, pronunciation, definitions)
         VALUES ${placeholders.join(', ')}
     `;
 
@@ -94,6 +94,11 @@ async function insertBatch(client: pg.Client, entries: KEngDicEntry[]): Promise<
  * Main import
  */
 async function importKEngDic() {
+    // DEFERRED (migration 57): the shared multi-language `dictionaryentries` table was split
+    // into per-language tables. This Korean flow now targets `dictionaryentries_ko`, which does
+    // NOT exist yet. Korean is not user-selectable for now; this importer is intentionally left
+    // broken until `dictionaryentries_ko` is created. See CLAUDE.md 'Dictionary Tables'.
+    throw new Error('Korean import disabled: dictionaryentries_ko not yet created (migration 57 / CLAUDE.md).');
     const filePath = process.argv[2] || '/home/cow/data/dictionaries/kengdic.tsv';
     
     console.log('🇰🇷 KENGDIC Korean Dictionary Import (TSV format)');
@@ -134,7 +139,7 @@ async function importKEngDic() {
     console.log('✅ Connected\n');
 
     console.log('🗑️  Clearing existing Korean entries...');
-    await client.query("DELETE FROM DictionaryEntries WHERE language = 'ko'");
+    await client.query("DELETE FROM dictionaryentries_ko WHERE language = 'ko'");
     console.log('✅ Cleared\n');
 
     console.log(`💾 Inserting ${entries.length} entries in batches of ${BATCH_SIZE}...`);

@@ -59,19 +59,9 @@ function SettingsPage() {
             description: 'Learn simplified and traditional Chinese characters with pinyin pronunciation'
         },
         {
-            value: 'ja',
-            label: 'Japanese',
-            description: 'Study kanji, hiragana, and katakana with romaji transliteration'
-        },
-        {
-            value: 'ko',
-            label: 'Korean',
-            description: 'Master Hangul script and Korean vocabulary with 117k+ entries'
-        },
-        {
-            value: 'vi',
-            label: 'Vietnamese',
-            description: 'Learn Vietnamese with tone markers and 42k+ dictionary entries'
+            value: 'es',
+            label: 'Spanish',
+            description: 'Learn Spanish vocabulary as plain text — no pronunciation overlay'
         },
     ];
 
@@ -200,7 +190,6 @@ function SettingsPage() {
                             sx={{ gap: 2 }}
                         >
                             {availableLanguages.map((lang) => {
-                                const isAvailable = lang.value === 'zh' || lang.value === 'ja' || lang.value === 'ko' || lang.value === 'vi';
                                 const isActive = user?.selectedLanguage === lang.value;
 
                                 return (
@@ -209,22 +198,21 @@ function SettingsPage() {
                                         variant="outlined"
                                         sx={{
                                             transition: 'all 0.2s ease-in-out',
-                                            cursor: isAvailable ? 'pointer' : 'not-allowed',
+                                            cursor: 'pointer',
                                             border: isActive ? 2 : 1,
                                             borderColor: isActive ? 'primary.main' : 'divider',
                                             backgroundColor: isActive ? 'action.selected' : 'background.paper',
-                                            opacity: isAvailable ? 1 : 0.5,
-                                            '&:hover': isAvailable ? {
+                                            '&:hover': {
                                                 borderColor: 'primary.main',
                                                 backgroundColor: 'action.hover',
-                                            } : {},
+                                            },
                                         }}
-                                        onClick={() => isAvailable && handleLanguageChange({ target: { value: lang.value } } as React.ChangeEvent<HTMLInputElement>)}
+                                        onClick={() => handleLanguageChange({ target: { value: lang.value } } as React.ChangeEvent<HTMLInputElement>)}
                                     >
                                         <CardContent sx={{ py: 2 }}>
                                             <FormControlLabel
                                                 value={lang.value}
-                                                control={<Radio disabled={!isAvailable} />}
+                                                control={<Radio />}
                                                 label={
                                                     <Box sx={{ ml: 1 }}>
                                                         <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
@@ -236,13 +224,6 @@ function SettingsPage() {
                                                                     label="Active"
                                                                     size="small"
                                                                     color="primary"
-                                                                    sx={{ ml: 2 }}
-                                                                />
-                                                            )}
-                                                            {!isAvailable && (
-                                                                <Chip
-                                                                    label="Coming Soon"
-                                                                    size="small"
                                                                     sx={{ ml: 2 }}
                                                                 />
                                                             )}
@@ -269,7 +250,7 @@ function SettingsPage() {
 
                     <Alert severity="info" sx={{ mt: 3 }}>
                         <Typography variant="body2">
-                            Currently available: Chinese (124k entries), Japanese (173k entries), Korean (117k entries), and Vietnamese (42k entries)!
+                            Currently available: Chinese and Spanish. More languages coming soon!
                         </Typography>
                     </Alert>
                 </CardContent>

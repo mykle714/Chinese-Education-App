@@ -3,6 +3,7 @@
 export interface UserMinutePoints {
   userId: string;
   streakDate: string;     // YYYY-MM-DD — 4 AM-local-bounded day label
+  language: string;       // language the minute was earned studying (zh/ja/ko/vi/es)
   minutesEarned: number;
   penaltyMinutes: number;
   lastSyncTimestamp: Date;
@@ -12,6 +13,7 @@ export interface UserMinutePoints {
 export interface UserMinutePointsCreateData {
   userId: string;
   streakDate: string;
+  language: string;
   minutesEarned: number;
 }
 

@@ -99,28 +99,28 @@ SELECT "createdAt" FROM users;
 ---
 
 ### 2. **Table Name Case Sensitivity**
-**Problem**: Querying tables with incorrect casing (e.g., `"DictionaryEntries"` instead of `dictionaryentries`)
+**Problem**: Querying tables with incorrect casing (e.g., `"dictionaryentries_zh"` instead of `dictionaryentries_zh`)
 
 **Error Message**:
 ```
-relation "DictionaryEntries" does not exist
+relation "dictionaryentries_zh" does not exist
 ```
 
-**Root Cause**: PostgreSQL automatically converts unquoted identifiers to lowercase. When a table is created without quotes (like `CREATE TABLE dictionaryentries`), it is stored as lowercase. Querying with quotes and wrong casing fails.
+**Root Cause**: PostgreSQL automatically converts unquoted identifiers to lowercase. When a table is created without quotes (like `CREATE TABLE dictionaryentries_zh`), it is stored as lowercase. Querying with quotes and wrong casing fails.
 
 **Solution**:
 - Always check the actual table name using the check-tables query below
-- Use lowercase table names without quotes: `FROM dictionaryentries`
+- Use lowercase table names without quotes: `FROM dictionaryentries_zh`
 - If you need mixed-case names, create tables with quotes and always quote them in queries
 - Better: Just use lowercase consistently
 
 **Example**:
 ```sql
 -- ❌ Wrong - will fail
-SELECT * FROM "DictionaryEntries" WHERE ...
+SELECT * FROM "dictionaryentries_zh" WHERE ...
 
 -- ✅ Correct - use lowercase
-SELECT * FROM dictionaryentries WHERE ...
+SELECT * FROM dictionaryentries_zh WHERE ...
 ```
 
 ### 3. **Missing Dependencies**
@@ -211,7 +211,7 @@ const result = await client.query(`
 ```
 
 **Current Tables**:
-- `dictionaryentries` - Dictionary words with definitions
+- `dictionaryentries_zh` - Dictionary words with definitions
 - `vocabentries` - User vocab learning entries
 - `users` - User accounts
 - `texts` - User text documents
@@ -226,12 +226,12 @@ Always use parameterized queries to prevent SQL injection:
 ```javascript
 // ❌ Bad - vulnerable to injection
 const result = await client.query(
-  `SELECT * FROM dictionaryentries WHERE language = '${lang}'`
+  `SELECT * FROM dictionaryentries_zh WHERE language = '${lang}'`
 );
 
 // ✅ Good - safe parameterized query
 const result = await client.query(
-  'SELECT * FROM dictionaryentries WHERE language = $1',
+  'SELECT * FROM dictionaryentries_zh WHERE language = $1',
   [lang]
 );
 ```
@@ -243,7 +243,7 @@ Verify column names exist before querying:
 const result = await client.query(`
   SELECT column_name
   FROM information_schema.columns
-  WHERE table_name = 'dictionaryentries'
+  WHERE table_name = 'dictionaryentries_zh'
 `);
 ```
 
@@ -252,10 +252,10 @@ Keep table names lowercase and unquoted:
 
 ```javascript
 // ✅ Correct
-await client.query('SELECT * FROM dictionaryentries WHERE ...');
+await client.query('SELECT * FROM dictionaryentries_zh WHERE ...');
 
 // ❌ Avoid unnecessary quoting
-await client.query('SELECT * FROM "dictionaryentries" WHERE ...');
+await client.query('SELECT * FROM "dictionaryentries_zh" WHERE ...');
 ```
 
 ### 4. **Handle Connection Pooling**
@@ -296,13 +296,13 @@ async function queryDiscoverableCards() {
   try {
     // Query 1: Total count
     const totalResult = await client.query(
-      'SELECT COUNT(*) as total_discoverable FROM dictionaryentries WHERE discoverable = TRUE'
+      'SELECT COUNT(*) as total_discoverable FROM dictionaryentries_zh WHERE discoverable = TRUE'
     );
     console.log(`Total: ${totalResult.rows[0].total_discoverable}`);
 
     // Query 2: Count by language
     const byLanguageResult = await client.query(
-      'SELECT language, COUNT(*) as count FROM dictionaryentries WHERE discoverable = TRUE GROUP BY language ORDER BY language'
+      'SELECT language, COUNT(*) as count FROM dictionaryentries_zh WHERE discoverable = TRUE GROUP BY language ORDER BY language'
     );
 
     byLanguageResult.rows.forEach(row => {
@@ -337,7 +337,7 @@ const result = await client.query(queryString, params);
 Use PostgreSQL's EXPLAIN to understand query performance:
 
 ```sql
-EXPLAIN SELECT * FROM dictionaryentries WHERE discoverable = TRUE;
+EXPLAIN SELECT * FROM dictionaryentries_zh WHERE discoverable = TRUE;
 ```
 
 ### Validate Column Names
@@ -346,7 +346,7 @@ Before using a column, verify it exists:
 ```sql
 SELECT column_name, data_type
 FROM information_schema.columns
-WHERE table_name = 'dictionaryentries'
+WHERE table_name = 'dictionaryentries_zh'
 ORDER BY ordinal_position;
 ```
 

@@ -125,17 +125,17 @@ Respond in this EXACT JSON format:
       "expansion": "expanded form" or null,
       "exampleSentences": [
         {
-          "chinese": "example sentence",
+          "foreignText": "example sentence",
           "english": "translation",
           "usage": "context"
         },
         {
-          "chinese": "example sentence",
+          "foreignText": "example sentence",
           "english": "translation",
           "usage": "context"
         },
         {
-          "chinese": "example sentence",
+          "foreignText": "example sentence",
           "english": "translation",
           "usage": "context"
         }
@@ -259,7 +259,7 @@ async function testModel(modelKey) {
     const placeholders = TEST_WORDS.map((_, i) => `$${i + 1}`).join(',');
     const query = `
       SELECT word1, pronunciation, definitions
-      FROM dictionaryentries
+      FROM dictionaryentries_zh
       WHERE language = 'zh'
       AND word1 IN (${placeholders})
     `;

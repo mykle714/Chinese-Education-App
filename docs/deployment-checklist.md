@@ -37,7 +37,7 @@
 - [ ] Verify Japanese dictionary imported (~180,000 entries)
 - [ ] Verify Korean dictionary imported (~50,000 entries)
 - [ ] Verify Vietnamese dictionary imported (~40,000 entries)
-- [ ] Check total entries: `docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT COUNT(*) FROM \"DictionaryEntries\";"`
+- [ ] Check total entries: `docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT COUNT(*) FROM \"dictionaryentries_zh\";"`
 - [ ] Verify multi-language support: Check each language has entries
 - [ ] Abbreviation expansion runs automatically as part of the import script (expands "sth" → "something", "sb" → "somebody" in all definitions)
 
@@ -68,22 +68,22 @@
 # Check all language counts
 docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "
     SELECT language, COUNT(*) as entries 
-    FROM \"DictionaryEntries\" 
+    FROM \"dictionaryentries_zh\" 
     GROUP BY language 
     ORDER BY language;
 "
 
 # Test Chinese entries
-docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT word1, word2, pronunciation FROM \"DictionaryEntries\" WHERE language='zh' LIMIT 3;"
+docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT word1, word2, pronunciation FROM \"dictionaryentries_zh\" WHERE language='zh' LIMIT 3;"
 
 # Test Japanese entries  
-docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT word1, word2, pronunciation FROM \"DictionaryEntries\" WHERE language='ja' LIMIT 3;"
+docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT word1, word2, pronunciation FROM \"dictionaryentries_zh\" WHERE language='ja' LIMIT 3;"
 
 # Test Korean entries
-docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT word1, word2, pronunciation FROM \"DictionaryEntries\" WHERE language='ko' LIMIT 3;"
+docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT word1, word2, pronunciation FROM \"dictionaryentries_zh\" WHERE language='ko' LIMIT 3;"
 
 # Test Vietnamese entries
-docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT word1, definitions FROM \"DictionaryEntries\" WHERE language='vi' LIMIT 3;"
+docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT word1, definitions FROM \"dictionaryentries_zh\" WHERE language='vi' LIMIT 3;"
 ```
 
 ## Important Notes
@@ -103,7 +103,7 @@ docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT word1, de
 - View PostgreSQL logs: `docker logs cow-postgres-prod`
 - Manually re-run import: `bash server/scripts/import-all-dictionaries.sh production`
 - Check database connection: `docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT version();"`
-- Verify migrations ran: `docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "\d \"DictionaryEntries\""`
+- Verify migrations ran: `docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "\d \"dictionaryentries_zh\""`
 
 ### General Troubleshooting
 - Check Docker logs: `docker-compose -f docker-compose.prod.yml logs -f`

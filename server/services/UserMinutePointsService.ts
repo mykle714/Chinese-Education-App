@@ -55,13 +55,24 @@ export class UserMinutePointsService {
     const clientTimestamp = this.parseTimestamp(request.timestamp);
     const streakDate = streakDateOf(clientTimestamp, tz);
 
+    // The minute is attributed to whatever language the user is currently
+    // studying. selectedLanguage is the single source of truth (kept fresh by
+    // PUT /api/users/language); default to 'zh' for legacy users with no value.
+    const language = user.selectedLanguage || 'zh';
+
     // Keep users.timezone fresh so the hourly streak-expiration cron can compute
     // "today" in this user's local 4 AM-bounded day. No-op when tz is unchanged.
     await this.userDAL.updateTimezoneIfChanged(userId, tz);
 
-    const { previousMinutes, newMinutes } = await this.userMinutePointsDAL.addMinutesForDate(userId, streakDate, 1);
+    await this.userMinutePointsDAL.addMinutesForDate(userId, streakDate, language, 1);
 
     await this.userDAL.incrementTotalMinutePoints(userId, 1);
+
+    // The streak is GLOBAL: studying any language counts. Decide the threshold
+    // crossing on the day's total summed across all languages, not the single
+    // language row we just bumped.
+    const newMinutes = await this.userMinutePointsDAL.getMinutesForDate(userId, streakDate);
+    const previousMinutes = newMinutes - 1;
 
     const crossedThreshold =
       previousMinutes < STREAK_CONFIG.RETENTION_MINUTES &&
@@ -79,7 +90,7 @@ export class UserMinutePointsService {
    * Build a dense list of CalendarDay rows for the given YYYY-MM month, filling in zeroes
    * for days the user has no row.
    */
-  async getCalendar(userId: string, yearMonth: string): Promise<CalendarResponse> {
+  async getCalendar(userId: string, language: string, yearMonth: string): Promise<CalendarResponse> {
     if (!/^\d{4}-\d{2}$/.test(yearMonth)) {
       throw new ValidationError('yearMonth must be in YYYY-MM format');
     }
@@ -95,8 +106,8 @@ export class UserMinutePointsService {
     const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
     const endDate = `${yearStr}-${monthStr}-${String(lastDay).padStart(2, '0')}`;
 
-    const rows = await this.userMinutePointsDAL.findInRange(userId, startDate, endDate);
-    const userFirstActivityDate = await this.userMinutePointsDAL.getFirstActivityDate(userId);
+    const rows = await this.userMinutePointsDAL.findInRange(userId, language, startDate, endDate);
+    const userFirstActivityDate = await this.userMinutePointsDAL.getFirstActivityDate(userId, language);
 
     // Index rows by streakDate for O(1) lookup.
     const byDate = new Map<string, { minutesEarned: number; penaltyMinutes: number }>();
@@ -126,6 +137,45 @@ export class UserMinutePointsService {
     }
 
     return { yearMonth, days, userFirstActivityDate };
+  }
+
+  /**
+   * Lifetime minutes the user has earned studying `language`.
+   * Powers the home screen's "total study time" for the selected language.
+   * (Distinct from users.totalMinutePoints, which is the global, penalty-debited
+   * accumulator used by the leaderboard.)
+   */
+  async getTotalForLanguage(userId: string, language: string): Promise<number> {
+    return this.userMinutePointsDAL.getTotalMinutesForLanguage(userId, language);
+  }
+
+  /**
+   * Minutes earned today (4 AM-local-bounded streak day) studying `language`.
+   * Powers the fire badge so switching languages shows that language's count.
+   */
+  async getTodayMinutes(userId: string, language: string, timestamp: string, tz: string): Promise<number> {
+    const resolvedTz = resolveTimezone(tz);
+    const streakDate = streakDateOf(this.parseTimestamp(timestamp), resolvedTz);
+    return this.userMinutePointsDAL.getMinutesForDateAndLanguage(userId, streakDate, language);
+  }
+
+  /**
+   * One-shot snapshot for the client's minute-points hook: per-language lifetime
+   * total + today's minutes, plus the GLOBAL current streak (the streak is not
+   * language-scoped). Replaces a separate total-minute-points call.
+   */
+  async getLanguageSummary(
+    userId: string,
+    language: string,
+    timestamp: string,
+    tz: string
+  ): Promise<{ totalMinutePoints: number; todayMinutes: number; currentStreak: number }> {
+    const [totalMinutePoints, todayMinutes, globalTotals] = await Promise.all([
+      this.userMinutePointsDAL.getTotalMinutesForLanguage(userId, language),
+      this.getTodayMinutes(userId, language, timestamp, tz),
+      this.userDAL.getTotalMinutePoints(userId),
+    ]);
+    return { totalMinutePoints, todayMinutes, currentStreak: globalTotals.currentStreak };
   }
 
   // ─────────────────────────────────────────────────────────────

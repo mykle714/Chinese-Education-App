@@ -7,7 +7,7 @@ This feature adds rich contextual information to vocabulary flashcards, includin
 
 ### 1. Database Schema (✅ Complete)
 
-Enrichment columns (breakdown, synonyms, exampleSentences, expansion, expansionLiteralTranslation, longDefinition, pronunciation, tone, script, hskLevel) live in `dictionaryentries`, not `vocabentries`. They are fetched via LEFT JOIN on `entryKey = word1 AND language`.
+Enrichment columns (breakdown, synonyms, exampleSentences, expansion, expansionLiteralTranslation, longDefinition, pronunciation, tone, script, hskLevel) live in `dictionaryentries_zh`, not `vocabentries`. They are fetched via LEFT JOIN on `entryKey = word1 AND language`.
 
 Runtime-computed fields (never stored in the DB):
 - `shortDefinition` — deterministic, via `generateShortDefinition()` in `server/utils/definitions.ts`
@@ -82,13 +82,13 @@ When creating new Chinese vocab entries, automatically generates and stores:
 - `getDistributedWorkingLoop()` - Now enriches all returned cards with related words before returning
 
 ### 6. Backfill Script (✅ Complete)
-**File**: `server/scripts/backfill-enrichment.js`
+**File**: `server/scripts/backfill/chinese/backfill-enrichment.js`
 
 Populates enrichment data for existing Chinese vocab entries.
 
 **Usage**:
 ```bash
-docker-compose exec backend-local node server/scripts/backfill-enrichment.js
+docker-compose exec backend-local node server/scripts/backfill/chinese/backfill-enrichment.js
 ```
 
 ## Data Structure Examples
@@ -202,12 +202,12 @@ The data is now available in `currentEntry` on FlashcardsLearnPage. To display:
 
 ### Verify Database Schema
 ```bash
-docker-compose exec postgres-local psql -U cow_user -d cow_db -c "\d dictionaryentries" | grep -E "(synonyms|exampleSentences|longDefinition)"
+docker-compose exec postgres-local psql -U cow_user -d cow_db -c "\d dictionaryentries_zh" | grep -E "(synonyms|exampleSentences|longDefinition)"
 ```
 
 ### Verify Data Populated
 ```bash
-docker-compose exec postgres-local psql -U cow_user -d cow_db -c "SELECT word1, language, synonyms, \"exampleSentences\" FROM dictionaryentries WHERE language = 'zh' LIMIT 3;"
+docker-compose exec postgres-local psql -U cow_user -d cow_db -c "SELECT word1, language, synonyms, \"exampleSentences\" FROM dictionaryentries_zh WHERE language = 'zh' LIMIT 3;"
 ```
 
 ### Test API Response
@@ -255,34 +255,33 @@ bash server/scripts/run-discoverable-enrichment.sh [production|local]
 
 | Step | Script | Output field(s) | Notes |
 |------|--------|-----------------|-------|
-| 1 | `backfill-split-semicolon-definitions.js` | `definitions` | Expands semicolon-delimited elements into separate array entries. Runs on ALL zh entries. |
-| 2 | `backfill-sort-definitions.js` | `definitions` | AI reorders definitions from most prototypical to least. Runs on discoverable zh entries with >1 definition. |
-| 3 | `backfill-hsk-level.js` | `hskLevel` | AI assigns one level token per entry (`HSK1`..`HSK6`). |
-| 4 | `backfill-short-long-definitions.js` | `longDefinition` | AI generates 25–75 char elaboration. Depends on sorted definitions from step 2. |
-| 5 | `backfill-example-sentences.js` | `exampleSentences` | AI generates 3 example sentences. Segment metadata (`_segments`, `segmentMetadata`) is computed at runtime — not stored. |
-| 6 | `backfill-synonyms.js` | `synonyms` | AI finds validated Chinese synonyms. |
-| 7 | `backfill-expansion.js` | `expansion`, `expansionLiteralTranslation` | AI generates expanded word form. |
-| 8 | `backfill-classifier.js` | `classifier` | AI assigns measure word(s). |
-| 9 | `backfill-dictionary-breakdown.js` | `breakdown` | AI generates per-character breakdown (multi-char words only). |
-| 10 | `backfill-vernacular-score.js` | `vernacularScore` | AI scores vernacular vs. literary register (1–5). |
+| 1 | `backfill/chinese/backfill-split-semicolon-definitions.js` | `definitions` | Expands semicolon-delimited elements into separate array entries. Runs on ALL zh entries. |
+| 2 | `backfill/chinese/backfill-sort-definitions.js` | `definitions` | AI reorders definitions from most prototypical to least. Runs on discoverable zh entries with >1 definition. |
+| 3 | `backfill/chinese/backfill-hsk-level.js` | `hskLevel` | AI assigns one level token per entry (`HSK1`..`HSK6`). |
+| 4 | `backfill/chinese/backfill-long-definitions.js` | `longDefinition` | AI generates 25–75 char elaboration. Depends on sorted definitions from step 2. |
+| 5 | `backfill/chinese/backfill-example-sentences.js` | `exampleSentences` | AI generates 3 example sentences. Segment metadata (`_segments`, `segmentMetadata`) is computed at runtime — not stored. |
+| 6 | `backfill/chinese/backfill-expansion-claude.js` | `expansion`, `expansionLiteralTranslation` | AI generates expanded word form. |
+| 7 | `backfill/chinese/backfill-classifier.js` | `classifier` | AI assigns measure word(s). |
+| 8 | `backfill/chinese/backfill-dictionary-breakdown.js` | `breakdown` | AI generates per-character breakdown (multi-char words only). |
+| 9 | `backfill/chinese/backfill-vernacular-score.js` | `vernacularScore` | AI scores vernacular vs. literary register (1–5). |
 
 ---
 
 ## Migration History
 
-- **Migrations 21–24**: Historically added and renamed enrichment columns (`breakdown`, `synonyms`, `exampleSentences`, `partsOfSpeech`, `expansion`) on `vocabentries`. Those columns have since been removed from `vocabentries`; all enrichment data now lives in `dictionaryentries`.
+- **Migrations 21–24**: Historically added and renamed enrichment columns (`breakdown`, `synonyms`, `exampleSentences`, `partsOfSpeech`, `expansion`) on `vocabentries`. Those columns have since been removed from `vocabentries`; all enrichment data now lives in `dictionaryentries_zh`.
 - **Migration 34**: Dropped `exampleSentencesMetadata` column — segment metadata (pronunciation, definition, particle/classifier per token) is now computed on-the-fly via `DictionaryDAL.enrichExampleSentencesMetadataBatch()` and attached to each sentence object at query time as `segmentMetadata`. Never stored in the DB.
-- **Migration 25**: Added `longDefinition` column to `dictionaryentries`
+- **Migration 25**: Added `longDefinition` column to `dictionaryentries_zh`
 - **Migration 27**: Dropped `shortDefinition` column — now computed at runtime via `generateShortDefinition()` in `server/utils/definitions.ts`
 
-## Short and Long Definitions (dictionaryentries)
+## Short and Long Definitions (dictionaryentries_zh)
 
 ### Columns
 
 | Column | Type | Table | Derivation |
 |--------|------|-------|------------|
 | `shortDefinition` | *Not stored* | Computed at runtime | Deterministic — shortest gloss extracted from `definitions` array via `server/utils/definitions.ts` |
-| `longDefinition` | TEXT (nullable) | `dictionaryentries` | AI-generated via Claude Haiku, 25–75 characters |
+| `longDefinition` | TEXT (nullable) | `dictionaryentries_zh` | AI-generated via Claude Haiku, 25–75 characters |
 
 ### shortDefinition Algorithm (server/utils/definitions.ts)
 
@@ -308,7 +307,7 @@ Uses Claude Haiku (`claude-haiku-4-5-20251001`) with a prompt that asks for a 25
 ### Backfill
 
 ```bash
-docker exec cow-backend-local ./node_modules/.bin/tsx scripts/backfill-short-long-definitions.js
+docker exec cow-backend-local ./node_modules/.bin/tsx scripts/backfill/chinese/backfill-short-long-definitions.js
 ```
 
 Only processes `discoverable = TRUE` zh entries where either column is NULL.
@@ -355,7 +354,7 @@ export interface VocabEntry {
 - `server/services/DictionaryService.ts`
 - `server/services/VocabEntryService.ts`
 - `server/services/OnDeckVocabService.ts`
-- `server/scripts/backfill-enrichment.js` (new)
+- `server/scripts/backfill/chinese/backfill-enrichment.js` (new)
 
 ### Frontend
 - `src/types.ts`

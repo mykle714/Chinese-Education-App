@@ -8,7 +8,7 @@ Only these tables may be data-deployed. All others contain live user data and mu
 
 | Table | Dump file |
 |---|---|
-| `dictionaryentries` | `database/dictionaryentries-data.dump` |
+| `dictionaryentries_zh` | `database/dictionaryentries_zh-data.dump` |
 | `particlesandclassifiers` | `database/particlesandclassifiers-data.dump` |
 
 ## Environment
@@ -22,7 +22,7 @@ Only these tables may be data-deployed. All others contain live user data and mu
 
 ## Steps (per table)
 
-Repeat these steps for each table being deployed. Substitute `<TABLE>` with the table name (e.g. `dictionaryentries`).
+Repeat these steps for each table being deployed. Substitute `<TABLE>` with the table name (e.g. `dictionaryentries_zh`).
 
 ### 1. Dump from local Postgres (run locally)
 

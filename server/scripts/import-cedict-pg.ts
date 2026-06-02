@@ -133,7 +133,7 @@ async function insertBatch(client: pg.Client, entries: DictionaryEntry[]): Promi
     });
 
     const query = `
-        INSERT INTO DictionaryEntries (language, word1, word2, pronunciation, tone, definitions)
+        INSERT INTO dictionaryentries_zh (language, word1, word2, pronunciation, tone, definitions)
         VALUES ${placeholders.join(', ')}
     `;
 
@@ -180,7 +180,7 @@ async function importCEDICT() {
     console.log('✅ Connected');
 
     console.log('🗑️  Clearing existing Chinese entries...');
-    await client.query("DELETE FROM DictionaryEntries WHERE language = 'zh'");
+    await client.query("DELETE FROM dictionaryentries_zh WHERE language = 'zh'");
     console.log('✅ Cleared');
 
     console.log(`💾 Inserting ${entries.length} entries in batches of ${BATCH_SIZE}...`);

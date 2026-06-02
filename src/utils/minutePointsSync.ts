@@ -17,6 +17,42 @@ export function getBrowserTimezone(): string {
   }
 }
 
+/** Per-language snapshot powering the home screen + fire badge. */
+export interface LanguageMinuteSummary {
+  totalMinutePoints: number; // lifetime minutes for this language
+  todayMinutes: number;      // minutes earned today (4 AM-local day) for this language
+  currentStreak: number;     // GLOBAL streak (not language-scoped)
+}
+
+/**
+ * Fetch the per-language minute-points summary for the selected language.
+ * The server attributes minutes by the user's selectedLanguage; we pass the
+ * language explicitly so a just-switched (not-yet-persisted) selection still
+ * reads the right bucket, plus tz/timestamp so "today" resolves in local time.
+ */
+export async function fetchLanguageSummary(
+  language: string,
+  token?: string | null
+): Promise<LanguageMinuteSummary | null> {
+  try {
+    const params = new URLSearchParams({
+      language,
+      tz: getBrowserTimezone(),
+      timestamp: new Date().toISOString(),
+    });
+    const response = await fetch(`${API_BASE_URL}/api/users/minute-points/summary?${params.toString()}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: 'include',
+    });
+    if (response.ok) {
+      return (await response.json()) as LanguageMinuteSummary;
+    }
+  } catch {
+    // Intentionally silent — caller falls back to local storage.
+  }
+  return null;
+}
+
 /**
  * Increment minute points by exactly 1 (server-side rate-limited).
  */

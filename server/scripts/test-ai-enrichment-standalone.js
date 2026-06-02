@@ -266,7 +266,7 @@ async function testModel(modelKey, client) {
     const placeholders = TEST_WORDS.map((_, i) => `$${i + 1}`).join(',');
     const query = `
       SELECT word1, pronunciation, definitions
-      FROM dictionaryentries
+      FROM dictionaryentries_zh
       WHERE language = 'zh'
       AND word1 IN (${placeholders})
     `;

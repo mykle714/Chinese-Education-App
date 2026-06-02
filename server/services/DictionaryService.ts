@@ -225,8 +225,9 @@ export class DictionaryService {
       return null;
     }
 
-    // Look up each character in the dictionary
-    const characterEntries: DictionaryEntry[] = await this.dictionaryDAL.findMultipleByWord1(characters, 'zh');
+    // Look up each character in the dictionary. The method is already guarded to
+    // zh above, but pass the param through rather than re-hardcoding the literal.
+    const characterEntries: DictionaryEntry[] = await this.dictionaryDAL.findMultipleByWord1(characters, language);
 
     // Build the breakdown object with definition only (pronunciation is derived from vocabentries.pronunciation at read time)
     const breakdown: Record<string, { definition: string }> = {};
@@ -334,7 +335,7 @@ export class DictionaryService {
    * Generate example sentences for a Chinese word
    * Creates 3 sentences showing different grammatical uses
    */
-  async generateExampleSentences(word: string, language: string): Promise<Array<{ chinese: string; english: string; usage: string }>> {
+  async generateExampleSentences(word: string, language: string): Promise<Array<{ foreignText: string; english: string; usage: string }>> {
     if (!language || language !== 'zh') {
       return [];
     }
@@ -352,17 +353,17 @@ export class DictionaryService {
     // Generate 3 template-based sentences
     const sentences = [
       {
-        chinese: `我很喜欢${word}。`,
+        foreignText: `我很喜欢${word}。`,
         english: `I really like ${englishMeaning}.`,
         usage: 'object'
       },
       {
-        chinese: `${word}很有用。`,
+        foreignText: `${word}很有用。`,
         english: `${englishMeaning} is very useful.`,
         usage: 'subject'
       },
       {
-        chinese: `这是一个关于${word}的故事。`,
+        foreignText: `这是一个关于${word}的故事。`,
         english: `This is a story about ${englishMeaning}.`,
         usage: 'prepositional'
       }
@@ -554,7 +555,7 @@ Respond with only the definition text — no quotes, no extra text.`;
   }
 
   /**
-   * Batch-fetch synonym metadata (pronunciation + first definition) from dictionaryentries.
+   * Batch-fetch synonym metadata (pronunciation + first definition) from dictionaryentries_zh.
    * Returns a map of { [word]: { definition, pronunciation } } for each found synonym.
    */
   async buildSynonymMetadata(
@@ -581,7 +582,7 @@ Respond with only the definition text — no quotes, no extra text.`;
   /**
    * Enrich an array of VocabEntry objects with computed synonymsMetadata.
    * Collects all synonym words across entries, batch-fetches their metadata
-   * from dictionaryentries, and attaches it to each entry.
+   * from dictionaryentries_zh, and attaches it to each entry.
    */
 
   /**
@@ -592,7 +593,7 @@ Respond with only the definition text — no quotes, no extra text.`;
    * @param language - Language filter (default: 'zh')
    */
   async enrichExampleSentencesMetadataBatch<T extends {
-    exampleSentences?: Array<{ chinese: string; english: string; [key: string]: any }> | null;
+    exampleSentences?: Array<{ foreignText: string; english: string; [key: string]: any }> | null;
   }>(entries: T[], language: string = 'zh'): Promise<T[]> {
     return this.dictionaryDAL.enrichExampleSentencesMetadataBatch(entries, language);
   }
@@ -609,7 +610,7 @@ Respond with only the definition text — no quotes, no extra text.`;
     return this.dictionaryDAL.enrichExpansionMetadataBatch(entries, language);
   }
 
-  async enrichEntriesWithSynonymMetadata(entries: VocabEntry[]): Promise<VocabEntry[]> {
+  async enrichEntriesWithSynonymMetadata(entries: VocabEntry[], language: string = 'zh'): Promise<VocabEntry[]> {
     // Collect all unique synonym words across all entries
     const allSynonyms = new Set<string>();
     for (const entry of entries) {
@@ -622,9 +623,9 @@ Respond with only the definition text — no quotes, no extra text.`;
 
     if (allSynonyms.size === 0) return entries;
 
-    // Single batch query for all synonym metadata
-    // Use 'zh' as default since synonyms are currently only for Chinese
-    const metadata = await this.buildSynonymMetadata([...allSynonyms], 'zh');
+    // Single batch query for all synonym metadata, scoped to the caller's language.
+    // Defaults to 'zh' for legacy callers since synonyms are currently Chinese-only.
+    const metadata = await this.buildSynonymMetadata([...allSynonyms], language);
 
     // Attach metadata to each entry that has synonyms
     return entries.map(entry => {

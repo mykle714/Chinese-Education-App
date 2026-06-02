@@ -3,13 +3,13 @@
 ## Overview
 The `backfill-enrichment.js` script populates enrichment data (synonyms, example sentences, parts of speech, and expansions) for existing Chinese vocabulary entries using Claude AI.
 
-**Script Location:** `server/scripts/backfill-enrichment.js`
+**Script Location:** `server/scripts/backfill/chinese/backfill-enrichment.js`
 
 ## Running the Script
 
 ### From Backend Container
 ```bash
-docker exec cow-backend-local sh -c 'npx tsx /app/scripts/backfill-enrichment.js'
+docker exec cow-backend-local sh -c 'npx tsx /app/scripts/backfill/chinese/backfill-enrichment.js'
 ```
 
 **Important Notes:**
@@ -73,27 +73,27 @@ FROM vocabentries;
 Database error: error: column "discoverable" does not exist
 ```
 
-**Cause:** The `dictionaryentries` table schema is missing enrichment-related columns.
+**Cause:** The `dictionaryentries_zh` table schema is missing enrichment-related columns.
 
 **Solution:** Add the missing columns to the database:
 
 ```bash
 docker exec -e PGPASSWORD=cow_password_local cow-postgres-local psql -h localhost -U cow_user -d cow_db << 'EOF'
-ALTER TABLE dictionaryentries ADD COLUMN discoverable BOOLEAN NOT NULL DEFAULT FALSE;
-ALTER TABLE dictionaryentries ADD COLUMN script VARCHAR(20);
-ALTER TABLE dictionaryentries ADD COLUMN "hskLevel" VARCHAR(10);
-ALTER TABLE dictionaryentries ADD COLUMN breakdown JSONB;
-ALTER TABLE dictionaryentries ADD COLUMN synonyms JSONB;
-ALTER TABLE dictionaryentries ADD COLUMN "exampleSentences" JSONB;
-ALTER TABLE dictionaryentries ADD COLUMN "partsOfSpeech" JSONB;
-ALTER TABLE dictionaryentries ADD COLUMN expansion TEXT;
-ALTER TABLE dictionaryentries ADD COLUMN "expansionMetadata" JSONB;
+ALTER TABLE dictionaryentries_zh ADD COLUMN discoverable BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE dictionaryentries_zh ADD COLUMN script VARCHAR(20);
+ALTER TABLE dictionaryentries_zh ADD COLUMN "hskLevel" VARCHAR(10);
+ALTER TABLE dictionaryentries_zh ADD COLUMN breakdown JSONB;
+ALTER TABLE dictionaryentries_zh ADD COLUMN synonyms JSONB;
+ALTER TABLE dictionaryentries_zh ADD COLUMN "exampleSentences" JSONB;
+ALTER TABLE dictionaryentries_zh ADD COLUMN "partsOfSpeech" JSONB;
+ALTER TABLE dictionaryentries_zh ADD COLUMN expansion TEXT;
+ALTER TABLE dictionaryentries_zh ADD COLUMN "expansionMetadata" JSONB;
 EOF
 ```
 
 **Verification:**
 ```bash
-docker exec -e PGPASSWORD=cow_password_local cow-postgres-local psql -h localhost -U cow_user -d cow_db -c "SELECT column_name FROM information_schema.columns WHERE table_name='dictionaryentries' ORDER BY ordinal_position;"
+docker exec -e PGPASSWORD=cow_password_local cow-postgres-local psql -h localhost -U cow_user -d cow_db -c "SELECT column_name FROM information_schema.columns WHERE table_name='dictionaryentries_zh' ORDER BY ordinal_position;"
 ```
 
 ### Issue 2: TypeScript Import Path Errors
@@ -107,7 +107,7 @@ Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/app/db.js'
 
 **Solution:** Use `npx tsx` to run the script:
 ```bash
-docker exec cow-backend-local sh -c 'npx tsx /app/scripts/backfill-enrichment.js'
+docker exec cow-backend-local sh -c 'npx tsx /app/scripts/backfill/chinese/backfill-enrichment.js'
 ```
 
 ### Issue 3: Git Bash Path Translation
@@ -122,7 +122,7 @@ Error: Cannot find module '/app/C:/Program Files/Git/app/scripts/...'
 
 **Solution:** Wrap the command in `sh -c` to avoid path translation:
 ```bash
-docker exec cow-backend-local sh -c 'npx tsx /app/scripts/backfill-enrichment.js'
+docker exec cow-backend-local sh -c 'npx tsx /app/scripts/backfill/chinese/backfill-enrichment.js'
 ```
 
 ### Issue 4: Database Connection Issues

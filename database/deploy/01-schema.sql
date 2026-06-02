@@ -79,20 +79,23 @@ CREATE INDEX IF NOT EXISTS idx_texts_userid ON texts("userId");
 
 -- ─────────────────────────────────────────────────────────────
 -- userminutepoints
--- Daily minute-points tracking per user. Aggregates across devices.
+-- Daily minute-points tracking per user, per language. Aggregates across devices.
 -- "streakDate" is the user-local 4 AM-bounded day label
 -- (e.g. activity at 03:30 local on the 13th counts toward the 12th).
+-- "language" attributes each earned minute to the language the user was
+-- studying; the streak itself stays global (any language keeps it alive).
 -- "penaltyMinutes" records minutes deducted by a streak break that
 -- was attributed to this missed day.
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS userminutepoints (
     "userId"            UUID    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     "streakDate"        DATE    NOT NULL,
+    "language"          VARCHAR(10) NOT NULL DEFAULT 'zh',
     "minutesEarned"     INTEGER NOT NULL DEFAULT 0,
     "penaltyMinutes"    INTEGER NOT NULL DEFAULT 0,
     "lastSyncTimestamp" TIMESTAMP DEFAULT NOW(),
     "updatedAt"         TIMESTAMP DEFAULT NOW(),
-    PRIMARY KEY ("userId", "streakDate")
+    PRIMARY KEY ("userId", "streakDate", "language")
 );
 
 -- ─────────────────────────────────────────────────────────────

@@ -279,7 +279,7 @@ export class TextService {
     }
     
     // Validate language code
-    const validLanguages = ['zh', 'ja', 'ko', 'vi'];
+    const validLanguages = ['zh', 'es'];
     if (data.language && !validLanguages.includes(data.language)) {
       throw new ValidationError(`Invalid language. Must be one of: ${validLanguages.join(', ')}`);
     }

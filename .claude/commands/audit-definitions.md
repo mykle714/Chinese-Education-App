@@ -1,6 +1,6 @@
 # Audit Dictionary Definitions & Parts of Speech
 
-Audit `dictionaryentries` rows for integrity problems in the `definitions` (jsonb array of English glosses) and `partsOfSpeech` (jsonb array of POS tags) columns, then propose fixes for the user to approve before applying.
+Audit `dictionaryentries_zh` rows for integrity problems in the `definitions` (jsonb array of English glosses) and `partsOfSpeech` (jsonb array of POS tags) columns, then propose fixes for the user to approve before applying.
 
 ## Scope
 
@@ -24,7 +24,7 @@ Local container is `cow-postgres-local` / db `cow_db` / user `cow_user`. Output 
 **1. Empty / missing definitions** (regression example: 体检 had `[]`)
 ```bash
 docker exec cow-postgres-local psql -U cow_user -d cow_db -At -c "
-SELECT id||' | '||word1 FROM dictionaryentries
+SELECT id||' | '||word1 FROM dictionaryentries_zh
 WHERE discoverable AND (definitions IS NULL OR jsonb_array_length(definitions)=0);"
 ```
 
@@ -33,7 +33,7 @@ WHERE discoverable AND (definitions IS NULL OR jsonb_array_length(definitions)=0
 docker exec cow-postgres-local psql -U cow_user -d cow_db -At -c "
 SELECT id||' | '||word1||' | dups='||
   (jsonb_array_length(definitions) - (SELECT count(DISTINCT lower(v)) FROM jsonb_array_elements_text(definitions) v))
-FROM dictionaryentries
+FROM dictionaryentries_zh
 WHERE discoverable
   AND (jsonb_array_length(definitions) - (SELECT count(DISTINCT lower(v)) FROM jsonb_array_elements_text(definitions) v)) > 0;"
 ```
@@ -43,7 +43,7 @@ The canonical tag list is `scripts/lib/posTags.js` (`ALLOWED_POS_TAGS`). Read it
 ```bash
 docker exec cow-postgres-local psql -U cow_user -d cow_db -At -c "
 SELECT id||' | '||word1||' | '||tag
-FROM dictionaryentries, jsonb_array_elements_text(\"partsOfSpeech\") tag
+FROM dictionaryentries_zh, jsonb_array_elements_text(\"partsOfSpeech\") tag
 WHERE discoverable
   AND tag NOT IN ('noun','verb','adjective','adverb','pronoun','numeral','classifier','conjunction','particle','preposition','interjection');"
 ```
@@ -52,7 +52,7 @@ WHERE discoverable
 **4. Discoverable entry with no POS at all** (should have at least one)
 ```bash
 docker exec cow-postgres-local psql -U cow_user -d cow_db -At -c "
-SELECT id||' | '||word1 FROM dictionaryentries
+SELECT id||' | '||word1 FROM dictionaryentries_zh
 WHERE discoverable AND (\"partsOfSpeech\" IS NULL OR jsonb_array_length(\"partsOfSpeech\")=0);"
 ```
 
@@ -63,7 +63,7 @@ Match only **leading-hyphen** glosses (English suffix forms, which read as noise
 ```bash
 docker exec cow-postgres-local psql -U cow_user -d cow_db -At -c "
 SELECT id||' | '||word1||' | '||v
-FROM dictionaryentries, jsonb_array_elements_text(definitions) v
+FROM dictionaryentries_zh, jsonb_array_elements_text(definitions) v
 WHERE discoverable AND v ~ '^-[a-z]';"
 ```
 
@@ -90,8 +90,8 @@ Batch the approved changes in a single transaction so a mistake rolls back clean
 ```bash
 docker exec -i cow-postgres-local psql -U cow_user -d cow_db <<'SQL'
 BEGIN;
-UPDATE dictionaryentries SET definitions   = '[...]'::jsonb     WHERE id=<id> AND word1='<word>';
-UPDATE dictionaryentries SET "partsOfSpeech" = '[...]'::jsonb   WHERE id=<id> AND word1='<word>';
+UPDATE dictionaryentries_zh SET definitions   = '[...]'::jsonb     WHERE id=<id> AND word1='<word>';
+UPDATE dictionaryentries_zh SET "partsOfSpeech" = '[...]'::jsonb   WHERE id=<id> AND word1='<word>';
 COMMIT;
 SQL
 ```

@@ -23,6 +23,22 @@ pct = particles and classifiers table
 nmp = night market page
 ped = pedestrian
 poi = point of interest
+cdet = chinese dictionary entries table
+sdet = spanish dictionary entries table
+cvet = chinese vocab entries table
+svet = spanish vocab entries table
+
+
+## Terminology: "Learn Now" cards
+
+The `'library'` starter-pack bucket is presented to users as **"Learn Now"** cards
+(renamed from "Library"). This rename is **front-end visible text only** — all
+internal identifiers keep the `library` name: the `StarterPackBucket` value
+`'library'`, API endpoint paths (`/add-to-library`, `/non-mastered-library-cards`,
+etc.), variable names (`onAddToLibrary`, `totalLibraryCards`), CSS class names
+(`flashcards-decks__library-*`), and the `'already-in-library'` API status are all
+unchanged because they are backend contracts. When adding new user-facing copy for
+this bucket, write "Learn Now"; when touching code/API, keep "library".
 
 ## Night Market Coordinate System
 
@@ -57,10 +73,37 @@ When querying or working with the PostgreSQL database:
 → See [POSTGRES_QUERY_GUIDE.md](./POSTGRES_QUERY_GUIDE.md)
 
 **Key Points**:
-- Always use lowercase table names: `dictionaryentries` (not `"DictionaryEntries"`)
+- Always use lowercase table names: `dictionaryentries_zh` (not `"DictionaryEntries"`)
 - Run db scripts from the `server/` directory
 - Use parameterized queries to prevent SQL injection
 - Always release database clients
+
+### Dictionary Tables (per-language, intentionally NOT unified)
+
+Dictionary data lives in **separate tables per language family** because their
+natural identity/keying differs. Do not try to force them into one table.
+
+| Concept | Table | Identity / key | Notes |
+|---|---|---|---|
+| **Chinese det** (cdet) | `dictionaryentries_zh` | surrogate `id`; looked up by `word1` (+ `language`) | The original rich table, **renamed from `dictionaryentries` (migration 57)** and now Chinese-only. Holds Chinese (`zh`) data plus all CJK-style enrichment columns (`numberedPinyin`, `tone`, `hskLevel`, `breakdown`, `classifier`, etc.). A `gender` column exists (migration 55) but is NULL for Chinese. |
+| **Spanish det** (sdet) | `dictionaryentries_es` | logical key **(`word1`, `pos`, `gender`)**, enforced by a `UNIQUE NULLS NOT DISTINCT` constraint (surrogate `id` PK) | Schema = clone of `dictionaryentries_zh` + scalar `pos` + `etymology` (Wiktionary etymology text, migration 59) + `raw` (jsonb source blocks). `longDefinition` is reserved for the AI definition-elaboration backfill, NOT etymology. Gender-homographs are **separate rows** (e.g. `cura`/n/f = "cure" vs `cura`/n/m = "priest"), because gender carries distinct meaning in Spanish. `gender` holds a cleaned primary token (`m`, `f`, `mf`, `mfbysense`, `m-p`, …); `?`/unknown is NULL. |
+| **Affixes** | `affixes` | (`language`, `affix`, `type`) | Bound morphemes for ALL languages. Kept out of the det tables because they are not standalone headwords. `type` ∈ {`prefix`,`suffix`,`interfix`,`infix`} (migration 61 added interfix/infix for Spanish `-i-`/`-x-`). `gender` ∈ {`m`,`f`,NULL} and `number` ∈ {`s`,`p`,NULL} (migration 61) carry the singular/plural + gender caveats for inflected affix forms (e.g. `-eada` = feminine singular of `-eado`). |
+
+Why the split: Chinese identity is essentially `word1`; Spanish identity needs
+`pos` + `gender` to keep semantic homographs distinct. Rather than overload one
+schema, each gets its own table. Source for Spanish/affixes: `doozan/spanish_data`
+(`es-en.data`, Wiktionary-derived, CC-BY-SA), imported via
+`server/scripts/import-esdict-temp.ts`; the `raw` column preserves the full
+per-POS source structure (gender, etymology, glosses, syn/q/usage).
+
+**Deprecated unified model / broken flows:** `dictionaryentries` used to be a
+single shared table for `zh/ja/ko/vi`. It now holds Chinese only. The ja/ko/vi
+import scripts (`import-jmdict.ts`, `import-edict2.ts`, `import-kedict.ts`,
+`import-kengdic-tsv.ts`, `import-vdict.ts`) are **intentionally left broken**
+(they throw on startup and reference not-yet-existing `dictionaryentries_ja/_ko/_vi`).
+Those languages are **not user-selectable** for now; build the per-language
+tables before re-enabling them. Relevant migrations: 55 (gender), 57 (rename →
+`dictionaryentries_zh`), 58 (create `dictionaryentries_es`), 59 (es etymology), 60 (affixes), 61 (affix gender/number + interfix/infix).
 
 ## 🗣️ Multi-Language Support
 
@@ -113,7 +156,7 @@ An hourly Postgres cron on the prod server (a) breaks stale streaks (mirroring `
 ### Deploying
 Use the `/deploy` skill. It contains the full deployment procedure, server details, and migration steps.
 
-### Data Deployment (syncing `dictionaryentries` to prod)
+### Data Deployment (syncing `dictionaryentries_zh` to prod)
 → See [docs/DATA_DEPLOYMENT_GUIDE.md](./docs/DATA_DEPLOYMENT_GUIDE.md)
 
 ### Docker Commands & Setup
@@ -188,6 +231,8 @@ For design guidelines:
 - When you present information to the user, use nice formatting techniques to make the content easily digestible for the user.
 - Always use descriptive class names for all HTML components
 - When a terminal command should be run on this machine, do not tell the user to run it, you should try to run it yourself first.
+- In all locations where the code doesn't quite seem to make sense or have a clear goal, flag it and bring it to my attention. Tell me what your guess is for what the code does and tell me how you would clarify/improve it.
+- Make sure to confirm all new tables and columns with me in a question form.
 
 ## Code Quality Standards
 When reviewing or writing code, actively look for and address:

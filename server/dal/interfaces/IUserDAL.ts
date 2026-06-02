@@ -16,15 +16,8 @@ export interface IUserDAL extends IBaseDAL<User, UserCreateData, UserUpdateData>
   // User deletion
   deleteUser(userId: string): Promise<boolean>;
 
-  // User statistics and analytics
-  getUserStats(id: string): Promise<{
-    totalVocabEntries: number;
-    createdAt: Date;
-  }>;
-
   // Batch operations
   findUsersCreatedAfter(date: Date): Promise<User[]>;
-  findUsersWithVocabCount(): Promise<Array<User & { vocabCount: number }>>;
 
   // Total minute points operations
   getTotalMinutePoints(userId: string): Promise<{ totalMinutePoints: number; currentStreak: number }>;

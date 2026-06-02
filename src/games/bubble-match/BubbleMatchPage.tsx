@@ -98,7 +98,7 @@ const BubbleMatchPage: React.FC = () => {
                 // a total of `data.total` library cards. Report the shortfall.
                 const have = Object.values(data.available).reduce((sum, n) => sum + n, 0);
                 setBlockMessage(
-                    `You need ${data.total} library cards to play Bubble Match — you have ${have}. Study more cards to unlock it.`
+                    `You need ${data.total} Learn Now cards to play Bubble Match — you have ${have}. Study more cards to unlock it.`
                 );
                 setPhase("blocked");
                 return null;
@@ -255,7 +255,7 @@ const BubbleMatchPage: React.FC = () => {
                     Match each word to its meaning by dragging one bubble onto the other before the screen fills up. {TOTAL_PAIRS} pairs · {LEVEL_CONFIGS[0].durationSec} seconds.
                 </Typography>
                 <Typography className="bubble-match__recommended-mix" sx={{ fontSize: 13, color: fc.textSecondary, lineHeight: 1.5, maxWidth: 300, fontStyle: "italic" }}>
-                    For the best practice mix, play with at least {RECOMMENDED_MIX} cards in your library.
+                    For the best practice mix, play with at least {RECOMMENDED_MIX} cards in your Learn Now deck.
                 </Typography>
                 <Box className="bubble-match__levels" sx={{ display: "flex", flexDirection: "column", gap: 1.5, width: "100%", maxWidth: 280, mt: 1 }}>
                     {LEVEL_CONFIGS.map((cfg) => (

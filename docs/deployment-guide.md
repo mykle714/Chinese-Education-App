@@ -245,23 +245,23 @@ docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "
             WHEN 'vi' THEN '🇻🇳 Vietnamese'
             ELSE language
         END as language_name
-    FROM \"DictionaryEntries\"
+    FROM \"dictionaryentries_zh\"
     GROUP BY language
     ORDER BY language;
 "
 
 # Test a dictionary lookup for each language
 # Chinese
-docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT word1, word2, pronunciation FROM \"DictionaryEntries\" WHERE language='zh' LIMIT 3;"
+docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT word1, word2, pronunciation FROM \"dictionaryentries_zh\" WHERE language='zh' LIMIT 3;"
 
 # Japanese
-docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT word1, word2, pronunciation FROM \"DictionaryEntries\" WHERE language='ja' LIMIT 3;"
+docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT word1, word2, pronunciation FROM \"dictionaryentries_zh\" WHERE language='ja' LIMIT 3;"
 
 # Korean
-docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT word1, word2, pronunciation FROM \"DictionaryEntries\" WHERE language='ko' LIMIT 3;"
+docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT word1, word2, pronunciation FROM \"dictionaryentries_zh\" WHERE language='ko' LIMIT 3;"
 
 # Vietnamese
-docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT word1, definitions FROM \"DictionaryEntries\" WHERE language='vi' LIMIT 3;"
+docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT word1, definitions FROM \"dictionaryentries_zh\" WHERE language='vi' LIMIT 3;"
 ```
 
 ## Troubleshooting Commands

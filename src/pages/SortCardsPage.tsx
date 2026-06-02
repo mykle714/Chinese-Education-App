@@ -8,7 +8,8 @@ import { useSpring, animated } from "@react-spring/web";
 import MobileDemoHeader from "../components/MobileDemoHeader";
 import MobileFooter from "../components/MobileFooter";
 import MinutePointsFireBadge from "../components/MinutePointsFireBadge";
-import CPCDRow from "../components/CPCDRow";
+import ForeignText from "../components/ForeignText";
+import PosBadge from "../components/PosBadge";
 import { API_BASE_URL } from "../constants";
 import { stripParentheses } from "../utils/definitionUtils";
 import type { Language, DiscoverCard, DiscoverFetchResponse, DiscoverSortResponse } from "../types";
@@ -21,6 +22,13 @@ function parseHskLevel(label: string | null | undefined): number | null {
     const m = label.match(/^HSK([1-6])$/);
     return m ? Number(m[1]) : null;
 }
+
+// Languages whose discover flow is leveled by HSK difficulty band. Other languages
+// (e.g. Spanish) use a sequential flow — the server offers cards in id order and the
+// client must NOT apply the HSK band filter (their cards have no hskLevel and would
+// otherwise all be filtered out). Mirrors the per-language split in StarterPacksService.
+const HSK_LEVELED_LANGUAGES = new Set<string>(["zh"]);
+const isHskLeveledLanguage = (lang?: string): boolean => !!lang && HSK_LEVELED_LANGUAGES.has(lang);
 
 // Design tokens from Figma
 const COLORS = {
@@ -49,6 +57,10 @@ const ContentArea = styled(Box)({
     flexDirection: "column",
     alignSelf: "stretch",
     overflow: "visible",
+    // Disable text selection: the card is drag-to-sort, so selecting the
+    // bucket labels / card text mid-drag is never intended and looks broken.
+    userSelect: "none",
+    WebkitUserSelect: "none",
 });
 
 // CSS grid distributes the 4 buckets evenly in a 2×2 layout regardless of viewport height
@@ -183,7 +195,7 @@ const SortCardsPage: React.FC = () => {
     const buckets = useMemo<BucketZone[]>(() => [
         { id: "learn-later", label: "Add to Learn Later", mainColor: COLORS.yellowMain, accentColor: COLORS.yellowAccent },
         { id: "skip", label: "Skip for now", mainColor: COLORS.greenMain, accentColor: COLORS.greenAccent },
-        { id: "library", label: "Add to\nLibrary", mainColor: COLORS.redMain, accentColor: COLORS.redAccent },
+        { id: "library", label: "Add to\nLearn Now", mainColor: COLORS.redMain, accentColor: COLORS.redAccent },
         { id: "already-learned", label: "Already Learned", mainColor: COLORS.blueMain, accentColor: COLORS.blueAccent },
     ], []);
 
@@ -220,7 +232,9 @@ const SortCardsPage: React.FC = () => {
         if (language) {
             fetchCards();
         }
-    }, [language]);
+        // token is included so the initial load re-runs once auth resolves and a
+        // token becomes available (the request sends the Authorization header).
+    }, [language, token]);
 
     // Build the visible queue: the currently displayed card is "frozen" at the
     // head and is never filtered out — even if a fresh server response shifts
@@ -229,8 +243,10 @@ const SortCardsPage: React.FC = () => {
     // Provisional mode (<3 Unfamiliar cards): tail filtered to only hskLevel+1.
     const visibleQueue = useMemo<DiscoverCard[]>(() => {
         const head = cardQueue[currentCardIndex];
-        if (userHskLevel == null) {
-            // No level known yet — show everything from the current index
+        // Sequential languages (e.g. Spanish): no HSK band filter — show every card
+        // from the current index in the server-provided id order.
+        if (!isHskLeveledLanguage(language) || userHskLevel == null) {
+            // No level known yet, or this language isn't HSK-leveled — show everything.
             return cardQueue.slice(currentCardIndex);
         }
         const targetLevel = Math.min(6, userHskLevel + 1);
@@ -248,7 +264,7 @@ const SortCardsPage: React.FC = () => {
                 return lvl >= min && lvl <= targetLevel;
             });
         return head ? [head, ...tail] : tail;
-    }, [cardQueue, currentCardIndex, userHskLevel, provisionalMode]);
+    }, [cardQueue, currentCardIndex, userHskLevel, provisionalMode, language]);
 
     const currentCard = visibleQueue[0];
 
@@ -290,8 +306,9 @@ const SortCardsPage: React.FC = () => {
     // Runs on cardQueue changes (initial load, load-more) and on band changes
     // (userHskLevel / provisionalMode updates from the server) so that a
     // mid-session rank-up updates the displayed card to match the new band.
+    // Only applies to HSK-leveled languages; sequential flows have no band to skip.
     useEffect(() => {
-        if (userHskLevel == null || cardQueue.length === 0) return;
+        if (!isHskLeveledLanguage(language) || userHskLevel == null || cardQueue.length === 0) return;
         const head = cardQueue[currentCardIndex];
         if (!head) return; // index is past end; waiting for more cards
         const lvl = parseHskLevel(head.hskLevel);
@@ -306,7 +323,7 @@ const SortCardsPage: React.FC = () => {
             next++;
         }
         if (next !== currentCardIndex) setCurrentCardIndex(next);
-    }, [cardQueue, currentCardIndex, userHskLevel, provisionalMode]);
+    }, [cardQueue, currentCardIndex, userHskLevel, provisionalMode, language]);
 
     // Reset exhausted flag when the HSK band changes — the server may have
     // cards in the new band even though the previous band was exhausted.
@@ -382,8 +399,12 @@ const SortCardsPage: React.FC = () => {
         // Advance past any out-of-band cards in cardQueue so the next active
         // card honors the current [userLevel, userLevel + 1] filter. If we run
         // off the end, the refetch effect (visibleQueue.length <= 5) will load more.
+        // Sequential languages (e.g. Spanish) have no HSK band — and their cards
+        // have hskLevel=null, which would make the band while-loop skip to the end
+        // of the queue every sort (draining visibleQueue → a loadMore per card).
+        // So advance by exactly one for them.
         setCurrentCardIndex((prev) => {
-            if (userHskLevel == null) return prev + 1;
+            if (!isHskLeveledLanguage(language) || userHskLevel == null) return prev + 1;
             const targetLevel = Math.min(6, userHskLevel + 1);
             const min = provisionalMode ? targetLevel : Math.max(1, userHskLevel);
             let next = prev + 1;
@@ -640,20 +661,14 @@ const SortCardsPage: React.FC = () => {
                     >
                         {/* Characters + pronunciation centered in the middle, rendered per-character via cpcd */}
                         <Box className="sort-cards__card-key-group" sx={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                            <CPCDRow
+                            <ForeignText
                                 size="sm"
                                 className="sort-cards__card-key"
-                                items={Array.from(currentCard.entryKey).map((char, i) => {
-                                    const syllables = currentCard.pronunciation ? currentCard.pronunciation.split(/\s+/) : [];
-                                    return {
-                                        character: char,
-                                        pinyin: syllables[i] ?? "",
-                                        showPinyin: !!syllables[i],
-                                        useToneColor: true,
-                                    };
-                                })}
+                                text={currentCard.entryKey}
+                                pronunciation={currentCard.pronunciation}
                             />
-
+                            {/* "(v)"/"(n)" badge for Spanish words with multiple discoverable POS */}
+                            <PosBadge pos={currentCard.pos} hasMultiplePos={currentCard.hasMultiplePos} />
                         </Box>
                         {/* Definition pinned to the bottom of the card; clamped to 2 lines to prevent overflow */}
                         <Typography

@@ -102,7 +102,7 @@ async function run() {
   try {
     const { rows } = await client.query(`
       SELECT word1, pronunciation, definitions
-      FROM dictionaryentries
+      FROM dictionaryentries_zh
       WHERE language = 'zh'
         AND discoverable = TRUE
         AND char_length(word1) BETWEEN 2 AND 5

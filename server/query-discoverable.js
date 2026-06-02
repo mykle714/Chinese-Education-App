@@ -22,14 +22,14 @@ async function queryDiscoverableCards() {
     // Query 1: Total count of discoverable cards
     console.log('Query 1: Total discoverable cards');
     const totalResult = await client.query(
-      'SELECT COUNT(*) as total_discoverable FROM dictionaryentries WHERE discoverable = TRUE'
+      'SELECT COUNT(*) as total_discoverable FROM dictionaryentries_zh WHERE discoverable = TRUE'
     );
     console.log(`Total discoverable cards: ${totalResult.rows[0].total_discoverable}\n`);
 
     // Query 2: Count by language
     console.log('Query 2: Discoverable cards by language');
     const byLanguageResult = await client.query(
-      'SELECT language, COUNT(*) as count FROM dictionaryentries WHERE discoverable = TRUE GROUP BY language ORDER BY language'
+      'SELECT language, COUNT(*) as count FROM dictionaryentries_zh WHERE discoverable = TRUE GROUP BY language ORDER BY language'
     );
     console.log('Results:');
     byLanguageResult.rows.forEach(row => {

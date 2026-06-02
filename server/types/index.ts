@@ -60,8 +60,10 @@ export interface AuthResponse {
   token: string;
 }
 
-// Language type for multi-language support
-export type Language = 'zh' | 'ja' | 'ko' | 'vi';
+// Language type for multi-language support.
+// Only Chinese and Spanish are user-selectable for now; ja/ko/vi are not yet
+// supported (their per-language dictionary tables don't exist — see CLAUDE.md).
+export type Language = 'zh' | 'es';
 
 // HSK Level type for vocabulary entries
 export type HskLevel = 'HSK1' | 'HSK2' | 'HSK3' | 'HSK4' | 'HSK5' | 'HSK6';
@@ -83,13 +85,13 @@ export interface ParticleClassifierEntry {
   createdAt: string;
 }
 
-// Manual per-entry override for display fields; stored as JSONB in dictionaryentries."shortDefinitionPronunciationOverride"
+// Manual per-entry override for display fields; stored as JSONB in dictionaryentries_zh."shortDefinitionPronunciationOverride"
 export interface ShortDefinitionPronunciationOverride {
   definition?: string | null;    // Replaces computed shortDefinition
   pronunciation?: string | null; // Replaces DictionaryEntry.pronunciation (space-separated, e.g. "fēng kuáng")
 }
 
-// Manual per-entry override for example sentence segment popups; stored as JSONB in dictionaryentries."exampleSentenceDefinitionPronunciationOverride"
+// Manual per-entry override for example sentence segment popups; stored as JSONB in dictionaryentries_zh."exampleSentenceDefinitionPronunciationOverride"
 export interface ExampleSentenceDefinitionPronunciationOverride {
   definition?: string | null;    // Shown verbatim in the segment popup instead of context-matched definition
   pronunciation?: string | null; // Shown verbatim in the segment popup instead of stored pronunciation
@@ -125,7 +127,7 @@ export interface DictionaryEntry {
   breakdown?: Record<string, { definition: string; pronunciation?: string }> | null;
   synonyms?: string[] | null;
   exampleSentences?: Array<{
-    chinese: string;
+    foreignText: string;
     english: string;
     translatedVocab?: string;  // English word/phrase in the translation that corresponds to the vocab word
     tense?: TenseLabel;        // Temporal meaning of the sentence: past, present, or future
@@ -153,10 +155,14 @@ export interface DiscoverCard {
   word2?: string | null;
   script?: string | null;
   hskLevel?: string | null;
+  // Spanish (es) only: this card's POS + whether the word1 has multiple
+  // discoverable POS (→ client shows a "(v)"/"(n)" badge). Null/false for Chinese.
+  pos?: string | null;
+  hasMultiplePos?: boolean;
   breakdown?: Record<string, { definition: string }> | null;
   synonyms?: string[] | null;
   exampleSentences?: Array<{
-    chinese: string;
+    foreignText: string;
     english: string;
     translatedVocab?: string;  // English word/phrase in the translation that corresponds to the vocab word
     tense?: TenseLabel;        // Temporal meaning of the sentence: past, present, or future
@@ -212,14 +218,14 @@ export interface VocabEntry {
   id: number;
   userId: string;
   entryKey: string;
-  definition?: string | null;  // det.definitions[0] — joined from dictionaryentries at read time
+  definition?: string | null;  // det.definitions[0] — joined from dictionaryentries_zh at read time
   language: Language;
   script?: string;
   pronunciation?: string | null;
   tone?: string | null;   // Tone digits derived from pronunciation (e.g. "12" for fēng kuáng)
   hskLevel?: HskLevel | null;
-  partsOfSpeech?: string[] | null;  // POS tags from dictionaryentries (e.g. ["noun", "verb"])
-  vernacularScore?: number | null;  // 1–5 register score from dictionaryentries (1=literary, 5=natural colloquial)
+  partsOfSpeech?: string[] | null;  // POS tags from dictionaryentries_zh (e.g. ["noun", "verb"])
+  vernacularScore?: number | null;  // 1–5 register score from dictionaryentries_zh (1=literary, 5=natural colloquial)
   markHistory?: ReviewMark[];  // Last 16 flashcard mark results
   totalMarkCount?: number;  // Total cumulative count of all marks
   totalCorrectCount?: number;  // Lifetime count of correct marks
@@ -230,14 +236,14 @@ export interface VocabEntry {
   starterPackBucket: StarterPackBucket;  // Starter pack sorting bucket (required)
   breakdown?: Record<string, { definition: string; pronunciation?: string }> | null;  // Character breakdown for Chinese vocab
   synonyms?: string[];  // Array of Chinese synonym words
-  synonymsMetadata?: Record<string, { definition: string; pronunciation: string }> | null;  // Computed at runtime by batch-reading from dictionaryentries
+  synonymsMetadata?: Record<string, { definition: string; pronunciation: string }> | null;  // Computed at runtime by batch-reading from dictionaryentries_zh
   expansion?: string | null;  // Expanded/fuller form of word (e.g., 不知不觉 → 不知道不觉得)
   expansionSegments?: string[] | null;  // GSA word tokens for the expansion string — computed at runtime
   expansionMetadata?: Record<string, { pronunciation?: string; definition?: string }> | null;  // Computed at runtime, keyed by segment
   expansionLiteralTranslation?: string | null;  // Literal phrase translation derived from expansion components
-  longDefinition?: string | null;  // AI-generated extended definition (25–150 chars) from dictionaryentries
+  longDefinition?: string | null;  // AI-generated extended definition (25–150 chars) from dictionaryentries_zh
   exampleSentences?: Array<{
-    chinese: string;
+    foreignText: string;
     english: string;
     translatedVocab?: string;  // English word/phrase in the translation that corresponds to the vocab word
     tense?: TenseLabel;        // Temporal meaning of the sentence: past, present, or future

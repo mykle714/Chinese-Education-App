@@ -10,12 +10,14 @@ export interface MinutePointsStorage {
 
 const STORAGE_KEY_PREFIX = 'minutePoints_';
 
-export const getMinutePointsStorageKey = (userId: string): string => {
-  return `${STORAGE_KEY_PREFIX}${userId}`;
+// Storage is scoped by (userId, language) so the per-language fire badge shows
+// the correct today-count when the user switches their selected language.
+export const getMinutePointsStorageKey = (userId: string, language: string): string => {
+  return `${STORAGE_KEY_PREFIX}${userId}_${language}`;
 };
 
-export const loadMinutePointsDataSync = (userId: string): MinutePointsStorage => {
-  const key = getMinutePointsStorageKey(userId);
+export const loadMinutePointsDataSync = (userId: string, language: string): MinutePointsStorage => {
+  const key = getMinutePointsStorageKey(userId, language);
   const stored = localStorage.getItem(key);
 
   if (!stored) {
@@ -41,8 +43,8 @@ export const loadMinutePointsDataSync = (userId: string): MinutePointsStorage =>
   }
 };
 
-export const saveMinutePointsData = (userId: string, data: MinutePointsStorage): void => {
-  const key = getMinutePointsStorageKey(userId);
+export const saveMinutePointsData = (userId: string, language: string, data: MinutePointsStorage): void => {
+  const key = getMinutePointsStorageKey(userId, language);
   try {
     localStorage.setItem(key, JSON.stringify(data));
   } catch (error) {
@@ -50,8 +52,8 @@ export const saveMinutePointsData = (userId: string, data: MinutePointsStorage):
   }
 };
 
-export const clearMinutePointsData = (userId: string): void => {
-  const key = getMinutePointsStorageKey(userId);
+export const clearMinutePointsData = (userId: string, language: string): void => {
+  const key = getMinutePointsStorageKey(userId, language);
   try {
     localStorage.removeItem(key);
   } catch (error) {

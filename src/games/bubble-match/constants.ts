@@ -30,7 +30,7 @@ export const TOTAL_PAIRS = Object.values(GAME_DISTRIBUTION).reduce((a, b) => a +
 export const LEVEL_CONFIGS: LevelConfig[] = [
     { level: 1, label: "Relaxed", launchIntervalMs: 2150, durationSec: 120 },
     { level: 2, label: "Brisk", launchIntervalMs: 1500, durationSec: 90 },
-    { level: 3, label: "Frantic", launchIntervalMs: 700, durationSec: 90 },
+    { level: 3, label: "Frantic", launchIntervalMs: 700, durationSec: 60 },
 ];
 
 // ---- Bubble sizing (px radius) -------------------------------------------

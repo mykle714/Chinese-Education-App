@@ -1,5 +1,6 @@
 import React from 'react';
 import { stripParentheses } from '../utils/definitionUtils';
+import type { VocabEntry } from '../types';
 import {
     Box,
     Card,
@@ -7,14 +8,6 @@ import {
     Typography,
     Divider,
 } from '@mui/material';
-
-interface VocabEntry {
-    id: number;
-    entryKey: string;
-    definition?: string | null;
-    pronunciation?: string | null;
-    createdAt: string;
-}
 
 interface FlashCardProps {
     entry: VocabEntry;

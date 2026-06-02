@@ -10,7 +10,7 @@ import {
 } from '../utils/minutePointsStorage';
 import { MINUTE_POINTS_ELIGIBLE_PAGES, MINUTE_POINTS_CONFIG, STREAK_CONFIG } from '../constants';
 import { useActivityDetection } from './useActivityDetection';
-import { incrementMinutePoint } from '../utils/minutePointsSync';
+import { incrementMinutePoint, fetchLanguageSummary } from '../utils/minutePointsSync';
 
 export interface UseMinutePointsReturn {
   currentPoints: number;
@@ -89,25 +89,13 @@ const minutePointsReducer = (state: MinutePointsState, action: MinutePointsActio
   }
 };
 
-/** Fetch totalMinutePoints and currentStreak from the server */
-async function fetchServerTotals(userId: string, token?: string | null): Promise<{ totalMinutePoints: number; currentStreak: number } | null> {
-  try {
-    const response = await fetch(`${window.location.origin}/api/users/${userId}/total-minute-points`, {
-      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-      credentials: 'include'
-    });
-    if (response.ok) {
-      return await response.json();
-    }
-  } catch {
-    // Intentionally silent — caller handles null
-  }
-  return null;
-}
-
 export const useMinutePoints = (): UseMinutePointsReturn => {
   const { user, token } = useAuth();
   const location = useLocation();
+
+  // Minutes are tracked per language; everything below is scoped to the user's
+  // currently selected language (default 'zh' for legacy accounts).
+  const language: string = user?.selectedLanguage || 'zh';
 
   const [state, dispatch] = useReducer(minutePointsReducer, {
     todaysMinutePointsMilli: 0,
@@ -142,11 +130,13 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
   const userIdRef = useRef(user?.id);
   const isEligiblePageRef = useRef(isEligiblePage);
   const tokenRef = useRef(token);
+  const languageRef = useRef(language);
 
   useEffect(() => { stateRef.current = state; }, [state]);
   useEffect(() => { userIdRef.current = user?.id; }, [user?.id]);
   useEffect(() => { isEligiblePageRef.current = isEligiblePage; }, [isEligiblePage]);
   useEffect(() => { tokenRef.current = token; }, [token]);
+  useEffect(() => { languageRef.current = language; }, [language]);
 
   useEffect(() => {
     if (!user?.id) {
@@ -164,53 +154,45 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
     }
 
     const loadData = async () => {
-      const stored = loadMinutePointsDataSync(user.id);
+      const stored = loadMinutePointsDataSync(user.id, language);
 
-      const lastActivityDate = new Date(stored.lastActivity).toDateString();
-      const shouldReset = lastActivityDate !== new Date().toDateString();
+      const sameDay = new Date(stored.lastActivity).toDateString() === new Date().toDateString();
 
-      const serverData = await fetchServerTotals(user.id, token);
+      // Server is authoritative per language: lifetime total, today's minutes
+      // (cross-device), and the global streak. Fall back to local storage offline.
+      const serverData = await fetchLanguageSummary(language, token);
 
-      if (shouldReset) {
-        const accumulativePoints = serverData?.totalMinutePoints ?? stored.totalMinutePoints;
-        const currentStreak = serverData?.currentStreak ?? 0;
+      const accumulativePoints = serverData?.totalMinutePoints ?? stored.totalMinutePoints;
+      const currentStreak = serverData?.currentStreak ?? 0;
 
-        const freshStorage: MinutePointsStorage = {
-          todaysMinutePointsMilli: 0,
-          totalMinutePoints: accumulativePoints,
-          lastActivity: new Date().toISOString()
-        };
-        saveMinutePointsData(user.id, freshStorage);
+      // Seed today's milliseconds from the server's whole-minute count, but keep
+      // any same-day local sub-minute progress that the server hasn't seen yet.
+      const serverTodayMilli =
+        serverData ? serverData.todayMinutes * MINUTE_POINTS_CONFIG.MILLISECONDS_PER_POINT : 0;
+      const localTodayMilli = sameDay ? stored.todaysMinutePointsMilli : 0;
+      const todaysMinutePointsMilli = Math.max(serverTodayMilli, localTodayMilli);
 
-        dispatch({
-          type: 'LOAD_DATA',
-          payload: {
-            todaysMinutePointsMilli: 0,
-            todaysMinutePointsMinutes: 0,
-            accumulativeMinutePoints: accumulativePoints,
-            lastActivity: new Date(),
-            currentStreak
-          }
-        });
-      } else {
-        const accumulativePoints = serverData?.totalMinutePoints ?? stored.totalMinutePoints;
-        const currentStreak = serverData?.currentStreak ?? 0;
+      const freshStorage: MinutePointsStorage = {
+        todaysMinutePointsMilli,
+        totalMinutePoints: accumulativePoints,
+        lastActivity: new Date().toISOString()
+      };
+      saveMinutePointsData(user.id, language, freshStorage);
 
-        dispatch({
-          type: 'LOAD_DATA',
-          payload: {
-            todaysMinutePointsMilli: stored.todaysMinutePointsMilli,
-            todaysMinutePointsMinutes: calculatePointsFromMilliseconds(stored.todaysMinutePointsMilli),
-            accumulativeMinutePoints: accumulativePoints,
-            lastActivity: new Date(stored.lastActivity),
-            currentStreak
-          }
-        });
-      }
+      dispatch({
+        type: 'LOAD_DATA',
+        payload: {
+          todaysMinutePointsMilli,
+          todaysMinutePointsMinutes: calculatePointsFromMilliseconds(todaysMinutePointsMilli),
+          accumulativeMinutePoints: accumulativePoints,
+          lastActivity: new Date(),
+          currentStreak
+        }
+      });
     };
 
     loadData();
-  }, [user?.id]);
+  }, [user?.id, language, token]);
 
   // 1-second accumulation timer
   useEffect(() => {
@@ -286,7 +268,8 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
 
         incrementMinutePoint(tokenRef.current).then((result) => {
           if (result.success && wasAtThreshold) {
-            fetchServerTotals(currentUserId, tokenRef.current).then((data) => {
+            // Streak is global; refetch it via the per-language summary.
+            fetchLanguageSummary(languageRef.current, tokenRef.current).then((data) => {
               if (data) {
                 dispatch({ type: 'SET_STREAK', payload: data.currentStreak });
               }
@@ -300,7 +283,7 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
         totalMinutePoints: newAccumulativePoints,
         lastActivity: new Date().toISOString()
       };
-      saveMinutePointsData(currentUserId, storageData);
+      saveMinutePointsData(currentUserId, languageRef.current, storageData);
     }, 1000);
 
     return () => {
@@ -336,7 +319,7 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
           totalMinutePoints: currentState.accumulativeMinutePoints,
           lastActivity: new Date().toISOString()
         };
-        saveMinutePointsData(userId, storageData);
+        saveMinutePointsData(userId, languageRef.current, storageData);
 
         if (process.env.NODE_ENV === 'development') {
           console.log('[MINUTE POINTS] ⏸ Going inactive, saved state');
@@ -354,11 +337,11 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
     if (!user?.id) return;
 
     dispatch({ type: 'RESET' });
-    clearMinutePointsData(user.id);
+    clearMinutePointsData(user.id, language);
 
     if (activityTimeoutRef.current) clearTimeout(activityTimeoutRef.current);
     if (animationTimeoutRef.current) clearTimeout(animationTimeoutRef.current);
-  }, [user?.id]);
+  }, [user?.id, language]);
 
   // Save state on browser close
   useEffect(() => {
@@ -372,7 +355,7 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
           totalMinutePoints: currentState.accumulativeMinutePoints,
           lastActivity: new Date().toISOString()
         };
-        saveMinutePointsData(userId, storageData);
+        saveMinutePointsData(userId, languageRef.current, storageData);
       }
     };
 
@@ -398,7 +381,7 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
           totalMinutePoints: currentState.accumulativeMinutePoints,
           lastActivity: new Date().toISOString()
         };
-        saveMinutePointsData(userId, storageData);
+        saveMinutePointsData(userId, languageRef.current, storageData);
       }
 
       dispatch({ type: 'SET_ACTIVE', payload: false });

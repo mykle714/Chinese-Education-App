@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Box, Typography, CircularProgress, Alert, Button } from "@mui/material";
+import { Box, Typography, CircularProgress, Alert, Button, Snackbar } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import MobileDemoHeader from "../components/MobileDemoHeader";
 import MobileFooter from "../components/MobileFooter";
@@ -9,6 +9,7 @@ import { useAuth } from "../AuthContext";
 import { API_BASE_URL } from "../constants";
 import type { VocabEntry } from "../types";
 import { usePageTitle } from "../hooks/usePageTitle";
+import { useDiscoverNavigation } from "../hooks/useDiscoverNavigation";
 
 // Design tokens from Figma
 const COLORS = {
@@ -26,6 +27,11 @@ const COLORS = {
     redMain: "#EF476F",
     redAccent: "#F2BAC9",
 };
+
+// Minimum number of cards a user must have sorted into their library before the
+// /flashcards/learn page is worth opening. Below this, we nudge them to Discover
+// instead of letting them land on a near-empty study session.
+const MIN_LIBRARY_CARDS = 20;
 
 // Styled Components — phone-frame sizing comes from MobileDemoFrame via Layout.tsx
 const ContentArea = styled(Box)(() => ({
@@ -208,6 +214,7 @@ const FlashcardsDecksPage: React.FC = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const { token } = useAuth();
+    const { goToDiscover } = useDiscoverNavigation();
     const [vocabEntries, setVocabEntries] = useState<VocabEntry[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -219,6 +226,12 @@ const FlashcardsDecksPage: React.FC = () => {
     const [masteredError, setMasteredError] = useState<string | null>(null);
     // Per-category library card counts shown under each deck bucket label.
     const [categoryCounts, setCategoryCounts] = useState<Record<string, number>>({});
+    // Whether the category counts have finished loading. We only enforce the
+    // MIN_LIBRARY_CARDS gate once we actually know the count (fail open before
+    // then, so a slow fetch never blocks a user who has plenty of cards).
+    const [countsLoaded, setCountsLoaded] = useState(false);
+    // Toast nudging users with too few library cards toward the Discover page.
+    const [lowCardSnackOpen, setLowCardSnackOpen] = useState(false);
 
     // Fetch non-mastered library cards from OnDeck vocab sets
     useEffect(() => {
@@ -233,14 +246,14 @@ const FlashcardsDecksPage: React.FC = () => {
                 });
 
                 if (!response.ok) {
-                    throw new Error('Failed to fetch library cards');
+                    throw new Error('Failed to fetch Learn Now cards');
                 }
 
                 const data = await response.json();
                 setVocabEntries(Array.isArray(data) ? data : []);
             } catch (err: unknown) {
                 console.error('Error fetching library cards:', err);
-                setError(err instanceof Error ? err.message : 'Failed to load library cards');
+                setError(err instanceof Error ? err.message : 'Failed to load Learn Now cards');
             } finally {
                 setLoading(false);
             }
@@ -328,6 +341,8 @@ const FlashcardsDecksPage: React.FC = () => {
                 }
             } catch (err) {
                 console.error('Error fetching category counts:', err);
+            } finally {
+                setCountsLoaded(true);
             }
         })();
     }, [token]);
@@ -339,9 +354,30 @@ const FlashcardsDecksPage: React.FC = () => {
         }
     }, [location.state?.refresh]);
 
+    // Total cards the user has sorted into their library, across every bucket.
+    const totalLibraryCards = Object.values(categoryCounts).reduce((sum, n) => sum + n, 0);
+
+    // Gate every entry point into /flashcards/learn: if the user has too few
+    // cards in their library, nudge them to Discover instead of navigating.
+    // Returns true when navigation was allowed.
+    const guardLearnNavigation = (): boolean => {
+        if (countsLoaded && totalLibraryCards < MIN_LIBRARY_CARDS) {
+            setLowCardSnackOpen(true);
+            return false;
+        }
+        return true;
+    };
+
+    const handleStudyAllClick = () => {
+        if (!guardLearnNavigation()) return;
+        navigate('/flashcards/learn');
+    };
+
     const handleDeckClick = (category: string) => {
+        if (!guardLearnNavigation()) return;
         navigate(`/flashcards/learn?category=${encodeURIComponent(category)}`);
     };
+
 
     // Refetch all card lists
     const refetchCards = async () => {
@@ -406,7 +442,7 @@ const FlashcardsDecksPage: React.FC = () => {
                 <ContentArea className="decks-page-content">
                     {/* Study All Button */}
                     <Box className="flashcards-decks__study-all-wrapper" sx={{ width: '100%', padding: '16px 20px' }}>
-                        <StudyAllButton className="flashcards-decks__study-all-button" onClick={() => navigate('/flashcards/learn')}>
+                        <StudyAllButton className="flashcards-decks__study-all-button" onClick={handleStudyAllClick}>
                             Study All
                         </StudyAllButton>
                     </Box>
@@ -464,7 +500,7 @@ const FlashcardsDecksPage: React.FC = () => {
                                 fontFamily: '"Inter", sans-serif',
                             }}
                         >
-                            Library
+                            Learn Now
                         </Typography>
                     </Box>
 
@@ -600,6 +636,38 @@ const FlashcardsDecksPage: React.FC = () => {
 
                 {/* Footer */}
                 <MobileFooter activePage="home" />
+
+                {/* Nudge toast: too few library cards to start a study session */}
+                <Snackbar
+                    className="flashcards-decks__low-cards-snackbar"
+                    open={lowCardSnackOpen}
+                    autoHideDuration={5000}
+                    onClose={() => setLowCardSnackOpen(false)}
+                    anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+                    sx={{ zIndex: 2000 }}
+                >
+                    <Alert
+                        className="flashcards-decks__low-cards-alert"
+                        severity="info"
+                        variant="filled"
+                        onClose={() => setLowCardSnackOpen(false)}
+                        action={
+                            <Button
+                                className="flashcards-decks__low-cards-action"
+                                color="inherit"
+                                size="small"
+                                onClick={() => {
+                                    setLowCardSnackOpen(false);
+                                    goToDiscover();
+                                }}
+                            >
+                                Discover
+                            </Button>
+                        }
+                    >
+                        Add at least {MIN_LIBRARY_CARDS} cards to your Learn Now deck — head to Discover to sort some cards.
+                    </Alert>
+                </Snackbar>
         </>
     );
 };

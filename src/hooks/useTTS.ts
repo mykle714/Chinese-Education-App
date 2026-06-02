@@ -3,6 +3,21 @@ import type { VocabEntry } from '../pages/FlashcardsLearnPage/types';
 import { getTTSProvider, tts } from '../services/tts';
 import type { TTSLang, TTSProvider } from '../services/tts';
 import { useTTSSettings } from './useTTSSettings';
+import { useAuth } from '../AuthContext';
+
+/**
+ * Map the user's selected study language → the TTS tag we narrate in. Without
+ * this, narration was hardcoded to Mandarin, so Spanish cards were read by the
+ * Chinese voice. Unknown/missing languages fall back to English (a neutral
+ * default rather than assuming Chinese).
+ */
+function toTTSLang(selectedLanguage: string | undefined): TTSLang {
+    switch (selectedLanguage) {
+        case 'zh': return 'zh-CN';
+        case 'es': return 'es-US';
+        default: return 'en-US';
+    }
+}
 
 /**
  * useTTS — single entry point for narrating flashcards.
@@ -12,6 +27,9 @@ import { useTTSSettings } from './useTTSSettings';
  */
 export function useTTS() {
     const { settings, update } = useTTSSettings();
+    const { user } = useAuth();
+    // The language to narrate in, derived from the user's current study language.
+    const ttsLang = toTTSLang(user?.selectedLanguage);
     // The text currently being narrated, or null when idle. Buttons compare
     // their target text to this to decide whether to show the loading spinner,
     // so only the clicked button spins when multiple are visible at once.
@@ -41,7 +59,7 @@ export function useTTS() {
 
         cancel();
 
-        const lang: TTSLang = 'zh-CN';
+        const lang: TTSLang = ttsLang;
         const primary = getTTSProvider(settings.engine);
         activeProviderRef.current = primary;
         setSpeakingKey(text);
@@ -79,7 +97,7 @@ export function useTTS() {
             // + setSpeakingKey(newText) before our finally ran.
             setSpeakingKey(prev => (prev === text ? null : prev));
         }
-    }, [settings.enabled, settings.engine, settings.rate, cancel]);
+    }, [settings.enabled, settings.engine, settings.rate, cancel, ttsLang]);
 
     const speak = useCallback(async (entry: VocabEntry) => {
         if (!entry || !entry.entryKey) return;
@@ -112,8 +130,8 @@ export function useTTS() {
         if (!settings.enabled) return;
         if (settings.engine === 'browser') return;
         if (entry.hasAudio === false) return;
-        tts.cloud.prefetch(entry.entryKey, 'zh-CN', entry.pronunciation);
-    }, [settings.enabled, settings.engine]);
+        tts.cloud.prefetch(entry.entryKey, ttsLang, entry.pronunciation);
+    }, [settings.enabled, settings.engine, ttsLang]);
 
     /**
      * Prime the cloud provider's shared <audio> element for autoplay. Call this
@@ -134,8 +152,8 @@ export function useTTS() {
         if (!text) return;
         if (!settings.enabled) return;
         if (settings.engine === 'browser') return;
-        tts.cloud.prefetch(text, 'zh-CN', pronunciation);
-    }, [settings.enabled, settings.engine]);
+        tts.cloud.prefetch(text, ttsLang, pronunciation);
+    }, [settings.enabled, settings.engine, ttsLang]);
 
     return {
         speak,

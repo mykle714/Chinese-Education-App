@@ -3,7 +3,7 @@ import { StarterPacksService } from '../services/StarterPacksService.js';
 import { requireUserId, handleControllerError } from '../utils/controllerUtils.js';
 
 // Supported language codes — used for validation in multiple endpoints
-const VALID_LANGUAGES = ['zh', 'ja', 'ko', 'vi'] as const;
+const VALID_LANGUAGES = ['zh', 'es'] as const;
 
 /**
  * Starter Packs Controller

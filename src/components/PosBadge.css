@@ -1,0 +1,15 @@
+/* "(v)" / "(n)" POS disambiguation badge shown next to a Spanish headword that
+   has multiple discoverable parts of speech. Deliberately subdued so it reads as
+   a grammatical annotation, not part of the word. */
+.pos-badge {
+  display: inline-block;
+  margin-left: 0.35em;
+  font-size: 0.6em;
+  font-weight: 600;
+  font-style: italic;
+  letter-spacing: 0.02em;
+  color: var(--text-muted, #8a8a8a);
+  vertical-align: middle;
+  user-select: none;
+  white-space: nowrap;
+}

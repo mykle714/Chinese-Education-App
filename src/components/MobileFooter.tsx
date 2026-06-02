@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { Box, Typography } from "@mui/material";
 import { styled } from "@mui/material/styles";
-import { useAuth } from "../AuthContext";
+import { useDiscoverNavigation } from "../hooks/useDiscoverNavigation";
 import HomeIcon from "@mui/icons-material/Home";
 import LanguageIcon from "@mui/icons-material/Language";
 import SportsEsportsIcon from "@mui/icons-material/SportsEsports";
@@ -60,15 +60,14 @@ interface MobileFooterProps {
 
 const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "home" }) => {
     const navigate = useNavigate();
-    const { user } = useAuth();
+    const { goToDiscover } = useDiscoverNavigation();
 
     const handleHomeClick = () => {
         navigate("/flashcards/decks");
     };
 
     const handleDiscoverClick = () => {
-        const language = user?.selectedLanguage || "zh";
-        navigate(`/discover/sort/${language}`);
+        goToDiscover();
     };
 
     const handleGamesClick = () => {

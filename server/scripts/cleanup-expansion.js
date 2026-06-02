@@ -89,7 +89,7 @@ async function run() {
   try {
     const { rows } = await client.query(`
       SELECT id, word1, expansion
-      FROM dictionaryentries
+      FROM dictionaryentries_zh
       WHERE language = 'zh'
         AND expansion IS NOT NULL
       ORDER BY word1
@@ -146,7 +146,7 @@ async function run() {
       console.log(`Nulling out ${allFailures.length} bad expansion(s)...`);
       if (!DRY_RUN) {
         await client.query(
-          `UPDATE dictionaryentries SET expansion = NULL WHERE id = ANY($1)`,
+          `UPDATE dictionaryentries_zh SET expansion = NULL WHERE id = ANY($1)`,
           [allFailures]
         );
         console.log('Done.');

@@ -69,43 +69,6 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
   }
 
   /**
-   * Get user statistics including vocab entry count
-   */
-  async getUserStats(id: string): Promise<{
-    totalVocabEntries: number;
-    createdAt: Date;
-  }> {
-    if (!id) {
-      throw new ValidationError('User ID is required');
-    }
-
-    const result = await this.dbManager.executeQuery<{
-      totalvocabentries: string;
-      createdat: Date;
-    }>(async (client) => {
-      return await client.query(`
-        SELECT 
-          u."createdAt",
-          COALESCE(COUNT(v.id), 0) as totalvocabentries
-        FROM Users u
-        LEFT JOIN VocabEntries v ON u.id = v."userId"
-        WHERE u.id = $1
-        GROUP BY u.id, u."createdAt"
-      `, [id]);
-    });
-
-    if (result.recordset.length === 0) {
-      throw new NotFoundError(`User with ID ${id} not found`);
-    }
-
-    const row = result.recordset[0];
-    return {
-      totalVocabEntries: parseInt(row.totalvocabentries),
-      createdAt: row.createdat
-    };
-  }
-
-  /**
    * Find users created after a specific date
    */
   async findUsersCreatedAfter(date: Date): Promise<User[]> {
@@ -114,40 +77,6 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
     });
 
     return result.recordset;
-  }
-
-  /**
-   * Find users with their vocabulary entry counts
-   */
-  async findUsersWithVocabCount(): Promise<Array<User & { vocabCount: number }>> {
-    const result = await this.dbManager.executeQuery<{
-      id: string;
-      email: string;
-      name: string;
-      createdat: Date;
-      vocabcount: string;
-    }>(async (client) => {
-      return await client.query(`
-        SELECT 
-          u.id, 
-          u.email, 
-          u.name, 
-          u."createdAt",
-          COALESCE(COUNT(v.id), 0) as vocabcount
-        FROM Users u
-        LEFT JOIN VocabEntries v ON u.id = v."userId"
-        GROUP BY u.id, u.email, u.name, u."createdAt"
-        ORDER BY vocabcount DESC, u."createdAt" DESC
-      `);
-    });
-
-    return result.recordset.map(row => ({
-      id: row.id,
-      email: row.email,
-      name: row.name,
-      createdAt: row.createdat,
-      vocabCount: parseInt(row.vocabcount)
-    }));
   }
 
   /**

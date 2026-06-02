@@ -34,11 +34,11 @@ Added character breakdown support for Chinese vocabulary flashcards. Each Chines
   - Fails gracefully if breakdown generation fails (doesn't break entry creation)
 
 ### 5. Backfill Script
-- **Script**: `server/scripts/backfill-breakdown.js`
+- **Script**: `server/scripts/backfill/chinese/backfill-breakdown.js`
   - Processes all existing Chinese vocab entries
   - Generates and stores breakdown for each
   - Progress tracking and error handling
-  - Usage: `node server/scripts/backfill-breakdown.js`
+  - Usage: `node server/scripts/backfill/chinese/backfill-breakdown.js`
 
 ## Data Flow
 
@@ -85,7 +85,7 @@ Added character breakdown support for Chinese vocabulary flashcards. Each Chines
 2. **Backfill existing entries** (optional but recommended):
    ```bash
    # Inside the app container
-   node server/scripts/backfill-breakdown.js
+   node server/scripts/backfill/chinese/backfill-breakdown.js
    ```
 
 ### Frontend Integration (Future):

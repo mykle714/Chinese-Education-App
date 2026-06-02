@@ -2,7 +2,10 @@
 // touching call-sites. To add a new engine, implement TTSProvider and register it
 // in src/services/tts/index.ts.
 
-export type TTSLang = 'zh-CN' | 'zh-TW' | 'en';
+// BCP-47-ish tags the UI can request. The cloud provider strips the region to a
+// short code for the server; the browser provider uses the full tag for voice
+// selection. `es-US` is Google's Latin-American/Mexican Spanish locale.
+export type TTSLang = 'zh-CN' | 'zh-TW' | 'es-US' | 'en-US' | 'en';
 
 export interface TTSRequest {
     // Hanzi (or other Chinese text) to speak. For non-Chinese languages, the

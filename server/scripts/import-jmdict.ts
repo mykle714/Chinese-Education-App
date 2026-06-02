@@ -185,7 +185,7 @@ async function insertBatch(client: pg.Client, entries: JMdictEntry[]): Promise<n
     });
 
     const query = `
-        INSERT INTO dictionaryentries (language, word1, word2, pronunciation, definitions)
+        INSERT INTO dictionaryentries_ja (language, word1, word2, pronunciation, definitions)
         VALUES ${placeholders.join(', ')}
     `;
 
@@ -197,6 +197,11 @@ async function insertBatch(client: pg.Client, entries: JMdictEntry[]): Promise<n
  * Main import
  */
 async function importJMdict() {
+    // DEFERRED (migration 57): the shared multi-language `dictionaryentries` table was split
+    // into per-language tables. This Japanese flow now targets `dictionaryentries_ja`, which does
+    // NOT exist yet. Japanese is not user-selectable for now; this importer is intentionally left
+    // broken until `dictionaryentries_ja` is created. See CLAUDE.md 'Dictionary Tables'.
+    throw new Error('Japanese import disabled: dictionaryentries_ja not yet created (migration 57 / CLAUDE.md).');
     const filePath = process.argv[2] || '/home/cow/data/dictionaries/JMdict_e';
     
     console.log('🇯🇵 JMdict Japanese Dictionary Import');
@@ -227,7 +232,7 @@ async function importJMdict() {
     console.log('✅ Connected\n');
 
     console.log('🗑️  Clearing existing Japanese entries...');
-    await client.query("DELETE FROM dictionaryentries WHERE language = 'ja'");
+    await client.query("DELETE FROM dictionaryentries_ja WHERE language = 'ja'");
     console.log('✅ Cleared\n');
 
     console.log(`� Inserting ${entries.length} entries in batches of ${BATCH_SIZE}...`);

@@ -1,53 +1,9 @@
-export type HskLevel = "HSK1" | "HSK2" | "HSK3" | "HSK4" | "HSK5" | "HSK6";
-
-export type FlashcardCategory = 'Unfamiliar' | 'Target' | 'Comfortable' | 'Mastered';
-
-// Particle or classifier annotation for a segment in example sentence metadata
-export interface ParticleOrClassifierInfo {
-  type: 'particle' | 'classifier';
-  definition: string;
-}
-
-export interface VocabEntry {
-    id: number;
-    entryKey: string;
-    definition?: string | null;
-    pronunciation?: string | null;
-    hskLevel?: HskLevel | null;
-    partsOfSpeech?: string[] | null;
-    vernacularScore?: number | null;  // 1=literary … 5=natural colloquial
-    category?: FlashcardCategory;
-    breakdown?: Record<string, { definition: string }> | null;
-    expansion?: string | null;
-    expansionSegments?: string[] | null;  // GSA word tokens for the expansion string
-    expansionMetadata?: Record<string, { pronunciation?: string; definition?: string }> | null;
-    expansionLiteralTranslation?: string | null;
-    longDefinition?: string | null;
-    exampleSentences?: Array<{
-      chinese: string;
-      english: string;
-      translatedVocab?: string;  // English word/phrase in the translation that corresponds to the vocab word
-      _segments?: string[];
-      segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo }>;
-    }>;
-    relatedWords?: Array<{ id: number; entryKey: string; pronunciation: string | null; definition: string | null }>;
-    // Single-char zh only: up to 5 multi-char words containing this character.
-    // vet-first (user's own entries) then det-fallback. vocabEntryId === null ⇒ det fallback.
-    usedIn?: UsedInItem[] | null;
-    // Set by the server after pre-warming the TTS cache for this card. `false`
-    // means synthesis errored (e.g. Google quota); the client should fall back
-    // to Web Speech. Absent means the server didn't run a prewarm — treat as truthy.
-    hasAudio?: boolean;
-    createdAt: string;
-}
-
-export interface UsedInItem {
-  vocabEntryId: number | null;
-  entryKey: string;
-  pronunciation: string | null;
-  definition: string | null;
-  vernacularScore: number | null;
-}
+// VocabEntry, UsedInItem and HskLevel are canonical in src/types; re-exported
+// here so existing `from "./types"` imports across the flashcards page keep
+// working. (FlashcardCategory/ParticleOrClassifierInfo also live in src/types —
+// import them from there directly if needed.)
+import type { VocabEntry, UsedInItem, HskLevel } from "../../types";
+export type { VocabEntry, UsedInItem, HskLevel };
 
 export interface BreakdownItem {
     character: string;

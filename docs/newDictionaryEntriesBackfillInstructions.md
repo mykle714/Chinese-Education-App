@@ -1,6 +1,6 @@
 # New Dictionary Entries Backfill Instructions
 
-When new entries in `dictionaryentries` are marked `discoverable = TRUE`, they need to be enriched with several derived and AI-generated columns before they are fully usable. This document catalogs every backfill script, what it populates, and the order in which scripts must be run.
+When new entries in `dictionaryentries_zh` are marked `discoverable = TRUE`, they need to be enriched with several derived and AI-generated columns before they are fully usable. This document catalogs every backfill script, what it populates, and the order in which scripts must be run.
 
 All scripts are run from the **project root** unless noted otherwise.
 
@@ -8,7 +8,7 @@ All scripts are run from the **project root** unless noted otherwise.
 
 ## Column Coverage Map
 
-Every column in `dictionaryentries` and the script responsible for populating it:
+Every column in `dictionaryentries_zh` and the script responsible for populating it:
 
 | Column | Populated By | Method | Scoped To `discoverable`? | Language |
 |---|---|---|---|---|
@@ -17,22 +17,22 @@ Every column in `dictionaryentries` and the script responsible for populating it
 | `word1` | Import / seed data | — | — | all |
 | `word2` | Import / seed data | — | — | all |
 | `pronunciation` | Import / seed data | — | — | all |
-| `tone` | `backfill-tones.js` | Deterministic | No | zh |
-| `numberedPinyin` | `backfill-numbered-pinyin.js` | Deterministic | No | all |
+| `tone` | `backfill/chinese/backfill-tones.js` | Deterministic | No | zh |
+| `numberedPinyin` | `backfill/chinese/backfill-numbered-pinyin.js` | Deterministic | No | zh |
 | `definitions` | Import / seed data | — | — | all |
 | `discoverable` | Manual / admin action | — | — | all |
 | `script` | Import / seed data | — | — | all |
-| `hskLevel` | `backfill-hsk-level.js` or import/seed data | AI (Claude Sonnet) or — | **Yes** (for backfill) | zh |
+| `hskLevel` | `backfill/chinese/backfill-hsk-level.js` or import/seed data | AI (Claude Sonnet) or — | **Yes** (for backfill) | zh |
 | `shortDefinition` | *Not stored — computed at runtime* | Deterministic via `server/utils/definitions.ts` | — | all |
-| `longDefinition` | `backfill-short-long-definitions.js` | AI (Claude Haiku) | **Yes** | zh |
-| `synonyms` | `backfill-synonyms.js` | AI (Claude) | **Yes** | zh |
-| `synonymsMetadata` | *Not stored — computed at runtime* | Deterministic via `DictionaryService.enrichEntriesWithSynonymMetadata()` | — | zh |
-| `exampleSentences` | `backfill-example-sentences.js` | AI (Claude) | **Yes** | zh |
+| `longDefinition` | `backfill/chinese/backfill-long-definitions.js` | AI (Claude Haiku) | **Yes** | zh |
+| `synonyms` | *Deprecated — no longer backfilled (script removed)* | — | — | zh |
+| `synonymsMetadata` | *Not stored — computed at runtime from existing `synonyms` data* | Deterministic via `DictionaryService.enrichEntriesWithSynonymMetadata()` | — | zh |
+| `exampleSentences` | `backfill/chinese/backfill-example-sentences.js` | AI (Claude) | **Yes** | zh |
 | `segmentMetadata` | *Not stored — computed at runtime* | Deterministic via `DictionaryDAL.enrichExampleSentencesMetadataBatch()` | — | zh |
-| `breakdown` | `backfill-dictionary-breakdown.js` | Deterministic | **Yes** | zh (multi-char only) |
-| `classifier` | `backfill-classifier.js` | AI (Claude Sonnet) | **Yes** | zh |
+| `breakdown` | `backfill/chinese/backfill-dictionary-breakdown.js` | Deterministic | **Yes** | zh (multi-char only) |
+| `classifier` | `backfill/chinese/backfill-classifier.js` | AI (Claude Sonnet) | **Yes** | zh |
 | `expansion` | Manual / AI enrichment pipeline | — | — | zh |
-| `expansionLiteralTranslation` | `backfill-expansion.js` | AI (Claude) | **Yes** | zh |
+| `expansionLiteralTranslation` | `backfill/chinese/backfill-expansion.js` | AI (Claude) | **Yes** | zh |
 | `createdAt` | DB auto-set | — | — | all |
 
 **Note on runtime-computed fields:** `shortDefinition`, `synonymsMetadata`, and `segmentMetadata` (per-sentence pronunciation/definition/particle data for example sentences) are **never stored in the database**. They are computed on-the-fly at the service layer for every API response.
@@ -51,7 +51,7 @@ Use the `/mark-discoverable` skill to handle the full flow — it sets `discover
 
 **Step 1 — Tones**
 ```bash
-docker exec cow-backend-local npx tsx scripts/backfill-tones.js --words=word1,word2
+docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-tones.js --words=word1,word2
 ```
 Populates: `tone`
 Reads: `pronunciation`
@@ -61,18 +61,18 @@ Filter: `language = 'zh' AND pronunciation IS NOT NULL AND tone IS NULL`
 
 **Step 2 — Numbered Pinyin**
 ```bash
-docker exec cow-backend-local npx tsx scripts/backfill-numbered-pinyin.js --words=word1,word2
+docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-numbered-pinyin.js --words=word1,word2
 ```
 Populates: `numberedPinyin`
 Reads: `pronunciation`
-Filter: `pronunciation IS NOT NULL AND "numberedPinyin" IS NULL` (all languages)
+Filter: `language = 'zh' AND pronunciation IS NOT NULL AND "numberedPinyin" IS NULL`
 Format: Numbered tone notation (e.g. "gan1 huo4"), ü → v, neutral tone gets no number
 
 ---
 
 **Step 3 — Character Breakdown**
 ```bash
-docker exec cow-backend-local npx tsx scripts/backfill-dictionary-breakdown.js --words=word1,word2
+docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-dictionary-breakdown.js --words=word1,word2
 ```
 Populates: `breakdown`
 Reads: `word1`, `language`
@@ -85,7 +85,7 @@ Note: Only applies to multi-character Chinese entries.
 
 **Step 4 — HSK Level**
 ```bash
-docker exec cow-backend-local npx tsx scripts/backfill-hsk-level.js --words=word1,word2
+docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-hsk-level.js --words=word1,word2
 ```
 Populates: `hskLevel`
 Filter: `language = 'zh' AND discoverable = TRUE AND "hskLevel" IS NULL`
@@ -95,7 +95,7 @@ Note: Assigns one level token per entry (`HSK1`..`HSK6`). Use `--spot-check` to 
 
 **Step 5 — Long Definitions**
 ```bash
-docker exec cow-backend-local npx tsx scripts/backfill-short-long-definitions.js --words=word1,word2
+docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-long-definitions.js --words=word1,word2
 ```
 Populates: `longDefinition` (Claude Haiku)
 Filter: `language = 'zh' AND discoverable = TRUE AND longDefinition IS NULL`
@@ -103,19 +103,10 @@ Note: `shortDefinition` is no longer stored — it is computed at runtime from `
 
 ---
 
-**Step 6 — Synonyms**
-```bash
-docker exec cow-backend-local npx tsx scripts/backfill-synonyms.js --words=word1,word2
-```
-Populates: `synonyms`
-Filter: `language = 'zh' AND discoverable = TRUE AND synonyms IS NULL`
-Note: Validates each AI-suggested synonym exists in `dictionaryentries` before saving. `synonymsMetadata` (pronunciation + first definition per synonym) is computed at runtime — not stored.
-
----
 
 **Step 7 — Example Sentences**
 ```bash
-docker exec cow-backend-local npx tsx scripts/backfill-example-sentences.js --words=word1,word2
+docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-example-sentences.js --words=word1,word2
 ```
 Populates: `exampleSentences`
 Filter: `language = 'zh' AND discoverable = TRUE AND exampleSentences IS NULL`
@@ -125,7 +116,7 @@ Note: Generates 3 sentences per entry. Each sentence contains `chinese`, `englis
 
 **Step 8 — Classifier (量词)**
 ```bash
-docker exec cow-backend-local npx tsx scripts/backfill-classifier.js --words=word1,word2
+docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-classifier.js --words=word1,word2
 ```
 Populates: `classifier`
 Filter: `language = 'zh' AND discoverable = TRUE AND classifier IS NULL`
@@ -139,8 +130,8 @@ These are not part of the standard discoverable-entry flow. Run them only when r
 
 | Script | Purpose | When To Run |
 |---|---|---|
-| `backfill-pinyin-ucolon.js` | Fixes malformed `u:N` CEDICT notation in `pronunciation` (e.g. `lu:3` → `lǚ`). Also recomputes `tone`. | Only needed once after initial CEDICT import. |
-| `backfill-enrichment.js` | Populates `expansionMetadata` for rows that have `expansion` but no metadata. | After manually adding or importing `expansion` values. |
+| `backfill/chinese/backfill-pinyin-ucolon.js` | Fixes malformed `u:N` CEDICT notation in `pronunciation` (e.g. `lu:3` → `lǚ`). Also recomputes `tone`. | Only needed once after initial CEDICT import. |
+| `backfill/chinese/backfill-enrichment.js` | Populates `expansionMetadata` for rows that have `expansion` but no metadata. | After manually adding or importing `expansion` values. |
 
 ---
 
@@ -159,7 +150,7 @@ After running backfills, use these queries to confirm coverage:
 SELECT
   COUNT(*) FILTER (WHERE "numberedPinyin" IS NULL AND pronunciation IS NOT NULL) AS missing_numbered_pinyin,
   COUNT(*) FILTER (WHERE "numberedPinyin" IS NOT NULL) AS has_numbered_pinyin
-FROM dictionaryentries;
+FROM dictionaryentries_zh;
 
 -- Check discoverable zh enrichment coverage
 SELECT
@@ -169,12 +160,12 @@ SELECT
   COUNT(*) FILTER (WHERE "exampleSentences" IS NULL) AS missing_sentences,
   COUNT(*) FILTER (WHERE breakdown IS NULL AND char_length(word1) > 1) AS missing_breakdown,
   COUNT(*) FILTER (WHERE classifier IS NULL) AS missing_classifier
-FROM dictionaryentries
+FROM dictionaryentries_zh
 WHERE language = 'zh' AND discoverable = TRUE;
 
 -- Spot-check numberedPinyin output
 SELECT pronunciation, "numberedPinyin"
-FROM dictionaryentries
+FROM dictionaryentries_zh
 WHERE pronunciation IS NOT NULL
 LIMIT 20;
 ```

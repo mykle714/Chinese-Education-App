@@ -1,5 +1,14 @@
 # Adding New Language Support Guide
 
+> ⚠️ **PARTIALLY OUTDATED — architecture changed (migration 57).** This guide assumes
+> all languages share one `dictionaryentries` table. That is no longer true: each
+> language now gets its **own table** (`dictionaryentries_zh`, `dictionaryentries_es`, …)
+> because identity/keying differs per language (Chinese keys on `word1`; Spanish on
+> `word1+pos+gender`). When adding a language, create a dedicated `dictionaryentries_<lang>`
+> table rather than inserting into a shared one, and follow the Spanish precedent
+> (`server/scripts/import-esdict-temp.ts`, `dictionaryentries_es`). See CLAUDE.md →
+> "Dictionary Tables". The dictionary-source and parsing steps below are still useful.
+
 This guide documents the complete process for adding a new language to the vocabulary learning application. It was created after successfully implementing Japanese support and serves as a template for adding Korean, Vietnamese, or other languages.
 
 ## Table of Contents

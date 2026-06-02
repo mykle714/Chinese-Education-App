@@ -34,15 +34,8 @@ import RemoveIcon from "@mui/icons-material/Remove";
 import SettingsIcon from "@mui/icons-material/Settings";
 import FlashCard from "../components/FlashCard";
 import { usePageTitle } from "../hooks/usePageTitle";
+import type { VocabEntry } from "../types";
 
-
-interface VocabEntry {
-    id: number;
-    entryKey: string;
-    definition?: string | null;  // det.definitions[0] — joined server-side
-    pronunciation?: string | null;
-    createdAt: string;
-}
 
 interface HistoryEntry {
     id: number;

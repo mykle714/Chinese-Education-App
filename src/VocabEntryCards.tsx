@@ -13,17 +13,7 @@ import {
   Divider
 } from '@mui/material';
 import { API_BASE_URL, VOCAB_SEARCH_CONFIG } from './constants';
-
-// HSK Level type
-type HskLevel = 'HSK1' | 'HSK2' | 'HSK3' | 'HSK4' | 'HSK5' | 'HSK6';
-
-interface VocabEntry {
-  id: number;
-  entryKey: string;
-  definition?: string | null;
-  hskLevel?: HskLevel | null;
-  createdAt: string;
-}
+import type { VocabEntry } from './types';
 
 const ENTRIES_PER_PAGE = 10;
 

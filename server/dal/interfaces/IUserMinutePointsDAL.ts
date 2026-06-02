@@ -2,33 +2,47 @@ import { ITransaction } from '../../types/dal.js';
 import { UserMinutePoints } from '../../types/minutePoints.js';
 
 export interface IUserMinutePointsDAL {
-  findByUserAndStreakDate(userId: string, streakDate: string): Promise<UserMinutePoints | null>;
+  findByUserAndStreakDate(userId: string, streakDate: string, language: string): Promise<UserMinutePoints | null>;
 
-  // Increment minutes earned for a (user, streakDate) by `delta`. Inserts the row if missing.
-  // Returns the previous and new minutesEarned values.
+  // Increment minutes earned for a (user, streakDate, language) by `delta`.
+  // Inserts the row if missing. Returns the previous and new minutesEarned
+  // values *for that language row*.
   addMinutesForDate(
     userId: string,
     streakDate: string,
+    language: string,
     delta: number
   ): Promise<{ previousMinutes: number; newMinutes: number }>;
 
-  // Stamp penaltyMinutes on a specific streakDate (the day the user missed).
-  // Inserts the row with zero earned minutes if missing.
+  // Stamp penaltyMinutes on a specific (streakDate, language) — the day the
+  // user missed, attributed to whichever language they had selected. Inserts
+  // the row with zero earned minutes if missing.
   addPenaltyMinutesForDate(
     userId: string,
     streakDate: string,
+    language: string,
     penaltyMinutes: number
   ): Promise<void>;
 
-  // Range queries (calendar + first-activity lookup)
-  findInRange(userId: string, startDate: string, endDate: string): Promise<UserMinutePoints[]>;
+  // Calendar rows for one language over a date range, plus the per-language
+  // first-activity lookup that bounds "hasData" on the calendar.
+  findInRange(userId: string, language: string, startDate: string, endDate: string): Promise<UserMinutePoints[]>;
+  getFirstActivityDate(userId: string, language: string): Promise<string | null>;
+
+  // Day total summed across ALL languages — used by the global streak/leaderboard.
   getMinutesForDate(userId: string, streakDate: string): Promise<number>;
-  getFirstActivityDate(userId: string): Promise<string | null>;
+
+  // Day total for a single language — used by the per-language fire badge.
+  getMinutesForDateAndLanguage(userId: string, streakDate: string, language: string): Promise<number>;
+
+  // Lifetime total for a single language — used by the home screen "total study time".
+  getTotalMinutesForLanguage(userId: string, language: string): Promise<number>;
 
   // Transaction-aware variant
   addMinutesForDateWithTransaction(
     userId: string,
     streakDate: string,
+    language: string,
     delta: number,
     transaction: ITransaction
   ): Promise<{ previousMinutes: number; newMinutes: number }>;

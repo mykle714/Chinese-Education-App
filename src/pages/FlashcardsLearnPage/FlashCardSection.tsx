@@ -12,7 +12,7 @@ import {
     FC_FONT_CJK,
 } from "./constants";
 import type { VocabEntry, SideOneLanguage } from "./types";
-import CPCDRow from "../../components/CPCDRow";
+import ForeignText from "../../components/ForeignText";
 import { SpeakerButton } from "../../components/SpeakerButton";
 
 // Re-exported so existing imports `from './FlashCardSection'` keep working.
@@ -68,16 +68,17 @@ const ChineseBlock: React.FC<{
     onSpeak?: (entry: VocabEntry) => void;
     speakingKey?: string | null;
 }> = ({ entry, showPinyin, showPinyinColor, onSpeak, speakingKey }) => {
-    const syllables = entry.pronunciation?.split(' ') ?? [];
-    const items = [...entry.entryKey].map((char, i) => ({
-        character: char,
-        pinyin: syllables[i] ?? '',
-        showPinyin,
-        useToneColor: showPinyinColor,
-    }));
     return (
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }} className="mobile-demo-flashcard-chinese-block">
-            <CPCDRow size="md" justifyContent="center" className="mobile-demo-flashcard-cpcd-row" items={items} />
+            <ForeignText
+                size="md"
+                justifyContent="center"
+                className="mobile-demo-flashcard-cpcd-row"
+                text={entry.entryKey}
+                pronunciation={entry.pronunciation}
+                showPinyin={showPinyin}
+                useToneColor={showPinyinColor}
+            />
             {onSpeak && (
                 <SpeakerButton
                     onClick={() => onSpeak(entry)}
@@ -498,7 +499,7 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                 >
                                     {selectedCategory
                                         ? `No cards in the ${selectedCategory} category yet. Cards will appear here as you study!`
-                                        : 'No library cards available. Add cards from the Discover page!'}
+                                        : 'No Learn Now cards available. Add cards from the Discover page!'}
                                 </Typography>
                             </CardContent>
                         </Card>

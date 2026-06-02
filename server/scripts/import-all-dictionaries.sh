@@ -175,7 +175,7 @@ import_chinese() {
     docker exec -i "$BACKEND_CONTAINER" node --loader ts-node/esm /app/scripts/import-cedict-pg.ts /app/cedict_ts.u8
     
     # Verify import
-    COUNT=$(docker exec -i "$POSTGRES_CONTAINER" psql -U cow_user -d cow_db -t -c "SELECT COUNT(*) FROM dictionaryentries WHERE language = 'zh';" | tr -d ' ')
+    COUNT=$(docker exec -i "$POSTGRES_CONTAINER" psql -U cow_user -d cow_db -t -c "SELECT COUNT(*) FROM dictionaryentries_zh WHERE language = 'zh';" | tr -d ' ')
     if [ "$COUNT" -gt 0 ]; then
         print_success "Chinese dictionary imported: $COUNT entries"
     else
@@ -196,7 +196,7 @@ import_japanese() {
     docker exec -i "$BACKEND_CONTAINER" node --loader ts-node/esm /app/scripts/import-jmdict.ts /app/data/dictionaries/JMdict_e
     
     # Verify import
-    COUNT=$(docker exec -i "$POSTGRES_CONTAINER" psql -U cow_user -d cow_db -t -c "SELECT COUNT(*) FROM dictionaryentries WHERE language = 'ja';" | tr -d ' ')
+    COUNT=$(docker exec -i "$POSTGRES_CONTAINER" psql -U cow_user -d cow_db -t -c "SELECT COUNT(*) FROM dictionaryentries_zh WHERE language = 'ja';" | tr -d ' ')
     if [ "$COUNT" -gt 0 ]; then
         print_success "Japanese dictionary imported: $COUNT entries"
     else
@@ -217,7 +217,7 @@ import_korean() {
     docker exec -i "$BACKEND_CONTAINER" node --loader ts-node/esm /app/scripts/import-kengdic-tsv.ts /app/data/dictionaries/kengdic.tsv
     
     # Verify import
-    COUNT=$(docker exec -i "$POSTGRES_CONTAINER" psql -U cow_user -d cow_db -t -c "SELECT COUNT(*) FROM dictionaryentries WHERE language = 'ko';" | tr -d ' ')
+    COUNT=$(docker exec -i "$POSTGRES_CONTAINER" psql -U cow_user -d cow_db -t -c "SELECT COUNT(*) FROM dictionaryentries_zh WHERE language = 'ko';" | tr -d ' ')
     if [ "$COUNT" -gt 0 ]; then
         print_success "Korean dictionary imported: $COUNT entries"
     else
@@ -240,7 +240,7 @@ import_vietnamese() {
     docker exec -i "$BACKEND_CONTAINER" node --loader ts-node/esm /app/scripts/import-vdict.ts "$VDICT_FILE"
     
     # Verify import
-    COUNT=$(docker exec -i "$POSTGRES_CONTAINER" psql -U cow_user -d cow_db -t -c "SELECT COUNT(*) FROM dictionaryentries WHERE language = 'vi';" | tr -d ' ')
+    COUNT=$(docker exec -i "$POSTGRES_CONTAINER" psql -U cow_user -d cow_db -t -c "SELECT COUNT(*) FROM dictionaryentries_zh WHERE language = 'vi';" | tr -d ' ')
     if [ "$COUNT" -gt 0 ]; then
         print_success "Vietnamese dictionary imported: $COUNT entries"
     else
@@ -249,7 +249,7 @@ import_vietnamese() {
 }
 
 # Expand lexicographic abbreviations in imported definitions
-# Replaces "sth" → "something" and "sb" → "somebody" across all dictionaryentries
+# Replaces "sth" → "something" and "sb" → "somebody" across all dictionaryentries_zh
 run_abbreviation_expansion() {
     print_header "Expanding Definition Abbreviations"
 
@@ -274,12 +274,12 @@ show_summary() {
                 WHEN 'vi' THEN '🇻🇳 Vietnamese'
                 ELSE language
             END as language_name
-        FROM dictionaryentries
+        FROM dictionaryentries_zh
         GROUP BY language
         ORDER BY language;
     "
     
-    TOTAL=$(docker exec -i "$POSTGRES_CONTAINER" psql -U cow_user -d cow_db -t -c "SELECT COUNT(*) FROM dictionaryentries;" | tr -d ' ')
+    TOTAL=$(docker exec -i "$POSTGRES_CONTAINER" psql -U cow_user -d cow_db -t -c "SELECT COUNT(*) FROM dictionaryentries_zh;" | tr -d ' ')
     echo ""
     print_success "Total dictionary entries: $TOTAL"
     

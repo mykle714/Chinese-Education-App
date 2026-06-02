@@ -9,7 +9,7 @@ import { useCardDrag } from "./useCardDrag";
 import { useWorkingLoop, type CardDragControls } from "./useWorkingLoop";
 import FlashcardsLearnHeader from "./FlashcardsLearnHeader";
 import InfoCardSection from "./InfoCardSection";
-import { getBreakdownItems as buildBreakdownItems } from "./breakdownUtils";
+import { getBreakdownItems as buildBreakdownItems } from "../../utils/breakdownUtils";
 import { useEipTabs } from "./useEipTabs";
 import EipTabStrip from "./EipTabStrip";
 import TooManyTabsSnackbar from "./TooManyTabsSnackbar";

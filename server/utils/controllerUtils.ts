@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { ValidationError, DuplicateError, NotFoundError, DALError } from '../types/dal.js';
+import { Language } from '../types/index.js';
 
 /**
  * Shared controller utilities — auth extraction and error handling.
@@ -27,6 +28,25 @@ export function requireUserId(req: Request, res: Response): string | null {
     return null;
   }
   return userId;
+}
+
+/**
+ * Resolve the authenticated user's active study language.
+ *
+ * The JWT only carries userId/email, so the language is read from the Users
+ * table per request. This is the single source for the `selectedLanguage` that
+ * controllers thread down into the service/DAL layers as an explicit argument,
+ * keeping every det/vet query scoped to the user's chosen language.
+ *
+ * Falls back to 'zh' when the user has no preference set (legacy default).
+ *
+ * Uses a dynamic import of dal/setup to avoid the controller→setup→controller
+ * circular import (mirrors how controllers already access the DAL).
+ */
+export async function getUserLanguage(userId: string): Promise<Language> {
+  const { userDAL } = await import('../dal/setup.js');
+  const user = await userDAL.findById(userId);
+  return user?.selectedLanguage || 'zh';
 }
 
 /**
@@ -66,7 +86,9 @@ export function handleControllerError(error: any, res: Response, controllerName:
 
   // FK constraint violation: user's account was deleted but they still hold a valid JWT.
   // Return 401 so the client's fetch interceptor clears the stale session.
-  if (error.code === '23503' && error.message?.includes('vocabentries_userId_fkey')) {
+  // The per-language vet split (migration 66) renamed the FK to
+  // vocabentries_zh_userId_fkey / vocabentries_es_userId_fkey, so match either.
+  if (error.code === '23503' && /vocabentries(_zh|_es)?_userId_fkey/.test(error.message ?? '')) {
     res.status(401).json({ error: 'Session invalid. Please log in again.' });
     return;
   }

@@ -25,6 +25,7 @@ local-day boundary.
 - **Schema dependencies**:
   - `users.timezone` — migration `50-add-user-timezone.sql`
   - `users.lastPenaltyDate` — migration `54-add-user-last-penalty-date.sql`
+  - `userminutepoints.language` (+ 3-col PK) — migration `62-add-language-to-userminutepoints.sql`
 - **Refresh path for `users.timezone`**: written by the client on
   (a) every successful login or session restore via
   `POST /api/auth/on-login` (`UserController.onLogin`), and
@@ -34,6 +35,14 @@ When the streak-break branch fires for a user, it also stamps
 `lastPenaltyDate = today_local` so the daily-penalty branch skips them
 on the same tick. Subsequent days of continued inactivity still trigger
 the daily penalty.
+
+**Language attribution (migration 62).** `userminutepoints` is keyed by
+`(userId, streakDate, language)`. The streak/inactivity penalty is global,
+so both branches stamp the penalty row on the user's
+`COALESCE("selectedLanguage", 'zh')` and use a 3-column
+`ON CONFLICT ("userId", "streakDate", "language")`. The penalty therefore
+shows on the calendar of whichever language the user had selected when the
+penalty fired.
 
 ## Dev
 

@@ -10,7 +10,7 @@ There are two types of definitions stored per vocab entry.
 - Each language's entries come from a different crowdsourced source and may follow different formatting conventions.
 
 ### Long Definition (`longDefinition`)
-- **Source:** `dictionaryentries.longDefinition` (DET)
+- **Source:** `dictionaryentries_zh.longDefinition` (DET)
 - An AI-generated extended definition (25–150 chars), fetched via DICT_JOIN.
 
 ---
@@ -41,7 +41,7 @@ Each property on a `VocabEntry` object falls into one of three source categories
 | `last16SuccessRate` | `last16SuccessRate` | Correct count in last 16 marks ÷ 16; recalculated after each mark |
 | `createdAt` | `createdAt` | Row creation timestamp |
 
-### From `dictionaryentries` (DET) — via DICT_JOIN
+### From `dictionaryentries_zh` (DET) — via DICT_JOIN
 
 Joined via `LEFT JOIN LATERAL` in `server/dal/shared/dictJoin.ts`, matching on `word1 = ve.entryKey AND language = ve.language LIMIT 1`.
 
@@ -65,17 +65,17 @@ Computed by `OnDeckVocabService` after the DB query, before the API response is 
 
 | Property | How It's Calculated | Service Method |
 |----------|-------------------|----------------|
-| `exampleSentences.segmentMetadata` | Each raw example sentence is greedy-segmented into tokens; each token is looked up in `dictionaryentries` to attach `{ pronunciation, definition, particleOrClassifier, wordForms }`. `wordForms` is carried through verbatim from the matched DET row so the renderer can pick a tense-appropriate form per segment (see below). | `DictionaryService.enrichExampleSentencesMetadataBatch()` → `buildDictMap()` in `server/dal/shared/segmentString.ts` |
-| `expansionMetadata` | For each character in the `expansion` string, looks up `pronunciation` and `definition` in `dictionaryentries`; result: `Record<char, { pronunciation, definition }>` | `DictionaryService.enrichExpansionMetadataBatch()` |
-| `synonymsMetadata` | Collects all unique synonym words from the batch, batch-queries `dictionaryentries`, builds `Record<word, { definition, pronunciation }>` | `DictionaryService.enrichEntriesWithSynonymMetadata()` |
+| `exampleSentences.segmentMetadata` | Each raw example sentence is greedy-segmented into tokens; each token is looked up in `dictionaryentries_zh` to attach `{ pronunciation, definition, particleOrClassifier, wordForms }`. `wordForms` is carried through verbatim from the matched DET row so the renderer can pick a tense-appropriate form per segment (see below). | `DictionaryService.enrichExampleSentencesMetadataBatch()` → `buildDictMap()` in `server/dal/shared/segmentString.ts` |
+| `expansionMetadata` | For each character in the `expansion` string, looks up `pronunciation` and `definition` in `dictionaryentries_zh`; result: `Record<char, { pronunciation, definition }>` | `DictionaryService.enrichExpansionMetadataBatch()` |
+| `synonymsMetadata` | Collects all unique synonym words from the batch, batch-queries `dictionaryentries_zh`, builds `Record<word, { definition, pronunciation }>` | `DictionaryService.enrichEntriesWithSynonymMetadata()` |
 | `relatedWords` | Finds up to 4 of the user's own library words (VET `starterPackBucket = 'library'`) that share characters with `entryKey`. Chinese only. Returns `Array<{ id, entryKey, pronunciation, definition }>` | `OnDeckVocabService.enrichWithRelatedWords()` → `VocabEntryDAL.findRelatedBySharedCharacters()` |
-| `usedIn` | Single-character zh entries only. Up to 5 multi-char words that contain this character. **Pass 1**: user's vet entries containing the char (excluding the entry itself), ordered by `de."vernacularScore" DESC NULLS LAST, entryKey ASC`. **Pass 2**: if pass 1 returns < 5, top up from `dictionaryentries` (same ordering, same exclusions, skipping pass-1 entryKeys). Pass-2 items have `vocabEntryId === null`. Returns `UsedInItem[]`. | `OnDeckVocabService.enrichWithUsedIn()` → `VocabEntryDAL.findUsedInForCharacter()` |
+| `usedIn` | Single-character zh entries only. Up to 5 multi-char words that contain this character. **Pass 1**: user's vet entries containing the char (excluding the entry itself), ordered by `de."vernacularScore" DESC NULLS LAST, entryKey ASC`. **Pass 2**: if pass 1 returns < 5, top up from `dictionaryentries_zh` (same ordering, same exclusions, skipping pass-1 entryKeys). Pass-2 items have `vocabEntryId === null`. Returns `UsedInItem[]`. | `OnDeckVocabService.enrichWithUsedIn()` → `VocabEntryDAL.findUsedInForCharacter()` |
 
 ---
 
 ## Example sentences
 
-Each example sentence is a `{ chinese, english, translatedVocab, tense, partOfSpeechDict }` row in `dictionaryentries.exampleSentences` (JSONB). The Chinese is rendered through `SegmentedSentenceDisplay` — characters are grouped into dictionary-matched segments, and tapping/hovering a segment surfaces a popup with the segment's contextual English meaning.
+Each example sentence is a `{ chinese, english, translatedVocab, tense, partOfSpeechDict }` row in `dictionaryentries_zh.exampleSentences` (JSONB). The Chinese is rendered through `SegmentedSentenceDisplay` — characters are grouped into dictionary-matched segments, and tapping/hovering a segment surfaces a popup with the segment's contextual English meaning.
 
 ### Why we need a tense-aware popup, not just the dictionary definition
 
@@ -83,12 +83,12 @@ The English translation field is one fixed string for the whole sentence, so it 
 
 ### Authoring time — two AI backfills
 
-1. **`server/scripts/backfill-example-sentences.js`** — for each discoverable zh DET row missing `exampleSentences`, asks Claude Sonnet for **exactly 3** sentences using the headword in a different grammatical role each, one per tense (`past`, `present`, `future`). The prompt requires:
+1. **`server/scripts/backfill/chinese/backfill-example-sentences.js`** — for each discoverable zh DET row missing `exampleSentences`, asks Claude Sonnet for **exactly 3** sentences using the headword in a different grammatical role each, one per tense (`past`, `present`, `future`). The prompt requires:
    - `tense` derived from the sentence's *meaning*, not its surface aspect markers (e.g. 了 can mark a present state change, so it doesn't automatically imply past).
    - `partOfSpeechDict` covering **every** non-punctuation token in the Chinese sentence, with multi-char tokens allowed. Tags come from `ALLOWED_POS_TAGS`.
    - A special tagging rule: if the headword is a verb used **nominally** in this sentence (e.g. 下单 as the subject of 下单很简单 / "Ordering is simple"), tag it as `noun` in `partOfSpeechDict`, not `verb`. This is what later lets the renderer pick the gerund form.
 
-2. **`server/scripts/backfill-word-forms.js`** — for each discoverable zh DET row with `partsOfSpeech` and no `wordForms`, asks Claude Sonnet to extract the base English word from `definitions[0]` and emit a `Record<string, string>` keyed by `past`, `present`, `future`, `gerund`, `adverb`, `adjective`, `noun`. Only the keys applicable to the entry's POS are populated; entries that yield no applicable forms are written as `{}` so the backfill doesn't retry them. The prompt explicitly handles two pitfalls:
+2. **`server/scripts/backfill/chinese/backfill-word-forms.js`** — for each discoverable zh DET row with `partsOfSpeech` and no `wordForms`, asks Claude Sonnet to extract the base English word from `definitions[0]` and emit a `Record<string, string>` keyed by `past`, `present`, `future`, `gerund`, `adverb`, `adjective`, `noun`. Only the keys applicable to the entry's POS are populated; entries that yield no applicable forms are written as `{}` so the backfill doesn't retry them. The prompt explicitly handles two pitfalls:
    - **Irregular verbs** — actual inflected English, not `{word}ed` templates (e.g. "run" → past `"ran"`).
    - **Adjectives mistagged as verbs** — Chinese adjectives are often POS-tagged as verbs, but English adjectives like "happy" don't conjugate. In that case only the `adjective` key is returned.
 

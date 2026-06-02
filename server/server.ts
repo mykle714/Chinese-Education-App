@@ -9,6 +9,7 @@ import { fileURLToPath } from 'url';
 import { authenticateToken } from './authMiddleware.js';
 import { User, VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, UserCreateData, UserLoginData, Text, ReviewMark, FlashcardCategory } from './types/index.js';
 import db from './db.js';
+import { VET_PHYSICAL_TABLES, vetTableForLanguage } from './dal/shared/vetTable.js';
 
 // ES module equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -131,12 +132,18 @@ app.patch('/api/vocabEntries/:id/bucket', authenticateToken, async (req: any, re
 
   const client = await db.getClient();
   try {
-    const result = await client.query(
-      `UPDATE vocabentries SET "starterPackBucket" = $1 WHERE id = $2 AND "userId" = $3 RETURNING *`,
-      [starterPackBucket, entryId, userId]
-    );
-    if (result.rows.length === 0) return res.status(404).json({ error: 'Entry not found or not owned by user' });
-    res.json(result.rows[0]);
+    // Per-language vet split (migration 66): id is globally unique across both
+    // tables, so update each — exactly one matches.
+    let updatedRow: any = null;
+    for (const t of VET_PHYSICAL_TABLES) {
+      const r = await client.query(
+        `UPDATE ${t} SET "starterPackBucket" = $1 WHERE id = $2 AND "userId" = $3 RETURNING *`,
+        [starterPackBucket, entryId, userId]
+      );
+      if (r.rows.length > 0) updatedRow = r.rows[0];
+    }
+    if (!updatedRow) return res.status(404).json({ error: 'Entry not found or not owned by user' });
+    res.json(updatedRow);
   } catch (err) {
     console.error('Error updating starterPackBucket:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -365,6 +372,12 @@ app.get('/api/users/minute-points/calendar/:yearMonth', authenticateToken, async
   await userMinutePointsController.getCalendar(req, res);
 });
 
+// Per-language summary (lifetime total + today's minutes + global streak)
+// @ts-ignore
+app.get('/api/users/minute-points/summary', authenticateToken, async (req, res) => {
+  await userMinutePointsController.getSummary(req, res);
+});
+
 // Leaderboard API Routes - USING NEW DAL ARCHITECTURE
 
 // Get leaderboard data (protected route)
@@ -507,8 +520,16 @@ app.post('/api/flashcards/mark', authenticateToken, async (req, res) => {
     console.log(`Card ${cardId} marked as ${isCorrect ? 'correct' : 'incorrect'} by user ${userId}`);
 
     // Fetch the current vocab entry to get its mark history, counts, rates, AND CURRENT CATEGORY
-    const entryQuery = 'SELECT "markHistory", "totalMarkCount", "totalCorrectCount", "totalSuccessRate", "last8SuccessRate", "last16SuccessRate", "category" FROM vocabentries WHERE id = $1 AND "userId" = $2';
-    const entryResult = await client.query(entryQuery, [cardId, userId]);
+    // vet is split per language; the client sends only a cardId, so probe each
+    // physical table (ids are globally unique) — exactly one holds the row.
+    let entryResult: any = { rows: [] };
+    for (const t of VET_PHYSICAL_TABLES) {
+      const r = await client.query(
+        `SELECT "markHistory", "totalMarkCount", "totalCorrectCount", "totalSuccessRate", "last8SuccessRate", "last16SuccessRate", "category", "language" FROM ${t} WHERE id = $1 AND "userId" = $2`,
+        [cardId, userId]
+      );
+      if (r.rows.length > 0) { entryResult = r; break; }
+    }
 
     if (entryResult.rows.length === 0) {
       client.release();
@@ -526,6 +547,8 @@ app.post('/api/flashcards/mark', authenticateToken, async (req, res) => {
     const currentTotalCorrectCount: number = entryResult.rows[0].totalCorrectCount || 0;
     // CAPTURE THE CATEGORY BEFORE THE MARK IS APPLIED
     const categoryBeforeMark: string = entryResult.rows[0].category || 'Unfamiliar';
+    // The replacement card must be in the same language as the card just marked.
+    const cardLanguage: string = entryResult.rows[0].language || 'zh';
 
     // Preserve the displaced oldest mark when history is already at capacity.
     const displacedMark: ReviewMark | null = existingHistory.length >= 16 ? existingHistory[0] : null;
@@ -550,10 +573,11 @@ app.post('/api/flashcards/mark', authenticateToken, async (req, res) => {
     } = calculateSuccessRates(updatedHistory, newTotalMarkCount, newTotalCorrectCount);
     const category: FlashcardCategory = calculateCategoryFromMarkHistory(updatedHistory);
 
-    // Update the database with new mark history, counts, success rates, and category
+    // Update the database with new mark history, counts, success rates, and category.
+    // We know the row's language (read above), so route to its per-language vet table.
     const updateQuery = `
-      UPDATE vocabentries 
-      SET "markHistory" = $1, 
+      UPDATE ${vetTableForLanguage(cardLanguage)}
+      SET "markHistory" = $1,
           "totalMarkCount" = $2,
           "totalCorrectCount" = $3,
           "totalSuccessRate" = $4,
@@ -578,7 +602,7 @@ app.post('/api/flashcards/mark', authenticateToken, async (req, res) => {
 
     // If correct, return a card from the same category as BEFORE the mark (with fallback priority)
     if (isCorrect) {
-      const newCard = await onDeckVocabService.getNextLibraryCardWithFallback(userId, categoryBeforeMark, excludeIds);
+      const newCard = await onDeckVocabService.getNextLibraryCardWithFallback(userId, categoryBeforeMark, cardLanguage, excludeIds);
       
       if (!newCard) {
         client.release();
@@ -646,8 +670,18 @@ app.post('/api/flashcards/undo-last-mark', authenticateToken, async (req, res) =
 
     await client.query('BEGIN');
 
-    const entryQuery = 'SELECT "markHistory", "totalMarkCount", "totalCorrectCount" FROM vocabentries WHERE id = $1 AND "userId" = $2 FOR UPDATE';
-    const entryResult = await client.query(entryQuery, [cardId, userId]);
+    // FOR UPDATE can't run against the union view, and we don't yet know the row's
+    // language, so probe each per-language vet table; the one holding this id
+    // returns (and locks) the row. ids are globally unique across the pair.
+    let entryResult: any = { rows: [] };
+    let lockedVetTable: string | null = null;
+    for (const t of VET_PHYSICAL_TABLES) {
+      const r = await client.query(
+        `SELECT "markHistory", "totalMarkCount", "totalCorrectCount" FROM ${t} WHERE id = $1 AND "userId" = $2 FOR UPDATE`,
+        [cardId, userId]
+      );
+      if (r.rows.length > 0) { entryResult = r; lockedVetTable = t; break; }
+    }
 
     if (entryResult.rows.length === 0) {
       await client.query('ROLLBACK');
@@ -700,7 +734,7 @@ app.post('/api/flashcards/undo-last-mark', authenticateToken, async (req, res) =
     } = calculateSuccessRates(revertedHistory, newTotalMarkCount, newTotalCorrectCount);
 
     const updateQuery = `
-      UPDATE vocabentries
+      UPDATE ${lockedVetTable}
       SET "markHistory" = $1,
           "totalMarkCount" = $2,
           "totalCorrectCount" = $3,

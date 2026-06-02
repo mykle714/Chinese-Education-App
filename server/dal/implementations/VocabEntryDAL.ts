@@ -6,6 +6,7 @@ import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, HskLevel, UsedI
 import { ValidationError, NotFoundError, BulkResult, ITransaction, DALError } from '../../types/dal.js';
 import db from '../../db.js';
 import { DICT_COLS, DICT_JOIN } from '../shared/dictJoin.js';
+import { vetTableForLanguage, vetReadFrom, VET_PHYSICAL_TABLES } from '../shared/vetTable.js';
 
 /**
  * VocabEntry Data Access Layer implementation
@@ -13,39 +14,101 @@ import { DICT_COLS, DICT_JOIN } from '../shared/dictJoin.js';
  */
 export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, VocabEntryUpdateData> implements IVocabEntryDAL {
   constructor() {
-    super(dbManager, 'VocabEntries', 'id'); // Use proper table name with camelCase columns
+    // NOTE: `vocabentries` is split per language (migration 66) into
+    // vocabentries_zh / vocabentries_es. There is no single physical vet table, so
+    // every read/write below routes explicitly via shared/vetTable.js. The base
+    // `tableName` is left as the (now-orphaned) legacy table name only to satisfy
+    // BaseDAL's constructor; all write methods that would use it are overridden.
+    super(dbManager, 'vocabentries_zh', 'id');
   }
 
-  async findById(id: string | number): Promise<VocabEntry | null> {
+  // ── Per-language write routing (vet split, migration 66) ───────────────────
+  // Inserts go to the table for the row's language (es carries `pos`). Id-based
+  // update/delete run against BOTH physical tables — ids are globally unique
+  // (shared sequence), so exactly one row matches.
+
+  async create(data: VocabEntryCreateData): Promise<VocabEntry> {
+    this.validateCreateData(data);
+    const table = vetTableForLanguage((data as any).language ?? 'zh');
+    const { columns, placeholders, values } = this.buildInsertQuery(data);
+    const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
+      return await client.query(
+        `INSERT INTO ${table} (${columns}) VALUES (${placeholders}) RETURNING *`,
+        values
+      );
+    });
+    if (result.recordset.length === 0) {
+      throw new DALError('Failed to create record', 'ERR_CREATE_FAILED');
+    }
+    return result.recordset[0];
+  }
+
+  async createWithTransaction(data: VocabEntryCreateData, transaction: ITransaction): Promise<VocabEntry> {
+    this.validateCreateData(data);
+    const table = vetTableForLanguage((data as any).language ?? 'zh');
+    const { columns, placeholders, values } = this.buildInsertQuery(data);
+    const client = transaction.getClient();
+    const result = await client.query(
+      `INSERT INTO ${table} (${columns}) VALUES (${placeholders}) RETURNING *`,
+      values
+    );
+    if (result.rows.length === 0) {
+      throw new DALError('Failed to create record', 'ERR_CREATE_FAILED');
+    }
+    return result.rows[0];
+  }
+
+  async update(id: string | number, data: VocabEntryUpdateData): Promise<VocabEntry> {
+    if (!id) throw new ValidationError('id is required');
+    this.validateUpdateData(data);
+    const { setClause, values } = this.buildUpdateQuery(data);
+    const client = await db.getClient();
+    try {
+      let updated: VocabEntry | null = null;
+      for (const table of VET_PHYSICAL_TABLES) {
+        const r = await client.query(
+          `UPDATE ${table} SET ${setClause} WHERE id = $${values.length + 1} RETURNING *`,
+          [...values, id]
+        );
+        if (r.rows.length > 0) updated = r.rows[0];
+      }
+      if (!updated) throw new NotFoundError(`Record with id ${id} not found`);
+      return updated;
+    } finally {
+      client.release();
+    }
+  }
+
+  async delete(id: string | number): Promise<boolean> {
+    if (!id) throw new ValidationError('id is required');
+    const client = await db.getClient();
+    try {
+      let affected = 0;
+      for (const table of VET_PHYSICAL_TABLES) {
+        const r = await client.query(`DELETE FROM ${table} WHERE id = $1`, [id]);
+        affected += r.rowCount ?? 0;
+      }
+      return affected > 0;
+    } finally {
+      client.release();
+    }
+  }
+
+  // Look up a single vet row by id, scoped to a language so it routes to that
+  // language's physical table (vet is split per language — migration 66). Callers
+  // resolve the language from the request / the user's active language.
+  async findByIdAndLanguage(id: string | number, language: string): Promise<VocabEntry | null> {
+    if (!language) {
+      throw new ValidationError('Language is required');
+    }
     const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
       return await client.query(`
         SELECT ve.*, ${DICT_COLS}
-        FROM VocabEntries ve ${DICT_JOIN}
+        FROM ${vetReadFrom(language)} ${DICT_JOIN}
         WHERE ve.id = $1
       `, [id]);
     });
     return result.recordset[0] || null;
-  }
-
-  /**
-   * Find vocabulary entries by user ID with pagination
-   */
-  async findByUserId(userId: string, limit: number = 100, offset: number = 0): Promise<VocabEntry[]> {
-    if (!userId) {
-      throw new ValidationError('User ID is required');
-    }
-
-    const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
-      return await client.query(`
-        SELECT ve.*, ${DICT_COLS}
-        FROM VocabEntries ve ${DICT_JOIN}
-        WHERE ve."userId" = $1
-        ORDER BY ve."createdAt" DESC
-        LIMIT $2 OFFSET $3
-      `, [userId, limit, offset]);
-    });
-
-    return result.recordset;
   }
 
   /**
@@ -62,7 +125,7 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
       return await client.query(`
         SELECT ve.*, ${DICT_COLS}
-        FROM VocabEntries ve ${DICT_JOIN}
+        FROM ${vetReadFrom(language)} ${DICT_JOIN}
         WHERE ve."userId" = $1 AND ve."language" = $2
         ORDER BY ve."createdAt" DESC
         LIMIT $3 OFFSET $4
@@ -75,38 +138,35 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
   /**
    * Find vocabulary entry by user and key
    */
-  async findByUserAndKey(userId: string, entryKey: string): Promise<VocabEntry | null> {
+  async findByUserAndKey(userId: string, entryKey: string, language: string, pos?: string): Promise<VocabEntry | null> {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
     if (!entryKey) {
       throw new ValidationError('Entry key is required');
     }
+    if (!language) {
+      throw new ValidationError('Language is required');
+    }
 
+    // (userId, entryKey, language) is the base identity — the same spelling can exist
+    // independently per study language. Spanish adds `pos` (verb vs noun of the same
+    // spelling are distinct saved cards): when a pos is supplied, match it too.
+    const params: any[] = [userId, entryKey, language];
+    let posPredicate = '';
+    if (pos !== undefined) {
+      params.push(pos);
+      posPredicate = ` AND ve.pos IS NOT DISTINCT FROM $${params.length}`;
+    }
     const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
       return await client.query(`
         SELECT ve.*, ${DICT_COLS}
-        FROM VocabEntries ve ${DICT_JOIN}
-        WHERE ve."userId" = $1 AND ve."entryKey" = $2
-      `, [userId, entryKey]);
+        FROM ${vetReadFrom(language)} ${DICT_JOIN}
+        WHERE ve."userId" = $1 AND ve."entryKey" = $2 AND ve."language" = $3${posPredicate}
+      `, params);
     });
 
     return result.recordset[0] || null;
-  }
-
-  /**
-   * Count vocabulary entries for a user
-   */
-  async countByUserId(userId: string): Promise<number> {
-    if (!userId) {
-      throw new ValidationError('User ID is required');
-    }
-
-    const result = await this.dbManager.executeQuery<{ count: string }>(async (client) => {
-      return await client.query('SELECT COUNT(*) as count FROM VocabEntries WHERE "userId" = $1', [userId]);
-    });
-
-    return parseInt(result.recordset[0].count);
   }
 
   /**
@@ -121,7 +181,7 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     }
 
     const result = await this.dbManager.executeQuery<{ count: string }>(async (client) => {
-      return await client.query('SELECT COUNT(*) as count FROM VocabEntries WHERE "userId" = $1 AND "language" = $2', [userId, language]);
+      return await client.query(`SELECT COUNT(*) as count FROM ${vetTableForLanguage(language)} WHERE "userId" = $1 AND "language" = $2`, [userId, language]);
     });
 
     return parseInt(result.recordset[0].count);
@@ -130,23 +190,27 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
   /**
    * Search vocabulary entries by term
    */
-  async searchEntries(userId: string, searchTerm: string, limit: number = 50): Promise<VocabEntry[]> {
+  async searchEntries(userId: string, searchTerm: string, language: string, limit: number = 50): Promise<VocabEntry[]> {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
     if (!searchTerm) {
       throw new ValidationError('Search term is required');
     }
+    if (!language) {
+      throw new ValidationError('Language is required');
+    }
 
     // Search matches on entryKey OR any individual definition phrase from det.
     // det.definitions is a JSONB array already pre-split into one phrase per
     // element (see scripts/backfill-split-semicolon-definitions.js), so
     // unnesting it via jsonb_array_elements_text gives per-phrase matching.
+    // Scoped to the user's active language so results don't mix languages.
     const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
       return await client.query(`
         SELECT ve.*, ${DICT_COLS}
-        FROM VocabEntries ve ${DICT_JOIN}
-        WHERE ve."userId" = $1
+        FROM ${vetReadFrom(language)} ${DICT_JOIN}
+        WHERE ve."userId" = $1 AND ve."language" = $4
         AND (
           ve."entryKey" ILIKE $2
           OR EXISTS (
@@ -156,7 +220,7 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
         )
         ORDER BY ve."createdAt" DESC
         LIMIT $3
-      `, [userId, `%${searchTerm}%`, limit]);
+      `, [userId, `%${searchTerm}%`, limit, language]);
     });
 
     return result.recordset;
@@ -170,11 +234,12 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
       throw new ValidationError('User ID is required');
     }
 
+    // HSK levels are a Chinese-only concept, so this query is hard-pinned to zh.
     const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
       return await client.query(`
         SELECT ve.*, ${DICT_COLS}
-        FROM VocabEntries ve ${DICT_JOIN}
-        WHERE ve."userId" = $1 AND de."hskLevel" = $2
+        FROM ${vetReadFrom('zh')} ${DICT_JOIN}
+        WHERE ve."userId" = $1 AND ve."language" = 'zh' AND de."hskLevel" = $2
         ORDER BY ve."createdAt" DESC
       `, [userId, hskLevel]);
     });
@@ -185,23 +250,27 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
   /**
    * Find vocabulary entries by a list of entry keys
    */
-  async bulkFindByKeys(userId: string, entryKeys: string[]): Promise<VocabEntry[]> {
+  async bulkFindByKeys(userId: string, entryKeys: string[], language: string): Promise<VocabEntry[]> {
     if (!userId) {
       throw new ValidationError('User ID is required');
+    }
+    if (!language) {
+      throw new ValidationError('Language is required');
     }
 
     if (!entryKeys || entryKeys.length === 0) {
       return [];
     }
 
-    const placeholders = entryKeys.map((_, index) => `$${index + 2}`).join(',');
-    
+    // entryKeys start at $3 — $1 is userId, $2 is the language filter.
+    const placeholders = entryKeys.map((_, index) => `$${index + 3}`).join(',');
+
     const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
       return await client.query(`
         SELECT ve.*, ${DICT_COLS}
-        FROM VocabEntries ve ${DICT_JOIN}
-        WHERE ve."userId" = $1 AND ve."entryKey" IN (${placeholders})
-      `, [userId, ...entryKeys]);
+        FROM ${vetReadFrom(language)} ${DICT_JOIN}
+        WHERE ve."userId" = $1 AND ve."language" = $2 AND ve."entryKey" IN (${placeholders})
+      `, [userId, language, ...entryKeys]);
     });
 
     return result.recordset;
@@ -210,7 +279,7 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
   /**
    * Find vocabulary entries by tokens for reader feature
    */
-  async findByTokens(userId: string, tokens: string[]): Promise<VocabEntry[]> {
+  async findByTokens(userId: string, tokens: string[], language: string): Promise<VocabEntry[]> {
     const dalStart = performance.now();
     
     console.log(`[VOCAB-DB] 🗄️ Starting database lookup:`, {
@@ -225,6 +294,10 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
         dalTime: `${(performance.now() - dalStart).toFixed(2)}ms`
       });
       throw new ValidationError('User ID is required');
+    }
+
+    if (!language) {
+      throw new ValidationError('Language is required');
     }
     
     if (!tokens || tokens.length === 0) {
@@ -268,8 +341,9 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     // Prepare SQL query with detailed logging
     const sqlQuery = `
       SELECT ve.*, ${DICT_COLS}
-      FROM VocabEntries ve ${DICT_JOIN}
+      FROM ${vetReadFrom(language)} ${DICT_JOIN}
       WHERE ve."userId" = $1
+      AND ve."language" = $3
       AND ve."entryKey" = ANY($2)
       ORDER BY LENGTH(ve."entryKey") DESC, ve."entryKey" ASC
     `;
@@ -295,7 +369,7 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
           queryExecutionStart: new Date().toISOString()
         });
 
-        const queryResult = await client.query(sqlQuery, [userId, uniqueTokens]);
+        const queryResult = await client.query(sqlQuery, [userId, uniqueTokens, language]);
         
         console.log(`[VOCAB-DB] 📊 Raw query result:`, {
           userId: `${userId.substring(0, 8)}...`,
@@ -406,11 +480,19 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
       for (let i = 0; i < entries.length; i++) {
         const entry = entries[i];
         
+        // Identity is (userId, entryKey, language) — default to 'zh' if the
+        // import didn't tag a language so legacy single-language data still works.
+        const entryLanguage = entry.language || 'zh';
+        // Route to the per-language vet table (vocabentries_zh / _es). Bulk import
+        // doesn't carry a pos, so es rows insert with pos NULL (the sort flow,
+        // not this path, captures the specific POS).
+        const vetTable = vetTableForLanguage(entryLanguage);
+
         try {
-          // Check if entry exists
+          // Check if entry exists for this user + key + language
           const existingResult = await client.query(
-            'SELECT id FROM VocabEntries WHERE "userId" = $1 AND "entryKey" = $2',
-            [entry.userId, entry.entryKey]
+            `SELECT id FROM ${vetTable} WHERE "userId" = $1 AND "entryKey" = $2 AND "language" = $3`,
+            [entry.userId, entry.entryKey, entryLanguage]
           );
 
           if (existingResult.rows.length > 0) {
@@ -419,11 +501,12 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
             result.skipped++;
           } else {
             await client.query(`
-              INSERT INTO VocabEntries ("userId", "entryKey")
-              VALUES ($1, $2)
+              INSERT INTO ${vetTable} ("userId", "entryKey", "language")
+              VALUES ($1, $2, $3)
             `, [
               entry.userId,
-              entry.entryKey
+              entry.entryKey,
+              entryLanguage
             ]);
             result.inserted++;
           }
@@ -443,18 +526,21 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
   /**
    * Find entries created after a specific date
    */
-  async findEntriesCreatedAfter(userId: string, date: Date): Promise<VocabEntry[]> {
+  async findEntriesCreatedAfter(userId: string, date: Date, language: string): Promise<VocabEntry[]> {
     if (!userId) {
       throw new ValidationError('User ID is required');
+    }
+    if (!language) {
+      throw new ValidationError('Language is required');
     }
 
     const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
       return await client.query(`
         SELECT ve.*, ${DICT_COLS}
-        FROM VocabEntries ve ${DICT_JOIN}
-        WHERE ve."userId" = $1 AND ve."createdAt" > $2
+        FROM ${vetReadFrom(language)} ${DICT_JOIN}
+        WHERE ve."userId" = $1 AND ve."language" = $3 AND ve."createdAt" > $2
         ORDER BY ve."createdAt" DESC
-      `, [userId, date]);
+      `, [userId, date, language]);
     });
 
     return result.recordset;
@@ -496,10 +582,10 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
         ve."entryKey" as entrykey,
         de.pronunciation,
         de.definition
-      FROM VocabEntries ve
+      FROM vocabentries_zh ve
       LEFT JOIN LATERAL (
         SELECT pronunciation, definitions->>0 as definition
-        FROM dictionaryentries
+        FROM dictionaryentries_zh
         WHERE word1 = ve."entryKey" AND language = ve.language LIMIT 1
       ) de ON true
       WHERE ve."userId" = $1
@@ -531,7 +617,7 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
   /**
    * For a single Chinese character, find up to `limit` multi-char words that contain it.
    *
-   * Pass 1: user's own vocabentries (vet). Joined to dictionaryentries (det) so we can sort
+   * Pass 1: user's own vocabentries (vet). Joined to dictionaryentries_zh (det) so we can sort
    *   by det."vernacularScore" DESC NULLS LAST (then entryKey ASC for determinism).
    * Pass 2: if pass 1 returns fewer than `limit`, top up from det (global), skipping any
    *   entryKeys already returned by pass 1. Same ordering. Pass-2 items have vocabEntryId=null.
@@ -560,10 +646,10 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
         de.pronunciation,
         de.definition,
         de."vernacularScore"
-      FROM VocabEntries ve
+      FROM vocabentries_zh ve
       LEFT JOIN LATERAL (
         SELECT pronunciation, definitions->>0 AS definition, "vernacularScore"
-        FROM dictionaryentries
+        FROM dictionaryentries_zh
         WHERE word1 = ve."entryKey" AND language = ve.language
         LIMIT 1
       ) de ON true
@@ -606,7 +692,7 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
         pronunciation,
         definitions->>0 AS definition,
         "vernacularScore"
-      FROM dictionaryentries
+      FROM dictionaryentries_zh
       WHERE language = $1
         AND char_length(word1) > 1
         AND char_length(word1) <= 4
@@ -640,69 +726,6 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     }));
 
     return [...vetItems, ...detItems];
-  }
-
-  /**
-   * Get comprehensive vocabulary statistics for a user
-   */
-  async getUserVocabStats(userId: string): Promise<{
-    total: number;
-    hskEntries: number;
-    hskBreakdown: Record<HskLevel, number>;
-    recentEntries: number;
-  }> {
-    if (!userId) {
-      throw new ValidationError('User ID is required');
-    }
-
-    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-
-    const result = await this.dbManager.executeQuery<{
-      total: string;
-      hskentries: string;
-      hsk1: string;
-      hsk2: string;
-      hsk3: string;
-      hsk4: string;
-      hsk5: string;
-      hsk6: string;
-      recententries: string;
-    }>(async (client) => {
-      return await client.query(`
-        SELECT
-          COUNT(*) as total,
-          SUM(CASE WHEN de."hskLevel" IS NOT NULL THEN 1 ELSE 0 END) as hskentries,
-          SUM(CASE WHEN de."hskLevel" = 'HSK1' THEN 1 ELSE 0 END) as hsk1,
-          SUM(CASE WHEN de."hskLevel" = 'HSK2' THEN 1 ELSE 0 END) as hsk2,
-          SUM(CASE WHEN de."hskLevel" = 'HSK3' THEN 1 ELSE 0 END) as hsk3,
-          SUM(CASE WHEN de."hskLevel" = 'HSK4' THEN 1 ELSE 0 END) as hsk4,
-          SUM(CASE WHEN de."hskLevel" = 'HSK5' THEN 1 ELSE 0 END) as hsk5,
-          SUM(CASE WHEN de."hskLevel" = 'HSK6' THEN 1 ELSE 0 END) as hsk6,
-          SUM(CASE WHEN ve."createdAt" > $2 THEN 1 ELSE 0 END) as recententries
-        FROM VocabEntries ve
-        LEFT JOIN LATERAL (
-          SELECT "hskLevel" FROM dictionaryentries
-          WHERE word1 = ve."entryKey" AND language = ve.language LIMIT 1
-        ) de ON true
-        WHERE ve."userId" = $1
-      `, [userId, weekAgo]);
-    });
-
-    const stats = result.recordset[0];
-    
-    return {
-      total: parseInt(stats.total),
-      hskEntries: parseInt(stats.hskentries),
-      hskBreakdown: {
-        HSK1: parseInt(stats.hsk1),
-        HSK2: parseInt(stats.hsk2),
-        HSK3: parseInt(stats.hsk3),
-        HSK4: parseInt(stats.hsk4),
-        HSK5: parseInt(stats.hsk5),
-        HSK6: parseInt(stats.hsk6)
-      },
-      recentEntries: parseInt(stats.recententries)
-    };
   }
 
   /**
@@ -787,15 +810,13 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     }
 
     const client = await db.getClient();
-    
+
     try {
-      const query = `
-        UPDATE vocabentries 
-        SET category = $1
-        WHERE id = $2
-      `;
-      
-      await client.query(query, [category, id]);
+      // id is globally unique across the per-language vet tables (shared sequence),
+      // so update both; exactly one row matches.
+      for (const table of VET_PHYSICAL_TABLES) {
+        await client.query(`UPDATE ${table} SET category = $1 WHERE id = $2`, [category, id]);
+      }
     } catch (error: any) {
       console.error('Error updating category:', error);
       throw new DALError('Failed to update vocab entry category', 'ERR_UPDATE_CATEGORY_FAILED', error);
@@ -822,28 +843,30 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     }
 
     const client = await db.getClient();
-    
+
     try {
-      const query = `
-        UPDATE vocabentries 
-        SET "markHistory" = $1,
-            "totalMarkCount" = $2,
-            "totalCorrectCount" = $3,
-            "totalSuccessRate" = $4,
-            "last8SuccessRate" = $5,
-            "last16SuccessRate" = $6
-        WHERE id = $7
-      `;
-      
-      await client.query(query, [
-        JSON.stringify(markHistory),
-        totalMarkCount,
-        totalCorrectCount,
-        totalSuccessRate,
-        last8SuccessRate,
-        last16SuccessRate,
-        id
-      ]);
+      // id is globally unique across the per-language vet tables (shared sequence),
+      // so update both; exactly one row matches.
+      for (const table of VET_PHYSICAL_TABLES) {
+        await client.query(`
+          UPDATE ${table}
+          SET "markHistory" = $1,
+              "totalMarkCount" = $2,
+              "totalCorrectCount" = $3,
+              "totalSuccessRate" = $4,
+              "last8SuccessRate" = $5,
+              "last16SuccessRate" = $6
+          WHERE id = $7
+        `, [
+          JSON.stringify(markHistory),
+          totalMarkCount,
+          totalCorrectCount,
+          totalSuccessRate,
+          last8SuccessRate,
+          last16SuccessRate,
+          id
+        ]);
+      }
     } catch (error: any) {
       console.error('Error updating mark history:', error);
       throw new DALError('Failed to update vocab entry mark history', 'ERR_UPDATE_MARK_HISTORY_FAILED', error);
@@ -855,17 +878,17 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
   /**
    * Find duplicate keys for a user (helper for data cleanup)
    */
-  async findDuplicateKeys(userId: string, entryKeys: string[]): Promise<VocabEntry[]> {
+  async findDuplicateKeys(userId: string, entryKeys: string[], language: string): Promise<VocabEntry[]> {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
-    
+
     if (!entryKeys || entryKeys.length === 0) {
       return [];
     }
 
     // Use bulkFindByKeys to get actual entries
-    return await this.bulkFindByKeys(userId, entryKeys);
+    return await this.bulkFindByKeys(userId, entryKeys, language);
   }
 
   /**

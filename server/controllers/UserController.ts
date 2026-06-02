@@ -96,11 +96,11 @@ export class UserController {
 
       const { selectedLanguage } = req.body;
       
-      // Validate language
-      const validLanguages = ['zh', 'ja', 'ko', 'vi'];
+      // Validate language (only Chinese and Spanish are user-selectable for now)
+      const validLanguages = ['zh', 'es'];
       if (!selectedLanguage || !validLanguages.includes(selectedLanguage)) {
         res.status(400).json({
-          error: 'Invalid language. Must be one of: zh, ja, ko, vi',
+          error: 'Invalid language. Must be one of: zh, es',
           code: 'ERR_INVALID_LANGUAGE'
         });
         return;
@@ -255,40 +255,12 @@ export class UserController {
   }
 
   /**
-   * Get user statistics
-   * GET /api/users/:id/stats
-   */
-  async getUserStats(req: Request, res: Response): Promise<void> {
-    try {
-      const { id } = req.params;
-      
-      const stats = await this.userService.getUserStats(id);
-      res.json(stats);
-    } catch (error) {
-      this.handleError(error, res);
-    }
-  }
-
-  /**
    * Get all users (admin function)
    * GET /api/users
    */
   async getAllUsers(req: Request, res: Response): Promise<void> {
     try {
       const users = await this.userService.getAllUsers();
-      res.json(users);
-    } catch (error) {
-      this.handleError(error, res);
-    }
-  }
-
-  /**
-   * Get users with vocabulary counts (admin function)
-   * GET /api/users/with-vocab-counts
-   */
-  async getUsersWithVocabCounts(req: Request, res: Response): Promise<void> {
-    try {
-      const users = await this.userService.getUsersWithVocabCounts();
       res.json(users);
     } catch (error) {
       this.handleError(error, res);

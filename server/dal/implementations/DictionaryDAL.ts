@@ -29,7 +29,7 @@ const DICTIONARY_COLUMNS = `
  */
 export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreateData, Partial<DictionaryEntryCreateData>> implements IDictionaryDAL {
   constructor() {
-    super(dbManager, 'dictionaryentries', 'id');
+    super(dbManager, 'dictionaryentries_zh', 'id');
   }
 
   /**
@@ -305,16 +305,23 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
    */
   async enrichExampleSentencesMetadataBatch<T extends {
     word1?: string;
-    exampleSentences?: Array<{ chinese: string; english: string; partOfSpeechDict?: Record<string, string>; [key: string]: any }> | null;
+    exampleSentences?: Array<{ foreignText: string; english: string; partOfSpeechDict?: Record<string, string>; [key: string]: any }> | null;
   }>(entries: T[], language: string = 'zh'): Promise<T[]> {
     const withSentences = entries.filter(e => e.exampleSentences?.length);
     if (withSentences.length === 0) return entries;
+
+    // Spanish (and other space-segmented Latin-script languages) don't use the
+    // Chinese greedy character segmentation or pinyin/particle lookups. Split on
+    // whitespace and attach a per-word definition from dictionaryentries_es.
+    if (language === 'es') {
+      return this.enrichSpanishExampleSentencesMetadataBatch(entries, withSentences);
+    }
 
     // 1. Collect all candidate substrings across all sentences — one combined set
     const allCandidates = new Set<string>();
     for (const entry of withSentences) {
       for (const sentence of entry.exampleSentences!) {
-        for (const candidate of getAllSubstrings(sentence.chinese)) {
+        for (const candidate of getAllSubstrings(sentence.foreignText)) {
           allCandidates.add(candidate);
         }
       }
@@ -354,7 +361,7 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
           // and we'd end up showing the wrong segment's metadata for the vocab word.
           const prioritySegments = entry.word1 ? [entry.word1] : undefined;
           const segments = segmentWithDict(
-            sentence.chinese,
+            sentence.foreignText,
             dictMap,
             excludeTokens,
             prioritySegments,
@@ -422,6 +429,75 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
   }
 
   /**
+   * Spanish counterpart of enrichExampleSentencesMetadataBatch. Spanish is written
+   * in Latin script with word boundaries, so there is no greedy character
+   * segmentation, no pinyin, and no particle/classifier model. Instead:
+   *   - `_segments` = the sentence split on whitespace (the rendered word tokens).
+   *   - `segmentMetadata[token]` = { definition } looked up from dictionaryentries_es
+   *     by the token's punctuation-stripped, lowercased form.
+   *
+   * One batched query covers every word across every sentence. `word1` is matched
+   * case-insensitively; the first row's first definition wins for homographs.
+   */
+  private async enrichSpanishExampleSentencesMetadataBatch<T extends {
+    word1?: string;
+    exampleSentences?: Array<{ foreignText: string; english: string; partOfSpeechDict?: Record<string, string>; [key: string]: any }> | null;
+  }>(entries: T[], withSentences: T[]): Promise<T[]> {
+    // Strip leading/trailing punctuation (incl. Spanish ¿ ¡ « » and ASCII) from a
+    // token, leaving letters/numbers/inner hyphens/apostrophes for dictionary lookup.
+    const cleanToken = (token: string): string =>
+      token.replace(/^[^\p{L}\p{N}]+/u, '').replace(/[^\p{L}\p{N}]+$/u, '');
+
+    // 1. Collect every distinct lowercased word form across all sentences.
+    const lookupForms = new Set<string>();
+    for (const entry of withSentences) {
+      for (const sentence of entry.exampleSentences!) {
+        for (const rawToken of sentence.foreignText.split(/\s+/)) {
+          const cleaned = cleanToken(rawToken).toLowerCase();
+          if (cleaned) lookupForms.add(cleaned);
+        }
+      }
+    }
+
+    // 2. One batch query against the Spanish dictionary table. (BaseDAL.tableName is
+    //    dictionaryentries_zh, so query dictionaryentries_es explicitly here.)
+    const defByForm = new Map<string, string>();
+    if (lookupForms.size > 0) {
+      const result = await this.dbManager.executeQuery<any>(async (client) => {
+        return await client.query(
+          `SELECT lower(word1) AS form, definitions
+           FROM dictionaryentries_es
+           WHERE lower(word1) = ANY($1)`,
+          [[...lookupForms]]
+        );
+      });
+      for (const row of result.recordset) {
+        if (defByForm.has(row.form)) continue; // first row wins for homographs
+        const defs = Array.isArray(row.definitions) ? row.definitions : [];
+        const first = defs.find((d: unknown) => typeof d === 'string' && d.trim().length > 0);
+        if (first) defByForm.set(row.form, first);
+      }
+    }
+
+    // 3. Attach _segments (whitespace tokens) + per-token definitions.
+    return entries.map(entry => {
+      if (!entry.exampleSentences?.length) return entry;
+      return {
+        ...entry,
+        exampleSentences: entry.exampleSentences.map(sentence => {
+          const segments = sentence.foreignText.split(/\s+/).filter(Boolean);
+          const segmentMetadata: Record<string, { definition?: string }> = {};
+          for (const token of segments) {
+            const def = defByForm.get(cleanToken(token).toLowerCase());
+            if (def) segmentMetadata[token] = { definition: def };
+          }
+          return { ...sentence, _segments: segments, segmentMetadata };
+        }),
+      };
+    });
+  }
+
+  /**
    * Batch-fetch particle/classifier annotations for a set of single characters.
    * Issues one DB query regardless of the set size.
    * Returns a Map keyed by character; each value is an array of entries since a single
@@ -465,7 +541,7 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
    * Enrich each entry with GSA-segmented expansion data.
    *
    * Mirrors enrichExampleSentencesMetadataBatch: runs the greedy segmentation algorithm
-   * on each entry's expansion string, then batch-queries dictionaryentries for all candidate
+   * on each entry's expansion string, then batch-queries dictionaryentries_zh for all candidate
    * substrings. Computed on-the-fly; not stored in the DB.
    *
    * Each entry gains:

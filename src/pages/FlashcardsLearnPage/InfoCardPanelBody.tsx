@@ -2,7 +2,8 @@ import React, { forwardRef, useImperativeHandle, useLayoutEffect, useRef, useSta
 import { Box, IconButton, Typography, useTheme } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import { stripParentheses } from "../../utils/definitionUtils";
-import CPCDRow from "../../components/CPCDRow";
+import ForeignText from "../../components/ForeignText";
+import PosBadge from "../../components/PosBadge";
 import SegmentedSentenceDisplay from "../../components/SegmentedSentenceDisplay";
 import InfoCardListRow from "./InfoCardListRow";
 import {
@@ -183,17 +184,19 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                 sx={headerDragBind ? { touchAction: "none", cursor: "grab" } : undefined}
             >
                 {currentEntry && (
-                    <CPCDRow
+                    <ForeignText
                         size="md"
                         justifyContent="flex-start"
                         className="mobile-demo-eic-header-cpcd"
-                        items={[...currentEntry.entryKey].map((char, i) => ({
-                            character: char,
-                            pinyin: currentEntry.pronunciation?.split(' ')[i] ?? '',
-                            useToneColor: showPinyinColor,
-                            showPinyin,
-                        }))}
+                        text={currentEntry.entryKey}
+                        pronunciation={currentEntry.pronunciation}
+                        useToneColor={showPinyinColor}
+                        showPinyin={showPinyin}
                     />
+                )}
+                {/* "(v)"/"(n)" badge for Spanish words with multiple discoverable POS */}
+                {currentEntry && (
+                    <PosBadge pos={currentEntry.pos} hasMultiplePos={currentEntry.hasMultiplePos} />
                 )}
                 {currentEntry && (
                     <Typography
@@ -221,7 +224,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                     <IconButton
                         className="mobile-demo-eic-add-to-library"
                         size="small"
-                        aria-label="Add to library"
+                        aria-label="Add to Learn Now"
                         onClick={(e) => {
                             // Match SpeakerButton's stop-propagation pattern so
                             // taps don't bubble to flip/drag handlers in any
@@ -396,11 +399,11 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                                         <SpeakerButton
                                             onClick={() =>
                                                 onSpeakSentence(
-                                                    sentence.chinese,
+                                                    sentence.foreignText,
                                                     buildSentencePronunciation(sentence),
                                                 )
                                             }
-                                            isLoading={speakingKey === sentence.chinese}
+                                            isLoading={speakingKey === sentence.foreignText}
                                         />
                                     </Box>
                                 )}
@@ -412,6 +415,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                                     showPinyinColor={showPinyinColor}
                                     showSegmentSpaces={showSegmentSpaces}
                                     vocabWord={currentEntry?.entryKey}
+                                    language={currentEntry?.language}
                                 />
                                 <Typography className="mobile-demo-sentence-english" sx={{ fontSize: 12, color: fc.textSecondary, fontFamily: FC_FONT, lineHeight: 1.4 }}>
                                     {renderEnglishWithVocabUnderline(sentence.english, sentence.translatedVocab)}
@@ -480,7 +484,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                                     <>
                                         <SegmentedSentenceDisplay
                                             sentence={{
-                                                chinese: currentEntry.expansion,
+                                                foreignText: currentEntry.expansion,
                                                 _segments: currentEntry.expansionSegments ?? [...currentEntry.expansion],
                                                 segmentMetadata: currentEntry.expansionMetadata ?? undefined,
                                             }}

@@ -28,17 +28,7 @@ import {
     Looks6 as Looks6Icon
 } from "@mui/icons-material";
 import { usePageTitle } from "../hooks/usePageTitle";
-
-// HSK Level type
-type HskLevel = 'HSK1' | 'HSK2' | 'HSK3' | 'HSK4' | 'HSK5' | 'HSK6';
-
-interface VocabEntry {
-    id: number;
-    entryKey: string;
-    definition?: string | null;
-    hskLevel?: HskLevel | null;
-    createdAt: string;
-}
+import type { VocabEntry, HskLevel } from "../types";
 
 // Helper function to get HSK level icon
 const getHskIcon = (hskLevel: HskLevel) => {

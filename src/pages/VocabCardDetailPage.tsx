@@ -9,9 +9,10 @@ import MobileFooter from "../components/MobileFooter";
 import PageHeader from "../components/PageHeader";
 import { API_BASE_URL } from "../constants";
 import type { VocabEntry, DictionaryEntry } from "../types";
-import CharacterPinyinColorDisplay from "../components/CharacterPinyinColorDisplay";
-import CPCDRow from "../components/CPCDRow";
+import ForeignText from "../components/ForeignText";
+import PosBadge from "../components/PosBadge";
 import SegmentedSentenceDisplay from "../components/SegmentedSentenceDisplay";
+import { getBreakdownItems } from "../utils/breakdownUtils";
 import { usePageTitle } from "../hooks/usePageTitle";
 
 // Design tokens
@@ -240,6 +241,8 @@ const VocabCardDetailPage: React.FC = () => {
                                     }}
                                 >
                                     {entry.entryKey}
+                                    {/* "(v)"/"(n)" badge for Spanish words with multiple discoverable POS */}
+                                    <PosBadge pos={entry.pos} hasMultiplePos={entry.hasMultiplePos} />
                                 </Typography>
 
                                 {/* Pronunciation */}
@@ -305,16 +308,12 @@ const VocabCardDetailPage: React.FC = () => {
                                             >
                                                 {/* One cpcd per character so each pinyin syllable in a multi-char
                                                     used-in entry (e.g. 朋友 → péng yǒu) gets its own tone color. */}
-                                                <CPCDRow
+                                                <ForeignText
                                                     size="md"
                                                     flexWrap="nowrap"
                                                     compact
-                                                    items={[...item.entryKey].map((ch, i) => ({
-                                                        character: ch,
-                                                        pinyin: (item.pronunciation ?? "").split(" ")[i] ?? "",
-                                                        useToneColor: true,
-                                                        showPinyin: true,
-                                                    }))}
+                                                    text={item.entryKey}
+                                                    pronunciation={item.pronunciation ?? undefined}
                                                 />
                                                 <Box className="vocab-card-detail__used-in-info">
                                                     <Typography
@@ -339,12 +338,13 @@ const VocabCardDetailPage: React.FC = () => {
                                 <SectionCard className="vocab-card-detail__breakdown">
                                     <SectionLabel className="vocab-card-detail__section-label">Character Breakdown</SectionLabel>
                                     <Box className="vocab-card-detail__breakdown-list" sx={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                                        {[...entry.entryKey].filter(char => entry.breakdown![char]).map(char => {
-                                            const info = entry.breakdown![char];
-                                            return (
+                                        {/* Per-character pinyin is derived from the headword pronunciation
+                                            (the breakdown map stores definitions only), shared with the EIC
+                                            breakdown tab via getBreakdownItems. */}
+                                        {getBreakdownItems(entry).map(item => (
                                             <Box
                                                 className="vocab-card-detail__breakdown-item"
-                                                key={char}
+                                                key={item.character}
                                                 sx={{
                                                     display: "flex",
                                                     alignItems: "flex-start",
@@ -354,13 +354,11 @@ const VocabCardDetailPage: React.FC = () => {
                                                     padding: "6px 10px",
                                                 }}
                                             >
-                                                <CharacterPinyinColorDisplay
-                                                    character={char}
-                                                    pinyin={info.pronunciation ?? ""}
+                                                <ForeignText
                                                     size="md"
-                                                    useToneColor={true}
-                                                    showPinyin={true}
                                                     compact
+                                                    text={item.character}
+                                                    pronunciation={item.pinyin || undefined}
                                                 />
                                                 <Box className="vocab-card-detail__breakdown-info">
                                                     <Typography
@@ -371,12 +369,11 @@ const VocabCardDetailPage: React.FC = () => {
                                                             fontFamily: '"Inter", sans-serif',
                                                         }}
                                                     >
-                                                        {stripParentheses(info.definition)}
+                                                        {stripParentheses(item.definition)}
                                                     </Typography>
                                                 </Box>
                                             </Box>
-                                            );
-                                        })}
+                                        ))}
                                     </Box>
                                 </SectionCard>
                             )}
@@ -387,7 +384,7 @@ const VocabCardDetailPage: React.FC = () => {
                                     <SectionLabel className="vocab-card-detail__section-label">Extended Definition</SectionLabel>
                                     <SegmentedSentenceDisplay
                                         sentence={{
-                                            chinese: entry.expansion!,
+                                            foreignText: entry.expansion!,
                                         }}
                                         size="md"
                                         compact
@@ -417,7 +414,6 @@ const VocabCardDetailPage: React.FC = () => {
                                     <Box className="vocab-card-detail__synonyms-list" sx={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
                                         {entry.synonyms!.map((syn) => {
                                             const meta = entry.synonymsMetadata?.[syn];
-                                            const pinyinSyllables = meta?.pronunciation ? meta.pronunciation.split(" ") : [];
                                             return (
                                                 <Box
                                                     className="vocab-card-detail__synonym-item"
@@ -432,15 +428,11 @@ const VocabCardDetailPage: React.FC = () => {
                                                         gap: "2px",
                                                     }}
                                                 >
-                                                    <CPCDRow
+                                                    <ForeignText
                                                         size="md"
                                                         compact
-                                                        items={[...syn].map((char, ci) => ({
-                                                            character: char,
-                                                            pinyin: pinyinSyllables[ci] ?? '',
-                                                            showPinyin: !!pinyinSyllables[ci],
-                                                            useToneColor: true,
-                                                        }))}
+                                                        text={syn}
+                                                        pronunciation={meta?.pronunciation}
                                                     />
                                                     {meta?.definition && (
                                                         <Typography sx={{ fontSize: "0.72rem", color: COLORS.textSecondary, fontFamily: '"Inter", sans-serif', fontStyle: "italic" }}>
@@ -503,7 +495,6 @@ const VocabCardDetailPage: React.FC = () => {
                                     <SectionLabel className="vocab-card-detail__section-label">Related Words</SectionLabel>
                                     <Box className="vocab-card-detail__related-words-list" sx={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
                                         {entry.relatedWords!.map((rel) => {
-                                            const pinyinSyllables = rel.pronunciation ? rel.pronunciation.split(" ") : [];
                                             return (
                                                 <Box
                                                     className="vocab-card-detail__related-word-item"
@@ -518,15 +509,11 @@ const VocabCardDetailPage: React.FC = () => {
                                                         gap: "2px",
                                                     }}
                                                 >
-                                                    <CPCDRow
+                                                    <ForeignText
                                                         size="md"
                                                         compact
-                                                        items={[...rel.entryKey].map((char, ci) => ({
-                                                            character: char,
-                                                            pinyin: pinyinSyllables[ci] ?? '',
-                                                            showPinyin: !!pinyinSyllables[ci],
-                                                            useToneColor: true,
-                                                        }))}
+                                                        text={rel.entryKey}
+                                                        pronunciation={rel.pronunciation}
                                                     />
                                                     {rel.definition && (
                                                         <Typography sx={{ fontSize: "0.72rem", color: COLORS.textSecondary, fontFamily: '"Inter", sans-serif', fontStyle: "italic" }}>
@@ -568,7 +555,7 @@ const VocabCardDetailPage: React.FC = () => {
                                     '&.Mui-disabled': { backgroundColor: '#2196f388' },
                                 }}
                             >
-                                {entry.starterPackBucket === 'library' ? 'Move to Learn Later' : 'Move to Library'}
+                                {entry.starterPackBucket === 'library' ? 'Move to Learn Later' : 'Move to Learn Now'}
                             </Button>
                         )}
                         {/* Delete button: always shown */}

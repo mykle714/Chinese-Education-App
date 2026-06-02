@@ -239,31 +239,10 @@ export class UserService {
   }
 
   /**
-   * Get user statistics
-   */
-  async getUserStats(userId: string): Promise<{
-    totalVocabEntries: number;
-    createdAt: Date;
-  }> {
-    if (!userId) {
-      throw new ValidationError('User ID is required');
-    }
-    
-    return await this.userDAL.getUserStats(userId);
-  }
-
-  /**
    * Get all users (admin function)
    */
   async getAllUsers(): Promise<User[]> {
     return await this.userDAL.findAll();
-  }
-
-  /**
-   * Get users with vocabulary counts (admin function)
-   */
-  async getUsersWithVocabCounts(): Promise<Array<User & { vocabCount: number }>> {
-    return await this.userDAL.findUsersWithVocabCount();
   }
 
   /**

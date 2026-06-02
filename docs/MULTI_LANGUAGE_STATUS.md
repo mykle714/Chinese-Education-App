@@ -1,5 +1,13 @@
 # Multi-Language Support Status
 
+> ⚠️ **OUTDATED — architecture changed (migration 57).** The "unified dictionary
+> system" described below no longer exists. Dictionary data is now split into
+> **per-language tables**: `dictionaryentries_zh` (Chinese, renamed from
+> `dictionaryentries`), `dictionaryentries_es` (Spanish), and `affixes`. Only
+> Chinese and Spanish data exist; **ja/ko/vi are not user-selectable** and their
+> import flows are intentionally broken pending per-language tables. See CLAUDE.md
+> → "Dictionary Tables".
+
 ## Overview
 
 The application supports learning in multiple languages with a unified vocabulary and dictionary system. Users can study Chinese, Japanese, Korean, and Vietnamese with built-in dictionaries and personalized vocabulary management.

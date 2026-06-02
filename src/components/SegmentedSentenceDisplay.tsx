@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Box, Popper, Typography } from "@mui/material";
 import { stripParentheses } from "../utils/definitionUtils";
-import CPCDRow, { type CPCDRowItem } from "./CPCDRow";
+import ForeignText, { type CPCDRowItem, isLatinScriptLang } from "./ForeignText";
 
 type Size = "sm" | "md";
 
@@ -17,6 +17,10 @@ const SEGMENT_GAP_BY_SIZE: Record<Size, string> = {
   md: "6px",
 };
 
+// Latin-script languages render one cell per whitespace-delimited WORD (not per
+// character) and have no pinyin overlay. `isLatinScriptLang` is imported from
+// ForeignText so the language set lives in exactly one place.
+
 interface SegmentMeta {
   pronunciation?: string;
   definition?: string;
@@ -25,7 +29,7 @@ interface SegmentMeta {
 }
 
 interface SentenceData {
-  chinese: string;
+  foreignText: string;
   _segments?: string[];
   segmentMetadata?: Record<string, SegmentMeta>;
   tense?: 'past' | 'present' | 'future';
@@ -46,6 +50,9 @@ interface SegmentedSentenceDisplayProps {
   vocabWord?: string;
   // When true, renders a CSS gap between segment groups instead of uniform overlap
   showSegmentSpaces?: boolean;
+  // Language of the sentence. Latin-script languages (e.g. 'es') render one cell
+  // per whitespace word instead of per character, with no pinyin overlay.
+  language?: string;
 }
 
 interface CharRenderData {
@@ -100,7 +107,11 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
   showPinyinColor = true,
   vocabWord,
   showSegmentSpaces = false,
+  language,
 }) => {
+  // Latin-script languages tokenize on whitespace (one cell per word) and never
+  // show a pinyin overlay or per-character segmentation.
+  const isLatin = isLatinScriptLang(language);
   const rowRef = useRef<HTMLDivElement | null>(null);
   const charRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [selectedRange, setSelectedRange] = useState<{ start: number; end: number; segment: string; definition?: string } | null>(null);
@@ -131,9 +142,27 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
 
   useEffect(() => cancelDismiss, []);
 
-  const chars = useMemo(() => [...sentence.chinese], [sentence.chinese]);
+  // For Latin script each cell is a whole word (split on whitespace); for CJK each
+  // cell is one character.
+  const chars = useMemo(
+    () => (isLatin ? sentence.foreignText.split(/\s+/).filter(Boolean) : [...sentence.foreignText]),
+    [sentence.foreignText, isLatin]
+  );
 
   const charData = useMemo<CharRenderData[]>(() => {
+    // Latin script: one cell per word, no pinyin, definition keyed by the word
+    // token exactly as DictionaryDAL.enrichSpanishExampleSentencesMetadataBatch stored it.
+    if (isLatin) {
+      const segmentMetadata = sentence.segmentMetadata ?? {};
+      return chars.map((word, i) => ({
+        pinyin: "",
+        segment: word,
+        start: i,
+        end: i,
+        definition: segmentMetadata[word]?.definition,
+      }));
+    }
+
     const data: (CharRenderData | undefined)[] = new Array(chars.length);
     const segments = sentence._segments?.length ? sentence._segments : chars;
     const segmentMetadata = sentence.segmentMetadata ?? {};
@@ -193,7 +222,7 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
     }
 
     return data as CharRenderData[];
-  }, [chars, sentence._segments, sentence.segmentMetadata]);
+  }, [chars, sentence._segments, sentence.segmentMetadata, isLatin]);
 
   // Groups consecutive characters that share the same segment (same `start` index).
   // Used when showSegmentSpaces is true to render each word as its own CPCDRow.
@@ -463,8 +492,9 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
           };
         });
 
-        if (showSegmentSpaces) {
+        if (showSegmentSpaces || isLatin) {
           // Spaced mode: each segment is its own CPCDRow; the outer Box provides the inter-segment gap.
+          // Latin script always uses this so words are separated by real spacing.
           // flexWrap/justifyContent/className belong on the outer container so wrapping happens at
           // word boundaries, not mid-segment.
           return (
@@ -479,7 +509,7 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
               }}
             >
               {segmentGroups.map((group) => (
-                <CPCDRow
+                <ForeignText
                   key={group.key}
                   size={size}
                   compact={compact}
@@ -492,7 +522,7 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
         }
 
         return (
-          <CPCDRow
+          <ForeignText
             size={size}
             compact={compact}
             flexWrap={flexWrap}

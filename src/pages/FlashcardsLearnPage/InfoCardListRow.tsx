@@ -1,5 +1,5 @@
 import { Box, Typography, useTheme } from "@mui/material";
-import CPCDRow from "../../components/CPCDRow";
+import ForeignText from "../../components/ForeignText";
 import { stripParentheses } from "../../utils/definitionUtils";
 import { FC_FONT } from "./constants";
 
@@ -18,7 +18,7 @@ export interface InfoCardListRowProps {
 /**
  * Shared row used by the breakdown tab for both the multi-char breakdown list
  * and the single-char "used in" list. Identical visuals; `size` controls the
- * CharacterPinyinColorDisplay sizing (sm for used-in, md for breakdown).
+ * ForeignText sizing (sm for used-in, md for breakdown).
  */
 function InfoCardListRow({
     character,
@@ -60,17 +60,14 @@ function InfoCardListRow({
             }}
         >
             {/* Render one cpcd per character so multi-syllable pinyin (used-in rows
-                like 朋友 → péng yǒu) gets per-syllable tone coloring. Single-char
-                inputs (breakdown rows) produce a one-element CPCDRow. */}
-            <CPCDRow
+                like 朋友 → péng yǒu) gets per-syllable tone coloring. */}
+            <ForeignText
                 size={size}
                 flexWrap="nowrap"
-                items={[...character].map((ch, i) => ({
-                    character: ch,
-                    pinyin: pinyin.split(" ")[i] ?? "",
-                    useToneColor: showPinyinColor,
-                    showPinyin,
-                }))}
+                text={character}
+                pronunciation={pinyin}
+                useToneColor={showPinyinColor}
+                showPinyin={showPinyin}
             />
             <Typography sx={{ fontSize: 14, color: fc.onSurface, flex: 1, fontFamily: FC_FONT }}>
                 {stripParentheses(definition)}

@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import apiClient from "../../utils/apiClient";
 
-export interface VocabEntry {
+// Distinct from the canonical src/types VocabEntry: this mirrors the raw
+// /api/vocabentries payload shape games consume (note string id), so it is named
+// separately to avoid masquerading as the shared VocabEntry model.
+export interface GameVocabEntry {
     id: string;
     userId: string;
     entryKey: string;
@@ -24,7 +27,7 @@ export interface UseVocabEntriesOptions {
 }
 
 export interface UseVocabEntriesResult {
-    entries: VocabEntry[];
+    entries: GameVocabEntry[];
     loading: boolean;
     error: Error | null;
     refetch: () => void;
@@ -39,7 +42,7 @@ export interface UseVocabEntriesResult {
  */
 export function useVocabEntries(options: UseVocabEntriesOptions = {}): UseVocabEntriesResult {
     const { category, language, enabled = true } = options;
-    const [entries, setEntries] = useState<VocabEntry[]>([]);
+    const [entries, setEntries] = useState<GameVocabEntry[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<Error | null>(null);
     const [refetchToken, setRefetchToken] = useState(0);
@@ -58,7 +61,7 @@ export function useVocabEntries(options: UseVocabEntriesOptions = {}): UseVocabE
         if (language) params.language = language;
 
         apiClient
-            .get<VocabEntry[]>("/api/vocabentries", { params })
+            .get<GameVocabEntry[]>("/api/vocabentries", { params })
             .then((res) => {
                 if (cancelled) return;
                 setEntries(res.data ?? []);

@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { TONE_COLORS } from "../../utils/toneColors";
 import { dictionaryEntryToVocabEntry } from "./dictEntryAdapter";
-import { getBreakdownItems } from "./breakdownUtils";
+import { getBreakdownItems } from "../../utils/breakdownUtils";
 import type { DictionaryEntry } from "../../types";
 import type { VocabEntry, BreakdownItem } from "./types";
 

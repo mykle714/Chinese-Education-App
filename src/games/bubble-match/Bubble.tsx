@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Typography } from "@mui/material";
-import CPCDRow from "../../components/CPCDRow";
+import ForeignText from "../../components/ForeignText";
 import { stripParentheses } from "../../utils/definitionUtils";
 import { FC_FONT_CJK } from "../../pages/FlashcardsLearnPage/constants";
 import type { BubbleBody, BubbleStatus } from "./types";
@@ -36,7 +36,7 @@ interface BubbleProps {
 // Length-based font scale for the definition text, similar in spirit to the
 // flashcard's englishFontSize but tuned to the smaller circular area.
 const definitionFontSize = (text: string, radius: number): number => {
-    const base = radius < 50 ? 11 : 12.5;
+    const base = radius < 50 ? 13 : 14.5;
     if (text.length > 42) return base - 3;
     if (text.length > 26) return base - 1.5;
     return base;
@@ -89,16 +89,7 @@ const Bubble: React.FC<BubbleProps> = ({
         border = DEFINITION_BUBBLE_BORDER;
     }
 
-    // Word content (cpcd row).
-    const syllables = entry.pronunciation?.split(" ") ?? [];
-    const chars = [...entry.entryKey];
-    const items = chars.map((char, i) => ({
-        character: char,
-        pinyin: syllables[i] ?? "",
-        showPinyin,
-        useToneColor: showPinyinColor,
-    }));
-    const contentScale = wordContentScale(chars.length, radius);
+    const contentScale = wordContentScale([...entry.entryKey].length, radius);
 
     const defText = stripParentheses(entry.definition ?? "");
 
@@ -171,7 +162,14 @@ const Bubble: React.FC<BubbleProps> = ({
                             justifyContent: "center",
                         }}
                     >
-                        <CPCDRow size="sm" justifyContent="center" items={items} />
+                        <ForeignText
+                            size="sm"
+                            justifyContent="center"
+                            text={entry.entryKey}
+                            pronunciation={entry.pronunciation}
+                            showPinyin={showPinyin}
+                            useToneColor={showPinyinColor}
+                        />
                     </Box>
                 ) : (
                     <Typography

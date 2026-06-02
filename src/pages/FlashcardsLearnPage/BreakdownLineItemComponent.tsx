@@ -1,5 +1,5 @@
 import React from "react";
-import CharacterPinyinColorDisplay from "../../components/CharacterPinyinColorDisplay";
+import ForeignText from "../../components/ForeignText";
 import { BreakdownLineItem, DefinitionColumn, DefinitionText } from "./styled";
 import { stripParentheses } from "../../utils/definitionUtils";
 
@@ -10,11 +10,10 @@ const BreakdownLineItemComponent: React.FC<{
     showPinyin?: boolean;
 }> = ({ character, pinyin, definition, showPinyin = true }) => (
     <BreakdownLineItem className="mobile-demo-breakdown-item">
-        <CharacterPinyinColorDisplay
-            character={character}
-            pinyin={pinyin}
+        <ForeignText
             size="sm"
-            useToneColor={true}
+            text={character}
+            pronunciation={pinyin}
             showPinyin={showPinyin}
         />
         <DefinitionColumn className="mobile-demo-definition-column">

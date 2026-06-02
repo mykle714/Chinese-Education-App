@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { VocabEntryService } from '../services/VocabEntryService.js';
 import { DictionaryService } from '../services/DictionaryService.js';
-import { requireUserId, handleControllerError } from '../utils/controllerUtils.js';
+import { requireUserId, getUserLanguage, handleControllerError } from '../utils/controllerUtils.js';
 
 /**
  * VocabEntry Controller - Handles HTTP requests and responses for vocabulary operations
@@ -71,7 +71,8 @@ export class VocabEntryController {
         return;
       }
 
-      const entry = await this.vocabEntryService.getEntry(userId, entryId);
+      const language = await getUserLanguage(userId);
+      const entry = await this.vocabEntryService.getEntry(userId, entryId, language);
       res.json(entry);
     } catch (error) {
       handleControllerError(error, res, 'VocabEntryController.getEntryById');
@@ -90,9 +91,7 @@ export class VocabEntryController {
       const { entryKey, hskLevel } = req.body;
 
       // Get user's selected language to tag the new entry
-      const { userDAL } = await import('../dal/setup.js');
-      const user = await userDAL.findById(userId);
-      const language = user?.selectedLanguage || 'zh';
+      const language = await getUserLanguage(userId);
 
       const newEntry = await this.vocabEntryService.createEntry(userId, {
         entryKey,
@@ -150,7 +149,8 @@ export class VocabEntryController {
       }
 
       const { entryKey, hskLevel } = req.body;
-      const updatedEntry = await this.vocabEntryService.updateEntry(userId, entryId, {
+      const language = await getUserLanguage(userId);
+      const updatedEntry = await this.vocabEntryService.updateEntry(userId, entryId, language, {
         entryKey,
         hskLevel
       });
@@ -179,7 +179,8 @@ export class VocabEntryController {
         return;
       }
 
-      await this.vocabEntryService.deleteEntry(userId, entryId);
+      const language = await getUserLanguage(userId);
+      await this.vocabEntryService.deleteEntry(userId, entryId, language);
       res.status(204).end();
     } catch (error) {
       handleControllerError(error, res, 'VocabEntryController.deleteEntry');
@@ -206,26 +207,11 @@ export class VocabEntryController {
         return;
       }
 
-      const entries = await this.vocabEntryService.searchEntries(userId, searchTerm, limit);
+      const language = await getUserLanguage(userId);
+      const entries = await this.vocabEntryService.searchEntries(userId, searchTerm, language, limit);
       res.json(entries);
     } catch (error) {
       handleControllerError(error, res, 'VocabEntryController.searchEntries');
-    }
-  }
-
-  /**
-   * Get vocabulary statistics for user
-   * GET /api/vocabEntries/stats
-   */
-  async getUserStats(req: Request, res: Response): Promise<void> {
-    try {
-      const userId = requireUserId(req, res);
-      if (!userId) return;
-
-      const stats = await this.vocabEntryService.getUserVocabStats(userId);
-      res.json(stats);
-    } catch (error) {
-      handleControllerError(error, res, 'VocabEntryController.getUserStats');
     }
   }
 
@@ -239,7 +225,8 @@ export class VocabEntryController {
       if (!userId) return;
 
       const days = parseInt(req.query.days as string) || 7;
-      const entries = await this.vocabEntryService.getRecentEntries(userId, days);
+      const language = await getUserLanguage(userId);
+      const entries = await this.vocabEntryService.getRecentEntries(userId, language, days);
       res.json(entries);
     } catch (error) {
       handleControllerError(error, res, 'VocabEntryController.getRecentEntries');
@@ -348,14 +335,12 @@ export class VocabEntryController {
 
       const serviceStart = performance.now();
 
-      // Get user's language for dictionary lookups
-      const { userDAL } = await import('../dal/setup.js');
-      const user = await userDAL.findById(userId);
-      const language = user?.selectedLanguage || 'zh';
+      // Get user's language for both personal vocab and dictionary lookups
+      const language = await getUserLanguage(userId);
 
       // Fetch personal vocab and dictionary entries in parallel
       const [personalEntries, dictionaryEntries] = await Promise.all([
-        this.vocabEntryService.getEntriesByTokens(userId, tokens),
+        this.vocabEntryService.getEntriesByTokens(userId, tokens, language),
         this.dictionaryService ? this.dictionaryService.lookupMultipleTerms(tokens, language) : Promise.resolve([])
       ]);
 

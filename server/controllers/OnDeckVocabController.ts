@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { OnDeckVocabService } from '../services/OnDeckVocabService.js';
-import { requireUserId, handleControllerError } from '../utils/controllerUtils.js';
+import { requireUserId, getUserLanguage, handleControllerError } from '../utils/controllerUtils.js';
 
 /**
  * OnDeck Vocabulary Controller
@@ -18,7 +18,8 @@ export class OnDeckVocabController {
       const userId = requireUserId(req, res);
       if (!userId) return;
 
-      const libraryCards = await this.onDeckVocabService.getLibraryCards(userId);
+      const language = await getUserLanguage(userId);
+      const libraryCards = await this.onDeckVocabService.getLibraryCards(userId, language);
       res.json(libraryCards);
     } catch (error: any) {
       handleControllerError(error, res, 'OnDeckVocabController.getLibraryCards');
@@ -34,7 +35,8 @@ export class OnDeckVocabController {
       const userId = requireUserId(req, res);
       if (!userId) return;
 
-      const learnLaterCards = await this.onDeckVocabService.getLearnLaterCards(userId);
+      const language = await getUserLanguage(userId);
+      const learnLaterCards = await this.onDeckVocabService.getLearnLaterCards(userId, language);
       res.json(learnLaterCards);
     } catch (error: any) {
       handleControllerError(error, res, 'OnDeckVocabController.getLearnLaterCards');
@@ -50,7 +52,8 @@ export class OnDeckVocabController {
       const userId = requireUserId(req, res);
       if (!userId) return;
 
-      const masteredCards = await this.onDeckVocabService.getMasteredLibraryCards(userId);
+      const language = await getUserLanguage(userId);
+      const masteredCards = await this.onDeckVocabService.getMasteredLibraryCards(userId, language);
       res.json(masteredCards);
     } catch (error: any) {
       handleControllerError(error, res, 'OnDeckVocabController.getMasteredLibraryCards');
@@ -66,7 +69,8 @@ export class OnDeckVocabController {
       const userId = requireUserId(req, res);
       if (!userId) return;
 
-      const nonMasteredCards = await this.onDeckVocabService.getNonMasteredLibraryCards(userId);
+      const language = await getUserLanguage(userId);
+      const nonMasteredCards = await this.onDeckVocabService.getNonMasteredLibraryCards(userId, language);
       res.json(nonMasteredCards);
     } catch (error: any) {
       handleControllerError(error, res, 'OnDeckVocabController.getNonMasteredLibraryCards');
@@ -83,7 +87,8 @@ export class OnDeckVocabController {
       if (!userId) return;
 
       const categoryFilter = req.query.category as string | undefined;
-      const workingLoop = await this.onDeckVocabService.getDistributedWorkingLoop(userId, categoryFilter);
+      const language = await getUserLanguage(userId);
+      const workingLoop = await this.onDeckVocabService.getDistributedWorkingLoop(userId, language, categoryFilter);
       res.json(workingLoop);
     } catch (error: any) {
       handleControllerError(error, res, 'OnDeckVocabController.getDistributedWorkingLoop');
@@ -99,7 +104,8 @@ export class OnDeckVocabController {
       const userId = requireUserId(req, res);
       if (!userId) return;
 
-      const counts = await this.onDeckVocabService.getCategoryCounts(userId);
+      const language = await getUserLanguage(userId);
+      const counts = await this.onDeckVocabService.getCategoryCounts(userId, language);
       res.json(counts);
     } catch (error: any) {
       handleControllerError(error, res, 'OnDeckVocabController.getCategoryCounts');
@@ -137,7 +143,8 @@ export class OnDeckVocabController {
         distribution.Mastered = 2;
       }
 
-      const pool = await this.onDeckVocabService.getGameVocabPool(userId, distribution);
+      const language = await getUserLanguage(userId);
+      const pool = await this.onDeckVocabService.getGameVocabPool(userId, language, distribution);
       res.json(pool);
     } catch (error: any) {
       handleControllerError(error, res, 'OnDeckVocabController.getGamePool');

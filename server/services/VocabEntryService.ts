@@ -6,6 +6,7 @@ import { DictionaryService } from './DictionaryService.js';
 import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, HskLevel, Language } from '../types/index.js';
 import { ValidationError, NotFoundError, BulkResult } from '../types/dal.js';
 import db from '../db.js';
+import { vetTableForLanguage } from '../dal/shared/vetTable.js';
 
 // CSV row interface for import processing
 interface CSVRow {
@@ -46,15 +47,17 @@ export class VocabEntryService {
       throw new NotFoundError('User not found');
     }
     
-    // Check for duplicates (business rule)
-    const existingEntry = await this.vocabEntryDAL.findByUserAndKey(userId, entryData.entryKey);
-    if (existingEntry) {
-      throw new ValidationError(`Entry with key "${entryData.entryKey}" already exists`);
-    }
-
     // Use user's selected language or default to Chinese
     const language: Language = user.selectedLanguage || 'zh';
     const trimmedKey = entryData.entryKey.trim();
+
+    // Check for duplicates within the same language (business rule). The same
+    // spelling can legitimately exist in another study language, so the check
+    // is scoped to the user's active language.
+    const existingEntry = await this.vocabEntryDAL.findByUserAndKey(userId, entryData.entryKey, language);
+    if (existingEntry) {
+      throw new ValidationError(`Entry with key "${entryData.entryKey}" already exists`);
+    }
 
     // Reject orphans: vet rows now derive their definition from det via
     // entryKey/language. Without a matching det row the entry would render
@@ -108,17 +111,21 @@ export class VocabEntryService {
       );
     }
 
+    // Per-language vet table (migration 66). This "add to library" path doesn't
+    // choose a specific POS, so es rows are inserted with pos NULL (a word-level
+    // save); the discover sort flow is what captures a specific POS.
+    const vetTable = vetTableForLanguage(language);
     const client = await db.getClient();
     try {
       const existing = await client.query<{ id: number; starterPackBucket: string | null }>(
-        `SELECT id, "starterPackBucket" FROM vocabentries
+        `SELECT id, "starterPackBucket" FROM ${vetTable}
          WHERE "userId" = $1 AND "entryKey" = $2 AND language = $3`,
         [userId, trimmedKey, language],
       );
 
       if (existing.rows.length === 0) {
         const insertResult = await client.query<{ id: number }>(
-          `INSERT INTO vocabentries ("userId", "entryKey", language, "starterPackBucket", category)
+          `INSERT INTO ${vetTable} ("userId", "entryKey", language, "starterPackBucket", category)
            VALUES ($1, $2, $3, 'library', 'Unfamiliar')
            RETURNING id`,
           [userId, trimmedKey, language],
@@ -133,7 +140,7 @@ export class VocabEntryService {
 
       const wasLearnLater = row.starterPackBucket === 'learn-later';
       await client.query(
-        `UPDATE vocabentries SET "starterPackBucket" = 'library' WHERE id = $1`,
+        `UPDATE ${vetTable} SET "starterPackBucket" = 'library' WHERE id = $1`,
         [row.id],
       );
       return { status: wasLearnLater ? 'moved' : 'added', vocabEntryId: row.id };
@@ -145,12 +152,13 @@ export class VocabEntryService {
   /**
    * Update an existing vocabulary entry
    */
-  async updateEntry(userId: string, entryId: number, updateData: VocabEntryUpdateData): Promise<VocabEntry> {
+  async updateEntry(userId: string, entryId: number, language: string, updateData: VocabEntryUpdateData): Promise<VocabEntry> {
     // Business validation
     this.validateUpdateData(updateData);
-    
-    // Verify user owns the entry (business rule)
-    const existingEntry = await this.vocabEntryDAL.findById(entryId);
+
+    // Verify user owns the entry (business rule). vet is split per language, so the
+    // lookup is language-scoped (caller passes the user's active language).
+    const existingEntry = await this.vocabEntryDAL.findByIdAndLanguage(entryId, language);
     if (!existingEntry) {
       throw new NotFoundError('Vocabulary entry not found');
     }
@@ -159,9 +167,10 @@ export class VocabEntryService {
       throw new ValidationError('You can only update your own vocabulary entries');
     }
     
-    // Check for duplicate key if key is being changed (business rule)
+    // Check for duplicate key if key is being changed (business rule).
+    // Scoped to the existing entry's language since identity is (user, key, language).
     if (updateData.entryKey !== existingEntry.entryKey) {
-      const duplicateEntry = await this.vocabEntryDAL.findByUserAndKey(userId, updateData.entryKey);
+      const duplicateEntry = await this.vocabEntryDAL.findByUserAndKey(userId, updateData.entryKey, existingEntry.language);
       if (duplicateEntry && duplicateEntry.id !== entryId) {
         throw new ValidationError(`Entry with key "${updateData.entryKey}" already exists`);
       }
@@ -180,8 +189,8 @@ export class VocabEntryService {
   /**
    * Delete a vocabulary entry
    */
-  async deleteEntry(userId: string, entryId: number): Promise<boolean> {
-    const existingEntry = await this.vocabEntryDAL.findById(entryId);
+  async deleteEntry(userId: string, entryId: number, language: string): Promise<boolean> {
+    const existingEntry = await this.vocabEntryDAL.findByIdAndLanguage(entryId, language);
     if (!existingEntry) {
       throw new NotFoundError('Vocabulary entry not found');
     }
@@ -196,7 +205,7 @@ export class VocabEntryService {
       try {
         await client.query(`
           DELETE FROM StarterPackSorts sps
-          USING DictionaryEntries de
+          USING dictionaryentries_zh de
           WHERE sps."dictionaryEntryId" = de.id
             AND de.word1 = $1
             AND sps."userId" = $2
@@ -214,8 +223,8 @@ export class VocabEntryService {
   /**
    * Get vocabulary entry by ID with ownership check
    */
-  async getEntry(userId: string, entryId: number): Promise<VocabEntry> {
-    const entry = await this.vocabEntryDAL.findById(entryId);
+  async getEntry(userId: string, entryId: number, language: string): Promise<VocabEntry> {
+    const entry = await this.vocabEntryDAL.findByIdAndLanguage(entryId, language);
     if (!entry) {
       throw new NotFoundError('Vocabulary entry not found');
     }
@@ -225,10 +234,11 @@ export class VocabEntryService {
       throw new ValidationError('You can only access your own vocabulary entries');
     }
 
-    // Enrich with computed example sentences and synonym metadata
-    const [withExampleMeta] = await this.dictionaryService.enrichExampleSentencesMetadataBatch([entry]);
+    // Enrich with computed example sentences and synonym metadata.
+    // The entry carries its own language, so use it for every dictionary lookup.
+    const [withExampleMeta] = await this.dictionaryService.enrichExampleSentencesMetadataBatch([entry], entry.language);
     const [withExpansionMeta] = await this.dictionaryService.enrichExpansionMetadataBatch([withExampleMeta], entry.language);
-    const [enriched] = await this.dictionaryService.enrichEntriesWithSynonymMetadata([withExpansionMeta]);
+    const [enriched] = await this.dictionaryService.enrichEntriesWithSynonymMetadata([withExpansionMeta], entry.language);
 
     // Enrich with related words (library words sharing characters, zh only)
     const relatedWords = await this.vocabEntryDAL.findRelatedBySharedCharacters(
@@ -266,7 +276,7 @@ export class VocabEntryService {
     // Enrich with computed example sentences and synonym metadata
     const withExampleMeta = await this.dictionaryService.enrichExampleSentencesMetadataBatch(entries, language);
     const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(withExampleMeta, language);
-    const enrichedEntries = await this.dictionaryService.enrichEntriesWithSynonymMetadata(withExpansionMeta);
+    const enrichedEntries = await this.dictionaryService.enrichEntriesWithSynonymMetadata(withExpansionMeta, language);
 
     return {
       entries: enrichedEntries,
@@ -278,44 +288,33 @@ export class VocabEntryService {
   /**
    * Search vocabulary entries
    */
-  async searchEntries(userId: string, searchTerm: string, limit: number = 50): Promise<VocabEntry[]> {
+  async searchEntries(userId: string, searchTerm: string, language: Language, limit: number = 50): Promise<VocabEntry[]> {
     if (!searchTerm || searchTerm.trim().length === 0) {
       throw new ValidationError('Search term is required');
     }
-    
+
     // Business rule: minimum search term length
     if (searchTerm.trim().length < 2) {
       throw new ValidationError('Search term must be at least 2 characters long');
     }
-    
-    const results = await this.vocabEntryDAL.searchEntries(userId, searchTerm.trim(), limit);
-    const withExampleMeta = await this.dictionaryService.enrichExampleSentencesMetadataBatch(results);
-    const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(withExampleMeta);
-    return await this.dictionaryService.enrichEntriesWithSynonymMetadata(withExpansionMeta);
+
+    const results = await this.vocabEntryDAL.searchEntries(userId, searchTerm.trim(), language, limit);
+    const withExampleMeta = await this.dictionaryService.enrichExampleSentencesMetadataBatch(results, language);
+    const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(withExampleMeta, language);
+    return await this.dictionaryService.enrichEntriesWithSynonymMetadata(withExpansionMeta, language);
   }
 
   /**
-   * Get entries by HSK level
+   * Get entries by HSK level. HSK is a Chinese-only concept, so this path is
+   * hard-pinned to zh end to end.
    */
   async getEntriesByHskLevel(userId: string, hskLevel: HskLevel): Promise<VocabEntry[]> {
     const entries = await this.vocabEntryDAL.findByHskLevel(userId, hskLevel);
-    const withExampleMeta = await this.dictionaryService.enrichExampleSentencesMetadataBatch(entries);
-    const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(withExampleMeta);
-    return await this.dictionaryService.enrichEntriesWithSynonymMetadata(withExpansionMeta);
+    const withExampleMeta = await this.dictionaryService.enrichExampleSentencesMetadataBatch(entries, 'zh');
+    const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(withExampleMeta, 'zh');
+    return await this.dictionaryService.enrichEntriesWithSynonymMetadata(withExpansionMeta, 'zh');
   }
 
-
-  /**
-   * Get comprehensive vocabulary statistics
-   */
-  async getUserVocabStats(userId: string): Promise<{
-    total: number;
-    hskEntries: number;
-    hskBreakdown: Record<HskLevel, number>;
-    recentEntries: number;
-  }> {
-    return await this.vocabEntryDAL.getUserVocabStats(userId);
-  }
 
   /**
    * Import vocabulary entries from CSV buffer
@@ -456,17 +455,17 @@ export class VocabEntryService {
   /**
    * Get recent entries for a user
    */
-  async getRecentEntries(userId: string, days: number = 7): Promise<VocabEntry[]> {
+  async getRecentEntries(userId: string, language: Language, days: number = 7): Promise<VocabEntry[]> {
     const date = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-    const entries = await this.vocabEntryDAL.findEntriesCreatedAfter(userId, date);
-    const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(entries);
-    return await this.dictionaryService.enrichEntriesWithSynonymMetadata(withExpansionMeta);
+    const entries = await this.vocabEntryDAL.findEntriesCreatedAfter(userId, date, language);
+    const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(entries, language);
+    return await this.dictionaryService.enrichEntriesWithSynonymMetadata(withExpansionMeta, language);
   }
 
   /**
    * Get vocabulary entries by tokens for reader feature
    */
-  async getEntriesByTokens(userId: string, tokens: string[]): Promise<VocabEntry[]> {
+  async getEntriesByTokens(userId: string, tokens: string[], language: Language): Promise<VocabEntry[]> {
     const serviceStart = performance.now();
     
     console.log(`[VOCAB-SERVICE] 🔄 Processing token lookup request:`, {
@@ -573,12 +572,12 @@ export class VocabEntryService {
 
     // Get entries by tokens from DAL
     const dalStart = performance.now();
-    const entries = await this.vocabEntryDAL.findByTokens(userId, uniqueTokens);
+    const entries = await this.vocabEntryDAL.findByTokens(userId, uniqueTokens, language);
     const dalTime = performance.now() - dalStart;
 
     // Enrich with computed expansion metadata + synonym metadata
-    const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(entries);
-    const enrichedEntries = await this.dictionaryService.enrichEntriesWithSynonymMetadata(withExpansionMeta);
+    const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(entries, language);
+    const enrichedEntries = await this.dictionaryService.enrichEntriesWithSynonymMetadata(withExpansionMeta, language);
     const totalServiceTime = performance.now() - serviceStart;
 
     console.log(`[VOCAB-SERVICE] 📊 Service processing completed:`, {

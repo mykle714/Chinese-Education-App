@@ -95,7 +95,7 @@ async function insertBatch(client: pg.Client, entries: VDictEntry[]): Promise<nu
     });
 
     const query = `
-        INSERT INTO DictionaryEntries (language, word1, definitions)
+        INSERT INTO dictionaryentries_vi (language, word1, definitions)
         VALUES ${placeholders.join(', ')}
     `;
 
@@ -107,6 +107,11 @@ async function insertBatch(client: pg.Client, entries: VDictEntry[]): Promise<nu
  * Main import
  */
 async function importVDict() {
+    // DEFERRED (migration 57): the shared multi-language `dictionaryentries` table was split
+    // into per-language tables. This Vietnamese flow now targets `dictionaryentries_vi`, which does
+    // NOT exist yet. Vietnamese is not user-selectable for now; this importer is intentionally left
+    // broken until `dictionaryentries_vi` is created. See CLAUDE.md 'Dictionary Tables'.
+    throw new Error('Vietnamese import disabled: dictionaryentries_vi not yet created (migration 57 / CLAUDE.md).');
     const filePath = process.argv[2] || '/home/cow/data/dictionaries/viet-dict.txt';
     
     console.log('🇻🇳 Vietnamese Dictionary Import');
@@ -157,7 +162,7 @@ async function importVDict() {
     console.log('✅ Connected\n');
 
     console.log('🗑️  Clearing existing Vietnamese entries...');
-    await client.query("DELETE FROM DictionaryEntries WHERE language = 'vi'");
+    await client.query("DELETE FROM dictionaryentries_vi WHERE language = 'vi'");
     console.log('✅ Cleared\n');
 
     console.log(`💾 Inserting ${entries.length} entries in batches of ${BATCH_SIZE}...`);

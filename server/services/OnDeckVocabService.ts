@@ -3,6 +3,8 @@ import { IVocabEntryDAL } from '../dal/interfaces/IVocabEntryDAL.js';
 import { DictionaryService } from './DictionaryService.js';
 import { ValidationError } from '../types/dal.js';
 import db from '../db.js';
+import { dictTableForLanguage } from '../dal/shared/dictTable.js';
+import { vetTableForLanguage, vetReadFrom } from '../dal/shared/vetTable.js';
 import { DICT_COLS, DICT_JOIN } from '../dal/shared/dictJoin.js';
 import { ttsService } from './TTSService.js';
 
@@ -147,16 +149,16 @@ export class OnDeckVocabService {
    * Adds example sentence metadata, expansion metadata, and synonym metadata in sequence.
    * All three stages must run in order since each stage's output feeds the next.
    */
-  private async enrichEntriesPipeline(entries: VocabEntry[]): Promise<VocabEntry[]> {
-    const withExampleMeta = await this.dictionaryService.enrichExampleSentencesMetadataBatch(entries);
-    const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(withExampleMeta);
-    return this.dictionaryService.enrichEntriesWithSynonymMetadata(withExpansionMeta);
+  private async enrichEntriesPipeline(entries: VocabEntry[], language: string): Promise<VocabEntry[]> {
+    const withExampleMeta = await this.dictionaryService.enrichExampleSentencesMetadataBatch(entries, language);
+    const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(withExampleMeta, language);
+    return this.dictionaryService.enrichEntriesWithSynonymMetadata(withExpansionMeta, language);
   }
 
   /**
    * Get all library cards (cards with starterPackBucket = 'library').
    */
-  async getLibraryCards(userId: string): Promise<VocabEntry[]> {
+  async getLibraryCards(userId: string, language: string): Promise<VocabEntry[]> {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
@@ -165,13 +167,14 @@ export class OnDeckVocabService {
     try {
       const result = await client.query<VocabEntry>(`
         SELECT ve.*, ${DICT_COLS}
-        FROM vocabentries ve ${DICT_JOIN}
+        FROM ${vetReadFrom(language)} ${DICT_JOIN}
         WHERE ve."userId" = $1
+        AND ve."language" = $2
         AND ve."starterPackBucket" = 'library'
         ORDER BY ve."createdAt" DESC
-      `, [userId]);
+      `, [userId, language]);
 
-      return await this.enrichEntriesPipeline(result.rows);
+      return await this.enrichEntriesPipeline(result.rows, language);
     } finally {
       client.release();
     }
@@ -180,7 +183,7 @@ export class OnDeckVocabService {
   /**
    * Get all learn later cards (cards with starterPackBucket = 'learn-later').
    */
-  async getLearnLaterCards(userId: string): Promise<VocabEntry[]> {
+  async getLearnLaterCards(userId: string, language: string): Promise<VocabEntry[]> {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
@@ -189,13 +192,14 @@ export class OnDeckVocabService {
     try {
       const result = await client.query<VocabEntry>(`
         SELECT ve.*, ${DICT_COLS}
-        FROM vocabentries ve ${DICT_JOIN}
+        FROM ${vetReadFrom(language)} ${DICT_JOIN}
         WHERE ve."userId" = $1
+        AND ve."language" = $2
         AND ve."starterPackBucket" = 'learn-later'
         ORDER BY ve."createdAt" DESC
-      `, [userId]);
+      `, [userId, language]);
 
-      return await this.enrichEntriesPipeline(result.rows);
+      return await this.enrichEntriesPipeline(result.rows, language);
     } finally {
       client.release();
     }
@@ -204,7 +208,7 @@ export class OnDeckVocabService {
   /**
    * Get mastered library cards (library cards with category = 'Mastered').
    */
-  async getMasteredLibraryCards(userId: string): Promise<VocabEntry[]> {
+  async getMasteredLibraryCards(userId: string, language: string): Promise<VocabEntry[]> {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
@@ -213,14 +217,15 @@ export class OnDeckVocabService {
     try {
       const result = await client.query<VocabEntry>(`
         SELECT ve.*, ${DICT_COLS}
-        FROM vocabentries ve ${DICT_JOIN}
+        FROM ${vetReadFrom(language)} ${DICT_JOIN}
         WHERE ve."userId" = $1
+        AND ve."language" = $2
         AND ve."starterPackBucket" = 'library'
         AND ve.category = 'Mastered'
         ORDER BY ve."createdAt" DESC
-      `, [userId]);
+      `, [userId, language]);
 
-      return await this.enrichEntriesPipeline(result.rows);
+      return await this.enrichEntriesPipeline(result.rows, language);
     } finally {
       client.release();
     }
@@ -229,7 +234,7 @@ export class OnDeckVocabService {
   /**
    * Get non-mastered library cards (library cards without category = 'Mastered').
    */
-  async getNonMasteredLibraryCards(userId: string): Promise<VocabEntry[]> {
+  async getNonMasteredLibraryCards(userId: string, language: string): Promise<VocabEntry[]> {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
@@ -238,14 +243,15 @@ export class OnDeckVocabService {
     try {
       const result = await client.query<VocabEntry>(`
         SELECT ve.*, ${DICT_COLS}
-        FROM vocabentries ve ${DICT_JOIN}
+        FROM ${vetReadFrom(language)} ${DICT_JOIN}
         WHERE ve."userId" = $1
+        AND ve."language" = $2
         AND ve."starterPackBucket" = 'library'
         AND (ve.category IS NULL OR ve.category != 'Mastered')
         ORDER BY ve."createdAt" DESC
-      `, [userId]);
+      `, [userId, language]);
 
-      return await this.enrichEntriesPipeline(result.rows);
+      return await this.enrichEntriesPipeline(result.rows, language);
     } finally {
       client.release();
     }
@@ -260,6 +266,7 @@ export class OnDeckVocabService {
   async getLibraryCardsByCategory(
     userId: string,
     category: string,
+    language: string,
     excludeIds: number[] = []
   ): Promise<VocabEntry[]> {
     if (!userId) {
@@ -273,16 +280,17 @@ export class OnDeckVocabService {
     try {
       const result = await client.query<VocabEntry>(`
         SELECT ve.*, ${DICT_COLS}
-        FROM vocabentries ve ${DICT_JOIN}
+        FROM ${vetReadFrom(language)} ${DICT_JOIN}
         WHERE ve."userId" = $1
+        AND ve."language" = $4
         AND ve."starterPackBucket" = 'library'
         AND ve.category = $2
         AND ve.id != ALL($3::int[])
         ORDER BY ve."createdAt" DESC
-      `, [userId, category, excludeIds]);
+      `, [userId, category, excludeIds, language]);
 
       // Run the three-stage enrichment pipeline, then add related words + single-char usedIn
-      const enriched = await this.enrichEntriesPipeline(result.rows);
+      const enriched = await this.enrichEntriesPipeline(result.rows, language);
       const withRelated = await this.enrichMultipleWithRelatedWords(userId, enriched);
       return await this.enrichMultipleWithUsedIn(userId, withRelated);
     } finally {
@@ -298,6 +306,7 @@ export class OnDeckVocabService {
   async getNextLibraryCardWithFallback(
     userId: string,
     preferredCategory: string,
+    language: string,
     excludeIds: number[] = []
   ): Promise<VocabEntry | null> {
     if (!userId) {
@@ -320,7 +329,7 @@ export class OnDeckVocabService {
     const cooledDownPool: VocabEntry[] = [];
 
     for (const category of categoryOrder) {
-      const cards = await this.getLibraryCardsByCategory(userId, category, excludeIds);
+      const cards = await this.getLibraryCardsByCategory(userId, category, language, excludeIds);
       if (cards.length === 0) continue;
 
       const eligible = this.pickNewestCardNotOnCooldown(cards);
@@ -343,6 +352,7 @@ export class OnDeckVocabService {
    */
   async getDistributedWorkingLoop(
     userId: string,
+    language: string,
     categoryFilter?: string | null
   ): Promise<VocabEntry[]> {
     if (!userId) {
@@ -357,13 +367,14 @@ export class OnDeckVocabService {
       if (categoryFilter) {
         const result = await client.query<VocabEntry>(`
           SELECT ve.*, ${DICT_COLS}
-          FROM vocabentries ve ${DICT_JOIN}
+          FROM ${vetReadFrom(language)} ${DICT_JOIN}
           WHERE ve."userId" = $1
+          AND ve."language" = $3
           AND ve."starterPackBucket" = 'library'
           AND ve.category = $2
           ORDER BY RANDOM()
           LIMIT 10
-        `, [userId, categoryFilter]);
+        `, [userId, categoryFilter, language]);
 
         workingLoop = result.rows;
       } else {
@@ -373,49 +384,53 @@ export class OnDeckVocabService {
         // Fetch 1 Mastered card
         const masteredResult = await client.query<VocabEntry>(`
           SELECT ve.*, ${DICT_COLS}
-          FROM vocabentries ve ${DICT_JOIN}
+          FROM ${vetReadFrom(language)} ${DICT_JOIN}
           WHERE ve."userId" = $1
+          AND ve."language" = $2
           AND ve."starterPackBucket" = 'library'
           AND ve.category = 'Mastered'
           ORDER BY RANDOM()
           LIMIT 1
-        `, [userId]);
+        `, [userId, language]);
         workingLoop.push(...masteredResult.rows);
 
         // Fetch 2 Comfortable cards
         const comfortableResult = await client.query<VocabEntry>(`
           SELECT ve.*, ${DICT_COLS}
-          FROM vocabentries ve ${DICT_JOIN}
+          FROM ${vetReadFrom(language)} ${DICT_JOIN}
           WHERE ve."userId" = $1
+          AND ve."language" = $2
           AND ve."starterPackBucket" = 'library'
           AND ve.category = 'Comfortable'
           ORDER BY RANDOM()
           LIMIT 2
-        `, [userId]);
+        `, [userId, language]);
         workingLoop.push(...comfortableResult.rows);
 
         // Fetch 2 Unfamiliar cards
         const unfamiliarResult = await client.query<VocabEntry>(`
           SELECT ve.*, ${DICT_COLS}
-          FROM vocabentries ve ${DICT_JOIN}
+          FROM ${vetReadFrom(language)} ${DICT_JOIN}
           WHERE ve."userId" = $1
+          AND ve."language" = $2
           AND ve."starterPackBucket" = 'library'
           AND ve.category = 'Unfamiliar'
           ORDER BY RANDOM()
           LIMIT 2
-        `, [userId]);
+        `, [userId, language]);
         workingLoop.push(...unfamiliarResult.rows);
 
         // Fetch 5 Target cards
         const targetResult = await client.query<VocabEntry>(`
           SELECT ve.*, ${DICT_COLS}
-          FROM vocabentries ve ${DICT_JOIN}
+          FROM ${vetReadFrom(language)} ${DICT_JOIN}
           WHERE ve."userId" = $1
+          AND ve."language" = $2
           AND ve."starterPackBucket" = 'library'
           AND ve.category = 'Target'
           ORDER BY RANDOM()
           LIMIT 5
-        `, [userId]);
+        `, [userId, language]);
         workingLoop.push(...targetResult.rows);
 
         // If we don't have 10 cards, fill remaining slots by priority: Target → Comfortable → Unfamiliar → Mastered
@@ -430,14 +445,15 @@ export class OnDeckVocabService {
 
             const fillResult = await client.query<VocabEntry>(`
               SELECT ve.*, ${DICT_COLS}
-              FROM vocabentries ve ${DICT_JOIN}
+              FROM ${vetReadFrom(language)} ${DICT_JOIN}
               WHERE ve."userId" = $1
+              AND ve."language" = $5
               AND ve."starterPackBucket" = 'library'
               AND ve.category = $2
               AND ve.id != ALL($3::int[])
               ORDER BY RANDOM()
               LIMIT $4
-            `, [userId, category, existingIds, neededCount]);
+            `, [userId, category, existingIds, neededCount, language]);
 
             workingLoop.push(...fillResult.rows);
           }
@@ -448,7 +464,7 @@ export class OnDeckVocabService {
       }
 
       // Run the three-stage enrichment pipeline, then add related words + single-char usedIn
-      const enriched = await this.enrichEntriesPipeline(workingLoop);
+      const enriched = await this.enrichEntriesPipeline(workingLoop, language);
       const withRelated = await this.enrichMultipleWithRelatedWords(userId, enriched);
       const withUsedIn = await this.enrichMultipleWithUsedIn(userId, withRelated);
 
@@ -470,6 +486,7 @@ export class OnDeckVocabService {
    */
   async getCategoryCounts(
     userId: string,
+    language: string,
     categories: string[] = ['Unfamiliar', 'Target', 'Comfortable', 'Mastered']
   ): Promise<Record<string, number>> {
     if (!userId) {
@@ -479,12 +496,13 @@ export class OnDeckVocabService {
     try {
       const result = await client.query<{ category: string; n: number }>(`
         SELECT category, COUNT(*)::int AS n
-        FROM vocabentries
+        FROM ${vetTableForLanguage(language)}
         WHERE "userId" = $1
+        AND "language" = $3
         AND "starterPackBucket" = 'library'
         AND category = ANY($2::text[])
         GROUP BY category
-      `, [userId, categories]);
+      `, [userId, categories, language]);
 
       const counts: Record<string, number> = {};
       for (const cat of categories) counts[cat] = 0;
@@ -521,6 +539,7 @@ export class OnDeckVocabService {
    */
   async getGameVocabPool(
     userId: string,
+    language: string,
     distribution: Record<string, number>
   ): Promise<{
     cards: VocabEntry[];
@@ -539,7 +558,7 @@ export class OnDeckVocabService {
     const countCategories = Array.from(
       new Set([...Object.keys(distribution), ...OnDeckVocabService.GAME_FALLBACK_ORDER])
     );
-    const available = await this.getCategoryCounts(userId, countCategories);
+    const available = await this.getCategoryCounts(userId, language, countCategories);
 
     const client = await db.getClient();
     try {
@@ -552,14 +571,15 @@ export class OnDeckVocabService {
         const existingIds = cards.map((c) => c.id);
         const result = await client.query<VocabEntry>(`
           SELECT ve.*, ${DICT_COLS}
-          FROM vocabentries ve ${DICT_JOIN}
+          FROM ${vetReadFrom(language)} ${DICT_JOIN}
           WHERE ve."userId" = $1
+          AND ve."language" = $5
           AND ve."starterPackBucket" = 'library'
           AND ve.category = $2
           AND ve.id != ALL($3::int[])
           ORDER BY RANDOM()
           LIMIT $4
-        `, [userId, category, existingIds, limit]);
+        `, [userId, category, existingIds, limit, language]);
         cards.push(...result.rows);
       };
 
@@ -580,7 +600,7 @@ export class OnDeckVocabService {
       // Enrich (long defs / parts of speech etc.) then pre-warm audio. We skip
       // the related-words / used-in passes the EIC needs — the game only renders
       // the word, its pinyin, and the flashcard definition.
-      const enriched = await this.enrichEntriesPipeline(cards);
+      const enriched = await this.enrichEntriesPipeline(cards, language);
       const withAudio = await this.prewarmAudio(enriched);
 
       return { cards: withAudio, requested: { ...distribution }, available, total, sufficient };
@@ -594,7 +614,7 @@ export class OnDeckVocabService {
    * `hasAudio` on the result. Used to pre-warm both the working-loop endpoint
    * and the mark endpoint's replacement card.
    *
-   * Also stamps `dictionaryentries.ttsVoice` so the column accurately reflects
+   * Also stamps `dictionaryentries_zh.ttsVoice` so the column accurately reflects
    * "this row has cached audio". The UPDATE is gated by `ttsVoice IS NULL` so
    * already-stamped rows are no-ops; this single path handles fresh synths,
    * cache hits whose column was never written (legacy gap), and is cheap
@@ -615,11 +635,14 @@ export class OnDeckVocabService {
         // Stamp the column when it's still NULL — covers new synths and any
         // pre-existing disk-cached rows that never went through the controller.
         // Stored language is the short code (e.g. 'zh') to match how the rest
-        // of the schema references languages.
+        // of the schema references languages. Route to the per-language det
+        // table so Spanish rows (dictionaryentries_es) actually get stamped
+        // instead of silently no-op'ing against the Chinese table.
+        const detTable = dictTableForLanguage(lang);
         const c = await db.getClient();
         try {
           await c.query(
-            'UPDATE dictionaryentries SET "ttsVoice" = $1 WHERE word1 = $2 AND language = $3 AND "ttsVoice" IS NULL',
+            `UPDATE ${detTable} SET "ttsVoice" = $1 WHERE word1 = $2 AND language = $3 AND "ttsVoice" IS NULL`,
             [result.voice, entry.entryKey, lang]
           );
         } catch (stampErr) {

@@ -32,7 +32,12 @@ export interface SynthesisResult {
  */
 export class TTSService {
   private readonly provider: string;
-  private readonly voice: string;
+  // Per-language voice names. The voice is resolved from the request language
+  // (see `voiceForLang`) so a Spanish word never gets read by the Mandarin
+  // voice and vice-versa. Override via env to swap voices without code changes.
+  private readonly voiceZh: string;
+  private readonly voiceEs: string;
+  private readonly voiceEn: string;
   private readonly credentialsPath: string;
   // GoogleAuth handles JWT signing and access-token caching/refresh internally,
   // so subsequent calls in the same hour reuse the same OAuth token.
@@ -44,7 +49,14 @@ export class TTSService {
     //   cmn-CN-Wavenet-A/B/C/D, cmn-CN-Standard-A/B/C/D,
     //   cmn-CN-Neural2-A (female), cmn-CN-Neural2-B/C/D (male),
     //   cmn-TW-* for Taiwanese Mandarin.
-    this.voice = process.env.GOOGLE_TTS_VOICE_ZH || 'cmn-CN-Wavenet-A';
+    this.voiceZh = process.env.GOOGLE_TTS_VOICE_ZH || 'cmn-CN-Wavenet-A';
+    // Mexican / Latin-American Spanish. Google Cloud TTS exposes Mexican-style
+    // Spanish under the `es-US` locale (there is no `es-MX` voice); es-US-Neural2-A
+    // is a natural female voice. Other options: es-US-Neural2-B/C (male),
+    // es-US-Wavenet-A/B/C, es-US-Standard-A/B/C. (es-ES-* would be Castilian.)
+    this.voiceEs = process.env.GOOGLE_TTS_VOICE_ES || 'es-US-Neural2-A';
+    // US English — the neutral fallback voice when no/unknown language is given.
+    this.voiceEn = process.env.GOOGLE_TTS_VOICE_EN || 'en-US-Neural2-C';
     // Path is resolved relative to the server/ directory (one level up from this file).
     const raw = process.env.GOOGLE_APPLICATION_CREDENTIALS || '';
     this.credentialsPath = raw
@@ -55,11 +67,24 @@ export class TTSService {
   }
 
   /**
+   * Resolve the provider voice name for a request language. Accepts either the
+   * short code (`es`, `zh`) or a BCP-47 tag (`es-US`, `zh-CN`) — we match on the
+   * leading subtag. Defaults to the Mandarin voice for anything unrecognized.
+   */
+  private voiceForLang(lang: string): string {
+    const primary = (lang || '').toLowerCase().split('-')[0];
+    if (primary === 'es') return this.voiceEs;
+    if (primary === 'en') return this.voiceEn;
+    return this.voiceZh;
+  }
+
+  /**
    * The voice tag we stamp on det.ttsVoice once a row is cached.
    * Mismatch with the current voice means we should re-synthesize.
+   * Language-scoped because each language uses a different voice.
    */
-  voiceTag(): string {
-    return `${this.provider}:${this.voice}`;
+  voiceTag(lang: string): string {
+    return `${this.provider}:${this.voiceForLang(lang)}`;
   }
 
   isConfigured(): boolean {
@@ -95,13 +120,13 @@ export class TTSService {
    * Google guesses the reading.
    */
   async synthesize(text: string, lang: string = 'zh-CN', pinyin?: string | null): Promise<SynthesisResult> {
-    const cacheKey = this.cacheKey(text, pinyin);
+    const cacheKey = this.cacheKey(text, lang, pinyin);
     const filePath = path.join(CACHE_DIR, `${cacheKey}.mp3`);
 
     // Fast path: serve from disk if we already synthesized this exact (voice, text, pinyin).
     try {
       const audio = await fs.readFile(filePath);
-      return { audio, cacheHit: true, voice: this.voiceTag() };
+      return { audio, cacheHit: true, voice: this.voiceTag(lang) };
     } catch {
       // miss — fall through to provider call
     }
@@ -119,15 +144,15 @@ export class TTSService {
       console.warn(`[TTSService] failed to write cache file ${filePath}:`, err);
     });
 
-    return { audio, cacheHit: false, voice: this.voiceTag() };
+    return { audio, cacheHit: false, voice: this.voiceTag(lang) };
   }
 
   /**
    * Whether a cached MP3 file already exists on disk for this (voice, text, pinyin).
    * Used as the source-of-truth check; the DB's ttsVoice column is just a hint.
    */
-  async hasCachedFile(text: string, pinyin?: string | null): Promise<boolean> {
-    const filePath = path.join(CACHE_DIR, `${this.cacheKey(text, pinyin)}.mp3`);
+  async hasCachedFile(text: string, lang: string, pinyin?: string | null): Promise<boolean> {
+    const filePath = path.join(CACHE_DIR, `${this.cacheKey(text, lang, pinyin)}.mp3`);
     try {
       await fs.access(filePath);
       return true;
@@ -136,34 +161,40 @@ export class TTSService {
     }
   }
 
-  private cacheKey(text: string, pinyin?: string | null): string {
+  private cacheKey(text: string, lang: string, pinyin?: string | null): string {
     // Normalize so callers can pass null/undefined/'' interchangeably without
     // splitting the cache.
     const normalized = (pinyin || '').trim();
     return crypto
       .createHash('sha256')
-      .update(`${this.voiceTag()}:${text}:${normalized}`)
+      .update(`${this.voiceTag(lang)}:${text}:${normalized}`)
       .digest('hex');
   }
 
   // Google Cloud Text-to-Speech REST API with service-account (OAuth) auth.
   // Docs: https://cloud.google.com/text-to-speech/docs/reference/rest/v1/text/synthesize
   private async callGoogle(text: string, lang: string, pinyin?: string | null): Promise<Buffer> {
-    // Google uses `cmn-CN` / `cmn-TW` for Mandarin, not `zh-*`. Map at the edge
-    // so callers can keep using standard BCP-47 tags.
+    // Google uses `cmn-CN` / `cmn-TW` for Mandarin, not `zh-*`. Spanish wants a
+    // full locale (`es-US` for Mexican/Latin-American, `es-ES` for Castilian);
+    // a bare `es` is rejected. Map at the edge so callers can pass short codes.
     const languageCode = lang === 'zh-CN' || lang === 'zh' ? 'cmn-CN'
       : lang === 'zh-TW' ? 'cmn-TW'
+      : lang === 'es' ? 'es-US'
+      : lang === 'en' ? 'en-US'
       : lang;
+
+    // Resolve the voice for this language; the voice name and languageCode must agree.
+    const voice = this.voiceForLang(lang);
 
     const client = await this.getAuth().getClient();
     const tokenResp = await client.getAccessToken();
     const accessToken = typeof tokenResp === 'string' ? tokenResp : tokenResp.token;
     if (!accessToken) throw new Error('Failed to obtain Google access token');
 
-    // Build SSML with per-syllable pinyin hints when pronunciation is provided
-    // and aligns with the hanzi 1:1. Falls back to plain text otherwise — that
-    // path matches the original behavior where Google chose the reading.
-    const ssml = buildPinyinSsml(text, pinyin);
+    // Pinyin <phoneme> hints only make sense for Mandarin. For other languages
+    // (e.g. Spanish) always synthesize the plain text — buildPinyinSsml would
+    // otherwise mis-tag a short word whose pronunciation happens to align 1:1.
+    const ssml = languageCode.startsWith('cmn') ? buildPinyinSsml(text, pinyin) : null;
     const input: { ssml: string } | { text: string } = ssml ? { ssml } : { text };
 
     const res = await fetch('https://texttospeech.googleapis.com/v1/text:synthesize', {
@@ -174,7 +205,7 @@ export class TTSService {
       },
       body: JSON.stringify({
         input,
-        voice: { languageCode, name: this.voice },
+        voice: { languageCode, name: voice },
         audioConfig: { audioEncoding: 'MP3' },
       }),
     });

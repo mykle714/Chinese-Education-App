@@ -23,27 +23,38 @@ minute points (default `3`).
 - `currentStreak INTEGER NOT NULL DEFAULT 0`.
 - `lastStreakDate DATE` — last streak day the user satisfied (or the day a penalty was applied to mark a break as resolved).
 
-`userminutepoints` (PK = `userId, streakDate`):
-- `minutesEarned INTEGER` — sum across all of the user's devices.
-- `penaltyMinutes INTEGER` — minutes deducted by a streak break stamped on the missed day.
+`userminutepoints` (PK = `userId, streakDate, language`):
+- `language VARCHAR(10) NOT NULL DEFAULT 'zh'` — the language the minute was earned studying (migration 62). One row per `(streakDate, language)`.
+- `minutesEarned INTEGER` — sum across all of the user's devices, for that language.
+- `penaltyMinutes INTEGER` — minutes deducted by a streak/inactivity penalty stamped on the missed day, attributed to the user's `selectedLanguage` at penalty time.
 - `lastSyncTimestamp`, `updatedAt` — bookkeeping timestamps.
 
 There is **no** device fingerprint and **no** longest-streak field.
 
+**Language scoping (migration 62).** Minutes are partitioned by language so the
+home screen and the fire badge show the count for the user's *selected* language.
+The **streak stays global**: `users.currentStreak` / `lastStreakDate` /
+`totalMinutePoints` are not language-scoped, studying *any* language keeps the
+streak alive, and the daily threshold is evaluated on the day's total **summed
+across all languages**. Only the *displayed* per-language counts come from
+`userminutepoints` filtered by language.
+
 ### Server
 
 - `server/utils/streakDate.ts` — `streakDateOf(timestamp, tz)`, plus tz validation and date-arithmetic helpers.
-- `UserMinutePointsService.incrementMinutePoints` — adds 1 minute, advances the streak when the user crosses `RETENTION_MINUTES` for the current streak day. Rate-limited to ~one call per 59 seconds.
-- `UserMinutePointsService.getCalendar` — returns one row per day for the requested month, zero-filled.
+- `UserMinutePointsService.incrementMinutePoints` — adds 1 minute to the row for the user's `selectedLanguage` (read server-side; no client language payload), then advances the **global** streak when the day's cross-language total crosses `RETENTION_MINUTES`. Rate-limited to ~one call per 59 seconds.
+- `UserMinutePointsService.getCalendar(userId, language, yearMonth)` — returns one row per day for the requested month and language, zero-filled.
+- `UserMinutePointsService.getLanguageSummary(userId, language, timestamp, tz)` — per-language lifetime total + today's minutes, plus the global current streak. Backs `GET /api/users/minute-points/summary`.
+- DAL split: `getMinutesForDate` sums across **all** languages (global streak + leaderboard); `getMinutesForDateAndLanguage` / `getTotalMinutesForLanguage` are the per-language reads.
 - `database/cron/expire-stale-streaks.sql` — hourly Postgres cron, the **sole authority for streak breaks**. If `today - lastStreakDate >= 2` (in the user's stored tz, 4 AM-bounded), resets `currentStreak = 0`, deducts `DAILY_PENALTY_MINUTES` from `totalMinutePoints`, and stamps `penaltyMinutes` on `lastStreakDate + 1`. See `docs/STREAK_EXPIRATION_CRON.md`.
 - `UserController.onLogin` — post-login hook (`POST /api/auth/on-login`). Today: refreshes `users.timezone` from the client so the cron has an up-to-date tz for every active user.
 - `LeaderboardService` — masks `currentStreak` to `null` for non-public users.
 
 ### Client
 
-- `useMinutePoints` (hook) — local accumulating timer + reads server-authoritative streak/total.
-- `useCalendarMinutePoints` (hook) — fetches the calendar endpoint, derives `isToday`/`hasData` in browser tz.
-- `minutePointsSync.incrementMinutePoint` — POSTs include `{ timestamp, tz }`. The tz is taken from `Intl.DateTimeFormat().resolvedOptions().timeZone`.
+- `useMinutePoints` (hook) — local accumulating timer + reads the per-language server summary (`fetchLanguageSummary`). Scoped to `user.selectedLanguage`; re-seeds today/total/streak when the language changes. localStorage is keyed by `(userId, language)`.
+- `useCalendarMinutePoints` (hook) — fetches the calendar endpoint with `?language=`, derives `isToday`/`hasData` in browser tz.
+- `minutePointsSync.incrementMinutePoint` — POSTs include `{ timestamp, tz }` (no language; server uses `selectedLanguage`). `fetchLanguageSummary` GETs `/summary?language&tz&timestamp`. The tz is taken from `Intl.DateTimeFormat().resolvedOptions().timeZone`.
 - `authSync.notifyLogin` — fired from `AuthContext` after login and session restore; POSTs `{ tz }` to `/api/auth/on-login` so `users.timezone` stays fresh even for users who don't earn points.
 - `MonthlyCalendar` / `StreakCounter` / `LeaderboardPlaceholder` — UI surfaces.
 - `MinutePointsBadge` — fire-icon badge on `/flashcards`, `/flashcards/learn`, `/reader`.
@@ -67,9 +78,10 @@ on each call.
 
 | Method | Endpoint | Body / params | Notes |
 |---|---|---|---|
-| GET  | `/api/users/:id/total-minute-points`            | —                              | `{ totalMinutePoints, currentStreak }` |
-| POST | `/api/users/minute-points/increment`            | `{ timestamp, tz }`            | Adds 1; may advance streak |
-| GET  | `/api/users/minute-points/calendar/:yearMonth`  | path: `YYYY-MM`                | Dense per-day list with `minutesEarned` and `penaltyMinutes` |
+| GET  | `/api/users/:id/total-minute-points`            | —                              | `{ totalMinutePoints, currentStreak }` — **global** accumulator (leaderboard); no longer called by the client hook |
+| GET  | `/api/users/minute-points/summary`              | query: `language`, `tz`, `timestamp` | `{ totalMinutePoints, todayMinutes, currentStreak }` — per-language total + today, global streak |
+| POST | `/api/users/minute-points/increment`            | `{ timestamp, tz }`            | Adds 1 to `selectedLanguage`; may advance the global streak |
+| GET  | `/api/users/minute-points/calendar/:yearMonth`  | path: `YYYY-MM`; query: `language` | Dense per-day list (one language) with `minutesEarned` and `penaltyMinutes` |
 | POST | `/api/auth/on-login`                            | `{ tz }`                       | Post-login bookkeeping (currently: refresh `users.timezone`) |
 | GET  | `/api/leaderboard`                              | —                              | `currentStreak` is `null` for non-public users |
 

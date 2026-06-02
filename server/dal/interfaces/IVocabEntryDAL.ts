@@ -7,26 +7,27 @@ import { BulkResult, ITransaction } from '../../types/dal.js';
  * Extends base DAL with vocabulary-specific operations
  */
 export interface IVocabEntryDAL extends IBaseDAL<VocabEntry, VocabEntryCreateData, VocabEntryUpdateData> {
-  // User-specific queries
-  findByUserId(userId: string, limit?: number, offset?: number): Promise<VocabEntry[]>;
+  // User-specific queries. vet is split per language (migration 66), so id lookups
+  // are language-scoped (the caller resolves the language) and there are no
+  // cross-language reads.
+  findByIdAndLanguage(id: string | number, language: string): Promise<VocabEntry | null>;
   findByUserIdAndLanguage(userId: string, language: string, limit?: number, offset?: number): Promise<VocabEntry[]>;
-  findByUserAndKey(userId: string, entryKey: string): Promise<VocabEntry | null>;
-  countByUserId(userId: string): Promise<number>;
+  findByUserAndKey(userId: string, entryKey: string, language: string, pos?: string): Promise<VocabEntry | null>;
   countByUserIdAndLanguage(userId: string, language: string): Promise<number>;
-  
+
   // Search and filtering
-  searchEntries(userId: string, searchTerm: string, limit?: number): Promise<VocabEntry[]>;
+  searchEntries(userId: string, searchTerm: string, language: string, limit?: number): Promise<VocabEntry[]>;
   findByHskLevel(userId: string, hskLevel: HskLevel): Promise<VocabEntry[]>;
-  findByTokens(userId: string, tokens: string[]): Promise<VocabEntry[]>;
-  
+  findByTokens(userId: string, tokens: string[], language: string): Promise<VocabEntry[]>;
+
   // Bulk operations for CSV import
   bulkCreate(entries: VocabEntryCreateData[]): Promise<VocabEntry[]>;
   bulkUpsert(entries: VocabEntryCreateData[]): Promise<BulkResult>;
   bulkCreateWithTransaction(entries: VocabEntryCreateData[], transaction: ITransaction): Promise<VocabEntry[]>;
-  
+
   // Advanced queries
-  findDuplicateKeys(userId: string, entryKeys: string[]): Promise<VocabEntry[]>;
-  findEntriesCreatedAfter(userId: string, date: Date): Promise<VocabEntry[]>;
+  findDuplicateKeys(userId: string, entryKeys: string[], language: string): Promise<VocabEntry[]>;
+  findEntriesCreatedAfter(userId: string, date: Date, language: string): Promise<VocabEntry[]>;
   findRelatedBySharedCharacters(
     userId: string,
     word: string,
@@ -39,15 +40,7 @@ export interface IVocabEntryDAL extends IBaseDAL<VocabEntry, VocabEntryCreateDat
     language: string,
     limit?: number
   ): Promise<UsedInItem[]>;
-  
-  // Statistics
-  getUserVocabStats(userId: string): Promise<{
-    total: number;
-    hskEntries: number;
-    hskBreakdown: Record<HskLevel, number>;
-    recentEntries: number; // Last 7 days
-  }>;
-  
+
   // Batch operations with progress tracking
   bulkUpsertWithProgress(
     entries: VocabEntryCreateData[],

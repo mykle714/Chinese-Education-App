@@ -49,9 +49,7 @@ const SPECIAL_CHARACTERS: Record<Language, string[]> = {
         'ū', 'ú', 'ǔ', 'ù',
         'ǖ', 'ǘ', 'ǚ', 'ǜ'
     ],
-    ja: ['あ', 'か', 'さ'],
-    ko: ['ㄱ', 'ㄴ', 'ㄷ'],
-    vi: ['à', 'á', 'ả'],
+    es: ['á', 'é', 'í', 'ó', 'ú', 'ñ', 'ü', '¿', '¡'],
 };
 
 function DictionaryPage() {
@@ -245,20 +243,20 @@ function DictionaryPage() {
                 body: JSON.stringify({ entryKey: entry.entryKey, language: userLanguage }),
             });
             if (!res.ok) {
-                setAddToLibSnack('Failed to add to library');
+                setAddToLibSnack('Failed to add to Learn Now');
                 return;
             }
             const data: { status: 'added' | 'moved' | 'already-in-library' } = await res.json();
             if (data.status === 'already-in-library') {
-                setAddToLibSnack('Already in library');
+                setAddToLibSnack('Already in Learn Now');
             } else if (data.status === 'moved') {
-                setAddToLibSnack('Moved from Learn Later to library');
+                setAddToLibSnack('Moved from Learn Later to Learn Now');
             } else {
-                setAddToLibSnack('Added to library');
+                setAddToLibSnack('Added to Learn Now');
             }
         } catch (err) {
             console.error('Failed to add to library:', err);
-            setAddToLibSnack('Failed to add to library');
+            setAddToLibSnack('Failed to add to Learn Now');
         }
     }, [token]);
 
@@ -691,7 +689,7 @@ function DictionaryPage() {
                 anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
             >
                 <Alert
-                    severity={addToLibSnack === 'Failed to add to library' ? 'error' : 'success'}
+                    severity={addToLibSnack === 'Failed to add to Learn Now' ? 'error' : 'success'}
                     variant="filled"
                     onClose={() => setAddToLibSnack(null)}
                 >

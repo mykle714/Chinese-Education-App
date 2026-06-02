@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { ttsService } from '../services/TTSService.js';
 import db from '../db.js';
+import { dictTableForLanguage } from '../dal/shared/dictTable.js';
 
 /**
  * TTSController
@@ -18,7 +19,9 @@ export class TTSController {
     try {
       const body = req.body || {};
       const text: string = typeof body.text === 'string' ? body.text.trim() : '';
-      const language: string = typeof body.language === 'string' ? body.language : 'zh';
+      // Default to English (a neutral fallback) when the client omits language,
+      // rather than assuming Chinese.
+      const language: string = typeof body.language === 'string' ? body.language : 'en';
       // Optional tone-marked pinyin (space-separated, one syllable per hanzi).
       // When present, TTSService folds it into the cache key and uses it as an
       // SSML phoneme hint so polyphones cache and play distinctly.
@@ -42,15 +45,17 @@ export class TTSController {
 
       const result = await ttsService.synthesize(text, ttsLang, pronunciation);
 
-      // Best-effort: stamp the matching dictionaryentries row(s) so we can later
-      // query "which det rows have cached audio". Matched by (word1, language)
-      // since the client doesn't know det's primary key. Skipped on cache hit
-      // (the column was set during the original miss).
+      // Best-effort: stamp the matching det row(s) so we can later query "which
+      // det rows have cached audio". Matched by (word1, language) since the client
+      // doesn't know det's primary key, and routed to the per-language det table
+      // so Spanish words land in dictionaryentries_es. Skipped on cache hit (the
+      // column was set during the original miss).
       if (!result.cacheHit) {
+        const detTable = dictTableForLanguage(language);
         const c = await db.getClient();
         try {
           await c.query(
-            'UPDATE dictionaryentries SET "ttsVoice" = $1 WHERE word1 = $2 AND language = $3',
+            `UPDATE ${detTable} SET "ttsVoice" = $1 WHERE word1 = $2 AND language = $3`,
             [result.voice, text, language]
           );
         } catch (err) {

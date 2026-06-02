@@ -12,7 +12,7 @@ Only these tables may be data-deployed. All others contain live user data and mu
 
 | Table | Dump file | Description |
 |---|---|---|
-| `dictionaryentries` | `database/dictionaryentries-data.dump` | Dictionary entry data enriched by backfill scripts |
+| `dictionaryentries_zh` | `database/dictionaryentries_zh-data.dump` | Dictionary entry data enriched by backfill scripts |
 | `particlesandclassifiers` | `database/particlesandclassifiers-data.dump` | Particles and classifiers reference data (pct) |
 
 **Foreign keys**: No other tables currently have FK references to these tables, so a plain `TRUNCATE` is safe before restore.

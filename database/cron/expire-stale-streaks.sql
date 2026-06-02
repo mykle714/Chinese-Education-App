@@ -51,6 +51,7 @@ BEGIN
   ------------------------------------------------------------------
   WITH candidates AS (
     SELECT id AS user_id,
+           COALESCE("selectedLanguage", 'zh') AS language,
            "lastStreakDate"::date AS last_streak_date,
            (((now() AT TIME ZONE timezone) - INTERVAL '4 hours')::date) AS today_local
     FROM users
@@ -60,16 +61,19 @@ BEGIN
   ),
   expired AS (
     SELECT user_id,
+           language,
            last_streak_date,
            today_local,
            (last_streak_date + INTERVAL '1 day')::date AS missed_date
     FROM candidates
     WHERE (today_local - last_streak_date) >= 2
   ),
+  -- The streak is global, but the row needs a language: attribute the penalty
+  -- to whatever language the user currently has selected.
   penalty_insert AS (
-    INSERT INTO userminutepoints ("userId", "streakDate", "minutesEarned", "penaltyMinutes", "updatedAt")
-    SELECT user_id, missed_date, 0, 10, now() FROM expired
-    ON CONFLICT ("userId", "streakDate")
+    INSERT INTO userminutepoints ("userId", "streakDate", "language", "minutesEarned", "penaltyMinutes", "updatedAt")
+    SELECT user_id, missed_date, language, 0, 10, now() FROM expired
+    ON CONFLICT ("userId", "streakDate", "language")
     DO UPDATE SET "penaltyMinutes" = userminutepoints."penaltyMinutes" + 10,
                   "updatedAt"      = now()
     RETURNING "userId"
@@ -106,6 +110,7 @@ BEGIN
   ------------------------------------------------------------------
   WITH candidates AS (
     SELECT id AS user_id,
+           COALESCE("selectedLanguage", 'zh') AS language,
            (((now() AT TIME ZONE timezone) - INTERVAL '4 hours')::date) AS today_local,
            ((("lastMinutePointIncrement" AT TIME ZONE 'UTC' AT TIME ZONE timezone)
               - INTERVAL '4 hours')::date) AS last_active_local,
@@ -115,15 +120,16 @@ BEGIN
       AND "lastMinutePointIncrement" IS NOT NULL
   ),
   eligible AS (
-    SELECT user_id, today_local
+    SELECT user_id, language, today_local
     FROM candidates
     WHERE (today_local - last_active_local) >= 2
       AND (last_penalty_date IS NULL OR last_penalty_date < today_local)
   ),
+  -- Attribute the inactivity penalty to the user's currently selected language.
   penalty_insert AS (
-    INSERT INTO userminutepoints ("userId", "streakDate", "minutesEarned", "penaltyMinutes", "updatedAt")
-    SELECT user_id, today_local, 0, 10, now() FROM eligible
-    ON CONFLICT ("userId", "streakDate")
+    INSERT INTO userminutepoints ("userId", "streakDate", "language", "minutesEarned", "penaltyMinutes", "updatedAt")
+    SELECT user_id, today_local, language, 0, 10, now() FROM eligible
+    ON CONFLICT ("userId", "streakDate", "language")
     DO UPDATE SET "penaltyMinutes" = userminutepoints."penaltyMinutes" + 10,
                   "updatedAt"      = now()
     RETURNING "userId"

@@ -52,7 +52,7 @@ export interface IDictionaryDAL extends IBaseDAL<DictionaryEntry, DictionaryEntr
    * @param language - Language filter for dictionary lookups
    */
   enrichExampleSentencesMetadataBatch<T extends {
-    exampleSentences?: Array<{ chinese: string; english: string; [key: string]: any }> | null;
+    exampleSentences?: Array<{ foreignText: string; english: string; [key: string]: any }> | null;
   }>(entries: T[], language?: string): Promise<T[]>;
 
   /**

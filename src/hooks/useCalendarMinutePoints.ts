@@ -41,6 +41,9 @@ interface ServerCalendarResponse {
 
 export const useCalendarMinutePoints = (initialYearMonth?: string): UseCalendarMinutePointsReturn => {
   const { user, token } = useAuth();
+  // Calendar is scoped to the user's selected language (matches the per-language
+  // minute-points tracking). Default 'zh' for legacy accounts.
+  const language: string = user?.selectedLanguage || 'zh';
   const [calendarData, setCalendarData] = useState<CalendarDataResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -60,7 +63,7 @@ export const useCalendarMinutePoints = (initialYearMonth?: string): UseCalendarM
     setError(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/users/minute-points/calendar/${yearMonth}`, {
+      const response = await fetch(`${API_BASE_URL}/api/users/minute-points/calendar/${yearMonth}?language=${encodeURIComponent(language)}`, {
         method: 'GET',
         credentials: 'include',
         headers: {
@@ -109,7 +112,7 @@ export const useCalendarMinutePoints = (initialYearMonth?: string): UseCalendarM
     } finally {
       setIsLoading(false);
     }
-  }, [user?.id, token]);
+  }, [user?.id, token, language]);
 
   useEffect(() => {
     if (user?.id) {

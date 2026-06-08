@@ -68,7 +68,7 @@ const Bubble: React.FC<BubbleProps> = ({
     onPointerLeave,
     studyMode,
 }) => {
-    const { id, kind, entry, radius } = body;
+    const { id, kind, entry, radius, targetRadius } = body;
     const isWord = kind === "word";
     const dimmed = status === "held" || status === "hovered";
 
@@ -78,7 +78,8 @@ const Bubble: React.FC<BubbleProps> = ({
         // Study-mode highlight reuses the match-green, minus the pop animation.
         bg = CORRECT_BUBBLE_BG;
         border = CORRECT_BUBBLE_BG;
-    } else if (status === "wrong") {
+    } else if (status === "wrong" || status === "nomatch") {
+        // Both render red; only "wrong" (a bad drag-drop) adds the shake below.
         bg = WRONG_BUBBLE_BG;
         border = WRONG_BUBBLE_BG;
     } else if (isWord) {
@@ -89,7 +90,9 @@ const Bubble: React.FC<BubbleProps> = ({
         border = DEFINITION_BUBBLE_BORDER;
     }
 
-    const contentScale = wordContentScale([...entry.entryKey].length, radius);
+    // Lay text out for the bubble's FINAL size; the grow-in is a CSS scale on the
+    // outer node, so the content scales with it rather than re-flowing each frame.
+    const contentScale = wordContentScale([...entry.entryKey].length, targetRadius);
 
     const defText = stripParentheses(entry.definition ?? "");
 
@@ -104,10 +107,12 @@ const Bubble: React.FC<BubbleProps> = ({
                 position: "absolute",
                 top: 0,
                 left: 0,
-                width: radius * 2,
-                height: radius * 2,
-                // Initial transform; the rAF loop overwrites this each frame.
-                transform: `translate(${body.x - radius}px, ${body.y - radius}px) scale(${body.scale})`,
+                width: targetRadius * 2,
+                height: targetRadius * 2,
+                // Initial transform; the rAF loop overwrites this each frame. The
+                // node is laid out at full size, so growth shows as a scale and the
+                // translate offset is by targetRadius (see writeTransform).
+                transform: `translate(${body.x - targetRadius}px, ${body.y - targetRadius}px) scale(${(targetRadius > 0 ? radius / targetRadius : 1) * body.scale})`,
                 willChange: "transform",
                 touchAction: "none", // pointer events drive dragging, not scrolling
                 cursor: studyMode ? "pointer" : "grab",
@@ -169,17 +174,21 @@ const Bubble: React.FC<BubbleProps> = ({
                             pronunciation={entry.pronunciation}
                             showPinyin={showPinyin}
                             useToneColor={showPinyinColor}
+                            // Match flp example sentences: nudge long pinyin syllables apart.
+                            pinyinShift
                         />
                     </Box>
                 ) : (
                     <Typography
                         className="bubble__definition"
                         sx={{
-                            fontSize: definitionFontSize(defText, radius),
-                            lineHeight: 1.15,
+                            fontSize: definitionFontSize(defText, targetRadius),
+                            // 1.3 (was 1.15) so the last clamped line's descenders
+                            // (q/g/y/p) aren't clipped by the -webkit-box overflow.
+                            lineHeight: 1.3,
                             fontWeight: 500,
                             fontFamily: FC_FONT_CJK,
-                            color: status === "wrong" || status === "correct" || status === "revealed" ? "#fff" : "#3a3a3a",
+                            color: status === "wrong" || status === "nomatch" || status === "correct" || status === "revealed" ? "#fff" : "#3a3a3a",
                             textAlign: "center",
                             // Clamp very long definitions so they never overflow the circle.
                             display: "-webkit-box",

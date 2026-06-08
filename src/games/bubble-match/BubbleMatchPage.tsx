@@ -6,13 +6,14 @@ import { API_BASE_URL } from "../../constants";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useTTS } from "../../hooks/useTTS";
 import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
-import MobileFooter from "../../components/MobileFooter";
+import { useBlockEdgeSwipe } from "../../hooks/useBlockEdgeSwipe";
 import type { VocabEntry } from "../../pages/FlashcardsLearnPage/types";
 import BubbleMatchHeader from "./BubbleMatchHeader";
 import BubbleMatchEndPopup from "./BubbleMatchEndPopup";
 import BubbleStage, { type LoseReason } from "./BubbleStage";
 import { GAME_DISTRIBUTION, LEVEL_CONFIGS, TOTAL_PAIRS } from "./constants";
 import type { LevelConfig } from "./types";
+import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
 
 /** Shape returned by GET /api/onDeck/game-pool. */
 interface GamePoolResponse {
@@ -67,6 +68,12 @@ const BubbleMatchPage: React.FC = () => {
     const tts = useTTS();
     const { settings, update } = useFlashcardLearnSettings();
     const { showPinyin, showPinyinColor, autoplayChinese } = settings;
+
+    // Block the mobile browser's edge-swipe-back gesture while this page is
+    // mounted — an edge swipe would otherwise navigate away mid-drag. CSS
+    // touch-action can't stop the history gesture, so this is handled at the
+    // touch-event layer (see the hook).
+    useBlockEdgeSwipe(true);
 
     const [phase, setPhase] = useState<Phase>("loading");
     const [blockMessage, setBlockMessage] = useState<string>("");
@@ -237,7 +244,7 @@ const BubbleMatchPage: React.FC = () => {
     } else if (phase === "blocked") {
         centered = renderCentered(
             <>
-                <Typography className="bubble-match__block-msg" sx={{ fontSize: 17, color: fc.onSurface, lineHeight: 1.5 }}>
+                <Typography className="bubble-match__block-msg" sx={{ fontSize: SIZE.subtitle, color: fc.onSurface, lineHeight: LEADING.normal }}>
                     {blockMessage}
                 </Typography>
                 <Button className="bubble-match__block-back" variant="contained" onClick={() => navigate("/games")}>
@@ -248,13 +255,13 @@ const BubbleMatchPage: React.FC = () => {
     } else if (phase === "picker") {
         centered = renderCentered(
             <>
-                <Typography className="bubble-match__title" sx={{ fontSize: 24, fontWeight: 700, color: fc.onSurface }}>
+                <Typography className="bubble-match__title" sx={{ fontSize: SIZE.heading, fontWeight: WEIGHT.bold, color: fc.onSurface }}>
                     Bubble Match
                 </Typography>
-                <Typography className="bubble-match__rules" sx={{ fontSize: 14, color: fc.textSecondary, lineHeight: 1.5, maxWidth: 300 }}>
+                <Typography className="bubble-match__rules" sx={{ fontSize: SIZE.body, color: fc.textSecondary, lineHeight: LEADING.normal, maxWidth: 300 }}>
                     Match each word to its meaning by dragging one bubble onto the other before the screen fills up. {TOTAL_PAIRS} pairs · {LEVEL_CONFIGS[0].durationSec} seconds.
                 </Typography>
-                <Typography className="bubble-match__recommended-mix" sx={{ fontSize: 13, color: fc.textSecondary, lineHeight: 1.5, maxWidth: 300, fontStyle: "italic" }}>
+                <Typography className="bubble-match__recommended-mix" sx={{ fontSize: SIZE.body, color: fc.textSecondary, lineHeight: LEADING.normal, maxWidth: 300, fontStyle: "italic" }}>
                     For the best practice mix, play with at least {RECOMMENDED_MIX} cards in your Learn Now deck.
                 </Typography>
                 <Box className="bubble-match__levels" sx={{ display: "flex", flexDirection: "column", gap: 1.5, width: "100%", maxWidth: 280, mt: 1 }}>
@@ -264,7 +271,7 @@ const BubbleMatchPage: React.FC = () => {
                             className={`bubble-match__level-btn bubble-match__level-btn--${cfg.level}`}
                             variant="contained"
                             onClick={() => startLevel(cfg)}
-                            sx={{ py: 1.5, fontSize: 16, textTransform: "none", borderRadius: "12px" }}
+                            sx={{ py: 1.5, fontSize: SIZE.bodyLg, textTransform: "none", borderRadius: "12px" }}
                         >
                             Level {cfg.level} — {cfg.label}
                         </Button>
@@ -307,8 +314,8 @@ const BubbleMatchPage: React.FC = () => {
                         boxShadow: "0 18px 48px rgba(0, 0, 0, 0.32)",
                     }}
                 >
-                    <Typography className="bubble-match__popup-title" sx={{ fontSize: 28, fontWeight: 800, color: fc.onSurface }}>🎉 Cleared!</Typography>
-                    <Typography className="bubble-match__popup-msg" sx={{ fontSize: 15, color: fc.textSecondary }}>
+                    <Typography className="bubble-match__popup-title" sx={{ fontSize: SIZE.heading, fontWeight: WEIGHT.bold, color: fc.onSurface }}>🎉 Cleared!</Typography>
+                    <Typography className="bubble-match__popup-msg" sx={{ fontSize: SIZE.bodyLg, color: fc.textSecondary }}>
                         You matched all {TOTAL_PAIRS} pairs on Level {level.level} ({level.label}).
                     </Typography>
                     <Box className="bubble-match__popup-actions" sx={{ display: "flex", flexDirection: "column", gap: 1.5, width: "100%" }}>
@@ -332,8 +339,8 @@ const BubbleMatchPage: React.FC = () => {
                 onMinimize={() => setPopupMinimized(true)}
                 onRestore={() => setPopupMinimized(false)}
             >
-                <Typography className="bubble-match__popup-title" sx={{ fontSize: 28, fontWeight: 800, color: fc.onSurface }}>Game over</Typography>
-                <Typography className="bubble-match__popup-msg" sx={{ fontSize: 15, color: fc.textSecondary }}>
+                <Typography className="bubble-match__popup-title" sx={{ fontSize: SIZE.heading, fontWeight: WEIGHT.bold, color: fc.onSurface }}>Game over</Typography>
+                <Typography className="bubble-match__popup-msg" sx={{ fontSize: SIZE.bodyLg, color: fc.textSecondary }}>
                     {loseReason === "full"
                         ? "The screen filled up before you could clear it."
                         : "Time ran out before all pairs were matched."}
@@ -410,7 +417,6 @@ const BubbleMatchPage: React.FC = () => {
                     centered
                 )}
             </Box>
-            <MobileFooter activePage="games" />
         </>
     );
 };

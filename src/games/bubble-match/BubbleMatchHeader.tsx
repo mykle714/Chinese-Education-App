@@ -2,6 +2,7 @@ import React from "react";
 import { Button, useTheme } from "@mui/material";
 import PageHeader from "../../components/PageHeader";
 import MinutePointsFireBadge from "../../components/MinutePointsFireBadge";
+import { SIZE } from "../../theme/scale";
 
 interface BubbleMatchHeaderProps {
     onBack: () => void;
@@ -32,7 +33,7 @@ const BubbleMatchHeader: React.FC<BubbleMatchHeaderProps> = ({
         px: 1,
         py: 0.25,
         height: "30px",
-        fontSize: "0.65rem",
+        fontSize: SIZE.micro,
         textTransform: "lowercase" as const,
         lineHeight: 1.4,
         borderRadius: "6px",

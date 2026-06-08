@@ -5,6 +5,8 @@ import {
     selectNextBubble,
     type Rng,
 } from "../games/bubble-match/spawnSelection";
+import { planSpawn } from "../games/bubble-match/physics";
+import { SPAWN_OVERLAP_FRACTION } from "../games/bubble-match/constants";
 import type { BubbleBody, BubbleKind } from "../games/bubble-match/types";
 
 // Minimal BubbleBody factory — selection only reads id, pairId, kind.
@@ -16,8 +18,7 @@ function body(pairId: string, kind: BubbleKind): BubbleBody {
         kind,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         entry: { id: Number(pairId), entryKey: pairId, createdAt: "" } as any,
-        x: 0, y: 0, vx: 0, vy: 0, radius: 40, mass: 1, scale: 1, targetScale: 1,
-        targetX: null, targetY: null,
+        x: 0, y: 0, radius: 40, targetRadius: 40, mass: 1600, scale: 1, targetScale: 1,
         status: "idle",
     };
 }
@@ -26,6 +27,16 @@ function body(pairId: string, kind: BubbleKind): BubbleBody {
 function seqRng(values: number[]): Rng {
     let i = 0;
     return () => (i < values.length ? values[i++] : 0);
+}
+
+// Helper: place a bubble at (x, y) with a given radius for planSpawn tests.
+function at(x: number, y: number, radius: number): BubbleBody {
+    const b = body("0", "word");
+    b.x = x;
+    b.y = y;
+    b.radius = radius;
+    b.targetRadius = radius;
+    return b;
 }
 
 describe("chooseKind", () => {
@@ -140,5 +151,49 @@ describe("selectNextBubble", () => {
         // After filters yield nothing, candidates = full queue; index = rng*2.
         const chosen = selectNextBubble(queue, screen, seqRng([0.9, 0.0, 0.5]));
         expect(["1", "2"]).toContain(chosen?.pairId);
+    });
+});
+
+describe("planSpawn", () => {
+    const bounds = { width: 1000, height: 1000 };
+
+    it("places anywhere on an empty board", () => {
+        // rng picks center (0.5, 0.5) of the inset rect.
+        const { x, y } = planSpawn(40, bounds, [], seqRng([0.5, 0.5]));
+        expect(x).toBeGreaterThanOrEqual(40);
+        expect(x).toBeLessThanOrEqual(bounds.width - 40);
+        expect(y).toBeGreaterThanOrEqual(40);
+        expect(y).toBeLessThanOrEqual(bounds.height - 40);
+    });
+
+    it("rejects a spot that breaks the 20% rule, accepting the next clear one", () => {
+        // One existing bubble of radius 50 dead center (500, 500). The first
+        // candidate lands right on top of it (breaks the rule); the second lands
+        // far away (clears it).
+        const existing = at(500, 500, 50);
+        const targetR = 40;
+        // rng sequence: candidate 1 = (500,500) on top → rejected; candidate 2 =
+        // (100,100) far away → accepted.
+        const rng = seqRng([0.46, 0.46, 0.06, 0.06]);
+        const spot = planSpawn(targetR, bounds, [existing], rng);
+        // The accepted spot must satisfy the rule against the existing bubble.
+        const dist = Math.hypot(spot.x - existing.x, spot.y - existing.y);
+        const penetration = targetR + existing.radius - dist;
+        const ratio = penetration <= 0 ? 0 : penetration / (2 * existing.radius);
+        expect(ratio).toBeLessThanOrEqual(SPAWN_OVERLAP_FRACTION);
+    });
+
+    it("falls back to the least-bad spot when the board is too full to clear the rule", () => {
+        // A wall of overlapping bubbles fills the whole inset rect, so no candidate
+        // can ever clear the 20% rule. planSpawn must still return a spot (so the
+        // board can over-pack and trip the overfill loss) rather than nothing.
+        const wall: BubbleBody[] = [];
+        for (let gx = 0; gx <= 1000; gx += 40) {
+            for (let gy = 0; gy <= 1000; gy += 40) wall.push(at(gx, gy, 60));
+        }
+        const spot = planSpawn(40, bounds, wall, Math.random);
+        expect(spot).toBeDefined();
+        expect(Number.isFinite(spot.x)).toBe(true);
+        expect(Number.isFinite(spot.y)).toBe(true);
     });
 });

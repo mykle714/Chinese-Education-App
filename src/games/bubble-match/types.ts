@@ -13,18 +13,22 @@ export type BubbleKind = "word" | "definition";
 
 /**
  * Interaction/animation status of a bubble. Drives its visual treatment:
- * - `entering`  — flying in from off-screen to its target spot, shoving any
- *                 bubbles in its path aside (infinite-mass while it travels).
- * - `idle`      — floating freely.
+ * - `growing`   — spawned in place and inflating from a tiny seed to its target
+ *                 size, shoving any bubbles it overlaps aside (infinite-mass
+ *                 while it grows so it holds its chosen spot).
+ * - `idle`      — settled at full size, sitting still (no autonomous drift).
  * - `held`      — picked up by the pointer (enlarged + greyed).
  * - `hovered`   — the current drop target under a held bubble (enlarged + greyed).
  * - `correct`   — a valid match just landed (green + pop, then removed).
  * - `wrong`     — an invalid match just landed (red flash + shake, then released).
+ * - `nomatch`   — study mode: a tapped bubble whose partner isn't on screen. Same
+ *                 red flash as `wrong` but WITHOUT the shake (no drag happened —
+ *                 the tap was valid, there was just nothing to pair with).
  * - `revealed`  — study mode (game-over popup minimized): this bubble and its
  *                 partner are highlighted green for reference. Persistent — no
  *                 pop/removal; cleared when the selection changes or study ends.
  */
-export type BubbleStatus = "entering" | "idle" | "held" | "hovered" | "correct" | "wrong" | "revealed";
+export type BubbleStatus = "growing" | "idle" | "held" | "hovered" | "correct" | "wrong" | "nomatch" | "revealed";
 
 /**
  * Physics + interaction state for a single bubble. This is the mutable source of
@@ -40,16 +44,14 @@ export interface BubbleBody {
     /** Center position (px) within the stage. */
     x: number;
     y: number;
-    /** Velocity (px/sec). */
-    vx: number;
-    vy: number;
+    /** Current, animating collision radius. While `status === "growing"` it lerps
+        from a tiny seed up to `targetRadius`; once settled it equals `targetRadius`. */
     radius: number;
-    /** Collision mass (∝ area) so big bubbles shove small ones. */
+    /** Final radius: the fixed layout size, the collision size once grown, and
+        the denominator for the grow-in scale (rendered scale = radius / targetRadius). */
+    targetRadius: number;
+    /** Collision mass (∝ targetRadius² area) so big bubbles shove small ones. */
     mass: number;
-    /** While `status === "entering"`, the spot inside the stage this bubble is
-        flying toward. Cleared (null) once it arrives and starts floating. */
-    targetX: number | null;
-    targetY: number | null;
     /** Current rendered scale; lerps toward `targetScale` each frame. */
     scale: number;
     targetScale: number;

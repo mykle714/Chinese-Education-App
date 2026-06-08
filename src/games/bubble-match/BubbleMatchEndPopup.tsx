@@ -1,6 +1,6 @@
 import React, { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { Box, IconButton, useTheme } from "@mui/material";
-import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
+import CloseFullscreenRoundedIcon from "@mui/icons-material/CloseFullscreenRounded";
 import OpenInFullRoundedIcon from "@mui/icons-material/OpenInFullRounded";
 
 // Resting visual constants for the minimized "tiny square" puck. Measured in
@@ -152,7 +152,7 @@ const BubbleMatchEndPopup: React.FC<BubbleMatchEndPopupProps> = ({
                         "&:hover": { backgroundColor: "rgba(0,0,0,0.06)" },
                     }}
                 >
-                    <CloseRoundedIcon fontSize="small" />
+                    <CloseFullscreenRoundedIcon fontSize="small" />
                 </IconButton>
                 {children}
             </Box>

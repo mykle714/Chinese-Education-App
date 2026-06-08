@@ -38,11 +38,16 @@ import {
   buildExcludeSet,
   segmentWithDict,
 } from '../../../dal/shared/segmentString.js';
+import { initRunLog } from '../run-log.js';
+const SCRIPT_VERSION = 1; // bump when this script's logic/prompt changes
 
 const DRY_RUN = process.argv.includes('--dry-run');
 const CONCURRENCY = parseInt(process.argv.find(a => a.startsWith('--concurrency='))?.split('=')[1] || '5', 10);
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+// run-log: track duration, version, words/mode, and token usage/cost
+const { stampEntries } = initRunLog({ script: 'chinese/backfill-expansion-claude', version: SCRIPT_VERSION, anthropic: anthropic });
 
 const MODEL = 'claude-sonnet-4-6';
 
@@ -420,6 +425,7 @@ async function processEntry(row, client, stats) {
           `UPDATE dictionaryentries_zh SET "expansionLiteralTranslation" = $1 WHERE id = $2`,
           [literal, row.id]
         );
+        await stampEntries(client, 'dictionaryentries_zh', row.id);
       }
       return;
     }
@@ -436,6 +442,7 @@ async function processEntry(row, client, stats) {
           `UPDATE dictionaryentries_zh SET expansion = '', "expansionLiteralTranslation" = NULL WHERE id = $1`,
           [row.id]
         );
+        await stampEntries(client, 'dictionaryentries_zh', row.id);
       }
       return;
     }
@@ -456,6 +463,7 @@ async function processEntry(row, client, stats) {
         `UPDATE dictionaryentries_zh SET expansion = $1, "expansionLiteralTranslation" = $2 WHERE id = $3`,
         [expansion, literal, row.id]
       );
+      await stampEntries(client, 'dictionaryentries_zh', row.id);
     }
   } catch (err) {
     process.stdout.write(`  ❌ ${row.word1} → ERROR: ${err.message}\n`);

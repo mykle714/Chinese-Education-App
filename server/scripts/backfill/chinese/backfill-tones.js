@@ -6,6 +6,10 @@
  */
 
 import db from '../../../db.js';
+import { initRunLog } from '../run-log.js';
+const SCRIPT_VERSION = 1; // bump when this script's logic/prompt changes
+// run-log: track duration, version, and words/mode
+const { stampEntries } = initRunLog({ script: 'chinese/backfill-tones', version: SCRIPT_VERSION });
 
 const BATCH_SIZE = 500;
 
@@ -89,6 +93,7 @@ async function backfillDictionaryTones() {
         ) AS v
         WHERE dictionaryentries_zh.id = v.id
       `, [ids, tones]);
+      await stampEntries(client, 'dictionaryentries_zh', ids);
 
       totalUpdated += rows.length;
       lastId = ids[ids.length - 1];

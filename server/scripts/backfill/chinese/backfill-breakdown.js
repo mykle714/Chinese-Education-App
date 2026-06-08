@@ -12,6 +12,10 @@
 import db from '../../../db.js';
 import { DictionaryService } from '../../../services/DictionaryService.js';
 import { DictionaryDAL } from '../../../dal/implementations/DictionaryDAL.js';
+import { initRunLog } from '../run-log.js';
+const SCRIPT_VERSION = 1; // bump when this script's logic/prompt changes
+// run-log: track duration, version, and words/mode
+initRunLog({ script: 'chinese/backfill-breakdown', version: SCRIPT_VERSION });
 
 async function backfillBreakdown() {
   console.log('🚀 Starting breakdown backfill process...\n');

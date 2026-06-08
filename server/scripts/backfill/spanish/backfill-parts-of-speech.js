@@ -56,8 +56,13 @@ dotenv.config({ path: path.join(__dirname, '../../../.env.docker') });
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
 import { posAbbrevToFriendly } from '../shared/lib/esPos.js';
+import { initRunLog } from '../run-log.js';
+const SCRIPT_VERSION = 1; // bump when this script's logic/prompt changes
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+// run-log: track duration, version, words/mode, and token usage/cost
+const { stampEntries } = initRunLog({ script: 'spanish/backfill-parts-of-speech', version: SCRIPT_VERSION, anthropic: anthropic });
 
 const isSpotCheck = process.argv.includes('--spot-check');
 const isDryRun = process.argv.includes('--dry-run');
@@ -380,6 +385,7 @@ async function reconcileWord(client, word, rows, groups) {
           [JSON.stringify(newDefs), JSON.stringify(partsOfSpeech), g.primaryGender ?? null,
            g.alternateGender ?? null, g.alternateMeaning ?? null, hasMultiplePos, target.id]
         );
+        await stampEntries(client, 'dictionaryentries_es', target.id);
       }
       keptIds.add(target.id);
       actions.push(`UPDATE id=${target.id} pos=${g.pos} gender=${g.primaryGender ?? '∅'}` +
@@ -389,15 +395,17 @@ async function reconcileWord(client, word, rows, groups) {
       // No existing row for this pos — INSERT. Copy raw/etymology from any source row.
       const donor = rows[0];
       if (!isDryRun) {
-        await client.query(
+        const inserted = await client.query(
           `INSERT INTO dictionaryentries_es
              (language, word1, pos, gender, definitions, "partsOfSpeech",
               "alternateGender", "alternateMeaning", "hasMultiplePos", raw, etymology, discoverable)
-           VALUES ('es', $1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, $8, $9::jsonb, $10, TRUE)`,
+           VALUES ('es', $1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, $8, $9::jsonb, $10, TRUE)
+           RETURNING id`,
           [word, g.pos, g.primaryGender ?? null, JSON.stringify(newDefs),
            JSON.stringify(partsOfSpeech), g.alternateGender ?? null, g.alternateMeaning ?? null,
            hasMultiplePos, donor?.raw ? JSON.stringify(donor.raw) : null, donor?.etymology ?? null]
         );
+        await stampEntries(client, 'dictionaryentries_es', inserted.rows[0].id);
       }
       actions.push(`INSERT pos=${g.pos} gender=${g.primaryGender ?? '∅'}` +
         (g.alternateGender ? ` alt=${g.alternateGender}:"${g.alternateMeaning}"` : ''));

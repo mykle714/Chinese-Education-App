@@ -32,9 +32,14 @@ dotenv.config({ path: path.join(__dirname, '../../../.env.docker') });
 
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
-import { ALLOWED_POS_TAGS, ALLOWED_POS_TAG_SET } from '../../shared/lib/posTags.js';
+import { ALLOWED_POS_TAGS, ALLOWED_POS_TAG_SET } from '../shared/lib/posTags.js';
+import { initRunLog } from '../run-log.js';
+const SCRIPT_VERSION = 2; // bump when this script's logic/prompt changes
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+// run-log: track duration, version, words/mode, and token usage/cost
+const { stampEntries } = initRunLog({ script: 'chinese/backfill-parts-of-speech', version: SCRIPT_VERSION, anthropic: anthropic });
 const isSpotCheck = process.argv.includes('--spot-check');
 
 const wordsArg = process.argv.find(a => a.startsWith('--words='));
@@ -106,6 +111,18 @@ Hard rules — apply formal tests, not English-translation intuition:
 7. DIRECTIONAL COMPLEMENTS — 起来 / 下来 / 出来 etc. are verbs in their
    literal sense (站起来 = "stand up") and may also be tagged "particle"
    when used as stative/aspectual markers (看起来 = "it seems").
+
+8. STANDALONE-WORD TEST — NO BOUND-MORPHEME SENSES — Tag a POS only if the
+   word can fill that role as a STANDALONE word in a real sentence. If a sense
+   exists ONLY as a bound morpheme inside compounds — it never stands alone as
+   that part of speech — do NOT tag it, even if the definitions gloss it.
+     - 能 means "energy" only inside compounds (能量, 能源); on its own 能 is a
+       verb (can / be able to) and never a standalone noun, so it is "verb" only,
+       NOT "noun".
+     - Likewise a character that only acts as a noun inside a compound (e.g. a
+       bound nominal root) does not earn "noun" as a standalone word.
+   Test: can you build a natural sentence using the bare word in that role,
+   without embedding it in a longer fixed compound? If not, drop the tag.
 `;
 
 const VIOLATION_CODE_LABELS = {
@@ -115,6 +132,7 @@ const VIOLATION_CODE_LABELS = {
   compositional: 'Tag inherited from a component character, not the whole word (rule 2)',
   over_tagged: 'List has 3+ tags but the word does not genuinely take that many roles (rule 1)',
   archaic_or_rare: 'Tag reflects an archaic or technical use a learner would never see',
+  bound_morpheme: 'Tag reflects a sense that exists only bound inside compounds, not as a standalone word (rule 8)',
   missing_tag: 'A clearly valid POS is missing from the list',
 };
 
@@ -434,6 +452,7 @@ async function run() {
           `UPDATE dictionaryentries_zh SET "partsOfSpeech" = $1::jsonb WHERE id = $2`,
           [JSON.stringify(result.tags), row.id]
         );
+        await stampEntries(client, 'dictionaryentries_zh', row.id);
 
         if (result.attempts === 1) {
           acceptedFirst++;

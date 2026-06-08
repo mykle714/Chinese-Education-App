@@ -36,8 +36,13 @@ dotenv.config({ path: path.join(__dirname, '../../../.env.docker') });
 
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
+import { initRunLog } from '../run-log.js';
+const SCRIPT_VERSION = 1; // bump when this script's logic/prompt changes
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+// run-log: track duration, version, words/mode, and token usage/cost
+const { stampEntries } = initRunLog({ script: 'spanish/backfill-vernacular-score', version: SCRIPT_VERSION, anthropic: anthropic });
 
 const isSpotCheck = process.argv.includes('--spot-check');
 const isRandom = process.argv.includes('--random');
@@ -189,6 +194,7 @@ async function run() {
           `UPDATE dictionaryentries_es SET "vernacularScore" = $1 WHERE id = $2`,
           [result.score, row.id]
         );
+        await stampEntries(client, 'dictionaryentries_es', row.id);
 
         scoreCounts[result.score]++;
         processed++;

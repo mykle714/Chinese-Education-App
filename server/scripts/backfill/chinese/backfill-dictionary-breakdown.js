@@ -1,6 +1,10 @@
 import db from '../../../db.js';
 import { DictionaryService } from '../../../services/DictionaryService.js';
 import { DictionaryDAL } from '../../../dal/implementations/DictionaryDAL.js';
+import { initRunLog } from '../run-log.js';
+const SCRIPT_VERSION = 1; // bump when this script's logic/prompt changes
+// run-log: track duration, version, and words/mode
+const { stampEntries } = initRunLog({ script: 'chinese/backfill-dictionary-breakdown', version: SCRIPT_VERSION });
 
 // --words=未来,摸脉 → scope to specific entries only; omit to target all discoverable entries with breakdown IS NULL
 const wordsArg = process.argv.find(a => a.startsWith('--words='));
@@ -53,6 +57,7 @@ async function backfillDictionaryBreakdown() {
             SET breakdown = $1
             WHERE id = $2
           `, [JSON.stringify(breakdown), entry.id]);
+          await stampEntries(client, 'dictionaryentries_zh', entry.id);
 
           successCount++;
         } else {

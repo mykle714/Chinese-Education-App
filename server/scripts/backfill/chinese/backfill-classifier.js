@@ -24,8 +24,13 @@ dotenv.config({ path: path.join(__dirname, '../../../.env.docker') });
 
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
+import { initRunLog } from '../run-log.js';
+const SCRIPT_VERSION = 1; // bump when this script's logic/prompt changes
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+// run-log: track duration, version, words/mode, and token usage/cost
+const { stampEntries } = initRunLog({ script: 'chinese/backfill-classifier', version: SCRIPT_VERSION, anthropic: anthropic });
 
 const isSpotCheck = process.argv.includes('--spot-check');
 
@@ -132,6 +137,7 @@ async function run() {
             `UPDATE dictionaryentries_zh SET classifier = $1::jsonb WHERE id = $2`,
             [JSON.stringify(classifiers), row.id]
           );
+          await stampEntries(client, 'dictionaryentries_zh', row.id);
           withClassifier++;
         } else {
           console.log('no classifier');
@@ -140,6 +146,7 @@ async function run() {
             `UPDATE dictionaryentries_zh SET classifier = '[]'::jsonb WHERE id = $1`,
             [row.id]
           );
+          await stampEntries(client, 'dictionaryentries_zh', row.id);
           noClassifier++;
         }
       } catch (err) {

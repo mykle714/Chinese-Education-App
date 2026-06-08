@@ -29,7 +29,7 @@
 #   3. backfill-parts-of-speech              — materialize one row per POS, delegate
 #                                              definitions, collapse gender into
 #                                              alternateGender/alternateMeaning (AI)
-#   4. backfill-sort-definitions             — sort defs by usefulness (AI)
+#   4. backfill-process-definitions-array    — sort defs by usefulness + prune (AI)
 #   5. backfill-long-definitions             — generate longDefinition (AI)
 #   6. backfill-example-sentences            — generate example sentences (AI)
 #   7. backfill-vernacular-score             — score vernacular register (AI)
@@ -118,8 +118,8 @@ run_script "Step 2: Expand Abbreviations" "backfill-expand-abbreviations.js"
 # Step 3: Materialize one row per POS, delegate definitions, collapse gender (AI)
 run_script "Step 3: Parts of Speech & Gender Collapse" "backfill-parts-of-speech.js"
 
-# Step 4: Sort definitions from most useful to least (AI)
-run_script "Step 4: Sort Definitions by Usefulness" "backfill-sort-definitions.js"
+# Step 4: Sort definitions from most useful to least + prune low-value (AI)
+run_script "Step 4: Process Definitions Array" "backfill-process-definitions-array.js"
 
 # Step 5: Generate longDefinition using sorted definitions (AI)
 run_script "Step 5: Long Definitions" "backfill-long-definitions.js"

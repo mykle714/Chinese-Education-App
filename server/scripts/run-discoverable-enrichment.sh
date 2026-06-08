@@ -20,7 +20,7 @@
 #
 # Pipeline order (each step depends on the previous):
 #   1. backfill-split-semicolon-definitions  — normalize definitions array
-#   2. backfill-sort-definitions             — sort defs by prototypicality (AI)
+#   2. backfill-process-definitions-array    — sort defs by prototypicality + prune (AI)
 #   3. backfill-parts-of-speech              — assign POS tag set (AI)
 #   4. backfill-hsk-level                    — assign HSK1-HSK6 level (AI)
 #   5. backfill-long-definitions             — generate longDefinition (AI)
@@ -103,8 +103,8 @@ check_container
 # Step 1: Normalize definitions — split any semicolon-delimited elements
 run_script "Step 1: Split Semicolon Definitions" "backfill-split-semicolon-definitions.js"
 
-# Step 2: Sort definitions from most prototypical to least (AI)
-run_script "Step 2: Sort Definitions by Prototypicality" "backfill-sort-definitions.js"
+# Step 2: Sort definitions from most prototypical to least + prune low-value (AI)
+run_script "Step 2: Process Definitions Array" "backfill-process-definitions-array.js"
 
 # Step 3: Assign parts of speech (AI)
 run_script "Step 3: Parts of Speech" "backfill-parts-of-speech.js"

@@ -1,32 +1,32 @@
 /**
- * Backfill Script: AI-powered definition sorting for dictionaryentries_es (SPANISH)
+ * Backfill Script: AI-powered definition-array processing for dictionaryentries_zh
  *
- * Spanish counterpart of backfill/chinese/backfill-sort-definitions.js.
- *
- * TODO(es-linguistics): the ranking prompt + worked examples below were adapted
- * from the Chinese version. The principles (modern frequency, restrictive
- * parentheticals, archaic-last) carry over, but the worked examples use Spanish
- * words chosen first-pass — have a Spanish speaker sanity-check them, and note
- * that regional senses (e.g. peninsular vs Latin-American) may need their own
- * handling.
+ * Two jobs in one pass over the `definitions` array:
+ *   (a) REORDER the glosses from most to least useful for a modern learner.
+ *   (b) PRUNE very low-confidence glosses — broken English, or incredibly
+ *       rare/archaic senses already covered by another gloss. Exclusively
+ *       parenthetical glosses (e.g. "(literary)") are KEPT but may never rank
+ *       first. The model may drop but never add or rephrase a string.
  *
  * Two-pass design:
- *   Pass 1 (Sonnet) — first ordering using a tuned prompt with few-shots.
+ *   Pass 1 (Sonnet) — first ordering + pruning using a tuned prompt with few-shots.
  *   Pass 2 (Sonnet) — critic that sees the original list + Pass 1's output,
  *     and either confirms, refines with a one-line reason, or flags
- *     low_confidence for human review.
- *   On validation failure (length/element/JSON), the prompt is retried on
- *   Opus before giving up.
+ *     low_confidence for human review. The critic may also restore a wrongly
+ *     dropped gloss or prune one the junior missed.
+ *   On validation failure (added/rephrased element, empty result, JSON), the
+ *   prompt is retried on Opus before giving up. A parenthetical-only gloss that
+ *   leads is fixed up locally (second entry promoted), not retried.
  *
- * Disagreements (Pass 2 ≠ Pass 1) and low_confidence flags are dumped to a
- * timestamped review file in /tmp so the user can skim post-run.
+ * Disagreements (Pass 2 ≠ Pass 1), low_confidence flags, and any pruned glosses
+ * are dumped to a timestamped review file in /tmp so the user can skim post-run.
  *
  * Usage:
- *   npx tsx scripts/backfill/spanish/backfill-sort-definitions.js                # discoverable es entries
- *   npx tsx scripts/backfill/spanish/backfill-sort-definitions.js --all          # all es entries
- *   npx tsx scripts/backfill/spanish/backfill-sort-definitions.js --spot-check   # 5 entries, no writes
- *   npx tsx scripts/backfill/spanish/backfill-sort-definitions.js --ids=1,2,3    # target specific IDs
- *   npx tsx scripts/backfill/spanish/backfill-sort-definitions.js --no-critic    # skip Pass 2
+ *   npx tsx scripts/backfill/chinese/backfill-process-definitions-array.js                # discoverable zh entries
+ *   npx tsx scripts/backfill/chinese/backfill-process-definitions-array.js --all          # all zh entries
+ *   npx tsx scripts/backfill/chinese/backfill-process-definitions-array.js --spot-check   # 5 entries, no writes
+ *   npx tsx scripts/backfill/chinese/backfill-process-definitions-array.js --ids=1,2,3    # target specific IDs
+ *   npx tsx scripts/backfill/chinese/backfill-process-definitions-array.js --no-critic    # skip Pass 2
  */
 
 import dotenv from 'dotenv';
@@ -39,6 +39,8 @@ dotenv.config({ path: path.join(__dirname, '../../../.env.docker') });
 
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
+import { initRunLog } from '../run-log.js';
+const SCRIPT_VERSION = 2; // bump when this script's logic/prompt changes
 
 const isSpotCheck = process.argv.includes('--spot-check');
 const includeAll  = process.argv.includes('--all');
@@ -53,55 +55,73 @@ const targetWords = wordsArg ? wordsArg.slice('--words='.length).split(',').map(
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+// run-log: track duration, version, words/mode, and token usage/cost
+const { stampEntries } = initRunLog({ script: 'chinese/backfill-process-definitions-array', version: SCRIPT_VERSION, anthropic: anthropic });
+
 const PASS1_MODEL = 'claude-sonnet-4-6';
 const PASS2_MODEL = 'claude-sonnet-4-6';
 const RETRY_MODEL = 'claude-opus-4-8'; // used when a Sonnet response fails validation
 
-const REVIEW_LOG_PATH = `/tmp/sort-definitions-review-${Date.now()}.log`;
+const REVIEW_LOG_PATH = `/tmp/process-definitions-array-review-${Date.now()}.log`;
 
 // ─── Pass 1 prompt ──────────────────────────────────────────────────────────
 // Tuned for the failures we observed: parenthetical confusion (一下), modern
 // frequency vs linguistic prototypicality (密码), and cedict's bias of listing
 // archaic senses first.
 
-const PASS1_SYSTEM = `You are a Spanish linguistics expert ranking English definitions of a Spanish word for a modern (2020s) Spanish learner's vocabulary card.`;
+const PASS1_SYSTEM = `You are a Chinese linguistics expert ranking English definitions of a Chinese word for a modern (2020s) Mandarin learner's vocabulary card.`;
 
 function pass1Prompt(word, definitions) {
-  return `Reorder the definitions of "${word}" from most to least useful for a modern learner.
+  return `Reorder the definitions of "${word}" from most to least useful for a modern learner, and remove very low-confidence glosses.
 
 Ranking principles (apply in order):
-1. FIRST — The sense a modern Spanish learner is most likely to encounter today. For everyday and tech terms, this is the modern usage, not the etymological core. (e.g. for "móvil", "mobile phone" beats "motive"; for "ratón", "computer mouse" is a common modern sense alongside the animal.)
+1. FIRST — The sense a modern Mandarin learner is most likely to encounter today. For everyday loanwords and tech terms, this is the modern usage, not the etymological core. (e.g. for 密码, "password" beats "cipher"; for 电脑, "computer" beats anything literal.)
 2. NEXT — The core lexical meaning the word is built around, and metaphorical/extended senses that flow from it.
-3. LATER — Contextually RESTRICTED senses: definitions whose parenthetical narrows *when/where* the sense applies. Examples that count as restrictive: "(of a person)", "(in cooking)", "(grammar)", "(formal)", "(colloquial)".
-4. LATER — Grammaticalized or functional uses: auxiliary uses, discourse markers, filler words, set-phrase-only senses.
-5. LAST — Archaic, literary, dialectal/regional, technical-only, or rare senses: "(archaic)", "(literary)", "(dated)", "(regional)", "(Latin America)", "(Spain)", "(vulgar)", "(math.)", etc.
+3. LATER — Contextually RESTRICTED senses: definitions whose parenthetical narrows *when/where* the sense applies. Examples that count as restrictive: "(after a personal pronoun)", "(before a verb)", "(of two people)", "(on restaurant menus)", "(bound form)", "(polite)", "(coll.)".
+4. LATER — Grammaticalized or functional uses: verb complements, particles, discourse markers, filler words, classifier uses.
+5. LAST — Archaic, literary, dialectal, technical-only, or rare senses: "(archaic)", "(literary)", "(old)", "(dialect)", "(Tw)", "(slang)", "(math.)", etc.
 
 Important distinctions:
-- A parenthetical that EXPLAINS a sense (e.g. "a little (softening the request)") does NOT make it restrictive — it's just clarifying the same primary meaning. Do not demote it.
-- A parenthetical that NARROWS the sense to a specific context (e.g. "(Latin America, vulgar) to have sex") IS restrictive — demote.
-- The input order is NOT a signal. The Wiktionary source often lists archaic, literary, or etymological senses first; ignore that.
-- When two senses are equally core, prefer whichever a learner hears more often in everyday spoken Spanish today.
+- A parenthetical that EXPLAINS a sense (e.g. "a little (indicating brief duration, or softening the tone)") does NOT make it restrictive — it's just clarifying the same primary meaning. Do not demote it.
+- A parenthetical that NARROWS the sense to a specific context (e.g. "(of two people) to fall in love") IS restrictive — demote.
+- The input order is NOT a signal. Cedict often lists archaic or literary senses first; ignore that.
+- When two senses are equally core, prefer whichever a learner hears more often in spoken Mandarin today.
 
-Worked examples (TODO(es-linguistics): review these example words/orderings):
+Removal (be conservative — when in doubt, KEEP the gloss and just rank it low):
+Remove a definition ONLY if it is genuinely low-value for a modern learner:
+- Broken English — the gloss is grammatically broken or reads as unintelligible English on its own (e.g. "doing while").
+- Incredibly rare / archaic — a sense so obscure, archaic, or specialized that a modern learner will essentially never meet it, AND its meaning is already covered by another surviving gloss.
+Never remove a sense that is the only one of its kind, and never remove every definition — always return at least one.
 
-Word: móvil
-Input:  ["motive", "mobile, movable", "mobile phone", "mobile (decorative hanging object)"]
-Output: ["mobile phone", "mobile, movable", "motive", "mobile (decorative hanging object)"]
-Reason: In modern Spanish (esp. Spain) "móvil" overwhelmingly means "mobile phone". The adjective sense is core; "motive" and the decorative sense are less frequent.
+Parenthetical-only entries:
+- An "exclusively parenthetical" gloss is one whose entire text is a parenthetical note (e.g. "(literary)", "(used before a verb)"). KEEP these — they carry usage information — but they must NEVER be placed first. Always rank at least one substantive (non-parenthetical) gloss ahead of any exclusively-parenthetical one.
 
-Word: coger
-Input:  ["(Latin America, vulgar) to have sex", "to take, to grab", "to catch"]
-Output: ["to take, to grab", "to catch", "(Latin America, vulgar) to have sex"]
-Reason: The everyday transitive senses dominate; the regional/vulgar sense is contextually restricted and goes last.
+Worked examples:
 
-Word: banco
-Input:  ["shoal (of fish)", "bench", "bank (financial institution)"]
-Output: ["bank (financial institution)", "bench", "shoal (of fish)"]
-Reason: The financial sense is the most frequent for a modern learner, then the concrete "bench", then the restricted "(of fish)" sense.
+Word: 一边
+Input:  ["doing while", "one side", "either side", "on the one hand", "on the other hand"]
+Output: ["one side", "either side", "on the one hand", "on the other hand"]
+Reason: "doing while" is broken English; removed. The remaining glosses cover the noun and paired-contrast senses.
+
+Word: 一下
+Input:  ["all at once", "suddenly", "a little (indicating brief duration, or softening the tone, or suggesting giving something a try)", "(after a verb) a bit"]
+Output: ["a little (indicating brief duration, or softening the tone, or suggesting giving something a try)", "(after a verb) a bit", "all at once", "suddenly"]
+Reason: "a little..." is the prototypical modern sense (看一下); the parenthetical explains, not restricts. "(after a verb) a bit" is contextually restrictive but still common. "all at once / suddenly" are extended senses.
+
+Word: 像
+Input:  ["image", "portrait", "appearance", "to resemble", "to be like", "to look as if", "such as", "image under a mapping (math.)"]
+Output: ["to resemble", "to be like", "to look as if", "such as", "appearance", "image", "portrait", "image under a mapping (math.)"]
+Reason: Verb senses dominate in modern usage. Noun senses follow. Math sense last.
+
+Word: 密码
+Input:  ["secret code", "cipher", "password", "PIN"]
+Output: ["password", "PIN", "secret code", "cipher"]
+Reason: Modern Mandarin 密码 overwhelmingly means "password" (login/banking). "cipher / secret code" are older general senses.
 
 Rules:
-- Return ALL definitions — do not add, remove, rephrase, or alter any string in any way.
-- Each string must be copied character-for-character exactly as it appears in the input, including parenthetical notes, punctuation, and formatting.
+- You MAY drop low-value definitions per the Removal guidance above, but you must NEVER add, rephrase, or alter any string. Every definition you return must be copied character-for-character exactly as it appears in the input, including parenthetical notes, punctuation, and formatting.
+- Return at least one definition; never return an empty array.
+- Do not place an exclusively-parenthetical gloss first.
 - Return ONLY a valid JSON array of strings, no explanation.
 
 Word: ${word}
@@ -112,23 +132,31 @@ ${JSON.stringify(definitions, null, 2)}`;
 
 // ─── Pass 2 critic prompt ───────────────────────────────────────────────────
 
-const PASS2_SYSTEM = `You are a Spanish linguistics expert reviewing a junior annotator's ranking of English definitions for a modern Spanish learner's vocabulary card.`;
+const PASS2_SYSTEM = `You are a Chinese linguistics expert reviewing a junior annotator's ranking of English definitions for a modern Mandarin learner's vocabulary card.`;
 
 function pass2Prompt(word, original, pass1) {
   return `Review the proposed ordering for "${word}" and decide whether to confirm, refine, or flag it.
 
 Ranking principles (the junior was given these — apply the same ones):
-1. FIRST — sense a modern (2020s) Spanish learner is most likely to encounter; for everyday/tech terms, modern usage beats etymological core.
+1. FIRST — sense a modern (2020s) Mandarin learner is most likely to encounter; for loanwords/tech terms, modern usage beats etymological core.
 2. NEXT — core lexical meaning + metaphorical extensions.
-3. LATER — senses with restrictive parentheticals "(of a person)", "(in cooking)", "(grammar)", "(regional)", "(colloquial)", etc.
-4. LATER — grammaticalized/functional uses (auxiliary, discourse markers, set-phrase-only senses).
-5. LAST — archaic/literary/dialectal/regional/technical-only/rare senses.
+3. LATER — senses with restrictive parentheticals "(after a verb)", "(of two people)", "(bound form)", "(coll.)", "(polite)", etc.
+4. LATER — grammaticalized/functional uses (particles, complements, classifiers).
+5. LAST — archaic/literary/dialectal/technical-only/rare senses.
+
+The junior was also told to PRUNE very low-confidence glosses:
+- Broken English (e.g. "doing while").
+- Incredibly rare/archaic senses already covered by another surviving gloss.
+Exclusively parenthetical glosses (e.g. "(literary)") are kept but must never rank first.
 
 Common mistakes to catch:
-- Demoting a sense because of an EXPLANATORY parenthetical (e.g. "(softening the request)") — these are not restrictive.
-- Promoting an etymological "core" over a more frequent modern sense (e.g. ranking "motive" above "mobile phone" for "móvil").
-- Trusting the input order. The Wiktionary source often lists archaic/etymological senses first.
-- Burying a high-frequency colloquial sense just because it has "(colloquial)".
+- Demoting a sense because of an EXPLANATORY parenthetical (e.g. "(indicating brief duration)") — these are not restrictive.
+- Promoting an etymological "core" over a more frequent modern sense (e.g. ranking "cipher" above "password" for 密码).
+- Trusting the input order. Cedict often lists archaic senses first.
+- Burying a high-frequency colloquial sense just because it has "(coll.)".
+- Keeping a broken-English or never-used archaic gloss the junior should have pruned — drop it.
+- Wrongly dropping a valid, useful sense — restore it (copy it verbatim from the original input).
+- Placing an exclusively-parenthetical gloss first.
 
 Word: ${word}
 
@@ -146,13 +174,14 @@ Decide:
 Return ONLY a JSON object, no explanation outside the JSON:
 {
   "action": "confirmed" | "refined" | "low_confidence",
-  "finalOrder": [<all original definitions, reordered>],
+  "finalOrder": [<kept definitions, reordered and pruned>],
   "reason": "<one short sentence — required for refined and low_confidence; empty string for confirmed>"
 }
 
 Rules:
-- finalOrder must contain EVERY string from the original input, character-for-character, exactly once.
-- Do not rephrase, edit, or alter any definition string.
+- finalOrder may DROP low-value definitions (broken English, incredibly rare/archaic), but every string it contains must come from the original input, character-for-character. Never add or rephrase.
+- You may restore a definition the junior wrongly dropped — it must still come verbatim from the original input.
+- Keep at least one definition, and do not place an exclusively-parenthetical gloss first.
 - Return ONLY the JSON object.`;
 }
 
@@ -163,15 +192,45 @@ function parseJsonFromResponse(raw) {
   return JSON.parse(cleaned);
 }
 
-function validateSameSet(original, candidate) {
+// An "exclusively parenthetical" gloss is one that, after trimming whitespace,
+// both opens with "(" and closes with ")" (e.g. "(literary)", "(used before a
+// verb)"). These are kept but must never rank first.
+function isExclusivelyParenthetical(def) {
+  return typeof def === 'string' && /^\(.*\)$/.test(def.trim());
+}
+
+// If a parenthetical-only gloss leads while a substantive gloss survives, promote
+// the second entry to first (a simple swap — per spec we do NOT retry the model
+// for this). Returns the order unchanged when no fix is needed.
+function demoteLeadingParenthetical(order) {
+  if (
+    order.length > 1 &&
+    isExclusivelyParenthetical(order[0]) &&
+    order.some(d => !isExclusivelyParenthetical(d))
+  ) {
+    return [order[1], order[0], ...order.slice(2)];
+  }
+  return order;
+}
+
+// Validates a processed ordering that MAY prune entries. Invariants:
+//   - it is a non-empty array
+//   - every element exists verbatim in the original (no additions/rephrasing)
+//   - no duplicates
+// (The parenthetical-first rule is fixed up post-validation by
+// demoteLeadingParenthetical, not enforced here.)
+// `dropped` (entries present in original but not the candidate) is returned for
+// logging so a human can review every removal.
+function validateProcessed(original, candidate) {
   if (!Array.isArray(candidate)) return { ok: false, error: 'not an array' };
-  if (candidate.length !== original.length) return { ok: false, error: 'length mismatch' };
+  if (candidate.length === 0) return { ok: false, error: 'empty result' };
   const originalSet = new Set(original);
+  const added = candidate.filter(d => !originalSet.has(d));
+  if (added.length) return { ok: false, error: 'added/rephrased element', added };
   const candidateSet = new Set(candidate);
+  if (candidateSet.size !== candidate.length) return { ok: false, error: 'duplicate element' };
   const dropped = original.filter(d => !candidateSet.has(d));
-  const added   = candidate.filter(d => !originalSet.has(d));
-  if (dropped.length || added.length) return { ok: false, error: 'element mismatch', dropped, added };
-  return { ok: true };
+  return { ok: true, dropped };
 }
 
 async function callPass1(word, definitions, model) {
@@ -187,9 +246,9 @@ async function callPass1(word, definitions, model) {
   let parsed;
   try { parsed = JSON.parse(arrMatch[0]); }
   catch (e) { return { error: `JSON parse: ${e.message}`, raw }; }
-  const v = validateSameSet(definitions, parsed);
+  const v = validateProcessed(definitions, parsed);
   if (!v.ok) return { error: v.error, dropped: v.dropped, added: v.added, parsed };
-  return { order: parsed };
+  return { order: demoteLeadingParenthetical(parsed), dropped: v.dropped };
 }
 
 async function pass1Sort(word, definitions) {
@@ -217,12 +276,13 @@ async function callPass2(word, original, pass1, model) {
   if (!parsed.action || !Array.isArray(parsed.finalOrder)) {
     return { error: 'malformed critic response', parsed };
   }
-  const v = validateSameSet(original, parsed.finalOrder);
+  const v = validateProcessed(original, parsed.finalOrder);
   if (!v.ok) return { error: v.error, dropped: v.dropped, added: v.added, parsed };
   return {
     action: parsed.action,
-    order: parsed.finalOrder,
+    order: demoteLeadingParenthetical(parsed.finalOrder),
     reason: parsed.reason || '',
+    dropped: v.dropped,
   };
 }
 
@@ -250,6 +310,7 @@ function flushReviewLog() {
       `  Original: ${JSON.stringify(e.original)}`,
       `  Pass 1:   ${JSON.stringify(e.pass1)}`,
       `  Final:    ${JSON.stringify(e.final)}`,
+      e.dropped && e.dropped.length ? `  Dropped:  ${JSON.stringify(e.dropped)}` : null,
       e.reason ? `  Reason:   ${e.reason}` : null,
     ].filter(Boolean).join('\n');
   }).join('\n\n');
@@ -265,9 +326,9 @@ async function run() {
     process.exit(1);
   }
 
-  const modeLabel = isSpotCheck ? 'SPOT CHECK' : targetWords?.length ? `scoped to: ${targetWords.join(', ')}` : includeAll ? 'ALL es entries' : 'discoverable es entries';
+  const modeLabel = isSpotCheck ? 'SPOT CHECK' : targetWords?.length ? `scoped to: ${targetWords.join(', ')}` : includeAll ? 'ALL zh entries' : 'discoverable zh entries';
   const criticLabel = skipCritic ? ' (Pass 1 only)' : ' (Pass 1 + critic)';
-  console.log(`Starting AI definition sort backfill — ${modeLabel}${criticLabel}\n`);
+  console.log(`Starting AI definition-array processing backfill — ${modeLabel}${criticLabel}\n`);
 
   const client = await db.getClient();
 
@@ -275,19 +336,19 @@ async function run() {
     const { rows: entries } = await client.query(
       targetIds
         ? `SELECT id, word1, pronunciation, definitions
-           FROM dictionaryentries_es
+           FROM dictionaryentries_zh
            WHERE id = ANY($1)
            ORDER BY id ASC`
         : targetWords?.length
         ? `SELECT id, word1, pronunciation, definitions
-           FROM dictionaryentries_es
-           WHERE language = 'es'
+           FROM dictionaryentries_zh
+           WHERE language = 'zh'
              AND word1 = ANY($1)
              AND jsonb_array_length(definitions) > 1
            ORDER BY id ASC`
         : `SELECT id, word1, pronunciation, definitions
-           FROM dictionaryentries_es
-           WHERE language = 'es'
+           FROM dictionaryentries_zh
+           WHERE language = 'zh'
              ${includeAll ? '' : 'AND discoverable = TRUE'}
              AND jsonb_array_length(definitions) > 1
            ORDER BY id ASC
@@ -295,7 +356,7 @@ async function run() {
       targetIds ? [targetIds] : targetWords?.length ? [targetWords] : []
     );
 
-    console.log(`Found ${entries.length} entries to sort\n`);
+    console.log(`Found ${entries.length} entries to process\n`);
 
     let updated  = 0;
     let unchanged = 0;
@@ -304,6 +365,7 @@ async function run() {
     let refined   = 0;
     let lowConf   = 0;
     let opusRetries = 0;
+    let glossesPruned = 0; // total glosses removed across all entries
 
     for (const row of entries) {
       const definitions = Array.isArray(row.definitions)
@@ -348,14 +410,19 @@ async function run() {
 
         const orderChanged = JSON.stringify(finalOrder) !== JSON.stringify(definitions);
         const pass2Disagreed = !skipCritic && JSON.stringify(finalOrder) !== JSON.stringify(p1.order);
+        // Glosses present in the original but pruned from the final result.
+        const finalSet = new Set(finalOrder);
+        const droppedGlosses = definitions.filter(d => !finalSet.has(d));
 
         // Log entries that need human review:
         // - refined (critic overrode pass1)
         // - low_confidence (critic uncertain)
-        if (action === 'refined' || action === 'low_confidence') {
+        // - any pruning (removals are destructive — always surface for review)
+        if (action === 'refined' || action === 'low_confidence' || droppedGlosses.length) {
           logReview({
             id: row.id, word: row.word1, action,
-            original: definitions, pass1: p1.order, final: finalOrder, reason,
+            original: definitions, pass1: p1.order, final: finalOrder,
+            dropped: droppedGlosses, reason,
           });
         }
 
@@ -370,18 +437,23 @@ async function run() {
           console.log(`    Before: ${JSON.stringify(definitions)}`);
           console.log(`    Pass1:  ${JSON.stringify(p1.order)}`);
           if (pass2Disagreed) console.log(`    Final:  ${JSON.stringify(finalOrder)}  ← critic refined`);
+          if (droppedGlosses.length) console.log(`    Pruned: ${JSON.stringify(droppedGlosses)}`);
           if (reason) console.log(`    Reason: ${reason}`);
           unchanged++; // not actually written
           continue;
         }
 
         await client.query(
-          `UPDATE dictionaryentries_es SET definitions = $1::jsonb WHERE id = $2`,
+          `UPDATE dictionaryentries_zh SET definitions = $1::jsonb WHERE id = $2`,
           [JSON.stringify(finalOrder), row.id]
         );
+        await stampEntries(client, 'dictionaryentries_zh', row.id);
 
         updated++;
-        const tag = pass2Disagreed ? `sorted [${action}]` : `sorted [${action}]`;
+        glossesPruned += droppedGlosses.length;
+        const tag = droppedGlosses.length
+          ? `processed [${action}], pruned ${droppedGlosses.length}`
+          : `processed [${action}]`;
         console.log(tag);
 
         if (updated % 100 === 0) {
@@ -407,6 +479,7 @@ async function run() {
       console.log(`Updated         : ${updated}`);
       console.log(`Unchanged       : ${unchanged}`);
       console.log(`Failed/invalid  : ${failed}`);
+      console.log(`Glosses pruned  : ${glossesPruned}`);
     }
     if (!skipCritic) {
       console.log(`Critic confirmed: ${confirmed}`);

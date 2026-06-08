@@ -13,6 +13,10 @@
  */
 
 import db from '../../../db.js';
+import { initRunLog } from '../run-log.js';
+const SCRIPT_VERSION = 1; // bump when this script's logic/prompt changes
+// run-log: track duration, version, and words/mode
+const { stampEntries } = initRunLog({ script: 'chinese/backfill-pinyin-ucolon', version: SCRIPT_VERSION });
 
 const BATCH_SIZE = 500;
 
@@ -120,6 +124,7 @@ async function backfillUColonPinyin() {
         ) AS v
         WHERE dictionaryentries_zh.id = v.id
       `, [ids, pronunciations, tones]);
+      await stampEntries(client, 'dictionaryentries_zh', ids);
 
       totalUpdated += rows.length;
       offset += rows.length;

@@ -17,6 +17,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, '../../../.env.docker') });
 
 import db from '../../../db.js';
+import { initRunLog } from '../run-log.js';
+const SCRIPT_VERSION = 1; // bump when this script's logic/prompt changes
+// run-log: track duration, version, and words/mode
+const { stampEntries } = initRunLog({ script: 'spanish/backfill-expand-abbreviations', version: SCRIPT_VERSION });
 
 const DRY_RUN = process.argv.includes('--dry-run');
 
@@ -77,6 +81,7 @@ async function backfillExpandAbbreviations() {
           SET definitions = $1::jsonb
           WHERE id = $2
         `, [JSON.stringify(expanded), entry.id]);
+        await stampEntries(client, 'dictionaryentries_es', entry.id);
       }
     }
 

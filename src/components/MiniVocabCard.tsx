@@ -1,4 +1,5 @@
 import { Box, Typography, Chip, IconButton } from "@mui/material";
+import ForeignText from "./ForeignText";
 import { stripParentheses } from "../utils/definitionUtils";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import RepeatIcon from "@mui/icons-material/Repeat";
@@ -152,7 +153,11 @@ const MiniVocabCard: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete,
                 </Box>
             )}
 
-            {/* Entry Key (Word/Character) */}
+            {/* Entry Key (Word/Character) + pronunciation, rendered per-character
+                via cpcd (ForeignText): each character carries its tone-colored
+                pinyin overlay. For Latin-script languages (es) ForeignText falls
+                back to plain text with no pinyin row. Items wrap so multi-character
+                phrases reflow within the narrow (~76px) card body. */}
             <Box
                 className="mini-vocab-card__key-wrapper"
                 sx={{
@@ -167,50 +172,17 @@ const MiniVocabCard: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete,
                     minWidth: 0,
                 }}
             >
-                <Typography
+                <ForeignText
                     className="mini-vocab-card__entry-key"
-                    sx={{
-                        // Shrink one step when the word is long; CSS handles ellipsis beyond that
-                        // ≤3 chars: full size; 4+ chars: reduced so 4 chars fit (76px) but 5 don't
-                        fontSize: entry.entryKey.length > 3 ? '0.9375rem' : '1.25rem',
-                        fontWeight: WEIGHT.bold,
-                        color: COLORS.onSurface,
-                        textAlign: 'center',
-                        lineHeight: 1.2,
-                        width: '100%',
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                    }}
-                >
-                    {entry.entryKey}
-                </Typography>
+                    language={entry.language}
+                    size="xs"
+                    bold
+                    flexWrap="wrap"
+                    justifyContent="center"
+                    text={entry.entryKey}
+                    pronunciation={entry.pronunciation}
+                />
             </Box>
-
-            {/* Pronunciation (if available) — font size steps down so full pinyin fits the ~76px card width */}
-            {entry.pronunciation && (
-                <Typography
-                    className="mini-vocab-card__pronunciation"
-                    sx={{
-                        fontSize:
-                            entry.pronunciation.length <= 12 ? '0.625rem'
-                            : entry.pronunciation.length <= 16 ? '0.56rem'
-                            : entry.pronunciation.length <= 22 ? '0.48rem'
-                            : '0.42rem',
-                        color: COLORS.textSecondary,
-                        textAlign: 'center',
-                        mb: 0.5,
-                        fontStyle: 'italic',
-                        lineHeight: 1.2,
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        width: '100%',
-                    }}
-                >
-                    {entry.pronunciation}
-                </Typography>
-            )}
 
             {/* Entry Value (Definition) */}
             <Typography

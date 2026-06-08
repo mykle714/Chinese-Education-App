@@ -22,6 +22,8 @@ import { NightMarketService } from '../services/NightMarketService.js';
 import { NightMarketController } from '../controllers/NightMarketController.js';
 import { GameAssetDAL } from './implementations/GameAssetDAL.js';
 import { GameProgressDAL } from './implementations/GameProgressDAL.js';
+import { Icons8DAL } from './implementations/Icons8DAL.js';
+import { Icons8Controller } from '../controllers/Icons8Controller.js';
 import { GameAssetService } from '../services/GameAssetService.js';
 import { GameProgressService } from '../services/GameProgressService.js';
 import { GamesController } from '../controllers/GamesController.js';
@@ -34,6 +36,7 @@ const dictionaryDAL = new DictionaryDAL();
 const nightMarketDAL = new NightMarketDAL();
 const gameAssetDAL = new GameAssetDAL();
 const gameProgressDAL = new GameProgressDAL();
+const icons8DAL = new Icons8DAL();
 
 // Service instances (with DI)
 const userService = new UserService(userDAL);
@@ -57,6 +60,8 @@ const textController = new TextController(textService);
 const starterPacksController = new StarterPacksController(starterPacksService);
 const nightMarketController = new NightMarketController(nightMarketService);
 const gamesController = new GamesController(gameAssetService, gameProgressService);
+// icons8 image serving is a thin DB read → no service layer; the controller takes the DAL directly.
+const icons8Controller = new Icons8Controller(icons8DAL);
 
 export {
   userDAL,
@@ -85,4 +90,6 @@ export {
   gameAssetService,
   gameProgressService,
   gamesController,
+  icons8DAL,
+  icons8Controller,
 };

@@ -22,13 +22,14 @@
 #   1. backfill-split-semicolon-definitions  — normalize definitions array
 #   2. backfill-process-definitions-array    — sort defs by prototypicality + prune (AI)
 #   3. backfill-parts-of-speech              — assign POS tag set (AI)
-#   4. backfill-hsk-level                    — assign HSK1-HSK6 level (AI)
-#   5. backfill-long-definitions             — generate longDefinition (AI)
-#   6. backfill-example-sentences            — generate example sentences (AI)
-#   7. backfill-expansion                    — generate expansion form (AI)
-#   8. backfill-classifier                   — assign measure words (AI)
-#   9. backfill-dictionary-breakdown         — per-character breakdown (AI)
-#  10. backfill-vernacular-score             — score vernacular register (AI)
+#   4. backfill-word-forms                   — generate English wordForms map (AI; needs POS + definitions[0])
+#   5. backfill-hsk-level                    — assign HSK1-HSK6 level (AI)
+#   6. backfill-long-definitions             — generate longDefinition (AI)
+#   7. backfill-example-sentences            — generate example sentences (AI)
+#   8. backfill-expansion                    — generate expansion form (AI)
+#   9. backfill-classifier                   — assign measure words (AI)
+#  10. backfill-dictionary-breakdown         — per-character breakdown (AI)
+#  11. backfill-vernacular-score             — score vernacular register (AI)
 #
 # Note: exampleSentencesMetadata is NOT a pipeline step. Segment metadata
 # (pronunciation, definition, particleOrClassifier per token) is computed
@@ -109,26 +110,29 @@ run_script "Step 2: Process Definitions Array" "backfill-process-definitions-arr
 # Step 3: Assign parts of speech (AI)
 run_script "Step 3: Parts of Speech" "backfill-parts-of-speech.js"
 
-# Step 4: Assign HSK level for discoverable zh entries (AI)
-run_script "Step 4: HSK Level" "backfill-hsk-level.js"
+# Step 4: Generate English wordForms map (AI) — depends on partsOfSpeech (step 3) + definitions[0] (step 2)
+run_script "Step 4: Word Forms" "backfill-word-forms.js"
 
-# Step 5: Generate longDefinition using sorted definitions (AI)
-run_script "Step 5: Long Definitions" "backfill-long-definitions.js"
+# Step 5: Assign HSK level for discoverable zh entries (AI)
+run_script "Step 5: HSK Level" "backfill-hsk-level.js"
 
-# Step 6: Generate example sentences (AI) — uses definitions
-run_script "Step 6: Example Sentences" "backfill-example-sentences.js"
+# Step 6: Generate longDefinition using sorted definitions (AI)
+run_script "Step 6: Long Definitions" "backfill-long-definitions.js"
 
-# Step 7: Generate expansion form (AI)
-run_script "Step 7: Expansion" "backfill-expansion-claude.js"
+# Step 7: Generate example sentences (AI) — uses definitions
+run_script "Step 7: Example Sentences" "backfill-example-sentences.js"
 
-# Step 8: Assign measure words / classifiers (AI)
-run_script "Step 8: Classifiers" "backfill-classifier.js"
+# Step 8: Generate expansion form (AI)
+run_script "Step 8: Expansion" "backfill-expansion-claude.js"
 
-# Step 9: Per-character breakdown for multi-character words (AI)
-run_script "Step 9: Dictionary Breakdown" "backfill-dictionary-breakdown.js"
+# Step 9: Assign measure words / classifiers (AI)
+run_script "Step 9: Classifiers" "backfill-classifier.js"
 
-# Step 10: Vernacular register score (AI)
-run_script "Step 10: Vernacular Score" "backfill-vernacular-score.js"
+# Step 10: Per-character breakdown for multi-character words (AI)
+run_script "Step 10: Dictionary Breakdown" "backfill-dictionary-breakdown.js"
+
+# Step 11: Vernacular register score (AI)
+run_script "Step 11: Vernacular Score" "backfill-vernacular-score.js"
 
 END_TIME=$(date +%s)
 DURATION=$((END_TIME - START_TIME))

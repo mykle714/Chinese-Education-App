@@ -76,6 +76,7 @@ docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-numbered
 docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-dictionary-breakdown.js --words=未来,摸脉
 docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-process-definitions-array.js --words=未来,摸脉
 docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-parts-of-speech.js --words=未来,摸脉
+docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-word-forms.js --words=未来,摸脉
 docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-hsk-level.js --words=未来,摸脉
 docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-long-definitions.js --words=未来,摸脉
 docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-example-sentences.js --words=未来,摸脉
@@ -83,7 +84,7 @@ docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-classifi
 docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-vernacular-score.js --words=未来,摸脉
 ```
 
-**Parts of speech must run before `backfill-long-definitions` AND `backfill-example-sentences`.** Both depend on `partsOfSpeech`: long-definitions only processes rows where `partsOfSpeech IS NOT NULL` (it would silently skip otherwise), and the example-sentence prompt enforces at least one sentence per listed POS.
+**Parts of speech must run before `backfill-word-forms`, `backfill-long-definitions`, AND `backfill-example-sentences`.** All three depend on `partsOfSpeech`: word-forms and long-definitions only process rows where `partsOfSpeech IS NOT NULL` (they silently skip otherwise), and the example-sentence prompt enforces at least one sentence per listed POS. `backfill-word-forms` additionally reads `definitions[0]`, so it must also run after `backfill-process-definitions-array`. It writes an English `wordForms` map (e.g. `{"past":"ran",...}`), or `{}` when no forms apply, so re-runs skip already-processed rows.
 
 ### A4. Verify enrichment
 
@@ -91,6 +92,7 @@ docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-vernacul
 SELECT word1, tone, "hskLevel",
   "longDefinition" IS NOT NULL AS has_long_def,
   "partsOfSpeech" IS NOT NULL AS has_parts_of_speech,
+  "wordForms" IS NOT NULL AS has_word_forms,
   "exampleSentences" IS NOT NULL AS has_examples,
   breakdown IS NOT NULL AS has_breakdown,
   classifier IS NOT NULL AS has_classifier,

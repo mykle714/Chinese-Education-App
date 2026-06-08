@@ -36,9 +36,13 @@ async function queryDiscoverableCards() {
       console.log(`  ${row.language}: ${row.count}`);
     });
 
-    // Query 3: Total vocabentries rows
-    console.log('\nQuery 3: Total vocabentries rows');
-    const vocabResult = await client.query('SELECT COUNT(*) as total FROM vocabentries');
+    // Query 3: Total vocabentries rows. vet was split per language in migration 66
+    // (legacy `vocabentries` dropped in 73); sum the per-language split tables.
+    console.log('\nQuery 3: Total vocabentries rows (zh + es)');
+    const vocabResult = await client.query(
+      `SELECT (SELECT COUNT(*) FROM vocabentries_zh)
+            + (SELECT COUNT(*) FROM vocabentries_es) AS total`
+    );
     console.log(`Total vocabentries: ${vocabResult.rows[0].total}`);
 
     console.log('\n✅ Query completed successfully');

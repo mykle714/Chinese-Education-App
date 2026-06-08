@@ -84,6 +84,7 @@ export interface VocabEntry {
   expansionSegments?: string[] | null;  // GSA word tokens for the expansion string
   expansionMetadata?: Record<string, { pronunciation?: string; definition?: string }> | null;
   expansionLiteralTranslation?: string | null;
+  iconId?: string | null;  // Representative icons8 icon joined from det; rendered via <img src="/api/icons8/<iconId>/image">
   exampleSentences?: Array<{
     foreignText: string;
     english: string;

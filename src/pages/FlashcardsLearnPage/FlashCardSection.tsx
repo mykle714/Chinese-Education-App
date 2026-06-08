@@ -16,6 +16,7 @@ import type { VocabEntry, SideOneLanguage } from "./types";
 import ForeignText from "../../components/ForeignText";
 import { SpeakerButton } from "../../components/SpeakerButton";
 import { getCategoryColor } from "../../utils/categoryColors";
+import { API_BASE_URL } from "../../constants";
 
 // Re-exported so existing imports `from './FlashCardSection'` keep working.
 export { SpeakerButton };
@@ -76,22 +77,30 @@ const ChineseBlock: React.FC<{
     speakingKey?: string | null;
 }> = ({ entry, showPinyin, showPinyinColor, onSpeak, speakingKey }) => {
     return (
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }} className="mobile-demo-flashcard-chinese-block">
-            <ForeignText
-                size="md"
-                justifyContent="center"
-                className="mobile-demo-flashcard-cpcd-row"
-                text={entry.entryKey}
-                pronunciation={entry.pronunciation}
-                showPinyin={showPinyin}
-                useToneColor={showPinyinColor}
-            />
-            {onSpeak && (
-                <SpeakerButton
-                    onClick={() => onSpeak(entry)}
-                    isLoading={speakingKey === entry.entryKey}
+        // Outer row fills the width and centers the Chinese text within the card.
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }} className="mobile-demo-flashcard-chinese-block">
+            {/* Inner wrapper shrinks to the text width so the Chinese stays truly
+                centered in the card. The speaker icon is absolutely positioned just
+                off the text's right edge, so it doesn't shift the text off-center. */}
+            <Box sx={{ position: 'relative', display: 'inline-flex' }} className="mobile-demo-flashcard-chinese-inner">
+                <ForeignText
+                    size="md"
+                    justifyContent="center"
+                    className="mobile-demo-flashcard-cpcd-row"
+                    text={entry.entryKey}
+                    pronunciation={entry.pronunciation}
+                    showPinyin={showPinyin}
+                    useToneColor={showPinyinColor}
                 />
-            )}
+                {onSpeak && (
+                    <Box sx={{ position: 'absolute', left: '100%', top: '50%', transform: 'translateY(-50%)', ml: 1 }}>
+                        <SpeakerButton
+                            onClick={() => onSpeak(entry)}
+                            isLoading={speakingKey === entry.entryKey}
+                        />
+                    </Box>
+                )}
+            </Box>
         </Box>
     );
 };
@@ -156,20 +165,30 @@ const CategoryChip: React.FC<{ category?: string }> = ({ category }) => {
     );
 };
 
-// Image placeholder box shown at the top of both card faces. Extracted so the
-// two faces share one definition. (Currently a literal "insert image here"
-// stand-in until card imagery ships.)
-const ImagePlaceholder: React.FC = () => {
+// Representative icons8 icon shown at the top of both card faces. Extracted so the
+// two faces share one definition. The entry's `iconId` (joined from det) points at
+// a downloaded icon served by the public endpoint /api/icons8/<iconId>/image; when
+// the entry has no icon assigned we render an empty placeholder box so the card
+// layout (image block + content) stays consistent across cards.
+const CardImage: React.FC<{ iconId?: string | null }> = ({ iconId }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
     return (
         <Box
             className="mobile-demo-flashcard-image"
-            sx={{ width: 106, height: 83, backgroundColor: fc.imagePlaceholder, borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            sx={{ width: 106, height: 83, backgroundColor: fc.imagePlaceholder, borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}
         >
-            <Typography sx={{ fontSize: SIZE.micro, color: fc.textSecondary, fontFamily: FC_FONT, textAlign: 'center' }}>
-                insert image here
-            </Typography>
+            {iconId && (
+                <Box
+                    component="img"
+                    className="mobile-demo-flashcard-image-icon"
+                    src={`${API_BASE_URL}/api/icons8/${encodeURIComponent(iconId)}/image`}
+                    alt=""
+                    // Decorative imagery: not draggable so it doesn't fight the card drag gesture.
+                    draggable={false}
+                    sx={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }}
+                />
+            )}
         </Box>
     );
 };
@@ -183,11 +202,14 @@ const CardFaceSide: React.FC<{
     contentGap: number;
     contentClassName?: string;
     children: React.ReactNode;
+    // The entry's representative icon, rendered in the image block at the top of
+    // the face. Undefined/null -> empty placeholder box (layout preserved).
+    iconId?: string | null;
     // Optional absolutely-positioned element (e.g. the category chip) rendered as
     // a direct child of the face box so it can sit in a corner, outside the
     // centered content column.
     cornerBadge?: React.ReactNode;
-}> = ({ rotated, contentGap, contentClassName, children, cornerBadge }) => {
+}> = ({ rotated, contentGap, contentClassName, children, iconId, cornerBadge }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
     return (
@@ -219,13 +241,19 @@ const CardFaceSide: React.FC<{
                         display: "flex",
                         flexDirection: "column",
                         alignItems: "center",
-                        justifyContent: "space-between",
+                        // Center the image + text as one group so whitespace is balanced
+                        // above and below the content (instead of space-between pinning the
+                        // image to the top edge and the text to the bottom edge, which left
+                        // a void in the middle and looked unbalanced — especially on Side 1
+                        // where there's only a single text block).
+                        justifyContent: "center",
                         height: "100%",
                         minHeight: 0,
-                        gap: "clamp(8px, 2.2vh, 20px)",
+                        // Comfortable, scaling gap between the image and the text block.
+                        gap: "clamp(20px, 5vh, 44px)",
                     }}
                 >
-                    <ImagePlaceholder />
+                    <CardImage iconId={iconId} />
                     <Box className={contentClassName} sx={{ display: 'flex', flexDirection: 'column', gap: contentGap, alignItems: 'center', width: '100%' }}>
                         {children}
                     </Box>
@@ -282,7 +310,7 @@ const CardFace: React.FC<{
             }}
         >
             {/* Side 1 — shows only one language, chosen randomly per card */}
-            <CardFaceSide rotated={false} contentGap={1} contentClassName="mobile-demo-flashcard-text mobile-demo-flashcard-side-one">
+            <CardFaceSide rotated={false} contentGap={1} contentClassName="mobile-demo-flashcard-text mobile-demo-flashcard-side-one" iconId={entry.iconId}>
                 {sideOneLanguage === 'zh'
                     ? <ChineseBlock entry={entry} showPinyin={showPinyin} showPinyinColor={showPinyinColor} onSpeak={onSpeak} speakingKey={speakingKey} />
                     : <EnglishBlock entry={entry} />}
@@ -293,6 +321,7 @@ const CardFace: React.FC<{
                 rotated
                 contentGap={2}
                 contentClassName="mobile-demo-flashcard-side-two"
+                iconId={entry.iconId}
                 cornerBadge={showProgressCategory ? <CategoryChip category={entry.category} /> : undefined}
             >
                 <ChineseBlock entry={entry} showPinyin={showPinyin} showPinyinColor={showPinyinColor} onSpeak={onSpeak} speakingKey={speakingKey} />

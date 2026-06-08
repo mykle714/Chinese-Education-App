@@ -450,6 +450,7 @@ const VocabCardDetailPage: React.FC = () => {
                                                     compact
                                                     flexWrap="wrap"
                                                     className="vocab-card-detail__example-chinese"
+                                                    selectable
                                                 />
                                                 <Typography
                                                     className="vocab-card-detail__example-english"

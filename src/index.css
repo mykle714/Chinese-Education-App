@@ -57,13 +57,17 @@ textarea,
 }
 
 /* CPCD (Chinese characters + pinyin) is the ONE content exception — users may
-   want to copy the characters/pinyin. But this is allowed only on non-touch
-   (desktop) devices: `(hover: hover) and (pointer: fine)` excludes phones/tablets,
-   so on mobile even CPCD stays non-selectable per product decision. */
+   want to copy the characters/pinyin. But selection is OPT-IN per instance: only
+   cpcd rows flagged with `.cpcd-row--selectable` (via CPCDRow's `selectable`
+   prop, currently example sentences only) are selectable, since cpcd also appears
+   in many drag-driven, non-prose surfaces where a stray selection is unwanted.
+   And even then it's allowed only on non-touch (desktop) devices:
+   `(hover: hover) and (pointer: fine)` excludes phones/tablets, so on mobile even
+   CPCD stays non-selectable per product decision. */
 @media (hover: hover) and (pointer: fine) {
-  .cpcd-row__chars,
-  .cpcd-row__chars *,
-  .cpcd-row__pinyin-cell {
+  .cpcd-row--selectable .cpcd-row__chars,
+  .cpcd-row--selectable .cpcd-row__chars *,
+  .cpcd-row--selectable .cpcd-row__pinyin-cell {
     -webkit-user-select: text;
     user-select: text;
   }

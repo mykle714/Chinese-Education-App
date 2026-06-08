@@ -27,8 +27,16 @@
  *   prompt is retried on Opus before giving up. A parenthetical-only gloss that
  *   leads is fixed up locally (second entry promoted), not retried.
  *
- * Disagreements (Pass 2 ≠ Pass 1), low_confidence flags, and any pruned glosses
- * are dumped to a timestamped review file in /tmp so the user can skim post-run.
+ * Short leading gloss (post-pass):
+ *   After ordering/pruning, if the final leading definition is longer than
+ *   MAX_FIRST_GLOSS_LEN (20) chars, a single short (≤20 char) gloss for the word
+ *   is synthesized (Sonnet, Opus on retry) and PREPENDED, keeping the long gloss
+ *   right behind it. This is the only step that intentionally writes a
+ *   NON-source string, so every generated gloss is surfaced in the review log.
+ *
+ * Disagreements (Pass 2 ≠ Pass 1), low_confidence flags, any pruned glosses, and
+ * every generated short gloss are dumped to a timestamped review file in /tmp so
+ * the user can skim post-run.
  *
  * Usage:
  *   npx tsx scripts/backfill/spanish/backfill-process-definitions-array.js                # discoverable es entries
@@ -49,7 +57,7 @@ dotenv.config({ path: path.join(__dirname, '../../../.env.docker') });
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
 import { initRunLog } from '../run-log.js';
-const SCRIPT_VERSION = 2; // bump when this script's logic/prompt changes
+const SCRIPT_VERSION = 3; // bump when this script's logic/prompt changes
 
 const isSpotCheck = process.argv.includes('--spot-check');
 const includeAll  = process.argv.includes('--all');
@@ -70,6 +78,11 @@ const { stampEntries } = initRunLog({ script: 'spanish/backfill-process-definiti
 const PASS1_MODEL = 'claude-sonnet-4-6';
 const PASS2_MODEL = 'claude-sonnet-4-6';
 const RETRY_MODEL = 'claude-opus-4-8'; // used when a Sonnet response fails validation
+
+// The card's headline slot wants a punchy gloss. If the final leading
+// definition exceeds this many characters, we synthesize a short replacement
+// gloss to prepend (see generateShortGloss).
+const MAX_FIRST_GLOSS_LEN = 20;
 
 const REVIEW_LOG_PATH = `/tmp/process-definitions-array-review-${Date.now()}.log`;
 
@@ -298,6 +311,62 @@ async function pass2Critique(word, original, pass1) {
   return { error: `pass2 failed both models (sonnet: ${first.error}, opus: ${retry.error})` };
 }
 
+// ─── Short leading-gloss synthesis ────────────────────────────────────────
+// When the final leading definition is too long for the card's headline slot
+// (> MAX_FIRST_GLOSS_LEN chars), ask the model for ONE short gloss capturing the
+// word's most common modern sense and prepend it. Unlike pass 1/2, this is
+// intentionally a NEW string (not copied from the source), so it is validated
+// only for length/shape and always surfaced for human review.
+
+const SHORT_GLOSS_SYSTEM = `You are a Spanish linguistics expert writing an ultra-concise English headword gloss for a modern Spanish learner's vocabulary card.`;
+
+function shortGlossPrompt(word, definitions) {
+  return `The card for "${word}" leads with a definition longer than ${MAX_FIRST_GLOSS_LEN} characters, which is too long for the card's headline slot.
+
+Write ONE short English gloss — at most ${MAX_FIRST_GLOSS_LEN} characters, including spaces — that captures the word's most common modern (2020s) meaning. It will be shown first, ahead of the fuller definitions.
+
+Requirements:
+- ${MAX_FIRST_GLOSS_LEN} characters or fewer total.
+- Reads like a clean dictionary headword gloss, NOT a sentence. No trailing period.
+- No parentheticals, no usage notes, no examples.
+- Base it on the most prototypical modern sense; the definitions below (already ordered most- to least-useful) are your guide.
+
+Existing definitions:
+${JSON.stringify(definitions, null, 2)}
+
+Return ONLY a JSON object, no explanation:
+{ "gloss": "<short gloss>" }`;
+}
+
+async function callShortGloss(word, definitions, model) {
+  const response = await anthropic.messages.create({
+    model,
+    max_tokens: 256,
+    system: SHORT_GLOSS_SYSTEM,
+    messages: [{ role: 'user', content: shortGlossPrompt(word, definitions) }],
+  });
+  const raw = response.content[0].text;
+  const objMatch = raw.match(/\{[\s\S]*\}/);
+  if (!objMatch) return { error: 'no object in response', raw };
+  let parsed;
+  try { parsed = JSON.parse(objMatch[0]); }
+  catch (e) { return { error: `JSON parse: ${e.message}`, raw }; }
+  const gloss = typeof parsed.gloss === 'string' ? parsed.gloss.trim() : '';
+  if (!gloss) return { error: 'empty gloss' };
+  if (gloss.length > MAX_FIRST_GLOSS_LEN) return { error: `gloss too long (${gloss.length} chars)` };
+  if (isExclusivelyParenthetical(gloss)) return { error: 'gloss is parenthetical-only' };
+  return { gloss };
+}
+
+async function generateShortGloss(word, definitions) {
+  const first = await callShortGloss(word, definitions, PASS1_MODEL);
+  if (!first.error) return { ...first, model: PASS1_MODEL };
+  // Validation failed on Sonnet — retry with Opus.
+  const retry = await callShortGloss(word, definitions, RETRY_MODEL);
+  if (!retry.error) return { ...retry, model: RETRY_MODEL, retried: true, firstError: first.error };
+  return { error: `short-gloss failed both models (sonnet: ${first.error}, opus: ${retry.error})` };
+}
+
 // ─── Review log ─────────────────────────────────────────────────────────────
 
 let reviewEntries = [];
@@ -315,6 +384,7 @@ function flushReviewLog() {
       `  Pass 1:   ${JSON.stringify(e.pass1)}`,
       `  Final:    ${JSON.stringify(e.final)}`,
       e.dropped && e.dropped.length ? `  Dropped:  ${JSON.stringify(e.dropped)}` : null,
+      e.generated ? `  Generated: ${JSON.stringify(e.generated)} (synthetic leading gloss)` : null,
       e.reason ? `  Reason:   ${e.reason}` : null,
     ].filter(Boolean).join('\n');
   }).join('\n\n');
@@ -370,6 +440,7 @@ async function run() {
     let lowConf   = 0;
     let opusRetries = 0;
     let glossesPruned = 0; // total glosses removed across all entries
+    let shortGenerated = 0; // total synthetic short leading glosses prepended
 
     for (const row of entries) {
       const definitions = Array.isArray(row.definitions)
@@ -412,6 +483,30 @@ async function run() {
           }
         }
 
+        // Short leading-gloss synthesis: if the curated leading definition is too
+        // long for the card headline, prepend a freshly generated short gloss
+        // (keeping the long one right behind it). This is the one place we write a
+        // non-source string, so it is always surfaced for human review.
+        let generatedFirst = null;
+        if (finalOrder.length && finalOrder[0].length > MAX_FIRST_GLOSS_LEN) {
+          const sg = await generateShortGloss(row.word1, finalOrder);
+          if (sg.retried) opusRetries++;
+          if (sg.error) {
+            console.log(`short-gloss fail (${sg.error}) — leaving long gloss first`);
+            logReview({
+              id: row.id, word: row.word1, action: 'short_gloss_failed',
+              original: definitions, pass1: p1.order, final: finalOrder,
+              reason: `Short-gloss error: ${sg.error}`,
+            });
+          } else {
+            generatedFirst = sg.gloss;
+            // De-dupe: if the model echoed an existing gloss, promote it rather
+            // than inserting a duplicate.
+            finalOrder = [generatedFirst, ...finalOrder.filter(d => d !== generatedFirst)];
+            shortGenerated++;
+          }
+        }
+
         const orderChanged = JSON.stringify(finalOrder) !== JSON.stringify(definitions);
         const pass2Disagreed = !skipCritic && JSON.stringify(finalOrder) !== JSON.stringify(p1.order);
         // Glosses present in the original but pruned from the final result.
@@ -422,11 +517,12 @@ async function run() {
         // - refined (critic overrode pass1)
         // - low_confidence (critic uncertain)
         // - any pruning (removals are destructive — always surface for review)
-        if (action === 'refined' || action === 'low_confidence' || droppedGlosses.length) {
+        // - any generated short gloss (synthetic non-source string)
+        if (action === 'refined' || action === 'low_confidence' || droppedGlosses.length || generatedFirst) {
           logReview({
             id: row.id, word: row.word1, action,
             original: definitions, pass1: p1.order, final: finalOrder,
-            dropped: droppedGlosses, reason,
+            dropped: droppedGlosses, generated: generatedFirst, reason,
           });
         }
 
@@ -442,6 +538,7 @@ async function run() {
           console.log(`    Pass1:  ${JSON.stringify(p1.order)}`);
           if (pass2Disagreed) console.log(`    Final:  ${JSON.stringify(finalOrder)}  ← critic refined`);
           if (droppedGlosses.length) console.log(`    Pruned: ${JSON.stringify(droppedGlosses)}`);
+          if (generatedFirst) console.log(`    Short:  ${JSON.stringify(generatedFirst)}  ← generated leading gloss`);
           if (reason) console.log(`    Reason: ${reason}`);
           unchanged++; // not actually written
           continue;
@@ -485,6 +582,7 @@ async function run() {
       console.log(`Failed/invalid  : ${failed}`);
       console.log(`Glosses pruned  : ${glossesPruned}`);
     }
+    console.log(`Short glosses   : ${shortGenerated} generated`);
     if (!skipCritic) {
       console.log(`Critic confirmed: ${confirmed}`);
       console.log(`Critic refined  : ${refined}`);

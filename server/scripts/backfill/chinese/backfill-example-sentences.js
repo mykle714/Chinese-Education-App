@@ -3,8 +3,13 @@
  *
  * For each discoverable zh entry with no exampleSentences, uses Claude AI to generate
  * natural, contextually appropriate example sentences using the word in different
- * grammatical roles. Each sentence includes Chinese, English translation, and
- * a partOfSpeechDict keyed by sentence tokens (single or multi-character words).
+ * grammatical roles. Each sentence includes Chinese, English translation,
+ * a partOfSpeechDict keyed by sentence tokens (single or multi-character words),
+ * and a segmentGloss: an ORDERED array of { index, segment, english } items giving
+ * the contextual English gloss (correct tense/form) of each Chinese segment. Read
+ * left to right, the english values string together into understandable (if broken)
+ * English. The explicit `index` disambiguates repeated tokens (e.g. 看看, 一…一…),
+ * which a token-keyed object could not.
  *
  * Multi-agent pipeline (mirrors backfill-expansion-claude.js):
  *   1. Generator agent (Sonnet) → proposes the batch of sentences
@@ -99,6 +104,33 @@ function formatDefinitions(definitions) {
   return Array.isArray(definitions) ? definitions.slice(0, 3).join('; ') : definitions;
 }
 
+// Mechanical shape check for the segmentGloss array: an ordered list of
+// { index, segment, english } items. Validates that it is a non-empty array,
+// each item is well-formed, segments carry no punctuation, and the indexes form
+// a contiguous 0..n-1 sequence (so order + dupe-disambiguation are intact).
+function isValidSegmentGloss(arr) {
+  if (!Array.isArray(arr) || arr.length === 0) return false;
+  const seenIndexes = new Set();
+  const ok = arr.every((item) =>
+    item &&
+    typeof item === 'object' &&
+    !Array.isArray(item) &&
+    Number.isInteger(item.index) &&
+    typeof item.segment === 'string' &&
+    item.segment.length > 0 &&
+    !/[\s，。！？；：,.!?;:]/.test(item.segment) &&
+    typeof item.english === 'string' &&
+    item.english.trim().length > 0 &&
+    (seenIndexes.add(item.index), true)
+  );
+  if (!ok || seenIndexes.size !== arr.length) return false;
+  // Indexes must be a contiguous 0..n-1 set (order is carried by the array itself).
+  for (let i = 0; i < arr.length; i++) {
+    if (!seenIndexes.has(i)) return false;
+  }
+  return true;
+}
+
 // Mechanical shape check for a single sentence object (fields + POS dict + tense).
 // Used both for generator output and for any Opus-repaired replacement sentence.
 function isValidSentenceShape(s) {
@@ -108,6 +140,7 @@ function isValidSentenceShape(s) {
     typeof s.english === 'string' && s.english.length > 0 &&
     typeof s.translatedVocab === 'string' && s.translatedVocab.trim().length > 0 &&
     typeof s.tense === 'string' && ALLOWED_TENSES.has(s.tense) &&
+    isValidSegmentGloss(s.segmentGloss) &&
     s.partOfSpeechDict &&
     typeof s.partOfSpeechDict === 'object' &&
     !Array.isArray(s.partOfSpeechDict) &&
@@ -161,6 +194,13 @@ Write exactly ${sentenceCount} natural example sentences using "${word}". Each s
 - Do not include punctuation as keys
 - Include the target word "${word}" as one of the keys in partOfSpeechDict
 - If the target word is a verb but is used as a gerund or nominal subject/object in this sentence (e.g. 下单很简单 — "Ordering is simple", where 下单 is the sentence subject), tag it as "noun", not "verb"
+- Include a "segmentGloss" array for each sentence: an ORDERED, segment-by-segment English gloss of the Chinese sentence
+  - Cover the SAME word tokens you used as keys in partOfSpeechDict, in the exact left-to-right order they appear in the Chinese sentence (do not include punctuation)
+  - Each item is an object: {"index": <0-based position in this array>, "segment": "<the Chinese token>", "english": "<its contextual English gloss>"}
+  - The "index" must start at 0 and increase by 1 for each item — this is what lets repeated tokens (e.g. 看看, 一…一…) be told apart
+  - Each "english" gloss must use the correct tense / form / number that the word takes IN THIS sentence (e.g. 贴 in a past-tense sentence → "stuck", not "stick"; 照片 as a definite object → "the photo")
+  - For grammatical function words with no direct English equivalent (把, 了, 的, 吗, measure words, etc.), give the closest functional English ("took", "(completed)", "'s", "(question)") or a brief bracketed note — choose whatever keeps the strung-together reading understandable
+  - When the "english" values are read in order, they must form understandable English to a native speaker — it does NOT need to be natural/fluent (broken English is fine), but it must be comprehensible
 
 Across the ${sentenceCount} sentences, vary the sentence structure so they don't feel templated. Do NOT start most sentences with a time word followed by a verb, and avoid leaning on a single repeated mold. Mix it up: vary the sentence-initial element, include a question where natural, and draw on a diverse range of grammatical constructions rather than reusing the same one.
 
@@ -174,13 +214,19 @@ Respond with ONLY a JSON array of exactly ${sentenceCount} objects in this forma
     "partOfSpeechDict": {
       "wordToken1": "pos_tag",
       "wordToken2": "pos_tag"
-    }
+    },
+    "segmentGloss": [
+      {"index": 0, "segment": "wordToken1", "english": "contextual english gloss"},
+      {"index": 1, "segment": "wordToken2", "english": "contextual english gloss"}
+    ]
   }
 ]`;
 
   const response = await anthropic.messages.create({
+    // segmentGloss roughly doubles per-sentence output size, so budget ~500 tokens
+    // per sentence (was 250) to avoid truncating the JSON mid-array.
     model: GENERATOR_MODEL,
-    max_tokens: Math.max(600, 250 * sentenceCount),
+    max_tokens: Math.max(1200, 500 * sentenceCount),
     temperature: 0.7,
     messages: [{ role: 'user', content: prompt }],
   });
@@ -254,7 +300,7 @@ async function regenerateSentenceWithOpus(word, pronunciation, definitionText, b
 
   const response = await anthropic.messages.create({
     model: REGENERATOR_MODEL,
-    max_tokens: 700,
+    max_tokens: 1400, // raised from 700 — segmentGloss adds substantial output length
     // Note: claude-opus-4-8 deprecates the `temperature` parameter, so it is omitted here.
     system: 'You are a native Mandarin teacher rewriting a single flawed example sentence. Respond only with valid JSON.',
     messages: [{
@@ -272,10 +318,11 @@ The replacement must follow the same requirements as the original generation:
 - "translatedVocab": the English word/phrase in your translation that corresponds to "${word}".
 - "tense": one of "past", "present", or "future" — the sentence's natural temporal meaning.
 - "partOfSpeechDict": every word token in the Chinese sentence as a key (no punctuation keys), each value one of: ${allowedPosTags.join(', ')}. Include "${word}" as a key.
+- "segmentGloss": an ORDERED array of {"index": <0-based>, "segment": "<Chinese token>", "english": "<contextual gloss>"} covering the same tokens in left-to-right order. index starts at 0 and increments by 1. Each english gloss uses the correct tense/form for this sentence; read in order they must form understandable (broken is fine) English.
 - The English translation must mirror the Chinese punctuation and clause structure.
 
 Respond with ONLY one JSON object:
-{"foreignText": "...", "english": "...", "translatedVocab": "...", "tense": "past|present|future", "partOfSpeechDict": {"token": "pos_tag"}}`,
+{"foreignText": "...", "english": "...", "translatedVocab": "...", "tense": "past|present|future", "partOfSpeechDict": {"token": "pos_tag"}, "segmentGloss": [{"index": 0, "segment": "token", "english": "gloss"}]}`,
     }],
   });
 
@@ -391,6 +438,10 @@ async function run() {
             console.log(`           translatedVocab: ${s.translatedVocab}`);
             console.log(`           tense: ${s.tense}`);
             console.log(`           POS: ${JSON.stringify(s.partOfSpeechDict)}`);
+            // segmentGloss: print per-segment glosses + the strung-together broken-English reading
+            const orderedGloss = [...s.segmentGloss].sort((a, b) => a.index - b.index);
+            console.log(`           segmentGloss: ${orderedGloss.map(g => `${g.segment}→${g.english}`).join('  ')}`);
+            console.log(`           strung together: ${orderedGloss.map(g => g.english).join(' ')}`);
           });
         } else {
           console.log(`✓${repaired ? ` (${repaired} repaired)` : ''}`);

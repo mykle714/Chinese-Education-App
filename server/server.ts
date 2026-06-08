@@ -16,7 +16,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Import DAL architecture
-import { userController, vocabEntryController, onDeckVocabController, userMinutePointsController, textController, dictionaryController, starterPacksController, onDeckVocabService, nightMarketController, gamesController } from './dal/setup.js';
+import { userController, vocabEntryController, onDeckVocabController, userMinutePointsController, textController, dictionaryController, starterPacksController, onDeckVocabService, nightMarketController, gamesController, icons8Controller } from './dal/setup.js';
 import { leaderboardController } from './controllers/LeaderboardController.js';
 import { ttsController } from './controllers/TTSController.js';
 import { MODE_CONFIGS, type StudyMode } from './services/OnDeckVocabService.js';
@@ -861,6 +861,15 @@ app.get('/api/dictionary/count', authenticateToken, async (req, res) => {
 // @ts-ignore
 app.post('/api/tts/synthesize', authenticateToken, async (req, res) => {
   await ttsController.synthesize(req, res);
+});
+
+// icons8 icon image: stream the stored bytes for a downloaded icon by its icons8 id.
+// PUBLIC (no auth) on purpose — loaded via <img src> in the discover flow, which can't
+// attach an Authorization header; icons are non-sensitive public artwork. Served from
+// icons8.assetBytes for now (see TODO(cdn) in Icons8Controller).
+// @ts-ignore
+app.get('/api/icons8/:iconId/image', async (req, res) => {
+  await icons8Controller.getIconImage(req, res);
 });
 
 // Get changelog content

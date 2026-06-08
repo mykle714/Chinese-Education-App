@@ -1,5 +1,12 @@
 # longDefinition Spot-Check Review (Chinese)
 
+> ⚠️ **Superseded by v11 (migration 70).** This review documents v9/v10, when
+> `longDefinition` was a single labeled TEXT string with a per-ENTRY budget of
+> `100 × (POScount + 1)` (200/300/400). As of SCRIPT_VERSION 11, `longDefinition` is
+> a JSONB OBJECT keyed by POS (`{"noun": "...", "verb": "..."}`) with a **per-POS-value
+> budget of 125 chars** (constant, independent of POS count). The lengths/budgets quoted
+> below no longer apply; the qualitative rule notes (rules 2–11) still do.
+
 **Date:** 2026-06-06
 **Script:** `server/scripts/backfill/chinese/backfill-long-definitions.js` (SCRIPT_VERSION 10)
 **Sample:** 15 discoverable `dictionaryentries_zh` words spanning vernacularScore 2–5.

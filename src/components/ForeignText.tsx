@@ -16,12 +16,20 @@ interface ForeignTextBaseProps {
     language?: Language;
     size?: CPCDSize;
     compact?: boolean;
+    // Render the word/characters at bold weight (regular by default). Applies to
+    // both the cpcd glyphs and the Latin-script plain-text fallback.
+    bold?: boolean;
     flexWrap?: "nowrap" | "wrap";
     justifyContent?: string;
     className?: string;
     // Horizontal long-syllable pinyin nudging (see CPCDRow.pinyinShift). Defaults
     // to true; ignored for Latin-script languages, which render no pinyin overlay.
     pinyinShift?: boolean;
+    // Allow text selection / cursor within the rendered word on desktop. Defaults
+    // to false; only prose-like surfaces (example sentences) enable it. See
+    // CPCDRow.selectable. Ignored for Latin-script plain text, which inherits the
+    // app-wide non-selectable default.
+    selectable?: boolean;
 }
 
 interface ForeignTextProps extends ForeignTextBaseProps {
@@ -96,6 +104,7 @@ const ForeignText: React.FC<ForeignTextProps> = ({
     language,
     size = "sm",
     compact = false,
+    bold = false,
     flexWrap = "nowrap",
     justifyContent,
     className,
@@ -105,6 +114,7 @@ const ForeignText: React.FC<ForeignTextProps> = ({
     useToneColor = true,
     items,
     pinyinShift = true,
+    selectable = false,
 }) => {
     // Resolve language: explicit prop wins, otherwise the user's selection.
     const { user } = useAuth();
@@ -123,7 +133,7 @@ const ForeignText: React.FC<ForeignTextProps> = ({
                     flexWrap,
                     justifyContent: justifyContent ?? "flex-start",
                     fontSize,
-                    fontWeight: WEIGHT.regular,
+                    fontWeight: bold ? WEIGHT.bold : WEIGHT.regular,
                     fontFamily: FONTS.sans,
                     color: "text.primary",
                     lineHeight: 1.21,
@@ -142,10 +152,12 @@ const ForeignText: React.FC<ForeignTextProps> = ({
             items={resolvedItems}
             size={size}
             compact={compact}
+            bold={bold}
             flexWrap={flexWrap}
             justifyContent={justifyContent}
             className={className}
             pinyinShift={pinyinShift}
+            selectable={selectable}
         />
     );
 };

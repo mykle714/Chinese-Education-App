@@ -175,6 +175,8 @@ export class StarterPacksService {
       exampleSentencesMetadata: null, // Computed on-the-fly in _enrichDiscoverCards
       expansion: row.expansion,
       expansionLiteralTranslation: row.expansionLiteralTranslation ?? null,
+      // Optional icons8 icon for the card; client renders it via /api/icons8/<iconId>/image.
+      iconId: row.iconId ?? null,
     }));
   }
 
@@ -307,7 +309,8 @@ export class StarterPacksService {
       const result = await client.query(`
         SELECT de.id, de.word1, de.word2, de.pronunciation, de.tone, de.definitions,
                de.language, de.script, de."hskLevel", de.breakdown, de.synonyms,
-               de."exampleSentences", de.expansion, de."expansionLiteralTranslation"${posCols}
+               de."exampleSentences", de.expansion, de."expansionLiteralTranslation",
+               de."iconId"${posCols}
         FROM ${table} de
         WHERE de.language = $1
           AND de.discoverable = TRUE

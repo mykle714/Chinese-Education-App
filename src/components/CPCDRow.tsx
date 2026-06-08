@@ -27,6 +27,9 @@ interface CPCDRowProps {
     flexWrap?: "nowrap" | "wrap";
     justifyContent?: string;
     className?: string;
+    // Renders the characters at bold weight instead of the default regular.
+    // Only affects the glyphs; the pinyin overlay stays at its normal weight.
+    bold?: boolean;
     // When true (default), neighboring pinyin syllables that would otherwise
     // collide are nudged apart just enough that their text stops overlapping.
     // The character cells overlap (negative margin) to keep narrow CJK glyphs
@@ -37,6 +40,12 @@ interface CPCDRowProps {
     // sentences untouched. Exposed as a property so every cpcd surface (flp
     // example sentences, bubble-match word bubbles, etc.) shares one behavior.
     pinyinShift?: boolean;
+    // When true, the characters/pinyin may be selected (and a text cursor may
+    // appear) on desktop — gated by the `.cpcd-row--selectable` CSS hook in
+    // index.css. Defaults to false because cpcd appears in many drag-driven,
+    // non-text surfaces; only prose-like surfaces (example sentences) opt in.
+    // Mobile stays non-selectable regardless (see the `(pointer: coarse)` block).
+    selectable?: boolean;
 }
 
 // Per-size visual constants. Mirror the table that used to live in
@@ -65,7 +74,9 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
     flexWrap = "nowrap",
     justifyContent,
     className,
+    bold = false,
     pinyinShift = true,
+    selectable = false,
 }) => {
     const charsBlockRef = useRef<HTMLDivElement | null>(null);
     const cellRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -208,9 +219,16 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
         return () => ro.disconnect();
     }, []);
 
+    // Compose the caller's className with the stable cpcd-row base class and the
+    // optional selectable modifier. The CSS desktop selection rule keys off
+    // `.cpcd-row--selectable` so selection is opt-in per instance.
+    const rootClassName = ["cpcd-row", selectable && "cpcd-row--selectable", className]
+        .filter(Boolean)
+        .join(" ");
+
     return (
         <Box
-            className={className}
+            className={rootClassName}
             sx={{ position: "relative" }}
         >
             {/* Chars block — all characters contiguous in DOM order. A drag-selection that
@@ -278,7 +296,7 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
                                 cursor: isInteractive ? "pointer" : "default",
                                 transition: "border-color 0.15s ease, background-color 0.15s ease",
                                 fontSize: charFontSize,
-                                fontWeight: WEIGHT.regular,
+                                fontWeight: bold ? WEIGHT.bold : WEIGHT.regular,
                                 fontFamily: FONTS.cjk,
                                 color: "text.primary",
                                 lineHeight: 1.21,

@@ -188,6 +188,9 @@ export interface DiscoverCard {
   expansionMetadata?: Record<string, { pronunciation?: string; definition?: string }> | null;  // Keyed by segment
   expansionLiteralTranslation?: string | null;
   matchException?: string[] | null;  // Multi-char tokens to suppress during GSA segmentation
+  // Optional icons8 icon id (FK → icons8."icons8Id"). When set, the client renders
+  // the icon via <img src="/api/icons8/<iconId>/image">. Null when no icon assigned.
+  iconId?: string | null;
 }
 
 export interface DictionaryEntryCreateData {
@@ -256,6 +259,7 @@ export interface VocabEntry {
   expansionLiteralTranslation?: string | null;  // Literal phrase translation derived from expansion components
   longDefinition?: string | null;  // AI-generated extended definition (25–150 chars) from dictionaryentries_zh
   longDefinitionParts?: LongDefinitionPart[] | null;  // Computed at runtime: longDefinition split into English + cpcd-able Chinese runs
+  iconId?: string | null;  // Representative icons8 icon (FK to icons8.icons8Id) joined from det; client renders via <img src="/api/icons8/<iconId>/image">
   exampleSentences?: Array<{
     foreignText: string;
     english: string;

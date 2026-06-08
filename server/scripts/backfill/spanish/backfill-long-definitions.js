@@ -7,15 +7,25 @@
  * (migration 59), so longDefinition starts NULL and is owned by this script.
  *
  * Pipeline:
- *   1. Generator agent (Sonnet) — writes a concise English definition (25–150 chars).
+ *   1. Generator agent (Sonnet) — writes a per-POS definition OBJECT { "<pos>": "..." }.
  *   2. Validator agent (Sonnet) — checks all hard constraints; may reject with a critique.
  *   3. Regenerator agent (Opus) — on rejection, retries once informed by the validator critique.
- *   4. Chooser agent (Opus) — picks the better definition between Sonnet's and Opus's attempts.
+ *   4. Chooser agent (Opus) — picks the better definition object between Sonnet's and Opus's attempts.
  *
  * Only processes entries where partsOfSpeech is already populated so definitions
  * accurately reflect every grammatical role. For Spanish, partsOfSpeech is set by
  * the importer (import-esdict-temp.ts) from the Wiktionary POS tags — no separate
  * es parts-of-speech backfill is needed.
+ *
+ * OUTPUT SHAPE: a JSON OBJECT keyed by part of speech — one definition per POS
+ * (e.g. { "noun": "...", "verb": "..." }). Single-POS words emit a one-key object.
+ * Stored verbatim in the JSONB `longDefinition` column (migration 70) and joined back
+ * into a labeled "pos: ... \n\n pos: ..." string at the read boundary
+ * (longDefObjectToDisplayString) for the API/renderer.
+ *
+ * LENGTH is per POS value: each definition value must be MIN_LEN..MAX_LEN_PER_POS
+ * (25–125) chars, independent of how many POS the word has. A final enforceMaxLen step
+ * (Opus tightener) guarantees every value respects the budget.
  *
  * Usage:
  *   docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-long-definitions.js              # full backfill
@@ -33,7 +43,7 @@ dotenv.config({ path: path.join(__dirname, '../../../.env.docker') });
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
 import { initRunLog } from '../run-log.js';
-const SCRIPT_VERSION = 1; // bump when this script's logic/prompt changes
+const SCRIPT_VERSION = 2; // bump when this script's logic/prompt changes
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -52,18 +62,77 @@ const VALIDATOR_MODEL = 'claude-sonnet-4-6';
 const RETRY_MODEL = 'claude-opus-4-8';
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Shared rule text — injected into generator, validator, and regenerator prompts
-//  so all agents judge by the exact same criteria.
+//  Length budget + object-shape helpers (mirrors chinese/backfill-long-definitions.js)
+//  A definition is a plain object keyed by POS: { "<pos>": "<text>", ... }. The budget
+//  is PER POS VALUE — each sense gets its own independent definition and budget.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MIN_LEN = 25;
+const MAX_LEN_PER_POS = 125;
+
+// String values of a definition object (defensive against non-string entries).
+function defValues(def) {
+  return def && typeof def === 'object' && !Array.isArray(def)
+    ? Object.values(def).filter(v => typeof v === 'string')
+    : [];
+}
+
+// POS keys whose value exceeds the per-POS ceiling.
+function overBudgetKeys(def) {
+  return Object.entries(def || {})
+    .filter(([, v]) => typeof v === 'string' && v.length > MAX_LEN_PER_POS)
+    .map(([k]) => k);
+}
+
+// Every value within [MIN_LEN, MAX_LEN_PER_POS]; used by enforceMaxLen.
+function defWithinBudget(def) {
+  const vals = defValues(def);
+  return vals.length > 0 && vals.every(v => v.length >= MIN_LEN && v.length <= MAX_LEN_PER_POS);
+}
+
+// Longest value length — surfaced in spot-check tags so an over-budget value is visible.
+function maxValueLen(def) {
+  const vals = defValues(def);
+  return vals.length ? Math.max(...vals.map(v => v.length)) : 0;
+}
+
+// Compact, length-annotated rendering of an object for inclusion in agent prompts.
+function annotateDefForPrompt(def) {
+  return Object.entries(def || {})
+    .map(([pos, v]) => `  "${pos}" (${typeof v === 'string' ? v.length : 0} chars): "${v}"`)
+    .join('\n');
+}
+
+// Human-readable one-liner for console/spot-check logging.
+function defToLogString(def) {
+  return Object.entries(def || {})
+    .map(([pos, v]) => `${pos}: ${v}`)
+    .join('  |  ');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Shared rule text — injected into generator, validator, regenerator, chooser,
+//  and tightener prompts so all agents judge by the exact same criteria.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const DEFINITION_RULES_TEXT = `
+Output shape — a JSON object keyed by part of speech:
+- Write ONE definition per part of speech, as a JSON object whose KEYS are the parts of speech (exactly
+  as given) and whose VALUES are that POS's definition string, ordered primary POS first, e.g.:
+      {"noun": "<nuance for the noun sense>", "verb": "<nuance for the verb sense>"}
+- If the word has only ONE part of speech, still emit a one-key object, e.g. {"noun": "..."}.
+- Each VALUE is an independent definition for that single sense — do NOT label it with the POS inside the
+  string, and do NOT cram other senses into it.
+
 Hard constraints — all must be satisfied:
 
-1. LENGTH — The definition must be between 25 and 150 characters (inclusive). Count precisely.
-2. ENGLISH ONLY — Pure ASCII output only. The definition itself must be in English; Spanish-language text, accented/special characters (á, é, í, ó, ú, ñ, ü, ¿, ¡, etc.), and all non-ASCII letters are forbidden.
+1. LENGTH — EACH value must be between ${MIN_LEN} and ${MAX_LEN_PER_POS} characters (inclusive). This
+   budget is PER POS value, not a shared total. Count each value precisely and never exceed
+   ${MAX_LEN_PER_POS} for any one value.
+2. ENGLISH ONLY — Pure ASCII output only. Each value must be in English; Spanish-language text, accented/special characters (á, é, í, ó, ú, ñ, ü, ¿, ¡, etc.), and all non-ASCII letters are forbidden.
 3. NO CONTRASTIVE CONSTRUCTIONS — Do not use "rather than", "instead of", "as opposed to", "not just X but Y", or "X, not Y" framings. Describe what the word means directly.
 4. NO SELF-REFERENCE — Do not repeat the target Spanish word itself or any literal gloss of it in quotes.
-5. POS COVERAGE — When the word has multiple parts of speech, reflect the distinct roles where meaningful (e.g. a word that is both noun and verb should convey both uses).
+5. POS COVERAGE & FORMAT — The object must contain exactly one key per part of speech given (cover every POS), keyed and ordered as specified above. Do not omit a POS, invent extra POS, or merge senses.
 
 Quality goals (address whichever are most relevant):
 - Dispel common misconceptions or mistranslations
@@ -71,12 +140,12 @@ Quality goals (address whichever are most relevant):
 `;
 
 const VIOLATION_CODE_LABELS = {
-  too_short: 'Definition is under 25 characters (rule 1)',
-  too_long: 'Definition is over 150 characters (rule 1)',
+  too_short: `One or more POS values is under ${MIN_LEN} characters (rule 1)`,
+  too_long: `One or more POS values exceeds the ${MAX_LEN_PER_POS}-character per-POS budget (rule 1)`,
   contains_non_english: 'Contains Spanish-language text, accented characters, or non-ASCII letters (rule 2)',
   contrastive_construction: 'Uses a forbidden contrastive phrase such as "rather than" or "instead of" (rule 3)',
   self_reference: 'Repeats the target word or its transliteration (rule 4)',
-  poor_pos_coverage: 'Word has multiple parts of speech but definition addresses only one role (rule 5)',
+  poor_pos_coverage: 'Object does not contain exactly one key per part of speech (missing/extra POS, or wrong object shape) (rule 5)',
   inaccurate: 'Definition is factually misleading or incorrect for a learner',
 };
 
@@ -96,8 +165,23 @@ function parseJsonFromResponse(text) {
   }
 }
 
+// Parse an agent response into a normalized definition object keyed by the expected
+// POS (in posList order). Tolerates markdown fences / extra prose around the JSON.
+// Keeps only string values for the expected POS; trims them. Returns null if no
+// expected POS has a non-empty value.
+function parseDefObject(responseText, posList) {
+  const raw = parseJsonFromResponse(responseText);
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const out = {};
+  for (const pos of posList) {
+    const v = raw[pos];
+    if (typeof v === 'string' && v.trim().length > 0) out[pos] = v.trim();
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-//  Agent 1: generator (Sonnet)
+//  Agent 1: generator (Sonnet) — emits the per-POS definition OBJECT
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function generateDefinition(word, partsOfSpeech, model = GEN_MODEL) {
@@ -111,17 +195,16 @@ ${posLine}
 
 ${DEFINITION_RULES_TEXT}
 
-Respond with ONLY the definition text — no quotes, no JSON, no extra text.`;
+Respond with ONLY the JSON object (keys = the parts of speech above, values = each definition) — no markdown fences, no extra prose.`;
 
   const response = await anthropic.messages.create({
     model,
-    max_tokens: 256,
+    max_tokens: 600,
     temperature: 0.3,
     messages: [{ role: 'user', content: prompt }],
   });
 
-  const text = response.content[0].text.trim();
-  return text.length >= 25 ? text : null;
+  return parseDefObject(response.content[0].text, posList);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -132,20 +215,21 @@ Respond with ONLY the definition text — no quotes, no JSON, no extra text.`;
 async function validateDefinition(word, partsOfSpeech, proposed) {
   const posList = Array.isArray(partsOfSpeech) ? partsOfSpeech.filter(Boolean) : [];
 
-  const prompt = `You are a strict reviewer checking an English dictionary definition for a Spanish word. Apply every constraint formally — do not approve a definition that violates any rule.
+  const prompt = `You are a strict reviewer checking a per-POS English definition object for a Spanish word. Apply every constraint formally — do not approve if any rule is violated, including for any single POS value.
 
 ${DEFINITION_RULES_TEXT}
 
 Word: ${word}
 Parts of speech: ${posList.join(', ') || 'N/A'}
-Proposed definition (${proposed.length} chars): "${proposed}"
+Proposed definition object (per-POS char counts shown; per-POS budget is ${MAX_LEN_PER_POS}):
+${annotateDefForPrompt(proposed)}
 
 Violation codes you may cite:
 ${Object.entries(VIOLATION_CODE_LABELS).map(([k, v]) => `  - "${k}": ${v}`).join('\n')}
 
-If the definition satisfies every constraint, respond with: {"accept": true}
-If any constraint is violated, respond with:
-  {"accept": false, "violatedRules": ["code1", "code2"], "critique": "1-2 sentences on the specific failures and what a corrected definition should look like"}
+If the object satisfies every constraint, respond with: {"accept": true}
+If any constraint is violated (for any POS value), respond with:
+  {"accept": false, "violatedRules": ["code1", "code2"], "critique": "1-2 sentences naming which POS value(s) fail and what a corrected object should look like"}
 
 Respond with ONLY valid JSON, no markdown.`;
 
@@ -182,52 +266,54 @@ async function regenerateDefinition(word, partsOfSpeech, priorDef, violatedRules
     .map(code => `  - ${code}: ${VIOLATION_CODE_LABELS[code] ?? code}`)
     .join('\n');
 
-  const prompt = `Your previous English definition for a Spanish word was rejected by a strict reviewer. Produce a corrected definition that fixes all flagged violations.
+  const prompt = `Your previous per-POS English definition object for a Spanish word was rejected by a strict reviewer. Produce a corrected object that fixes all flagged violations.
 
 ${DEFINITION_RULES_TEXT}
 
 Word: ${word}
 Parts of speech: ${posList.join(', ') || 'N/A'}
 
-Previous attempt: "${priorDef}"
+Previous attempt:
+${annotateDefForPrompt(priorDef)}
 Violated rules:
 ${violationLines || '  (none specified)'}
 Reviewer critique:
 ${critique || '(none)'}
 
-Apply all constraints precisely. You may keep, change, or restructure any part of the previous attempt. Respond with ONLY the corrected definition text — no quotes, no JSON, no extra text.`;
+Apply all constraints precisely. You may keep, change, or restructure any value. Respond with ONLY the corrected JSON object — no markdown fences, no extra prose.`;
 
   const response = await anthropic.messages.create({
     model: RETRY_MODEL,
-    max_tokens: 256,
+    max_tokens: 600,
     // Note: claude-opus-4-8 does not accept the `temperature` parameter — omit it.
-    system: 'You are a Spanish language expert writing concise, rule-compliant English definitions. Respond only with the definition text.',
+    system: 'You are a Spanish language expert writing concise, rule-compliant per-POS English definition objects. Respond only with the JSON object.',
     messages: [{ role: 'user', content: prompt }],
   });
 
-  const text = response.content[0].text.trim();
-  return text.length >= 25 ? text : null;
+  return parseDefObject(response.content[0].text, posList);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Agent 4: chooser (Opus) — final adjudicator between Sonnet's and Opus's definitions
+//  Agent 4: chooser (Opus) — final adjudicator between Sonnet's and Opus's objects
 //  Returns { winner: 'sonnet' | 'opus', reason: string }
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function chooseDefinition(word, partsOfSpeech, sonnetDef, opusDef) {
   const posList = Array.isArray(partsOfSpeech) ? partsOfSpeech.filter(Boolean) : [];
 
-  const prompt = `Two English definitions have been proposed for a Spanish word. Pick the better one as written — do not propose a third.
+  const prompt = `Two per-POS English definition objects have been proposed for a Spanish word. Pick the better one as written — do not propose a third.
 
 ${DEFINITION_RULES_TEXT}
 
 Word: ${word}
 Parts of speech: ${posList.join(', ') || 'N/A'}
 
-Option A (sonnet): "${sonnetDef}"
-Option B (opus):   "${opusDef}"
+Option A (sonnet):
+${annotateDefForPrompt(sonnetDef)}
+Option B (opus):
+${annotateDefForPrompt(opusDef)}
 
-Judge which definition better satisfies all constraints and quality goals. Penalize constraint violations AND vague or unhelpful definitions.
+Judge which object better satisfies all constraints and quality goals. Penalize constraint violations (including any value exceeding the ${MAX_LEN_PER_POS}-character per-POS budget) AND vague or unhelpful definitions.
 
 Respond with ONLY one of:
   {"winner": "sonnet", "reason": "1 short sentence"}
@@ -238,7 +324,7 @@ or
     model: RETRY_MODEL,
     max_tokens: 200,
     // Note: claude-opus-4-8 does not accept the `temperature` parameter — omit it.
-    system: 'You are a strict adjudicator picking between two dictionary definitions. Respond only with valid JSON.',
+    system: 'You are a strict adjudicator picking between two dictionary definition objects. Respond only with valid JSON.',
     messages: [{ role: 'user', content: prompt }],
   });
 
@@ -251,29 +337,93 @@ or
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  Agent 5: tightener (Opus) — compresses over-budget POS values to <= MAX_LEN_PER_POS
+//  without losing nuance. The validator only length-checks the first (Sonnet) attempt;
+//  the retry/chooser path can otherwise emit over-budget values never re-measured.
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function tightenDefinition(word, partsOfSpeech, tooLongDef) {
+  const posList = Array.isArray(partsOfSpeech) ? partsOfSpeech.filter(Boolean) : [];
+  const offenders = overBudgetKeys(tooLongDef);
+
+  const prompt = `A per-POS English definition object for a Spanish word has one or more values over the ${MAX_LEN_PER_POS}-character per-POS budget. Staying within ${MAX_LEN_PER_POS} characters PER VALUE is MANDATORY and is the top priority — cut whatever it takes from the over-long value(s), dropping the least-essential details, to land at ${MAX_LEN_PER_POS} characters or fewer for EACH value. Keep the single most important nuance per value; losing secondary nuance is acceptable. Keep the same POS keys; do not drop or add a POS.
+
+${DEFINITION_RULES_TEXT}
+
+Word: ${word}
+Parts of speech: ${posList.join(', ') || 'N/A'}
+
+Over-budget object (per-POS char counts shown; values over budget: ${offenders.join(', ') || 'n/a'}):
+${annotateDefForPrompt(tooLongDef)}
+
+Respond with ONLY the shortened JSON object — no markdown fences, no extra prose. EVERY value MUST be ${MAX_LEN_PER_POS} characters or fewer.`;
+
+  const response = await anthropic.messages.create({
+    model: RETRY_MODEL,
+    max_tokens: 600,
+    // Note: claude-opus-4-8 does not accept the `temperature` parameter — omit it.
+    system: 'You are a Spanish language expert compressing per-POS definition objects to a strict per-value length while preserving nuance. Respond only with the JSON object.',
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  return parseDefObject(response.content[0].text, posList);
+}
+
+// Programmatic length guard. The validator only checks Sonnet's first attempt, so the
+// Opus retry/chooser path can return objects with over-budget values. Given candidate
+// objects ordered best-first, return the first whose every value is within
+// [MIN_LEN, MAX_LEN_PER_POS]; otherwise ask Opus to compress (up to 4 tries); as a last
+// resort return the candidate with the smallest worst-case value and flag it.
+async function enforceMaxLen(word, partsOfSpeech, candidates) {
+  const valid = candidates.filter(Boolean);
+  for (const c of valid) {
+    if (defWithinBudget(c)) return { definition: c, tightened: false, overBudget: false };
+  }
+  let current = valid[0];
+  for (let i = 0; i < 4 && current; i++) {
+    const t = await tightenDefinition(word, partsOfSpeech, current);
+    if (t && defWithinBudget(t)) return { definition: t, tightened: true, overBudget: false };
+    // Keep shrinking from whichever has the smaller worst-case value so far.
+    if (t && maxValueLen(t) < maxValueLen(current)) current = t;
+  }
+  const all = [...valid, current].filter(Boolean).sort((a, b) => maxValueLen(a) - maxValueLen(b));
+  const best = all[0];
+  return { definition: best, tightened: true, overBudget: maxValueLen(best) > MAX_LEN_PER_POS };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  Orchestrator: generator → validator → (opus retry → opus chooser) → final
 //  Returns { definition, attempts, model, accepted, finalCritique, ... }
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function runDefinitionPipeline(word, partsOfSpeech) {
+  // Per-POS budget is constant (MAX_LEN_PER_POS); kept in the result for logging.
+  const maxLen = MAX_LEN_PER_POS;
+
   const firstDef = await generateDefinition(word, partsOfSpeech, GEN_MODEL);
   if (!firstDef) {
-    return { definition: null, attempts: 1, model: GEN_MODEL, accepted: false, finalCritique: 'Generator returned empty output' };
+    return { definition: null, attempts: 1, model: GEN_MODEL, accepted: false, maxLen, finalCritique: 'Generator returned empty/unparseable output' };
   }
 
   const verdict1 = await validateDefinition(word, partsOfSpeech, firstDef);
   if (verdict1.accept) {
-    return { definition: firstDef, attempts: 1, model: GEN_MODEL, accepted: true, finalCritique: '' };
+    // Validator already enforced length, but guard anyway in case it miscounted.
+    const enforced = await enforceMaxLen(word, partsOfSpeech, [firstDef]);
+    return { definition: enforced.definition, attempts: 1, model: GEN_MODEL, accepted: true, maxLen, tightened: enforced.tightened, overBudget: enforced.overBudget, finalCritique: '' };
   }
 
   // Sonnet's attempt was rejected — retry with Opus, informed by the critique.
   const retryDef = await regenerateDefinition(word, partsOfSpeech, firstDef, verdict1.violatedRules, verdict1.critique);
   if (!retryDef) {
+    const enforced = await enforceMaxLen(word, partsOfSpeech, [firstDef]);
     return {
-      definition: firstDef,
+      definition: enforced.definition,
       attempts: 2,
       model: GEN_MODEL,
       accepted: false,
+      maxLen,
+      tightened: enforced.tightened,
+      overBudget: enforced.overBudget,
       finalCritique: `Opus retry returned empty output; falling back to Sonnet's attempt. Original critique: ${verdict1.critique}`,
     };
   }
@@ -282,14 +432,20 @@ async function runDefinitionPipeline(word, partsOfSpeech) {
   const choice = await chooseDefinition(word, partsOfSpeech, firstDef, retryDef);
   const winnerDef = choice.winner === 'sonnet' ? firstDef : retryDef;
   const winnerModel = choice.winner === 'sonnet' ? GEN_MODEL : RETRY_MODEL;
+  const otherDef = choice.winner === 'sonnet' ? retryDef : firstDef;
+  // Enforce the budget, preferring the chooser's winner, then the other candidate.
+  const enforced = await enforceMaxLen(word, partsOfSpeech, [winnerDef, otherDef]);
   return {
-    definition: winnerDef,
+    definition: enforced.definition,
     attempts: 2,
     model: winnerModel,
     chooser: choice.winner,
     chooserReason: choice.reason,
     sonnetDef: firstDef,
     opusDef: retryDef,
+    maxLen,
+    tightened: enforced.tightened,
+    overBudget: enforced.overBudget,
     finalCritique: '',
   };
 }
@@ -356,26 +512,32 @@ async function run() {
           continue;
         }
 
+        // longDefinition is a JSONB object keyed by POS — serialize for the jsonb param.
         await client.query(
-          `UPDATE dictionaryentries_es SET "longDefinition" = $1 WHERE id = $2`,
-          [result.definition, row.id]
+          `UPDATE dictionaryentries_es SET "longDefinition" = $1::jsonb WHERE id = $2`,
+          [JSON.stringify(result.definition), row.id]
         );
         await stampEntries(client, 'dictionaryentries_es', row.id);
 
+        // Tag shows the worst-case value length against the per-POS budget and whether
+        // the tightener had to run (and whether it still came up short).
+        const lenTag = `[max ${maxValueLen(result.definition)}/${result.maxLen}${result.tightened ? ' tightened' : ''}${result.overBudget ? ' ⚠OVER' : ''}]`;
+        const defStr = defToLogString(result.definition);
+
         if (result.attempts === 1) {
           acceptedFirst++;
-          console.log(`"${result.definition}"  [sonnet ✓]`);
+          console.log(`"${defStr}"  [sonnet ✓] ${lenTag}`);
         } else {
           opusRetries++;
           if (result.chooser === 'sonnet') chooserPickedSonnet++;
           else chooserPickedOpus++;
           console.log(
-            `"${result.definition}"  [chooser → ${result.chooser}]  ` +
+            `"${defStr}"  [chooser → ${result.chooser}] ${lenTag}  ` +
             `reason: ${result.chooserReason}`
           );
           if (isSpotCheck) {
-            console.log(`    sonnet: "${result.sonnetDef}"`);
-            console.log(`    opus:   "${result.opusDef}"`);
+            console.log(`    sonnet: "${defToLogString(result.sonnetDef)}"`);
+            console.log(`    opus:   "${defToLogString(result.opusDef)}"`);
           }
         }
         updated++;

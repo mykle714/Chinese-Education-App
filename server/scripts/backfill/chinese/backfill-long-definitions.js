@@ -2,10 +2,10 @@
  * Backfill Script: AI-powered longDefinition for dictionaryentries_zh
  *
  * Pipeline (mirrors backfill-parts-of-speech.js):
- *   1. Generator agent (Sonnet) — writes a concise English definition (25–150 chars).
+ *   1. Generator agent (Sonnet) — writes a per-POS definition OBJECT { "<pos>": "..." }.
  *   2. Validator agent (Sonnet) — checks all hard constraints; may reject with a critique.
  *   3. Regenerator agent (Opus) — on rejection, retries once informed by the validator critique.
- *   4. Chooser agent (Opus) — picks the better definition between Sonnet's and Opus's attempts.
+ *   4. Chooser agent (Opus) — picks the better definition object between Sonnet's and Opus's attempts.
  *
  * Only processes entries where partsOfSpeech is already populated so definitions
  * accurately reflect every grammatical role. Run backfill-parts-of-speech.js first.
@@ -20,12 +20,18 @@
  * English), comment on register/formality (the learner gets that from
  * vernacularScore), or elaborate on regional usage. Chinese characters ARE allowed
  * for citing words/phrases (pinyin is not — use the characters); output stays
- * primarily English. Multi-POS entries use a labeled "noun: ... \n\n verb: ..."
- * format ordered most-common POS first.
+ * primarily English.
  *
- * LENGTH is dynamic: maxChars = 100 * (posCount + 1) (see maxLenForPos). Because the
- * validator only length-checks the first attempt, a final enforceMaxLen step (Opus
- * tightener) guarantees the written value respects the budget.
+ * OUTPUT SHAPE: a JSON OBJECT keyed by part of speech — one definition per POS,
+ * primary POS first (e.g. { "noun": "...", "verb": "..." }). Single-POS words emit a
+ * one-key object. This is stored verbatim in the JSONB `longDefinition` column
+ * (migration 70) and joined back into a labeled "pos: ... \n\n pos: ..." string at the
+ * read boundary (longDefObjectToDisplayString) for the API/renderer.
+ *
+ * LENGTH is per POS value: each definition value must be MIN_LEN..MAX_LEN_PER_POS
+ * (25–125) chars, independent of how many POS the word has. Because the validator only
+ * length-checks the first attempt, a final enforceMaxLen step (Opus tightener)
+ * guarantees every value respects the budget.
  *
  * Usage:
  *   docker exec cow-backend-local npx tsx scripts/backfill-long-definitions.js              # full backfill
@@ -43,7 +49,7 @@ dotenv.config({ path: path.join(__dirname, '../../../.env.docker') });
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
 import { initRunLog } from '../run-log.js';
-const SCRIPT_VERSION = 10; // bump when this script's logic/prompt changes
+const SCRIPT_VERSION = 11; // bump when this script's logic/prompt changes
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -63,21 +69,71 @@ const RETRY_MODEL = 'claude-opus-4-8';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Shared rule text — injected into generator, validator, regenerator, chooser,
-//  and tightener prompts so all agents judge by the exact same criteria. It is a
-//  FUNCTION because the max length is dynamic (scales with POS count — see
-//  maxLenForPos).
+//  and tightener prompts so all agents judge by the exact same criteria.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Length budget is PER POS VALUE. Each POS gets its own independent definition with
+// its own budget — total length is no longer split across senses. A 1-POS word and
+// each sense of a 3-POS word are all bounded by the same [MIN_LEN, MAX_LEN_PER_POS].
 const MIN_LEN = 25;
+const MAX_LEN_PER_POS = 125;
 
-// Length budget scales with the number of parts of speech so multi-POS entries
-// (which use the labeled "noun: ... \n\n verb: ..." format) get room for each
-// sense:  maxChars = 100 * (posCount + 1)  →  1 POS = 200, 2 POS = 300, 3 POS = 400.
-function maxLenForPos(posCount) {
-  return 100 * (Math.max(1, posCount) + 1);
+// ── Object-shape helpers ─────────────────────────────────────────────────────
+// A definition is a plain object keyed by POS: { "<pos>": "<text>", ... }.
+
+// String values of a definition object (defensive against non-string entries).
+function defValues(def) {
+  return def && typeof def === 'object' && !Array.isArray(def)
+    ? Object.values(def).filter(v => typeof v === 'string')
+    : [];
 }
 
-function definitionRulesText(maxLen) {
+// POS keys whose value exceeds the per-POS ceiling.
+function overBudgetKeys(def) {
+  return Object.entries(def || {})
+    .filter(([, v]) => typeof v === 'string' && v.length > MAX_LEN_PER_POS)
+    .map(([k]) => k);
+}
+
+// True when the object covers exactly the expected POS and every value is in range.
+function isValidDefObject(def, posList) {
+  if (!def || typeof def !== 'object' || Array.isArray(def)) return false;
+  const keys = Object.keys(def);
+  if (keys.length === 0) return false;
+  // Every expected POS must be present (extra keys are tolerated but discouraged).
+  for (const pos of posList) {
+    if (!(pos in def)) return false;
+  }
+  return defValues(def).every(v => v.length >= MIN_LEN && v.length <= MAX_LEN_PER_POS);
+}
+
+// Every value within [MIN_LEN, MAX_LEN_PER_POS]; used by enforceMaxLen.
+function defWithinBudget(def) {
+  const vals = defValues(def);
+  return vals.length > 0 && vals.every(v => v.length >= MIN_LEN && v.length <= MAX_LEN_PER_POS);
+}
+
+// Longest value length — surfaced in spot-check tags so an over-budget value is visible.
+function maxValueLen(def) {
+  const vals = defValues(def);
+  return vals.length ? Math.max(...vals.map(v => v.length)) : 0;
+}
+
+// Compact, length-annotated rendering of an object for inclusion in agent prompts.
+function annotateDefForPrompt(def) {
+  return Object.entries(def || {})
+    .map(([pos, v]) => `  "${pos}" (${typeof v === 'string' ? v.length : 0} chars): "${v}"`)
+    .join('\n');
+}
+
+// Human-readable one-liner for console/spot-check logging.
+function defToLogString(def) {
+  return Object.entries(def || {})
+    .map(([pos, v]) => `${pos}: ${v}`)
+    .join('  |  ');
+}
+
+function definitionRulesText() {
   return `
 A "long definition" is an enrichment shown in the extra-info panel. The learner ALREADY sees a short
 gloss (provided below as the "displayed gloss"); your job is to deepen understanding BEYOND it.
@@ -101,21 +157,25 @@ How to write it:
   conveys the nuance is better than a padded one; stop once you have said what matters.
 - DO NOT LIST SYNONYMS. This is a definition, not a thesaurus.
 
-Multiple parts of speech — required format:
-- If the word has MORE THAN ONE part of speech, write one labeled segment per POS, ordered from the
-  MOST common/primary POS to the least, each separated by a blank line, exactly like:
-      noun: <nuance for the noun sense>
-
-      verb: <nuance for the verb sense>
-- If the word has only ONE part of speech, write a single unlabeled definition (no "noun:" prefix).
+Output shape — a JSON object keyed by part of speech:
+- Write ONE definition per part of speech, as a JSON object whose KEYS are the parts of speech (exactly
+  as given) and whose VALUES are that POS's definition string, ordered from the MOST common/primary POS
+  to the least, e.g.:
+      {"noun": "<nuance for the noun sense>", "verb": "<nuance for the verb sense>"}
+- If the word has only ONE part of speech, still emit a one-key object, e.g. {"noun": "..."}.
+- Each VALUE is an independent definition for that single sense — do NOT label it with the POS inside the
+  string, and do NOT cram other senses into it.
 
 Hard constraints — all must be satisfied:
 
-1. LENGTH — Between ${MIN_LEN} and ${maxLen} characters. The upper bound is a hard CEILING, never a target — do not pad to approach it; a much shorter definition is perfectly fine. Count precisely and never exceed ${maxLen}.
+1. LENGTH — EACH value must be between ${MIN_LEN} and ${MAX_LEN_PER_POS} characters. This budget is PER
+   POS value, not a shared total. The upper bound is a hard CEILING, never a target — do not pad to
+   approach it; a much shorter definition is perfectly fine. Count each value precisely and never exceed
+   ${MAX_LEN_PER_POS} for any one value.
 2. PRIMARILY ENGLISH — CHINESE ONLY WHEN CULTURALLY SIGNIFICANT, NO PINYIN — Write in English. Include Chinese characters ONLY to cite a term that is itself culturally significant (an established idiom, chengyu, or culturally loaded set phrase, e.g. 九五之尊, 关系网). Do NOT use Chinese for ad-hoc example sentences, trivial collocations, contrast words, or to illustrate ordinary grammar (e.g. 你能来吗, 现在几点, 外面刮风了, 红薯) — describe such usage in English. This holds even for grammatical/function words (particles, pronouns, conjunctions, measure words): explain their senses and constructions in plain English; do NOT show them with Chinese example phrases. Also do NOT cite the headword (the target word) itself in Chinese, and do NOT cite ordinary compounds or derived words that merely contain it (e.g. 能量, 能力, 工作单位) — reserve Chinese for STANDALONE, culturally significant idioms or set phrases. NEVER romanize Chinese into pinyin (with or without tone marks). Other non-ASCII letters (e.g. accented Latin letters) are forbidden.
 3. NO CONTRAST AGAINST THE GLOSS — Do not frame the meaning as a contrast with the displayed gloss or its English wording (e.g. "rather than [the gloss]", "instead of X", "not X but Y", "as opposed to" the English sense). Contrast is allowed ONLY when it describes the word's OWN semantics — distinguishing two of its senses, or an earlier vs. later state.
 4. NO BARE SELF-REFERENCE — Do not define the word by merely restating it or quoting a literal gloss of it. (Citing the target inside a genuine example phrase, in characters, is fine.)
-5. POS COVERAGE & FORMAT — Cover every part of speech, using the labeled multi-POS format above whenever there is more than one.
+5. POS COVERAGE & FORMAT — The object must contain exactly one key per part of speech given (cover every POS), keyed and ordered as specified above. Do not omit a POS, invent extra POS, or merge senses.
 6. NO SYNONYM LIST — Do not present the meaning as a string of synonymous words.
 7. NO GLOSS RESTATEMENT — Add only nuance the displayed gloss does not convey; never quote, paraphrase, or restate it, and never state what a reader could already infer from it.
 8. DO NOT REFERENCE ENGLISH — Never mention "English", "the English word", "its English equivalent/translation", or compare the word to its English rendering. Describe the word on its own terms. The ONLY exception is when the word's own meaning is about the English language itself.
@@ -126,14 +186,14 @@ Hard constraints — all must be satisfied:
 }
 
 const VIOLATION_CODE_LABELS = {
-  too_short: `Definition is under ${MIN_LEN} characters (rule 1)`,
-  too_long: 'Definition exceeds the character budget allowed for its POS count (rule 1)',
+  too_short: `One or more POS values is under ${MIN_LEN} characters (rule 1)`,
+  too_long: `One or more POS values exceeds the ${MAX_LEN_PER_POS}-character per-POS budget (rule 1)`,
   uses_pinyin: 'Romanizes a Chinese word into pinyin instead of using Chinese characters (rule 2)',
   gratuitous_chinese: 'Uses Chinese for an ad-hoc example, the headword itself, or an ordinary compound/derived word rather than a standalone culturally significant term (rule 2)',
   contains_non_english: 'Contains non-ASCII letters other than Chinese characters (e.g. accented Latin letters / pinyin diacritics) (rule 2)',
   contrastive_construction: 'Frames the meaning as a contrast against the displayed gloss / its English wording (rule 3)',
   self_reference: 'Defines the word by merely restating it or quoting a literal gloss (rule 4)',
-  poor_pos_coverage: 'Does not cover every part of speech, or omits the labeled multi-POS format (rule 5)',
+  poor_pos_coverage: 'Object does not contain exactly one key per part of speech (missing/extra POS, or wrong object shape) (rule 5)',
   lists_synonyms: 'Presents the meaning as a list/string of synonymous words (rule 6)',
   restates_display_definition: 'Restates, paraphrases, or only echoes inferences from the displayed gloss (rule 7)',
   references_english: 'Mentions English or compares the word to its English rendering (rule 8)',
@@ -179,11 +239,26 @@ function parseJsonFromResponse(text) {
   }
 }
 
+// Parse an agent response into a normalized definition object keyed by the expected
+// POS (in posList order). Tolerates markdown fences / extra prose around the JSON.
+// Keeps only string values for the expected POS; trims them. Returns null if no
+// expected POS has a non-empty value.
+function parseDefObject(responseText, posList) {
+  const raw = parseJsonFromResponse(responseText);
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const out = {};
+  for (const pos of posList) {
+    const v = raw[pos];
+    if (typeof v === 'string' && v.trim().length > 0) out[pos] = v.trim();
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-//  Agent 1: generator (Sonnet)
+//  Agent 1: generator (Sonnet) — emits the per-POS definition OBJECT
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function generateDefinition(word, partsOfSpeech, displayDefinition, maxLen, model = GEN_MODEL) {
+async function generateDefinition(word, partsOfSpeech, displayDefinition, model = GEN_MODEL) {
   const posList = Array.isArray(partsOfSpeech) ? partsOfSpeech.filter(Boolean) : [];
   const posLine = posList.length > 0 ? `Parts of speech (primary first): ${posList.join(', ')}` : '';
 
@@ -193,19 +268,18 @@ Word: ${word}
 ${posLine}
 ${displayDefinitionBlock(displayDefinition)}
 
-${definitionRulesText(maxLen)}
+${definitionRulesText()}
 
-Respond with ONLY the definition text — no quotes, no JSON, no extra text.`;
+Respond with ONLY the JSON object (keys = the parts of speech above, values = each definition) — no markdown fences, no extra prose.`;
 
   const response = await anthropic.messages.create({
     model,
-    max_tokens: 400,
+    max_tokens: 600,
     temperature: 0.3,
     messages: [{ role: 'user', content: prompt }],
   });
 
-  const text = response.content[0].text.trim();
-  return text.length >= MIN_LEN ? text : null;
+  return parseDefObject(response.content[0].text, posList);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -213,24 +287,25 @@ Respond with ONLY the definition text — no quotes, no JSON, no extra text.`;
 //  Returns { accept, violatedRules: string[], critique }
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function validateDefinition(word, partsOfSpeech, displayDefinition, maxLen, proposed) {
+async function validateDefinition(word, partsOfSpeech, displayDefinition, proposed) {
   const posList = Array.isArray(partsOfSpeech) ? partsOfSpeech.filter(Boolean) : [];
 
-  const prompt = `You are a strict reviewer checking an English dictionary definition for a Chinese word. Apply every constraint formally — do not approve a definition that violates any rule.
+  const prompt = `You are a strict reviewer checking a per-POS English definition object for a Chinese word. Apply every constraint formally — do not approve if any rule is violated, including for any single POS value.
 
-${definitionRulesText(maxLen)}
+${definitionRulesText()}
 
 Word: ${word}
 Parts of speech (primary first): ${posList.join(', ') || 'N/A'}
 ${displayDefinitionBlock(displayDefinition)}
-Proposed definition (${proposed.length} chars; budget is ${maxLen}): "${proposed}"
+Proposed definition object (per-POS char counts shown; per-POS budget is ${MAX_LEN_PER_POS}):
+${annotateDefForPrompt(proposed)}
 
 Violation codes you may cite:
 ${Object.entries(VIOLATION_CODE_LABELS).map(([k, v]) => `  - "${k}": ${v}`).join('\n')}
 
-If the definition satisfies every constraint, respond with: {"accept": true}
-If any constraint is violated, respond with:
-  {"accept": false, "violatedRules": ["code1", "code2"], "critique": "1-2 sentences on the specific failures and what a corrected definition should look like"}
+If the object satisfies every constraint, respond with: {"accept": true}
+If any constraint is violated (for any POS value), respond with:
+  {"accept": false, "violatedRules": ["code1", "code2"], "critique": "1-2 sentences naming which POS value(s) fail and what a corrected object should look like"}
 
 Respond with ONLY valid JSON, no markdown.`;
 
@@ -261,60 +336,62 @@ Respond with ONLY valid JSON, no markdown.`;
 //  Agent 3: regenerator (Opus) — corrects an attempt that failed validation
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function regenerateDefinition(word, partsOfSpeech, displayDefinition, maxLen, priorDef, violatedRules, critique) {
+async function regenerateDefinition(word, partsOfSpeech, displayDefinition, priorDef, violatedRules, critique) {
   const posList = Array.isArray(partsOfSpeech) ? partsOfSpeech.filter(Boolean) : [];
   const violationLines = violatedRules
     .map(code => `  - ${code}: ${VIOLATION_CODE_LABELS[code] ?? code}`)
     .join('\n');
 
-  const prompt = `Your previous English definition for a Chinese word was rejected by a strict reviewer. Produce a corrected definition that fixes all flagged violations.
+  const prompt = `Your previous per-POS English definition object for a Chinese word was rejected by a strict reviewer. Produce a corrected object that fixes all flagged violations.
 
-${definitionRulesText(maxLen)}
+${definitionRulesText()}
 
 Word: ${word}
 Parts of speech (primary first): ${posList.join(', ') || 'N/A'}
 ${displayDefinitionBlock(displayDefinition)}
 
-Previous attempt: "${priorDef}"
+Previous attempt:
+${annotateDefForPrompt(priorDef)}
 Violated rules:
 ${violationLines || '  (none specified)'}
 Reviewer critique:
 ${critique || '(none)'}
 
-Apply all constraints precisely. You may keep, change, or restructure any part of the previous attempt. Respond with ONLY the corrected definition text — no quotes, no JSON, no extra text.`;
+Apply all constraints precisely. You may keep, change, or restructure any value. Respond with ONLY the corrected JSON object — no markdown fences, no extra prose.`;
 
   const response = await anthropic.messages.create({
     model: RETRY_MODEL,
-    max_tokens: 400,
+    max_tokens: 600,
     // Note: claude-opus-4-8 does not accept the `temperature` parameter — omit it.
-    system: 'You are a Chinese language expert writing concise, rule-compliant English definitions. Respond only with the definition text.',
+    system: 'You are a Chinese language expert writing concise, rule-compliant per-POS English definition objects. Respond only with the JSON object.',
     messages: [{ role: 'user', content: prompt }],
   });
 
-  const text = response.content[0].text.trim();
-  return text.length >= MIN_LEN ? text : null;
+  return parseDefObject(response.content[0].text, posList);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Agent 4: chooser (Opus) — final adjudicator between Sonnet's and Opus's definitions
+//  Agent 4: chooser (Opus) — final adjudicator between Sonnet's and Opus's objects
 //  Returns { winner: 'sonnet' | 'opus', reason: string }
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function chooseDefinition(word, partsOfSpeech, displayDefinition, maxLen, sonnetDef, opusDef) {
+async function chooseDefinition(word, partsOfSpeech, displayDefinition, sonnetDef, opusDef) {
   const posList = Array.isArray(partsOfSpeech) ? partsOfSpeech.filter(Boolean) : [];
 
-  const prompt = `Two English definitions have been proposed for a Chinese word. Pick the better one as written — do not propose a third.
+  const prompt = `Two per-POS English definition objects have been proposed for a Chinese word. Pick the better one as written — do not propose a third.
 
-${definitionRulesText(maxLen)}
+${definitionRulesText()}
 
 Word: ${word}
 Parts of speech (primary first): ${posList.join(', ') || 'N/A'}
 ${displayDefinitionBlock(displayDefinition)}
 
-Option A (sonnet, ${sonnetDef.length} chars): "${sonnetDef}"
-Option B (opus, ${opusDef.length} chars):   "${opusDef}"
+Option A (sonnet):
+${annotateDefForPrompt(sonnetDef)}
+Option B (opus):
+${annotateDefForPrompt(opusDef)}
 
-Judge which definition better satisfies all constraints and quality goals. Penalize constraint violations (including exceeding the ${maxLen}-character budget) AND vague or unhelpful definitions.
+Judge which object better satisfies all constraints and quality goals. Penalize constraint violations (including any value exceeding the ${MAX_LEN_PER_POS}-character per-POS budget) AND vague or unhelpful definitions.
 
 Respond with ONLY one of:
   {"winner": "sonnet", "reason": "1 short sentence"}
@@ -325,7 +402,7 @@ or
     model: RETRY_MODEL,
     max_tokens: 200,
     // Note: claude-opus-4-8 does not accept the `temperature` parameter — omit it.
-    system: 'You are a strict adjudicator picking between two dictionary definitions. Respond only with valid JSON.',
+    system: 'You are a strict adjudicator picking between two dictionary definition objects. Respond only with valid JSON.',
     messages: [{ role: 'user', content: prompt }],
   });
 
@@ -338,57 +415,60 @@ or
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Agent 5: tightener (Opus) — compresses an over-budget definition to <= maxLen
+//  Agent 5: tightener (Opus) — compresses over-budget POS values to <= MAX_LEN_PER_POS
 //  without losing nuance. Needed because the validator only length-checks the
 //  first (Sonnet) attempt; the retry/chooser path can otherwise emit over-budget
-//  text that is never re-measured.
+//  values that are never re-measured.
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function tightenDefinition(word, partsOfSpeech, displayDefinition, maxLen, tooLongDef) {
+async function tightenDefinition(word, partsOfSpeech, displayDefinition, tooLongDef) {
   const posList = Array.isArray(partsOfSpeech) ? partsOfSpeech.filter(Boolean) : [];
+  const offenders = overBudgetKeys(tooLongDef);
 
-  const prompt = `An English definition for a Chinese word is too long. Staying within ${maxLen} characters is MANDATORY and is the top priority — cut whatever it takes, dropping the least-essential details, to land at ${maxLen} characters or fewer. Keep the single most important nuance; losing secondary nuance is acceptable. Preserve the labeled multi-POS format ("noun: ... \\n\\n verb: ...") if the original uses it.
+  const prompt = `A per-POS English definition object for a Chinese word has one or more values over the ${MAX_LEN_PER_POS}-character per-POS budget. Staying within ${MAX_LEN_PER_POS} characters PER VALUE is MANDATORY and is the top priority — cut whatever it takes from the over-long value(s), dropping the least-essential details, to land at ${MAX_LEN_PER_POS} characters or fewer for EACH value. Keep the single most important nuance per value; losing secondary nuance is acceptable. Keep the same POS keys; do not drop or add a POS.
 
-${definitionRulesText(maxLen)}
+${definitionRulesText()}
 
 Word: ${word}
 Parts of speech (primary first): ${posList.join(', ') || 'N/A'}
 ${displayDefinitionBlock(displayDefinition)}
 
-Too-long definition (${tooLongDef.length} chars; budget is ${maxLen}): "${tooLongDef}"
+Over-budget object (per-POS char counts shown; values over budget: ${offenders.join(', ') || 'n/a'}):
+${annotateDefForPrompt(tooLongDef)}
 
-Respond with ONLY the shortened definition text — no quotes, no JSON, no extra text. It MUST be ${maxLen} characters or fewer.`;
+Respond with ONLY the shortened JSON object — no markdown fences, no extra prose. EVERY value MUST be ${MAX_LEN_PER_POS} characters or fewer.`;
 
   const response = await anthropic.messages.create({
     model: RETRY_MODEL,
-    max_tokens: 400,
+    max_tokens: 600,
     // Note: claude-opus-4-8 does not accept the `temperature` parameter — omit it.
-    system: 'You are a Chinese language expert compressing definitions to a strict length while preserving nuance. Respond only with the definition text.',
+    system: 'You are a Chinese language expert compressing per-POS definition objects to a strict per-value length while preserving nuance. Respond only with the JSON object.',
     messages: [{ role: 'user', content: prompt }],
   });
 
-  const text = response.content[0].text.trim();
-  return text.length >= MIN_LEN ? text : null;
+  return parseDefObject(response.content[0].text, posList);
 }
 
 // Programmatic length guard. The validator only checks Sonnet's first attempt, so
-// the Opus retry/chooser path can return over-budget text. Given candidates ordered
-// best-first, return the first already within [MIN_LEN, maxLen]; otherwise ask Opus
-// to compress (up to 2 tries); as a last resort return the shortest seen and flag it.
-async function enforceMaxLen(word, partsOfSpeech, displayDefinition, maxLen, candidates) {
+// the Opus retry/chooser path can return objects with over-budget values. Given
+// candidate objects ordered best-first, return the first whose every value is within
+// [MIN_LEN, MAX_LEN_PER_POS]; otherwise ask Opus to compress (up to 4 tries); as a
+// last resort return the candidate with the smallest worst-case value and flag it.
+async function enforceMaxLen(word, partsOfSpeech, displayDefinition, candidates) {
   const valid = candidates.filter(Boolean);
   for (const c of valid) {
-    if (c.length >= MIN_LEN && c.length <= maxLen) return { definition: c, tightened: false, overBudget: false };
+    if (defWithinBudget(c)) return { definition: c, tightened: false, overBudget: false };
   }
   let current = valid[0];
   for (let i = 0; i < 4 && current; i++) {
-    const t = await tightenDefinition(word, partsOfSpeech, displayDefinition, maxLen, current);
-    if (t && t.length >= MIN_LEN && t.length <= maxLen) return { definition: t, tightened: true, overBudget: false };
-    if (t && t.length < current.length) current = t; // keep shrinking from the shortest so far
+    const t = await tightenDefinition(word, partsOfSpeech, displayDefinition, current);
+    if (t && defWithinBudget(t)) return { definition: t, tightened: true, overBudget: false };
+    // Keep shrinking from whichever has the smaller worst-case value so far.
+    if (t && maxValueLen(t) < maxValueLen(current)) current = t;
   }
-  const all = [...valid, current].filter(Boolean).sort((a, b) => a.length - b.length);
-  const shortest = all[0];
-  return { definition: shortest, tightened: true, overBudget: shortest.length > maxLen };
+  const all = [...valid, current].filter(Boolean).sort((a, b) => maxValueLen(a) - maxValueLen(b));
+  const best = all[0];
+  return { definition: best, tightened: true, overBudget: maxValueLen(best) > MAX_LEN_PER_POS };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -397,25 +477,25 @@ async function enforceMaxLen(word, partsOfSpeech, displayDefinition, maxLen, can
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function runDefinitionPipeline(word, partsOfSpeech, displayDefinition) {
-  const posCount = Array.isArray(partsOfSpeech) ? partsOfSpeech.filter(Boolean).length : 0;
-  const maxLen = maxLenForPos(posCount);
+  // Per-POS budget is constant (MAX_LEN_PER_POS); kept in the result for logging.
+  const maxLen = MAX_LEN_PER_POS;
 
-  const firstDef = await generateDefinition(word, partsOfSpeech, displayDefinition, maxLen, GEN_MODEL);
+  const firstDef = await generateDefinition(word, partsOfSpeech, displayDefinition, GEN_MODEL);
   if (!firstDef) {
-    return { definition: null, attempts: 1, model: GEN_MODEL, accepted: false, maxLen, finalCritique: 'Generator returned empty output' };
+    return { definition: null, attempts: 1, model: GEN_MODEL, accepted: false, maxLen, finalCritique: 'Generator returned empty/unparseable output' };
   }
 
-  const verdict1 = await validateDefinition(word, partsOfSpeech, displayDefinition, maxLen, firstDef);
+  const verdict1 = await validateDefinition(word, partsOfSpeech, displayDefinition, firstDef);
   if (verdict1.accept) {
     // Validator already enforced length, but guard anyway in case it miscounted.
-    const enforced = await enforceMaxLen(word, partsOfSpeech, displayDefinition, maxLen, [firstDef]);
+    const enforced = await enforceMaxLen(word, partsOfSpeech, displayDefinition, [firstDef]);
     return { definition: enforced.definition, attempts: 1, model: GEN_MODEL, accepted: true, maxLen, tightened: enforced.tightened, overBudget: enforced.overBudget, finalCritique: '' };
   }
 
   // Sonnet's attempt was rejected — retry with Opus, informed by the critique.
-  const retryDef = await regenerateDefinition(word, partsOfSpeech, displayDefinition, maxLen, firstDef, verdict1.violatedRules, verdict1.critique);
+  const retryDef = await regenerateDefinition(word, partsOfSpeech, displayDefinition, firstDef, verdict1.violatedRules, verdict1.critique);
   if (!retryDef) {
-    const enforced = await enforceMaxLen(word, partsOfSpeech, displayDefinition, maxLen, [firstDef]);
+    const enforced = await enforceMaxLen(word, partsOfSpeech, displayDefinition, [firstDef]);
     return {
       definition: enforced.definition,
       attempts: 2,
@@ -429,12 +509,12 @@ async function runDefinitionPipeline(word, partsOfSpeech, displayDefinition) {
   }
 
   // Opus chooser picks between Sonnet's original and Opus's correction.
-  const choice = await chooseDefinition(word, partsOfSpeech, displayDefinition, maxLen, firstDef, retryDef);
+  const choice = await chooseDefinition(word, partsOfSpeech, displayDefinition, firstDef, retryDef);
   const winnerDef = choice.winner === 'sonnet' ? firstDef : retryDef;
   const winnerModel = choice.winner === 'sonnet' ? GEN_MODEL : RETRY_MODEL;
   const otherDef = choice.winner === 'sonnet' ? retryDef : firstDef;
   // Enforce the budget, preferring the chooser's winner, then the other candidate.
-  const enforced = await enforceMaxLen(word, partsOfSpeech, displayDefinition, maxLen, [winnerDef, otherDef]);
+  const enforced = await enforceMaxLen(word, partsOfSpeech, displayDefinition, [winnerDef, otherDef]);
   return {
     definition: enforced.definition,
     attempts: 2,
@@ -512,30 +592,32 @@ async function run() {
           continue;
         }
 
+        // longDefinition is a JSONB object keyed by POS — serialize for the jsonb param.
         await client.query(
-          `UPDATE dictionaryentries_zh SET "longDefinition" = $1 WHERE id = $2`,
-          [result.definition, row.id]
+          `UPDATE dictionaryentries_zh SET "longDefinition" = $1::jsonb WHERE id = $2`,
+          [JSON.stringify(result.definition), row.id]
         );
         await stampEntries(client, 'dictionaryentries_zh', row.id);
 
-        // Tags appended to every line so spot-checks surface the length budget and
-        // whether the tightener had to run (and whether it still came up short).
-        const lenTag = `[${result.definition.length}/${result.maxLen}${result.tightened ? ' tightened' : ''}${result.overBudget ? ' ⚠OVER' : ''}]`;
+        // Tag shows the worst-case value length against the per-POS budget and whether
+        // the tightener had to run (and whether it still came up short).
+        const lenTag = `[max ${maxValueLen(result.definition)}/${result.maxLen}${result.tightened ? ' tightened' : ''}${result.overBudget ? ' ⚠OVER' : ''}]`;
+        const defStr = defToLogString(result.definition);
 
         if (result.attempts === 1) {
           acceptedFirst++;
-          console.log(`"${result.definition}"  [sonnet ✓] ${lenTag}`);
+          console.log(`"${defStr}"  [sonnet ✓] ${lenTag}`);
         } else {
           opusRetries++;
           if (result.chooser === 'sonnet') chooserPickedSonnet++;
           else chooserPickedOpus++;
           console.log(
-            `"${result.definition}"  [chooser → ${result.chooser}] ${lenTag}  ` +
+            `"${defStr}"  [chooser → ${result.chooser}] ${lenTag}  ` +
             `reason: ${result.chooserReason}`
           );
           if (isSpotCheck) {
-            console.log(`    sonnet: "${result.sonnetDef}"`);
-            console.log(`    opus:   "${result.opusDef}"`);
+            console.log(`    sonnet: "${defToLogString(result.sonnetDef)}"`);
+            console.log(`    opus:   "${defToLogString(result.opusDef)}"`);
           }
         }
         updated++;

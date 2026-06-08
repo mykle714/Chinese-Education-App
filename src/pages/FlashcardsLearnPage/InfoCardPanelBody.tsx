@@ -420,6 +420,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                                     showSegmentSpaces={showSegmentSpaces}
                                     vocabWord={currentEntry?.entryKey}
                                     language={currentEntry?.language}
+                                    selectable
                                 />
                                 <Typography className="mobile-demo-sentence-english" sx={{ fontSize: SIZE.caption, color: fc.textSecondary, fontFamily: FC_FONT, lineHeight: LEADING.normal }}>
                                     {renderEnglishWithVocabUnderline(sentence.english, sentence.translatedVocab)}

@@ -3,7 +3,7 @@ import { IDictionaryDAL } from '../interfaces/IDictionaryDAL.js';
 import { dbManager } from '../base/DatabaseManager.js';
 import { DictionaryEntry, DictionaryEntryCreateData, ParticleClassifierEntry } from '../../types/index.js';
 import { ValidationError } from '../../types/dal.js';
-import { resolveShortDefinition } from '../../utils/definitions.js';
+import { resolveShortDefinition, longDefObjectToDisplayString } from '../../utils/definitions.js';
 import { ShortDefinitionPronunciationOverride, ExampleSentenceDefinitionPronunciationOverride } from '../../types/index.js';
 import { getAllSubstrings, buildDictMap, buildExcludeSet, segmentWithDict, buildSegmentMetadata, splitHanRuns, RenderedSegmentMeta } from '../shared/segmentString.js';
 import { LongDefinitionPart } from '../../types/index.js';
@@ -58,7 +58,9 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
       shortDefinitionPronunciationOverride: (row.shortDefinitionPronunciationOverride as ShortDefinitionPronunciationOverride | null) ?? null,
       shortDefinition: resolveShortDefinition(definitions, row.shortDefinitionPronunciationOverride),
       exampleSentenceDefinitionPronunciationOverride: (row.exampleSentenceDefinitionPronunciationOverride as ExampleSentenceDefinitionPronunciationOverride | null) ?? null,
-      longDefinition: row.longDefinition ?? null,
+      // Stored as a JSONB object keyed by POS (migration 70); hydrated to the canonical
+      // labeled string the API/renderer expect (see longDefObjectToDisplayString).
+      longDefinition: longDefObjectToDisplayString(row.longDefinition),
       breakdown: row.breakdown ?? null,
       synonyms: row.synonyms ?? null,
       exampleSentences: row.exampleSentences ?? null, // Enriched on-the-fly via enrichExampleSentencesMetadataBatch
@@ -576,6 +578,16 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
   async enrichLongDefinitionMetadataBatch<T extends {
     longDefinition?: string | null;
   }>(entries: T[], language: string = 'zh'): Promise<T[]> {
+    // `longDefinition` is stored as a JSONB object keyed by POS (migration 70). Some
+    // callers reach here with the raw object (dictJoin-based queries bypass the row→entity
+    // map), so normalize each entry to the canonical labeled string first — both for the
+    // segmentation below and on the entry itself, so the API never leaks the raw object.
+    for (const entry of entries) {
+      entry.longDefinition = longDefObjectToDisplayString(
+        entry.longDefinition as Parameters<typeof longDefObjectToDisplayString>[0]
+      );
+    }
+
     // Split each long definition into runs once; reused for both candidate collection
     // and the final part assembly below.
     const runsByEntry = entries.map(entry => {

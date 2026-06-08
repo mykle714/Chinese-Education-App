@@ -61,6 +61,10 @@ interface SegmentedSentenceDisplayProps {
   // (used when a Chinese run is embedded in a long definition). The popup/highlight
   // geometry is rect-based and works identically in either mode.
   display?: "block" | "inline";
+  // Allow the characters/pinyin to be selected (and a text cursor to appear) on
+  // desktop. Defaults to false; example-sentence call sites pass true. See
+  // CPCDRow.selectable.
+  selectable?: boolean;
 }
 
 interface CharRenderData {
@@ -117,6 +121,7 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
   showSegmentSpaces = false,
   language,
   display = "block",
+  selectable = false,
 }) => {
   // Latin-script languages tokenize on whitespace (one cell per word) and never
   // show a pinyin overlay or per-character segmentation.
@@ -529,6 +534,7 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
                   size={size}
                   compact={compact}
                   flexWrap="nowrap"
+                  selectable={selectable}
                   items={buildItems(group.indices)}
                 />
               ))}
@@ -543,6 +549,7 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
             flexWrap={flexWrap}
             justifyContent={justifyContent}
             className={className}
+            selectable={selectable}
             items={buildItems(chars.map((_, i) => i))}
           />
         );

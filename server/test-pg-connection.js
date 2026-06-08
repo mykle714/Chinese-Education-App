@@ -24,13 +24,15 @@ async function testConnection() {
     const result = await client.query('SELECT version()');
     console.log('✅ Database version:', result.rows[0].version);
     
-    const testResult = await client.query('SELECT COUNT(*) as count FROM vocabentries');
+    // vocabentries was split per language in migration 66 (legacy table dropped in 73);
+    // smoke-test against the Chinese split table.
+    const testResult = await client.query('SELECT COUNT(*) as count FROM vocabentries_zh');
     console.log('✅ Sample data count:', testResult.rows[0].count, 'vocabulary entries');
-    
-    const sampleData = await client.query('SELECT entrykey, language FROM vocabentries LIMIT 3');
+
+    const sampleData = await client.query('SELECT "entryKey", language FROM vocabentries_zh LIMIT 3');
     console.log('✅ Sample vocabulary entries:');
     sampleData.rows.forEach(row => {
-      console.log(`  - ${row.entrykey} (${row.language})`);
+      console.log(`  - ${row.entryKey} (${row.language})`);
     });
     
     client.release();

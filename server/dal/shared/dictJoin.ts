@@ -6,12 +6,16 @@
 // `pos`, `hasMultiplePos`, `alternateGender`, `alternateMeaning` are Spanish-only
 // (NULL/FALSE for Chinese): the client shows a POS badge like "(v)" when
 // hasMultiplePos is true, and the alternate-gender gloss for gender-homographs.
+//
+// `iconId` is the optional FK to icons8 (migration 72), present on both det tables.
+// The client renders the icon via <img src="/api/icons8/<iconId>/image">.
 export const DICT_COLS =
   `de.script, de.pronunciation, de.tone, de."hskLevel", de."partsOfSpeech", ` +
   `de."vernacularScore", ` +
   `de.breakdown, de.synonyms, de."exampleSentences", ` +
   `de.expansion, de."expansionLiteralTranslation", de."longDefinition", ` +
   `de.pos, de."hasMultiplePos", de."alternateGender", de."alternateMeaning", ` +
+  `de."iconId", ` +
   `de.definition`;
 
 // The columns selected inside each branch of the lateral join. Kept identical
@@ -29,6 +33,7 @@ const DICT_LATERAL_SELECT_ZH =
   `       "exampleSentences", expansion, "expansionLiteralTranslation", "longDefinition",` +
   `       NULL::varchar AS pos, FALSE AS "hasMultiplePos",` +
   `       NULL::varchar AS "alternateGender", NULL::text AS "alternateMeaning",` +
+  `       "iconId",` +
   `       1 AS match_rank,` +
   `       definitions, definitions->>0 AS definition`;
 
@@ -37,6 +42,7 @@ const DICT_LATERAL_SELECT_ES =
   `       breakdown, synonyms,` +
   `       "exampleSentences", expansion, "expansionLiteralTranslation", "longDefinition",` +
   `       pos, "hasMultiplePos", "alternateGender", "alternateMeaning",` +
+  `       "iconId",` +
   `       (CASE WHEN ve.pos IS NOT NULL AND pos = ve.pos THEN 0 ELSE 1 END) AS match_rank,` +
   `       definitions, definitions->>0 AS definition`;
 

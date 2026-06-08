@@ -256,7 +256,7 @@ bash server/scripts/run-discoverable-enrichment.sh [production|local]
 | Step | Script | Output field(s) | Notes |
 |------|--------|-----------------|-------|
 | 1 | `backfill/chinese/backfill-split-semicolon-definitions.js` | `definitions` | Expands semicolon-delimited elements into separate array entries. Runs on ALL zh entries. |
-| 2 | `backfill/chinese/backfill-sort-definitions.js` | `definitions` | AI reorders definitions from most prototypical to least. Runs on discoverable zh entries with >1 definition. |
+| 2 | `backfill/chinese/backfill-process-definitions-array.js` | `definitions` | AI reorders definitions from most prototypical to least, and prunes very low-confidence glosses (broken English, incredibly rare/archaic). Runs on discoverable zh entries with >1 definition. |
 | 3 | `backfill/chinese/backfill-hsk-level.js` | `hskLevel` | AI assigns one level token per entry (`HSK1`..`HSK6`). |
 | 4 | `backfill/chinese/backfill-long-definitions.js` | `longDefinition` | AI generates 25–75 char elaboration. Depends on sorted definitions from step 2. |
 | 5 | `backfill/chinese/backfill-example-sentences.js` | `exampleSentences` | AI generates 3 example sentences. Segment metadata (`_segments`, `segmentMetadata`) is computed at runtime — not stored. |

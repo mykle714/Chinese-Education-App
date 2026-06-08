@@ -51,6 +51,29 @@ When the user mentions coordinates for night market assets, they are always in i
 All night market assets live at: `/home/cow/src/assets/`
 (Note: this is different from `public/assets/` — Vite imports these directly as modules.)
 
+## Touch & Scroll (mobile)
+This is a mobile-first app built around drag gestures. Components you create should
+default to `touchAction: "none"` so background/empty-area touches don't trigger the
+browser's native pan/scroll (which fights the drag interactions). Only set a
+scroll-permitting value (`auto`, `pan-y`, etc.) on a component when I explicitly tell
+you it should be scrollable.
+
+Text is **non-selectable by default app-wide** — `src/index.css` sets `user-select:
+none` on `body` (it cascades to everything). Form fields (`input`/`textarea`/
+`contenteditable`) are re-enabled there. The **only** selectable content exception is
+**cpcd** (`.cpcd-row__chars` / `.cpcd-row__pinyin-cell`), and only on non-touch
+devices — the `@media (hover: hover) and (pointer: fine)` block in `index.css` makes
+cpcd selectable on desktop but keeps it non-selectable on mobile. Don't sprinkle
+per-component `userSelect: "none"`; rely on the global default and only opt specific
+content into `userSelect: "text"` (desktop-gated) when I call it out.
+
+**Games must block the mobile edge-swipe-back gesture by default.** Every game page
+should call `useBlockEdgeSwipe(true)` (`src/hooks/useBlockEdgeSwipe.ts`) so a swipe
+from the left/right screen edge doesn't navigate away mid-drag. `touch-action: none`
+does NOT stop this — the browser claims the history-navigation gesture before the
+element sees the touch, so it must be cancelled at the touch-event layer. Reference
+implementation: `src/games/bubble-match/BubbleMatchPage.tsx`.
+
 ## Writing .md files
 Do not write content descibing what you just completed; you should write the status/structure of the service/code. The files are meant to be for future AI  agents.
 

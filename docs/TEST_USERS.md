@@ -73,5 +73,4 @@ The Reader Vocabulary Test User contains comprehensive vocabulary extracted from
 ## Files
 
 - `database/init/02-test-users.sql` - Original 3 test users
-- `database/init/03-reader-vocab-test-user.sql` - Reader vocabulary test user
-- `server/tests/create-reader-vocab-test-account.js` - Manual creation script (backup)
+- `server/tests/create-reader-vocab-test-account.js` - Reader vocabulary test account: no longer auto-seeded on fresh DBs (init SQL removed); create it on demand with this script

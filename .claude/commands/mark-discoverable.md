@@ -74,16 +74,16 @@ Run all steps in order with `--words=word1,word2,...` (comma-joined hanzi).
 docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-tones.js --words=未来,摸脉
 docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-numbered-pinyin.js --words=未来,摸脉
 docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-dictionary-breakdown.js --words=未来,摸脉
-docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-sort-definitions.js --words=未来,摸脉
+docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-process-definitions-array.js --words=未来,摸脉
+docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-parts-of-speech.js --words=未来,摸脉
 docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-hsk-level.js --words=未来,摸脉
 docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-long-definitions.js --words=未来,摸脉
-docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-parts-of-speech.js --words=未来,摸脉
 docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-example-sentences.js --words=未来,摸脉
 docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-classifier.js --words=未来,摸脉
 docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-vernacular-score.js --words=未来,摸脉
 ```
 
-Parts of speech must run before example sentences (the example-sentence prompt enforces at least one sentence per listed POS).
+**Parts of speech must run before `backfill-long-definitions` AND `backfill-example-sentences`.** Both depend on `partsOfSpeech`: long-definitions only processes rows where `partsOfSpeech IS NOT NULL` (it would silently skip otherwise), and the example-sentence prompt enforces at least one sentence per listed POS.
 
 ### A4. Verify enrichment
 
@@ -161,7 +161,7 @@ docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-expand-a
 docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-parts-of-speech.js --words=cura,perro --dry-run
 docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-parts-of-speech.js --words=cura,perro
 # 4-7 AI enrichment (auto-scoped to discoverable rows)
-docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-sort-definitions.js --words=cura,perro
+docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-process-definitions-array.js --words=cura,perro
 docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-long-definitions.js
 docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-example-sentences.js
 docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-vernacular-score.js

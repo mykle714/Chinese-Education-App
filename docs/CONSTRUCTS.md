@@ -31,7 +31,7 @@ Each property on a `VocabEntry` object falls into one of three source categories
 | `id` | `id` | Primary key |
 | `entryKey` | `entryKey` | The word/characters being studied |
 | `entryValue` | `entryValue` | Short English definition |
-| `category` | `category` | Current flashcard category (`Unfamiliar`/`Target`/`Comfortable`/`Mastered`); stored in VET but recalculated server-side after each mark from the last 8 marks in `markHistory` |
+| `category` | `category` | Current flashcard category (`Unfamiliar`/`Target`/`Comfortable`/`Mastered`). A **GENERATED STORED** column (migration 67) the DB derives from `markHistory` via `compute_flashcard_category()` — banded by correct-count in the last 8 marks (≤1 Unfamiliar, ≤4 Target, ≤6 Comfortable, ≥7 Mastered; thresholds set by migration 69). Read-only: never written by app code; the mark/undo endpoints read it back via `RETURNING`. |
 | `starterPackBucket` | `starterPackBucket` | `'library'` / `'learn-later'` / `'skip'` — determines if card appears in study loop |
 | `markHistory` | `markHistory` | JSONB array (capped at 16) of `{ timestamp: ISO-8601, isCorrect: boolean }` |
 | `totalMarkCount` | `totalMarkCount` | Running total of all marks ever given |

@@ -177,17 +177,64 @@ export class DictionaryService {
       return [...b].length - [...a].length;
     });
 
-    // Step 6: for each segment, fetch all entries that start with it (prefix search),
-    // then split into exact matches (word1 === segment) and starts-with matches.
+    // Step 6: build the result groups.
+    //
+    // Prefix ("starts-with") search is applied ONLY to the full typed string, so that
+    // e.g. "阿尔" surfaces 阿尔泰/阿尔法/阿尔卑斯 even though "阿尔" isn't itself a headword.
+    // Each individual GSA segment contributes only its EXACT match (word1 === segment) —
+    // no per-segment prefix expansion.
     const groups: Array<{ segment: string; exactEntries: DictionaryEntry[]; prefixEntries: DictionaryEntry[] }> = [];
-    for (const seg of uniqueSegments) {
-      const { entries } = await this.dictionaryDAL.searchByWord1(seg, language, 50, 0);
-      if (entries.length === 0) continue;
 
-      const enriched = await this.enrichExpansionMetadataBatch(entries, language);
-      const exactEntries = enriched.filter(e => e.word1 === seg);
-      const prefixEntries = enriched.filter(e => e.word1 !== seg);
-      groups.push({ segment: seg, exactEntries, prefixEntries });
+    // 6a. Full-input prefix group (first). Split the prefix-search rows into the exact
+    // match (word1 === trimmed) and the starts-with matches (word1 !== trimmed).
+    const { entries: fullInputEntries } = await this.dictionaryDAL.searchByWord1(trimmed, language, 50, 0);
+    if (fullInputEntries.length > 0) {
+      const enrichedFull = await this.enrichExpansionMetadataBatch(fullInputEntries, language);
+      groups.push({
+        segment: trimmed,
+        exactEntries: enrichedFull.filter(e => e.word1 === trimmed),
+        prefixEntries: enrichedFull.filter(e => e.word1 !== trimmed),
+      });
+    }
+
+    // 6b. Exact-only group per GSA segment. Reuse the exact entries already fetched in
+    // Step 1 (findMultipleByWord1 over all candidate substrings) — no extra DB round-trips.
+    // Enrich once, then bucket by word1.
+    const enrichedExact = await this.enrichExpansionMetadataBatch(exactEntries, language);
+    const exactByWord1 = new Map<string, DictionaryEntry[]>();
+    for (const entry of enrichedExact) {
+      const bucket = exactByWord1.get(entry.word1);
+      if (bucket) bucket.push(entry);
+      else exactByWord1.set(entry.word1, [entry]);
+    }
+
+    // Track which segments have already been emitted so the per-character pass below
+    // doesn't duplicate a group already produced by the full-input or GSA passes.
+    const emittedSegments = new Set<string>();
+    emittedSegments.add(trimmed);
+
+    for (const seg of uniqueSegments) {
+      // The full-input group already covers this case (its exact + prefix entries).
+      if (seg === trimmed) continue;
+      const segExact = exactByWord1.get(seg);
+      if (!segExact || segExact.length === 0) continue;
+      groups.push({ segment: seg, exactEntries: segExact, prefixEntries: [] });
+      emittedSegments.add(seg);
+    }
+
+    // 6c. Exact-only group per individual character in the query, in first-occurrence
+    // order. GSA may merge characters into multi-char words (e.g. "学生" → ["学生"]), so
+    // this guarantees each single character (学, 生) still gets its own exact match.
+    // Skips characters already emitted as a full-input/GSA segment.
+    const seenChars = new Set<string>();
+    for (const ch of [...trimmed]) {
+      if (seenChars.has(ch)) continue;
+      seenChars.add(ch);
+      if (emittedSegments.has(ch)) continue;
+      const charExact = exactByWord1.get(ch);
+      if (!charExact || charExact.length === 0) continue;
+      groups.push({ segment: ch, exactEntries: charExact, prefixEntries: [] });
+      emittedSegments.add(ch);
     }
 
     return groups;
@@ -608,6 +655,19 @@ Respond with only the definition text — no quotes, no extra text.`;
     expansion?: string | null;
   }>(entries: T[], language: string = 'zh'): Promise<T[]> {
     return this.dictionaryDAL.enrichExpansionMetadataBatch(entries, language);
+  }
+
+  /**
+   * Enrich entries with `longDefinitionParts` — the long definition split into English
+   * prose + cpcd-able Chinese runs. Delegates to the DAL batch method (one DB query).
+   *
+   * @param entries - Objects with optional `longDefinition` field
+   * @param language - Language filter (default: 'zh')
+   */
+  async enrichLongDefinitionMetadataBatch<T extends {
+    longDefinition?: string | null;
+  }>(entries: T[], language: string = 'zh'): Promise<T[]> {
+    return this.dictionaryDAL.enrichLongDefinitionMetadataBatch(entries, language);
   }
 
   async enrichEntriesWithSynonymMetadata(entries: VocabEntry[], language: string = 'zh'): Promise<VocabEntry[]> {

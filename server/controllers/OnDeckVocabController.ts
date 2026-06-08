@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { OnDeckVocabService } from '../services/OnDeckVocabService.js';
+import { OnDeckVocabService, type StudyMode } from '../services/OnDeckVocabService.js';
 import { requireUserId, getUserLanguage, handleControllerError } from '../utils/controllerUtils.js';
 
 /**
@@ -78,8 +78,9 @@ export class OnDeckVocabController {
   };
 
   /**
-   * Get distributed working loop (1 Mastered, 2 Comfortable, 2 Unfamiliar, 5 Target)
-   * GET /api/onDeck/distributed-working-loop?category=<optional>
+   * Get distributed working loop (1 Mastered, 2 Comfortable, 2 Unfamiliar, 5 Target by default).
+   * GET /api/onDeck/distributed-working-loop?category=<optional>&mode=<easy|hard|optional>
+   * The optional `mode` swaps in a difficulty-targeted distribution (see MODE_CONFIGS).
    */
   getDistributedWorkingLoop = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -87,8 +88,11 @@ export class OnDeckVocabController {
       if (!userId) return;
 
       const categoryFilter = req.query.category as string | undefined;
+      const rawMode = req.query.mode as string | undefined;
+      const mode: StudyMode | undefined =
+        rawMode === 'easy' || rawMode === 'hard' ? rawMode : undefined;
       const language = await getUserLanguage(userId);
-      const workingLoop = await this.onDeckVocabService.getDistributedWorkingLoop(userId, language, categoryFilter);
+      const workingLoop = await this.onDeckVocabService.getDistributedWorkingLoop(userId, language, categoryFilter, mode);
       res.json(workingLoop);
     } catch (error: any) {
       handleControllerError(error, res, 'OnDeckVocabController.getDistributedWorkingLoop');

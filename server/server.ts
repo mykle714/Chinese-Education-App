@@ -19,6 +19,7 @@ const __dirname = path.dirname(__filename);
 import { userController, vocabEntryController, onDeckVocabController, userMinutePointsController, textController, dictionaryController, starterPacksController, onDeckVocabService, nightMarketController, gamesController } from './dal/setup.js';
 import { leaderboardController } from './controllers/LeaderboardController.js';
 import { ttsController } from './controllers/TTSController.js';
+import { MODE_CONFIGS, type StudyMode } from './services/OnDeckVocabService.js';
 
 // Configure multer for file uploads
 const upload = multer({ 
@@ -455,20 +456,9 @@ function resolveUserTimeZone(rawTimeZone: unknown): string {
   }
 }
 
-function calculateCategoryFromMarkHistory(markHistory: ReviewMark[]): FlashcardCategory {
-  const last8Marks: ReviewMark[] = markHistory.slice(-8);
-  const last8Correct: number = last8Marks.filter(m => m.isCorrect).length;
-
-  if (last8Correct <= 2) {
-    return FlashcardCategory.UNFAMILIAR;
-  } else if (last8Correct <= 5) {
-    return FlashcardCategory.TARGET;
-  } else if (last8Correct <= 7) {
-    return FlashcardCategory.COMFORTABLE;
-  }
-
-  return FlashcardCategory.MASTERED;
-}
+// NOTE: category is no longer computed in app code. It is a GENERATED STORED column
+// (migration 67) derived from markHistory by the SQL function compute_flashcard_category().
+// The mark/undo endpoints read the freshly-derived value back via `RETURNING category`.
 
 function calculateSuccessRates(markHistory: ReviewMark[], totalMarkCount: number, totalCorrectCount: number): {
   totalSuccessRate: number;
@@ -496,7 +486,13 @@ app.post('/api/flashcards/mark', authenticateToken, async (req, res) => {
   
   try {
     const userId = (req as any).user?.userId;
-    const { cardId, isCorrect, excludeIds: rawExcludeIds } = req.body;
+    const { cardId, isCorrect, excludeIds: rawExcludeIds, mode: rawMode } = req.body;
+
+    // Optional difficulty mode (Easy/Hard). When set, the replacement card must
+    // stay within the mode's allowed categories so a banned category never leaks
+    // back into the loop via a correct-mark refill.
+    const mode: StudyMode | undefined =
+      rawMode === 'easy' || rawMode === 'hard' ? rawMode : undefined;
 
     if (!userId) {
       client.release();
@@ -571,9 +567,10 @@ app.post('/api/flashcards/mark', authenticateToken, async (req, res) => {
       last8SuccessRate: newLast8SuccessRate,
       last16SuccessRate: newLast16SuccessRate
     } = calculateSuccessRates(updatedHistory, newTotalMarkCount, newTotalCorrectCount);
-    const category: FlashcardCategory = calculateCategoryFromMarkHistory(updatedHistory);
 
-    // Update the database with new mark history, counts, success rates, and category.
+    // Update the database with new mark history, counts, and success rates.
+    // `category` is a GENERATED column (migration 67) derived from markHistory, so
+    // we never write it — instead RETURNING hands back the freshly-derived value.
     // We know the row's language (read above), so route to its per-language vet table.
     const updateQuery = `
       UPDATE ${vetTableForLanguage(cardLanguage)}
@@ -582,31 +579,46 @@ app.post('/api/flashcards/mark', authenticateToken, async (req, res) => {
           "totalCorrectCount" = $3,
           "totalSuccessRate" = $4,
           "last8SuccessRate" = $5,
-          "last16SuccessRate" = $6,
-          category = $7
-      WHERE id = $8 AND "userId" = $9
+          "last16SuccessRate" = $6
+      WHERE id = $7 AND "userId" = $8
+      RETURNING category
     `;
-    await client.query(updateQuery, [
-      JSON.stringify(updatedHistory), 
+    const updateResult = await client.query(updateQuery, [
+      JSON.stringify(updatedHistory),
       newTotalMarkCount,
       newTotalCorrectCount,
       newTotalSuccessRate,
       newLast8SuccessRate,
       newLast16SuccessRate,
-      category,
-      cardId, 
+      cardId,
       userId
     ]);
+    const category: FlashcardCategory = updateResult.rows[0].category;
 
     console.log(`Updated card ${cardId}: ${updatedHistory.length} recent marks, total: ${newTotalMarkCount}, correct: ${newTotalCorrectCount}, rates: ${(newTotalSuccessRate * 100).toFixed(1)}% / ${(newLast8SuccessRate * 100).toFixed(1)}% / ${(newLast16SuccessRate * 100).toFixed(1)}%, category BEFORE: ${categoryBeforeMark}, category AFTER: ${category}`);
 
-    // If correct, return a card from the same category as BEFORE the mark (with fallback priority)
+    // If correct, return a card from the same category as BEFORE the mark (with fallback priority).
+    // In a mode session the replacement pool is capped to the mode's allowed categories.
     if (isCorrect) {
-      const newCard = await onDeckVocabService.getNextLibraryCardWithFallback(userId, categoryBeforeMark, cardLanguage, excludeIds);
-      
+      const allowedCategories = mode ? MODE_CONFIGS[mode].allowed : undefined;
+      const newCard = await onDeckVocabService.getNextLibraryCardWithFallback(userId, categoryBeforeMark, cardLanguage, excludeIds, allowedCategories);
+
       if (!newCard) {
+        // In a mode session, "no eligible replacement" is the expected end-of-pool
+        // state, not an error: return success with newCard:null so the client winds
+        // the loop down ("no more easy/hard cards remaining"). Mix keeps the 404.
+        if (mode) {
+          client.release();
+          return res.status(200).json({
+            success: true,
+            category,
+            markTimestamp: newMark.timestamp,
+            displacedMark,
+            newCard: null,
+          });
+        }
         client.release();
-        return res.status(404).json({ 
+        return res.status(404).json({
           error: 'No library cards available',
           code: 'ERR_NO_CARDS_AVAILABLE'
         });
@@ -726,13 +738,14 @@ app.post('/api/flashcards/undo-last-mark', authenticateToken, async (req, res) =
     const currentTotalCorrectCount: number = entryResult.rows[0].totalCorrectCount || 0;
     const newTotalMarkCount: number = Math.max(0, currentTotalMarkCount - 1);
     const newTotalCorrectCount: number = Math.max(0, currentTotalCorrectCount - (lastMark.isCorrect ? 1 : 0));
-    const category: FlashcardCategory = calculateCategoryFromMarkHistory(revertedHistory);
     const {
       totalSuccessRate,
       last8SuccessRate,
       last16SuccessRate
     } = calculateSuccessRates(revertedHistory, newTotalMarkCount, newTotalCorrectCount);
 
+    // `category` is GENERATED from markHistory (migration 67) — never written here;
+    // RETURNING gives back the value re-derived from the reverted history.
     const updateQuery = `
       UPDATE ${lockedVetTable}
       SET "markHistory" = $1,
@@ -740,22 +753,22 @@ app.post('/api/flashcards/undo-last-mark', authenticateToken, async (req, res) =
           "totalCorrectCount" = $3,
           "totalSuccessRate" = $4,
           "last8SuccessRate" = $5,
-          "last16SuccessRate" = $6,
-          category = $7
-      WHERE id = $8 AND "userId" = $9
+          "last16SuccessRate" = $6
+      WHERE id = $7 AND "userId" = $8
+      RETURNING category
     `;
 
-    await client.query(updateQuery, [
+    const updateResult = await client.query(updateQuery, [
       JSON.stringify(revertedHistory),
       newTotalMarkCount,
       newTotalCorrectCount,
       totalSuccessRate,
       last8SuccessRate,
       last16SuccessRate,
-      category,
       cardId,
       userId
     ]);
+    const category: FlashcardCategory = updateResult.rows[0].category;
 
     await client.query('COMMIT');
     client.release();

@@ -97,6 +97,18 @@ export interface ExampleSentenceDefinitionPronunciationOverride {
   pronunciation?: string | null; // Shown verbatim in the segment popup instead of stored pronunciation
 }
 
+// One ordered piece of a long definition split into English prose vs. embedded Chinese.
+// `text` parts render as plain prose; `foreign` parts carry the same segmentation payload
+// as an example sentence so the client renders them as cpcd with the hover/tap popup.
+export type LongDefinitionPart =
+  | { type: 'text'; value: string }
+  | {
+      type: 'foreign';
+      foreignText: string;
+      _segments: string[];
+      segmentMetadata: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo; wordForms?: Record<string, string> }>;
+    };
+
 // Dictionary Entry type for multi-language dictionaries
 export interface DictionaryEntry {
   id: number;
@@ -122,6 +134,7 @@ export interface DictionaryEntry {
   shortDefinition?: string | null; // Resolved at runtime: override.definition ?? generateShortDefinition()
   exampleSentenceDefinitionPronunciationOverride?: ExampleSentenceDefinitionPronunciationOverride | null; // Raw override object from DB; applied verbatim in segment popups
   longDefinition?: string | null;
+  longDefinitionParts?: LongDefinitionPart[] | null;  // Computed at runtime: longDefinition split into English + cpcd-able Chinese runs
 
   // AI-enriched content
   breakdown?: Record<string, { definition: string; pronunciation?: string }> | null;
@@ -242,6 +255,7 @@ export interface VocabEntry {
   expansionMetadata?: Record<string, { pronunciation?: string; definition?: string }> | null;  // Computed at runtime, keyed by segment
   expansionLiteralTranslation?: string | null;  // Literal phrase translation derived from expansion components
   longDefinition?: string | null;  // AI-generated extended definition (25–150 chars) from dictionaryentries_zh
+  longDefinitionParts?: LongDefinitionPart[] | null;  // Computed at runtime: longDefinition split into English + cpcd-able Chinese runs
   exampleSentences?: Array<{
     foreignText: string;
     english: string;

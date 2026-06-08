@@ -48,7 +48,10 @@ export class DictionaryController {
       // pinyin metadata. Enrich them on read so consumers (the EIP child panel
       // opened from a breakdown tap) get the same _segments/segmentMetadata
       // shape that flashcards do — otherwise pinyin won't render above each token.
-      const [enrichedEntry] = await this.dictionaryService.enrichExampleSentencesMetadataBatch([entry], language);
+      const [withExampleMeta] = await this.dictionaryService.enrichExampleSentencesMetadataBatch([entry], language);
+      // Split the long definition into English prose + embedded-Chinese runs so the EIP
+      // Definition tab can render inline cpcd (with the segment popup) for any Chinese it contains.
+      const [enrichedEntry] = await this.dictionaryService.enrichLongDefinitionMetadataBatch([withExampleMeta], language);
 
       // For single-character zh entries, also attach the per-user "used in"
       // list (up to 4 multi-char words containing this character, capped at

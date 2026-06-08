@@ -798,32 +798,9 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     }
   }
 
-  /**
-   * Update a vocab entry's category
-   */
-  async updateCategory(id: number, category: string): Promise<void> {
-    if (!id) {
-      throw new ValidationError('Entry ID is required');
-    }
-    if (!category) {
-      throw new ValidationError('Category is required');
-    }
-
-    const client = await db.getClient();
-
-    try {
-      // id is globally unique across the per-language vet tables (shared sequence),
-      // so update both; exactly one row matches.
-      for (const table of VET_PHYSICAL_TABLES) {
-        await client.query(`UPDATE ${table} SET category = $1 WHERE id = $2`, [category, id]);
-      }
-    } catch (error: any) {
-      console.error('Error updating category:', error);
-      throw new DALError('Failed to update vocab entry category', 'ERR_UPDATE_CATEGORY_FAILED', error);
-    } finally {
-      client.release();
-    }
-  }
+  // updateCategory was removed in migration 67: `category` is now a GENERATED STORED
+  // column derived from markHistory, so it cannot (and need not) be written directly.
+  // Callers that previously forced a category now write the corresponding markHistory.
 
   /**
    * Update a vocab entry's mark history and related statistics

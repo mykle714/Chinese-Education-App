@@ -5,7 +5,8 @@ import { DictionaryEntry, DictionaryEntryCreateData, ParticleClassifierEntry } f
 import { ValidationError } from '../../types/dal.js';
 import { resolveShortDefinition } from '../../utils/definitions.js';
 import { ShortDefinitionPronunciationOverride, ExampleSentenceDefinitionPronunciationOverride } from '../../types/index.js';
-import { getAllSubstrings, buildDictMap, buildExcludeSet, pickDefinitionForTranslatedSentence, segmentWithDict } from '../shared/segmentString.js';
+import { getAllSubstrings, buildDictMap, buildExcludeSet, segmentWithDict, buildSegmentMetadata, splitHanRuns, RenderedSegmentMeta } from '../shared/segmentString.js';
+import { LongDefinitionPart } from '../../types/index.js';
 
 // Standard column list for all dictionary SELECT queries
 const DICTIONARY_COLUMNS = `
@@ -367,60 +368,15 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
             prioritySegments,
             classifierTokens
           );
-          const segmentMetadata: Record<string, {
-            pronunciation?: string;
-            definition?: string;
-            particleOrClassifier?: { type: 'particle' | 'classifier'; definition: string };
-            wordForms?: Record<string, string>;
-          }> = {};
-
-          for (const seg of segments) {
-            const segMeta = dictMap.get(seg);
-            const pacEntries = pacMap.get(seg);
-
-            // Only create a metadata entry if the segment has at least one data source
-            if (segMeta || pacEntries?.length) {
-              segmentMetadata[seg] = {};
-
-              if (segMeta) {
-                // exampleSentenceDefinitionPronunciationOverride takes precedence over everything;
-                // fall back to the stored pronunciation / context-matched definition otherwise.
-                const pronunciation = segMeta.overridePronunciation ?? segMeta.pronunciation;
-                if (pronunciation) {
-                  segmentMetadata[seg].pronunciation = pronunciation;
-                }
-                const bestDefinition = segMeta.overrideDefinition
-                  ?? pickDefinitionForTranslatedSentence(segMeta, sentence.english);
-                if (bestDefinition) {
-                  segmentMetadata[seg].definition = bestDefinition;
-                }
-                if (segMeta.wordForms) {
-                  segmentMetadata[seg].wordForms = segMeta.wordForms;
-                }
-              }
-
-              // Attach particle/classifier annotation only when the sentence's AI-generated
-              // partOfSpeechDict confirms this token is being used as a particle or classifier
-              // in this specific sentence. This prevents words like 把 from always showing their
-              // grammatical label even when used as a verb in the sentence.
-              if (pacEntries?.length) {
-                const posTag = sentence.partOfSpeechDict?.[seg];
-                if (posTag === 'particle' || posTag === 'classifier') {
-                  // Particle is preferred over classifier when a character qualifies as both,
-                  // since the grammatical role is more salient for learner display.
-                  const particle = pacEntries.find(e => e.type === 'particle');
-                  const classifier = pacEntries.find(e => e.type === 'classifier');
-                  const preferred = particle ?? classifier;
-                  if (preferred) {
-                    segmentMetadata[seg].particleOrClassifier = {
-                      type: preferred.type,
-                      definition: preferred.definition,
-                    };
-                  }
-                }
-              }
-            }
-          }
+          // Build per-segment metadata via the shared helper. Example sentences use the
+          // full feature set: particle/classifier annotation (gated by the AI POS dict),
+          // context-matched definitions (against the English translation), and wordForms.
+          const segmentMetadata = buildSegmentMetadata(segments, dictMap, {
+            pacMap,
+            partOfSpeechDict: sentence.partOfSpeechDict,
+            translatedContext: sentence.english,
+            includeWordForms: true,
+          });
 
           return { ...sentence, _segments: segments, segmentMetadata };
         }),
@@ -584,33 +540,99 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
       }
 
       const expansionSegments = segmentWithDict(expansion, dictMap, excludeTokens);
-      const expansionMetadata: Record<string, { pronunciation?: string; definition?: string }> = {};
       const translatedExpansion =
         typeof entry.expansionLiteralTranslation === 'string'
           ? entry.expansionLiteralTranslation
           : null;
 
-      for (const seg of expansionSegments) {
-        const segMeta = dictMap.get(seg);
-        if (!segMeta) continue;
-
-        expansionMetadata[seg] = {};
-        const pronunciation = segMeta.overridePronunciation ?? segMeta.pronunciation;
-        if (pronunciation) {
-          expansionMetadata[seg].pronunciation = pronunciation;
-        }
-        const bestDefinition = segMeta.overrideDefinition
-          ?? pickDefinitionForTranslatedSentence(segMeta, translatedExpansion);
-        if (bestDefinition) {
-          expansionMetadata[seg].definition = bestDefinition;
-        }
-      }
+      // Expansion is pure Chinese: no particle/classifier model and no wordForms — just
+      // pronunciation + context-matched definition (against the literal translation).
+      const expansionMetadata = buildSegmentMetadata(expansionSegments, dictMap, {
+        translatedContext: translatedExpansion,
+      });
 
       return {
         ...entry,
         expansionSegments,
         expansionMetadata: Object.keys(expansionMetadata).length > 0 ? expansionMetadata : null,
       };
+    });
+  }
+
+  /**
+   * Enrich each entry's `longDefinition` into `longDefinitionParts` — an ordered list of
+   * English-prose parts and embedded-Chinese parts. The Chinese parts carry the same
+   * `{ foreignText, _segments, segmentMetadata }` shape as an example sentence, so the
+   * client renders them as cpcd with the identical hover/tap definition popup.
+   *
+   * Chinese-only: `longDefinition` for non-`zh` languages (e.g. Spanish) has no Han runs,
+   * so it returns a single text part with no DB work. Mirrors enrichExpansionMetadataBatch:
+   * one batched dictionary query + one batched particle/classifier query across all entries.
+   * Computed on-the-fly; not stored in the DB.
+   *
+   * @param entries - Objects with optional `longDefinition` field
+   * @param language - Language filter for dictionary lookups (default: 'zh')
+   */
+  async enrichLongDefinitionMetadataBatch<T extends {
+    longDefinition?: string | null;
+  }>(entries: T[], language: string = 'zh'): Promise<T[]> {
+    // Split each long definition into runs once; reused for both candidate collection
+    // and the final part assembly below.
+    const runsByEntry = entries.map(entry => {
+      const text = typeof entry.longDefinition === 'string' ? entry.longDefinition : '';
+      return text ? splitHanRuns(text) : [];
+    });
+
+    // Only Chinese runs need dictionary segmentation. For non-zh (no Han) this stays empty
+    // and we short-circuit without touching the DB.
+    const allCandidates = new Set<string>();
+    if (language === 'zh') {
+      for (const runs of runsByEntry) {
+        for (const run of runs) {
+          if (run.type !== 'han') continue;
+          for (const candidate of getAllSubstrings(run.value)) {
+            allCandidates.add(candidate);
+          }
+        }
+      }
+    }
+
+    if (allCandidates.size === 0) {
+      // No embedded Chinese anywhere: every long definition is a single text part.
+      return entries.map((entry, i) => ({
+        ...entry,
+        longDefinitionParts: runsByEntry[i].length
+          ? runsByEntry[i].map(run => ({ type: 'text' as const, value: run.value }))
+          : null,
+      }));
+    }
+
+    // Single batch dictionary query for all Chinese runs across all entries.
+    const dictEntries = await this.findMultipleByWord1([...allCandidates], language);
+    const dictMap = buildDictMap(dictEntries);
+    const excludeTokens = buildExcludeSet(dictEntries);
+
+    return entries.map((entry, i) => {
+      const runs = runsByEntry[i];
+      if (runs.length === 0) {
+        return { ...entry, longDefinitionParts: null };
+      }
+
+      const parts: LongDefinitionPart[] = runs.map(run => {
+        if (run.type === 'text') {
+          return { type: 'text', value: run.value };
+        }
+        // Each Chinese run is a mini-sentence: GSA-segment it, then build segment metadata.
+        // No partOfSpeechDict/translation context exists for an inline definition word, so
+        // particle/classifier annotation is skipped and definitions fall back to the
+        // dictionary's best/first sense.
+        const segments = segmentWithDict(run.value, dictMap, excludeTokens);
+        const segmentMetadata: Record<string, RenderedSegmentMeta> =
+          buildSegmentMetadata(segments, dictMap);
+        return { type: 'foreign', foreignText: run.value, _segments: segments, segmentMetadata };
+      });
+
+      return { ...entry, longDefinitionParts: parts };
     });
   }
 

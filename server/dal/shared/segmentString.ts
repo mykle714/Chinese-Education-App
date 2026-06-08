@@ -1,4 +1,4 @@
-import { DictionaryEntry } from '../../types/index.js';
+import { DictionaryEntry, ParticleClassifierEntry } from '../../types/index.js';
 
 /**
  * Metadata entry for a dictionary-matched segment (word or character).
@@ -296,4 +296,128 @@ export function segmentWithDict(
 
   // No match at any length — return individual characters as fallback
   return chars;
+}
+
+/**
+ * Rendered metadata for one segment, keyed by segment string in the maps returned
+ * from buildSegmentMetadata. Superset of every per-segment field the client renders:
+ * example sentences use all of it; expansion/long-definition use pronunciation+definition.
+ */
+export interface RenderedSegmentMeta {
+  pronunciation?: string;
+  definition?: string;
+  particleOrClassifier?: { type: 'particle' | 'classifier'; definition: string };
+  wordForms?: Record<string, string>;
+}
+
+/**
+ * Build the segment→metadata map shared by every Chinese enrichment path
+ * (example sentences, expansion, long definition).
+ *
+ * Given an already-computed segment list and a pre-fetched dictionary map, resolve
+ * each segment's pronunciation + best definition (override-aware, context-matched via
+ * pickDefinitionForTranslatedSentence) and, when enabled, its particle/classifier
+ * annotation and AI wordForms. Segmentation itself stays at the call site because each
+ * path seeds segmentWithDict differently (priority headword, classifier boundaries);
+ * only this per-segment build was duplicated.
+ *
+ * @param segments - GSA segments to annotate (from segmentWithDict)
+ * @param dictMap - Pre-built dictionary lookup (from buildDictMap)
+ * @param opts.pacMap - Particle/classifier annotations (from fetchParticlesAndClassifiers)
+ * @param opts.partOfSpeechDict - Sentence's AI POS tags; gates particle/classifier display
+ * @param opts.translatedContext - English translation used to context-match definitions
+ * @param opts.includeWordForms - When true, attach segMeta.wordForms (example sentences only)
+ */
+export function buildSegmentMetadata(
+  segments: string[],
+  dictMap: Map<string, SegmentMeta>,
+  opts?: {
+    pacMap?: Map<string, ParticleClassifierEntry[]>;
+    partOfSpeechDict?: Record<string, string>;
+    translatedContext?: string | null;
+    includeWordForms?: boolean;
+  }
+): Record<string, RenderedSegmentMeta> {
+  const { pacMap, partOfSpeechDict, translatedContext = null, includeWordForms = false } = opts ?? {};
+  const result: Record<string, RenderedSegmentMeta> = {};
+
+  for (const seg of segments) {
+    const segMeta = dictMap.get(seg);
+    const pacEntries = pacMap?.get(seg);
+
+    // Only emit an entry when there's at least one data source for the segment.
+    if (!segMeta && !pacEntries?.length) continue;
+
+    const entry: RenderedSegmentMeta = {};
+
+    if (segMeta) {
+      // Verbatim overrides win; otherwise fall back to stored pronunciation and the
+      // context-matched definition.
+      const pronunciation = segMeta.overridePronunciation ?? segMeta.pronunciation;
+      if (pronunciation) entry.pronunciation = pronunciation;
+      const bestDefinition = segMeta.overrideDefinition
+        ?? pickDefinitionForTranslatedSentence(segMeta, translatedContext);
+      if (bestDefinition) entry.definition = bestDefinition;
+      if (includeWordForms && segMeta.wordForms) entry.wordForms = segMeta.wordForms;
+    }
+
+    // Attach particle/classifier annotation only when the source sentence's AI POS dict
+    // confirms this token is used as a particle/classifier here (prevents e.g. 把 always
+    // showing its grammatical label). Particle preferred over classifier when both exist.
+    if (pacEntries?.length && partOfSpeechDict) {
+      const posTag = partOfSpeechDict[seg];
+      if (posTag === 'particle' || posTag === 'classifier') {
+        const particle = pacEntries.find(e => e.type === 'particle');
+        const classifier = pacEntries.find(e => e.type === 'classifier');
+        const preferred = particle ?? classifier;
+        if (preferred) {
+          entry.particleOrClassifier = { type: preferred.type, definition: preferred.definition };
+        }
+      }
+    }
+
+    result[seg] = entry;
+  }
+
+  return result;
+}
+
+// A maximal run of CJK characters: Han ideographs plus CJK symbols/punctuation
+// (　-〿, e.g. 、。《》) and fullwidth forms (＀-￯). Keeping adjacent
+// CJK punctuation inside the run lets an embedded Chinese clause render as one cpcd
+// block instead of fragmenting around every comma.
+const FOREIGN_RUN_REGEX = /[\p{Script=Han}　-〿＀-￯]+/gu;
+const HAS_HAN = /\p{Script=Han}/u;
+
+export interface TextRun {
+  type: 'text' | 'han';
+  value: string;
+}
+
+/**
+ * Split mixed English + Chinese prose into ordered runs. A 'han' run is a maximal CJK
+ * stretch containing at least one Han character (rendered as cpcd downstream); everything
+ * else — including CJK-punctuation-only stretches — folds into 'text' runs. Adjacent text
+ * runs are merged so the result strictly alternates text/han.
+ */
+export function splitHanRuns(text: string): TextRun[] {
+  const runs: TextRun[] = [];
+  const pushText = (value: string) => {
+    if (!value) return;
+    const last = runs[runs.length - 1];
+    if (last && last.type === 'text') last.value += value;
+    else runs.push({ type: 'text', value });
+  };
+
+  let lastIndex = 0;
+  for (const match of text.matchAll(FOREIGN_RUN_REGEX)) {
+    const idx = match.index ?? 0;
+    if (idx > lastIndex) pushText(text.slice(lastIndex, idx));
+    if (HAS_HAN.test(match[0])) runs.push({ type: 'han', value: match[0] });
+    else pushText(match[0]); // punctuation-only run carries no lookup value → treat as text
+    lastIndex = idx + match[0].length;
+  }
+  if (lastIndex < text.length) pushText(text.slice(lastIndex));
+
+  return runs;
 }

@@ -1,3 +1,4 @@
+import { PoolClient } from 'pg';
 import { ReviewMark, VocabEntry } from '../types/index.js';
 import { IVocabEntryDAL } from '../dal/interfaces/IVocabEntryDAL.js';
 import { DictionaryService } from './DictionaryService.js';
@@ -7,6 +8,54 @@ import { dictTableForLanguage } from '../dal/shared/dictTable.js';
 import { vetTableForLanguage, vetReadFrom } from '../dal/shared/vetTable.js';
 import { DICT_COLS, DICT_JOIN } from '../dal/shared/dictJoin.js';
 import { ttsService } from './TTSService.js';
+
+// Difficulty-targeted study modes launched from the decks page (Easy/Hard
+// buttons). Each mode shapes BOTH the initial working-loop distribution and the
+// replacement-card pool handed back by the mark endpoint, so banned categories
+// never leak in via a correct-mark refill.
+export type StudyMode = 'easy' | 'hard';
+
+interface ModeLoopConfig {
+  // Ordered initial fetch quotas (summing to the loop total).
+  quotas: { category: string; count: number }[];
+  // Priority order used to top the loop up to its total when a quota underfills.
+  fillOrder: string[];
+  // The only categories this mode may ever serve (initial loop + refills).
+  allowed: string[];
+}
+
+// Single source of truth for mode distributions, shared by the working-loop
+// builder and the mark route's replacement picker.
+export const MODE_CONFIGS: Record<StudyMode, ModeLoopConfig> = {
+  // Easy: ease the learner with cards they mostly know.
+  easy: {
+    quotas: [{ category: 'Comfortable', count: 7 }, { category: 'Mastered', count: 3 }],
+    fillOrder: ['Comfortable', 'Mastered'],
+    allowed: ['Comfortable', 'Mastered'],
+  },
+  // Hard: drill the cards the learner struggles with.
+  hard: {
+    quotas: [{ category: 'Unfamiliar', count: 7 }, { category: 'Target', count: 3 }],
+    fillOrder: ['Target', 'Unfamiliar'],
+    allowed: ['Unfamiliar', 'Target'],
+  },
+};
+
+// Default (Mix) working-loop shape — the historical 1-2-2-5 distribution with a
+// Target-first top-up. Lives alongside the mode configs so the loop builder is
+// fully data-driven.
+const DEFAULT_LOOP_CONFIG: Omit<ModeLoopConfig, 'allowed'> = {
+  quotas: [
+    { category: 'Mastered', count: 1 },
+    { category: 'Comfortable', count: 2 },
+    { category: 'Unfamiliar', count: 2 },
+    { category: 'Target', count: 5 },
+  ],
+  fillOrder: ['Target', 'Comfortable', 'Unfamiliar', 'Mastered'],
+};
+
+// Total cards in a working loop, regardless of distribution.
+const WORKING_LOOP_SIZE = 10;
 
 /**
  * OnDeck Vocabulary Service
@@ -152,7 +201,8 @@ export class OnDeckVocabService {
   private async enrichEntriesPipeline(entries: VocabEntry[], language: string): Promise<VocabEntry[]> {
     const withExampleMeta = await this.dictionaryService.enrichExampleSentencesMetadataBatch(entries, language);
     const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(withExampleMeta, language);
-    return this.dictionaryService.enrichEntriesWithSynonymMetadata(withExpansionMeta, language);
+    const withLongDefMeta = await this.dictionaryService.enrichLongDefinitionMetadataBatch(withExpansionMeta, language);
+    return this.dictionaryService.enrichEntriesWithSynonymMetadata(withLongDefMeta, language);
   }
 
   /**
@@ -300,14 +350,20 @@ export class OnDeckVocabService {
 
   /**
    * Get next library card with fallback priority.
-   * Priority order when preferred category has no cards: Target -> Unfamiliar -> Comfortable -> Mastered.
+   * Default priority when preferred category has no cards: Target -> Unfamiliar -> Comfortable -> Mastered.
    * Skips cards still on per-category cooldown (see COOLDOWN_MS_BY_CATEGORY).
+   *
+   * `allowedCategories` (Easy/Hard modes) restricts the replacement pool to the
+   * given categories only — a banned category is never served, even as a last
+   * resort. When every allowed category is exhausted, returns null so the caller
+   * can wind the working loop down ("no more easy/hard cards remaining").
    */
   async getNextLibraryCardWithFallback(
     userId: string,
     preferredCategory: string,
     language: string,
-    excludeIds: number[] = []
+    excludeIds: number[] = [],
+    allowedCategories?: string[]
   ): Promise<VocabEntry | null> {
     if (!userId) {
       throw new ValidationError('User ID is required');
@@ -321,9 +377,17 @@ export class OnDeckVocabService {
     // cooldown do we emit a cooled-down card, picking the one whose last correct
     // mark is furthest in the past. `excludeIds` keeps cards already in the
     // client's working loop out of the replacement pool.
+    //
+    // In a mode session, `allowedCategories` caps the pool: the preferred
+    // category is honored only if it's allowed, and the fallback list is the
+    // remaining allowed categories.
+    const fallbackBase = allowedCategories ?? ['Target', 'Unfamiliar', 'Comfortable', 'Mastered'];
+    const preferredFirst = !allowedCategories || allowedCategories.includes(preferredCategory)
+      ? [preferredCategory]
+      : [];
     const categoryOrder: string[] = [
-      preferredCategory,
-      ...['Target', 'Unfamiliar', 'Comfortable', 'Mastered'].filter(cat => cat !== preferredCategory),
+      ...preferredFirst,
+      ...fallbackBase.filter(cat => cat !== preferredCategory),
     ];
 
     const cooledDownPool: VocabEntry[] = [];
@@ -345,15 +409,47 @@ export class OnDeckVocabService {
   }
 
   /**
-   * Get distributed working loop with specific card distribution.
-   * Distribution: 1 Mastered, 2 Comfortable, 2 Unfamiliar, 5 Target.
-   * If category filter is applied, only return cards from that category (up to 10).
+   * Fetch up to `limit` random library cards of one category, excluding ids
+   * already chosen. Shared building block for the working-loop distribution.
+   */
+  private async fetchCategoryCards(
+    client: PoolClient,
+    userId: string,
+    language: string,
+    category: string,
+    limit: number,
+    excludeIds: number[]
+  ): Promise<VocabEntry[]> {
+    if (limit <= 0) return [];
+    const result = await client.query<VocabEntry>(`
+      SELECT ve.*, ${DICT_COLS}
+      FROM ${vetReadFrom(language)} ${DICT_JOIN}
+      WHERE ve."userId" = $1
+      AND ve."language" = $5
+      AND ve."starterPackBucket" = 'library'
+      AND ve.category = $2
+      AND ve.id != ALL($3::int[])
+      ORDER BY RANDOM()
+      LIMIT $4
+    `, [userId, category, excludeIds, limit, language]);
+    return result.rows;
+  }
+
+  /**
+   * Get distributed working loop with a category distribution.
+   * - Default (Mix): 1 Mastered, 2 Comfortable, 2 Unfamiliar, 5 Target.
+   * - `mode` 'easy'/'hard': the difficulty-targeted distributions in MODE_CONFIGS
+   *   (Easy = 7 Comfortable + 3 Mastered; Hard = 7 Unfamiliar + 3 Target), each
+   *   topping up only from its allowed categories.
+   * - `categoryFilter`: returns up to 10 cards from that single category (legacy
+   *   deck-tap path), ignoring distribution.
    * Enriches cards with related words that share characters.
    */
   async getDistributedWorkingLoop(
     userId: string,
     language: string,
-    categoryFilter?: string | null
+    categoryFilter?: string | null,
+    mode?: StudyMode
   ): Promise<VocabEntry[]> {
     if (!userId) {
       throw new ValidationError('User ID is required');
@@ -378,84 +474,30 @@ export class OnDeckVocabService {
 
         workingLoop = result.rows;
       } else {
-        // No filter - get distributed cards (1-2-2-5 distribution)
+        // Data-driven distribution: pick the per-mode config (or the Mix default),
+        // fetch each quota in order, then top up to WORKING_LOOP_SIZE using the
+        // mode's fill order. Mode loops only ever draw from their config's
+        // categories; Mix may draw from all four.
+        const config = mode ? MODE_CONFIGS[mode] : DEFAULT_LOOP_CONFIG;
         workingLoop = [];
 
-        // Fetch 1 Mastered card
-        const masteredResult = await client.query<VocabEntry>(`
-          SELECT ve.*, ${DICT_COLS}
-          FROM ${vetReadFrom(language)} ${DICT_JOIN}
-          WHERE ve."userId" = $1
-          AND ve."language" = $2
-          AND ve."starterPackBucket" = 'library'
-          AND ve.category = 'Mastered'
-          ORDER BY RANDOM()
-          LIMIT 1
-        `, [userId, language]);
-        workingLoop.push(...masteredResult.rows);
+        // Initial quota fetches.
+        for (const { category, count } of config.quotas) {
+          const rows = await this.fetchCategoryCards(
+            client, userId, language, category, count, workingLoop.map(c => c.id)
+          );
+          workingLoop.push(...rows);
+        }
 
-        // Fetch 2 Comfortable cards
-        const comfortableResult = await client.query<VocabEntry>(`
-          SELECT ve.*, ${DICT_COLS}
-          FROM ${vetReadFrom(language)} ${DICT_JOIN}
-          WHERE ve."userId" = $1
-          AND ve."language" = $2
-          AND ve."starterPackBucket" = 'library'
-          AND ve.category = 'Comfortable'
-          ORDER BY RANDOM()
-          LIMIT 2
-        `, [userId, language]);
-        workingLoop.push(...comfortableResult.rows);
-
-        // Fetch 2 Unfamiliar cards
-        const unfamiliarResult = await client.query<VocabEntry>(`
-          SELECT ve.*, ${DICT_COLS}
-          FROM ${vetReadFrom(language)} ${DICT_JOIN}
-          WHERE ve."userId" = $1
-          AND ve."language" = $2
-          AND ve."starterPackBucket" = 'library'
-          AND ve.category = 'Unfamiliar'
-          ORDER BY RANDOM()
-          LIMIT 2
-        `, [userId, language]);
-        workingLoop.push(...unfamiliarResult.rows);
-
-        // Fetch 5 Target cards
-        const targetResult = await client.query<VocabEntry>(`
-          SELECT ve.*, ${DICT_COLS}
-          FROM ${vetReadFrom(language)} ${DICT_JOIN}
-          WHERE ve."userId" = $1
-          AND ve."language" = $2
-          AND ve."starterPackBucket" = 'library'
-          AND ve.category = 'Target'
-          ORDER BY RANDOM()
-          LIMIT 5
-        `, [userId, language]);
-        workingLoop.push(...targetResult.rows);
-
-        // If we don't have 10 cards, fill remaining slots by priority: Target → Comfortable → Unfamiliar → Mastered
-        if (workingLoop.length < 10) {
-          const fillPriorityOrder: string[] = ['Target', 'Comfortable', 'Unfamiliar', 'Mastered'];
-
-          for (const category of fillPriorityOrder) {
-            if (workingLoop.length >= 10) break;
-
-            const existingIds: number[] = workingLoop.map(card => card.id);
-            const neededCount: number = 10 - workingLoop.length;
-
-            const fillResult = await client.query<VocabEntry>(`
-              SELECT ve.*, ${DICT_COLS}
-              FROM ${vetReadFrom(language)} ${DICT_JOIN}
-              WHERE ve."userId" = $1
-              AND ve."language" = $5
-              AND ve."starterPackBucket" = 'library'
-              AND ve.category = $2
-              AND ve.id != ALL($3::int[])
-              ORDER BY RANDOM()
-              LIMIT $4
-            `, [userId, category, existingIds, neededCount, language]);
-
-            workingLoop.push(...fillResult.rows);
+        // Top up toward the loop size by fill-order priority.
+        if (workingLoop.length < WORKING_LOOP_SIZE) {
+          for (const category of config.fillOrder) {
+            if (workingLoop.length >= WORKING_LOOP_SIZE) break;
+            const rows = await this.fetchCategoryCards(
+              client, userId, language, category,
+              WORKING_LOOP_SIZE - workingLoop.length, workingLoop.map(c => c.id)
+            );
+            workingLoop.push(...rows);
           }
         }
 

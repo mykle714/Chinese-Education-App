@@ -84,7 +84,7 @@ export class VocabEntryService {
    * may not already have a vocabentries row.
    *
    * Branches:
-   *  - no row → INSERT with starterPackBucket='library', category='Unfamiliar'
+   *  - no row → INSERT with starterPackBucket='library' (category is GENERATED → 'Unfamiliar')
    *  - row already in library → no-op
    *  - row in 'learn-later' → bucket → 'library' (status='moved')
    *  - row in 'skip' or NULL → bucket → 'library' (status='added' — skip-undo
@@ -125,8 +125,10 @@ export class VocabEntryService {
 
       if (existing.rows.length === 0) {
         const insertResult = await client.query<{ id: number }>(
-          `INSERT INTO ${vetTable} ("userId", "entryKey", language, "starterPackBucket", category)
-           VALUES ($1, $2, $3, 'library', 'Unfamiliar')
+          // category is GENERATED from markHistory (migration 67); a fresh row's
+          // empty history resolves to 'Unfamiliar', so it is not written here.
+          `INSERT INTO ${vetTable} ("userId", "entryKey", language, "starterPackBucket")
+           VALUES ($1, $2, $3, 'library')
            RETURNING id`,
           [userId, trimmedKey, language],
         );
@@ -238,7 +240,8 @@ export class VocabEntryService {
     // The entry carries its own language, so use it for every dictionary lookup.
     const [withExampleMeta] = await this.dictionaryService.enrichExampleSentencesMetadataBatch([entry], entry.language);
     const [withExpansionMeta] = await this.dictionaryService.enrichExpansionMetadataBatch([withExampleMeta], entry.language);
-    const [enriched] = await this.dictionaryService.enrichEntriesWithSynonymMetadata([withExpansionMeta], entry.language);
+    const [withLongDefMeta] = await this.dictionaryService.enrichLongDefinitionMetadataBatch([withExpansionMeta], entry.language);
+    const [enriched] = await this.dictionaryService.enrichEntriesWithSynonymMetadata([withLongDefMeta], entry.language);
 
     // Enrich with related words (library words sharing characters, zh only)
     const relatedWords = await this.vocabEntryDAL.findRelatedBySharedCharacters(
@@ -276,7 +279,8 @@ export class VocabEntryService {
     // Enrich with computed example sentences and synonym metadata
     const withExampleMeta = await this.dictionaryService.enrichExampleSentencesMetadataBatch(entries, language);
     const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(withExampleMeta, language);
-    const enrichedEntries = await this.dictionaryService.enrichEntriesWithSynonymMetadata(withExpansionMeta, language);
+    const withLongDefMeta = await this.dictionaryService.enrichLongDefinitionMetadataBatch(withExpansionMeta, language);
+    const enrichedEntries = await this.dictionaryService.enrichEntriesWithSynonymMetadata(withLongDefMeta, language);
 
     return {
       entries: enrichedEntries,
@@ -301,7 +305,8 @@ export class VocabEntryService {
     const results = await this.vocabEntryDAL.searchEntries(userId, searchTerm.trim(), language, limit);
     const withExampleMeta = await this.dictionaryService.enrichExampleSentencesMetadataBatch(results, language);
     const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(withExampleMeta, language);
-    return await this.dictionaryService.enrichEntriesWithSynonymMetadata(withExpansionMeta, language);
+    const withLongDefMeta = await this.dictionaryService.enrichLongDefinitionMetadataBatch(withExpansionMeta, language);
+    return await this.dictionaryService.enrichEntriesWithSynonymMetadata(withLongDefMeta, language);
   }
 
   /**
@@ -312,7 +317,8 @@ export class VocabEntryService {
     const entries = await this.vocabEntryDAL.findByHskLevel(userId, hskLevel);
     const withExampleMeta = await this.dictionaryService.enrichExampleSentencesMetadataBatch(entries, 'zh');
     const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(withExampleMeta, 'zh');
-    return await this.dictionaryService.enrichEntriesWithSynonymMetadata(withExpansionMeta, 'zh');
+    const withLongDefMeta = await this.dictionaryService.enrichLongDefinitionMetadataBatch(withExpansionMeta, 'zh');
+    return await this.dictionaryService.enrichEntriesWithSynonymMetadata(withLongDefMeta, 'zh');
   }
 
 
@@ -459,7 +465,8 @@ export class VocabEntryService {
     const date = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
     const entries = await this.vocabEntryDAL.findEntriesCreatedAfter(userId, date, language);
     const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(entries, language);
-    return await this.dictionaryService.enrichEntriesWithSynonymMetadata(withExpansionMeta, language);
+    const withLongDefMeta = await this.dictionaryService.enrichLongDefinitionMetadataBatch(withExpansionMeta, language);
+    return await this.dictionaryService.enrichEntriesWithSynonymMetadata(withLongDefMeta, language);
   }
 
   /**
@@ -577,7 +584,8 @@ export class VocabEntryService {
 
     // Enrich with computed expansion metadata + synonym metadata
     const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(entries, language);
-    const enrichedEntries = await this.dictionaryService.enrichEntriesWithSynonymMetadata(withExpansionMeta, language);
+    const withLongDefMeta = await this.dictionaryService.enrichLongDefinitionMetadataBatch(withExpansionMeta, language);
+    const enrichedEntries = await this.dictionaryService.enrichEntriesWithSynonymMetadata(withLongDefMeta, language);
     const totalServiceTime = performance.now() - serviceStart;
 
     console.log(`[VOCAB-SERVICE] 📊 Service processing completed:`, {

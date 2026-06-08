@@ -418,20 +418,23 @@ export class StarterPacksService {
       let vocabEntryId: number;
 
       if (!existing) {
-        const initialCategory = shouldMarkMastered ? 'Mastered' : 'Unfamiliar';
+        // `category` is a GENERATED column (migration 67) derived from markHistory,
+        // so it is omitted here: a fresh row's empty history yields 'Unfamiliar', and
+        // the shouldMarkMastered branch below writes an 8/8 history that yields
+        // 'Mastered' automatically.
         const insertResult = isEs
           ? await client.query(`
               INSERT INTO ${vetTable} (
-                "userId", "entryKey", language, pos, "starterPackBucket", category
-              ) VALUES ($1, $2, $3, $4, $5, $6)
-              RETURNING id
-            `, [userId, dictEntry.word1, dictEntry.language, dictEntry.pos, actualBucket, initialCategory])
-          : await client.query(`
-              INSERT INTO ${vetTable} (
-                "userId", "entryKey", language, "starterPackBucket", category
+                "userId", "entryKey", language, pos, "starterPackBucket"
               ) VALUES ($1, $2, $3, $4, $5)
               RETURNING id
-            `, [userId, dictEntry.word1, dictEntry.language, actualBucket, initialCategory]);
+            `, [userId, dictEntry.word1, dictEntry.language, dictEntry.pos, actualBucket])
+          : await client.query(`
+              INSERT INTO ${vetTable} (
+                "userId", "entryKey", language, "starterPackBucket"
+              ) VALUES ($1, $2, $3, $4)
+              RETURNING id
+            `, [userId, dictEntry.word1, dictEntry.language, actualBucket]);
         vocabEntryId = insertResult.rows[0].id;
         console.log(`[StarterPacks] Created VocabEntry id=${vocabEntryId} for entryKey=${dictEntry.word1}`);
       } else {
@@ -440,7 +443,8 @@ export class StarterPacksService {
       }
 
       if (shouldMarkMastered) {
-        await this.vocabEntryDAL.updateCategory(vocabEntryId, 'Mastered');
+        // Writing a perfect 8/8 markHistory makes the GENERATED category resolve to
+        // 'Mastered' — no explicit category write needed (or possible).
         const currentTimestamp: string = new Date().toISOString();
         const perfectMarkHistory: any[] = Array(8).fill(null).map(() => ({
           timestamp: currentTimestamp,

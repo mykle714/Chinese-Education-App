@@ -68,4 +68,16 @@ export interface IDictionaryDAL extends IBaseDAL<DictionaryEntry, DictionaryEntr
     expansion?: string | null;
     expansionLiteralTranslation?: string | null;
   }>(entries: T[], language?: string): Promise<T[]>;
+
+  /**
+   * Enrich entries with `longDefinitionParts` — the long definition split into ordered
+   * English-prose parts and embedded-Chinese parts (each carrying segmentation metadata
+   * so the client renders them as cpcd with the example-sentence popup).
+   *
+   * @param entries - Array of objects with optional `longDefinition` field
+   * @param language - Language filter for dictionary lookups (Chinese-only; non-zh is a no-op)
+   */
+  enrichLongDefinitionMetadataBatch<T extends {
+    longDefinition?: string | null;
+  }>(entries: T[], language?: string): Promise<T[]>;
 }

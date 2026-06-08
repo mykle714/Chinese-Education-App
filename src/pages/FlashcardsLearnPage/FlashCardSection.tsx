@@ -11,9 +11,11 @@ import {
     FC_FONT,
     FC_FONT_CJK,
 } from "./constants";
+import { SIZE, WEIGHT, LEADING, TRACKING } from "../../theme/scale";
 import type { VocabEntry, SideOneLanguage } from "./types";
 import ForeignText from "../../components/ForeignText";
 import { SpeakerButton } from "../../components/SpeakerButton";
+import { getCategoryColor } from "../../utils/categoryColors";
 
 // Re-exported so existing imports `from './FlashCardSection'` keep working.
 export { SpeakerButton };
@@ -29,8 +31,13 @@ interface FlashCardSectionProps {
     isFlipped: boolean;
     isAnimating: boolean;
     selectedCategory: string | null;
+    // Overrides the default empty-state text when present (e.g. mode run-out:
+    // "No more easy cards remaining.").
+    emptyMessage?: string;
     showPinyin: boolean;
     showPinyinColor: boolean;
+    // When true, the card's progress category renders as a colored chip on Side 2.
+    showProgressCategory: boolean;
     // Side 1 language for the front-slot card. Side 2 always shows both.
     sideOneLanguage: SideOneLanguage;
     // Side 1 language for the back-slot (peeking) card — different random value
@@ -108,7 +115,7 @@ const EnglishBlock: React.FC<{ entry: VocabEntry }> = ({ entry }) => {
     return (
         <Typography sx={{
             fontSize: englishFontSize(text),
-            fontWeight: 400,
+            fontWeight: WEIGHT.regular,
             color: theme.palette.flashcard.onSurface,
             fontFamily: FC_FONT_CJK,
             textAlign: 'center',
@@ -116,6 +123,36 @@ const EnglishBlock: React.FC<{ entry: VocabEntry }> = ({ entry }) => {
         }}>
             {text}
         </Typography>
+    );
+};
+
+// Progress-category chip shown in the top-left corner of Side 2 when the setting
+// is enabled. Absolutely positioned within the card face (matching MiniVocabCard's
+// top-left badge). Tinted with the shared category color. Renders only when a
+// category is present on the entry.
+const CategoryChip: React.FC<{ category?: string }> = ({ category }) => {
+    if (!category) return null;
+    const color = getCategoryColor(category);
+    return (
+        <Box
+            className="mobile-demo-flashcard-category-chip"
+            sx={{
+                position: 'absolute',
+                top: 12,
+                left: 12,
+                zIndex: 2,
+                display: 'inline-flex',
+                alignItems: 'center',
+                px: 1.25,
+                py: 0.25,
+                borderRadius: '999px',
+                backgroundColor: color,
+            }}
+        >
+            <Typography sx={{ fontSize: SIZE.caption, fontWeight: WEIGHT.semibold, color: '#FFFFFF', fontFamily: FC_FONT, lineHeight: LEADING.normal, letterSpacing: TRACKING.wide }}>
+                {category}
+            </Typography>
+        </Box>
     );
 };
 
@@ -130,7 +167,7 @@ const ImagePlaceholder: React.FC = () => {
             className="mobile-demo-flashcard-image"
             sx={{ width: 106, height: 83, backgroundColor: fc.imagePlaceholder, borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
         >
-            <Typography sx={{ fontSize: 11, color: fc.textSecondary, fontFamily: FC_FONT, textAlign: 'center' }}>
+            <Typography sx={{ fontSize: SIZE.micro, color: fc.textSecondary, fontFamily: FC_FONT, textAlign: 'center' }}>
                 insert image here
             </Typography>
         </Box>
@@ -146,7 +183,11 @@ const CardFaceSide: React.FC<{
     contentGap: number;
     contentClassName?: string;
     children: React.ReactNode;
-}> = ({ rotated, contentGap, contentClassName, children }) => {
+    // Optional absolutely-positioned element (e.g. the category chip) rendered as
+    // a direct child of the face box so it can sit in a corner, outside the
+    // centered content column.
+    cornerBadge?: React.ReactNode;
+}> = ({ rotated, contentGap, contentClassName, children, cornerBadge }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
     return (
@@ -162,6 +203,7 @@ const CardFaceSide: React.FC<{
             alignItems: "center",
             justifyContent: CARD_FACE_JUSTIFY,
         }}>
+            {cornerBadge}
             <CardContent
                 className={rotated ? undefined : "mobile-demo-flashcard-content"}
                 sx={{
@@ -207,6 +249,7 @@ const CardFace: React.FC<{
     isAnimating: boolean;
     showPinyin: boolean;
     showPinyinColor: boolean;
+    showProgressCategory: boolean;
     sideOneLanguage: SideOneLanguage;
     dragPosition: { x: number; y: number };
     dismissThreshold: number;
@@ -216,7 +259,7 @@ const CardFace: React.FC<{
     isProminent: boolean;
     onSpeak?: (entry: VocabEntry) => void;
     speakingKey?: string | null;
-}> = ({ entry, isFlipped, isAnimating, showPinyin, showPinyinColor, sideOneLanguage, dragPosition, dismissThreshold, isProminent, onSpeak, speakingKey }) => {
+}> = ({ entry, isFlipped, isAnimating, showPinyin, showPinyinColor, showProgressCategory, sideOneLanguage, dragPosition, dismissThreshold, isProminent, onSpeak, speakingKey }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
 
@@ -246,7 +289,12 @@ const CardFace: React.FC<{
             </CardFaceSide>
 
             {/* Side 2 — always shows both Chinese and English */}
-            <CardFaceSide rotated contentGap={2} contentClassName="mobile-demo-flashcard-side-two">
+            <CardFaceSide
+                rotated
+                contentGap={2}
+                contentClassName="mobile-demo-flashcard-side-two"
+                cornerBadge={showProgressCategory ? <CategoryChip category={entry.category} /> : undefined}
+            >
                 <ChineseBlock entry={entry} showPinyin={showPinyin} showPinyinColor={showPinyinColor} onSpeak={onSpeak} speakingKey={speakingKey} />
                 <EnglishBlock entry={entry} />
             </CardFaceSide>
@@ -278,8 +326,10 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
     isFlipped,
     isAnimating,
     selectedCategory,
+    emptyMessage,
     showPinyin,
     showPinyinColor,
+    showProgressCategory,
     sideOneLanguage,
     nextSideOneLanguage,
     showSwipeHint,
@@ -455,6 +505,7 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                                 isAnimating={isAnimating}
                                                 showPinyin={showPinyin}
                                                 showPinyinColor={showPinyinColor}
+                                                showProgressCategory={showProgressCategory}
                                                 sideOneLanguage={slotSideOneLanguages[slot]}
                                                 // Suppress the drag overlay on the newly promoted card while
                                                 // the previous card is still flying out (isAnimating window).
@@ -490,14 +541,16 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                 <Typography
                                     className="mobile-demo-flashcard-empty-text"
                                     sx={{
-                                        fontSize: 20,
-                                        fontWeight: 400,
+                                        fontSize: SIZE.title,
+                                        fontWeight: WEIGHT.regular,
                                         color: fc.onSurface,
                                         fontFamily: FC_FONT,
                                         lineHeight: 1.5,
                                     }}
                                 >
-                                    {selectedCategory
+                                    {emptyMessage
+                                        ? emptyMessage
+                                        : selectedCategory
                                         ? `No cards in the ${selectedCategory} category yet. Cards will appear here as you study!`
                                         : 'No Learn Now cards available. Add cards from the Discover page!'}
                                 </Typography>

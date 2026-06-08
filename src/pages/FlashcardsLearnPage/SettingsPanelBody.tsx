@@ -2,6 +2,7 @@ import { forwardRef, useImperativeHandle, useRef } from "react";
 import { Box, Switch, Typography, useTheme } from "@mui/material";
 import { InfoSheetEntryHeader } from "./styled";
 import { FC_FONT } from "./constants";
+import { SIZE } from "../../theme/scale";
 import type { SheetPanelBodyHandle } from "./SheetPanel";
 import type { FlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
 
@@ -47,6 +48,7 @@ const SettingsPanelBody = forwardRef<SheetPanelBodyHandle, SettingsPanelBodyProp
         { key: "showPinyinColor", label: "Color pinyin by tone", visible: settings.showPinyin, indented: true },
         { key: "showSegmentSpaces", label: "Show spaces between words", visible: true },
         { key: "autoplayChinese", label: "Autoplay audio on Chinese side", visible: true },
+        { key: "showProgressCategory", label: "Show progress category on back", visible: true },
     ];
 
     return (
@@ -65,7 +67,7 @@ const SettingsPanelBody = forwardRef<SheetPanelBodyHandle, SettingsPanelBodyProp
                 <Typography
                     className="flashcard-settings-title"
                     sx={{
-                        fontSize: 16,
+                        fontSize: SIZE.bodyLg,
                         fontWeight: 600,
                         color: fc.onSurface,
                         fontFamily: FC_FONT,

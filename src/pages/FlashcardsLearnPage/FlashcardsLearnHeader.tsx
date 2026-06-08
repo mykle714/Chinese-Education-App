@@ -5,6 +5,7 @@ import SettingsIcon from "@mui/icons-material/Settings";
 import PageHeader from "../../components/PageHeader";
 import MinutePointsFireBadge from "../../components/MinutePointsFireBadge";
 import type { LastMarkUndoSnapshot } from "./types";
+import { SIZE } from "../../theme/scale";
 
 interface FlashcardsLearnHeaderProps {
     selectedCategory: string | null;
@@ -41,7 +42,7 @@ const FlashcardsLearnHeader: React.FC<FlashcardsLearnHeaderProps> = ({
         px: 1,
         py: 0.25,
         height: "30px",
-        fontSize: "0.65rem",
+        fontSize: SIZE.micro,
         textTransform: "lowercase" as const,
         lineHeight: 1.4,
         borderRadius: "6px",

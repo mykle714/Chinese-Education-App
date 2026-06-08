@@ -1,6 +1,8 @@
 import { Box, Card, Typography } from "@mui/material";
 import { styled, alpha } from "@mui/material/styles";
 import { CORRECT_COLOR, INCORRECT_COLOR, FC_FONT } from "./constants";
+import { FONTS } from "../../theme/fonts";
+import { SIZE, WEIGHT } from "../../theme/scale";
 
 // IPhoneFrame removed — phone-frame sizing comes from MobileDemoFrame via Layout.tsx.
 
@@ -97,9 +99,9 @@ export const EipEntryTab = styled(Box, {
     borderBottom: isActive ? `2px solid ${toneColor}` : "2px solid transparent",
     marginBottom: -1,
     cursor: "pointer",
-    fontFamily: '"Noto Sans SC", "Inter", sans-serif',
-    fontSize: 14,
-    fontWeight: 600,
+    fontFamily: FONTS.cjk,
+    fontSize: SIZE.body,
+    fontWeight: WEIGHT.semibold,
     color: theme.palette.flashcard.onSurface,
     lineHeight: 1.1,
     userSelect: "none",
@@ -182,7 +184,7 @@ export const DefinitionColumn = styled(Box)(() => ({
 }));
 
 export const DefinitionText = styled(Typography)(({ theme }) => ({
-    fontSize: 12,
+    fontSize: SIZE.caption,
     color: theme.palette.flashcard.onSurface,
     lineHeight: "16px",
     fontFamily: FC_FONT,
@@ -202,8 +204,8 @@ export const HskPill = styled(Box)(({ theme }) => ({
     backgroundColor: theme.palette.flashcard.hskPill,
     color: "#FFFFFF",
     fontFamily: FC_FONT,
-    fontSize: 11,
-    fontWeight: 600,
+    fontSize: SIZE.micro,
+    fontWeight: WEIGHT.semibold,
     letterSpacing: "0.02em",
     padding: "3px 8px",
     borderRadius: 999,
@@ -214,8 +216,8 @@ export const PosChip = styled(Box)(({ theme }) => ({
     border: `1px solid ${theme.palette.flashcard.border}`,
     color: theme.palette.flashcard.onSurface,
     fontFamily: FC_FONT,
-    fontSize: 11,
-    fontWeight: 500,
+    fontSize: SIZE.micro,
+    fontWeight: WEIGHT.medium,
     padding: "2px 8px",
     borderRadius: 999,
     lineHeight: 1.2,
@@ -224,7 +226,7 @@ export const PosChip = styled(Box)(({ theme }) => ({
 // Section header above the shared-characters list inside the info tab.
 // Mirrors the "Expanded Form" label in the literal tab.
 export const SharedCharsLabel = styled(Typography)(({ theme }) => ({
-    fontSize: 12,
+    fontSize: SIZE.caption,
     color: theme.palette.flashcard.textSecondary,
     fontFamily: FC_FONT,
     textTransform: "uppercase",
@@ -323,8 +325,8 @@ export const SwipeHintLabel = styled(Box, {
     alignItems: "center",
     gap: 6,
     fontFamily: FC_FONT,
-    fontSize: 13,
-    fontWeight: 600,
+    fontSize: SIZE.body,
+    fontWeight: WEIGHT.semibold,
     letterSpacing: "0.02em",
     color: side === "left" ? INCORRECT_COLOR : CORRECT_COLOR,
     opacity: visible ? 1 : 0,
@@ -349,8 +351,8 @@ export const FlipHintLabel = styled(Box, {
     alignItems: "center",
     gap: 6,
     fontFamily: FC_FONT,
-    fontSize: 13,
-    fontWeight: 600,
+    fontSize: SIZE.body,
+    fontWeight: WEIGHT.semibold,
     letterSpacing: "0.02em",
     color: theme.palette.flashcard.textSecondary,
     opacity: visible ? 1 : 0,

@@ -2,6 +2,7 @@ import { Box, Typography, useTheme } from "@mui/material";
 import ForeignText from "../../components/ForeignText";
 import { stripParentheses } from "../../utils/definitionUtils";
 import { FC_FONT } from "./constants";
+import { SIZE } from "../../theme/scale";
 
 export interface InfoCardListRowProps {
     character: string;
@@ -69,11 +70,11 @@ function InfoCardListRow({
                 useToneColor={showPinyinColor}
                 showPinyin={showPinyin}
             />
-            <Typography sx={{ fontSize: 14, color: fc.onSurface, flex: 1, fontFamily: FC_FONT }}>
+            <Typography sx={{ fontSize: SIZE.body, color: fc.onSurface, flex: 1, fontFamily: FC_FONT }}>
                 {stripParentheses(definition)}
             </Typography>
             {clickable && (
-                <Typography sx={{ fontSize: 14, color: fc.textSecondary, flexShrink: 0 }}>›</Typography>
+                <Typography sx={{ fontSize: SIZE.body, color: fc.textSecondary, flexShrink: 0 }}>›</Typography>
             )}
         </Box>
     );

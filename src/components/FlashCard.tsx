@@ -1,6 +1,7 @@
 import React from 'react';
 import { stripParentheses } from '../utils/definitionUtils';
 import type { VocabEntry } from '../types';
+import { SIZE, WEIGHT } from '../theme/scale';
 import {
     Box,
     Card,
@@ -100,7 +101,7 @@ const FlashCard: React.FC<FlashCardProps> = ({
                             variant="h4"
                             component="h2"
                             sx={{
-                                fontWeight: 'bold',
+                                fontWeight: WEIGHT.bold,
                                 color: 'primary.main',
                                 mb: showPronunciation && entry.pronunciation ? 1 : 3
                             }}
@@ -116,7 +117,7 @@ const FlashCard: React.FC<FlashCardProps> = ({
                                 color="text.secondary"
                                 sx={{
                                     fontStyle: 'italic',
-                                    fontSize: '1rem',
+                                    fontSize: SIZE.bodyLg,
                                     mb: 3,
                                     opacity: 0.8
                                 }}
@@ -170,7 +171,7 @@ const FlashCard: React.FC<FlashCardProps> = ({
                             p: 3,
                         }}
                     >
-                        <Typography className="flash-card__back-word" variant="h5" component="h2" gutterBottom sx={{ fontWeight: 'bold' }}>
+                        <Typography className="flash-card__back-word" variant="h5" component="h2" gutterBottom sx={{ fontWeight: WEIGHT.bold }}>
                             {displayEntry.entryKey}
                         </Typography>
                         <Divider className="flash-card__back-divider" sx={{ mb: 2 }} />
@@ -181,7 +182,7 @@ const FlashCard: React.FC<FlashCardProps> = ({
                             sx={{
                                 flexGrow: 1,
                                 mb: 2,
-                                fontSize: '1.1rem',
+                                fontSize: SIZE.subtitle,
                                 lineHeight: 1.6
                             }}
                         >

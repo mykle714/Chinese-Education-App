@@ -5,6 +5,7 @@ import { dictionaryEntryToVocabEntry } from "./dictEntryAdapter";
 import { getBreakdownItems } from "../../utils/breakdownUtils";
 import type { DictionaryEntry } from "../../types";
 import type { VocabEntry, BreakdownItem } from "./types";
+import { FONTS } from "../../theme/fonts";
 
 export interface EipTab {
     id: string;            // entryKey — used as React key and for dedupe
@@ -36,7 +37,7 @@ function measureTabWidth(label: string): number {
     const el = document.createElement("span");
     el.style.cssText =
         "position:absolute;left:-9999px;top:-9999px;visibility:hidden;" +
-        'font-family:"Noto Sans SC","Inter",sans-serif;' +
+        `font-family:${FONTS.cjk};` +
         "font-size:14px;font-weight:600;line-height:1.1;" +
         "padding:6px 12px;border-bottom:2px solid transparent;" +
         "white-space:nowrap;display:inline-block;box-sizing:border-box;";

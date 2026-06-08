@@ -1,4 +1,5 @@
 import { useState, useEffect, memo, useRef } from "react";
+import { WEIGHT } from '../theme/scale';
 import { stripParentheses } from "../utils/definitionUtils";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "../AuthContext";
@@ -959,7 +960,7 @@ function FlashcardsPage() {
         <Box sx={{ width: drawerWidth, height: '100%', display: 'flex', flexDirection: 'column' }}>
             {/* Header */}
             <Box sx={{ p: 2, borderBottom: '1px solid rgba(0, 0, 0, 0.08)' }}>
-                <Typography variant="h6" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Typography variant="h6" sx={{ fontWeight: WEIGHT.bold, display: 'flex', alignItems: 'center', gap: 1 }}>
                     <HistoryIcon />
                     Study History
                 </Typography>
@@ -1010,7 +1011,7 @@ function FlashcardsPage() {
                                                     // Skipped card - dash icon
                                                     <RemoveIcon color="disabled" fontSize="small" />
                                                 )}
-                                                <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+                                                <Typography variant="subtitle2" sx={{ fontWeight: WEIGHT.bold }}>
                                                     {entry.entryKey}
                                                 </Typography>
                                             </Box>

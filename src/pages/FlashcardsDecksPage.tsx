@@ -10,23 +10,10 @@ import { API_BASE_URL } from "../constants";
 import type { VocabEntry } from "../types";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useDiscoverNavigation } from "../hooks/useDiscoverNavigation";
-
-// Design tokens from Figma
-const COLORS = {
-    background: "#FAFAFB",
-    header: "#F2F2F4",
-    onSurface: "#1C1C1E",
-    border: "#5C5C66",
-    // Deck colors
-    blueMain: "#779BE7",
-    blueAccent: "#BAD7F2",
-    greenMain: "#05C793",
-    greenAccent: "#BAF2D8",
-    yellowMain: "#FF8E47",
-    yellowAccent: "#F2E2BA",
-    redMain: "#EF476F",
-    redAccent: "#F2BAC9",
-};
+import { useCategoryCounts } from "../hooks/useCategoryCounts";
+import { COLORS } from "../theme/colors";
+import { FONTS } from "../theme/fonts";
+import { SIZE, WEIGHT } from "../theme/scale";
 
 // Minimum number of cards a user must have sorted into their library before the
 // /flashcards/learn page is worth opening. Below this, we nudge them to Discover
@@ -43,34 +30,62 @@ const ContentArea = styled(Box)(() => ({
     alignItems: "center",
 }));
 
-const BucketsContainer = styled(Box)(() => ({
-    width: "fit-content",
-    maxWidth: "100%",
-    margin: "0 auto",
-    height: 140,
-    position: "relative",
-    flexShrink: 0,
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 12,
-    padding: "0 20px",
-}));
+// Shared look for the three study-entry buttons (Easy / Mix / Hard). Easy and
+// Hard add their own color; Mix uses the neutral header surface.
+const studyButtonBase = {
+    borderRadius: "8px",
+    padding: "18px 16px",
+    fontSize: SIZE.bodyLg,
+    fontWeight: WEIGHT.medium,
+    fontFamily: FONTS.sans,
+    textTransform: "none" as const,
+    boxShadow: "2px 4px 4px rgba(0, 0, 0, 0.25)",
+};
 
-const StudyAllButton = styled(Button)(() => ({
+// Compact entry button into a mixed (all-category) study session. Sits centered
+// between the Easy/Hard buttons with a fixed footprint so those two flex to fill
+// the remaining side space.
+const MixButton = styled(Button)(() => ({
+    ...studyButtonBase,
     backgroundColor: COLORS.header,
     color: COLORS.onSurface,
-    borderRadius: "8px",
     border: `2px solid ${COLORS.border}`,
-    padding: "36px 32px",
-    fontSize: 32,
-    fontWeight: 500,
-    fontFamily: '"Inter", sans-serif',
-    textTransform: "none",
-    boxShadow: "2px 4px 4px rgba(0, 0, 0, 0.25)",
-    width: "100%",
+    // Keep Mix at its original half-width footprint; Easy/Hard split the rest.
+    flex: "0 0 50%",
     "&:hover": {
         backgroundColor: COLORS.header,
+    },
+}));
+
+// Easy (blue) / Hard (red) difficulty entry buttons. They flank Mix and flex to
+// take the remaining side space. `greyed` renders a non-interactive-looking
+// disabled state WITHOUT the `disabled` prop, so taps still fire onClick to
+// surface the "mark more cards" toast.
+const EasyButton = styled(Button, {
+    shouldForwardProp: (prop) => prop !== "greyed",
+})<{ greyed?: boolean }>(({ greyed }) => ({
+    ...studyButtonBase,
+    flex: 1,
+    // Softer blue accent tone from the deck buckets (Mastered accent).
+    color: COLORS.onSurface,
+    backgroundColor: greyed ? "#C7C7CC" : "#BAD7F2",
+    opacity: greyed ? 0.6 : 1,
+    "&:hover": {
+        backgroundColor: greyed ? "#C7C7CC" : "#A6C9EC",
+    },
+}));
+
+const HardButton = styled(Button, {
+    shouldForwardProp: (prop) => prop !== "greyed",
+})<{ greyed?: boolean }>(({ greyed }) => ({
+    ...studyButtonBase,
+    flex: 1,
+    // Softer red accent tone from the deck buckets (Unfamiliar accent).
+    color: COLORS.onSurface,
+    backgroundColor: greyed ? "#C7C7CC" : "#F2BAC9",
+    opacity: greyed ? 0.6 : 1,
+    "&:hover": {
+        backgroundColor: greyed ? "#C7C7CC" : "#EBA6B9",
     },
 }));
 
@@ -92,122 +107,6 @@ const CardsPreviewContainer = styled(Box)(() => ({
     justifyContent: "flex-start",
 }));
 
-// Deck Card Component
-interface DeckCardProps {
-    label: string;
-    mainColor: string;
-    accentColor: string;
-    onClick: () => void;
-    // Number of library cards in this category, shown under the label.
-    count?: number;
-}
-
-const DeckCard = styled(Box)<{ mainColor: string; accentColor: string }>(
-    ({ mainColor, accentColor }) => ({
-        position: "relative",
-        width: 80,
-        height: 116,
-        cursor: "pointer",
-        transition: "transform 0.2s ease-in-out",
-        flexShrink: 0,
-        "&:hover": {
-            transform: "translateY(-4px)",
-        },
-        "& .bucket-layer-3": {
-            position: "absolute",
-            left: 8,
-            top: 8,
-            width: 72,
-            height: 104,
-            backgroundColor: mainColor,
-            borderRadius: 8,
-            boxShadow: "1px 4px 4px rgba(0, 0, 0, 0.25)",
-        },
-        "& .bucket-layer-2": {
-            position: "absolute",
-            left: 4,
-            top: 4,
-            width: 72,
-            height: 104,
-            backgroundColor: mainColor,
-            borderRadius: 8,
-            boxShadow: "1px 4px 4px rgba(0, 0, 0, 0.25)",
-        },
-        "& .bucket-layer-1": {
-            position: "absolute",
-            left: 0,
-            top: 0,
-            width: 72,
-            height: 104,
-            backgroundColor: mainColor,
-            borderRadius: 8,
-            boxShadow: "1px 4px 4px rgba(0, 0, 0, 0.25)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-        },
-        "& .bucket-inner": {
-            width: "calc(100% - 8px)",
-            height: "calc(100% - 8px)",
-            backgroundColor: accentColor,
-            borderRadius: 4,
-        },
-        "& .bucket-text": {
-            position: "absolute",
-            width: 60,
-            height: 40,
-            left: 6,
-            top: 32,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 2,
-            fontSize: 10,
-            fontWeight: 400,
-            lineHeight: 1.21,
-            textAlign: "center",
-            color: COLORS.onSurface,
-            fontFamily: '"Inter", sans-serif',
-            zIndex: 1,
-        },
-        // Card count sits directly under the bucket label.
-        "& .bucket-count": {
-            fontSize: 9,
-            fontWeight: 700,
-            lineHeight: 1,
-            opacity: 0.75,
-        },
-    })
-);
-
-const DeckCardComponent: React.FC<DeckCardProps> = ({
-    label,
-    mainColor,
-    accentColor,
-    onClick,
-    count,
-}) => {
-    return (
-        <DeckCard
-            mainColor={mainColor}
-            accentColor={accentColor}
-            onClick={onClick}
-            className="deck-card"
-        >
-            <div className="bucket-layer-3" />
-            <div className="bucket-layer-2" />
-            <div className="bucket-layer-1">
-                <div className="bucket-inner" />
-                <div className="bucket-text">
-                    <span className="bucket-label">{label}</span>
-                    {typeof count === "number" && <span className="bucket-count">{count}</span>}
-                </div>
-            </div>
-        </DeckCard>
-    );
-};
-
 // Main Component
 const FlashcardsDecksPage: React.FC = () => {
     usePageTitle("Decks");
@@ -224,14 +123,14 @@ const FlashcardsDecksPage: React.FC = () => {
     const [masteredEntries, setMasteredEntries] = useState<VocabEntry[]>([]);
     const [masteredLoading, setMasteredLoading] = useState(true);
     const [masteredError, setMasteredError] = useState<string | null>(null);
-    // Per-category library card counts shown under each deck bucket label.
-    const [categoryCounts, setCategoryCounts] = useState<Record<string, number>>({});
-    // Whether the category counts have finished loading. We only enforce the
-    // MIN_LIBRARY_CARDS gate once we actually know the count (fail open before
+    // Per-category library card counts, used to gate study navigation. We only
+    // enforce the MIN_LIBRARY_CARDS gate once counts have loaded (fail open before
     // then, so a slow fetch never blocks a user who has plenty of cards).
-    const [countsLoaded, setCountsLoaded] = useState(false);
+    const { counts: categoryCounts, loaded: countsLoaded } = useCategoryCounts();
     // Toast nudging users with too few library cards toward the Discover page.
     const [lowCardSnackOpen, setLowCardSnackOpen] = useState(false);
+    // Toast shown when a greyed Easy/Hard button is tapped (no eligible cards yet).
+    const [markMoreSnackOpen, setMarkMoreSnackOpen] = useState(false);
 
     // Fetch non-mastered library cards from OnDeck vocab sets
     useEffect(() => {
@@ -326,33 +225,18 @@ const FlashcardsDecksPage: React.FC = () => {
         }
     }, [token]);
 
-    // Fetch per-category library card counts for the deck bucket labels
-    useEffect(() => {
-        if (!token) return;
-        (async () => {
-            try {
-                const response = await fetch(`${API_BASE_URL}/api/onDeck/category-counts`, {
-                    credentials: 'include',
-                    headers: { 'Authorization': `Bearer ${token}` },
-                });
-                if (response.ok) {
-                    const data = await response.json();
-                    setCategoryCounts(data && typeof data === 'object' ? data : {});
-                }
-            } catch (err) {
-                console.error('Error fetching category counts:', err);
-            } finally {
-                setCountsLoaded(true);
-            }
-        })();
-    }, [token]);
-
     // Refresh card lists when navigating back from CDP after an action
     useEffect(() => {
         if (location.state?.refresh) {
             refetchCards();
         }
     }, [location.state?.refresh]);
+
+    // All three card previews (Learn Now / Learn Later / Mastered) load from
+    // separate endpoints. We hold every section behind this single flag so the
+    // staggered pop-in cascades all fire together once everything is ready, rather
+    // than section-by-section as each individual request resolves.
+    const allCardsLoaded = !loading && !learnLaterLoading && !masteredLoading;
 
     // Total cards the user has sorted into their library, across every bucket.
     const totalLibraryCards = Object.values(categoryCounts).reduce((sum, n) => sum + n, 0);
@@ -368,16 +252,30 @@ const FlashcardsDecksPage: React.FC = () => {
         return true;
     };
 
-    const handleStudyAllClick = () => {
+    const handleMixClick = () => {
         if (!guardLearnNavigation()) return;
         navigate('/flashcards/learn');
     };
 
-    const handleDeckClick = (category: string) => {
+    // Easy mode draws from Comfortable+Mastered; Hard from Unfamiliar+Target. A
+    // mode is only usable once the account has at least one eligible card for it.
+    const easyEligible = ((categoryCounts["Comfortable"] || 0) + (categoryCounts["Mastered"] || 0)) > 0;
+    const hardEligible = ((categoryCounts["Unfamiliar"] || 0) + (categoryCounts["Target"] || 0)) > 0;
+
+    // Easy/Hard handlers. When no eligible cards exist, the button is greyed but
+    // still tappable — a tap surfaces the "mark more cards in Mix mode" toast.
+    // Otherwise the same 20-card library minimum as Mix applies via the guard.
+    const handleEasyClick = () => {
+        if (!easyEligible) { setMarkMoreSnackOpen(true); return; }
         if (!guardLearnNavigation()) return;
-        navigate(`/flashcards/learn?category=${encodeURIComponent(category)}`);
+        navigate('/flashcards/learn?mode=easy');
     };
 
+    const handleHardClick = () => {
+        if (!hardEligible) { setMarkMoreSnackOpen(true); return; }
+        if (!guardLearnNavigation()) return;
+        navigate('/flashcards/learn?mode=hard');
+    };
 
     // Refetch all card lists
     const refetchCards = async () => {
@@ -440,51 +338,30 @@ const FlashcardsDecksPage: React.FC = () => {
 
                 {/* Content Area */}
                 <ContentArea className="decks-page-content">
-                    {/* Study All Button */}
-                    <Box className="flashcards-decks__study-all-wrapper" sx={{ width: '100%', padding: '16px 20px' }}>
-                        <StudyAllButton className="flashcards-decks__study-all-button" onClick={handleStudyAllClick}>
-                            Study All
-                        </StudyAllButton>
+                    {/* Study-entry row: Easy (blue) and Hard (red) flank the centered
+                        Mix button and flex to fill the remaining side space. */}
+                    <Box
+                        className="flashcards-decks__mode-row"
+                        sx={{ width: '100%', padding: '16px 20px', display: 'flex', alignItems: 'stretch', gap: 1.5 }}
+                    >
+                        <EasyButton
+                            className="flashcards-decks__easy-button"
+                            greyed={!easyEligible}
+                            onClick={handleEasyClick}
+                        >
+                            Easy
+                        </EasyButton>
+                        <MixButton className="flashcards-decks__mix-button" onClick={handleMixClick}>
+                            Mix
+                        </MixButton>
+                        <HardButton
+                            className="flashcards-decks__hard-button"
+                            greyed={!hardEligible}
+                            onClick={handleHardClick}
+                        >
+                            Hard
+                        </HardButton>
                     </Box>
-
-                    {/* Buckets/Decks Section */}
-                    <BucketsContainer className="decks-buckets-container">
-                        {/* Unfamiliar - Red */}
-                        <DeckCardComponent
-                            label="Unfamiliar"
-                            mainColor={COLORS.redMain}
-                            accentColor={COLORS.redAccent}
-                            onClick={() => handleDeckClick("Unfamiliar")}
-                            count={categoryCounts["Unfamiliar"]}
-                        />
-
-                        {/* Target - Yellow */}
-                        <DeckCardComponent
-                            label="Target"
-                            mainColor={COLORS.yellowMain}
-                            accentColor={COLORS.yellowAccent}
-                            onClick={() => handleDeckClick("Target")}
-                            count={categoryCounts["Target"]}
-                        />
-
-                        {/* Comfortable - Green */}
-                        <DeckCardComponent
-                            label="Comfortable"
-                            mainColor={COLORS.greenMain}
-                            accentColor={COLORS.greenAccent}
-                            onClick={() => handleDeckClick("Comfortable")}
-                            count={categoryCounts["Comfortable"]}
-                        />
-
-                        {/* Mastered - Blue */}
-                        <DeckCardComponent
-                            label="Mastered"
-                            mainColor={COLORS.blueMain}
-                            accentColor={COLORS.blueAccent}
-                            onClick={() => handleDeckClick("Mastered")}
-                            count={categoryCounts["Mastered"]}
-                        />
-                    </BucketsContainer>
 
                     {/* Line Separator */}
                     <LineSeparator className="decks-line-separator" />
@@ -494,10 +371,10 @@ const FlashcardsDecksPage: React.FC = () => {
                         <Typography
                             className="flashcards-decks__library-label"
                             sx={{
-                                fontSize: 14,
-                                fontWeight: 500,
+                                fontSize: SIZE.body,
+                                fontWeight: WEIGHT.medium,
                                 color: COLORS.onSurface,
-                                fontFamily: '"Inter", sans-serif',
+                                fontFamily: FONTS.sans,
                             }}
                         >
                             Learn Now
@@ -506,8 +383,8 @@ const FlashcardsDecksPage: React.FC = () => {
 
                     {/* Vocabulary Cards Preview */}
                     <CardsPreviewContainer className="decks-cards-preview">
-                        {loading ? (
-                            // Loading state
+                        {!allCardsLoaded ? (
+                            // Loading state — gated on all sections so the cascades sync.
                             <Box className="flashcards-decks__library-loading" sx={{ display: 'flex', justifyContent: 'center', width: '100%', py: 4 }}>
                                 <CircularProgress className="flashcards-decks__library-spinner" />
                             </Box>
@@ -524,12 +401,13 @@ const FlashcardsDecksPage: React.FC = () => {
                                 </Alert>
                             </Box>
                         ) : (
-                            // Display vocabulary cards
-                            vocabEntries.map((entry) => (
+                            // Display vocabulary cards — staggered pop-in on load.
+                            vocabEntries.map((entry, index) => (
                                 <MiniVocabCard
                                     key={entry.id}
                                     entry={entry}
                                     onClick={(e) => navigate(`/flashcards/card/${e.id}`)}
+                                    animationDelayMs={index * 50}
                                 />
                             ))
                         )}
@@ -543,10 +421,10 @@ const FlashcardsDecksPage: React.FC = () => {
                         <Typography
                             className="flashcards-decks__learn-later-label"
                             sx={{
-                                fontSize: 14,
-                                fontWeight: 500,
+                                fontSize: SIZE.body,
+                                fontWeight: WEIGHT.medium,
                                 color: COLORS.onSurface,
-                                fontFamily: '"Inter", sans-serif',
+                                fontFamily: FONTS.sans,
                             }}
                         >
                             Learn Later
@@ -555,8 +433,8 @@ const FlashcardsDecksPage: React.FC = () => {
 
                     {/* Learn Later Cards Preview */}
                     <CardsPreviewContainer className="decks-learn-later-preview">
-                        {learnLaterLoading ? (
-                            // Loading state
+                        {!allCardsLoaded ? (
+                            // Loading state — gated on all sections so the cascades sync.
                             <Box className="flashcards-decks__learn-later-loading" sx={{ display: 'flex', justifyContent: 'center', width: '100%', py: 4 }}>
                                 <CircularProgress className="flashcards-decks__learn-later-spinner" />
                             </Box>
@@ -573,12 +451,13 @@ const FlashcardsDecksPage: React.FC = () => {
                                 </Alert>
                             </Box>
                         ) : (
-                            // Display learn later cards
-                            learnLaterEntries.map((entry) => (
+                            // Display learn later cards — staggered pop-in on load.
+                            learnLaterEntries.map((entry, index) => (
                                 <MiniVocabCard
                                     key={entry.id}
                                     entry={entry}
                                     onClick={(e) => navigate(`/flashcards/card/${e.id}`)}
+                                    animationDelayMs={index * 50}
                                 />
                             ))
                         )}
@@ -592,10 +471,10 @@ const FlashcardsDecksPage: React.FC = () => {
                         <Typography
                             className="flashcards-decks__mastered-label"
                             sx={{
-                                fontSize: 14,
-                                fontWeight: 500,
+                                fontSize: SIZE.body,
+                                fontWeight: WEIGHT.medium,
                                 color: COLORS.onSurface,
-                                fontFamily: '"Inter", sans-serif',
+                                fontFamily: FONTS.sans,
                             }}
                         >
                             Mastered
@@ -604,8 +483,8 @@ const FlashcardsDecksPage: React.FC = () => {
 
                     {/* Mastered Cards Preview */}
                     <CardsPreviewContainer className="decks-mastered-preview">
-                        {masteredLoading ? (
-                            // Loading state
+                        {!allCardsLoaded ? (
+                            // Loading state — gated on all sections so the cascades sync.
                             <Box className="flashcards-decks__mastered-loading" sx={{ display: 'flex', justifyContent: 'center', width: '100%', py: 4 }}>
                                 <CircularProgress className="flashcards-decks__mastered-spinner" />
                             </Box>
@@ -622,12 +501,13 @@ const FlashcardsDecksPage: React.FC = () => {
                                 </Alert>
                             </Box>
                         ) : (
-                            // Display mastered cards
-                            masteredEntries.map((entry) => (
+                            // Display mastered cards — staggered pop-in on load.
+                            masteredEntries.map((entry, index) => (
                                 <MiniVocabCard
                                     key={entry.id}
                                     entry={entry}
                                     onClick={(e) => navigate(`/flashcards/card/${e.id}`)}
+                                    animationDelayMs={index * 50}
                                 />
                             ))
                         )}
@@ -666,6 +546,25 @@ const FlashcardsDecksPage: React.FC = () => {
                         }
                     >
                         Add at least {MIN_LIBRARY_CARDS} cards to your Learn Now deck — head to Discover to sort some cards.
+                    </Alert>
+                </Snackbar>
+
+                {/* Toast: greyed Easy/Hard tapped — user has no eligible cards yet */}
+                <Snackbar
+                    className="flashcards-decks__mark-more-snackbar"
+                    open={markMoreSnackOpen}
+                    autoHideDuration={5000}
+                    onClose={() => setMarkMoreSnackOpen(false)}
+                    anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+                    sx={{ zIndex: 2000 }}
+                >
+                    <Alert
+                        className="flashcards-decks__mark-more-alert"
+                        severity="info"
+                        variant="filled"
+                        onClose={() => setMarkMoreSnackOpen(false)}
+                    >
+                        Mark more cards in Mix mode to unlock this deck.
                     </Alert>
                 </Snackbar>
         </>

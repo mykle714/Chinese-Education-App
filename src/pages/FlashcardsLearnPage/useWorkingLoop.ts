@@ -26,9 +26,16 @@ export interface CardDragControls {
     resetDragPosition: () => void;
 }
 
+// Difficulty modes launched from the decks page Easy/Hard buttons. null = Mix.
+export type StudyMode = "easy" | "hard";
+
 interface UseWorkingLoopArgs {
     token: string | null;
     selectedCategory: string | null;
+    // Difficulty mode for this session, or null for the default Mix distribution.
+    // Drives the loop-fetch distribution, the mark replacement pool, and the
+    // wind-down behavior when the eligible pool is exhausted.
+    mode: StudyMode | null;
     // TTS prefetch — warms the in-session blob cache for newly loaded cards.
     prefetch: (entry: VocabEntry) => void;
     cardDragRef: RefObject<CardDragControls>;
@@ -65,6 +72,7 @@ export interface UseWorkingLoopReturn {
 export function useWorkingLoop({
     token,
     selectedCategory,
+    mode,
     prefetch,
     cardDragRef,
 }: UseWorkingLoopArgs): UseWorkingLoopReturn {
@@ -106,9 +114,11 @@ export function useWorkingLoop({
                 setLoading(true);
                 setError(null);
 
-                const url = selectedCategory
-                    ? `${API_BASE_URL}/api/onDeck/distributed-working-loop?category=${selectedCategory}`
-                    : `${API_BASE_URL}/api/onDeck/distributed-working-loop`;
+                const params = new URLSearchParams();
+                if (selectedCategory) params.set("category", selectedCategory);
+                if (mode) params.set("mode", mode);
+                const query = params.toString();
+                const url = `${API_BASE_URL}/api/onDeck/distributed-working-loop${query ? `?${query}` : ""}`;
 
                 const response = await fetch(url, { credentials: "include" });
 
@@ -117,7 +127,7 @@ export function useWorkingLoop({
                 const cards = Array.isArray(data) ? data : [data];
 
                 console.log(
-                    `Loaded ${cards.length} cards in distributed working loop${selectedCategory ? ` (category: ${selectedCategory})` : ""}`
+                    `Loaded ${cards.length} cards in distributed working loop${selectedCategory ? ` (category: ${selectedCategory})` : ""}${mode ? ` (mode: ${mode})` : ""}`
                 );
                 setWorkingLoop(cards);
                 setLastMarkUndoSnapshot(null);
@@ -153,9 +163,9 @@ export function useWorkingLoop({
             fetchInitialCards();
         }
     // prefetch and cardDragRef are stable references; depending on them would
-    // not re-run the fetch, which should only react to token/category changes.
+    // not re-run the fetch, which should only react to token/category/mode changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [token, selectedCategory]);
+    }, [token, selectedCategory, mode]);
 
     // Mark card with retry logic.
     // `excludeIds` tells the server which cards are already in the working loop,
@@ -180,7 +190,9 @@ export function useWorkingLoop({
                 method: "POST",
                 headers,
                 credentials: "include",
-                body: JSON.stringify({ cardId, isCorrect, excludeIds }),
+                // `mode` lets the server cap the replacement card to the mode's
+                // allowed categories (and return newCard:null when exhausted).
+                body: JSON.stringify({ cardId, isCorrect, excludeIds, mode: mode ?? undefined }),
             });
 
             if (!response.ok) {
@@ -207,7 +219,7 @@ export function useWorkingLoop({
             setError("Failed to save progress. Please check your connection.");
             return null;
         }
-    }, [token]);
+    }, [token, mode]);
 
     const handleCardDismiss = useCallback(async (direction: "left" | "right") => {
         if (workingLoop.length === 0 || isAnimating) return;
@@ -256,6 +268,26 @@ export function useWorkingLoop({
                     // Pull the replacement's audio into the in-session blob cache
                     // while the user is studying other cards in the loop.
                     prefetch(newCard);
+                } else if (mode && isCorrect && !newCard) {
+                    // Mode session, card passed, but the eligible pool is exhausted —
+                    // wind the loop down by removing the just-passed card instead of
+                    // recycling it. Remove by id (the optimistic currentIndex has
+                    // already advanced, so index math would be brittle), then re-anchor
+                    // currentIndex to the card now on front (the one promoted on dismiss)
+                    // so the visible card doesn't jump. Empty loop ⇒ currentEntry null
+                    // ⇒ "no more <mode> cards remaining" empty state.
+                    const preLoop = preDismissSnapshot.workingLoop;
+                    const promotedCard = preLoop.length > 1
+                        ? preLoop[(preDismissSnapshot.currentIndex + 1) % preLoop.length]
+                        : null;
+                    setWorkingLoop(prevLoop => {
+                        const newLoop = prevLoop.filter(card => card.id !== currentCard.id);
+                        const anchorIndex = promotedCard
+                            ? newLoop.findIndex(card => card.id === promotedCard.id)
+                            : -1;
+                        setCurrentIndex(anchorIndex >= 0 ? anchorIndex : 0);
+                        return newLoop;
+                    });
                 }
                 setLastMarkUndoSnapshot({
                     cardId: currentCard.id,
@@ -280,7 +312,7 @@ export function useWorkingLoop({
         setFlyOut(null);
         cardDragRef.current?.resetDragPosition();
         setIsAnimating(false);
-    }, [workingLoop, isAnimating, currentIndex, activeFrontSlot, currentSideOneLanguage, nextSideOneLanguage, markCard, prefetch, cardDragRef]);
+    }, [workingLoop, isAnimating, currentIndex, activeFrontSlot, currentSideOneLanguage, nextSideOneLanguage, markCard, prefetch, cardDragRef, mode]);
 
     const handleUndoLastMark = useCallback(async () => {
         if (!lastMarkUndoSnapshot || isAnimating || isUndoing) return;

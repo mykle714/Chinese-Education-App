@@ -5,8 +5,9 @@ import { useAuth } from "../../AuthContext";
 import { API_BASE_URL } from "../../constants";
 import { ContentArea, MoreInfoPill } from "./styled";
 import { FC_FONT } from "./constants";
+import { SIZE, WEIGHT, TRACKING } from "../../theme/scale";
 import { useCardDrag } from "./useCardDrag";
-import { useWorkingLoop, type CardDragControls } from "./useWorkingLoop";
+import { useWorkingLoop, type CardDragControls, type StudyMode } from "./useWorkingLoop";
 import FlashcardsLearnHeader from "./FlashcardsLearnHeader";
 import InfoCardSection from "./InfoCardSection";
 import { getBreakdownItems as buildBreakdownItems } from "../../utils/breakdownUtils";
@@ -28,9 +29,17 @@ const FlashcardsLearnPage: React.FC = () => {
     const isMobile = useMediaQuery(theme.breakpoints.down("md"));
     const [searchParams] = useSearchParams();
     const selectedCategory: string | null = searchParams.get('category');
+    // Difficulty mode (Easy/Hard) launched from the decks page, or null for Mix.
+    const rawMode = searchParams.get('mode');
+    const selectedMode: StudyMode | null = rawMode === 'easy' || rawMode === 'hard' ? rawMode : null;
+    // Mode-specific empty-state copy shown when a mode session runs out of cards.
+    const emptyMessage: string | undefined =
+        selectedMode === 'easy' ? 'No more easy cards remaining.'
+        : selectedMode === 'hard' ? 'No more hard cards remaining.'
+        : undefined;
 
     const { settings: learnSettings, update: updateLearnSettings } = useFlashcardLearnSettings();
-    const { showPinyin, showPinyinColor, showSegmentSpaces, autoplayChinese } = learnSettings;
+    const { showPinyin, showPinyinColor, showSegmentSpaces, autoplayChinese, showProgressCategory } = learnSettings;
     // Settings sheet open/close. Independent from the EIC sheet so the two can
     // coexist if needed (each one renders its own SheetPanel).
     const [settingsOpen, setSettingsOpen] = useState(false);
@@ -68,7 +77,7 @@ const FlashcardsLearnPage: React.FC = () => {
         nextSideOneLanguage,
         handleCardDismiss,
         handleUndoLastMark,
-    } = useWorkingLoop({ token, selectedCategory, prefetch: tts.prefetch, cardDragRef });
+    } = useWorkingLoop({ token, selectedCategory, mode: selectedMode, prefetch: tts.prefetch, cardDragRef });
 
     // Drag/flip logic. Depends on the working loop's isAnimating + currentIndex,
     // and feeds dismisses back into it via handleCardDismiss.
@@ -273,8 +282,10 @@ const FlashcardsLearnPage: React.FC = () => {
                     isFlipped={isFlipped}
                     isAnimating={isAnimating}
                     selectedCategory={selectedCategory}
+                    emptyMessage={emptyMessage}
                     showPinyin={showPinyin}
                     showPinyinColor={showPinyinColor}
+                    showProgressCategory={showProgressCategory}
                     sideOneLanguage={currentSideOneLanguage}
                     nextSideOneLanguage={nextSideOneLanguage}
                     showSwipeHint={showSwipeHint}
@@ -298,8 +309,8 @@ const FlashcardsLearnPage: React.FC = () => {
                         onClick={handleMoreInfoClick}
                         aria-label="Open extra info"
                     >
-                        <Typography sx={{ fontSize: 13, color: theme.palette.flashcard.onSurface, lineHeight: 1, transform: "translateY(-1px)" }}>↑</Typography>
-                        <Typography sx={{ fontSize: 12, fontWeight: 600, color: theme.palette.flashcard.onSurface, letterSpacing: "0.02em", fontFamily: FC_FONT }}>More Info</Typography>
+                        <Typography sx={{ fontSize: SIZE.body, color: theme.palette.flashcard.onSurface, lineHeight: 1, transform: "translateY(-1px)" }}>↑</Typography>
+                        <Typography sx={{ fontSize: SIZE.caption, fontWeight: WEIGHT.semibold, color: theme.palette.flashcard.onSurface, letterSpacing: TRACKING.wide, fontFamily: FC_FONT }}>More Info</Typography>
                     </MoreInfoPill>
                 </Tooltip>
                 {/* Modal EIC sheet — only mounted when open to reset animation on reopen.

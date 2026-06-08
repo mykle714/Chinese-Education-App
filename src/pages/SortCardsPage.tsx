@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useParams } from "react-router-dom";
-import { Box, Typography, IconButton, CircularProgress } from "@mui/material";
+import { Box, Typography, IconButton, Button, CircularProgress } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import UndoIcon from "@mui/icons-material/Undo";
 import { useDrag } from "@use-gesture/react";
@@ -15,6 +15,11 @@ import { stripParentheses } from "../utils/definitionUtils";
 import type { Language, DiscoverCard, DiscoverFetchResponse, DiscoverSortResponse } from "../types";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useAuth } from "../AuthContext";
+import { useTTS } from "../hooks/useTTS";
+import { useDiscoverSettings } from "../hooks/useDiscoverSettings";
+import { COLORS } from "../theme/colors";
+import { FONTS } from "../theme/fonts";
+import { SIZE, WEIGHT, LEADING, TRACKING } from "../theme/scale";
 
 // Parses an HSK label like "HSK3" → 3, returns null for missing/malformed values.
 function parseHskLevel(label: string | null | undefined): number | null {
@@ -30,24 +35,6 @@ function parseHskLevel(label: string | null | undefined): number | null {
 const HSK_LEVELED_LANGUAGES = new Set<string>(["zh"]);
 const isHskLeveledLanguage = (lang?: string): boolean => !!lang && HSK_LEVELED_LANGUAGES.has(lang);
 
-// Design tokens from Figma
-const COLORS = {
-    background: "#FAFAFB",
-    header: "#F2F2F4",
-    onSurface: "#1C1C1E",
-    border: "#5C5C66",
-    cardColor: "#D8D8DC",
-    // Bucket colors
-    redMain: "#EF476F",
-    redAccent: "#F2BAC9",
-    greenMain: "#05C793",
-    greenAccent: "#BAF2D8",
-    blueMain: "#779BE7",
-    blueAccent: "#BAD7F2",
-    yellowMain: "#FF8E47",
-    yellowAccent: "#F2E2BA",
-};
-
 // Styled Components — phone-frame sizing comes from MobileDemoFrame via Layout.tsx
 
 const ContentArea = styled(Box)({
@@ -61,6 +48,9 @@ const ContentArea = styled(Box)({
     // bucket labels / card text mid-drag is never intended and looks broken.
     userSelect: "none",
     WebkitUserSelect: "none",
+    // Block native pan/scroll so dragging on the background/empty area doesn't
+    // fight the card drag gesture (browser default would try to scroll the page).
+    touchAction: "none",
 });
 
 // CSS grid distributes the 4 buckets evenly in a 2×2 layout regardless of viewport height
@@ -104,13 +94,13 @@ const Bucket = styled(Box)<{ mainColor: string; accentColor: string; highlight?:
             padding: 8,
         },
         "& .bucket-text": {
-            fontSize: 12,
-            fontWeight: 400,
-            lineHeight: 1.21,
+            fontSize: SIZE.caption,
+            fontWeight: WEIGHT.regular,
+            lineHeight: LEADING.tight,
             textAlign: "center",
             color: COLORS.onSurface,
-            fontFamily: '"Inter", sans-serif',
-            letterSpacing: "0.14em",
+            fontFamily: FONTS.sans,
+            letterSpacing: TRACKING.caps,
         },
     })
 );
@@ -134,7 +124,7 @@ const FlashCard = styled(AnimatedBox)({
     aspectRatio: "136 / 200",
     height: 200,
     maxHeight: "calc(100% - 16px)", // scale down on small screens (8px margin each side)
-    backgroundColor: COLORS.cardColor,
+    backgroundColor: COLORS.card,
     borderRadius: 12,
     boxShadow: "2px 4px 4px rgba(0, 0, 0, 0.25)",
     padding: 16,
@@ -162,6 +152,13 @@ const SortCardsPage: React.FC = () => {
     usePageTitle("Discover");
     const { token } = useAuth();
     const { language } = useParams<{ language: Language }>();
+    const tts = useTTS();
+    const { settings: discoverSettings, update: updateDiscoverSettings } = useDiscoverSettings();
+    // Primes the cloud provider's <audio> element for autoplay exactly once per
+    // session, on the first drag gesture. Mobile autoplay policy rejects a
+    // programmatic play() that isn't tied to a user gesture, so the on-deck
+    // autoplay effect (which runs on card change, not on a tap) needs this unlock.
+    const audioUnlockedRef = useRef(false);
     // `cardQueue` is the append-only master list of every card we've fetched.
     // `currentCardIndex` advances through it. We never replace `cardQueue` so the
     // currently displayed card (and undo history) survive mid-session refetches.
@@ -267,6 +264,21 @@ const SortCardsPage: React.FC = () => {
     }, [cardQueue, currentCardIndex, userHskLevel, provisionalMode, language]);
 
     const currentCard = visibleQueue[0];
+
+    // TTS narration: auto-play the on-deck word each time a new card reaches the
+    // head position. Keyed on the card id so re-renders (drag, highlight, band
+    // changes) don't re-fire narration for the same card. Gated by both the
+    // Discover autoplay toggle and the global TTS enable flag.
+    useEffect(() => {
+        if (!tts.enabled || !discoverSettings.autoplay) return;
+        if (!currentCard) return;
+        tts.speakSentence(currentCard.entryKey, currentCard.pronunciation ?? undefined);
+        // Cancel narration if the user sorts/advances mid-utterance.
+        return () => tts.cancel();
+        // tts.speakSentence/cancel are stable across renders; depending on them
+        // would re-fire narration on every settings change.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentCard?.id, tts.enabled, discoverSettings.autoplay]);
 
     // Animate card entrance when the active card changes
     useEffect(() => {
@@ -539,6 +551,12 @@ const SortCardsPage: React.FC = () => {
     // Drag gesture handler
     const bind = useDrag(
         ({ down, offset: [ox, oy] }) => {
+            // First touch of a drag is a genuine user gesture — use it to unlock
+            // mobile autoplay so the next card's narration isn't blocked.
+            if (down && !audioUnlockedRef.current) {
+                audioUnlockedRef.current = true;
+                tts.unlockAudio();
+            }
             api.start({
                 x: down ? ox : 0,
                 y: down ? oy : 0,
@@ -607,6 +625,32 @@ const SortCardsPage: React.FC = () => {
                 activePage="discover"
                 extraActions={
                     <>
+                        {/* Autoplay toggle — same "autoplay" text label flp uses
+                            (FlashcardsLearnHeader), styled to the Discover header palette. */}
+                        <Button
+                            className="sort-cards__autoplay-toggle"
+                            variant={discoverSettings.autoplay ? "contained" : "text"}
+                            size="small"
+                            onClick={() => updateDiscoverSettings({ autoplay: !discoverSettings.autoplay })}
+                            aria-pressed={discoverSettings.autoplay}
+                            sx={{
+                                minWidth: "unset",
+                                px: 1,
+                                py: 0.25,
+                                height: "30px",
+                                fontSize: SIZE.micro,
+                                textTransform: "lowercase",
+                                lineHeight: LEADING.normal,
+                                borderRadius: "6px",
+                                color: COLORS.onSurface,
+                                backgroundColor: discoverSettings.autoplay ? COLORS.card : "transparent",
+                                "&:hover": {
+                                    backgroundColor: discoverSettings.autoplay ? COLORS.card : "transparent",
+                                },
+                            }}
+                        >
+                            autoplay
+                        </Button>
                         <IconButton
                             className="sort-cards__undo-button"
                             onClick={handleUndo}
@@ -674,8 +718,8 @@ const SortCardsPage: React.FC = () => {
                         <Typography
                             className="sort-cards__card-value"
                             sx={{
-                                fontSize: 12,
-                                fontWeight: 400,
+                                fontSize: SIZE.caption,
+                                fontWeight: WEIGHT.regular,
                                 textAlign: "center",
                                 width: "100%",
                                 display: "-webkit-box",

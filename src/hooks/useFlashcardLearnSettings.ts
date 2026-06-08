@@ -9,6 +9,9 @@ export interface FlashcardLearnSettings {
     showPinyinColor: boolean;
     showSegmentSpaces: boolean;
     autoplayChinese: boolean;
+    // Show the card's progress category (Unfamiliar/Target/Comfortable/Mastered)
+    // as a colored chip on the back (Side 2) of the card. Opt-in, off by default.
+    showProgressCategory: boolean;
 }
 
 const DEFAULT_SETTINGS: FlashcardLearnSettings = {
@@ -16,6 +19,7 @@ const DEFAULT_SETTINGS: FlashcardLearnSettings = {
     showPinyinColor: true,
     showSegmentSpaces: false,
     autoplayChinese: true,
+    showProgressCategory: false,
 };
 
 function loadSettings(): FlashcardLearnSettings {

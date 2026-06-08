@@ -23,6 +23,7 @@ export function dictionaryEntryToVocabEntry(dict: DictionaryEntry): VocabEntry {
         pronunciation: dict.pronunciation ?? null,
         definition: dict.definitions?.[0] ?? null,
         longDefinition: dict.longDefinition ?? null,
+        longDefinitionParts: dict.longDefinitionParts ?? null,
         partsOfSpeech: dict.partsOfSpeech ?? null,
         vernacularScore: dict.vernacularScore ?? null,
         hskLevel: (anyDict.hskLevel as HskLevel | null | undefined) ?? null,

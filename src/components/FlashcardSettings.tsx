@@ -1,4 +1,5 @@
 import { Box, Typography, FormControlLabel, Checkbox, IconButton } from "@mui/material";
+import { WEIGHT } from '../theme/scale';
 import { Settings as SettingsIcon, ChevronRight as ChevronRightIcon } from "@mui/icons-material";
 
 interface FlashcardSettingsProps {
@@ -27,7 +28,7 @@ function FlashcardSettings({
                     <Typography
                         className="flashcards-page-settings-title"
                         variant="h6"
-                        sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, color: 'text.secondary' }}
+                        sx={{ fontWeight: WEIGHT.bold, display: 'flex', alignItems: 'center', gap: 1, color: 'text.secondary' }}
                     >
                         <SettingsIcon className="flashcards-page-settings-title-icon" fontSize="small" />
                         Settings
@@ -48,7 +49,7 @@ function FlashcardSettings({
                 <Typography
                     className="flashcards-page-settings-section-title"
                     variant="subtitle2"
-                    sx={{ mb: 2, fontWeight: 'medium', color: 'text.primary' }}
+                    sx={{ mb: 2, fontWeight: WEIGHT.medium, color: 'text.primary' }}
                 >
                     Card Display
                 </Typography>
@@ -69,7 +70,7 @@ function FlashcardSettings({
                             <Typography
                                 className="flashcards-page-show-pronunciation-label-title"
                                 variant="body2"
-                                sx={{ fontWeight: 'medium' }}
+                                sx={{ fontWeight: WEIGHT.medium }}
                             >
                                 Show pronunciation
                             </Typography>

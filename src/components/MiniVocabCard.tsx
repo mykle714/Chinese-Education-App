@@ -3,44 +3,26 @@ import { stripParentheses } from "../utils/definitionUtils";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import RepeatIcon from "@mui/icons-material/Repeat";
 import type { VocabEntry } from "../types";
+import { getCategoryColor } from "../utils/categoryColors";
+import { COLORS } from "../theme/colors";
+import { SIZE, WEIGHT } from "../theme/scale";
 
 interface MiniVocabCardProps {
     entry: VocabEntry;
     onClick?: (entry: VocabEntry) => void;
     onDelete?: (entry: VocabEntry) => void;
     onCycle?: (entry: VocabEntry) => void;
+    // When set, the card plays the shared `cardPopIn` animation on mount, delayed
+    // by this many ms. Callers (e.g. the /decks card previews) pass `index * step`
+    // to stagger a freshly-loaded row into a left-to-right cascade. Omit elsewhere
+    // (card detail page, flashcard back) to render with no entrance animation.
+    animationDelayMs?: number;
 }
 
-// Design tokens
-const COLORS = {
-    cardBackground: "#D8D8DC",
-    onSurface: "#1C1C1E",
-    textSecondary: "#5C5C66",
-    // Category colors matching the deck colors
-    categoryUnfamiliar: "#EF476F",
-    categoryTarget: "#FF8E47",
-    categoryComfortable: "#05C793",
-    categoryMastered: "#779BE7",
-};
+// Category color mapping lives in src/utils/categoryColors (shared with the
+// card detail page and the flashcard-learn back-of-card chip).
 
-
-// Helper function to get category color
-const getCategoryColor = (category?: string) => {
-    switch (category) {
-        case 'Unfamiliar':
-            return COLORS.categoryUnfamiliar;
-        case 'Target':
-            return COLORS.categoryTarget;
-        case 'Comfortable':
-            return COLORS.categoryComfortable;
-        case 'Mastered':
-            return COLORS.categoryMastered;
-        default:
-            return COLORS.textSecondary;
-    }
-};
-
-const MiniVocabCard: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete, onCycle }) => {
+const MiniVocabCard: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete, onCycle, animationDelayMs }) => {
     return (
         <Box
             className="mini-vocab-card"
@@ -48,11 +30,17 @@ const MiniVocabCard: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete,
             sx={{
                 width: 92,
                 height: 132,
-                backgroundColor: COLORS.cardBackground,
+                backgroundColor: COLORS.card,
                 borderRadius: '8px',
                 boxShadow: '2px 4px 4px rgba(0, 0, 0, 0.25)',
                 cursor: onClick ? 'pointer' : 'default',
                 transition: 'transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out',
+                // Optional staggered entrance. `backwards` fill holds the scaled-down
+                // start state during the delay; ending at scale(1) lets the hover-lift
+                // transform take over cleanly once the animation finishes.
+                ...(typeof animationDelayMs === "number" && {
+                    animation: `cardPopIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) ${animationDelayMs}ms backwards`,
+                }),
                 display: 'flex',
                 flexDirection: 'column',
                 padding: '8px',
@@ -153,9 +141,9 @@ const MiniVocabCard: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete,
                         sx={{
                             backgroundColor: getCategoryColor(entry.category),
                             color: 'white',
-                            fontSize: '0.65rem',
+                            fontSize: SIZE.micro,
                             height: '20px',
-                            fontWeight: 'bold',
+                            fontWeight: WEIGHT.bold,
                             '& .MuiChip-label': {
                                 padding: '0 6px',
                             },
@@ -185,7 +173,7 @@ const MiniVocabCard: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete,
                         // Shrink one step when the word is long; CSS handles ellipsis beyond that
                         // ≤3 chars: full size; 4+ chars: reduced so 4 chars fit (76px) but 5 don't
                         fontSize: entry.entryKey.length > 3 ? '0.9375rem' : '1.25rem',
-                        fontWeight: 'bold',
+                        fontWeight: WEIGHT.bold,
                         color: COLORS.onSurface,
                         textAlign: 'center',
                         lineHeight: 1.2,
@@ -228,7 +216,7 @@ const MiniVocabCard: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete,
             <Typography
                 className="mini-vocab-card__entry-value"
                 sx={{
-                    fontSize: '0.75rem',
+                    fontSize: SIZE.caption,
                     color: COLORS.textSecondary,
                     textAlign: 'center',
                     lineHeight: 1.2,

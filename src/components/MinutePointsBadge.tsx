@@ -1,4 +1,5 @@
 import React from 'react';
+import { WEIGHT } from '../theme/scale';
 import {
     Badge,
     Box,
@@ -131,7 +132,7 @@ export const MinutePointsBadge: React.FC<MinutePointsBadgeProps> = ({
                     sx={{
                         '& .MuiBadge-badge': {
                             fontSize: isMobile ? '0.75rem' : '0.875rem',
-                            fontWeight: 'bold',
+                            fontWeight: WEIGHT.bold,
                             minWidth: isMobile ? '20px' : '24px',
                             height: isMobile ? '20px' : '24px',
                             borderRadius: '50%',

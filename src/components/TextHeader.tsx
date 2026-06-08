@@ -1,4 +1,5 @@
 import { Box, Typography, Chip, CircularProgress, Button } from "@mui/material";
+import { WEIGHT } from '../theme/scale';
 import { ArrowBack as ArrowBackIcon, Edit as EditIcon, Delete as DeleteIcon } from "@mui/icons-material";
 import type { VocabEntry, Text } from "../types";
 
@@ -65,7 +66,7 @@ function TextHeader({
                 className="reader-page-text-title"
                 variant="h4"
                 component="h1"
-                sx={{ mb: 1, fontWeight: 'bold' }}
+                sx={{ mb: 1, fontWeight: WEIGHT.bold }}
             >
                 {selectedText.title}
             </Typography>

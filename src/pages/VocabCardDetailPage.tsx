@@ -14,23 +14,10 @@ import PosBadge from "../components/PosBadge";
 import SegmentedSentenceDisplay from "../components/SegmentedSentenceDisplay";
 import { getBreakdownItems } from "../utils/breakdownUtils";
 import { usePageTitle } from "../hooks/usePageTitle";
-
-// Design tokens
-const COLORS = {
-    background: "#FAFAFB",
-    header: "#F2F2F4",
-    card: "#D8D8DC",
-    infoCard: "#F5EBE0",
-    sectionCard: "#EDE7DC",
-    onSurface: "#1C1C1E",
-    textSecondary: "#5C5C66",
-    border: "#5C5C66",
-    categoryUnfamiliar: "#EF476F",
-    categoryTarget: "#FF8E47",
-    categoryComfortable: "#05C793",
-    categoryMastered: "#779BE7",
-};
-
+import { getCategoryColor } from "../utils/categoryColors";
+import { COLORS } from "../theme/colors";
+import { FONTS } from "../theme/fonts";
+import { SIZE, WEIGHT, LEADING, TRACKING } from "../theme/scale";
 
 // Phone-frame sizing comes from MobileDemoFrame via Layout.tsx
 const ContentArea = styled(Box)(() => ({
@@ -77,23 +64,16 @@ const SectionCard = styled(Box)(() => ({
 }));
 
 const SectionLabel = styled(Typography)(() => ({
-    fontSize: "0.7rem",
-    fontWeight: 700,
+    fontSize: SIZE.micro,
+    fontWeight: WEIGHT.bold,
     color: COLORS.textSecondary,
-    letterSpacing: "0.08em",
+    letterSpacing: TRACKING.caps,
     textTransform: "uppercase",
-    fontFamily: '"Inter", sans-serif',
+    fontFamily: FONTS.sans,
 }));
 
-const getCategoryColor = (category?: string) => {
-    switch (category) {
-        case "Unfamiliar": return COLORS.categoryUnfamiliar;
-        case "Target": return COLORS.categoryTarget;
-        case "Comfortable": return COLORS.categoryComfortable;
-        case "Mastered": return COLORS.categoryMastered;
-        default: return COLORS.textSecondary;
-    }
-};
+// Category color mapping lives in src/utils/categoryColors (shared with
+// MiniVocabCard and the flashcard-learn back-of-card chip).
 
 const VocabCardDetailPage: React.FC = () => {
     usePageTitle("Card");
@@ -206,8 +186,8 @@ const VocabCardDetailPage: React.FC = () => {
                                             sx={{
                                                 backgroundColor: getCategoryColor(entry.category),
                                                 color: "white",
-                                                fontSize: "0.7rem",
-                                                fontWeight: 700,
+                                                fontSize: SIZE.micro,
+                                                fontWeight: WEIGHT.bold,
                                                 height: 22,
                                             }}
                                         />
@@ -218,10 +198,10 @@ const VocabCardDetailPage: React.FC = () => {
                                             label={entry.hskLevel}
                                             size="small"
                                             sx={{
-                                                backgroundColor: COLORS.categoryMastered,
+                                                backgroundColor: COLORS.hskChip,
                                                 color: "white",
-                                                fontSize: "0.7rem",
-                                                fontWeight: 700,
+                                                fontSize: SIZE.micro,
+                                                fontWeight: WEIGHT.bold,
                                                 height: 22,
                                             }}
                                         />
@@ -233,11 +213,11 @@ const VocabCardDetailPage: React.FC = () => {
                                     className="vocab-card-detail__main-word"
                                     sx={{
                                         fontSize: entry.entryKey.length > 4 ? "3rem" : "4rem",
-                                        fontWeight: 700,
+                                        fontWeight: WEIGHT.bold,
                                         color: COLORS.onSurface,
-                                        lineHeight: 1,
+                                        lineHeight: LEADING.none,
                                         textAlign: "center",
-                                        fontFamily: '"Noto Serif SC", "Inter", sans-serif',
+                                        fontFamily: FONTS.serif,
                                     }}
                                 >
                                     {entry.entryKey}
@@ -250,11 +230,11 @@ const VocabCardDetailPage: React.FC = () => {
                                     <Typography
                                         className="vocab-card-detail__pronunciation"
                                         sx={{
-                                            fontSize: "1rem",
+                                            fontSize: SIZE.bodyLg,
                                             color: COLORS.textSecondary,
                                             fontStyle: "italic",
                                             textAlign: "center",
-                                            fontFamily: '"Inter", sans-serif',
+                                            fontFamily: FONTS.sans,
                                         }}
                                     >
                                         {entry.pronunciation}
@@ -267,11 +247,11 @@ const VocabCardDetailPage: React.FC = () => {
                                 <Typography
                                     className="vocab-card-detail__definition"
                                     sx={{
-                                        fontSize: "0.95rem",
+                                        fontSize: SIZE.bodyLg,
                                         color: COLORS.onSurface,
                                         textAlign: "center",
-                                        fontFamily: '"Inter", sans-serif',
-                                        lineHeight: 1.5,
+                                        fontFamily: FONTS.sans,
+                                        lineHeight: LEADING.normal,
                                     }}
                                 >
                                     {stripParentheses(entry.definition ?? '')}
@@ -282,7 +262,7 @@ const VocabCardDetailPage: React.FC = () => {
                             {hasShortDef && (
                                 <SectionCard className="vocab-card-detail__dict-definition">
                                     <SectionLabel>Dictionary Definition</SectionLabel>
-                                    <Typography sx={{ fontSize: '1rem', fontWeight: 600, color: COLORS.onSurface, fontFamily: '"Inter", sans-serif' }}>
+                                    <Typography sx={{ fontSize: SIZE.bodyLg, fontWeight: WEIGHT.semibold, color: COLORS.onSurface, fontFamily: FONTS.sans }}>
                                         {stripParentheses(dictEntry!.shortDefinition!)}
                                     </Typography>
                                 </SectionCard>
@@ -319,9 +299,9 @@ const VocabCardDetailPage: React.FC = () => {
                                                     <Typography
                                                         className="vocab-card-detail__used-in-def"
                                                         sx={{
-                                                            fontSize: "0.875rem",
+                                                            fontSize: SIZE.body,
                                                             color: COLORS.onSurface,
-                                                            fontFamily: '"Inter", sans-serif',
+                                                            fontFamily: FONTS.sans,
                                                         }}
                                                     >
                                                         {stripParentheses(item.definition ?? "")}
@@ -364,9 +344,9 @@ const VocabCardDetailPage: React.FC = () => {
                                                     <Typography
                                                         className="vocab-card-detail__breakdown-def"
                                                         sx={{
-                                                            fontSize: "0.875rem",
+                                                            fontSize: SIZE.body,
                                                             color: COLORS.onSurface,
-                                                            fontFamily: '"Inter", sans-serif',
+                                                            fontFamily: FONTS.sans,
                                                         }}
                                                     >
                                                         {stripParentheses(item.definition)}
@@ -394,11 +374,11 @@ const VocabCardDetailPage: React.FC = () => {
                                     {/* Literal English translation of the expansion */}
                                     {entry.expansionLiteralTranslation && (
                                         <Typography sx={{
-                                            fontSize: "0.8rem",
+                                            fontSize: SIZE.body,
                                             color: COLORS.textSecondary,
-                                            fontFamily: '"Inter", sans-serif',
+                                            fontFamily: FONTS.sans,
                                             mt: 0.5,
-                                            lineHeight: 1.4,
+                                            lineHeight: LEADING.normal,
                                             wordBreak: 'break-word',
                                         }}>
                                             {stripParentheses(entry.expansionLiteralTranslation)}
@@ -435,7 +415,7 @@ const VocabCardDetailPage: React.FC = () => {
                                                         pronunciation={meta?.pronunciation}
                                                     />
                                                     {meta?.definition && (
-                                                        <Typography sx={{ fontSize: "0.72rem", color: COLORS.textSecondary, fontFamily: '"Inter", sans-serif', fontStyle: "italic" }}>
+                                                        <Typography sx={{ fontSize: SIZE.caption, color: COLORS.textSecondary, fontFamily: FONTS.sans, fontStyle: "italic" }}>
                                                             {stripParentheses(meta.definition)}
                                                         </Typography>
                                                     )}
@@ -474,11 +454,11 @@ const VocabCardDetailPage: React.FC = () => {
                                                 <Typography
                                                     className="vocab-card-detail__example-english"
                                                     sx={{
-                                                        fontSize: "0.8rem",
+                                                        fontSize: SIZE.body,
                                                         color: COLORS.textSecondary,
-                                                        fontFamily: '"Inter", sans-serif',
+                                                        fontFamily: FONTS.sans,
                                                         fontStyle: "italic",
-                                                        lineHeight: 1.4,
+                                                        lineHeight: LEADING.normal,
                                                     }}
                                                 >
                                                     {ex.english}
@@ -516,7 +496,7 @@ const VocabCardDetailPage: React.FC = () => {
                                                         pronunciation={rel.pronunciation}
                                                     />
                                                     {rel.definition && (
-                                                        <Typography sx={{ fontSize: "0.72rem", color: COLORS.textSecondary, fontFamily: '"Inter", sans-serif', fontStyle: "italic" }}>
+                                                        <Typography sx={{ fontSize: SIZE.caption, color: COLORS.textSecondary, fontFamily: FONTS.sans, fontStyle: "italic" }}>
                                                             {stripParentheses(rel.definition)}
                                                         </Typography>
                                                     )}
@@ -548,9 +528,9 @@ const VocabCardDetailPage: React.FC = () => {
                                     flex: 1,
                                     backgroundColor: '#2196f3',
                                     textTransform: 'none',
-                                    fontFamily: '"Inter", sans-serif',
-                                    fontWeight: 600,
-                                    fontSize: '0.8rem',
+                                    fontFamily: FONTS.sans,
+                                    fontWeight: WEIGHT.semibold,
+                                    fontSize: SIZE.body,
                                     '&:hover': { backgroundColor: '#1976d2' },
                                     '&.Mui-disabled': { backgroundColor: '#2196f388' },
                                 }}
@@ -569,9 +549,9 @@ const VocabCardDetailPage: React.FC = () => {
                                 flex: 1,
                                 backgroundColor: '#ef5350',
                                 textTransform: 'none',
-                                fontFamily: '"Inter", sans-serif',
-                                fontWeight: 600,
-                                fontSize: '0.8rem',
+                                fontFamily: FONTS.sans,
+                                fontWeight: WEIGHT.semibold,
+                                fontSize: SIZE.body,
                                 '&:hover': { backgroundColor: '#d32f2f' },
                                 '&.Mui-disabled': { backgroundColor: '#ef535088' },
                             }}

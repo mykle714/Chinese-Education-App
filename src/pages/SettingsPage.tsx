@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { WEIGHT } from '../theme/scale';
 import {
     Container,
     Paper,
@@ -95,7 +96,7 @@ function SettingsPage() {
                     </Typography>
 
                     <FormControl component="fieldset" sx={{ width: '100%' }}>
-                        <FormLabel component="legend" sx={{ mb: 2, fontWeight: 'bold' }}>
+                        <FormLabel component="legend" sx={{ mb: 2, fontWeight: WEIGHT.bold }}>
                             Available Themes
                         </FormLabel>
                         <RadioGroup
@@ -181,7 +182,7 @@ function SettingsPage() {
                     </Typography>
 
                     <FormControl component="fieldset" sx={{ width: '100%' }}>
-                        <FormLabel component="legend" sx={{ mb: 2, fontWeight: 'bold' }}>
+                        <FormLabel component="legend" sx={{ mb: 2, fontWeight: WEIGHT.bold }}>
                             Available Languages
                         </FormLabel>
                         <RadioGroup
@@ -285,7 +286,7 @@ function SettingsPage() {
                     </Box>
 
                     <FormControl component="fieldset" sx={{ mb: 3, opacity: ttsSettings.enabled ? 1 : 0.5 }} disabled={!ttsSettings.enabled} className="narration-engine-control">
-                        <FormLabel component="legend" sx={{ mb: 1, fontWeight: 'bold' }}>Engine</FormLabel>
+                        <FormLabel component="legend" sx={{ mb: 1, fontWeight: WEIGHT.bold }}>Engine</FormLabel>
                         <RadioGroup
                             row
                             value={ttsSettings.engine}

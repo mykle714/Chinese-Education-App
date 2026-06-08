@@ -1,6 +1,7 @@
 import { Box, Typography, List, ListItem, ListItemButton, CircularProgress, Alert, Chip, IconButton, Button, Tooltip } from "@mui/material";
 import { Article as ArticleIcon, Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, Person as PersonIcon } from "@mui/icons-material";
 import type { Text } from "../types";
+import { SIZE , WEIGHT} from "../theme/scale";
 
 interface TextSidebarProps {
     texts: Text[];
@@ -41,7 +42,7 @@ function TextSidebar({
                     <Typography
                         className="reader-page-sidebar-title"
                         variant="h6"
-                        sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}
+                        sx={{ fontWeight: WEIGHT.bold, display: 'flex', alignItems: 'center', gap: 1 }}
                     >
                         <ArticleIcon className="reader-page-sidebar-title-icon" />
                         Reading Materials
@@ -166,7 +167,7 @@ function TextSidebar({
                                         <Tooltip title="Your Document">
                                             <PersonIcon
                                                 sx={{
-                                                    fontSize: 16,
+                                                    fontSize: SIZE.bodyLg,
                                                     color: selectedText?.id === text.id ? 'rgba(255,255,255,0.8)' : 'primary.main'
                                                 }}
                                             />
@@ -176,7 +177,7 @@ function TextSidebar({
                                         className="reader-page-sidebar-text-title"
                                         variant="subtitle2"
                                         sx={{
-                                            fontWeight: 'bold',
+                                            fontWeight: WEIGHT.bold,
                                             color: selectedText?.id === text.id ? 'white' : 'text.primary',
                                             flex: 1
                                         }}
@@ -190,7 +191,7 @@ function TextSidebar({
                                     sx={{
                                         mb: 1,
                                         color: selectedText?.id === text.id ? 'rgba(255,255,255,0.8)' : 'text.secondary',
-                                        fontSize: '0.875rem'
+                                        fontSize: SIZE.body
                                     }}
                                 >
                                     {text.description}
@@ -205,7 +206,7 @@ function TextSidebar({
                                         size="small"
                                         variant={selectedText?.id === text.id ? "filled" : "outlined"}
                                         sx={{
-                                            fontSize: '0.75rem',
+                                            fontSize: SIZE.caption,
                                             height: 20,
                                             color: selectedText?.id === text.id ? 'white' : 'text.secondary',
                                             borderColor: selectedText?.id === text.id ? 'rgba(255,255,255,0.5)' : undefined,

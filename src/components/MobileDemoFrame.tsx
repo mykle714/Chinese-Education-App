@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
 import { Box, useMediaQuery, useTheme } from "@mui/material";
 import { styled } from "@mui/material/styles";
+import { COLORS } from "../theme/colors";
 
 // Shared phone-frame container for every mobile-demo route. This is the single
 // source of truth for the "iPhone surface" sizing — pages under
@@ -8,10 +9,6 @@ import { styled } from "@mui/material/styles";
 // On mobile we render full-bleed; on desktop we render a centered, rounded
 // 393px-wide card so the surface still feels like a phone next to the
 // Layout sidebar.
-
-const COLORS = {
-    background: "#FAFAFB",
-};
 
 const FrameRoot = styled(Box)(() => ({
     backgroundColor: COLORS.background,
@@ -37,7 +34,9 @@ const MobileDemoFrame: React.FC<MobileDemoFrameProps> = ({ children, className }
         ? {
               maxWidth: 393,
               borderRadius: "20px",
-              margin: "0 auto",
+              // Vertical margin breathes space above/below the phone card;
+              // "auto" still centers it horizontally next to the sidebar.
+              margin: "24px auto",
               minHeight: "852px",
               maxHeight: "932px",
           }

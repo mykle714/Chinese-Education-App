@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { WEIGHT } from '../theme/scale';
 import {
     Container,
     Typography,
@@ -332,7 +333,7 @@ function ProfilePage() {
                         Are you sure you want to delete your account? This action is permanent and cannot be undone.
                     </DialogContentText>
 
-                    <DialogContentText sx={{ mb: 2, fontWeight: 'bold' }}>
+                    <DialogContentText sx={{ mb: 2, fontWeight: WEIGHT.bold }}>
                         All of the following will be permanently deleted:
                     </DialogContentText>
 

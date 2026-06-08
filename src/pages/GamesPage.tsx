@@ -9,16 +9,12 @@ import { usePageTitle } from "../hooks/usePageTitle";
 import { GAME_REGISTRY } from "../games/registry";
 import { useAuth } from "../AuthContext";
 import type { GameDef } from "../games/types";
+import { COLORS } from "../theme/colors";
+import { FONTS } from "../theme/fonts";
+import { SIZE, WEIGHT, LEADING } from "../theme/scale";
 
 // Phone-frame sizing comes from MobileDemoFrame via Layout.tsx — this page
 // only owns its inner layout.
-const COLORS = {
-    onSurface: "#1C1C1E",
-    mutedText: "#5C5C66",
-    rowBorder: "rgba(0, 0, 0, 0.08)",
-    rowHoverBg: "rgba(0, 0, 0, 0.04)",
-    iconBg: "#F1ECE3",
-};
 
 const ContentArea = styled(Box)(() => ({
     flex: 1,
@@ -26,6 +22,12 @@ const ContentArea = styled(Box)(() => ({
     overflowX: "hidden",
     display: "flex",
     flexDirection: "column",
+    // This is the one intentionally-scrollable region on the page (the game list
+    // can overflow vertically). Allow vertical pan here, but `overscroll-behavior:
+    // contain` stops the scroll from chaining to the frame/page so the page itself
+    // never scrolls or rubber-bands at the list's scroll boundary.
+    touchAction: "pan-y",
+    overscrollBehavior: "contain",
 }));
 
 // Full-width vertical menu list. Each registered game becomes one row that
@@ -116,18 +118,18 @@ const GamesPage: React.FC = () => {
                                         sx={{ width: "100%", height: "100%", objectFit: "cover" }}
                                     />
                                 ) : (
-                                    <SportsEsportsIcon sx={{ color: COLORS.mutedText }} />
+                                    <SportsEsportsIcon sx={{ color: COLORS.textSecondary }} />
                                 )}
                             </GameRowIcon>
                             <GameRowBody className="games-page__menu-item-body">
                                 <Typography
                                     className="games-page__menu-item-title"
                                     sx={{
-                                        fontSize: 16,
-                                        fontWeight: 500,
+                                        fontSize: SIZE.bodyLg,
+                                        fontWeight: WEIGHT.medium,
                                         color: COLORS.onSurface,
-                                        fontFamily: '"Inter", sans-serif',
-                                        lineHeight: 1.3,
+                                        fontFamily: FONTS.sans,
+                                        lineHeight: LEADING.normal,
                                     }}
                                 >
                                     {game.title}
@@ -136,10 +138,10 @@ const GamesPage: React.FC = () => {
                                     <Typography
                                         className="games-page__menu-item-subtitle"
                                         sx={{
-                                            fontSize: 13,
-                                            color: COLORS.mutedText,
-                                            fontFamily: '"Inter", sans-serif',
-                                            lineHeight: 1.4,
+                                            fontSize: SIZE.body,
+                                            color: COLORS.textSecondary,
+                                            fontFamily: FONTS.sans,
+                                            lineHeight: LEADING.normal,
                                             mt: 0.25,
                                         }}
                                     >
@@ -147,7 +149,7 @@ const GamesPage: React.FC = () => {
                                     </Typography>
                                 )}
                             </GameRowBody>
-                            <ChevronRightIcon sx={{ color: COLORS.mutedText, flexShrink: 0 }} />
+                            <ChevronRightIcon sx={{ color: COLORS.textSecondary, flexShrink: 0 }} />
                         </GameMenuRow>
                     ))}
                 </GameMenuList>
@@ -158,10 +160,10 @@ const GamesPage: React.FC = () => {
                         <Typography
                             className="games-page__empty-title"
                             sx={{
-                                fontSize: 18,
-                                fontWeight: 500,
+                                fontSize: SIZE.subtitle,
+                                fontWeight: WEIGHT.medium,
                                 color: COLORS.onSurface,
-                                fontFamily: '"Inter", sans-serif',
+                                fontFamily: FONTS.sans,
                             }}
                         >
                             No games yet
@@ -169,9 +171,9 @@ const GamesPage: React.FC = () => {
                         <Typography
                             className="games-page__empty-subtitle"
                             sx={{
-                                fontSize: 14,
-                                color: COLORS.mutedText,
-                                fontFamily: '"Inter", sans-serif',
+                                fontSize: SIZE.body,
+                                color: COLORS.textSecondary,
+                                fontFamily: FONTS.sans,
                             }}
                         >
                             Games will appear here as we build them.

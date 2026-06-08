@@ -12,6 +12,8 @@ import {
     ListItem,
 } from '@mui/material';
 import type { DictionaryEntry } from '../types';
+import { FONTS } from '../theme/fonts';
+import { WEIGHT } from '../theme/scale';
 
 interface VocabDisplayCardProps {
     dictionaryEntry: DictionaryEntry | null;
@@ -74,8 +76,8 @@ const VocabDisplayCard: React.FC<VocabDisplayCardProps> = React.memo(({ dictiona
                                 component="h3"
                                 gutterBottom
                                 sx={{
-                                    fontWeight: 'bold',
-                                    fontFamily: '"Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif',
+                                    fontWeight: WEIGHT.bold,
+                                    fontFamily: FONTS.cjk,
                                 }}
                             >
                                 {dictionaryEntry.word1}
@@ -92,7 +94,7 @@ const VocabDisplayCard: React.FC<VocabDisplayCardProps> = React.memo(({ dictiona
 
                             <Divider className="vocab-display-card__dict-divider" sx={{ mb: 1.5 }} />
 
-                            <Typography className="vocab-display-card__dict-label" variant="subtitle2" sx={{ mb: 1, fontWeight: 'bold' }}>
+                            <Typography className="vocab-display-card__dict-label" variant="subtitle2" sx={{ mb: 1, fontWeight: WEIGHT.bold }}>
                                 Definitions:
                             </Typography>
 

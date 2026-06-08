@@ -1,4 +1,5 @@
 import { useState, useEffect, type ReactNode } from "react";
+import { WEIGHT } from '../theme/scale';
 import { Link as RouterLink, useLocation, useNavigate } from "react-router-dom";
 import {
     Box,
@@ -135,7 +136,7 @@ const MobileNavDrawer: React.FC = () => {
                         className="mobile-nav-drawer__header"
                         sx={{ p: 2, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column" }}
                     >
-                        <Typography variant="h6" noWrap component="div" sx={{ fontWeight: "bold" }}>
+                        <Typography variant="h6" noWrap component="div" sx={{ fontWeight: WEIGHT.bold }}>
                             Vocabulary Manager
                         </Typography>
                         {isAuthenticated && user && (

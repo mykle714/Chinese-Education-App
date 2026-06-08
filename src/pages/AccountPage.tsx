@@ -14,22 +14,19 @@ import {
     DialogContent,
     DialogContentText,
     DialogActions,
+    Snackbar,
 } from "@mui/material";
-import { Logout, Visibility, VisibilityOff, Warning } from "@mui/icons-material";
+import { Visibility, VisibilityOff, Warning, ContentCopy } from "@mui/icons-material";
 import { styled } from "@mui/material/styles";
 import MobileDemoHeader from "../components/MobileDemoHeader";
 import MobileFooter from "../components/MobileFooter";
+import DeckBuckets from "../components/DeckBuckets";
 import { useAuth } from "../AuthContext";
-import { useConfirmation } from "../contexts/ConfirmationContext";
 import { usePageTitle } from "../hooks/usePageTitle";
-
-// Design tokens from Figma
-const COLORS = {
-    background: "#FAFAFB",
-    header: "#F2F2F4",
-    onSurface: "#1C1C1E",
-    border: "#5C5C66",
-};
+import { useCategoryCounts } from "../hooks/useCategoryCounts";
+import { COLORS } from "../theme/colors";
+import { FONTS } from "../theme/fonts";
+import { SIZE, WEIGHT } from "../theme/scale";
 
 // Styled Components — phone-frame sizing comes from MobileDemoFrame via Layout.tsx
 const ContentArea = styled(Box)(() => ({
@@ -80,8 +77,9 @@ const DeleteButton = styled(Button)(() => ({
 
 function AccountPage() {
     usePageTitle("Account");
-    const { user, isLoading, changePassword, deleteAccount, logout } = useAuth();
-    const { confirm } = useConfirmation();
+    const { user, isLoading, changePassword, deleteAccount } = useAuth();
+    // Per-category library card counts, shown as a display-only stat block.
+    const { counts: categoryCounts, loaded: countsLoaded } = useCategoryCounts();
     // Password form state
     const [currentPassword, setCurrentPassword] = useState("");
     const [newPassword, setNewPassword] = useState("");
@@ -104,6 +102,20 @@ function AccountPage() {
     const [showNewPassword, setShowNewPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
+    // "Copied to clipboard" toast for the user-ID copy button
+    const [copiedToastOpen, setCopiedToastOpen] = useState(false);
+
+    // Copy the user ID to the clipboard, then surface a confirmation toast.
+    // Falls back silently if the Clipboard API is unavailable (e.g. insecure context).
+    const handleCopyUserId = async (id: string) => {
+        try {
+            await navigator.clipboard.writeText(id);
+            setCopiedToastOpen(true);
+        } catch {
+            // Clipboard unavailable (non-HTTPS / unsupported) — no-op rather than crash.
+        }
+    };
+
     // Form validation
     const validateForm = () => {
         if (!currentPassword) {
@@ -122,14 +134,6 @@ function AccountPage() {
         }
 
         return true;
-    };
-
-    // Handle logout with confirmation
-    const handleLogout = async () => {
-        const confirmed = await confirm("Are you sure you want to log out?");
-        if (confirmed) {
-            logout();
-        }
     };
 
     // Handle delete account dialog
@@ -241,8 +245,8 @@ function AccountPage() {
                                         width: 56,
                                         height: 56,
                                         bgcolor: "#779BE7",
-                                        fontSize: 20,
-                                        fontWeight: 500,
+                                        fontSize: SIZE.title,
+                                        fontWeight: WEIGHT.medium,
                                     }}
                                 >
                                     {userName.charAt(0).toUpperCase()}
@@ -251,10 +255,10 @@ function AccountPage() {
                                     <Typography
                                         className="account-page__user-name"
                                         sx={{
-                                            fontSize: 14,
-                                            fontWeight: 500,
+                                            fontSize: SIZE.body,
+                                            fontWeight: WEIGHT.medium,
                                             color: COLORS.onSurface,
-                                            fontFamily: '"Inter", sans-serif',
+                                            fontFamily: FONTS.sans,
                                         }}
                                     >
                                         {userName}
@@ -262,49 +266,59 @@ function AccountPage() {
                                     <Typography
                                         className="account-page__user-email"
                                         sx={{
-                                            fontSize: 12,
+                                            fontSize: SIZE.caption,
                                             color: "#5C5C66",
-                                            fontFamily: '"Inter", sans-serif',
+                                            fontFamily: FONTS.sans,
                                         }}
                                     >
                                         {userEmail}
                                     </Typography>
                                 </Box>
                             </UserInfoRow>
-                            <Typography
-                                className="account-page__user-id"
-                                sx={{
-                                    fontSize: 12,
-                                    color: "#5C5C66",
-                                    fontFamily: '"Inter", sans-serif',
-                                }}
+                            <Box
+                                className="account-page__user-id-row"
+                                sx={{ display: "flex", alignItems: "center", gap: 0.5 }}
                             >
-                                ID: {userId}
-                            </Typography>
+                                <Typography
+                                    className="account-page__user-id"
+                                    sx={{
+                                        fontSize: SIZE.caption,
+                                        color: "#5C5C66",
+                                        fontFamily: FONTS.sans,
+                                    }}
+                                >
+                                    ID: {userId}
+                                </Typography>
+                                <IconButton
+                                    className="account-page__copy-user-id-button"
+                                    aria-label="Copy user ID"
+                                    size="small"
+                                    onClick={() => handleCopyUserId(String(userId))}
+                                    sx={{ color: "#5C5C66", padding: "2px" }}
+                                >
+                                    <ContentCopy sx={{ fontSize: SIZE.body }} />
+                                </IconButton>
+                            </Box>
                         </UserInfoSection>
 
-                        {/* Logout Button */}
-                        <Button
-                            className="account-page__logout-button"
-                            fullWidth
-                            variant="outlined"
-                            color="primary"
-                            startIcon={<Logout fontSize="small" />}
-                            onClick={handleLogout}
-                            size="small"
-                        >
-                            Log Out
-                        </Button>
+                        {/* Deck stats — display-only bucket counts (no navigation).
+                            The buckets are withheld until the counts finish loading, then
+                            mount with a staggered pop-in animation (see DeckBuckets). The
+                            wrapper reserves the row's height up front so the form below
+                            doesn't shift down when the cards appear. */}
+                        <Box className="account-page__deck-stats" sx={{ minHeight: 150 }}>
+                            {countsLoaded && <DeckBuckets counts={categoryCounts} variant="display" />}
+                        </Box>
 
                         {/* Password Change Section */}
                         <FormSection className="account-page__password-section">
                             <Typography
                                 className="account-page__section-title"
                                 sx={{
-                                    fontSize: 14,
-                                    fontWeight: 500,
+                                    fontSize: SIZE.body,
+                                    fontWeight: WEIGHT.medium,
                                     color: COLORS.onSurface,
-                                    fontFamily: '"Inter", sans-serif',
+                                    fontFamily: FONTS.sans,
                                 }}
                             >
                                 Change Password
@@ -426,16 +440,16 @@ function AccountPage() {
                             <Typography
                                 className="account-page__delete-section-title"
                                 sx={{
-                                    fontSize: 14,
-                                    fontWeight: 500,
+                                    fontSize: SIZE.body,
+                                    fontWeight: WEIGHT.medium,
                                     color: "#EF476F",
-                                    fontFamily: '"Inter", sans-serif',
+                                    fontFamily: FONTS.sans,
                                 }}
                             >
                                 Delete Account
                             </Typography>
 
-                            <Alert className="account-page__warning-alert" severity="warning" icon={<Warning fontSize="small" />} sx={{ fontSize: 12 }}>
+                            <Alert className="account-page__warning-alert" severity="warning" icon={<Warning fontSize="small" />} sx={{ fontSize: SIZE.caption }}>
                                 This action is permanent and cannot be undone.
                             </Alert>
 
@@ -469,7 +483,7 @@ function AccountPage() {
                     <Warning className="account-page__dialog-warning-icon" /> Delete Account
                 </DialogTitle>
                 <DialogContent className="account-page__dialog-content">
-                    <DialogContentText className="account-page__dialog-content-text" sx={{ mb: 3, fontSize: 14 }}>
+                    <DialogContentText className="account-page__dialog-content-text" sx={{ mb: 3, fontSize: SIZE.body }}>
                         Are you sure you want to delete your account? This action is permanent and cannot be undone.
                     </DialogContentText>
 
@@ -524,6 +538,16 @@ function AccountPage() {
                     </Button>
                 </DialogActions>
             </Dialog>
+
+            {/* "Copied to clipboard" confirmation for the user-ID copy button */}
+            <Snackbar
+                className="account-page__copy-toast"
+                open={copiedToastOpen}
+                autoHideDuration={2000}
+                onClose={() => setCopiedToastOpen(false)}
+                message="Copied to clipboard"
+                anchorOrigin={{ vertical: "top", horizontal: "center" }}
+            />
         </>
     );
 }

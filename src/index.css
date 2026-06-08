@@ -1,5 +1,6 @@
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  /* Mirrors FONTS.sans in src/theme/fonts.ts (CSS can't import the TS token). */
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   line-height: 1.5;
   font-weight: 400;
 
@@ -39,6 +40,50 @@ html {
   /* Do NOT set overflow-x: hidden on html — it suppresses vertical scroll on iOS Safari */
 }
 
+/* App-wide default: text is NOT selectable. This is a mobile-first, drag-driven
+   UI, so a stray text selection on drag/long-press is never intended. user-select
+   inherits, so setting it on body cascades to all descendants. */
+body {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Form fields must stay selectable/editable everywhere (typing, caret, copy). */
+input,
+textarea,
+[contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* CPCD (Chinese characters + pinyin) is the ONE content exception — users may
+   want to copy the characters/pinyin. But this is allowed only on non-touch
+   (desktop) devices: `(hover: hover) and (pointer: fine)` excludes phones/tablets,
+   so on mobile even CPCD stays non-selectable per product decision. */
+@media (hover: hover) and (pointer: fine) {
+  .cpcd-row__chars,
+  .cpcd-row__chars *,
+  .cpcd-row__pinyin-cell {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+}
+
+/* On touch devices, guarantee CPCD stays non-selectable AND that no text
+   insertion caret can blink inside it. A caret is independent of user-select
+   — the browser can place an insertion point on a tap even when selection is
+   off — so we make it transparent. `(pointer: coarse)` also covers tablets
+   that report a fine pointer via stylus, overriding the desktop block above. */
+@media (pointer: coarse) {
+  .cpcd-row__chars,
+  .cpcd-row__chars *,
+  .cpcd-row__pinyin-cell {
+    -webkit-user-select: none;
+    user-select: none;
+    caret-color: transparent;
+  }
+}
+
 /* Targeted touch prevention only for flashcard interaction area */
 .flashcard-container {
   touch-action: none !important;
@@ -74,6 +119,23 @@ html {
   100% {
     transform: translateY(150px) scale(0.8);
     opacity: 0;
+  }
+}
+
+/* Shared "pop-in" used when a freshly-loaded set of cards mounts (deck buckets on
+   the Account page, and the Learn Now / Learn Later / Mastered card previews on the
+   /decks page). Callers apply it via `animation: cardPopIn ...` with a per-card
+   animation-delay to stagger the cascade. Use fill-mode `backwards` so each card
+   holds the 0% (scaled-down, invisible) state during its delay and returns to its
+   own declared transform afterward — important so card hover-lift still works. */
+@keyframes cardPopIn {
+  0% {
+    transform: scale(0.3);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
   }
 }
 

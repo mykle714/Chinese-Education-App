@@ -1,9 +1,10 @@
 import React, { useEffect, useLayoutEffect, useRef } from "react";
 import { Box } from "@mui/material";
 import { getToneColor } from "../utils/toneColors";
-import { computePinyinShifts, SHIFT_UNIT_BY_SIZE } from "../utils/pinyinShift";
+import { FONTS } from "../theme/fonts";
+import { WEIGHT } from "../theme/scale";
 
-export type CPCDSize = "sm" | "md" | "lg";
+export type CPCDSize = "xs" | "sm" | "md" | "lg";
 
 export interface CPCDRowItem {
     character: string;
@@ -26,21 +27,36 @@ interface CPCDRowProps {
     flexWrap?: "nowrap" | "wrap";
     justifyContent?: string;
     className?: string;
+    // When true (default), neighboring pinyin syllables that would otherwise
+    // collide are nudged apart just enough that their text stops overlapping.
+    // The character cells overlap (negative margin) to keep narrow CJK glyphs
+    // visually tight, but each pinyin span is as wide as a full column — so a
+    // syllable whose romanization fills the column (e.g. "shén" in 神诞节) bleeds
+    // into its neighbor's pinyin. This measures the actual rendered text width
+    // and spreads only the offending syllables, leaving narrow pinyin and long
+    // sentences untouched. Exposed as a property so every cpcd surface (flp
+    // example sentences, bubble-match word bubbles, etc.) shares one behavior.
+    pinyinShift?: boolean;
 }
 
 // Per-size visual constants. Mirror the table that used to live in
 // CharacterPinyinColorDisplay; kept here because CPCDRow now owns the layout.
-const COLUMN_WIDTH: Record<CPCDSize, number> = { sm: 32, md: 50, lg: 54 };
+// "xs" is sized to sit inline within 14px body prose (e.g. Chinese embedded in a long
+// definition): glyph just above body size, with a compact pinyin row beneath.
+const COLUMN_WIDTH: Record<CPCDSize, number> = { xs: 22, sm: 32, md: 50, lg: 54 };
 // Vertical space reserved above each char cell's glyph for the pinyin row.
 // Sized to fit the pinyin font's line-box at each size (font-size × 1.21).
-const PINYIN_RESERVED_HEIGHT: Record<CPCDSize, number> = { sm: 18, md: 22, lg: 24 };
-const CHAR_FONT_SIZE: Record<CPCDSize, string> = { sm: "26px", md: "2.25rem", lg: "2.4rem" };
-const PINYIN_FONT_SIZE: Record<CPCDSize, string> = { sm: "13px", md: "1rem", lg: "1.05rem" };
-const COMPACT_CHAR_FONT: Record<CPCDSize, string> = { sm: "22px", md: "1.875rem", lg: "2.25rem" };
-const COMPACT_PINYIN_FONT: Record<CPCDSize, string> = { sm: "11px", md: "0.875rem", lg: "1rem" };
-const VERTICAL_PADDING: Record<CPCDSize, string> = { sm: "4px", md: "8px", lg: "8px" };
+const PINYIN_RESERVED_HEIGHT: Record<CPCDSize, number> = { xs: 13, sm: 18, md: 22, lg: 24 };
+const CHAR_FONT_SIZE: Record<CPCDSize, string> = { xs: "18px", sm: "26px", md: "2.25rem", lg: "2.4rem" };
+const PINYIN_FONT_SIZE: Record<CPCDSize, string> = { xs: "10px", sm: "13px", md: "1rem", lg: "1.05rem" };
+const COMPACT_CHAR_FONT: Record<CPCDSize, string> = { xs: "16px", sm: "22px", md: "1.875rem", lg: "2.25rem" };
+const COMPACT_PINYIN_FONT: Record<CPCDSize, string> = { xs: "9px", sm: "11px", md: "0.875rem", lg: "1rem" };
+const VERTICAL_PADDING: Record<CPCDSize, string> = { xs: "2px", sm: "4px", md: "8px", lg: "8px" };
 // Negative left-margin per child to overlap cells, preserving the prior visual density.
-const OVERLAP_BY_SIZE: Record<CPCDSize, number> = { sm: -6, md: -4, lg: -2 };
+const OVERLAP_BY_SIZE: Record<CPCDSize, number> = { xs: -4, sm: -6, md: -4, lg: -2 };
+// Minimum breathing space (unscaled px) kept between adjacent pinyin texts when
+// de-overlapping. Small so non-colliding rows are never disturbed.
+const PINYIN_MIN_GAP_PX = 2;
 
 const CPCDRow: React.FC<CPCDRowProps> = ({
     items,
@@ -49,6 +65,7 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
     flexWrap = "nowrap",
     justifyContent,
     className,
+    pinyinShift = true,
 }) => {
     const charsBlockRef = useRef<HTMLDivElement | null>(null);
     const cellRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -58,7 +75,6 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
     const pinyinReservedHeight = PINYIN_RESERVED_HEIGHT[size];
     const overlap = OVERLAP_BY_SIZE[size];
     const overlapAbs = Math.abs(overlap);
-    const shiftUnitPx = SHIFT_UNIT_BY_SIZE[size];
     const charFontSize = compact ? COMPACT_CHAR_FONT[size] : CHAR_FONT_SIZE[size];
     const pinyinFontSize = compact ? COMPACT_PINYIN_FONT[size] : PINYIN_FONT_SIZE[size];
 
@@ -66,10 +82,20 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
     // render and on size changes to the chars block (handled by ResizeObserver
     // below) so pinyins reflow whenever the row wraps to a new line.
     const positionPinyins = () => {
-        if (!charsBlockRef.current) return;
+        const charsBlock = charsBlockRef.current;
+        if (!charsBlock) return;
 
-        // Group items into visual rows by similar offsetTop. The shift algorithm
-        // is row-local — a long syllable at the end of one wrapped line must not
+        // Ancestors may scale this row (e.g. bubble-match shrinks long words via a
+        // CSS transform). Layout offsets (offsetLeft/offsetWidth) are unscaled, but
+        // Range/getBoundingClientRect widths are post-scale — so divide measured
+        // text widths by this factor to keep all math in one (unscaled) space.
+        const safeScale =
+            charsBlock.offsetWidth > 0
+                ? charsBlock.getBoundingClientRect().width / charsBlock.offsetWidth || 1
+                : 1;
+
+        // Group items into visual rows by similar offsetTop. De-overlap is
+        // row-local — a wide syllable at the end of one wrapped line must not
         // push the first item of the next line.
         const rows: { topKey: number; indices: number[] }[] = [];
         for (let i = 0; i < items.length; i++) {
@@ -81,17 +107,88 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
             else rows.push({ topKey: top, indices: [i] });
         }
 
+        // Measures the actual rendered width (unscaled) of a pinyin span's text,
+        // excluding the trailing copy-space we append between syllables.
+        const measureTextWidth = (span: HTMLSpanElement | null, pinyin: string): number => {
+            const node = span?.firstChild;
+            if (!node || !pinyin) return 0;
+            const range = document.createRange();
+            range.setStart(node, 0);
+            range.setEnd(node, Math.min(pinyin.length, node.textContent?.length ?? 0));
+            return range.getBoundingClientRect().width / safeScale;
+        };
+
         for (const row of rows) {
-            const rowItems = row.indices.map((idx) => items[idx]);
-            const shifts = computePinyinShifts(rowItems, shiftUnitPx);
+            const n = row.indices.length;
+            // For each syllable collect its cell center and how far its pinyin text
+            // extends left/right of that center. The pinyin span is a fixed,
+            // cell-width box with text-align:center, so the text extent is
+            // ASYMMETRIC when the romanization is wider than the box: text-align
+            // only centers content that fits — an overflowing syllable is anchored
+            // at the box's left edge and spills to the right (LTR). So a wide
+            // syllable reaches boxWidth/2 to its left but (textWidth − boxWidth/2)
+            // to its right. Modeling this correctly is what keeps a wide syllable's
+            // narrow neighbor from being over-pushed.
+            const centers: number[] = [];
+            const halfLefts: number[] = [];
+            const halfRights: number[] = [];
+            const overflows: boolean[] = [];
+            for (const itemIdx of row.indices) {
+                const cell = cellRefs.current[itemIdx];
+                const item = items[itemIdx];
+                const charCount = Math.max(1, [...item.character].length);
+                const boxWidth = charCount * columnWidth;
+                const textWidth = measureTextWidth(pinyinRefs.current[itemIdx], item.pinyin ?? "");
+                const overflow = textWidth > boxWidth;
+                centers.push(cell ? cell.offsetLeft + boxWidth / 2 : 0);
+                halfLefts.push(overflow ? boxWidth / 2 : textWidth / 2);
+                halfRights.push(overflow ? textWidth - boxWidth / 2 : textWidth / 2);
+                overflows.push(overflow);
+            }
+
+            // Compute per-syllable horizontal offsets that keep adjacent pinyin
+            // texts from touching. Each pinyin stays anchored on its own character
+            // by default (offset 0). When two collide, how the required separation
+            // is shared depends on which one is a "wide originator" — a syllable
+            // whose romanization overflows its own column:
+            //   • exactly one overflows → it holds position and the narrower
+            //     neighbor yields the whole amount (e.g. 形状: zhuàng anchored);
+            //   • both overflow (e.g. 上传 shàng/chuán) or neither → split evenly,
+            //     so two comparably-wide syllables displace each other.
+            // Solved by relaxation: repeatedly push apart any overlapping pair by
+            // its share until stable. Capped passes; converges quickly for the
+            // short runs cpcd renders (a word, or one wrapped line).
+            const offsets = new Array<number>(n).fill(0);
+            if (pinyinShift && n > 1) {
+                const maxPasses = Math.max(4, n);
+                for (let pass = 0; pass < maxPasses; pass++) {
+                    let moved = false;
+                    for (let i = 0; i < n - 1; i++) {
+                        // Required center spacing = left syllable's right reach +
+                        // right syllable's left reach + gap.
+                        const minSpacing = halfRights[i] + halfLefts[i + 1] + PINYIN_MIN_GAP_PX;
+                        const actualSpacing = centers[i + 1] + offsets[i + 1] - (centers[i] + offsets[i]);
+                        const deficit = minSpacing - actualSpacing;
+                        if (deficit <= 0.01) continue;
+                        // Decide each side's share of the push.
+                        let leftShare = 0.5;
+                        if (overflows[i] && !overflows[i + 1]) leftShare = 0; // left anchors
+                        else if (overflows[i + 1] && !overflows[i]) leftShare = 1; // right anchors
+                        offsets[i] -= deficit * leftShare;
+                        offsets[i + 1] += deficit * (1 - leftShare);
+                        moved = true;
+                    }
+                    if (!moved) break;
+                }
+            }
 
             row.indices.forEach((itemIdx, localIdx) => {
                 const cell = cellRefs.current[itemIdx];
                 const span = pinyinRefs.current[itemIdx];
                 if (!cell || !span) return;
                 // Pinyin span is fixed-width (= cell width) with text-align:center,
-                // so we just align its left edge to the cell's left edge plus shift.
-                const x = cell.offsetLeft + shifts[localIdx];
+                // so we align its left edge to the cell's left edge plus the offset.
+                const x = cell.offsetLeft + offsets[localIdx];
                 // Pinyin sits at the bottom of the cell, inside the reserved padding-bottom region.
                 const y = cell.offsetTop + cell.offsetHeight - pinyinReservedHeight;
                 span.style.transform = `translate(${x}px, ${y}px)`;
@@ -181,8 +278,8 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
                                 cursor: isInteractive ? "pointer" : "default",
                                 transition: "border-color 0.15s ease, background-color 0.15s ease",
                                 fontSize: charFontSize,
-                                fontWeight: 400,
-                                fontFamily: '"Inter", "Noto Sans JP", sans-serif',
+                                fontWeight: WEIGHT.regular,
+                                fontFamily: FONTS.cjk,
                                 color: "text.primary",
                                 lineHeight: 1.21,
                             }}
@@ -234,7 +331,7 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
                                 width: `${cellWidth}px`,
                                 textAlign: "center",
                                 fontSize: pinyinFontSize,
-                                fontFamily: '"Noto Sans Display", sans-serif',
+                                fontFamily: FONTS.sans,
                                 fontStretch: "condensed",
                                 color: color as string,
                                 lineHeight: 1.21,

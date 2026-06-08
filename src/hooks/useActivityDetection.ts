@@ -8,12 +8,21 @@ interface UseActivityDetectionOptions {
 
 /**
  * Hook to detect user activity through various input events
- * Tracks clicks, keyboard presses, and touch events (but not mouse movement)
+ * Tracks clicks, keyboard presses, touch starts, and pointer-downs (but not
+ * mouse movement).
+ *
+ * `pointerdown` is included because some surfaces (e.g. the Bubble Match game)
+ * are driven entirely by pointer events with `touch-action: none` and dragging:
+ * a bubble drag fires `pointerdown` but never a `click` (the pointer moves
+ * before release), so without this it would not register as activity. Listening
+ * for `pointerdown` covers mouse/touch/pen uniformly. On touch devices both
+ * `touchstart` and `pointerdown` fire, but the duplicate call is harmless — the
+ * activity timeout is simply reset twice.
  */
 export const useActivityDetection = ({
     onActivity,
     isEnabled,
-    events = ['click', 'keydown', 'touchstart']
+    events = ['click', 'keydown', 'touchstart', 'pointerdown']
 }: UseActivityDetectionOptions) => {
     
     // Memoized activity handler to prevent unnecessary re-renders

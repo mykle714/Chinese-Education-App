@@ -20,6 +20,19 @@ export interface ParticleOrClassifierInfo {
   definition: string;
 }
 
+// One ordered piece of a long definition split into English prose vs. embedded Chinese.
+// `text` parts render as plain prose; `foreign` parts carry the same segmentation payload
+// as an example sentence so they render as cpcd with the hover/tap popup. Computed by the
+// server (enrichLongDefinitionMetadataBatch); mirrors the server LongDefinitionPart type.
+export type LongDefinitionPart =
+  | { type: 'text'; value: string }
+  | {
+      type: 'foreign';
+      foreignText: string;
+      _segments: string[];
+      segmentMetadata: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo; wordForms?: Record<string, string> }>;
+    };
+
 // Flashcard Category type for spaced repetition
 export type FlashcardCategory = 'Unfamiliar' | 'Target' | 'Comfortable' | 'Mastered';
 
@@ -47,6 +60,7 @@ export interface VocabEntry {
   entryKey: string;
   definition?: string | null;  // det.definitions[0] — joined from dictionaryentries at read time
   longDefinition?: string | null;
+  longDefinitionParts?: LongDefinitionPart[] | null;  // Computed at runtime: longDefinition split into English + cpcd-able Chinese runs
   language?: Language;         // absent on det-fallback entries
   script?: string;
   pronunciation?: string | null;
@@ -116,6 +130,7 @@ export interface DictionaryEntry {
   shortDefinitionPronunciationOverride?: ShortDefinitionPronunciationOverride | null; // Raw override object from DB
   shortDefinition?: string | null;
   longDefinition?: string | null;
+  longDefinitionParts?: LongDefinitionPart[] | null;  // Computed at runtime: longDefinition split into English + cpcd-able Chinese runs
   createdAt: string;
 }
 

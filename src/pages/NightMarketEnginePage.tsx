@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { WEIGHT } from '../theme/scale';
 import {
   Box, Typography, Button, CircularProgress, Alert,
   Dialog, DialogTitle, DialogContent, DialogActions, Snackbar,
@@ -185,13 +186,13 @@ function NightMarketEnginePage() {
             className="night-market-engine-title"
             variant="h4"
             component="h1"
-            sx={{ color: 'white', fontWeight: 'bold', textShadow: '2px 2px 4px rgba(0,0,0,0.8)', display: 'flex', alignItems: 'baseline', gap: 1.5 }}
+            sx={{ color: 'white', fontWeight: WEIGHT.bold, textShadow: '2px 2px 4px rgba(0,0,0,0.8)', display: 'flex', alignItems: 'baseline', gap: 1.5 }}
           >
             Night Market
             <Typography
               component="span"
               variant="h6"
-              sx={{ color: 'rgba(255,255,255,0.55)', fontWeight: 'normal' }}
+              sx={{ color: 'rgba(255,255,255,0.55)', fontWeight: WEIGHT.regular }}
             >
               (Pixi.js)
             </Typography>
@@ -214,7 +215,7 @@ function NightMarketEnginePage() {
             startIcon={<LockOpenIcon />}
             onClick={unlockNext}
             disabled={isUnlocking}
-            sx={{ textShadow: '1px 1px 2px rgba(0,0,0,0.3)', fontWeight: 'bold' }}
+            sx={{ textShadow: '1px 1px 2px rgba(0,0,0,0.3)', fontWeight: WEIGHT.bold }}
           >
             {isUnlocking ? 'Unlocking...' : 'Unlock New Item'}
           </Button>

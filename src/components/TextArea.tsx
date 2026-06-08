@@ -7,6 +7,8 @@ import {
     moveCursorRightFromPosition
 } from "../utils/textSelectionUtils";
 import ReaderTapOverlay from "./ReaderTapOverlay";
+import { FONTS } from "../theme/fonts";
+import { SIZE } from "../theme/scale";
 
 // Text interface for TypeScript
 interface Text {
@@ -123,18 +125,23 @@ function TextArea({
                         }
                     }}
                     variant="outlined"
+                    // The reading box is focused on purpose (it drives word selection +
+                    // arrow-key navigation), so mobile browsers would normally raise the
+                    // soft keyboard. This box is not for typing, so inputMode="none"
+                    // suppresses the virtual keyboard while keeping focus/selection intact.
+                    inputProps={{ inputMode: 'none' }}
                     InputProps={{
                         sx: {
                             lineHeight: 2,
-                            fontSize: '1.1rem',
-                            fontFamily: '"Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif',
+                            fontSize: SIZE.subtitle,
+                            fontFamily: FONTS.cjk,
                             letterSpacing: '0.02em',
                             padding: 2,
                             cursor: 'text',
                             '& .MuiInputBase-input': {
                                 lineHeight: 2,
-                                fontSize: '1.1rem',
-                                fontFamily: '"Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif',
+                                fontSize: SIZE.subtitle,
+                                fontFamily: FONTS.cjk,
                                 letterSpacing: '0.02em',
                                 cursor: 'text',
                                 userSelect: 'text',

@@ -1,4 +1,5 @@
 import { Box, Card, CardContent, Typography } from "@mui/material";
+import { WEIGHT } from '../theme/scale';
 
 interface StreakCounterProps {
     currentStreak: number;
@@ -17,14 +18,14 @@ function StreakCounter({ currentStreak }: StreakCounterProps) {
                         🔥
                     </Typography>
                     <Box>
-                        <Typography variant="h6" component="div" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+                        <Typography variant="h6" component="div" sx={{ fontWeight: WEIGHT.bold, mb: 0.5 }}>
                             Current Streak
                         </Typography>
                     </Box>
                 </Box>
 
                 <Typography variant="h4" sx={{
-                    fontWeight: 'bold',
+                    fontWeight: WEIGHT.bold,
                     textAlign: 'center',
                     mb: 1,
                     textShadow: '0 1px 2px rgba(0,0,0,0.1)'

@@ -1,5 +1,6 @@
 import { Box, Card, CardContent, Typography, CircularProgress } from "@mui/material";
 import { useCalendarMinutePoints, type CalendarDayData } from "../hooks/useCalendarMinutePoints";
+import { SIZE , WEIGHT} from "../theme/scale";
 
 function MonthlyCalendar() {
     const { calendarData, isLoading, error } = useCalendarMinutePoints();
@@ -101,7 +102,7 @@ function MonthlyCalendar() {
                             📅
                         </Typography>
                         <Box>
-                            <Typography variant="h6" component="div" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+                            <Typography variant="h6" component="div" sx={{ fontWeight: WEIGHT.bold, mb: 0.5 }}>
                                 {currentMonth} {currentYear}
                             </Typography>
                             <Typography variant="body2" sx={{ opacity: 0.9, color: '#ffcccb' }}>
@@ -129,7 +130,7 @@ function MonthlyCalendar() {
                         📅
                     </Typography>
                     <Box>
-                        <Typography variant="h6" component="div" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+                        <Typography variant="h6" component="div" sx={{ fontWeight: WEIGHT.bold, mb: 0.5 }}>
                             {currentMonth} {currentYear}
                         </Typography>
                         <Typography variant="body2" sx={{ opacity: 0.9 }}>
@@ -146,8 +147,8 @@ function MonthlyCalendar() {
                             <Box key={day} sx={{
                                 textAlign: 'center',
                                 py: 0.5,
-                                fontSize: '0.75rem',
-                                fontWeight: 'bold',
+                                fontSize: SIZE.caption,
+                                fontWeight: WEIGHT.bold,
                                 opacity: 0.8
                             }}>
                                 {day}
@@ -184,9 +185,9 @@ function MonthlyCalendar() {
                                                 position: 'absolute',
                                                 top: 2,
                                                 left: 4,
-                                                fontSize: '0.6rem',
+                                                fontSize: SIZE.micro,
                                                 opacity: 0.8,
-                                                fontWeight: dayData.isToday ? 'bold' : 'normal'
+                                                fontWeight: dayData.isToday ? WEIGHT.bold : WEIGHT.regular
                                             }}>
                                                 {getDayNumber(dayData)}
                                             </Box>
@@ -195,7 +196,7 @@ function MonthlyCalendar() {
                                             <Box sx={{
                                                 position: 'absolute',
                                                 left: 3,
-                                                fontSize: '0.65rem',
+                                                fontSize: SIZE.micro,
                                                 opacity: 0.9
                                             }}>
                                                 {getStatusStamp(dayData)}
@@ -203,8 +204,8 @@ function MonthlyCalendar() {
 
                                             {/* Work points prominently displayed in center-right */}
                                             <Box sx={{
-                                                fontSize: '0.75rem',
-                                                fontWeight: dayData.isToday ? 'bold' : 'normal',
+                                                fontSize: SIZE.caption,
+                                                fontWeight: dayData.isToday ? WEIGHT.bold : WEIGHT.regular,
                                                 marginLeft: 'auto',
                                                 marginRight: 0.5
                                             }}>
@@ -222,18 +223,18 @@ function MonthlyCalendar() {
                 {!isLoading && calendarData && (
                     <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center', gap: 3 }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Typography variant="body2" sx={{ fontSize: '0.9rem' }}>
+                            <Typography variant="body2" sx={{ fontSize: SIZE.bodyLg }}>
                                 ✅
                             </Typography>
-                            <Typography variant="body2" sx={{ fontSize: '0.75rem', opacity: 0.9 }}>
+                            <Typography variant="body2" sx={{ fontSize: SIZE.caption, opacity: 0.9 }}>
                                 Goal met (+points)
                             </Typography>
                         </Box>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Typography variant="body2" sx={{ fontSize: '0.9rem' }}>
+                            <Typography variant="body2" sx={{ fontSize: SIZE.bodyLg }}>
                                 ❌
                             </Typography>
-                            <Typography variant="body2" sx={{ fontSize: '0.75rem', opacity: 0.9 }}>
+                            <Typography variant="body2" sx={{ fontSize: SIZE.caption, opacity: 0.9 }}>
                                 Penalty (-points)
                             </Typography>
                         </Box>

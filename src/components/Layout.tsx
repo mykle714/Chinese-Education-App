@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect } from "react";
+import { WEIGHT } from '../theme/scale';
 import { Link as RouterLink, useLocation } from "react-router-dom";
 import { useAuth } from "../AuthContext";
 import { useConfirmation } from "../contexts/ConfirmationContext";
@@ -154,7 +155,7 @@ function Layout({ children }: LayoutProps) {
             sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}
         >
             <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
-                <Typography variant="h6" noWrap component="div" sx={{ fontWeight: 'bold' }}>
+                <Typography variant="h6" noWrap component="div" sx={{ fontWeight: WEIGHT.bold }}>
                     Vocabulary Manager
                 </Typography>
                 {isAuthenticated && user && (
@@ -329,26 +330,6 @@ function Layout({ children }: LayoutProps) {
                     {isMobile && <Toolbar />}
                     {mainContent}
                 </Box>
-            </Box>
-
-            {/* Footer - spans full width */}
-            <Box
-                component="footer"
-                sx={{
-                    py: 2,
-                    px: 2,
-                    backgroundColor: (theme) => theme.palette.grey[100],
-                    borderTop: '1px solid rgba(0, 0, 0, 0.08)',
-                    position: 'fixed',
-                    bottom: 0,
-                    left: 0,
-                    width: '100%',
-                    zIndex: (theme) => theme.zIndex.drawer - 1
-                }}
-            >
-                <Typography variant="body2" color="text.secondary" align="center">
-                    © {new Date().getFullYear()} Vocabulary Entry Manager
-                </Typography>
             </Box>
         </Box>
     );

@@ -6,14 +6,9 @@ import HomeIcon from "@mui/icons-material/Home";
 import LanguageIcon from "@mui/icons-material/Language";
 import SportsEsportsIcon from "@mui/icons-material/SportsEsports";
 import AccountCircleIcon from "@mui/icons-material/AccountCircle";
-
-// Design tokens from Figma
-const COLORS = {
-    header: "#F2F2F4",
-    border: "#5C5C66",
-    iconColor: "#323232",
-    textColor: "#272727",
-};
+import { COLORS } from "../theme/colors";
+import { FONTS } from "../theme/fonts";
+import { SIZE, WEIGHT, LEADING } from "../theme/scale";
 
 const Footer = styled(Box)(() => ({
     backgroundColor: COLORS.header,
@@ -23,6 +18,9 @@ const Footer = styled(Box)(() => ({
     flexDirection: "column",
     justifyContent: "center",
     flexShrink: 0,
+    // Block native pan/scroll: dragging from the footer must not scroll/bounce
+    // the page (it sits below drag-to-sort/game surfaces).
+    touchAction: "none",
 }));
 
 const FooterContent = styled(Box)(() => ({
@@ -90,11 +88,11 @@ const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "home" }) => {
                     <Typography
                         className="mobile-footer__home-label"
                         sx={{
-                            fontSize: 12,
-                            fontWeight: 400,
-                            lineHeight: 1.21,
-                            color: COLORS.textColor,
-                            fontFamily: '"Inter", sans-serif',
+                            fontSize: SIZE.caption,
+                            fontWeight: WEIGHT.regular,
+                            lineHeight: LEADING.tight,
+                            color: COLORS.onSurface,
+                            fontFamily: FONTS.sans,
                         }}
                     >
                         Home
@@ -112,11 +110,11 @@ const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "home" }) => {
                     <Typography
                         className="mobile-footer__discover-label"
                         sx={{
-                            fontSize: 12,
-                            fontWeight: 400,
-                            lineHeight: 1.21,
-                            color: COLORS.textColor,
-                            fontFamily: '"Inter", sans-serif',
+                            fontSize: SIZE.caption,
+                            fontWeight: WEIGHT.regular,
+                            lineHeight: LEADING.tight,
+                            color: COLORS.onSurface,
+                            fontFamily: FONTS.sans,
                         }}
                     >
                         Discover
@@ -134,11 +132,11 @@ const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "home" }) => {
                     <Typography
                         className="mobile-footer__games-label"
                         sx={{
-                            fontSize: 12,
-                            fontWeight: 400,
-                            lineHeight: 1.21,
-                            color: COLORS.textColor,
-                            fontFamily: '"Inter", sans-serif',
+                            fontSize: SIZE.caption,
+                            fontWeight: WEIGHT.regular,
+                            lineHeight: LEADING.tight,
+                            color: COLORS.onSurface,
+                            fontFamily: FONTS.sans,
                         }}
                     >
                         Games
@@ -156,11 +154,11 @@ const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "home" }) => {
                     <Typography
                         className="mobile-footer__account-label"
                         sx={{
-                            fontSize: 12,
-                            fontWeight: 400,
-                            lineHeight: 1.21,
-                            color: COLORS.textColor,
-                            fontFamily: '"Inter", sans-serif',
+                            fontSize: SIZE.caption,
+                            fontWeight: WEIGHT.regular,
+                            lineHeight: LEADING.tight,
+                            color: COLORS.onSurface,
+                            fontFamily: FONTS.sans,
                         }}
                     >
                         Account

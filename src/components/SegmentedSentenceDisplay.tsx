@@ -2,8 +2,10 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Box, Popper, Typography } from "@mui/material";
 import { stripParentheses } from "../utils/definitionUtils";
 import ForeignText, { type CPCDRowItem, isLatinScriptLang } from "./ForeignText";
+import { FONTS } from "../theme/fonts";
+import { SIZE } from "../theme/scale";
 
-type Size = "sm" | "md";
+type Size = "xs" | "sm" | "md";
 
 // Punctuation should not be highlightable on hover/tap — it carries no lookup value.
 // Uses Unicode property escapes to cover ASCII, CJK, and fullwidth punctuation/symbols.
@@ -13,6 +15,7 @@ const isPunctuation = (ch: string): boolean => PUNCTUATION_REGEX.test(ch);
 // CSS gap between segment groups when showSegmentSpaces is true.
 // Sized proportionally to character width at each size — NOT a native space character.
 const SEGMENT_GAP_BY_SIZE: Record<Size, string> = {
+  xs: "3px",
   sm: "4px",
   md: "6px",
 };
@@ -53,6 +56,11 @@ interface SegmentedSentenceDisplayProps {
   // Language of the sentence. Latin-script languages (e.g. 'es') render one cell
   // per whitespace word instead of per character, with no pinyin overlay.
   language?: string;
+  // Layout of the root container. "block" (default) fills its line; "inline" makes the
+  // whole display an inline-flex box so it can sit mid-sentence within flowing prose
+  // (used when a Chinese run is embedded in a long definition). The popup/highlight
+  // geometry is rect-based and works identically in either mode.
+  display?: "block" | "inline";
 }
 
 interface CharRenderData {
@@ -108,6 +116,7 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
   vocabWord,
   showSegmentSpaces = false,
   language,
+  display = "block",
 }) => {
   // Latin-script languages tokenize on whitespace (one cell per word) and never
   // show a pinyin overlay or per-character segmentation.
@@ -428,7 +437,13 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
   return (
     <Box
       ref={rowRef}
-      sx={{ position: "relative", width: "100%" }}
+      sx={
+        display === "inline"
+          ? // Inline-flex so the run flows within surrounding prose; verticalAlign middle
+            // vertically centers the whole cpcd unit (glyph + pinyin row) on the text line.
+            { position: "relative", display: "inline-flex", verticalAlign: "middle" }
+          : { position: "relative", width: "100%" }
+      }
       onMouseEnter={cancelDismiss}
       onMouseLeave={scheduleDismiss}
       // Deselect when tapping container background (whitespace between/around characters)
@@ -562,10 +577,10 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
         >
           <Typography
             sx={{
-              fontSize: "0.72rem",
+              fontSize: SIZE.caption,
               lineHeight: 1.3,
               color: "text.primary",
-              fontFamily: '"Inter", sans-serif',
+              fontFamily: FONTS.sans,
               textAlign: "center",
               wordBreak: "break-word",
             }}

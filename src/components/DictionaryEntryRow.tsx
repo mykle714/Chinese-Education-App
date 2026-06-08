@@ -1,6 +1,8 @@
 import { Card, CardContent, Typography } from '@mui/material';
 import type { DictionaryEntry } from '../types';
 import { stripParentheses } from '../utils/definitionUtils';
+import { FONTS } from '../theme/fonts';
+import { SIZE, WEIGHT } from '../theme/scale';
 
 interface DictionaryEntryRowProps {
     entry: DictionaryEntry;
@@ -41,9 +43,9 @@ function DictionaryEntryRow({ entry, onClick }: DictionaryEntryRowProps) {
                     component="h3"
                     gutterBottom
                     sx={{
-                        fontWeight: 'bold',
-                        fontFamily: '"Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif',
-                        fontSize: '1.25rem',
+                        fontWeight: WEIGHT.bold,
+                        fontFamily: FONTS.cjk,
+                        fontSize: SIZE.title,
                     }}
                 >
                     {entry.word1}

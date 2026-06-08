@@ -1,5 +1,6 @@
 import { Box, Card, CardContent, Typography, CircularProgress, Alert, Chip, Avatar } from "@mui/material";
 import { useLeaderboard } from "../hooks/useLeaderboard";
+import { SIZE , WEIGHT} from "../theme/scale";
 
 function LeaderboardPlaceholder() {
     const { entries, loading, error, isEmpty } = useLeaderboard();
@@ -31,7 +32,7 @@ function LeaderboardPlaceholder() {
                         <Typography variant="h4" component="span" sx={{ fontSize: '2rem' }}>
                             🏆
                         </Typography>
-                        <Typography variant="h6" component="div" sx={{ fontWeight: 'bold' }}>
+                        <Typography variant="h6" component="div" sx={{ fontWeight: WEIGHT.bold }}>
                             Leaderboard
                         </Typography>
                     </Box>
@@ -55,7 +56,7 @@ function LeaderboardPlaceholder() {
                         <Typography variant="h4" component="span" sx={{ fontSize: '2rem' }}>
                             🏆
                         </Typography>
-                        <Typography variant="h6" component="div" sx={{ fontWeight: 'bold' }}>
+                        <Typography variant="h6" component="div" sx={{ fontWeight: WEIGHT.bold }}>
                             Leaderboard
                         </Typography>
                     </Box>
@@ -81,7 +82,7 @@ function LeaderboardPlaceholder() {
                         🏆
                     </Typography>
                     <Box>
-                        <Typography variant="h6" component="div" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+                        <Typography variant="h6" component="div" sx={{ fontWeight: WEIGHT.bold, mb: 0.5 }}>
                             Leaderboard
                         </Typography>
                         <Typography variant="body2" sx={{ opacity: 0.9 }}>
@@ -123,7 +124,7 @@ function LeaderboardPlaceholder() {
                             >
                                 {/* Rank */}
                                 <Box sx={{ minWidth: '3rem', textAlign: 'center' }}>
-                                    <Typography variant="h6" sx={{ fontWeight: 'bold', fontSize: '1.2rem' }}>
+                                    <Typography variant="h6" sx={{ fontWeight: WEIGHT.bold, fontSize: SIZE.title }}>
                                         {getRankEmoji(entry.rank)}
                                     </Typography>
                                 </Box>
@@ -145,7 +146,7 @@ function LeaderboardPlaceholder() {
                                             variant="body1"
                                             title={entry.email}
                                             sx={{
-                                                fontWeight: 'bold',
+                                                fontWeight: WEIGHT.bold,
                                                 overflow: 'hidden',
                                                 textOverflow: 'ellipsis',
                                                 whiteSpace: 'nowrap'
@@ -161,7 +162,7 @@ function LeaderboardPlaceholder() {
                                                     bgcolor: 'rgba(255, 255, 255, 0.2)',
                                                     color: 'white',
                                                     height: '20px',
-                                                    fontSize: '0.7rem'
+                                                    fontSize: SIZE.micro
                                                 }}
                                             />
                                         )}
@@ -169,14 +170,14 @@ function LeaderboardPlaceholder() {
 
                                     <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
                                         {entry.currentStreak !== null && (
-                                            <Typography variant="body2" sx={{ opacity: 0.9, fontSize: '0.8rem' }}>
+                                            <Typography variant="body2" sx={{ opacity: 0.9, fontSize: SIZE.body }}>
                                                 🔥 {entry.currentStreak} streak
                                             </Typography>
                                         )}
-                                        <Typography variant="body2" sx={{ opacity: 0.9, fontSize: '0.8rem' }}>
+                                        <Typography variant="body2" sx={{ opacity: 0.9, fontSize: SIZE.body }}>
                                             📅 Today: {entry.todaysMinutes}
                                         </Typography>
-                                        <Typography variant="body2" sx={{ opacity: 0.9, fontSize: '0.8rem' }}>
+                                        <Typography variant="body2" sx={{ opacity: 0.9, fontSize: SIZE.body }}>
                                             📊 Yesterday: {entry.yesterdaysMinutes}
                                         </Typography>
                                     </Box>
@@ -184,10 +185,10 @@ function LeaderboardPlaceholder() {
 
                                 {/* Total Points */}
                                 <Box sx={{ textAlign: 'right' }}>
-                                    <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                                    <Typography variant="h6" sx={{ fontWeight: WEIGHT.bold }}>
                                         {entry.accumulativeMinutePoints.toLocaleString()}
                                     </Typography>
-                                    <Typography variant="body2" sx={{ opacity: 0.8, fontSize: '0.75rem' }}>
+                                    <Typography variant="body2" sx={{ opacity: 0.8, fontSize: SIZE.caption }}>
                                         points
                                     </Typography>
                                 </Box>
@@ -206,7 +207,7 @@ function LeaderboardPlaceholder() {
                     }}>
                         <Typography variant="body2" sx={{
                             opacity: 0.7,
-                            fontSize: '0.8rem'
+                            fontSize: SIZE.body
                         }}>
                             Showing top {Math.min(entries.length, 10)} learners
                         </Typography>

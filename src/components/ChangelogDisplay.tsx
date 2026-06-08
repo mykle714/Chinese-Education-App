@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Box, Typography, Paper, CircularProgress, Alert } from '@mui/material';
 import ReactMarkdown from 'react-markdown';
+import { FONTS } from '../theme/fonts';
+import { SIZE, WEIGHT, LEADING } from '../theme/scale';
 
 interface ChangelogData {
     content: string;
@@ -59,23 +61,23 @@ const ChangelogDisplay = () => {
 
     return (
         <Paper sx={{ p: 3, mt: 3 }}>
-            <Typography variant="h6" gutterBottom sx={{ mb: 2, fontWeight: 'bold' }}>
+            <Typography variant="h6" gutterBottom sx={{ mb: 2, fontWeight: WEIGHT.bold }}>
                 📋 Changelog
             </Typography>
             <Box sx={{
                 maxHeight: 400,
                 overflowY: 'auto',
-                '& h1': { fontSize: '1.1rem', fontWeight: 'bold', mb: 2 },
-                '& h2': { fontSize: '0.95rem', fontWeight: 'bold', mb: 1.5, mt: 2 },
-                '& h3': { fontSize: '0.85rem', fontWeight: 'bold', mb: 1, mt: 1.5 },
-                '& p': { fontSize: '0.8rem', mb: 1, lineHeight: 1.6 },
+                '& h1': { fontSize: SIZE.subtitle, fontWeight: WEIGHT.bold, mb: 2 },
+                '& h2': { fontSize: SIZE.bodyLg, fontWeight: WEIGHT.bold, mb: 1.5, mt: 2 },
+                '& h3': { fontSize: SIZE.body, fontWeight: WEIGHT.bold, mb: 1, mt: 1.5 },
+                '& p': { fontSize: SIZE.body, mb: 1, lineHeight: LEADING.relaxed },
                 '& ul': { mb: 1.5, pl: 2 },
-                '& li': { fontSize: '0.8rem', mb: 0.5 },
+                '& li': { fontSize: SIZE.body, mb: 0.5 },
                 '& code': {
                     backgroundColor: 'rgba(0, 0, 0, 0.04)',
                     padding: '2px 4px',
                     borderRadius: '3px',
-                    fontFamily: 'monospace'
+                    fontFamily: FONTS.mono
                 },
                 '& a': {
                     color: 'primary.main',

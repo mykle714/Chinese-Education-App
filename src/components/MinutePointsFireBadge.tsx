@@ -3,6 +3,7 @@ import { Badge, Box, IconButton, Typography, useTheme } from "@mui/material";
 import LocalFireDepartmentIcon from "@mui/icons-material/LocalFireDepartment";
 import { FIRE_ACTIVE_COLOR } from "../pages/FlashcardsLearnPage/constants";
 import { useMinutePoints } from "../hooks/useMinutePoints";
+import { SIZE , WEIGHT} from "../theme/scale";
 
 // Calls useMinutePoints internally rather than accepting it as a prop, so the
 // per-second TICK only re-renders this leaf component instead of whatever page
@@ -26,8 +27,8 @@ const MinutePointsFireBadge: React.FC = () => {
                 max={99}
                 sx={{
                     "& .MuiBadge-badge": {
-                        fontSize: "0.625rem",
-                        fontWeight: "bold",
+                        fontSize: SIZE.micro,
+                        fontWeight: WEIGHT.bold,
                         minWidth: "16px",
                         height: "16px",
                         padding: "0 4px",
@@ -47,7 +48,7 @@ const MinutePointsFireBadge: React.FC = () => {
                         className="minute-points-fire-badge__icon"
                         sx={{
                             color: activeColor,
-                            fontSize: "1.25rem",
+                            fontSize: SIZE.title,
                             filter: minutePoints.isActive ? "drop-shadow(0 0 4px rgba(230, 81, 0, 0.6))" : "none",
                             animation: minutePoints.isAnimating ? "minutePointsFirePulse 0.6s ease-out" : "none",
                             "@keyframes minutePointsFirePulse": {
@@ -61,8 +62,8 @@ const MinutePointsFireBadge: React.FC = () => {
             <Typography
                 className="minute-points-fire-badge__seconds"
                 sx={{
-                    fontSize: "0.625rem",
-                    fontWeight: "bold",
+                    fontSize: SIZE.micro,
+                    fontWeight: WEIGHT.bold,
                     color: activeColor,
                     lineHeight: 1,
                     marginTop: "-2px",

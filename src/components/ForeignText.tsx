@@ -3,6 +3,8 @@ import { Box } from "@mui/material";
 import CPCDRow, { type CPCDRowItem, type CPCDSize } from "./CPCDRow";
 import { useAuth } from "../AuthContext";
 import type { Language } from "../types";
+import { FONTS } from "../theme/fonts";
+import { WEIGHT } from "../theme/scale";
 
 // Re-export so call sites can build items without importing CPCDRow directly.
 // ForeignText is the public container; CPCDRow is its Chinese-script implementation.
@@ -17,6 +19,9 @@ interface ForeignTextBaseProps {
     flexWrap?: "nowrap" | "wrap";
     justifyContent?: string;
     className?: string;
+    // Horizontal long-syllable pinyin nudging (see CPCDRow.pinyinShift). Defaults
+    // to true; ignored for Latin-script languages, which render no pinyin overlay.
+    pinyinShift?: boolean;
 }
 
 interface ForeignTextProps extends ForeignTextBaseProps {
@@ -53,8 +58,8 @@ export function isLatinScriptLang(language?: string | null): boolean {
 
 // Plain-text font sizing, mirroring CPCDRow's per-size character font so a
 // Spanish word sits at the same visual scale as a Chinese row would.
-const PLAIN_CHAR_FONT: Record<CPCDSize, string> = { sm: "26px", md: "2.25rem", lg: "2.4rem" };
-const PLAIN_COMPACT_CHAR_FONT: Record<CPCDSize, string> = { sm: "22px", md: "1.875rem", lg: "2.25rem" };
+const PLAIN_CHAR_FONT: Record<CPCDSize, string> = { xs: "18px", sm: "26px", md: "2.25rem", lg: "2.4rem" };
+const PLAIN_COMPACT_CHAR_FONT: Record<CPCDSize, string> = { xs: "16px", sm: "22px", md: "1.875rem", lg: "2.25rem" };
 
 /**
  * Build one CPCDRow item per character, zipping each character with its
@@ -99,6 +104,7 @@ const ForeignText: React.FC<ForeignTextProps> = ({
     showPinyin = true,
     useToneColor = true,
     items,
+    pinyinShift = true,
 }) => {
     // Resolve language: explicit prop wins, otherwise the user's selection.
     const { user } = useAuth();
@@ -117,8 +123,8 @@ const ForeignText: React.FC<ForeignTextProps> = ({
                     flexWrap,
                     justifyContent: justifyContent ?? "flex-start",
                     fontSize,
-                    fontWeight: 400,
-                    fontFamily: '"Inter", sans-serif',
+                    fontWeight: WEIGHT.regular,
+                    fontFamily: FONTS.sans,
                     color: "text.primary",
                     lineHeight: 1.21,
                 }}
@@ -139,6 +145,7 @@ const ForeignText: React.FC<ForeignTextProps> = ({
             flexWrap={flexWrap}
             justifyContent={justifyContent}
             className={className}
+            pinyinShift={pinyinShift}
         />
     );
 };

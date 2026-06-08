@@ -3,6 +3,8 @@ import { Box, IconButton, Typography } from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import { styled } from "@mui/material/styles";
 import { useNavigate } from "react-router-dom";
+import { FONTS } from "../theme/fonts";
+import { SIZE, WEIGHT } from "../theme/scale";
 
 const Header = styled(Box)(() => ({
     backgroundColor: "#F2F2F4",
@@ -12,6 +14,10 @@ const Header = styled(Box)(() => ({
     flexDirection: "row",
     alignItems: "center",
     flexShrink: 0,
+    // Block native pan/scroll: dragging from the header must not scroll/bounce
+    // the page (it sits above drag-to-sort/game surfaces). Mark a child scrollable
+    // explicitly if one ever needs it.
+    touchAction: "none",
 }));
 
 const Toolbar = styled(Box)(() => ({
@@ -71,10 +77,10 @@ const PageHeader: React.FC<PageHeaderProps> = ({ title, onBack, showBack = true,
                     className="page-header__title"
                     sx={{
                         flex: 1,
-                        fontSize: 16,
-                        fontWeight: 400,
+                        fontSize: SIZE.bodyLg,
+                        fontWeight: WEIGHT.regular,
                         color: "#1C1C1E",
-                        fontFamily: '"Inter", sans-serif',
+                        fontFamily: FONTS.sans,
                         whiteSpace: "nowrap",
                     }}
                 >

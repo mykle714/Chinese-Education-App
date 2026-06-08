@@ -11,6 +11,7 @@ import {
 import { MINUTE_POINTS_ELIGIBLE_PAGES, MINUTE_POINTS_CONFIG, STREAK_CONFIG } from '../constants';
 import { useActivityDetection } from './useActivityDetection';
 import { incrementMinutePoint, fetchLanguageSummary } from '../utils/minutePointsSync';
+import { isSameStreakDay } from '../utils/streakDay';
 
 export interface UseMinutePointsReturn {
   currentPoints: number;
@@ -156,7 +157,15 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
     const loadData = async () => {
       const stored = loadMinutePointsDataSync(user.id, language);
 
-      const sameDay = new Date(stored.lastActivity).toDateString() === new Date().toDateString();
+      // Stale local sub-minute progress only counts if it belongs to the SAME
+      // streak day as now. We must use the server's 4 AM-bounded streak day
+      // (isSameStreakDay) — NOT a midnight toDateString() comparison: a session
+      // run between midnight and 4 AM belongs to the previous streak day, so on a
+      // fresh login later that same calendar day the server correctly reports 0
+      // for today. A midnight comparison would mark that pre-4 AM progress as
+      // "same day" and Math.max() below would resurrect it, making the fire badge
+      // show yesterday's minutes on the first login of the new streak day.
+      const sameDay = isSameStreakDay(stored.lastActivity, new Date());
 
       // Server is authoritative per language: lifetime total, today's minutes
       // (cross-device), and the global streak. Fall back to local storage offline.

@@ -1,6 +1,8 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { ThemeProvider, createTheme, type Theme } from '@mui/material/styles';
 import { CssBaseline } from '@mui/material';
+import { FONTS } from '../theme/fonts';
+import { SIZE, WEIGHT, LEADING, TRACKING } from '../theme/scale';
 
 // Per-surface color tokens for the flashcard learn page.
 // All 18 fields must be defined for every theme — no optional fields.
@@ -50,9 +52,24 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 // Theme configurations
 const createAppTheme = (mode: ThemeMode): Theme => {
+    // Typography variants are mapped onto the shared type scale (src/theme/scale.ts)
+    // so every <Typography> across the app draws from the same 9-step ramp.
     const baseTheme = {
         typography: {
-            fontFamily: 'system-ui, Avenir, Helvetica, Arial, sans-serif',
+            fontFamily: FONTS.sans,
+            h1: { fontSize: SIZE.display, fontWeight: WEIGHT.bold, lineHeight: LEADING.none },
+            h2: { fontSize: SIZE.heading, fontWeight: WEIGHT.bold, lineHeight: LEADING.tight },
+            h3: { fontSize: SIZE.heading, fontWeight: WEIGHT.bold, lineHeight: LEADING.tight },
+            h4: { fontSize: SIZE.title, fontWeight: WEIGHT.bold, lineHeight: LEADING.tight },
+            h5: { fontSize: SIZE.title, fontWeight: WEIGHT.semibold, lineHeight: LEADING.tight },
+            h6: { fontSize: SIZE.subtitle, fontWeight: WEIGHT.semibold, lineHeight: LEADING.tight },
+            subtitle1: { fontSize: SIZE.bodyLg, fontWeight: WEIGHT.medium, lineHeight: LEADING.normal },
+            subtitle2: { fontSize: SIZE.body, fontWeight: WEIGHT.semibold, lineHeight: LEADING.normal },
+            body1: { fontSize: SIZE.bodyLg, fontWeight: WEIGHT.regular, lineHeight: LEADING.normal },
+            body2: { fontSize: SIZE.body, fontWeight: WEIGHT.regular, lineHeight: LEADING.normal },
+            caption: { fontSize: SIZE.caption, fontWeight: WEIGHT.medium, lineHeight: LEADING.normal },
+            button: { fontSize: SIZE.body, fontWeight: WEIGHT.semibold, lineHeight: LEADING.normal, letterSpacing: TRACKING.wide, textTransform: 'none' as const },
+            overline: { fontSize: SIZE.micro, fontWeight: WEIGHT.semibold, lineHeight: LEADING.none, letterSpacing: TRACKING.caps, textTransform: 'uppercase' as const },
         },
         shape: {
             borderRadius: 8,

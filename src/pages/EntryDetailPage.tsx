@@ -29,6 +29,7 @@ import {
 } from "@mui/icons-material";
 import { usePageTitle } from "../hooks/usePageTitle";
 import type { VocabEntry, HskLevel } from "../types";
+import { SIZE } from "../theme/scale";
 
 // Helper function to get HSK level icon
 const getHskIcon = (hskLevel: HskLevel) => {
@@ -52,7 +53,7 @@ const renderTags = (entry: VocabEntry) => (
                 label={entry.hskLevel}
                 size="small"
                 color="secondary"
-                sx={{ fontSize: '0.7rem', height: '20px' }}
+                sx={{ fontSize: SIZE.micro, height: '20px' }}
             />
         )}
     </Box>

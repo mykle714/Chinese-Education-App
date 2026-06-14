@@ -25,17 +25,14 @@ export const GAME_DISTRIBUTION: Record<string, number> = {
 // — 20 pairs → 40 bubbles. The level only changes launch cadence + duration.
 export const TOTAL_PAIRS = Object.values(GAME_DISTRIBUTION).reduce((a, b) => a + b, 0);
 
-// Four difficulty levels the player climbs in order. Higher levels launch the
+// Three difficulty levels the player climbs in order. Higher levels launch the
 // 40 bubbles faster (and give less time), so the field fills quicker — clearing
-// the last (Frantic) wins the game. Settings carry the old per-step spacing
-// (interval ≈ 362.5 ms, duration 15 s); the original slowest tier was dropped
-// and every level shifted down one, so Level 1 ("Relaxed") now opens at what was
-// previously the second-easiest pace.
+// the last (Frantic) wins the game. The old second tier (interval ≈ 1425 ms,
+// duration 90 s) was dropped, leaving a Relaxed → Brisk → Frantic ladder.
 export const LEVEL_CONFIGS: LevelConfig[] = [
-    { level: 1, label: "Relaxed", launchIntervalMs: 1788, durationSec: 105 },
-    { level: 2, label: "Brisk", launchIntervalMs: 1425, durationSec: 90 },
-    { level: 3, label: "Hurried", launchIntervalMs: 1063, durationSec: 75 },
-    { level: 4, label: "Frantic", launchIntervalMs: 700, durationSec: 60 },
+    { level: 1, label: "Relaxed", launchIntervalMs: 1800, durationSec: 105 },
+    { level: 2, label: "Brisk", launchIntervalMs: 1100, durationSec: 75 },
+    { level: 3, label: "Frantic", launchIntervalMs: 700, durationSec: 60 },
 ];
 
 // ---- Bubble sizing (px radius) -------------------------------------------

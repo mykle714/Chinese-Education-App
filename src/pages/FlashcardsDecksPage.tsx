@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Box, Typography, Alert, Button, Snackbar } from "@mui/material";
 import DelayedCircularProgress from "../components/DelayedCircularProgress";
@@ -20,6 +20,15 @@ import { SIZE, WEIGHT } from "../theme/scale";
 // /flashcards/learn page is worth opening. Below this, we nudge them to Discover
 // instead of letting them land on a near-empty study session.
 const MIN_LIBRARY_CARDS = 20;
+
+// Per-card delay (ms) for the staggered pop-in cascade, and the cap on how many
+// cards get a growing delay. Without a cap, a large deck (hundreds of cards on
+// real accounts) would stretch the cascade to 10s+ of continuously-firing
+// animations, pinning the main thread and swallowing the first taps. Capping the
+// index keeps the whole cascade under ~CARD_STAGGER_MAX × CARD_STAGGER_STEP ms.
+const CARD_STAGGER_STEP = 50;
+const CARD_STAGGER_MAX = 12;
+const cardStaggerDelayMs = (index: number) => Math.min(index, CARD_STAGGER_MAX) * CARD_STAGGER_STEP;
 
 // Styled Components — phone-frame sizing comes from MobileDemoFrame via Layout.tsx
 const ContentArea = styled(Box)(() => ({
@@ -278,6 +287,14 @@ const FlashcardsDecksPage: React.FC = () => {
         navigate('/flashcards/learn?mode=hard');
     };
 
+    // Stable card-tap handler shared by all three previews. Defined once (not an
+    // inline arrow per card) so the memoized MiniVocabCards don't all re-render
+    // whenever this page re-renders (e.g. a snackbar toggling).
+    const handleCardClick = useCallback(
+        (entry: VocabEntry) => navigate(`/flashcards/card/${entry.id}`),
+        [navigate]
+    );
+
     // Refetch all card lists
     const refetchCards = async () => {
         // Refetch non-mastered library cards
@@ -407,8 +424,8 @@ const FlashcardsDecksPage: React.FC = () => {
                                 <MiniVocabCard
                                     key={entry.id}
                                     entry={entry}
-                                    onClick={(e) => navigate(`/flashcards/card/${e.id}`)}
-                                    animationDelayMs={index * 50}
+                                    onClick={handleCardClick}
+                                    animationDelayMs={cardStaggerDelayMs(index)}
                                 />
                             ))
                         )}
@@ -457,8 +474,8 @@ const FlashcardsDecksPage: React.FC = () => {
                                 <MiniVocabCard
                                     key={entry.id}
                                     entry={entry}
-                                    onClick={(e) => navigate(`/flashcards/card/${e.id}`)}
-                                    animationDelayMs={index * 50}
+                                    onClick={handleCardClick}
+                                    animationDelayMs={cardStaggerDelayMs(index)}
                                 />
                             ))
                         )}
@@ -507,8 +524,8 @@ const FlashcardsDecksPage: React.FC = () => {
                                 <MiniVocabCard
                                     key={entry.id}
                                     entry={entry}
-                                    onClick={(e) => navigate(`/flashcards/card/${e.id}`)}
-                                    animationDelayMs={index * 50}
+                                    onClick={handleCardClick}
+                                    animationDelayMs={cardStaggerDelayMs(index)}
                                 />
                             ))
                         )}

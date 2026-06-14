@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { Box, Typography, Chip, IconButton } from "@mui/material";
 import ForeignText from "./ForeignText";
 import { stripParentheses } from "../utils/definitionUtils";
@@ -23,7 +24,7 @@ interface MiniVocabCardProps {
 // Category color mapping lives in src/utils/categoryColors (shared with the
 // card detail page and the flashcard-learn back-of-card chip).
 
-const MiniVocabCard: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete, onCycle, animationDelayMs }) => {
+const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete, onCycle, animationDelayMs }) => {
     return (
         <Box
             className="mini-vocab-card"
@@ -36,6 +37,13 @@ const MiniVocabCard: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete,
                 boxShadow: '2px 4px 4px rgba(0, 0, 0, 0.25)',
                 cursor: onClick ? 'pointer' : 'default',
                 transition: 'transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out',
+                // CSS containment: let the browser skip layout/paint for cards
+                // scrolled out of view (the /decks previews can hold hundreds of
+                // cards on real accounts). They stay in the DOM and tappable;
+                // `containIntrinsicSize` reserves the fixed 92×132 footprint so
+                // scroll height stays stable while offscreen cards are skipped.
+                contentVisibility: 'auto',
+                containIntrinsicSize: '92px 132px',
                 // Optional staggered entrance. `backwards` fill holds the scaled-down
                 // start state during the delay; ending at scale(1) lets the hover-lift
                 // transform take over cleanly once the animation finishes.
@@ -204,5 +212,10 @@ const MiniVocabCard: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete,
         </Box>
     );
 };
+
+// Memoized: the /decks previews render long lists of these, and unrelated
+// parent state (e.g. toggling a snackbar) must not re-render every card. Props
+// are primitives + a stable `entry`, so referential equality is sufficient.
+const MiniVocabCard = memo(MiniVocabCardComponent);
 
 export default MiniVocabCard;

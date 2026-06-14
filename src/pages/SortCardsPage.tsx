@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useParams } from "react-router-dom";
-import { Box, Typography, IconButton, Button, CircularProgress } from "@mui/material";
+import { Box, Typography, IconButton, Button } from "@mui/material";
+import DelayedCircularProgress from "../components/DelayedCircularProgress";
 import { styled } from "@mui/material/styles";
 import UndoIcon from "@mui/icons-material/Undo";
 import { useDrag } from "@use-gesture/react";
@@ -594,7 +595,7 @@ const SortCardsPage: React.FC = () => {
     if (loading) {
         return (
             <Box className="sort-cards__loading-wrapper" sx={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100dvh" }}>
-                <CircularProgress className="sort-cards__spinner" />
+                <DelayedCircularProgress className="sort-cards__spinner" />
             </Box>
         );
     }

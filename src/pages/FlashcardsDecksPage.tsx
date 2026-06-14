@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Box, Typography, CircularProgress, Alert, Button, Snackbar } from "@mui/material";
+import { Box, Typography, Alert, Button, Snackbar } from "@mui/material";
+import DelayedCircularProgress from "../components/DelayedCircularProgress";
 import { styled } from "@mui/material/styles";
 import MobileDemoHeader from "../components/MobileDemoHeader";
 import MobileFooter from "../components/MobileFooter";
@@ -386,7 +387,7 @@ const FlashcardsDecksPage: React.FC = () => {
                         {!allCardsLoaded ? (
                             // Loading state — gated on all sections so the cascades sync.
                             <Box className="flashcards-decks__library-loading" sx={{ display: 'flex', justifyContent: 'center', width: '100%', py: 4 }}>
-                                <CircularProgress className="flashcards-decks__library-spinner" />
+                                <DelayedCircularProgress className="flashcards-decks__library-spinner" />
                             </Box>
                         ) : error ? (
                             // Error state
@@ -436,7 +437,7 @@ const FlashcardsDecksPage: React.FC = () => {
                         {!allCardsLoaded ? (
                             // Loading state — gated on all sections so the cascades sync.
                             <Box className="flashcards-decks__learn-later-loading" sx={{ display: 'flex', justifyContent: 'center', width: '100%', py: 4 }}>
-                                <CircularProgress className="flashcards-decks__learn-later-spinner" />
+                                <DelayedCircularProgress className="flashcards-decks__learn-later-spinner" />
                             </Box>
                         ) : learnLaterError ? (
                             // Error state
@@ -486,7 +487,7 @@ const FlashcardsDecksPage: React.FC = () => {
                         {!allCardsLoaded ? (
                             // Loading state — gated on all sections so the cascades sync.
                             <Box className="flashcards-decks__mastered-loading" sx={{ display: 'flex', justifyContent: 'center', width: '100%', py: 4 }}>
-                                <CircularProgress className="flashcards-decks__mastered-spinner" />
+                                <DelayedCircularProgress className="flashcards-decks__mastered-spinner" />
                             </Box>
                         ) : masteredError ? (
                             // Error state

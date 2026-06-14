@@ -1,10 +1,11 @@
 import { useState, useMemo, useEffect } from 'react';
 import { WEIGHT } from '../theme/scale';
 import {
-  Box, Typography, Button, CircularProgress, Alert,
+  Box, Typography, Button, Alert,
   Dialog, DialogTitle, DialogContent, DialogActions, Snackbar,
   Tooltip,
 } from '@mui/material';
+import DelayedCircularProgress from '../components/DelayedCircularProgress';
 import LockOpenIcon from '@mui/icons-material/LockOpen';
 import CropFreeIcon from '@mui/icons-material/CropFree';
 import StorefrontIcon from '@mui/icons-material/Storefront';
@@ -140,7 +141,7 @@ function NightMarketEnginePage() {
         className="night-market-engine-loading"
         sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 'calc(100vh - 64px)' }}
       >
-        <CircularProgress className="night-market-engine-loading-spinner" />
+        <DelayedCircularProgress className="night-market-engine-loading-spinner" />
       </Box>
     );
   }

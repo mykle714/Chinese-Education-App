@@ -15,7 +15,6 @@ import {
     Card,
     CardContent,
     Button,
-    CircularProgress,
     Alert,
     List,
     ListItem,
@@ -25,6 +24,7 @@ import {
     Fab,
     IconButton,
 } from "@mui/material";
+import DelayedCircularProgress from "../components/DelayedCircularProgress";
 import CheckIcon from "@mui/icons-material/Check";
 import CloseIcon from "@mui/icons-material/Close";
 import HistoryIcon from "@mui/icons-material/History";
@@ -925,7 +925,7 @@ function FlashcardsPage() {
                     Flashcards
                 </Typography>
                 <Box display="flex" justifyContent="center" alignItems="center" minHeight="300px">
-                    <CircularProgress />
+                    <DelayedCircularProgress />
                 </Box>
             </Container>
         );

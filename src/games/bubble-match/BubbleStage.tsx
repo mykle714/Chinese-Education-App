@@ -31,6 +31,7 @@ import {
     POP_DURATION_MS,
     WRONG_FEEDBACK_MS,
     CANCEL_ZONE_HEIGHT,
+    POST_DONE_SETTLE_MS,
 } from "./constants";
 
 export type LoseReason = "time" | "full";
@@ -230,10 +231,38 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
         (outcome: "win" | LoseReason) => {
             if (phaseRef.current === "done") return;
             phaseRef.current = "done";
+
+            // Force-drop a bubble the player is still holding at the buzzer. Without
+            // this, the in-flight drag stays live and its eventual pointerup would
+            // resolve a match after the run is already over (the onUp guard below is
+            // the other half of this). Settle the held bubble — and any lit hover
+            // target — back to idle so the field freezes in a clean state; the
+            // physics wall-clamp then lifts it out of the cancel strip next frame.
+            const heldId = heldIdRef.current;
+            if (heldId) {
+                heldIdRef.current = null;
+                const held = bodiesRef.current.find((b) => b.id === heldId);
+                if (held) {
+                    held.status = "idle";
+                    held.targetScale = SCALE_IDLE;
+                }
+                const hoveredId = hoveredIdRef.current;
+                if (hoveredId) {
+                    const hov = bodiesRef.current.find((b) => b.id === hoveredId);
+                    if (hov && hov.status === "hovered") {
+                        hov.status = "idle";
+                        hov.targetScale = SCALE_IDLE;
+                    }
+                }
+                hoveredIdRef.current = null;
+                setOverCancelZone(false);
+                forceRender();
+            }
+
             if (outcome === "win") onLevelWin();
             else onLevelLose(outcome);
         },
-        [onLevelWin, onLevelLose]
+        [onLevelWin, onLevelLose, forceRender]
     );
 
     // ---- Main setup: build queue, start loops. Re-runs per level. -----------
@@ -313,6 +342,9 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
         // rAF physics + transform-write loop.
         let raf = 0;
         let last = performance.now();
+        // perf.now() when the run ended (phase → done); 0 while still playing.
+        // Drives the post-run loop shutdown (see the bottom of frame()).
+        let doneSince = 0;
         const frame = (now: number) => {
             const dt = Math.min((now - last) / 1000, MAX_DT);
             last = now;
@@ -322,8 +354,16 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
             const residual = stepPhysics(bodies, dt, bounds);
 
             // Smoothly approach each bubble's target scale and write transforms.
+            // Track whether anything is still mid-animation so the loop can stop
+            // itself once the field goes static (see the shutdown check below).
+            let anyAnimating = false;
             for (const b of bodies) {
                 b.scale += (b.targetScale - b.scale) * SCALE_LERP;
+                // Snap to target once within epsilon so the asymptotic lerp
+                // actually reaches "settled" instead of crawling forever.
+                if (Math.abs(b.targetScale - b.scale) < 0.001) b.scale = b.targetScale;
+                else anyAnimating = true;
+                if (b.status === "growing") anyAnimating = true;
                 writeTransform(b);
             }
 
@@ -349,6 +389,20 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
             // Danger glow when the field is getting full (warning, below the loss line).
             const isDanger = ratio >= DANGER_FILL_RATIO;
             setDanger((prev) => (prev === isDanger ? prev : isDanger));
+
+            // Post-run shutdown: once the run is over the stage stays mounted
+            // behind the popup, but a still-running per-frame transform-write
+            // loop over ~40 nodes competes with the popup's buttons for the main
+            // thread. Stop rescheduling as soon as the field stops moving (no
+            // scale animation / growth). The over-packed loss never fully settles
+            // (the solver stays stuck), so a hard grace cap freezes it anyway —
+            // the run is already decided. While playing we always continue.
+            if (phaseRef.current === "done") {
+                if (doneSince === 0) doneSince = now;
+                const settled = !anyAnimating;
+                const graceElapsed = now - doneSince >= POST_DONE_SETTLE_MS;
+                if (settled || graceElapsed) return; // leave the loop stopped
+            }
 
             raf = requestAnimationFrame(frame);
         };
@@ -606,6 +660,22 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
             setOverCancelZone(false);
             const held = bodiesRef.current.find((b) => b.id === heldId);
             if (!held) return;
+
+            // Run already ended (e.g. time ran out mid-drag): drop the bubble with
+            // NO match resolution — no mark, no removal, no win. finishLevel already
+            // clears heldIdRef when it fires, so this mainly guards the race where a
+            // release lands in the same tick the buzzer does.
+            if (phaseRef.current !== "playing") {
+                setStatus(held, "idle", SCALE_IDLE);
+                const lateTargetId = hoveredIdRef.current;
+                hoveredIdRef.current = null;
+                if (lateTargetId) {
+                    const lateTarget = bodiesRef.current.find((b) => b.id === lateTargetId);
+                    if (lateTarget && lateTarget.status === "hovered") setStatus(lateTarget, "idle", SCALE_IDLE);
+                }
+                forceRender();
+                return;
+            }
 
             const targetId = hoveredIdRef.current;
             hoveredIdRef.current = null;

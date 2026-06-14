@@ -25,12 +25,17 @@ export const GAME_DISTRIBUTION: Record<string, number> = {
 // — 20 pairs → 40 bubbles. The level only changes launch cadence + duration.
 export const TOTAL_PAIRS = Object.values(GAME_DISTRIBUTION).reduce((a, b) => a + b, 0);
 
-// Three difficulty levels (picked before play; they do NOT chain). Higher levels
-// launch the 40 bubbles faster, so the field fills quicker — tune freely.
+// Four difficulty levels the player climbs in order. Higher levels launch the
+// 40 bubbles faster (and give less time), so the field fills quicker — clearing
+// the last (Frantic) wins the game. Settings carry the old per-step spacing
+// (interval ≈ 362.5 ms, duration 15 s); the original slowest tier was dropped
+// and every level shifted down one, so Level 1 ("Relaxed") now opens at what was
+// previously the second-easiest pace.
 export const LEVEL_CONFIGS: LevelConfig[] = [
-    { level: 1, label: "Relaxed", launchIntervalMs: 2150, durationSec: 120 },
-    { level: 2, label: "Brisk", launchIntervalMs: 1500, durationSec: 90 },
-    { level: 3, label: "Frantic", launchIntervalMs: 700, durationSec: 60 },
+    { level: 1, label: "Relaxed", launchIntervalMs: 1788, durationSec: 105 },
+    { level: 2, label: "Brisk", launchIntervalMs: 1425, durationSec: 90 },
+    { level: 3, label: "Hurried", launchIntervalMs: 1063, durationSec: 75 },
+    { level: 4, label: "Frantic", launchIntervalMs: 700, durationSec: 60 },
 ];
 
 // ---- Bubble sizing (px radius) -------------------------------------------
@@ -120,6 +125,17 @@ export const CANCEL_ZONE_HEIGHT = 96;
 // ---- Match feedback timing (ms) ------------------------------------------
 export const POP_DURATION_MS = 280; // green pop before a correct pair is removed
 export const WRONG_FEEDBACK_MS = 420; // red shake before a wrong pair is released
+
+// ---- Post-run loop shutdown ----------------------------------------------
+// After a run ends (won/lost) the stage stays mounted behind the popup, but
+// once the field stops moving there's nothing left to animate, so the rAF loop
+// stops rescheduling itself (it otherwise keeps writing transforms to ~40 nodes
+// every frame, competing with the popup's buttons for the main thread). The
+// loop halts as soon as every bubble's scale has settled; this is the hard cap
+// for the over-packed loss case, where bubbles stay mutually overlapping and the
+// separation solver never fully settles — we let it nudge for this long, then
+// freeze the field (the run is already over).
+export const POST_DONE_SETTLE_MS = 900;
 
 // Bubble palette (kept local; harmonizes with the flashcard surface tokens).
 export const WORD_BUBBLE_BG = "#EAF1FF";

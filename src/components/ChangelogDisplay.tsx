@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Box, Typography, Paper, CircularProgress, Alert } from '@mui/material';
+import { Box, Typography, Paper, Alert } from '@mui/material';
+import DelayedCircularProgress from './DelayedCircularProgress';
 import ReactMarkdown from 'react-markdown';
 import { FONTS } from '../theme/fonts';
 import { SIZE, WEIGHT, LEADING } from '../theme/scale';
@@ -41,7 +42,7 @@ const ChangelogDisplay = () => {
         return (
             <Paper sx={{ p: 3, mt: 3 }}>
                 <Box display="flex" justifyContent="center" alignItems="center" minHeight={200}>
-                    <CircularProgress />
+                    <DelayedCircularProgress />
                 </Box>
             </Paper>
         );

@@ -26,8 +26,13 @@ import { GAME_REGISTRY } from "./games/registry";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import ProtectedRoute from "./components/ProtectedRoute";
+import { useBlockZoom } from "./hooks/useBlockZoom";
 
 function App() {
+  // App-wide: disable pinch / double-tap zoom (mobile-first UI, zoom is never
+  // wanted). Complements the viewport meta in index.html, which iOS ignores.
+  useBlockZoom(true);
+
   return (
     <ThemeContextProvider>
       <AuthProvider>

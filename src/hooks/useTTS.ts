@@ -134,12 +134,13 @@ export function useTTS() {
     }, [settings.enabled, settings.engine, ttsLang]);
 
     /**
-     * Prime the cloud provider's shared <audio> element for autoplay. Call this
+     * Prime the cloud provider's shared AudioContext for autoplay. Call this
      * synchronously from a real user gesture (e.g. a button click) when the next
      * autoplay will be triggered by code that runs after an `await` — such as a
      * drag handler that narrates only once playback begins — so mobile autoplay
-     * policy doesn't reject that first programmatic play(). No-op for the browser
-     * engine, which primes itself on its first in-gesture speak().
+     * policy doesn't leave the context suspended for that first programmatic
+     * play. No-op for the browser engine, which primes itself on its first
+     * in-gesture speak().
      */
     const unlockAudio = useCallback(() => {
         if (!settings.enabled) return;

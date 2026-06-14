@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { stripParentheses } from "../utils/definitionUtils";
 import { useParams, useNavigate } from "react-router-dom";
-import { Box, Typography, Chip, Button, CircularProgress, Alert, Divider } from "@mui/material";
+import { Box, Typography, Chip, Button, Alert, Divider } from "@mui/material";
+import DelayedCircularProgress from "../components/DelayedCircularProgress";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import RepeatIcon from "@mui/icons-material/Repeat";
 import { styled } from "@mui/material/styles";
@@ -168,7 +169,7 @@ const VocabCardDetailPage: React.FC = () => {
                 <ContentArea className="vocab-card-detail__content">
                     {loading ? (
                         <Box className="vocab-card-detail__loading" sx={{ display: "flex", justifyContent: "center", pt: 6 }}>
-                            <CircularProgress className="vocab-card-detail__spinner" />
+                            <DelayedCircularProgress className="vocab-card-detail__spinner" />
                         </Box>
                     ) : error ? (
                         <Alert className="vocab-card-detail__error-alert" severity="error">{error}</Alert>

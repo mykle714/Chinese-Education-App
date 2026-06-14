@@ -1,6 +1,7 @@
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../AuthContext';
-import { CircularProgress, Box } from '@mui/material';
+import { Box } from '@mui/material';
+import DelayedCircularProgress from './DelayedCircularProgress';
 
 interface ProtectedRouteProps {
     children: React.ReactNode;
@@ -14,7 +15,7 @@ function ProtectedRoute({ children, allowPublic }: ProtectedRouteProps) {
     if (isLoading) {
         return (
             <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '50vh' }}>
-                <CircularProgress />
+                <DelayedCircularProgress />
             </Box>
         );
     }

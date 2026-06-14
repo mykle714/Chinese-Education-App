@@ -16,7 +16,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Import DAL architecture
-import { userController, vocabEntryController, onDeckVocabController, userMinutePointsController, textController, dictionaryController, starterPacksController, onDeckVocabService, nightMarketController, gamesController, icons8Controller } from './dal/setup.js';
+import { userController, vocabEntryController, onDeckVocabController, userMinutePointsController, textController, dictionaryController, starterPacksController, onDeckVocabService, nightMarketController, gamesController, icons8Controller, weekliesController } from './dal/setup.js';
 import { leaderboardController } from './controllers/LeaderboardController.js';
 import { ttsController } from './controllers/TTSController.js';
 import { MODE_CONFIGS, type StudyMode } from './services/OnDeckVocabService.js';
@@ -194,6 +194,61 @@ app.post('/api/auth/logout', (req, res) => {
 // @ts-ignore
 app.post('/api/auth/on-login', authenticateToken, async (req, res) => {
   await userController.onLogin(req, res);
+});
+
+// ---------------------------------------------------------------------------
+// Client performance diagnostics sink
+// ---------------------------------------------------------------------------
+// Receives batched interaction-latency telemetry from the browser (see
+// src/utils/perfDiagnostics.ts). Used to diagnose the prod-only "buttons take
+// 1–2s before working" lag on the mobile-demo footer/decks. Deliberately
+// UNAUTHENTICATED: the payload arrives via navigator.sendBeacon, which cannot
+// attach an Authorization header, and the lag also affects public/demo
+// sessions. It only appends to a git-ignored JSONL log + prints a one-line
+// summary; it never touches the database or returns data.
+const CLIENT_PERF_LOG = path.join(__dirname, 'logs', 'client-perf.jsonl');
+// @ts-ignore
+app.post('/api/diagnostics/perf', (req, res) => {
+  try {
+    const body = req.body || {};
+    const records = Array.isArray(body.records) ? body.records : [];
+    // Cap to avoid a malicious/buggy client flooding the log in one request.
+    if (records.length === 0 || records.length > 100) {
+      return res.status(204).end();
+    }
+
+    const entry = {
+      receivedAt: new Date().toISOString(),
+      ip: req.headers['x-forwarded-for'] || req.socket?.remoteAddress,
+      userAgent: typeof body.userAgent === 'string' ? body.userAgent.slice(0, 400) : undefined,
+      deviceMemory: body.deviceMemory,
+      hardwareConcurrency: body.hardwareConcurrency,
+      connection: body.connection,
+      records,
+    };
+
+    fs.mkdirSync(path.dirname(CLIENT_PERF_LOG), { recursive: true });
+    fs.appendFile(CLIENT_PERF_LOG, JSON.stringify(entry) + '\n', () => {});
+
+    // Compact console summary: the worst interaction in this batch, so prod logs
+    // surface the lag without needing to open the JSONL.
+    const worst = records
+      .filter((r: any) => r && r.kind === 'interaction')
+      .sort((a: any, b: any) => (b.duration || 0) - (a.duration || 0))[0];
+    if (worst) {
+      console.log(
+        `⏱️  client-perf: ${worst.duration}ms on ${worst.path} ` +
+        `[${worst.target || worst.name}] ` +
+        `(inputDelay=${worst.inputDelay}ms, processing=${worst.processing}ms, present=${worst.presentation}ms)`
+      );
+    }
+
+    // 204 keeps the beacon response empty; the client ignores the body anyway.
+    return res.status(204).end();
+  } catch (err) {
+    console.error('Error handling client perf diagnostics:', err);
+    return res.status(204).end();
+  }
 });
 
 // Get current authenticated user - USING NEW DAL ARCHITECTURE
@@ -435,6 +490,19 @@ app.get('/api/games/:gameId/progress', authenticateToken, async (req, res) => {
 // @ts-ignore
 app.post('/api/games/:gameId/progress', authenticateToken, async (req, res) => {
   await gamesController.saveProgress(req, res);
+});
+
+// Weekly achievements (per-user flag bag, wiped weekly by a prod cron).
+// List the authenticated user's achievements earned this week.
+// @ts-ignore
+app.get('/api/users/me/weeklies', authenticateToken, async (req, res) => {
+  await weekliesController.listWeeklies(req, res);
+});
+
+// Record (or clear) a weekly achievement: body { key, value? }.
+// @ts-ignore
+app.post('/api/users/me/weeklies', authenticateToken, async (req, res) => {
+  await weekliesController.setWeekly(req, res);
 });
 
 // Flashcards API Routes - USING NEW DAL ARCHITECTURE

@@ -34,11 +34,15 @@ Added character breakdown support for Chinese vocabulary flashcards. Each Chines
   - Fails gracefully if breakdown generation fails (doesn't break entry creation)
 
 ### 5. Backfill Script
-- **Script**: `server/scripts/backfill/chinese/backfill-breakdown.js`
-  - Processes all existing Chinese vocab entries
-  - Generates and stores breakdown for each
-  - Progress tracking and error handling
-  - Usage: `node server/scripts/backfill/chinese/backfill-breakdown.js`
+- **Script**: `server/scripts/backfill/chinese/backfill-dictionary-breakdown.js`
+  - Populates `dictionaryentries_zh.breakdown` (breakdown is a per-word fact stored
+    on the **det** table, not per-user on vet)
+  - Scope: discoverable, multi-character (`char_length(word1) > 1`) zh entries with
+    `breakdown IS NULL`; `--words=未来,摸脉` to target specific entries
+  - Run-logged via `stampEntries`; progress tracking and error handling
+  - Usage: `node server/scripts/backfill/chinese/backfill-dictionary-breakdown.js`
+  - NOTE: the old per-vet `backfill-breakdown.js` was removed after the migration-66
+    vet split / migration-73 legacy drop — this det-based script supersedes it.
 
 ## Data Flow
 
@@ -85,7 +89,7 @@ Added character breakdown support for Chinese vocabulary flashcards. Each Chines
 2. **Backfill existing entries** (optional but recommended):
    ```bash
    # Inside the app container
-   node server/scripts/backfill/chinese/backfill-breakdown.js
+   node server/scripts/backfill/chinese/backfill-dictionary-breakdown.js
    ```
 
 ### Frontend Integration (Future):

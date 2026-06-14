@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Box, CircularProgress, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
+import { Box, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
+import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import { useAuth } from "../../AuthContext";
 import { API_BASE_URL } from "../../constants";
 import { ContentArea, MoreInfoPill } from "./styled";
@@ -230,7 +231,7 @@ const FlashcardsLearnPage: React.FC = () => {
                     backgroundColor: theme.palette.flashcard.background,
                 }}
             >
-                <CircularProgress />
+                <DelayedCircularProgress />
             </Box>
         );
     }

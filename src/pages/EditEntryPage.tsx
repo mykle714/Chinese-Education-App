@@ -16,6 +16,7 @@ import {
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import SaveIcon from "@mui/icons-material/Save";
+import DelayedCircularProgress from "../components/DelayedCircularProgress";
 import { DEFAULT_TEST_USER_ID } from "../constants";
 import { usePageTitle } from "../hooks/usePageTitle";
 import type { VocabEntry } from "../types";
@@ -126,7 +127,7 @@ function EditEntryPage() {
         return (
             <Container maxWidth="lg" sx={{ py: 4 }}>
                 <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
-                    <CircularProgress />
+                    <DelayedCircularProgress />
                 </Box>
             </Container>
         );

@@ -7,7 +7,6 @@ import {
     InputAdornment,
     IconButton,
     Button,
-    CircularProgress,
     Alert,
     Pagination,
     useMediaQuery,
@@ -17,6 +16,7 @@ import {
     Snackbar,
 } from '@mui/material';
 import { Search, Clear } from '@mui/icons-material';
+import DelayedCircularProgress from '../components/DelayedCircularProgress';
 import { useAuth } from '../AuthContext';
 import { API_BASE_URL } from '../constants';
 import type { DictionaryEntry, Language } from '../types';
@@ -522,7 +522,7 @@ function DictionaryPage() {
             {/* Loading State */}
             {loading && (
                 <Box className="dictionary-page__loading-spinner" sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-                    <CircularProgress />
+                    <DelayedCircularProgress />
                 </Box>
             )}
 

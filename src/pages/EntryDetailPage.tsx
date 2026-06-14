@@ -11,11 +11,11 @@ import {
     Paper,
     Box,
     Button,
-    CircularProgress,
     Alert,
     Divider,
     Chip
 } from "@mui/material";
+import DelayedCircularProgress from "../components/DelayedCircularProgress";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
@@ -122,7 +122,7 @@ function EntryDetailPage() {
         return (
             <Container maxWidth="lg" sx={{ py: 4 }}>
                 <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
-                    <CircularProgress />
+                    <DelayedCircularProgress />
                 </Box>
             </Container>
         );

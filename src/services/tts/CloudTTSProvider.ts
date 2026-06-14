@@ -3,52 +3,72 @@ import type { TTSProvider, TTSRequest } from './types';
 
 /**
  * Server-proxied TTS. POSTs to /api/tts/synthesize, receives an MP3 blob,
- * plays via HTMLAudioElement. Server handles the Azure call + caching.
+ * decodes it with the Web Audio API and plays it through an
+ * AudioBufferSourceNode. Server handles the Azure/Google call + caching.
  *
- * Requires `entryId` on the request (server caches per dictionary entry id).
- * If entryId is missing this provider reports unavailable and the caller
- * should fall back to WebSpeech.
+ * Why Web Audio instead of an <audio> element: on iOS any <audio>/<video>
+ * element that plays is automatically registered with the system "Now Playing"
+ * center, which surfaces the rewind/play/fast-forward transport UI on the lock
+ * screen and Control Center. TTS clips are not "media" the user wants to scrub,
+ * so we route them through Web Audio, which is NOT registered as a media session
+ * and therefore shows no lock-screen controls.
+ *
+ * Trade-offs of this approach (vs. the old HTMLAudioElement path):
+ *   1. iOS silences Web Audio when the hardware ring/silent switch is OFF
+ *      (media elements play through it). This is inherent to the non-media-
+ *      session classification — accepted as part of suppressing the controls.
+ *   2. AudioBufferSourceNode.playbackRate is a *resampling* rate: it shifts
+ *      PITCH along with speed (unlike HTMLAudioElement, which preserves pitch).
+ *      For Chinese this distorts tones at rate != 1.0. The correct long-term
+ *      fix is to bake `rate` into the synthesis server-side; until then a
+ *      non-1.0 rate here pitch-shifts. At rate == 1.0 there is no distortion.
+ *
+ * Requires `entryId`/text on the request (server caches per dictionary entry).
+ * If text is missing this provider throws and the caller should fall back to
+ * WebSpeech.
  */
 export class CloudTTSProvider implements TTSProvider {
     readonly name = 'cloud' as const;
 
-    private currentAudio: HTMLAudioElement | null = null;
+    // The single session-scoped AudioContext. Created lazily (decoding needs a
+    // context, and that can happen at prefetch time before any gesture) and
+    // resumed inside the first user gesture by unlock(). One context is reused
+    // for the whole session so decoded buffers stay valid and the gesture
+    // activation we earn on iOS persists across utterances.
+    private audioCtx: AudioContext | null = null;
+    // The source node for the utterance currently playing, or null when idle.
+    // Source nodes are one-shot in Web Audio, so each speak() creates a fresh
+    // one; this handle exists only so cancel() can stop the live one.
+    private currentSource: AudioBufferSourceNode | null = null;
     // Monotonic counter incremented on every speak()/cancel(). A speak() in
     // flight captures its generation before awaiting the network fetch; when
     // the fetch resolves, if the generation no longer matches the latest, the
-    // call bails out before constructing an Audio. This closes the race where
-    // cancel() can't pause audio that hasn't been built yet.
+    // call bails out before starting playback. This closes the race where
+    // cancel() can't stop a source that hasn't been built yet.
     private generation = 0;
-    // In-session blob cache so repeated plays of the same word don't re-hit
-    // the server. Server has its own disk cache, but skipping the round-trip
-    // is still cheaper. Key: `${lang}:${text}`.
-    private blobCache = new Map<string, Promise<string>>();
+    // In-session cache of DECODED audio buffers so repeated plays of the same
+    // word don't re-hit the server or re-decode. AudioBuffers are reusable
+    // across many source nodes, so we decode once and replay cheaply. Server
+    // has its own disk cache, but skipping the round-trip is still cheaper.
+    // Key: `${lang}:${text}:${pinyin}`.
+    private bufferCache = new Map<string, Promise<AudioBuffer>>();
 
     // --- iOS / mobile autoplay unlock ---------------------------------------
-    // WebKit (and to a lesser extent mobile Chrome) blocks HTMLMediaElement.play()
-    // unless it is dispatched synchronously inside a user-gesture task. Our
-    // speak() awaits a network fetch before constructing the Audio, which loses
-    // gesture context, so on a fresh page load the first autoplay (e.g. the
-    // flashcards "first face is Chinese" effect) is silently rejected.
+    // WebKit (and to a lesser extent mobile Chrome) starts an AudioContext in
+    // the 'suspended' state and only allows it to be resumed from inside a real
+    // user-gesture task. Our speak() awaits a network fetch before playing,
+    // which loses gesture context, so without priming the first autoplay would
+    // be stuck in a suspended context (no sound, onended never fires).
     //
-    // Workaround: keep ONE long-lived HTMLAudioElement and call .play() on it
-    // (muted, with a tiny silent src) the first time the user touches the page.
-    // That call is in-gesture so iOS allows it, and the element is then marked
-    // as user-activated for the rest of the session. Subsequent programmatic
-    // play() calls on the same element — even from timers / fetch callbacks —
-    // are allowed, because the activation lives on the element, not the call
-    // stack. Per-utterance audio is swapped in via `src =` rather than
-    // `new Audio()` so it inherits the unlocked element's activation.
-    private audioEl: HTMLAudioElement | null = null;
+    // Workaround: on the first user gesture, resume() the shared context (and
+    // play a 1-sample silent buffer as a belt-and-suspenders activation). Once
+    // resumed the context stays running for the session, so later programmatic
+    // playback — even from timers / fetch callbacks — produces sound, because
+    // the activation lives on the context, not the call stack.
     private unlockListenerInstalled = false;
-    // Flipped true once the silent in-gesture play() resolves, marking the
-    // shared element as user-activated. Guards unlock() so we don't re-run the
-    // silent play (and its element-resetting cleanup) on every gesture.
+    // Flipped true once the context has been resumed inside a gesture. Guards
+    // unlock() so we don't re-run the resume/silent-buffer work on every gesture.
     private audioUnlocked = false;
-    // 1-frame silent MP3 (≈ 70 bytes) used to satisfy the gesture-bound play()
-    // call without making any sound.
-    private static SILENT_MP3 =
-        'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQxAADB8AhSmxhIIEVCSiJrDCQBTcu3UrAIwUdkRgQbFAZC1CQEwTJ9mjRvBA4UOLD8nKVOWfh+UlK3z/177OXrfP/X9o3/+vXP///0eMpAGoEAGgIQQwQAAFAAAAQADAaqsXQAYWAUgxAYcQEEoYDQSCh4iQUEEhYg6JCAQQEoIASBQiAh4kEEEBYgwQQEcQAQQQECQQECAgQECAgQEDgIDhAYIDBAQICA4QGCAwQECDgIDhAcICBAQICBAQICBAQICAgQEDg=';
 
     private getToken(): string | null {
         if (typeof window === 'undefined') return null;
@@ -63,17 +83,29 @@ export class CloudTTSProvider implements TTSProvider {
     }
 
     /**
-     * Install a one-shot global gesture listener that primes our shared
-     * <audio> element so future programmatic play() calls are allowed by iOS.
-     * Idempotent and cheap — safe to call from any speak()/prefetch() entry
-     * point. See the audioEl/unlocked block above for the full rationale.
+     * Lazily create the session AudioContext. Safe to call before any gesture:
+     * the context starts 'suspended' (decoding still works in that state), and
+     * unlock() resumes it later. Returns null if Web Audio is unavailable.
+     */
+    private ensureContext(): AudioContext | null {
+        if (typeof window === 'undefined') return null;
+        if (this.audioCtx) return this.audioCtx;
+        const Ctor: typeof AudioContext | undefined =
+            window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+        if (!Ctor) return null;
+        this.audioCtx = new Ctor();
+        return this.audioCtx;
+    }
+
+    /**
+     * Install a one-shot global gesture listener that resumes our shared
+     * AudioContext so later programmatic playback is allowed by iOS. Idempotent
+     * and cheap — safe to call from any speak()/prefetch() entry point.
      */
     private ensureUnlockListener(): void {
         if (typeof window === 'undefined') return;
         if (this.unlockListenerInstalled) return;
         this.unlockListenerInstalled = true;
-
-        if (!this.audioEl) this.audioEl = new Audio();
 
         // pointerdown fires earliest across mouse + touch + pen. `capture: true`
         // ensures we see the gesture even if a child handler stops propagation.
@@ -81,64 +113,47 @@ export class CloudTTSProvider implements TTSProvider {
     }
 
     /**
-     * Prime the shared <audio> element for autoplay by playing a muted silent
-     * clip. MUST be called synchronously inside a real user-gesture task (e.g. a
-     * button click or pointerdown handler) — there must be no `await` between the
-     * gesture and this call. Earns the per-element activation flag so a later
-     * speak() can call play() after its awaited fetch without being rejected by
-     * mobile autoplay policy.
+     * Prime the shared AudioContext for autoplay by resuming it inside a real
+     * user-gesture task (e.g. a button click or pointerdown handler). MUST be
+     * called synchronously from the gesture — there must be no `await` between
+     * the gesture and this call. Earns the context activation so a later speak()
+     * can play after its awaited fetch without being stuck in a suspended
+     * context.
      *
-     * Idempotent: no-ops once already unlocked. Skipped while a real utterance is
-     * playing so the silent clip's cleanup can't clobber live audio. Safe to call
-     * outside a gesture too — it's best-effort and swallows failures.
+     * Idempotent: no-ops once already unlocked. Safe to call outside a gesture
+     * too — it's best-effort and swallows failures.
      *
      * Callers that begin playback only after a fetch (e.g. a game's first
      * bubble-drag autoplay) should call this from an earlier guaranteed gesture
-     * such as a start/level button so the element is unlocked before that fetch.
+     * such as a start/level button so the context is resumed before that fetch.
      */
     unlock(): void {
         if (typeof window === 'undefined') return;
         if (this.audioUnlocked) return;
-        // A real utterance is mid-flight; the silent clip's cleanup below would
-        // pause it and strip its src. The active play already proves activation.
-        if (this.currentAudio) return;
 
-        if (!this.audioEl) this.audioEl = new Audio();
-        const el = this.audioEl;
+        const ctx = this.ensureContext();
+        if (!ctx) return;
 
-        // Must run synchronously inside the gesture task — no awaits before
-        // play(). Muted + silent src so the user hears nothing.
         try {
-            el.muted = true;
-            el.src = CloudTTSProvider.SILENT_MP3;
-            const p = el.play();
+            // resume() must be called synchronously inside the gesture task.
+            // It returns a promise; on resolve the context is 'running'.
+            const p = ctx.resume();
             if (p && typeof p.then === 'function') {
-                p.then(() => {
-                    this.audioUnlocked = true;
-                }).catch(() => {
-                    // Even on rejection iOS may still have flagged the element
-                    // as activated; leave audioUnlocked false so a later gesture
-                    // can retry.
-                }).finally(() => {
-                    // CRITICAL: a real speak() can take over this shared element
-                    // while our silent clip is still in flight (e.g. the very
-                    // first bubble grab fires unlock() AND speak() on the same
-                    // pointerdown). speak() swaps in its own src + sets
-                    // currentAudio; if we tore down here we'd pause and strip
-                    // that live narration. Only clean up the silent clip when no
-                    // real utterance owns the element.
-                    if (this.currentAudio) {
-                        el.muted = false;
-                        return;
-                    }
-                    el.pause();
-                    el.muted = false;
-                    el.removeAttribute('src');
-                    el.load();
+                p.then(() => { this.audioUnlocked = true; }).catch(() => {
+                    // Leave audioUnlocked false so a later gesture can retry.
                 });
             } else {
                 this.audioUnlocked = true;
             }
+
+            // Belt-and-suspenders: play a 1-sample silent buffer in-gesture.
+            // Some WebKit builds need an actually-started source (not just
+            // resume()) to fully unlock. Inaudible and self-cleaning.
+            const buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+            const src = ctx.createBufferSource();
+            src.buffer = buffer;
+            src.connect(ctx.destination);
+            src.start(0);
         } catch {
             // ignore — gesture activation is best-effort
         }
@@ -148,8 +163,8 @@ export class CloudTTSProvider implements TTSProvider {
         if (!req.text) throw new Error('CloudTTSProvider requires text');
 
         // Arm the gesture-unlock listener on first call so the next user tap
-        // anywhere on the page primes our shared <audio> element. No-op after
-        // the first install or once already unlocked.
+        // anywhere on the page resumes our shared AudioContext. No-op after the
+        // first install or once already unlocked.
         this.ensureUnlockListener();
 
         // Stop any in-flight playback first. cancel() also bumps `generation`,
@@ -158,46 +173,52 @@ export class CloudTTSProvider implements TTSProvider {
         this.cancel();
         const myGeneration = ++this.generation;
 
-        const url = await this.getOrFetchAudioUrl(req.text, req.lang, req.pronunciation);
+        const buffer = await this.getOrFetchBuffer(req.text, req.lang, req.pronunciation);
 
-        // Superseded by a newer speak() or a cancel() while the fetch was in
-        // flight — drop this call on the floor.
+        // Superseded by a newer speak() or a cancel() while the fetch/decode was
+        // in flight — drop this call on the floor.
         if (myGeneration !== this.generation) return;
 
-        // Reuse the shared element instead of `new Audio(url)`. iOS autoplay
-        // activation is per-element, so a fresh Audio() would lose the unlock
-        // we earned during the first user gesture. Swapping src on the unlocked
-        // element keeps the activation flag and lets programmatic play() (after
-        // our awaited fetch) succeed.
-        if (!this.audioEl) this.audioEl = new Audio();
-        const audio = this.audioEl;
-        audio.src = url;
-        audio.playbackRate = req.rate ?? 1.0;
-        audio.muted = false;
-        this.currentAudio = audio;
+        const ctx = this.ensureContext();
+        if (!ctx) return;
+
+        // Best-effort resume in case the gesture-unlock hasn't fired yet (e.g.
+        // an autoplay before the user has tapped). If the context still isn't
+        // running we resolve with no audio rather than scheduling a source into
+        // a suspended context (whose onended would never fire and hang us).
+        if (ctx.state !== 'running') {
+            ctx.resume().catch(() => { });
+            // resume() may flip state synchronously; re-read via a widened type
+            // because TS has narrowed ctx.state to non-'running' in this branch.
+            if ((ctx.state as AudioContextState) !== 'running') return;
+        }
+
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        // NOTE: playbackRate here resamples and therefore shifts pitch — see the
+        // class doc trade-off. Fine at 1.0; distorts tones otherwise.
+        source.playbackRate.value = req.rate ?? 1.0;
+        source.connect(ctx.destination);
+        this.currentSource = source;
 
         return new Promise<void>((resolve) => {
             const cleanup = () => {
-                audio.onended = null;
-                audio.onerror = null;
-                if (this.currentAudio === audio) this.currentAudio = null;
+                source.onended = null;
+                if (this.currentSource === source) this.currentSource = null;
             };
-            audio.onended = () => {
+            // Fires both on natural end and when cancel() calls source.stop().
+            source.onended = () => {
                 cleanup();
                 resolve();
             };
-            audio.onerror = () => {
+            try {
+                source.start(0);
+            } catch {
+                // start() can throw if the node is in a bad state — resolve so
+                // the caller isn't left hanging.
                 cleanup();
                 resolve();
-            };
-            // play() returns a promise that may reject on autoplay-policy blocks.
-            // Once the element is gesture-unlocked this branch should not fire
-            // on iOS; before unlock (very first card before any tap) the play
-            // is silently dropped and the caller resolves with no audio.
-            audio.play().catch(() => {
-                cleanup();
-                resolve();
-            });
+            }
         });
     }
 
@@ -205,48 +226,55 @@ export class CloudTTSProvider implements TTSProvider {
         // Bump the generation so any in-flight speak() awaiting its fetch
         // will see the mismatch when it resumes and skip playback.
         this.generation++;
-        if (this.currentAudio) {
-            this.currentAudio.pause();
-            this.currentAudio.currentTime = 0;
-            // Don't null out audioEl itself — its iOS gesture-unlock activation
-            // is a one-shot per element and must survive across utterances.
-            this.currentAudio = null;
+        if (this.currentSource) {
+            try {
+                // stop() fires onended on the source, which resolves the live
+                // speak()'s promise via its handler. Guard against double-stop
+                // throwing on an already-finished node.
+                this.currentSource.stop();
+            } catch {
+                // already stopped / ended
+            }
+            this.currentSource = null;
         }
     }
 
     /**
-     * Fire-and-forget: warm the in-session blob cache for (text, lang) so a
-     * later `speak()` call resolves synchronously without a network round-trip.
-     * Errors are swallowed (and the entry evicted) so failures here never
-     * surface — the next real `speak()` will simply re-fetch or fall back.
+     * Fire-and-forget: warm the in-session buffer cache for (text, lang) so a
+     * later `speak()` call resolves synchronously without a network round-trip
+     * or decode. Errors are swallowed (and the entry evicted) so failures here
+     * never surface — the next real `speak()` will simply re-fetch or fall back.
      *
      * Server-side cache is pre-warmed by the working-loop / mark endpoints
      * before the response reaches us, so this fetch is the cheap follow-up
-     * that pulls bytes across the wire into the browser.
+     * that pulls bytes across the wire and decodes them.
      */
     prefetch(text: string, lang: string, pronunciation?: string | null): void {
         if (!text) return;
         // Arm the gesture-unlock listener as early as possible — prefetch fires
         // during deck load, well before the first speak(), giving the user's
-        // very first tap a chance to unlock the shared <audio> element.
+        // very first tap a chance to resume the shared AudioContext.
         this.ensureUnlockListener();
         // Reuse the same get-or-fetch path so the cache key matches speak()'s.
-        this.getOrFetchAudioUrl(text, lang, pronunciation).catch(() => {
-            // already evicted by getOrFetchAudioUrl's promise.catch
+        this.getOrFetchBuffer(text, lang, pronunciation).catch(() => {
+            // already evicted by getOrFetchBuffer's promise.catch
         });
     }
 
-    private getOrFetchAudioUrl(text: string, lang: string, pronunciation?: string | null): Promise<string> {
+    private getOrFetchBuffer(text: string, lang: string, pronunciation?: string | null): Promise<AudioBuffer> {
         // Server expects short language code (e.g. 'zh'); strip BCP-47 region.
         const shortLang = lang.split('-')[0];
         // Normalize pinyin so prefetch and speak land on the same cache slot
         // regardless of whitespace or null vs undefined.
         const normalizedPinyin = (pronunciation || '').trim();
         const key = `${shortLang}:${text}:${normalizedPinyin}`;
-        const cached = this.blobCache.get(key);
+        const cached = this.bufferCache.get(key);
         if (cached) return cached;
 
-        const promise = (async (): Promise<string> => {
+        const promise = (async (): Promise<AudioBuffer> => {
+            const ctx = this.ensureContext();
+            if (!ctx) throw new Error('Web Audio unavailable');
+
             const token = this.getToken();
             const res = await fetch(`${API_BASE_URL}/api/tts/synthesize`, {
                 method: 'POST',
@@ -266,13 +294,27 @@ export class CloudTTSProvider implements TTSProvider {
             if (!res.ok) {
                 throw new Error(`TTS server error: ${res.status}`);
             }
-            const blob = await res.blob();
-            return URL.createObjectURL(blob);
+            const arrayBuffer = await res.arrayBuffer();
+            return await this.decode(ctx, arrayBuffer);
         })();
 
         // On failure, drop the cache entry so the next call can retry.
-        promise.catch(() => this.blobCache.delete(key));
-        this.blobCache.set(key, promise);
+        promise.catch(() => this.bufferCache.delete(key));
+        this.bufferCache.set(key, promise);
         return promise;
+    }
+
+    /**
+     * Decode compressed audio bytes to an AudioBuffer. Wraps decodeAudioData to
+     * support both the modern promise form and the legacy callback form (older
+     * Safari/WebKit only implements the callback signature).
+     */
+    private decode(ctx: AudioContext, data: ArrayBuffer): Promise<AudioBuffer> {
+        return new Promise<AudioBuffer>((resolve, reject) => {
+            const maybePromise = ctx.decodeAudioData(data, resolve, reject);
+            if (maybePromise && typeof maybePromise.then === 'function') {
+                maybePromise.then(resolve, reject);
+            }
+        });
     }
 }

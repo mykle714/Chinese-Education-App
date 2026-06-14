@@ -17,6 +17,7 @@ import {
     Snackbar,
 } from "@mui/material";
 import { Visibility, VisibilityOff, Warning, ContentCopy } from "@mui/icons-material";
+import DelayedCircularProgress from "../components/DelayedCircularProgress";
 import { styled } from "@mui/material/styles";
 import MobileDemoHeader from "../components/MobileDemoHeader";
 import MobileFooter from "../components/MobileFooter";
@@ -203,7 +204,7 @@ function AccountPage() {
             <>
                 <MobileDemoHeader title="Account" activePage="account" />
                 <ContentArea className="account-page__content">
-                    <CircularProgress className="account-page__spinner" />
+                    <DelayedCircularProgress className="account-page__spinner" />
                 </ContentArea>
                 <MobileFooter activePage="account" />
             </>

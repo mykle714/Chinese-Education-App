@@ -24,6 +24,8 @@ import { GameAssetDAL } from './implementations/GameAssetDAL.js';
 import { GameProgressDAL } from './implementations/GameProgressDAL.js';
 import { Icons8DAL } from './implementations/Icons8DAL.js';
 import { Icons8Controller } from '../controllers/Icons8Controller.js';
+import { WeekliesDAL } from './implementations/WeekliesDAL.js';
+import { WeekliesController } from '../controllers/WeekliesController.js';
 import { GameAssetService } from '../services/GameAssetService.js';
 import { GameProgressService } from '../services/GameProgressService.js';
 import { GamesController } from '../controllers/GamesController.js';
@@ -37,6 +39,7 @@ const nightMarketDAL = new NightMarketDAL();
 const gameAssetDAL = new GameAssetDAL();
 const gameProgressDAL = new GameProgressDAL();
 const icons8DAL = new Icons8DAL();
+const weekliesDAL = new WeekliesDAL();
 
 // Service instances (with DI)
 const userService = new UserService(userDAL);
@@ -62,6 +65,8 @@ const nightMarketController = new NightMarketController(nightMarketService);
 const gamesController = new GamesController(gameAssetService, gameProgressService);
 // icons8 image serving is a thin DB read → no service layer; the controller takes the DAL directly.
 const icons8Controller = new Icons8Controller(icons8DAL);
+// weeklies is a thin per-user flag bag → no service layer; controller takes the DAL directly.
+const weekliesController = new WeekliesController(weekliesDAL);
 
 export {
   userDAL,
@@ -92,4 +97,6 @@ export {
   gamesController,
   icons8DAL,
   icons8Controller,
+  weekliesDAL,
+  weekliesController,
 };

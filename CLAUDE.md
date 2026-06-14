@@ -170,6 +170,9 @@ An hourly Postgres cron on the prod server (a) breaks stale streaks (mirroring `
 ### Games
 → See [docs/GAMES_FEATURE.md](./docs/GAMES_FEATURE.md)
 
+### Client Performance Diagnostics
+→ See [docs/CLIENT_PERF_DIAGNOSTICS.md](./docs/CLIENT_PERF_DIAGNOSTICS.md) — real-user tap-latency telemetry (Event Timing / long tasks) for the prod-only footer/decks lag; sink at `POST /api/diagnostics/perf`, analyze with `server/scripts/analyze-client-perf.ts`
+
 ## 🔧 Troubleshooting
 
 → See [docs/troubleshooting/DOCKER_STARTUP_ISSUES.md](./docs/troubleshooting/DOCKER_STARTUP_ISSUES.md) — port conflicts, zombie processes, compose project name conflicts, network issues, password mismatches

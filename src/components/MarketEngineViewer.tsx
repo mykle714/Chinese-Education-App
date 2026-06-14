@@ -2,7 +2,8 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Application, extend, useTick, useApplication } from '@pixi/react';
 import { Container, Sprite, Graphics, Text, Assets, Texture, Rectangle } from 'pixi.js';
 import type { FederatedPointerEvent } from 'pixi.js';
-import { Box, CircularProgress, Alert } from '@mui/material';
+import { Box, Alert } from '@mui/material';
+import DelayedCircularProgress from './DelayedCircularProgress';
 import { TILE_SIZE, type FrameAnimation, type MotionSpec } from '../config/nightMarketRegistry';
 import { evaluateMotion } from '../utils/nightMarketMotion';
 import {
@@ -1083,7 +1084,7 @@ function MarketEngineViewer({ layers, onLayerTap, pedestrians, showGrid, debug =
     >
       {!textures && (
         <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-          <CircularProgress className="market-engine-loading-spinner" />
+          <DelayedCircularProgress className="market-engine-loading-spinner" />
         </Box>
       )}
 

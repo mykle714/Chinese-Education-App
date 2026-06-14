@@ -1,4 +1,5 @@
-import { Box, Card, CardContent, Typography, CircularProgress, Alert, Chip, Avatar } from "@mui/material";
+import { Box, Card, CardContent, Typography, Alert, Chip, Avatar } from "@mui/material";
+import DelayedCircularProgress from "./DelayedCircularProgress";
 import { useLeaderboard } from "../hooks/useLeaderboard";
 import { SIZE , WEIGHT} from "../theme/scale";
 
@@ -13,7 +14,7 @@ function LeaderboardPlaceholder() {
                 height: 'fit-content'
             }}>
                 <CardContent sx={{ py: 4, textAlign: 'center' }}>
-                    <CircularProgress sx={{ color: 'white', mb: 2 }} />
+                    <DelayedCircularProgress sx={{ color: 'white', mb: 2 }} />
                     <Typography variant="body1">Loading leaderboard...</Typography>
                 </CardContent>
             </Card>

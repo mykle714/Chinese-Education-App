@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { WEIGHT } from '../theme/scale';
+import DelayedCircularProgress from "../components/DelayedCircularProgress";
 import {
     Container,
     Typography,
@@ -147,7 +148,7 @@ function ProfilePage() {
     if (isLoading) {
         return (
             <Container maxWidth="lg" sx={{ py: 4, display: 'flex', justifyContent: 'center' }}>
-                <CircularProgress />
+                <DelayedCircularProgress />
             </Container>
         );
     }

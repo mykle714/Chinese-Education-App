@@ -7,11 +7,11 @@ import {
   Card,
   CardContent,
   Typography,
-  CircularProgress,
   Alert,
   CardActionArea,
   Divider
 } from '@mui/material';
+import DelayedCircularProgress from './components/DelayedCircularProgress';
 import { API_BASE_URL, VOCAB_SEARCH_CONFIG } from './constants';
 import type { VocabEntry } from './types';
 
@@ -161,7 +161,7 @@ const VocabEntryCards = ({ refreshTrigger, searchTerm = '' }: VocabEntryCardsPro
 
   if (loading && entries.length === 0) return (
     <Box className="vocab-entries-loading-initial" display="flex" justifyContent="center" alignItems="center" minHeight="200px">
-      <CircularProgress />
+      <DelayedCircularProgress />
     </Box>
   );
 
@@ -240,7 +240,7 @@ const VocabEntryCards = ({ refreshTrigger, searchTerm = '' }: VocabEntryCardsPro
 
       {loading && entries.length > 0 && !searchTerm && (
         <Box className="vocab-entries-loading-more" gridColumn="1/-1" display="flex" justifyContent="center" p={2}>
-          <CircularProgress size={30} />
+          <DelayedCircularProgress size={30} />
         </Box>
       )}
     </Box>

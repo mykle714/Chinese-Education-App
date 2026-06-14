@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Application, extend, useApplication, useTick } from "@pixi/react";
 import { Assets, Container, Graphics, Sprite, Text, Texture } from "pixi.js";
 import type { Application as PixiApplication } from "pixi.js";
-import { Box, CircularProgress, Alert } from "@mui/material";
+import { Box, Alert } from "@mui/material";
+import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import { API_BASE_URL } from "../../constants";
 import type { GameAsset } from "../types";
 
@@ -154,7 +155,7 @@ function GameStage({ assets, onReady, onTick, children, background = "#FAFAFB" }
                     justifyContent: "center",
                 }}
             >
-                <CircularProgress />
+                <DelayedCircularProgress />
             </Box>
         );
     }

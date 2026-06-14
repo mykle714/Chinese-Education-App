@@ -71,6 +71,13 @@ const Bubble: React.FC<BubbleProps> = ({
     const { id, kind, entry, radius, targetRadius } = body;
     const isWord = kind === "word";
     const dimmed = status === "held" || status === "hovered";
+    // Only promote a bubble to its own compositor layer while it's actually
+    // moving (being dragged, the drop-target growing, or inflating in). A
+    // permanent `willChange: transform` on all ~40 bubbles keeps 40 GPU layers
+    // alive at once, which thrashes the mobile compositor and shows up as input
+    // lag (taps/drags register a beat late). Idle bubbles don't animate, so they
+    // get `auto` and stay off their own layer.
+    const animating = status === "held" || status === "hovered" || status === "growing";
 
     let bg: string;
     let border: string;
@@ -113,7 +120,7 @@ const Bubble: React.FC<BubbleProps> = ({
                 // node is laid out at full size, so growth shows as a scale and the
                 // translate offset is by targetRadius (see writeTransform).
                 transform: `translate(${body.x - targetRadius}px, ${body.y - targetRadius}px) scale(${(targetRadius > 0 ? radius / targetRadius : 1) * body.scale})`,
-                willChange: "transform",
+                willChange: animating ? "transform" : "auto",
                 touchAction: "none", // pointer events drive dragging, not scrolling
                 cursor: studyMode ? "pointer" : "grab",
                 zIndex: status === "held" ? 30 : status === "hovered" ? 20 : status === "revealed" ? 15 : 10,

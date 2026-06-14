@@ -1,4 +1,5 @@
-import { Box, Card, CardContent, Typography, CircularProgress } from "@mui/material";
+import { Box, Card, CardContent, Typography } from "@mui/material";
+import DelayedCircularProgress from "./DelayedCircularProgress";
 import { useCalendarMinutePoints, type CalendarDayData } from "../hooks/useCalendarMinutePoints";
 import { SIZE , WEIGHT} from "../theme/scale";
 
@@ -160,7 +161,7 @@ function MonthlyCalendar() {
                     <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 0.5 }}>
                         {isLoading ? (
                             <Box sx={{ gridColumn: 'span 7', display: 'flex', justifyContent: 'center', py: 4 }}>
-                                <CircularProgress size={24} sx={{ color: 'white' }} />
+                                <DelayedCircularProgress size={24} sx={{ color: 'white' }} />
                             </Box>
                         ) : (
                             calendarDisplay.map((dayData, index) => (

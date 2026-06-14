@@ -20,6 +20,7 @@ import NightMarketEnginePage from "./pages/NightMarketEnginePage";
 import DictionaryPage from "./pages/DictionaryPage";
 import SortCardsPage from "./pages/SortCardsPage";
 import VocabCardDetailPage from "./pages/VocabCardDetailPage";
+import MasteredCardsPage from "./pages/MasteredCardsPage";
 import { Suspense, createElement } from "react";
 import GamesPage from "./pages/GamesPage";
 import { GAME_REGISTRY } from "./games/registry";
@@ -75,6 +76,11 @@ function App() {
                 <Route path="/flashcards/decks" element={
                   <ProtectedRoute allowPublic>
                     <FlashcardsDecksPage />
+                  </ProtectedRoute>
+                } />
+                <Route path="/flashcards/mastered" element={
+                  <ProtectedRoute allowPublic>
+                    <MasteredCardsPage />
                   </ProtectedRoute>
                 } />
                 <Route path="/reader" element={

@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Box, Typography, Alert, Button, Snackbar } from "@mui/material";
-import DelayedCircularProgress from "../components/DelayedCircularProgress";
+import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import { styled } from "@mui/material/styles";
 import MobileDemoHeader from "../components/MobileDemoHeader";
 import MobileFooter from "../components/MobileFooter";
-import MiniVocabCard from "../components/MiniVocabCard";
+import MiniVocabCardGrid from "../components/MiniVocabCardGrid";
 import { useAuth } from "../AuthContext";
 import { API_BASE_URL } from "../constants";
 import type { VocabEntry } from "../types";
@@ -20,15 +20,6 @@ import { SIZE, WEIGHT } from "../theme/scale";
 // /flashcards/learn page is worth opening. Below this, we nudge them to Discover
 // instead of letting them land on a near-empty study session.
 const MIN_LIBRARY_CARDS = 20;
-
-// Per-card delay (ms) for the staggered pop-in cascade, and the cap on how many
-// cards get a growing delay. Without a cap, a large deck (hundreds of cards on
-// real accounts) would stretch the cascade to 10s+ of continuously-firing
-// animations, pinning the main thread and swallowing the first taps. Capping the
-// index keeps the whole cascade under ~CARD_STAGGER_MAX × CARD_STAGGER_STEP ms.
-const CARD_STAGGER_STEP = 50;
-const CARD_STAGGER_MAX = 12;
-const cardStaggerDelayMs = (index: number) => Math.min(index, CARD_STAGGER_MAX) * CARD_STAGGER_STEP;
 
 // Styled Components — phone-frame sizing comes from MobileDemoFrame via Layout.tsx
 const ContentArea = styled(Box)(() => ({
@@ -106,15 +97,20 @@ const LineSeparator = styled(Box)(() => ({
     margin: "0 auto",
 }));
 
-const CardsPreviewContainer = styled(Box)(() => ({
-    // 3 cards × 92px + 2 gaps × 16px + 2 sides × 28px padding = 364px
-    width: 364,
-    margin: "0 auto",
+// Full-width tappable row that replaces the old inline Mastered preview: it links
+// to the dedicated /flashcards/mastered page (mastered decks can be large, so they
+// live on their own page rather than rendering hundreds of cards inline here).
+const MasteredLinkRow = styled(Box)(() => ({
+    width: "100%",
     display: "flex",
-    flexWrap: "wrap",
-    gap: 16,
-    padding: 28,
-    justifyContent: "flex-start",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "18px 28px",
+    cursor: "pointer",
+    transition: "background-color 0.15s ease-in-out",
+    "&:hover": {
+        backgroundColor: COLORS.header,
+    },
 }));
 
 // Main Component
@@ -130,9 +126,8 @@ const FlashcardsDecksPage: React.FC = () => {
     const [learnLaterEntries, setLearnLaterEntries] = useState<VocabEntry[]>([]);
     const [learnLaterLoading, setLearnLaterLoading] = useState(true);
     const [learnLaterError, setLearnLaterError] = useState<string | null>(null);
-    const [masteredEntries, setMasteredEntries] = useState<VocabEntry[]>([]);
-    const [masteredLoading, setMasteredLoading] = useState(true);
-    const [masteredError, setMasteredError] = useState<string | null>(null);
+    // Mastered cards now live on their own page (/flashcards/mastered); this page
+    // only needs the count for the link row, which comes from categoryCounts.
     // Per-category library card counts, used to gate study navigation. We only
     // enforce the MIN_LIBRARY_CARDS gate once counts have loaded (fail open before
     // then, so a slow fetch never blocks a user who has plenty of cards).
@@ -204,37 +199,6 @@ const FlashcardsDecksPage: React.FC = () => {
         }
     }, [token]);
 
-    // Fetch mastered library cards from OnDeck vocab sets
-    useEffect(() => {
-        const fetchMasteredCards = async () => {
-            try {
-                setMasteredLoading(true);
-                setMasteredError(null);
-
-                const response = await fetch(`${API_BASE_URL}/api/onDeck/mastered-library-cards`, {
-                    credentials: 'include',
-                    headers: { 'Authorization': `Bearer ${token}` },
-                });
-
-                if (!response.ok) {
-                    throw new Error('Failed to fetch mastered cards');
-                }
-
-                const data = await response.json();
-                setMasteredEntries(Array.isArray(data) ? data : []);
-            } catch (err: unknown) {
-                console.error('Error fetching mastered cards:', err);
-                setMasteredError(err instanceof Error ? err.message : 'Failed to load mastered cards');
-            } finally {
-                setMasteredLoading(false);
-            }
-        };
-
-        if (token) {
-            fetchMasteredCards();
-        }
-    }, [token]);
-
     // Refresh card lists when navigating back from CDP after an action
     useEffect(() => {
         if (location.state?.refresh) {
@@ -242,11 +206,11 @@ const FlashcardsDecksPage: React.FC = () => {
         }
     }, [location.state?.refresh]);
 
-    // All three card previews (Learn Now / Learn Later / Mastered) load from
-    // separate endpoints. We hold every section behind this single flag so the
-    // staggered pop-in cascades all fire together once everything is ready, rather
-    // than section-by-section as each individual request resolves.
-    const allCardsLoaded = !loading && !learnLaterLoading && !masteredLoading;
+    // Both card previews (Learn Now / Learn Later) load from separate endpoints.
+    // We hold both sections behind this single flag so the staggered pop-in
+    // cascades fire together once everything is ready, rather than section-by-
+    // section as each individual request resolves.
+    const allCardsLoaded = !loading && !learnLaterLoading;
 
     // Total cards the user has sorted into their library, across every bucket.
     const totalLibraryCards = Object.values(categoryCounts).reduce((sum, n) => sum + n, 0);
@@ -287,7 +251,7 @@ const FlashcardsDecksPage: React.FC = () => {
         navigate('/flashcards/learn?mode=hard');
     };
 
-    // Stable card-tap handler shared by all three previews. Defined once (not an
+    // Stable card-tap handler shared by both previews. Defined once (not an
     // inline arrow per card) so the memoized MiniVocabCards don't all re-render
     // whenever this page re-renders (e.g. a snackbar toggling).
     const handleCardClick = useCallback(
@@ -295,7 +259,7 @@ const FlashcardsDecksPage: React.FC = () => {
         [navigate]
     );
 
-    // Refetch all card lists
+    // Refetch both card lists
     const refetchCards = async () => {
         // Refetch non-mastered library cards
         try {
@@ -329,23 +293,6 @@ const FlashcardsDecksPage: React.FC = () => {
             console.error('Error refetching learn later cards:', err);
         } finally {
             setLearnLaterLoading(false);
-        }
-
-        // Refetch mastered cards
-        try {
-            setMasteredLoading(true);
-            const response = await fetch(`${API_BASE_URL}/api/onDeck/mastered-library-cards`, {
-                credentials: 'include',
-                headers: { 'Authorization': `Bearer ${token}` },
-            });
-            if (response.ok) {
-                const data = await response.json();
-                setMasteredEntries(Array.isArray(data) ? data : []);
-            }
-        } catch (err) {
-            console.error('Error refetching mastered cards:', err);
-        } finally {
-            setMasteredLoading(false);
         }
     };
 
@@ -400,36 +347,15 @@ const FlashcardsDecksPage: React.FC = () => {
                     </Box>
 
                     {/* Vocabulary Cards Preview */}
-                    <CardsPreviewContainer className="decks-cards-preview">
-                        {!allCardsLoaded ? (
-                            // Loading state — gated on all sections so the cascades sync.
-                            <Box className="flashcards-decks__library-loading" sx={{ display: 'flex', justifyContent: 'center', width: '100%', py: 4 }}>
-                                <DelayedCircularProgress className="flashcards-decks__library-spinner" />
-                            </Box>
-                        ) : error ? (
-                            // Error state
-                            <Box className="flashcards-decks__library-error" sx={{ width: '100%', px: 2 }}>
-                                <Alert className="flashcards-decks__library-error-alert" severity="error">{error}</Alert>
-                            </Box>
-                        ) : vocabEntries.length === 0 ? (
-                            // Empty state
-                            <Box className="flashcards-decks__library-empty" sx={{ width: '100%', px: 2 }}>
-                                <Alert className="flashcards-decks__library-empty-alert" severity="info">
-                                    Please go to the Discover tab to select cards you would like to learn
-                                </Alert>
-                            </Box>
-                        ) : (
-                            // Display vocabulary cards — staggered pop-in on load.
-                            vocabEntries.map((entry, index) => (
-                                <MiniVocabCard
-                                    key={entry.id}
-                                    entry={entry}
-                                    onClick={handleCardClick}
-                                    animationDelayMs={cardStaggerDelayMs(index)}
-                                />
-                            ))
-                        )}
-                    </CardsPreviewContainer>
+                    <MiniVocabCardGrid
+                        containerClassName="decks-cards-preview"
+                        classPrefix="flashcards-decks__library"
+                        loading={!allCardsLoaded}
+                        error={error}
+                        entries={vocabEntries}
+                        emptyMessage="Please go to the Discover tab to select cards you would like to learn"
+                        onCardClick={handleCardClick}
+                    />
 
                     {/* Line Separator */}
                     <LineSeparator className="decks-line-separator" sx={{ mt: 2 }} />
@@ -450,44 +376,27 @@ const FlashcardsDecksPage: React.FC = () => {
                     </Box>
 
                     {/* Learn Later Cards Preview */}
-                    <CardsPreviewContainer className="decks-learn-later-preview">
-                        {!allCardsLoaded ? (
-                            // Loading state — gated on all sections so the cascades sync.
-                            <Box className="flashcards-decks__learn-later-loading" sx={{ display: 'flex', justifyContent: 'center', width: '100%', py: 4 }}>
-                                <DelayedCircularProgress className="flashcards-decks__learn-later-spinner" />
-                            </Box>
-                        ) : learnLaterError ? (
-                            // Error state
-                            <Box className="flashcards-decks__learn-later-error" sx={{ width: '100%', px: 2 }}>
-                                <Alert className="flashcards-decks__learn-later-error-alert" severity="error">{learnLaterError}</Alert>
-                            </Box>
-                        ) : learnLaterEntries.length === 0 ? (
-                            // Empty state
-                            <Box className="flashcards-decks__learn-later-empty" sx={{ width: '100%', px: 2 }}>
-                                <Alert className="flashcards-decks__learn-later-empty-alert" severity="info">
-                                    No learn later cards yet. Add cards from the Discover page to see them here!
-                                </Alert>
-                            </Box>
-                        ) : (
-                            // Display learn later cards — staggered pop-in on load.
-                            learnLaterEntries.map((entry, index) => (
-                                <MiniVocabCard
-                                    key={entry.id}
-                                    entry={entry}
-                                    onClick={handleCardClick}
-                                    animationDelayMs={cardStaggerDelayMs(index)}
-                                />
-                            ))
-                        )}
-                    </CardsPreviewContainer>
+                    <MiniVocabCardGrid
+                        containerClassName="decks-learn-later-preview"
+                        classPrefix="flashcards-decks__learn-later"
+                        loading={!allCardsLoaded}
+                        error={learnLaterError}
+                        entries={learnLaterEntries}
+                        emptyMessage="No learn later cards yet. Add cards from the Discover page to see them here!"
+                        onCardClick={handleCardClick}
+                    />
 
                     {/* Line Separator */}
                     <LineSeparator className="decks-line-separator" sx={{ mt: 2 }} />
 
-                    {/* Mastered Cards Section */}
-                    <Box className="flashcards-decks__mastered-header" sx={{ width: '100%', px: 3.5, pt: 2, pb: 1 }}>
+                    {/* Mastered Cards link — the full list lives on its own page so a
+                        large mastered deck never renders hundreds of cards inline. */}
+                    <MasteredLinkRow
+                        className="flashcards-decks__mastered-link"
+                        onClick={() => navigate('/flashcards/mastered')}
+                    >
                         <Typography
-                            className="flashcards-decks__mastered-label"
+                            className="flashcards-decks__mastered-link-label"
                             sx={{
                                 fontSize: SIZE.body,
                                 fontWeight: WEIGHT.medium,
@@ -495,41 +404,20 @@ const FlashcardsDecksPage: React.FC = () => {
                                 fontFamily: FONTS.sans,
                             }}
                         >
-                            Mastered
+                            Mastered Cards
+                            <Box
+                                component="span"
+                                className="flashcards-decks__mastered-link-count"
+                                sx={{ color: COLORS.textSecondary, ml: 1, fontWeight: WEIGHT.regular }}
+                            >
+                                ({categoryCounts["Mastered"] || 0})
+                            </Box>
                         </Typography>
-                    </Box>
-
-                    {/* Mastered Cards Preview */}
-                    <CardsPreviewContainer className="decks-mastered-preview">
-                        {!allCardsLoaded ? (
-                            // Loading state — gated on all sections so the cascades sync.
-                            <Box className="flashcards-decks__mastered-loading" sx={{ display: 'flex', justifyContent: 'center', width: '100%', py: 4 }}>
-                                <DelayedCircularProgress className="flashcards-decks__mastered-spinner" />
-                            </Box>
-                        ) : masteredError ? (
-                            // Error state
-                            <Box className="flashcards-decks__mastered-error" sx={{ width: '100%', px: 2 }}>
-                                <Alert className="flashcards-decks__mastered-error-alert" severity="error">{masteredError}</Alert>
-                            </Box>
-                        ) : masteredEntries.length === 0 ? (
-                            // Empty state
-                            <Box className="flashcards-decks__mastered-empty" sx={{ width: '100%', px: 2 }}>
-                                <Alert className="flashcards-decks__mastered-empty-alert" severity="info">
-                                    No mastered cards yet. Cards will appear here when you master them through study!
-                                </Alert>
-                            </Box>
-                        ) : (
-                            // Display mastered cards — staggered pop-in on load.
-                            masteredEntries.map((entry, index) => (
-                                <MiniVocabCard
-                                    key={entry.id}
-                                    entry={entry}
-                                    onClick={handleCardClick}
-                                    animationDelayMs={cardStaggerDelayMs(index)}
-                                />
-                            ))
-                        )}
-                    </CardsPreviewContainer>
+                        <ChevronRightIcon
+                            className="flashcards-decks__mastered-link-chevron"
+                            sx={{ color: COLORS.textSecondary }}
+                        />
+                    </MasteredLinkRow>
                 </ContentArea>
 
                 {/* Footer */}

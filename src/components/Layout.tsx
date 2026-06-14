@@ -105,6 +105,7 @@ function Layout({ children }: LayoutProps) {
     // registry so adding a game requires no edits here.
     const MOBILE_DEMO_PATHS = [
         "/flashcards/decks",
+        "/flashcards/mastered",
         "/account",
         "/flashcards/learn",
         "/games",

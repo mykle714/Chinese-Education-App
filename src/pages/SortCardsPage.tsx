@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { Box, Typography, IconButton, Button } from "@mui/material";
 import DelayedCircularProgress from "../components/DelayedCircularProgress";
 import { styled } from "@mui/material/styles";
@@ -7,7 +7,6 @@ import UndoIcon from "@mui/icons-material/Undo";
 import { useDrag } from "@use-gesture/react";
 import { useSpring, animated } from "@react-spring/web";
 import MobileDemoHeader from "../components/MobileDemoHeader";
-import MobileFooter from "../components/MobileFooter";
 import MinutePointsFireBadge from "../components/MinutePointsFireBadge";
 import ForeignText from "../components/ForeignText";
 import PosBadge from "../components/PosBadge";
@@ -22,19 +21,35 @@ import { COLORS } from "../theme/colors";
 import { FONTS } from "../theme/fonts";
 import { SIZE, WEIGHT, LEADING, TRACKING } from "../theme/scale";
 
-// Parses an HSK label like "HSK3" → 3, returns null for missing/malformed values.
-function parseHskLevel(label: string | null | undefined): number | null {
-    if (!label) return null;
-    const m = label.match(/^HSK([1-6])$/);
-    return m ? Number(m[1]) : null;
+// Per-language encoding of the integer difficulty level carried in
+// DiscoverCard.difficulty. Both languages use the adaptive band; they differ only in
+// how the level is stored and its ceiling (mirrors _levelConfig in
+// StarterPacksService):
+//   - zh: "HSK1".."HSK6" (HSK proficiency, ceiling 6)
+//   - es: "1".."5"       (learner-acquisition difficulty, ceiling 5)
+const LEVEL_CONFIG: Record<string, { max: number; parse: (label: string | null | undefined) => number | null }> = {
+    zh: { max: 6, parse: (l) => { const m = l?.match(/^HSK([1-6])$/); return m ? Number(m[1]) : null; } },
+    es: { max: 5, parse: (l) => { const m = l?.match(/^([1-5])$/); return m ? Number(m[1]) : null; } },
+};
+
+// Languages whose discover flow is leveled by an adaptive difficulty band. A
+// language not listed here uses an unfiltered flow — the client must NOT apply the
+// band filter (its cards have no level and would otherwise all be filtered out).
+const DIFFICULTY_LEVELED_LANGUAGES = new Set<string>(Object.keys(LEVEL_CONFIG));
+const isDifficultyLeveledLanguage = (lang?: string): boolean => !!lang && DIFFICULTY_LEVELED_LANGUAGES.has(lang);
+
+// Parse a card's stored level using the language's encoding; null when missing,
+// malformed, or the language isn't leveled.
+function parseDifficultyLevel(label: string | null | undefined, language?: string): number | null {
+    const cfg = language ? LEVEL_CONFIG[language] : undefined;
+    return cfg ? cfg.parse(label) : null;
 }
 
-// Languages whose discover flow is leveled by HSK difficulty band. Other languages
-// (e.g. Spanish) use a sequential flow — the server offers cards in id order and the
-// client must NOT apply the HSK band filter (their cards have no hskLevel and would
-// otherwise all be filtered out). Mirrors the per-language split in StarterPacksService.
-const HSK_LEVELED_LANGUAGES = new Set<string>(["zh"]);
-const isHskLeveledLanguage = (lang?: string): boolean => !!lang && HSK_LEVELED_LANGUAGES.has(lang);
+// The difficulty ceiling for a language (used to clamp the upper band edge).
+// Falls back to 6 so non-leveled callers behave as before.
+function maxLevelFor(language?: string): number {
+    return (language && LEVEL_CONFIG[language]?.max) || 6;
+}
 
 // Styled Components — phone-frame sizing comes from MobileDemoFrame via Layout.tsx
 
@@ -54,26 +69,26 @@ const ContentArea = styled(Box)({
     touchAction: "none",
 });
 
-// CSS grid distributes the 4 buckets evenly in a 2×2 layout regardless of viewport height
+// CSS grid distributes the 3 buckets evenly in a single row regardless of viewport height
 const BucketsContainer = styled(Box)({
     width: "100%",
-    flex: "2 2 0", // flex-basis: 0 gives grid a definite height so 1fr rows resolve correctly
+    flex: "1 1 0", // flex-basis: 0 gives grid a definite height so the 1fr row resolves correctly
     minHeight: 0, // allow flex to shrink below grid content size on small screens
-    maxHeight: 424, // 2 × 200px buckets + 16px rowGap + 8px paddingBlock
+    maxHeight: 208, // 1 × 200px bucket + 8px paddingBlock
     paddingBlock: "4px",
     display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gridTemplateRows: "1fr 1fr",
-    rowGap: "16px",
+    gridTemplateColumns: "1fr 1fr 1fr",
+    gridTemplateRows: "1fr",
+    columnGap: "12px",
     justifyItems: "center",
 });
 
 const Bucket = styled(Box)<{ mainColor: string; accentColor: string; highlight?: boolean }>(
     ({ mainColor, accentColor, highlight }) => ({
         aspectRatio: "136 / 200",
-        height: "100%", // fill the 1fr grid row; aspect-ratio then drives width
-        maxWidth: "100%", // guard against narrow+tall rows where ratio would overflow horizontally
-        minHeight: 0, // override grid item default (auto) so bucket shrinks with 1fr rows
+        width: "100%", // fill the 1fr grid column; aspect-ratio then drives height
+        maxHeight: "100%", // guard against short rows where ratio would overflow vertically
+        minWidth: 0, // override grid item default (auto) so bucket shrinks with 1fr columns
         padding: 8,
         backgroundColor: mainColor,
         borderRadius: 12,
@@ -151,6 +166,7 @@ interface BucketZone {
 
 const SortCardsPage: React.FC = () => {
     usePageTitle("Discover");
+    const navigate = useNavigate();
     const { token } = useAuth();
     const { language } = useParams<{ language: Language }>();
     const tts = useTTS();
@@ -165,19 +181,19 @@ const SortCardsPage: React.FC = () => {
     // currently displayed card (and undo history) survive mid-session refetches.
     const [cardQueue, setCardQueue] = useState<DiscoverCard[]>([]);
     const [currentCardIndex, setCurrentCardIndex] = useState(0);
-    const [userHskLevel, setUserHskLevel] = useState<number | null>(null);
-    // provisionalMode: true when user has <3 Unfamiliar cards; narrows filter to hskLevel+1 only
+    const [userDifficultyLevel, setUserDifficultyLevel] = useState<number | null>(null);
+    // provisionalMode: true when user has <3 Unfamiliar cards; narrows filter to difficulty+1 only
     const [provisionalMode, setProvisionalMode] = useState<boolean>(false);
     const [loading, setLoading] = useState(true);
     const [highlightedBucket, setHighlightedBucket] = useState<string | null>(null);
-    // History entries snapshot the band state (userHskLevel, provisionalMode) at sort time
+    // History entries snapshot the band state (userDifficultyLevel, provisionalMode) at sort time
     // so undo can restore the same band the card was sorted under. Without this, undo would
     // restore currentCardIndex but the head-skip effect would immediately re-skip the card
     // when the current band excludes it (e.g. after a rank-up or in provisional mode).
     const [history, setHistory] = useState<Array<{
         card: DiscoverCard;
         bucket: string;
-        prevUserHskLevel: number | null;
+        prevUserDifficultyLevel: number | null;
         prevProvisionalMode: boolean;
     }>>([]);
     const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -191,7 +207,6 @@ const SortCardsPage: React.FC = () => {
     const bucketRefs = useRef<Map<string, HTMLElement>>(new Map());
 
     const buckets = useMemo<BucketZone[]>(() => [
-        { id: "learn-later", label: "Add to Learn Later", mainColor: COLORS.yellowMain, accentColor: COLORS.yellowAccent },
         { id: "skip", label: "Skip for now", mainColor: COLORS.greenMain, accentColor: COLORS.greenAccent },
         { id: "library", label: "Add to\nLearn Now", mainColor: COLORS.redMain, accentColor: COLORS.redAccent },
         { id: "already-learned", label: "Already Learned", mainColor: COLORS.blueMain, accentColor: COLORS.blueAccent },
@@ -215,7 +230,7 @@ const SortCardsPage: React.FC = () => {
                 if (response.ok) {
                     const data: DiscoverFetchResponse = await response.json();
                     setCardQueue(data.cards);
-                    setUserHskLevel(data.userHskLevel);
+                    setUserDifficultyLevel(data.userDifficultyLevel);
                     setProvisionalMode(data.provisionalMode);
                 } else {
                     console.error("Failed to fetch starter pack cards");
@@ -236,33 +251,33 @@ const SortCardsPage: React.FC = () => {
 
     // Build the visible queue: the currently displayed card is "frozen" at the
     // head and is never filtered out — even if a fresh server response shifts
-    // userHskLevel mid-session, we don't want to yank the active card off-screen.
+    // userDifficultyLevel mid-session, we don't want to yank the active card off-screen.
     // Normal mode: tail filtered to [userLevel, userLevel + 1].
-    // Provisional mode (<3 Unfamiliar cards): tail filtered to only hskLevel+1.
+    // Provisional mode (<3 Unfamiliar cards): tail filtered to only difficulty+1.
     const visibleQueue = useMemo<DiscoverCard[]>(() => {
         const head = cardQueue[currentCardIndex];
-        // Sequential languages (e.g. Spanish): no HSK band filter — show every card
-        // from the current index in the server-provided id order.
-        if (!isHskLeveledLanguage(language) || userHskLevel == null) {
-            // No level known yet, or this language isn't HSK-leveled — show everything.
+        // Non-leveled languages: no band filter — show every card from the current
+        // index in the server-provided id order.
+        if (!isDifficultyLeveledLanguage(language) || userDifficultyLevel == null) {
+            // No level known yet, or this language isn't difficulty-leveled — show everything.
             return cardQueue.slice(currentCardIndex);
         }
-        const targetLevel = Math.min(6, userHskLevel + 1);
+        const targetLevel = Math.min(maxLevelFor(language), userDifficultyLevel + 1);
         const tail = cardQueue
             .slice(currentCardIndex + 1)
             .filter((c) => {
-                const lvl = parseHskLevel(c.hskLevel);
+                const lvl = parseDifficultyLevel(c.difficulty, language);
                 if (lvl == null) return false;
                 if (provisionalMode) {
-                    // Provisional: show only cards at exactly targetLevel (userHskLevel+1).
+                    // Provisional: show only cards at exactly targetLevel (userDifficultyLevel+1).
                     return lvl === targetLevel;
                 }
-                // Normal: show [userHskLevel, userHskLevel+1]
-                const min = Math.max(1, userHskLevel);
+                // Normal: show [userDifficultyLevel, userDifficultyLevel+1]
+                const min = Math.max(1, userDifficultyLevel);
                 return lvl >= min && lvl <= targetLevel;
             });
         return head ? [head, ...tail] : tail;
-    }, [cardQueue, currentCardIndex, userHskLevel, provisionalMode, language]);
+    }, [cardQueue, currentCardIndex, userDifficultyLevel, provisionalMode, language]);
 
     const currentCard = visibleQueue[0];
 
@@ -295,54 +310,54 @@ const SortCardsPage: React.FC = () => {
         }
     }, [currentCard, api]);
 
-    // Diagnostic: log the displayed card + current HSK level whenever either changes
+    // Diagnostic: log the displayed card + current difficulty level whenever either changes
     useEffect(() => {
         if (currentCard) {
-            const targetLevel = userHskLevel != null ? Math.min(6, userHskLevel + 1) : null;
-            const bandMin = provisionalMode ? targetLevel : (userHskLevel != null ? Math.max(1, userHskLevel) : null);
+            const targetLevel = userDifficultyLevel != null ? Math.min(maxLevelFor(language), userDifficultyLevel + 1) : null;
+            const bandMin = provisionalMode ? targetLevel : (userDifficultyLevel != null ? Math.max(1, userDifficultyLevel) : null);
             const bandMax = targetLevel;
             console.log(
                 "[Discover] displaying card:",
                 currentCard.entryKey,
-                currentCard.hskLevel,
-                "| userHskLevel:",
-                userHskLevel,
+                currentCard.difficulty,
+                "| userDifficultyLevel:",
+                userDifficultyLevel,
                 "| provisionalMode:",
                 provisionalMode,
                 "| band:",
-                bandMin != null ? `HSK${bandMin}–HSK${bandMax}` : "unfiltered"
+                bandMin != null ? `${bandMin}–${bandMax}` : "unfiltered"
             );
         }
-    }, [currentCard, userHskLevel, provisionalMode]);
+    }, [currentCard, userDifficultyLevel, provisionalMode, language]);
 
     // Head-skip effect: advance past any out-of-band card at the head position.
     // Runs on cardQueue changes (initial load, load-more) and on band changes
-    // (userHskLevel / provisionalMode updates from the server) so that a
+    // (userDifficultyLevel / provisionalMode updates from the server) so that a
     // mid-session rank-up updates the displayed card to match the new band.
-    // Only applies to HSK-leveled languages; sequential flows have no band to skip.
+    // Only applies to difficulty-leveled languages; non-leveled flows have no band to skip.
     useEffect(() => {
-        if (!isHskLeveledLanguage(language) || userHskLevel == null || cardQueue.length === 0) return;
+        if (!isDifficultyLeveledLanguage(language) || userDifficultyLevel == null || cardQueue.length === 0) return;
         const head = cardQueue[currentCardIndex];
         if (!head) return; // index is past end; waiting for more cards
-        const lvl = parseHskLevel(head.hskLevel);
+        const lvl = parseDifficultyLevel(head.difficulty, language);
         if (lvl == null) return;
-        const targetLevel = Math.min(6, userHskLevel + 1);
-        const min = provisionalMode ? targetLevel : Math.max(1, userHskLevel);
+        const targetLevel = Math.min(maxLevelFor(language), userDifficultyLevel + 1);
+        const min = provisionalMode ? targetLevel : Math.max(1, userDifficultyLevel);
         if (lvl >= min && lvl <= targetLevel) return; // head is in-band, nothing to do
         let next = currentCardIndex + 1;
         while (next < cardQueue.length) {
-            const nextLvl = parseHskLevel(cardQueue[next].hskLevel);
+            const nextLvl = parseDifficultyLevel(cardQueue[next].difficulty, language);
             if (nextLvl != null && nextLvl >= min && nextLvl <= targetLevel) break;
             next++;
         }
         if (next !== currentCardIndex) setCurrentCardIndex(next);
-    }, [cardQueue, currentCardIndex, userHskLevel, provisionalMode, language]);
+    }, [cardQueue, currentCardIndex, userDifficultyLevel, provisionalMode, language]);
 
-    // Reset exhausted flag when the HSK band changes — the server may have
+    // Reset exhausted flag when the difficulty band changes — the server may have
     // cards in the new band even though the previous band was exhausted.
     useEffect(() => {
         setLoadMoreExhausted(false);
-    }, [userHskLevel, provisionalMode]);
+    }, [userDifficultyLevel, provisionalMode]);
 
     // Load more cards when ≤5 remain in the client-filtered visible queue
     useEffect(() => {
@@ -405,31 +420,31 @@ const SortCardsPage: React.FC = () => {
         setHistory([{
             card: sortedCard,
             bucket: bucketId,
-            prevUserHskLevel: userHskLevel,
+            prevUserDifficultyLevel: userDifficultyLevel,
             prevProvisionalMode: provisionalMode,
         }]);
 
         // Advance past any out-of-band cards in cardQueue so the next active
         // card honors the current [userLevel, userLevel + 1] filter. If we run
         // off the end, the refetch effect (visibleQueue.length <= 5) will load more.
-        // Sequential languages (e.g. Spanish) have no HSK band — and their cards
-        // have hskLevel=null, which would make the band while-loop skip to the end
-        // of the queue every sort (draining visibleQueue → a loadMore per card).
-        // So advance by exactly one for them.
+        // Non-leveled languages have no band — and their cards have difficulty=null,
+        // which would make the band while-loop skip to the end of the queue every
+        // sort (draining visibleQueue → a loadMore per card). So advance by exactly
+        // one for them (guarded by isDifficultyLeveledLanguage below).
         setCurrentCardIndex((prev) => {
-            if (!isHskLeveledLanguage(language) || userHskLevel == null) return prev + 1;
-            const targetLevel = Math.min(6, userHskLevel + 1);
-            const min = provisionalMode ? targetLevel : Math.max(1, userHskLevel);
+            if (!isDifficultyLeveledLanguage(language) || userDifficultyLevel == null) return prev + 1;
+            const targetLevel = Math.min(maxLevelFor(language), userDifficultyLevel + 1);
+            const min = provisionalMode ? targetLevel : Math.max(1, userDifficultyLevel);
             let next = prev + 1;
             while (next < cardQueue.length) {
-                const lvl = parseHskLevel(cardQueue[next].hskLevel);
+                const lvl = parseDifficultyLevel(cardQueue[next].difficulty, language);
                 if (lvl != null && lvl >= min && lvl <= targetLevel) break;
                 next++;
             }
             return next;
         });
 
-        // Fire-and-forget POST. When it returns we update userHskLevel; the
+        // Fire-and-forget POST. When it returns we update userDifficultyLevel; the
         // useMemo recomputes visibleQueue against the new level on next render,
         // but the currently displayed card stays put (frozen head).
         try {
@@ -445,8 +460,8 @@ const SortCardsPage: React.FC = () => {
             });
             if (response.ok) {
                 const data: DiscoverSortResponse = await response.json();
-                if (typeof data.userHskLevel === "number") {
-                    setUserHskLevel(data.userHskLevel);
+                if (typeof data.userDifficultyLevel === "number") {
+                    setUserDifficultyLevel(data.userDifficultyLevel);
                 }
                 if (typeof data.provisionalMode === "boolean") {
                     setProvisionalMode(data.provisionalMode);
@@ -469,7 +484,7 @@ const SortCardsPage: React.FC = () => {
         // Restore the band state *before* the index so the head-skip effect, when it
         // runs in response to the index change, evaluates the restored card against
         // the same band it was originally sorted under.
-        setUserHskLevel(lastAction.prevUserHskLevel);
+        setUserDifficultyLevel(lastAction.prevUserDifficultyLevel);
         setProvisionalMode(lastAction.prevProvisionalMode);
 
         const restoredIndex = cardQueue.findIndex((c) => c.id === lastAction.card.id);
@@ -493,8 +508,8 @@ const SortCardsPage: React.FC = () => {
             // Sync with server-recomputed band (post-rollback) once it returns.
             if (response.ok) {
                 const data: Partial<DiscoverSortResponse> = await response.json();
-                if (typeof data.userHskLevel === "number") {
-                    setUserHskLevel(data.userHskLevel);
+                if (typeof data.userDifficultyLevel === "number") {
+                    setUserDifficultyLevel(data.userDifficultyLevel);
                 }
                 if (typeof data.provisionalMode === "boolean") {
                     setProvisionalMode(data.provisionalMode);
@@ -535,8 +550,8 @@ const SortCardsPage: React.FC = () => {
                     console.log("[LoadMore] server returned 0 cards — marking exhausted");
                     setLoadMoreExhausted(true); // server truly has nothing left
                 }
-                if (typeof data.userHskLevel === "number") {
-                    setUserHskLevel(data.userHskLevel);
+                if (typeof data.userDifficultyLevel === "number") {
+                    setUserDifficultyLevel(data.userDifficultyLevel);
                 }
                 if (typeof data.provisionalMode === "boolean") {
                     setProvisionalMode(data.provisionalMode);
@@ -605,7 +620,8 @@ const SortCardsPage: React.FC = () => {
             <>
                 <MobileDemoHeader
                     title="Sort Cards"
-                    activePage="discover"
+                    showBack
+                    onBack={() => navigate("/discover")}
                     extraActions={<MinutePointsFireBadge />}
                 />
                 <ContentArea className="sort-cards__content">
@@ -613,7 +629,6 @@ const SortCardsPage: React.FC = () => {
                         <Typography className="sort-cards__all-sorted-text">All cards sorted! 🎉</Typography>
                     </Box>
                 </ContentArea>
-                <MobileFooter activePage="discover" />
             </>
         );
     }
@@ -623,7 +638,8 @@ const SortCardsPage: React.FC = () => {
             {/* Header */}
             <MobileDemoHeader
                 title="Sort Cards"
-                activePage="discover"
+                showBack
+                onBack={() => navigate("/discover")}
                 extraActions={
                     <>
                         {/* Autoplay toggle — same "autoplay" text label flp uses
@@ -734,9 +750,6 @@ const SortCardsPage: React.FC = () => {
                     </FlashCard>
                 </OnDeckSection>
             </ContentArea>
-
-            {/* Footer */}
-            <MobileFooter activePage="discover" />
         </>
     );
 };

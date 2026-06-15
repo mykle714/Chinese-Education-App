@@ -6,7 +6,7 @@ export interface DictionaryEntry {
     word1: string;
     pronunciation?: string | null;
     definition?: string | null;
-    hskLevelTag?: string | null;
+    difficultyTag?: string | null;
     expansion?: unknown;
     [key: string]: unknown;
 }

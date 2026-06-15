@@ -17,7 +17,10 @@ mdp = mobile demo page
 flp = /flashcards/learn page
 fdp = /flashcards/decks page
 gsa = greedy segmentation algorithm
-dp = discover page (aka sort cards page)
+dp = discover page — the `/discover` hub menu (lists discover activities)
+scp = sort cards page — the drag-to-sort page at `/discover/sort/:language` (reached from the discover hub)
+hp = home page — the `/` hub menu (Night Market, Games, Reader, Dictionary, Tester Dashboard); footer Home tab
+tdp = tester dashboard page — `/tester-dashboard` (former landing content: study time, streak, calendar, leaderboard)
 cdp = card detail page
 pct = particles and classifiers table
 nmp = night market page
@@ -166,6 +169,15 @@ An hourly Postgres cron on the prod server (a) breaks stale streaks (mirroring `
 → See [docs/NIGHT_MARKET_FEATURE.md](./docs/NIGHT_MARKET_FEATURE.md)
 → Pedestrian movement: [docs/PEDESTRIAN_WALKING_ALGORITHM.md](./docs/PEDESTRIAN_WALKING_ALGORITHM.md)
 → Tile/street graph invariants: [docs/NIGHT_MARKET_GRAPH_ASSUMPTIONS.md](./docs/NIGHT_MARKET_GRAPH_ASSUMPTIONS.md)
+
+### App Navigation
+→ See [docs/NAVIGATION.md](./docs/NAVIGATION.md) — no hamburger/sidebar; nav is the footer tabs (Flashcards / Discover / Home / Account) + the `/` Home menu + back-arrow drill-ins. Settings + Logout live on the Account page.
+
+### Mobile Tab Screen Layout (scroll-away header + floating footer)
+→ See [docs/MOBILE_TAB_SCREEN_LAYOUT.md](./docs/MOBILE_TAB_SCREEN_LAYOUT.md) — every scrollable footer-tab page must use `MobileTabScreen` (header scrolls away inside the scroll area; the bottom nav is a floating pill). Home, Decks, Discover, Games hub, and Account use it today.
+
+### Discover Flow
+→ See [docs/DISCOVER_FLOW.md](./docs/DISCOVER_FLOW.md) — two-level Discover surface: the `/discover` hub menu (footer tab) → `/discover/sort/:language` drag-to-sort page (back-arrow header, no footer).
 
 ### Games
 → See [docs/GAMES_FEATURE.md](./docs/GAMES_FEATURE.md)

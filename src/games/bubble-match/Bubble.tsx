@@ -3,6 +3,7 @@ import { Box, Typography } from "@mui/material";
 import ForeignText from "../../components/ForeignText";
 import { stripParentheses } from "../../utils/definitionUtils";
 import { FC_FONT_CJK } from "../../pages/FlashcardsLearnPage/constants";
+import { API_BASE_URL } from "../../constants";
 import type { BubbleBody, BubbleStatus } from "./types";
 import {
     WORD_BUBBLE_BG,
@@ -102,6 +103,10 @@ const Bubble: React.FC<BubbleProps> = ({
     const contentScale = wordContentScale([...entry.entryKey].length, targetRadius);
 
     const defText = stripParentheses(entry.definition ?? "");
+    // Definition bubbles show the entry's representative icons8 icon (same one as
+    // the flashcard faces) stacked above the text. Absent icon -> text only, no
+    // reserved space (a bubble has no fixed image slot like the card does).
+    const hasIcon = !isWord && !!entry.iconId;
 
     return (
         <Box
@@ -186,26 +191,50 @@ const Bubble: React.FC<BubbleProps> = ({
                         />
                     </Box>
                 ) : (
-                    <Typography
-                        className="bubble__definition"
+                    <Box
+                        className="bubble__definition-stack"
                         sx={{
-                            fontSize: definitionFontSize(defText, targetRadius),
-                            // 1.3 (was 1.15) so the last clamped line's descenders
-                            // (q/g/y/p) aren't clipped by the -webkit-box overflow.
-                            lineHeight: 1.3,
-                            fontWeight: 500,
-                            fontFamily: FC_FONT_CJK,
-                            color: status === "wrong" || status === "nomatch" || status === "correct" || status === "revealed" ? "#fff" : "#3a3a3a",
-                            textAlign: "center",
-                            // Clamp very long definitions so they never overflow the circle.
-                            display: "-webkit-box",
-                            WebkitLineClamp: 4,
-                            WebkitBoxOrient: "vertical",
-                            overflow: "hidden",
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: "3px",
                         }}
                     >
-                        {defText}
-                    </Typography>
+                        {hasIcon && (
+                            <Box
+                                component="img"
+                                className="bubble__definition-icon"
+                                src={`${API_BASE_URL}/api/icons8/${encodeURIComponent(entry.iconId!)}/image`}
+                                alt=""
+                                // Decorative: not draggable / no pointer events so it
+                                // doesn't fight the bubble drag gesture.
+                                draggable={false}
+                                sx={{ width: 28, height: 28, objectFit: "contain", flexShrink: 0, pointerEvents: "none" }}
+                            />
+                        )}
+                        <Typography
+                            className="bubble__definition"
+                            sx={{
+                                fontSize: definitionFontSize(defText, targetRadius),
+                                // 1.3 (was 1.15) so the last clamped line's descenders
+                                // (q/g/y/p) aren't clipped by the -webkit-box overflow.
+                                lineHeight: 1.3,
+                                fontWeight: 500,
+                                fontFamily: FC_FONT_CJK,
+                                color: status === "wrong" || status === "nomatch" || status === "correct" || status === "revealed" ? "#fff" : "#3a3a3a",
+                                textAlign: "center",
+                                // Clamp very long definitions so they never overflow the
+                                // circle. One line fewer when the icon is taking up room.
+                                display: "-webkit-box",
+                                WebkitLineClamp: hasIcon ? 3 : 4,
+                                WebkitBoxOrient: "vertical",
+                                overflow: "hidden",
+                            }}
+                        >
+                            {defText}
+                        </Typography>
+                    </Box>
                 )}
 
                 {/* Grey dim overlay shown while held or while a valid drop target. */}

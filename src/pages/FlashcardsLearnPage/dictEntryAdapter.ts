@@ -1,5 +1,5 @@
 import type { DictionaryEntry } from "../../types";
-import type { VocabEntry, HskLevel, UsedInItem } from "./types";
+import type { VocabEntry, DifficultyLevel, UsedInItem } from "./types";
 
 // Adapts a dictionaryentries-table record (det) returned by
 // /api/dictionary/lookup/:term into the VocabEntry shape that
@@ -7,7 +7,7 @@ import type { VocabEntry, HskLevel, UsedInItem } from "./types";
 // are mapped — the rest stay undefined.
 export function dictionaryEntryToVocabEntry(dict: DictionaryEntry): VocabEntry {
     const anyDict = dict as DictionaryEntry & {
-        hskLevel?: string | null;
+        difficulty?: string | null;
         breakdown?: Record<string, { definition: string; pronunciation?: string }> | null;
         exampleSentences?: VocabEntry["exampleSentences"];
         expansion?: string | null;
@@ -26,7 +26,7 @@ export function dictionaryEntryToVocabEntry(dict: DictionaryEntry): VocabEntry {
         longDefinitionParts: dict.longDefinitionParts ?? null,
         partsOfSpeech: dict.partsOfSpeech ?? null,
         vernacularScore: dict.vernacularScore ?? null,
-        hskLevel: (anyDict.hskLevel as HskLevel | null | undefined) ?? null,
+        difficulty: (anyDict.difficulty as DifficultyLevel | null | undefined) ?? null,
         breakdown: anyDict.breakdown
             ? Object.fromEntries(
                 Object.entries(anyDict.breakdown).map(([k, v]) => [k, { definition: v.definition }])

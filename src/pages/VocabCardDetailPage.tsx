@@ -4,9 +4,8 @@ import { useParams, useNavigate } from "react-router-dom";
 import { Box, Typography, Chip, Button, Alert, Divider } from "@mui/material";
 import DelayedCircularProgress from "../components/DelayedCircularProgress";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
-import RepeatIcon from "@mui/icons-material/Repeat";
 import { styled } from "@mui/material/styles";
-import MobileFooter from "../components/MobileFooter";
+import MobileFooter, { FLOATING_FOOTER_CLEARANCE } from "../components/MobileFooter";
 import PageHeader from "../components/PageHeader";
 import { API_BASE_URL } from "../constants";
 import type { VocabEntry, DictionaryEntry } from "../types";
@@ -43,7 +42,8 @@ const HeroCard = styled(Box)(() => ({
     gap: "8px",
 }));
 
-// Action bar above the footer
+// Action bar that sits just above the floating footer pill. Its bottom margin
+// reserves the pill's clearance zone so the buttons are never covered by it.
 const ActionBar = styled(Box)(() => ({
     display: 'flex',
     gap: '12px',
@@ -51,6 +51,7 @@ const ActionBar = styled(Box)(() => ({
     backgroundColor: COLORS.background,
     borderTop: `1px solid rgba(92,92,102, 0.2)`,
     flexShrink: 0,
+    marginBottom: FLOATING_FOOTER_CLEARANCE,
 }));
 
 // Info section card
@@ -132,26 +133,6 @@ const VocabCardDetailPage: React.FC = () => {
         }
     };
 
-    // Toggles card between library and learn-later buckets, then returns to decks page
-    const handleCycleCard = async () => {
-        if (!entry) return;
-        const targetBucket = entry.starterPackBucket === 'library' ? 'learn-later' : 'library';
-        try {
-            setActionLoading(true);
-            const response = await fetch(`${API_BASE_URL}/api/vocabEntries/${entry.id}/bucket`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({ starterPackBucket: targetBucket }),
-            });
-            if (!response.ok) throw new Error('Failed to move card');
-            navigate('/flashcards/decks', { state: { refresh: Date.now() } });
-        } catch (err) {
-            console.error('Error moving card:', err);
-            setActionLoading(false);
-        }
-    };
-
     const hasShortDef = !!dictEntry?.shortDefinition;
     const isSingleChar = !!entry && [...entry.entryKey].length === 1;
     // For single-char zh, the breakdown section is replaced by a "Used In" list. See OnDeckVocabService.enrichWithUsedIn.
@@ -166,7 +147,9 @@ const VocabCardDetailPage: React.FC = () => {
         <>
                 <PageHeader title="Card Detail" />
 
-                <ContentArea className="vocab-card-detail__content">
+                {/* When there's no entry, no ActionBar renders, so the content area
+                    itself must reserve the floating footer's clearance. */}
+                <ContentArea className="vocab-card-detail__content" sx={{ pb: entry ? 0 : `${FLOATING_FOOTER_CLEARANCE}px` }}>
                     {loading ? (
                         <Box className="vocab-card-detail__loading" sx={{ display: "flex", justifyContent: "center", pt: 6 }}>
                             <DelayedCircularProgress className="vocab-card-detail__spinner" />
@@ -193,10 +176,11 @@ const VocabCardDetailPage: React.FC = () => {
                                             }}
                                         />
                                     ) : <Box className="vocab-card-detail__badge-placeholder" />}
-                                    {entry.hskLevel && (
+                                    {/* HSK chip: only for HSK-encoded difficulty (zh); es stores a bare 1–5. */}
+                                    {entry.difficulty?.startsWith('HSK') && (
                                         <Chip
                                             className="vocab-card-detail__hsk-chip"
-                                            label={entry.hskLevel}
+                                            label={entry.difficulty}
                                             size="small"
                                             sx={{
                                                 backgroundColor: COLORS.hskChip,
@@ -518,28 +502,6 @@ const VocabCardDetailPage: React.FC = () => {
                 {/* Action bar — only visible when a card is loaded */}
                 {entry && (
                     <ActionBar className="vocab-card-detail__action-bar">
-                        {/* Cycle button: only for library / learn-later cards */}
-                        {(entry.starterPackBucket === 'library' || entry.starterPackBucket === 'learn-later') && (
-                            <Button
-                                className="vocab-card-detail__cycle-button"
-                                variant="contained"
-                                startIcon={<RepeatIcon />}
-                                disabled={actionLoading}
-                                onClick={handleCycleCard}
-                                sx={{
-                                    flex: 1,
-                                    backgroundColor: '#2196f3',
-                                    textTransform: 'none',
-                                    fontFamily: FONTS.sans,
-                                    fontWeight: WEIGHT.semibold,
-                                    fontSize: SIZE.body,
-                                    '&:hover': { backgroundColor: '#1976d2' },
-                                    '&.Mui-disabled': { backgroundColor: '#2196f388' },
-                                }}
-                            >
-                                {entry.starterPackBucket === 'library' ? 'Move to Learn Later' : 'Move to Learn Now'}
-                            </Button>
-                        )}
                         {/* Delete button: always shown */}
                         <Button
                             className="vocab-card-detail__delete-button"
@@ -563,7 +525,7 @@ const VocabCardDetailPage: React.FC = () => {
                     </ActionBar>
                 )}
 
-                <MobileFooter activePage="home" />
+                <MobileFooter activePage="flashcards" />
         </>
     );
 };

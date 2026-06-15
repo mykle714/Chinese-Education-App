@@ -186,10 +186,6 @@ Searches the user's vocab entries.
 Returns all library cards (`starterPackBucket = 'library'`).
 - **Response:** `VocabEntry[]`
 
-### `GET /api/onDeck/learn-later-cards`
-Returns all learn-later cards (`starterPackBucket = 'learn-later'`).
-- **Response:** `VocabEntry[]`
-
 ### `GET /api/onDeck/mastered-library-cards` / `non-mastered-library-cards`
 Returns library cards filtered by mastery status.
 - **Response:** `VocabEntry[]`

@@ -10,13 +10,18 @@ import { vetTableForLanguage } from '../dal/shared/vetTable.js';
  * Business logic for managing language starter packs (the discover / "sort cards" flow).
  *
  * Card source is the per-language dictionaryentries table (discoverable=TRUE), with
- * per-user sort state tracked in vocabentries (starterPackBucket field). The flow is
- * split per language because card ordering differs:
- *   - Chinese (dictionaryentries_zh): adaptive HSK-band flow (computeUserHskLevel /
- *     provisional mode), since Chinese cards carry an hskLevel difficulty signal.
- *   - Spanish (dictionaryentries_es): sequential flow — cards offered in id order,
- *     no difficulty leveling (Spanish rows have no hskLevel). Reuses the shared
- *     skip-recycle logic (_clearSkipCards) so "skip for now" still works.
+ * per-user sort state tracked in vocabentries (starterPackBucket field). Both
+ * supported languages use the same adaptive, difficulty-banded flow
+ * (_getDifficultyDiscoverCards / computeUserDifficultyLevel / provisional mode); they differ only
+ * in how the integer difficulty level is encoded in the dict table's difficulty column:
+ *   - Chinese (dictionaryentries_zh): 'HSK1'..'HSK6' (HSK proficiency, ceiling 6).
+ *   - Spanish (dictionaryentries_es): '1'..'5' (learner-acquisition difficulty,
+ *     1=easiest..5=hardest, ceiling 5) written by the Spanish vernacular/difficulty
+ *     backfill. The encoding is centralized in _levelConfig so the band math stays
+ *     language-agnostic.
+ *
+ * For Chinese the difficulty value doubles as the user-facing HSK proficiency label
+ * (rendered as an "HSK 3" badge); for Spanish it is a plain 1–5 acquisition score.
  */
 export class StarterPacksService {
   constructor(
@@ -43,86 +48,58 @@ export class StarterPacksService {
   }
 
   /**
-   * Compute the band fields ({userHskLevel, provisionalMode}) the client uses to
-   * narrow its filter after a fetch/sort/undo. HSK leveling is Chinese-only, so
-   * sequential languages (Spanish) report neutral values that make the client
-   * filter a no-op.
+   * Compute the band fields ({userDifficultyLevel, provisionalMode}) the client uses to
+   * narrow its filter after a fetch/sort/undo. Shared by both languages — the
+   * difficulty-level encoding is resolved per-language inside computeUserDifficultyLevel.
    */
-  private async _computeBand(userId: string, language: string): Promise<{ userHskLevel: number; provisionalMode: boolean }> {
-    if (language === 'es') return { userHskLevel: 0, provisionalMode: false };
+  private async _computeBand(userId: string, language: string): Promise<{ userDifficultyLevel: number; provisionalMode: boolean }> {
     const provisionalMode = await this.computeProvisionalMode(userId, language);
-    const userHskLevel = await this.computeUserHskLevel(userId, language, provisionalMode);
-    return { userHskLevel, provisionalMode };
+    const userDifficultyLevel = await this.computeUserDifficultyLevel(userId, language, provisionalMode);
+    return { userDifficultyLevel, provisionalMode };
   }
 
   /**
-   * Get unsorted discoverable cards for a specific language. Dispatches to the
-   * language-appropriate flow: adaptive HSK band for Chinese, sequential id order
-   * for Spanish. Both return the same shape so the controller/client are agnostic.
+   * Get unsorted discoverable cards for a specific language. Both supported
+   * languages use the same adaptive difficulty-band flow; the per-language level
+   * encoding is resolved inside the flow (see _levelConfig).
    */
-  async getStarterPackCards(language: string, userId: string, excludeIds: number[] = []): Promise<{ cards: DiscoverCard[]; userHskLevel: number; provisionalMode: boolean }> {
-    if (language === 'es') {
-      return this._getSequentialDiscoverCards(language, userId, excludeIds);
-    }
-    return this._getHskDiscoverCards(language, userId, excludeIds);
+  async getStarterPackCards(language: string, userId: string, excludeIds: number[] = []): Promise<{ cards: DiscoverCard[]; userDifficultyLevel: number; provisionalMode: boolean }> {
+    return this._getDifficultyDiscoverCards(language, userId, excludeIds);
   }
 
   /**
-   * Sequential discover flow (Spanish): offer discoverable cards in id order with
-   * no difficulty leveling. Reuses the shared skip-recycle fallback so "skip for
-   * now" cards re-enter the flow once the primary set is exhausted.
-   */
-  private async _getSequentialDiscoverCards(language: string, userId: string, excludeIds: number[]): Promise<{ cards: DiscoverCard[]; userHskLevel: number; provisionalMode: boolean }> {
-    const table = this._dictTable(language);
-
-    // Primary fetch: discoverable, unsorted, in id order. `null` labels = no HSK filter.
-    let rows = await this._fetchUnsortedCardRows(language, userId, table, null, excludeIds);
-
-    // Skip-recycle fallback (same mechanism as the Chinese flow): when the primary
-    // set is empty, recycle the user's skipped cards and retry once.
-    if (rows.length === 0) {
-      await this._clearSkipCards(userId, language);
-      rows = await this._fetchUnsortedCardRows(language, userId, table, null, excludeIds);
-    }
-
-    const cards = this._rowsToDiscoverCards(rows);
-    const enriched = await this._enrichDiscoverCards(cards, language);
-    // Spanish has no adaptive level; neutral band values keep the client filter a no-op.
-    return { cards: enriched, userHskLevel: 0, provisionalMode: false };
-  }
-
-  /**
-   * Adaptive HSK discover flow (Chinese): cards filtered to the user's current HSK
-   * level (±1 buffer). Also returns the computed userHskLevel so the client can
+   * Adaptive difficulty-band discover flow: cards filtered to the user's current
+   * level (±1 buffer). Also returns the computed userDifficultyLevel so the client can
    * apply its own narrower filter and display it.
    *
    * Fallback chain when the primary band is empty:
    *   1. Recycle the user's skipped cards in the same band, retry the query.
-   *   2. Widen to "any HSK ≤ userHskLevel" (easier-review fallback) — this
+   *   2. Widen to "any level ≤ userDifficultyLevel" (easier-review fallback) — this
    *      keeps the user moving when they've exhausted everything at their
    *      level. The client still narrows the result, so easier cards may not
    *      all reach the UI; that's OK, they're a safety net.
    */
-  private async _getHskDiscoverCards(language: string, userId: string, excludeIds: number[] = []): Promise<{ cards: DiscoverCard[]; userHskLevel: number; provisionalMode: boolean }> {
+  private async _getDifficultyDiscoverCards(language: string, userId: string, excludeIds: number[] = []): Promise<{ cards: DiscoverCard[]; userDifficultyLevel: number; provisionalMode: boolean }> {
     const table = this._dictTable(language);
+    const { maxLevel } = this._levelConfig(language);
     // Provisional mode must be known before the level calc — the level formula
-    // differs in provisional mode (see computeUserHskLevel).
+    // differs in provisional mode (see computeUserDifficultyLevel).
     const provisionalMode = await this.computeProvisionalMode(userId, language);
-    const userHskLevel = await this.computeUserHskLevel(userId, language, provisionalMode);
+    const userDifficultyLevel = await this.computeUserDifficultyLevel(userId, language, provisionalMode);
 
     // Step 1: primary query — band matched to the client filter so every fetched card is showable.
-    // Provisional mode (< 3 Unfamiliar cards): no HSK band restriction — fetch from all levels so
+    // Provisional mode (< 3 Unfamiliar cards): no difficulty band restriction — fetch from all levels so
     //   the user can encounter any card and build Unfamiliar signal quickly. The client still applies
     //   its own narrower filter before displaying, so this is purely a supply-side widening.
-    // Normal mode: ±1 around userHskLevel (client shows [level, level+1]; level-1 provides a small buffer).
-    // Provisional mode: fetch only cards above the user's current level (userHskLevel+1..6),
+    // Normal mode: ±1 around userDifficultyLevel (client shows [level, level+1]; level-1 provides a small buffer).
+    // Provisional mode: fetch only cards above the user's current level (userDifficultyLevel+1..6),
     // matching exactly what the client filter will show. Fetching the full range (1..6)
     // caused premature "All cards sorted" — lower-level cards were deduped out on load-more
     // because they were already in allCards, leaving visibleQueue empty.
     const primaryLabels = provisionalMode
-      ? this._buildBandLabels(userHskLevel + 1, 6)
-      : this._buildBandLabels(userHskLevel - 1, userHskLevel + 1);
-    console.log(`[StarterPacks] getStarterPackCards: userHskLevel=${userHskLevel}, provisionalMode=${provisionalMode}, excludeIds.length=${excludeIds.length}, primaryLabels=${JSON.stringify(primaryLabels)}`);
+      ? this._buildBandLabels(userDifficultyLevel + 1, maxLevel, language)
+      : this._buildBandLabels(userDifficultyLevel - 1, userDifficultyLevel + 1, language);
+    console.log(`[StarterPacks] getStarterPackCards: userDifficultyLevel=${userDifficultyLevel}, provisionalMode=${provisionalMode}, excludeIds.length=${excludeIds.length}, primaryLabels=${JSON.stringify(primaryLabels)}`);
     let rows = await this._fetchUnsortedCardRows(language, userId, table, primaryLabels, excludeIds);
     console.log(`[StarterPacks] primary query returned ${rows.length} rows`);
 
@@ -134,11 +111,11 @@ export class StarterPacksService {
 
     // Step 3: easier-review fallback — widen the band when the primary is exhausted.
     // Provisional: already using full range, so fallback is also full range (handles skip-recycle edge case).
-    // Normal: any HSK ≤ userHskLevel+1.
+    // Normal: any level ≤ userDifficultyLevel+1.
     if (rows.length === 0) {
       const easierLabels = provisionalMode
-        ? this._buildBandLabels(1, 6)
-        : this._buildBandLabels(1, userHskLevel + 1);
+        ? this._buildBandLabels(1, maxLevel, language)
+        : this._buildBandLabels(1, userDifficultyLevel + 1, language);
       rows = await this._fetchUnsortedCardRows(language, userId, table, easierLabels, excludeIds);
       if (rows.length > 0) {
         console.log(`[StarterPacks] Easier-review fallback: returning ${rows.length} card(s) for userId=${userId} provisionalMode=${provisionalMode}`);
@@ -148,7 +125,7 @@ export class StarterPacksService {
     const cards = this._rowsToDiscoverCards(rows);
     const enriched = await this._enrichDiscoverCards(cards, language);
 
-    return { cards: enriched, userHskLevel, provisionalMode };
+    return { cards: enriched, userDifficultyLevel, provisionalMode };
   }
 
   /**
@@ -165,7 +142,7 @@ export class StarterPacksService {
       language: row.language,
       word2: row.word2,
       script: row.script,
-      hskLevel: row.hskLevel,
+      difficulty: row.difficulty,
       // Spanish POS badge fields (NULL/false for Chinese — see _fetchUnsortedCardRows).
       pos: row.pos ?? null,
       hasMultiplePos: row.hasMultiplePos ?? false,
@@ -191,31 +168,70 @@ export class StarterPacksService {
   }
 
   /**
-   * Compute the user's current adaptive HSK level.
+   * Per-language encoding of the integer difficulty level stored in the dict
+   * table's difficulty column. Centralizes the differences so the band math
+   * (computeUserDifficultyLevel / _buildBandLabels) stays language-agnostic:
+   *   - maxLevel       — the difficulty ceiling (zh: 6, es: 5).
+   *   - label(n)       — format level n into the stored string ('HSK3' vs '3').
+   *   - levelExpr      — SQL extracting the integer level from de."difficulty".
+   *   - validPredicate — SQL matching rows whose difficulty is a valid level.
+   * All SQL fragments are static (never interpolate caller input) so they are
+   * safe to splice directly into queries.
+   */
+  private _levelConfig(language: string): {
+    maxLevel: number;
+    label: (n: number) => string;
+    levelExpr: string;
+    validPredicate: string;
+  } {
+    if (language === 'es') {
+      // Spanish: bare integer '1'..'5' learner-acquisition difficulty.
+      return {
+        maxLevel: 5,
+        label: (n) => String(n),
+        levelExpr: `CAST(de."difficulty" AS INTEGER)`,
+        validPredicate: `de."difficulty" ~ '^[1-5]$'`,
+      };
+    }
+    // Chinese (default): 'HSK1'..'HSK6'.
+    return {
+      maxLevel: 6,
+      label: (n) => `HSK${n}`,
+      levelExpr: `CAST(SUBSTRING(de."difficulty" FROM 4) AS INTEGER)`,
+      validPredicate: `de."difficulty" ~ '^HSK[1-6]$'`,
+    };
+  }
+
+  /**
+   * Compute the user's current adaptive difficulty level.
    *
-   * Normal mode: ceil(avg HSK level of the 50 hardest Mastered cards). Anchors
+   * Normal mode: ceil(avg level of the 50 hardest Mastered cards). Anchors
    *   the level to the ceiling of what the user has solidly learned.
-   * Provisional mode (<3 Unfamiliar): ceil(1 + avg HSK level of the 5 hardest
+   * Provisional mode (<3 Unfamiliar): ceil(1 + avg level of the 5 hardest
    *   Mastered cards). Pushes the level one band above recent mastery so the
    *   user encounters harder cards and builds Unfamiliar signal quickly.
    *
-   * Returns 0 if the user has no mastered cards yet. Otherwise clamped to [1, 6].
+   * Returns 0 if the user has no mastered cards yet. Otherwise clamped to
+   * [1, maxLevel] (6 for Chinese HSK, 5 for Spanish difficulty).
    */
-  private async computeUserHskLevel(userId: string, language: string, provisionalMode: boolean): Promise<number> {
+  private async computeUserDifficultyLevel(userId: string, language: string, provisionalMode: boolean): Promise<number> {
+    const { maxLevel, levelExpr, validPredicate } = this._levelConfig(language);
+    const det = this._dictTable(language);
+    const vet = this._vetTable(language);
     const client = await db.getClient();
     try {
       const sampleSize = provisionalMode ? 5 : 50;
       const result = await client.query<{ avg_lvl: number | null }>(`
         SELECT AVG(lvl)::float AS avg_lvl
         FROM (
-          SELECT CAST(SUBSTRING(de."hskLevel" FROM 4) AS INTEGER) AS lvl
-          FROM vocabentries_zh ve
-          JOIN dictionaryentries_zh de
+          SELECT ${levelExpr} AS lvl
+          FROM ${vet} ve
+          JOIN ${det} de
             ON ve."entryKey" = de.word1 AND de.language = ve.language
           WHERE ve."userId" = $1
             AND ve.language = $2
             AND ve.category = 'Mastered'
-            AND de."hskLevel" ~ '^HSK[1-6]$'
+            AND ${validPredicate}
           ORDER BY lvl DESC
           LIMIT $3
         ) sub
@@ -224,7 +240,7 @@ export class StarterPacksService {
       const avg = result.rows[0]?.avg_lvl;
       if (avg == null) return 0; // brand-new user with no mastered cards
       const raw = provisionalMode ? 1 + avg : avg;
-      return Math.max(1, Math.min(6, Math.ceil(raw)));
+      return Math.max(1, Math.min(maxLevel, Math.ceil(raw)));
     } finally {
       client.release();
     }
@@ -235,8 +251,8 @@ export class StarterPacksService {
    *
    * Provisional mode is active when the user has fewer than 3 cards categorised
    * as "Unfamiliar". In this state the client narrows its card filter to only
-   * hskLevel+1, pushing the user toward slightly harder cards so they build up
-   * enough Unfamiliar signal quickly to make the adaptive HSK level meaningful.
+   * difficulty+1, pushing the user toward slightly harder cards so they build up
+   * enough Unfamiliar signal quickly to make the adaptive difficulty level meaningful.
    */
   private async computeProvisionalMode(userId: string, language: string): Promise<boolean> {
     const client = await db.getClient();
@@ -253,26 +269,29 @@ export class StarterPacksService {
   }
 
   /**
-   * Build the array of "HSK{n}" labels covering the inclusive band
-   * [minLevel, maxLevel], clamped to [1, 6]. Returns an empty array if the
-   * range is invalid.
+   * Build the array of difficulty-level labels covering the inclusive band
+   * [minLevel, maxLevel], in the language's stored encoding (e.g. 'HSK2'..'HSK4'
+   * for zh, '2'..'4' for es). Clamped to [1, language ceiling]. Returns an empty
+   * array if the range is invalid.
    */
-  private _buildBandLabels(minLevel: number, maxLevel: number): string[] {
-    const lo = Math.max(1, Math.min(6, minLevel));
-    const hi = Math.max(1, Math.min(6, maxLevel));
+  private _buildBandLabels(minLevel: number, maxLevel: number, language: string): string[] {
+    const { maxLevel: cap, label } = this._levelConfig(language);
+    const lo = Math.max(1, Math.min(cap, minLevel));
+    const hi = Math.max(1, Math.min(cap, maxLevel));
     const labels: string[] = [];
     for (let i = lo; i <= hi; i++) {
-      labels.push(`HSK${i}`);
+      labels.push(label(i));
     }
     return labels;
   }
 
   /**
    * Fetch raw unsorted discoverable card rows for a user/language from the given
-   * `table`, ordered by id. `allowedLabels` controls the HSK band filter:
-   *   - `string[]` → restrict to those HSK labels (Chinese flow). Empty array →
-   *      no labels in band, returns [].
-   *   - `null` → no HSK filter at all (sequential languages, e.g. Spanish).
+   * `table`, ordered by id. `allowedLabels` controls the difficulty-band filter:
+   *   - `string[]` → restrict to those level labels (e.g. 'HSK3' / '3'). Empty
+   *      array → no labels in band, returns [].
+   *   - `null` → no level filter at all (escape hatch; both supported languages
+   *      now pass labels via the adaptive flow).
    * Excludes cards the user has already sorted (vocabentries NOT EXISTS) and any
    * `excludeIds` the client already holds. `table` is whitelisted via _dictTable.
    */
@@ -288,7 +307,7 @@ export class StarterPacksService {
       let filters = '';
       if (allowedLabels !== null) {
         params.push(allowedLabels);
-        filters += ` AND de."hskLevel" = ANY($${params.length}::text[])`;
+        filters += ` AND de."difficulty" = ANY($${params.length}::text[])`;
       }
       if (excludeIds.length > 0) {
         params.push(excludeIds);
@@ -308,7 +327,7 @@ export class StarterPacksService {
 
       const result = await client.query(`
         SELECT de.id, de.word1, de.word2, de.pronunciation, de.tone, de.definitions,
-               de.language, de.script, de."hskLevel", de.breakdown, de.synonyms,
+               de.language, de.script, de."difficulty", de.breakdown, de.synonyms,
                de."exampleSentences", de.expansion, de."expansionLiteralTranslation",
                de."iconId"${posCols}
         FROM ${table} de
@@ -386,7 +405,7 @@ export class StarterPacksService {
    * Special handling: "already-learned" → bucket='library' + category='Mastered' + perfect mark history
    */
   async sortCard(userId: string, cardId: number, bucket: string, language: string): Promise<any> {
-    const validBuckets: string[] = ['already-learned', 'library', 'skip', 'learn-later'];
+    const validBuckets: string[] = ['already-learned', 'library', 'skip'];
     if (!validBuckets.includes(bucket)) {
       throw new Error(`Invalid bucket: ${bucket}`);
     }
@@ -463,13 +482,13 @@ export class StarterPacksService {
 
       // Recompute the band after the sort so the client can update its filter on
       // the fly. Neutral for sequential languages (Spanish) — see _computeBand.
-      const { userHskLevel, provisionalMode } = await this._computeBand(userId, language);
+      const { userDifficultyLevel, provisionalMode } = await this._computeBand(userId, language);
 
       return {
         success: true,
         message: 'Card sorted successfully',
         bucket: actualBucket,
-        userHskLevel,
+        userDifficultyLevel,
         provisionalMode
       };
     } finally {
@@ -518,9 +537,9 @@ export class StarterPacksService {
       }
 
       // Recompute band after rollback so the client can re-sync. Mirrors sortCard().
-      const { userHskLevel, provisionalMode } = await this._computeBand(userId, language);
+      const { userDifficultyLevel, provisionalMode } = await this._computeBand(userId, language);
 
-      return { success: true, message: 'Card undo successful', userHskLevel, provisionalMode };
+      return { success: true, message: 'Card undo successful', userDifficultyLevel, provisionalMode };
     } finally {
       client.release();
     }

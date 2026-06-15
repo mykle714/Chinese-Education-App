@@ -65,8 +65,11 @@ export interface AuthResponse {
 // supported (their per-language dictionary tables don't exist — see CLAUDE.md).
 export type Language = 'zh' | 'es';
 
-// HSK Level type for vocabulary entries
-export type HskLevel = 'HSK1' | 'HSK2' | 'HSK3' | 'HSK4' | 'HSK5' | 'HSK6';
+// Per-language difficulty label stored in dictionaryentries_*.difficulty (drives
+// the discover band). The encoding differs by language:
+//   - zh: 'HSK1'..'HSK6' (HSK proficiency, also shown as an "HSK 3" badge)
+//   - es: '1'..'5'       (learner-acquisition difficulty, 1=easiest)
+export type DifficultyLevel = 'HSK1' | 'HSK2' | 'HSK3' | 'HSK4' | 'HSK5' | 'HSK6' | '1' | '2' | '3' | '4' | '5';
 export type TenseLabel = 'past' | 'present' | 'future';
 
 // Particle or classifier annotation attached to a segmented character in example sentence metadata
@@ -126,7 +129,7 @@ export interface DictionaryEntry {
 
   // Classification
   partsOfSpeech?: string[] | null;
-  hskLevel?: string | null;
+  difficulty?: string | null;
 
   // Definitions
   definitions: string[];  // Parsed JSON array
@@ -167,7 +170,7 @@ export interface DiscoverCard {
   language: Language;
   word2?: string | null;
   script?: string | null;
-  hskLevel?: string | null;
+  difficulty?: string | null;
   // Spanish (es) only: this card's POS + whether the word1 has multiple
   // discoverable POS (→ client shows a "(v)"/"(n)" badge). Null/false for Chinese.
   pos?: string | null;
@@ -216,7 +219,7 @@ export enum FlashcardCategory {
 }
 
 // Starter pack bucket type
-export type StarterPackBucket = 'library' | 'learn-later' | 'skip';
+export type StarterPackBucket = 'library' | 'skip';
 
 // Used-in item: a multi-char word that contains a given single character.
 // Returned per single-char zh card by OnDeckVocabService.enrichWithUsedIn.
@@ -239,7 +242,7 @@ export interface VocabEntry {
   script?: string;
   pronunciation?: string | null;
   tone?: string | null;   // Tone digits derived from pronunciation (e.g. "12" for fēng kuáng)
-  hskLevel?: HskLevel | null;
+  difficulty?: DifficultyLevel | null;
   partsOfSpeech?: string[] | null;  // POS tags from dictionaryentries_zh (e.g. ["noun", "verb"])
   vernacularScore?: number | null;  // 1–5 register score from dictionaryentries_zh (1=literary, 5=natural colloquial)
   markHistory?: ReviewMark[];  // Last 16 flashcard mark results
@@ -280,14 +283,14 @@ export interface VocabEntryCreateData {
   userId: string;
   entryKey: string;
   language: Language;
-  hskLevel?: HskLevel | null;
+  difficulty?: DifficultyLevel | null;
 }
 
 // VocabEntry update data type
 export interface VocabEntryUpdateData {
   entryKey?: string;
   language?: Language;
-  hskLevel?: HskLevel | null;
+  difficulty?: DifficultyLevel | null;
 }
 
 // Request parameters type

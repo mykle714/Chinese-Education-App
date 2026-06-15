@@ -3,24 +3,45 @@ import { Box, Typography } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import { useDiscoverNavigation } from "../hooks/useDiscoverNavigation";
 import HomeIcon from "@mui/icons-material/Home";
+import StyleIcon from "@mui/icons-material/Style";
 import LanguageIcon from "@mui/icons-material/Language";
-import SportsEsportsIcon from "@mui/icons-material/SportsEsports";
 import AccountCircleIcon from "@mui/icons-material/AccountCircle";
 import { COLORS } from "../theme/colors";
 import { FONTS } from "../theme/fonts";
 import { SIZE, WEIGHT, LEADING } from "../theme/scale";
 
+// Floating-pill geometry. Exported so scroll containers (see MobileTabScreen)
+// can reserve matching bottom padding and never let content hide behind the bar.
+export const FLOATING_FOOTER_HEIGHT = 64;
+export const FLOATING_FOOTER_INSET = 16;
+// Total vertical space the floating pill occupies plus a breathing gap above it,
+// used as the scroll area's paddingBottom so the last row clears the bar.
+export const FLOATING_FOOTER_CLEARANCE = FLOATING_FOOTER_HEIGHT + FLOATING_FOOTER_INSET * 2;
+
+// The footer is always a detached, rounded pill, anchored to the bottom of the
+// nearest positioned ancestor (MobileTabScreen's ScreenRoot, or the phone frame
+// for pages that render it directly) and hovering above the content. This is the
+// ONLY footer style in the app — there is no flat/in-flow variant. Surfaces that
+// render it must reserve FLOATING_FOOTER_CLEARANCE of bottom space so content
+// never hides behind the pill.
 const Footer = styled(Box)(() => ({
     backgroundColor: COLORS.header,
-    width: "100%",
-    height: 96,
     display: "flex",
     flexDirection: "column",
     justifyContent: "center",
     flexShrink: 0,
     // Block native pan/scroll: dragging from the footer must not scroll/bounce
-    // the page (it sits below drag-to-sort/game surfaces).
+    // the page (it sits over drag-to-sort/game surfaces).
     touchAction: "none",
+    position: "absolute",
+    left: FLOATING_FOOTER_INSET,
+    right: FLOATING_FOOTER_INSET,
+    bottom: FLOATING_FOOTER_INSET,
+    height: FLOATING_FOOTER_HEIGHT,
+    borderRadius: FLOATING_FOOTER_HEIGHT / 2,
+    boxShadow: "0 6px 24px rgba(0, 0, 0, 0.20)",
+    overflow: "hidden", // clip item ripples/dividers to the pill shape
+    zIndex: 10,
 }));
 
 const FooterContent = styled(Box)(() => ({
@@ -52,15 +73,20 @@ const FooterDivider = styled(Box)(() => ({
     backgroundColor: COLORS.border,
 }));
 
+// The four top-level footer tabs. Every other surface is a drill-in reached from
+// one of these (or from the Home menu) — there is no separate Games tab anymore;
+// Games lives under the Home menu.
+export type FooterTab = "flashcards" | "discover" | "home" | "account";
+
 interface MobileFooterProps {
-    activePage?: "home" | "discover" | "games" | "account";
+    activePage?: FooterTab;
 }
 
 const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "home" }) => {
     const navigate = useNavigate();
     const { goToDiscover } = useDiscoverNavigation();
 
-    const handleHomeClick = () => {
+    const handleFlashcardsClick = () => {
         navigate("/flashcards/decks");
     };
 
@@ -68,8 +94,8 @@ const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "home" }) => {
         goToDiscover();
     };
 
-    const handleGamesClick = () => {
-        navigate("/games");
+    const handleHomeClick = () => {
+        navigate("/");
     };
 
     const handleAccountClick = () => {
@@ -103,6 +129,28 @@ const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "home" }) => {
 
                 <FooterItem
                     className="mobile-footer-item"
+                    active={activePage === "flashcards"}
+                    onClick={handleFlashcardsClick}
+                >
+                    <StyleIcon className="mobile-footer__flashcards-icon" sx={{ fontSize: 24, color: COLORS.iconColor }} />
+                    <Typography
+                        className="mobile-footer__flashcards-label"
+                        sx={{
+                            fontSize: SIZE.caption,
+                            fontWeight: WEIGHT.regular,
+                            lineHeight: LEADING.tight,
+                            color: COLORS.onSurface,
+                            fontFamily: FONTS.sans,
+                        }}
+                    >
+                        Flashcards
+                    </Typography>
+                </FooterItem>
+
+                <FooterDivider className="mobile-footer-divider" />
+
+                <FooterItem
+                    className="mobile-footer-item"
                     active={activePage === "discover"}
                     onClick={handleDiscoverClick}
                 >
@@ -118,28 +166,6 @@ const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "home" }) => {
                         }}
                     >
                         Discover
-                    </Typography>
-                </FooterItem>
-
-                <FooterDivider className="mobile-footer-divider" />
-
-                <FooterItem
-                    className="mobile-footer-item"
-                    active={activePage === "games"}
-                    onClick={handleGamesClick}
-                >
-                    <SportsEsportsIcon className="mobile-footer__games-icon" sx={{ fontSize: 24, color: COLORS.iconColor }} />
-                    <Typography
-                        className="mobile-footer__games-label"
-                        sx={{
-                            fontSize: SIZE.caption,
-                            fontWeight: WEIGHT.regular,
-                            lineHeight: LEADING.tight,
-                            color: COLORS.onSurface,
-                            fontFamily: FONTS.sans,
-                        }}
-                    >
-                        Games
                     </Typography>
                 </FooterItem>
 

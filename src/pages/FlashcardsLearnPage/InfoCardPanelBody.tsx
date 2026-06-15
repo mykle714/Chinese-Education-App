@@ -135,7 +135,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
     // Tab content availability — order matches TAB_LABELS: definition, examples, breakdown
     const definitionTabHasContent = !!(
         currentEntry?.longDefinition ||
-        currentEntry?.hskLevel ||
+        currentEntry?.difficulty ||
         (currentEntry?.partsOfSpeech?.length ?? 0) > 0
     );
     const examplesTabHasContent = !!(currentEntry?.exampleSentences?.length);
@@ -307,7 +307,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                                 }}
                             />
                         )}
-                        {(currentEntry?.hskLevel || (currentEntry?.partsOfSpeech?.length ?? 0) > 0 || currentEntry?.vernacularScore != null) && (
+                        {(currentEntry?.difficulty || (currentEntry?.partsOfSpeech?.length ?? 0) > 0 || currentEntry?.vernacularScore != null) && (
                             <Box
                                 className="mobile-demo-definition-meta-strip"
                                 sx={{
@@ -319,13 +319,14 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                                     borderBottom: `1px solid ${fc.border}`,
                                 }}
                             >
-                                {currentEntry?.hskLevel && (
+                                {/* HSK meta: only for HSK-encoded difficulty (zh); es stores a bare 1–5. */}
+                                {currentEntry?.difficulty?.startsWith('HSK') && (
                                     <Box sx={{ display: "flex", flexDirection: "column", gap: "3px" }}>
                                         <Typography sx={{ fontSize: SIZE.micro, fontWeight: WEIGHT.bold, color: fc.textSecondary, letterSpacing: TRACKING.caps, textTransform: "uppercase", fontFamily: FC_FONT }}>
                                             HSK
                                         </Typography>
                                         <Typography sx={{ fontSize: SIZE.body, fontWeight: WEIGHT.semibold, color: fc.onSurface, fontFamily: FC_FONT }}>
-                                            {currentEntry.hskLevel.replace(/^HSK/, 'HSK ')}
+                                            {currentEntry.difficulty.replace(/^HSK/, 'HSK ')}
                                         </Typography>
                                     </Box>
                                 )}

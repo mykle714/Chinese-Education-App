@@ -12,7 +12,7 @@ import { LongDefinitionPart } from '../../types/index.js';
 const DICTIONARY_COLUMNS = `
   id, language, script, discoverable, "createdAt",
   word1, word2, pronunciation, "numberedPinyin", tone,
-  "partsOfSpeech", "hskLevel",
+  "partsOfSpeech", "difficulty",
   definitions, "longDefinition",
   breakdown, synonyms,
   "exampleSentences",
@@ -53,7 +53,7 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
       numberedPinyin: row.numberedPinyin ?? null,
       tone: row.tone ?? null,
       partsOfSpeech: row.partsOfSpeech ?? null,
-      hskLevel: row.hskLevel ?? null,
+      difficulty: row.difficulty ?? null,
       definitions,
       shortDefinitionPronunciationOverride: (row.shortDefinitionPronunciationOverride as ShortDefinitionPronunciationOverride | null) ?? null,
       shortDefinition: resolveShortDefinition(definitions, row.shortDefinitionPronunciationOverride),

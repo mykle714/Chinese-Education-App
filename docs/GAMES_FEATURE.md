@@ -14,18 +14,26 @@ linked from the hub.
 
 | Path     | Component   | Footer `activePage` | Notes                          |
 | -------- | ----------- | ------------------- | ------------------------------ |
-| `/games` | `GamesPage` | `"games"`           | Hub / navigational menu        |
+| `/games` | `GamesPage` | `"home"`            | Hub / menu; drill-in from Home (back arrow → `/`) |
 
-Each individual game will get its own route under `/games/<slug>` and should
-also render `MobileFooter activePage="games"` so the tab stays highlighted
-while a user is inside a game.
+Each individual game gets its own route under `/games/<slug>` and renders
+`MobileFooter activePage="home"` so the **Home** tab stays highlighted while a
+user is inside a game (Games lives under the Home menu).
+
+**Game info screens get the floating footer.** A game's pre-play info / start
+screen (rules + level picker, plus loading/blocked states) renders
+`<MobileFooter activePage="home" />` so players can jump to another tab without
+backing out first. It is hidden during the live stage (playing/won/lost), where
+the game owns the full surface and the end-popup provides its own navigation.
+Reference: `BubbleMatchPage` gates the footer on `!showStage`. See
+[MOBILE_TAB_SCREEN_LAYOUT.md](./MOBILE_TAB_SCREEN_LAYOUT.md).
 
 ## Navigation entry point
 
-A "Games" tab has been added to `MobileFooter` between **Discover** and
-**Account**. It uses MUI's `SportsEsportsIcon` and follows the same icon +
-label + divider pattern as the other tabs. The footer's `activePage` union now
-includes `"games"`.
+Games is **not** a footer tab. It is a row in the **Home menu** (`/`, see
+[NAVIGATION.md](./NAVIGATION.md)). The footer tabs are Flashcards / Discover /
+Home / Account; the Games hub is reached by tapping **Games** in the Home menu,
+and its header shows a back arrow returning to `/`.
 
 ## Design decisions
 
@@ -68,9 +76,9 @@ for now; if a third page needs them we should hoist a shared
 All mobile-demo routes (the ones listed in `MOBILE_DEMO_PATHS` in
 `src/components/Layout.tsx`) share **one** phone-frame container:
 `src/components/MobileDemoFrame.tsx`. `Layout.tsx` wraps the route's children
-with it automatically — on mobile it renders full-bleed (no Layout chrome),
-on desktop it renders as a centered ~393px-wide rounded card alongside the
-Layout sidebar drawer.
+with it automatically — on mobile it renders full-bleed, on desktop it renders
+as a centered ~393px-wide rounded card. There is no sidebar/hamburger chrome
+anymore (see [NAVIGATION.md](./NAVIGATION.md)); desktop is phone-frame-only.
 
 **Do not** re-introduce a per-page `IPhoneFrame = styled(Box)…` or local
 `desktopFrameSx` block when adding a new game page (or any other mobile-demo
@@ -78,33 +86,33 @@ page). Just register the route in `MOBILE_DEMO_PATHS` and render the page's
 content directly — header + content area + `MobileFooter`. The frame is
 applied for you.
 
-Today's `MOBILE_DEMO_PATHS`: `/flashcards/decks`, `/account`,
-`/flashcards/learn`, `/games`, plus any path under `/discover/sort/` or
-`/flashcards/card/`.
+Today's `MOBILE_DEMO_PATHS`: `/`, `/flashcards/decks`, `/flashcards/mastered`,
+`/account`, `/flashcards/learn`, `/discover`, `/games`, plus any path under
+`/discover/sort/` or `/flashcards/card/`.
 
 ## Mobile demo header (shared header hierarchy)
 
-Two-layer header model:
+Two-layer header model (there is **no** hamburger / nav drawer — global nav is
+the footer tabs + the Home menu):
 
 - **`PageHeader`** (`src/components/PageHeader.tsx`) — base layout primitive.
-  Defines the row: optional back button · title · `rightContent` (a single
-  flush-right ReactNode slot). Has **no opinion** about what goes in the
-  rightmost slot.
-- **`MobileDemoHeader`** (`src/components/MobileDemoHeader.tsx`) — hamburger
-  parent. Composes `PageHeader` and pins `MobileNavDrawer` into the rightmost
-  slot. Exposes an `extraActions` prop for page-specific buttons (e.g. the
-  undo button on Discover) that render **to the left** of the hamburger.
+  Defines the row: optional back button · optional left-icon badge · title ·
+  `rightContent` (a single flush-right ReactNode slot).
+- **`MobileDemoHeader`** (`src/components/MobileDemoHeader.tsx`) — composes
+  `PageHeader`, adds the active-tab identity badge in the left slot
+  (`activePage`, when no back button), `showBack` for drill-ins, and an
+  `extraActions` slot rendered flush-right (e.g. the undo button on Sort Cards,
+  the settings gear on Account).
 
 Rules of thumb:
 
-- Footer-tab surfaces (Decks, Discover, Games, Account) → use
-  `MobileDemoHeader`. The hamburger is included for free; pages just pass
-  `title` and optional `extraActions`. Do **not** wire `MobileNavDrawer`
-  into pages by hand.
+- Footer-tab hubs (Flashcards/Decks, Discover, Home, Account) → use
+  `MobileDemoHeader` inside `MobileTabScreen`; pass `title`, `activePage`, and
+  optional `headerExtraActions`. Drill-in hubs (Games) also pass `showBack` +
+  `onBack`.
 - Specialty headers (`FlashcardsLearnHeader` with fire icon + seconds counter,
   `VocabCardDetailPage` with just back+title) → compose `PageHeader`
-  directly and own their own `rightContent`. They opt out of the hamburger by
-  not using `MobileDemoHeader`.
+  directly and own their own `rightContent`.
 
 ## Games framework
 
@@ -133,8 +141,7 @@ The registry is consumed by:
 - `src/App.tsx` — iterates `GAME_REGISTRY` to mount one route per game, each
   wrapped in a `Suspense` boundary for the lazy component.
 - `src/components/Layout.tsx` — spreads `GAME_ROUTES` into
-  `MOBILE_DEMO_PATHS` so every game gets the phone frame + hamburger
-  automatically.
+  `MOBILE_DEMO_PATHS` so every game gets the phone frame automatically.
 
 Net effect: adding a new game = one entry in `GAME_REGISTRY` + one page
 component. No edits to `GamesPage`, `App`, or `Layout`.
@@ -159,7 +166,7 @@ component. No edits to `GamesPage`, `App`, or `Layout`.
 
 - **`GamePage.tsx`** — page-level shell. Renders `<MobileDemoHeader>` (with
   back-nav to `/games`) + a flex `ContentArea` + `<MobileFooter
-  activePage="games">`. Most games render `<GamePage game={gameDef}>{stage}</GamePage>`.
+  activePage="home">`. Most games render `<GamePage game={gameDef}>{stage}</GamePage>`.
 
 - **`useGameActors.ts`** — generalized version of the night market's
   `usePixiPedestrians` handle. Generic over the game's actor type; returns
@@ -240,9 +247,9 @@ themselves automatically from the registry.
 
 ## Files
 
-- `src/components/MobileFooter.tsx` — added Games tab
+- `src/components/MobileFooter.tsx` — footer tabs (Flashcards / Discover / Home / Account)
 - `src/components/MobileDemoFrame.tsx` — shared phone-frame container
-- `src/components/MobileDemoHeader.tsx` — hamburger-parent header for footer-tab pages
+- `src/components/MobileDemoHeader.tsx` — shared header (back / title / active badge / extraActions); no hamburger
 - `src/components/PageHeader.tsx` — base header (renamed `rightItems` → `rightContent`)
 - `src/components/Layout.tsx` — wires `MobileDemoFrame` into demo routes; spreads `GAME_ROUTES` into `MOBILE_DEMO_PATHS`
 - `src/pages/GamesPage.tsx` — hub page; renders `GAME_REGISTRY`
@@ -268,7 +275,7 @@ runtime** — it is a DOM + `requestAnimationFrame` game (absolutely-positioned
 bubbles moved via `transform`), chosen for direct reuse of the colored-pinyin
 `CPCDRow` (cpcd) and cheap circle-circle physics at ~50 bubbles. It still renders
 through the standard page shell (its own flp-style header + `MobileFooter
-activePage="games"`), not `GamePage`.
+activePage="home"`), not `GamePage`.
 
 ### Gameplay
 

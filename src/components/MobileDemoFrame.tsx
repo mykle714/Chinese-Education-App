@@ -17,6 +17,11 @@ const FrameRoot = styled(Box)(() => ({
     flexDirection: "column",
     width: "100%",
     height: "100dvh",
+    // Positioning context for the floating footer pill: pages that render
+    // MobileFooter directly (without MobileTabScreen's own positioned wrapper)
+    // anchor the pill to this frame, so it stays inside the phone surface on
+    // desktop's centered card rather than escaping to the viewport.
+    position: "relative",
 }));
 
 interface MobileDemoFrameProps {

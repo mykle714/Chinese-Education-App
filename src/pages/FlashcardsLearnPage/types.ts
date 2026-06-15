@@ -1,9 +1,9 @@
-// VocabEntry, UsedInItem and HskLevel are canonical in src/types; re-exported
+// VocabEntry, UsedInItem and DifficultyLevel are canonical in src/types; re-exported
 // here so existing `from "./types"` imports across the flashcards page keep
 // working. (FlashcardCategory/ParticleOrClassifierInfo also live in src/types —
 // import them from there directly if needed.)
-import type { VocabEntry, UsedInItem, HskLevel } from "../../types";
-export type { VocabEntry, UsedInItem, HskLevel };
+import type { VocabEntry, UsedInItem, DifficultyLevel } from "../../types";
+export type { VocabEntry, UsedInItem, DifficultyLevel };
 
 export interface BreakdownItem {
     character: string;

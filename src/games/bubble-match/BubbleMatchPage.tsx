@@ -9,6 +9,7 @@ import { useTTS } from "../../hooks/useTTS";
 import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
 import { useBlockEdgeSwipe } from "../../hooks/useBlockEdgeSwipe";
 import type { VocabEntry } from "../../pages/FlashcardsLearnPage/types";
+import MobileFooter, { FLOATING_FOOTER_CLEARANCE } from "../../components/MobileFooter";
 import BubbleMatchHeader from "./BubbleMatchHeader";
 import BubbleMatchEndPopup from "./BubbleMatchEndPopup";
 import BubbleStage, { type LoseReason } from "./BubbleStage";
@@ -29,10 +30,9 @@ interface GamePoolResponse {
 type Phase =
     | "loading"
     | "blocked"
-    | "start"
+    | "start" // level picker
     | "playing"
-    | "levelCleared" // beat a non-final level → interstitial before the next one
-    | "gameWon" // beat the final level → whole game cleared
+    | "won" // cleared the chosen level
     | "lost";
 
 function shuffle<T>(arr: T[]): T[] {
@@ -49,10 +49,18 @@ const poolQuery = Object.entries(GAME_DISTRIBUTION)
     .map(([cat, n]) => `${encodeURIComponent(cat)}=${n}`)
     .join("&");
 
-/** Weekly-achievement key recorded when the player clears the final level. The
- *  server stores this in the per-user `weeklies` table (wiped weekly by a prod
- *  cron), so its presence means "beat Bubble Match this week". */
-const WEEKLY_ACTIVITY = "bubbleMatch";
+/** Per-level weekly-achievement keys. Each level banks its own badge in the
+ *  per-user `weeklies` table (wiped weekly by a prod cron); clearing a harder
+ *  level also banks every easier level's badge (see recordWeeklyWin). Keys look
+ *  like `bubbleMatch-1` (Relaxed) … `bubbleMatch-3` (Frantic). */
+const WEEKLY_PREFIX = "bubbleMatch";
+const weeklyKeyForLevel = (level: number) => `${WEEKLY_PREFIX}-${level}`;
+/** Parse a stored activity key back into its level number, or null if it isn't a
+ *  Bubble Match per-level key (also tolerates a legacy bare `bubbleMatch`). */
+const levelFromWeeklyKey = (activity: string): number | null => {
+    const m = /^bubbleMatch-(\d+)$/.exec(activity);
+    return m ? Number(m[1]) : null;
+};
 
 /** Human-readable preferred mix, e.g. "2 Unfamiliar, 10 Target, 6 Comfortable, and 2 Mastered". */
 const RECOMMENDED_MIX = (() => {
@@ -64,12 +72,12 @@ const RECOMMENDED_MIX = (() => {
 /**
  * Bubble Match — page shell + game-flow state machine.
  *
- * Flow: loading → (blocked | start) → playing → (levelCleared → playing …)*
- *       → (gameWon | lost).
- * One game locks in a single set of TOTAL_PAIRS cards (20 pairs = 40 bubbles)
- * and the player climbs the LEVEL_CONFIGS ladder with that same set: clearing a
- * level advances to the next (faster launch cadence + shorter clock), clearing
- * the final level wins the game, and running out of time/space loses it.
+ * Flow: loading → (blocked | start) → playing → (won | lost) → start …
+ * The start screen is a level picker: the player chooses one LEVEL_CONFIGS entry
+ * and plays it on its own (levels do NOT chain). A run locks in a single set of
+ * TOTAL_PAIRS cards (20 pairs = 40 bubbles); the chosen level only sets the
+ * launch cadence + clock. Clearing the level wins the run (and banks its weekly
+ * badge plus every easier level's), and running out of time/space loses it.
  *
  * Minute-points: the fire badge lives in the header and earning is gated by
  * route prefix in the global activity-detection layer (see the eligible-pages
@@ -98,20 +106,13 @@ const BubbleMatchPage: React.FC = () => {
     const [loseReason, setLoseReason] = useState<LoseReason | null>(null);
     // Whether the game-over card is collapsed into the top-right corner puck.
     const [popupMinimized, setPopupMinimized] = useState(false);
-    // Whether the user has already cleared Bubble Match this week (from the
-    // weeklies table). Seeded on mount and set optimistically on a fresh win, so
-    // the start screen / win popup can surface the weekly achievement.
-    const [beatThisWeek, setBeatThisWeek] = useState(false);
+    // Set of level numbers the user has already cleared this week (from the
+    // weeklies table). Seeded on mount and updated optimistically on a fresh win,
+    // so the picker / win popup can surface the per-level weekly badges.
+    const [clearedLevels, setClearedLevels] = useState<Set<number>>(new Set());
     // Bumped on each (re)start so BubbleStage remounts with a clean slate.
     const runIdRef = useRef(0);
     const [runId, setRunId] = useState(0);
-
-    // Where the current level sits in the ladder, and what (if anything) comes
-    // next. Levels chain: clearing one advances to the next on the same card set;
-    // clearing the final level (no next) wins the whole game.
-    const levelIdx = LEVEL_CONFIGS.findIndex((c) => c.level === level.level);
-    const nextLevelConfig = LEVEL_CONFIGS[levelIdx + 1] ?? null;
-    const isFinalLevel = nextLevelConfig === null;
 
     // Fetch a fresh, randomized game pool from the server (the endpoint orders
     // candidates by RANDOM(), so each call yields a different vocab set).
@@ -169,9 +170,9 @@ const BubbleMatchPage: React.FC = () => {
         };
     }, [token, fetchGamePool]);
 
-    // Seed the "already beat it this week" flag from the weeklies table so the
-    // start screen / win popup can reflect a win earned earlier this week.
-    // Fire-and-forget: a failure just leaves the flag false (no UI blocking).
+    // Seed the per-level cleared set from the weeklies table so the picker / win
+    // popup can reflect badges earned earlier this week. Fire-and-forget: a
+    // failure just leaves the set empty (no UI blocking).
     useEffect(() => {
         if (!token) return;
         let cancelled = false;
@@ -184,9 +185,12 @@ const BubbleMatchPage: React.FC = () => {
                 if (!res.ok) return;
                 const data: { weeklies?: Array<{ activity: string }> } = await res.json();
                 if (cancelled) return;
-                setBeatThisWeek(!!data.weeklies?.some((w) => w.activity === WEEKLY_ACTIVITY));
+                const levels = (data.weeklies ?? [])
+                    .map((w) => levelFromWeeklyKey(w.activity))
+                    .filter((lv): lv is number => lv !== null);
+                setClearedLevels(new Set(levels));
             } catch {
-                /* leave beatThisWeek false */
+                /* leave clearedLevels empty */
             }
         })();
         return () => {
@@ -206,34 +210,29 @@ const BubbleMatchPage: React.FC = () => {
         setPhase("playing");
     }, []);
 
-    // Start (or restart) the whole game from Level 1 on the already-loaded card
-    // set (reshuffled launch order). Primes the audio element inside this real
-    // click gesture: in-game autoplay fires from a bubble's pointerdown but only
-    // after an awaited fetch, which loses gesture context — without this, mobile
+    // Start (or replay) the given level on the already-loaded card set
+    // (reshuffled launch order). Primes the audio element inside this real click
+    // gesture: in-game autoplay fires from a bubble's pointerdown but only after
+    // an awaited fetch, which loses gesture context — without this, mobile
     // autoplay policy would silently drop the first Chinese bubble's narration.
-    const startGame = useCallback(() => {
+    const startLevel = useCallback((cfg: LevelConfig) => {
         tts.unlockAudio();
-        beginRun(LEVEL_CONFIGS[0], pool);
+        beginRun(cfg, pool);
     }, [tts.unlockAudio, beginRun, pool]);
 
-    // Start the whole game from Level 1 on a freshly fetched (different) card set.
-    // Primes audio inside the click gesture before the awaited fetch — same reason
-    // as startGame.
-    const startGameNewVocab = useCallback(async () => {
+    // Start the given level on a freshly fetched (different) card set. Primes
+    // audio inside the click gesture before the awaited fetch — same reason as
+    // startLevel.
+    const startLevelNewVocab = useCallback(async (cfg: LevelConfig) => {
         tts.unlockAudio();
         setPhase("loading");
         const cards = await fetchGamePool();
         if (!cards) return; // fetchGamePool already switched to the blocked phase
-        beginRun(LEVEL_CONFIGS[0], cards);
+        beginRun(cfg, cards);
     }, [tts.unlockAudio, fetchGamePool, beginRun]);
 
-    // Advance from a cleared level to the next one, keeping the SAME card set
-    // (reshuffled). Only reachable from the levelCleared interstitial, where a
-    // next level is guaranteed to exist.
-    const continueToNextLevel = useCallback(() => {
-        tts.unlockAudio();
-        if (nextLevelConfig) beginRun(nextLevelConfig, pool);
-    }, [tts.unlockAudio, beginRun, nextLevelConfig, pool]);
+    // Drop back to the level picker (keeps the loaded pool for a quick replay).
+    const backToPicker = useCallback(() => setPhase("start"), []);
 
     // Record a flashcard review mark for a matched/mismatched bubble's vocab
     // entry, reusing the same endpoint flp's working loop calls. Fire-and-forget:
@@ -262,36 +261,42 @@ const BubbleMatchPage: React.FC = () => {
             .catch((err) => console.error(`[BubbleMatch] mark failed → card ${entry.id}:`, err));
     }, [token]);
 
-    // Record the weekly Bubble Match achievement on the server. Fire-and-forget
-    // (mirrors markBubbleMatch): the win UI never blocks on it, and the flag is
-    // set optimistically so the popup reflects the win even if the POST is slow.
-    const recordWeeklyWin = useCallback(() => {
-        setBeatThisWeek(true);
+    // Bank the weekly badges for clearing `clearedLevel`: that level plus every
+    // easier one (lower level number). Fire-and-forget per key (mirrors
+    // markBubbleMatch): the win UI never blocks on it, and the cleared set is
+    // updated optimistically so the popup reflects the badges even if a POST is
+    // slow. Already-earned levels are skipped (the upsert would just re-stamp).
+    const recordWeeklyWin = useCallback((clearedLevel: number) => {
+        const earned = LEVEL_CONFIGS.map((c) => c.level).filter((lv) => lv <= clearedLevel);
+        setClearedLevels((prev) => {
+            const next = new Set(prev);
+            earned.forEach((lv) => next.add(lv));
+            return next;
+        });
         const headers: HeadersInit = { "Content-Type": "application/json" };
         if (token && token !== "null" && token !== "undefined") {
             headers["Authorization"] = `Bearer ${token}`;
         }
-        fetch(`${API_BASE_URL}/api/users/me/weeklies`, {
-            method: "POST",
-            headers,
-            credentials: "include",
-            body: JSON.stringify({ key: WEEKLY_ACTIVITY, value: true }),
-        })
-            .then((res) => console.log(`[BubbleMatch] weekly win recorded → HTTP ${res.status}`))
-            .catch((err) => console.error("[BubbleMatch] weekly win record failed:", err));
+        earned.forEach((lv) => {
+            fetch(`${API_BASE_URL}/api/users/me/weeklies`, {
+                method: "POST",
+                headers,
+                credentials: "include",
+                body: JSON.stringify({ key: weeklyKeyForLevel(lv), value: true }),
+            })
+                .then((res) => console.log(`[BubbleMatch] weekly badge L${lv} recorded → HTTP ${res.status}`))
+                .catch((err) => console.error(`[BubbleMatch] weekly badge L${lv} record failed:`, err));
+        });
     }, [token]);
 
-    // Clearing a level shows the level-cleared interstitial; clearing the final
-    // level (no next config) wins the whole game — and banks the weekly achievement.
+    // Clearing the chosen level wins the run and banks its weekly badge (plus
+    // every easier level's). Levels don't chain — the win popup offers replay /
+    // picker, not an auto-advance.
     const onLevelWin = useCallback(() => {
         setPopupMinimized(false);
-        if (isFinalLevel) {
-            recordWeeklyWin();
-            setPhase("gameWon");
-        } else {
-            setPhase("levelCleared");
-        }
-    }, [isFinalLevel, recordWeeklyWin]);
+        recordWeeklyWin(level.level);
+        setPhase("won");
+    }, [recordWeeklyWin, level.level]);
     const onLevelLose = useCallback((reason: LoseReason) => {
         setLoseReason(reason);
         setPopupMinimized(false);
@@ -313,6 +318,10 @@ const BubbleMatchPage: React.FC = () => {
                 justifyContent: "center",
                 gap: 2.5,
                 px: 4,
+                // Clear the floating footer pill that overlays the non-gameplay
+                // (info / loading / blocked) screens so centered content never
+                // tucks behind it.
+                pb: `${FLOATING_FOOTER_CLEARANCE}px`,
                 textAlign: "center",
             }}
         >
@@ -320,41 +329,19 @@ const BubbleMatchPage: React.FC = () => {
         </Box>
     );
 
-    // Plain (non-minimizable) scrim + card for the level-cleared interstitial and
-    // the game-won screen. Translucent so the live field shows through behind it.
-    const renderScrim = (children: React.ReactNode) => (
-        <Box
-            className="bubble-match__popup-scrim"
-            sx={{
-                position: "absolute",
-                inset: 0,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                px: 4,
-                zIndex: 200,
-                backgroundColor: "rgba(20, 20, 28, 0.32)",
-            }}
-        >
-            <Box
-                className="bubble-match__popup-card"
-                sx={{
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    gap: 2,
-                    textAlign: "center",
-                    width: "100%",
-                    maxWidth: 340,
-                    px: 4,
-                    py: 3.5,
-                    borderRadius: "20px",
-                    backgroundColor: fc.flashCard,
-                    boxShadow: "0 18px 48px rgba(0, 0, 0, 0.32)",
-                }}
-            >
-                {children}
-            </Box>
+    // Shared replay actions for the end-of-run popups (won / lost). Levels don't
+    // chain, so both offer: replay this level (same / different vocab set), jump
+    // back to the picker, or quit. `level` is the level that just ended.
+    const endActions = (
+        <Box className="bubble-match__popup-actions" sx={{ display: "flex", flexDirection: "column", gap: 1.5, width: "100%" }}>
+            <Button variant="contained" onClick={() => startLevel(level)} sx={{ textTransform: "none" }}>
+                Play Level {level.level} again (same vocab set)
+            </Button>
+            <Button variant="outlined" onClick={() => startLevelNewVocab(level)} sx={{ textTransform: "none" }}>
+                Play again with a different vocab set
+            </Button>
+            <Button variant="text" onClick={backToPicker}>Choose another level</Button>
+            <Button variant="text" onClick={() => navigate("/games")}>Back to Games</Button>
         </Box>
     );
 
@@ -384,75 +371,51 @@ const BubbleMatchPage: React.FC = () => {
                     Bubble Match
                 </Typography>
                 <Typography className="bubble-match__rules" sx={{ fontSize: SIZE.body, color: fc.textSecondary, lineHeight: LEADING.normal, maxWidth: 300 }}>
-                    Match each word to its meaning by dragging one bubble onto the other before the screen fills up. One set of {TOTAL_PAIRS} pairs carries through all {LEVEL_CONFIGS.length} levels — each one launches the bubbles faster. Clear Level {LEVEL_CONFIGS[LEVEL_CONFIGS.length - 1].level} to win.
+                    Match each word to its meaning by dragging one bubble onto the other before the screen fills up. Pick a level — each one plays a single {TOTAL_PAIRS}-pair set, and higher levels launch the bubbles faster with less time on the clock. Clearing a harder level also earns every easier level's badge.
                 </Typography>
                 <Typography className="bubble-match__recommended-mix" sx={{ fontSize: SIZE.body, color: fc.textSecondary, lineHeight: LEADING.normal, maxWidth: 300, fontStyle: "italic" }}>
                     For the best practice mix, play with at least {RECOMMENDED_MIX} cards in your Learn Now deck.
                 </Typography>
-                {/* Weekly achievement badge — shown once the user has cleared the
-                    final level this week (from the weeklies table). */}
-                {beatThisWeek && (
-                    <Typography className="bubble-match__weekly-badge" sx={{ fontSize: SIZE.body, fontWeight: WEIGHT.bold, color: fc.onSurface }}>
-                        ⭐ You already beat Bubble Match this week!
-                    </Typography>
-                )}
-                <Box className="bubble-match__start" sx={{ display: "flex", flexDirection: "column", gap: 1.5, width: "100%", maxWidth: 280, mt: 1 }}>
-                    <Button
-                        className="bubble-match__start-btn"
-                        variant="contained"
-                        onClick={startGame}
-                        sx={{ py: 1.5, fontSize: SIZE.bodyLg, textTransform: "none", borderRadius: "12px" }}
-                    >
-                        Start Game
-                    </Button>
-                </Box>
-            </>
-        );
-    } else if (phase === "levelCleared") {
-        // Interstitial between levels: the field stays live behind a plain scrim
-        // (no minimize affordance — the player is moving forward, not studying).
-        popup = renderScrim(
-            <>
-                <Typography className="bubble-match__popup-title" sx={{ fontSize: SIZE.heading, fontWeight: WEIGHT.bold, color: fc.onSurface }}>
-                    ✅ Level {level.level} cleared!
-                </Typography>
-                <Typography className="bubble-match__popup-msg" sx={{ fontSize: SIZE.bodyLg, color: fc.textSecondary }}>
-                    You matched all {TOTAL_PAIRS} pairs.{nextLevelConfig ? ` Next up: Level ${nextLevelConfig.level} — ${nextLevelConfig.label}, with the same cards but a faster launch.` : ""}
-                </Typography>
-                <Box className="bubble-match__popup-actions" sx={{ display: "flex", flexDirection: "column", gap: 1.5, width: "100%" }}>
-                    {nextLevelConfig && (
-                        <Button variant="contained" onClick={continueToNextLevel} sx={{ textTransform: "none" }}>
-                            Continue to Level {nextLevelConfig.level}
+                {/* Level picker — one button per level, each independently playable.
+                    A ⭐ marks a level already cleared this week (from the weeklies
+                    table); higher levels launch faster (shorter interval, less time). */}
+                <Box className="bubble-match__level-picker" sx={{ display: "flex", flexDirection: "column", gap: 1.5, width: "100%", maxWidth: 300, mt: 1 }}>
+                    {LEVEL_CONFIGS.map((cfg) => (
+                        <Button
+                            key={cfg.level}
+                            className={`bubble-match__level-btn bubble-match__level-btn--${cfg.level}`}
+                            variant="contained"
+                            onClick={() => startLevel(cfg)}
+                            sx={{ py: 1.25, px: 2, fontSize: SIZE.bodyLg, textTransform: "none", borderRadius: "12px", justifyContent: "space-between" }}
+                        >
+                            <Box component="span" className="bubble-match__level-btn-label" sx={{ fontWeight: WEIGHT.bold }}>
+                                {clearedLevels.has(cfg.level) ? "⭐ " : ""}Level {cfg.level}
+                            </Box>
+                            <Box component="span" className="bubble-match__level-btn-name" sx={{ fontSize: SIZE.caption, opacity: 0.85 }}>
+                                {cfg.label}
+                            </Box>
                         </Button>
-                    )}
-                    <Button variant="text" onClick={() => navigate("/games")}>Quit Game</Button>
+                    ))}
                 </Box>
             </>
         );
-    } else if (phase === "gameWon") {
-        // Whole game cleared (final level beaten) — plain scrim, restart options.
-        popup = renderScrim(
-            <>
-                <Typography className="bubble-match__popup-title" sx={{ fontSize: SIZE.heading, fontWeight: WEIGHT.bold, color: fc.onSurface }}>🏆 You win!</Typography>
+    } else if (phase === "won") {
+        popup = (
+            <BubbleMatchEndPopup
+                minimized={popupMinimized}
+                onMinimize={() => setPopupMinimized(true)}
+                onRestore={() => setPopupMinimized(false)}
+            >
+                <Typography className="bubble-match__popup-title" sx={{ fontSize: SIZE.heading, fontWeight: WEIGHT.bold, color: fc.onSurface }}>🏆 Level {level.level} cleared!</Typography>
                 <Typography className="bubble-match__popup-msg" sx={{ fontSize: SIZE.bodyLg, color: fc.textSecondary }}>
-                    You cleared all {LEVEL_CONFIGS.length} levels on a single {TOTAL_PAIRS}-pair set. 🎉
+                    You matched all {TOTAL_PAIRS} pairs on Level {level.level} — {level.label}. 🎉
                 </Typography>
-                {/* Weekly achievement banked — sourced from the weeklies table. */}
+                {/* Weekly badge(s) banked — this level plus every easier one. */}
                 <Typography className="bubble-match__popup-weekly" sx={{ fontSize: SIZE.body, fontWeight: WEIGHT.bold, color: fc.onSurface }}>
-                    ⭐ Weekly achievement unlocked: you beat Bubble Match this week!
+                    ⭐ Weekly badge unlocked: {level.label}{level.level > 1 ? ` (and every easier level)` : ""}!
                 </Typography>
-                <Box className="bubble-match__popup-actions" sx={{ display: "flex", flexDirection: "column", gap: 1.5, width: "100%" }}>
-                    {/* Same-card-set restart from Level 1. */}
-                    <Button variant="contained" onClick={startGame} sx={{ textTransform: "none" }}>
-                        Play again with the same vocab set
-                    </Button>
-                    {/* Re-fetches a fresh randomized pool, then restarts from Level 1. */}
-                    <Button variant="outlined" onClick={startGameNewVocab} sx={{ textTransform: "none" }}>
-                        Play again with a different vocab set
-                    </Button>
-                    <Button variant="text" onClick={() => navigate("/games")}>Back to Games</Button>
-                </Box>
-            </>
+                {endActions}
+            </BubbleMatchEndPopup>
         );
     } else if (phase === "lost") {
         popup = (
@@ -466,27 +429,16 @@ const BubbleMatchPage: React.FC = () => {
                     {loseReason === "full"
                         ? "The screen filled up before you could clear it."
                         : "Time ran out before all pairs were matched."}
-                    {" "}You reached Level {level.level} — {level.label}.
+                    {" "}You were playing Level {level.level} — {level.label}.
                 </Typography>
-                <Box className="bubble-match__popup-actions" sx={{ display: "flex", flexDirection: "column", gap: 1.5, width: "100%" }}>
-                    {/* A loss ends the run; restarting drops back to Level 1 on the
-                        already-loaded card pool (reshuffled). */}
-                    <Button variant="contained" onClick={startGame} sx={{ textTransform: "none" }}>
-                        Restart from Level 1 (same vocab set)
-                    </Button>
-                    {/* Re-fetches a fresh randomized pool, then restarts from Level 1. */}
-                    <Button variant="outlined" onClick={startGameNewVocab} sx={{ textTransform: "none" }}>
-                        Restart with a different vocab set
-                    </Button>
-                    <Button variant="text" onClick={() => navigate("/games")}>Back to Games</Button>
-                </Box>
+                {endActions}
             </BubbleMatchEndPopup>
         );
     }
 
     // The stage stays mounted across playing → won/lost (same runId key) so the
     // popup overlays a live, still-animating field rather than replacing it.
-    const showStage = phase === "playing" || phase === "levelCleared" || phase === "gameWon" || phase === "lost";
+    const showStage = phase === "playing" || phase === "won" || phase === "lost";
 
     return (
         <>
@@ -531,7 +483,8 @@ const BubbleMatchPage: React.FC = () => {
                             onLevelLose={onLevelLose}
                             onMark={markBubbleMatch}
                             // Game-over popup minimized → bubbles become tappable/
-                            // hoverable for studying the pairs.
+                            // hoverable for studying the pairs. (A win clears the
+                            // field, so only the lost phase has anything to study.)
                             studyMode={phase === "lost" && popupMinimized}
                         />
                         {popup}
@@ -539,6 +492,14 @@ const BubbleMatchPage: React.FC = () => {
                 ) : (
                     centered
                 )}
+
+                {/* Floating bottom nav on the non-gameplay (info / loading /
+                    blocked) screens so players can jump to other tabs without
+                    backing out first. Hidden during the live stage (playing / won
+                    / lost), where the stage owns the full surface and the
+                    end-popup provides its own navigation. Anchors to this
+                    position:relative content box. */}
+                {!showStage && <MobileFooter activePage="home" />}
             </Box>
         </>
     );

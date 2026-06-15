@@ -127,7 +127,7 @@ textarea,
 }
 
 /* Shared "pop-in" used when a freshly-loaded set of cards mounts (deck buckets on
-   the Account page, and the Learn Now / Learn Later / Mastered card previews on the
+   the Account page, and the Learn Now / Mastered card previews on the
    /decks page). Callers apply it via `animation: cardPopIn ...` with a per-card
    animation-delay to stagger the cascade. Use fill-mode `backwards` so each card
    holds the 0% (scaled-down, invisible) state during its delay and returns to its

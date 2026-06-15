@@ -1,114 +1,43 @@
-import { type ReactNode, useEffect } from "react";
-import { WEIGHT } from '../theme/scale';
-import { Link as RouterLink, useLocation } from "react-router-dom";
-import { useAuth } from "../AuthContext";
-import { useConfirmation } from "../contexts/ConfirmationContext";
-import {
-    AppBar,
-    Box,
-    Toolbar,
-    Typography,
-    Button,
-    Drawer,
-    List,
-    ListItem,
-    ListItemButton,
-    ListItemIcon,
-    ListItemText,
-    Divider,
-    useMediaQuery,
-    useTheme as useMuiTheme,
-    IconButton
-} from "@mui/material";
-import HomeIcon from "@mui/icons-material/Home";
-import MenuBookIcon from "@mui/icons-material/MenuBook";
-import PersonIcon from "@mui/icons-material/Person";
-import ShuffleIcon from "@mui/icons-material/Shuffle";
-import SettingsIcon from "@mui/icons-material/Settings";
-import ArticleIcon from "@mui/icons-material/Article";
-import NightsStayIcon from "@mui/icons-material/NightsStay";
-import MenuIcon from "@mui/icons-material/Menu";
-import BookIcon from "@mui/icons-material/Book";
-import PhoneIphoneIcon from "@mui/icons-material/PhoneIphone";
-import { useState } from "react";
+import { type ReactNode } from "react";
+import { Box } from "@mui/material";
+import { useLocation } from "react-router-dom";
 import MobileDemoFrame from "./MobileDemoFrame";
-import MinutePointsFireBadge from "./MinutePointsFireBadge";
 import { GAME_ROUTES } from "../games/registry";
 
 interface LayoutProps {
     children: ReactNode;
 }
 
-interface NavItem {
-    text: string;
-    path: string;
-    icon: ReactNode;
-    desktopOnly?: boolean; // if true, hidden in the mobile temporary drawer
-}
-
+// Global app shell. There is no navigation chrome here anymore — the hamburger
+// drawer / desktop sidebar were removed in favor of the footer tabs
+// (Flashcards / Discover / Home / Account) plus the Home menu. Every page now
+// owns its own header (a back arrow for drill-ins, or MobileTabScreen's header
+// for the footer-tab hubs).
+//
+// Two render modes:
+//   • Mobile-demo surfaces (the phone-frame pages) → wrapped in MobileDemoFrame,
+//     which is full-bleed on mobile and a centered phone card on desktop.
+//   • Everything else (Reader / Dictionary / Night Market / Settings / dashboard
+//     / auth pages, etc.) → rendered full-height with no chrome.
 function Layout({ children }: LayoutProps) {
     const location = useLocation();
-    const theme = useMuiTheme();
-    const isMobile = useMediaQuery(theme.breakpoints.down("md"));
-    const [drawerOpen, setDrawerOpen] = useState(false);
-    const { isAuthenticated, user, logout } = useAuth();
-    const { confirm } = useConfirmation();
 
-    // Force-close the drawer whenever the user becomes unauthenticated
-    useEffect(() => {
-        if (!isAuthenticated) {
-            setDrawerOpen(false);
-        }
-    }, [isAuthenticated]);
-
-    // Drawer width for both permanent and temporary drawers
-    const drawerWidth = 250;
-
-    // Define navigation items based on authentication status
-    const navItems: NavItem[] = [
-        { text: "Home", path: "/", icon: <HomeIcon /> },
-    ];
-
-    // Add authenticated-only navigation items (not shown for public/demo accounts)
-    if (isAuthenticated && !user?.isPublic) {
-        navItems.push(
-            { text: "Cards", path: "/entries", icon: <MenuBookIcon /> },
-            { text: "Dictionary", path: "/dictionary", icon: <BookIcon /> },
-            { text: "Flashcards", path: "/flashcards", icon: <ShuffleIcon /> },
-            { text: "Mobile Demo", path: "/flashcards/decks", icon: <PhoneIphoneIcon /> },
-            { text: "Reader", path: "/reader", icon: <ArticleIcon /> },
-            { text: "Night Market", path: "/night-market", icon: <NightsStayIcon /> },
-            { text: "Profile", path: "/profile", icon: <PersonIcon /> },
-            { text: "Settings", path: "/settings", icon: <SettingsIcon /> }
-        );
-    } else if (isAuthenticated && user?.isPublic) {
-        // Public accounts get Dictionary access plus standard public nav
-        navItems.push(
-            { text: "Dictionary", path: "/dictionary", icon: <BookIcon /> },
-            { text: "Mobile Demo", path: "/flashcards/decks", icon: <PhoneIphoneIcon /> },
-            { text: "Reader", path: "/reader", icon: <ArticleIcon /> },
-            { text: "Night Market", path: "/night-market", icon: <NightsStayIcon /> },
-            { text: "Settings", path: "/settings", icon: <SettingsIcon /> }
-        );
-    } else {
-        navItems.push(
-            { text: "Mobile Demo", path: "/flashcards/decks", icon: <PhoneIphoneIcon /> },
-            { text: "Reader", path: "/reader", icon: <ArticleIcon /> },
-            { text: "Settings", path: "/settings", icon: <SettingsIcon /> }
-        );
-    }
-
-    // Mobile demo pages share one phone-frame surface (MobileDemoFrame). New
-    // routes that should live inside that surface are added here — pages
-    // themselves should NOT re-define their own IPhoneFrame styled Box.
-    // Every game route is also a mobile-demo surface — derived from the
-    // registry so adding a game requires no edits here.
+    // Routes that live inside the shared phone-frame surface (MobileDemoFrame).
+    // Adding a page here is all that's needed to opt it into the frame. Game
+    // routes are derived from the registry so new games need no edits.
     const MOBILE_DEMO_PATHS = [
+        "/",
         "/flashcards/decks",
         "/flashcards/mastered",
         "/account",
         "/flashcards/learn",
+        "/discover",
         "/games",
+        // Home-menu child pages also render inside the phone frame.
+        "/night-market",
+        "/reader",
+        "/dictionary",
+        "/tester-dashboard",
         ...GAME_ROUTES,
     ];
     const isMobileDemoPage =
@@ -116,222 +45,22 @@ function Layout({ children }: LayoutProps) {
         location.pathname.startsWith("/discover/sort/") ||
         location.pathname.startsWith("/flashcards/card/");
 
-    // On mobile, demo routes render full-bleed with no Layout chrome.
-    if (isMobileDemoPage && isMobile) {
+    if (isMobileDemoPage) {
         return <MobileDemoFrame>{children}</MobileDemoFrame>;
     }
 
-    // On desktop, demo routes still render inside Layout chrome (sidebar drawer
-    // visible) but their content is wrapped in the same phone-shaped frame.
-    const mainContent = isMobileDemoPage ? <MobileDemoFrame>{children}</MobileDemoFrame> : children;
-
-    const toggleDrawer = (open: boolean) => (event: React.KeyboardEvent | React.MouseEvent) => {
-        if (
-            event.type === "keydown" &&
-            ((event as React.KeyboardEvent).key === "Tab" || (event as React.KeyboardEvent).key === "Shift")
-        ) {
-            return;
-        }
-        setDrawerOpen(open);
-    };
-
-    // Handle logout with confirmation — close the drawer first so it doesn't flash open during navigation
-    const handleLogout = async () => {
-        setDrawerOpen(false);
-        const confirmed = await confirm("Are you sure you want to log out?");
-        if (confirmed) {
-            logout();
-        }
-    };
-
-    // Navigation content - used in both permanent sidebar and mobile drawer.
-    // The onClickCapture on the outer Box is the single place that dismisses
-    // the mobile drawer for ANY clickable inside (nav items, logout button,
-    // future additions) — individual buttons no longer need their own handler.
-    const navigationContent = (
-        <Box
-            onClickCapture={() => {
-                if (isMobile) setDrawerOpen(false);
-            }}
-            sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}
-        >
-            <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
-                <Typography variant="h6" noWrap component="div" sx={{ fontWeight: WEIGHT.bold }}>
-                    Vocabulary Manager
-                </Typography>
-                {isAuthenticated && user && (
-                    <Typography variant="body2" sx={{ mt: 1, color: 'text.secondary' }}>
-                        {user.name}
-                    </Typography>
-                )}
-            </Box>
-            <Divider />
-            <List sx={{ flexGrow: 1, pt: 2 }}>
-                {navItems.filter((item) => !(item.desktopOnly && isMobile)).map((item) => (
-                    <ListItem key={item.text} disablePadding sx={{ mb: 1 }}>
-                        <ListItemButton
-                            component={RouterLink}
-                            to={item.path}
-                            selected={location.pathname === item.path}
-                                sx={{
-                                    borderRadius: '0 20px 20px 0',
-                                    mr: 1,
-                                    pl: 3,
-                                    '&.Mui-selected': {
-                                        backgroundColor: 'primary.main',
-                                        color: 'white',
-                                        '&:hover': {
-                                            backgroundColor: 'primary.dark',
-                                        },
-                                        '& .MuiListItemIcon-root': {
-                                            color: 'white',
-                                        },
-                                    },
-                                    '&:hover': {
-                                        backgroundColor: 'action.hover',
-                                    },
-                                }}
-                            >
-                                <ListItemIcon sx={{
-                                    minWidth: 40,
-                                    color: location.pathname === item.path ? 'white' : 'inherit'
-                                }}>
-                                    {item.icon}
-                                </ListItemIcon>
-                                <ListItemText primary={item.text} />
-                        </ListItemButton>
-                    </ListItem>
-                ))}
-            </List>
-
-            {isAuthenticated && (
-                <Box sx={{ p: 2, borderTop: '1px solid rgba(0, 0, 0, 0.08)' }}>
-                    <Button
-                        fullWidth
-                        variant="outlined"
-                        color="primary"
-                        onClick={handleLogout}
-                        startIcon={<PersonIcon />}
-                    >
-                        Logout
-                    </Button>
-                </Box>
-            )}
-        </Box>
-    );
-
     return (
-        <Box sx={{ display: "flex", minHeight: "100vh", position: "relative", pb: 6 }}>
-            {/* App bar - only visible on mobile */}
-            <AppBar
-                position="fixed"
-                elevation={1}
-                sx={{
-                    width: isMobile ? '100%' : `calc(100% - ${drawerWidth}px)`,
-                    ml: isMobile ? 0 : `${drawerWidth}px`,
-                    display: isMobile ? 'block' : 'none',
-                    backgroundColor: 'background.paper',
-                    color: 'text.primary'
-                }}
-            >
-                <Toolbar>
-                    <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
-                        Vocabulary Manager
-                    </Typography>
-                    {/* Streak fire badge in the mobile AppBar, scoped to the Reader route */}
-                    {isAuthenticated && location.pathname.startsWith("/reader") && (
-                        <Box sx={{ mr: 1 }}>
-                            <MinutePointsFireBadge />
-                        </Box>
-                    )}
-                    {/* Only show the hamburger menu when the user is logged in */}
-                    {isAuthenticated && (
-                        <IconButton
-                            color="inherit"
-                            aria-label="open drawer"
-                            edge="end"
-                            onClick={toggleDrawer(true)}
-                            sx={{ ml: 2 }}
-                        >
-                            <MenuIcon />
-                        </IconButton>
-                    )}
-                </Toolbar>
-            </AppBar>
-
-            {/* Permanent drawer for desktop */}
-            {!isMobile && (
-                <Drawer
-                    variant="permanent"
-                    sx={{
-                        width: 0,
-                        flexShrink: 0,
-                        [`& .MuiDrawer-paper`]: {
-                            width: drawerWidth,
-                            boxSizing: 'border-box',
-                            borderRight: '1px solid rgba(0, 0, 0, 0.08)',
-                            boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.05)'
-                        },
-                    }}
-                    open
-                >
-                    {navigationContent}
-                </Drawer>
-            )}
-
-            {/* Temporary drawer for mobile */}
-            {isMobile && (
-                <Drawer
-                    variant="temporary"
-                    anchor="right"
-                    open={drawerOpen}
-                    onClose={toggleDrawer(false)}
-                    ModalProps={{
-                        keepMounted: true, // Better open performance on mobile
-                    }}
-                    sx={{
-                        [`& .MuiDrawer-paper`]: {
-                            width: drawerWidth,
-                            boxSizing: 'border-box',
-                            boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.1)'
-                        },
-                    }}
-                >
-                    {navigationContent}
-                </Drawer>
-            )}
-
-            {/* Main content wrapper — width + ml must sum to 100% to avoid overflow */}
-            <Box
-                className="layout-main-wrapper"
-                sx={{
-                    minWidth: 0,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    width: { xs: '100%', md: `calc(100% - ${drawerWidth}px)` },
-                    ml: { xs: 0, md: `${drawerWidth}px` }
-                }}
-            >
-                {/* Content area */}
-                <Box
-                    className="layout-main-content"
-                    component="main"
-                    sx={{
-                        flexGrow: 1,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'stretch',   // children fill full width; each Container centers itself via margin:auto
-                    }}
-                >
-                    {/* Spacer matching the fixed AppBar height so page content
-                        starts below it on mobile. AppBar is only rendered on
-                        mobile, and mobile-demo pages take the full-bleed early
-                        return above, so this only affects non-demo pages on
-                        mobile (the AppBar's only visible context). */}
-                    {isMobile && <Toolbar />}
-                    {mainContent}
-                </Box>
-            </Box>
+        <Box
+            className="layout-main-content"
+            component="main"
+            sx={{
+                minHeight: "100dvh",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "stretch",
+            }}
+        >
+            {children}
         </Box>
     );
 }

@@ -1,5 +1,5 @@
 import { IBaseDAL } from './IBaseDAL.js';
-import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, HskLevel, UsedInItem } from '../../types/index.js';
+import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, UsedInItem } from '../../types/index.js';
 import { BulkResult, ITransaction } from '../../types/dal.js';
 
 /**
@@ -17,7 +17,7 @@ export interface IVocabEntryDAL extends IBaseDAL<VocabEntry, VocabEntryCreateDat
 
   // Search and filtering
   searchEntries(userId: string, searchTerm: string, language: string, limit?: number): Promise<VocabEntry[]>;
-  findByHskLevel(userId: string, hskLevel: HskLevel): Promise<VocabEntry[]>;
+  findByDifficultyLevel(userId: string, difficulty: DifficultyLevel): Promise<VocabEntry[]>;
   findByTokens(userId: string, tokens: string[], language: string): Promise<VocabEntry[]>;
 
   // Bulk operations for CSV import

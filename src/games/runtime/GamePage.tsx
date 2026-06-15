@@ -3,7 +3,7 @@ import { Box } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import { useNavigate } from "react-router-dom";
 import MobileDemoHeader from "../../components/MobileDemoHeader";
-import MobileFooter from "../../components/MobileFooter";
+import MobileFooter, { FLOATING_FOOTER_CLEARANCE } from "../../components/MobileFooter";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import type { GameDef } from "../types";
 
@@ -13,6 +13,8 @@ const ContentArea = styled(Box)(() => ({
     display: "flex",
     flexDirection: "column",
     overflow: "hidden",
+    // Reserve space for the floating footer pill so the game body sits above it.
+    paddingBottom: FLOATING_FOOTER_CLEARANCE,
 }));
 
 export interface GamePageProps {
@@ -52,7 +54,7 @@ const GamePage: React.FC<GamePageProps> = ({ game, backTo = "/games", headerActi
             <ContentArea className={`game-page__content game-page--${game.gameId}`}>
                 {children}
             </ContentArea>
-            <MobileFooter activePage="games" />
+            <MobileFooter activePage="home" />
         </>
     );
 };

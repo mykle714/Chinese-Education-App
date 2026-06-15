@@ -88,14 +88,14 @@ export class VocabEntryController {
       const userId = requireUserId(req, res);
       if (!userId) return;
 
-      const { entryKey, hskLevel } = req.body;
+      const { entryKey, difficulty } = req.body;
 
       // Get user's selected language to tag the new entry
       const language = await getUserLanguage(userId);
 
       const newEntry = await this.vocabEntryService.createEntry(userId, {
         entryKey,
-        hskLevel,
+        difficulty,
         language
       });
 
@@ -107,10 +107,10 @@ export class VocabEntryController {
 
   /**
    * Add a dictionary entry to the user's library. Idempotent across already-in-library,
-   * learn-later, skip, and unsorted states (see VocabEntryService.addToLibrary).
+   * skip, and unsorted states (see VocabEntryService.addToLibrary).
    * POST /api/vocabEntries/add-to-library
    * Body: { entryKey, language }
-   * Response: { status: 'added' | 'moved' | 'already-in-library', vocabEntryId }
+   * Response: { status: 'added' | 'already-in-library', vocabEntryId }
    */
   async addToLibrary(req: Request, res: Response): Promise<void> {
     try {
@@ -148,11 +148,11 @@ export class VocabEntryController {
         return;
       }
 
-      const { entryKey, hskLevel } = req.body;
+      const { entryKey, difficulty } = req.body;
       const language = await getUserLanguage(userId);
       const updatedEntry = await this.vocabEntryService.updateEntry(userId, entryId, language, {
         entryKey,
-        hskLevel
+        difficulty
       });
 
       res.json(updatedEntry);

@@ -3,8 +3,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { Box, Typography, Alert, Button, Snackbar } from "@mui/material";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import { styled } from "@mui/material/styles";
-import MobileDemoHeader from "../components/MobileDemoHeader";
-import MobileFooter from "../components/MobileFooter";
+import MobileTabScreen from "../components/MobileTabScreen";
 import MiniVocabCardGrid from "../components/MiniVocabCardGrid";
 import { useAuth } from "../AuthContext";
 import { API_BASE_URL } from "../constants";
@@ -21,15 +20,19 @@ import { SIZE, WEIGHT } from "../theme/scale";
 // instead of letting them land on a near-empty study session.
 const MIN_LIBRARY_CARDS = 20;
 
-// Styled Components — phone-frame sizing comes from MobileDemoFrame via Layout.tsx
-const ContentArea = styled(Box)(() => ({
-    flex: 1,
-    overflowY: "auto",
-    overflowX: "hidden",
-    display: "flex",
-    flexDirection: "column",
+// Styled Components — phone-frame sizing comes from MobileDemoFrame via Layout.tsx;
+// the scroll-away header + floating footer + scroll behavior come from
+// MobileTabScreen.
+// Inverted grey/white scheme, scoped to /decks only: the page surface is painted
+// with the grey header tone (passed as MobileTabScreen `surfaceColor`) while the
+// mini cards inside flip to the near-white page tone (COLORS.background). The
+// shared MobileDemoFrame and MiniVocabCard keep their normal colors everywhere else.
+const CONTENT_SX = {
     alignItems: "center",
-}));
+    "& .mini-vocab-card": {
+        backgroundColor: COLORS.background,
+    },
+} as const;
 
 // Shared look for the three study-entry buttons (Easy / Mix / Hard). Easy and
 // Hard add their own color; Mix uses the neutral header surface.
@@ -123,9 +126,6 @@ const FlashcardsDecksPage: React.FC = () => {
     const [vocabEntries, setVocabEntries] = useState<VocabEntry[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [learnLaterEntries, setLearnLaterEntries] = useState<VocabEntry[]>([]);
-    const [learnLaterLoading, setLearnLaterLoading] = useState(true);
-    const [learnLaterError, setLearnLaterError] = useState<string | null>(null);
     // Mastered cards now live on their own page (/flashcards/mastered); this page
     // only needs the count for the link row, which comes from categoryCounts.
     // Per-category library card counts, used to gate study navigation. We only
@@ -168,37 +168,6 @@ const FlashcardsDecksPage: React.FC = () => {
         }
     }, [token]);
 
-    // Fetch learn later cards from OnDeck vocab sets
-    useEffect(() => {
-        const fetchLearnLaterCards = async () => {
-            try {
-                setLearnLaterLoading(true);
-                setLearnLaterError(null);
-
-                const response = await fetch(`${API_BASE_URL}/api/onDeck/learn-later-cards`, {
-                    credentials: 'include',
-                    headers: { 'Authorization': `Bearer ${token}` },
-                });
-
-                if (!response.ok) {
-                    throw new Error('Failed to fetch learn later cards');
-                }
-
-                const data = await response.json();
-                setLearnLaterEntries(Array.isArray(data) ? data : []);
-            } catch (err: unknown) {
-                console.error('Error fetching learn later cards:', err);
-                setLearnLaterError(err instanceof Error ? err.message : 'Failed to load learn later cards');
-            } finally {
-                setLearnLaterLoading(false);
-            }
-        };
-
-        if (token) {
-            fetchLearnLaterCards();
-        }
-    }, [token]);
-
     // Refresh card lists when navigating back from CDP after an action
     useEffect(() => {
         if (location.state?.refresh) {
@@ -206,11 +175,8 @@ const FlashcardsDecksPage: React.FC = () => {
         }
     }, [location.state?.refresh]);
 
-    // Both card previews (Learn Now / Learn Later) load from separate endpoints.
-    // We hold both sections behind this single flag so the staggered pop-in
-    // cascades fire together once everything is ready, rather than section-by-
-    // section as each individual request resolves.
-    const allCardsLoaded = !loading && !learnLaterLoading;
+    // The Learn Now preview gates its staggered pop-in cascade behind this flag.
+    const allCardsLoaded = !loading;
 
     // Total cards the user has sorted into their library, across every bucket.
     const totalLibraryCards = Object.values(categoryCounts).reduce((sum, n) => sum + n, 0);
@@ -277,32 +243,17 @@ const FlashcardsDecksPage: React.FC = () => {
         } finally {
             setLoading(false);
         }
-
-        // Refetch learn later cards
-        try {
-            setLearnLaterLoading(true);
-            const response = await fetch(`${API_BASE_URL}/api/onDeck/learn-later-cards`, {
-                credentials: 'include',
-                headers: { 'Authorization': `Bearer ${token}` },
-            });
-            if (response.ok) {
-                const data = await response.json();
-                setLearnLaterEntries(Array.isArray(data) ? data : []);
-            }
-        } catch (err) {
-            console.error('Error refetching learn later cards:', err);
-        } finally {
-            setLearnLaterLoading(false);
-        }
     };
 
     return (
         <>
-            {/* Header */}
-            <MobileDemoHeader title="Decks & Cards" activePage="home" />
-
-                {/* Content Area */}
-                <ContentArea className="decks-page-content">
+            <MobileTabScreen
+                title="Decks & Cards"
+                activePage="flashcards"
+                surfaceColor={COLORS.header}
+                contentClassName="decks-page-content"
+                contentSx={CONTENT_SX}
+            >
                     {/* Study-entry row: Easy (blue) and Hard (red) flank the centered
                         Mix button and flex to fill the remaining side space. */}
                     <Box
@@ -360,35 +311,6 @@ const FlashcardsDecksPage: React.FC = () => {
                     {/* Line Separator */}
                     <LineSeparator className="decks-line-separator" sx={{ mt: 2 }} />
 
-                    {/* Learn Later Cards Section */}
-                    <Box className="flashcards-decks__learn-later-header" sx={{ width: '100%', px: 3.5, pt: 2, pb: 1 }}>
-                        <Typography
-                            className="flashcards-decks__learn-later-label"
-                            sx={{
-                                fontSize: SIZE.body,
-                                fontWeight: WEIGHT.medium,
-                                color: COLORS.onSurface,
-                                fontFamily: FONTS.sans,
-                            }}
-                        >
-                            Learn Later
-                        </Typography>
-                    </Box>
-
-                    {/* Learn Later Cards Preview */}
-                    <MiniVocabCardGrid
-                        containerClassName="decks-learn-later-preview"
-                        classPrefix="flashcards-decks__learn-later"
-                        loading={!allCardsLoaded}
-                        error={learnLaterError}
-                        entries={learnLaterEntries}
-                        emptyMessage="No learn later cards yet. Add cards from the Discover page to see them here!"
-                        onCardClick={handleCardClick}
-                    />
-
-                    {/* Line Separator */}
-                    <LineSeparator className="decks-line-separator" sx={{ mt: 2 }} />
-
                     {/* Mastered Cards link — the full list lives on its own page so a
                         large mastered deck never renders hundreds of cards inline. */}
                     <MasteredLinkRow
@@ -418,10 +340,7 @@ const FlashcardsDecksPage: React.FC = () => {
                             sx={{ color: COLORS.textSecondary }}
                         />
                     </MasteredLinkRow>
-                </ContentArea>
-
-                {/* Footer */}
-                <MobileFooter activePage="home" />
+            </MobileTabScreen>
 
                 {/* Nudge toast: too few library cards to start a study session */}
                 <Snackbar

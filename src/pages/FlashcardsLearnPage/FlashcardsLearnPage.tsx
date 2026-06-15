@@ -105,7 +105,7 @@ const FlashcardsLearnPage: React.FC = () => {
         console.log('Current card enrichment:', {
             definition: currentEntry.definition ?? 'none',
             pronunciation: currentEntry.pronunciation ?? 'none',
-            hskLevel: currentEntry.hskLevel ?? 'none',
+            difficulty: currentEntry.difficulty ?? 'none',
             partsOfSpeech: currentEntry.partsOfSpeech ?? 'none',
             vernacularScore: currentEntry.vernacularScore ?? 'none',
             category: currentEntry.category ?? 'none',

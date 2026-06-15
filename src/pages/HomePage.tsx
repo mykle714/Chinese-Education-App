@@ -1,57 +1,54 @@
-import { Box, Container, Typography } from "@mui/material";
-import Message from "../Message";
-import { useMinutePoints } from "../hooks/useMinutePoints";
-import TimeDisplay from "../components/TimeDisplay";
-import StreakCounter from "../components/StreakCounter";
-import MonthlyCalendar from "../components/MonthlyCalendar";
-import LeaderboardPlaceholder from "../components/LeaderboardPlaceholder";
+import NightsStayIcon from "@mui/icons-material/NightsStay";
+import SportsEsportsIcon from "@mui/icons-material/SportsEsports";
+import ArticleIcon from "@mui/icons-material/Article";
+import BookIcon from "@mui/icons-material/Book";
+import DashboardIcon from "@mui/icons-material/Dashboard";
+import MobileTabScreen from "../components/MobileTabScreen";
+import { HubMenu, HubMenuRow } from "../components/HubMenu";
 import { usePageTitle } from "../hooks/usePageTitle";
+import { COLORS } from "../theme/colors";
+
+// Home hub (`/`) — the landing surface for the footer's Home tab. A vertical
+// HubMenu (same component the Discover / Games hubs use) of the app's secondary
+// destinations. Phone-frame sizing comes from MobileDemoFrame; the scroll-away
+// header + floating footer come from MobileTabScreen.
+
+interface HomeMenuItem {
+    to: string;
+    title: string;
+    subtitle: string;
+    icon: React.ReactNode;
+    key: string;
+}
+
+const iconSx = { color: COLORS.textSecondary } as const;
 
 function HomePage() {
     usePageTitle();
-    const {
-        totalStudyTimeMinutes,
-        currentStreak
-    } = useMinutePoints();
+
+    const items: HomeMenuItem[] = [
+        { key: "night-market", to: "/night-market", title: "Night Market", subtitle: "Explore the vocabulary night market", icon: <NightsStayIcon sx={iconSx} /> },
+        { key: "games", to: "/games", title: "Games", subtitle: "Play vocabulary mini-games", icon: <SportsEsportsIcon sx={iconSx} /> },
+        { key: "reader", to: "/reader", title: "Reader", subtitle: "Read texts and mine new words", icon: <ArticleIcon sx={iconSx} /> },
+        { key: "dictionary", to: "/dictionary", title: "Dictionary", subtitle: "Look up words and add them to your decks", icon: <BookIcon sx={iconSx} /> },
+        { key: "tester-dashboard", to: "/tester-dashboard", title: "Tester Dashboard", subtitle: "Study time, streak, and activity", icon: <DashboardIcon sx={iconSx} /> },
+    ];
 
     return (
-        <Container maxWidth="xl" sx={{ py: 4 }}>
-            <Message />
-
-            <Box sx={{
-                display: 'grid',
-                gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr' },
-                gap: 4
-            }}>
-                {/* Left Column - User Dashboard */}
-                <Box sx={{ minWidth: 0 }}>
-                    <Box sx={{ mb: 2 }}>
-                        {/* Test User Message */}
-                        {import.meta.env.VITE_TEST_USER_MESSAGE && (
-                            <Box className="test-user-message-banner" sx={{ mb: 3, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
-                                <Typography variant="body1" color="text.secondary">
-                                    📢 {import.meta.env.VITE_TEST_USER_MESSAGE}
-                                </Typography>
-                            </Box>
-                        )}
-
-                        {/* Total Study Time Display */}
-                        <TimeDisplay totalMinutes={totalStudyTimeMinutes} />
-
-                        {/* Streak Counter */}
-                        <StreakCounter currentStreak={currentStreak} />
-
-                        {/* Monthly Activity Calendar */}
-                        <MonthlyCalendar />
-                    </Box>
-                </Box>
-
-                {/* Right Column - Leaderboard */}
-                <Box sx={{ minWidth: 0 }}>
-                    <LeaderboardPlaceholder />
-                </Box>
-            </Box>
-        </Container>
+        <MobileTabScreen title="Home" activePage="home" contentClassName="home-page__content">
+            <HubMenu className="home-page__menu">
+                {items.map((item) => (
+                    <HubMenuRow
+                        key={item.key}
+                        to={item.to}
+                        className={`home-page__menu-item home-page__menu-item--${item.key}`}
+                        title={item.title}
+                        subtitle={item.subtitle}
+                        icon={item.icon}
+                    />
+                ))}
+            </HubMenu>
+        </MobileTabScreen>
     );
 }
 

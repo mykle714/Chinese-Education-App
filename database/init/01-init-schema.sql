@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS vocabentries (
     "last16SuccessRate" NUMERIC(5,4),
     category            VARCHAR(20) NOT NULL DEFAULT 'Unfamiliar',
     "starterPackBucket" VARCHAR(20) NOT NULL
-        CHECK ("starterPackBucket" IN ('library', 'learn-later', 'skip')),
+        CHECK ("starterPackBucket" IN ('library', 'skip')),
     "createdAt"         TIMESTAMP DEFAULT NOW()
 );
 

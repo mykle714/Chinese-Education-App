@@ -27,23 +27,6 @@ export class OnDeckVocabController {
   };
 
   /**
-   * Get all learn later cards (vocab entries from *-learn-later OnDeck sets)
-   * GET /api/onDeck/learn-later-cards
-   */
-  getLearnLaterCards = async (req: Request, res: Response): Promise<void> => {
-    try {
-      const userId = requireUserId(req, res);
-      if (!userId) return;
-
-      const language = await getUserLanguage(userId);
-      const learnLaterCards = await this.onDeckVocabService.getLearnLaterCards(userId, language);
-      res.json(learnLaterCards);
-    } catch (error: any) {
-      handleControllerError(error, res, 'OnDeckVocabController.getLearnLaterCards');
-    }
-  };
-
-  /**
    * Get mastered library cards (library cards with category = 'Mastered')
    * GET /api/onDeck/mastered-library-cards
    */

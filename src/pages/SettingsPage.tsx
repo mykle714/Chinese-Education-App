@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { WEIGHT } from '../theme/scale';
+import PageHeader from '../components/PageHeader';
 import {
     Container,
     Paper,
@@ -31,6 +33,7 @@ import type { TTSEngineChoice } from '../services/tts';
 
 function SettingsPage() {
     usePageTitle("Settings");
+    const navigate = useNavigate();
     const { themeMode, setThemeMode, availableThemes } = useTheme();
     const { user, updateLanguage } = useAuth();
     const [languageSuccess, setLanguageSuccess] = useState(false);
@@ -67,6 +70,12 @@ function SettingsPage() {
     ];
 
     return (
+        <Box sx={{ display: "flex", flexDirection: "column", height: "100dvh" }}>
+            {/* Common back header → returns to the Account page (Settings is opened
+                from the gear in the Account header). */}
+            <PageHeader title="Settings" onBack={() => navigate("/account")} />
+
+            <Box sx={{ flex: 1, overflowY: "auto" }}>
         <Container maxWidth="md" sx={{ py: 4 }}>
             {/* Page Header */}
             <Box sx={{ mb: 4, textAlign: 'center' }}>
@@ -329,6 +338,8 @@ function SettingsPage() {
                 message={languageError}
             />
         </Container>
+            </Box>
+        </Box>
     );
 }
 

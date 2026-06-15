@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Box } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import PageHeader from "../components/PageHeader";
-import MobileFooter from "../components/MobileFooter";
+import MobileFooter, { FLOATING_FOOTER_CLEARANCE } from "../components/MobileFooter";
 import MiniVocabCardGrid from "../components/MiniVocabCardGrid";
 import { useAuth } from "../AuthContext";
 import { API_BASE_URL } from "../constants";
@@ -22,6 +22,8 @@ const ContentArea = styled(Box)(() => ({
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
+    // Clear the floating footer pill so the last row never hides behind it.
+    paddingBottom: FLOATING_FOOTER_CLEARANCE,
 }));
 
 const MasteredCardsPage: React.FC = () => {
@@ -86,7 +88,7 @@ const MasteredCardsPage: React.FC = () => {
                 />
             </ContentArea>
 
-            <MobileFooter activePage="home" />
+            <MobileFooter activePage="flashcards" />
         </>
     );
 };

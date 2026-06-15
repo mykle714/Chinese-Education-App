@@ -11,8 +11,11 @@ export const LANGUAGE_NAMES: Record<Language, string> = {
   es: 'Spanish'
 };
 
-// HSK Level type for vocabulary entries
-export type HskLevel = 'HSK1' | 'HSK2' | 'HSK3' | 'HSK4' | 'HSK5' | 'HSK6';
+// Per-language difficulty label stored in dictionaryentries_*.difficulty (drives
+// the discover band). The encoding differs by language:
+//   - zh: 'HSK1'..'HSK6' (HSK proficiency, also shown as an "HSK 3" badge)
+//   - es: '1'..'5'       (learner-acquisition difficulty, 1=easiest)
+export type DifficultyLevel = 'HSK1' | 'HSK2' | 'HSK3' | 'HSK4' | 'HSK5' | 'HSK6' | '1' | '2' | '3' | '4' | '5';
 
 // Particle or classifier annotation for a segment in example sentence metadata
 export interface ParticleOrClassifierInfo {
@@ -37,7 +40,7 @@ export type LongDefinitionPart =
 export type FlashcardCategory = 'Unfamiliar' | 'Target' | 'Comfortable' | 'Mastered';
 
 // Starter pack bucket type
-export type StarterPackBucket = 'library' | 'learn-later' | 'skip';
+export type StarterPackBucket = 'library' | 'skip';
 
 // One "used in" suggestion: a multi-char word containing a single-char headword.
 // vet-first (user's own entries) then det-fallback; vocabEntryId === null ⇒ det fallback.
@@ -65,7 +68,7 @@ export interface VocabEntry {
   script?: string;
   pronunciation?: string | null;
   tone?: string | null;
-  hskLevel?: HskLevel | null;
+  difficulty?: DifficultyLevel | null;
   partsOfSpeech?: string[] | null;
   // Spanish (es) only: the saved sense's part of speech + whether this word1 has
   // multiple discoverable POS (so the UI shows a "(v)"/"(n)" disambiguation badge),
@@ -145,7 +148,7 @@ export interface DiscoverCard {
   language: Language;
   word2?: string | null;
   script?: string | null;
-  hskLevel?: string | null;
+  difficulty?: string | null;
   // Spanish (es) only: this card's POS, and whether the word1 has multiple
   // discoverable POS (→ show a "(v)"/"(n)" badge). Null/false for Chinese.
   pos?: string | null;
@@ -168,7 +171,7 @@ export interface DiscoverCard {
 // GET /api/starter-packs/:language response shape
 export interface DiscoverFetchResponse {
   cards: DiscoverCard[];
-  userHskLevel: number;
+  userDifficultyLevel: number;
   provisionalMode: boolean;
 }
 
@@ -177,7 +180,7 @@ export interface DiscoverSortResponse {
   success: boolean;
   message: string;
   bucket: string;
-  userHskLevel: number;
+  userDifficultyLevel: number;
   provisionalMode: boolean;
 }
 

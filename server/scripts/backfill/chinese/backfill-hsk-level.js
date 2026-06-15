@@ -1,7 +1,7 @@
 /**
  * Backfill Script: AI-powered HSK level assignment for dictionaryentries_zh
  *
- * For each discoverable zh entry where hskLevel IS NULL, asks Claude Sonnet
+ * For each discoverable zh entry where difficulty IS NULL, asks Claude Sonnet
  * to assign a single HSK level from HSK1..HSK6 based on common learner-level usage.
  *
  * Usage:
@@ -27,7 +27,7 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const { stampEntries } = initRunLog({ script: 'chinese/backfill-hsk-level', version: SCRIPT_VERSION, anthropic: anthropic });
 const isSpotCheck = process.argv.includes('--spot-check');
 
-// --words=未来,摸脉 → scope to specific entries only; omit to target all discoverable entries with hskLevel IS NULL
+// --words=未来,摸脉 → scope to specific entries only; omit to target all discoverable entries with difficulty IS NULL
 const wordsArg = process.argv.find(a => a.startsWith('--words='));
 const targetWords = wordsArg ? wordsArg.slice('--words='.length).split(',').map(s => s.trim()).filter(Boolean) : null;
 const wordsFilter = targetWords?.length
@@ -38,7 +38,7 @@ const wordsFilter = targetWords?.length
  * Ask Claude for the best-fit HSK level for a Chinese word.
  * Returns one of HSK1..HSK6, or null if parsing fails.
  */
-async function askClaudeForHskLevel(word, pronunciation, definitions) {
+async function askClaudeForDifficultyLevel(word, pronunciation, definitions) {
   const definitionText = Array.isArray(definitions)
     ? definitions.slice(0, 5).join('; ')
     : String(definitions ?? '');
@@ -99,7 +99,7 @@ async function run() {
       FROM dictionaryentries_zh
       WHERE language = 'zh'
         AND discoverable = TRUE
-        AND "hskLevel" IS NULL
+        AND "difficulty" IS NULL
         ${wordsFilter}
       ORDER BY id ASC
       ${isSpotCheck ? 'LIMIT 5' : ''}
@@ -119,21 +119,21 @@ async function run() {
       try {
         process.stdout.write(`  ${row.word1} (${row.pronunciation || 'N/A'}) ... `);
 
-        const hskLevel = await askClaudeForHskLevel(row.word1, row.pronunciation, row.definitions);
+        const difficulty = await askClaudeForDifficultyLevel(row.word1, row.pronunciation, row.definitions);
 
-        if (!hskLevel) {
+        if (!difficulty) {
           console.log('FAILED: could not parse HSK level');
           failed++;
           continue;
         }
 
         await client.query(
-          `UPDATE dictionaryentries_zh SET "hskLevel" = $1 WHERE id = $2`,
-          [hskLevel, row.id]
+          `UPDATE dictionaryentries_zh SET "difficulty" = $1 WHERE id = $2`,
+          [difficulty, row.id]
         );
         await stampEntries(client, 'dictionaryentries_zh', row.id);
 
-        console.log(hskLevel);
+        console.log(difficulty);
         updated++;
       } catch (err) {
         console.log(`FAILED: ${err.message}`);

@@ -28,12 +28,12 @@ import {
     Looks6 as Looks6Icon
 } from "@mui/icons-material";
 import { usePageTitle } from "../hooks/usePageTitle";
-import type { VocabEntry, HskLevel } from "../types";
+import type { VocabEntry, DifficultyLevel } from "../types";
 import { SIZE } from "../theme/scale";
 
 // Helper function to get HSK level icon
-const getHskIcon = (hskLevel: HskLevel) => {
-    switch (hskLevel) {
+const getDifficultyIcon = (difficulty: DifficultyLevel) => {
+    switch (difficulty) {
         case 'HSK1': return <LooksOneIcon fontSize="small" />;
         case 'HSK2': return <LooksTwoIcon fontSize="small" />;
         case 'HSK3': return <Looks3Icon fontSize="small" />;
@@ -47,10 +47,12 @@ const getHskIcon = (hskLevel: HskLevel) => {
 // Helper function to render tag badges
 const renderTags = (entry: VocabEntry) => (
     <Box sx={{ position: 'absolute', top: 16, right: 16, display: 'flex', gap: 0.5 }}>
-        {entry.hskLevel && (
+        {/* HSK badge: only for HSK-encoded difficulty (zh). Other languages (es)
+            store a bare 1–5 difficulty that is not an HSK proficiency label. */}
+        {entry.difficulty?.startsWith('HSK') && (
             <Chip
-                icon={getHskIcon(entry.hskLevel)}
-                label={entry.hskLevel}
+                icon={getDifficultyIcon(entry.difficulty)}
+                label={entry.difficulty}
                 size="small"
                 color="secondary"
                 sx={{ fontSize: SIZE.micro, height: '20px' }}

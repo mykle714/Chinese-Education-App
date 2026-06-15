@@ -3,7 +3,7 @@ import csv from 'csv-parser';
 import { IVocabEntryDAL } from '../dal/interfaces/IVocabEntryDAL.js';
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import { DictionaryService } from './DictionaryService.js';
-import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, HskLevel, Language } from '../types/index.js';
+import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, Language } from '../types/index.js';
 import { ValidationError, NotFoundError, BulkResult } from '../types/dal.js';
 import db from '../db.js';
 import { vetTableForLanguage } from '../dal/shared/vetTable.js';
@@ -86,7 +86,6 @@ export class VocabEntryService {
    * Branches:
    *  - no row → INSERT with starterPackBucket='library' (category is GENERATED → 'Unfamiliar')
    *  - row already in library → no-op
-   *  - row in 'learn-later' → bucket → 'library' (status='moved')
    *  - row in 'skip' or NULL → bucket → 'library' (status='added' — skip-undo
    *    is conceptually the same user action as add)
    *
@@ -97,7 +96,7 @@ export class VocabEntryService {
     userId: string,
     entryKey: string,
     language: Language,
-  ): Promise<{ status: 'added' | 'moved' | 'already-in-library'; vocabEntryId: number }> {
+  ): Promise<{ status: 'added' | 'already-in-library'; vocabEntryId: number }> {
     const trimmedKey = entryKey?.trim();
     if (!trimmedKey) {
       throw new ValidationError('entryKey is required');
@@ -140,12 +139,12 @@ export class VocabEntryService {
         return { status: 'already-in-library', vocabEntryId: row.id };
       }
 
-      const wasLearnLater = row.starterPackBucket === 'learn-later';
+      // Any non-library row (skip or NULL) becomes a library add.
       await client.query(
         `UPDATE ${vetTable} SET "starterPackBucket" = 'library' WHERE id = $1`,
         [row.id],
       );
-      return { status: wasLearnLater ? 'moved' : 'added', vocabEntryId: row.id };
+      return { status: 'added', vocabEntryId: row.id };
     } finally {
       client.release();
     }
@@ -313,8 +312,8 @@ export class VocabEntryService {
    * Get entries by HSK level. HSK is a Chinese-only concept, so this path is
    * hard-pinned to zh end to end.
    */
-  async getEntriesByHskLevel(userId: string, hskLevel: HskLevel): Promise<VocabEntry[]> {
-    const entries = await this.vocabEntryDAL.findByHskLevel(userId, hskLevel);
+  async getEntriesByDifficultyLevel(userId: string, difficulty: DifficultyLevel): Promise<VocabEntry[]> {
+    const entries = await this.vocabEntryDAL.findByDifficultyLevel(userId, difficulty);
     const withExampleMeta = await this.dictionaryService.enrichExampleSentencesMetadataBatch(entries, 'zh');
     const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(withExampleMeta, 'zh');
     const withLongDefMeta = await this.dictionaryService.enrichLongDefinitionMetadataBatch(withExpansionMeta, 'zh');
@@ -360,7 +359,7 @@ export class VocabEntryService {
       userId,
       entryKey: entry.front.trim(),
       language,
-      hskLevel: null // Business rule: CSV imports don't have HSK levels by default
+      difficulty: null // Business rule: CSV imports don't have HSK levels by default
     }));
     
     // Perform bulk upsert with progress tracking
@@ -435,7 +434,7 @@ export class VocabEntryService {
               userId,
               entryKey: entry.front.trim(),
               language,
-              hskLevel: null
+              difficulty: null
             }));
             
             // Perform bulk upsert

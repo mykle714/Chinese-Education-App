@@ -25,14 +25,16 @@ export const GAME_DISTRIBUTION: Record<string, number> = {
 // — 20 pairs → 40 bubbles. The level only changes launch cadence + duration.
 export const TOTAL_PAIRS = Object.values(GAME_DISTRIBUTION).reduce((a, b) => a + b, 0);
 
-// Three difficulty levels the player climbs in order. Higher levels launch the
-// 40 bubbles faster (and give less time), so the field fills quicker — clearing
-// the last (Frantic) wins the game. The old second tier (interval ≈ 1425 ms,
-// duration 90 s) was dropped, leaving a Relaxed → Brisk → Frantic ladder.
+// Three independently-playable difficulty levels. Higher levels launch the
+// 40 bubbles faster (and give less time), so the field fills quicker. Levels do
+// NOT chain — the player picks one from the start screen and plays it on its own;
+// clearing a harder level also banks every easier level's weekly badge. The old
+// second tier (interval ≈ 1425 ms, duration 90 s) was dropped, leaving
+// Chill / Hustle / Torture.
 export const LEVEL_CONFIGS: LevelConfig[] = [
-    { level: 1, label: "Relaxed", launchIntervalMs: 1800, durationSec: 105 },
-    { level: 2, label: "Brisk", launchIntervalMs: 1100, durationSec: 75 },
-    { level: 3, label: "Frantic", launchIntervalMs: 700, durationSec: 60 },
+    { level: 1, label: "Chill", launchIntervalMs: 1800, durationSec: 105 },
+    { level: 2, label: "Hustle", launchIntervalMs: 1100, durationSec: 75 },
+    { level: 3, label: "Torture", launchIntervalMs: 700, durationSec: 60 },
 ];
 
 // ---- Bubble sizing (px radius) -------------------------------------------

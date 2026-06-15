@@ -1,12 +1,13 @@
 import { useState, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { WEIGHT } from '../theme/scale';
 import {
   Box, Typography, Button, Alert,
   Dialog, DialogTitle, DialogContent, DialogActions, Snackbar,
   Tooltip,
 } from '@mui/material';
+import PageHeader from '../components/PageHeader';
 import DelayedCircularProgress from '../components/DelayedCircularProgress';
-import LockOpenIcon from '@mui/icons-material/LockOpen';
 import CropFreeIcon from '@mui/icons-material/CropFree';
 import StorefrontIcon from '@mui/icons-material/Storefront';
 import AltRouteIcon from '@mui/icons-material/AltRoute';
@@ -39,6 +40,7 @@ import { isoToScreen, computeLayerZ } from '../utils/isometric';
  */
 function NightMarketEnginePage() {
   usePageTitle('Night Market Engine');
+  const navigate = useNavigate();
 
   // Lock body scrolling so the mouse wheel is reserved for canvas zoom.
   useEffect(() => {
@@ -54,10 +56,8 @@ function NightMarketEnginePage() {
     nextThreshold,
     totalUnlockable,
     canUnlock,
-    unlockNext,
     newUnlock,
     clearNewUnlock,
-    isUnlocking,
   } = useNightMarket();
 
   const { accumulativeMinutePoints } = useMinutePoints();
@@ -139,7 +139,7 @@ function NightMarketEnginePage() {
     return (
       <Box
         className="night-market-engine-loading"
-        sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 'calc(100vh - 64px)' }}
+        sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', flex: 1, minHeight: 0 }}
       >
         <DelayedCircularProgress className="night-market-engine-loading-spinner" />
       </Box>
@@ -155,13 +155,17 @@ function NightMarketEnginePage() {
   }
 
   return (
+    <Box className="night-market-engine-root" sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+      {/* Common back header → returns to the Home menu. */}
+      <PageHeader title="Night Market" onBack={() => navigate("/")} />
     <Box
       className="night-market-engine-page"
       sx={{
         display: 'flex',
         flexDirection: 'column',
         width: '100%',
-        height: 'calc(100vh - 64px)',
+        flex: 1,
+        minHeight: 0,
         overflow: 'hidden',
         position: 'relative',
       }}
@@ -208,20 +212,6 @@ function NightMarketEnginePage() {
         </Box>
 
         <Box className="night-market-engine-header-actions" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-        {canUnlock && (
-          <Button
-            className="night-market-engine-unlock-button"
-            variant="contained"
-            color="warning"
-            startIcon={<LockOpenIcon />}
-            onClick={unlockNext}
-            disabled={isUnlocking}
-            sx={{ textShadow: '1px 1px 2px rgba(0,0,0,0.3)', fontWeight: WEIGHT.bold }}
-          >
-            {isUnlocking ? 'Unlocking...' : 'Unlock New Item'}
-          </Button>
-        )}
-
         {!canUnlock && totalUnlockable > earnedCount && (
           <Typography
             className="night-market-engine-next-unlock-hint"
@@ -336,6 +326,7 @@ function NightMarketEnginePage() {
             : ''
         }
       />
+    </Box>
     </Box>
   );
 }

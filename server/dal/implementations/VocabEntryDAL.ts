@@ -2,7 +2,7 @@ import { PoolClient, QueryResult } from 'pg';
 import { BaseDAL } from '../base/BaseDAL.js';
 import { IVocabEntryDAL } from '../interfaces/IVocabEntryDAL.js';
 import { dbManager } from '../base/DatabaseManager.js';
-import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, HskLevel, UsedInItem } from '../../types/index.js';
+import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, UsedInItem } from '../../types/index.js';
 import { ValidationError, NotFoundError, BulkResult, ITransaction, DALError } from '../../types/dal.js';
 import db from '../../db.js';
 import { DICT_COLS, DICT_JOIN } from '../shared/dictJoin.js';
@@ -229,7 +229,7 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
   /**
    * Find entries by HSK level
    */
-  async findByHskLevel(userId: string, hskLevel: HskLevel): Promise<VocabEntry[]> {
+  async findByDifficultyLevel(userId: string, difficulty: DifficultyLevel): Promise<VocabEntry[]> {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
@@ -239,9 +239,9 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
       return await client.query(`
         SELECT ve.*, ${DICT_COLS}
         FROM ${vetReadFrom('zh')} ${DICT_JOIN}
-        WHERE ve."userId" = $1 AND ve."language" = 'zh' AND de."hskLevel" = $2
+        WHERE ve."userId" = $1 AND ve."language" = 'zh' AND de."difficulty" = $2
         ORDER BY ve."createdAt" DESC
-      `, [userId, hskLevel]);
+      `, [userId, difficulty]);
     });
 
     return result.recordset;
@@ -399,7 +399,7 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
         foundEntries: result.recordset.map(entry => ({
           id: entry.id,
           key: entry.entryKey,
-          hskLevel: entry.hskLevel
+          difficulty: entry.difficulty
         })).slice(0, 10), // Show first 10 entries
         tokenMatchAnalysis: {
           matchedTokens: result.recordset.map(e => e.entryKey),
@@ -592,7 +592,7 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
         AND ve.language = $2
         AND ve."entryKey" != $3
         AND ve."entryKey" ~ $4
-        AND ve."starterPackBucket" NOT IN ('skip', 'learn-later')
+        AND ve."starterPackBucket" != 'skip'
       ORDER BY ve.id ASC
       LIMIT $5
     `;

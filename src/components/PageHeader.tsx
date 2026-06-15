@@ -34,10 +34,9 @@ interface PageHeaderProps {
     title: string;
     onBack?: () => void;
     showBack?: boolean;
-    // Single ReactNode slot rendered flush-right. The base header has no
-    // opinion about what goes here — footer-tab surfaces should use
-    // `MobileDemoHeader` (which fills this slot with the hamburger menu)
-    // rather than wiring `MobileNavDrawer` into every page.
+    // Single ReactNode slot rendered flush-right (e.g. a settings gear, an undo
+    // button, or a streak badge). The base header has no opinion about what goes
+    // here; footer-tab hubs compose this via `MobileDemoHeader`.
     rightContent?: React.ReactNode;
     // Icon rendered immediately to the left of the title. On footer-tab
     // surfaces this mirrors the active footer tab's icon as a page-identity

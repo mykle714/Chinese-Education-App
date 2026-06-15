@@ -10,7 +10,7 @@
 // `iconId` is the optional FK to icons8 (migration 72), present on both det tables.
 // The client renders the icon via <img src="/api/icons8/<iconId>/image">.
 export const DICT_COLS =
-  `de.script, de.pronunciation, de.tone, de."hskLevel", de."partsOfSpeech", ` +
+  `de.script, de.pronunciation, de.tone, de."difficulty", de."partsOfSpeech", ` +
   `de."vernacularScore", ` +
   `de.breakdown, de.synonyms, de."exampleSentences", ` +
   `de.expansion, de."expansionLiteralTranslation", de."longDefinition", ` +
@@ -28,7 +28,7 @@ export const DICT_COLS =
 // when the exact pos isn't present (e.g. data drift), so a card is never blank.
 // It is consumed only by the ORDER BY below, not returned in DICT_COLS.
 const DICT_LATERAL_SELECT_ZH =
-  `SELECT script, pronunciation, tone, "hskLevel", "partsOfSpeech", "vernacularScore",` +
+  `SELECT script, pronunciation, tone, "difficulty", "partsOfSpeech", "vernacularScore",` +
   `       breakdown, synonyms,` +
   `       "exampleSentences", expansion, "expansionLiteralTranslation", "longDefinition",` +
   `       NULL::varchar AS pos, FALSE AS "hasMultiplePos",` +
@@ -38,7 +38,7 @@ const DICT_LATERAL_SELECT_ZH =
   `       definitions, definitions->>0 AS definition`;
 
 const DICT_LATERAL_SELECT_ES =
-  `SELECT script, pronunciation, tone, "hskLevel", "partsOfSpeech", "vernacularScore",` +
+  `SELECT script, pronunciation, tone, "difficulty", "partsOfSpeech", "vernacularScore",` +
   `       breakdown, synonyms,` +
   `       "exampleSentences", expansion, "expansionLiteralTranslation", "longDefinition",` +
   `       pos, "hasMultiplePos", "alternateGender", "alternateMeaning",` +

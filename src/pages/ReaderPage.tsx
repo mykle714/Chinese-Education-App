@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import {
     Box,
-    useMediaQuery,
     useTheme,
     IconButton,
     Snackbar,
@@ -11,6 +11,8 @@ import {
     Settings as SettingsIcon,
     TouchApp as TouchAppIcon
 } from "@mui/icons-material";
+import PageHeader from "../components/PageHeader";
+import MinutePointsFireBadge from "../components/MinutePointsFireBadge";
 import { useAuth } from "../AuthContext";
 import { useTheme as useCustomTheme } from "../contexts/ThemeContext";
 import { API_BASE_URL } from "../constants";
@@ -37,10 +39,13 @@ import { usePageTitle } from "../hooks/usePageTitle";
 
 function ReaderPage() {
     usePageTitle("Reader");
+    const navigate = useNavigate();
     const theme = useTheme();
     const customTheme = useCustomTheme();
-    const isMobile = useMediaQuery(theme.breakpoints.down("md"));
-    const { token, user } = useAuth();
+    // Reader is always rendered in its mobile layout regardless of viewport
+    // width — the desktop sidebar/settings layout has been retired.
+    const isMobile = true;
+    const { token, user, isAuthenticated } = useAuth();
     const vocabularyUpdate = useVocabularyUpdate();
 
     // State management
@@ -375,19 +380,22 @@ function ReaderPage() {
     }, [selectedText, textToDelete, handleDialogSuccess]);
 
     return (
-        <>
-            {/* Negative top margin tightens the gap below the page chrome on
-                desktop. On mobile a fixed AppBar sits above the content, so we
-                keep mt:0 there — otherwise the content (incl. the text header)
-                is pulled up underneath the AppBar and gets clipped. */}
+        <Box className="reader-page-root" sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+            {/* Common back header → returns to the Home menu. The streak fire badge
+                (previously in the global AppBar on /reader) rides in the right slot. */}
+            <PageHeader
+                title="Reader"
+                onBack={() => navigate("/")}
+                rightContent={isAuthenticated ? <MinutePointsFireBadge /> : undefined}
+            />
             <Box className="reader-page-container" sx={{
                 display: 'flex',
                 width: '100%',
-                // Lock the reader to the viewport so the page itself never scrolls.
-                // Subtract the fixed footer (~48px) and, on mobile, the fixed AppBar Toolbar (~64px).
-                height: { xs: 'calc(100vh - 112px)', md: 'calc(100vh - 48px)' },
+                // Fill the space under the common header; the reader locks to this
+                // box so the page itself never scrolls.
+                flex: 1,
+                minHeight: 0,
                 overflow: 'hidden',
-                mt: { xs: 0, md: -2 }
             }}>
                 {/* Desktop sidebar */}
                 {!isMobile && (
@@ -606,7 +614,7 @@ function ReaderPage() {
                 </Snackbar>
 
             </Box>
-        </>
+        </Box>
     );
 }
 

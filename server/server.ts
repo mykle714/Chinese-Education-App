@@ -117,45 +117,8 @@ app.put('/api/vocabEntries/:id', authenticateToken, async (req, res) => {
   await vocabEntryController.updateEntry(req, res);
 });
 
-// Update just the starterPackBucket on an existing VocabEntry (e.g. library ↔ learn-later toggle from CDP)
-// @ts-ignore
-app.patch('/api/vocabEntries/:id/bucket', authenticateToken, async (req: any, res: any) => {
-  const userId = req.user?.userId;
-  const entryId = parseInt(req.params.id);
-  const { starterPackBucket } = req.body;
-
-  const validBuckets = ['library', 'learn-later', 'skip', 'already-learned'];
-  if (!userId) return res.status(401).json({ error: 'Not authenticated' });
-  if (isNaN(entryId)) return res.status(400).json({ error: 'Invalid entry ID' });
-  if (!starterPackBucket || !validBuckets.includes(starterPackBucket)) {
-    return res.status(400).json({ error: `Invalid bucket. Must be one of: ${validBuckets.join(', ')}` });
-  }
-
-  const client = await db.getClient();
-  try {
-    // Per-language vet split (migration 66): id is globally unique across both
-    // tables, so update each — exactly one matches.
-    let updatedRow: any = null;
-    for (const t of VET_PHYSICAL_TABLES) {
-      const r = await client.query(
-        `UPDATE ${t} SET "starterPackBucket" = $1 WHERE id = $2 AND "userId" = $3 RETURNING *`,
-        [starterPackBucket, entryId, userId]
-      );
-      if (r.rows.length > 0) updatedRow = r.rows[0];
-    }
-    if (!updatedRow) return res.status(404).json({ error: 'Entry not found or not owned by user' });
-    res.json(updatedRow);
-  } catch (err) {
-    console.error('Error updating starterPackBucket:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  } finally {
-    client.release();
-  }
-});
-
 // Add a dictionary entry to the user's library (idempotent; handles already-in-library,
-// learn-later → library, skip → library, and unsorted → library). Used by the
-// dictionary EIP "+" button.
+// skip → library, and unsorted → library). Used by the dictionary EIP "+" button.
 // @ts-ignore
 app.post('/api/vocabEntries/add-to-library', authenticateToken, async (req, res) => {
   await vocabEntryController.addToLibrary(req, res);
@@ -372,13 +335,6 @@ app.post('/api/vocabEntries/by-tokens', authenticateToken, async (req, res) => {
 app.get('/api/onDeck/library-cards', authenticateToken, async (req, res) => {
   console.log('🔄 Using NEW DAL architecture for OnDeck getLibraryCards');
   await onDeckVocabController.getLibraryCards(req, res);
-});
-
-// Get all learn later cards (vocab entries from *-learn-later OnDeck sets)
-// @ts-ignore
-app.get('/api/onDeck/learn-later-cards', authenticateToken, async (req, res) => {
-  console.log('🔄 Using NEW DAL architecture for OnDeck getLearnLaterCards');
-  await onDeckVocabController.getLearnLaterCards(req, res);
 });
 
 // Get mastered library cards (library cards with category = 'Mastered')

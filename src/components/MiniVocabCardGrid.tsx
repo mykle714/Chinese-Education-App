@@ -5,9 +5,9 @@ import DelayedCircularProgress from "./DelayedCircularProgress";
 import { useIncrementalList } from "../hooks/useIncrementalList";
 import type { VocabEntry } from "../types";
 
-// Fixed-width wrapping grid of MiniVocabCards. Shared by the /decks previews
-// (Learn Now / Learn Later) and the dedicated /flashcards/mastered page so the
-// loading / error / empty / list states stay identical across them.
+// Fixed-width wrapping grid of MiniVocabCards. Shared by the /decks Learn Now
+// preview and the dedicated /flashcards/mastered page so the loading / error /
+// empty / list states stay identical across them.
 const CardsPreviewContainer = styled(Box)(() => ({
     // 3 cards × 92px + 2 gaps × 16px + 2 sides × 28px padding = 364px
     width: 364,

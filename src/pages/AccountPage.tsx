@@ -17,28 +17,28 @@ import {
     Snackbar,
 } from "@mui/material";
 import { Visibility, VisibilityOff, Warning, ContentCopy } from "@mui/icons-material";
+import SettingsIcon from "@mui/icons-material/Settings";
+import LogoutIcon from "@mui/icons-material/Logout";
+import { useNavigate } from "react-router-dom";
 import DelayedCircularProgress from "../components/DelayedCircularProgress";
 import { styled } from "@mui/material/styles";
-import MobileDemoHeader from "../components/MobileDemoHeader";
-import MobileFooter from "../components/MobileFooter";
+import MobileTabScreen from "../components/MobileTabScreen";
 import DeckBuckets from "../components/DeckBuckets";
 import { useAuth } from "../AuthContext";
+import { useConfirmation } from "../contexts/ConfirmationContext";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useCategoryCounts } from "../hooks/useCategoryCounts";
 import { COLORS } from "../theme/colors";
 import { FONTS } from "../theme/fonts";
 import { SIZE, WEIGHT } from "../theme/scale";
 
-// Styled Components — phone-frame sizing comes from MobileDemoFrame via Layout.tsx
-const ContentArea = styled(Box)(() => ({
-    flex: 1,
-    overflowY: "auto",
-    overflowX: "hidden",
-    display: "flex",
-    flexDirection: "column",
+// Styled Components — phone-frame sizing comes from MobileDemoFrame via Layout.tsx;
+// the scroll-away header + floating footer + scroll behavior come from
+// MobileTabScreen. Content centering/padding is passed to it via `contentSx`.
+const CONTENT_SX = {
     alignItems: "center",
     padding: "20px",
-}));
+} as const;
 
 const AccountSection = styled(Box)(() => ({
     width: "100%",
@@ -78,7 +78,32 @@ const DeleteButton = styled(Button)(() => ({
 
 function AccountPage() {
     usePageTitle("Account");
-    const { user, isLoading, changePassword, deleteAccount } = useAuth();
+    const navigate = useNavigate();
+    const { confirm } = useConfirmation();
+    const { user, isLoading, changePassword, deleteAccount, logout } = useAuth();
+
+    // Settings moved out of the (now-removed) hamburger into a gear in this page's
+    // header. Logout likewise moved here from the drawer.
+    const handleLogout = async () => {
+        const confirmed = await confirm("Are you sure you want to log out?");
+        if (confirmed) {
+            logout();
+            navigate("/");
+        }
+    };
+
+    // Gear button rendered in the header's right slot → opens the Settings page.
+    const settingsAction = (
+        <IconButton
+            className="account-page__settings-button"
+            aria-label="Open settings"
+            size="small"
+            onClick={() => navigate("/settings")}
+            sx={{ color: "#1C1C1E" }}
+        >
+            <SettingsIcon />
+        </IconButton>
+    );
     // Per-category library card counts, shown as a display-only stat block.
     const { counts: categoryCounts, loaded: countsLoaded } = useCategoryCounts();
     // Password form state
@@ -201,27 +226,19 @@ function AccountPage() {
 
     if (isLoading) {
         return (
-            <>
-                <MobileDemoHeader title="Account" activePage="account" />
-                <ContentArea className="account-page__content">
-                    <DelayedCircularProgress className="account-page__spinner" />
-                </ContentArea>
-                <MobileFooter activePage="account" />
-            </>
+            <MobileTabScreen title="Account" activePage="account" contentClassName="account-page__content" contentSx={CONTENT_SX}>
+                <DelayedCircularProgress className="account-page__spinner" />
+            </MobileTabScreen>
         );
     }
 
     if (!user) {
         return (
-            <>
-                <MobileDemoHeader title="Account" activePage="account" />
-                <ContentArea className="account-page__content">
-                    <Typography className="account-page__no-user-text" sx={{ textAlign: "center", color: COLORS.onSurface }}>
-                        Please log in to view your account
-                    </Typography>
-                </ContentArea>
-                <MobileFooter activePage="account" />
-            </>
+            <MobileTabScreen title="Account" activePage="account" contentClassName="account-page__content" contentSx={CONTENT_SX}>
+                <Typography className="account-page__no-user-text" sx={{ textAlign: "center", color: COLORS.onSurface }}>
+                    Please log in to view your account
+                </Typography>
+            </MobileTabScreen>
         );
     }
 
@@ -231,11 +248,7 @@ function AccountPage() {
 
     return (
         <>
-            {/* Header */}
-            <MobileDemoHeader title="Account" activePage="account" />
-
-                {/* Content Area */}
-                <ContentArea className="account-page__content">
+            <MobileTabScreen title="Account" activePage="account" contentClassName="account-page__content" contentSx={CONTENT_SX} headerExtraActions={settingsAction}>
                     <AccountSection className="account-page__account-section">
                         {/* User Info Section */}
                         <UserInfoSection className="account-page__user-info-section">
@@ -436,6 +449,21 @@ function AccountPage() {
                             </Box>
                         </FormSection>
 
+                        {/* Logout Section — moved here from the removed hamburger drawer. */}
+                        <FormSection className="account-page__logout-section">
+                            <Button
+                                className="account-page__logout-button"
+                                fullWidth
+                                variant="outlined"
+                                color="primary"
+                                startIcon={<LogoutIcon fontSize="small" />}
+                                onClick={handleLogout}
+                                size="small"
+                            >
+                                Log Out
+                            </Button>
+                        </FormSection>
+
                         {/* Delete Account Section */}
                         <FormSection className="account-page__delete-section">
                             <Typography
@@ -467,10 +495,7 @@ function AccountPage() {
                             </DeleteButton>
                         </FormSection>
                     </AccountSection>
-                </ContentArea>
-
-                {/* Footer */}
-                <MobileFooter activePage="account" />
+            </MobileTabScreen>
 
             {/* Delete Account Confirmation Dialog */}
             <Dialog

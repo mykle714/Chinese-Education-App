@@ -231,31 +231,6 @@ export class OnDeckVocabService {
   }
 
   /**
-   * Get all learn later cards (cards with starterPackBucket = 'learn-later').
-   */
-  async getLearnLaterCards(userId: string, language: string): Promise<VocabEntry[]> {
-    if (!userId) {
-      throw new ValidationError('User ID is required');
-    }
-
-    const client = await db.getClient();
-    try {
-      const result = await client.query<VocabEntry>(`
-        SELECT ve.*, ${DICT_COLS}
-        FROM ${vetReadFrom(language)} ${DICT_JOIN}
-        WHERE ve."userId" = $1
-        AND ve."language" = $2
-        AND ve."starterPackBucket" = 'learn-later'
-        ORDER BY ve."createdAt" DESC
-      `, [userId, language]);
-
-      return await this.enrichEntriesPipeline(result.rows, language);
-    } finally {
-      client.release();
-    }
-  }
-
-  /**
    * Get mastered library cards (library cards with category = 'Mastered').
    */
   async getMasteredLibraryCards(userId: string, language: string): Promise<VocabEntry[]> {

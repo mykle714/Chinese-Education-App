@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import PageHeader from '../components/PageHeader';
 import {
     Container,
     Typography,
@@ -9,8 +11,6 @@ import {
     Button,
     Alert,
     Pagination,
-    useMediaQuery,
-    useTheme,
     Chip,
     Divider,
     Snackbar,
@@ -54,8 +54,10 @@ const SPECIAL_CHARACTERS: Record<Language, string[]> = {
 
 function DictionaryPage() {
     usePageTitle("Dictionary");
-    const theme = useTheme();
-    const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+    const navigate = useNavigate();
+    // Dictionary is always rendered in its mobile layout regardless of viewport
+    // width — the desktop two-column layout has been retired.
+    const isMobile = true;
     const { token, user } = useAuth();
     const tts = useTTS();
 
@@ -227,8 +229,7 @@ function DictionaryPage() {
     }, [eip]);
 
     // Snackbar shown after the "+ to library" button in the EIP header is tapped.
-    // Message reflects whether the word was newly added, moved from learn-later,
-    // or was already in the library.
+    // Message reflects whether the word was newly added or was already in the library.
     const [addToLibSnack, setAddToLibSnack] = useState<string | null>(null);
 
     const handleAddToLibrary = useCallback(async (entry: VocabEntry) => {
@@ -246,11 +247,9 @@ function DictionaryPage() {
                 setAddToLibSnack('Failed to add to Learn Now');
                 return;
             }
-            const data: { status: 'added' | 'moved' | 'already-in-library' } = await res.json();
+            const data: { status: 'added' | 'already-in-library' } = await res.json();
             if (data.status === 'already-in-library') {
                 setAddToLibSnack('Already in Learn Now');
-            } else if (data.status === 'moved') {
-                setAddToLibSnack('Moved from Learn Later to Learn Now');
             } else {
                 setAddToLibSnack('Added to Learn Now');
             }
@@ -266,6 +265,10 @@ function DictionaryPage() {
     };
 
     return (
+        <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+            {/* Common back header → returns to the Home menu. */}
+            <PageHeader title="Dictionary" onBack={() => navigate("/")} />
+            <Box className="dictionary-page__scroll" sx={{ flex: 1, overflowY: 'auto' }}>
         <Container
             className="dictionary-page"
             maxWidth="lg"
@@ -273,7 +276,7 @@ function DictionaryPage() {
                 py: 4,
                 display: 'flex',
                 flexDirection: 'column',
-                minHeight: 'calc(100vh - 200px)',
+                minHeight: 'calc(100% - 8px)',
             }}
         >
             {/* Header */}
@@ -697,6 +700,8 @@ function DictionaryPage() {
                 </Alert>
             </Snackbar>
         </Container>
+            </Box>
+        </Box>
     );
 }
 

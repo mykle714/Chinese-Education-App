@@ -15,7 +15,7 @@ export class StarterPacksController {
   /**
    * Get starter pack cards for a specific language
    * GET /api/starter-packs/:language
-   * Response: { cards: DiscoverCard[], userHskLevel: number }
+   * Response: { cards: DiscoverCard[], userDifficultyLevel: number }
    */
   getStarterPackCards = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -39,7 +39,7 @@ export class StarterPacksController {
    * Load more starter pack cards, excluding cards the client already has.
    * POST /api/starter-packs/:language/more
    * Body: { excludeIds: number[] }
-   * Response: { cards: DiscoverCard[], userHskLevel: number, provisionalMode: boolean }
+   * Response: { cards: DiscoverCard[], userDifficultyLevel: number, provisionalMode: boolean }
    */
   loadMoreCards = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -92,7 +92,7 @@ export class StarterPacksController {
    * Sort a card into a bucket
    * POST /api/starter-packs/sort
    * Body: { cardId: number, bucket: string, language: string }
-   * Response: { success, message, bucket, userHskLevel }
+   * Response: { success, message, bucket, userDifficultyLevel }
    */
   sortCard = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -106,7 +106,7 @@ export class StarterPacksController {
         return;
       }
 
-      const validBuckets = ['already-learned', 'library', 'skip', 'learn-later'];
+      const validBuckets = ['already-learned', 'library', 'skip'];
       if (!validBuckets.includes(bucket)) {
         res.status(400).json({ error: 'Invalid bucket type' });
         return;

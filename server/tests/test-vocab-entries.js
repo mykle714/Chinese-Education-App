@@ -50,7 +50,7 @@ async function testVocabEntries() {
     const newEntry = {
       entryKey: '测试',
       isCustomTag: true,
-      hskLevel: 'HSK1'
+      difficulty: 'HSK1'
     };
 
     const createReq = createMockReq(testUser, newEntry);
@@ -116,7 +116,7 @@ async function testVocabEntries() {
       const updateData = {
         entryKey: '测试更新',
         isCustomTag: true,
-        hskLevel: 'HSK2'
+        difficulty: 'HSK2'
       };
 
       const updateReq = createMockReq(testUser, updateData, { id: createdEntryId.toString() });

@@ -41,7 +41,6 @@ This is the backend API server for the vocabulary application, providing endpoin
 
 ### OnDeck Vocabulary
 - `GET /api/onDeck/library-cards` - Get all library cards (protected)
-- `GET /api/onDeck/learn-later-cards` - Get all learn-later cards (protected)
 - `GET /api/onDeck/mastered-library-cards` - Get mastered library cards (protected)
 - `GET /api/onDeck/non-mastered-library-cards` - Get non-mastered library cards (protected)
 - `GET /api/onDeck/distributed-working-loop` - Get distributed working loop cards (protected)

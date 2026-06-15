@@ -7,27 +7,36 @@ import { useAuth } from "../AuthContext";
 const DEFAULT_DISCOVER_LANGUAGE = "zh";
 
 /**
- * Encapsulates navigation to the Discover (sort cards) page, which is keyed by
- * the user's selected language: `/discover/sort/{language}`.
+ * Encapsulates Discover-flow navigation.
  *
- * Previously this language-resolution + route-building logic was duplicated in
- * MobileFooter and FlashcardsDecksPage. Centralizing it here keeps the default
- * language and route shape in one place.
+ * The Discover flow is a two-level surface:
+ * - `/discover` — the Discover hub (menu of discover activities; lists Sort Cards
+ *   today). This is where the footer's Discover tab lands.
+ * - `/discover/sort/{language}` — the drag-to-sort page, reached from the hub and
+ *   keyed by the user's selected language.
+ *
+ * Centralizing the default language + route shapes here keeps them in one place
+ * (previously duplicated across MobileFooter / FlashcardsDecksPage).
  *
  * Returns:
- * - `goToDiscover()` — navigate to the Discover page for the user's language.
- * - `discoverPath` — the resolved path, for cases that need the string directly.
+ * - `goToDiscover()` / `discoverPath` — the Discover hub menu.
+ * - `goToSort()` / `sortPath` — the language-keyed sort page.
  */
 export function useDiscoverNavigation() {
   const navigate = useNavigate();
   const { user } = useAuth();
 
   const language = user?.selectedLanguage || DEFAULT_DISCOVER_LANGUAGE;
-  const discoverPath = `/discover/sort/${language}`;
+  const discoverPath = "/discover";
+  const sortPath = `/discover/sort/${language}`;
 
   const goToDiscover = useCallback(() => {
     navigate(discoverPath);
   }, [navigate, discoverPath]);
 
-  return { goToDiscover, discoverPath };
+  const goToSort = useCallback(() => {
+    navigate(sortPath);
+  }, [navigate, sortPath]);
+
+  return { goToDiscover, discoverPath, goToSort, sortPath };
 }

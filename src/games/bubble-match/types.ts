@@ -66,7 +66,7 @@ export interface BubbleBody {
 export interface LevelConfig {
     /** 1-based level number shown in the picker / HUD. */
     level: number;
-    /** Short label for the picker (e.g. "Relaxed", "Brisk", "Frantic"). */
+    /** Short label for the picker (e.g. "Chill", "Hustle", "Torture"). */
     label: string;
     /** Delay between successive bubble launches (ms). Lower = faster/harder. */
     launchIntervalMs: number;

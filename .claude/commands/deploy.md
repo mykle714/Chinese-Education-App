@@ -101,6 +101,11 @@ git pull origin main
 docker-compose -f docker-compose.prod.yml down
 docker-compose -f docker-compose.prod.yml up --build -d
 
+# Maintenance cron (prod only) — idempotent; installs/refreshes the hourly
+# inactivity-penalty + weekly-reset schedule into the user crontab from the
+# git-tracked source. Safe to run every deploy. See docs/STREAK_EXPIRATION_CRON.md
+bash database/cron/install-cron.sh
+
 # Migration(s) — copy file into container, run with -f, then RECORD it in schema_migrations
 # (never use < redirect, it breaks in pasted blocks; always insert the tracking row so migrate.sh stays correct)
 docker cp database/migrations/<migration-file>.sql cow-postgres-prod:/tmp/<migration-file>.sql

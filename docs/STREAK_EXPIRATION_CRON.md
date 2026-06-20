@@ -89,20 +89,27 @@ psql "$DATABASE_URL" -f database/cron/expire-stale-streaks.sql
    Safe to re-run within the same local day (idempotent — second run
    returns `UPDATE 0` for both branches).
 
-4. **Install the schedule.** The crontab line is no longer hand-pasted — both
-   the SQL logic *and* the schedule are now git-tracked. The schedule lives in
-   `database/cron/install-cron.sh` (the editable source of truth for *when* the
-   job runs), and `/deploy` runs that script on every deploy, so normally you
-   don't touch the crontab by hand at all. To install/refresh it manually:
+4. **Install the schedule.** The cron line is no longer hand-pasted into the
+   user crontab — both the SQL logic *and* the schedule are now git-tracked, and
+   the schedule is installed as a **dedicated `/etc/cron.d/cow-maintenance`
+   drop-in** so it is physically isolated from other projects' cron on the same
+   server. The schedule lives in `database/cron/install-cron.sh` (the editable
+   source of truth for *when* the job runs), and `/deploy` runs that script on
+   every deploy, so normally you don't touch cron by hand at all. To
+   install/refresh it manually (needs sudo — `/etc/cron.d` is root-owned):
    ```bash
    bash /home/michael/vocabulary-app/database/cron/install-cron.sh
    ```
-   The installer is **idempotent and non-destructive**: it rewrites only its own
-   marker-delimited block (and absorbs any legacy unmarked streak line so the job
-   can never end up double-scheduled), preserves all other crontab entries, and
-   `mkdir -p`s the `logs/` dir itself. The schedule runs at `HH:01` so the 4 AM
-   local-day boundary has definitely ticked over for any timezone whose
-   day-rollover lands on the hour.
+   The installer is **idempotent**: it overwrites the whole drop-in file with
+   identical content, runs the job as the checkout's owning user (the `USER`
+   column that `/etc/cron.d` format requires), and `mkdir -p`s the `logs/` dir
+   itself. cron auto-detects the new file — no service reload needed. The
+   schedule runs at `HH:01` so the 4 AM local-day boundary has definitely ticked
+   over for any timezone whose day-rollover lands on the hour.
+
+   > **Note on `/etc/cron.d` filenames:** cron ignores any file whose name
+   > contains a `.` (that is why the dir's `.placeholder` is skipped). Keep the
+   > name `cow-maintenance` (letters/hyphens only).
 
 5. **Verify** `/home/michael/vocabulary-app/logs/streak-expire.log`
    the morning after install — one `BEGIN / DO / COMMIT` block per

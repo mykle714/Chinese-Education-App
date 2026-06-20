@@ -102,8 +102,9 @@ docker-compose -f docker-compose.prod.yml down
 docker-compose -f docker-compose.prod.yml up --build -d
 
 # Maintenance cron (prod only) — idempotent; installs/refreshes the hourly
-# inactivity-penalty + weekly-reset schedule into the user crontab from the
-# git-tracked source. Safe to run every deploy. See docs/STREAK_EXPIRATION_CRON.md
+# inactivity-penalty + weekly-reset schedule as the /etc/cron.d/cow-maintenance
+# drop-in from the git-tracked source (self-elevates with sudo for the write).
+# Safe to run every deploy. See docs/STREAK_EXPIRATION_CRON.md
 bash database/cron/install-cron.sh
 
 # Migration(s) — copy file into container, run with -f, then RECORD it in schema_migrations

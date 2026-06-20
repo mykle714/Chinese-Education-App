@@ -1,65 +1,59 @@
 #!/usr/bin/env bash
 #
-# Idempotently install the prod maintenance cron into the CURRENT user's crontab.
+# Install the prod maintenance cron as a dedicated /etc/cron.d drop-in.
 #
 # Why this exists: the *SQL logic* (expire-stale-streaks.sql) has always been
-# git-tracked, but the *schedule* (the crontab line that runs it hourly) used to
-# live only in the prod user's system crontab — untracked and un-deployable. This
-# script makes the schedule a reviewable, diffable artifact in the repo and lets
+# git-tracked, but the *schedule* (the line that runs it hourly) used to live
+# only in the prod user's crontab — untracked and un-deployable. This script
+# makes the schedule a reviewable, diffable artifact in the repo and lets
 # `/deploy` install it the same way it ships code: edit here, commit, deploy.
+#
+# Why /etc/cron.d (not the user crontab): the server hosts other projects whose
+# cron lives in the same user crontab. A per-project drop-in file gives physical
+# isolation — this project owns exactly /etc/cron.d/cow-maintenance, and editing
+# or removing it can never disturb another project's schedule.
 #
 # Design notes:
 #   - PROD ONLY. Dev is intentionally left clean (run the SQL by hand with
 #     `psql -f` when testing). See docs/STREAK_EXPIRATION_CRON.md.
-#   - Idempotent. Re-running replaces our managed block in place; running it on
-#     every deploy is safe.
-#   - Non-destructive. Any UNmanaged crontab lines (e.g. the walker test trigger)
-#     are preserved untouched — we only rewrite the marker-delimited block below,
-#     matched by EXACT line so the markers need no regex escaping.
-#   - Path-portable. Absolute paths are derived from this script's location, so a
-#     checkout in a different directory still produces correct cron lines.
+#   - Idempotent. It writes the whole drop-in file, so re-running just overwrites
+#     it with identical content — safe to run on every deploy.
+#   - Needs root to write /etc/cron.d. Run as root, or as a sudoer (the script
+#     self-elevates with sudo for the file write only). `/deploy` runs it inside
+#     a block that already has sudo.
+#   - Path-portable. Absolute paths are derived from this script's location.
 set -euo pipefail
 
 # Repo root = two levels up from database/cron/install-cron.sh
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+CRON_FILE="/etc/cron.d/cow-maintenance"
 
-# Exact-match marker lines delimiting the block this script owns.
-BEGIN="# BEGIN cow-maintenance-cron (managed by database/cron/install-cron.sh — do not edit by hand)"
-END="# END cow-maintenance-cron"
-
-# The managed block. The schedule lives HERE — this is the editable source of
-# truth for when the job runs. Runs at HH:01 so the 4 AM local-day boundary has
-# definitely ticked over for any timezone whose day-rollover lands on the hour.
-read -r -d '' BLOCK <<EOF || true
-$BEGIN
-# Hourly inactivity-penalty + weekly-reset maintenance — see docs/STREAK_EXPIRATION_CRON.md
-1 * * * * /usr/bin/docker exec -i cow-postgres-prod psql -U cow_user -d cow_db < $REPO_DIR/database/cron/expire-stale-streaks.sql >> $REPO_DIR/logs/streak-expire.log 2>&1
-$END
-EOF
+# The job must run as the human user that owns the checkout (writable logs/,
+# docker group access) — NOT root, even when this script is invoked under sudo.
+# Deriving it from the repo dir's owner is robust to being run via `sudo bash …`.
+CRON_USER="$(stat -c '%U' "$REPO_DIR")"
 
 # The cron line redirects output here; make sure the dir exists (logs/ is gitignored).
 mkdir -p "$REPO_DIR/logs"
 
-# Rebuild the crontab without our job, then append the fresh managed block.
-# We drop THREE things so the result converges to exactly one streak line no
-# matter the prior state (guards against double-scheduling = double penalties):
-#   1. our marker-delimited block (exact-line match via awk — no regex escaping);
-#   2. any leftover line that invokes the job SQL (the LEGACY unmanaged line that
-#      predates this script, or a stray duplicate);
-#   3. the legacy standalone comment that used to sit above that line.
-# Everything else (e.g. the walker test trigger) is preserved verbatim.
-current="$(crontab -l 2>/dev/null || true)"
-cleaned="$(printf '%s\n' "$current" | awk -v b="$BEGIN" -v e="$END" '
-  $0 == b { skip = 1; next }
-  skip && $0 == e { skip = 0; next }
-  skip { next }
-  index($0, "expire-stale-streaks.sql") { next }
-  $0 == "# Hourly streak expiration — see docs/STREAK_EXPIRATION_CRON.md" { next }
-  { print }
-')"
+# /etc/cron.d format differs from a user crontab: every job line carries a USER
+# column between the schedule and the command. The schedule lives HERE — this is
+# the editable source of truth for WHEN the job runs. HH:01 so the 4 AM local-day
+# boundary has definitely ticked over for any timezone whose rollover is on the hour.
+read -r -d '' CONTENT <<EOF || true
+# /etc/cron.d/cow-maintenance — managed by database/cron/install-cron.sh (do not edit by hand).
+# Source of truth lives in the vocabulary-app repo; edit there + redeploy.
+# Hourly inactivity-penalty + weekly-reset maintenance — see docs/STREAK_EXPIRATION_CRON.md
+1 * * * * $CRON_USER /usr/bin/docker exec -i cow-postgres-prod psql -U cow_user -d cow_db < $REPO_DIR/database/cron/expire-stale-streaks.sql >> $REPO_DIR/logs/streak-expire.log 2>&1
+EOF
 
-# Drop a leading blank line if the crontab was previously empty.
-printf '%s\n%s\n' "$(printf '%s' "$cleaned" | sed '/./,$!d')" "$BLOCK" | crontab -
+# /etc/cron.d is root-owned; elevate only for the write. cron auto-detects the
+# new file — no service reload needed. File must be root-owned and 0644 or cron
+# ignores it.
+SUDO=""; [ "$(id -u)" -ne 0 ] && SUDO="sudo"
+printf '%s\n' "$CONTENT" | $SUDO tee "$CRON_FILE" >/dev/null
+$SUDO chown root:root "$CRON_FILE"
+$SUDO chmod 644 "$CRON_FILE"
 
-echo "Installed cow-maintenance cron. Current crontab:"
-crontab -l
+echo "Installed $CRON_FILE (job runs as '$CRON_USER'):"
+cat "$CRON_FILE"

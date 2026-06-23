@@ -20,10 +20,13 @@ import { Visibility, VisibilityOff, Warning, ContentCopy } from "@mui/icons-mate
 import SettingsIcon from "@mui/icons-material/Settings";
 import LogoutIcon from "@mui/icons-material/Logout";
 import { useNavigate } from "react-router-dom";
+import { useSlideNavigate } from "../hooks/useSlideNavigate";
 import DelayedCircularProgress from "../components/DelayedCircularProgress";
 import { styled } from "@mui/material/styles";
 import MobileTabScreen from "../components/MobileTabScreen";
 import DeckBuckets from "../components/DeckBuckets";
+import AvatarPickerDialog from "../components/AvatarPickerDialog";
+import { API_BASE_URL } from "../constants";
 import { useAuth } from "../AuthContext";
 import { useConfirmation } from "../contexts/ConfirmationContext";
 import { usePageTitle } from "../hooks/usePageTitle";
@@ -79,8 +82,13 @@ const DeleteButton = styled(Button)(() => ({
 function AccountPage() {
     usePageTitle("Account");
     const navigate = useNavigate();
+    // Settings is a leaf page: slideNavigate plays the slide-up enter transition.
+    const slideNavigate = useSlideNavigate();
     const { confirm } = useConfirmation();
-    const { user, isLoading, changePassword, deleteAccount, logout } = useAuth();
+    const { user, isLoading, changePassword, deleteAccount, logout, updateAvatar } = useAuth();
+
+    // Avatar picker (modal) open state.
+    const [avatarPickerOpen, setAvatarPickerOpen] = useState(false);
 
     // Settings moved out of the (now-removed) hamburger into a gear in this page's
     // header. Logout likewise moved here from the drawer.
@@ -98,7 +106,7 @@ function AccountPage() {
             className="account-page__settings-button"
             aria-label="Open settings"
             size="small"
-            onClick={() => navigate("/settings")}
+            onClick={() => slideNavigate("/settings")}
             sx={{ color: "#1C1C1E" }}
         >
             <SettingsIcon />
@@ -253,14 +261,27 @@ function AccountPage() {
                         {/* User Info Section */}
                         <UserInfoSection className="account-page__user-info-section">
                             <UserInfoRow className="account-page__user-info-row">
+                                {/* Tappable avatar → opens the icon picker. Renders the
+                                    chosen icons8 icon when set (src), otherwise MUI falls
+                                    back to the name-initial child. */}
                                 <Avatar
                                     className="account-page__avatar"
+                                    role="button"
+                                    aria-label="Change avatar"
+                                    onClick={() => setAvatarPickerOpen(true)}
+                                    src={
+                                        user.avatarIconId
+                                            ? `${API_BASE_URL}/api/icons8/${encodeURIComponent(user.avatarIconId)}/image`
+                                            : undefined
+                                    }
+                                    imgProps={{ sx: { objectFit: "contain", p: 0.75 } }}
                                     sx={{
                                         width: 56,
                                         height: 56,
                                         bgcolor: "#779BE7",
                                         fontSize: SIZE.title,
                                         fontWeight: WEIGHT.medium,
+                                        cursor: "pointer",
                                     }}
                                 >
                                     {userName.charAt(0).toUpperCase()}
@@ -564,6 +585,14 @@ function AccountPage() {
                     </Button>
                 </DialogActions>
             </Dialog>
+
+            {/* Avatar icon picker — paginated grid of all downloaded icons8 icons. */}
+            <AvatarPickerDialog
+                open={avatarPickerOpen}
+                onClose={() => setAvatarPickerOpen(false)}
+                currentIconId={user.avatarIconId ?? null}
+                onSelect={updateAvatar}
+            />
 
             {/* "Copied to clipboard" confirmation for the user-ID copy button */}
             <Snackbar

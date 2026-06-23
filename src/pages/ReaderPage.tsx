@@ -11,7 +11,7 @@ import {
     Settings as SettingsIcon,
     TouchApp as TouchAppIcon
 } from "@mui/icons-material";
-import PageHeader from "../components/PageHeader";
+import LeafPage from "../components/LeafPage";
 import MinutePointsFireBadge from "../components/MinutePointsFireBadge";
 import { useAuth } from "../AuthContext";
 import { useTheme as useCustomTheme } from "../contexts/ThemeContext";
@@ -380,14 +380,15 @@ function ReaderPage() {
     }, [selectedText, textToDelete, handleDialogSuccess]);
 
     return (
-        <Box className="reader-page-root" sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-            {/* Common back header → returns to the Home menu. The streak fire badge
-                (previously in the global AppBar on /reader) rides in the right slot. */}
-            <PageHeader
-                title="Reader"
-                onBack={() => navigate("/")}
-                rightContent={isAuthenticated ? <MinutePointsFireBadge /> : undefined}
-            />
+        // Reader is a LEAF PAGE (see docs/LEAF_NODE_PAGES.md): no footer, DOWN back
+        // arrow (→ Home), slides up on enter / down on exit. The streak fire badge
+        // (previously in the global AppBar on /reader) rides in the header's right slot.
+        <LeafPage
+            title="Reader"
+            onBack={() => navigate("/")}
+            rightContent={isAuthenticated ? <MinutePointsFireBadge /> : undefined}
+            className="reader-page-root"
+        >
             <Box className="reader-page-container" sx={{
                 display: 'flex',
                 width: '100%',
@@ -614,7 +615,7 @@ function ReaderPage() {
                 </Snackbar>
 
             </Box>
-        </Box>
+        </LeafPage>
     );
 }
 

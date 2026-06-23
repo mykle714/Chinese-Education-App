@@ -1,5 +1,7 @@
 # Discover Flow
 
+> ↑ Part of [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md).
+
 The Discover feature is a **two-level** surface, mirroring the Games hub.
 
 ```
@@ -20,16 +22,17 @@ Footer "Discover" tab
 | Route                       | Component       | Header                              | Footer            |
 | --------------------------- | --------------- | ----------------------------------- | ----------------- |
 | `/discover`                 | `DiscoverPage`  | `MobileDemoHeader` (Discover badge) | Floating pill     |
-| `/discover/sort/:language`  | `SortCardsPage` | `MobileDemoHeader` `showBack` (↓ back arrow) → `/discover` | **none** |
+| `/discover/sort/:language`  | `SortCardsPage` | `LeafPage` (↓ back arrow) → `/discover` | **none** |
 
 - **`/discover` (hub):** built on `MobileTabScreen` (`activePage="discover"`) +
   the shared `HubMenu` / `HubMenuRow` (same components the Games hub uses). Today
   it has a single row, **Sort Cards**, linking to the language-keyed sort page.
-- **`/discover/sort/:language` (sort):** a focused drill-in. The header is a
-  `MobileDemoHeader` with `showBack` (the down-chevron back arrow in the left
-  slot) whose `onBack` returns to `/discover`; its right slot holds the page's
-  `extraActions` (autoplay toggle, undo, streak badge). The sort page renders
-  **no** `MobileFooter`. (Global nav is the footer tabs + Home menu — there is no
+- **`/discover/sort/:language` (sort):** a **leaf page** (see
+  [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md)) — wrapped in `LeafPage`, which owns
+  the down-chevron back arrow (`onBack` → `/discover`), the slide-up/down
+  transition, and the back-arrow-only exit. Its right slot holds the page's
+  `rightContent` (autoplay toggle, undo, streak badge). A leaf page renders **no**
+  `MobileFooter`. (Global nav is the footer tabs + Home menu — there is no
   hamburger; see [NAVIGATION.md](./NAVIGATION.md).)
 
 ## Navigation helper

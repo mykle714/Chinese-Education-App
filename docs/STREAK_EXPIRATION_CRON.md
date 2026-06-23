@@ -1,9 +1,8 @@
-# Inactivity Penalty + Weekly Reset Cron (prod only)
+# Inactivity Penalty Cron (prod only)
 
-An hourly Postgres cron. The first two branches debit minute points from
-inactive users; the third wipes stale weekly achievements. All three run
-in one transaction off the **same** hourly crontab line (they live in one
-SQL file — there is no separate weekly-reset cron):
+An hourly Postgres cron. Both branches debit minute points from inactive
+users and run in one transaction off the **same** hourly crontab line
+(they live in one SQL file):
 
 1. **Streak break** — for users whose `currentStreak > 0` but whose
    `lastStreakDate` is ≥ 2 local days behind, reset `currentStreak` to
@@ -17,17 +16,17 @@ SQL file — there is no separate weekly-reset cron):
    inactivity. Independent of streak state — even users who never had
    a streak get charged. Idempotency is via `users.lastPenaltyDate`,
    which the cron stamps to today's local date after each debit.
-3. **Weekly achievement reset** — deletes a user's `weeklies` rows whose
-   `achievedAt` predates the start of their current local week (the most
-   recent **Sunday 04:00** in `users.timezone`). It is a boundary
-   *comparison*, not an exact-hour wipe, so it is idempotent and
-   self-healing: if the Sunday-4 AM tick is missed (server down, etc.),
-   the next hourly tick still clears the finished week's rows. The
-   Sunday boundary is computed via `EXTRACT(DOW …)` — **not**
-   `date_trunc('week', …)`, which is Monday-based. No new column is
-   needed; the `weeklies` rows' own `achievedAt` carries the state.
 
-All three branches use each user's stored `users.timezone` against the
+> **Removed: weekly achievement reset.** This cron used to have a third
+> branch that wiped each user's `weeklies` rows at their local week
+> rollover. The `weeklies` table is gone — weekly achievements are now
+> derived as a timestamp filter over the persistent append-only `wins`
+> log (the most recent **Sunday 04:00** in `users.timezone`; see
+> `WinsDAL.getWeeklyCountsByUser` / `getWeeklyWins`, migration
+> `78-create-wins-table.sql`). Nothing is wiped, so lifetime win history
+> is preserved and no cron branch is needed.
+
+Both branches use each user's stored `users.timezone` against the
 4 AM local-day boundary.
 
 - **SQL**: `database/cron/expire-stale-streaks.sql` (filename kept for
@@ -38,7 +37,8 @@ All three branches use each user's stored `users.timezone` against the
   - `users.timezone` — migration `50-add-user-timezone.sql`
   - `users.lastPenaltyDate` — migration `54-add-user-last-penalty-date.sql`
   - `userminutepoints.language` (+ 3-col PK) — migration `62-add-language-to-userminutepoints.sql`
-  - `weeklies` table — migration `74-create-weeklies-table.sql`
+  - `wins` table — migration `78-create-wins-table.sql` (replaced the
+    `weeklies` table from migration `74-create-weeklies-table.sql`)
 - **Refresh path for `users.timezone`**: written by the client on
   (a) every successful login or session restore via
   `POST /api/auth/on-login` (`UserController.onLogin`), and
@@ -165,7 +165,6 @@ emitted *before* the `DO` line — one per branch that fired:
 ```
 NOTICE:  inactivity-cron streak-break 2026-05-25 04:17:02+00 count=1 user_ids={30093a9b-...} missed_dates={2026-05-23}
 NOTICE:  inactivity-cron daily-penalty 2026-05-25 04:17:02+00 count=5 user_ids={a36e5ebf-..., ...} penalty_dates={2026-05-25, ...}
-NOTICE:  inactivity-cron weekly-reset 2026-05-25 04:17:02+00 rows=12 user_ids={a36e5ebf-..., ...}
 ```
 
 To find every cleanup event:

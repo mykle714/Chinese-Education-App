@@ -16,7 +16,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Import DAL architecture
-import { userController, vocabEntryController, onDeckVocabController, userMinutePointsController, textController, dictionaryController, starterPacksController, onDeckVocabService, nightMarketController, gamesController, icons8Controller, weekliesController } from './dal/setup.js';
+import { userController, vocabEntryController, onDeckVocabController, userMinutePointsController, textController, dictionaryController, starterPacksController, onDeckVocabService, nightMarketController, gamesController, icons8Controller, winsController } from './dal/setup.js';
 import { leaderboardController } from './controllers/LeaderboardController.js';
 import { ttsController } from './controllers/TTSController.js';
 import { MODE_CONFIGS, type StudyMode } from './services/OnDeckVocabService.js';
@@ -270,6 +270,12 @@ app.put('/api/users/language', authenticateToken, async (req, res) => {
   await userController.updateLanguage(req, res);
 });
 
+// Update the user's profile avatar (icons8 icon id, or null to clear)
+// @ts-ignore
+app.put('/api/users/avatar', authenticateToken, async (req, res) => {
+  await userController.updateAvatar(req, res);
+});
+
 // Text API Routes - USING NEW DAL ARCHITECTURE
 
 // Get all texts for authenticated user (protected route)
@@ -448,17 +454,17 @@ app.post('/api/games/:gameId/progress', authenticateToken, async (req, res) => {
   await gamesController.saveProgress(req, res);
 });
 
-// Weekly achievements (per-user flag bag, wiped weekly by a prod cron).
-// List the authenticated user's achievements earned this week.
+// Game wins (append-only lifetime log; "this week" is a timestamp filter).
+// List this week's earned (game, level) badges + lifetime win counts.
 // @ts-ignore
-app.get('/api/users/me/weeklies', authenticateToken, async (req, res) => {
-  await weekliesController.listWeeklies(req, res);
+app.get('/api/users/me/wins', authenticateToken, async (req, res) => {
+  await winsController.listWins(req, res);
 });
 
-// Record (or clear) a weekly achievement: body { key, value? }.
+// Record one win: body { game, level }.
 // @ts-ignore
-app.post('/api/users/me/weeklies', authenticateToken, async (req, res) => {
-  await weekliesController.setWeekly(req, res);
+app.post('/api/users/me/wins', authenticateToken, async (req, res) => {
+  await winsController.recordWin(req, res);
 });
 
 // Flashcards API Routes - USING NEW DAL ARCHITECTURE
@@ -824,11 +830,8 @@ app.get('/api/starter-packs/:language', authenticateToken, async (req, res) => {
   await starterPacksController.getStarterPackCards(req, res);
 });
 
-// Load more starter pack cards with client-side exclusion list (protected route)
-// @ts-ignore
-app.post('/api/starter-packs/:language/more', authenticateToken, async (req, res) => {
-  await starterPacksController.loadMoreCards(req, res);
-});
+// (Removed POST /api/starter-packs/:language/more — replenishment is now folded into
+// the POST /sort response, which returns the single replacement card for the queue.)
 
 // Get user's progress on a starter pack (protected route)
 // @ts-ignore
@@ -885,6 +888,13 @@ app.get('/api/dictionary/count', authenticateToken, async (req, res) => {
 // @ts-ignore
 app.post('/api/tts/synthesize', authenticateToken, async (req, res) => {
   await ttsController.synthesize(req, res);
+});
+
+// icons8 icon catalog: paginated list of downloaded icons for the avatar picker.
+// Auth-gated — only logged-in users browse icons to set their avatar.
+// @ts-ignore
+app.get('/api/icons8', authenticateToken, async (req, res) => {
+  await icons8Controller.listIcons(req, res);
 });
 
 // icons8 icon image: stream the stored bytes for a downloaded icon by its icons8 id.

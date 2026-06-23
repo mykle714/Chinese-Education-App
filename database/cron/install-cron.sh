@@ -43,7 +43,7 @@ mkdir -p "$REPO_DIR/logs"
 read -r -d '' CONTENT <<EOF || true
 # /etc/cron.d/cow-maintenance — managed by database/cron/install-cron.sh (do not edit by hand).
 # Source of truth lives in the vocabulary-app repo; edit there + redeploy.
-# Hourly inactivity-penalty + weekly-reset maintenance — see docs/STREAK_EXPIRATION_CRON.md
+# Hourly inactivity-penalty maintenance — see docs/STREAK_EXPIRATION_CRON.md
 1 * * * * $CRON_USER /usr/bin/docker exec -i cow-postgres-prod psql -U cow_user -d cow_db < $REPO_DIR/database/cron/expire-stale-streaks.sql >> $REPO_DIR/logs/streak-expire.log 2>&1
 EOF
 

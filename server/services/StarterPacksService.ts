@@ -7,23 +7,43 @@ import { vetTableForLanguage } from '../dal/shared/vetTable.js';
 
 /**
  * Starter Packs Service
- * Business logic for managing language starter packs (the discover / "sort cards" flow).
+ * Business logic for the discover / "sort cards" flow.
  *
- * Card source is the per-language dictionaryentries table (discoverable=TRUE), with
- * per-user sort state tracked in vocabentries (starterPackBucket field). Both
- * supported languages use the same adaptive, difficulty-banded flow
- * (_getDifficultyDiscoverCards / computeUserDifficultyLevel / provisional mode); they differ only
- * in how the integer difficulty level is encoded in the dict table's difficulty column:
- *   - Chinese (dictionaryentries_zh): 'HSK1'..'HSK6' (HSK proficiency, ceiling 6).
- *   - Spanish (dictionaryentries_es): '1'..'5' (learner-acquisition difficulty,
- *     1=easiest..5=hardest, ceiling 5) written by the Spanish vernacular/difficulty
- *     backfill. The encoding is centralized in _levelConfig so the band math stays
- *     language-agnostic.
+ * DESIGN (see docs/SORT_CARDS_DESIGN.md): the SERVER owns the level; the client is a
+ * dumb FIFO queue. All level estimation and card selection happen here; the client
+ * just shows the head of a short queue and asks for one replacement per sort.
  *
- * For Chinese the difficulty value doubles as the user-facing HSK proficiency label
- * (rendered as an "HSK 3" badge); for Spanish it is a plain 1–5 acquisition score.
+ * Card source is the per-language dictionaryentries table (discoverable=TRUE). Per-user
+ * sort state lives in two places:
+ *   - vocabentries (vet): "Add to Learn Now" / "Already Learned" rows. The GENERATED
+ *     `category` column (from markHistory) is the only mastery signal the estimator
+ *     reads — so a card mastered via flashcard review (or DEMOTED by a later wrong
+ *     answer) automatically moves the level, with no Discover-specific bookkeeping.
+ *   - discover_skips: "Skip for now" deferrals (migration 80). Deliberately separate
+ *     so a skip carries NO level signal and never enters the library.
+ *
+ * Difficulty is ONE generalized integer scale '1'..'6' (migration 79) stored in the
+ * dict table's difficulty column, ceiling 6 for every language:
+ *   - Chinese (dictionaryentries_zh): '1'..'6' — these ARE HSK proficiency levels
+ *     (1 = HSK1 .. 6 = HSK6); migration 79 dropped the old 'HSK' prefix only.
+ *   - Spanish (dictionaryentries_es): '1'..'6' learner-acquisition difficulty.
+ * The encoding is centralized in _levelConfig so the level math stays
+ * language-agnostic. For Chinese the value is surfaced as an "HSK 3" badge (the UI
+ * re-adds the HSK label for zh); for Spanish it is a plain acquisition score.
  */
 export class StarterPacksService {
+  /**
+   * Leveling tuning knobs (docs/SORT_CARDS_DESIGN.md §4.3 / §12).
+   * A level L is "cleared" (so the user advances past it) when:
+   *     mastered[L] >= MIN_MASTERED_TO_ADVANCE  AND  learning[L] <= LEARN_LATER_TOLERANCE
+   * - MIN_MASTERED_TO_ADVANCE: master at least this many cards at L before advancing.
+   * - LEARN_LATER_TOLERANCE: how many "Add to Learn Now" (not-yet-mastered) cards a
+   *   level may carry and still clear. One stray "I'll learn this later" never strands
+   *   the user; the second one settles them at L until review drains the pile.
+   */
+  private static readonly MIN_MASTERED_TO_ADVANCE = 3;
+  private static readonly LEARN_LATER_TOLERANCE = 1;
+
   constructor(
     private vocabEntryDAL: VocabEntryDAL,
     private dictionaryDAL: DictionaryDAL
@@ -48,84 +68,44 @@ export class StarterPacksService {
   }
 
   /**
-   * Compute the band fields ({userDifficultyLevel, provisionalMode}) the client uses to
-   * narrow its filter after a fetch/sort/undo. Shared by both languages — the
-   * difficulty-level encoding is resolved per-language inside computeUserDifficultyLevel.
+   * Get the initial queue of ready-to-show cards for a language. The client holds a
+   * short FIFO queue (size 2: head + one buffer), so the default limit is 2.
+   * Returns `exhausted: true` only when the user has genuinely sorted the entire
+   * discoverable dictionary (an extreme edge case — see getNextCards).
    */
-  private async _computeBand(userId: string, language: string): Promise<{ userDifficultyLevel: number; provisionalMode: boolean }> {
-    const provisionalMode = await this.computeProvisionalMode(userId, language);
-    const userDifficultyLevel = await this.computeUserDifficultyLevel(userId, language, provisionalMode);
-    return { userDifficultyLevel, provisionalMode };
+  async getStarterPackCards(language: string, userId: string, limit = 2): Promise<{ cards: DiscoverCard[]; exhausted: boolean; level: number }> {
+    return this.getNextCards(language, userId, [], limit);
   }
 
   /**
-   * Get unsorted discoverable cards for a specific language. Both supported
-   * languages use the same adaptive difficulty-band flow; the per-language level
-   * encoding is resolved inside the flow (see _levelConfig).
-   */
-  async getStarterPackCards(language: string, userId: string, excludeIds: number[] = []): Promise<{ cards: DiscoverCard[]; userDifficultyLevel: number; provisionalMode: boolean }> {
-    return this._getDifficultyDiscoverCards(language, userId, excludeIds);
-  }
-
-  /**
-   * Adaptive difficulty-band discover flow: cards filtered to the user's current
-   * level (±1 buffer). Also returns the computed userDifficultyLevel so the client can
-   * apply its own narrower filter and display it.
+   * Select the next batch of ready-to-show cards (server is the sole owner of card
+   * selection — the client does NO filtering). Supply order (docs §5):
+   *   1. In-level first, then NEAREST-level-first — a single SQL `ORDER BY
+   *      ABS(level - estimate)` gives in-level cards, then ±1, ±2, … so the user
+   *      drifts away from their level only as gradually as the data allows.
+   *   2. Recycle skips: only once non-skip supply is exhausted do skipped cards
+   *      re-enter (oldest skip first), filling any remaining slots.
+   * Excludes cards the user has already sorted (vet row) and any `excludeIds` the
+   * client already holds. `exhausted` is true only when nothing is left at all.
    *
-   * Fallback chain when the primary band is empty:
-   *   1. Recycle the user's skipped cards in the same band, retry the query.
-   *   2. Widen to "any level ≤ userDifficultyLevel" (easier-review fallback) — this
-   *      keeps the user moving when they've exhausted everything at their
-   *      level. The client still narrows the result, so easier cards may not
-   *      all reach the UI; that's OK, they're a safety net.
+   * `level` is the user's estimated difficulty level (docs §6), returned for
+   * DISPLAY ONLY — the client shows it as a chip but must never filter on it.
    */
-  private async _getDifficultyDiscoverCards(language: string, userId: string, excludeIds: number[] = []): Promise<{ cards: DiscoverCard[]; userDifficultyLevel: number; provisionalMode: boolean }> {
-    const table = this._dictTable(language);
-    const { maxLevel } = this._levelConfig(language);
-    // Provisional mode must be known before the level calc — the level formula
-    // differs in provisional mode (see computeUserDifficultyLevel).
-    const provisionalMode = await this.computeProvisionalMode(userId, language);
-    const userDifficultyLevel = await this.computeUserDifficultyLevel(userId, language, provisionalMode);
+  async getNextCards(language: string, userId: string, excludeIds: number[] = [], limit = 2): Promise<{ cards: DiscoverCard[]; exhausted: boolean; level: number }> {
+    const level = await this.estimateLevel(userId, language);
 
-    // Step 1: primary query — band matched to the client filter so every fetched card is showable.
-    // Provisional mode (< 3 Unfamiliar cards): no difficulty band restriction — fetch from all levels so
-    //   the user can encounter any card and build Unfamiliar signal quickly. The client still applies
-    //   its own narrower filter before displaying, so this is purely a supply-side widening.
-    // Normal mode: ±1 around userDifficultyLevel (client shows [level, level+1]; level-1 provides a small buffer).
-    // Provisional mode: fetch only cards above the user's current level (userDifficultyLevel+1..6),
-    // matching exactly what the client filter will show. Fetching the full range (1..6)
-    // caused premature "All cards sorted" — lower-level cards were deduped out on load-more
-    // because they were already in allCards, leaving visibleQueue empty.
-    const primaryLabels = provisionalMode
-      ? this._buildBandLabels(userDifficultyLevel + 1, maxLevel, language)
-      : this._buildBandLabels(userDifficultyLevel - 1, userDifficultyLevel + 1, language);
-    console.log(`[StarterPacks] getStarterPackCards: userDifficultyLevel=${userDifficultyLevel}, provisionalMode=${provisionalMode}, excludeIds.length=${excludeIds.length}, primaryLabels=${JSON.stringify(primaryLabels)}`);
-    let rows = await this._fetchUnsortedCardRows(language, userId, table, primaryLabels, excludeIds);
-    console.log(`[StarterPacks] primary query returned ${rows.length} rows`);
+    // Step 1: fresh (non-skipped) cards, nearest-level-first.
+    let rows = await this._fetchSupplyRows(language, userId, level, excludeIds, { includeSkips: false, limit });
 
-    // Step 2: recycle skip cards in the same band and retry
-    if (rows.length === 0) {
-      await this._clearSkipCards(userId, language);
-      rows = await this._fetchUnsortedCardRows(language, userId, table, primaryLabels, excludeIds);
+    // Step 2: backfill from recycled skips only if fresh supply ran short.
+    if (rows.length < limit) {
+      const have = new Set([...excludeIds, ...rows.map((r) => r.id)]);
+      const skipRows = await this._fetchSupplyRows(language, userId, level, [...have], { includeSkips: true, limit: limit - rows.length });
+      rows = rows.concat(skipRows);
     }
 
-    // Step 3: easier-review fallback — widen the band when the primary is exhausted.
-    // Provisional: already using full range, so fallback is also full range (handles skip-recycle edge case).
-    // Normal: any level ≤ userDifficultyLevel+1.
-    if (rows.length === 0) {
-      const easierLabels = provisionalMode
-        ? this._buildBandLabels(1, maxLevel, language)
-        : this._buildBandLabels(1, userDifficultyLevel + 1, language);
-      rows = await this._fetchUnsortedCardRows(language, userId, table, easierLabels, excludeIds);
-      if (rows.length > 0) {
-        console.log(`[StarterPacks] Easier-review fallback: returning ${rows.length} card(s) for userId=${userId} provisionalMode=${provisionalMode}`);
-      }
-    }
-
-    const cards = this._rowsToDiscoverCards(rows);
-    const enriched = await this._enrichDiscoverCards(cards, language);
-
-    return { cards: enriched, userDifficultyLevel, provisionalMode };
+    const enriched = await this._enrichDiscoverCards(this._rowsToDiscoverCards(rows), language);
+    return { cards: enriched, exhausted: enriched.length === 0, level };
   }
 
   /**
@@ -143,7 +123,7 @@ export class StarterPacksService {
       word2: row.word2,
       script: row.script,
       difficulty: row.difficulty,
-      // Spanish POS badge fields (NULL/false for Chinese — see _fetchUnsortedCardRows).
+      // Spanish POS badge fields (NULL/false for Chinese — see _fetchSupplyRows).
       pos: row.pos ?? null,
       hasMultiplePos: row.hasMultiplePos ?? false,
       breakdown: row.breakdown,
@@ -168,198 +148,164 @@ export class StarterPacksService {
   }
 
   /**
-   * Per-language encoding of the integer difficulty level stored in the dict
-   * table's difficulty column. Centralizes the differences so the band math
-   * (computeUserDifficultyLevel / _buildBandLabels) stays language-agnostic:
-   *   - maxLevel       — the difficulty ceiling (zh: 6, es: 5).
-   *   - label(n)       — format level n into the stored string ('HSK3' vs '3').
+   * Encoding of the integer difficulty level stored in the dict table's difficulty
+   * column. As of migration 79 every supported language uses ONE generalized scale —
+   * a bare integer '1'..'6' — so this is no longer per-language:
+   *   - maxLevel       — the difficulty ceiling (6 for all languages).
    *   - levelExpr      — SQL extracting the integer level from de."difficulty".
    *   - validPredicate — SQL matching rows whose difficulty is a valid level.
    * All SQL fragments are static (never interpolate caller input) so they are
    * safe to splice directly into queries.
+   *
+   * For Chinese the integer still IS the HSK proficiency level (1 = HSK1 .. 6 = HSK6);
+   * migration 79 only dropped the textual 'HSK' prefix, the semantics are unchanged.
+   * For Spanish it is a learner-acquisition score on the same 1..6 scale.
    */
-  private _levelConfig(language: string): {
+  private _levelConfig(_language: string): {
     maxLevel: number;
-    label: (n: number) => string;
     levelExpr: string;
     validPredicate: string;
   } {
-    if (language === 'es') {
-      // Spanish: bare integer '1'..'5' learner-acquisition difficulty.
-      return {
-        maxLevel: 5,
-        label: (n) => String(n),
-        levelExpr: `CAST(de."difficulty" AS INTEGER)`,
-        validPredicate: `de."difficulty" ~ '^[1-5]$'`,
-      };
-    }
-    // Chinese (default): 'HSK1'..'HSK6'.
+    // Single generalized config (kept the `_language` param in case a future
+    // language needs to diverge from the shared 1..6 integer scale).
     return {
       maxLevel: 6,
-      label: (n) => `HSK${n}`,
-      levelExpr: `CAST(SUBSTRING(de."difficulty" FROM 4) AS INTEGER)`,
-      validPredicate: `de."difficulty" ~ '^HSK[1-6]$'`,
+      levelExpr: `CAST(de."difficulty" AS INTEGER)`,
+      validPredicate: `de."difficulty" ~ '^[1-6]$'`,
     };
   }
 
   /**
-   * Compute the user's current adaptive difficulty level.
+   * Estimate the user's current difficulty level: the lowest level they have NOT yet
+   * cleared (docs §4.3). Pure function of vet mastery state, recomputed on demand —
+   * never accumulated from sort events, so it is order-independent and picks up
+   * flashcard-review progress (and demotions) automatically.
    *
-   * Normal mode: ceil(avg level of the 50 hardest Mastered cards). Anchors
-   *   the level to the ceiling of what the user has solidly learned.
-   * Provisional mode (<3 Unfamiliar): ceil(1 + avg level of the 5 hardest
-   *   Mastered cards). Pushes the level one band above recent mastery so the
-   *   user encounters harder cards and builds Unfamiliar signal quickly.
-   *
-   * Returns 0 if the user has no mastered cards yet. Otherwise clamped to
-   * [1, maxLevel] (6 for Chinese HSK, 5 for Spanish difficulty).
+   * For each level L we count, in ONE grouped query:
+   *   - mastered[L]: vet rows at L with category = 'Mastered'.
+   *   - learning[L]: vet rows at L in the library but NOT mastered (the "don't know"
+   *     / frontier signal). Skips are in discover_skips, not vet, so they never count.
+   * A level is cleared when mastered[L] >= MIN_MASTERED_TO_ADVANCE AND
+   * learning[L] <= LEARN_LATER_TOLERANCE. The same rule gives both the fast cold-start
+   * climb and the slow settled climb, because learning[L] self-shrinks as cards are
+   * mastered. A brand-new user (all zero) is not-cleared at L1 → estimate 1.
    */
-  private async computeUserDifficultyLevel(userId: string, language: string, provisionalMode: boolean): Promise<number> {
+  async estimateLevel(userId: string, language: string): Promise<number> {
     const { maxLevel, levelExpr, validPredicate } = this._levelConfig(language);
     const det = this._dictTable(language);
     const vet = this._vetTable(language);
     const client = await db.getClient();
     try {
-      const sampleSize = provisionalMode ? 5 : 50;
-      const result = await client.query<{ avg_lvl: number | null }>(`
-        SELECT AVG(lvl)::float AS avg_lvl
-        FROM (
-          SELECT ${levelExpr} AS lvl
-          FROM ${vet} ve
-          JOIN ${det} de
-            ON ve."entryKey" = de.word1 AND de.language = ve.language
-          WHERE ve."userId" = $1
-            AND ve.language = $2
-            AND ve.category = 'Mastered'
-            AND ${validPredicate}
-          ORDER BY lvl DESC
-          LIMIT $3
-        ) sub
-      `, [userId, language, sampleSize]);
-
-      const avg = result.rows[0]?.avg_lvl;
-      if (avg == null) return 0; // brand-new user with no mastered cards
-      const raw = provisionalMode ? 1 + avg : avg;
-      return Math.max(1, Math.min(maxLevel, Math.ceil(raw)));
-    } finally {
-      client.release();
-    }
-  }
-
-  /**
-   * Determine whether the user is in provisional mode.
-   *
-   * Provisional mode is active when the user has fewer than 3 cards categorised
-   * as "Unfamiliar". In this state the client narrows its card filter to only
-   * difficulty+1, pushing the user toward slightly harder cards so they build up
-   * enough Unfamiliar signal quickly to make the adaptive difficulty level meaningful.
-   */
-  private async computeProvisionalMode(userId: string, language: string): Promise<boolean> {
-    const client = await db.getClient();
-    try {
-      const result = await client.query<{ cnt: string }>(`
-        SELECT COUNT(*) AS cnt
-        FROM ${this._vetTable(language)}
-        WHERE "userId" = $1 AND language = $2 AND category = 'Unfamiliar'
+      const result = await client.query<{ lvl: number; mastered: string; learning: string }>(`
+        SELECT ${levelExpr} AS lvl,
+               COUNT(*) FILTER (WHERE ve.category = 'Mastered')  AS mastered,
+               COUNT(*) FILTER (WHERE ve.category <> 'Mastered') AS learning
+        FROM ${vet} ve
+        JOIN ${det} de
+          ON ve."entryKey" = de.word1 AND de.language = ve.language
+        WHERE ve."userId" = $1
+          AND ve.language = $2
+          AND ${validPredicate}
+        GROUP BY lvl
       `, [userId, language]);
-      return parseInt(result.rows[0].cnt, 10) < 3;
+
+      // Index the per-level counts so missing levels read as 0.
+      const mastered = new Map<number, number>();
+      const learning = new Map<number, number>();
+      for (const row of result.rows) {
+        mastered.set(row.lvl, parseInt(row.mastered, 10));
+        learning.set(row.lvl, parseInt(row.learning, 10));
+      }
+
+      // Walk up from the bottom; return the first uncleared level.
+      for (let L = 1; L <= maxLevel; L++) {
+        const cleared =
+          (mastered.get(L) ?? 0) >= StarterPacksService.MIN_MASTERED_TO_ADVANCE &&
+          (learning.get(L) ?? 0) <= StarterPacksService.LEARN_LATER_TOLERANCE;
+        if (!cleared) return L;
+      }
+      return maxLevel; // everything cleared → top of the scale
     } finally {
       client.release();
     }
   }
 
   /**
-   * Build the array of difficulty-level labels covering the inclusive band
-   * [minLevel, maxLevel], in the language's stored encoding (e.g. 'HSK2'..'HSK4'
-   * for zh, '2'..'4' for es). Clamped to [1, language ceiling]. Returns an empty
-   * array if the range is invalid.
+   * Fetch ready-to-show discoverable card rows for a user/language, ordered
+   * NEAREST-LEVEL-FIRST around `level` (in-level, then ±1, ±2, …; ties broken by id).
+   * Always excludes cards the user has already sorted (vet NOT EXISTS) and any
+   * `excludeIds` the caller already holds.
+   *
+   * `opts.includeSkips` selects the two supply phases (docs §5):
+   *   - false → exclude cards currently in discover_skips (the normal fresh supply).
+   *   - true  → ONLY cards in discover_skips (the recycle phase), oldest skip first,
+   *             used to backfill when fresh supply is short.
    */
-  private _buildBandLabels(minLevel: number, maxLevel: number, language: string): string[] {
-    const { maxLevel: cap, label } = this._levelConfig(language);
-    const lo = Math.max(1, Math.min(cap, minLevel));
-    const hi = Math.max(1, Math.min(cap, maxLevel));
-    const labels: string[] = [];
-    for (let i = lo; i <= hi; i++) {
-      labels.push(label(i));
-    }
-    return labels;
-  }
+  private async _fetchSupplyRows(
+    language: string,
+    userId: string,
+    level: number,
+    excludeIds: number[],
+    opts: { includeSkips: boolean; limit: number }
+  ): Promise<any[]> {
+    if (opts.limit <= 0) return [];
 
-  /**
-   * Fetch raw unsorted discoverable card rows for a user/language from the given
-   * `table`, ordered by id. `allowedLabels` controls the difficulty-band filter:
-   *   - `string[]` → restrict to those level labels (e.g. 'HSK3' / '3'). Empty
-   *      array → no labels in band, returns [].
-   *   - `null` → no level filter at all (escape hatch; both supported languages
-   *      now pass labels via the adaptive flow).
-   * Excludes cards the user has already sorted (vocabentries NOT EXISTS) and any
-   * `excludeIds` the client already holds. `table` is whitelisted via _dictTable.
-   */
-  private async _fetchUnsortedCardRows(language: string, userId: string, table: string, allowedLabels: string[] | null, excludeIds: number[] = []): Promise<any[]> {
-    // Empty (but non-null) label band means "nothing in range" — short-circuit.
-    if (allowedLabels !== null && allowedLabels.length === 0) return [];
+    const det = this._dictTable(language);
+    const vetTable = this._vetTable(language);
+    const { levelExpr, validPredicate } = this._levelConfig(language);
 
     const client = await db.getClient();
     try {
-      // Build the optional filters with positional params appended in order so the
-      // placeholder numbers always line up regardless of which filters are active.
-      const params: any[] = [language, userId];
-      let filters = '';
-      if (allowedLabels !== null) {
-        params.push(allowedLabels);
-        filters += ` AND de."difficulty" = ANY($${params.length}::text[])`;
-      }
+      // $1 language, $2 userId, $3 level (for the nearest-first distance ordering),
+      // then optional excludeIds, then $limit.
+      const params: any[] = [language, userId, level];
+      let excludeFilter = '';
       if (excludeIds.length > 0) {
         params.push(excludeIds);
-        filters += ` AND de.id != ALL($${params.length}::int[])`;
+        excludeFilter = ` AND de.id != ALL($${params.length}::int[])`;
       }
 
-      // Spanish det carries pos / hasMultiplePos (for the POS badge); Chinese det
-      // does not, so substitute literals there. Likewise, a Spanish word1 has one
-      // discoverable row per POS, so a card is "already sorted" only when the user
-      // has a vet row for that SAME pos — exclude per (word1, pos), not per word1.
+      // Skip phase: fresh supply EXCLUDES skipped cards; recycle phase keeps ONLY them.
+      // `recycleOrder` pulls the oldest skip back first when recycling.
+      const skipFilter = opts.includeSkips
+        ? `AND EXISTS (SELECT 1 FROM discover_skips ds WHERE ds."userId" = $2 AND ds.language = de.language AND ds."cardId" = de.id)`
+        : `AND NOT EXISTS (SELECT 1 FROM discover_skips ds WHERE ds."userId" = $2 AND ds.language = de.language AND ds."cardId" = de.id)`;
+      const recycleOrder = opts.includeSkips
+        ? `(SELECT ds."createdAt" FROM discover_skips ds WHERE ds."userId" = $2 AND ds.language = de.language AND ds."cardId" = de.id) ASC,`
+        : '';
+
+      // Spanish det carries pos / hasMultiplePos (for the POS badge); Chinese det does
+      // not, so substitute literals. A Spanish word1 has one discoverable row per POS,
+      // so a card is "already sorted" only when the user has a vet row for that SAME
+      // pos — exclude per (word1, pos), not per word1.
       const isEs = language === 'es';
       const posCols = isEs
         ? `, de.pos, de."hasMultiplePos"`
         : `, NULL::varchar AS pos, FALSE AS "hasMultiplePos"`;
-      const vetTable = this._vetTable(language);
       const excludePos = isEs ? ` AND ve.pos IS NOT DISTINCT FROM de.pos` : '';
+
+      params.push(opts.limit);
+      const limitParam = `$${params.length}`;
 
       const result = await client.query(`
         SELECT de.id, de.word1, de.word2, de.pronunciation, de.tone, de.definitions,
                de.language, de.script, de."difficulty", de.breakdown, de.synonyms,
                de."exampleSentences", de.expansion, de."expansionLiteralTranslation",
                de."iconId"${posCols}
-        FROM ${table} de
+        FROM ${det} de
         WHERE de.language = $1
           AND de.discoverable = TRUE
+          AND ${validPredicate}
           AND NOT EXISTS (
             SELECT 1 FROM ${vetTable} ve
             WHERE ve."userId" = $2 AND ve."entryKey" = de.word1 AND ve.language = de.language${excludePos}
           )
-          ${filters}
-        ORDER BY de.id ASC
-        LIMIT 50
+          ${skipFilter}
+          ${excludeFilter}
+        ORDER BY ${recycleOrder} ABS(${levelExpr} - $3) ASC, de.id ASC
+        LIMIT ${limitParam}
       `, params);
       return result.rows;
-    } finally {
-      client.release();
-    }
-  }
-
-  /**
-   * Delete all skip-bucket vocabentries for a user/language so those cards
-   * re-enter the discover flow on the next fetch.
-   */
-  private async _clearSkipCards(userId: string, language: string): Promise<void> {
-    const client = await db.getClient();
-    try {
-      const result = await client.query(`
-        DELETE FROM ${this._vetTable(language)}
-        WHERE "userId" = $1 AND language = $2 AND "starterPackBucket" = 'skip'
-        RETURNING id
-      `, [userId, language]);
-      console.log(`[StarterPacks] Recycled ${result.rowCount} skip card(s) for userId=${userId} language=${language}`);
     } finally {
       client.release();
     }
@@ -378,10 +324,15 @@ export class StarterPacksService {
         WHERE language = $1 AND discoverable = TRUE
       `, [language]);
 
+      // "Sorted" = cards the user has acted on = library vet rows PLUS current skips.
+      // Skips moved out of vet into discover_skips (migration 80), so both must be
+      // counted to keep progress faithful to the pre-split behaviour.
       const sortedResult = await client.query<{ count: string }>(`
-        SELECT COUNT(*) as count
-        FROM ${this._vetTable(language)}
-        WHERE "userId" = $1 AND language = $2 AND "starterPackBucket" IS NOT NULL
+        SELECT
+          (SELECT COUNT(*) FROM ${this._vetTable(language)}
+             WHERE "userId" = $1 AND language = $2 AND "starterPackBucket" IS NOT NULL)
+        + (SELECT COUNT(*) FROM discover_skips
+             WHERE "userId" = $1 AND language = $2) AS count
       `, [userId, language]);
 
       const total: number = parseInt(totalResult.rows[0].count);
@@ -400,23 +351,35 @@ export class StarterPacksService {
   }
 
   /**
-   * Sort a card into a bucket
-   * Creates/updates the corresponding vocabentry with starterPackBucket set.
-   * Special handling: "already-learned" → bucket='library' + category='Mastered' + perfect mark history
+   * Sort a card into a bucket and return the single replacement card for the client's
+   * FIFO tail (a sort always shrinks the queue by one, so it carries its own refill —
+   * there is no separate "load more" call). `excludeIds` are the ids the client still
+   * holds, so the replacement is never a duplicate.
+   *
+   * Bucket effects (docs §8):
+   *   - skip            → INSERT discover_skips (NO vet row → no level signal).
+   *   - library         → "Add to Learn Now": upsert vet row, empty history (Unfamiliar).
+   *   - already-learned → upsert vet row + perfect 8/8 history → GENERATED category Mastered.
    */
-  async sortCard(userId: string, cardId: number, bucket: string, language: string): Promise<any> {
+  async sortCard(userId: string, cardId: number, bucket: string, language: string, excludeIds: number[] = []): Promise<any> {
     const validBuckets: string[] = ['already-learned', 'library', 'skip'];
     if (!validBuckets.includes(bucket)) {
       throw new Error(`Invalid bucket: ${bucket}`);
     }
 
-    let actualBucket: StarterPackBucket = bucket as StarterPackBucket;
-    let shouldMarkMastered: boolean = false;
-
-    if (bucket === 'already-learned') {
-      actualBucket = 'library';
-      shouldMarkMastered = true;
+    // Skip is signal-free: it lives in discover_skips, never in vet. Record it and
+    // return — no dictionary lookup or vet upsert needed.
+    if (bucket === 'skip') {
+      await this._recordSkip(userId, cardId, language);
+      const { cards, exhausted, level } = await this.getNextCards(language, userId, excludeIds, 1);
+      return { success: true, message: 'Card skipped', bucket: 'skip', nextCard: cards[0] ?? null, exhausted, level };
     }
+
+    // library / already-learned both persist as the internal 'library' bucket
+    // (per CLAUDE.md "Learn Now" is UI text only). already-learned additionally
+    // writes a perfect history so the GENERATED category resolves to Mastered.
+    const actualBucket: StarterPackBucket = 'library';
+    const shouldMarkMastered = bucket === 'already-learned';
 
     // Look up the card in the language-appropriate dictionary table. Card ids are
     // per-table surrogate serials that collide across languages, so we must scope
@@ -479,28 +442,59 @@ export class StarterPacksService {
         );
         console.log(`[StarterPacks] Marked VocabEntry id=${vocabEntryId} as Mastered with 8/8 history`);
       }
+    } finally {
+      client.release();
+    }
 
-      // Recompute the band after the sort so the client can update its filter on
-      // the fly. Neutral for sequential languages (Spanish) — see _computeBand.
-      const { userDifficultyLevel, provisionalMode } = await this._computeBand(userId, language);
+    // Compute the one replacement card AFTER the sort is persisted, so the new vet
+    // row is reflected in the estimate and the supply exclusions.
+    const { cards, exhausted, level } = await this.getNextCards(language, userId, excludeIds, 1);
+    return { success: true, message: 'Card sorted successfully', bucket: actualBucket, nextCard: cards[0] ?? null, exhausted, level };
+  }
 
-      return {
-        success: true,
-        message: 'Card sorted successfully',
-        bucket: actualBucket,
-        userDifficultyLevel,
-        provisionalMode
-      };
+  /**
+   * Record a "Skip for now" deferral in discover_skips (signal-free — see §3.3).
+   * Idempotent per (userId, language, cardId) via the unique index.
+   */
+  private async _recordSkip(userId: string, cardId: number, language: string): Promise<void> {
+    const client = await db.getClient();
+    try {
+      await client.query(`
+        INSERT INTO discover_skips ("userId", language, "cardId")
+        VALUES ($1, $2, $3)
+        ON CONFLICT ("userId", language, "cardId") DO NOTHING
+      `, [userId, language, cardId]);
     } finally {
       client.release();
     }
   }
 
   /**
-   * Undo a card sort
-   * Deletes the vocabentry row (only if created via starter pack, i.e. starterPackBucket IS NOT NULL)
+   * Undo the last sort. The client passes the bucket it sorted into so we reverse the
+   * exact trace (docs §8):
+   *   - skip            → DELETE the discover_skips row (by cardId — no word1 lookup).
+   *   - library / already-learned → DELETE the vet row (by word1[, pos]).
+   * Returns { success } — the client already has the card to re-show; it does not
+   * need a replacement.
    */
-  async undoSort(userId: string, cardId: number, language: string): Promise<any> {
+  async undoSort(userId: string, cardId: number, bucket: string, language: string): Promise<any> {
+    if (bucket === 'skip') {
+      const client = await db.getClient();
+      try {
+        const result = await client.query(`
+          DELETE FROM discover_skips
+          WHERE "userId" = $1 AND language = $2 AND "cardId" = $3
+          RETURNING id
+        `, [userId, language, cardId]);
+        return result.rows.length > 0
+          ? { success: true, message: 'Skip undo successful' }
+          : { success: false, message: 'Skip not found' };
+      } finally {
+        client.release();
+      }
+    }
+
+    // library / already-learned: delete the vet row created by the sort.
     const table = this._dictTable(language);
     const client = await db.getClient();
     try {
@@ -536,10 +530,7 @@ export class StarterPacksService {
         return { success: false, message: 'Card not found in sorted list' };
       }
 
-      // Recompute band after rollback so the client can re-sync. Mirrors sortCard().
-      const { userDifficultyLevel, provisionalMode } = await this._computeBand(userId, language);
-
-      return { success: true, message: 'Card undo successful', userDifficultyLevel, provisionalMode };
+      return { success: true, message: 'Card undo successful' };
     } finally {
       client.release();
     }

@@ -34,6 +34,11 @@ interface PageHeaderProps {
     title: string;
     onBack?: () => void;
     showBack?: boolean;
+    // Which way the back chevron points. "down" is the original drill-in arrow
+    // (leaf pages); "left" is the lateral/back arrow (node pages). Both render the
+    // SAME ExpandMoreIcon so the chevron style is identical — "left" just rotates
+    // it 90°. See LeafPageHeader / NodePageHeader and docs/LEAF_NODE_PAGES.md.
+    arrowDirection?: "down" | "left";
     // Single ReactNode slot rendered flush-right (e.g. a settings gear, an undo
     // button, or a streak badge). The base header has no opinion about what goes
     // here; footer-tab hubs compose this via `MobileDemoHeader`.
@@ -44,7 +49,7 @@ interface PageHeaderProps {
     leftIcon?: React.ReactNode;
 }
 
-const PageHeader: React.FC<PageHeaderProps> = ({ title, onBack, showBack = true, rightContent, leftIcon }) => {
+const PageHeader: React.FC<PageHeaderProps> = ({ title, onBack, showBack = true, rightContent, leftIcon, arrowDirection = "down" }) => {
     const navigate = useNavigate();
 
     return (
@@ -58,7 +63,11 @@ const PageHeader: React.FC<PageHeaderProps> = ({ title, onBack, showBack = true,
                         sx={{ color: "#1C1C1E" }}
                         onClick={onBack ?? (() => navigate(-1))}
                     >
-                        <ExpandMoreIcon />
+                        {/* Rotate the down chevron 90° for the "left" (node-page) arrow
+                            so leaf and node back buttons share one icon glyph. */}
+                        <ExpandMoreIcon
+                            sx={arrowDirection === "left" ? { transform: "rotate(90deg)" } : undefined}
+                        />
                     </IconButton>
                 ) : leftIcon ? (
                     <Box

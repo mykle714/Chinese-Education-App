@@ -32,6 +32,26 @@ export class Icons8Controller {
     }
   }
 
+  /**
+   * GET /api/icons8?offset=&limit=
+   *   returns: { icons: [{ id, name }], total, hasMore } — one page of the icon
+   *   catalog for the avatar picker's infinite scroll. Each icon's bytes are fetched
+   *   separately via getIconImage. Auth-gated (only logged-in users pick avatars).
+   */
+  async listIcons(req: Request, res: Response): Promise<void> {
+    try {
+      // Default page size 48; DAL clamps offset/limit to safe bounds.
+      const offset = parseInt(String(req.query.offset ?? '0'), 10) || 0;
+      const limit = parseInt(String(req.query.limit ?? '48'), 10) || 48;
+
+      const page = await this.icons8DAL.listIcons(offset, limit);
+      res.json(page);
+    } catch (err: any) {
+      console.error('[Icons8Controller] listIcons error:', err);
+      res.status(500).json({ error: err?.message || 'Failed to list icons' });
+    }
+  }
+
   async getIconImage(req: Request, res: Response): Promise<void> {
     try {
       const iconId = String(req.params.iconId || '').trim();

@@ -1,6 +1,7 @@
 import { Box, Card, CardContent, Typography, Alert, Chip, Avatar } from "@mui/material";
 import DelayedCircularProgress from "./DelayedCircularProgress";
 import { useLeaderboard } from "../hooks/useLeaderboard";
+import { API_BASE_URL } from "../constants";
 import { SIZE , WEIGHT} from "../theme/scale";
 
 function LeaderboardPlaceholder() {
@@ -110,7 +111,9 @@ function LeaderboardPlaceholder() {
                                 sx={{
                                     display: 'flex',
                                     alignItems: 'center',
-                                    gap: 2,
+                                    // No uniform gap — per-element margins below let us
+                                    // tighten the rank→avatar spacing while keeping the
+                                    // avatar→info and info→points spacing roomy.
                                     p: 2,
                                     borderRadius: 2,
                                     backgroundColor: isCurrentUser
@@ -123,30 +126,44 @@ function LeaderboardPlaceholder() {
                                     }
                                 }}
                             >
-                                {/* Rank */}
-                                <Box sx={{ minWidth: '3rem', textAlign: 'center' }}>
+                                {/* Rank — narrower box + tight right margin pulls the
+                                    avatar in close, freeing horizontal room for the name. */}
+                                <Box sx={{ minWidth: '2rem', textAlign: 'center', mr: 0.5 }}>
                                     <Typography variant="h6" sx={{ fontWeight: WEIGHT.bold, fontSize: SIZE.title }}>
                                         {getRankEmoji(entry.rank)}
                                     </Typography>
                                 </Box>
 
-                                {/* User Avatar */}
-                                <Avatar sx={{
-                                    bgcolor: 'rgba(255, 255, 255, 0.2)',
-                                    color: 'white',
-                                    width: 40,
-                                    height: 40
-                                }}>
+                                {/* User Avatar — shows the user's chosen icons8 icon when
+                                    set (src), else falls back to the name/email initial. */}
+                                <Avatar
+                                    src={
+                                        entry.avatarIconId
+                                            ? `${API_BASE_URL}/api/icons8/${encodeURIComponent(entry.avatarIconId)}/image`
+                                            : undefined
+                                    }
+                                    imgProps={{ sx: { objectFit: 'contain', p: 0.5 } }}
+                                    sx={{
+                                        bgcolor: 'rgba(255, 255, 255, 0.2)',
+                                        color: 'white',
+                                        width: 40,
+                                        height: 40
+                                    }}
+                                >
                                     {(entry.name || entry.email).charAt(0).toUpperCase()}
                                 </Avatar>
 
                                 {/* User Info */}
-                                <Box sx={{ flex: 1, minWidth: 0 }}>
+                                <Box sx={{ flex: 1, minWidth: 0, ml: 1.5 }}>
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
                                         <Typography
                                             variant="body1"
                                             title={entry.email}
                                             sx={{
+                                                // flex:1 makes the name span the full width of
+                                                // the info cell, pushing the "You" chip to the edge.
+                                                flex: 1,
+                                                minWidth: 0,
                                                 fontWeight: WEIGHT.bold,
                                                 overflow: 'hidden',
                                                 textOverflow: 'ellipsis',
@@ -163,7 +180,8 @@ function LeaderboardPlaceholder() {
                                                     bgcolor: 'rgba(255, 255, 255, 0.2)',
                                                     color: 'white',
                                                     height: '20px',
-                                                    fontSize: SIZE.micro
+                                                    fontSize: SIZE.micro,
+                                                    flexShrink: 0
                                                 }}
                                             />
                                         )}
@@ -176,6 +194,9 @@ function LeaderboardPlaceholder() {
                                             </Typography>
                                         )}
                                         <Typography variant="body2" sx={{ opacity: 0.9, fontSize: SIZE.body }}>
+                                            🏆 {entry.weeklyAchievements} weekly
+                                        </Typography>
+                                        <Typography variant="body2" sx={{ opacity: 0.9, fontSize: SIZE.body }}>
                                             📅 Today: {entry.todaysMinutes}
                                         </Typography>
                                         <Typography variant="body2" sx={{ opacity: 0.9, fontSize: SIZE.body }}>
@@ -185,7 +206,7 @@ function LeaderboardPlaceholder() {
                                 </Box>
 
                                 {/* Total Points */}
-                                <Box sx={{ textAlign: 'right' }}>
+                                <Box sx={{ textAlign: 'right', ml: 1.5 }}>
                                     <Typography variant="h6" sx={{ fontWeight: WEIGHT.bold }}>
                                         {entry.accumulativeMinutePoints.toLocaleString()}
                                     </Typography>

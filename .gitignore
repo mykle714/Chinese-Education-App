@@ -48,3 +48,6 @@ amIOnTheProdMachine.md
 
 # Local Claude Code settings (may contain secrets)
 .claude/settings.local.json
+
+# Claude Code git worktrees (temporary isolated checkouts; never committed)
+.claude/worktrees/

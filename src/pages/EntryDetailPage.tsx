@@ -31,15 +31,16 @@ import { usePageTitle } from "../hooks/usePageTitle";
 import type { VocabEntry, DifficultyLevel } from "../types";
 import { SIZE } from "../theme/scale";
 
-// Helper function to get HSK level icon
+// Helper function to get the numeric difficulty icon. Difficulty is the generalized
+// bare-integer scale '1'..'6' (migration 79); for zh these are HSK levels.
 const getDifficultyIcon = (difficulty: DifficultyLevel) => {
     switch (difficulty) {
-        case 'HSK1': return <LooksOneIcon fontSize="small" />;
-        case 'HSK2': return <LooksTwoIcon fontSize="small" />;
-        case 'HSK3': return <Looks3Icon fontSize="small" />;
-        case 'HSK4': return <Looks4Icon fontSize="small" />;
-        case 'HSK5': return <Looks5Icon fontSize="small" />;
-        case 'HSK6': return <Looks6Icon fontSize="small" />;
+        case '1': return <LooksOneIcon fontSize="small" />;
+        case '2': return <LooksTwoIcon fontSize="small" />;
+        case '3': return <Looks3Icon fontSize="small" />;
+        case '4': return <Looks4Icon fontSize="small" />;
+        case '5': return <Looks5Icon fontSize="small" />;
+        case '6': return <Looks6Icon fontSize="small" />;
         default: return <LooksOneIcon fontSize="small" />; // Default fallback
     }
 };
@@ -47,12 +48,12 @@ const getDifficultyIcon = (difficulty: DifficultyLevel) => {
 // Helper function to render tag badges
 const renderTags = (entry: VocabEntry) => (
     <Box sx={{ position: 'absolute', top: 16, right: 16, display: 'flex', gap: 0.5 }}>
-        {/* HSK badge: only for HSK-encoded difficulty (zh). Other languages (es)
-            store a bare 1–5 difficulty that is not an HSK proficiency label. */}
-        {entry.difficulty?.startsWith('HSK') && (
+        {/* HSK badge: only for zh, whose difficulty integers ARE HSK levels. Spanish
+            uses the same 1–6 scale but it is not an HSK proficiency label, so no badge. */}
+        {entry.language === 'zh' && entry.difficulty && (
             <Chip
                 icon={getDifficultyIcon(entry.difficulty)}
-                label={entry.difficulty}
+                label={`HSK${entry.difficulty}`}
                 size="small"
                 color="secondary"
                 sx={{ fontSize: SIZE.micro, height: '20px' }}

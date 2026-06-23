@@ -5,8 +5,7 @@ import { Box, Typography, Chip, Button, Alert, Divider } from "@mui/material";
 import DelayedCircularProgress from "../components/DelayedCircularProgress";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import { styled } from "@mui/material/styles";
-import MobileFooter, { FLOATING_FOOTER_CLEARANCE } from "../components/MobileFooter";
-import PageHeader from "../components/PageHeader";
+import LeafPage from "../components/LeafPage";
 import { API_BASE_URL } from "../constants";
 import type { VocabEntry, DictionaryEntry } from "../types";
 import ForeignText from "../components/ForeignText";
@@ -42,8 +41,9 @@ const HeroCard = styled(Box)(() => ({
     gap: "8px",
 }));
 
-// Action bar that sits just above the floating footer pill. Its bottom margin
-// reserves the pill's clearance zone so the buttons are never covered by it.
+// Action bar pinned to the bottom of the leaf page. Card Detail is a LEAF PAGE
+// (see docs/LEAF_NODE_PAGES.md): no footer, so the action bar is the page's
+// bottom edge with no extra footer-clearance reservation.
 const ActionBar = styled(Box)(() => ({
     display: 'flex',
     gap: '12px',
@@ -51,7 +51,6 @@ const ActionBar = styled(Box)(() => ({
     backgroundColor: COLORS.background,
     borderTop: `1px solid rgba(92,92,102, 0.2)`,
     flexShrink: 0,
-    marginBottom: FLOATING_FOOTER_CLEARANCE,
 }));
 
 // Info section card
@@ -144,12 +143,10 @@ const VocabCardDetailPage: React.FC = () => {
     const hasExpansion = !!entry?.expansion;
 
     return (
-        <>
-                <PageHeader title="Card Detail" />
-
-                {/* When there's no entry, no ActionBar renders, so the content area
-                    itself must reserve the floating footer's clearance. */}
-                <ContentArea className="vocab-card-detail__content" sx={{ pb: entry ? 0 : `${FLOATING_FOOTER_CLEARANCE}px` }}>
+        // Card Detail is a LEAF PAGE: no footer, DOWN back arrow (returns to the
+        // previous screen), slides up on enter / down on exit.
+        <LeafPage title="Card Detail" onBack={() => navigate(-1)}>
+                <ContentArea className="vocab-card-detail__content">
                     {loading ? (
                         <Box className="vocab-card-detail__loading" sx={{ display: "flex", justifyContent: "center", pt: 6 }}>
                             <DelayedCircularProgress className="vocab-card-detail__spinner" />
@@ -176,11 +173,12 @@ const VocabCardDetailPage: React.FC = () => {
                                             }}
                                         />
                                     ) : <Box className="vocab-card-detail__badge-placeholder" />}
-                                    {/* HSK chip: only for HSK-encoded difficulty (zh); es stores a bare 1–5. */}
-                                    {entry.difficulty?.startsWith('HSK') && (
+                                    {/* HSK chip: only for zh, whose 1–6 difficulty integers ARE HSK
+                                        levels; es uses the same scale but it is not an HSK label. */}
+                                    {entry.language === 'zh' && entry.difficulty && (
                                         <Chip
                                             className="vocab-card-detail__hsk-chip"
-                                            label={entry.difficulty}
+                                            label={`HSK${entry.difficulty}`}
                                             size="small"
                                             sx={{
                                                 backgroundColor: COLORS.hskChip,
@@ -524,9 +522,7 @@ const VocabCardDetailPage: React.FC = () => {
                         </Button>
                     </ActionBar>
                 )}
-
-                <MobileFooter activePage="flashcards" />
-        </>
+        </LeafPage>
     );
 };
 

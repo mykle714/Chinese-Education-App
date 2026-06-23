@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import { useSlideNavigate } from "../hooks/useSlideNavigate";
 import { Box, Typography, Alert, Button, Snackbar } from "@mui/material";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import { styled } from "@mui/material/styles";
@@ -120,6 +121,9 @@ const MasteredLinkRow = styled(Box)(() => ({
 const FlashcardsDecksPage: React.FC = () => {
     usePageTitle("Decks");
     const navigate = useNavigate();
+    // For drill-ins that slide over this page (Mastered = node, Card Detail = leaf),
+    // use the view-transition navigate so Decks is held beneath. See useSlideNavigate.
+    const slideNavigate = useSlideNavigate();
     const location = useLocation();
     const { token } = useAuth();
     const { goToDiscover } = useDiscoverNavigation();
@@ -221,8 +225,8 @@ const FlashcardsDecksPage: React.FC = () => {
     // inline arrow per card) so the memoized MiniVocabCards don't all re-render
     // whenever this page re-renders (e.g. a snackbar toggling).
     const handleCardClick = useCallback(
-        (entry: VocabEntry) => navigate(`/flashcards/card/${entry.id}`),
-        [navigate]
+        (entry: VocabEntry) => slideNavigate(`/flashcards/card/${entry.id}`),
+        [slideNavigate]
     );
 
     // Refetch both card lists
@@ -315,7 +319,7 @@ const FlashcardsDecksPage: React.FC = () => {
                         large mastered deck never renders hundreds of cards inline. */}
                     <MasteredLinkRow
                         className="flashcards-decks__mastered-link"
-                        onClick={() => navigate('/flashcards/mastered')}
+                        onClick={() => slideNavigate('/flashcards/mastered')}
                     >
                         <Typography
                             className="flashcards-decks__mastered-link-label"

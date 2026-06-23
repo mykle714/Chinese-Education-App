@@ -2,7 +2,7 @@ import { Box, Typography } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import { useNavigate } from "react-router-dom";
 import SportsEsportsIcon from "@mui/icons-material/SportsEsports";
-import MobileTabScreen from "../components/MobileTabScreen";
+import NodePage from "../components/NodePage";
 import { HubMenu, HubMenuRow } from "../components/HubMenu";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { GAME_REGISTRY } from "../games/registry";
@@ -12,10 +12,13 @@ import { COLORS } from "../theme/colors";
 import { FONTS } from "../theme/fonts";
 import { SIZE, WEIGHT } from "../theme/scale";
 
-// Phone-frame sizing comes from MobileDemoFrame via Layout.tsx; the scroll-away
-// header + floating footer + scroll behavior come from MobileTabScreen; the row
-// list comes from the shared HubMenu (also used by the Discover hub) — this page
-// only owns game gating + the empty state.
+// Games is a NODE PAGE (see docs/LEAF_NODE_PAGES.md): it keeps the footer and
+// uses the LEFT back arrow + horizontal slide. Phone-frame sizing comes from
+// MobileDemoFrame via Layout.tsx; the scroll-away header + floating footer +
+// scroll behavior come from MobileTabScreen (wrapped by NodePage, which adds the
+// slide-in-from-right / slide-out-to-right-on-arrow transition); the row list
+// comes from the shared HubMenu (also used by the Discover hub) — this page only
+// owns game gating + the empty state.
 
 const EmptyState = styled(Box)(() => ({
     flex: 1,
@@ -42,7 +45,7 @@ const GamesPage: React.FC = () => {
     });
 
     return (
-        <MobileTabScreen title="Games" activePage="home" showBack onBack={() => navigate("/")} contentClassName="games-page__content">
+        <NodePage title="Games" activePage="home" onBack={() => navigate("/")} contentClassName="games-page__content">
                 <HubMenu className="games-page__menu">
                     {visibleGames.map((game: GameDef) => (
                         <HubMenuRow
@@ -93,7 +96,7 @@ const GamesPage: React.FC = () => {
                         </Typography>
                     </EmptyState>
                 )}
-        </MobileTabScreen>
+        </NodePage>
     );
 };
 

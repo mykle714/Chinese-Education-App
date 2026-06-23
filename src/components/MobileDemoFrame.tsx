@@ -2,6 +2,7 @@ import { type ReactNode } from "react";
 import { Box, useMediaQuery, useTheme } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import { COLORS } from "../theme/colors";
+import FooterPresenter from "./FooterPresenter";
 
 // Shared phone-frame container for every mobile-demo route. This is the single
 // source of truth for the "iPhone surface" sizing — pages under
@@ -42,7 +43,12 @@ const MobileDemoFrame: React.FC<MobileDemoFrameProps> = ({ children, className }
               // Vertical margin breathes space above/below the phone card;
               // "auto" still centers it horizontally next to the sidebar.
               margin: "24px auto",
-              minHeight: "852px",
+              // Override the base height: 100dvh. Subtracting the 48px of
+              // top+bottom margin keeps the card strictly shorter than the
+              // viewport, so the margin gap is always visible above AND below
+              // instead of the full-height card pushing the bottom into scroll.
+              height: "calc(100dvh - 48px)",
+              minHeight: "500px",
               maxHeight: "932px",
           }
         : {};
@@ -50,6 +56,9 @@ const MobileDemoFrame: React.FC<MobileDemoFrameProps> = ({ children, className }
     return (
         <FrameRoot className={className ?? "mobile-demo-frame"} sx={desktopSx}>
             {children}
+            {/* Single persistent footer pill, animated independently of the page
+                slides (it lives outside the page surfaces). See FooterPresenter. */}
+            <FooterPresenter />
         </FrameRoot>
     );
 };

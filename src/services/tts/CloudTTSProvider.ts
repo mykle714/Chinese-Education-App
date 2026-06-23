@@ -1,5 +1,6 @@
 import { API_BASE_URL } from '../../constants';
 import type { TTSProvider, TTSRequest } from './types';
+import { timeStretchBuffer } from './timeStretch';
 
 /**
  * Server-proxied TTS. POSTs to /api/tts/synthesize, receives an MP3 blob,
@@ -17,11 +18,12 @@ import type { TTSProvider, TTSRequest } from './types';
  *   1. iOS silences Web Audio when the hardware ring/silent switch is OFF
  *      (media elements play through it). This is inherent to the non-media-
  *      session classification — accepted as part of suppressing the controls.
- *   2. AudioBufferSourceNode.playbackRate is a *resampling* rate: it shifts
- *      PITCH along with speed (unlike HTMLAudioElement, which preserves pitch).
- *      For Chinese this distorts tones at rate != 1.0. The correct long-term
- *      fix is to bake `rate` into the synthesis server-side; until then a
- *      non-1.0 rate here pitch-shifts. At rate == 1.0 there is no distortion.
+ *   2. AudioBufferSourceNode.playbackRate is a *resampling* rate (it would shift
+ *      PITCH along with speed, distorting Chinese tones). So we do NOT use it for
+ *      the speech-rate setting: instead we phase-vocoder time-stretch the decoded
+ *      buffer to the requested rate (see timeStretch.ts) and play it back at
+ *      playbackRate 1.0, preserving pitch. One stretched buffer is cached per
+ *      word (re-made only when the rate setting changes) so repeats stay cheap.
  *
  * Requires `entryId`/text on the request (server caches per dictionary entry).
  * If text is missing this provider throws and the caller should fall back to
@@ -50,8 +52,15 @@ export class CloudTTSProvider implements TTSProvider {
     // word don't re-hit the server or re-decode. AudioBuffers are reusable
     // across many source nodes, so we decode once and replay cheaply. Server
     // has its own disk cache, but skipping the round-trip is still cheaper.
-    // Key: `${lang}:${text}:${pinyin}`.
+    // Key: `${lang}:${text}:${pinyin}` (see bufferKey).
     private bufferCache = new Map<string, Promise<AudioBuffer>>();
+    // In-session cache of PITCH-PRESERVING TIME-STRETCHED buffers, keyed by
+    // bufferKey (one entry per word — same cardinality as bufferCache). The rate
+    // is a single global preference, so only ever ONE stretched rate of a word is
+    // reachable at a time; we store that one alongside the rate it was made at and
+    // re-stretch only when the active rate changes (a slider move). The 1.0× case
+    // is never stored — the original buffer is returned as-is.
+    private stretchCache = new Map<string, { rate: number; buffer: AudioBuffer }>();
 
     // --- iOS / mobile autoplay unlock ---------------------------------------
     // WebKit (and to a lesser extent mobile Chrome) starts an AudioContext in
@@ -194,10 +203,15 @@ export class CloudTTSProvider implements TTSProvider {
         }
 
         const source = ctx.createBufferSource();
-        source.buffer = buffer;
-        // NOTE: playbackRate here resamples and therefore shifts pitch — see the
-        // class doc trade-off. Fine at 1.0; distorts tones otherwise.
-        source.playbackRate.value = req.rate ?? 1.0;
+        // Honor the speech-rate setting by TIME-STRETCHING (pitch-preserving)
+        // rather than via playbackRate (which would resample and shift pitch —
+        // see the class doc trade-off). playbackRate stays 1.0.
+        const rate = req.rate ?? 1.0;
+        source.buffer = this.playbackBufferForRate(
+            buffer,
+            this.bufferKey(req.text, req.lang, req.pronunciation),
+            rate,
+        );
         source.connect(ctx.destination);
         this.currentSource = source;
 
@@ -261,13 +275,22 @@ export class CloudTTSProvider implements TTSProvider {
         });
     }
 
+    /**
+     * Canonical cache key for a (text, lang, pinyin) triple. Normalizes the
+     * language to its short code and trims pinyin so prefetch() and speak() land
+     * on the same slot regardless of whitespace or null-vs-undefined.
+     */
+    private bufferKey(text: string, lang: string, pronunciation?: string | null): string {
+        const shortLang = lang.split('-')[0];
+        const normalizedPinyin = (pronunciation || '').trim();
+        return `${shortLang}:${text}:${normalizedPinyin}`;
+    }
+
     private getOrFetchBuffer(text: string, lang: string, pronunciation?: string | null): Promise<AudioBuffer> {
         // Server expects short language code (e.g. 'zh'); strip BCP-47 region.
         const shortLang = lang.split('-')[0];
-        // Normalize pinyin so prefetch and speak land on the same cache slot
-        // regardless of whitespace or null vs undefined.
         const normalizedPinyin = (pronunciation || '').trim();
-        const key = `${shortLang}:${text}:${normalizedPinyin}`;
+        const key = this.bufferKey(text, lang, pronunciation);
         const cached = this.bufferCache.get(key);
         if (cached) return cached;
 
@@ -302,6 +325,31 @@ export class CloudTTSProvider implements TTSProvider {
         promise.catch(() => this.bufferCache.delete(key));
         this.bufferCache.set(key, promise);
         return promise;
+    }
+
+    /**
+     * Resolve the buffer to actually play for a given speech rate. At 1.0× the
+     * original buffer is returned unchanged; otherwise a pitch-preserving
+     * time-stretched variant is produced (once) and memoized per (word, rate).
+     * Falls back to the original buffer if stretching throws, so narration still
+     * plays (just at the un-stretched 1.0× tempo) rather than going silent.
+     */
+    private playbackBufferForRate(original: AudioBuffer, key: string, rate: number): AudioBuffer {
+        if (Math.abs(rate - 1) < 0.001) return original;
+        // Reuse the cached stretch only if it was made at the current rate; a
+        // slider move invalidates it (and the old buffer is dropped by overwrite).
+        const cached = this.stretchCache.get(key);
+        if (cached && Math.abs(cached.rate - rate) < 0.001) return cached.buffer;
+        const ctx = this.audioCtx;
+        if (!ctx) return original;
+        try {
+            const stretched = timeStretchBuffer(ctx, original, rate);
+            this.stretchCache.set(key, { rate, buffer: stretched });
+            return stretched;
+        } catch (err) {
+            console.warn('[CloudTTSProvider] time-stretch failed, playing at 1.0×:', err);
+            return original;
+        }
     }
 
     /**

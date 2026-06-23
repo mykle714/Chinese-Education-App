@@ -35,7 +35,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
 import { ALLOWED_POS_TAGS } from '../shared/lib/posTags.js';
 import { initRunLog } from '../run-log.js';
-const SCRIPT_VERSION = 1; // bump when this script's logic/prompt changes
+const SCRIPT_VERSION = 2; // bump when this script's logic/prompt changes (v2: numberDict per noun token)
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -69,6 +69,7 @@ const VALIDATOR_MODEL = 'claude-sonnet-4-6';
 const REGENERATOR_MODEL = 'claude-opus-4-8';
 
 const ALLOWED_TENSES = new Set(['past', 'present', 'future']);
+const ALLOWED_NUMBERS = new Set(['singular', 'plural']);
 const ALLOWED_POS_TAG_SET = new Set(ALLOWED_POS_TAGS);
 
 // Shared rule text — the catalogue of common AI mistakes the validator agent
@@ -131,7 +132,25 @@ function isValidSegmentGloss(arr) {
   return true;
 }
 
-// Mechanical shape check for a single sentence object (fields + POS dict + tense).
+// Validates the numberDict: a grammatical-number ('singular'/'plural') tag for each
+// noun token. It must be an object whose values are all in ALLOWED_NUMBERS, and it must
+// cover every token that partOfSpeechDict tags as a 'noun' (each noun declares its number
+// so resolveWordForm can pick the singular vs. plural English form in the popup). Tokens
+// of other parts of speech may be omitted.
+function isValidNumberDict(numberDict, partOfSpeechDict) {
+  if (!numberDict || typeof numberDict !== 'object' || Array.isArray(numberDict)) return false;
+  for (const [token, num] of Object.entries(numberDict)) {
+    if (typeof token !== 'string' || token.length === 0) return false;
+    if (typeof num !== 'string' || !ALLOWED_NUMBERS.has(num)) return false;
+  }
+  // Every noun token must have a number declared.
+  for (const [token, tag] of Object.entries(partOfSpeechDict)) {
+    if (tag === 'noun' && !numberDict[token]) return false;
+  }
+  return true;
+}
+
+// Mechanical shape check for a single sentence object (fields + POS dict + tense + numberDict).
 // Used both for generator output and for any Opus-repaired replacement sentence.
 function isValidSentenceShape(s) {
   return !!(
@@ -151,7 +170,8 @@ function isValidSentenceShape(s) {
       !/[\s，。！？；：,.!?;:]/.test(token) &&
       typeof tag === 'string' &&
       ALLOWED_POS_TAG_SET.has(tag)
-    )
+    ) &&
+    isValidNumberDict(s.numberDict, s.partOfSpeechDict)
   );
 }
 
@@ -194,6 +214,7 @@ Write exactly ${sentenceCount} natural example sentences using "${word}". Each s
 - Do not include punctuation as keys
 - Include the target word "${word}" as one of the keys in partOfSpeechDict
 - If the target word is a verb but is used as a gerund or nominal subject/object in this sentence (e.g. 下单很简单 — "Ordering is simple", where 下单 is the sentence subject), tag it as "noun", not "verb"
+- Include a "numberDict" object for each sentence: for EVERY token you tagged as "noun" in partOfSpeechDict, give its grammatical number IN THIS SENTENCE as "singular" or "plural", based on how it is rendered in the English translation (e.g. 书 in "I read the books" → "plural"; 书 in "I read a book" → "singular"). Judge number from the meaning/English, since Chinese nouns are not overtly marked for number. Only noun tokens need an entry; omit non-noun tokens.
 - Include a "segmentGloss" array for each sentence: an ORDERED, segment-by-segment English gloss of the Chinese sentence
   - Cover the SAME word tokens you used as keys in partOfSpeechDict, in the exact left-to-right order they appear in the Chinese sentence (do not include punctuation)
   - Each item is an object: {"index": <0-based position in this array>, "segment": "<the Chinese token>", "english": "<its contextual English gloss>"}
@@ -214,6 +235,9 @@ Respond with ONLY a JSON array of exactly ${sentenceCount} objects in this forma
     "partOfSpeechDict": {
       "wordToken1": "pos_tag",
       "wordToken2": "pos_tag"
+    },
+    "numberDict": {
+      "<each noun token>": "singular" | "plural"
     },
     "segmentGloss": [
       {"index": 0, "segment": "wordToken1", "english": "contextual english gloss"},
@@ -318,11 +342,12 @@ The replacement must follow the same requirements as the original generation:
 - "translatedVocab": the English word/phrase in your translation that corresponds to "${word}".
 - "tense": one of "past", "present", or "future" — the sentence's natural temporal meaning.
 - "partOfSpeechDict": every word token in the Chinese sentence as a key (no punctuation keys), each value one of: ${allowedPosTags.join(', ')}. Include "${word}" as a key.
+- "numberDict": for EVERY token tagged "noun" in partOfSpeechDict, its grammatical number in this sentence — "singular" or "plural" — judged from the English translation. Only noun tokens need an entry.
 - "segmentGloss": an ORDERED array of {"index": <0-based>, "segment": "<Chinese token>", "english": "<contextual gloss>"} covering the same tokens in left-to-right order. index starts at 0 and increments by 1. Each english gloss uses the correct tense/form for this sentence; read in order they must form understandable (broken is fine) English.
 - The English translation must mirror the Chinese punctuation and clause structure.
 
 Respond with ONLY one JSON object:
-{"foreignText": "...", "english": "...", "translatedVocab": "...", "tense": "past|present|future", "partOfSpeechDict": {"token": "pos_tag"}, "segmentGloss": [{"index": 0, "segment": "token", "english": "gloss"}]}`,
+{"foreignText": "...", "english": "...", "translatedVocab": "...", "tense": "past|present|future", "partOfSpeechDict": {"token": "pos_tag"}, "numberDict": {"nounToken": "singular|plural"}, "segmentGloss": [{"index": 0, "segment": "token", "english": "gloss"}]}`,
     }],
   });
 
@@ -438,6 +463,7 @@ async function run() {
             console.log(`           translatedVocab: ${s.translatedVocab}`);
             console.log(`           tense: ${s.tense}`);
             console.log(`           POS: ${JSON.stringify(s.partOfSpeechDict)}`);
+            console.log(`           number: ${JSON.stringify(s.numberDict)}`);
             // segmentGloss: print per-segment glosses + the strung-together broken-English reading
             const orderedGloss = [...s.segmentGloss].sort((a, b) => a.index - b.index);
             console.log(`           segmentGloss: ${orderedGloss.map(g => `${g.segment}→${g.english}`).join('  ')}`);

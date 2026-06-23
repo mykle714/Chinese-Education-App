@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { UserService } from '../services/UserService.js';
+import { IIcons8DAL } from '../dal/interfaces/IIcons8DAL.js';
 import { ValidationError, DuplicateError, NotFoundError, DALError } from '../types/dal.js';
 
 /**
@@ -7,7 +8,8 @@ import { ValidationError, DuplicateError, NotFoundError, DALError } from '../typ
  * Delegates business logic to UserService
  */
 export class UserController {
-  constructor(private userService: UserService) {}
+  // icons8DAL is used only to validate avatar icon ids (PUT /api/users/avatar).
+  constructor(private userService: UserService, private icons8DAL: IIcons8DAL) {}
 
   /**
    * Register a new user
@@ -110,6 +112,56 @@ export class UserController {
         selectedLanguage
       });
       
+      res.json(updatedUser);
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  /**
+   * Update the user's profile avatar (the icons8 icon they picked).
+   * PUT /api/users/avatar
+   *
+   * Body: { avatarIconId: string | null } — null/empty clears the avatar back to the
+   * name-initial fallback. A non-null id must reference a downloaded icon in icons8;
+   * we validate up front so an unknown id returns a clean 400 rather than surfacing
+   * as a FK-violation 500.
+   */
+  async updateAvatar(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = (req as any).user?.userId;
+
+      if (!userId) {
+        res.status(401).json({
+          error: 'User not authenticated',
+          code: 'ERR_NOT_AUTHENTICATED'
+        });
+        return;
+      }
+
+      const { avatarIconId } = req.body;
+
+      // Normalize: treat null / undefined / '' all as "clear the avatar".
+      const normalized: string | null =
+        avatarIconId === null || avatarIconId === undefined || avatarIconId === ''
+          ? null
+          : String(avatarIconId).trim();
+
+      if (normalized !== null) {
+        const exists = await this.icons8DAL.iconExists(normalized);
+        if (!exists) {
+          res.status(400).json({
+            error: 'Unknown icon id',
+            code: 'ERR_INVALID_ICON'
+          });
+          return;
+        }
+      }
+
+      const updatedUser = await this.userService.updateUserProfile(userId, {
+        avatarIconId: normalized
+      });
+
       res.json(updatedUser);
     } catch (error) {
       this.handleError(error, res);

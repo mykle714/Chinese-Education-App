@@ -28,6 +28,9 @@ interface MobileDemoHeaderProps {
     onBack?: () => void;
     extraActions?: ReactNode;
     activePage?: FooterTab;
+    // Back-chevron direction, forwarded to PageHeader. "down" (default) for leaf
+    // drill-ins; "left" for node pages. See docs/LEAF_NODE_PAGES.md.
+    arrowDirection?: "down" | "left";
 }
 
 const MobileDemoHeader: React.FC<MobileDemoHeaderProps> = ({
@@ -36,11 +39,13 @@ const MobileDemoHeader: React.FC<MobileDemoHeaderProps> = ({
     onBack,
     extraActions,
     activePage,
+    arrowDirection = "down",
 }) => (
     <PageHeader
         title={title}
         showBack={showBack}
         onBack={onBack}
+        arrowDirection={arrowDirection}
         leftIcon={activePage ? ACTIVE_PAGE_ICON[activePage] : undefined}
         rightContent={extraActions}
     />

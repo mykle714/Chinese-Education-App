@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { TTSEngineChoice } from '../services/tts';
 
 // localStorage key for the user's TTS preferences. Single JSON blob so adding
 // new knobs later (e.g. voice selection) doesn't require new keys.
@@ -7,14 +6,10 @@ const STORAGE_KEY = 'tts.settings';
 
 export interface TTSSettings {
     enabled: boolean;
-    engine: TTSEngineChoice;
-    rate: number; // 0.5..2.0
 }
 
 const DEFAULT_SETTINGS: TTSSettings = {
     enabled: true,
-    engine: 'auto',
-    rate: 1.0,
 };
 
 function loadSettings(): TTSSettings {

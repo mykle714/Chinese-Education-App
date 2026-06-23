@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { LeaderboardService } from '../services/LeaderboardService.js';
-import { userDAL, userMinutePointsDAL } from '../dal/setup.js';
+import { userDAL, userMinutePointsDAL, winsDAL } from '../dal/setup.js';
 
 /**
  * Leaderboard Controller
@@ -12,7 +12,8 @@ export class LeaderboardController {
   constructor() {
     this.leaderboardService = new LeaderboardService(
       userDAL,
-      userMinutePointsDAL
+      userMinutePointsDAL,
+      winsDAL
     );
   }
 

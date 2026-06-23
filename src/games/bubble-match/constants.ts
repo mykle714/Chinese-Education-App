@@ -26,15 +26,16 @@ export const GAME_DISTRIBUTION: Record<string, number> = {
 export const TOTAL_PAIRS = Object.values(GAME_DISTRIBUTION).reduce((a, b) => a + b, 0);
 
 // Three independently-playable difficulty levels. Higher levels launch the
-// 40 bubbles faster (and give less time), so the field fills quicker. Levels do
-// NOT chain — the player picks one from the start screen and plays it on its own;
-// clearing a harder level also banks every easier level's weekly badge. The old
-// second tier (interval ≈ 1425 ms, duration 90 s) was dropped, leaving
-// Chill / Hustle / Torture.
+// 40 bubbles faster AND drop the ceiling faster once they're all out, so the
+// field jams quicker. There is no clock — the only loss is the field over-packing
+// under the descending ceiling. Levels do NOT chain — the player picks one from
+// the start screen and plays it on its own; clearing a harder level also banks
+// every easier level's weekly badge. The old second tier (interval ≈ 1425 ms)
+// was dropped, leaving Chill / Hustle / Torture.
 export const LEVEL_CONFIGS: LevelConfig[] = [
-    { level: 1, label: "Chill", launchIntervalMs: 1800, durationSec: 105 },
-    { level: 2, label: "Hustle", launchIntervalMs: 1100, durationSec: 75 },
-    { level: 3, label: "Torture", launchIntervalMs: 700, durationSec: 60 },
+    { level: 1, label: "Chill", launchIntervalMs: 1800, shrinkSpeedPxPerSec: 9 },
+    { level: 2, label: "Hustle", launchIntervalMs: 1100, shrinkSpeedPxPerSec: 16 },
+    { level: 3, label: "Torture", launchIntervalMs: 700, shrinkSpeedPxPerSec: 26 },
 ];
 
 // ---- Bubble sizing (px radius) -------------------------------------------
@@ -112,6 +113,17 @@ export const DANGER_FILL_RATIO = 0.72; // border glows red — "you're getting f
 export const LOSE_FILL_RATIO = 0.85; // area coverage at which the field is unwinnable
 export const OVERFILL_RESIDUAL_PX = 220; // total pairwise penetration (px) that counts as "stuck"
 export const OVERFILL_SUSTAIN_MS = 600; // residual must persist this long before we lose
+
+// ---- Descending ceiling ---------------------------------------------------
+// Once the whole pool has launched, the play area's TOP wall starts moving down
+// at the level's shrinkSpeedPxPerSec, compressing the field until the area-packing
+// / residual signals trip the overfill loss (this is what replaced the old clock).
+// The ceiling descends ALL the way to the floor (0 play height): if even a single
+// pair is still unmatched, the shrinking area eventually pushes fillRatio past the
+// loss line, and at exactly 0 height fillRatio returns 1 (its stageArea<=0 guard),
+// guaranteeing the loss. (A nonzero floor used to leave 1–2 leftover bubbles in a
+// no-win/no-lose limbo — too few to ever cover 85% of an 80px-tall strip.)
+export const MIN_PLAY_HEIGHT = 0; // px — the ceiling closes the play area completely
 
 // ---- Cancel zone ----------------------------------------------------------
 /** Height (px) of the bottom "drop here to cancel match" strip. Carved out of the

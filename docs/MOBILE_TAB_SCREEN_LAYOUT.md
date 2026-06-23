@@ -1,5 +1,7 @@
 # Mobile Tab Screen Layout (scroll-away header + floating footer)
 
+> ↑ Part of [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md).
+
 The mobile-demo footer-tab surfaces share one layout shell,
 `src/components/MobileTabScreen.tsx`. It encodes two design rules so individual
 pages don't re-implement (or drift from) them.
@@ -13,20 +15,28 @@ pages don't re-implement (or drift from) them.
      consistent. Today that is `/` (Home hub), `/flashcards/decks` (Decks),
      `/discover` (Discover hub), `/games` (Games hub), and `/account` (Account).
      The four footer tabs are Flashcards / Discover / Home / Account; Games is a
-     drill-in from the Home menu (`MobileTabScreen` `showBack`, `activePage="home"`).
+     drill-in from the Home menu. Games (and Mastered Cards) are **node pages** —
+     they wrap `MobileTabScreen` in `NodePage`, which sets `showBack` +
+     `arrowDirection="left"` and adds the horizontal slide. See
+     [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md).
 2. **Floating footer.** The bottom nav (`MobileFooter`) renders as a detached,
    rounded **pill** that hovers over the content rather than sitting in normal
    flow. The scroll area reserves `FLOATING_FOOTER_CLEARANCE` of bottom padding
-   so the last row never hides behind the pill.
+   so the last row never hides behind the pill. **`MobileTabScreen` no longer
+   renders the footer itself** — a single persistent pill is rendered at the frame
+   level by `FooterPresenter` (so it animates independently of the page slides;
+   see [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md)). `MobileTabScreen` still reserves
+   the clearance and passes `activePage` (header badge + footer route map).
 
 ## Anatomy
 
 ```
-ScreenRoot            position: relative  (anchors the floating footer pill)
+ScreenRoot            position: relative
 └─ ScrollArea         flex:1, overflow:auto, pan-y, paddingBottom: clearance
    ├─ MobileDemoHeader            ← scrolls away with content
    └─ ContentInner    flex:1      ← page content (styled via `contentSx`)
-└─ MobileFooter floating          ← absolute pill, bottom-center
+
+(the floating pill is rendered once by FooterPresenter in MobileDemoFrame, not here)
 ```
 
 - `surfaceColor` paints `ScreenRoot` behind everything (header + content + the
@@ -72,16 +82,19 @@ covered:
 
 | Surface (direct `MobileFooter`)        | How it reserves clearance                  |
 | -------------------------------------- | ------------------------------------------ |
-| `MasteredCardsPage` (scroll list)      | `paddingBottom` on its `ContentArea`       |
-| `VocabCardDetailPage` (detail)         | `marginBottom` on the `ActionBar` (or `ContentArea` padding when no action bar) |
 | `GamePage` (generic game shell)        | `paddingBottom` on its `ContentArea`       |
-| `BubbleMatchPage` (info screen)        | `paddingBottom` on the centered overlay    |
+
+> Note: `MasteredCardsPage` is now a **node page** (wraps `MobileTabScreen` via
+> `NodePage`), so it gets the footer + clearance from the shell rather than
+> rendering `MobileFooter` directly. `VocabCardDetailPage` and `BubbleMatchPage`
+> are **leaf pages** (`LeafPage`) and have **no footer** at all. See
+> [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md).
 
 ## Game info screens
 
-A game's **info / start screen** (rules + level picker, plus loading/blocked
-states) should also show the floating footer so players can jump to another tab
-without backing out first. It is hidden during the live stage (playing / won /
-lost), where the game owns the full surface and the end-popup provides its own
-navigation. Reference: `src/games/bubble-match/BubbleMatchPage.tsx` renders
-`<MobileFooter activePage="home" />` whenever `!showStage`.
+The **generic** game shell (`GamePage`, for future registry games that don't ship
+their own page) shows the floating footer on its info / loading screens so players
+can jump to another tab without backing out, and hides it during the live stage
+(`!showStage`). Bubble Match no longer follows this pattern — it is a leaf page
+(`BubbleMatchPage` wrapped in `LeafPage`) with **no footer** on any screen; its
+only exit is the down-arrow back button. See [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md).

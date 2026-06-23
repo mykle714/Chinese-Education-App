@@ -143,6 +143,52 @@ describe("selectNextBubble", () => {
         expect(chosen?.pairId).toBe("1");
     });
 
+    it("always spawns a matching bubble when ≥7 bubbles are on screen", () => {
+        // 7 lone bubbles on screen (at the near-full threshold). The queue holds
+        // one partner for an on-screen bubble plus several with no partner present.
+        // The near-full constraint must restrict the pool to the matchable one.
+        const screen = [
+            body("1", "word"), body("2", "word"), body("3", "word"),
+            body("4", "word"), body("5", "word"), body("6", "word"),
+            body("7", "word"),
+        ];
+        const queue = [
+            body("1", "definition"), // matches pair 1 on screen ✓ (the relief valve)
+            body("8", "definition"), // no partner on screen ✗
+            body("9", "definition"), // no partner on screen ✗
+        ];
+        for (let i = 0; i < 50; i++) {
+            const chosen = selectNextBubble(queue, screen, Math.random);
+            expect(chosen?.pairId).toBe("1");
+        }
+    });
+
+    it("ignores the near-full constraint below the threshold (6 on screen)", () => {
+        // 6 lone bubbles → near-full constraint off; an unmatchable spawn is allowed.
+        const screen = [
+            body("1", "word"), body("2", "word"), body("3", "word"),
+            body("4", "word"), body("5", "word"), body("6", "word"),
+        ];
+        // Force want = definition WITHOUT partner on screen (chooseWantWithMatch
+        // returns false here since withMatch=0 → P(want with)=0), so the unmatched
+        // pair-9 definition is eligible — it would be forbidden once at 7.
+        const queue = [body("9", "definition")];
+        const chosen = selectNextBubble(queue, screen, seqRng([0.9, 0.9, 0.0]));
+        expect(chosen?.pairId).toBe("9");
+    });
+
+    it("relaxes the near-full constraint when no queued bubble would match", () => {
+        // ≥7 on screen but nothing in the queue matches → must still spawn something.
+        const screen = [
+            body("1", "word"), body("2", "word"), body("3", "word"),
+            body("4", "word"), body("5", "word"), body("6", "word"),
+            body("7", "word"),
+        ];
+        const queue = [body("8", "word"), body("9", "definition")];
+        const chosen = selectNextBubble(queue, screen, Math.random);
+        expect(["8", "9"]).toContain(chosen?.pairId);
+    });
+
     it("falls back to a uniform pick when no candidate matches the filters", () => {
         // Screen forces want = definition WITH partner on screen, but the queue
         // has no definition whose partner is present → fall back to whole queue.
@@ -155,7 +201,7 @@ describe("selectNextBubble", () => {
 });
 
 describe("planSpawn", () => {
-    const bounds = { width: 1000, height: 1000 };
+    const bounds = { width: 1000, top: 0, height: 1000 };
 
     it("places anywhere on an empty board", () => {
         // rng picks center (0.5, 0.5) of the inset rect.

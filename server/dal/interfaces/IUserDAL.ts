@@ -38,5 +38,5 @@ export interface IUserDAL extends IBaseDAL<User, UserCreateData, UserUpdateData>
 
   // Leaderboard operations (returns isPublic so callers can mask streak from non-public users)
   getAllUsersWithTotalPoints(): Promise<Array<{ userId: string; email: string; name: string; totalMinutePoints: number }>>;
-  getPublicUsersWithTotalPoints(): Promise<Array<{ userId: string; email: string; name: string; totalMinutePoints: number; currentStreak: number; isPublic: boolean }>>;
+  getPublicUsersWithTotalPoints(): Promise<Array<{ userId: string; email: string; name: string; totalMinutePoints: number; currentStreak: number; isPublic: boolean; avatarIconId: string | null }>>;
 }

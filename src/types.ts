@@ -11,11 +11,12 @@ export const LANGUAGE_NAMES: Record<Language, string> = {
   es: 'Spanish'
 };
 
-// Per-language difficulty label stored in dictionaryentries_*.difficulty (drives
-// the discover band). The encoding differs by language:
-//   - zh: 'HSK1'..'HSK6' (HSK proficiency, also shown as an "HSK 3" badge)
-//   - es: '1'..'5'       (learner-acquisition difficulty, 1=easiest)
-export type DifficultyLevel = 'HSK1' | 'HSK2' | 'HSK3' | 'HSK4' | 'HSK5' | 'HSK6' | '1' | '2' | '3' | '4' | '5';
+// Generalized difficulty label stored in dictionaryentries_*.difficulty (drives the
+// discover band). One bare-integer '1'..'6' scale for every language (migration 79):
+//   - zh: '1'..'6' — these ARE HSK levels (1 = HSK1 .. 6 = HSK6); the UI re-adds an
+//     "HSK n" badge for zh. Only the stored 'HSK' prefix was dropped.
+//   - es: '1'..'6'  (learner-acquisition difficulty, 1=easiest)
+export type DifficultyLevel = '1' | '2' | '3' | '4' | '5' | '6';
 
 // Particle or classifier annotation for a segment in example sentence metadata
 export interface ParticleOrClassifierInfo {
@@ -93,6 +94,7 @@ export interface VocabEntry {
     english: string;
     tense?: 'past' | 'present' | 'future';
     partOfSpeechDict?: Record<string, string>;  // AI-generated POS tag per sentence token; absent on det-adapter entries
+    numberDict?: Record<string, 'singular' | 'plural'>;  // AI-generated grammatical number per noun token; selects the plural English form in the segment popup
     translatedVocab?: string;  // English word/phrase in the translation corresponding to the vocab word
     _segments?: string[];
     segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo; wordForms?: Record<string, string> }>;
@@ -160,28 +162,36 @@ export interface DiscoverCard {
     english: string;
     tense?: 'past' | 'present' | 'future';
     partOfSpeechDict: Record<string, string>;  // AI-generated POS tag per sentence token (e.g. "particle", "verb", "noun")
+    numberDict?: Record<string, 'singular' | 'plural'>;  // AI-generated grammatical number per noun token; selects the plural English form in the segment popup
     _segments?: string[];
     segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; wordForms?: Record<string, string> }>;
   }> | null;
   expansion?: string | null;
   expansionMetadata?: Record<string, { pronunciation?: string; definition?: string }> | null;
   expansionLiteralTranslation?: string | null;
+  // Optional icons8 icon assigned to this entry (icons8Id); the client renders
+  // the icon via <img src="/api/icons8/<iconId>/image">. Null when no icon assigned.
+  iconId?: string | null;
 }
 
-// GET /api/starter-packs/:language response shape
+// GET /api/starter-packs/:language response shape — the initial FIFO queue fill.
+// The server owns all leveling; the client just shows these cards in order.
 export interface DiscoverFetchResponse {
   cards: DiscoverCard[];
-  userDifficultyLevel: number;
-  provisionalMode: boolean;
+  exhausted: boolean; // true only when the whole discoverable dictionary is sorted
+  level: number;      // user's estimated difficulty level — DISPLAY ONLY (a chip), never a filter
 }
 
-// POST /api/starter-packs/sort response shape
+// POST /api/starter-packs/sort response shape. A sort shrinks the client queue by
+// one, so the response carries the single replacement card (nextCard) for the tail —
+// there is no separate "load more" call.
 export interface DiscoverSortResponse {
   success: boolean;
   message: string;
   bucket: string;
-  userDifficultyLevel: number;
-  provisionalMode: boolean;
+  nextCard: DiscoverCard | null; // replacement for the queue tail; null when exhausted
+  exhausted: boolean;
+  level: number;                 // user's (possibly updated) estimated level — DISPLAY ONLY
 }
 
 // Combined vocab lookup response

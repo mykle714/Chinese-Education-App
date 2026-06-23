@@ -32,9 +32,8 @@ import {
     WRONG_FEEDBACK_MS,
     CANCEL_ZONE_HEIGHT,
     POST_DONE_SETTLE_MS,
+    MIN_PLAY_HEIGHT,
 } from "./constants";
-
-export type LoseReason = "time" | "full";
 
 interface BubbleStageProps {
     /** The pairs (vocab entries) tested in this level. */
@@ -48,7 +47,9 @@ interface BubbleStageProps {
         Undefined when autoplay is off. */
     onSpeak?: (entry: VocabEntry) => void;
     onLevelWin: () => void;
-    onLevelLose: (reason: LoseReason) => void;
+    /** Called when the descending ceiling packs the field past the point of
+        recovery (the only loss path — there is no clock). */
+    onLevelLose: () => void;
     /** Record a flashcard mark for a matched/mismatched bubble's vocab entry.
         Mirrors the flp mark endpoint: correct match → success, wrong match →
         incorrect. Not called for study-mode taps after the game ends. */
@@ -137,9 +138,10 @@ function makeBody(
 
 /**
  * One level's playfield. Owns the physics loop, the timed bubble launcher, the
- * countdown, and all drag/match interaction. Reports up via onLevelWin /
- * onLevelLose; the page handles progression and re-mounts the stage per level
- * (keyed on level number) so each level starts from a clean slate.
+ * descending ceiling (which closes in once the whole pool is out), and all
+ * drag/match interaction. Reports up via onLevelWin / onLevelLose; the page
+ * handles progression and re-mounts the stage per level (keyed on level number)
+ * so each level starts from a clean slate.
  */
 const BubbleStage: React.FC<BubbleStageProps> = ({
     levelPairs,
@@ -155,15 +157,22 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
     studyMode,
 }) => {
     const stageRef = useRef<HTMLDivElement>(null);
+    // The visible descending "lid". Its height is written directly each frame (in
+    // the rAF loop, like the bubbles) to match boundsRef.top without re-rendering.
+    const ceilingNodeRef = useRef<HTMLDivElement>(null);
 
     // Physics + interaction source of truth (mutated in place; never per-frame state).
     const bodiesRef = useRef<BubbleBody[]>([]);
     const queueRef = useRef<BubbleBody[]>([]);
     const nodeMapRef = useRef<Map<string, HTMLDivElement>>(new Map());
     // Play bounds: width + walls, with height EXCLUDING the bottom cancel strip
-    // (height = stage height − CANCEL_ZONE_HEIGHT). Everything physics cares about
-    // (spawn inset, wall clamp, fill ratio) reads this, so the strip is outside play.
-    const boundsRef = useRef<Bounds>({ width: 0, height: 0 });
+    // (height = stage height − CANCEL_ZONE_HEIGHT) and a `top` wall that descends
+    // once the pool is out. Everything physics cares about (spawn inset, wall
+    // clamp, fill ratio) reads this, so the strip is outside play.
+    const boundsRef = useRef<Bounds>({ width: 0, top: 0, height: 0 });
+    // Flips true on the first launch-tick after the queue drains: from then on the
+    // rAF loop lowers boundsRef.top (the ceiling) at config.shrinkSpeedPxPerSec.
+    const shrinkingRef = useRef(false);
     // Full measured stage height (including the strip). Used only to let a *held*
     // bubble be dragged down into the strip while every settled body stays in play.
     const fullHeightRef = useRef(0);
@@ -196,8 +205,11 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
     // React state used only for renders the DOM-write loop can't cover.
     const [, setTick] = useState(0);
     const forceRender = useCallback(() => setTick((t) => t + 1), []);
-    const [timeLeft, setTimeLeft] = useState(config.durationSec);
     const [danger, setDanger] = useState(false);
+    // Latches true the first time the player enters study mode (collapses the
+    // game-over popup to inspect the field). Once dismissed, the red danger glow
+    // never returns for the rest of the run — re-expanding the popup won't flash it.
+    const [dangerDismissed, setDangerDismissed] = useState(false);
     const [matched, setMatched] = useState(0);
     // True while the currently-held bubble overlaps the bottom cancel strip — drives
     // the strip's hover tint. Pure feedback; does not affect match logic.
@@ -228,7 +240,7 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
     }, []);
 
     const finishLevel = useCallback(
-        (outcome: "win" | LoseReason) => {
+        (outcome: "win" | "lose") => {
             if (phaseRef.current === "done") return;
             phaseRef.current = "done";
 
@@ -260,7 +272,7 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
             }
 
             if (outcome === "win") onLevelWin();
-            else onLevelLose(outcome);
+            else onLevelLose();
         },
         [onLevelWin, onLevelLose, forceRender]
     );
@@ -270,13 +282,15 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
         phaseRef.current = "playing";
         matchedRef.current = 0;
         setMatched(0);
-        setTimeLeft(config.durationSec);
         setDanger(false);
+        setDangerDismissed(false);
         bodiesRef.current = [];
         nodeMapRef.current.clear();
         heldIdRef.current = null;
         hoveredIdRef.current = null;
         overfillSinceRef.current = null;
+        shrinkingRef.current = false;
+        boundsRef.current.top = 0;
         setOverCancelZone(false);
 
         // Build all bubbles for the level (word + definition per pair). Launch
@@ -296,7 +310,12 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
                 fullHeightRef.current = rect.height;
                 // Play area excludes the bottom cancel strip — this makes the
                 // boundary a wall for spawning, collision push-back, and overfill.
-                boundsRef.current = { width: rect.width, height: rect.height - CANCEL_ZONE_HEIGHT };
+                // Preserve the descending ceiling's `top` across resizes.
+                boundsRef.current = {
+                    width: rect.width,
+                    top: boundsRef.current.top,
+                    height: rect.height - CANCEL_ZONE_HEIGHT,
+                };
             }
         };
         measure();
@@ -322,22 +341,21 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
             forceRender();
         };
 
-        // Spawn the first immediately, then on the level's cadence.
+        // Spawn the first immediately, then on the level's cadence. The tick that
+        // finds the queue already drained is "the tick the next bubble would have
+        // launched on" — instead of spawning, it starts the ceiling descending and
+        // stops the launcher (nothing left to spawn). From here the only way the run
+        // ends is a win (field cleared) or the descending ceiling jamming the field.
         spawnOne();
-        const launchTimer = setInterval(spawnOne, config.launchIntervalMs);
-
-        // Countdown — lose if time runs out with anything left to match.
-        const secondTimer = setInterval(() => {
+        const launchTimer = setInterval(() => {
             if (phaseRef.current !== "playing") return;
-            setTimeLeft((t) => {
-                const next = t - 1;
-                if (next <= 0) {
-                    finishLevel("time");
-                    return 0;
-                }
-                return next;
-            });
-        }, 1000);
+            if (queueRef.current.length === 0) {
+                shrinkingRef.current = true;
+                clearInterval(launchTimer);
+                return;
+            }
+            spawnOne();
+        }, config.launchIntervalMs);
 
         // rAF physics + transform-write loop.
         let raf = 0;
@@ -351,7 +369,23 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
             const bodies = bodiesRef.current;
             const bounds = boundsRef.current;
 
+            // Lower the ceiling once the whole pool has launched. It presses the
+            // field down (via the top wall clamp in stepPhysics) and shrinks the
+            // play area, driving the fill ratio up toward the overfill loss. With
+            // MIN_PLAY_HEIGHT === 0 the ceiling closes the area completely, so any
+            // bubbles still on the field force a loss (fillRatio returns 1 once the
+            // play area hits 0 height). The visible lid tracks bounds.top below
+            // (written like a bubble transform, no re-render).
+            if (shrinkingRef.current && phaseRef.current === "playing") {
+                const maxTop = bounds.height - MIN_PLAY_HEIGHT;
+                bounds.top = Math.min(bounds.top + config.shrinkSpeedPxPerSec * dt, maxTop);
+            }
+
             const residual = stepPhysics(bodies, dt, bounds);
+
+            // Drop the visible lid to the ceiling line (its height === bounds.top).
+            const ceiling = ceilingNodeRef.current;
+            if (ceiling) ceiling.style.height = `${bounds.top}px`;
 
             // Smoothly approach each bubble's target scale and write transforms.
             // Track whether anything is still mid-animation so the loop can stop
@@ -382,7 +416,7 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
                     overfillSinceRef.current !== null &&
                     now - overfillSinceRef.current >= OVERFILL_SUSTAIN_MS;
                 if (ratio >= LOSE_FILL_RATIO || stuckTooLong) {
-                    finishLevel("full");
+                    finishLevel("lose");
                 }
             }
 
@@ -411,7 +445,6 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
         return () => {
             window.removeEventListener("resize", measure);
             clearInterval(launchTimer);
-            clearInterval(secondTimer);
             cancelAnimationFrame(raf);
             pendingTimeoutsRef.current.forEach(clearTimeout);
             pendingTimeoutsRef.current = [];
@@ -484,6 +517,8 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
         // Re-arming each time study mode toggles ensures the synthetic enter that
         // fires as the popup collapses (no real move) is never honored.
         hoverArmedRef.current = false;
+        // Entering study mode permanently dismisses the danger glow for this run.
+        if (studyMode) setDangerDismissed(true);
         if (!studyMode) setRevealedPair(null);
     }, [studyMode, setRevealedPair]);
 
@@ -718,11 +753,14 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
                     }, POP_DURATION_MS);
                     pendingTimeoutsRef.current.push(to);
                 } else {
-                    // Record an incorrect review for the card the player was
-                    // dragging (the held bubble) — mirrors an flp "got it wrong"
-                    // mark. The drop target belongs to a different pair, so only
-                    // the held bubble's card is the one the player answered.
-                    onMark?.(held.entry, false);
+                    // Record an incorrect review against the Chinese (word) bubble's
+                    // card — mirrors an flp "got it wrong" mark. A registered match
+                    // is always one word + one definition (same-kind drops never
+                    // hover/match, see findHoverTarget), and held/target belong to
+                    // different pairs here, so we mark whichever side is the Chinese
+                    // word regardless of which bubble the player dragged.
+                    const chineseBubble = held.kind === "word" ? held : target;
+                    onMark?.(chineseBubble.entry, false);
                     setStatus(held, "wrong", held.targetScale);
                     setStatus(target, "wrong", target.targetScale);
                     forceRender();
@@ -773,12 +811,66 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
                 // scrolls/pans the page on mobile — the stage owns all touch input.
                 touchAction: "none",
                 overscrollBehavior: "contain",
-                // Red danger glow when the field is ≥85% full.
-                boxShadow: danger ? "inset 0 0 0 4px rgba(244,67,54,0.85)" : "inset 0 0 0 0 transparent",
-                transition: "box-shadow 0.25s ease",
             }}
         >
-            {/* HUD: level · countdown · pairs cleared */}
+            {/* Danger glow — an inward-fading red vignette that pulses when the
+                field is getting dangerously full (≥ DANGER_FILL_RATIO). It reaches
+                deep into the playfield from every edge and fades toward the center
+                (radial gradient: transparent core → red rim), so the alarm reads
+                even when bubbles cover the borders. Sits above the bubbles but below
+                the HUD; purely visual (pointerEvents off). When not in danger it
+                fades out via the opacity transition and the pulse animation stops. */}
+            <Box
+                className="bubble-stage__danger-glow"
+                sx={{
+                    position: "absolute",
+                    inset: 0,
+                    pointerEvents: "none",
+                    zIndex: 40,
+                    // Vignette: clear well into the field, then ramp to a strong red
+                    // at the very edges. The early transparent stop (28%) is what
+                    // makes it extend "much deeper" than the old 4px border.
+                    background:
+                        "radial-gradient(125% 125% at 50% 50%, rgba(244,67,54,0) 28%, rgba(244,67,54,0.28) 62%, rgba(244,67,54,0.6) 100%)",
+                    // Dismissed for good once the player has collapsed the game-over
+                    // popup to inspect the (still-packed) field — the alarm is no
+                    // longer meaningful, and it must not flash back if they re-expand.
+                    opacity: danger && !dangerDismissed ? 1 : 0,
+                    // Fade in/out when danger toggles; the pulse drives the in-danger feel.
+                    transition: "opacity 0.35s ease",
+                    animation: danger && !dangerDismissed ? "bubbleDangerPulse 1.15s ease-in-out infinite" : "none",
+                    "@keyframes bubbleDangerPulse": {
+                        "0%, 100%": { opacity: 0.45 },
+                        "50%": { opacity: 1 },
+                    },
+                }}
+            />
+
+            {/* Descending ceiling — the visible "lid" that closes in from the top
+                once the whole pool has launched. Its height is written every frame
+                to match boundsRef.top (the play-area top wall); it sits below the
+                HUD and bubbles so neither is occluded. Pure visual: the actual wall
+                lives in the physics bounds. */}
+            <Box
+                ref={ceilingNodeRef}
+                className="bubble-stage__ceiling"
+                sx={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    height: 0,
+                    pointerEvents: "none",
+                    zIndex: 2,
+                    // Graphite slab fading to a hard, slightly menacing bottom edge
+                    // so the closing wall reads clearly against the pale playfield.
+                    background: "linear-gradient(180deg, #2a2f3a 0%, #3a414f 70%, #4a5263 100%)",
+                    borderBottom: "3px solid #1c2029",
+                    boxShadow: "0 6px 14px rgba(0,0,0,0.28)",
+                }}
+            />
+
+            {/* HUD: level · pairs cleared */}
             <Box
                 className="bubble-stage__hud"
                 sx={{
@@ -795,17 +887,6 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
             >
                 <Typography className="bubble-stage__level" sx={{ fontSize: SIZE.body, fontWeight: WEIGHT.bold, color: "#6b6b6b" }}>
                     Lv {levelNumber} · {levelLabel}
-                </Typography>
-                <Typography
-                    className="bubble-stage__timer"
-                    sx={{
-                        fontSize: SIZE.bodyLg,
-                        fontWeight: 800,
-                        // Red in the final-5s warning.
-                        color: timeLeft <= 5 ? "#F44336" : "#3a3a3a",
-                    }}
-                >
-                    {timeLeft}s
                 </Typography>
                 <Typography className="bubble-stage__progress" sx={{ fontSize: SIZE.body, fontWeight: WEIGHT.bold, color: "#6b6b6b" }}>
                     {matched}/{totalPairs}

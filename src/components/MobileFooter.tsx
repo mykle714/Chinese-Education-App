@@ -80,9 +80,13 @@ export type FooterTab = "flashcards" | "discover" | "home" | "account";
 
 interface MobileFooterProps {
     activePage?: FooterTab;
+    // Spread onto the pill element. Used by FooterPresenter to drive the
+    // vertical slide-in/out transform (the footer is animated independently of the
+    // page-slide transitions). See FooterPresenter / docs/LEAF_NODE_PAGES.md.
+    style?: React.CSSProperties;
 }
 
-const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "home" }) => {
+const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "home", style }) => {
     const navigate = useNavigate();
     const { goToDiscover } = useDiscoverNavigation();
 
@@ -103,7 +107,7 @@ const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "home" }) => {
     };
 
     return (
-        <Footer className="mobile-footer">
+        <Footer className="mobile-footer" style={style}>
             <FooterContent className="mobile-footer-content">
                 <FooterItem
                     className="mobile-footer-item"

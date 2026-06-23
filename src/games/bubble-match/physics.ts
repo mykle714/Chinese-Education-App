@@ -3,6 +3,10 @@ import { GROW_LERP, MAX_PUSH_SPEED, SPAWN_MAX_ATTEMPTS, SPAWN_OVERLAP_FRACTION }
 
 export interface Bounds {
     width: number;
+    /** Top wall (px from the stage's top edge). 0 at the start of a run; rises
+        as the descending ceiling closes in once the whole pool has launched, so
+        the play area is the band [top, height]. */
+    top: number;
     height: number;
 }
 
@@ -63,7 +67,10 @@ export function stepPhysics(bodies: BubbleBody[], dt: number, bounds: Bounds): n
         // cap as the separation solver.
         if (b.x - b.radius < 0) b.x = b.radius;
         else if (b.x + b.radius > bounds.width) b.x = bounds.width - b.radius;
-        if (b.y - b.radius < 0) b.y = b.radius;
+        // Top is the descending ceiling: snap a body that pokes above it back down.
+        // (It only rises a few px/frame, so this is a sub-pixel-ish correction that
+        // gently presses the field down as the ceiling closes in.)
+        if (b.y - b.radius < bounds.top) b.y = bounds.top + b.radius;
         else if (b.y + b.radius > bounds.height) {
             const overshoot = b.y + b.radius - bounds.height;
             b.y -= Math.min(overshoot, MAX_PUSH_SPEED * dt);
@@ -147,7 +154,10 @@ export function planSpawn(
 
     for (let attempt = 0; attempt < SPAWN_MAX_ATTEMPTS; attempt++) {
         const x = randRange(targetRadius, Math.max(targetRadius, bounds.width - targetRadius), rng);
-        const y = randRange(targetRadius, Math.max(targetRadius, bounds.height - targetRadius), rng);
+        // Inset by the (descending) top wall as well as the bottom — though in
+        // practice the whole pool has launched before the ceiling starts moving.
+        const yLo = bounds.top + targetRadius;
+        const y = randRange(yLo, Math.max(yLo, bounds.height - targetRadius), rng);
 
         // Worst overlap ratio across all existing bubbles for this candidate. The
         // ratio is penetration / other.diameter; the rule passes when it stays
@@ -178,8 +188,11 @@ export function planSpawn(
  * still-growing bubble contributes only its (small) inflated-so-far area.
  */
 export function fillRatio(bodies: BubbleBody[], bounds: Bounds): number {
-    const stageArea = bounds.width * bounds.height;
-    if (stageArea === 0) return 0;
+    // Coverage is measured against the *live* play area [top, height], so as the
+    // ceiling descends the same bubbles cover a larger fraction — which is exactly
+    // what drives the field toward the overfill loss.
+    const stageArea = bounds.width * (bounds.height - bounds.top);
+    if (stageArea <= 0) return 1;
     const bubbleArea = bodies.reduce((sum, b) => sum + Math.PI * b.radius * b.radius, 0);
     return bubbleArea / stageArea;
 }

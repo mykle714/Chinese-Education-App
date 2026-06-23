@@ -3,6 +3,7 @@ import { Box, Typography } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import { Link as RouterLink } from "react-router-dom";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
+import { useSlideNavigate } from "../hooks/useSlideNavigate";
 import { COLORS } from "../theme/colors";
 import { FONTS } from "../theme/fonts";
 import { SIZE, WEIGHT, LEADING } from "../theme/scale";
@@ -70,8 +71,17 @@ interface HubMenuRowProps {
     className?: string;
 }
 
-export const HubMenuRow: React.FC<HubMenuRowProps> = ({ to, icon, title, subtitle, className }) => (
-    <MenuRow to={to} className={className ?? "hub-menu__row"}>
+export const HubMenuRow: React.FC<HubMenuRowProps> = ({ to, icon, title, subtitle, className }) => {
+    const slideNavigate = useSlideNavigate();
+    // Intercept plain left-clicks to drive the slide-over view transition; leave
+    // modified clicks (new tab/window) to the underlying RouterLink.
+    const handleClick = (e: React.MouseEvent) => {
+        if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        e.preventDefault();
+        slideNavigate(to);
+    };
+    return (
+    <MenuRow to={to} onClick={handleClick} className={className ?? "hub-menu__row"}>
         <RowIconTile className="hub-menu__row-icon">{icon}</RowIconTile>
         <RowBody className="hub-menu__row-body">
             <Typography
@@ -103,4 +113,5 @@ export const HubMenuRow: React.FC<HubMenuRowProps> = ({ to, icon, title, subtitl
         </RowBody>
         <ChevronRightIcon sx={{ color: COLORS.textSecondary, flexShrink: 0 }} />
     </MenuRow>
-);
+    );
+};

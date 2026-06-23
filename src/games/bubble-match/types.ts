@@ -61,7 +61,9 @@ export interface BubbleBody {
 /**
  * A difficulty level. A single game always uses the full pool (all pairs from
  * the launch config); the chosen level only changes how fast bubbles launch and
- * how long the player has. Levels do NOT chain — one level per session.
+ * how fast the ceiling closes in once they're all out. Levels do NOT chain —
+ * one level per session. There is no clock: the run ends when the player clears
+ * every pair (win) or the descending ceiling jams the field (lose).
  */
 export interface LevelConfig {
     /** 1-based level number shown in the picker / HUD. */
@@ -70,8 +72,9 @@ export interface LevelConfig {
     label: string;
     /** Delay between successive bubble launches (ms). Lower = faster/harder. */
     launchIntervalMs: number;
-    /** Time the player has to clear the whole pool (seconds). */
-    durationSec: number;
+    /** Speed (px/sec) the top boundary descends once the whole pool has launched.
+        Higher = the field compresses (and the player loses) faster. */
+    shrinkSpeedPxPerSec: number;
 }
 
 /** High-level game phase the page renders against. */

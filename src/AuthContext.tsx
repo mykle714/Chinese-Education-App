@@ -14,6 +14,8 @@ interface User {
     name: string;
     isPublic?: boolean;
     selectedLanguage?: Language;
+    // icons8 id of the chosen profile avatar; null/undefined => name-initial fallback.
+    avatarIconId?: string | null;
 }
 
 // Define the AuthContext type
@@ -28,6 +30,7 @@ interface AuthContextType {
     changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
     deleteAccount: (password: string) => Promise<void>;
     updateLanguage: (language: Language) => Promise<void>;
+    updateAvatar: (avatarIconId: string | null) => Promise<void>;
     error: string | null;
 }
 
@@ -291,6 +294,36 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
     };
 
+    // Persist the user's chosen avatar (an icons8 id) or clear it (null). Mirrors
+    // updateLanguage: PUT to the server, then optimistically patch local user state.
+    const updateAvatar = async (avatarIconId: string | null) => {
+        setError(null);
+        try {
+            if (!token || token === 'null' || token === 'undefined' || token.length <= 10) {
+                throw new Error('You must be logged in to update your avatar');
+            }
+
+            const response = await fetch(`${API_BASE_URL}/api/users/avatar`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                credentials: 'include',
+                body: JSON.stringify({ avatarIconId })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || 'Failed to update avatar');
+            }
+
+            setUser({ ...user!, avatarIconId });
+        } catch (error: unknown) {
+            setError(error instanceof Error ? error.message : 'Failed to update avatar');
+            throw error;
+        }
+    };
+
     const value = {
         user,
         token,
@@ -302,6 +335,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         changePassword,
         deleteAccount,
         updateLanguage,
+        updateAvatar,
         error
     };
 

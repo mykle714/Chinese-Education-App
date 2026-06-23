@@ -12,6 +12,11 @@ export interface FlashcardLearnSettings {
     // Show the card's progress category (Unfamiliar/Target/Comfortable/Mastered)
     // as a colored chip on the back (Side 2) of the card. Opt-in, off by default.
     showProgressCategory: boolean;
+    // Slow down example-sentence (est) narration to 0.65× for easier listening.
+    // Scoped to the est tab only — the flashcard word itself always plays at 1×,
+    // as does all narration outside the flp. Off (1×) by default. See useTTS /
+    // SLOW_SENTENCE_RATE and FlashcardsLearnPage's onSpeakSentence wiring.
+    slowExampleSentences: boolean;
 }
 
 const DEFAULT_SETTINGS: FlashcardLearnSettings = {
@@ -20,6 +25,7 @@ const DEFAULT_SETTINGS: FlashcardLearnSettings = {
     showSegmentSpaces: false,
     autoplayChinese: true,
     showProgressCategory: false,
+    slowExampleSentences: false,
 };
 
 function loadSettings(): FlashcardLearnSettings {

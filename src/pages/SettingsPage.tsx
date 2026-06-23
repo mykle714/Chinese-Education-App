@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { WEIGHT } from '../theme/scale';
-import PageHeader from '../components/PageHeader';
+import LeafPage from '../components/LeafPage';
 import {
     Container,
     Paper,
@@ -18,9 +18,7 @@ import {
     Chip,
     Snackbar,
     Switch,
-    Slider,
 } from '@mui/material';
-import SettingsIcon from '@mui/icons-material/Settings';
 import PaletteIcon from '@mui/icons-material/Palette';
 import LanguageIcon from '@mui/icons-material/Language';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
@@ -29,7 +27,6 @@ import { useAuth } from '../AuthContext';
 import type { Language } from '../types';
 import { usePageTitle } from '../hooks/usePageTitle';
 import { useTTSSettings } from '../hooks/useTTSSettings';
-import type { TTSEngineChoice } from '../services/tts';
 
 function SettingsPage() {
     usePageTitle("Settings");
@@ -70,26 +67,13 @@ function SettingsPage() {
     ];
 
     return (
-        <Box sx={{ display: "flex", flexDirection: "column", height: "100dvh" }}>
-            {/* Common back header → returns to the Account page (Settings is opened
-                from the gear in the Account header). */}
-            <PageHeader title="Settings" onBack={() => navigate("/account")} />
-
-            <Box sx={{ flex: 1, overflowY: "auto" }}>
-        <Container maxWidth="md" sx={{ py: 4 }}>
-            {/* Page Header */}
-            <Box sx={{ mb: 4, textAlign: 'center' }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 2 }}>
-                    <SettingsIcon sx={{ fontSize: 40, mr: 2, color: 'primary.main' }} />
-                    <Typography variant="h3" component="h1" fontWeight="bold">
-                        Settings
-                    </Typography>
-                </Box>
-                <Typography variant="h6" color="text.secondary">
-                    Customize your vocabulary learning experience
-                </Typography>
-            </Box>
-
+        // Settings is a LEAF PAGE (see docs/LEAF_NODE_PAGES.md): no footer, DOWN
+        // back arrow (→ Account, since it opens from the gear in the Account
+        // header), slides up on enter / down on exit. Phone-frame sizing comes from
+        // MobileDemoFrame via Layout.tsx (/settings is in MOBILE_DEMO_PATHS).
+        <LeafPage title="Settings" onBack={() => navigate("/account")} className="settings-page">
+            <Box className="settings-page__scroll" sx={{ flex: 1, overflowY: "auto" }}>
+        <Container maxWidth="sm" sx={{ py: 4 }}>
             {/* Theme Settings Section */}
             <Paper elevation={2} sx={{ mb: 4 }}>
                 <CardContent sx={{ p: 4 }}>
@@ -293,34 +277,6 @@ function SettingsPage() {
                             inputProps={{ 'aria-label': 'Enable narration' }}
                         />
                     </Box>
-
-                    <FormControl component="fieldset" sx={{ mb: 3, opacity: ttsSettings.enabled ? 1 : 0.5 }} disabled={!ttsSettings.enabled} className="narration-engine-control">
-                        <FormLabel component="legend" sx={{ mb: 1, fontWeight: WEIGHT.bold }}>Engine</FormLabel>
-                        <RadioGroup
-                            row
-                            value={ttsSettings.engine}
-                            onChange={(e) => updateTTSSettings({ engine: e.target.value as TTSEngineChoice })}
-                        >
-                            <FormControlLabel value="auto" control={<Radio />} label="Auto (cloud → browser)" />
-                            <FormControlLabel value="cloud" control={<Radio />} label="Cloud only" />
-                            <FormControlLabel value="browser" control={<Radio />} label="Browser only" />
-                        </RadioGroup>
-                    </FormControl>
-
-                    <Box sx={{ opacity: ttsSettings.enabled ? 1 : 0.5 }} className="narration-rate-control">
-                        <Typography variant="body1" fontWeight="bold" gutterBottom>
-                            Speech rate: {ttsSettings.rate.toFixed(2)}×
-                        </Typography>
-                        <Slider
-                            value={ttsSettings.rate}
-                            min={0.5}
-                            max={1.5}
-                            step={0.05}
-                            marks={[{ value: 0.5, label: '0.5×' }, { value: 1.0, label: '1×' }, { value: 1.5, label: '1.5×' }]}
-                            disabled={!ttsSettings.enabled}
-                            onChange={(_, v) => updateTTSSettings({ rate: Array.isArray(v) ? v[0] : v })}
-                        />
-                    </Box>
                 </CardContent>
             </Paper>
 
@@ -339,7 +295,7 @@ function SettingsPage() {
             />
         </Container>
             </Box>
-        </Box>
+        </LeafPage>
     );
 }
 

@@ -11,6 +11,10 @@ export interface LeaderboardEntry {
   currentStreak: number | null;
   todaysMinutes: number;
   yesterdaysMinutes: number;
+  /** How many weekly achievements this user has earned in the current week. */
+  weeklyAchievements: number;
+  /** icons8 id of the user's chosen avatar; null when they haven't picked one. */
+  avatarIconId: string | null;
   rank: number;
   isCurrentUser?: boolean;
 }

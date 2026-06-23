@@ -14,26 +14,31 @@ linked from the hub.
 
 | Path     | Component   | Footer `activePage` | Notes                          |
 | -------- | ----------- | ------------------- | ------------------------------ |
-| `/games` | `GamesPage` | `"home"`            | Hub / menu; drill-in from Home (back arrow → `/`) |
+| `/games` | `GamesPage` | `"home"`            | Hub / menu; **node page** (left arrow → `/`, keeps footer, slides in-from-right) |
 
-Each individual game gets its own route under `/games/<slug>` and renders
-`MobileFooter activePage="home"` so the **Home** tab stays highlighted while a
-user is inside a game (Games lives under the Home menu).
+Each individual game gets its own route under `/games/<slug>`.
 
-**Game info screens get the floating footer.** A game's pre-play info / start
-screen (rules + level picker, plus loading/blocked states) renders
-`<MobileFooter activePage="home" />` so players can jump to another tab without
-backing out first. It is hidden during the live stage (playing/won/lost), where
-the game owns the full surface and the end-popup provides its own navigation.
-Reference: `BubbleMatchPage` gates the footer on `!showStage`. See
-[MOBILE_TAB_SCREEN_LAYOUT.md](./MOBILE_TAB_SCREEN_LAYOUT.md).
+**Bubble Match is a leaf page (no footer).** `BubbleMatchPage` is wrapped in
+`LeafPage` (see [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md)): the down-arrow back
+button (→ `/games`) is the only way out, there is **no** footer on any of its
+screens (info / picker / loading / blocked / stage), and the page slides up on
+enter / down on exit. The pinyin + autoplay toggles and the fire badge live in
+the header's right slot via `BubbleMatchHeaderControls`.
+
+The **generic** in-game shell `src/games/runtime/GamePage.tsx` (for future
+registry games that don't ship their own page) still renders
+`MobileFooter activePage="home"` on its info/loading screens and hides it during
+the live stage (`!showStage`); it has not been migrated to a leaf page yet.
 
 ## Navigation entry point
 
 Games is **not** a footer tab. It is a row in the **Home menu** (`/`, see
 [NAVIGATION.md](./NAVIGATION.md)). The footer tabs are Flashcards / Discover /
-Home / Account; the Games hub is reached by tapping **Games** in the Home menu,
-and its header shows a back arrow returning to `/`.
+Home / Account; the Games hub is reached by tapping **Games** in the Home menu.
+The hub is a **node page** (`NodePage`, see [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md)):
+its header shows a **left** back arrow returning to `/`, it keeps the floating
+footer, and it slides in from the right (out to the right only when the arrow is
+tapped — footer-tab nav does not animate).
 
 ## Design decisions
 
@@ -51,9 +56,11 @@ yet" + subtitle) instead of mocked rows. Rationale: placeholder rows tend to
 get shipped by accident, and a real empty state forces a clear "first game"
 design moment.
 
-### 3. No back button on the hub
-`PageHeader` is rendered with `showBack={false}` because the hub is a
-top-level destination reached from the footer, not a child page.
+### 3. Left back arrow on the hub (node page)
+The hub is a **node page** (`NodePage`), so it shows a **left** back arrow
+returning to `/` — Games is a drill-in from the Home menu, not a footer tab.
+It keeps the floating footer (lateral nav stays available) and only slides out
+to the right when the arrow is tapped. See [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md).
 
 ### 4. Reuses the existing iPhone frame layout
 `GamesPage` mirrors the `IPhoneFrame` / `ContentArea` / `MobileFooter` layout
@@ -96,23 +103,30 @@ Two-layer header model (there is **no** hamburger / nav drawer — global nav is
 the footer tabs + the Home menu):
 
 - **`PageHeader`** (`src/components/PageHeader.tsx`) — base layout primitive.
-  Defines the row: optional back button · optional left-icon badge · title ·
-  `rightContent` (a single flush-right ReactNode slot).
+  Defines the row: optional back button (`arrowDirection` "down" | "left") ·
+  optional left-icon badge · title · `rightContent` (a single flush-right
+  ReactNode slot).
 - **`MobileDemoHeader`** (`src/components/MobileDemoHeader.tsx`) — composes
   `PageHeader`, adds the active-tab identity badge in the left slot
-  (`activePage`, when no back button), `showBack` for drill-ins, and an
-  `extraActions` slot rendered flush-right (e.g. the undo button on Sort Cards,
-  the settings gear on Account).
+  (`activePage`, when no back button), `showBack` for drill-ins, an
+  `arrowDirection` pass-through, and an `extraActions` slot rendered flush-right
+  (e.g. the settings gear on Account).
+- **`LeafPageHeader` / `NodePageHeader`** (`src/components/`) — thin
+  specializations preset to `arrowDirection` "down" / "left" + `showBack`. Used
+  by the `LeafPage` / `NodePage` wrappers. See
+  [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md).
 
 Rules of thumb:
 
 - Footer-tab hubs (Flashcards/Decks, Discover, Home, Account) → use
   `MobileDemoHeader` inside `MobileTabScreen`; pass `title`, `activePage`, and
-  optional `headerExtraActions`. Drill-in hubs (Games) also pass `showBack` +
-  `onBack`.
-- Specialty headers (`FlashcardsLearnHeader` with fire icon + seconds counter,
-  `VocabCardDetailPage` with just back+title) → compose `PageHeader`
-  directly and own their own `rightContent`.
+  optional `headerExtraActions`.
+- Back-arrow drill-ins → use the `LeafPage` (down arrow, no footer) or `NodePage`
+  (left arrow, keeps footer) wrapper instead of composing the header by hand.
+  Games + Mastered Cards are node pages; Sort Cards, Dictionary, and Card Detail
+  are leaf pages.
+- Specialty in-page headers (`FlashcardsLearnHeader` with fire icon + seconds
+  counter) → compose `PageHeader` directly and own their own `rightContent`.
 
 ## Games framework
 
@@ -286,11 +300,15 @@ activePage="home"`), not `GamePage`.
   elastic collisions (`physics.ts`). Drag a bubble onto its partner to match
   (bidirectional). Correct → green pop + removal; wrong → red shake + release.
   Picking up / dropping **onto** a Chinese word triggers autoplay TTS.
-- **Levels do not chain** — a level picker selects difficulty (launch cadence
-  only); all use 30s and the full pool. Win = clear all pairs in time. Lose =
-  timer hits 0, or a bubble can't be placed (the border glows red at ≥85% fill
-  as a warning first). Tunables live in `constants.ts` (`LEVEL_CONFIGS`,
-  `GAME_DISTRIBUTION`, sizes, physics).
+- **Levels do not chain** — a level picker selects difficulty (launch cadence +
+  ceiling-shrink speed); all use the full pool. **There is no clock.** Once the
+  whole pool has launched, on the next launch-tick a **descending ceiling**
+  (`boundsRef.top`, rising at the level's `shrinkSpeedPxPerSec`) starts closing
+  in from the top, compressing the field. Win = clear all pairs. Lose = the field
+  over-packs under the ceiling (area ≥ `LOSE_FILL_RATIO`, or sustained residual
+  overlap) — the border glows red at ≥85% fill as a warning first. Tunables live
+  in `constants.ts` (`LEVEL_CONFIGS`, `GAME_DISTRIBUTION`, `MIN_PLAY_HEIGHT`,
+  sizes, physics).
 - Minute-points: `/games/bubble-match` is in `MINUTE_POINTS_ELIGIBLE_PAGES`
   (`src/constants.ts`); the header's `MinutePointsFireBadge` works as on flp.
 
@@ -298,7 +316,7 @@ activePage="home"`), not `GamePage`.
 
 - `src/games/bubble-match/` — `BubbleMatchPage.tsx` (flow: loading → blocked |
   picker → playing → won | lost), `BubbleStage.tsx` (rAF loop, launcher,
-  countdown, drag/hover/match, HUD, red glow), `Bubble.tsx` (one bubble; outer
+  descending ceiling, drag/hover/match, HUD, red glow), `Bubble.tsx` (one bubble; outer
   node carries the loop's transform, inner node carries CSS pop/shake),
   `physics.ts`, `BubbleMatchHeader.tsx`, `constants.ts`, `types.ts`.
 - `src/games/registry.ts` — registers the game (`requiresAuth: true`).

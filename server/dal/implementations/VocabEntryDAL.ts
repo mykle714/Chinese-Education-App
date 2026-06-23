@@ -592,7 +592,11 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
         AND ve.language = $2
         AND ve."entryKey" != $3
         AND ve."entryKey" ~ $4
-        AND ve."starterPackBucket" != 'skip'
+        -- Library rows only. Previously written as != 'skip', which (given the old
+        -- 'library'|'skip'|NULL domain) already resolved to library-only since
+        -- NULL != 'skip' is unknown. Skips now live in discover_skips (migration 80);
+        -- = 'library' keeps the exact same result set.
+        AND ve."starterPackBucket" = 'library'
       ORDER BY ve.id ASC
       LIMIT $5
     `;

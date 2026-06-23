@@ -1,5 +1,7 @@
 # App Navigation
 
+> ↑ Part of [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md).
+
 There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed —
 `MobileNavDrawer` is deleted and `Layout` carries no chrome). Navigation is:
 
@@ -20,18 +22,23 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
    **Night Market**, **Games**, **Reader**, **Dictionary**, **Tester Dashboard**.
 
 3. **Back-arrow drill-ins** — every page reached from a hub has a common header
-   with a down-chevron back button:
-   - Home-menu destinations (`/night-market`, `/games`, `/reader`, `/dictionary`,
-     `/tester-dashboard`) → back to `/`.
-   - Sort Cards (`/discover/sort/:language`) → back to `/discover`.
-   - Settings (`/settings`) → back to `/account` (opened from the Account header
-     gear).
+   with a back button. These come in two archetypes (see
+   [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md)): **leaf pages** (down arrow, no
+   footer, back-arrow-only exit, slide up/down) and **node pages** (left arrow,
+   keep the footer, slide in-from-right / out-to-right via the arrow).
+   - Home-menu destinations → back to `/`: `/dictionary` (leaf), `/games` (node);
+     `/night-market`, `/reader`, `/tester-dashboard` use their own headers.
+   - Sort Cards (`/discover/sort/:language`) → back to `/discover` (leaf).
+   - Card Detail (`/flashcards/card/:id`) → back (leaf); Mastered Cards
+     (`/flashcards/mastered`) → back to Decks (node).
+   - Settings (`/settings`) → back to `/account` (leaf; opened from the Account
+     header gear via `slideNavigate`, so it slides up into the phone frame).
 
 ## Account page absorbs the old drawer footer
 
 The drawer's two global controls moved onto `AccountPage`:
 - **Settings** → a gear `IconButton` in the Account header (`headerExtraActions`)
-  that navigates to `/settings`.
+  that `slideNavigate`s to `/settings` (a leaf page rendered inside the phone frame).
 - **Log Out** → a button in the Account body (`account-page__logout-section`),
   with the same confirm-then-`logout()` flow the drawer used.
 
@@ -40,8 +47,9 @@ The drawer's two global controls moved onto `AccountPage`:
 `Layout.tsx` has two modes:
 - Mobile-demo routes (`MOBILE_DEMO_PATHS`, which now includes `/`) → wrapped in
   `MobileDemoFrame` (full-bleed on mobile, centered phone card on desktop).
-- Everything else (Reader / Dictionary / Night Market / Settings / Tester
-  Dashboard / auth) → full-height, no chrome; each owns its `PageHeader`.
+- Everything else (auth pages, etc.) → full-height, no chrome; each owns its
+  `PageHeader`. (Reader / Dictionary / Night Market / Settings / Tester Dashboard
+  now render inside the frame as leaf pages.)
 
 ## Tester Dashboard
 

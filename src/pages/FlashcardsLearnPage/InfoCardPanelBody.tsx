@@ -319,14 +319,15 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                                     borderBottom: `1px solid ${fc.border}`,
                                 }}
                             >
-                                {/* HSK meta: only for HSK-encoded difficulty (zh); es stores a bare 1–5. */}
-                                {currentEntry?.difficulty?.startsWith('HSK') && (
+                                {/* HSK meta: only for zh, whose 1–6 difficulty integers ARE HSK
+                                    levels; es uses the same scale but it is not an HSK label. */}
+                                {currentEntry?.language === 'zh' && currentEntry.difficulty && (
                                     <Box sx={{ display: "flex", flexDirection: "column", gap: "3px" }}>
                                         <Typography sx={{ fontSize: SIZE.micro, fontWeight: WEIGHT.bold, color: fc.textSecondary, letterSpacing: TRACKING.caps, textTransform: "uppercase", fontFamily: FC_FONT }}>
                                             HSK
                                         </Typography>
                                         <Typography sx={{ fontSize: SIZE.body, fontWeight: WEIGHT.semibold, color: fc.onSurface, fontFamily: FC_FONT }}>
-                                            {currentEntry.difficulty.replace(/^HSK/, 'HSK ')}
+                                            {`HSK ${currentEntry.difficulty}`}
                                         </Typography>
                                     </Box>
                                 )}

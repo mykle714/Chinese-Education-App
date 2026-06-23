@@ -44,38 +44,10 @@ unchanged because they are backend contracts. When adding new user-facing copy f
 this bucket, write "Learn Now"; when touching code/API, keep "library".
 
 ## Night Market Coordinate System
-
-When the user mentions coordinates for night market assets, they are always in isometric grid units (isoX, isoY). See `src/utils/isometric.ts` for the full coordinate system definition.
-
-- **isoX** — distance along the isometric X axis (toward top-right on screen / east)
-- **isoY** — distance along the isometric Y axis (toward top-left on screen / north)
-- **Origin (0, 0)** — maps to the center of the viewport
-
-All night market assets live at: `/home/cow/src/assets/`
-(Note: this is different from `public/assets/` — Vite imports these directly as modules.)
+→ Moved to the Coordinate System section of [docs/NIGHT_MARKET_FEATURE.md](./docs/NIGHT_MARKET_FEATURE.md) — asset coordinates are always isometric grid units (isoX, isoY); assets live in `src/assets/` (not `public/assets/`).
 
 ## Touch & Scroll (mobile)
-This is a mobile-first app built around drag gestures. Components you create should
-default to `touchAction: "none"` so background/empty-area touches don't trigger the
-browser's native pan/scroll (which fights the drag interactions). Only set a
-scroll-permitting value (`auto`, `pan-y`, etc.) on a component when I explicitly tell
-you it should be scrollable.
-
-Text is **non-selectable by default app-wide** — `src/index.css` sets `user-select:
-none` on `body` (it cascades to everything). Form fields (`input`/`textarea`/
-`contenteditable`) are re-enabled there. The **only** selectable content exception is
-**cpcd** (`.cpcd-row__chars` / `.cpcd-row__pinyin-cell`), and only on non-touch
-devices — the `@media (hover: hover) and (pointer: fine)` block in `index.css` makes
-cpcd selectable on desktop but keeps it non-selectable on mobile. Don't sprinkle
-per-component `userSelect: "none"`; rely on the global default and only opt specific
-content into `userSelect: "text"` (desktop-gated) when I call it out.
-
-**Games must block the mobile edge-swipe-back gesture by default.** Every game page
-should call `useBlockEdgeSwipe(true)` (`src/hooks/useBlockEdgeSwipe.ts`) so a swipe
-from the left/right screen edge doesn't navigate away mid-drag. `touch-action: none`
-does NOT stop this — the browser claims the history-navigation gesture before the
-element sees the touch, so it must be cancelled at the touch-event layer. Reference
-implementation: `src/games/bubble-match/BubbleMatchPage.tsx`.
+→ Moved to [docs/UX_AND_NAVIGATION.md](./docs/UX_AND_NAVIGATION.md) — default components to `touchAction: "none"` (scrolling is opt-in per page via an inner container); the app shell never scrolls; text is app-wide `user-select: none` (cpcd is the desktop-only exception); every game page must call `useBlockEdgeSwipe(true)`.
 
 ## Writing .md files
 Do not write content descibing what you just completed; you should write the status/structure of the service/code. The files are meant to be for future AI  agents.
@@ -170,17 +142,17 @@ An hourly Postgres cron on the prod server (a) breaks stale streaks (mirroring `
 → Pedestrian movement: [docs/PEDESTRIAN_WALKING_ALGORITHM.md](./docs/PEDESTRIAN_WALKING_ALGORITHM.md)
 → Tile/street graph invariants: [docs/NIGHT_MARKET_GRAPH_ASSUMPTIONS.md](./docs/NIGHT_MARKET_GRAPH_ASSUMPTIONS.md)
 
-### App Navigation
-→ See [docs/NAVIGATION.md](./docs/NAVIGATION.md) — no hamburger/sidebar; nav is the footer tabs (Flashcards / Discover / Home / Account) + the `/` Home menu + back-arrow drill-ins. Settings + Logout live on the Account page.
-
-### Mobile Tab Screen Layout (scroll-away header + floating footer)
-→ See [docs/MOBILE_TAB_SCREEN_LAYOUT.md](./docs/MOBILE_TAB_SCREEN_LAYOUT.md) — every scrollable footer-tab page must use `MobileTabScreen` (header scrolls away inside the scroll area; the bottom nav is a floating pill). Home, Decks, Discover, Games hub, and Account use it today.
-
-### Discover Flow
-→ See [docs/DISCOVER_FLOW.md](./docs/DISCOVER_FLOW.md) — two-level Discover surface: the `/discover` hub menu (footer tab) → `/discover/sort/:language` drag-to-sort page (back-arrow header, no footer).
+### UX & Navigation
+→ See [docs/UX_AND_NAVIGATION.md](./docs/UX_AND_NAVIGATION.md) — umbrella for navigation + the mobile shell: app navigation structure (footer tabs + `/` Home menu + back-arrow drill-ins), the `MobileTabScreen` scroll-away-header layout, the **Leaf**/**Node** drill-in archetypes, the Discover two-level surface, and the global touch/scroll/selection rules.
 
 ### Games
 → See [docs/GAMES_FEATURE.md](./docs/GAMES_FEATURE.md)
+
+### Example Sentences (est)
+→ See [docs/EXAMPLE_SENTENCES.md](./docs/EXAMPLE_SENTENCES.md) — the est tab: AI-generated sentences rendered as tappable cpcd segments with definition popups. Covers the generation pipeline, segment enrichment, and **form modification** (contextually inflected English glosses via `wordForms` + `resolveWordForm`, zh only).
+
+### CPCD Pinyin Shift (character + pinyin column spacing)
+→ See [docs/CPCD_PINYIN_SHIFT.md](./docs/CPCD_PINYIN_SHIFT.md) — how `CPCDRow` spaces out long pinyin (rendered wider than its column): a long syllable stays centered over its char and pushes its immediate neighbors outward; opposing pushes cancel.
 
 ### Client Performance Diagnostics
 → See [docs/CLIENT_PERF_DIAGNOSTICS.md](./docs/CLIENT_PERF_DIAGNOSTICS.md) — real-user tap-latency telemetry (Event Timing / long tasks) for the prod-only footer/decks lag; sink at `POST /api/diagnostics/perf`, analyze with `server/scripts/analyze-client-perf.ts`
@@ -279,3 +251,10 @@ When reviewing or writing code, actively look for and address:
 - **Non-robust patterns** — missing null/undefined guards, unchecked array access, `JSON.parse` without try-catch, fire-and-forget promises without `.catch()`, unvalidated external inputs
 - **Potential failure paths** — database clients not released in all branches, missing error handling in async code, `Promise.all` failing mid-batch without individual error capture
 - **Complex code without comments** — algorithms, non-obvious state management (stale closure workarounds, ref sync patterns), and transaction flows should have inline comments explaining *why*, not just *what*
+
+## Dependency Documentation
+When writing functions, always write down which docs depend on or reference the code being written. In addition, when writing docs, add to each section which lines of code in which files the sections references or depends on.
+
+When editting code, check the referenced documentation and update it if need be. When editting documentation, check the referenced code to see if there is alignment.
+
+When implementing features, make sure the document referencing the system/component/mechanism in question has a section on the new behavior/feature.

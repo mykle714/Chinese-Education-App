@@ -1,11 +1,9 @@
 import React from "react";
 import { Button, useTheme } from "@mui/material";
-import PageHeader from "../../components/PageHeader";
 import MinutePointsFireBadge from "../../components/MinutePointsFireBadge";
 import { SIZE } from "../../theme/scale";
 
-interface BubbleMatchHeaderProps {
-    onBack: () => void;
+interface BubbleMatchHeaderControlsProps {
     showPinyin: boolean;
     onTogglePinyin: () => void;
     autoplayChinese: boolean;
@@ -13,13 +11,14 @@ interface BubbleMatchHeaderProps {
 }
 
 /**
- * Header for the Bubble Match game. Mirrors FlashcardsLearnHeader's two quick
- * toggles (pinyin + autoplay) and the minute-points fire badge, composed onto
- * the shared PageHeader primitive (it opts out of the hamburger like the other
- * specialty headers).
+ * Right-side header controls for the Bubble Match game: two quick toggles (pinyin
+ * + autoplay, mirroring FlashcardsLearnHeader) and the minute-points fire badge.
+ *
+ * Bubble Match is a LEAF PAGE (see docs/LEAF_NODE_PAGES.md), so the header bar +
+ * down-arrow back button come from LeafPage/LeafPageHeader; this component just
+ * fills LeafPage's `rightContent` slot.
  */
-const BubbleMatchHeader: React.FC<BubbleMatchHeaderProps> = ({
-    onBack,
+const BubbleMatchHeaderControls: React.FC<BubbleMatchHeaderControlsProps> = ({
     showPinyin,
     onTogglePinyin,
     autoplayChinese,
@@ -42,7 +41,7 @@ const BubbleMatchHeader: React.FC<BubbleMatchHeaderProps> = ({
         "&:hover": { backgroundColor: active ? fc.toggleActiveBg : fc.toggleInactiveBg },
     });
 
-    const rightContent = (
+    return (
         <>
             <Button
                 className="pinyin-toggle-btn"
@@ -65,8 +64,6 @@ const BubbleMatchHeader: React.FC<BubbleMatchHeaderProps> = ({
             <MinutePointsFireBadge />
         </>
     );
-
-    return <PageHeader title="Bubble Match" onBack={onBack} rightContent={rightContent} />;
 };
 
-export default BubbleMatchHeader;
+export default BubbleMatchHeaderControls;

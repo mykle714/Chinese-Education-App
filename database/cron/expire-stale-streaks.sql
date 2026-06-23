@@ -1,6 +1,6 @@
--- Hourly inactivity-penalty + weekly-reset cron (prod only).
+-- Hourly inactivity-penalty cron (prod only).
 --
--- Three independent branches run in one transaction:
+-- Two independent branches run in one transaction:
 --
 --   A) Streak break (legacy behavior). For users with an active streak
 --      whose lastStreakDate is >= 2 of their own local days behind:
@@ -17,19 +17,15 @@
 --      continued inactivity, indefinitely, until totalMinutePoints
 --      reaches 0 (at which point the user falls out of scope).
 --
---   C) Weekly achievement reset (new). Wipes each user's `weeklies`
---      rows once their local week has rolled over. The week boundary is
---      the most recent Sunday 04:00 in the user's own timezone (same
---      4 AM day-boundary as A/B). A row whose achievedAt predates that
---      boundary belongs to a finished week, so it is deleted. This is a
---      boundary COMPARISON, not an exact-hour wipe: it runs every tick
---      and self-heals -- if the 4 AM Sunday tick is missed (server down,
---      etc.), the very next hourly tick still clears the stale rows.
+-- (There used to be a Branch C that wiped each user's `weeklies` rows at
+-- their local week rollover. That table is gone: weekly achievements are
+-- now derived as a timestamp filter over the persistent append-only
+-- `wins` log -- see WinsDAL.getWeeklyCountsByUser -- so nothing needs to
+-- be wiped and lifetime win history is preserved.)
 --
--- The job is idempotent: branch A bumps lastStreakDate, branch B bumps
--- lastPenaltyDate, and branch C only deletes rows already older than the
--- current week boundary, so each subsequent hourly tick within the same
--- local day/week is a no-op.
+-- The job is idempotent: branch A bumps lastStreakDate and branch B bumps
+-- lastPenaltyDate, so each subsequent hourly tick within the same local
+-- day is a no-op.
 --
 -- First-run behavior: lastPenaltyDate starts NULL for every existing
 -- user. The first tick after deploy charges each currently-inactive
@@ -55,8 +51,6 @@ DECLARE
   penalty_count  int;
   penalty_ids    uuid[];
   penalty_dates  date[];
-  weekly_count   int;
-  weekly_ids     uuid[];
 BEGIN
   ------------------------------------------------------------------
   -- Branch A: streak break (resets currentStreak, deducts 10).
@@ -161,48 +155,6 @@ BEGIN
   IF penalty_count > 0 THEN
     RAISE NOTICE 'inactivity-cron daily-penalty % count=% user_ids=% penalty_dates=%',
                  now(), penalty_count, penalty_ids, penalty_dates;
-  END IF;
-
-  ------------------------------------------------------------------
-  -- Branch C: weekly achievement reset (wipes stale `weeklies` rows).
-  --
-  -- Week boundary = most recent Sunday 04:00 in the user's timezone.
-  -- Derivation (all in the user's local wall clock):
-  --   local_now = now() AT TIME ZONE tz
-  --   anchored  = local_now - 4h   -- shift so the logical day starts at 04:00
-  --   In the anchored frame a logical day starts at local midnight (= real
-  --   04:00) and EXTRACT(DOW) = 0 on the logical Sunday. Subtracting DOW days
-  --   from anchored::date lands on the logical Sunday; +4h converts that back
-  --   to the real local Sunday-04:00 wall-clock time; "AT TIME ZONE tz" turns
-  --   that wall-clock instant into a timestamptz comparable to achievedAt.
-  -- Any weekly earned before this boundary belongs to a finished week.
-  --
-  -- NOTE: Postgres date_trunc('week') is Monday-based, so it is deliberately
-  -- NOT used here -- the boundary is computed via DOW to honor a Sunday reset.
-  -- COALESCE(timezone, 'UTC') guards the (should-not-happen) NULL-tz row so it
-  -- still resets instead of silently never clearing.
-  ------------------------------------------------------------------
-  WITH deleted AS (
-    DELETE FROM weeklies w
-    USING users u
-    WHERE w."userId" = u.id
-      AND w."achievedAt" < (
-            (
-              (
-                ((now() AT TIME ZONE COALESCE(u.timezone, 'UTC')) - INTERVAL '4 hours')::date
-                - EXTRACT(DOW FROM ((now() AT TIME ZONE COALESCE(u.timezone, 'UTC')) - INTERVAL '4 hours'))::int
-              )::timestamp + INTERVAL '4 hours'
-            ) AT TIME ZONE COALESCE(u.timezone, 'UTC')
-          )
-    RETURNING w."userId"
-  )
-  SELECT COUNT(*), array_agg(DISTINCT "userId")
-  INTO   weekly_count, weekly_ids
-  FROM   deleted;
-
-  IF weekly_count > 0 THEN
-    RAISE NOTICE 'inactivity-cron weekly-reset % rows=% user_ids=%',
-                 now(), weekly_count, weekly_ids;
   END IF;
 END
 $$;

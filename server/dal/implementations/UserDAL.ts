@@ -88,7 +88,7 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
     }
 
     const result = await this.dbManager.executeQuery<User>(async (client) => {
-      return await client.query('SELECT id, email, name, "isPublic", "selectedLanguage", "lastMinutePointIncrement", "createdAt" FROM Users WHERE id = $1', [id]);
+      return await client.query('SELECT id, email, name, "isPublic", "avatarIconId", "selectedLanguage", "lastMinutePointIncrement", "createdAt" FROM Users WHERE id = $1', [id]);
     });
 
     return result.recordset[0] || null;
@@ -323,7 +323,7 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
    * Get all users that participate in the leaderboard with their totals + streak.
    * Returns isPublic so callers can mask streak from non-public users at the response layer.
    */
-  async getPublicUsersWithTotalPoints(): Promise<Array<{ userId: string; email: string; name: string; totalMinutePoints: number; currentStreak: number; isPublic: boolean }>> {
+  async getPublicUsersWithTotalPoints(): Promise<Array<{ userId: string; email: string; name: string; totalMinutePoints: number; currentStreak: number; isPublic: boolean; avatarIconId: string | null }>> {
     const result = await this.dbManager.executeQuery<{
       id: string;
       email: string;
@@ -331,6 +331,7 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
       totalminutepoints: number;
       currentstreak: number;
       ispublic: boolean;
+      avatariconid: string | null;
     }>(async (client) => {
       return await client.query(`
         SELECT
@@ -339,7 +340,8 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
           name,
           COALESCE("totalMinutePoints", 0) as totalminutepoints,
           COALESCE("currentStreak", 0) as currentstreak,
-          "isPublic" as ispublic
+          "isPublic" as ispublic,
+          "avatarIconId" as avatariconid
         FROM Users
         ORDER BY "totalMinutePoints" DESC NULLS LAST, "createdAt" ASC
       `);
@@ -351,7 +353,8 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
       name: row.name,
       totalMinutePoints: row.totalminutepoints || 0,
       currentStreak: row.currentstreak || 0,
-      isPublic: row.ispublic === true
+      isPublic: row.ispublic === true,
+      avatarIconId: row.avatariconid ?? null
     }));
   }
 

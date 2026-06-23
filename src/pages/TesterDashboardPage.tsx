@@ -1,7 +1,7 @@
 import { Box, Container, Typography } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import Message from "../Message";
-import PageHeader from "../components/PageHeader";
+import LeafPage from "../components/LeafPage";
 import { useMinutePoints } from "../hooks/useMinutePoints";
 import TimeDisplay from "../components/TimeDisplay";
 import StreakCounter from "../components/StreakCounter";
@@ -20,9 +20,9 @@ function TesterDashboardPage() {
     } = useMinutePoints();
 
     return (
-        <Box className="tester-dashboard-page" sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-            <PageHeader title="Tester Dashboard" onBack={() => navigate("/")} />
-
+        // Tester Dashboard is a LEAF PAGE (see docs/LEAF_NODE_PAGES.md): no footer,
+        // DOWN back arrow (→ Home), slides up on enter / down on exit.
+        <LeafPage title="Tester Dashboard" onBack={() => navigate("/")} className="tester-dashboard-page">
             <Box className="tester-dashboard-page__scroll" sx={{ flex: 1, overflowY: "auto" }}>
                 {/* Always rendered in the mobile single-column layout regardless
                     of viewport width — the desktop two-column layout is retired. */}
@@ -64,7 +64,7 @@ function TesterDashboardPage() {
                     </Box>
                 </Container>
             </Box>
-        </Box>
+        </LeafPage>
     );
 }
 

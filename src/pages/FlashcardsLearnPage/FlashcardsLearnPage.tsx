@@ -19,7 +19,7 @@ import FlashCardSection from "./FlashCardSection";
 import SheetPanel, { type SheetPanelBodyHandle } from "./SheetPanel";
 import SettingsPanelBody from "./SettingsPanelBody";
 import { usePageTitle } from "../../hooks/usePageTitle";
-import { useTTS } from "../../hooks/useTTS";
+import { useTTS, SLOW_SENTENCE_RATE } from "../../hooks/useTTS";
 import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
 
 const FlashcardsLearnPage: React.FC = () => {
@@ -40,7 +40,7 @@ const FlashcardsLearnPage: React.FC = () => {
         : undefined;
 
     const { settings: learnSettings, update: updateLearnSettings } = useFlashcardLearnSettings();
-    const { showPinyin, showPinyinColor, showSegmentSpaces, autoplayChinese, showProgressCategory } = learnSettings;
+    const { showPinyin, showPinyinColor, showSegmentSpaces, autoplayChinese, showProgressCategory, slowExampleSentences } = learnSettings;
     // Settings sheet open/close. Independent from the EIC sheet so the two can
     // coexist if needed (each one renders its own SheetPanel).
     const [settingsOpen, setSettingsOpen] = useState(false);
@@ -48,6 +48,20 @@ const FlashcardsLearnPage: React.FC = () => {
     const settingsBodyRef = useRef<SheetPanelBodyHandle | null>(null);
 
     const tts = useTTS();
+
+    // Example-sentence (est) narration honors the flp "slow sentences" toggle:
+    // 0.65× when on, 1× otherwise. Scoped here so the flashcard word (onSpeak)
+    // and every non-flp caller stay at the default 1×. Memoized so InfoCardSection
+    // children don't re-render when unrelated state changes.
+    const speakSentenceAtRate = useCallback(
+        (text: string, pronunciation?: string) =>
+            tts.speakSentence(text, pronunciation, slowExampleSentences ? SLOW_SENTENCE_RATE : 1),
+        // tts.speakSentence is itself memoized (stable) — depending on the whole
+        // tts object would re-create this every render. Same pattern as the
+        // narration effect above.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [tts.speakSentence, slowExampleSentences],
+    );
 
     // Bridge ref handed to useWorkingLoop so it can read/drive the card-drag layer
     // (flip state + drag-position reset) without a render-time dependency on
@@ -341,7 +355,7 @@ const FlashcardsLearnPage: React.FC = () => {
                             onUsedInItemClick={(item) => eip.openForEntryKey(item.entryKey)}
                             depth={0}
                             onSpeak={tts.enabled ? tts.speak : undefined}
-                            onSpeakSentence={tts.enabled ? tts.speakSentence : undefined}
+                            onSpeakSentence={tts.enabled ? speakSentenceAtRate : undefined}
                             speakingKey={tts.speakingKey}
                             tabStrip={
                                 <EipTabStrip

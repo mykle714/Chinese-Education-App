@@ -213,7 +213,7 @@ export class UserService {
   /**
    * Update user profile information
    */
-  async updateUserProfile(userId: string, updateData: { email?: string; name?: string; selectedLanguage?: Language }): Promise<User> {
+  async updateUserProfile(userId: string, updateData: { email?: string; name?: string; selectedLanguage?: Language; avatarIconId?: string | null }): Promise<User> {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
@@ -233,8 +233,10 @@ export class UserService {
       this.validateName(updateData.name);
     }
     
-    // Update user
+    // Update user. The DAL's UPDATE ... RETURNING * includes the password hash, so
+    // strip it before handing the row back to any caller / the HTTP response.
     const updatedUser = await this.userDAL.update(userId, updateData);
+    delete updatedUser.password;
     return updatedUser;
   }
 

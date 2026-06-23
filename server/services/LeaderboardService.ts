@@ -1,5 +1,6 @@
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import { IUserMinutePointsDAL } from '../dal/interfaces/IUserMinutePointsDAL.js';
+import { IWinsDAL } from '../dal/interfaces/IWinsDAL.js';
 import { LeaderboardEntry, LeaderboardResponse } from '../types/leaderboard.js';
 import { ValidationError } from '../types/dal.js';
 
@@ -12,7 +13,8 @@ import { ValidationError } from '../types/dal.js';
 export class LeaderboardService {
   constructor(
     private userDAL: IUserDAL,
-    private userMinutePointsDAL: IUserMinutePointsDAL
+    private userMinutePointsDAL: IUserMinutePointsDAL,
+    private winsDAL: IWinsDAL
   ) {}
 
   async getLeaderboard(): Promise<LeaderboardResponse> {
@@ -34,6 +36,11 @@ export class LeaderboardService {
       yesterday.setDate(yesterday.getDate() - 1);
       const yesterdayStr = yesterday.toISOString().split('T')[0];
 
+      // Weekly-achievement counts for every user in a single grouped query
+      // (avoids an N+1 lookup inside the per-user loop below). "This week" = the
+      // distinct (game, level) wins since each user's local week boundary.
+      const weeklyAchievementCounts = await this.winsDAL.getWeeklyCountsByUser();
+
       const leaderboardEntries: LeaderboardEntry[] = [];
 
       for (const user of usersWithPoints) {
@@ -49,6 +56,8 @@ export class LeaderboardService {
           currentStreak: user.isPublic ? user.currentStreak : null,
           todaysMinutes,
           yesterdaysMinutes,
+          weeklyAchievements: weeklyAchievementCounts.get(user.userId) ?? 0,
+          avatarIconId: user.avatarIconId,
           rank: 0,
         });
       }

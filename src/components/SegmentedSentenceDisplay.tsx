@@ -37,6 +37,10 @@ interface SentenceData {
   segmentMetadata?: Record<string, SegmentMeta>;
   tense?: 'past' | 'present' | 'future';
   partOfSpeechDict?: Record<string, string>;
+  // Per-noun-token grammatical number. Unlike `tense` (one verb per sentence, so
+  // sentence-level), number is per-token because a sentence can mix singular and
+  // plural nouns. Drives plural-form selection in resolveWordForm.
+  numberDict?: Record<string, 'singular' | 'plural'>;
 }
 
 interface SegmentedSentenceDisplayProps {
@@ -91,18 +95,24 @@ interface HighlightRow {
 
 // Selects the contextually appropriate English form from a wordForms map.
 // Verbs prefer tense-specific keys (past/present/future); other POS use their tag directly.
-// When a verb is used nominally (tagged "noun" in this sentence's partOfSpeechDict),
-// fall back to the gerund form since verb entries have no dedicated "noun" key.
+// Nouns prefer the plural form ('noun_plural') when this token is plural in the sentence,
+// otherwise the singular ('noun'). When a verb is used nominally (tagged "noun" in this
+// sentence's partOfSpeechDict), fall back to the gerund form since verb entries have no
+// dedicated "noun" key.
 function resolveWordForm(
   wordForms: Record<string, string>,
   pos: string | undefined,
-  tense: string | undefined
+  tense: string | undefined,
+  number: 'singular' | 'plural' | undefined
 ): string | undefined {
   if (!pos) return undefined;
   if (tense && (pos === 'verb' || pos === 'auxiliary verb')) {
     return wordForms[tense] ?? wordForms[pos];
   }
   if (pos === 'noun') {
+    if (number === 'plural') {
+      return wordForms['noun_plural'] ?? wordForms['noun'] ?? wordForms['gerund'];
+    }
     return wordForms['noun'] ?? wordForms['gerund'];
   }
   return wordForms[pos];
@@ -197,7 +207,8 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
       // If the segment has wordForms and POS context is available, use the conjugated form
       if (meta?.wordForms && sentence.partOfSpeechDict && !meta.particleOrClassifier) {
         const pos = sentence.partOfSpeechDict[segment];
-        const form = resolveWordForm(meta.wordForms, pos, sentence.tense);
+        const number = sentence.numberDict?.[segment];
+        const form = resolveWordForm(meta.wordForms, pos, sentence.tense, number);
         if (form) definition = form;
       }
 
@@ -222,7 +233,8 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
         let fallbackDefinition = fallbackMeta?.particleOrClassifier?.definition ?? fallbackMeta?.definition;
         if (fallbackMeta?.wordForms && sentence.partOfSpeechDict && !fallbackMeta.particleOrClassifier) {
           const pos = sentence.partOfSpeechDict[char];
-          const form = resolveWordForm(fallbackMeta.wordForms, pos, sentence.tense);
+          const number = sentence.numberDict?.[char];
+          const form = resolveWordForm(fallbackMeta.wordForms, pos, sentence.tense, number);
           if (form) fallbackDefinition = form;
         }
         data[i] = {

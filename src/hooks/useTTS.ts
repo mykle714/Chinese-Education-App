@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { VocabEntry } from '../pages/FlashcardsLearnPage/types';
-import { getTTSProvider, tts } from '../services/tts';
+import { tts } from '../services/tts';
 import type { TTSLang, TTSProvider } from '../services/tts';
 import { useTTSSettings } from './useTTSSettings';
 import { useAuth } from '../AuthContext';
+
+// Playback-speed multiplier for the flp "slow example sentences" toggle. The
+// only non-1× speed in the app; the provider time-stretches pitch-preservingly
+// so this doesn't distort tones. Consumed by FlashcardsLearnPage's est wiring.
+export const SLOW_SENTENCE_RATE = 0.65;
 
 /**
  * Map the user's selected study language → the TTS tag we narrate in. Without
@@ -51,16 +56,20 @@ export function useTTS() {
     }, []);
 
     // Shared playback core for any (text, pronunciation) pair. Used by both
-    // speak(entry) and speakSentence(text, pronunciation) so the cancel +
-    // primary→browser fallback logic lives in one place.
-    const speakText = useCallback(async (text: string, pronunciation?: string | null) => {
+    // speak(entry) and speakSentence(text, pronunciation, rate) so the cancel +
+    // primary→browser fallback logic lives in one place. `rate` is the
+    // playback-speed multiplier (1 = normal); the provider time-stretches
+    // pitch-preservingly, so non-1 values don't distort tones.
+    const speakText = useCallback(async (text: string, pronunciation?: string | null, rate: number = 1) => {
         if (!settings.enabled) return;
         if (!text) return;
 
         cancel();
 
         const lang: TTSLang = ttsLang;
-        const primary = getTTSProvider(settings.engine);
+        // Narration always runs "auto": cloud is primary (better voice), browser
+        // is the fallback. There is no user engine choice anymore.
+        const primary = tts.cloud;
         activeProviderRef.current = primary;
         setSpeakingKey(text);
 
@@ -69,24 +78,22 @@ export function useTTS() {
                 text,
                 lang,
                 pronunciation: pronunciation ?? undefined,
-                rate: settings.rate,
+                rate,
             });
         } catch (err) {
             // Cloud failed (server unreachable, key missing, etc.) — fall back
-            // to browser unless the user explicitly chose cloud-only.
-            console.warn('[useTTS] primary provider failed, falling back:', err);
-            if (settings.engine === 'auto') {
-                try {
-                    activeProviderRef.current = tts.browser;
-                    await tts.browser.speak({
-                        text,
-                        lang,
-                        pronunciation: pronunciation ?? undefined,
-                        rate: settings.rate,
-                    });
-                } catch (err2) {
-                    console.warn('[useTTS] fallback provider also failed:', err2);
-                }
+            // to the browser engine.
+            console.warn('[useTTS] cloud provider failed, falling back to browser:', err);
+            try {
+                activeProviderRef.current = tts.browser;
+                await tts.browser.speak({
+                    text,
+                    lang,
+                    pronunciation: pronunciation ?? undefined,
+                    rate,
+                });
+            } catch (err2) {
+                console.warn('[useTTS] fallback provider also failed:', err2);
             }
         } finally {
             if (activeProviderRef.current === primary || activeProviderRef.current === tts.browser) {
@@ -97,8 +104,10 @@ export function useTTS() {
             // + setSpeakingKey(newText) before our finally ran.
             setSpeakingKey(prev => (prev === text ? null : prev));
         }
-    }, [settings.enabled, settings.engine, settings.rate, cancel, ttsLang]);
+    }, [settings.enabled, cancel, ttsLang]);
 
+    // The flashcard WORD is always narrated at normal speed (1×). Slowing is
+    // offered only for example sentences (see speakSentence).
     const speak = useCallback(async (entry: VocabEntry) => {
         if (!entry || !entry.entryKey) return;
         await speakText(entry.entryKey, entry.pronunciation);
@@ -107,9 +116,11 @@ export function useTTS() {
     // Narrate an arbitrary Chinese sentence. Pronunciation is the optional
     // space-separated pinyin hint (one token per GSA segment) — see
     // buildSentencePronunciation. Server-side cache is keyed on text+pinyin+voice
-    // so repeat plays of the same sentence reuse the same cached MP3.
-    const speakSentence = useCallback(async (text: string, pronunciation?: string) => {
-        await speakText(text, pronunciation);
+    // so repeat plays of the same sentence reuse the same cached MP3. `rate`
+    // lets callers slow playback (e.g. the flp est "slow sentences" toggle);
+    // omitted ⇒ 1× so every other caller is unaffected.
+    const speakSentence = useCallback(async (text: string, pronunciation?: string, rate: number = 1) => {
+        await speakText(text, pronunciation, rate);
     }, [speakText]);
 
     // Cancel on unmount so a stale utterance can't outlive the page.
@@ -122,16 +133,15 @@ export function useTTS() {
     /**
      * Prime the cloud provider's in-session blob cache for this entry so the
      * next speak() resolves without a network round-trip. No-ops when the user
-     * disabled TTS, picked the browser engine, or the server signaled that
-     * synthesis failed for this card (hasAudio === false).
+     * disabled TTS, or the server signaled that synthesis failed for this card
+     * (hasAudio === false).
      */
     const prefetch = useCallback((entry: VocabEntry | null | undefined) => {
         if (!entry || !entry.entryKey) return;
         if (!settings.enabled) return;
-        if (settings.engine === 'browser') return;
         if (entry.hasAudio === false) return;
         tts.cloud.prefetch(entry.entryKey, ttsLang, entry.pronunciation);
-    }, [settings.enabled, settings.engine, ttsLang]);
+    }, [settings.enabled, ttsLang]);
 
     /**
      * Prime the cloud provider's shared AudioContext for autoplay. Call this
@@ -139,22 +149,19 @@ export function useTTS() {
      * autoplay will be triggered by code that runs after an `await` — such as a
      * drag handler that narrates only once playback begins — so mobile autoplay
      * policy doesn't leave the context suspended for that first programmatic
-     * play. No-op for the browser engine, which primes itself on its first
-     * in-gesture speak().
+     * play.
      */
     const unlockAudio = useCallback(() => {
         if (!settings.enabled) return;
-        if (settings.engine === 'browser') return;
         tts.cloud.unlock();
-    }, [settings.enabled, settings.engine]);
+    }, [settings.enabled]);
 
     // Sentence variant of prefetch — warm the cloud cache without playing.
     const prefetchSentence = useCallback((text: string, pronunciation?: string) => {
         if (!text) return;
         if (!settings.enabled) return;
-        if (settings.engine === 'browser') return;
         tts.cloud.prefetch(text, ttsLang, pronunciation);
-    }, [settings.enabled, settings.engine, ttsLang]);
+    }, [settings.enabled, ttsLang]);
 
     return {
         speak,

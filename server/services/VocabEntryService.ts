@@ -86,8 +86,9 @@ export class VocabEntryService {
    * Branches:
    *  - no row → INSERT with starterPackBucket='library' (category is GENERATED → 'Unfamiliar')
    *  - row already in library → no-op
-   *  - row in 'skip' or NULL → bucket → 'library' (status='added' — skip-undo
-   *    is conceptually the same user action as add)
+   *  - row with NULL bucket → bucket → 'library' (status='added'). ('skip' rows no
+   *    longer occur in vet — skips live in discover_skips since migration 80 — but
+   *    the non-library branch below still safely upgrades any stray NULL row.)
    *
    * Returns the resulting vocabentry id and a status string the client can
    * translate into a flash message.
@@ -139,7 +140,7 @@ export class VocabEntryService {
         return { status: 'already-in-library', vocabEntryId: row.id };
       }
 
-      // Any non-library row (skip or NULL) becomes a library add.
+      // Any non-library row (a stray NULL bucket) becomes a library add.
       await client.query(
         `UPDATE ${vetTable} SET "starterPackBucket" = 'library' WHERE id = $1`,
         [row.id],

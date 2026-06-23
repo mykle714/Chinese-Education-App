@@ -27,6 +27,7 @@ export interface User {
   password?: string; // Not returned to client
   selectedLanguage?: Language;
   isPublic?: boolean; // Whether user appears on the public leaderboard
+  avatarIconId?: string | null; // FK to icons8("icons8Id") — the icon chosen as profile avatar (migration 77)
   lastMinutePointIncrement?: Date; // Last successful minute-point increment (for rate limiting)
   createdAt?: Date;
 }
@@ -52,6 +53,7 @@ export interface UserUpdateData {
   password?: string;
   selectedLanguage?: Language;
   isPublic?: boolean;
+  avatarIconId?: string | null; // Set when the user picks/clears their profile avatar (migration 77)
 }
 
 // Auth response type
@@ -65,11 +67,12 @@ export interface AuthResponse {
 // supported (their per-language dictionary tables don't exist — see CLAUDE.md).
 export type Language = 'zh' | 'es';
 
-// Per-language difficulty label stored in dictionaryentries_*.difficulty (drives
-// the discover band). The encoding differs by language:
-//   - zh: 'HSK1'..'HSK6' (HSK proficiency, also shown as an "HSK 3" badge)
-//   - es: '1'..'5'       (learner-acquisition difficulty, 1=easiest)
-export type DifficultyLevel = 'HSK1' | 'HSK2' | 'HSK3' | 'HSK4' | 'HSK5' | 'HSK6' | '1' | '2' | '3' | '4' | '5';
+// Generalized difficulty label stored in dictionaryentries_*.difficulty (drives the
+// discover band). One bare-integer '1'..'6' scale for every language (migration 79):
+//   - zh: '1'..'6' — these ARE HSK levels (1 = HSK1 .. 6 = HSK6), shown as an
+//     "HSK 3" badge in the UI; only the stored 'HSK' prefix was dropped.
+//   - es: '1'..'6'  (learner-acquisition difficulty, 1=easiest)
+export type DifficultyLevel = '1' | '2' | '3' | '4' | '5' | '6';
 export type TenseLabel = 'past' | 'present' | 'future';
 
 // Particle or classifier annotation attached to a segmented character in example sentence metadata
@@ -148,6 +151,7 @@ export interface DictionaryEntry {
     translatedVocab?: string;  // English word/phrase in the translation that corresponds to the vocab word
     tense?: TenseLabel;        // Temporal meaning of the sentence: past, present, or future
     partOfSpeechDict: Record<string, string>;  // AI-generated POS tag per sentence token (e.g. "particle", "verb", "noun")
+    numberDict?: Record<string, 'singular' | 'plural'>;  // AI-generated grammatical number per noun token; selects the plural English form in the segment popup
     _segments?: string[];
     segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo; wordForms?: Record<string, string> }>;
   }> | null;
@@ -183,6 +187,7 @@ export interface DiscoverCard {
     translatedVocab?: string;  // English word/phrase in the translation that corresponds to the vocab word
     tense?: TenseLabel;        // Temporal meaning of the sentence: past, present, or future
     partOfSpeechDict: Record<string, string>;  // AI-generated POS tag per sentence token (e.g. "particle", "verb", "noun")
+    numberDict?: Record<string, 'singular' | 'plural'>;  // AI-generated grammatical number per noun token; selects the plural English form in the segment popup
     _segments?: string[];
     segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo; wordForms?: Record<string, string> }>;
   }> | null;
@@ -218,8 +223,12 @@ export enum FlashcardCategory {
   MASTERED = 'Mastered'
 }
 
-// Starter pack bucket type
-export type StarterPackBucket = 'library' | 'skip';
+// Starter pack bucket type — the value stored in vocabentries.starterPackBucket.
+// Only 'library' persists in vet now: "Skip for now" deferrals moved to the
+// discover_skips table (migration 80), so 'skip' is no longer a vet bucket value.
+// (The discover API still ACCEPTS 'skip'/'already-learned' as input bucket names;
+// they just don't map to this stored type.)
+export type StarterPackBucket = 'library';
 
 // Used-in item: a multi-char word that contains a given single character.
 // Returned per single-char zh card by OnDeckVocabService.enrichWithUsedIn.
@@ -269,6 +278,7 @@ export interface VocabEntry {
     translatedVocab?: string;  // English word/phrase in the translation that corresponds to the vocab word
     tense?: TenseLabel;        // Temporal meaning of the sentence: past, present, or future
     partOfSpeechDict: Record<string, string>;  // AI-generated POS tag per sentence token (e.g. "particle", "verb", "noun")
+    numberDict?: Record<string, 'singular' | 'plural'>;  // AI-generated grammatical number per noun token; selects the plural English form in the segment popup
     _segments?: string[];
     segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo; wordForms?: Record<string, string> }>;
   }>;  // Example sentences enriched at runtime with greedy segmentation and per-segment metadata

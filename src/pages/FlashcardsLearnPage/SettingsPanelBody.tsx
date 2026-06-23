@@ -48,6 +48,8 @@ const SettingsPanelBody = forwardRef<SheetPanelBodyHandle, SettingsPanelBodyProp
         { key: "showPinyinColor", label: "Color pinyin by tone", visible: settings.showPinyin, indented: true },
         { key: "showSegmentSpaces", label: "Show spaces between words", visible: true },
         { key: "autoplayChinese", label: "Autoplay audio on Chinese side", visible: true },
+        // Slow only the example-sentence audio; the flashcard word stays at 1×.
+        { key: "slowExampleSentences", label: "Slow example sentence audio (0.65×)", visible: true },
         { key: "showProgressCategory", label: "Show progress category on back", visible: true },
     ];
 

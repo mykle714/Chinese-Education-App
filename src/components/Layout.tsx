@@ -1,8 +1,9 @@
-import { type ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
 import { Box } from "@mui/material";
 import { useLocation } from "react-router-dom";
 import MobileDemoFrame from "./MobileDemoFrame";
 import { GAME_ROUTES } from "../games/registry";
+import { clearSkipNextEnter } from "../hooks/usePageSlide";
 
 interface LayoutProps {
     children: ReactNode;
@@ -22,6 +23,15 @@ interface LayoutProps {
 function Layout({ children }: LayoutProps) {
     const location = useLocation();
 
+    // Reset the leaf/node "skip next enter" latch once per navigation. This runs
+    // AFTER the destination page's render on the same navigation (parent effects
+    // fire after child renders), so a leaf/node destination still reads the armed
+    // latch and appears static, while a non-sliding destination clears it here so
+    // it never bleeds into a later page. See usePageSlide.
+    useEffect(() => {
+        clearSkipNextEnter();
+    }, [location.pathname]);
+
     // Routes that live inside the shared phone-frame surface (MobileDemoFrame).
     // Adding a page here is all that's needed to opt it into the frame. Game
     // routes are derived from the registry so new games need no edits.
@@ -38,6 +48,8 @@ function Layout({ children }: LayoutProps) {
         "/reader",
         "/dictionary",
         "/tester-dashboard",
+        // Settings opens from the Account header gear as a leaf (slide-up sheet).
+        "/settings",
         ...GAME_ROUTES,
     ];
     const isMobileDemoPage =

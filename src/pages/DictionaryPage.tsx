@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import PageHeader from '../components/PageHeader';
+import LeafPage from '../components/LeafPage';
 import {
     Container,
     Typography,
@@ -103,6 +103,25 @@ function DictionaryPage() {
         };
         return vowelColors[char] || 'transparent';
     };
+
+    // Shared style for the tone-marked pinyin vowel buttons. Square footprint:
+    // the height matches a MUI small contained button (~30px); width is locked to
+    // the same value and the default horizontal padding is removed so the single
+    // glyph stays centered.
+    const specialCharButtonSx = (char: string) => ({
+        width: '30px',
+        minWidth: '30px',
+        height: '30px',
+        p: 0,
+        fontFamily: 'inherit',
+        textTransform: 'lowercase' as const,
+        backgroundColor: getVowelColor(char),
+        color: '#000000',
+        '&:hover': {
+            backgroundColor: getVowelColor(char),
+            filter: 'brightness(0.9)',
+        },
+    });
 
     // Debounce search input
     useEffect(() => {
@@ -265,9 +284,9 @@ function DictionaryPage() {
     };
 
     return (
-        <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-            {/* Common back header → returns to the Home menu. */}
-            <PageHeader title="Dictionary" onBack={() => navigate("/")} />
+        // Dictionary is a LEAF PAGE (see docs/LEAF_NODE_PAGES.md): no footer, DOWN
+        // back arrow (returns to the Home menu), slides up on enter / down on exit.
+        <LeafPage title="Dictionary" onBack={() => navigate("/")}>
             <Box className="dictionary-page__scroll" sx={{ flex: 1, overflowY: 'auto' }}>
         <Container
             className="dictionary-page"
@@ -304,24 +323,16 @@ function DictionaryPage() {
                 >
                     {/* Row 1: a, e (8 chars) */}
                     <Box className="dictionary-page__special-chars-row" sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 0.5, justifyContent: 'center' }}>
-                        {specialChars.slice(0, 8).map((char) => (
+                        {specialChars.slice(0, 8).map((char, idx) => (
                             <Button
                                 key={char}
                                 className="dictionary-page__special-char-btn"
                                 variant="contained"
                                 size="small"
                                 onClick={() => handleSpecialCharClick(char)}
-                                sx={{
-                                    minWidth: '40px',
-                                    fontFamily: 'inherit',
-                                    textTransform: 'lowercase',
-                                    backgroundColor: getVowelColor(char),
-                                    color: '#000000',
-                                    '&:hover': {
-                                        backgroundColor: getVowelColor(char),
-                                        filter: 'brightness(0.9)',
-                                    },
-                                }}
+                                // Extra left margin on the 5th button splits the row's
+                                // two vowel groups (4 + 4) with a gap down the middle.
+                                sx={{ ...specialCharButtonSx(char), ...(idx === 4 ? { ml: 2 } : {}) }}
                             >
                                 {char}
                             </Button>
@@ -329,24 +340,16 @@ function DictionaryPage() {
                     </Box>
                     {/* Row 2: i, o (8 chars) */}
                     <Box className="dictionary-page__special-chars-row" sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 0.5, justifyContent: 'center' }}>
-                        {specialChars.slice(8, 16).map((char) => (
+                        {specialChars.slice(8, 16).map((char, idx) => (
                             <Button
                                 key={char}
                                 className="dictionary-page__special-char-btn"
                                 variant="contained"
                                 size="small"
                                 onClick={() => handleSpecialCharClick(char)}
-                                sx={{
-                                    minWidth: '40px',
-                                    fontFamily: 'inherit',
-                                    textTransform: 'lowercase',
-                                    backgroundColor: getVowelColor(char),
-                                    color: '#000000',
-                                    '&:hover': {
-                                        backgroundColor: getVowelColor(char),
-                                        filter: 'brightness(0.9)',
-                                    },
-                                }}
+                                // Extra left margin on the 5th button splits the row's
+                                // two vowel groups (4 + 4) with a gap down the middle.
+                                sx={{ ...specialCharButtonSx(char), ...(idx === 4 ? { ml: 2 } : {}) }}
                             >
                                 {char}
                             </Button>
@@ -354,24 +357,16 @@ function DictionaryPage() {
                     </Box>
                     {/* Row 3: u, ü (8 chars) */}
                     <Box className="dictionary-page__special-chars-row" sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 1, justifyContent: 'center' }}>
-                        {specialChars.slice(16).map((char) => (
+                        {specialChars.slice(16).map((char, idx) => (
                             <Button
                                 key={char}
                                 className="dictionary-page__special-char-btn"
                                 variant="contained"
                                 size="small"
                                 onClick={() => handleSpecialCharClick(char)}
-                                sx={{
-                                    minWidth: '40px',
-                                    fontFamily: 'inherit',
-                                    textTransform: 'lowercase',
-                                    backgroundColor: getVowelColor(char),
-                                    color: '#000000',
-                                    '&:hover': {
-                                        backgroundColor: getVowelColor(char),
-                                        filter: 'brightness(0.9)',
-                                    },
-                                }}
+                                // Extra left margin on the 5th button splits the row's
+                                // two vowel groups (4 + 4) with a gap down the middle.
+                                sx={{ ...specialCharButtonSx(char), ...(idx === 4 ? { ml: 2 } : {}) }}
                             >
                                 {char}
                             </Button>
@@ -448,18 +443,7 @@ function DictionaryPage() {
                                     variant="contained"
                                     size="small"
                                     onClick={() => handleSpecialCharClick(char)}
-                                    sx={{
-                                        // Width reduced 5% (40px → 38px) per design tweak
-                                        minWidth: '38px',
-                                        fontFamily: 'inherit',
-                                        textTransform: 'lowercase',
-                                        backgroundColor: getVowelColor(char),
-                                        color: '#000000',
-                                        '&:hover': {
-                                            backgroundColor: getVowelColor(char),
-                                            filter: 'brightness(0.9)',
-                                        },
-                                    }}
+                                    sx={specialCharButtonSx(char)}
                                 >
                                     {char}
                                 </Button>
@@ -474,18 +458,7 @@ function DictionaryPage() {
                                     variant="contained"
                                     size="small"
                                     onClick={() => handleSpecialCharClick(char)}
-                                    sx={{
-                                        // Width reduced 5% (40px → 38px) per design tweak
-                                        minWidth: '38px',
-                                        fontFamily: 'inherit',
-                                        textTransform: 'lowercase',
-                                        backgroundColor: getVowelColor(char),
-                                        color: '#000000',
-                                        '&:hover': {
-                                            backgroundColor: getVowelColor(char),
-                                            filter: 'brightness(0.9)',
-                                        },
-                                    }}
+                                    sx={specialCharButtonSx(char)}
                                 >
                                     {char}
                                 </Button>
@@ -701,7 +674,7 @@ function DictionaryPage() {
             </Snackbar>
         </Container>
             </Box>
-        </Box>
+        </LeafPage>
     );
 }
 

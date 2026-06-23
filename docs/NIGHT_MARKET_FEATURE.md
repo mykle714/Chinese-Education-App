@@ -6,6 +6,20 @@ The Night Market is a visual reward system tied to work points. As users study a
 
 ---
 
+## Coordinate System
+
+When coordinates are given for night market assets, they are always in **isometric
+grid units (isoX, isoY)**. See `src/utils/isometric.ts` for the full definition.
+
+- **isoX** — distance along the isometric X axis (toward top-right on screen / east)
+- **isoY** — distance along the isometric Y axis (toward top-left on screen / north)
+- **Origin (0, 0)** — maps to the center of the viewport
+
+All night market assets live at `/home/cow/src/assets/` (NOT `public/assets/` — Vite
+imports these directly as modules).
+
+---
+
 ## Architecture
 
 ```

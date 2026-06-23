@@ -3,7 +3,7 @@
  *
  * For each discoverable zh entry where "wordForms" IS NULL and partsOfSpeech IS NOT NULL,
  * asks Claude Sonnet to extract the base English word from definitions[0] and produce a map
- * of conjugated/inflected forms keyed by: past, present, future, gerund, adverb, adjective, noun.
+ * of conjugated/inflected forms keyed by: past, present, future, gerund, adverb, adjective, noun, noun_plural.
  * Only keys relevant to the entry's partsOfSpeech are included.
  *
  * Usage:
@@ -22,7 +22,7 @@ dotenv.config({ path: path.join(__dirname, '../../../.env.docker') });
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
 import { initRunLog } from '../run-log.js';
-const SCRIPT_VERSION = 1; // bump when this script's logic/prompt changes
+const SCRIPT_VERSION = 2; // bump when this script's logic/prompt changes (v2: noun_plural form)
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -36,7 +36,7 @@ const wordsFilter = targetWords?.length
   ? `AND word1 = ANY(ARRAY[${targetWords.map(w => `'${w.replace(/'/g, "''")}'`).join(', ')}])`
   : '';
 
-const ALLOWED_KEYS = new Set(['past', 'present', 'future', 'gerund', 'adverb', 'adjective', 'noun']);
+const ALLOWED_KEYS = new Set(['past', 'present', 'future', 'gerund', 'adverb', 'adjective', 'noun', 'noun_plural']);
 
 /**
  * Extract the first balanced JSON object from a string.
@@ -74,7 +74,7 @@ Task: Extract the base English word from the definition (strip "to ", articles, 
 - If parts of speech includes "verb" AND the base English word is actually a real English verb (e.g. "run", "learn", "like"): include "past", "present" (3rd person singular), "future" (with "will"), and "gerund" (present participle)
 - If parts of speech includes "adverb": include "adverb"
 - If parts of speech includes "adjective": include "adjective" (the base adjective form)
-- If parts of speech includes "noun": include "noun"
+- If parts of speech includes "noun": include "noun" (singular form) AND "noun_plural" (the English plural form). Use the correct irregular plural where applicable (e.g. "child" → "children", "person" → "people", "mouse" → "mice"), and handle regular -s/-es/-ies rules ("book" → "books", "box" → "boxes", "city" → "cities"). For uncountable/mass nouns with no natural plural (e.g. "water", "information"), set "noun_plural" equal to the singular form.
 
 CRITICAL RULE — adjectives tagged as verbs:
 If the base English word is an adjective (e.g. "happy", "fast", "good") but the POS includes "verb", do NOT generate verb conjugations for the adjective. Instead, only include the "adjective" key. Chinese adjectives are often tagged as verbs grammatically, but "happy" does not conjugate as an English verb.
@@ -90,7 +90,9 @@ Examples:
   word=快, definition="fast", pos=["adjective","adverb"] → {"adjective":"fast","adverb":"quickly"}
   word=高兴, definition="happy", pos=["adjective","verb"] → {"adjective":"happy"}  ← adjective only, "happy" is not a real English verb
   word=喜欢, definition="to like", pos=["verb"] → {"past":"liked","present":"likes","future":"will like","gerund":"liking"}
-  word=书, definition="book", pos=["noun"] → {"noun":"book"}
+  word=书, definition="book", pos=["noun"] → {"noun":"book","noun_plural":"books"}
+  word=孩子, definition="child", pos=["noun"] → {"noun":"child","noun_plural":"children"}
+  word=水, definition="water", pos=["noun"] → {"noun":"water","noun_plural":"water"}  ← mass noun, no distinct plural
 
 Respond with ONLY valid JSON, no explanation.`;
 

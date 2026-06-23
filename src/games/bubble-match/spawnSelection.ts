@@ -64,6 +64,16 @@ export function chooseWantWithMatch(onScreen: BubbleBody[], rng: Rng = Math.rand
 export const NEAR_EMPTY_SPAWN_THRESHOLD = 3;
 
 /**
+ * When the board has this many bubbles or more, we force the next spawn to be one
+ * whose partner is ALREADY on screen (a bubble the player can immediately match),
+ * so a crowding board gets a relief valve instead of piling on more unmatchable
+ * bubbles. Mirror image of NEAR_EMPTY_SPAWN_THRESHOLD: that floor forbids instant
+ * matches to keep a sparse board populated; this ceiling requires one to keep a
+ * full board from overflowing. Only applied when such a candidate exists.
+ */
+export const NEAR_FULL_SPAWN_THRESHOLD = 7;
+
+/**
  * Pick the next bubble to launch from `queue`, given what's currently on screen.
  * Returns the chosen bubble (caller is responsible for removing it from the
  * queue), or null when the queue is empty.
@@ -78,13 +88,21 @@ export function selectNextBubble(
     // A queue candidate's partner is "on screen" iff its pairId is present there.
     const onScreenPairIds = new Set(onScreen.map((b) => b.pairId));
 
-    // Hard constraint on a near-empty board: drop any queue bubble that would
-    // match something already on screen, so the spawn can't be instantly
-    // cleared. Skip the constraint if it would leave nothing to spawn.
+    // Hard board-population constraints (mutually exclusive — the thresholds
+    // don't overlap), applied before the soft biases:
+    //   • Near-empty (≤ NEAR_EMPTY_SPAWN_THRESHOLD): drop any queue bubble that
+    //     would match something on screen, so the spawn can't be instantly
+    //     cleared and the sparse board stays populated.
+    //   • Near-full (≥ NEAR_FULL_SPAWN_THRESHOLD): require a bubble whose partner
+    //     is already on screen, giving the crowded board a clearable relief valve.
+    // Each is skipped if it would leave nothing to spawn.
     let pool = queue;
     if (onScreen.length <= NEAR_EMPTY_SPAWN_THRESHOLD) {
         const nonMatching = queue.filter((b) => !onScreenPairIds.has(b.pairId));
         if (nonMatching.length > 0) pool = nonMatching;
+    } else if (onScreen.length >= NEAR_FULL_SPAWN_THRESHOLD) {
+        const matching = queue.filter((b) => onScreenPairIds.has(b.pairId));
+        if (matching.length > 0) pool = matching;
     }
 
     const wantKind = chooseKind(onScreen, rng);

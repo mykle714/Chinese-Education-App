@@ -6,7 +6,7 @@ import {
   Dialog, DialogTitle, DialogContent, DialogActions, Snackbar,
   Tooltip,
 } from '@mui/material';
-import PageHeader from '../components/PageHeader';
+import LeafPage from '../components/LeafPage';
 import DelayedCircularProgress from '../components/DelayedCircularProgress';
 import CropFreeIcon from '@mui/icons-material/CropFree';
 import StorefrontIcon from '@mui/icons-material/Storefront';
@@ -135,29 +135,35 @@ function NightMarketEnginePage() {
 
   const earnedCount = unlocks.filter(u => u.unlockOrder > 0).length;
 
+  // Night Market is a LEAF PAGE (see docs/LEAF_NODE_PAGES.md): no footer, DOWN back
+  // arrow (→ Home), slides up on enter / down on exit. All three states
+  // (loading / error / engine) render through one LeafPage so it stays a single
+  // instance and the enter slide plays only once.
   if (isLoading) {
     return (
-      <Box
-        className="night-market-engine-loading"
-        sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', flex: 1, minHeight: 0 }}
-      >
-        <DelayedCircularProgress className="night-market-engine-loading-spinner" />
-      </Box>
+      <LeafPage title="Night Market" onBack={() => navigate("/")}>
+        <Box
+          className="night-market-engine-loading"
+          sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', flex: 1, minHeight: 0 }}
+        >
+          <DelayedCircularProgress className="night-market-engine-loading-spinner" />
+        </Box>
+      </LeafPage>
     );
   }
 
   if (error) {
     return (
-      <Box className="night-market-engine-error" sx={{ p: 3 }}>
-        <Alert className="night-market-engine-error-alert" severity="error">{error}</Alert>
-      </Box>
+      <LeafPage title="Night Market" onBack={() => navigate("/")}>
+        <Box className="night-market-engine-error" sx={{ p: 3 }}>
+          <Alert className="night-market-engine-error-alert" severity="error">{error}</Alert>
+        </Box>
+      </LeafPage>
     );
   }
 
   return (
-    <Box className="night-market-engine-root" sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-      {/* Common back header → returns to the Home menu. */}
-      <PageHeader title="Night Market" onBack={() => navigate("/")} />
+    <LeafPage title="Night Market" onBack={() => navigate("/")} className="night-market-engine-root">
     <Box
       className="night-market-engine-page"
       sx={{
@@ -327,7 +333,7 @@ function NightMarketEnginePage() {
         }
       />
     </Box>
-    </Box>
+    </LeafPage>
   );
 }
 

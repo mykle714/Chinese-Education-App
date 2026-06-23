@@ -3,7 +3,7 @@ import { Box } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import type { SxProps, Theme } from "@mui/material/styles";
 import MobileDemoHeader from "./MobileDemoHeader";
-import MobileFooter, { FLOATING_FOOTER_CLEARANCE, FLOATING_FOOTER_INSET, type FooterTab } from "./MobileFooter";
+import { FLOATING_FOOTER_CLEARANCE, FLOATING_FOOTER_INSET, type FooterTab } from "./MobileFooter";
 import { COLORS } from "../theme/colors";
 
 // Shared layout shell for every SCROLLABLE footer-tab hub page (Flashcards/Decks,
@@ -85,6 +85,10 @@ interface MobileTabScreenProps {
     // Used by hub pages that are also drill-ins from the Home menu (e.g. Games).
     showBack?: boolean;
     onBack?: () => void;
+    // Back-chevron direction when showBack is set. "down" (default) for leaf-style
+    // drill-ins; "left" for node pages (footer-bearing hubs). See NodePage and
+    // docs/LEAF_NODE_PAGES.md.
+    arrowDirection?: "down" | "left";
     // Extra header actions rendered flush-right in the header.
     headerExtraActions?: ReactNode;
     // Painted behind the whole scroll surface (header + content + the padding
@@ -103,6 +107,7 @@ const MobileTabScreen: React.FC<MobileTabScreenProps> = ({
     activePage,
     showBack = false,
     onBack,
+    arrowDirection = "down",
     headerExtraActions,
     surfaceColor = COLORS.background,
     contentSx,
@@ -117,13 +122,17 @@ const MobileTabScreen: React.FC<MobileTabScreenProps> = ({
                 activePage={activePage}
                 showBack={showBack}
                 onBack={onBack}
+                arrowDirection={arrowDirection}
                 extraActions={headerExtraActions}
             />
             <ContentInner className={contentClassName} sx={contentSx}>
                 {children}
             </ContentInner>
         </ScrollArea>
-        <MobileFooter activePage={activePage} />
+        {/* The floating footer is rendered once at the frame level by
+            FooterPresenter (so it animates independently of the page slides), not
+            here. `activePage` still drives the header badge + the footer route map.
+            The ScrollArea keeps reserving FLOATING_FOOTER_CLEARANCE for the pill. */}
     </ScreenRoot>
 );
 

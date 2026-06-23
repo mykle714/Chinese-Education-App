@@ -24,8 +24,8 @@ import { GameAssetDAL } from './implementations/GameAssetDAL.js';
 import { GameProgressDAL } from './implementations/GameProgressDAL.js';
 import { Icons8DAL } from './implementations/Icons8DAL.js';
 import { Icons8Controller } from '../controllers/Icons8Controller.js';
-import { WeekliesDAL } from './implementations/WeekliesDAL.js';
-import { WeekliesController } from '../controllers/WeekliesController.js';
+import { WinsDAL } from './implementations/WinsDAL.js';
+import { WinsController } from '../controllers/WinsController.js';
 import { GameAssetService } from '../services/GameAssetService.js';
 import { GameProgressService } from '../services/GameProgressService.js';
 import { GamesController } from '../controllers/GamesController.js';
@@ -39,7 +39,7 @@ const nightMarketDAL = new NightMarketDAL();
 const gameAssetDAL = new GameAssetDAL();
 const gameProgressDAL = new GameProgressDAL();
 const icons8DAL = new Icons8DAL();
-const weekliesDAL = new WeekliesDAL();
+const winsDAL = new WinsDAL();
 
 // Service instances (with DI)
 const userService = new UserService(userDAL);
@@ -54,7 +54,7 @@ const gameAssetService = new GameAssetService(gameAssetDAL);
 const gameProgressService = new GameProgressService(gameProgressDAL);
 
 // Controller instances
-const userController = new UserController(userService);
+const userController = new UserController(userService, icons8DAL);
 const vocabEntryController = new VocabEntryController(vocabEntryService, dictionaryService);
 const onDeckVocabController = new OnDeckVocabController(onDeckVocabService);
 const userMinutePointsController = new UserMinutePointsController(userMinutePointsService);
@@ -65,8 +65,8 @@ const nightMarketController = new NightMarketController(nightMarketService);
 const gamesController = new GamesController(gameAssetService, gameProgressService);
 // icons8 image serving is a thin DB read → no service layer; the controller takes the DAL directly.
 const icons8Controller = new Icons8Controller(icons8DAL);
-// weeklies is a thin per-user flag bag → no service layer; controller takes the DAL directly.
-const weekliesController = new WeekliesController(weekliesDAL);
+// wins is a thin per-user event log → no service layer; controller takes the DAL directly.
+const winsController = new WinsController(winsDAL);
 
 export {
   userDAL,
@@ -97,6 +97,6 @@ export {
   gamesController,
   icons8DAL,
   icons8Controller,
-  weekliesDAL,
-  weekliesController,
+  winsDAL,
+  winsController,
 };

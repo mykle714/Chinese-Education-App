@@ -88,6 +88,27 @@ textarea,
   }
 }
 
+/* TOUCH DEVICES: cpcd is NEVER selectable, even when flagged `.cpcd-row--selectable`.
+   The desktop block above is the ONLY place selection is re-enabled, but it keys off
+   `(hover: hover) and (pointer: fine)` — a hybrid/stylus device (or devtools emulation)
+   can report `pointer: fine` AND be touch-capable, slipping selection back on. This
+   block force-disables selection + caret on any coarse pointer with `!important`, so a
+   stray touch-drag (e.g. while writing in the practice popup) can never select pinyin.
+   Mirrors the product rule: no text is selectable on mobile outside the reader. */
+@media (pointer: coarse) {
+  .cpcd-row__chars,
+  .cpcd-row__chars *,
+  .cpcd-row__pinyin-cell,
+  .cpcd-row--selectable .cpcd-row__chars,
+  .cpcd-row--selectable .cpcd-row__chars *,
+  .cpcd-row--selectable .cpcd-row__pinyin-cell {
+    -webkit-user-select: none !important;
+    user-select: none !important;
+    -webkit-touch-callout: none !important;
+    caret-color: transparent !important;
+  }
+}
+
 /* Targeted touch prevention only for flashcard interaction area */
 .flashcard-container {
   touch-action: none !important;

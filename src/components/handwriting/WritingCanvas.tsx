@@ -174,6 +174,12 @@ const WritingCanvas = forwardRef<WritingCanvasHandle, WritingCanvasProps>(functi
         width: size,
         height: size,
         touchAction: "none", // drawing must never scroll or trigger edge-swipe nav
+        // A draw gesture must never start a text selection / long-press callout that
+        // could extend into whatever sits below the popup (e.g. cpcd pinyin). Pointer
+        // events are stopped in JS, but native touch selection is governed by these.
+        userSelect: "none",
+        WebkitUserSelect: "none",
+        WebkitTouchCallout: "none",
         cursor: disabled ? "not-allowed" : "crosshair",
         display: "block",
       }}

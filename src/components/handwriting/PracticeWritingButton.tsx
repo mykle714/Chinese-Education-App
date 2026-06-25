@@ -2,8 +2,9 @@
  * PracticeWritingButton — the "Practice Writing Me" entry point.
  *
  * A self-contained button that opens the writing-practice popup for a target
- * word. Placed on the eip and the word details page (cdp). Chinese-only for now
- * (the recognizer is zh_CN); renders nothing for other languages.
+ * word. Placed on the eip, the flp main flashcard (front face, stacked above the
+ * audio icon), and the word details page (cdp). Chinese-only for now (the
+ * recognizer is zh_CN); renders nothing for other languages.
  *
  * Spec: docs/HANDWRITING_RECOGNITION.md ("Entry points").
  */
@@ -23,6 +24,8 @@ interface PracticeWritingButtonProps {
   size?: "small" | "medium" | "large";
   /** Compact icon button for tight headers (e.g. the eip). */
   iconOnly?: boolean;
+  /** Hide the gold ★N completion superscript (e.g. on the flashcard, for a clean face). */
+  hideStarBadge?: boolean;
 }
 
 export default function PracticeWritingButton({
@@ -31,6 +34,7 @@ export default function PracticeWritingButton({
   variant = "outlined",
   size = "small",
   iconOnly = false,
+  hideStarBadge = false,
 }: PracticeWritingButtonProps) {
   const { token } = useAuth();
   const [open, setOpen] = useState(false);
@@ -80,8 +84,11 @@ export default function PracticeWritingButton({
   };
 
   // Gold star superscript showing how many of the 4 levels are completed. Hidden at
-  // zero. Wraps either button variant.
-  const withStarBadge = (child: React.ReactNode) => (
+  // zero, or entirely when `hideStarBadge` is set (e.g. the flashcard face, kept
+  // clean for zen). Wraps either button variant.
+  const withStarBadge = (child: React.ReactNode) => {
+    if (hideStarBadge) return child;
+    return (
     <Badge
       className="practice-writing-button__stars"
       badgeContent={starCount > 0 ? `★${starCount}` : 0}
@@ -97,7 +104,8 @@ export default function PracticeWritingButton({
     >
       {child}
     </Badge>
-  );
+    );
+  };
 
   return (
     <>

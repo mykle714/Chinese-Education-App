@@ -15,6 +15,7 @@ import { SIZE, WEIGHT, LEADING, TRACKING } from "../../theme/scale";
 import type { VocabEntry, SideOneLanguage } from "./types";
 import ForeignText from "../../components/ForeignText";
 import { SpeakerButton } from "../../components/SpeakerButton";
+import PracticeWritingButton from "../../components/handwriting/PracticeWritingButton";
 import { getCategoryColor } from "../../utils/categoryColors";
 import { API_BASE_URL } from "../../constants";
 
@@ -92,12 +93,30 @@ const ChineseBlock: React.FC<{
                     showPinyin={showPinyin}
                     useToneColor={showPinyinColor}
                 />
-                {onSpeak && (
+                {/* Writing-practice + audio icons stacked vertically (writing on
+                    top, speaker below), mirroring the eip header stack. The column
+                    is absolutely positioned just off the text's right edge so it
+                    doesn't shift the centered Chinese. Either icon may be absent
+                    (non-zh hides writing; no onSpeak hides audio). */}
+                {(onSpeak || entry.language === "zh") && (
                     <Box sx={{ position: 'absolute', left: '100%', top: '50%', transform: 'translateY(-50%)', ml: 1 }}>
-                        <SpeakerButton
-                            onClick={() => onSpeak(entry)}
-                            isLoading={speakingKey === entry.entryKey}
-                        />
+                        <Box
+                            className="mobile-demo-flashcard-actions"
+                            sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.25 }}
+                        >
+                            <PracticeWritingButton
+                                character={entry.entryKey}
+                                language={entry.language}
+                                iconOnly
+                                hideStarBadge
+                            />
+                            {onSpeak && (
+                                <SpeakerButton
+                                    onClick={() => onSpeak(entry)}
+                                    isLoading={speakingKey === entry.entryKey}
+                                />
+                            )}
+                        </Box>
                     </Box>
                 )}
             </Box>

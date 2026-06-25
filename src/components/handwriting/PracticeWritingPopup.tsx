@@ -26,7 +26,7 @@ import { recordCompletion } from "./completions";
 import { getWritingDraft, setWritingDraft } from "./writingDraftStore";
 import type { Ink, WritingCanvasHandle } from "./types";
 
-type AssistMode = "trace" | "peek" | "flash" | "solo";
+type AssistMode = "trace" | "walkthrough" | "memorize" | "test";
 
 interface TabSpec {
   mode: AssistMode;
@@ -35,17 +35,23 @@ interface TabSpec {
   guideMs: number;
   /** whether drawing is locked while the guide is visible. */
   lockWhileGuide: boolean;
-  /** button caption (Levels 2 & 3 only). */
+  /** bottom button caption (walkthrough = "Show", memorize = "Start Writing"). */
   buttonLabel?: string;
 }
 
-// User-facing labels are the generic "Level N" ladder; the `mode` still carries
-// the assistance semantics (trace/peek/flash/solo) used everywhere internally.
+// The four ascending-difficulty levels. `label` is user-facing; `mode` carries the
+// assistance semantics used throughout (and is the value stored per completion):
+//   trace       — persistent guide, freely traceable (easiest)
+//   walkthrough — guide flashes on entry + a "Show" button re-flashes it (1.5s,
+//                 drawing locked while visible)
+//   memorize    — study the guide as long as you want (drawing blocked), then tap
+//                 "Start Writing" to dismiss it and write from memory
+//   test        — no guide at all (hardest)
 const TABS: TabSpec[] = [
-  { mode: "trace", label: "Level 1", guideMs: 0, lockWhileGuide: false },
-  { mode: "peek", label: "Level 2", guideMs: 3000, lockWhileGuide: false, buttonLabel: "Peek (3s)" },
-  { mode: "flash", label: "Level 3", guideMs: 1000, lockWhileGuide: true, buttonLabel: "Flash (1s)" },
-  { mode: "solo", label: "Level 4", guideMs: 0, lockWhileGuide: false },
+  { mode: "trace", label: "Trace", guideMs: 0, lockWhileGuide: false },
+  { mode: "walkthrough", label: "Step Through", guideMs: 1500, lockWhileGuide: true, buttonLabel: "Show" },
+  { mode: "memorize", label: "Memorize", guideMs: 0, lockWhileGuide: false, buttonLabel: "Start Writing" },
+  { mode: "test", label: "Test", guideMs: 0, lockWhileGuide: false },
 ];
 
 const COOLDOWN_SECONDS = 6; // Peek/Flash button cooldown, measured from press
@@ -103,6 +109,9 @@ export default function PracticeWritingPopup({
   });
   // Bumped on collapse so the grid previews remount and repaint the new ink.
   const [previewNonce, setPreviewNonce] = useState(0);
+  // Bumped each time the user tries to draw during Memorize's study-first lock; the
+  // increment (used as a React key on the "Start Writing" button) replays the pulse.
+  const [startPulseNonce, setStartPulseNonce] = useState(0);
 
   // Guide / draw-lock / cooldown state, driven by the active level + focus.
   const [outlineVisible, setOutlineVisible] = useState(false);
@@ -116,6 +125,15 @@ export default function PracticeWritingPopup({
   // The drawing surface is active in single-char mode, or when a grid slot is focused.
   const drawingIndex = isMulti ? focusedIndex : 0;
   const isDrawing = drawingIndex !== null;
+  // Memorize's study-first phase: the guide is up and drawing is locked until the
+  // user taps "Start Writing". Drives the "no writing" badge + the blocked-attempt nudge.
+  const memorizeBlocked = spec.mode === "memorize" && drawLocked;
+
+  // The user pressed to draw while locked. In Memorize that means "study first" —
+  // pulse the "Start Writing" button to point them at the unlock action.
+  const handleBlockedAttempt = () => {
+    if (memorizeBlocked) setStartPulseNonce((n) => n + 1);
+  };
 
   const clearTimers = () => {
     if (guideTimerRef.current) clearTimeout(guideTimerRef.current);
@@ -157,14 +175,27 @@ export default function PracticeWritingPopup({
     clearTimers();
     setCooldown(0);
     setDrawLocked(false);
+    setStartPulseNonce(0); // fresh entry — no stale pulse on the Start Writing button
     if (spec.mode === "trace") {
       setOutlineVisible(true); // persistent guide (+ looped stroke order)
-    } else if (spec.mode === "solo") {
+    } else if (spec.mode === "test") {
       setOutlineVisible(false); // no assistance
+    } else if (spec.mode === "memorize") {
+      // Study-then-write: show the guide persistently and BLOCK drawing (no timer —
+      // study as long as you want) until the user taps "Start Writing".
+      setOutlineVisible(true);
+      setDrawLocked(true);
     } else {
-      // peek / flash: auto-show on entry (does NOT start the button cooldown)
+      // walkthrough: auto-show the timed guide on entry (does NOT start the cooldown)
       flashGuide(spec.guideMs, spec.lockWhileGuide, false);
     }
+  };
+
+  /** Memorize level: dismiss the persistent guide and unlock drawing for this attempt. */
+  const startWriting = () => {
+    clearTimers();
+    setOutlineVisible(false);
+    setDrawLocked(false);
   };
 
   // Level change (both modes): clear the attempt and reset guide state. On a real
@@ -328,17 +359,21 @@ export default function PracticeWritingPopup({
     boxShadow: "0 2px 10px rgba(0,0,0,0.12)",
   } as const;
 
-  // Swallow draw-gesture events so they never reach the flashcard's document-level
-  // drag/flip listeners (pointer events are also stopped in WritingCanvas).
-  const stop = (e: React.SyntheticEvent) => e.stopPropagation();
-  const gestureStopHandlers = {
-    onPointerDown: stop,
-    onPointerUp: stop,
-    onMouseDown: stop,
-    onMouseUp: stop,
-    onClick: stop,
-    onTouchStart: stop,
-    onTouchEnd: stop,
+  // ── Single generalized lockout ──────────────────────────────────────────────
+  // While the popup is open the ENTIRE writing surface is modal: every gesture is
+  // absorbed at the popup root and never propagates out (to the flp flashcard's
+  // drag/flip handlers, the eip sheet, etc.). This is ONE blocker here instead of
+  // ad-hoc per-island `stopPropagation`. The greyed background (taps that land on
+  // the root itself, not on an island) is the step-back target — handled by the
+  // root onClick below — so the lock and the step-back share this one place.
+  const blockGesture = (e: React.SyntheticEvent) => e.stopPropagation();
+  const rootLockHandlers = {
+    onPointerDown: blockGesture,
+    onPointerUp: blockGesture,
+    onMouseDown: blockGesture,
+    onMouseUp: blockGesture,
+    onTouchStart: blockGesture,
+    onTouchEnd: blockGesture,
   };
 
   const anyInk = inks.some((ink) => ink.length > 0);
@@ -398,17 +433,71 @@ export default function PracticeWritingPopup({
     </Button>
   );
 
-  const peekButton = spec.buttonLabel ? (
-    <Button
-      className="practice-writing__peek"
-      variant="outlined"
-      onClick={() => flashGuide(spec.guideMs, spec.lockWhileGuide, true)}
-      disabled={cooldown > 0}
-      sx={{ minWidth: 140 }}
+  // Bottom assist button, mode-dependent:
+  //   • Memorize → "Start Writing": dismisses the persistent guide + unlocks drawing.
+  //     Shown only while still studying (guide up); no cooldown.
+  //   • Walkthrough → "Show": re-flashes the timed guide, with a 6s cooldown.
+  const assistButton =
+    spec.mode === "memorize" ? (
+      outlineVisible ? (
+        <Button
+          // Re-keyed on each blocked-write attempt so the pulse animation replays.
+          key={`start-${startPulseNonce}`}
+          className="practice-writing__start"
+          variant="contained"
+          disableElevation
+          onClick={startWriting}
+          sx={{
+            minWidth: 140,
+            borderRadius: 3,
+            textTransform: "none",
+            // Pulse once per blocked attempt (nonce > 0; re-keyed to replay).
+            animation: startPulseNonce > 0 ? "practiceStartPulse 0.5s ease-in-out 1" : "none",
+          }}
+        >
+          {spec.buttonLabel}
+        </Button>
+      ) : null
+    ) : spec.buttonLabel ? (
+      <Button
+        className="practice-writing__peek"
+        variant="contained"
+        disableElevation
+        onClick={() => flashGuide(spec.guideMs, spec.lockWhileGuide, true)}
+        disabled={cooldown > 0}
+        sx={{
+          minWidth: 140,
+          borderRadius: 3,
+          textTransform: "none",
+          // Disabled (cooldown) = solid light grey with a live countdown, matching Verify.
+          "&.Mui-disabled": { backgroundColor: COLORS.card, color: COLORS.textSecondary, opacity: 1 },
+        }}
+      >
+        {cooldown > 0 ? `${cooldown}s` : spec.buttonLabel}
+      </Button>
+    ) : null;
+
+  // The assist button lives in an ABSOLUTELY-positioned slot anchored just below the
+  // writing panel, so it sits out of flow: showing/hiding it (Memorize's "Start
+  // Writing" appears then vanishes on tap) never reflows or shifts the panel. The
+  // drawing-area is `position: relative` to anchor this slot at its bottom edge.
+  const assistSlot = (
+    <Box
+      className="practice-writing__assist-slot"
+      sx={{
+        position: "absolute",
+        top: "100%",
+        left: 0,
+        right: 0,
+        mt: 1.5,
+        display: "flex",
+        justifyContent: "center",
+        pointerEvents: assistButton ? "auto" : "none",
+      }}
     >
-      {cooldown > 0 ? `${cooldown}s` : spec.buttonLabel}
-    </Button>
-  ) : null;
+      {assistButton}
+    </Box>
+  );
 
   const levelBar = (
     <Box
@@ -446,14 +535,30 @@ export default function PracticeWritingPopup({
           <Tab
             key={t.mode}
             className={`practice-writing__tab practice-writing__tab--${t.mode}`}
-            // A gold star prefixes the label (inline) once this level is completed.
+            // The label (word) stays centered in the tab pill via MUI's flex
+            // centering. The gold star is ABSOLUTELY positioned just above the word
+            // (out of flow), so completing a level overlays the star on top without
+            // shifting/reflowing the word at all. The word wraps (no nowrap) so
+            // multi-word labels like "Step Through" stack onto two lines.
             label={
-              <span className="practice-writing__tab-label" style={{ whiteSpace: "nowrap" }}>
-                {completedLevels.has(t.mode) && (
-                  <span className="practice-writing__tab-star" style={{ color: "#F6B73C" }}>
-                    ★&nbsp;
-                  </span>
-                )}
+              <span
+                className="practice-writing__tab-label"
+                style={{ position: "relative", display: "inline-block", textAlign: "center", lineHeight: 1.15 }}
+              >
+                <span
+                  className="practice-writing__tab-star"
+                  style={{
+                    position: "absolute",
+                    bottom: "100%", // sits directly above the word, out of flow
+                    left: "50%",
+                    transform: "translateX(-50%)",
+                    color: "#F6B73C",
+                    lineHeight: 1,
+                    visibility: completedLevels.has(t.mode) ? "visible" : "hidden",
+                  }}
+                >
+                  ★
+                </span>
                 {t.label}
               </span>
             }
@@ -485,25 +590,30 @@ export default function PracticeWritingPopup({
         {verifyButton(!activeHasInk)}
       </Box>
 
-      <Box className="practice-writing__drawing-area" sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1.5 }}>
-        <Box className="practice-writing__stage" {...gestureStopHandlers} sx={panelSx}>
+      <Box className="practice-writing__drawing-area" sx={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <Box className="practice-writing__stage" sx={panelSx}>
           <WritingStage
             ref={canvasRef}
             character={chars[0]}
             size={FOCUS_SIZE}
             drawable
-            showGuide={spec.mode !== "solo"}
+            showGuide={spec.mode !== "test"}
             guideVisible={outlineVisible}
             loopAnimation={spec.mode === "trace"}
             guideKey={spec.mode}
             drawLocked={drawLocked}
-            loading={drawLocked}
+            // Spinner only for the timed walkthrough lockout — NOT memorize, whose
+            // lock is open-ended (a perpetual spinner there would be misleading).
+            loading={drawLocked && spec.mode === "walkthrough"}
+            // Memorize study-first lock: red "no writing" badge + nudge on attempts.
+            blocked={memorizeBlocked}
+            onBlockedAttempt={handleBlockedAttempt}
             initialInk={inks[0]}
             onInkChange={handleActiveInkChange}
             result={results[0]}
           />
         </Box>
-        {peekButton}
+        {assistSlot}
       </Box>
 
       {levelBar}
@@ -531,26 +641,31 @@ export default function PracticeWritingPopup({
       </Box>
 
       {/* mb:auto pairs with the header's mt:auto to center the panel (no spacer div). */}
-      <Box className="practice-writing__drawing-area" sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1.5, mb: "auto" }}>
-        <Box className="practice-writing__stage" {...gestureStopHandlers} sx={panelSx}>
+      <Box className="practice-writing__drawing-area" sx={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", mb: "auto" }}>
+        <Box className="practice-writing__stage" sx={panelSx}>
           <WritingStage
             key={`focus-${focusedIndex}`}
             ref={canvasRef}
             character={chars[focusedIndex]}
             size={FOCUS_SIZE}
             drawable
-            showGuide={spec.mode !== "solo"}
+            showGuide={spec.mode !== "test"}
             guideVisible={outlineVisible}
             loopAnimation={spec.mode === "trace"}
             guideKey={`${focusedIndex}-${spec.mode}`}
             drawLocked={drawLocked}
-            loading={drawLocked}
+            // Spinner only for the timed walkthrough lockout — NOT memorize, whose
+            // lock is open-ended (a perpetual spinner there would be misleading).
+            loading={drawLocked && spec.mode === "walkthrough"}
+            // Memorize study-first lock: red "no writing" badge + nudge on attempts.
+            blocked={memorizeBlocked}
+            onBlockedAttempt={handleBlockedAttempt}
             initialInk={inks[focusedIndex]}
             onInkChange={handleActiveInkChange}
             result="idle"
           />
         </Box>
-        {peekButton}
+        {assistSlot}
       </Box>
     </>
   );
@@ -581,11 +696,7 @@ export default function PracticeWritingPopup({
           <Box
             key={`slot-${i}`}
             className={`practice-writing__grid-slot practice-writing__grid-slot--${i}`}
-            {...gestureStopHandlers}
-            onClick={(e) => {
-              e.stopPropagation();
-              focusSlot(i);
-            }}
+            onClick={() => focusSlot(i)}
             sx={{
               ...panelSx,
               width: GRID_SLOT,
@@ -612,11 +723,21 @@ export default function PracticeWritingPopup({
                 character={ch}
                 size={FOCUS_SIZE}
                 drawable={false}
-                // Grid previews show the grey guide for Level 1 (trace) and Level 2
-                // (peek); Level 3 (flash) and Level 4 (solo) leave previews blank.
-                // The timed reveal/lock behavior is a focused-mode aid, not the preview.
-                showGuide={spec.mode === "trace" || spec.mode === "peek"}
-                guideVisible={spec.mode === "trace" || spec.mode === "peek"}
+                // Grid-preview guide rules:
+                //   • Trace / Step Through (walkthrough) → always show the grey guide.
+                //   • Memorize → show the guide ONLY while the slot is empty; once the
+                //     user has written in it, show their writing alone (study-then-write).
+                //   • Test → never.
+                showGuide={
+                  spec.mode === "trace" ||
+                  spec.mode === "walkthrough" ||
+                  (spec.mode === "memorize" && (inks[i]?.length ?? 0) === 0)
+                }
+                guideVisible={
+                  spec.mode === "trace" ||
+                  spec.mode === "walkthrough" ||
+                  (spec.mode === "memorize" && (inks[i]?.length ?? 0) === 0)
+                }
                 loopAnimation={false}
                 guideKey={`grid-${i}-${spec.mode}`}
                 initialInk={inks[i]}
@@ -657,9 +778,14 @@ export default function PracticeWritingPopup({
     >
       <Box
         className="practice-writing"
-        // Taps on the transparent area around the islands (not on an island —
-        // those stop propagation) step back one level, mirroring the backdrop.
+        // The one generalized lockout (see rootLockHandlers): absorbs every gesture
+        // so nothing leaks to the page below. The greyed background — a tap whose
+        // target is the root itself, i.e. NOT on a floating island — steps back one
+        // level: focused slot → 2×2 grid, and grid / single-char → close. Taps on an
+        // island stop here too (lock) but skip the step-back.
+        {...rootLockHandlers}
         onClick={(e) => {
+          e.stopPropagation();
           if (e.target === e.currentTarget) handleBackgroundTap();
         }}
         sx={{

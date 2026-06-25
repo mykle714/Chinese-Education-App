@@ -164,6 +164,24 @@ textarea,
   }
 }
 
+/* Practice-writing "Start Writing" nudge: a brief scale + expanding glow ring,
+   triggered when the user tries to draw while Memorize's study-first lock is on.
+   Draws the eye to the unlock button. See PracticeWritingPopup.tsx. */
+@keyframes practiceStartPulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(246, 183, 60, 0.7);
+  }
+  50% {
+    transform: scale(1.07);
+    box-shadow: 0 0 0 10px rgba(246, 183, 60, 0);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(246, 183, 60, 0);
+  }
+}
+
 .feedback-indicator {
   animation: floatUpFade 1s ease-out forwards;
 }

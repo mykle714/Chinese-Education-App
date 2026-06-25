@@ -14,7 +14,7 @@
  */
 import { forwardRef } from "react";
 import { Box, CircularProgress } from "@mui/material";
-import { CheckCircle, Cancel } from "@mui/icons-material";
+import { CheckCircle, Cancel, Block } from "@mui/icons-material";
 import { COLORS } from "../../theme";
 import HanziGuide from "./HanziGuide";
 import WritingCanvas from "./WritingCanvas";
@@ -47,6 +47,10 @@ interface WritingStageProps {
   resultIconSize?: number;
   /** Show a small corner spinner (e.g. Level 3's draw lockout while the guide flashes). */
   loading?: boolean;
+  /** Show the red "no writing" badge (⃠) in the corner — Memorize's study-first lock. */
+  blocked?: boolean;
+  /** Fires when the user presses down to draw while the canvas is locked. */
+  onBlockedAttempt?: () => void;
 }
 
 const WritingStage = forwardRef<WritingCanvasHandle, WritingStageProps>(function WritingStage(
@@ -64,6 +68,8 @@ const WritingStage = forwardRef<WritingCanvasHandle, WritingStageProps>(function
     result,
     resultIconSize = 40,
     loading = false,
+    blocked = false,
+    onBlockedAttempt,
   },
   ref,
 ) {
@@ -74,6 +80,14 @@ const WritingStage = forwardRef<WritingCanvasHandle, WritingStageProps>(function
           className="writing-stage__lock-spinner"
           size={20}
           sx={{ position: "absolute", top: 8, left: 8, color: COLORS.textSecondary, pointerEvents: "none", zIndex: 1 }}
+        />
+      )}
+      {blocked && (
+        // "No writing" badge: a red circle-with-a-slash in the top-left corner, the
+        // visual cue that the canvas is locked during Memorize's study-first phase.
+        <Block
+          className="writing-stage__blocked-badge"
+          sx={{ position: "absolute", top: 8, left: 8, color: COLORS.redMain, fontSize: 22, pointerEvents: "none", zIndex: 2 }}
         />
       )}
       {showGuide && (
@@ -92,6 +106,7 @@ const WritingStage = forwardRef<WritingCanvasHandle, WritingStageProps>(function
           disabled={!drawable || drawLocked}
           initialInk={initialInk}
           onInkChange={onInkChange}
+          onBlockedAttempt={onBlockedAttempt}
         />
       </Box>
 

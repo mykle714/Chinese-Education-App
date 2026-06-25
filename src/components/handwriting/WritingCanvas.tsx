@@ -23,6 +23,8 @@ interface WritingCanvasProps {
   initialInk?: Ink;
   /** Fires whenever the stroke set changes (start/finish a stroke, clear). */
   onInkChange?: (ink: Ink) => void;
+  /** Fires when the user presses down to draw while `disabled` (a blocked attempt). */
+  onBlockedAttempt?: () => void;
   strokeColor?: string;
   strokeWidth?: number;
 }
@@ -33,7 +35,7 @@ interface WritingCanvasProps {
 const MIN_POINT_DISTANCE = 2;
 
 const WritingCanvas = forwardRef<WritingCanvasHandle, WritingCanvasProps>(function WritingCanvas(
-  { size, disabled = false, initialInk, onInkChange, strokeColor = COLORS.onSurface, strokeWidth = 6 },
+  { size, disabled = false, initialInk, onInkChange, onBlockedAttempt, strokeColor = COLORS.onSurface, strokeWidth = 6 },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -42,8 +44,10 @@ const WritingCanvas = forwardRef<WritingCanvasHandle, WritingCanvasProps>(functi
   const currentRef = useRef<Stroke | null>(null);
   // Stable refs for values the (mount-only) effect's draw helpers need to read live.
   const disabledRef = useRef(disabled);
+  const blockedAttemptRef = useRef(onBlockedAttempt);
   const styleRef = useRef({ strokeColor, strokeWidth });
   disabledRef.current = disabled;
+  blockedAttemptRef.current = onBlockedAttempt;
   styleRef.current = { strokeColor, strokeWidth };
 
   const notifyChange = () => onInkChange?.(inkRef.current);
@@ -116,7 +120,13 @@ const WritingCanvas = forwardRef<WritingCanvasHandle, WritingCanvasProps>(functi
     };
 
     const onDown = (e: PointerEvent) => {
-      if (disabledRef.current) return;
+      if (disabledRef.current) {
+        // Drawing is locked — surface the blocked attempt so the UI can nudge the
+        // user toward the unlock action (e.g. pulse "Start Writing" in Memorize).
+        e.preventDefault();
+        blockedAttemptRef.current?.();
+        return;
+      }
       e.preventDefault();
       e.stopPropagation(); // keep draw gestures from reaching the flashcard's document-level drag/flip
       canvas.setPointerCapture(e.pointerId); // finish the stroke even if it leaves the canvas

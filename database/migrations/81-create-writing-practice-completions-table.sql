@@ -3,7 +3,7 @@
 -- Tracks per-user completion of the character writing-practice drill. A "completion"
 -- is the FIRST successful Verify (target === recognizer top-1) of a given assistance
 -- level for a given character. Each completed level earns the user one star toward
--- that character (max 4: trace, peek, flash, solo). See docs/HANDWRITING_RECOGNITION.md.
+-- that character (max 4: trace, walkthrough, memorize, test). See docs/HANDWRITING_RECOGNITION.md.
 --
 -- Shape: row-per-first-completion (Shape A). The unique constraint makes repeated
 -- successes idempotent, so the table is STATE, not history — bounded at <=4 rows per
@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS writing_practice_completions (
     "userId"      UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     language      VARCHAR(8)  NOT NULL,                             -- 'zh'
     "entryKey"    VARCHAR     NOT NULL,                             -- the single character practiced
-    level         VARCHAR(16) NOT NULL,                             -- 'trace' | 'peek' | 'flash' | 'solo'
+    level         VARCHAR(16) NOT NULL,                             -- 'trace' | 'walkthrough' | 'memorize' | 'test'
     "completedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()   -- first-success timestamp
 );
 

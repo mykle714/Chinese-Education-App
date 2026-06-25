@@ -11,7 +11,7 @@
 import db from '../db.js';
 
 /** The four assistance levels; also the allow-list for incoming `level` values. */
-export const WRITING_PRACTICE_LEVELS = ['trace', 'peek', 'flash', 'solo'] as const;
+export const WRITING_PRACTICE_LEVELS = ['trace', 'walkthrough', 'memorize', 'test'] as const;
 export type WritingPracticeLevel = (typeof WRITING_PRACTICE_LEVELS)[number];
 
 export function isWritingPracticeLevel(value: unknown): value is WritingPracticeLevel {

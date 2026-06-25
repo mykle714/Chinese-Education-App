@@ -133,36 +133,55 @@ stand-alone close button — there is no single bordered header:
 | **Verify** | **Stand-alone button to the right** of the toolbar (same row as the Clear/Undo pill, above the writing panel). | Sends the current tab's on-screen strokes to `POST /api/handwriting/recognize`; **correct iff target == top-1 candidate** (see decisions). Result feedback is a simple **green check (✓)** on pass or **red X (✗)** on fail — no auto-advance, no retry gating; the user stays on the tab and can clear/redraw/re-verify freely. |
 | **Level bar** | **Bottom floating pill**, footer-style, spanning the popup width. | The four level tabs (see below). |
 
-Dismissal: the **✕** *and* **tapping the backdrop** both close the popup. Both
-are treated identically (a click-off is assumed possibly-accidental), so both
+Dismissal: the **✕** closes the popup; on desktop, **tapping the backdrop outside
+the phone card** (the Dialog's own scrim, via `onClose`) does the same. Both
 **preserve** state per the lifecycle rules below.
+
+**Generalized lockout + greyed-background step-back.** While the popup is open the
+entire writing surface is a single modal layer: one set of gesture handlers on the
+popup root (`rootLockHandlers` in `PracticeWritingPopup.tsx`) absorbs **every**
+pointer/touch/mouse/click event, so nothing leaks to the page underneath (notably
+the flp flashcard's drag/flip handlers and the eip sheet). Tapping the **greyed
+background** — a tap whose target is the root itself (the dark area around the
+floating islands), *not* an island — **steps back one level**: a focused grid slot
+collapses to the **2×2 grid**, and the grid / single-char view **closes** the popup
+(`handleBackgroundTap`). Taps on an island are locked here too but skip the
+step-back. This is deliberately ONE blocker (lock + step-back in the same place)
+rather than per-island `stopPropagation`, which previously let edge-of-tab taps
+both close the writer and reach the card.
 
 ### Tabs — progressive assistance
 
 Four levels, decreasing assistance left→right, presented as the **bottom floating
-level bar** and labeled generically **Level 1 – Level 4** (the internal `mode`
-still carries the trace/peek/flash/solo semantics). Only the assistance behavior
-differs; the chrome, canvas, and grading are identical across levels.
+level bar**. Each tab shows a user-facing **label** (`Trace` / `Step Through` /
+`Memorize` / `Test`); the internal **`mode`** (`trace` / `walkthrough` / `memorize`
+/ `test`) carries the assistance semantics and is the value stored per completion.
+Only the assistance behavior differs; the chrome, canvas, and grading are identical
+across levels.
 
-| # | Level (mode) | Background guide (greyed target char + stroke order) | On tab entry | "Show" button | Draw during guide? |
+| # | Label (`mode`) | Background guide (greyed target char + stroke order) | On tab entry | Bottom button | Draw during guide? |
 |---|---|---|---|---|---|
-| 1 | **Level 1** (`trace`) | **Always shown** (persistent grey background w/ stroke order) | guide visible | — (always on) | Yes |
-| 2 | **Level 2** (`peek`) | Default **off** | guide shown **3s**, then fades | re-shows guide for **3s**; **6s cooldown** | **Yes** |
-| 3 | **Level 3** (`flash`) | Default **off** | guide shown **1s**, then fades | flashes guide for **1s**; **6s cooldown** | **No** — drawing is locked while the guide is visible |
-| 4 | **Level 4** (`solo`) | Never shown; no button | blank | — | n/a |
+| 1 | **Trace** (`trace`) | **Always shown** (persistent grey background w/ stroke order) | guide visible | — (always on) | Yes |
+| 2 | **Step Through** (`walkthrough`) | Default **off** | guide shown **1.5s**, then fades | **"Show"** — re-flashes guide for **1.5s**; **6s cooldown** | **No** — drawing is locked while the guide is visible |
+| 3 | **Memorize** (`memorize`) | Shown persistently on entry; **no timer** (study as long as you want) | guide visible, **drawing blocked** | **"Start Writing"** — dismisses the guide + unlocks drawing (no cooldown) | **No** until "Start Writing", then **Yes** |
+| 4 | **Test** (`test`) | Never shown; no button | blank | — | n/a |
 
 Notes:
-- Tab 3 mirrors Tab 2's structure (entry flash + re-show button) but with a
-  **1s** duration and **drawing disabled** for the duration the guide is on screen.
-- **Peek/Flash button cooldown (Tabs 2 & 3): 6s from press.** When the button is
-  pressed, it is disabled for 6 seconds **measured from the press** — the cooldown
-  overlaps the guide-visible window (3s on Tab 2, 1s on Tab 3), so the button
-  re-enables 6s after press regardless of how long the guide was shown. The
-  automatic on-entry guide does **not** start a cooldown (the button is usable
-  immediately on tab entry).
-- **Cooldown affordance:** while locked, the button is **greyed out (disabled)**
-  and shows a **live countdown** of remaining seconds (6 → 0), returning to its
-  normal enabled label when the cooldown ends.
+- **Step Through** = the only *timed* guide: it flashes on entry and on each "Show"
+  press for **1.5s**, with **drawing disabled** while the guide is on screen.
+- **Memorize** = study-then-write. The guide is shown indefinitely with drawing
+  **blocked**; the bottom **"Start Writing"** button hides the guide and unlocks
+  drawing (and then disappears). No timer, no cooldown — re-entering the level (or,
+  multi-char, re-focusing a slot) re-arms the study gate. No lock spinner is shown
+  (the lock is open-ended, unlike Step Through's timed flash).
+- **"Show" button cooldown (Step Through only): 6s from press.** When pressed, it is
+  disabled for 6 seconds **measured from the press** — the cooldown overlaps the
+  1.5s guide-visible window, so the button re-enables 6s after press. The automatic
+  on-entry guide does **not** start a cooldown (the button is usable immediately on
+  tab entry).
+- **Cooldown affordance:** while locked, the "Show" button is **greyed out
+  (disabled)** and shows a **live countdown** of remaining seconds (6 → 0),
+  returning to "Show" when the cooldown ends.
 - "Stroke order" background = the greyed target glyph with its stroke-order guide
   (see open question on rendering source below).
 
@@ -173,7 +192,7 @@ Two distinct "reset" scopes — **soft** (tab switch) vs. **hard** (context chan
 | Trigger | Effect |
 |---|---|
 | **Switch level** (within the popup) | **Clears** the attempt — every character's canvas is emptied and results reset (multi collapses to the grid). Each level is a fresh attempt; only one level's ink exists at a time. |
-| **Close popup** (✕ *or* backdrop tap) | **Preserves** every character's ink, the active level index, **and** the focused grid slot. Reopening returns the user to the same level and view (grid or the same enlarged slot) with their drawing intact. Rationale: a click-off may be accidental — let them resume. |
+| **Close popup** (✕, or desktop backdrop tap) | **Preserves** every character's ink, the active level index, **and** the focused grid slot. Reopening returns the user to the same level and view (grid or the same enlarged slot) with their drawing intact. Rationale: a click-off may be accidental — let them resume. |
 | **Leave the flp** (`/flashcards/learn`) | **Hard clear** — discard preserved draft. |
 | **Mark a card** | **Hard clear** — discard preserved draft. |
 | **Leave the word details page (cdp)** | **Hard clear** — discard preserved draft. |
@@ -208,6 +227,9 @@ each character's ink; recognition runs per character.
   the same `FOCUS_SIZE` (300px) space; the grid previews are the full-size stage
   rendered then **CSS-scaled** down, so a preview and its enlarged panel share one
   coordinate system and recognition is identical regardless of on-screen size.
+- **Grid-preview guide** (per slot): **Trace** and **Step Through** always show the
+  grey guide behind any writing; **Memorize** shows the guide **only while the slot
+  is empty** (once written, the writing shows alone); **Test** never shows it.
 - **Verify (grid only)** recognises **all characters in parallel** (one proxy call
   each, top-1 vs. that character) and overlays **✓/✗ per slot**. An empty slot
   counts as ✗.
@@ -226,13 +248,16 @@ character is top-1-correct in one Verify (a partial pass awards nothing).
   ≤4 rows/character/user. Stars = `COUNT(*)` grouped by `entryKey`. State, not
   history. Helper: `server/utils/writingPracticeStore.ts`; routes
   `GET/POST /api/handwriting/completions` (`server/server.ts`).
-- **Tab star:** a gold ★ prefixes a level's label (inline) once that level is
-  completed for the word (`PracticeWritingPopup.tsx`).
+- **Tab star:** a gold ★ sits **above** a level's label once that level is
+  completed for the word. The label stays centered in the tab; the star is
+  absolutely positioned above it (out of flow), so it overlays on completion
+  without shifting/reflowing the word (`PracticeWritingPopup.tsx`).
 - **Button superscript:** the "Practice Writing Me" button shows a gold `★N`
   badge = number of completed levels for the character; the button fetches the set
   on mount and owns it as the single source of truth, passing it to the popup and
   receiving updates when a level is freshly cleared (`PracticeWritingButton.tsx`,
-  `completions.ts`).
+  `completions.ts`). The **flp flashcard** instance passes `hideStarBadge` to omit
+  the badge (keeping the card face clean); the eip and cdp instances keep it.
 - **Award flow:** on a correct Verify for an un-completed level, the popup POSTs the
   completion (idempotent) and lifts the returned full set up to the button, which
   refreshes both the superscript and the tab stars.
@@ -259,9 +284,10 @@ display-only.
 
 **Layering:** Hanzi Writer SVG underneath (the guide); our transparent capture
 canvas on top, same coordinate box. Tab assistance maps to Hanzi Writer calls:
-Tab 1 = persistent `showOutline` (+ optional looped stroke-order animation);
-Tabs 2/3 = `showOutline`/`hideOutline` driven by the entry timer and the
-Peek/Flash button; Tab 4 = no Hanzi Writer instance.
+**Trace** = persistent `showOutline` (+ optional looped stroke-order animation);
+**Step Through** = `showOutline`/`hideOutline` driven by the entry timer and the
+"Show" button; **Memorize** = persistent `showOutline` cleared by "Start Writing";
+**Test** = no Hanzi Writer instance.
 
 **Data source:** feed Hanzi Writer our **local** `makemeahanzi` data via
 `charDataLoader` rather than its default CDN, so the guide has no external runtime
@@ -271,8 +297,8 @@ dependency (consistent with the offline-fallback stance of the recognition layer
 
 | Layer | Component | File |
 |---|---|---|
-| Presentation (entry) | "Practice Writing Me" button on the **eip** and **cdp** (zh + **1–4 characters**; icon variant in eip header) | `src/components/handwriting/PracticeWritingButton.tsx`; placed in `src/pages/FlashcardsLearnPage/InfoCardPanelBody.tsx` + `src/pages/VocabCardDetailPage.tsx` |
-| Presentation (surface) | "Practice Writing Me" **popup** — single panel (1 char) or 2×2 grid + focus (2–4 chars); floating bars (corner ✕, Clear/Undo pill, Verify, bottom Level 1–4 bar), cooldowns, lifecycle, ✓/✗ | `src/components/handwriting/PracticeWritingPopup.tsx` |
+| Presentation (entry) | "Practice Writing Me" button on the **eip**, the **flp main flashcard** (front face, stacked above the audio icon), and **cdp** (zh + **1–4 characters**; icon variant on the eip header + flashcard) | `src/components/handwriting/PracticeWritingButton.tsx`; placed in `src/pages/FlashcardsLearnPage/InfoCardPanelBody.tsx`, `src/pages/FlashcardsLearnPage/FlashCardSection.tsx` (ChineseBlock) + `src/pages/VocabCardDetailPage.tsx` |
+| Presentation (surface) | "Practice Writing Me" **popup** — single panel (1 char) or 2×2 grid + focus (2–4 chars); floating bars (corner ✕, Clear/Undo pill, Verify, bottom Trace/Step Through/Memorize/Test bar), cooldowns, lifecycle, ✓/✗ | `src/components/handwriting/PracticeWritingPopup.tsx` |
 | Presentation (panel) | One writing panel = guide + capture canvas + ✓/✗ overlay; reused for the single panel, the focused slot, and the scaled grid previews | `src/components/handwriting/WritingStage.tsx` |
 | Presentation (guide) | **Hanzi Writer** (display-only) — grey outline + stroke-order guide; local data via `charDataLoader` (CDN fallback) | `src/components/handwriting/HanziGuide.tsx`, `loadCharData.ts` |
 | Presentation (capture) | DIY canvas overlay → emits `Ink`; Pointer Events, `touchAction:none`, undo/clear | `src/components/handwriting/WritingCanvas.tsx` |

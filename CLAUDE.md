@@ -139,6 +139,7 @@ An hourly Postgres cron on the prod server (a) breaks stale streaks (mirroring `
 
 ### Night Market
 → See [docs/NIGHT_MARKET_FEATURE.md](./docs/NIGHT_MARKET_FEATURE.md)
+→ Templates (layout authoring/tiling): [docs/NIGHT_MARKET_TEMPLATES.md](./docs/NIGHT_MARKET_TEMPLATES.md)
 → Pedestrian movement: [docs/PEDESTRIAN_WALKING_ALGORITHM.md](./docs/PEDESTRIAN_WALKING_ALGORITHM.md)
 → Tile/street graph invariants: [docs/NIGHT_MARKET_GRAPH_ASSUMPTIONS.md](./docs/NIGHT_MARKET_GRAPH_ASSUMPTIONS.md)
 

@@ -4,6 +4,10 @@
 
 The Night Market is a visual reward system tied to work points. As users study and accumulate work points (1 point = 1 minute of active study), they unlock items that populate a personal night market scene. Each user's market is unique because unlocks are randomly selected from a pool and persisted for the life of the account.
 
+> **Layout authoring:** the map itself is assembled from prebuilt rectangular
+> templates tiled together — see [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md)
+> (DESIGN stage).
+
 ---
 
 ## Coordinate System

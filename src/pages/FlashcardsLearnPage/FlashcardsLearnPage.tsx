@@ -18,6 +18,7 @@ import TooManyTabsSnackbar from "./TooManyTabsSnackbar";
 import FlashCardSection from "./FlashCardSection";
 import SheetPanel, { type SheetPanelBodyHandle } from "./SheetPanel";
 import SettingsPanelBody from "./SettingsPanelBody";
+import { clearWritingDraft } from "../../components/handwriting/writingDraftStore";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useTTS, SLOW_SENTENCE_RATE } from "../../hooks/useTTS";
 import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
@@ -111,6 +112,14 @@ const FlashcardsLearnPage: React.FC = () => {
 
     // Keep the bridge ref pointing at the live drag controls every render.
     cardDragRef.current = { isFlipped, setIsFlipped, resetDragPosition };
+
+    // Hard-clear the preserved writing-practice draft when a card is marked (which
+    // advances currentIndex) and when leaving the flp (cleanup on unmount).
+    // (docs/HANDWRITING_RECOGNITION.md "Canvas / state lifecycle")
+    useEffect(() => {
+        clearWritingDraft();
+        return () => clearWritingDraft();
+    }, [currentIndex]);
 
     // Log enrichment data for the current card whenever it changes (covers both correct and incorrect advances)
     useEffect(() => {

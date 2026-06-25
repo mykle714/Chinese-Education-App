@@ -11,6 +11,8 @@ import type { VocabEntry, DictionaryEntry } from "../types";
 import ForeignText from "../components/ForeignText";
 import PosBadge from "../components/PosBadge";
 import SegmentedSentenceDisplay from "../components/SegmentedSentenceDisplay";
+import PracticeWritingButton from "../components/handwriting/PracticeWritingButton";
+import { clearWritingDraft } from "../components/handwriting/writingDraftStore";
 import { getBreakdownItems } from "../utils/breakdownUtils";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { getCategoryColor } from "../utils/categoryColors";
@@ -114,6 +116,12 @@ const VocabCardDetailPage: React.FC = () => {
 
         if (id) fetchEntry();
     }, [id]);
+
+    // Hard-clear the preserved writing-practice draft when leaving the cdp.
+    // (docs/HANDWRITING_RECOGNITION.md "Canvas / state lifecycle")
+    useEffect(() => {
+        return () => clearWritingDraft();
+    }, []);
 
     // Hard-deletes the VocabEntry and returns to the decks page
     const handleDelete = async () => {
@@ -239,6 +247,11 @@ const VocabCardDetailPage: React.FC = () => {
                                 >
                                     {stripParentheses(entry.definition ?? '')}
                                 </Typography>
+
+                                {/* Writing practice entry point (Chinese only — renders null otherwise) */}
+                                <Box sx={{ mt: 1.5 }}>
+                                    <PracticeWritingButton character={entry.entryKey} language={entry.language} />
+                                </Box>
                             </HeroCard>
 
                             {/* Dictionary Definition */}

@@ -20,6 +20,9 @@ export function dictionaryEntryToVocabEntry(dict: DictionaryEntry): VocabEntry {
     return {
         id: dict.id,
         entryKey: dict.word1,
+        // Carry the language through so language-gated UI (e.g. the zh-only
+        // "Practice Writing Me" button) works on breakdown/dictionary drill-ins.
+        language: dict.language,
         pronunciation: dict.pronunciation ?? null,
         definition: dict.definitions?.[0] ?? null,
         longDefinition: dict.longDefinition ?? null,

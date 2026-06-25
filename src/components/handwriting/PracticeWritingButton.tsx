@@ -1,0 +1,141 @@
+/**
+ * PracticeWritingButton — the "Practice Writing Me" entry point.
+ *
+ * A self-contained button that opens the writing-practice popup for a target
+ * word. Placed on the eip and the word details page (cdp). Chinese-only for now
+ * (the recognizer is zh_CN); renders nothing for other languages.
+ *
+ * Spec: docs/HANDWRITING_RECOGNITION.md ("Entry points").
+ */
+import { useCallback, useEffect, useState } from "react";
+import { Badge, Button, IconButton, Tooltip } from "@mui/material";
+import BrushIcon from "@mui/icons-material/Brush";
+import PracticeWritingPopup from "./PracticeWritingPopup";
+import { useAuth } from "../../AuthContext";
+import { fetchCompletedLevels } from "./completions";
+
+interface PracticeWritingButtonProps {
+  character: string;
+  /** Recognition is zh-only; the button renders null for any other/absent language. */
+  language: string | undefined;
+  /** Override the default outlined look. */
+  variant?: "text" | "outlined" | "contained";
+  size?: "small" | "medium" | "large";
+  /** Compact icon button for tight headers (e.g. the eip). */
+  iconOnly?: boolean;
+}
+
+export default function PracticeWritingButton({
+  character,
+  language,
+  variant = "outlined",
+  size = "small",
+  iconOnly = false,
+}: PracticeWritingButtonProps) {
+  const { token } = useAuth();
+  const [open, setOpen] = useState(false);
+  // Completed assistance levels for this character (the stars). Owned here so the
+  // superscript count and the popup's per-tab stars share one source of truth.
+  const [completedLevels, setCompletedLevels] = useState<Set<string>>(new Set());
+
+  // Gate: Chinese only (zh_CN recognizer), 1–4 characters. Single characters use
+  // one large panel; 2–4 use the 2×2 grid (top-two for 2 chars; +bottom-left for
+  // 3; all four for 4). Words longer than 4 chars are excluded — the grid only has
+  // four slots (docs/HANDWRITING_RECOGNITION.md "Multi-character grid").
+  // [...character] counts code points so surrogate-pair CJK glyphs count as one.
+  const charCount = [...character].length;
+  const eligible = language === "zh" && charCount >= 1 && charCount <= 4;
+
+  // Load existing stars for this character so the superscript shows before opening.
+  useEffect(() => {
+    if (!eligible || !token) return;
+    let cancelled = false;
+    fetchCompletedLevels("zh", character, token)
+      .then((levels) => {
+        if (!cancelled) setCompletedLevels(new Set(levels));
+      })
+      .catch(() => {
+        /* non-fatal: just show no stars */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [eligible, character, token]);
+
+  // Called by the popup when a level is freshly completed (it returns the new set).
+  const handleLevelsChange = useCallback((levels: string[]) => {
+    setCompletedLevels(new Set(levels));
+  }, []);
+
+  if (!eligible) return null;
+
+  const starCount = completedLevels.size;
+
+  // In the eip the button sits inside flip/drag-sensitive surfaces, so taps must
+  // not bubble (mirrors the SpeakerButton / add-to-library stop-propagation).
+  const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+  const openPopup = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setOpen(true);
+  };
+
+  // Gold star superscript showing how many of the 4 levels are completed. Hidden at
+  // zero. Wraps either button variant.
+  const withStarBadge = (child: React.ReactNode) => (
+    <Badge
+      className="practice-writing-button__stars"
+      badgeContent={starCount > 0 ? `★${starCount}` : 0}
+      overlap="rectangular"
+      sx={{
+        "& .MuiBadge-badge": {
+          bgcolor: "#F6B73C",
+          color: "#3A2A00",
+          fontWeight: 700,
+          fontSize: "0.65rem",
+        },
+      }}
+    >
+      {child}
+    </Badge>
+  );
+
+  return (
+    <>
+      {iconOnly
+        ? withStarBadge(
+            <Tooltip title="Practice writing me">
+              <IconButton
+                className="practice-writing-button"
+                size={size === "large" ? "medium" : "small"}
+                aria-label="Practice writing me"
+                onClick={openPopup}
+                onMouseDown={stop}
+                onTouchStart={stop}
+                onTouchEnd={stop}
+              >
+                <BrushIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>,
+          )
+        : withStarBadge(
+            <Button
+              className="practice-writing-button"
+              variant={variant}
+              size={size}
+              startIcon={<BrushIcon />}
+              onClick={openPopup}
+              onMouseDown={stop}
+            >
+              Practice Writing Me
+            </Button>,
+          )}
+      <PracticeWritingPopup
+        open={open}
+        character={character}
+        completedLevels={completedLevels}
+        onLevelsChange={handleLevelsChange}
+        onClose={() => setOpen(false)}
+      />
+    </>
+  );
+}

@@ -5,6 +5,7 @@ import { stripParentheses } from "../../utils/definitionUtils";
 import ForeignText from "../../components/ForeignText";
 import PosBadge from "../../components/PosBadge";
 import SegmentedSentenceDisplay from "../../components/SegmentedSentenceDisplay";
+import PracticeWritingButton from "../../components/handwriting/PracticeWritingButton";
 import LongDefinitionDisplay from "../../components/LongDefinitionDisplay";
 import InfoCardListRow from "./InfoCardListRow";
 import {
@@ -216,12 +217,6 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                         {stripParentheses(currentEntry.definition ?? '')}
                     </Typography>
                 )}
-                {onSpeak && currentEntry && (
-                    <SpeakerButton
-                        onClick={() => onSpeak(currentEntry)}
-                        isLoading={speakingKey === currentEntry.entryKey}
-                    />
-                )}
                 {onAddToLibrary && currentEntry && (
                     <IconButton
                         className="mobile-demo-eic-add-to-library"
@@ -244,6 +239,27 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                     >
                         <AddIcon fontSize="small" />
                     </IconButton>
+                )}
+                {/* Writing-practice + audio icons stacked vertically (writing on
+                    top, speaker below). Either may be absent (non-zh / no onSpeak),
+                    in which case the column simply holds the one that renders. */}
+                {currentEntry && (onSpeak || currentEntry.language === "zh") && (
+                    <Box
+                        className="mobile-demo-eic-actions"
+                        sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.25 }}
+                    >
+                        <PracticeWritingButton
+                            character={currentEntry.entryKey}
+                            language={currentEntry.language}
+                            iconOnly
+                        />
+                        {onSpeak && (
+                            <SpeakerButton
+                                onClick={() => onSpeak(currentEntry)}
+                                isLoading={speakingKey === currentEntry.entryKey}
+                            />
+                        )}
+                    </Box>
                 )}
             </InfoSheetEntryHeader>
 

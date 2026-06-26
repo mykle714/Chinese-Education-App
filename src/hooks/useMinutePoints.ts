@@ -12,6 +12,7 @@ import { MINUTE_POINTS_ELIGIBLE_PAGES, MINUTE_POINTS_CONFIG, STREAK_CONFIG } fro
 import { useActivityDetection } from './useActivityDetection';
 import { incrementMinutePoint, fetchLanguageSummary } from '../utils/minutePointsSync';
 import { isSameStreakDay } from '../utils/streakDay';
+import { getMinutePointsPaused } from '../utils/minutePointsPause';
 
 export interface UseMinutePointsReturn {
   currentPoints: number;
@@ -222,6 +223,12 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
       const currentIsEligible = isEligiblePageRef.current;
 
       if (!currentState.isActive || !currentIsEligible || !currentUserId) {
+        return;
+      }
+
+      // Paused (e.g. flp icon-layout editor): hold accumulation — don't count this
+      // second as study time. The interval keeps running so it resumes on unpause.
+      if (getMinutePointsPaused()) {
         return;
       }
 

@@ -126,6 +126,13 @@ app.post('/api/vocabEntries/add-to-library', authenticateToken, async (req, res)
   await vocabEntryController.addToLibrary(req, res);
 });
 
+// Persist (or clear) a custom flashcard icon arrangement for one vet row.
+// body: { iconLayout: Item[] | null }. See docs/CARD_ICON_LAYOUT.md.
+// @ts-ignore
+app.patch('/api/vocabEntries/:id/icon-layout', authenticateToken, async (req, res) => {
+  await vocabEntryController.updateIconLayout(req, res);
+});
+
 // Delete vocab entry - USING NEW DAL ARCHITECTURE
 // @ts-ignore
 app.delete('/api/vocabEntries/:id', authenticateToken, async (req, res) => {
@@ -972,6 +979,21 @@ app.post('/api/tts/synthesize', authenticateToken, async (req, res) => {
 // @ts-ignore
 app.get('/api/icons8', authenticateToken, async (req, res) => {
   await icons8Controller.listIcons(req, res);
+});
+
+// icons8 live search: proxy the icons8 API for the custom card icon layout's "add
+// icon" dialog (docs/CARD_ICON_LAYOUT.md). Auth-gated. Returns ids+names only; tiles
+// preview from the icons8 CDN and download-on-select via the ensure route below.
+// @ts-ignore
+app.get('/api/icons8/search', authenticateToken, async (req, res) => {
+  await icons8Controller.searchIcons(req, res);
+});
+
+// icons8 download-on-select: cache an icon's SVG bytes locally so the image route can
+// serve it. Auth-gated; idempotent. Called when a user picks a search result.
+// @ts-ignore
+app.post('/api/icons8/:iconId/ensure', authenticateToken, async (req, res) => {
+  await icons8Controller.ensureIcon(req, res);
 });
 
 // icons8 icon image: stream the stored bytes for a downloaded icon by its icons8 id.

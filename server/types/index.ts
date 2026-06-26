@@ -242,6 +242,23 @@ export interface UsedInItem {
 }
 
 // VocabEntry model type
+/**
+ * One placed icon in a custom flashcard icon arrangement (vet."iconLayout", migration
+ * 82; see docs/CARD_ICON_LAYOUT.md). Coordinates are NORMALIZED so a saved layout
+ * survives the card being rendered at different pixel sizes across viewports.
+ */
+export interface IconLayoutItem {
+  iconId: string;   // icons8 natural key (icons8."icons8Id"); rendered via /api/icons8/<id>/image
+  x: number;        // icon CENTER as a fraction of card WIDTH  [0..1]
+  y: number;        // icon CENTER as a fraction of card HEIGHT [0..1]
+  scale: number;    // multiplier on the base icon box (~0.28 * cardWidth); clamped ~[0.25, 3]
+  rotation: number; // degrees
+  z: number;        // paint order (higher = front)
+}
+
+/** Max icons allowed in one custom arrangement (shared client/server cap). */
+export const ICON_LAYOUT_MAX_ITEMS = 12;
+
 export interface VocabEntry {
   id: number;
   userId: string;
@@ -272,6 +289,8 @@ export interface VocabEntry {
   longDefinition?: string | null;  // AI-generated extended definition (25–150 chars) from dictionaryentries_zh
   longDefinitionParts?: LongDefinitionPart[] | null;  // Computed at runtime: longDefinition split into English + cpcd-able Chinese runs
   iconId?: string | null;  // Representative icons8 icon (FK to icons8.icons8Id) joined from det; client renders via <img src="/api/icons8/<iconId>/image">
+  iconLayout?: IconLayoutItem[] | null;  // Custom flashcard icon arrangement (vet column, migration 82). NULL = use the default centered iconId. See docs/CARD_ICON_LAYOUT.md
+  iconTextBackdrop?: boolean | null;  // When true, draw a white backdrop behind the card's word text for legibility over the icon arrangement (vet column, migration 83). See docs/CARD_ICON_LAYOUT.md
   exampleSentences?: Array<{
     foreignText: string;
     english: string;

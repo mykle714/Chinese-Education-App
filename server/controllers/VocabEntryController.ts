@@ -162,6 +162,46 @@ export class VocabEntryController {
   }
 
   /**
+   * Persist (or clear) a custom flashcard icon arrangement for one vet row.
+   * PATCH /api/vocabEntries/:id/icon-layout   body: { iconLayout: Item[] | null }
+   * See docs/CARD_ICON_LAYOUT.md.
+   */
+  async updateIconLayout(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
+      const entryId = parseInt(req.params.id);
+      if (isNaN(entryId)) {
+        res.status(400).json({ error: 'Invalid entry ID', code: 'ERR_INVALID_ENTRY_ID' });
+        return;
+      }
+
+      // Accept the layout array or null (reset to default). Anything else is rejected
+      // by the service's validateIconLayout. textBackdrop is an optional boolean.
+      const { iconLayout, textBackdrop } = req.body ?? {};
+      if (iconLayout !== null && !Array.isArray(iconLayout)) {
+        res.status(400).json({ error: 'iconLayout must be an array or null' });
+        return;
+      }
+
+      const language = await getUserLanguage(userId);
+      const updated = await this.vocabEntryService.updateIconLayout(
+        userId, entryId, language, iconLayout, !!textBackdrop
+      );
+
+      // Echo back just what the client needs to refresh the card in place.
+      res.json({
+        id: updated.id,
+        iconLayout: updated.iconLayout ?? null,
+        iconTextBackdrop: updated.iconTextBackdrop ?? false,
+      });
+    } catch (error) {
+      handleControllerError(error, res, 'VocabEntryController.updateIconLayout');
+    }
+  }
+
+  /**
    * Delete vocabulary entry
    * DELETE /api/vocabEntries/:id
    */

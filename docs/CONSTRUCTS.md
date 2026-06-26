@@ -153,6 +153,8 @@ Defined in `src/config/nightMarketRegistry.ts:137`.
 
 Streets are authored as `Street { isNorthSouth, start, end, offset, width }` and expanded to tiles by `streetTiles()` in `src/config/tileRegistry.ts:107`. `buildTilesFromStreets()` then deduplicates by priority and stamps `street` + `intersectingStreets` onto each surviving tile.
 
+> **Future layout source:** the tiles above are authored today via the hand-written tile/street registry. The template system ([NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md), DESIGN stage) will replace that registry as the source of truth — the tile and street graphs will be computed from tiled, placed templates instead.
+
 ### Two graphs are derived from tiles
 
 #### 1. Tile graph (fine-grained) — `src/utils/tileGraph.ts`

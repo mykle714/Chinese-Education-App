@@ -50,6 +50,7 @@ dotenv.config({ path: path.join(__dirname, '../../.env.docker') });
 
 import db from '../../db.js';
 import { initRunLog } from './run-log.js';
+import { searchIcons, getIconById } from '../../services/Icons8FetchService.js';
 
 const SCRIPT_VERSION = 1; // bump when this script's logic changes
 
@@ -96,62 +97,18 @@ const DELAY_MS = 300;
 // ─────────────────────────────────────────────────────────────────────────────
 //  icons8 API helpers
 // ─────────────────────────────────────────────────────────────────────────────
-
-// Browser-ish headers the icons8 edge expects; auth is the `token` query param.
-const ICONS8_HEADERS = {
-  accept: 'application/json, text/plain, */*',
-  'accept-language': 'en-US,en;q=0.9',
-  origin: 'https://icons8.com',
-  referer: 'https://icons8.com/',
-  'user-agent':
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
-};
+//
+// The actual icons8 HTTP calls (search filters, auth, response shapes) live in the
+// shared service Icons8FetchService so the request path (Icons8Controller) and this
+// backfill stay in lockstep. See server/services/Icons8FetchService.ts.
 
 /**
  * SEARCH for the single best icon for `term`. amount=1 — we only need one.
  * Returns the raw icon object (search shape) or null if nothing matched.
  */
 async function searchTopIcon(term) {
-  const params = new URLSearchParams({
-    isAnimated: 'false',
-    style: 'color',
-    language: 'en',
-    analytics: 'false',
-    saveAnalytics: 'false',
-    amount: '1', // only one icon needed per entry
-    isOuch: 'true',
-    replaceNameWithSynonyms: 'true',
-    offset: '0',
-    term,
-    token: ICONS8_TOKEN,
-  });
-  const url = `https://search-app.icons8.com/api/iconsets/v7/search?${params.toString()}`;
-
-  const res = await fetch(url, { headers: ICONS8_HEADERS });
-  if (!res.ok) {
-    throw new Error(`search HTTP ${res.status} for term "${term}"`);
-  }
-  const data = await res.json();
-  const icon = data?.icons?.[0];
-  return icon ?? null;
-}
-
-/**
- * getIconById — full metadata + raw SVG bytes for an icon id.
- * Returns the raw icon object (getById shape) or null on a not-found / unsuccessful
- * response.
- */
-async function getIconById(iconId) {
-  const params = new URLSearchParams({ id: iconId, token: ICONS8_TOKEN });
-  const url = `https://api-icons.icons8.com/publicApi/icons/icon?${params.toString()}`;
-
-  const res = await fetch(url, { headers: ICONS8_HEADERS });
-  if (!res.ok) {
-    throw new Error(`getIconById HTTP ${res.status} for id "${iconId}"`);
-  }
-  const data = await res.json();
-  if (!data?.success || !data?.icon) return null;
-  return data.icon;
+  const { icons } = await searchIcons(term, { amount: 1 });
+  return icons[0] ?? null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

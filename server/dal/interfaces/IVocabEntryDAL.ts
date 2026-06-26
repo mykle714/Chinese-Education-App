@@ -1,5 +1,5 @@
 import { IBaseDAL } from './IBaseDAL.js';
-import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, UsedInItem } from '../../types/index.js';
+import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, UsedInItem, IconLayoutItem } from '../../types/index.js';
 import { BulkResult, ITransaction } from '../../types/dal.js';
 
 /**
@@ -11,6 +11,21 @@ export interface IVocabEntryDAL extends IBaseDAL<VocabEntry, VocabEntryCreateDat
   // are language-scoped (the caller resolves the language) and there are no
   // cross-language reads.
   findByIdAndLanguage(id: string | number, language: string): Promise<VocabEntry | null>;
+
+  /**
+   * Persist (or clear) a custom flashcard icon arrangement for one vet row, scoped to
+   * its owner. `layout` of null clears it back to the default centered icon;
+   * `textBackdrop` toggles the white text backdrop (migration 83). Returns the updated
+   * row, or null when no row matches (wrong id / not the caller's).
+   * See docs/CARD_ICON_LAYOUT.md.
+   */
+  updateIconLayout(
+    userId: string,
+    id: string | number,
+    language: string,
+    layout: IconLayoutItem[] | null,
+    textBackdrop: boolean
+  ): Promise<VocabEntry | null>;
   findByUserIdAndLanguage(userId: string, language: string, limit?: number, offset?: number): Promise<VocabEntry[]>;
   findByUserAndKey(userId: string, entryKey: string, language: string, pos?: string): Promise<VocabEntry | null>;
   countByUserIdAndLanguage(userId: string, language: string): Promise<number>;

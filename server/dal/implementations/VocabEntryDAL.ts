@@ -2,7 +2,7 @@ import { PoolClient, QueryResult } from 'pg';
 import { BaseDAL } from '../base/BaseDAL.js';
 import { IVocabEntryDAL } from '../interfaces/IVocabEntryDAL.js';
 import { dbManager } from '../base/DatabaseManager.js';
-import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, UsedInItem } from '../../types/index.js';
+import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, UsedInItem, IconLayoutItem } from '../../types/index.js';
 import { ValidationError, NotFoundError, BulkResult, ITransaction, DALError } from '../../types/dal.js';
 import db from '../../db.js';
 import { DICT_COLS, DICT_JOIN } from '../shared/dictJoin.js';
@@ -92,6 +92,37 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     } finally {
       client.release();
     }
+  }
+
+  async updateIconLayout(
+    userId: string,
+    id: string | number,
+    language: string,
+    layout: IconLayoutItem[] | null,
+    textBackdrop: boolean
+  ): Promise<VocabEntry | null> {
+    if (!userId) throw new ValidationError('userId is required');
+    if (!id) throw new ValidationError('id is required');
+    if (!language) throw new ValidationError('language is required');
+
+    // Ownership is enforced in the WHERE (id + userId), so this is safe even though
+    // it doesn't pre-read the row. Routes to the language's physical vet table.
+    const table = vetTableForLanguage(language);
+    // null clears the layout; an array is stored as jsonb.
+    const value = layout === null ? null : JSON.stringify(layout);
+
+    const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
+      return await client.query(
+        `UPDATE ${table}
+            SET "iconLayout" = $1::jsonb,
+                "iconTextBackdrop" = $2
+          WHERE id = $3 AND "userId" = $4
+          RETURNING *`,
+        [value, textBackdrop, id, userId]
+      );
+    });
+
+    return result.recordset[0] ?? null;
   }
 
   // Look up a single vet row by id, scoped to a language so it routes to that

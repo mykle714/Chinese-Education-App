@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { IIcons8DAL } from '../dal/interfaces/IIcons8DAL.js';
+import { searchIcons } from '../services/Icons8FetchService.js';
 
 /**
  * Icons8Controller
@@ -49,6 +50,63 @@ export class Icons8Controller {
     } catch (err: any) {
       console.error('[Icons8Controller] listIcons error:', err);
       res.status(500).json({ error: err?.message || 'Failed to list icons' });
+    }
+  }
+
+  /**
+   * GET /api/icons8/search?term=&offset=&limit=
+   *   returns: { icons: [{ id, name }], hasMore } — a page of live icons8 search
+   *   results for the custom card icon layout's "add icon" dialog. Auth-gated.
+   *
+   * The search response carries ids + names only (no image URL), so the client
+   * previews each tile directly from the icons8 CDN (img.icons8.com/?id=...) and
+   * only downloads+caches the SVG on select (POST /api/icons8/:iconId/ensure).
+   */
+  async searchIcons(req: Request, res: Response): Promise<void> {
+    try {
+      const term = String(req.query.term ?? '').trim();
+      if (!term) {
+        res.json({ icons: [], hasMore: false });
+        return;
+      }
+      const offset = Math.max(parseInt(String(req.query.offset ?? '0'), 10) || 0, 0);
+      // Clamp the page size to keep each batch of CDN <img> loads light on mobile.
+      const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? '48'), 10) || 48, 1), 48);
+
+      const { icons, total } = await searchIcons(term, { offset, amount: limit });
+      res.json({
+        icons: icons.map((i) => ({ id: i.id, name: i.name })),
+        hasMore: offset + icons.length < total,
+      });
+    } catch (err: any) {
+      console.error('[Icons8Controller] searchIcons error:', err);
+      res.status(502).json({ error: err?.message || 'Icon search failed' });
+    }
+  }
+
+  /**
+   * POST /api/icons8/:iconId/ensure
+   *   Ensures the icon's SVG is cached locally (downloads from icons8 if missing) so
+   *   it can be served by GET /api/icons8/<id>/image. Idempotent. Auth-gated; called
+   *   when a user selects a search result for the custom card icon layout.
+   *   returns: { id } on success, 404 when icons8 has no such icon.
+   */
+  async ensureIcon(req: Request, res: Response): Promise<void> {
+    try {
+      const iconId = String(req.params.iconId || '').trim();
+      if (!iconId) {
+        res.status(400).json({ error: 'iconId is required' });
+        return;
+      }
+      const cached = await this.icons8DAL.ensureCached(iconId);
+      if (!cached) {
+        res.status(404).json({ error: 'Icon not found' });
+        return;
+      }
+      res.json({ id: iconId });
+    } catch (err: any) {
+      console.error('[Icons8Controller] ensureIcon error:', err);
+      res.status(502).json({ error: err?.message || 'Failed to cache icon' });
     }
   }
 

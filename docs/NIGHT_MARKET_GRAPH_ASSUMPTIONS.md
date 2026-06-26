@@ -4,6 +4,8 @@ Structural invariants the tile graph, street graph, and stand layout must satisf
 
 Each assumption should be enforced by a test against the built graphs (`TILE_GRAPH`, `STREET_GRAPH`). Tests live alongside the existing graph tests in `src/utils/__tests__/`.
 
+> **Layout source:** once the template system ([NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md), DESIGN stage) lands, the graphs are computed from tiled templates rather than the hand-authored tile registry. The stitched-template result must still satisfy *every* invariant below — the edge-signature matching rule is what keeps cross-seam streets contiguous enough to do so.
+
 ---
 
 ## Streets

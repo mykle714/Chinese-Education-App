@@ -46,4 +46,13 @@ export interface IIcons8DAL {
    * total count and a hasMore flag.
    */
   listIcons(offset: number, limit: number): Promise<Icons8Page>;
+
+  /**
+   * Ensure an icon's SVG bytes are cached locally so GET /api/icons8/<id>/image can
+   * serve it. If the row is missing or has no bytes yet, fetches the icon from the
+   * live icons8 API (getById) and inserts/updates it. Idempotent. Used by the custom
+   * card icon layout's "download on select" step (docs/CARD_ICON_LAYOUT.md).
+   * Returns true when the icon ends up cached, false when icons8 has no such icon.
+   */
+  ensureCached(icons8Id: string): Promise<boolean>;
 }

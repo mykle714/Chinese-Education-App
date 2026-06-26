@@ -13,6 +13,8 @@ import {
 } from "./constants";
 import { SIZE, WEIGHT, LEADING, TRACKING } from "../../theme/scale";
 import type { VocabEntry, SideOneLanguage } from "./types";
+import type { IconLayoutItem } from "../../types";
+import CardIconLayer from "./CardIconLayer";
 import ForeignText from "../../components/ForeignText";
 import { SpeakerButton } from "../../components/SpeakerButton";
 import PracticeWritingButton from "../../components/handwriting/PracticeWritingButton";
@@ -65,6 +67,15 @@ interface FlashCardSectionProps {
     // to the speaker button so only the active card's icon shows the loading
     // spinner during playback.
     speakingKey?: string | null;
+    // The live icon-layout edit canvas, built by the page when edit mode is on. It is
+    // applied only to the ACTIVE FRONT card's back face. See docs/CARD_ICON_LAYOUT.md.
+    editCanvas?: React.ReactNode;
+    // True while the icon-layout editor is open. Locks the card: drag/flip handlers
+    // are not attached so the card can't be swiped away or flipped mid-edit.
+    editMode?: boolean;
+    // Live white-text-backdrop value from the editor toolbar (applied to the active
+    // front card's back face while editing).
+    editTextBackdrop?: boolean;
 }
 
 // Chinese (CPCD) row block reused on both Side 1 (when Chinese) and Side 2.
@@ -76,7 +87,11 @@ const ChineseBlock: React.FC<{
     showPinyinColor: boolean;
     onSpeak?: (entry: VocabEntry) => void;
     speakingKey?: string | null;
-}> = ({ entry, showPinyin, showPinyinColor, onSpeak, speakingKey }) => {
+    // The practice-writing button exists on the SECOND side (back) only — the front
+    // passes false so it never appears there.
+    showWriting?: boolean;
+}> = ({ entry, showPinyin, showPinyinColor, onSpeak, speakingKey, showWriting = false }) => {
+    const showWritingButton = showWriting && entry.language === "zh";
     return (
         // Outer row fills the width and centers the Chinese text within the card.
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }} className="mobile-demo-flashcard-chinese-block">
@@ -98,18 +113,20 @@ const ChineseBlock: React.FC<{
                     is absolutely positioned just off the text's right edge so it
                     doesn't shift the centered Chinese. Either icon may be absent
                     (non-zh hides writing; no onSpeak hides audio). */}
-                {(onSpeak || entry.language === "zh") && (
+                {(onSpeak || showWritingButton) && (
                     <Box sx={{ position: 'absolute', left: '100%', top: '50%', transform: 'translateY(-50%)', ml: 1 }}>
                         <Box
                             className="mobile-demo-flashcard-actions"
                             sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.25 }}
                         >
-                            <PracticeWritingButton
-                                character={entry.entryKey}
-                                language={entry.language}
-                                iconOnly
-                                hideStarBadge
-                            />
+                            {showWritingButton && (
+                                <PracticeWritingButton
+                                    character={entry.entryKey}
+                                    language={entry.language}
+                                    iconOnly
+                                    hideStarBadge
+                                />
+                            )}
                             {onSpeak && (
                                 <SpeakerButton
                                     onClick={() => onSpeak(entry)}
@@ -195,7 +212,11 @@ const CardImage: React.FC<{ iconId?: string | null }> = ({ iconId }) => {
     return (
         <Box
             className="mobile-demo-flashcard-image"
-            sx={{ width: 106, height: 83, backgroundColor: fc.imagePlaceholder, borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}
+            // The placeholder background is only meaningful for the empty (no-icon)
+            // state. icons8 icons are transparent SVGs, so painting the box white
+            // behind a present icon leaks a white halo around it against the pastel
+            // card face — so render the icon directly on the face (transparent box).
+            sx={{ width: 106, height: 83, backgroundColor: iconId ? 'transparent' : fc.imagePlaceholder, borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}
         >
             {iconId && (
                 <Box
@@ -224,13 +245,35 @@ const CardFaceSide: React.FC<{
     // The entry's representative icon, rendered in the image block at the top of
     // the face. Undefined/null -> empty placeholder box (layout preserved).
     iconId?: string | null;
+    // Whether THIS face displays the English block. Icons (default or custom) render
+    // only on English-bearing faces (docs/CARD_ICON_LAYOUT.md): back face always,
+    // front face only when Side 1 is English.
+    showIcon: boolean;
+    // Saved custom icon arrangement for the entry. When present (and showIcon), it
+    // replaces the single default icon with a clipped layer drawn BEHIND the content.
+    iconLayout?: IconLayoutItem[] | null;
+    // When provided, this face is being edited: render the gesture canvas (above a
+    // dimmed content layer) instead of the static icon layer / default icon.
+    editCanvas?: React.ReactNode;
+    // Make this face non-interactive. Used to silence the away-facing (front) face
+    // while editing the back face — CSS 3D backface culling does not reliably exclude
+    // the rotated-away face from hit-testing, so it would otherwise capture the
+    // canvas's pointer events.
+    inert?: boolean;
+    // When true, the card's word text gets a solid white backdrop so it stays legible
+    // over the icon arrangement (migration 83). Only meaningful on faces showing icons.
+    textBackdrop?: boolean;
     // Optional absolutely-positioned element (e.g. the category chip) rendered as
     // a direct child of the face box so it can sit in a corner, outside the
     // centered content column.
     cornerBadge?: React.ReactNode;
-}> = ({ rotated, contentGap, contentClassName, children, iconId, cornerBadge }) => {
+}> = ({ rotated, contentGap, contentClassName, children, iconId, showIcon, iconLayout, editCanvas, inert, textBackdrop, cornerBadge }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
+    const hasCustom = showIcon && !!iconLayout && iconLayout.length > 0;
+    const editing = !!editCanvas;
+    // Backdrop only matters when this face is showing icons behind the text.
+    const applyBackdrop = !!textBackdrop && showIcon;
     return (
         <Box sx={{
             position: "absolute",
@@ -240,11 +283,29 @@ const CardFaceSide: React.FC<{
             ...(rotated && { transform: "rotateY(180deg)" }),
             backgroundColor: fc.flashCard,
             borderRadius: "12px",
+            // Clip the custom icon layer / edit canvas to the card boundary so icons
+            // partially off the card are cut off and never paint outside it.
+            overflow: "hidden",
+            ...(inert && { pointerEvents: "none" }),
             display: "flex",
             alignItems: "center",
             justifyContent: CARD_FACE_JUSTIFY,
         }}>
             {cornerBadge}
+            {/* Icon layer sits BEHIND the content (cpcd / English / buttons) so the
+                card info always reads on top — for a saved arrangement AND while
+                editing. During edit the live canvas replaces the static layer; the
+                content above is made non-interactive so pointer events fall through to
+                the canvas even where they overlap the text. */}
+            {editing ? editCanvas : (hasCustom && <CardIconLayer layout={iconLayout!} />)}
+            {/* Default single icon — positioned at the FACE level (not inside the
+                padded content) so it sits at 33.33% of the full card, exactly matching
+                the edit-mode seed (DEFAULT_ICON_Y). zIndex 0 keeps it behind the text. */}
+            {showIcon && !hasCustom && !editing && (
+                <Box sx={{ position: "absolute", top: "33.33%", left: "50%", transform: "translate(-50%, -50%)", zIndex: 0 }}>
+                    <CardImage iconId={iconId} />
+                </Box>
+            )}
             <CardContent
                 className={rotated ? undefined : "mobile-demo-flashcard-content"}
                 sx={{
@@ -252,28 +313,46 @@ const CardFaceSide: React.FC<{
                     height: "100%",
                     padding: "clamp(16px, 7%, 72px) 30px",
                     boxSizing: "border-box",
+                    // Content sits above the icon layer. While editing it stays fully
+                    // visible but non-interactive, so the icons (canvas) below can be
+                    // manipulated through it.
+                    position: "relative",
+                    zIndex: 1,
+                    ...(editing && { pointerEvents: "none" }),
                 }}
             >
                 <Box
                     className={rotated ? undefined : "mobile-demo-flashcard-inner"}
-                    sx={{
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        // Center the image + text as one group so whitespace is balanced
-                        // above and below the content (instead of space-between pinning the
-                        // image to the top edge and the text to the bottom edge, which left
-                        // a void in the middle and looked unbalanced — especially on Side 1
-                        // where there's only a single text block).
-                        justifyContent: "center",
-                        height: "100%",
-                        minHeight: 0,
-                        // Comfortable, scaling gap between the image and the text block.
-                        gap: "clamp(20px, 5vh, 44px)",
-                    }}
+                    sx={{ position: "relative", height: "100%", width: "100%", minHeight: 0 }}
                 >
-                    <CardImage iconId={iconId} />
-                    <Box className={contentClassName} sx={{ display: 'flex', flexDirection: 'column', gap: contentGap, alignItems: 'center', width: '100%' }}>
+                    {/* Card text — lower third of the card (≈1/3 up from the bottom). The
+                        optional white backdrop keeps it legible over the icons. */}
+                    <Box
+                        className={contentClassName}
+                        sx={{
+                            position: "absolute",
+                            top: "66.67%",
+                            left: "50%",
+                            transform: "translate(-50%, -50%)",
+                            width: "100%",
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: contentGap,
+                            alignItems: "center",
+                            boxSizing: "border-box",
+                            // Separate white backdrops that hug each block — one behind
+                            // the Chinese text (its inner wrapper, which shrinks to the
+                            // text width) and one behind the English definition.
+                            ...(applyBackdrop && {
+                                "& .mobile-demo-flashcard-chinese-inner, & > .MuiTypography-root": {
+                                    backgroundColor: "#fff",
+                                    borderRadius: "8px",
+                                    padding: "2px 8px",
+                                    boxShadow: "0 1px 4px rgba(0,0,0,0.18)",
+                                },
+                            }),
+                        }}
+                    >
                         {children}
                     </Box>
                 </Box>
@@ -306,7 +385,14 @@ const CardFace: React.FC<{
     isProminent: boolean;
     onSpeak?: (entry: VocabEntry) => void;
     speakingKey?: string | null;
-}> = ({ entry, isFlipped, isAnimating, showPinyin, showPinyinColor, showProgressCategory, sideOneLanguage, dragPosition, dismissThreshold, isProminent, onSpeak, speakingKey }) => {
+    // The live icon-layout edit canvas for THIS card's back face. Only the active
+    // front card supplies one (and only while edit mode is on); it replaces the back
+    // face's static icon layer. See docs/CARD_ICON_LAYOUT.md.
+    editCanvas?: React.ReactNode;
+    // Live white-text-backdrop value for the back face while editing (overrides the
+    // saved entry.iconTextBackdrop so the preview reflects the toolbar toggle).
+    editTextBackdrop?: boolean;
+}> = ({ entry, isFlipped, isAnimating, showPinyin, showPinyinColor, showProgressCategory, sideOneLanguage, dragPosition, dismissThreshold, isProminent, onSpeak, speakingKey, editCanvas, editTextBackdrop }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
 
@@ -328,22 +414,44 @@ const CardFace: React.FC<{
                 overflow: 'visible',
             }}
         >
-            {/* Side 1 — shows only one language, chosen randomly per card */}
-            <CardFaceSide rotated={false} contentGap={1} contentClassName="mobile-demo-flashcard-text mobile-demo-flashcard-side-one" iconId={entry.iconId}>
+            {/* Side 1 — shows only one language, chosen randomly per card. The icon
+                renders here only when Side 1 is English; on the back it always renders. */}
+            <CardFaceSide
+                rotated={false}
+                contentGap={1}
+                contentClassName="mobile-demo-flashcard-text mobile-demo-flashcard-side-one"
+                iconId={entry.iconId}
+                showIcon={sideOneLanguage === 'en'}
+                iconLayout={entry.iconLayout}
+                textBackdrop={!!entry.iconTextBackdrop}
+                // CSS 3D backface culling does NOT reliably exclude the rotated-away
+                // face from hit-testing, so the away face must be made inert or it
+                // intercepts taps meant for the visible face (e.g. the writing/audio
+                // buttons on the back). Side 1 faces away whenever the card is flipped.
+                inert={isFlipped}
+            >
                 {sideOneLanguage === 'zh'
-                    ? <ChineseBlock entry={entry} showPinyin={showPinyin} showPinyinColor={showPinyinColor} onSpeak={onSpeak} speakingKey={speakingKey} />
+                    ? <ChineseBlock entry={entry} showPinyin={showPinyin} showPinyinColor={showPinyinColor} onSpeak={onSpeak} speakingKey={speakingKey} showWriting={false} />
                     : <EnglishBlock entry={entry} />}
             </CardFaceSide>
 
-            {/* Side 2 — always shows both Chinese and English */}
+            {/* Side 2 — always shows both Chinese and English, and the icon arrangement. */}
             <CardFaceSide
                 rotated
                 contentGap={2}
                 contentClassName="mobile-demo-flashcard-side-two"
                 iconId={entry.iconId}
+                showIcon
+                iconLayout={entry.iconLayout}
+                editCanvas={editCanvas}
+                // While editing, preview the toolbar's backdrop toggle; otherwise the
+                // saved value.
+                textBackdrop={editCanvas ? !!editTextBackdrop : !!entry.iconTextBackdrop}
+                // Side 2 faces away when the card is showing its front.
+                inert={!isFlipped}
                 cornerBadge={showProgressCategory ? <CategoryChip category={entry.category} /> : undefined}
             >
-                <ChineseBlock entry={entry} showPinyin={showPinyin} showPinyinColor={showPinyinColor} onSpeak={onSpeak} speakingKey={speakingKey} />
+                <ChineseBlock entry={entry} showPinyin={showPinyin} showPinyinColor={showPinyinColor} onSpeak={onSpeak} speakingKey={speakingKey} showWriting />
                 <EnglishBlock entry={entry} />
             </CardFaceSide>
 
@@ -386,6 +494,9 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
     handlers,
     onSpeak,
     speakingKey,
+    editCanvas,
+    editMode,
+    editTextBackdrop,
 }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
@@ -520,7 +631,7 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                     <Box
                                         key={isFront ? `front-${shakeNonce}` : `slot-${slot}`}
                                         ref={isFront ? cardRef : undefined}
-                                        {...(isFront ? {
+                                        {...(isFront && !editMode ? {
                                             onTouchStart: handlers.onTouchStart,
                                             onTouchEnd: handlers.onTouchEnd,
                                             onMouseDown: handlers.onMouseDown,
@@ -565,6 +676,9 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                                 // tapping it on the back/flying-out card would race the animation.
                                                 onSpeak={isFront ? onSpeak : undefined}
                                                 speakingKey={isFront ? speakingKey : null}
+                                                // Edit canvas applies only to the active front card's back face.
+                                                editCanvas={isFront ? editCanvas : undefined}
+                                                editTextBackdrop={isFront ? editTextBackdrop : undefined}
                                             />
                                         )}
                                     </Box>

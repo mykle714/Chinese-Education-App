@@ -16,8 +16,23 @@ import { useEipTabs } from "./useEipTabs";
 import EipTabStrip from "./EipTabStrip";
 import TooManyTabsSnackbar from "./TooManyTabsSnackbar";
 import FlashCardSection from "./FlashCardSection";
+import CardIconCanvas from "./CardIconCanvas";
+import CardEditToolbar from "./CardEditToolbar";
+import IconSearchDialog from "../../components/IconSearchDialog";
+import { defaultLayoutForEntry, maxZ } from "./cardIconLayout";
+import { saveIconLayout } from "./cardIconApi";
+import { ICON_LAYOUT_MAX_ITEMS, type IconLayoutItem, type VocabEntry } from "../../types";
+import { setMinutePointsPaused } from "../../utils/minutePointsPause";
 import SheetPanel, { type SheetPanelBodyHandle } from "./SheetPanel";
 import SettingsPanelBody from "./SettingsPanelBody";
+import {
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogContentText,
+    DialogActions,
+    Button,
+} from "@mui/material";
 import { clearWritingDraft } from "../../components/handwriting/writingDraftStore";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useTTS, SLOW_SENTENCE_RATE } from "../../hooks/useTTS";
@@ -112,6 +127,108 @@ const FlashcardsLearnPage: React.FC = () => {
 
     // Keep the bridge ref pointing at the live drag controls every render.
     cardDragRef.current = { isFlipped, setIsFlipped, resetDragPosition };
+
+    // ── Custom card icon layout (edit mode) ───────────────────────────────────
+    // See docs/CARD_ICON_LAYOUT.md. The editor operates on the active card's back
+    // face. Saved layouts are echoed into a local override map (keyed by vet id) so
+    // the card reflects the change without re-fetching the working loop.
+    const [editMode, setEditMode] = useState(false);
+    const [draftLayout, setDraftLayout] = useState<IconLayoutItem[]>([]);
+    // Whether the draft has the white text backdrop enabled (legibility over icons).
+    const [draftTextBackdrop, setDraftTextBackdrop] = useState(false);
+    const [savingLayout, setSavingLayout] = useState(false);
+    const [iconSearchOpen, setIconSearchOpen] = useState(false);
+    const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+    const [iconLayoutOverrides, setIconLayoutOverrides] = useState<Record<number, IconLayoutItem[] | null>>({});
+    const [textBackdropOverrides, setTextBackdropOverrides] = useState<Record<number, boolean>>({});
+
+    // Merge any saved-this-session overrides into an entry before it is rendered.
+    const applyIconOverride = useCallback(
+        (e: VocabEntry | null): VocabEntry | null => {
+            if (!e) return e;
+            let r = e;
+            if (e.id in iconLayoutOverrides) r = { ...r, iconLayout: iconLayoutOverrides[e.id] };
+            if (e.id in textBackdropOverrides) r = { ...r, iconTextBackdrop: textBackdropOverrides[e.id] };
+            return r;
+        },
+        [iconLayoutOverrides, textBackdropOverrides],
+    );
+    const displayCurrentEntry = applyIconOverride(currentEntry);
+    const displayNextEntry = applyIconOverride(nextEntry);
+
+    const exitEdit = useCallback(() => {
+        setEditMode(false);
+        setIconSearchOpen(false);
+        setResetConfirmOpen(false);
+    }, []);
+
+    const enterEdit = useCallback(() => {
+        if (!displayCurrentEntry) return;
+        const existing = displayCurrentEntry.iconLayout;
+        // Seed from the saved layout, or the single default det icon at center.
+        setDraftLayout(
+            existing && existing.length > 0
+                ? existing.map((it) => ({ ...it }))
+                : defaultLayoutForEntry(displayCurrentEntry),
+        );
+        setDraftTextBackdrop(!!displayCurrentEntry.iconTextBackdrop);
+        setEditMode(true);
+    }, [displayCurrentEntry]);
+
+    // Pause minute-points accumulation while editing the icon layout (decorating a
+    // card isn't study time). Always unpause on exit/unmount.
+    useEffect(() => {
+        setMinutePointsPaused(editMode);
+        return () => setMinutePointsPaused(false);
+    }, [editMode]);
+
+    // Leaving the current card (e.g. an undo) cancels any in-progress edit.
+    const editCardId = currentEntry?.id ?? null;
+    useEffect(() => {
+        if (editMode) exitEdit();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [editCardId]);
+
+    // Append a freshly-picked icon (already cached) at center, on top.
+    const handleAddIcon = useCallback((iconId: string) => {
+        setDraftLayout((prev) =>
+            prev.length >= ICON_LAYOUT_MAX_ITEMS
+                ? prev
+                : [...prev, { iconId, x: 0.5, y: 0.5, scale: 1, rotation: 0, z: maxZ(prev) + 1 }],
+        );
+    }, []);
+
+    const handleSaveLayout = useCallback(async () => {
+        if (!currentEntry) return;
+        setSavingLayout(true);
+        try {
+            const res = await saveIconLayout(token, currentEntry.id, draftLayout, draftTextBackdrop);
+            setIconLayoutOverrides((o) => ({ ...o, [currentEntry.id]: res.iconLayout }));
+            setTextBackdropOverrides((o) => ({ ...o, [currentEntry.id]: res.iconTextBackdrop }));
+            exitEdit();
+        } catch (err) {
+            console.error("Failed to save icon layout:", err);
+        } finally {
+            setSavingLayout(false);
+        }
+    }, [currentEntry, draftLayout, draftTextBackdrop, token, exitEdit]);
+
+    // Reset-to-default: clear the saved layout (null), restoring the default centered
+    // icon, then exit edit mode. Confirmation-gated by resetConfirmOpen.
+    const handleResetConfirmed = useCallback(async () => {
+        if (!currentEntry) return;
+        setSavingLayout(true);
+        try {
+            await saveIconLayout(token, currentEntry.id, null, false);
+            setIconLayoutOverrides((o) => ({ ...o, [currentEntry.id]: null }));
+            setTextBackdropOverrides((o) => ({ ...o, [currentEntry.id]: false }));
+            exitEdit();
+        } catch (err) {
+            console.error("Failed to reset icon layout:", err);
+        } finally {
+            setSavingLayout(false);
+        }
+    }, [currentEntry, token, exitEdit]);
 
     // Hard-clear the preserved writing-practice draft when a card is marked (which
     // advances currentIndex) and when leaving the flp (cleanup on unmount).
@@ -288,16 +405,33 @@ const FlashcardsLearnPage: React.FC = () => {
                 onUndo={handleUndoLastMark}
                 showPinyin={showPinyin}
                 onTogglePinyin={() => updateLearnSettings({ showPinyin: !showPinyin })}
-                autoplayChinese={autoplayChinese}
-                onToggleAutoplayChinese={() => updateLearnSettings({ autoplayChinese: !autoplayChinese })}
+                isFlipped={isFlipped}
+                editMode={editMode}
+                onToggleEdit={() => (editMode ? exitEdit() : enterEdit())}
                 onSettingsClick={() => setSettingsOpen(true)}
             />
             <ContentArea className="mobile-demo-content">
+                {/* Floating edit toolbar — overlays the top of the content area while
+                    editing so it does NOT push the card down (docs/CARD_ICON_LAYOUT.md). */}
+                {editMode && (
+                    <Box sx={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 20 }}>
+                        <CardEditToolbar
+                            count={draftLayout.length}
+                            textBackdrop={draftTextBackdrop}
+                            onAdd={() => setIconSearchOpen(true)}
+                            onToggleBackdrop={() => setDraftTextBackdrop((v) => !v)}
+                            onReset={() => setResetConfirmOpen(true)}
+                            onSave={handleSaveLayout}
+                            onCancel={exitEdit}
+                            saving={savingLayout}
+                        />
+                    </Box>
+                )}
                 {/* Flashcard fills the full ContentArea. The EIC sheet now overlays
                     at the bottom rather than stacking above the flashcard. */}
                 <FlashCardSection
-                    currentEntry={currentEntry}
-                    nextEntry={nextEntry}
+                    currentEntry={displayCurrentEntry}
+                    nextEntry={displayNextEntry}
                     activeFrontSlot={activeFrontSlot}
                     flyOut={flyOut}
                     cardRef={cardRef}
@@ -318,6 +452,9 @@ const FlashcardsLearnPage: React.FC = () => {
                     handlers={handlers}
                     onSpeak={tts.enabled ? tts.speak : undefined}
                     speakingKey={tts.speakingKey}
+                    editCanvas={editMode ? <CardIconCanvas layout={draftLayout} onChange={setDraftLayout} /> : undefined}
+                    editMode={editMode}
+                    editTextBackdrop={draftTextBackdrop}
                 />
                 {/* Centered pill button — ghosted before flip, full opacity after */}
                 <Tooltip
@@ -399,6 +536,40 @@ const FlashcardsLearnPage: React.FC = () => {
                     </SheetPanel>
                 )}
             </ContentArea>
+
+            {/* Add-icon search dialog (download-on-select). docs/CARD_ICON_LAYOUT.md */}
+            <IconSearchDialog
+                open={iconSearchOpen}
+                onClose={() => setIconSearchOpen(false)}
+                onPick={handleAddIcon}
+                // Seed the search with the card's English meaning so relevant icons
+                // show immediately. Strip a leading "to " (verb infinitives like
+                // "to understand" search far better as just "understand").
+                initialTerm={(displayCurrentEntry?.definition ?? "").replace(/^to\s+/i, "")}
+            />
+
+            {/* Reset-to-default confirmation. */}
+            <Dialog
+                className="card-icon-reset-dialog"
+                open={resetConfirmOpen}
+                onClose={() => !savingLayout && setResetConfirmOpen(false)}
+            >
+                <DialogTitle>Reset to default icon?</DialogTitle>
+                <DialogContent>
+                    <DialogContentText>
+                        This removes your custom icon arrangement for this card and restores the
+                        default icon. This can't be undone.
+                    </DialogContentText>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setResetConfirmOpen(false)} disabled={savingLayout}>
+                        Cancel
+                    </Button>
+                    <Button onClick={handleResetConfirmed} color="error" disabled={savingLayout}>
+                        Reset
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </>
     );
 };

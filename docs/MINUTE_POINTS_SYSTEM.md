@@ -18,7 +18,11 @@ minute points (default `3`).
 ### Database
 
 `users` columns:
-- `totalMinutePoints INTEGER` — lifetime accumulator.
+- `totalMinutePoints INTEGER` — lifetime accumulator. Also drives the Night Market
+  unlock count (DESIGN stage — see
+  [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md#unlock-economy-minutes--unlocks)):
+  a threshold schedule maps this value to how many unlocks the user has, and the
+  inactivity cron's debits remove unlocks when it drops.
 - `lastMinutePointIncrement TIMESTAMP` — last successful tick (rate limit).
 - `currentStreak INTEGER NOT NULL DEFAULT 0`.
 - `lastStreakDate DATE` — last streak day the user satisfied (or the day a penalty was applied to mark a break as resolved).

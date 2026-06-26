@@ -85,6 +85,31 @@ assetMap: { [localCellKey: "col,row"]: assetId }
 
 ---
 
+## Tile rendering (autotiling)
+
+The **default ground/street tiles** (cells with no explicit `assetMap` entry) are
+not a single fixed sprite — **the sprite chosen for a cell depends on that cell's
+neighbors.** This is classic *autotiling* (Wang / bitmask tiling): a street cell
+surrounded by other street cells renders a "middle of road" sprite, while a street
+cell with non-street neighbors renders an edge/corner sprite so the path visually
+terminates cleanly.
+
+- The neighbor signal is the **walkability class** of adjacent cells
+  (`street-walkable` vs not), evaluated **across template seams** on the stitched
+  global grid — so streets that continue into an abutting template render as
+  continuous road, not as two capped stubs. (This is exactly what the edge-signature
+  matching rule in [Edge signatures](#edge-signatures) guarantees.)
+- Because a cell's class can flip at runtime (see
+  [Conditional cell classes](#conditional-cell-classes--template-versions)), the
+  autotile sprite of a cell **and its neighbors** must be recomputed whenever any
+  trigger changes (placeholder occupancy *or* a neighbor template appearing/leaving),
+  not just at template placement.
+
+> **TBD:** the exact tileset scheme (4-bit edge-only vs 8-bit blob/47-tile, which
+> classes participate, and the sprite atlas) is not yet specified.
+
+---
+
 ## Placeholder areas
 
 Separate from the per-cell asset map, a template defines a **list of placeholder
@@ -116,19 +141,82 @@ cell's walkability class and asset-map entry describe the *default* template; th
 placeholder layer decides, at render time, whether the default or an occupant is
 shown for a given area.
 
-### Occupancy changes walkability
+### Conditional cell classes — template "versions"
 
-Placing an occupant **can change the walkability** of the cells in its placeholder
-area (e.g. an occupant asset blocks cells that were communal-walkable in the
-template's default state). Therefore:
+A template is not a single fixed grid: cells can **switch walkability class** based
+on runtime state, so a template has **multiple versions**. The switch can happen
+**both inside and outside a placeholder's own rectangle** — most importantly it can
+**flip cells between `communal-walkable` and `street-walkable`** (e.g. a short
+connecting street "opens" only once a stand exists, or only once a neighbor template
+is there to connect to).
 
-- A cell's effective walkability = its template default, **overridden** by any
-  occupant covering it.
-- The **tile graph and street graph must be recomputed** whenever a placeholder's
-  occupancy changes (occupant added/removed), not just when templates are placed.
+**Each cell can carry multiple conditions, combined with OR — *any* satisfied
+condition triggers the switch.** Two kinds of trigger:
 
-Because occupant footprints exactly equal their placeholder areas, the set of
-cells whose walkability can flip is exactly the placeholder area's rectangle.
+1. **Placeholder occupancy** — a specific placeholder in *this* template is occupied
+   (e.g. dropping a stand opens its access street).
+2. **Template adjacency** — another template is placed adjacent on a given edge
+   (e.g. a boundary street cell becomes `street-walkable` only when there is a
+   neighbor to connect to, instead of dead-ending as a stub).
+
+A single cell may depend on **multiple placeholders and multiple adjacent
+templates** at once; if *any* of its conditions holds, it takes the switched class.
+Because these effects reach beyond the placeholder rectangle, the conditions must be
+**authored explicitly in the template object**, not inferred from occupant
+footprints. Conceptually:
+
+```
+// per template, in the code registry
+cellClassConditions: Array<{
+  cells: Array<"col,row">,         // cells that switch together
+  class: "street-walkable" | "communal-walkable" | "unwalkable",  // class when ANY trigger holds
+  anyOf: Array<                    // OR — any satisfied trigger applies `class`
+    | { type: "placeholderOccupied", placeholderId: string }
+    | { type: "templateAdjacent",   edge: "north" | "south" | "east" | "west" }
+  >,
+}>
+```
+
+A cell's **effective walkability** = its template default, with the switched `class`
+applied if any of its conditions holds, then overridden by any occupant footprint
+covering it.
+
+Consequences:
+
+- The **tile graph, street graph, and autotile sprites must be recomputed** whenever
+  any input to these conditions changes — a placeholder's occupancy *or* a neighbor
+  template being placed/removed — not just when a template is first placed.
+- **No speculative edge-signature matching.** A new template is only placed when the
+  existing template is **full** (all placeholders occupied — see
+  [Tiling & Placement](#tiling--placement)). At that moment every *occupancy-driven*
+  conditional street is already manifested, so the edge the neighbor attaches to is a
+  **real, present street** — signatures are matched against the live, manifested edge,
+  not a hypothetical "connected" state.
+
+### Why streets carry an adjacency dependency (decay safety)
+
+Once a neighbor template is attached through a conditional street, that **neighbor's
+adjacency becomes a second trigger** on the same street. The street then lives on:
+
+> `(its placeholder occupant is present)` **OR** `(the neighbor template is present)`
+
+The point is **decay safety**. If the original placeholder occupant is later removed
+by minute decay ([Unlock economy](#unlock-economy-minutes--unlocks)), the street must
+**not** suddenly vanish — the neighbor template may still exist (it has its own
+occupants), and a vanished street would orphan it from the graph. The adjacency
+trigger forces the street to persist as long as the neighbor is there.
+
+**Authoring invariant (must be tested).** Template authors configure these triggers
+by hand, so a test must enforce the rule that makes decay safety hold:
+
+- **Every conditional street cell that runs off a template edge must include a
+  `templateAdjacent` trigger for that edge** (in addition to whatever
+  `placeholderOccupied` trigger originally opened it). Without it, attaching a
+  neighbor through that edge would create a street whose only lifeline is the
+  occupant — and decay could disconnect a live neighbor.
+
+Tests for these authoring rules live alongside the registry/graph tests (see
+[NIGHT_MARKET_GRAPH_ASSUMPTIONS.md](./NIGHT_MARKET_GRAPH_ASSUMPTIONS.md)).
 
 ---
 
@@ -171,17 +259,102 @@ the shared dimension (height for E/W seams, width for N/S seams) matches.
 
 ## Tiling & Placement
 
-**TBD — algorithm not yet designed.** What we know so far:
+**Templates themselves are not unlocks.** Unlocks are *placeholder occupants*;
+templates are the canvas those occupants land in. The two grow on different
+triggers:
 
-- Start: one **starter template at the origin**, with its own edge signatures.
-- Growth: as the user unlocks things, additional templates are appended adjacent
-  to placed templates, choosing candidates whose facing-edge signature **matches**
-  the open edge they attach to.
-- Templates are **not rotated**, so candidate selection is purely by signature
+### What happens when an unlock is granted
+
+1. **Select a free placeholder spot.** Among all placed templates, pick an
+   unoccupied placeholder area.
+2. **Grant an unlock of that size.** The unlock chosen is sized to the selected
+   placeholder (occupant footprint = placeholder area, by construction), then placed
+   into that spot, flipping the template to its occupied version (see
+   [Conditional cell classes](#conditional-cell-classes--template-versions)).
+3. **No free placeholder? Spawn a new template.** If no unoccupied placeholder
+   exists (of the size needed), append a **new template** adjacent to an existing
+   one, then place the unlock into one of the new template's fresh placeholders.
+
+### How a new template attaches
+
+- A new template attaches onto an existing template **via its street shape** — the
+  candidate's facing-edge signature must **match** the open edge it attaches to
+  ([Edge signatures](#edge-signatures)), so streets stay continuous across the seam.
+- Spawning only happens when the existing template is **full** (no free
+  placeholder), so all of its occupancy-driven conditional streets are already
+  manifested. Edge signatures are therefore matched against the **live, manifested
+  edge** — no speculation needed (see
+  [Conditional cell classes](#conditional-cell-classes--template-versions)).
+- Templates are **never rotated**, so candidate selection is purely signature
   equality on the target edge.
+- Start state: one **starter ("hub") template at the origin** — this is the
+  default origin template every user has at 0 minutes (see
+  [Unlock economy](#unlock-economy-minutes--unlocks)).
 
-Selection/ordering policy (random vs. weighted, how unlocks map to placements,
-overlap/gap handling, multi-edge constraints) is deferred to a later design pass.
+> **Still pending — algorithm not yet designed.** The selection/placement policy is
+> deferred: which free placeholder to fill (random vs. weighted), which template to
+> spawn and against which open edge, and overlap/gap/multi-edge handling.
+
+---
+
+## Unlock economy (minutes → unlocks)
+
+The number of unlocks a user has is a **pure function of their lifetime minute
+points** (`users.totalMinutePoints` — the accumulator from
+[MINUTE_POINTS_SYSTEM.md](./MINUTE_POINTS_SYSTEM.md), where 1 minute point ≈ 60s of
+study). Earning minutes grants unlocks; losing minutes takes them back.
+
+### Schedule
+
+| Total minute points ≥ | Total unlocks | Notes |
+|---|---|---|
+| 0 | 0 | **hub only** — the default origin template |
+| 1 | 1 | |
+| 2 | 2 | |
+| 3 | 3 | early unlocks are 1 minute apart |
+| 5 | 4 | |
+| 7 | 5 | |
+| 10 | 6 | |
+| 14 | 7 | |
+| 18 | 8 | |
+| 22 | 9 | mid unlocks are 4 minutes apart |
+| 26 | 10 | |
+| 30 | 11 | |
+| 34 | 12 | |
+| 38 | 13 | |
+| 42 | 14 | |
+| 47 | 15 | 5 minutes apart |
+| 52 | 16 | |
+| 60 | 17 | |
+| 60 + 60·k | 17 + k | **steady state: +1 unlock per hour** beyond minute 60 |
+
+For `m ≥ 60`: `unlocks(m) = 17 + floor((m − 60) / 60)`. Below 60 the thresholds are
+the explicit list above. The threshold list lives as a **static constant in code**
+(alongside the night-market registry), not in the DB.
+
+Each granted unlock triggers the placement flow in
+[Tiling & Placement](#tiling--placement) (fill a free placeholder, or spawn a new
+template when none are free).
+
+### Losing minutes removes unlocks
+
+`totalMinutePoints` can **decrease** — the hourly maintenance cron debits it on
+streak breaks and continued inactivity (see
+[STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md)). When it drops below a
+threshold, the user must lose unlocks to match the schedule again. This cleanup
+**extends the existing hourly cron** (`database/cron/expire-stale-streaks.sql`) so
+it runs in the **same transaction** that debits the minutes:
+
+1. After the debit, compute `target = unlocks(totalMinutePoints)`.
+2. While the user has **more** unlocks than `target`, **delete unlocks at random**
+   from `nightmarketunlocks` until the count matches.
+3. **Remove now-empty templates.** Any placed template left with **zero occupied
+   placeholders** is deleted from `nightmarkettemplates` — **except the hub/origin
+   template**, which always persists (it is the 0-minute baseline).
+
+> **No new `minutesLost` table.** The minute deduction is already recorded as
+> `userminutepoints.penaltyMinutes` (keyed `userId, streakDate, language`) by the
+> existing cron — we reuse that audit trail rather than adding a table.
 
 ---
 
@@ -192,11 +365,14 @@ and DB-persisted user state:
 
 ### Template definitions — **code registry** (static content)
 
-Template grids, walkability classes, asset maps, placeholder areas, and edge
+Template grids, walkability classes, asset maps, placeholder areas, **conditional
+cell-class rules** (occupancy + adjacency triggers — see
+[Conditional cell classes](#conditional-cell-classes--template-versions)), and edge
 signatures are authored in code alongside `src/config/nightMarketRegistry.ts`
 (and its server twin `server/config/nightMarketRegistry.ts`). Signatures can be
 **derived** from the cell grid at build time rather than hand-entered, to avoid
-drift.
+drift. The static **minutes→unlocks schedule** (see
+[Unlock economy](#unlock-economy-minutes--unlocks)) is also a code constant, here.
 
 ### Per-user placement — **one new table + existing unlocks** (persisted)
 
@@ -245,7 +421,8 @@ the migration can add them as NOT NULL without a backfill.
 Templates **replace hand-authored tile registration** as the source for the graphs:
 
 1. Place templates per the user's persisted layout → a global set of cells with
-   walkability classes (after applying any placeholder occupants).
+   walkability classes (after applying each template's conditional cell-class rules:
+   placeholder occupancy + neighbor-template adjacency).
 2. **Tile graph:** all `street-walkable` + `communal-walkable` cells become
    walkable tiles, 4-connected by adjacency (today's construction in
    `src/utils/tileGraph.ts`).
@@ -257,6 +434,13 @@ Templates **replace hand-authored tile registration** as the source for the grap
    (rectangular nodes, uniform edge widths, etc.). The edge-signature matching
    rule is what makes cross-seam streets contiguous enough to satisfy them.
 
+> **Still pending — algorithm not yet written.** Step 3 glosses over the hard part:
+> today's street graph is built from authored `Street { isNorthSouth, start, end,
+> offset, width }` objects, but templates only give us a *grid of street-walkable
+> cells*. The algorithm to **recover `Street` objects (runs, widths, offsets) from
+> the stitched cell map** — so the existing `buildStreetGraph` machinery and the
+> graph invariants still apply — is a TBD design pass.
+
 ---
 
 ## Open questions
@@ -266,6 +450,18 @@ Templates **replace hand-authored tile registration** as the source for the grap
    them, so the pedestrian algorithm needs a defined behavior for them.
 2. **Placement algorithm:** selection/ordering policy, gap/overlap handling,
    multi-edge constraints (see [Tiling & Placement](#tiling--placement)).
+3. **Street-recovery algorithm:** how to derive `Street` objects from a stitched
+   cell grid (see [Feeding TILE_GRAPH / STREET_GRAPH](#feeding-tile_graph--street_graph)).
+4. **Tileset scheme:** the autotiling bitmask/atlas
+   (see [Tile rendering](#tile-rendering-autotiling)).
+5. **Empty-template removal vs. structural dependency:** decay safety keeps a
+   conditional *street* alive via the neighbor's adjacency trigger
+   ([Why streets carry an adjacency dependency](#why-streets-carry-an-adjacency-dependency-decay-safety)),
+   but if the template *holding* that street decays to **zero occupants**, the
+   empty-template cleanup ([Unlock economy](#losing-minutes-removes-unlocks)) would
+   delete it and orphan the neighbor that attached through it. Must cleanup refuse to
+   remove an empty template that a still-present neighbor depends on (i.e. is the
+   "remove empty templates" rule subordinate to template-adjacency dependencies)?
 
 ---
 
@@ -280,7 +476,15 @@ Code this doc will depend on / drive once implemented:
 - `src/utils/isometric.ts` — local `(col,row)` → global `(isoX, isoY)` mapping.
 - New DB table `nightmarkettemplates` (placements) + new `placedTemplateId` /
   `placeholderAreaId` columns on `nightmarketunlocks` (occupants).
+- `users.totalMinutePoints` — the minute accumulator the unlock schedule reads
+  (see [MINUTE_POINTS_SYSTEM.md](./MINUTE_POINTS_SYSTEM.md)).
+- `database/cron/expire-stale-streaks.sql` — the hourly maintenance cron gains an
+  unlock-removal + empty-template-cleanup branch (see
+  [STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md)). Reuses
+  `userminutepoints.penaltyMinutes` as the loss audit trail (no new table).
 
 Related docs: [NIGHT_MARKET_FEATURE.md](./NIGHT_MARKET_FEATURE.md),
 [NIGHT_MARKET_GRAPH_ASSUMPTIONS.md](./NIGHT_MARKET_GRAPH_ASSUMPTIONS.md),
-[PEDESTRIAN_WALKING_ALGORITHM.md](./PEDESTRIAN_WALKING_ALGORITHM.md).
+[PEDESTRIAN_WALKING_ALGORITHM.md](./PEDESTRIAN_WALKING_ALGORITHM.md),
+[MINUTE_POINTS_SYSTEM.md](./MINUTE_POINTS_SYSTEM.md),
+[STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md).

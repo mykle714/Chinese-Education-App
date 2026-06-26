@@ -153,6 +153,9 @@ An hourly Postgres cron on the prod server (a) breaks stale streaks (mirroring `
 → See [docs/PRACTICE_WRITING.md](./docs/PRACTICE_WRITING.md) — the "Practice Writing Me" drill: four assistance levels (Trace / Step Through / Memorize / Test), the 2×2 grid for multi-char words, the generalized modal lockout + greyed-background step-back, Memorize's study-first lock (no-writing badge + Start-Writing pulse), top-1 grading, and completion stars.
 → Recognition path (stroke format, backends, Google proxy, Hanzi Writer guide): [docs/HANDWRITING_RECOGNITION.md](./docs/HANDWRITING_RECOGNITION.md)
 
+### Custom Card Icon Layout (flp)
+→ See [docs/CARD_ICON_LAYOUT.md](./docs/CARD_ICON_LAYOUT.md) — per-word custom icon arrangements on flashcards: the back-face canvas editor (drag/resize/rotate up to 12 icons via gestures), the `iconLayout` jsonb on the vet tables (normalized coords), the icons8 search proxy + download-on-select, and the face-gating rule (icons render only on English-bearing faces).
+
 ### Example Sentences (est)
 → See [docs/EXAMPLE_SENTENCES.md](./docs/EXAMPLE_SENTENCES.md) — the est tab: AI-generated sentences rendered as tappable cpcd segments with definition popups. Covers the generation pipeline, segment enrichment, and **form modification** (contextually inflected English glosses via `wordForms` + `resolveWordForm`, zh only).
 
@@ -257,7 +260,10 @@ When reviewing or writing code, actively look for and address:
 - **Potential failure paths** — database clients not released in all branches, missing error handling in async code, `Promise.all` failing mid-batch without individual error capture
 - **Complex code without comments** — algorithms, non-obvious state management (stale closure workarounds, ref sync patterns), and transaction flows should have inline comments explaining *why*, not just *what*
 
-## Dependency Documentation
+## Documentation
+Do not add to CLAUDE.md without asking me. Generally speaking I would like new documents to be linked as grandchild documents to CLAUDE.md so that this file does not grow too large.
+
+### Dependency Documentation
 When writing functions, always write down which docs depend on or reference the code being written. In addition, when writing docs, add to each section which lines of code in which files the sections references or depends on.
 
 When editting code, check the referenced documentation and update it if need be. When editting documentation, check the referenced code to see if there is alignment.

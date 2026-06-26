@@ -2,6 +2,9 @@ import React from "react";
 import { Button, IconButton, useTheme } from "@mui/material";
 import UndoIcon from "@mui/icons-material/Undo";
 import SettingsIcon from "@mui/icons-material/Settings";
+// Edit (icon-layout) uses the brush; the writing-practice button uses the pencil
+// (the two were swapped per design).
+import BrushIcon from "@mui/icons-material/Brush";
 import PageHeader from "../../components/PageHeader";
 import MinutePointsFireBadge from "../../components/MinutePointsFireBadge";
 import type { LastMarkUndoSnapshot } from "./types";
@@ -16,8 +19,12 @@ interface FlashcardsLearnHeaderProps {
     onUndo: () => void;
     showPinyin: boolean;
     onTogglePinyin: () => void;
-    autoplayChinese: boolean;
-    onToggleAutoplayChinese: () => void;
+    // Whether the active card is showing its back (Side 2). The icon-layout editor
+    // only operates on the back face, so the "edit" button is enabled only here.
+    isFlipped: boolean;
+    // True while the icon-layout editor is open (keeps the button from re-triggering).
+    editMode: boolean;
+    onToggleEdit: () => void;
     onSettingsClick: () => void;
 }
 
@@ -30,8 +37,9 @@ const FlashcardsLearnHeader: React.FC<FlashcardsLearnHeaderProps> = ({
     onUndo,
     showPinyin,
     onTogglePinyin,
-    autoplayChinese,
-    onToggleAutoplayChinese,
+    isFlipped,
+    editMode,
+    onToggleEdit,
     onSettingsClick,
 }) => {
     const theme = useTheme();
@@ -53,11 +61,12 @@ const FlashcardsLearnHeader: React.FC<FlashcardsLearnHeaderProps> = ({
         },
     });
 
-    // Control-placement principle (see also SettingsPanelBody): the header
-    // surfaces only the two "quick" toggles flipped often mid-study — pinyin and
-    // autoplay. All other learn prefs (tone color, word spacing) live in the
-    // Settings sheet as "setup" prefs. Both toggles here are also mirrored in the
-    // sheet, which remains the single complete control panel.
+    // Control-placement principle (see also SettingsPanelBody): the header surfaces
+    // only the "quick" pinyin toggle flipped often mid-study. All other learn prefs
+    // (tone color, word spacing, autoplay) live in the Settings sheet as "setup"
+    // prefs — the single complete control panel. The "edit" button opens the custom
+    // card icon-layout editor (docs/CARD_ICON_LAYOUT.md); it acts on the back face, so
+    // it is enabled only when the card is flipped to the back.
     const rightItems = (
         <>
             <IconButton
@@ -79,16 +88,17 @@ const FlashcardsLearnHeader: React.FC<FlashcardsLearnHeaderProps> = ({
             >
                 pinyin
             </Button>
-            {/* Autoplay-on-chinese-side toggle. Replaces the previous segment-spaces
-                button — spaces moved into the settings sheet. */}
+            {/* Custom icon-layout editor toggle — back face only. */}
             <Button
-                className="autoplay-toggle-btn"
-                variant={autoplayChinese ? "contained" : "text"}
+                className="card-edit-toggle-btn"
+                variant={editMode ? "contained" : "text"}
                 size="small"
-                onClick={onToggleAutoplayChinese}
-                sx={toggleSx(autoplayChinese)}
+                startIcon={<BrushIcon sx={{ fontSize: "14px !important" }} />}
+                onClick={onToggleEdit}
+                disabled={!isFlipped}
+                sx={toggleSx(editMode)}
             >
-                autoplay
+                edit
             </Button>
             <IconButton
                 className="mobile-demo-tool-button mobile-demo-settings-button"

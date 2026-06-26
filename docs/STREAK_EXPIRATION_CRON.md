@@ -29,6 +29,14 @@ users and run in one transaction off the **same** hourly crontab line
 Both branches use each user's stored `users.timezone` against the
 4 AM local-day boundary.
 
+> **Planned third branch (DESIGN): Night Market unlock cleanup.** Because both
+> branches above can *lower* `totalMinutePoints`, a planned branch will run in the
+> same transaction to remove Night Market unlocks at random down to the count the
+> minute total now allows, and delete any template left with no occupants (the
+> hub/origin template is exempt). No new table — the deduction is already audited via
+> `userminutepoints.penaltyMinutes`. See
+> [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md#losing-minutes-removes-unlocks).
+
 - **SQL**: `database/cron/expire-stale-streaks.sql` (filename kept for
   backward compatibility with the prod crontab; consider renaming to
   e.g. `hourly-maintenance.sql` next time the crontab is touched — it now

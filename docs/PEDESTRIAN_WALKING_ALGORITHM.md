@@ -4,6 +4,8 @@ Defines how a pedestrian translates a high-level street-graph route (`[node₀, 
 
 This document describes the intended behavior. The graph guarantees that make it sound are listed in [NIGHT_MARKET_GRAPH_ASSUMPTIONS.md](./NIGHT_MARKET_GRAPH_ASSUMPTIONS.md) — the algorithm assumes those invariants hold.
 
+> **Not yet modeled:** the template system ([NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md), DESIGN stage) introduces a `communal-walkable` tile tier (walkable open space that is *not* a street and is excluded from the street graph). This algorithm has no defined behavior for those cells yet — see that doc's Open Questions.
+
 ---
 
 ## Core primitive: axial walk along an edge

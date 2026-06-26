@@ -2,15 +2,17 @@
  * PracticeWritingButton — the "Practice Writing Me" entry point.
  *
  * A self-contained button that opens the writing-practice popup for a target
- * word. Placed on the eip, the flp main flashcard (front face, stacked above the
- * audio icon), and the word details page (cdp). Chinese-only for now (the
+ * word. Placed on the eip, the flp main flashcard (back face only, stacked above
+ * the audio icon), and the word details page (cdp). Chinese-only for now (the
  * recognizer is zh_CN); renders nothing for other languages.
  *
  * Spec: docs/HANDWRITING_RECOGNITION.md ("Entry points").
  */
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Button, IconButton, Tooltip } from "@mui/material";
-import BrushIcon from "@mui/icons-material/Brush";
+// Writing practice uses the pencil; the flp icon-layout "edit" uses the brush
+// (the two were swapped per design).
+import EditIcon from "@mui/icons-material/Edit";
 import PracticeWritingPopup from "./PracticeWritingPopup";
 import { useAuth } from "../../AuthContext";
 import { fetchCompletedLevels } from "./completions";
@@ -121,7 +123,7 @@ export default function PracticeWritingButton({
                 onTouchStart={stop}
                 onTouchEnd={stop}
               >
-                <BrushIcon fontSize="small" />
+                <EditIcon fontSize="small" />
               </IconButton>
             </Tooltip>,
           )
@@ -130,7 +132,7 @@ export default function PracticeWritingButton({
               className="practice-writing-button"
               variant={variant}
               size={size}
-              startIcon={<BrushIcon />}
+              startIcon={<EditIcon />}
               onClick={openPopup}
               onMouseDown={stop}
             >

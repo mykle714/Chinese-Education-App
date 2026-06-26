@@ -3,7 +3,7 @@ import csv from 'csv-parser';
 import { IVocabEntryDAL } from '../dal/interfaces/IVocabEntryDAL.js';
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import { DictionaryService } from './DictionaryService.js';
-import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, Language } from '../types/index.js';
+import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, Language, IconLayoutItem, ICON_LAYOUT_MAX_ITEMS } from '../types/index.js';
 import { ValidationError, NotFoundError, BulkResult } from '../types/dal.js';
 import db from '../db.js';
 import { vetTableForLanguage } from '../dal/shared/vetTable.js';
@@ -186,6 +186,74 @@ export class VocabEntryService {
     const updatedEntry = await this.vocabEntryDAL.update(entryId, updateFields);
 
     return updatedEntry;
+  }
+
+  /**
+   * Persist (or clear) a custom flashcard icon arrangement for one of the user's vet
+   * rows. `layout` of null clears it back to the default centered icon. Validates the
+   * arrangement shape/size here (business rule), then writes via the ownership-scoped
+   * DAL method. See docs/CARD_ICON_LAYOUT.md.
+   */
+  async updateIconLayout(
+    userId: string,
+    entryId: number,
+    language: string,
+    layout: IconLayoutItem[] | null,
+    textBackdrop: boolean
+  ): Promise<VocabEntry> {
+    const clean = layout === null ? null : this.validateIconLayout(layout);
+    // A backdrop is only meaningful with a custom layout; force it off when clearing.
+    const backdrop = clean === null ? false : !!textBackdrop;
+    const updated = await this.vocabEntryDAL.updateIconLayout(userId, entryId, language, clean, backdrop);
+    if (!updated) {
+      // No row matched the id for this user — either it doesn't exist or isn't theirs.
+      throw new NotFoundError('Vocabulary entry not found');
+    }
+    return updated;
+  }
+
+  /**
+   * Validate + normalize a custom icon arrangement: max ICON_LAYOUT_MAX_ITEMS items,
+   * each with a non-empty iconId and finite numeric x/y/scale/rotation/z. Coordinates
+   * are clamped to sane ranges; `z` is renumbered 0..n-1 (by ascending z) so paint
+   * order is canonical regardless of how the client tracked it.
+   */
+  private validateIconLayout(layout: unknown): IconLayoutItem[] {
+    if (!Array.isArray(layout)) {
+      throw new ValidationError('iconLayout must be an array or null');
+    }
+    if (layout.length > ICON_LAYOUT_MAX_ITEMS) {
+      throw new ValidationError(`iconLayout may contain at most ${ICON_LAYOUT_MAX_ITEMS} icons`);
+    }
+
+    const clamp = (n: number, lo: number, hi: number) => Math.min(Math.max(n, lo), hi);
+
+    const items: IconLayoutItem[] = layout.map((raw: any, i: number) => {
+      const iconId = typeof raw?.iconId === 'string' ? raw.iconId.trim() : '';
+      if (!iconId) throw new ValidationError(`iconLayout[${i}].iconId is required`);
+      const nums = ['x', 'y', 'scale', 'rotation', 'z'];
+      for (const k of nums) {
+        if (typeof raw?.[k] !== 'number' || !Number.isFinite(raw[k])) {
+          throw new ValidationError(`iconLayout[${i}].${k} must be a finite number`);
+        }
+      }
+      return {
+        iconId,
+        x: clamp(raw.x, 0, 1),
+        y: clamp(raw.y, 0, 1),
+        scale: clamp(raw.scale, 0.25, 4.5),
+        rotation: raw.rotation,
+        z: raw.z,
+      };
+    });
+
+    // Renumber z to a canonical 0..n-1 by ascending original z (stable for ties).
+    items
+      .map((item, idx) => ({ item, idx }))
+      .sort((a, b) => a.item.z - b.item.z || a.idx - b.idx)
+      .forEach((entry, rank) => { entry.item.z = rank; });
+
+    return items;
   }
 
   /**

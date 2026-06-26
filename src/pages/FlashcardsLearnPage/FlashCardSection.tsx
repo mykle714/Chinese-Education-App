@@ -7,6 +7,7 @@ import {
     INCORRECT_COLOR,
     CARD_FACE_JUSTIFY,
     CARD_DISMISS_THRESHOLD_VW,
+    CARD_FLY_OUT_MS,
     CARD_FLY_OUT_TRANSITION,
     FC_FONT,
     FC_FONT_CJK,
@@ -286,6 +287,15 @@ const CardFaceSide: React.FC<{
             // Clip the custom icon layer / edit canvas to the card boundary so icons
             // partially off the card are cut off and never paint outside it.
             overflow: "hidden",
+            // Explicit visual hiding of the away-facing face. `backfaceVisibility:hidden`
+            // alone is unreliable on some mobile WebKit/Blink builds (prod bug: the
+            // rotated-away Side 1 bled through the back, mirrored by the parent's
+            // rotateY(180deg)), so we don't trust it for the visual. `inert` already
+            // tracks "this face is facing away"; when so, force visibility:hidden but
+            // DELAY it to the mid-flip point (90°, edge-on) so the flip still animates
+            // — and reveal the incoming face immediately (no delay) on the way in.
+            visibility: inert ? "hidden" : "visible",
+            transition: `visibility 0s ${inert ? CARD_FLY_OUT_MS / 2 : 0}ms`,
             ...(inert && { pointerEvents: "none" }),
             display: "flex",
             alignItems: "center",

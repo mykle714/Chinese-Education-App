@@ -18,6 +18,15 @@ export const FC_FONT_CJK = FONTS.cjk;
 export const CARD_FLY_OUT_MS = 450;
 export const CARD_FLY_OUT_TRANSITION = `transform ${CARD_FLY_OUT_MS}ms ease`;
 
+// The 3D flip (rotateY) uses a LINEAR curve, NOT `ease`, on purpose: the away-facing
+// face is hidden (visibility) at the time-midpoint to defeat the mobile
+// backface-visibility bug (see CardFaceSide). With `ease`, the card reaches 90°
+// (edge-on) well before the time-midpoint, so the rotated-away face's mirrored
+// backside would flash between edge-on and the hide. `linear` makes 90° land exactly
+// at CARD_FLY_OUT_MS / 2, so the hide fires precisely at edge-on — no flash. Same
+// duration as the fly-out so the two stay visually consistent.
+export const CARD_FLIP_TRANSITION = `transform ${CARD_FLY_OUT_MS}ms linear`;
+
 // Tab accent colors — decorative, consistent across all themes
 const TAB_BLUE   = "#779BE7";
 const TAB_ORANGE = "#FF8E47";

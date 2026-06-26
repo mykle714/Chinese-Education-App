@@ -9,6 +9,7 @@ import {
     CARD_DISMISS_THRESHOLD_VW,
     CARD_FLY_OUT_MS,
     CARD_FLY_OUT_TRANSITION,
+    CARD_FLIP_TRANSITION,
     FC_FONT,
     FC_FONT_CJK,
 } from "./constants";
@@ -292,8 +293,10 @@ const CardFaceSide: React.FC<{
             // rotated-away Side 1 bled through the back, mirrored by the parent's
             // rotateY(180deg)), so we don't trust it for the visual. `inert` already
             // tracks "this face is facing away"; when so, force visibility:hidden but
-            // DELAY it to the mid-flip point (90°, edge-on) so the flip still animates
-            // — and reveal the incoming face immediately (no delay) on the way in.
+            // DELAY it to exactly the mid-flip point — which, because the flip curve is
+            // LINEAR (CARD_FLIP_TRANSITION), is precisely 90° / edge-on, so the face
+            // vanishes at zero projected width with no mirror flash. The incoming face
+            // is revealed immediately (no delay) on the way in.
             visibility: inert ? "hidden" : "visible",
             transition: `visibility 0s ${inert ? CARD_FLY_OUT_MS / 2 : 0}ms`,
             ...(inert && { pointerEvents: "none" }),
@@ -420,7 +423,9 @@ const CardFace: React.FC<{
                 inset: 0,
                 transformStyle: "preserve-3d",
                 transform: `rotateY(${isFlipped ? 180 : 0}deg)`,
-                transition: isAnimating ? 'none' : CARD_FLY_OUT_TRANSITION,
+                // LINEAR flip (not the fly-out's ease) so 90° lands exactly at the
+                // time-midpoint, matching the away-face visibility hide in CardFaceSide.
+                transition: isAnimating ? 'none' : CARD_FLIP_TRANSITION,
                 overflow: 'visible',
             }}
         >

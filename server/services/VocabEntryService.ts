@@ -244,6 +244,9 @@ export class VocabEntryService {
         // Optional horizontal-mirror flag; coerced to a real boolean (omitted when false
         // so unmirrored items stay clean in the jsonb).
         ...(raw.flipX === true ? { flipX: true } : {}),
+        // Optional lock flag (icon ignores canvas translate/resize/rotate gestures);
+        // coerced + omitted when false so unlocked items stay clean in the jsonb.
+        ...(raw.locked === true ? { locked: true } : {}),
       };
     });
 

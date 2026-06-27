@@ -3,8 +3,14 @@
 > Status: **implemented**. Backed by migration 82 (`iconLayout`), the icons8
 > search/ensure and vocabEntries icon-layout endpoints, and the flp edit-mode UI.
 > The editor has **two modes** — basic (swap the single icon) and advanced (the full
-> drag/resize/rotate canvas, plus a per-icon tool row: undo / delete / align / mirror /
-> reorder).
+> drag/resize/rotate canvas, plus per-icon tools merged into **one wrapping flex-list menu**:
+> undo / redo / delete / duplicate / mirror / lock / align / snap / order / count, flowing onto
+> the next line when a row overflows). In
+> **advanced** mode the card is pushed (animated) down toward the bottom of the screen so
+> the three-row toolbar clears it (basic mode keeps its single static row, card stays
+> centered). While editing the **More Info pill stays drawn but greyed + inert**; in
+> advanced mode the card slides over and covers it. The toolbar drops in on enter and the
+> advanced menu reveal-expands on the adv toggle.
 >
 > The white text-backdrop affordance (migration 83 `iconTextBackdrop`) has been
 > **removed**: migration 84 drops the column and the editor no longer exposes it.
@@ -79,7 +85,8 @@ New nullable column **`iconLayout` jsonb** on both vet tables (`vocabentries_zh`
   "scale":    1.2,      // multiplier on the base box; clamped ~[0.25, 4.5]
   "rotation": 0,        // degrees
   "z":        0,        // paint order; higher = front. Normalized to 0..n-1 on save.
-  "flipX":    true      // OPTIONAL horizontal mirror (the "mirror" action); omitted/false = not mirrored
+  "flipX":    true,     // OPTIONAL horizontal mirror (the "mirror" action); omitted/false = not mirrored
+  "locked":   true      // OPTIONAL lock (the "lock" action); icon ignores translate/resize/rotate gestures. omitted/false = freely editable
 }
 ```
 
@@ -164,9 +171,38 @@ All in `src/pages/FlashcardsLearnPage/`.
      because the arrangement lives on the back face.
 
 2. **Floating edit toolbar** (`CardEditToolbar.tsx`) — rendered as an **absolute
-   overlay inside `ContentArea`** (which is `position: relative`), so it does NOT push
-   the card down when it appears. It has **two modes**, toggled by the **adv** button
-   (`Tune` icon, filled when active); the page tracks this as `advMode`.
+   overlay inside `ContentArea`** (which is `position: relative`), so the toolbar itself
+   does NOT change the card-slot's flow height. Instead, in **advanced** mode (when the
+   toolbar grows to three rows) the **card is pushed down** toward the bottom of the
+   screen so the toolbar clears it with a healthy gap: `DraggableCardContainer` takes a
+   `pushDown` prop (`editMode && advMode`) that swaps its symmetric `48px 40px` padding
+   for a large top inset (`148px 40px 28px`), **transitioned** so the card glides
+   down/up. Basic mode keeps the single static row, so the card stays centered.
+
+   **Animations (all share one timing — both directions).** The toolbar drop, the
+   advanced-rows reveal, and the card push-down all run at `CARD_EDIT_ANIM_MS = 300` with
+   easing `CARD_EDIT_ANIM_EASING = cubic-bezier(0.22, 1, 0.36, 1)` (exported from
+   `CardEditToolbar.tsx`), so they move in lockstep on **open AND close**:
+   - **Toolbar** — wrapped in MUI **`<Slide direction="down">`** in
+     `FlashcardsLearnPage.tsx` (`in={editMode}`, `mountOnEnter`/`unmountOnExit`): drops in
+     from behind the header on enter, slides back up on exit.
+   - **Advanced menu** — the merged wrapping flex-list menu is wrapped in MUI **`<Collapse>`**
+     (`in={advMode}`, `unmountOnExit`): height-expands on adv-on, collapses up on adv-off.
+     (The align/order dropdowns are portaled, so Collapse's height clipping doesn't affect
+     them.)
+   - **Card** — the `DraggableCardContainer` `padding` `transition` animates both ways.
+
+   Using `Slide`/`Collapse` (react-transition-group) instead of mount-only `@keyframes` is
+   what makes the **closing** motion match the opening one.
+
+   **More Info pill** — stays **drawn but greyed + inert** while editing
+   (`isDisabled={editMode}` on `MoreInfoPill`, `FlashcardsLearnPage.tsx`), NOT removed.
+   In advanced mode the card slides down **over** it: the card slot is raised
+   (`zIndex: 3` when `editMode && advMode` in `FlashCardSection.tsx`) above the pill's
+   `zIndex: 2`, so the card paints over the pill rather than the pill floating on top.
+
+   The toolbar has **two modes**, toggled by the **adv** button (`Tune` icon,
+   filled when active); the page tracks this as `advMode`.
 
    **Two drafts, preserved across the toggle** — the page holds `basicDraft` (the
    single-icon view, 0–1 items) and `advDraft` (the multi-icon arrangement) at once.
@@ -178,20 +214,91 @@ All in `src/pages/FlashcardsLearnPage/`.
    **Basic mode**: the card shows a single icon and the gesture canvas is NOT mounted.
    The contextual left button is **change icon** (`Autorenew` cycle icon) — opens the
    picker; on select it **replaces** `basicDraft` with one default-positioned icon (the
-   "swap"). Always valid here because basic is always a single icon.
+   "swap"). Always valid here because basic is always a single icon. The **basic row is
+   now static** — the only thing that changes between modes is this left button's
+   add-icon / swap-icon label + action (the `count/12` readout has moved to the advanced
+   menu; see below).
 
    **Advanced mode**: the gesture canvas is live (drag / resize / rotate / add /
-   delete) over `advDraft`. The left button becomes **add icon** (`Add` ＋, disabled once
-   12 icons are placed) with the `count/12` readout, and a **second toolbar row of
-   per-icon tools** drops in below the first:
-   - **undo** (`Undo`) — reverts the last edit action. Disabled with an empty stack.
+   delete) over `advDraft`. The left button (on the static basic row) becomes **add
+   icon** (`Add` ＋, disabled once 12 icons are placed), and **one merged tool menu** drops
+   in below — a single container (`card-edit-toolbar__adv-menu`) laid out as a **wrapping
+   flex list** (`display: flex; flexWrap: wrap`): each tool hugs its own content (`smallBtnSx`)
+   and items flow left-to-right, collecting onto the next line when a row overflows (no fixed
+   columns / table widths). The align/order dropdowns are children of the list but portal /
+   return null, so they take no slot. The tools, in order:
+
+   - **undo** (`Undo`) — reverts the last edit action. Disabled with an empty undo stack.
+   - **redo** (`Redo`) — replays the most recently undone action. Disabled with an empty
+     redo stack; the redo stack is cleared whenever a fresh tracked action occurs (see
+     "Undo/redo history" below).
    - **delete** (`DeleteOutline`) — removes the **selected** icon (no confirmation).
      Disabled when nothing is selected.
-   - **align** (`CropSquare`) — opens a dropdown of 4 arrows (up / right / down / left)
-     that snap the selected icon's `rotation` to an absolute orientation
-     (`ALIGN_ROTATION` = `0 / 90 / 180 / -90`). Disabled when nothing is selected.
+   - **duplicate** (`ContentCopy`) — clones the **selected** icon's appearance
+     (`iconId` / `scale` / `rotation` / `flipX`) but drops the copy at the **default
+     new-icon spawn spot** (card center `x:0.5, y:0.5`) on top of the stack, then selects
+     the copy (`handleDuplicateSelected`). Disabled when nothing is selected **or** at the
+     12-icon max.
    - **mirror** (`Flip`) — toggles `flipX` on the selected icon. Disabled when nothing
      is selected.
+   - **lock** (`LockOpen` → `Lock`) — toggles `locked` on the selected icon
+     (`handleToggleLock`). A locked icon stays **selectable** but ignores the canvas
+     translate / resize / rotate gestures; its corner indicator turns into a **golden lock
+     symbol** (see the gesture-canvas section). The button **label is always "lock"** in
+     both states; the locked state is signalled only by the **golden** filled lock icon +
+     filled-golden button styling (`selectedLocked` drives it), vs. the open-lock icon when
+     unlocked. Disabled when nothing is selected. Lock is **not** an undoable action — see
+     "Undo/redo history" below.
+   - **align** / **snap** / **order** — the three dropdown tools (see below).
+   - the **`count/12` readout** (`Typography`) — the last item in the list, vertically
+     centered (`alignSelf: center`); moved here off the basic row.
+
+   *The align + snap + order dropdowns are **non-modal**.* They render with `hideBackdrop` +
+   `slotProps.root.sx.pointerEvents: "none"` / `slotProps.paper: "auto"`, so a press
+   anywhere outside the open dropdown is **not** swallowed by a modal backdrop — it falls
+   straight through to the canvas/toolbar. Because that removes MUI's own backdrop-click
+   `onClose`, the toolbar closes them itself: a capture-phase `document` `pointerdown`
+   (effect keyed on the three anchors) closes whichever is open whenever the press lands
+   outside it (`closest('.card-edit-toolbar__align-menu, .card-edit-toolbar__order-popover,
+   .card-edit-toolbar__snap-menu')` guards inside presses). Net effect: trying any action while
+   a dropdown is open (drag an icon, hit another tool) **both dismisses the dropdown and performs
+   the action** in the one press, instead of the first press being eaten just to close the menu.
+   The snap menu is the exception that *stays* open on an inside press (its rows are inside
+   `.card-edit-toolbar__snap-menu`), so several toggles can be flipped in one open.
+
+   - **align** (`CropSquare`) — opens a dropdown laid out as a **3×3 grid of direction
+     cells with the center cell empty** (8 directions: the 4 cardinals + the 4 **45°
+     diagonals**). Each cell shows an upward arrow spun toward its direction; clicking it
+     snaps the selected icon's `rotation` to that absolute orientation. The grid +
+     rotations come from `ALIGN_ROTATION` in `cardIconLayout.ts`
+     (`up:0, up-right:45, right:90, down-right:135, down:180, down-left:225, left:-90,
+     up-left:-45`) — the same angle each cell rotates its arrow by, so arrow ⇔ result
+     always match. `AlignDirection` (8-member union) lives there too and is re-exported
+     from `CardEditToolbar.tsx`. Disabled when nothing is selected.
+   - **snap** (`GridOn`) — opens a dropdown of **three independent toggle rows** (move /
+     rotate / resize), each quantizing its operation to a discrete increment. The button is
+     **filled when ANY toggle is on** (`anySnapOn`) and is disabled when the card is empty
+     (`count === 0`). Each row shows an icon + label + a trailing check that fades in when
+     active; pressing a row toggles it **without closing the menu** (so several can be set in
+     one open). The increments (helpers in `cardIconLayout.ts`):
+     - **move** → icon CENTER snaps to a grid whose spacing is **5% of the card width** in
+       both physical axes (`snapCenterToGrid`; the y-step is `0.05 × CARD_ASPECT` in height
+       fractions since the grid is square in pixels — `CARD_ASPECT = 295/426`, the fixed card
+       aspect, so the math needs no pixel rect).
+     - **rotate** → rotation snaps to the nearest **22.5°** (`snapRotation`; 16 steps/turn).
+     - **resize** → the rendered icon SIZE (`BASE_ICON_FRAC × scale` of card width) snaps to
+       the nearest **5% of the card width** (`snapScaleToStep`, clamped to the scale range).
+
+     **Two-layer behavior.** (1) *Turning a toggle ON snaps every icon immediately* — the page
+     handlers (`handleToggleSnapMove/Rotate/Resize` → shared `applySnapAll`) snapshot history
+     once, then map the snap over `advDraft`, so existing off-grid placements jump onto the
+     grid in one undo step. (2) *Future gestures stay quantized* — the toggles are passed to
+     `CardIconCanvas` as a `snap: { move, rotate, resize }` `SnapConfig`, and its drag /
+     pinch / corner-handle handlers apply `snapCenterToGrid` / `snapScaleToStep` /
+     `snapRotation` live while the matching flag is on. Turning a toggle OFF only flips the
+     flag (icons keep their snapped values). Snap state is **editor-only** (not persisted) and
+     is cleared on `exitEdit`. The align action's fixed rotations (multiples of 45°) are
+     already on the 22.5° grid, so rotate-snap never fights it.
    - **order** (`Layers`) — opens a compact popover (`CardIconOrderList`, width fits its
      contents) listing every icon in paint order (**top of the list = rendered on top =
      highest `z`**). Each row is just the icon thumbnail + a trailing triple-dot
@@ -199,11 +306,14 @@ All in `src/pages/FlashcardsLearnPage/`.
      anywhere on it, not only the dots). The card restacks **live as you drag** — every
      time the placeholder lands on a new slot the new `z`-order is pushed up via
      `onReorder` (top row = highest `z`), so the arrangement previews in real time rather
-     than only on release. A plain tap (no movement) is a no-op (no `z` rewrite, no undo
-     entry). Disabled when the card is empty.
+     than only on release. A plain tap (no movement) is a no-op for `z` (no rewrite, no
+     undo entry). **Pressing any row also selects that icon** (`onSelectIcon`) — whether or
+     not a reorder drag follows — so the canvas highlights it and the per-icon tools target
+     it. Disabled when the card is empty.
 
-     *Gesture wiring (`CardIconOrderList`):* on row `pointerdown` the component sets a
-     drag state, then tracks the pointer via **window-level `pointermove`/`pointerup`/
+     *Gesture wiring (`CardIconOrderList`):* on row `pointerdown` the component selects the
+     row's icon, sets a drag state, then tracks the pointer via **window-level
+     `pointermove`/`pointerup`/
      `pointercancel` listeners** for the gesture's duration. It deliberately does **not**
      bind handlers to the dragged row (it is swapped for a placeholder immediately, so a
      row-bound handler would unmount mid-drag → the old "release freezes" bug) and does
@@ -211,14 +321,31 @@ All in `src/pages/FlashcardsLearnPage/`.
      paths, which silently aborted the whole drag → the old "drag does nothing" bug).
      Window listeners make the drag complete wherever the pointer travels or releases.
 
-   **Undo history** — the page keeps a capped stack (`ADV_HISTORY_MAX = 100`) of prior
-   `advDraft` snapshots (`advHistory`). Every discrete action pushes the PRE-change
-   snapshot via `pushAdvHistory` *before* mutating: gestures snapshot once at gesture
-   start (`onInteractionStart`, fired by `CardIconCanvas` on drag/pinch/handle start),
-   add / delete / align / mirror snapshot in their page handlers, and a **reorder drag**
-   snapshots once via `onReorderStart` on its first change (the live `onReorder` calls
-   during the drag do NOT snapshot, so the whole drag collapses to one undo step).
-   `undoAdv` pops and restores, clearing selection. The stack is cleared on enter/exit edit.
+   **Undo/redo history** — the page keeps two capped stacks (`ADV_HISTORY_MAX = 100`) of
+   prior `advDraft` snapshots: `advHistory` (undo) and `advFuture` (redo). Every discrete
+   action pushes the PRE-change snapshot onto `advHistory` via `pushAdvHistory` *before*
+   mutating: gestures snapshot once on the **first real movement** (`onInteractionStart`,
+   fired by `CardIconCanvas` from the `onDrag`/`onPinch` memo factory, and from the corner
+   handle's `first` frame) — deliberately **NOT** on `onDragStart`/`onPinchStart`, because a
+   **tap-to-select also fires those start events** (tap-vs-drag isn't decided until release),
+   so snapshotting there pushed a no-op entry on every selection tap and made undo/redo
+   appear to "do nothing" for a press or two. add / delete / duplicate / align / mirror
+   snapshot in their page handlers, and a **reorder drag** snapshots once via
+   `onReorderStart` on its first change (the live `onReorder` calls during the drag do NOT
+   snapshot, so the whole drag collapses to one undo step). `pushAdvHistory` also **clears
+   `advFuture`** — a fresh action discards any abandoned redo branch (the standard editor
+   rule). `undoAdv` pops `advHistory`, pushes the current draft onto `advFuture`, and
+   restores. `redoAdv` does the mirror: pops `advFuture`, pushes the current draft back onto
+   `advHistory`, and re-applies. Both clear selection. The shared cap-aware push is
+   `pushHistorySnapshot`. Both stacks are cleared on enter/exit edit.
+
+   **Lock is orthogonal to history** — toggling **lock** (`handleToggleLock`) pushes **no**
+   undo entry, and undo/redo never change any icon's lock state. When `undoAdv`/`redoAdv`
+   restore a snapshot they run it through `withLiveLocks`, which keeps the snapshot's
+   geometry but re-applies the **currently-live** `locked` flags (matched by icon index
+   against the live draft). Result: you can lock an icon and still undo/redo its
+   position/scale/rotation, and an undo never silently re-locks or unlocks anything. (Icons
+   resurrected by undoing a delete come back unlocked, since they have no live counterpart.)
 
    **Render order is no longer last-touched.** Selecting an icon does NOT change its `z`
    (the old `z = max+1`-on-select was removed). The selected icon only *visually* floats
@@ -257,12 +384,50 @@ All in `src/pages/FlashcardsLearnPage/`.
    - Desktop: drag plus a corner handle on the selected icon for resize/rotate (the
      handle computes scale from the pointer's distance to the icon center, rotation
      from its angle).
-   - **Selecting** an icon (on `pointerDown`) shows a dashed selection outline + the
-     handle and floats it visually (transient high `zIndex`) — but does **not** change
-     its stored `z` (paint order is owned by the order dropdown). Selection is controlled
-     by the page (`selected`/`onSelect`).
-   - **Delete** = drag an icon so its center leaves the card boundary and release, or use
-     the advanced toolbar's delete button on the selected icon.
+   - **Locked icons** (`item.locked`, set via the toolbar's lock button): drag / pinch /
+     handle-resize all early-return for a locked icon, so it ignores translate / resize /
+     rotate. It is still **tap-selectable** (the `onDrag` tap branch is not gated), so it
+     can be unlocked or deleted — but a tap on overlapping icons **prefers the unlocked one
+     beneath it** (`pickTapTarget`): it hit-tests every icon box under the tap and selects
+     the topmost UNLOCKED icon, only landing on a locked icon when there is no unlocked icon
+     at that point. So a locked icon sitting on top never blocks selection of an editable
+     icon under it. The selected icon's corner indicator swaps from the
+     `OpenWith` resize glyph to a **golden** (`#E0A82E`) `Lock` glyph and becomes inert,
+     and the icon box drops its grab cursor. `locked` persists in the saved jsonb but is
+     **ignored by the read-only renderer** (`CardIconLayer`) — it's an editor-only concept.
+   - **Selecting / selection switching** — a **tap** selects an icon under it (the
+     `onDrag` tap branch, via `filterTaps`), preferring the topmost unlocked icon at that
+     point (`pickTapTarget`, see "Locked icons" above). A **drag/pinch** does not blindly grab the
+     icon it lands on: `resolveTarget` decides whether it acts on the **already-selected**
+     icon or **auto-switches** to the one pressed:
+       - The selected icon (when **unlocked**) owns a **protected zone** = its box expanded
+         outward by `PROTECT_MARGIN_FRAC` (15% of the card width) on every side. A gesture
+         STARTING inside the zone keeps acting on the
+         selected icon, so an overlapping neighbour can't steal a fine manipulation; a
+         gesture starting OUTSIDE the zone switches selection to the icon it landed on and
+         acts there. The zone test (`withinSelectedZone`) is an axis-aligned box check in
+         normalized canvas space (rotation ignored — a good-enough heuristic).
+       - A **locked** selected icon has **no** protected zone (it can't be manipulated
+         anyway), so a gesture in ANY location passes straight through: it switches
+         selection to the pressed icon and acts there.
+       - **Actions only ever apply to the resolved target** (which is also the icon selection
+         switches to). The target is committed **synchronously** to `gestureTargetRef` at
+         gesture start (and pinned in `memo`), so a gesture that starts outside the zone both
+         switches selection AND moves/resizes the new icon in the SAME stroke — it does NOT
+         re-derive the target from the async `selected` state (which lags a render, so the
+         old code dropped the motion and "only selected"). A locked TARGET still becomes
+         selected but is frozen (no move/resize/rotate).
+     Selection shows a dashed outline + the corner handle and floats the icon visually
+     (transient high `zIndex`) — but does **not** change its stored `z` (paint order is
+     owned by the order dropdown). Selection is controlled by the page (`selected`/`onSelect`).
+   - **Off-card drag** = on release, an icon dragged too far off-card is snapped back via
+     `clampIconCenter` so at least 15% of the **icon's own size** (`MIN_ON_CARD_FRAC`, in
+     `cardIconLayout.ts`) stays on-card in both axes — it is NOT deleted. The threshold is
+     icon-relative (same fraction on each axis); since the icon is square in px but `x`/`y`
+     are normalized to card width/height, the clamp expresses the icon's half-size in each
+     axis's own units via the canvas aspect ratio.
+   - **Delete** = use the advanced toolbar's delete button on the selected icon (the only
+     way to remove an icon now that off-card drag snaps back).
    - The canvas sits BEHIND the card content (icons are always behind the text), and
      the content is kept fully visible but `pointerEvents: none` while editing, so the
      edit is WYSIWYG and pointers fall through the text to the icons below.
@@ -377,10 +542,11 @@ the separate download-on-select step.
 - `server/controllers/VocabEntryController.ts` + `VocabEntryDAL.ts`
   (`IVocabEntryDAL`) — `updateIconLayout(userId, id, layout)`, scoped by `userId`,
   validating: `null` OR an array of ≤ 12 items with a string `iconId`, numeric
-  `x`/`y`/`scale`/`rotation`/`z`, and an optional boolean `flipX` (coerced; omitted when
-  false) — else `400`. `z` is renumbered 0..n-1 by ascending `z` on save.
+  `x`/`y`/`scale`/`rotation`/`z`, and optional booleans `flipX` and `locked` (both
+  coerced; omitted when false) — else `400`. `z` is renumbered 0..n-1 by ascending `z`
+  on save.
 
-**Types** — `IconLayoutItem` (with the optional `flipX`) + `iconLayout?:
+**Types** — `IconLayoutItem` (with the optional `flipX` and `locked`) + `iconLayout?:
 IconLayoutItem[] | null` on the `VocabEntry` interface, in both `server/types/index.ts`
 and client `src/types.ts`.
 

@@ -67,6 +67,7 @@ export interface IconLayoutItem {
   rotation: number; // degrees
   z: number;        // paint order (higher = front)
   flipX?: boolean;  // horizontal mirror (the "mirror" toolbar action); omitted/false = not mirrored
+  locked?: boolean; // when true the icon ignores canvas translate/resize/rotate gestures (the "lock" toolbar action); omitted/false = freely editable
 }
 
 /** Max icons allowed in one custom arrangement (mirrors the server cap). */

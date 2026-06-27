@@ -30,6 +30,7 @@ cdet = chinese dictionary entries table
 sdet = spanish dictionary entries table
 cvet = chinese vocab entries table
 svet = spanish vocab entries table
+fie = flashcard icon editor
 
 
 ## Terminology: "Learn Now" cards

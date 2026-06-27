@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { CARD_DISMISS_THRESHOLD_VW } from "./constants";
+import { CARD_DISMISS_THRESHOLD_VW, CARD_FLY_OUT_MS } from "./constants";
 
 interface UseCardDragReturn {
     cardRef: React.RefObject<HTMLDivElement | null>;
@@ -54,6 +54,34 @@ export function useCardDrag(
     // intentionally don't translate the card before it's been flipped).
     const lastMousePos = useRef({ x: 0, y: 0 });
 
+    // Flip-animation lockout. The one-way flip plays a CARD_FLY_OUT_MS linear
+    // transition; a second tap during that window would otherwise be treated as a
+    // tap on an already-flipped card and bump shakeNonce, which remounts the front
+    // card (key=`front-${shakeNonce}`) and cuts the flip short into a shake. We hold
+    // this lock for the flip's duration and ignore all taps/drags while it's set, so
+    // the next interaction can only land after the flip has fully completed. A ref
+    // (not state) keeps the event handlers from needing it as a dependency.
+    const flipLockRef = useRef(false);
+    const flipLockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // Perform the one-way Side 1 → Side 2 flip and arm the lockout. Shared by the
+    // touch and mouse tap paths so the lock behaves identically across input types.
+    const beginFlip = () => {
+        setIsFlipped(true);
+        setHasFlippedCurrentCard(true);
+        setShowTapToFlipHint(false);
+        flipLockRef.current = true;
+        if (flipLockTimer.current) clearTimeout(flipLockTimer.current);
+        flipLockTimer.current = setTimeout(() => {
+            flipLockRef.current = false;
+        }, CARD_FLY_OUT_MS);
+    };
+
+    // Clear any pending lockout timer on unmount to avoid a stray callback.
+    useEffect(() => () => {
+        if (flipLockTimer.current) clearTimeout(flipLockTimer.current);
+    }, []);
+
     // Reset flip-tracking whenever the card changes. New cards always start on
     // Side 1 (isFlipped=false) — the flip is one-way and the Side 1 language
     // randomization lives in the parent page now.
@@ -63,6 +91,9 @@ export function useCardDrag(
         setShowSwipeHint(false);
         setShowTapToFlipHint(false);
         setShakeNonce(0);
+        // A fresh card starts unflipped, so any in-flight flip lock is moot.
+        flipLockRef.current = false;
+        if (flipLockTimer.current) clearTimeout(flipLockTimer.current);
     }, [resetKey]);
 
     // Read the card's rendered pixel width at evaluation time.
@@ -72,7 +103,8 @@ export function useCardDrag(
     const getCardWidth = () => cardRef.current?.offsetWidth ?? window.innerWidth;
 
     const handleTouchStart = (e: React.TouchEvent) => {
-        if (isAnimating) return;
+        // Ignore the whole interaction while a flip is mid-animation.
+        if (isAnimating || flipLockRef.current) return;
 
         // Always record the start position so handleTouchEnd can measure drag distance,
         // even when dragging is blocked (card not yet flipped).
@@ -112,6 +144,10 @@ export function useCardDrag(
         // after this touch interaction, which would cause a double-flip bug.
         e.preventDefault();
 
+        // A flip is still animating — swallow this tap entirely (no flip, no shake)
+        // so it can't remount the card mid-flip.
+        if (flipLockRef.current) return;
+
         // If dragging hasn't started (blocked because card wasn't flipped),
         // only flip if this was a genuine tap — finger barely moved.
         if (!isDragging && !isAnimating) {
@@ -122,9 +158,7 @@ export function useCardDrag(
             );
             // One-way flip: only Side 1 → Side 2, never back.
             if (dist < 10 && !hasFlippedCurrentCard) {
-                setIsFlipped(true);
-                setHasFlippedCurrentCard(true);
-                setShowTapToFlipHint(false);
+                beginFlip();
             } else if (!hasFlippedCurrentCard) {
                 // Drag attempt on an unflipped card: shake the card and fade in
                 // the "Tap to flip" hint. Mirrors the swipe-direction tutorial.
@@ -172,7 +206,8 @@ export function useCardDrag(
     // useEffect below, so rapid drags can never outpace the card's visual bounds and
     // accidentally fire onMouseLeave, which would otherwise cancel the drag.
     const handleMouseDown = (e: React.MouseEvent) => {
-        if (isAnimating) return;
+        // Ignore the whole interaction while a flip is mid-animation.
+        if (isAnimating || flipLockRef.current) return;
         if (!hasFlippedCurrentCard) {
             // Dragging is blocked, but we still need to record the mousedown so that
             // the document-level mouseup can fire a tap-to-flip — and so we can
@@ -211,9 +246,7 @@ export function useCardDrag(
                     (lastMousePos.current.y - dragStart.current.y) ** 2
                 );
                 if (dist < 10) {
-                    setIsFlipped(true);
-                    setHasFlippedCurrentCard(true);
-                    setShowTapToFlipHint(false);
+                    beginFlip();
                 } else {
                     // Swipe attempt on an unflipped card — same treatment as touch.
                     setShakeNonce(n => n + 1);

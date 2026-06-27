@@ -266,6 +266,9 @@ export const ContentArea = styled(Box)(() => ({
 // Centered pill button at the bottom of ContentArea that opens the EIC sheet.
 // Ghosted (opacity 0.32) before the card is flipped; full opacity after.
 // `hintActive` drives a gentle bounce animation to signal discoverability after the first flip.
+// While the icon editor is open the pill stays DRAWN but greyed + inert (`isDisabled`); in
+// advanced mode the card slides down and paints over it (the card slot is raised above the
+// pill — see FlashCardSection), so it ends up covered rather than removed.
 export const MoreInfoPill = styled(Box, {
     shouldForwardProp: (prop) => prop !== "isFlipped" && prop !== "hintActive" && prop !== "isDisabled",
 })<{ isFlipped: boolean; hintActive?: boolean; isDisabled?: boolean }>(({ isFlipped, hintActive, isDisabled, theme }) => ({
@@ -283,8 +286,8 @@ export const MoreInfoPill = styled(Box, {
     cursor: isDisabled ? "default" : "pointer",
     fontFamily: FC_FONT,
     zIndex: 2,
-    // Greyed out & inert while the card editor is open; otherwise faded until the
-    // card is flipped (extra info only applies to the flipped/answer side).
+    // Greyed & inert while editing; otherwise faded until the card is flipped (extra info
+    // only applies to the flipped/answer side).
     opacity: isDisabled ? 0.32 : isFlipped ? 1 : 0.32,
     pointerEvents: isDisabled || !isFlipped ? "none" : "auto",
     transition: "opacity 0.35s ease",
@@ -300,10 +303,21 @@ export const MoreInfoPill = styled(Box, {
 // so that height: 100% resolves correctly (flex-grown heights are not definite in CSS).
 // containerType: "size" makes this the @container query target for CardAspectWrapper:
 // the wrapper switches which axis it fills based on this element's aspect ratio.
-export const DraggableCardContainer = styled(Box)(() => ({
+export const DraggableCardContainer = styled(Box, {
+    shouldForwardProp: (prop) => prop !== "pushDown",
+})<{ pushDown?: boolean }>(({ pushDown }) => ({
     position: "absolute",
     inset: 0,
-    padding: "48px 40px",
+    // Normally the card is centered with symmetric padding. In ADVANCED edit mode the
+    // toolbar grows to three rows and overlays the top of the content area, so we push
+    // the card DOWN with a large top inset that clears the toolbar with a healthy gap,
+    // and keep a comfortable bottom margin. (Basic mode keeps its single static row, so
+    // it stays centered.) The padding change is TRANSITIONED so the card glides down/up
+    // rather than snapping; as it slides down it paints over the greyed More Info pill.
+    padding: pushDown ? "148px 40px 28px" : "48px 40px",
+    // Keep this in lockstep with the toolbar's drop / adv-rows reveal (CardEditToolbar)
+    // so the card and toolbar move together — same duration + easing curve.
+    transition: "padding 0.3s cubic-bezier(0.22, 1, 0.36, 1)",
     boxSizing: "border-box",
     perspective: "1200px",
     display: "flex",

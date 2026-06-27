@@ -127,13 +127,31 @@ export function isPlainDefaultLayout(
   return it.iconId === defaultIconId && isDefaultPlacement(it);
 }
 
-/** Map a cardinal alignment direction to an absolute upright rotation (degrees). Used by
- *  the advanced toolbar's alignment dropdown to snap the selected icon's orientation. */
-export const ALIGN_ROTATION: Record<"up" | "right" | "down" | "left", number> = {
+/** The eight alignment directions the toolbar's align dropdown offers — the four cardinals
+ *  plus the four 45° diagonals. Mirrors `AlignDirection` in `CardEditToolbar.tsx`. */
+export type AlignDirection =
+  | "up"
+  | "up-right"
+  | "right"
+  | "down-right"
+  | "down"
+  | "down-left"
+  | "left"
+  | "up-left";
+
+/** Map an alignment direction to an absolute rotation (degrees, clockwise from upright). Used
+ *  by the advanced toolbar's alignment dropdown to snap the selected icon's orientation. The
+ *  value doubles as the angle to spin an upward-pointing arrow glyph so it points that way, so
+ *  the dropdown's grid arrows are generated straight from this map. */
+export const ALIGN_ROTATION: Record<AlignDirection, number> = {
   up: 0,
+  "up-right": 45,
   right: 90,
+  "down-right": 135,
   down: 180,
+  "down-left": 225,
   left: -90,
+  "up-left": -45,
 };
 
 /**
@@ -150,6 +168,94 @@ export function isAdvancedLayout(layout: IconLayoutItem[] | null | undefined): b
 
 /** Clamp a scale into the allowed range. */
 export const clampScale = (s: number) => Math.min(Math.max(s, SCALE_MIN), SCALE_MAX);
+
+// ── Snap-to-increment helpers (the toolbar's "snap" toggles) ──────────────────────────
+// The editor's snap dropdown offers three independent toggles — move / rotate / resize —
+// each quantizing its operation to a discrete increment. When a toggle is turned on the
+// page snaps every icon for that property once (so existing placements jump onto the grid)
+// and the canvas keeps future gestures snapped while it stays on. See docs/CARD_ICON_LAYOUT.md.
+
+/** Card aspect ratio (width / height), fixed by the flashcard frame (the CardAspectWrapper
+ *  in FlashCardSection.tsx uses `aspectRatio: 295 / 426`). The move grid is square in
+ *  PHYSICAL units (5% of the card WIDTH on both axes), but `y` is a fraction of card HEIGHT,
+ *  so the y-step is the width-step scaled by this ratio. Keeping it a constant lets the snap
+ *  math run on the page (no canvas pixel rect needed) since the card's aspect never varies. */
+export const CARD_ASPECT = 295 / 426;
+
+/** Move grid spacing as a fraction of card WIDTH (icon CENTER snaps to this grid). */
+export const SNAP_MOVE_STEP_FRAC = 0.05;
+/** Resize step: the rendered icon SIZE (BASE_ICON_FRAC·scale of card width) snaps to a
+ *  multiple of this fraction of card WIDTH. */
+export const SNAP_SIZE_STEP_FRAC = 0.05;
+/** Rotation snaps to the nearest multiple of this angle (degrees). 360 / 22.5 = 16 steps. */
+export const SNAP_ROTATION_DEG = 22.5;
+
+/** Round a value to the nearest multiple of `step`. */
+const roundToStep = (v: number, step: number) => Math.round(v / step) * step;
+
+/** Snap an icon center (`x`,`y`, normalized to card width/height) onto the move grid. The
+ *  grid is square in pixels: x uses a 5%-of-width step, y uses the same physical step
+ *  expressed in height fractions (× CARD_ASPECT). */
+export function snapCenterToGrid(x: number, y: number): { x: number; y: number } {
+  return {
+    x: roundToStep(x, SNAP_MOVE_STEP_FRAC),
+    y: roundToStep(y, SNAP_MOVE_STEP_FRAC * CARD_ASPECT),
+  };
+}
+
+/** Snap a `scale` so the rendered icon size (BASE_ICON_FRAC·scale of card width) lands on a
+ *  5%-of-card-width step. Never snaps below one step; result is clamped to the scale range. */
+export function snapScaleToStep(scale: number): number {
+  const size = BASE_ICON_FRAC * scale; // current icon width as a fraction of card width
+  const snappedSize = Math.max(SNAP_SIZE_STEP_FRAC, roundToStep(size, SNAP_SIZE_STEP_FRAC));
+  return clampScale(snappedSize / BASE_ICON_FRAC);
+}
+
+/** Snap a rotation (degrees) to the nearest 22.5° increment. */
+export function snapRotation(rotation: number): number {
+  return roundToStep(rotation, SNAP_ROTATION_DEG);
+}
+
+const clampRange = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
+
+/**
+ * Minimum slice of an ICON that must stay on the card after a drag, expressed as a
+ * fraction of the icon's own size. Icons dragged farther off-card are pulled back to
+ * this edge so a grabbable sliver always remains (replaces the old drag-off-to-delete).
+ */
+export const MIN_ON_CARD_FRAC = 0.15;
+
+/**
+ * Clamp an icon's center (`x`,`y`, normalized to card width/height) so that at least
+ * `minVisible` of the ICON'S OWN size stays on the card in BOTH axes.
+ *
+ * Icons are square in pixels (aspect-ratio 1, width = BASE_ICON_FRAC*scale of the card
+ * width), but `x` is a fraction of card width while `y` is a fraction of card height.
+ * Because the threshold is icon-relative it's the same `minVisible` on each axis; we
+ * just express the icon's half-size in each axis's own units — width fractions for x,
+ * and height fractions for y via the card's aspect ratio (`rect.width / rect.height`).
+ * `rect` is the canvas pixel rect.
+ *
+ * For an icon of half-size `h` (in an axis's fractions) and visible fraction `f`, the
+ * center bound on that axis is `[(2f-1)·h, 1-(2f-1)·h]` (keep `f` of the icon on-card).
+ */
+export function clampIconCenter(
+  item: Pick<IconLayoutItem, "x" | "y" | "scale">,
+  rect: { width: number; height: number },
+  minVisible = MIN_ON_CARD_FRAC,
+): { x: number; y: number } {
+  // Half the icon box as a fraction of card width (icons are square in px).
+  const halfW = (BASE_ICON_FRAC * item.scale) / 2;
+  // Convert that half-size into card-HEIGHT fractions for the vertical axis.
+  const ratio = rect.height > 0 ? rect.width / rect.height : 1;
+  const halfH = halfW * ratio;
+  // How far the center may pass an edge while still keeping `minVisible` of the icon
+  // on-card: at the edge, `(2·minVisible − 1)` of the half-size pokes inward.
+  const overhang = 2 * minVisible - 1;
+  const x = clampRange(item.x, overhang * halfW, 1 - overhang * halfW);
+  const y = clampRange(item.y, overhang * halfH, 1 - overhang * halfH);
+  return { x, y };
+}
 
 /** Highest z in a layout (so selection can bring an icon to the front: max + 1). */
 export const maxZ = (layout: IconLayoutItem[]) =>

@@ -48,7 +48,10 @@ const CardIconOrderList: React.FC<{
     // Called ONCE per drag, the first time the order actually changes, so the page can
     // snapshot undo history before the (live) reorder mutates the draft.
     onReorderStart: () => void;
-}> = ({ layout, onReorder, onReorderStart }) => {
+    // Select the icon for the pressed row (so the canvas highlights it + the per-icon
+    // tools target it). Fired on row press, before/regardless of any reorder drag.
+    onSelectIcon: (layoutIdx: number) => void;
+}> = ({ layout, onReorder, onReorderStart, onSelectIcon }) => {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const [drag, setDrag] = useState<DragState | null>(null);
 
@@ -76,6 +79,9 @@ const CardIconOrderList: React.FC<{
     const onRowDown = (e: React.PointerEvent, layoutIdx: number) => {
         e.preventDefault();
         e.stopPropagation();
+        // Pressing a row selects its icon (whether or not a reorder drag follows), so the
+        // canvas highlights it and the per-icon tools act on it.
+        onSelectIcon(layoutIdx);
         const cont = containerRef.current;
         if (!cont) return;
         const cr = cont.getBoundingClientRect();

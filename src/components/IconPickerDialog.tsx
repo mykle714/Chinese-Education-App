@@ -278,7 +278,11 @@ function IconPickerDialog({
 
                 <Box
                     className="icon-picker-dialog__grid"
-                    sx={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 1 }}
+                    // minmax(0, 1fr) (not a bare 1fr, which is minmax(auto, 1fr)) lets each
+                    // column shrink below the intrinsic width of its icon image. Without it,
+                    // the large CDN-preview images keep the 3 columns from shrinking and the
+                    // grid overflows its container → horizontal scroll on narrow screens.
+                    sx={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 1 }}
                 >
                     {icons.map((icon) => {
                         const isSaving = savingId === icon.id;
@@ -294,6 +298,10 @@ function IconPickerDialog({
                                 sx={{
                                     position: "relative",
                                     aspectRatio: "1 / 1",
+                                    // Belt-and-suspenders with the grid's minmax(0,1fr): a grid
+                                    // item's default min-width is auto, so pin it to 0 so the
+                                    // tile can shrink to its track instead of overflowing.
+                                    minWidth: 0,
                                     display: "flex",
                                     alignItems: "center",
                                     justifyContent: "center",

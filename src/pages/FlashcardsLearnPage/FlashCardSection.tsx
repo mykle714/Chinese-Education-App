@@ -75,6 +75,10 @@ interface FlashCardSectionProps {
     // True while the icon-layout editor is open. Locks the card: drag/flip handlers
     // are not attached so the card can't be swiped away or flipped mid-edit.
     editMode?: boolean;
+    // True when the editor is in ADVANCED mode. Drives the card push-down: the advanced
+    // toolbar grows to three rows, so the card is shifted down to clear it. Basic mode
+    // keeps its single static row and the card stays centered.
+    advMode?: boolean;
 }
 
 // Chinese (CPCD) row block reused on both Side 1 (when Chinese) and Side 2.
@@ -474,6 +478,7 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
     speakingKey,
     editCanvas,
     editMode,
+    advMode,
 }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
@@ -504,6 +509,10 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                 overflow: "hidden",
                 position: "relative",
                 width: "100%",
+                // While advanced-editing the card slides DOWN over the greyed More Info pill
+                // (zIndex 2). Lift the whole slot above it so the card paints over the pill
+                // (kept below the edit toolbar's zIndex 20). Otherwise the pill floats on top.
+                ...(editMode && advMode ? { zIndex: 3 } : {}),
             }}
         >
             {/* Swipe-direction tutorial labels — sit above the card in the
@@ -535,7 +544,7 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
             {/* Fills the slot. DraggableCardContainer has definite px dimensions because
                 it is absolutely positioned — this is what makes height:100% on
                 CardAspectWrapper resolve correctly (flex-grown heights are not definite). */}
-            <DraggableCardContainer className="mobile-demo-draggable-container">
+            <DraggableCardContainer className="mobile-demo-draggable-container" pushDown={editMode && advMode}>
                 {/* CardAspectWrapper: fills the larger of the two axes while preserving
                     aspect-ratio. Default = height-bound (container is wider than card ratio).
                     The @container rule flips to width-bound when the container is narrower

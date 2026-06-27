@@ -23,6 +23,7 @@ const FOOTER_ROUTES: Record<string, FooterTab> = {
     "/discover": "discover",
     "/account": "account",
     "/games": "home",
+    "/community": "home",
     "/flashcards/mastered": "flashcards",
 };
 

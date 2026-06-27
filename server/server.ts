@@ -16,7 +16,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Import DAL architecture
-import { userController, vocabEntryController, onDeckVocabController, userMinutePointsController, textController, dictionaryController, starterPacksController, onDeckVocabService, nightMarketController, gamesController, icons8Controller, winsController } from './dal/setup.js';
+import { userController, vocabEntryController, onDeckVocabController, userMinutePointsController, textController, dictionaryController, starterPacksController, onDeckVocabService, nightMarketController, gamesController, icons8Controller, winsController, communityLayoutController } from './dal/setup.js';
 import { leaderboardController } from './controllers/LeaderboardController.js';
 import { ttsController } from './controllers/TTSController.js';
 import { recognizeChinese, validateInk } from './utils/handwritingRecognizer.js';
@@ -155,11 +155,19 @@ app.post('/api/auth/login', async (req, res) => {
   await userController.login(req, res);
 });
 
-// Logout user
+// Logout user — revokes the refresh token server-side, then clears both cookies.
 // @ts-ignore
-app.post('/api/auth/logout', (req, res) => {
-  res.clearCookie('token');
-  res.status(200).json({ message: 'Logged out successfully' });
+app.post('/api/auth/logout', async (req, res) => {
+  await userController.logout(req, res);
+});
+
+// Refresh access token — exchanges the refresh-token cookie for a new access
+// token (with refresh-token rotation). Deliberately NOT behind authenticateToken:
+// the access token is expired by design at this point, so the refresh cookie is
+// the credential the handler validates.
+// @ts-ignore
+app.post('/api/auth/refresh', async (req, res) => {
+  await userController.refresh(req, res);
 });
 
 // Post-login hook — refresh tz and any other client-supplied session context
@@ -549,6 +557,33 @@ app.get('/api/users/me/wins', authenticateToken, async (req, res) => {
 // @ts-ignore
 app.post('/api/users/me/wins', authenticateToken, async (req, res) => {
   await winsController.recordWin(req, res);
+});
+
+// Community — shareable advanced card-icon layouts (docs/COMMUNITY_PAGE.md).
+// Feeds are POST so the growing exclude lists aren't bound by URL length.
+// @ts-ignore
+app.post('/api/community/learning-feed', authenticateToken, async (req, res) => {
+  await communityLayoutController.learningFeed(req, res);
+});
+// @ts-ignore
+app.post('/api/community/top-feed', authenticateToken, async (req, res) => {
+  await communityLayoutController.topFeed(req, res);
+});
+// @ts-ignore
+app.get('/api/community/my-votes', authenticateToken, async (req, res) => {
+  await communityLayoutController.myVotes(req, res);
+});
+// @ts-ignore
+app.post('/api/community/vote', authenticateToken, async (req, res) => {
+  await communityLayoutController.vote(req, res);
+});
+// @ts-ignore
+app.post('/api/community/unvote', authenticateToken, async (req, res) => {
+  await communityLayoutController.unvote(req, res);
+});
+// @ts-ignore
+app.post('/api/community/apply-design', authenticateToken, async (req, res) => {
+  await communityLayoutController.applyDesign(req, res);
 });
 
 // Flashcards API Routes - USING NEW DAL ARCHITECTURE
@@ -987,6 +1022,14 @@ app.get('/api/icons8', authenticateToken, async (req, res) => {
 // @ts-ignore
 app.get('/api/icons8/search', authenticateToken, async (req, res) => {
   await icons8Controller.searchIcons(req, res);
+});
+
+// icons8 default-results prefetch: return (and cache on first call) the icons8 search
+// response for a card's default English query, so the picker shows results instantly on
+// open. Auth-gated. Body { language, entryKey, pos?, term }. docs/CARD_ICON_LAYOUT.md
+// @ts-ignore
+app.post('/api/icons8/default-results', authenticateToken, async (req, res) => {
+  await icons8Controller.defaultResults(req, res);
 });
 
 // icons8 download-on-select: cache an icon's SVG bytes locally so the image route can

@@ -1,6 +1,7 @@
 import { memo } from "react";
 import { Box, Typography, Chip, IconButton } from "@mui/material";
 import ForeignText from "./ForeignText";
+import CardIconLayer from "../pages/FlashcardsLearnPage/CardIconLayer";
 import { stripParentheses } from "../utils/definitionUtils";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import RepeatIcon from "@mui/icons-material/Repeat";
@@ -25,6 +26,11 @@ interface MiniVocabCardProps {
 // card detail page and the flashcard-learn back-of-card chip).
 
 const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete, onCycle, animationDelayMs }) => {
+    // Render a custom icon arrangement behind the text only for ADVANCED layouts
+    // (2+ icons). Single-icon "basic" layouts and plain default-icon cards keep
+    // the icon-free thumbnail. CardIconLayer is fully percentage-based, so it
+    // scales to this 92×132 card with no pixel math. See docs/CARD_ICON_LAYOUT.md.
+    const hasAdvancedLayout = !!entry.iconLayout && entry.iconLayout.length > 1;
     return (
         <Box
             className="mini-vocab-card"
@@ -33,7 +39,7 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
                 width: 92,
                 height: 132,
                 backgroundColor: COLORS.card,
-                borderRadius: '8px',
+                borderRadius: '12px',
                 boxShadow: '2px 4px 4px rgba(0, 0, 0, 0.25)',
                 cursor: onClick ? 'pointer' : 'default',
                 transition: 'transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out',
@@ -66,6 +72,12 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
                 },
             }}
         >
+            {/* Custom advanced icon arrangement, drawn BEHIND the text (the layer
+                sets zIndex 0 and establishes a stacking context confining its
+                per-icon z values; the word/definition below are lifted to zIndex 1
+                so they always read on top). Decorative + pointer-events: none. */}
+            {hasAdvancedLayout && <CardIconLayer layout={entry.iconLayout!} />}
+
             {/* Action Buttons - Top Corners */}
             <Box
                 className="action-buttons"
@@ -178,6 +190,9 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
                     mb: 0.5,
                     width: '100%',
                     minWidth: 0,
+                    // Sit above the advanced icon layer (zIndex 0) so the word reads on top.
+                    position: 'relative',
+                    zIndex: 1,
                 }}
             >
                 <ForeignText
@@ -205,6 +220,9 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
                     WebkitLineClamp: 2,
                     WebkitBoxOrient: 'vertical',
                     minHeight: 24,
+                    // Above the advanced icon layer (zIndex 0).
+                    position: 'relative',
+                    zIndex: 1,
                 }}
             >
                 {stripParentheses(entry.definition ?? '')}

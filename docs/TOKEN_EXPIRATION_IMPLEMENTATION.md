@@ -1,187 +1,144 @@
-# Token Expiration Auto-Redirect Implementation
+# Authentication: Access + Refresh Token Scheme
 
 ## Overview
-Implemented automatic redirection to the login page when a user's authentication token expires. This provides a seamless user experience by detecting expired sessions and redirecting users without manual intervention.
+Authentication uses a **short-lived access token** plus a **long-lived, rotating
+refresh token**. The client transparently refreshes an expired access token in
+the background (reactively, on the first 401) and only redirects to `/login` when
+the refresh itself fails. This replaces the old single 24h JWT that bounced the
+user to login the moment it lapsed.
 
-## What Was Implemented
+| Token | Lifetime | Form | Transport | Revocable? |
+|---|---|---|---|---|
+| **Access** | 15 min | stateless JWT (`userId`, `email`) | httpOnly cookie `token` (path `/`) + `Authorization: Bearer` header | No (short by design) |
+| **Refresh** | 30 days | opaque 256-bit random string | httpOnly cookie `refreshToken` (path `/api/auth`) | **Yes** — stateful, rotated |
 
-### 1. Global Fetch Interceptor (`src/utils/fetchInterceptor.ts`) ⭐ PRIMARY SOLUTION
-Created a **global fetch wrapper** that intercepts ALL fetch calls:
-- **Wraps native fetch()**: Overrides `window.fetch` to monitor all HTTP responses
-- **Detects 401/403**: Automatically catches authentication errors
-- **Auto-redirect**: Clears auth state and redirects to login
-- **Zero migration needed**: Works with all existing fetch calls immediately
+Only the **hash** of each refresh token is stored server-side, and every refresh
+**rotates** the token with **reuse detection** (theft defense).
 
-### 2. Axios API Client (`src/utils/apiClient.ts`) - SUPPLEMENTARY
-Also created an axios-based client for new code:
-- **Request Interceptor**: Prepares requests with proper authentication
-- **Response Interceptor**: Detects 401/403 responses
-- **Can be used optionally**: For new features or gradual migration
+## Server
 
-### 3. AuthContext Integration (`src/AuthContext.tsx`)
-Updated the AuthContext to:
-- Initialize the global fetch interceptor on app startup
-- Register token expiration handlers for both fetch and axios
-- Provide unified `handleTokenExpiration` that:
-  - Clears localStorage token
-  - Resets user state
-  - Navigates to `/login`
+### Database — `refresh_tokens` table (migration 85)
+`database/migrations/85-create-refresh-tokens-table.sql`. One row per issued
+refresh token. Columns: `id`, `"userId"` (FK→`users`, `ON DELETE CASCADE`),
+`"tokenHash"` (SHA-256 hex — raw token is never stored), `"expiresAt"`,
+`"createdAt"`, `"revokedAt"` (NULL = valid), `"replacedByHash"` (successor on
+rotation → forms a per-login "family" chain), `"userAgent"`. Unique index on
+`"tokenHash"`, index on `"userId"`.
 
-## How It Works
+### Token logic — `server/services/UserService.ts`
+- `ACCESS_TOKEN_TTL = '15m'`, `REFRESH_TOKEN_TTL_MS = 30d` (lines ~16-19).
+- `generateAccessToken(user)` (~112-118) — signs the 15m access JWT (shared by
+  login + refresh).
+- `hashRefreshToken(raw)` (~121-123) — SHA-256 hex.
+- `issueRefreshToken(userId, userAgent?)` (~130-145) — mints a random token,
+  stores its hash, returns the **raw** token + expiry (the family root on login,
+  or a successor on rotation).
+- `rotateRefreshToken(raw, userAgent?)` (~158-200) — the refresh exchange:
+  - unknown hash → reject (`Invalid refresh token`)
+  - **already-revoked hash → REUSE DETECTED**: `revokeAllForUser` (burn the whole
+    family) then reject
+  - expired → reject
+  - valid → issue successor, revoke the presented token linked to it
+    (`replacedByHash`), return new access token + new refresh token + user.
+- `revokeRefreshToken(raw)` / `revokeAllRefreshTokens(userId)` — logout / "log out
+  everywhere" / account deletion.
 
-### Before Implementation
-1. User's token expires
-2. API calls fail with 401/403 errors
-3. User sees error messages but stays on the page
-4. User must manually logout or refresh
+`authenticateUser` (~50-95) now signs only the access token; the controller issues
+the matching refresh token.
 
-### After Implementation
-1. User's token expires
-2. Any API call triggers the response interceptor
-3. Interceptor detects 401/403 status
-4. **Automatically** clears auth state and localStorage
-5. Sets `sessionExpired` flag in localStorage
-6. **Automatically** redirects to `/login`
-7. Login page displays: **"Your session has expired. Please log in again."** (warning alert)
-8. User can log in again with clear understanding of what happened
+### Storage — `server/dal/implementations/RefreshTokenDAL.ts`
+Pure storage (interface `server/dal/interfaces/IRefreshTokenDAL.ts`): `create`,
+`findByHash`, `revoke(hash, replacedByHash)` (COALESCE-guarded so the first
+revoke moment is preserved), `revokeAllForUser`. Wired in `server/dal/setup.ts`
+(`refreshTokenDAL` → injected into `UserService`).
 
-## Docker Setup Completed
+### HTTP — `server/controllers/UserController.ts` + `server/server.ts`
+- `setAuthCookies` / `clearAuthCookies` (~33-46) — the access cookie is path `/`
+  (sent with every request); the refresh cookie is path `/api/auth` (only sent to
+  refresh/logout/delete-account, shrinking exposure). **`clearCookie` must use the
+  same path or the browser keeps the cookie.** Add `secure: true` to both under
+  HTTPS.
+- `login` — authenticate → `issueRefreshToken` → `setAuthCookies`. The refresh
+  token is **cookie-only**, never in the response body.
+- `refresh` (`POST /api/auth/refresh`) — reads the refresh cookie, calls
+  `rotateRefreshToken`, sets new cookies, returns `{ user, token }`. **Not behind
+  `authenticateToken`** (the access token is expired by design here; the refresh
+  cookie is the credential). On failure it clears cookies so a dead token stops
+  being resent.
+- `logout` (`POST /api/auth/logout`) — revokes the refresh token, clears cookies.
+- `deleteAccount` — `revokeAllRefreshTokens` then delete (CASCADE also clears rows).
 
-The implementation is now fully deployed in your Docker containers:
-- ✅ Axios dependency installed
-- ✅ Frontend container rebuilt with new dependencies
-- ✅ Backend container running
-- ✅ All services operational
+`authMiddleware.ts` is unchanged and still verifies the access token from header
+**or** cookie (header wins — see the client retry note below).
 
-## Authentication Architecture
+## Client
 
-### Cookie-Based Authentication 🍪
-The app uses **HTTP-only cookies** for secure authentication:
-- **Cookies** (primary): Server sets HTTP-only cookies, sent automatically with `credentials: 'include'`
-- **localStorage** (UI state): Stores a token reference for client-side auth state tracking
-- **Why both**: Cookies provide security (HTTP-only, protected from XSS), localStorage provides UI reactivity
+### Shared refresh core — `src/utils/tokenRefresh.ts`
+Single source of truth so the fetch interceptor, axios client, and AuthContext
+share **one** in-flight refresh (a burst of concurrent 401s → exactly one
+`/api/auth/refresh`). `attemptTokenRefresh()` POSTs to `/api/auth/refresh` (with
+the refresh cookie), on success persists the new access token to localStorage,
+broadcasts it via `setRefreshHandlers`, and returns it; returns `null` on failure.
+Captures the **native** fetch at module load so refresh requests are never
+self-intercepted.
 
-**Security Benefits:**
-- HTTP-only cookies cannot be accessed by JavaScript (XSS protection)
-- Cookies are automatically included in requests (no manual header management)
-- localStorage token is only for UI state, not actual authentication
+### Interceptors — `src/utils/fetchInterceptor.ts` + `src/utils/apiClient.ts`
+On a 401/403 from a **refreshable** endpoint:
+1. `attemptTokenRefresh()`.
+2. On success, **retry the original request once** with the fresh token, then
+   return the retry response (caller never sees the 401).
+3. On failure (or still-401 retry), clear auth state, set the `sessionExpired`
+   flag, and redirect to `/login`.
 
-## Testing the Implementation
+`NO_REFRESH_PATHS` excludes `login`/`register`/`logout`/`refresh` (a 401 there is a
+real failure or would recurse). **`/api/auth/me` is intentionally eligible** so an
+expired access token on app load is refreshed instead of logging the user out.
 
-### Manual Testing Steps
+**Header-precedence gotcha:** `authMiddleware` prefers the `Authorization` header
+over the cookie, so the retry **rewrites the header** with the new token —
+otherwise a stale header would override the freshly-set access cookie and 401
+again. The native-`fetch` retry bypasses the interceptor (no recursion); the axios
+retry uses a `_retried` flag.
 
-1. **Access the application**
-   ```
-   Open http://localhost:3000 in your browser
-   ```
+### `src/AuthContext.tsx`
+- Registers the refresh handler (`setRefreshHandlers`) to mirror a refreshed token
+  into React state.
+- `login` stores only the access token (refresh lives in the httpOnly cookie).
+- `checkAuth` (on mount): with a valid access token, calls `/api/auth/me` (the
+  interceptor auto-refreshes on 401). With **no** usable access token, it still
+  attempts a silent `attemptTokenRefresh()` so a valid refresh cookie keeps the
+  user signed in across reloads / localStorage clears.
 
-2. **Login to the application**
-   ```
-   Navigate to /login and authenticate
-   ```
+## Security model
+- Refresh tokens are opaque + **hashed at rest** → a DB leak yields no usable
+  tokens.
+- **Rotation + reuse detection**: replaying a spent refresh token revokes the
+  entire family, forcing re-login (standard stolen-token defense).
+- httpOnly cookies → tokens invisible to JS (XSS can't read them).
+- Short 15m access window limits the blast radius of a leaked access token.
 
-3. **Simulate token expiration** (choose one method):
-   
-   **Method A: Delete Authentication Cookie** ⭐ **RECOMMENDED**
-   - Open browser DevTools (F12)
-   - Go to **Application** → **Cookies** → `http://localhost:3000`
-   - Find and delete the auth cookie (e.g., `connect.sid`, `token`, or `session`)
-   - Navigate to any page or perform any action (e.g., Flashcards, Entries)
-   - **Expected**: Immediate redirect to `/login`
-   
-   **Method B: Delete localStorage token** (UI state only)
-   - Open browser DevTools (F12)
-   - Go to Application → Local Storage
-   - Delete the `token` value
-   - This clears UI state but backend may still have valid cookie
-   
-   **Method C: Wait for natural expiration**
-   - Leave the app idle for the token expiration duration
-   - Return and try to perform any action
-   
-   **Method D: Server-side invalidation** (if available)
-   - Use server admin tools to invalidate the session
-   - Try to perform any action in the app
+## Manual testing
+The full server lifecycle (login → refresh/rotation → reuse detection → logout
+revocation) is exercisable with curl against `http://localhost:5000`:
+1. `POST /api/auth/login` → two `Set-Cookie`s (`token` Max-Age 900, `refreshToken`
+   Max-Age ~2.6M, path `/api/auth`).
+2. `POST /api/auth/refresh` (with cookies) → 200, new `token`, rotated
+   `refreshToken`.
+3. Replay the pre-rotation refresh token → `401 Refresh token reuse detected`; the
+   post-rotation token is now dead too (family burned).
+4. `POST /api/auth/logout` → both cookies cleared; the token can no longer refresh.
 
-4. **Expected Behavior**
-   - On the next API call, you should be:
-     - Automatically redirected to `/login`
-     - Auth state cleared (both cookie and localStorage)
-     - No error messages or broken UI state
-     - Console message: "Token expired or unauthorized (detected by fetch interceptor)"
+To observe the client refresh-and-retry in a browser: log in, delete the `token`
+cookie (DevTools → Application → Cookies) leaving `refreshToken`, then trigger any
+API call — it should refresh transparently and NOT redirect to login. Delete the
+`refreshToken` too and the next 401 redirects to `/login` with the session-expired
+notice.
 
-### Testing with Any Page (Now Works Everywhere!)
-
-Since the global fetch interceptor is active, you can test on **any page**:
-
-1. Login to the app
-2. Navigate to **any page** (Flashcards, Entries, Reader, etc.)
-3. Delete the **authentication cookie** (see Method A above)
-4. Perform any action that makes an API call
-5. **Expected**: Immediate redirect to `/login` (no error dialogs)
-
-**No more page-by-page migration needed!** The fetch interceptor covers all pages automatically.
-
-## Optional: Using Axios API Client for New Code
-
-While the global fetch interceptor handles all existing code automatically, you may optionally use the axios client for new features:
-
-**Benefits of using apiClient:**
-- Cleaner syntax (auto JSON parsing)
-- Built-in request/response transformations
-- Easier error handling
-
-**Example usage:**
-```typescript
-import apiClient from "../utils/apiClient";
-
-// GET request
-const response = await apiClient.get('/api/endpoint');
-const data = response.data;
-
-// POST request
-const response = await apiClient.post('/api/endpoint', { key: 'value' });
-
-// Error handling
-try {
-  const response = await apiClient.get('/api/data');
-} catch (err: any) {
-  const errorMessage = err.response?.data?.error || err.message;
-}
-```
-
-**Note:** Using fetch() still works perfectly - the global interceptor handles token expiration for both!
-
-## Benefits
-
-1. **Better UX**: No confusing error messages or broken states
-2. **Consistent behavior**: All pages handle expiration the same way
-3. **Centralized logic**: Token expiration handled in one place
-4. **Maintainable**: Easy to add more interceptor logic if needed
-5. **Secure**: Prevents users from staying in a broken auth state
-
-## Technical Details
-
-### API Client Configuration
-- Base URL: Pulled from `API_BASE_URL` constant
-- Credentials: `withCredentials: true` for cookie-based auth
-- Headers: Default `Content-Type: application/json`
-
-### Interceptor Behavior
-- **Request**: Adds token to headers (if needed)
-- **Response Success**: Passes through unchanged
-- **Response Error (401/403)**: 
-  - Logs to console
-  - Clears localStorage
-  - Calls clearAuthState
-  - Navigates to login
-  - Rejects promise (allows component error handling if needed)
-
-## Future Enhancements
-
-Consider implementing:
-1. Token refresh mechanism (if backend supports it)
-2. User notification before redirect (toast message)
-3. Return URL tracking (redirect back after login)
-4. Retry failed requests after token refresh
-5. Global loading state during auth operations
+## Future enhancements
+1. Proactive refresh (decode `exp`, refresh just before expiry) in addition to the
+   reactive path.
+2. An "active sessions" UI backed by `refresh_tokens."userAgent"` + a "log out
+   everywhere" button (server already supports `revokeAllRefreshTokens`).
+3. Periodic cleanup of expired/revoked `refresh_tokens` rows (not required for
+   correctness — expiry is checked at use).
+4. `secure: true` cookies once served over HTTPS.

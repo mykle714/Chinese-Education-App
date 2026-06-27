@@ -62,6 +62,19 @@ export interface AuthResponse {
   token: string;
 }
 
+// A stored refresh-token row (see migration 85). The raw token is never stored;
+// `tokenHash` is its SHA-256 hex. `revokedAt === null` means currently valid.
+export interface RefreshToken {
+  id: string;
+  userId: string;
+  tokenHash: string;
+  expiresAt: Date;
+  createdAt: Date;
+  revokedAt: Date | null;
+  replacedByHash: string | null;
+  userAgent: string | null;
+}
+
 // Language type for multi-language support.
 // Only Chinese and Spanish are user-selectable for now; ja/ko/vi are not yet
 // supported (their per-language dictionary tables don't exist — see CLAUDE.md).
@@ -254,6 +267,7 @@ export interface IconLayoutItem {
   scale: number;    // multiplier on the base icon box (~0.28 * cardWidth); clamped ~[0.25, 3]
   rotation: number; // degrees
   z: number;        // paint order (higher = front)
+  flipX?: boolean;  // horizontal mirror (the "mirror" toolbar action); omitted/false = not mirrored
 }
 
 /** Max icons allowed in one custom arrangement (shared client/server cap). */
@@ -290,7 +304,6 @@ export interface VocabEntry {
   longDefinitionParts?: LongDefinitionPart[] | null;  // Computed at runtime: longDefinition split into English + cpcd-able Chinese runs
   iconId?: string | null;  // Representative icons8 icon (FK to icons8.icons8Id) joined from det; client renders via <img src="/api/icons8/<iconId>/image">
   iconLayout?: IconLayoutItem[] | null;  // Custom flashcard icon arrangement (vet column, migration 82). NULL = use the default centered iconId. See docs/CARD_ICON_LAYOUT.md
-  iconTextBackdrop?: boolean | null;  // When true, draw a white backdrop behind the card's word text for legibility over the icon arrangement (vet column, migration 83). See docs/CARD_ICON_LAYOUT.md
   exampleSentences?: Array<{
     foreignText: string;
     english: string;

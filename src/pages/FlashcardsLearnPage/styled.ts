@@ -267,8 +267,8 @@ export const ContentArea = styled(Box)(() => ({
 // Ghosted (opacity 0.32) before the card is flipped; full opacity after.
 // `hintActive` drives a gentle bounce animation to signal discoverability after the first flip.
 export const MoreInfoPill = styled(Box, {
-    shouldForwardProp: (prop) => prop !== "isFlipped" && prop !== "hintActive",
-})<{ isFlipped: boolean; hintActive?: boolean }>(({ isFlipped, hintActive, theme }) => ({
+    shouldForwardProp: (prop) => prop !== "isFlipped" && prop !== "hintActive" && prop !== "isDisabled",
+})<{ isFlipped: boolean; hintActive?: boolean; isDisabled?: boolean }>(({ isFlipped, hintActive, isDisabled, theme }) => ({
     position: "absolute",
     bottom: 24,
     left: "50%",
@@ -280,14 +280,16 @@ export const MoreInfoPill = styled(Box, {
     border: `1px solid ${theme.palette.flashcard.border}`,
     borderRadius: 999,
     padding: "7px 16px 7px 14px",
-    cursor: "pointer",
+    cursor: isDisabled ? "default" : "pointer",
     fontFamily: FC_FONT,
     zIndex: 2,
-    opacity: isFlipped ? 1 : 0.32,
-    pointerEvents: isFlipped ? "auto" : "none",
+    // Greyed out & inert while the card editor is open; otherwise faded until the
+    // card is flipped (extra info only applies to the flipped/answer side).
+    opacity: isDisabled ? 0.32 : isFlipped ? 1 : 0.32,
+    pointerEvents: isDisabled || !isFlipped ? "none" : "auto",
     transition: "opacity 0.35s ease",
     whiteSpace: "nowrap",
-    animation: hintActive ? "moreInfoPulse 1.6s ease-in-out infinite" : "none",
+    animation: hintActive && !isDisabled ? "moreInfoPulse 1.6s ease-in-out infinite" : "none",
     "@keyframes moreInfoPulse": {
         "0%, 100%": { transform: "translateX(-50%) translateY(0)", opacity: 0.7 },
         "50%": { transform: "translateX(-50%) translateY(-4px)", opacity: 1 },

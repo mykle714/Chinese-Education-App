@@ -66,10 +66,46 @@ export interface IconLayoutItem {
   scale: number;    // multiplier on the base icon box (~0.28 * cardWidth); clamped ~[0.25, 3]
   rotation: number; // degrees
   z: number;        // paint order (higher = front)
+  flipX?: boolean;  // horizontal mirror (the "mirror" toolbar action); omitted/false = not mirrored
 }
 
 /** Max icons allowed in one custom arrangement (mirrors the server cap). */
 export const ICON_LAYOUT_MAX_ITEMS = 12;
+
+/**
+ * A community-shared advanced card-icon design surfaced on the Community page
+ * (docs/COMMUNITY_PAGE.md). Identity = (ownerUserId, entryKey, language). Carries just enough
+ * det fields to render the read-only mini card / zoom.
+ */
+export interface CommunityDesign {
+  ownerUserId: string;
+  ownerName?: string | null;
+  entryKey: string;
+  language: Language;
+  iconLayout: IconLayoutItem[] | null;
+  pronunciation?: string | null;
+  tone?: string | null;
+  script?: string | null;
+  definition?: string | null;
+  /** Votes since the viewer's current week boundary. */
+  voteCountThisWeek: number;
+  /** Whether the viewer already has this word saved (drives the apply-button label). */
+  inLibrary: boolean;
+}
+
+/** A design the viewer voted on this week (identity key only) — used to grey voted designs. */
+export interface VotedDesignKey {
+  ownerUserId: string;
+  entryKey: string;
+  language: Language;
+}
+
+export type VoteResult = 'recorded' | 'already-voted';
+export type ApplyDesignResult = 'applied' | 'added-and-applied' | 'would-override';
+
+/** Composite key for a design within one language feed (ownerUserId|entryKey). */
+export const designKey = (d: { ownerUserId: string; entryKey: string }) =>
+  `${d.ownerUserId}|${d.entryKey}`;
 
 // Canonical VocabEntry model shared across the whole frontend (flashcards,
 // card detail, discover, dictionary adapters, etc.). It is a superset: a
@@ -108,7 +144,6 @@ export interface VocabEntry {
   expansionLiteralTranslation?: string | null;
   iconId?: string | null;  // Representative icons8 icon joined from det; rendered via <img src="/api/icons8/<iconId>/image">
   iconLayout?: IconLayoutItem[] | null;  // Custom flashcard icon arrangement (vet column, migration 82). NULL = use the default centered iconId. See docs/CARD_ICON_LAYOUT.md
-  iconTextBackdrop?: boolean | null;  // When true, draw a white backdrop behind the card's word text for legibility over the icons (vet column, migration 83). See docs/CARD_ICON_LAYOUT.md
   exampleSentences?: Array<{
     foreignText: string;
     english: string;
@@ -126,6 +161,11 @@ export interface VocabEntry {
   // means synthesis errored; the client should fall back to Web Speech. Absent
   // means the server didn't run a prewarm — treat as truthy.
   hasAudio?: boolean;
+  // Whether the source det row is marked discoverable (appears in vocab
+  // discovery). Carried through dictEntryAdapter so the dictionary EIP can hide
+  // the "+ to Learn Now" button for undiscoverable lookups. Absent on real vet
+  // rows (already in the library by definition).
+  discoverable?: boolean;
   createdAt: string;
 }
 
@@ -157,6 +197,7 @@ export interface DictionaryEntry {
   shortDefinition?: string | null;
   longDefinition?: string | null;
   longDefinitionParts?: LongDefinitionPart[] | null;  // Computed at runtime: longDefinition split into English + cpcd-able Chinese runs
+  discoverable?: boolean;  // Whether the entry appears in vocab discovery (set during data import). Undiscoverable entries are lookup-only.
   createdAt: string;
 }
 

@@ -110,6 +110,38 @@ export class Icons8Controller {
     }
   }
 
+  /**
+   * POST /api/icons8/default-results
+   *   body: { language, entryKey, pos?, term }
+   *   returns: { icons: [{ id, name }] } — the cached first page of the default
+   *   icon-search for this word, warming the cache (one live icons8 search) on a miss.
+   *   Auth-gated; called when a learner enters flp edit mode so the picker can render
+   *   results the instant it opens. See docs/CARD_ICON_LAYOUT.md.
+   *
+   * The `term` is the client-computed default query (iconSearchTerm) — we keep that
+   * derivation in ONE place on the client rather than duplicating the strip rules
+   * server-side; the server only caches the *response*, keyed by the word.
+   */
+  async defaultResults(req: Request, res: Response): Promise<void> {
+    try {
+      const { language, entryKey, pos, term } = req.body ?? {};
+      if (!entryKey || typeof entryKey !== 'string') {
+        res.status(400).json({ error: 'entryKey is required' });
+        return;
+      }
+      const icons = await this.icons8DAL.getOrWarmDefaultIconResults(
+        String(language ?? ''),
+        entryKey,
+        typeof pos === 'string' ? pos : null,
+        typeof term === 'string' ? term : ''
+      );
+      res.json({ icons });
+    } catch (err: any) {
+      console.error('[Icons8Controller] defaultResults error:', err);
+      res.status(502).json({ error: err?.message || 'Failed to load default icons' });
+    }
+  }
+
   async getIconImage(req: Request, res: Response): Promise<void> {
     try {
       const iconId = String(req.params.iconId || '').trim();

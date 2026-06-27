@@ -16,8 +16,8 @@
  *         (proxy), writingDraftStore (preserve-on-close).
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Dialog, IconButton, Button, Tabs, Tab, Box, CircularProgress } from "@mui/material";
-import { Close, DeleteOutline, Undo, ArrowBack } from "@mui/icons-material";
+import { Dialog, Button, Tabs, Tab, Box, CircularProgress } from "@mui/material";
+import { DeleteOutline, Undo } from "@mui/icons-material";
 import { useAuth } from "../../AuthContext";
 import { COLORS } from "../../theme";
 import WritingStage, { type StageResult } from "./WritingStage";
@@ -97,6 +97,11 @@ export default function PracticeWritingPopup({
   const [focusedIndex, setFocusedIndex] = useState<number | null>(draft?.focusedIndex ?? null);
   const [results, setResults] = useState<StageResult[]>(() => chars.map(() => "idle"));
   const [checking, setChecking] = useState(false);
+  // After a Verify, reveal the grey guide on EVERY panel — on all levels, even
+  // Test (which normally shows no guide) — so the user can compare their writing
+  // against the correct character. Reset on any new attempt (redraw / refocus /
+  // level change) so the next attempt starts from the level's normal guide rules.
+  const [verifyRevealed, setVerifyRevealed] = useState(false);
 
   // The active drawing canvas (single panel or the focused slot). Only one is
   // mounted at a time, so a single handle suffices.
@@ -209,6 +214,7 @@ export default function PracticeWritingPopup({
     clearTimers();
     setCooldown(0);
     setDrawLocked(false);
+    setVerifyRevealed(false); // each level entry starts from its own guide rules
 
     if (isTabChange) {
       setResults(chars.map(() => "idle"));
@@ -233,6 +239,7 @@ export default function PracticeWritingPopup({
   // Multi-char: entering a focused slot applies the level's guide; leaving hides it.
   useEffect(() => {
     if (!open || !isMulti) return;
+    setVerifyRevealed(false); // focusing/unfocusing a slot resets to its guide rules
     if (focusedIndex === null) {
       clearTimers();
       setCooldown(0);
@@ -248,6 +255,7 @@ export default function PracticeWritingPopup({
   // Redrawing the active surface invalidates that character's prior result.
   const handleActiveInkChange = (ink: Ink) => {
     setActiveHasInk(ink.length > 0);
+    setVerifyRevealed(false); // a new stroke is a fresh attempt — drop the post-Verify reveal
     const idx = drawingIndex ?? 0;
     setResults((r) => {
       if (r[idx] === "idle") return r;
@@ -316,6 +324,7 @@ export default function PracticeWritingPopup({
     const newResults: StageResult[] = chars.map((_, i) => (settled[i].correct ? "correct" : "wrong"));
     setResults(newResults);
     setChecking(false);
+    setVerifyRevealed(true); // reveal the guide on every panel for comparison
     const allCorrect = settled.every((s) => s.correct);
 
     // Diagnostics for tuning recognition (latency is browser→proxy→Google RTT).
@@ -519,7 +528,7 @@ export default function PracticeWritingPopup({
             m: 0.75,
             borderRadius: 2.5,
             px: { xs: 0.5, sm: 1.5 },
-            fontSize: { xs: "0.72rem", sm: "0.875rem" },
+            fontSize: { xs: "0.72rem", sm: "0.75rem" },
             textTransform: "none",
             color: COLORS.textSecondary,
             transition: "background-color 0.15s ease, color 0.15s ease",
@@ -597,8 +606,9 @@ export default function PracticeWritingPopup({
             character={chars[0]}
             size={FOCUS_SIZE}
             drawable
-            showGuide={spec.mode !== "test"}
-            guideVisible={outlineVisible}
+            // Post-Verify reveal overrides the level's normal guide gating (even Test).
+            showGuide={spec.mode !== "test" || verifyRevealed}
+            guideVisible={outlineVisible || verifyRevealed}
             loopAnimation={spec.mode === "trace"}
             guideKey={spec.mode}
             drawLocked={drawLocked}
@@ -622,16 +632,11 @@ export default function PracticeWritingPopup({
 
   const focusBody = focusedIndex !== null && (
     <>
-      <Box className="practice-writing__focus-header" sx={{ alignSelf: "flex-start", mt: "auto" }}>
-        <Button
-          className="practice-writing__back"
-          startIcon={<ArrowBack />}
-          onClick={collapseFocus}
-          sx={{ ...floatingBarSx, color: COLORS.onSurface, borderRadius: 999, textTransform: "none", px: 2, minHeight: 44 }}
-        >
-          Back
-        </Button>
-      </Box>
+      {/* No Back button: tapping the greyed background collapses the focused slot
+          back to the 2×2 grid (handleBackgroundTap). This empty spacer keeps its
+          mt:auto so the focused panel stays vertically centered (pairs with the
+          drawing-area's mb:auto below). */}
+      <Box className="practice-writing__focus-header" sx={{ mt: "auto" }} />
 
       <Box
         className="practice-writing__toolbar practice-writing__toolbar--focus"
@@ -692,7 +697,18 @@ export default function PracticeWritingPopup({
           justifyContent: "center",
         }}
       >
-        {chars.map((ch, i) => (
+        {chars.map((ch, i) => {
+          // Grid-preview guide visibility for this slot:
+          //   • Post-Verify → always reveal (compare writing vs. the guide), all levels.
+          //   • Trace → always.
+          //   • Step Through (walkthrough) / Memorize → only while the slot is EMPTY;
+          //     once the user has written in it, show their writing alone.
+          //   • Test → never.
+          const slotGuide =
+            verifyRevealed ||
+            spec.mode === "trace" ||
+            ((spec.mode === "walkthrough" || spec.mode === "memorize") && (inks[i]?.length ?? 0) === 0);
+          return (
           <Box
             key={`slot-${i}`}
             className={`practice-writing__grid-slot practice-writing__grid-slot--${i}`}
@@ -723,21 +739,8 @@ export default function PracticeWritingPopup({
                 character={ch}
                 size={FOCUS_SIZE}
                 drawable={false}
-                // Grid-preview guide rules:
-                //   • Trace / Step Through (walkthrough) → always show the grey guide.
-                //   • Memorize → show the guide ONLY while the slot is empty; once the
-                //     user has written in it, show their writing alone (study-then-write).
-                //   • Test → never.
-                showGuide={
-                  spec.mode === "trace" ||
-                  spec.mode === "walkthrough" ||
-                  (spec.mode === "memorize" && (inks[i]?.length ?? 0) === 0)
-                }
-                guideVisible={
-                  spec.mode === "trace" ||
-                  spec.mode === "walkthrough" ||
-                  (spec.mode === "memorize" && (inks[i]?.length ?? 0) === 0)
-                }
+                showGuide={slotGuide}
+                guideVisible={slotGuide}
                 loopAnimation={false}
                 guideKey={`grid-${i}-${spec.mode}`}
                 initialInk={inks[i]}
@@ -746,7 +749,8 @@ export default function PracticeWritingPopup({
               />
             </Box>
           </Box>
-        ))}
+          );
+        })}
       </Box>
 
       {levelBar}
@@ -799,24 +803,7 @@ export default function PracticeWritingPopup({
           boxSizing: "border-box",
         }}
       >
-        {/* Floating close button — anchored to the top-right corner of the phone card. */}
-        <IconButton
-          className="practice-writing__close"
-          onClick={handleClose}
-          size="small"
-          sx={{
-            position: "absolute",
-            top: 10,
-            right: 10,
-            zIndex: 3,
-            bgcolor: COLORS.header,
-            boxShadow: "0 2px 8px rgba(0,0,0,0.18)",
-            "&:hover": { bgcolor: COLORS.card },
-          }}
-        >
-          <Close fontSize="small" />
-        </IconButton>
-
+        {/* No close button: tapping the greyed background exits (handleBackgroundTap). */}
         {!isMulti ? singleBody : focusedIndex !== null ? focusBody : gridBody}
       </Box>
     </Dialog>

@@ -2,26 +2,9 @@ import { IWinsDAL } from '../interfaces/IWinsDAL.js';
 import { dbManager } from '../base/DatabaseManager.js';
 import { Win, WinAggregate } from '../../types/wins.js';
 import { ValidationError } from '../../types/dal.js';
-
-/**
- * SQL expression for a user's current week boundary as a timestamptz, given a
- * `users` row aliased `u`. Boundary = most-recent Sunday 04:00 in the user's
- * local timezone (a logical day starts at 04:00; the week resets on Sunday).
- *
- * This is the SAME derivation the inactivity cron used to wipe weeklies (see
- * database/cron/expire-stale-streaks.sql) — kept identical so "earned this week"
- * means exactly what it did before, only now as a filter over the persistent
- * wins log instead of a destructive weekly delete. Postgres date_trunc('week')
- * is Monday-based, so it is deliberately NOT used here.
- */
-const WEEK_BOUNDARY = `(
-  (
-    (
-      ((now() AT TIME ZONE COALESCE(u.timezone, 'UTC')) - INTERVAL '4 hours')::date
-      - EXTRACT(DOW FROM ((now() AT TIME ZONE COALESCE(u.timezone, 'UTC')) - INTERVAL '4 hours'))::int
-    )::timestamp + INTERVAL '4 hours'
-  ) AT TIME ZONE COALESCE(u.timezone, 'UTC')
-)`;
+// Most-recent-Sunday-04:00 week boundary, shared with community-layout votes so "this week"
+// is identical across the app. See server/dal/shared/weekBoundary.ts.
+import { WEEK_BOUNDARY } from '../shared/weekBoundary.js';
 
 /**
  * Persists the append-only `wins` event log (one row per game win). All tallies

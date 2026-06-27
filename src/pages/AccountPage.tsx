@@ -25,7 +25,7 @@ import DelayedCircularProgress from "../components/DelayedCircularProgress";
 import { styled } from "@mui/material/styles";
 import MobileTabScreen from "../components/MobileTabScreen";
 import DeckBuckets from "../components/DeckBuckets";
-import AvatarPickerDialog from "../components/AvatarPickerDialog";
+import IconPickerDialog from "../components/IconPickerDialog";
 import { API_BASE_URL } from "../constants";
 import { useAuth } from "../AuthContext";
 import { useConfirmation } from "../contexts/ConfirmationContext";
@@ -586,12 +586,16 @@ function AccountPage() {
                 </DialogActions>
             </Dialog>
 
-            {/* Avatar icon picker — paginated grid of all downloaded icons8 icons. */}
-            <AvatarPickerDialog
+            {/* Avatar icon picker — shared icon search/browser. Empty query browses all
+                downloaded icons; typing searches icons8 (download-on-select). */}
+            <IconPickerDialog
                 open={avatarPickerOpen}
                 onClose={() => setAvatarPickerOpen(false)}
+                title="Choose your avatar"
                 currentIconId={user.avatarIconId ?? null}
-                onSelect={updateAvatar}
+                onPick={(id) => updateAvatar(id)}
+                onRemove={() => updateAvatar(null)}
+                removeLabel="Remove avatar"
             />
 
             {/* "Copied to clipboard" confirmation for the user-ID copy button */}

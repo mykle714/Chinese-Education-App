@@ -5,6 +5,7 @@ import { ThemeContextProvider } from "./contexts/ThemeContext";
 import { VocabularyUpdateProvider } from "./contexts/VocabularyUpdateContext";
 import Layout from "./components/Layout";
 import HomePage from "./pages/HomePage";
+import CommunityPage from "./pages/CommunityPage/CommunityPage";
 import EntriesPage from "./pages/EntriesPage";
 import EntryDetailPage from "./pages/EntryDetailPage";
 import EditEntryPage from "./pages/EditEntryPage";
@@ -113,6 +114,11 @@ function App() {
                 <Route path="/flashcards/card/:id" element={
                   <ProtectedRoute allowPublic>
                     <VocabCardDetailPage />
+                  </ProtectedRoute>
+                } />
+                <Route path="/community" element={
+                  <ProtectedRoute allowPublic>
+                    <CommunityPage />
                   </ProtectedRoute>
                 } />
                 <Route path="/games" element={

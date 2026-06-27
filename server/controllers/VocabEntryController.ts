@@ -178,8 +178,8 @@ export class VocabEntryController {
       }
 
       // Accept the layout array or null (reset to default). Anything else is rejected
-      // by the service's validateIconLayout. textBackdrop is an optional boolean.
-      const { iconLayout, textBackdrop } = req.body ?? {};
+      // by the service's validateIconLayout.
+      const { iconLayout } = req.body ?? {};
       if (iconLayout !== null && !Array.isArray(iconLayout)) {
         res.status(400).json({ error: 'iconLayout must be an array or null' });
         return;
@@ -187,14 +187,13 @@ export class VocabEntryController {
 
       const language = await getUserLanguage(userId);
       const updated = await this.vocabEntryService.updateIconLayout(
-        userId, entryId, language, iconLayout, !!textBackdrop
+        userId, entryId, language, iconLayout
       );
 
       // Echo back just what the client needs to refresh the card in place.
       res.json({
         id: updated.id,
         iconLayout: updated.iconLayout ?? null,
-        iconTextBackdrop: updated.iconTextBackdrop ?? false,
       });
     } catch (error) {
       handleControllerError(error, res, 'VocabEntryController.updateIconLayout');

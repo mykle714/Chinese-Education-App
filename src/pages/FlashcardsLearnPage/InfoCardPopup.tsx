@@ -101,6 +101,8 @@ function InfoCardPopup({
                     onAddToLibrary={onAddToLibrary}
                     onSpeakSentence={onSpeakSentence}
                     speakingKey={speakingKey}
+                    // Tighter headword in the centered popup than the bottom-sheet EIP.
+                    headerCpcdSize="sm"
                 />
             </Box>
         </>

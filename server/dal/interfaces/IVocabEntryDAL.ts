@@ -14,17 +14,15 @@ export interface IVocabEntryDAL extends IBaseDAL<VocabEntry, VocabEntryCreateDat
 
   /**
    * Persist (or clear) a custom flashcard icon arrangement for one vet row, scoped to
-   * its owner. `layout` of null clears it back to the default centered icon;
-   * `textBackdrop` toggles the white text backdrop (migration 83). Returns the updated
-   * row, or null when no row matches (wrong id / not the caller's).
+   * its owner. `layout` of null clears it back to the default centered icon. Returns
+   * the updated row, or null when no row matches (wrong id / not the caller's).
    * See docs/CARD_ICON_LAYOUT.md.
    */
   updateIconLayout(
     userId: string,
     id: string | number,
     language: string,
-    layout: IconLayoutItem[] | null,
-    textBackdrop: boolean
+    layout: IconLayoutItem[] | null
   ): Promise<VocabEntry | null>;
   findByUserIdAndLanguage(userId: string, language: string, limit?: number, offset?: number): Promise<VocabEntry[]>;
   findByUserAndKey(userId: string, entryKey: string, language: string, pos?: string): Promise<VocabEntry | null>;

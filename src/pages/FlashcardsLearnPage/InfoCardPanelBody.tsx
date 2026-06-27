@@ -2,7 +2,7 @@ import React, { forwardRef, useImperativeHandle, useLayoutEffect, useRef, useSta
 import { Box, IconButton, Typography, useTheme } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import { stripParentheses } from "../../utils/definitionUtils";
-import ForeignText from "../../components/ForeignText";
+import ForeignText, { type CPCDSize } from "../../components/ForeignText";
 import PosBadge from "../../components/PosBadge";
 import SegmentedSentenceDisplay from "../../components/SegmentedSentenceDisplay";
 import PracticeWritingButton from "../../components/handwriting/PracticeWritingButton";
@@ -58,6 +58,9 @@ export interface InfoCardPanelBodyProps {
     // speaker spins when it matches the current entry; each sentence speaker
     // spins when it matches that sentence's Chinese text.
     speakingKey?: string | null;
+    // Size of the headword CPCD in the entry header. Defaults to "md" (bottom-
+    // sheet variant); the centered popup variant passes "sm" for a tighter card.
+    headerCpcdSize?: CPCDSize;
     // The scrollable content area's touchAction. Bottom-sheet variant sets
     // "none" so it can route touchmove between sheet-resize and content-scroll;
     // popup variant leaves it "auto" for native scrolling.
@@ -105,6 +108,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
     onAddToLibrary,
     onSpeakSentence,
     speakingKey,
+    headerCpcdSize = "md",
     scrollTouchAction = "auto",
     headerDragBind,
 }, ref) {
@@ -188,7 +192,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
             >
                 {currentEntry && (
                     <ForeignText
-                        size="md"
+                        size={headerCpcdSize}
                         justifyContent="flex-start"
                         className="mobile-demo-eic-header-cpcd"
                         text={currentEntry.entryKey}
@@ -217,7 +221,9 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                         {stripParentheses(currentEntry.definition ?? '')}
                     </Typography>
                 )}
-                {onAddToLibrary && currentEntry && (
+                {/* Only discoverable entries can be added to Learn Now —
+                    lookup-only (undiscoverable) dictionary words hide the button. */}
+                {onAddToLibrary && currentEntry && currentEntry.discoverable && (
                     <IconButton
                         className="mobile-demo-eic-add-to-library"
                         size="small"

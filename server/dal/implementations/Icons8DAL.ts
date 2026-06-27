@@ -1,7 +1,8 @@
 import { IIcons8DAL, Icons8Asset, Icons8Page, Icons8ListItem } from '../interfaces/IIcons8DAL.js';
 import { dbManager } from '../base/DatabaseManager.js';
 import { ValidationError } from '../../types/dal.js';
-import { getIconById } from '../../services/Icons8FetchService.js';
+import { getIconById, searchIcons } from '../../services/Icons8FetchService.js';
+import { dictTableForLanguage } from '../shared/dictTable.js';
 
 /**
  * Data Access Layer for the `icons8` table (downloaded icons8 icons + their v5
@@ -122,5 +123,69 @@ export class Icons8DAL implements IIcons8DAL {
     });
 
     return true;
+  }
+
+  async getOrWarmDefaultIconResults(
+    language: string,
+    entryKey: string,
+    pos: string | null,
+    term: string
+  ): Promise<Icons8ListItem[]> {
+    if (!entryKey) throw new ValidationError('entryKey is required');
+
+    const table = dictTableForLanguage(language);
+    // Only the Spanish det carries a `pos` column (the zh table substitutes a NULL
+    // literal in dictJoin), so we only reference / order by pos for es. Mirroring the
+    // dictJoin preference (exact-pos row first) keeps the cache on the same det row
+    // whose definition produced the term.
+    const isEs = table === 'dictionaryentries_es';
+    const row = await dbManager.executeQuery<{ id: number; cached: Icons8ListItem[] | null }>(
+      async (client) => {
+        if (isEs) {
+          return await client.query(
+            `SELECT id, "defaultIconResults" AS cached
+               FROM ${table}
+              WHERE word1 = $1 AND language = $2
+              ORDER BY (CASE WHEN $3::varchar IS NOT NULL AND pos = $3 THEN 0 ELSE 1 END),
+                       definitions->>0 NULLS LAST
+              LIMIT 1`,
+            [entryKey, language, pos]
+          );
+        }
+        return await client.query(
+          `SELECT id, "defaultIconResults" AS cached
+             FROM ${table}
+            WHERE word1 = $1 AND language = $2
+            ORDER BY definitions->>0 NULLS LAST
+            LIMIT 1`,
+          [entryKey, language]
+        );
+      }
+    );
+
+    const det = row.recordset[0];
+    if (!det) return []; // No det row for this word -> nothing to cache; picker lives.
+
+    // Cache hit: node-postgres parses jsonb into a JS array already. NULL = never
+    // warmed (fall through to the live search); [] = warmed-but-empty (a valid hit).
+    if (det.cached !== null && det.cached !== undefined) return det.cached;
+
+    // Miss. Without a term there is nothing to search (and we don't want to cache an
+    // empty result keyed to "no query"), so just return empty and leave the column NULL.
+    const trimmed = term.trim();
+    if (!trimmed) return [];
+
+    const { icons } = await searchIcons(trimmed, { amount: 48 });
+    const slim: Icons8ListItem[] = icons.map((i) => ({ id: i.id, name: i.name }));
+
+    // Write the response back to the resolved det row so the next open is instant.
+    await dbManager.executeQuery(async (client) =>
+      client.query(
+        `UPDATE ${table} SET "defaultIconResults" = $1::jsonb WHERE id = $2`,
+        [JSON.stringify(slim), det.id]
+      )
+    );
+
+    return slim;
   }
 }

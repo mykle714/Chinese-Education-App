@@ -55,4 +55,28 @@ export interface IIcons8DAL {
    * Returns true when the icon ends up cached, false when icons8 has no such icon.
    */
   ensureCached(icons8Id: string): Promise<boolean>;
+
+  /**
+   * Return the cached default icon-search response for a det entry, warming it on a
+   * miss. The "default query" is the card's English meaning, computed client-side and
+   * passed in as `term`; the response (first page of icons8 ids+names) is cached on
+   * the shared det row (`defaultIconResults`, migration 87) so the picker can show
+   * results instantly on open. See docs/CARD_ICON_LAYOUT.md.
+   *
+   * - Cache hit  -> returns the stored list (may be []), no icons8 call.
+   * - Cache miss -> if `term` is non-empty, runs ONE live icons8 search, writes the
+   *   result back to det, and returns it; if `term` is empty (or no det row matches),
+   *   returns [] without writing.
+   *
+   * @param language vet/det language code ('zh' | 'es'); selects the det table.
+   * @param entryKey det `word1` headword.
+   * @param pos      saved vet POS (Spanish disambiguation); NULL for Chinese.
+   * @param term     client-computed default search term (iconSearchTerm()).
+   */
+  getOrWarmDefaultIconResults(
+    language: string,
+    entryKey: string,
+    pos: string | null,
+    term: string
+  ): Promise<Icons8ListItem[]>;
 }

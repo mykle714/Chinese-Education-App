@@ -1,5 +1,6 @@
 // Setup file to wire together DAL, Service, and Controller instances
 import { UserDAL } from './implementations/UserDAL.js';
+import { RefreshTokenDAL } from './implementations/RefreshTokenDAL.js';
 import { VocabEntryDAL } from './implementations/VocabEntryDAL.js';
 import { UserMinutePointsDAL } from './implementations/UserMinutePointsDAL.js';
 import { DictionaryDAL } from './implementations/DictionaryDAL.js';
@@ -26,12 +27,16 @@ import { Icons8DAL } from './implementations/Icons8DAL.js';
 import { Icons8Controller } from '../controllers/Icons8Controller.js';
 import { WinsDAL } from './implementations/WinsDAL.js';
 import { WinsController } from '../controllers/WinsController.js';
+import { CommunityLayoutDAL } from './implementations/CommunityLayoutDAL.js';
+import { CommunityLayoutService } from '../services/CommunityLayoutService.js';
+import { CommunityLayoutController } from '../controllers/CommunityLayoutController.js';
 import { GameAssetService } from '../services/GameAssetService.js';
 import { GameProgressService } from '../services/GameProgressService.js';
 import { GamesController } from '../controllers/GamesController.js';
 
 // DAL instances
 const userDAL = new UserDAL();
+const refreshTokenDAL = new RefreshTokenDAL();
 const vocabEntryDAL = new VocabEntryDAL();
 const userMinutePointsDAL = new UserMinutePointsDAL();
 const dictionaryDAL = new DictionaryDAL();
@@ -40,9 +45,10 @@ const gameAssetDAL = new GameAssetDAL();
 const gameProgressDAL = new GameProgressDAL();
 const icons8DAL = new Icons8DAL();
 const winsDAL = new WinsDAL();
+const communityLayoutDAL = new CommunityLayoutDAL();
 
 // Service instances (with DI)
-const userService = new UserService(userDAL);
+const userService = new UserService(userDAL, refreshTokenDAL);
 const dictionaryService = new DictionaryService(dictionaryDAL);
 const vocabEntryService = new VocabEntryService(vocabEntryDAL, userDAL, dictionaryService);
 const onDeckVocabService = new OnDeckVocabService(vocabEntryDAL, dictionaryService);
@@ -52,6 +58,8 @@ const starterPacksService = new StarterPacksService(vocabEntryDAL, dictionaryDAL
 const nightMarketService = new NightMarketService(nightMarketDAL, userDAL);
 const gameAssetService = new GameAssetService(gameAssetDAL);
 const gameProgressService = new GameProgressService(gameProgressDAL);
+// Community shared-layout feeds + votes; reuses vocabEntryService for the apply-to-card flow.
+const communityLayoutService = new CommunityLayoutService(communityLayoutDAL, vocabEntryService);
 
 // Controller instances
 const userController = new UserController(userService, icons8DAL);
@@ -67,9 +75,11 @@ const gamesController = new GamesController(gameAssetService, gameProgressServic
 const icons8Controller = new Icons8Controller(icons8DAL);
 // wins is a thin per-user event log → no service layer; controller takes the DAL directly.
 const winsController = new WinsController(winsDAL);
+const communityLayoutController = new CommunityLayoutController(communityLayoutService);
 
 export {
   userDAL,
+  refreshTokenDAL,
   vocabEntryDAL,
   userMinutePointsDAL,
   dictionaryDAL,
@@ -99,4 +109,7 @@ export {
   icons8Controller,
   winsDAL,
   winsController,
+  communityLayoutDAL,
+  communityLayoutService,
+  communityLayoutController,
 };

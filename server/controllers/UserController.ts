@@ -1,7 +1,16 @@
 import { Request, Response } from 'express';
-import { UserService } from '../services/UserService.js';
+import { UserService, IssuedRefreshToken } from '../services/UserService.js';
 import { IIcons8DAL } from '../dal/interfaces/IIcons8DAL.js';
 import { ValidationError, DuplicateError, NotFoundError, DALError } from '../types/dal.js';
+
+// The access-token cookie lives at root (sent with every API request); the
+// refresh-token cookie is scoped to /api/auth so it is only ever sent to the
+// auth endpoints that need it (refresh / logout / delete-account), shrinking its
+// exposure. clearCookie MUST use the same path or the browser keeps the cookie.
+const ACCESS_COOKIE = 'token';
+const REFRESH_COOKIE = 'refreshToken';
+const REFRESH_COOKIE_PATH = '/api/auth';
+const ACCESS_COOKIE_MAX_AGE_MS = 15 * 60 * 1000; // mirrors ACCESS_TOKEN_TTL
 
 /**
  * User Controller - Handles HTTP requests and responses for user operations
@@ -10,6 +19,32 @@ import { ValidationError, DuplicateError, NotFoundError, DALError } from '../typ
 export class UserController {
   // icons8DAL is used only to validate avatar icon ids (PUT /api/users/avatar).
   constructor(private userService: UserService, private icons8DAL: IIcons8DAL) {}
+
+  /**
+   * Set the access + refresh cookies after a login or refresh. Both are httpOnly
+   * (invisible to JS — XSS can't read them). The refresh cookie's lifetime tracks
+   * its DB expiry so the browser drops it in lockstep with the server.
+   * Note: add `secure: true` to both when serving over HTTPS.
+   */
+  private setAuthCookies(res: Response, accessToken: string, refresh: IssuedRefreshToken): void {
+    res.cookie(ACCESS_COOKIE, accessToken, {
+      httpOnly: true,
+      sameSite: 'lax',
+      maxAge: ACCESS_COOKIE_MAX_AGE_MS,
+    });
+    res.cookie(REFRESH_COOKIE, refresh.rawToken, {
+      httpOnly: true,
+      sameSite: 'lax',
+      path: REFRESH_COOKIE_PATH,
+      maxAge: Math.max(0, refresh.expiresAt.getTime() - Date.now()),
+    });
+  }
+
+  /** Clear both auth cookies (logout / account deletion). */
+  private clearAuthCookies(res: Response): void {
+    res.clearCookie(ACCESS_COOKIE);
+    res.clearCookie(REFRESH_COOKIE, { path: REFRESH_COOKIE_PATH });
+  }
 
   /**
    * Register a new user
@@ -40,18 +75,74 @@ export class UserController {
       const { email, password } = req.body;
       
       const authResponse = await this.userService.authenticateUser(email, password);
-      
-      // Set token as cookie
-      // Note: secure flag removed to support HTTP deployment
-      // Add back 'secure: true' when using HTTPS
-      res.cookie('token', authResponse.token, {
-        httpOnly: true,
-        sameSite: 'lax',
-        maxAge: 24 * 60 * 60 * 1000 // 24 hours
-      });
-      
+
+      // Issue the matching refresh token (the family root for this login) and set
+      // both cookies. The refresh token is cookie-only — never returned in the
+      // body, so client JS never holds it.
+      const refresh = await this.userService.issueRefreshToken(
+        authResponse.user.id,
+        req.headers['user-agent'] ?? null
+      );
+      this.setAuthCookies(res, authResponse.token, refresh);
+
       res.json(authResponse);
     } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  /**
+   * Exchange the refresh-token cookie for a fresh access token (and a rotated
+   * refresh token). This endpoint is NOT behind authenticateToken — the access
+   * token is expired by design here; the refresh cookie is the credential.
+   * POST /api/auth/refresh
+   */
+  async refresh(req: Request, res: Response): Promise<void> {
+    try {
+      const rawRefreshToken = req.cookies?.[REFRESH_COOKIE];
+      if (!rawRefreshToken) {
+        res.status(401).json({
+          error: 'No refresh token provided',
+          code: 'ERR_NO_REFRESH_TOKEN',
+        });
+        return;
+      }
+
+      const result = await this.userService.rotateRefreshToken(
+        rawRefreshToken,
+        req.headers['user-agent'] ?? null
+      );
+
+      this.setAuthCookies(res, result.token, result.refreshToken);
+
+      // Return the new access token + user so the client can update in-memory
+      // state and the Authorization header it sends on subsequent requests.
+      res.json({ user: result.user, token: result.token });
+    } catch (error) {
+      // A failed rotation (invalid/expired/reused token) must clear the cookies
+      // so the browser stops resending a dead refresh token; the client then
+      // falls back to the login redirect.
+      this.clearAuthCookies(res);
+      this.handleError(error, res);
+    }
+  }
+
+  /**
+   * Log out: revoke the presented refresh token server-side (so it can never be
+   * rotated again) and clear both cookies.
+   * POST /api/auth/logout
+   */
+  async logout(req: Request, res: Response): Promise<void> {
+    try {
+      const rawRefreshToken = req.cookies?.[REFRESH_COOKIE];
+      if (rawRefreshToken) {
+        await this.userService.revokeRefreshToken(rawRefreshToken);
+      }
+      this.clearAuthCookies(res);
+      res.status(200).json({ message: 'Logged out successfully' });
+    } catch (error) {
+      // Even if revocation fails, still clear cookies so the client logs out.
+      this.clearAuthCookies(res);
       this.handleError(error, res);
     }
   }
@@ -217,12 +308,17 @@ export class UserController {
         return;
       }
       
-      // Delete user account (this will cascade delete all user data)
+      // Revoke any outstanding refresh tokens up front (the FK CASCADE on user
+      // deletion also removes the rows, but this is explicit and order-safe).
+      await this.userService.revokeAllRefreshTokens(userId);
+
+      // Delete user account (this will cascade delete all user data, including
+      // any remaining refresh_tokens rows via ON DELETE CASCADE)
       await this.userService.deleteUser(userId, password);
-      
-      // Clear authentication cookie
-      res.clearCookie('token');
-      
+
+      // Clear both authentication cookies
+      this.clearAuthCookies(res);
+
       res.json({
         message: 'Account deleted successfully'
       });

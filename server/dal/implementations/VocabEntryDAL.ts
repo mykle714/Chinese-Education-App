@@ -98,8 +98,7 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     userId: string,
     id: string | number,
     language: string,
-    layout: IconLayoutItem[] | null,
-    textBackdrop: boolean
+    layout: IconLayoutItem[] | null
   ): Promise<VocabEntry | null> {
     if (!userId) throw new ValidationError('userId is required');
     if (!id) throw new ValidationError('id is required');
@@ -114,11 +113,10 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
       return await client.query(
         `UPDATE ${table}
-            SET "iconLayout" = $1::jsonb,
-                "iconTextBackdrop" = $2
-          WHERE id = $3 AND "userId" = $4
+            SET "iconLayout" = $1::jsonb
+          WHERE id = $2 AND "userId" = $3
           RETURNING *`,
-        [value, textBackdrop, id, userId]
+        [value, id, userId]
       );
     });
 

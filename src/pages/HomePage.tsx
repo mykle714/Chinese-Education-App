@@ -3,6 +3,7 @@ import SportsEsportsIcon from "@mui/icons-material/SportsEsports";
 import ArticleIcon from "@mui/icons-material/Article";
 import BookIcon from "@mui/icons-material/Book";
 import DashboardIcon from "@mui/icons-material/Dashboard";
+import GroupsIcon from "@mui/icons-material/Groups";
 import MobileTabScreen from "../components/MobileTabScreen";
 import { HubMenu, HubMenuRow } from "../components/HubMenu";
 import { usePageTitle } from "../hooks/usePageTitle";
@@ -29,6 +30,7 @@ function HomePage() {
     const items: HomeMenuItem[] = [
         { key: "night-market", to: "/night-market", title: "Night Market", subtitle: "Explore the vocabulary night market", icon: <NightsStayIcon sx={iconSx} /> },
         { key: "games", to: "/games", title: "Games", subtitle: "Play vocabulary mini-games", icon: <SportsEsportsIcon sx={iconSx} /> },
+        { key: "community", to: "/community", title: "Community", subtitle: "Discover and upvote card designs from other learners", icon: <GroupsIcon sx={iconSx} /> },
         { key: "reader", to: "/reader", title: "Reader", subtitle: "Read texts and mine new words", icon: <ArticleIcon sx={iconSx} /> },
         { key: "dictionary", to: "/dictionary", title: "Dictionary", subtitle: "Look up words and add them to your decks", icon: <BookIcon sx={iconSx} /> },
         { key: "tester-dashboard", to: "/tester-dashboard", title: "Tester Dashboard", subtitle: "Study time, streak, and activity", icon: <DashboardIcon sx={iconSx} /> },

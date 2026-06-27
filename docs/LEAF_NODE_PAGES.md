@@ -121,7 +121,7 @@ leaf page slides the page up while the footer drops away.
 
 `FooterPresenter` holds the single source of truth for which routes show the
 footer (and which tab is active): `/` (home), `/flashcards/decks`, `/discover`,
-`/account`, `/games`, `/flashcards/mastered`. Every other route (all leaf pages,
+`/account`, `/games`, `/community`, `/flashcards/mastered`. Every other route (all leaf pages,
 login, etc.) is absent → the footer slides out. `MobileTabScreen` no longer
 renders `MobileFooter` itself (it still reserves `FLOATING_FOOTER_CLEARANCE` and
 uses `activePage` for the header badge).
@@ -139,6 +139,7 @@ uses `activePage` for the header badge).
 | `/games/bubble-match` | `BubbleMatchPage` | Leaf (footer removed; the info/picker screen no longer shows the footer) |
 | `/flashcards/mastered` | `MasteredCardsPage` | Node |
 | `/games` | `GamesPage` | Node |
+| `/community` | `CommunityPage` | Node |
 
 ## Not yet classified
 The generic in-game shell `src/games/runtime/GamePage.tsx` (used by any future

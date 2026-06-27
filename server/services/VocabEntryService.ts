@@ -198,13 +198,10 @@ export class VocabEntryService {
     userId: string,
     entryId: number,
     language: string,
-    layout: IconLayoutItem[] | null,
-    textBackdrop: boolean
+    layout: IconLayoutItem[] | null
   ): Promise<VocabEntry> {
     const clean = layout === null ? null : this.validateIconLayout(layout);
-    // A backdrop is only meaningful with a custom layout; force it off when clearing.
-    const backdrop = clean === null ? false : !!textBackdrop;
-    const updated = await this.vocabEntryDAL.updateIconLayout(userId, entryId, language, clean, backdrop);
+    const updated = await this.vocabEntryDAL.updateIconLayout(userId, entryId, language, clean);
     if (!updated) {
       // No row matched the id for this user — either it doesn't exist or isn't theirs.
       throw new NotFoundError('Vocabulary entry not found');
@@ -244,6 +241,9 @@ export class VocabEntryService {
         scale: clamp(raw.scale, 0.25, 4.5),
         rotation: raw.rotation,
         z: raw.z,
+        // Optional horizontal-mirror flag; coerced to a real boolean (omitted when false
+        // so unmirrored items stay clean in the jsonb).
+        ...(raw.flipX === true ? { flipX: true } : {}),
       };
     });
 

@@ -41,6 +41,9 @@ export function dictionaryEntryToVocabEntry(dict: DictionaryEntry): VocabEntry {
         expansionMetadata: anyDict.expansionMetadata ?? null,
         expansionLiteralTranslation: anyDict.expansionLiteralTranslation ?? null,
         usedIn: anyDict.usedIn ?? null,
+        // Carry discoverability so the dictionary EIP can hide the "+ to Learn
+        // Now" button for lookup-only (undiscoverable) entries.
+        discoverable: dict.discoverable ?? false,
         createdAt: dict.createdAt,
     };
 }

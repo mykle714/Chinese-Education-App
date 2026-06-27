@@ -1,5 +1,15 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import { API_BASE_URL } from '../constants';
+import { attemptTokenRefresh } from './tokenRefresh';
+
+// Mirror the fetch interceptor: don't auto-refresh on auth-mutation endpoints
+// (a 401 there is a real failure / would recurse). /api/auth/me is eligible.
+const NO_REFRESH_PATHS = [
+  '/api/auth/login',
+  '/api/auth/register',
+  '/api/auth/logout',
+  '/api/auth/refresh',
+];
 
 // Create axios instance with default config
 const apiClient = axios.create({
@@ -39,31 +49,43 @@ apiClient.interceptors.request.use(
   }
 );
 
-// Response interceptor - handle token expiration
+// Response interceptor - transparently refresh + retry on auth failure, then
+// fall back to logout. Mirrors the global fetch interceptor's behavior.
 apiClient.interceptors.response.use(
   (response) => {
     // Pass through successful responses
     return response;
   },
-  (error: AxiosError) => {
-    // Handle 401 (Unauthorized) and 403 (Forbidden) responses
-    if (error.response?.status === 401 || error.response?.status === 403) {
-      console.log('Token expired or unauthorized, redirecting to login...');
-      
-      // Clear auth state
+  async (error: AxiosError) => {
+    const status = error.response?.status;
+    // `_retried` guards against an infinite refresh/retry loop on the retried call.
+    const config = error.config as (InternalAxiosRequestConfig & { _retried?: boolean }) | undefined;
+    const url = config?.url ?? '';
+    const skipRefresh = NO_REFRESH_PATHS.some((p) => url.includes(p));
+
+    if ((status === 401 || status === 403) && config && !config._retried && !skipRefresh) {
+      const newToken = await attemptTokenRefresh();
+
+      if (newToken) {
+        // Retry once with the fresh token (cookie is also refreshed server-side).
+        config._retried = true;
+        config.headers = config.headers ?? {};
+        (config.headers as Record<string, string>).Authorization = `Bearer ${newToken}`;
+        return apiClient(config);
+      }
+
+      // Refresh failed: the session is truly over.
+      console.log('Session expired and refresh failed — redirecting to login...');
       if (clearAuthState) {
         clearAuthState();
       }
-      
-      // Clear localStorage
       localStorage.removeItem('token');
-      
-      // Redirect to login
+      localStorage.setItem('sessionExpired', 'true');
       if (navigateToLogin) {
         navigateToLogin();
       }
     }
-    
+
     return Promise.reject(error);
   }
 );

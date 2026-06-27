@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Box, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
@@ -17,10 +17,11 @@ import EipTabStrip from "./EipTabStrip";
 import TooManyTabsSnackbar from "./TooManyTabsSnackbar";
 import FlashCardSection from "./FlashCardSection";
 import CardIconCanvas from "./CardIconCanvas";
-import CardEditToolbar from "./CardEditToolbar";
-import IconSearchDialog from "../../components/IconSearchDialog";
-import { defaultLayoutForEntry, maxZ } from "./cardIconLayout";
-import { saveIconLayout } from "./cardIconApi";
+import CardEditToolbar, { type AlignDirection } from "./CardEditToolbar";
+import IconPickerDialog from "../../components/IconPickerDialog";
+import { defaultLayoutForEntry, maxZ, isAdvancedLayout, isPlainDefaultLayout, DEFAULT_ICON_X, DEFAULT_ICON_Y, DEFAULT_ICON_SCALE, ALIGN_ROTATION } from "./cardIconLayout";
+import { saveIconLayout, fetchDefaultIconResults, type IconSearchItem } from "./cardIconApi";
+import { iconSearchTerm } from "../../utils/definitionUtils";
 import { ICON_LAYOUT_MAX_ITEMS, type IconLayoutItem, type VocabEntry } from "../../types";
 import { setMinutePointsPaused } from "../../utils/minutePointsPause";
 import SheetPanel, { type SheetPanelBodyHandle } from "./SheetPanel";
@@ -133,47 +134,157 @@ const FlashcardsLearnPage: React.FC = () => {
     // face. Saved layouts are echoed into a local override map (keyed by vet id) so
     // the card reflects the change without re-fetching the working loop.
     const [editMode, setEditMode] = useState(false);
-    const [draftLayout, setDraftLayout] = useState<IconLayoutItem[]>([]);
-    // Whether the draft has the white text backdrop enabled (legibility over icons).
-    const [draftTextBackdrop, setDraftTextBackdrop] = useState(false);
+    // Advanced mode: the full gesture canvas (drag/resize/rotate/add). Basic mode (false)
+    // only swaps a single icon. See docs/CARD_ICON_LAYOUT.md.
+    const [advMode, setAdvMode] = useState(false);
+    // The editor keeps TWO drafts at once so toggling adv never destroys the other view:
+    //  - basicDraft: the single-icon basic view (0 or 1 item).
+    //  - advDraft:   the multi-icon advanced arrangement.
+    // The active draft (driven by advMode) is what the card displays and what Save
+    // persists ("we show/save whichever mode the user is in").
+    const [basicDraft, setBasicDraft] = useState<IconLayoutItem[]>([]);
+    const [advDraft, setAdvDraft] = useState<IconLayoutItem[]>([]);
+    const draftLayout = advMode ? advDraft : basicDraft;
+    // Which advanced-canvas icon is selected (index into advDraft), driving the per-icon
+    // toolbar controls (delete / align / mirror). Null = nothing selected.
+    const [selectedIcon, setSelectedIcon] = useState<number | null>(null);
+    // Undo history for the advanced draft: a capped stack of prior advDraft snapshots.
+    // Each discrete action (gesture, add, delete, align, mirror, reorder) pushes the
+    // PRE-change snapshot via pushAdvHistory; undo pops and restores it.
+    const ADV_HISTORY_MAX = 100;
+    const [advHistory, setAdvHistory] = useState<IconLayoutItem[][]>([]);
+    // Latest-ref so pushAdvHistory (a stable callback) always snapshots the current draft
+    // without taking advDraft as a dependency.
+    const advDraftRef = useRef(advDraft);
+    advDraftRef.current = advDraft;
+    const pushAdvHistory = useCallback(() => {
+        setAdvHistory((h) => {
+            const next = [...h, advDraftRef.current.map((it) => ({ ...it }))];
+            return next.length > ADV_HISTORY_MAX ? next.slice(next.length - ADV_HISTORY_MAX) : next;
+        });
+    }, []);
+    const undoAdv = useCallback(() => {
+        setAdvHistory((h) => {
+            if (h.length === 0) return h;
+            setAdvDraft(h[h.length - 1]);
+            setSelectedIcon(null);
+            return h.slice(0, -1);
+        });
+    }, []);
+    // Whether "reset to default" has anything to clear (drives greying it out). A draft
+    // that is just the plain default icon offers nothing to reset.
+    //  - Advanced: also enabled while the action stack is non-empty (a saved design opens
+    //    non-default → enabled; a default card becomes resettable once any tracked action
+    //    has happened, even if it nets back to default).
+    //  - Basic: enabled once the single icon differs from the default (a saved design
+    //    opens changed → enabled; an untouched default stays greyed until "swap icon").
+    const defaultIconId = currentEntry?.iconId ?? null;
+    const canReset = advMode
+        ? (!isPlainDefaultLayout(advDraft, defaultIconId) || advHistory.length > 0)
+        : !isPlainDefaultLayout(basicDraft, defaultIconId);
     const [savingLayout, setSavingLayout] = useState(false);
     const [iconSearchOpen, setIconSearchOpen] = useState(false);
+    // Prefetched icons8 results for the current card's DEFAULT query, warmed on enter-
+    // edit so the picker can render instantly on open. Tagged with the card id + term so
+    // a stale prefetch (from a previously-edited card) is never shown for another card.
+    const [defaultIconResults, setDefaultIconResults] =
+        useState<{ entryId: number; term: string; icons: IconSearchItem[] } | null>(null);
     const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
     const [iconLayoutOverrides, setIconLayoutOverrides] = useState<Record<number, IconLayoutItem[] | null>>({});
-    const [textBackdropOverrides, setTextBackdropOverrides] = useState<Record<number, boolean>>({});
 
-    // Merge any saved-this-session overrides into an entry before it is rendered.
+    // Merge any saved-this-session icon-layout override into an entry before render.
     const applyIconOverride = useCallback(
         (e: VocabEntry | null): VocabEntry | null => {
             if (!e) return e;
-            let r = e;
-            if (e.id in iconLayoutOverrides) r = { ...r, iconLayout: iconLayoutOverrides[e.id] };
-            if (e.id in textBackdropOverrides) r = { ...r, iconTextBackdrop: textBackdropOverrides[e.id] };
-            return r;
+            if (e.id in iconLayoutOverrides) return { ...e, iconLayout: iconLayoutOverrides[e.id] };
+            return e;
         },
-        [iconLayoutOverrides, textBackdropOverrides],
+        [iconLayoutOverrides],
     );
     const displayCurrentEntry = applyIconOverride(currentEntry);
     const displayNextEntry = applyIconOverride(nextEntry);
 
+    // The picker's prefetched first page, for the CURRENT card only. Memoized so its
+    // identity is stable across renders — IconPickerDialog's load effect depends on it,
+    // and a fresh object literal each render would re-run that effect (it sets state in
+    // the cache fast path) and loop infinitely.
+    const pickerPrefetched = useMemo(
+        () =>
+            defaultIconResults && defaultIconResults.entryId === currentEntry?.id
+                ? { term: defaultIconResults.term, icons: defaultIconResults.icons }
+                : null,
+        [defaultIconResults, currentEntry?.id],
+    );
+
+    // While editing, the active card reflects the live draft (WYSIWYG). In basic mode
+    // there is no gesture canvas, so the draft is rendered through the normal static
+    // icon-layer path by feeding it onto the entry's iconLayout.
+    const editingCurrentEntry =
+        editMode && displayCurrentEntry
+            ? { ...displayCurrentEntry, iconLayout: draftLayout }
+            : displayCurrentEntry;
+
     const exitEdit = useCallback(() => {
         setEditMode(false);
+        setAdvMode(false);
         setIconSearchOpen(false);
         setResetConfirmOpen(false);
+        setSelectedIcon(null);
+        setAdvHistory([]);
     }, []);
 
     const enterEdit = useCallback(() => {
         if (!displayCurrentEntry) return;
         const existing = displayCurrentEntry.iconLayout;
-        // Seed from the saved layout, or the single default det icon at center.
-        setDraftLayout(
-            existing && existing.length > 0
-                ? existing.map((it) => ({ ...it }))
-                : defaultLayoutForEntry(displayCurrentEntry),
-        );
-        setDraftTextBackdrop(!!displayCurrentEntry.iconTextBackdrop);
+        const clone = (l: IconLayoutItem[]) => l.map((it) => ({ ...it }));
+        // The single default det icon at its default spot (basic-mode fallback).
+        const def = defaultLayoutForEntry(displayCurrentEntry);
+        if (existing && isAdvancedLayout(existing)) {
+            // A saved ADVANCED arrangement (multiple icons, or a single icon that's been
+            // moved / resized / rotated) → seed advanced from it and auto-open advanced.
+            // Basic falls back to the default single icon (toggling adv off shows that,
+            // while the advanced arrangement is preserved in advDraft).
+            setAdvDraft(clone(existing));
+            setBasicDraft(def);
+            setAdvMode(true);
+        } else if (existing && existing.length === 1) {
+            // A saved single default-placed icon → that IS the basic view; advanced
+            // starts from it too (so the user can build on it without losing the icon).
+            setBasicDraft(clone(existing));
+            setAdvDraft(clone(existing));
+            setAdvMode(false);
+        } else {
+            // Nothing saved → default single icon in both drafts, basic mode.
+            setBasicDraft(def);
+            setAdvDraft(def);
+            setAdvMode(false);
+        }
+        setSelectedIcon(null);
+        setAdvHistory([]);
         setEditMode(true);
-    }, [displayCurrentEntry]);
+
+        // Warm the icon picker: fetch (and cache on the server) the default-query
+        // results for this card so they're ready the instant the picker opens. Fire-and
+        // -forget — on failure the picker simply does its normal live search on open.
+        const term = iconSearchTerm(displayCurrentEntry.definition);
+        const entryId = displayCurrentEntry.id;
+        if (displayCurrentEntry.entryKey && displayCurrentEntry.language) {
+            fetchDefaultIconResults(token, {
+                language: displayCurrentEntry.language,
+                entryKey: displayCurrentEntry.entryKey,
+                pos: displayCurrentEntry.pos ?? null,
+                term,
+            })
+                .then((icons) => setDefaultIconResults({ entryId, term, icons }))
+                .catch(() => {/* picker falls back to a live search on open */});
+        }
+    }, [displayCurrentEntry, token]);
+
+    // Selection only makes sense inside the advanced canvas — clear it whenever advanced
+    // mode is toggled off (the basic view has no selectable icons).
+    useEffect(() => {
+        if (!advMode) setSelectedIcon(null);
+    }, [advMode]);
 
     // Pause minute-points accumulation while editing the icon layout (decorating a
     // card isn't study time). Always unpause on exit/unmount.
@@ -189,29 +300,79 @@ const FlashcardsLearnPage: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [editCardId]);
 
-    // Append a freshly-picked icon (already cached) at center, on top.
-    const handleAddIcon = useCallback((iconId: string) => {
-        setDraftLayout((prev) =>
-            prev.length >= ICON_LAYOUT_MAX_ITEMS
-                ? prev
-                : [...prev, { iconId, x: 0.5, y: 0.5, scale: 1, rotation: 0, z: maxZ(prev) + 1 }],
+    // The icon picker's pick handler depends on the mode: advanced mode APPENDS a new
+    // icon at center; basic mode SWAPS the single icon (replaces the whole draft with
+    // one default-positioned icon).
+    const handlePickIcon = useCallback(
+        (iconId: string) => {
+            if (advMode) {
+                if (advDraftRef.current.length >= ICON_LAYOUT_MAX_ITEMS) return;
+                pushAdvHistory();
+                // New icons spawn at the card center, 20% larger (DEFAULT_ICON_SCALE), on top.
+                setAdvDraft((prev) => [
+                    ...prev,
+                    { iconId, x: 0.5, y: 0.5, scale: DEFAULT_ICON_SCALE, rotation: 0, z: maxZ(prev) + 1 },
+                ]);
+            } else {
+                setBasicDraft([{ iconId, x: DEFAULT_ICON_X, y: DEFAULT_ICON_Y, scale: DEFAULT_ICON_SCALE, rotation: 0, z: 0 }]);
+            }
+        },
+        [advMode, pushAdvHistory],
+    );
+
+    // ── Advanced per-icon toolbar actions ─────────────────────────────────────
+    // Each snapshots history first, then mutates advDraft. They no-op when nothing is
+    // selected (the toolbar already disables the buttons, but guard defensively).
+    const handleDeleteSelected = useCallback(() => {
+        if (selectedIcon === null) return;
+        pushAdvHistory();
+        setAdvDraft((prev) => prev.filter((_, idx) => idx !== selectedIcon));
+        setSelectedIcon(null);
+    }, [selectedIcon, pushAdvHistory]);
+
+    const handleAlign = useCallback(
+        (dir: AlignDirection) => {
+            if (selectedIcon === null) return;
+            pushAdvHistory();
+            setAdvDraft((prev) =>
+                prev.map((it, idx) => (idx === selectedIcon ? { ...it, rotation: ALIGN_ROTATION[dir] } : it)),
+            );
+        },
+        [selectedIcon, pushAdvHistory],
+    );
+
+    const handleMirror = useCallback(() => {
+        if (selectedIcon === null) return;
+        pushAdvHistory();
+        setAdvDraft((prev) =>
+            prev.map((it, idx) => (idx === selectedIcon ? { ...it, flipX: !it.flipX } : it)),
         );
-    }, []);
+    }, [selectedIcon, pushAdvHistory]);
+
+    // Reorder commits a fully rebuilt layout (z values permuted) from the order list.
+    // Live reorder: the order list applies the new z-order on every placeholder move (so
+    // the card previews the stack live), so this must NOT push undo history each call —
+    // that happens once per drag via `onReorderStart` (= pushAdvHistory) below.
+    const handleReorder = useCallback(
+        (next: IconLayoutItem[]) => {
+            setAdvDraft(next);
+        },
+        [],
+    );
 
     const handleSaveLayout = useCallback(async () => {
         if (!currentEntry) return;
         setSavingLayout(true);
         try {
-            const res = await saveIconLayout(token, currentEntry.id, draftLayout, draftTextBackdrop);
+            const res = await saveIconLayout(token, currentEntry.id, draftLayout);
             setIconLayoutOverrides((o) => ({ ...o, [currentEntry.id]: res.iconLayout }));
-            setTextBackdropOverrides((o) => ({ ...o, [currentEntry.id]: res.iconTextBackdrop }));
             exitEdit();
         } catch (err) {
             console.error("Failed to save icon layout:", err);
         } finally {
             setSavingLayout(false);
         }
-    }, [currentEntry, draftLayout, draftTextBackdrop, token, exitEdit]);
+    }, [currentEntry, draftLayout, token, exitEdit]);
 
     // Reset-to-default: clear the saved layout (null), restoring the default centered
     // icon, then exit edit mode. Confirmation-gated by resetConfirmOpen.
@@ -219,9 +380,8 @@ const FlashcardsLearnPage: React.FC = () => {
         if (!currentEntry) return;
         setSavingLayout(true);
         try {
-            await saveIconLayout(token, currentEntry.id, null, false);
+            await saveIconLayout(token, currentEntry.id, null);
             setIconLayoutOverrides((o) => ({ ...o, [currentEntry.id]: null }));
-            setTextBackdropOverrides((o) => ({ ...o, [currentEntry.id]: false }));
             exitEdit();
         } catch (err) {
             console.error("Failed to reset icon layout:", err);
@@ -318,6 +478,17 @@ const FlashcardsLearnPage: React.FC = () => {
         eip.clear();
     }, [eip]);
 
+    // The card editor and the EIP can't coexist — entering edit mode dismisses the
+    // panel (and the More Info pill is disabled while editing, see MoreInfoPill below).
+    // Key off editMode ONLY (rising edge): closeEip's identity churns every render
+    // (useEipTabs returns a fresh object, and closeEip -> eip.clear() -> setTabs([]),
+    // a new array ref each call), so depending on it here would re-run the effect every
+    // render and loop infinitely.
+    useEffect(() => {
+        if (editMode) closeEip();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [editMode]);
+
     // Hint shown when the user taps the pill before flipping the card.
     // Auto-dismisses after a couple seconds, and clears immediately on flip.
     const [showFlipHint, setShowFlipHint] = useState(false);
@@ -331,6 +502,8 @@ const FlashcardsLearnPage: React.FC = () => {
     }, [isFlipped]);
 
     const handleMoreInfoClick = () => {
+        // Disabled while the card editor is open (the pill is also greyed out).
+        if (editMode) return;
         if (!isFlipped) {
             setShowFlipHint(true);
             return;
@@ -401,7 +574,12 @@ const FlashcardsLearnPage: React.FC = () => {
                 lastMarkUndoSnapshot={lastMarkUndoSnapshot}
                 isAnimating={isAnimating}
                 isUndoing={isUndoing}
-                onBack={() => navigate('/flashcards/decks')}
+                // In edit mode the back arrow first cancels the edit (discarding the
+                // draft, unpausing minute points), then performs the normal back nav.
+                onBack={() => {
+                    if (editMode) exitEdit();
+                    navigate('/flashcards/decks');
+                }}
                 onUndo={handleUndoLastMark}
                 showPinyin={showPinyin}
                 onTogglePinyin={() => updateLearnSettings({ showPinyin: !showPinyin })}
@@ -416,10 +594,21 @@ const FlashcardsLearnPage: React.FC = () => {
                 {editMode && (
                     <Box sx={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 20 }}>
                         <CardEditToolbar
-                            count={draftLayout.length}
-                            textBackdrop={draftTextBackdrop}
-                            onAdd={() => setIconSearchOpen(true)}
-                            onToggleBackdrop={() => setDraftTextBackdrop((v) => !v)}
+                            advMode={advMode}
+                            count={advDraft.length}
+                            layout={advDraft}
+                            hasSelection={selectedIcon !== null}
+                            canUndo={advHistory.length > 0}
+                            onChangeIcon={() => setIconSearchOpen(true)}
+                            onAddIcon={() => setIconSearchOpen(true)}
+                            onToggleAdv={() => setAdvMode((v) => !v)}
+                            onUndo={undoAdv}
+                            onDeleteSelected={handleDeleteSelected}
+                            onAlign={handleAlign}
+                            onMirror={handleMirror}
+                            onReorder={handleReorder}
+                            onReorderStart={pushAdvHistory}
+                            canReset={canReset}
                             onReset={() => setResetConfirmOpen(true)}
                             onSave={handleSaveLayout}
                             onCancel={exitEdit}
@@ -430,7 +619,7 @@ const FlashcardsLearnPage: React.FC = () => {
                 {/* Flashcard fills the full ContentArea. The EIC sheet now overlays
                     at the bottom rather than stacking above the flashcard. */}
                 <FlashCardSection
-                    currentEntry={displayCurrentEntry}
+                    currentEntry={editingCurrentEntry}
                     nextEntry={displayNextEntry}
                     activeFrontSlot={activeFrontSlot}
                     flyOut={flyOut}
@@ -452,9 +641,18 @@ const FlashcardsLearnPage: React.FC = () => {
                     handlers={handlers}
                     onSpeak={tts.enabled ? tts.speak : undefined}
                     speakingKey={tts.speakingKey}
-                    editCanvas={editMode ? <CardIconCanvas layout={draftLayout} onChange={setDraftLayout} /> : undefined}
+                    // Gesture canvas only in advanced mode; basic mode renders the draft
+                    // through the static icon layer (via editingCurrentEntry above).
+                    editCanvas={editMode && advMode ? (
+                        <CardIconCanvas
+                            layout={advDraft}
+                            onChange={setAdvDraft}
+                            selected={selectedIcon}
+                            onSelect={setSelectedIcon}
+                            onInteractionStart={pushAdvHistory}
+                        />
+                    ) : undefined}
                     editMode={editMode}
-                    editTextBackdrop={draftTextBackdrop}
                 />
                 {/* Centered pill button — ghosted before flip, full opacity after */}
                 <Tooltip
@@ -466,8 +664,10 @@ const FlashcardsLearnPage: React.FC = () => {
                     <MoreInfoPill
                         className="mobile-demo-more-info-pill"
                         isFlipped={isFlipped}
-                        hintActive={isFlipped && !eicHintConsumed}
+                        isDisabled={editMode}
+                        hintActive={isFlipped && !eicHintConsumed && !editMode}
                         onClick={handleMoreInfoClick}
+                        aria-disabled={editMode}
                         aria-label="Open extra info"
                     >
                         <Typography sx={{ fontSize: SIZE.body, color: theme.palette.flashcard.onSurface, lineHeight: 1, transform: "translateY(-1px)" }}>↑</Typography>
@@ -538,14 +738,18 @@ const FlashcardsLearnPage: React.FC = () => {
             </ContentArea>
 
             {/* Add-icon search dialog (download-on-select). docs/CARD_ICON_LAYOUT.md */}
-            <IconSearchDialog
+            <IconPickerDialog
                 open={iconSearchOpen}
                 onClose={() => setIconSearchOpen(false)}
-                onPick={handleAddIcon}
-                // Seed the search with the card's English meaning so relevant icons
-                // show immediately. Strip a leading "to " (verb infinitives like
-                // "to understand" search far better as just "understand").
-                initialTerm={(displayCurrentEntry?.definition ?? "").replace(/^to\s+/i, "")}
+                title={advMode ? "Add an icon" : "Change icon"}
+                onPick={handlePickIcon}
+                // Seed the search with the card's English meaning (parsed via the shared
+                // iconSearchTerm: stripParentheses to match the card display, then the
+                // "to " / "to be " infinitive strips) so relevant icons show immediately.
+                initialTerm={iconSearchTerm(displayCurrentEntry?.definition)}
+                // Render the warmed default-query results instantly on open (when they
+                // belong to THIS card); typing a new term reverts to a live search.
+                prefetched={pickerPrefetched}
             />
 
             {/* Reset-to-default confirmation. */}

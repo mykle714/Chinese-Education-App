@@ -5,6 +5,7 @@ import { API_BASE_URL } from './constants';
 import type { Language } from './types';
 import { setAuthHandlers } from './utils/apiClient';
 import { setFetchInterceptorHandlers, setupFetchInterceptor } from './utils/fetchInterceptor';
+import { setRefreshHandlers, attemptTokenRefresh } from './utils/tokenRefresh';
 import { notifyLogin } from './utils/authSync';
 
 // Define the User type
@@ -77,6 +78,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
         // Register handlers with fetch interceptor (for native fetch calls)
         setFetchInterceptorHandlers(handleTokenExpiration, clearAuth);
 
+        // When the shared refresh core mints a new access token, mirror it into
+        // React state (localStorage is already updated by the refresh core). This
+        // keeps the Authorization header future requests send in sync.
+        setRefreshHandlers((newToken: string) => {
+            setToken(newToken);
+        });
+
         // Setup the global fetch interceptor
         setupFetchInterceptor();
     }, [navigate]);
@@ -109,11 +117,20 @@ export function AuthProvider({ children }: AuthProviderProps) {
                     localStorage.removeItem('token');
                     setToken(null);
                 }
-            } else if (token) {
-                // If we have an invalid token, clear it immediately
-                console.log('Invalid token detected, clearing:', token);
-                localStorage.removeItem('token');
-                setToken(null);
+            } else {
+                // No usable access token in localStorage. A valid httpOnly refresh
+                // cookie may still exist (e.g. the access token expired while away,
+                // or localStorage was cleared) — try a silent refresh so a reload
+                // keeps the user signed in. On success the refresh handler sets the
+                // token, re-running this effect down the validToken path above.
+                if (token) {
+                    console.log('Invalid token detected, clearing:', token);
+                    localStorage.removeItem('token');
+                }
+                const refreshed = await attemptTokenRefresh();
+                if (!refreshed) {
+                    setToken(null);
+                }
             }
             setIsLoading(false);
         };

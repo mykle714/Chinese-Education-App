@@ -43,6 +43,7 @@ function Layout({ children }: LayoutProps) {
         "/flashcards/learn",
         "/discover",
         "/games",
+        "/community",
         // Home-menu child pages also render inside the phone frame.
         "/night-market",
         "/reader",

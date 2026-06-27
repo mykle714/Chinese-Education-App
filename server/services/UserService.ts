@@ -1,6 +1,8 @@
 import bcrypt from 'bcrypt';
+import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
+import { IRefreshTokenDAL } from '../dal/interfaces/IRefreshTokenDAL.js';
 import { User, UserCreateData, UserLoginData, AuthResponse, Language } from '../types/index.js';
 import { ValidationError, DuplicateError, NotFoundError, DALError } from '../types/dal.js';
 import { resolveTimezone } from '../utils/streakDate.js';
@@ -9,12 +11,37 @@ import { resolveTimezone } from '../utils/streakDate.js';
 const JWT_SECRET = process.env.JWT_SECRET;
 const SALT_ROUNDS = 10;
 
+// Token lifetimes for the access/refresh scheme (migration 85). The access token
+// is a short-lived stateless JWT (verified by authMiddleware); the refresh token
+// is a long-lived opaque random string tracked in `refresh_tokens` so it can be
+// rotated and revoked.
+const ACCESS_TOKEN_TTL = '15m';
+const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+/** Result of issuing a refresh token: the RAW token (handed to the client once)
+ *  plus its expiry (used to set the cookie maxAge). The raw token is never stored. */
+export interface IssuedRefreshToken {
+  rawToken: string;
+  expiresAt: Date;
+}
+
+/** Result of a successful rotation: a new access token, a new refresh token, and
+ *  the authenticated user (so the controller can refresh client-side state). */
+export interface RefreshResult {
+  user: User;
+  token: string;
+  refreshToken: IssuedRefreshToken;
+}
+
 /**
  * User Service - Contains all business logic for user operations
  * Handles authentication, validation, password management, etc.
  */
 export class UserService {
-  constructor(private userDAL: IUserDAL) {}
+  constructor(
+    private userDAL: IUserDAL,
+    private refreshTokenDAL: IRefreshTokenDAL
+  ) {}
 
   /**
    * Create a new user with password hashing and validation
@@ -69,17 +96,116 @@ export class UserService {
     }
     
     
-    // Generate JWT token (business logic)
-    const token = jwt.sign(
-      { userId: user.id, email: user.email },
-      JWT_SECRET,
-      { expiresIn: '24h' }
-    );
-    
+    // Generate the short-lived access token (business logic). The matching
+    // refresh token is issued separately by the controller via issueRefreshToken.
+    const token = this.generateAccessToken(user);
+
     // Remove password from response
     delete user.password;
-    
+
     return { user, token };
+  }
+
+  /**
+   * Sign a short-lived stateless access-token JWT for a user. Shared by login
+   * and refresh so both encode the same claims/lifetime.
+   */
+  private generateAccessToken(user: User): string {
+    return jwt.sign(
+      { userId: user.id, email: user.email },
+      JWT_SECRET,
+      { expiresIn: ACCESS_TOKEN_TTL }
+    );
+  }
+
+  /** SHA-256 hex of a raw refresh token — the only form we ever persist. */
+  private hashRefreshToken(rawToken: string): string {
+    return crypto.createHash('sha256').update(rawToken).digest('hex');
+  }
+
+  /**
+   * Issue a brand-new refresh token for a user (login = family root). Generates a
+   * 256-bit random opaque token, stores only its hash, and returns the RAW token
+   * to hand to the client exactly once.
+   */
+  async issueRefreshToken(userId: string, userAgent?: string | null): Promise<IssuedRefreshToken> {
+    if (!userId) {
+      throw new ValidationError('User ID is required');
+    }
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_MS);
+    await this.refreshTokenDAL.create({
+      userId,
+      tokenHash: this.hashRefreshToken(rawToken),
+      expiresAt,
+      userAgent,
+    });
+    return { rawToken, expiresAt };
+  }
+
+  /**
+   * Exchange a valid refresh token for a fresh access token + a rotated refresh
+   * token. Implements rotation with reuse detection:
+   *   - unknown token            -> reject (invalid)
+   *   - expired token            -> reject (must re-login)
+   *   - ALREADY-revoked token    -> THEFT/replay: revoke the user's entire family
+   *                                 and reject (neither party can continue)
+   *   - valid token              -> revoke it (linked to its successor) and issue
+   *                                 a new access + refresh pair
+   */
+  async rotateRefreshToken(rawToken: string, userAgent?: string | null): Promise<RefreshResult> {
+    if (!rawToken) {
+      throw new ValidationError('Refresh token is required');
+    }
+
+    const presentedHash = this.hashRefreshToken(rawToken);
+    const stored = await this.refreshTokenDAL.findByHash(presentedHash);
+
+    if (!stored) {
+      throw new ValidationError('Invalid refresh token');
+    }
+
+    // Reuse of a revoked token => the chain was already spent (replay or stolen
+    // token used after the legit client rotated). Burn the whole family.
+    if (stored.revokedAt) {
+      await this.refreshTokenDAL.revokeAllForUser(stored.userId);
+      throw new ValidationError('Refresh token reuse detected');
+    }
+
+    if (stored.expiresAt.getTime() <= Date.now()) {
+      throw new ValidationError('Refresh token has expired');
+    }
+
+    const user = await this.userDAL.findById(stored.userId);
+    if (!user) {
+      // Orphaned token (user deleted) — clean up and reject.
+      await this.refreshTokenDAL.revoke(presentedHash, null);
+      throw new NotFoundError('User not found');
+    }
+
+    // Issue the successor first, then revoke the presented token linked to it so
+    // the family chain (replacedByHash) stays intact.
+    const newRefresh = await this.issueRefreshToken(stored.userId, userAgent);
+    await this.refreshTokenDAL.revoke(presentedHash, this.hashRefreshToken(newRefresh.rawToken));
+
+    const token = this.generateAccessToken(user);
+    delete user.password;
+
+    return { user, token, refreshToken: newRefresh };
+  }
+
+  /** Revoke a single refresh token (logout). Best-effort: a no-op if unknown. */
+  async revokeRefreshToken(rawToken: string): Promise<void> {
+    if (!rawToken) return;
+    await this.refreshTokenDAL.revoke(this.hashRefreshToken(rawToken), null);
+  }
+
+  /** Revoke every valid refresh token for a user ("log out everywhere"). */
+  async revokeAllRefreshTokens(userId: string): Promise<void> {
+    if (!userId) {
+      throw new ValidationError('User ID is required');
+    }
+    await this.refreshTokenDAL.revokeAllForUser(userId);
   }
 
   /**

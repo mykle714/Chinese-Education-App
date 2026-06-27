@@ -74,7 +74,9 @@ const FlashcardsLearnHeader: React.FC<FlashcardsLearnHeaderProps> = ({
                 size="small"
                 sx={{ color: fc.onSurface }}
                 onClick={onUndo}
-                disabled={!lastMarkUndoSnapshot || isAnimating || isUndoing}
+                // Mark-undo is meaningless while the icon-layout editor is open (the
+                // editor has its own draft state), so grey it out and disable it there.
+                disabled={!lastMarkUndoSnapshot || isAnimating || isUndoing || editMode}
             >
                 <UndoIcon />
             </IconButton>

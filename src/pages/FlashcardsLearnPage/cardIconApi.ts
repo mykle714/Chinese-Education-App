@@ -4,11 +4,27 @@
 import { API_BASE_URL } from "../../constants";
 import type { IconLayoutItem } from "../../types";
 
-interface IconSearchItem { id: string; name: string }
+export interface IconSearchItem { id: string; name: string }
 interface IconSearchPage { icons: IconSearchItem[]; hasMore: boolean }
 
 function authHeaders(token: string | null): HeadersInit {
   return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+/**
+ * List the icons we've already downloaded+cached into our DB (the catalog), paged.
+ * Used by the icon picker's empty-query state to browse all downloaded icons.
+ * Shape matches searchIcons8 (icons + hasMore) so the picker can treat both uniformly.
+ */
+export async function listIcons8(
+  token: string | null,
+  offset: number,
+  limit: number
+): Promise<IconSearchPage> {
+  const url = `${API_BASE_URL}/api/icons8?offset=${offset}&limit=${limit}`;
+  const res = await fetch(url, { credentials: "include", headers: authHeaders(token) });
+  if (!res.ok) throw new Error(`Failed to load icons (${res.status})`);
+  return res.json();
 }
 
 /** Live icons8 search for the add-icon dialog. Returns ids+names + a hasMore flag. */
@@ -38,20 +54,40 @@ export async function ensureIcon8(token: string | null, iconId: string): Promise
 }
 
 /**
- * Persist (array) or clear (null) the custom layout for a vet row, plus the white
- * text-backdrop flag (forced off by the server when the layout is cleared).
+ * Fetch (and warm on first call) the cached icons8 results for a card's DEFAULT
+ * search query — the card's English meaning. Called when the learner enters edit mode
+ * so the picker can render results the instant it opens (no live search on open).
+ * The server caches the response on the shared det row (migration 87); `term` is the
+ * client-computed default query (iconSearchTerm). See docs/CARD_ICON_LAYOUT.md.
+ */
+export async function fetchDefaultIconResults(
+  token: string | null,
+  params: { language: string; entryKey: string; pos: string | null; term: string }
+): Promise<IconSearchItem[]> {
+  const res = await fetch(`${API_BASE_URL}/api/icons8/default-results`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) throw new Error(`Failed to load default icons (${res.status})`);
+  const data: { icons: IconSearchItem[] } = await res.json();
+  return data.icons;
+}
+
+/**
+ * Persist (array) or clear (null) the custom icon layout for a vet row.
  */
 export async function saveIconLayout(
   token: string | null,
   vetId: number,
-  layout: IconLayoutItem[] | null,
-  textBackdrop: boolean
-): Promise<{ id: number; iconLayout: IconLayoutItem[] | null; iconTextBackdrop: boolean }> {
+  layout: IconLayoutItem[] | null
+): Promise<{ id: number; iconLayout: IconLayoutItem[] | null }> {
   const res = await fetch(`${API_BASE_URL}/api/vocabEntries/${vetId}/icon-layout`, {
     method: "PATCH",
     credentials: "include",
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
-    body: JSON.stringify({ iconLayout: layout, textBackdrop }),
+    body: JSON.stringify({ iconLayout: layout }),
   });
   if (!res.ok) throw new Error(`Failed to save layout (${res.status})`);
   return res.json();

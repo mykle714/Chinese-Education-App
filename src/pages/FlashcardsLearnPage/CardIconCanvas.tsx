@@ -6,8 +6,8 @@ import type { IconLayoutItem } from "../../types";
 import {
     iconImageUrl,
     iconItemStyle,
+    iconFlipTransform,
     clampScale,
-    maxZ,
     BASE_ICON_FRAC,
 } from "./cardIconLayout";
 
@@ -22,10 +22,17 @@ import {
  * Gestures (via @use-gesture/react):
  *   - one-finger drag  → move an icon (release with its center off-card = delete).
  *   - two-finger pinch → resize + rotate.
- *   - selecting an icon brings it to the front (z = max + 1) and shows a selection
- *     outline + a corner handle that resizes/rotates via drag (desktop + touch
- *     fallback for the pinch gesture).
+ *   - selecting an icon shows a selection outline + a corner handle that resizes/rotates
+ *     via drag (desktop + touch fallback for the pinch gesture). Selection does NOT change
+ *     paint order — render order is owned by the toolbar's reorder list. The selected icon
+ *     floats to the front (high zIndex) ONLY while it is actively being dragged/pinched/
+ *     resized (`interacting`), then drops back to its real `z`. Pinning it for the whole
+ *     selection would mask the order list's reordering of that icon (a fixed bug).
  *   - tapping empty canvas deselects.
+ *
+ * Selection is CONTROLLED by the page (`selected`/`onSelect`) so the advanced toolbar's
+ * per-icon controls (delete / align / mirror) can act on it. `onInteractionStart` fires
+ * once at the start of each gesture so the page can snapshot the undo history.
  *
  * Coordinates are normalized; drag deltas (px) are converted to fractions using the
  * canvas element's measured rect.
@@ -33,9 +40,18 @@ import {
 const CardIconCanvas: React.FC<{
     layout: IconLayoutItem[];
     onChange: (layout: IconLayoutItem[]) => void;
-}> = ({ layout, onChange }) => {
+    selected: number | null;
+    onSelect: (i: number | null) => void;
+    onInteractionStart: () => void;
+}> = ({ layout, onChange, selected, onSelect, onInteractionStart }) => {
     const rootRef = useRef<HTMLDivElement | null>(null);
-    const [selected, setSelected] = useState<number | null>(null);
+
+    // True only WHILE the selected icon is being actively manipulated (drag / pinch /
+    // handle-resize). The selected icon floats to the front (zIndex 9999) during that
+    // manipulation so it's fully visible, then drops back to its real `z`. Merely being
+    // selected must NOT pin it on top — otherwise reordering it via the toolbar's order
+    // list has no visible effect (the pin always wins). See docs/CARD_ICON_LAYOUT.md.
+    const [interacting, setInteracting] = useState(false);
 
     const rect = () => rootRef.current?.getBoundingClientRect() ?? null;
 
@@ -46,21 +62,14 @@ const CardIconCanvas: React.FC<{
 
     const deleteItem = (i: number) => {
         onChange(layout.filter((_, idx) => idx !== i));
-        setSelected(null);
-    };
-
-    // Select an icon and bring it to the front (unless already topmost).
-    const selectAndFront = (i: number) => {
-        setSelected(i);
-        const top = maxZ(layout);
-        if (layout[i] && layout[i].z < top) updateItem(i, { z: top + 1 });
+        onSelect(null);
     };
 
     // Per-icon drag (move) + pinch (resize/rotate). One hook, bound per icon via
     // bind(index); the handler reads the index from `args`.
     const bindIcon = useGesture(
         {
-            onDragStart: ({ args: [i] }) => selectAndFront(i),
+            onDragStart: ({ args: [i] }) => { onInteractionStart(); onSelect(i); setInteracting(true); },
             onDrag: ({ args: [i], movement: [mx, my], last, memo }) => {
                 const r = rect();
                 if (!r) return memo;
@@ -71,6 +80,7 @@ const CardIconCanvas: React.FC<{
                 const nx = start.x + mx / r.width;
                 const ny = start.y + my / r.height;
                 if (last) {
+                    setInteracting(false);
                     // Released with the icon's center off the card → delete it.
                     if (nx < 0 || nx > 1 || ny < 0 || ny > 1) {
                         deleteItem(i);
@@ -80,8 +90,9 @@ const CardIconCanvas: React.FC<{
                 updateItem(i, { x: nx, y: ny });
                 return start;
             },
-            onPinchStart: ({ args: [i] }) => selectAndFront(i),
-            onPinch: ({ args: [i], da: [d, a], memo }) => {
+            onPinchStart: ({ args: [i] }) => { onInteractionStart(); onSelect(i); setInteracting(true); },
+            onPinch: ({ args: [i], da: [d, a], last, memo }) => {
+                if (last) setInteracting(false);
                 const m =
                     (memo as { d0: number; a0: number; scale: number; rot: number } | undefined) ?? {
                         d0: d || 1,
@@ -103,9 +114,13 @@ const CardIconCanvas: React.FC<{
     // the pointer's distance to the icon center and rotation from its angle (the
     // handle sits at the icon's bottom-right = 45° baseline).
     const bindHandle = useGesture({
-        onDrag: ({ xy: [px, py], event }) => {
+        onDrag: ({ xy: [px, py], event, first, last }) => {
             event?.stopPropagation?.();
             if (selected === null) return;
+            // Snapshot once at the start of a resize/rotate drag for undo; float the icon
+            // to the front for the duration of the resize, then drop it back to its z.
+            if (first) { onInteractionStart(); setInteracting(true); }
+            if (last) setInteracting(false);
             const r = rect();
             if (!r) return;
             const it = layout[selected];
@@ -131,7 +146,7 @@ const CardIconCanvas: React.FC<{
             className="card-icon-canvas"
             // Deselect when tapping empty canvas. Stop touch/mouse from reaching the
             // card's drag/flip handlers on the ancestor slot while editing.
-            onPointerDown={() => setSelected(null)}
+            onPointerDown={() => onSelect(null)}
             onTouchStart={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
             sx={{
@@ -161,14 +176,18 @@ const CardIconCanvas: React.FC<{
                         {...bound}
                         onPointerDown={(e) => {
                             e.stopPropagation(); // keep the root's deselect from firing
-                            selectAndFront(i);
+                            onSelect(i);
                             gestureDown?.(e);
                         }}
                         className={`card-icon-canvas__icon${isSel ? " card-icon-canvas__icon--selected" : ""}`}
                         sx={{
-                            ...iconItemStyle(item),
-                            // Selected icon floats above the rest regardless of its z.
-                            zIndex: isSel ? 9999 : item.z,
+                            // Mirror is applied to the inner <img> (below), NOT this wrapper,
+                            // so flipping the icon never moves the resize/rotate handle.
+                            ...iconItemStyle(item, false),
+                            // The selected icon floats above the rest ONLY while it is being
+                            // actively manipulated; otherwise it keeps its real `z` so the
+                            // order list's reordering is visible immediately.
+                            zIndex: isSel && interacting ? 9999 : item.z,
                             touchAction: "none",
                             cursor: "grab",
                             "&:active": { cursor: "grabbing" },
@@ -183,9 +202,20 @@ const CardIconCanvas: React.FC<{
                             alt=""
                             draggable={false}
                             sx={{
+                                // `display: block` removes the inline <img>'s baseline
+                                // descender gap, which would otherwise inflate this icon's
+                                // box ~4px taller than its `aspect-ratio: 1/1` target. Since
+                                // the box is centered via translate(-50%, -50%), that extra
+                                // height shifted the icon ~2px UP versus the static
+                                // CardIconLayer (where the icon IS the <img>, no wrapper/gap)
+                                // — the visible jump on entering/exiting the editor.
+                                display: "block",
                                 width: "100%",
                                 height: "100%",
                                 objectFit: "contain",
+                                // Horizontal mirror lives here (not on the wrapper) so the
+                                // handle stays put when the icon is flipped.
+                                transform: iconFlipTransform(item),
                                 pointerEvents: "none",
                                 userSelect: "none",
                             }}

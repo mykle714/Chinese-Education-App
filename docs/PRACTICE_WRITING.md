@@ -124,9 +124,10 @@ level entry (`applyGuideForEntry`) so re-entering never auto-pulses.
   tab-change/open effect.
 - **Multi (2–4)** — a **2×2 grid** of read-only previews (`gridBody`): chars fill
   `0→TL, 1→TR, 2→BL, 3→BR`. Tapping a slot **enlarges** it into a focused drawing
-  panel (`focusBody`) with the guide, Clear/Undo, and a **Back** button (no Verify /
-  level bar). Entering a focused slot runs `applyGuideForEntry`; **Back**
-  (`collapseFocus`) captures that slot's ink back into `inks` and returns to the grid.
+  panel (`focusBody`) with the guide and Clear/Undo (no Verify / level bar). There is
+  **no Back button** — tapping the greyed background collapses the slot (see below).
+  Entering a focused slot runs `applyGuideForEntry`; collapsing (`collapseFocus`)
+  captures that slot's ink back into `inks` and returns to the grid.
   Verify (grid only) recognizes **all** characters at once.
 
 **Coordinate space.** Every panel — focused or grid preview — captures/seeds ink in
@@ -134,11 +135,13 @@ the same `FOCUS_SIZE` (300px) space; grid previews are the full-size stage CSS-s
 down (`GRID_SCALE`), so a preview and its enlarged panel share one coordinate system
 and recognition is identical regardless of on-screen size.
 
-**Grid-preview guide rules** (per slot):
-- **Trace / Step Through** → always show the grey guide behind any writing.
-- **Memorize** → show the guide **only while the slot is empty**; once written, show
-  the writing alone.
+**Grid-preview guide rules** (per slot, computed as `slotGuide` in `gridBody`):
+- **Trace** → always show the grey guide behind any writing.
+- **Step Through / Memorize** → show the guide **only while the slot is empty**;
+  once the slot has strokes, show the writing alone.
 - **Test** → never.
+- **Post-Verify override** → after a Verify the guide is revealed on **every** slot
+  regardless of level (see [Grading](#grading-verify)).
 
 ---
 
@@ -154,9 +157,9 @@ The **greyed background** — a tap whose `target === currentTarget` (the dark a
 around the floating islands, not an island) — **steps back one level** via
 `handleBackgroundTap`: a focused grid slot collapses to the **2×2 grid**; the grid /
 single-char view **closes** the popup. Taps on an island are locked here too but skip
-the step-back. Explicit controls: **✕** (close) and, in a focused slot, **Back**
-(collapse). On desktop the Dialog's own backdrop outside the 393px phone card also
-closes (via `onClose`).
+the step-back. There are **no explicit close/back controls** — the greyed background is
+the only step-back/exit affordance (plus, on desktop, the Dialog's own backdrop outside
+the 393px phone card, which closes via `onClose`).
 
 ---
 
@@ -171,6 +174,13 @@ panel invalidates that character's prior result back to `idle`.
 
 The level's **star** is awarded only when **every** character is correct in a single
 Verify (and the level isn't already completed).
+
+**Post-Verify guide reveal.** A successful or failed Verify flips `verifyRevealed`,
+which forces the grey guide visible on **every** panel — single, focused, and all
+grid slots — on **all four levels** (even Test, which normally shows no guide) so the
+user can compare their writing against the correct character. It is reset back to the
+level's normal guide rules on the next fresh attempt: redrawing (`handleActiveInkChange`),
+entering/leaving a focused slot, or changing level.
 
 ---
 
@@ -203,7 +213,7 @@ labels ("Step Through") wrap.
 
 ## Draft preservation (lifecycle)
 
-Closing the popup (✕ or backdrop) **preserves** the active level index, every
+Closing the popup (background tap or backdrop) **preserves** the active level index, every
 character's ink, and the focused grid slot (`setWritingDraft` →
 `writingDraftStore.ts`); reopening the same word restores them so an accidental
 click-off doesn't lose work. The draft is **hard-cleared** when the flp advances to

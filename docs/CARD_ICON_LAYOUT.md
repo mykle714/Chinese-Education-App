@@ -1,7 +1,8 @@
 # Custom Card Icon Layout (flp)
 
-> Status: **implemented**. Backed by migration 82 (`iconLayout`), the icons8
-> search/ensure and vocabEntries icon-layout endpoints, and the flp edit-mode UI.
+> Status: **implemented**. Backed by migration 82 (`iconLayout`) + migration 88
+> (`snapConfig`, per-card snap toggles), the icons8 search/ensure and vocabEntries
+> icon-layout endpoints, and the flp edit-mode UI.
 > The editor has **two modes** — basic (swap the single icon) and advanced (the full
 > drag/resize/rotate canvas, plus per-icon tools merged into **one wrapping flex-list menu**:
 > undo / redo / delete / duplicate / mirror / lock / align / snap / order / count, flowing onto
@@ -97,6 +98,13 @@ keep their own stored `scale`. `flipX` is mirrored at render time via
 `scaleX(-1)` in `iconItemStyle` (applied AFTER `rotate`), shared by both renderers
 (`CardIconLayer`, `CardIconCanvas`) and the order-list thumbnails.
 
+**Per-card snap toggles — `snapConfig` jsonb** on both vet tables (migration
+`database/migrations/88-add-snap-config-to-vocabentries.sql`). Shape
+`{ "move": bool, "rotate": bool, "resize": bool }`; `NULL` = all off. Persists the
+editor's snap setup per saved word (see the snap tool under "Edit-mode UX"). Written
+together with `iconLayout` by the same `PATCH …/icon-layout`. Type `SnapConfig` lives in
+`src/types.ts` + `server/types/index.ts` (re-exported from `CardIconCanvas.tsx`).
+
 **Coordinates are normalized** (fractions of the rendered card size), so a saved
 layout survives the card being rendered at different pixel sizes across viewports.
 The on-screen box for an icon is `BASE_ICON_FRAC × cardWidth × scale`
@@ -104,7 +112,13 @@ The on-screen box for an icon is `BASE_ICON_FRAC × cardWidth × scale`
 then rotated `rotation` degrees. `scale` is clamped to `[0.25, 4.5]`; at max an icon
 is ~1.26× the card width (`0.28 × 4.5 ≈ 1.26`). These
 live in `cardIconLayout.ts` (`BASE_ICON_FRAC`, `SCALE_MIN/MAX`, `DEFAULT_ICON_*`); the
-server's `validateIconLayout` mirrors the scale clamp.
+server's `validateIconLayout` mirrors **both** the scale clamp **and the center clamp** —
+it re-implements `clampIconCenter`'s 15%-on-card rule (using duplicated `BASE_ICON_FRAC`
+/ `CARD_ASPECT` / `MIN_ON_CARD_FRAC` constants) rather than forcing `x`/`y` into `[0,1]`.
+This matters because the edit canvas legitimately lets an icon's center sit slightly past
+the card edge (only `MIN_ON_CARD_FRAC` of the icon need stay on-card); clamping the center
+to `[0,1]` on save would yank a mostly-off-card icon **deeper inward**, disagreeing with
+what the editor showed.
 
 **Default placement (no custom layout)** — the card lays its content in vertical
 thirds (`FlashCardSection.tsx` `CardFaceSide`): the default single icon sits in the
@@ -296,9 +310,19 @@ All in `src/pages/FlashcardsLearnPage/`.
      `CardIconCanvas` as a `snap: { move, rotate, resize }` `SnapConfig`, and its drag /
      pinch / corner-handle handlers apply `snapCenterToGrid` / `snapScaleToStep` /
      `snapRotation` live while the matching flag is on. Turning a toggle OFF only flips the
-     flag (icons keep their snapped values). Snap state is **editor-only** (not persisted) and
-     is cleared on `exitEdit`. The align action's fixed rotations (multiples of 45°) are
-     already on the 22.5° grid, so rotate-snap never fights it.
+     flag (icons keep their snapped values). The align action's fixed rotations (multiples of
+     45°) are already on the 22.5° grid, so rotate-snap never fights it.
+
+     **Snap state PERSISTS per card** (migration 88, `vet.snapConfig` jsonb `{move,rotate,resize}`;
+     NULL = all off). On `enterEdit` the three toggles are **seeded** from the card's
+     `snapConfig` (entering does NOT re-snap existing placements — they were already saved
+     snapped). The config is written **with the layout on Save** (`saveIconLayout` sends
+     `{ iconLayout, snapConfig }` in one PATCH; `snapConfig` is `null` when all toggles are off),
+     so **Cancel discards snap changes too** — consistent with the draft/Save/Cancel model.
+     **Reset-to-default** clears `snapConfig` to NULL alongside the layout. The live toggles are
+     still cleared on `exitEdit`, but the next session re-seeds them from the saved card. A
+     same-session re-edit seeds from `snapConfigOverrides` (the snap analogue of
+     `iconLayoutOverrides`). See the Data model + API sections.
    - **order** (`Layers`) — opens a compact popover (`CardIconOrderList`, width fits its
      contents) listing every icon in paint order (**top of the list = rendered on top =
      highest `z`**). Each row is just the icon thumbnail + a trailing triple-dot
@@ -381,6 +405,20 @@ All in `src/pages/FlashcardsLearnPage/`.
    per-icon via `bind(index)`):
    - drag moves an icon (updates `x`,`y`); pinch resizes + rotates (two-finger:
      distance → `scale`, angle → `rotation`).
+   - **Pinch-to-zoom works from anywhere on the canvas and targets the SELECTED icon.**
+     Unlike drag (which acts on whatever icon it lands on / its protected zone), pinch
+     deliberately ignores which icon the fingers are over and resizes/rotates the current
+     selection via the shared `beginPinch`/`runPinch` handlers — so you can zoom in empty
+     space or over a different icon. It falls back to the icon under the pinch only when
+     nothing is selected (a pinch directly on an icon still grabs it). Implementation:
+     pinches that **start on an icon** route through the per-icon `bindIcon`; pinches that
+     **start on empty space** route through a second `useGesture` bound to the canvas root
+     (`bindCanvas`); both call the same shared handlers. Because `bindCanvas` also owns the
+     empty-canvas behaviour, the **tap-to-deselect was moved off the root's raw
+     `onPointerDown` onto `bindCanvas`'s drag `tap`** — otherwise the first finger of an
+     empty-space pinch would wipe the selection (via the old `onPointerDown` deselect)
+     before the pinch could read it. Icon presses `stopPropagation` in their own
+     `onPointerDown`, so they never reach `bindCanvas` (no double-handling).
    - Desktop: drag plus a corner handle on the selected icon for resize/rotate (the
      handle computes scale from the pointer's distance to the icon center, rotation
      from its angle).
@@ -522,7 +560,7 @@ All in `src/pages/FlashcardsLearnPage/`.
 | `GET /api/icons8/search?term=&offset=&limit=` | yes | Proxy the live icons8 v7 search; returns `{ icons: [{ id, name }], hasMore }`. |
 | `POST /api/icons8/default-results` | yes | Body `{ language, entryKey, pos?, term }`. Return (and cache on first call, on det `defaultIconResults`) the first page of the card's default-query results: `{ icons: [{ id, name }] }`. Warms the picker so it renders instantly on open. |
 | `POST /api/icons8/:iconId/ensure` | yes | Download + cache the icon's SVG into the `icons8` table if missing (so `/api/icons8/<id>/image` can serve it). Idempotent. |
-| `PATCH /api/vocabEntries/:id/icon-layout` | yes | Body `{ iconLayout: Item[] \| null }`. Persist or clear the layout for the caller's vet row. |
+| `PATCH /api/vocabEntries/:id/icon-layout` | yes | Body `{ iconLayout: Item[] \| null, snapConfig?: {move,rotate,resize} \| null }`. Persist or clear the layout **and** the per-card snap toggles for the caller's vet row. `snapConfig` omitted = leave the column untouched (community copy path); `null` = clear; object = set. Echoes back `{ id, iconLayout, snapConfig }`. |
 | `GET /api/icons8/:iconId/image` | no (existing) | Serves cached icon bytes. Unchanged ([Icons8Controller.ts](../server/controllers/Icons8Controller.ts)). |
 
 **Search filters** mirror the representative-icon backfill exactly:
@@ -540,15 +578,21 @@ the separate download-on-select step.
 - `server/controllers/Icons8Controller.ts` — `searchIcons`, `ensureIcon` handlers;
   routes registered in `server/server.ts` (near the existing icons8 routes).
 - `server/controllers/VocabEntryController.ts` + `VocabEntryDAL.ts`
-  (`IVocabEntryDAL`) — `updateIconLayout(userId, id, layout)`, scoped by `userId`,
-  validating: `null` OR an array of ≤ 12 items with a string `iconId`, numeric
-  `x`/`y`/`scale`/`rotation`/`z`, and optional booleans `flipX` and `locked` (both
-  coerced; omitted when false) — else `400`. `z` is renumbered 0..n-1 by ascending `z`
-  on save.
+  (`IVocabEntryDAL`) — `updateIconLayout(userId, id, layout, snapConfig?)`, scoped by
+  `userId`. Layout validation: `null` OR an array of ≤ 12 items with a string `iconId`,
+  numeric `x`/`y`/`scale`/`rotation`/`z`, and optional booleans `flipX` and `locked`
+  (both coerced; omitted when false) — else `400`. `scale` is clamped to `[0.25, 5]` and
+  the `x`/`y` **center** is clamped by the same 15%-on-card rule the edit canvas uses
+  (`clampIconCenter`), NOT to `[0,1]` — so a mostly-off-card icon is not pulled inward on
+  save (see the Data model note above). `z` is renumbered 0..n-1 by ascending `z` on save. `snapConfig` validation (`validateSnapConfig`): `undefined` leaves the
+  column untouched (community copy path), `null` clears it, an object is coerced to
+  `{move,rotate,resize}` booleans — else `400`. Layout + snap are written in **one
+  UPDATE** (the DAL builds the SET list conditionally).
 
 **Types** — `IconLayoutItem` (with the optional `flipX` and `locked`) + `iconLayout?:
-IconLayoutItem[] | null` on the `VocabEntry` interface, in both `server/types/index.ts`
-and client `src/types.ts`.
+IconLayoutItem[] | null` and `SnapConfig` (`{move,rotate,resize}`) + `snapConfig?:
+SnapConfig | null` on the `VocabEntry` interface, in both `server/types/index.ts` and
+client `src/types.ts`. `SnapConfig` is re-exported from `CardIconCanvas.tsx`.
 
 ## Dependencies / cross-references
 

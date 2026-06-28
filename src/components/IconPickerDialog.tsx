@@ -11,8 +11,10 @@ import {
     CircularProgress,
     Alert,
     InputAdornment,
+    IconButton,
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
+import ClearIcon from "@mui/icons-material/Clear";
 import { useAuth } from "../AuthContext";
 import { COLORS } from "../theme/colors";
 import { FONTS } from "../theme/fonts";
@@ -183,15 +185,20 @@ function IconPickerDialog({
 
     // Reset each time the dialog opens, pre-filling the search with initialTerm (the
     // term effect above reacts to it). Empty initialTerm → opens in browse-all mode.
+    //
+    // This effect deliberately owns ONLY `term` and `savingId`. The term effect above
+    // runs on every open (it depends on `open`) and already resets icons/offset/hasMore/
+    // error/termRef before (re)loading. Because effects fire in declaration order, the
+    // term effect runs first and this one second — so if this one also reset icons it
+    // would clobber the page the term effect just loaded. That clobber was invisible on
+    // the first open (term genuinely changed from "" → initialTerm, re-triggering the
+    // term effect AFTER this one), but on a re-open with the same initialTerm the
+    // setTerm is a no-op, nothing re-triggers the term effect, and the grid was left
+    // empty. Keeping the reset of shared state solely in the term effect avoids the race.
     useEffect(() => {
         if (!open) return;
         setTerm(initialTerm.trim());
-        setIcons([]);
-        setHasMore(false);
-        setError(null);
         setSavingId(null);
-        offsetRef.current = 0;
-        termRef.current = "";
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open]);
 
@@ -267,6 +274,20 @@ function IconPickerDialog({
                                 <SearchIcon fontSize="small" />
                             </InputAdornment>
                         ),
+                        // Clear button — only shown while there is text to clear.
+                        endAdornment: term ? (
+                            <InputAdornment position="end">
+                                <IconButton
+                                    className="icon-picker-dialog__clear"
+                                    size="small"
+                                    aria-label="Clear search"
+                                    onClick={() => setTerm("")}
+                                    edge="end"
+                                >
+                                    <ClearIcon fontSize="small" />
+                                </IconButton>
+                            </InputAdornment>
+                        ) : undefined,
                     }}
                 />
 

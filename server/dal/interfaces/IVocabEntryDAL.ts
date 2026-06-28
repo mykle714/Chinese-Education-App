@@ -1,5 +1,5 @@
 import { IBaseDAL } from './IBaseDAL.js';
-import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, UsedInItem, IconLayoutItem } from '../../types/index.js';
+import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, UsedInItem, IconLayoutItem, SnapConfig } from '../../types/index.js';
 import { BulkResult, ITransaction } from '../../types/dal.js';
 
 /**
@@ -14,15 +14,18 @@ export interface IVocabEntryDAL extends IBaseDAL<VocabEntry, VocabEntryCreateDat
 
   /**
    * Persist (or clear) a custom flashcard icon arrangement for one vet row, scoped to
-   * its owner. `layout` of null clears it back to the default centered icon. Returns
-   * the updated row, or null when no row matches (wrong id / not the caller's).
-   * See docs/CARD_ICON_LAYOUT.md.
+   * its owner. `layout` of null clears it back to the default centered icon. The
+   * editor's snap toggles ride along on the same write: `snapConfig` of `undefined`
+   * leaves the column untouched (used by the community copy path), `null` clears it,
+   * an object sets it. Returns the updated row, or null when no row matches (wrong id /
+   * not the caller's). See docs/CARD_ICON_LAYOUT.md.
    */
   updateIconLayout(
     userId: string,
     id: string | number,
     language: string,
-    layout: IconLayoutItem[] | null
+    layout: IconLayoutItem[] | null,
+    snapConfig?: SnapConfig | null
   ): Promise<VocabEntry | null>;
   findByUserIdAndLanguage(userId: string, language: string, limit?: number, offset?: number): Promise<VocabEntry[]>;
   findByUserAndKey(userId: string, entryKey: string, language: string, pos?: string): Promise<VocabEntry | null>;

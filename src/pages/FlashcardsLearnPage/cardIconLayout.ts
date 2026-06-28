@@ -15,11 +15,11 @@ import { API_BASE_URL } from "../../constants";
 /** Base icon box as a fraction of card width (before per-icon scale). */
 export const BASE_ICON_FRAC = 0.28;
 
-/** Per-icon scale clamp (mirrors the server's validateIconLayout). Max is ~4.5 so a
- *  maximized icon is ~1.26× the card width (BASE_ICON_FRAC × 4.5 ≈ 1.26 — the earlier
- *  "just larger than the card" 3.75 bumped up 20% per design). */
+/** Per-icon scale clamp (mirrors the server's validateIconLayout). Max is 5 so a
+ *  maximized icon is ~1.4× the card width (BASE_ICON_FRAC × 5 ≈ 1.4 — bumped up from
+ *  the earlier 4.5 ≈ 1.26× per design). */
 export const SCALE_MIN = 0.25;
-export const SCALE_MAX = 4.5;
+export const SCALE_MAX = 5;
 
 /** Default placement of the seeded single icon: horizontally centered, ~2/3 up from
  *  the bottom of the card (i.e. 1/3 down from the top). */

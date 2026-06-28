@@ -74,6 +74,17 @@ export interface IconLayoutItem {
 export const ICON_LAYOUT_MAX_ITEMS = 12;
 
 /**
+ * Per-card snap toggles for the flashcard icon editor (vet."snapConfig", migration 88;
+ * see docs/CARD_ICON_LAYOUT.md). Each flag quantizes one editor gesture to a discrete
+ * increment (move grid / 22.5° rotation / 5%-of-width size). NULL on the row = all off.
+ */
+export interface SnapConfig {
+  move: boolean;
+  rotate: boolean;
+  resize: boolean;
+}
+
+/**
  * A community-shared advanced card-icon design surfaced on the Community page
  * (docs/COMMUNITY_PAGE.md). Identity = (ownerUserId, entryKey, language). Carries just enough
  * det fields to render the read-only mini card / zoom.
@@ -145,6 +156,7 @@ export interface VocabEntry {
   expansionLiteralTranslation?: string | null;
   iconId?: string | null;  // Representative icons8 icon joined from det; rendered via <img src="/api/icons8/<iconId>/image">
   iconLayout?: IconLayoutItem[] | null;  // Custom flashcard icon arrangement (vet column, migration 82). NULL = use the default centered iconId. See docs/CARD_ICON_LAYOUT.md
+  snapConfig?: SnapConfig | null;  // Per-card icon-editor snap toggles (vet column, migration 88). NULL = all off. See docs/CARD_ICON_LAYOUT.md
   exampleSentences?: Array<{
     foreignText: string;
     english: string;

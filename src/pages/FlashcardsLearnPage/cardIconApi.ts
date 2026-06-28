@@ -2,7 +2,7 @@
 // All are auth-gated; the caller passes the bearer token from useAuth().
 
 import { API_BASE_URL } from "../../constants";
-import type { IconLayoutItem } from "../../types";
+import type { IconLayoutItem, SnapConfig } from "../../types";
 
 export interface IconSearchItem { id: string; name: string }
 interface IconSearchPage { icons: IconSearchItem[]; hasMore: boolean }
@@ -76,18 +76,22 @@ export async function fetchDefaultIconResults(
 }
 
 /**
- * Persist (array) or clear (null) the custom icon layout for a vet row.
+ * Persist (array) or clear (null) the custom icon layout for a vet row, plus the
+ * editor's per-card snap toggles (`snapConfig`). The editor always sends both together
+ * (snap persists per card; see docs/CARD_ICON_LAYOUT.md); pass `null` for snapConfig on
+ * reset-to-default to clear it.
  */
 export async function saveIconLayout(
   token: string | null,
   vetId: number,
-  layout: IconLayoutItem[] | null
-): Promise<{ id: number; iconLayout: IconLayoutItem[] | null }> {
+  layout: IconLayoutItem[] | null,
+  snapConfig: SnapConfig | null
+): Promise<{ id: number; iconLayout: IconLayoutItem[] | null; snapConfig: SnapConfig | null }> {
   const res = await fetch(`${API_BASE_URL}/api/vocabEntries/${vetId}/icon-layout`, {
     method: "PATCH",
     credentials: "include",
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
-    body: JSON.stringify({ iconLayout: layout }),
+    body: JSON.stringify({ iconLayout: layout, snapConfig }),
   });
   if (!res.ok) throw new Error(`Failed to save layout (${res.status})`);
   return res.json();

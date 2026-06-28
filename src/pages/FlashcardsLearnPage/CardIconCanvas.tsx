@@ -3,7 +3,7 @@ import { Box } from "@mui/material";
 import { useGesture } from "@use-gesture/react";
 import OpenWithIcon from "@mui/icons-material/OpenWith";
 import LockIcon from "@mui/icons-material/Lock";
-import type { IconLayoutItem } from "../../types";
+import type { IconLayoutItem, SnapConfig } from "../../types";
 import {
     iconImageUrl,
     iconItemStyle,
@@ -17,12 +17,9 @@ import {
 } from "./cardIconLayout";
 
 /** Live snap toggles fed from the toolbar — each quantizes its gesture to a discrete
- *  increment (move grid / 11.25° rotation / 5%-of-width size). See docs/CARD_ICON_LAYOUT.md. */
-export interface SnapConfig {
-    move: boolean;
-    rotate: boolean;
-    resize: boolean;
-}
+ *  increment (move grid / 22.5° rotation / 5%-of-width size). Canonical type lives in
+ *  ../../types; re-exported here for the editor modules. See docs/CARD_ICON_LAYOUT.md. */
+export type { SnapConfig };
 
 /**
  * CardIconCanvas — the interactive editor for a custom flashcard icon arrangement,
@@ -35,7 +32,13 @@ export interface SnapConfig {
  * Gestures (via @use-gesture/react):
  *   - one-finger drag  → move an icon (release far off-card snaps it back so at least
  *     15% of the icon stays on-card; see clampIconCenter).
- *   - two-finger pinch → resize + rotate.
+ *   - two-finger pinch → resize + rotate the SELECTED icon, FROM ANYWHERE on the canvas
+ *     (not just over an icon). Pinch deliberately ignores which icon the fingers are
+ *     over and acts on the current selection (`beginPinch`/`runPinch`), so a zoom works
+ *     in empty space; it falls back to the icon under the pinch only when nothing is
+ *     selected. Pinches over an icon route through the per-icon `bindIcon`; pinches over
+ *     empty space route through the canvas-level `bindCanvas` — both call the same shared
+ *     handlers, so the behaviour is identical wherever the fingers land.
  *   - selecting an icon shows a selection outline + a corner handle that resizes/rotates
  *     via drag (desktop + touch fallback for the pinch gesture). Selection does NOT change
  *     paint order — render order is owned by the toolbar's reorder list. The selected icon
@@ -158,8 +161,59 @@ const CardIconCanvas: React.FC<{
         return pool.reduce((best, cur) => (cur.it.z > best.it.z ? cur : best)).idx;
     };
 
+    // Topmost icon (highest paint order) whose box contains the client point, or null.
+    // Used as the pinch FALLBACK target when nothing is selected yet (a pinch landing
+    // directly on an icon still grabs it). Rotation ignored (axis-aligned box test),
+    // matching pickTapTarget / withinSelectedZone.
+    const topmostIconAt = (px: number, py: number): number | null => {
+        const r = rect();
+        if (!r) return null;
+        const pnx = (px - r.left) / r.width;
+        const pny = (py - r.top) / r.height;
+        const aspect = r.width / r.height; // width-fraction extent → height-fraction
+        const hits = layout
+            .map((it, idx) => ({ it, idx }))
+            .filter(({ it }) => {
+                const hx = (BASE_ICON_FRAC * it.scale) / 2; // half-extent (fraction of card width)
+                const hy = hx * aspect;
+                return Math.abs(pnx - it.x) <= hx && Math.abs(pny - it.y) <= hy;
+            });
+        if (hits.length === 0) return null;
+        // Topmost = highest paint order (z).
+        return hits.reduce((best, cur) => (cur.it.z > best.it.z ? cur : best)).idx;
+    };
+
     type DragMemo = { t: number; x: number; y: number };
     type PinchMemo = { t: number; d0: number; a0: number; scale: number; rot: number };
+
+    // PINCH always targets the SELECTED icon, regardless of where on the canvas the
+    // fingers land (the request: a zoom gesture should work from anywhere in the card
+    // canvas and resize the currently-selected icon). When nothing is selected yet, it
+    // falls back to the icon under the pinch (so a pinch directly on an icon still grabs
+    // it). Shared by the per-icon binding (pinches starting on an icon) and the
+    // canvas-level binding (pinches starting on empty space). NOTE: unlike drag, pinch
+    // does NOT use resolveTarget / the protected-zone switch — it deliberately ignores
+    // which icon the fingers are over and acts on the selection. See docs/CARD_ICON_LAYOUT.md.
+    const beginPinch = (fallback: number | null, d: number, a: number): PinchMemo | null => {
+        const t = selected !== null ? selected : fallback;
+        if (t === null) return null; // nothing selected and no icon under the pinch
+        if (t !== selected) onSelect(t); // adopt the fallback icon as the selection
+        if (!layout[t].locked) {
+            onInteractionStart(); // snapshot undo history once, on the first real frame
+            setInteracting(true); // float the target to the front while pinching
+        }
+        return { t, d0: d || 1, a0: a, scale: layout[t].scale, rot: layout[t].rotation };
+    };
+    const runPinch = (m: PinchMemo, d: number, a: number, last: boolean) => {
+        if (layout[m.t].locked) return; // frozen target: no resize/rotate
+        if (last) setInteracting(false);
+        let nScale = clampScale(m.scale * (d / m.d0));
+        let nRot = m.rot + (a - m.a0);
+        // Quantize size / rotation live per the active snap toggles.
+        if (snap.resize) nScale = snapScaleToStep(nScale);
+        if (snap.rotate) nRot = snapRotation(nRot);
+        updateItem(m.t, { scale: nScale, rotation: nRot });
+    };
 
     // Per-icon drag (move) + pinch (resize/rotate). One hook, bound per icon via
     // bind(index); the handler reads the index from `args`.
@@ -229,33 +283,14 @@ const CardIconCanvas: React.FC<{
                 updateItem(m.t, { x: nx, y: ny });
                 return m;
             },
-            onPinchStart: ({ args: [i], origin: [ox, oy] }) => {
-                const t = resolveTarget(i, ox, oy);
-                gestureTargetRef.current = t;    // synchronous source of truth for this gesture
-                if (t !== selected) onSelect(t); // gesture switched selection to a new target
-                // Snapshot + float happen on the first real onPinch frame (see onDragStart).
-            },
-            onPinch: ({ args: [i], origin: [ox, oy], da: [d, a], last, memo }) => {
-                // Target resolved synchronously at onPinchStart (gestureTargetRef); pin the
-                // scale/rotate baselines in memo. The first frame snapshots for undo + floats.
-                const m =
-                    (memo as PinchMemo | undefined) ??
-                    (() => {
-                        const t = gestureTargetRef.current ?? resolveTarget(i, ox, oy);
-                        if (!layout[t].locked) {
-                            onInteractionStart();
-                            setInteracting(true);
-                        }
-                        return { t, d0: d || 1, a0: a, scale: layout[t].scale, rot: layout[t].rotation };
-                    })();
-                if (layout[m.t].locked) return m; // frozen target: no resize/rotate
-                if (last) { setInteracting(false); gestureTargetRef.current = null; }
-                let nScale = clampScale(m.scale * (d / m.d0));
-                let nRot = m.rot + (a - m.a0);
-                // Quantize size / rotation live per the active snap toggles.
-                if (snap.resize) nScale = snapScaleToStep(nScale);
-                if (snap.rotate) nRot = snapRotation(nRot);
-                updateItem(m.t, { scale: nScale, rotation: nRot });
+            // Pinch starting ON an icon. Targets the SELECTED icon (beginPinch), falling
+            // back to the pressed icon `i` only when nothing is selected. The matching
+            // empty-canvas pinch is handled by bindCanvas below — together they make a
+            // zoom gesture work from ANYWHERE on the canvas.
+            onPinch: ({ args: [i], da: [d, a], last, memo }) => {
+                const m = (memo as PinchMemo | undefined) ?? beginPinch(i, d, a);
+                if (!m) return memo;
+                runPinch(m, d, a, last);
                 return m;
             },
         },
@@ -296,13 +331,43 @@ const CardIconCanvas: React.FC<{
         },
     });
 
+    // Canvas-level gestures, bound to the ROOT (not a specific icon) so they fire for
+    // presses on EMPTY space:
+    //   - PINCH anywhere → resize/rotate the SELECTED icon (beginPinch/runPinch). This is
+    //     what lets a zoom gesture work from anywhere in the card canvas and target the
+    //     selected icon — even when the fingers land on empty space or a non-selected
+    //     icon. Pinches that start on an icon are handled by bindIcon above (their
+    //     onPointerDown stopPropagation keeps them from also reaching this binding); this
+    //     covers the empty-space case bindIcon can't see.
+    //   - a TAP on empty canvas deselects (moved here off the raw onPointerDown so the
+    //     first finger of an empty-space pinch no longer wipes the selection before the
+    //     pinch can read it — `filterTaps` means a pinch is never reported as a tap).
+    const bindCanvas = useGesture(
+        {
+            onDrag: ({ tap }) => {
+                if (tap) onSelect(null);
+            },
+            onPinch: ({ origin: [ox, oy], da: [d, a], last, memo }) => {
+                const m = (memo as PinchMemo | undefined) ?? beginPinch(topmostIconAt(ox, oy), d, a);
+                if (!m) return memo;
+                runPinch(m, d, a, last);
+                return m;
+            },
+        },
+        { drag: { filterTaps: true } }
+    );
+
     return (
         <Box
             ref={rootRef}
             className="card-icon-canvas"
-            // Deselect when tapping empty canvas. Stop touch/mouse from reaching the
-            // card's drag/flip handlers on the ancestor slot while editing.
-            onPointerDown={() => onSelect(null)}
+            // Canvas-level gestures: pinch-to-zoom the selected icon from anywhere, and a
+            // tap on empty canvas deselects (both in bindCanvas). NOTE: deselect lives on
+            // the gesture's TAP (not raw onPointerDown) so the first finger of an
+            // empty-space pinch doesn't clear the selection the pinch needs to target.
+            {...bindCanvas()}
+            // Stop touch/mouse from reaching the card's drag/flip handlers on the ancestor
+            // slot while editing.
             onTouchStart={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
             sx={{
@@ -332,7 +397,9 @@ const CardIconCanvas: React.FC<{
                         key={`${item.iconId}-${i}`}
                         {...bound}
                         onPointerDown={(e) => {
-                            e.stopPropagation(); // keep the root's deselect from firing
+                            e.stopPropagation(); // keep this press out of the canvas-level
+                            // bindCanvas gesture (its tap-deselect + empty-space pinch) — an
+                            // icon press is handled here by bindIcon instead.
                             gestureDown?.(e);
                         }}
                         className={`card-icon-canvas__icon${isSel ? " card-icon-canvas__icon--selected" : ""}`}

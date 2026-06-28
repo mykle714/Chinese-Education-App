@@ -2,7 +2,7 @@ import { PoolClient, QueryResult } from 'pg';
 import { BaseDAL } from '../base/BaseDAL.js';
 import { IVocabEntryDAL } from '../interfaces/IVocabEntryDAL.js';
 import { dbManager } from '../base/DatabaseManager.js';
-import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, UsedInItem, IconLayoutItem } from '../../types/index.js';
+import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, UsedInItem, IconLayoutItem, SnapConfig } from '../../types/index.js';
 import { ValidationError, NotFoundError, BulkResult, ITransaction, DALError } from '../../types/dal.js';
 import db from '../../db.js';
 import { DICT_COLS, DICT_JOIN } from '../shared/dictJoin.js';
@@ -98,7 +98,8 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     userId: string,
     id: string | number,
     language: string,
-    layout: IconLayoutItem[] | null
+    layout: IconLayoutItem[] | null,
+    snapConfig?: SnapConfig | null
   ): Promise<VocabEntry | null> {
     if (!userId) throw new ValidationError('userId is required');
     if (!id) throw new ValidationError('id is required');
@@ -108,15 +109,27 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     // it doesn't pre-read the row. Routes to the language's physical vet table.
     const table = vetTableForLanguage(language);
     // null clears the layout; an array is stored as jsonb.
-    const value = layout === null ? null : JSON.stringify(layout);
+    const layoutValue = layout === null ? null : JSON.stringify(layout);
+
+    // snapConfig === undefined means "leave the column untouched" (community copy path);
+    // null clears it (all off), an object sets it. Build the SET list accordingly so the
+    // editor's Save writes layout + snap atomically while the copy path touches only layout.
+    const sets = [`"iconLayout" = $1::jsonb`];
+    const params: (string | number | null)[] = [layoutValue];
+    if (snapConfig !== undefined) {
+      const snapValue = snapConfig === null ? null : JSON.stringify(snapConfig);
+      params.push(snapValue);
+      sets.push(`"snapConfig" = $${params.length}::jsonb`);
+    }
+    params.push(id, userId);
 
     const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
       return await client.query(
         `UPDATE ${table}
-            SET "iconLayout" = $1::jsonb
-          WHERE id = $2 AND "userId" = $3
+            SET ${sets.join(', ')}
+          WHERE id = $${params.length - 1} AND "userId" = $${params.length}
           RETURNING *`,
-        [value, id, userId]
+        params
       );
     });
 

@@ -179,21 +179,29 @@ export class VocabEntryController {
 
       // Accept the layout array or null (reset to default). Anything else is rejected
       // by the service's validateIconLayout.
-      const { iconLayout } = req.body ?? {};
+      const { iconLayout, snapConfig } = req.body ?? {};
       if (iconLayout !== null && !Array.isArray(iconLayout)) {
         res.status(400).json({ error: 'iconLayout must be an array or null' });
+        return;
+      }
+      // snapConfig is optional: omit it to leave the column untouched. When present it
+      // must be an object (the snap toggles) or null (clear); the service validates the
+      // shape. The editor always sends it with the layout (it persists per card).
+      if (snapConfig !== undefined && snapConfig !== null && typeof snapConfig !== 'object') {
+        res.status(400).json({ error: 'snapConfig must be an object or null' });
         return;
       }
 
       const language = await getUserLanguage(userId);
       const updated = await this.vocabEntryService.updateIconLayout(
-        userId, entryId, language, iconLayout
+        userId, entryId, language, iconLayout, snapConfig
       );
 
       // Echo back just what the client needs to refresh the card in place.
       res.json({
         id: updated.id,
         iconLayout: updated.iconLayout ?? null,
+        snapConfig: updated.snapConfig ?? null,
       });
     } catch (error) {
       handleControllerError(error, res, 'VocabEntryController.updateIconLayout');

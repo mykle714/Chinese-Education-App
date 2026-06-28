@@ -3,10 +3,18 @@ import csv from 'csv-parser';
 import { IVocabEntryDAL } from '../dal/interfaces/IVocabEntryDAL.js';
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import { DictionaryService } from './DictionaryService.js';
-import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, Language, IconLayoutItem, ICON_LAYOUT_MAX_ITEMS } from '../types/index.js';
+import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, Language, IconLayoutItem, ICON_LAYOUT_MAX_ITEMS, SnapConfig } from '../types/index.js';
 import { ValidationError, NotFoundError, BulkResult } from '../types/dal.js';
 import db from '../db.js';
 import { vetTableForLanguage } from '../dal/shared/vetTable.js';
+
+// ── Icon-layout geometry (mirrors src/pages/FlashcardsLearnPage/cardIconLayout.ts) ──
+// These must stay in lockstep with the client constants so save-time validation clamps
+// an icon center to the SAME bound the edit canvas allows on release (clampIconCenter).
+// Diverging here is what made far-off-card icons get yanked deeper inward on save.
+const BASE_ICON_FRAC = 0.28;        // icon box width as a fraction of card width (before scale)
+const CARD_ASPECT = 295 / 426;      // fixed flashcard width / height (FlashCardSection frame)
+const MIN_ON_CARD_FRAC = 0.15;      // min slice of an icon that must stay on-card after a drag
 
 // CSV row interface for import processing
 interface CSVRow {
@@ -190,23 +198,45 @@ export class VocabEntryService {
 
   /**
    * Persist (or clear) a custom flashcard icon arrangement for one of the user's vet
-   * rows. `layout` of null clears it back to the default centered icon. Validates the
-   * arrangement shape/size here (business rule), then writes via the ownership-scoped
-   * DAL method. See docs/CARD_ICON_LAYOUT.md.
+   * rows. `layout` of null clears it back to the default centered icon. The editor's
+   * per-card snap toggles ride along on the same write: `snapConfig` of `undefined`
+   * leaves the column untouched (community copy path), `null` clears it (all off), an
+   * object sets it. Validates both shapes here (business rule), then writes via the
+   * ownership-scoped DAL method. See docs/CARD_ICON_LAYOUT.md.
    */
   async updateIconLayout(
     userId: string,
     entryId: number,
     language: string,
-    layout: IconLayoutItem[] | null
+    layout: IconLayoutItem[] | null,
+    snapConfig?: SnapConfig | null
   ): Promise<VocabEntry> {
     const clean = layout === null ? null : this.validateIconLayout(layout);
-    const updated = await this.vocabEntryDAL.updateIconLayout(userId, entryId, language, clean);
+    const cleanSnap = snapConfig === undefined ? undefined : this.validateSnapConfig(snapConfig);
+    const updated = await this.vocabEntryDAL.updateIconLayout(userId, entryId, language, clean, cleanSnap);
     if (!updated) {
       // No row matched the id for this user — either it doesn't exist or isn't theirs.
       throw new NotFoundError('Vocabulary entry not found');
     }
     return updated;
+  }
+
+  /**
+   * Validate the per-card snap toggles: null (all off) or an object with three boolean
+   * flags. Coerces each to a real boolean so a partial/loosely-typed body is normalized.
+   * See docs/CARD_ICON_LAYOUT.md.
+   */
+  private validateSnapConfig(snap: unknown): SnapConfig | null {
+    if (snap === null) return null;
+    if (typeof snap !== 'object' || Array.isArray(snap)) {
+      throw new ValidationError('snapConfig must be an object or null');
+    }
+    const s = snap as Record<string, unknown>;
+    return {
+      move: s.move === true,
+      rotate: s.rotate === true,
+      resize: s.resize === true,
+    };
   }
 
   /**
@@ -234,11 +264,22 @@ export class VocabEntryService {
           throw new ValidationError(`iconLayout[${i}].${k} must be a finite number`);
         }
       }
+      const scale = clamp(raw.scale, 0.25, 5);
+      // Clamp the icon CENTER the same way the edit canvas does on release
+      // (clampIconCenter): keep at least MIN_ON_CARD_FRAC of the icon's OWN size on-card
+      // rather than forcing the center into [0,1]. The center is therefore allowed to sit
+      // slightly past the card edge (overhang is negative), so an icon parked mostly
+      // off-card during editing is NOT pulled deeper inward on save. Icons are square in
+      // px, so the half-size is BASE_ICON_FRAC·scale/2 in width fractions; the y axis uses
+      // the same physical half-size expressed in height fractions via CARD_ASPECT.
+      const halfW = (BASE_ICON_FRAC * scale) / 2;
+      const halfH = halfW * CARD_ASPECT;
+      const overhang = 2 * MIN_ON_CARD_FRAC - 1; // how far the center may pass an edge
       return {
         iconId,
-        x: clamp(raw.x, 0, 1),
-        y: clamp(raw.y, 0, 1),
-        scale: clamp(raw.scale, 0.25, 4.5),
+        x: clamp(raw.x, overhang * halfW, 1 - overhang * halfW),
+        y: clamp(raw.y, overhang * halfH, 1 - overhang * halfH),
+        scale,
         rotation: raw.rotation,
         z: raw.z,
         // Optional horizontal-mirror flag; coerced to a real boolean (omitted when false

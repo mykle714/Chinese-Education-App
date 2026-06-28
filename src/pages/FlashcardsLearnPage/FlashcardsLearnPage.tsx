@@ -22,7 +22,7 @@ import IconPickerDialog from "../../components/IconPickerDialog";
 import { defaultLayoutForEntry, maxZ, isAdvancedLayout, isPlainDefaultLayout, DEFAULT_ICON_X, DEFAULT_ICON_Y, DEFAULT_ICON_SCALE, ALIGN_ROTATION, snapCenterToGrid, snapScaleToStep, snapRotation } from "./cardIconLayout";
 import { saveIconLayout, fetchDefaultIconResults, type IconSearchItem } from "./cardIconApi";
 import { iconSearchTerm } from "../../utils/definitionUtils";
-import { ICON_LAYOUT_MAX_ITEMS, type IconLayoutItem, type VocabEntry } from "../../types";
+import { ICON_LAYOUT_MAX_ITEMS, type IconLayoutItem, type SnapConfig, type VocabEntry } from "../../types";
 import { setMinutePointsPaused } from "../../utils/minutePointsPause";
 import SheetPanel, { type SheetPanelBodyHandle } from "./SheetPanel";
 import SettingsPanelBody from "./SettingsPanelBody";
@@ -148,10 +148,12 @@ const FlashcardsLearnPage: React.FC = () => {
     // Which advanced-canvas icon is selected (index into advDraft), driving the per-icon
     // toolbar controls (delete / align / mirror). Null = nothing selected.
     const [selectedIcon, setSelectedIcon] = useState<number | null>(null);
-    // Snap toggles (editor-only, not persisted): each quantizes one operation to a discrete
-    // increment — move → 5%-of-width grid, rotate → 11.25° steps, resize → 5%-of-width size.
-    // Turning one ON snaps every icon for that property immediately (one undo step) and keeps
-    // future gestures quantized (the canvas reads these live). See docs/CARD_ICON_LAYOUT.md.
+    // Snap toggles: each quantizes one operation to a discrete increment — move →
+    // 5%-of-width grid, rotate → 22.5° steps, resize → 5%-of-width size. Turning one ON
+    // snaps every icon for that property immediately (one undo step) and keeps future
+    // gestures quantized (the canvas reads these live). PERSISTED per card via
+    // vet.snapConfig (migration 88): seeded from the card on enterEdit and saved with the
+    // layout on Save (NULL when all off). See docs/CARD_ICON_LAYOUT.md.
     const [snapMove, setSnapMove] = useState(false);
     const [snapRotate, setSnapRotate] = useState(false);
     const [snapResize, setSnapResize] = useState(false);
@@ -265,15 +267,22 @@ const FlashcardsLearnPage: React.FC = () => {
         useState<{ entryId: number; term: string; icons: IconSearchItem[] } | null>(null);
     const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
     const [iconLayoutOverrides, setIconLayoutOverrides] = useState<Record<number, IconLayoutItem[] | null>>({});
+    // Same session-override pattern for the per-card snap toggles (vet.snapConfig,
+    // migration 88) — so re-opening the editor on a card just saved this session seeds
+    // the toggles from the latest save rather than the stale server value.
+    const [snapConfigOverrides, setSnapConfigOverrides] = useState<Record<number, SnapConfig | null>>({});
 
-    // Merge any saved-this-session icon-layout override into an entry before render.
+    // Merge any saved-this-session icon-layout / snap-config overrides into an entry
+    // before render (and before enterEdit seeds the drafts + snap toggles from it).
     const applyIconOverride = useCallback(
         (e: VocabEntry | null): VocabEntry | null => {
             if (!e) return e;
-            if (e.id in iconLayoutOverrides) return { ...e, iconLayout: iconLayoutOverrides[e.id] };
-            return e;
+            let merged = e;
+            if (e.id in iconLayoutOverrides) merged = { ...merged, iconLayout: iconLayoutOverrides[e.id] };
+            if (e.id in snapConfigOverrides) merged = { ...merged, snapConfig: snapConfigOverrides[e.id] };
+            return merged;
         },
-        [iconLayoutOverrides],
+        [iconLayoutOverrides, snapConfigOverrides],
     );
     const displayCurrentEntry = applyIconOverride(currentEntry);
     const displayNextEntry = applyIconOverride(nextEntry);
@@ -304,7 +313,8 @@ const FlashcardsLearnPage: React.FC = () => {
         setIconSearchOpen(false);
         setResetConfirmOpen(false);
         setSelectedIcon(null);
-        // Snap toggles are editor-only; clear them so the next edit session starts unsnapped.
+        // Clear the live toggles on exit; the next edit session re-seeds them from the
+        // card's saved snapConfig in enterEdit (they persist per card, migration 88).
         setSnapMove(false);
         setSnapRotate(false);
         setSnapResize(false);
@@ -343,6 +353,14 @@ const FlashcardsLearnPage: React.FC = () => {
             setAdvMode(false);
         }
         setSelectedIcon(null);
+        // Seed the snap toggles from this card's saved snapConfig (vet.snapConfig,
+        // migration 88) so they persist per card. NULL/absent → all off. The toggles
+        // only quantize FUTURE gestures here; existing placements aren't re-snapped on
+        // enter (that would mutate the card before any user action). docs/CARD_ICON_LAYOUT.md.
+        const snap = displayCurrentEntry.snapConfig ?? null;
+        setSnapMove(snap?.move ?? false);
+        setSnapRotate(snap?.rotate ?? false);
+        setSnapResize(snap?.resize ?? false);
         // Reset both the state AND the synchronous refs (see exitEdit).
         advHistoryRef.current = [];
         advFutureRef.current = [];
@@ -514,15 +532,22 @@ const FlashcardsLearnPage: React.FC = () => {
         if (!currentEntry) return;
         setSavingLayout(true);
         try {
-            const res = await saveIconLayout(token, currentEntry.id, draftLayout);
+            // Persist the snap toggles alongside the layout (folded into one Save, so
+            // Cancel discards both). NULL when all off, keeping clean rows. migration 88.
+            const anySnapOn = snapMove || snapRotate || snapResize;
+            const snapConfig: SnapConfig | null = anySnapOn
+                ? { move: snapMove, rotate: snapRotate, resize: snapResize }
+                : null;
+            const res = await saveIconLayout(token, currentEntry.id, draftLayout, snapConfig);
             setIconLayoutOverrides((o) => ({ ...o, [currentEntry.id]: res.iconLayout }));
+            setSnapConfigOverrides((o) => ({ ...o, [currentEntry.id]: res.snapConfig }));
             exitEdit();
         } catch (err) {
             console.error("Failed to save icon layout:", err);
         } finally {
             setSavingLayout(false);
         }
-    }, [currentEntry, draftLayout, token, exitEdit]);
+    }, [currentEntry, draftLayout, token, exitEdit, snapMove, snapRotate, snapResize]);
 
     // Reset-to-default: clear the saved layout (null), restoring the default centered
     // icon, then exit edit mode. Confirmation-gated by resetConfirmOpen.
@@ -530,8 +555,11 @@ const FlashcardsLearnPage: React.FC = () => {
         if (!currentEntry) return;
         setSavingLayout(true);
         try {
-            await saveIconLayout(token, currentEntry.id, null);
+            // Reset-to-default clears the layout AND the snap config (no icons → snap is
+            // meaningless), so the next edit session on this card starts unsnapped.
+            await saveIconLayout(token, currentEntry.id, null, null);
             setIconLayoutOverrides((o) => ({ ...o, [currentEntry.id]: null }));
+            setSnapConfigOverrides((o) => ({ ...o, [currentEntry.id]: null }));
             exitEdit();
         } catch (err) {
             console.error("Failed to reset icon layout:", err);

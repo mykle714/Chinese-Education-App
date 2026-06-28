@@ -33,6 +33,8 @@ import {
     DialogContentText,
     DialogActions,
     Button,
+    Snackbar,
+    Alert,
 } from "@mui/material";
 import { clearWritingDraft } from "../../components/handwriting/writingDraftStore";
 import { usePageTitle } from "../../hooks/usePageTitle";
@@ -259,6 +261,9 @@ const FlashcardsLearnPage: React.FC = () => {
         ? (!isPlainDefaultLayout(advDraft, defaultIconId) || advHistory.length > 0)
         : !isPlainDefaultLayout(basicDraft, defaultIconId);
     const [savingLayout, setSavingLayout] = useState(false);
+    // Surfaced as a toast when an icon-layout save/reset PATCH fails, so a failed
+    // write isn't swallowed into console.error behind a dead-looking Save button.
+    const [saveError, setSaveError] = useState<string | null>(null);
     const [iconSearchOpen, setIconSearchOpen] = useState(false);
     // Prefetched icons8 results for the current card's DEFAULT query, warmed on enter-
     // edit so the picker can render instantly on open. Tagged with the card id + term so
@@ -544,6 +549,9 @@ const FlashcardsLearnPage: React.FC = () => {
             exitEdit();
         } catch (err) {
             console.error("Failed to save icon layout:", err);
+            // Keep the editor open (the throw skipped exitEdit) and tell the user why,
+            // so the draft isn't silently lost behind an unresponsive Save button.
+            setSaveError("Couldn't save your icon layout. Please try again.");
         } finally {
             setSavingLayout(false);
         }
@@ -563,6 +571,7 @@ const FlashcardsLearnPage: React.FC = () => {
             exitEdit();
         } catch (err) {
             console.error("Failed to reset icon layout:", err);
+            setSaveError("Couldn't reset your icon layout. Please try again.");
         } finally {
             setSavingLayout(false);
         }
@@ -923,6 +932,25 @@ const FlashcardsLearnPage: React.FC = () => {
                     );
                 })()}
                 <TooManyTabsSnackbar signal={eip.overflowSignal} />
+                {/* Icon-layout save/reset failure toast (e.g. backend PATCH error).
+                    Replaces the prior silent console.error so the editor stays open
+                    and the user knows the write didn't land. */}
+                <Snackbar
+                    open={saveError !== null}
+                    autoHideDuration={4000}
+                    onClose={() => setSaveError(null)}
+                    anchorOrigin={{ vertical: "top", horizontal: "center" }}
+                    sx={{ zIndex: 2000 }}
+                >
+                    <Alert
+                        severity="error"
+                        variant="filled"
+                        onClose={() => setSaveError(null)}
+                        sx={{ fontFamily: FC_FONT }}
+                    >
+                        {saveError}
+                    </Alert>
+                </Snackbar>
                 {/* Settings sheet — same drag/scroll behavior as the EIP. Mounted
                     only while open so the open animation replays on each invocation.
                     Depth 99 keeps it above any open EIP panel stack. */}

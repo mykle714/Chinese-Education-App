@@ -47,8 +47,18 @@ button still appears on whichever face shows the Chinese).
 
 Icons are drawn in a layer **behind** the cpcd, English text, buttons, and labels (a
 lower `zIndex` than `CardContent` — see the stacking-context note under the gesture
-canvas), and are **clipped to the card boundary** (`overflow: hidden` on the face) —
-icons dragged partially off the card are cut off, never painted outside the card.
+canvas), and are **clipped to the card boundary** — icons dragged partially off the
+card are cut off, never painted outside the card.
+
+**Where the clip lives (face split).** `CardFaceSide` is split into an **outer** box
+(the 3D-flip/backface/`inert` face, `overflow: visible`) and an **inner** box
+(`inset: 0`, `overflow: hidden`, rounded corners) that does the actual card-boundary
+clipping. The static `CardIconLayer` and `CardContent` live in the **inner** clip box.
+The live **edit canvas** lives in the **outer** box (so its selection indicators may
+overflow the card edge — see the gesture-canvas section); the canvas clips its **own**
+icons internally instead. This split is what lets the selection outline + resize handle
+poke past the card boundary into the surrounding card padding while ordinary icons stay
+clipped. (`FlashCardSection.tsx` `CardFaceSide`.)
 
 **3D-flip hit-testing:** CSS backface culling does not reliably exclude the rotated
 -away face from *hit-testing*, so the away-facing `CardFaceSide` is made `inert`
@@ -65,8 +75,10 @@ read-only `CardIconLayer`, which is fully percentage-based and therefore scales 
 the 92×132 thumbnail with no extra math.
 
 Gating differs from the flashcard: the thumbnail renders the layer **only for
-advanced arrangements** (`iconLayout.length > 1`). Single-icon "basic" layouts and
-plain default-icon cards keep the icon-free thumbnail. The layer sits at `zIndex 0`
+advanced arrangements**, using the shared `isAdvancedLayout()` gate (multiple icons,
+OR a single icon moved/resized/rotated off its default placement). Plain default-icon
+cards keep the icon-free thumbnail. (Note: a single *advanced* icon still renders — an
+earlier `iconLayout.length > 1` shortcut here wrongly dropped those.) The layer sits at `zIndex 0`
 (behind the text); the word and definition blocks are given `position: relative;
 zIndex: 1` so they read on top — the same stacking-context rule the flashcard face
 follows.
@@ -84,7 +96,7 @@ New nullable column **`iconLayout` jsonb** on both vet tables (`vocabentries_zh`
   "iconId":   "16017",  // icons8 natural key (icons8."icons8Id"); rendered via /api/icons8/<id>/image
   "x":        0.5,      // icon CENTER, fraction of card WIDTH  [0..1]
   "y":        0.45,     // icon CENTER, fraction of card HEIGHT [0..1]
-  "scale":    1.2,      // multiplier on the base box; clamped ~[0.25, 4.5]
+  "scale":    1.25,     // multiplier on the base box; clamped ~[0.25, 5]
   "rotation": 0,        // degrees
   "z":        0,        // paint order; higher = front. Normalized to 0..n-1 on save.
   "flipX":    true,     // OPTIONAL horizontal mirror (the "mirror" action); omitted/false = not mirrored
@@ -92,8 +104,10 @@ New nullable column **`iconLayout` jsonb** on both vet tables (`vocabentries_zh`
 }
 ```
 
-**Default scale is `DEFAULT_ICON_SCALE = 1.2`** (the default icon renders 20% larger
-than the base box). It applies to every newly created item: the seeded basic icon, a
+**Default scale is `DEFAULT_ICON_SCALE = 1.25`** (the default icon renders 25% larger
+than the base box). 1.25 is picked so the default size lands exactly on the size-snap
+grid (`BASE_ICON_FRAC × 1.25 = 0.35 = 7 × the 0.05 SNAP_SIZE_STEP_FRAC`), so toggling
+size-snap on never resizes a default icon. It applies to every newly created item: the seeded basic icon, a
 basic "change icon" swap, and an icon spawned into advanced mode. Existing saved layouts
 keep their own stored `scale`. `flipX` is mirrored at render time via
 `scaleX(-1)` in `iconItemStyle` (applied AFTER `rotate`), shared by both renderers
@@ -123,8 +137,8 @@ theme-aware default).
 layout survives the card being rendered at different pixel sizes across viewports.
 The on-screen box for an icon is `BASE_ICON_FRAC × cardWidth × scale`
 (`BASE_ICON_FRAC ≈ 0.28`), positioned by its center at `(x·cardWidth, y·cardHeight)`,
-then rotated `rotation` degrees. `scale` is clamped to `[0.25, 4.5]`; at max an icon
-is ~1.26× the card width (`0.28 × 4.5 ≈ 1.26`). These
+then rotated `rotation` degrees. `scale` is clamped to `[0.25, 5]`; at max an icon
+is ~1.4× the card width (`0.28 × 5 ≈ 1.4`). These
 live in `cardIconLayout.ts` (`BASE_ICON_FRAC`, `SCALE_MIN/MAX`, `DEFAULT_ICON_*`); the
 server's `validateIconLayout` mirrors **both** the scale clamp **and the center clamp** —
 it re-implements `clampIconCenter`'s 15%-on-card rule (using duplicated `BASE_ICON_FRAC`
@@ -283,6 +297,17 @@ All in `src/pages/FlashcardsLearnPage/`.
    - the **`count/12` readout** (`Typography`) — the last item in the list, vertically
      centered (`alignSelf: center`); moved here off the basic row.
 
+   *Rapid-tap responsiveness (touch).* Spam-tapping any toolbar control (undo/redo, snap rows,
+   contrast modes, shift-pad nudges) used to drop every **second** rapid tap on touch (mouse was
+   fine). The cause was **not** the toolbar — it was the app-root zoom blocker `useBlockZoom`
+   (`src/hooks/useBlockZoom.ts`): its `touchend` handler called `preventDefault()` on the second
+   of two taps within 300ms to kill double-tap zoom, but `preventDefault()` on `touchend` **also
+   cancels the synthetic `click`**, so the second rapid tap never fired its `onClick`. The fix:
+   that handler now skips `preventDefault()` when the tap lands on an interactive target
+   (`isInteractiveTarget` — native controls/roles/`[tabindex]`, plus a `cursor: pointer` fallback
+   that catches the `<Box onClick>` menu rows), so control clicks survive while double-tap zoom is
+   still blocked on non-interactive content.
+
    *The shift + contrast + align + snap + order dropdowns are **non-modal**.* They render with
    `hideBackdrop` + `slotProps.root.sx.pointerEvents: "none"` / `slotProps.paper: "auto"`, so a
    press anywhere outside the open dropdown is **not** swallowed by a modal backdrop — it falls
@@ -291,22 +316,50 @@ All in `src/pages/FlashcardsLearnPage/`.
    (effect keyed on the five anchors) closes whichever is open whenever the press lands
    outside it (`closest('.card-edit-toolbar__align-menu, .card-edit-toolbar__order-popover,
    .card-edit-toolbar__snap-menu, .card-edit-toolbar__shift-menu, .card-edit-toolbar__contrast-menu')`
-   guards inside presses). Net effect: trying any action while a dropdown is open (drag an icon,
-   hit another tool) **both dismisses the dropdown and performs the action** in the one press,
-   instead of the first press being eaten just to close the menu. The snap, **shift**, and
+   guards inside presses). Net effect: trying any action while a transient dropdown is open (drag
+   an icon, hit another tool) **both dismisses the dropdown and performs the action** in the one
+   press, instead of the first press being eaten just to close the menu. The snap, **shift**, and
    **contrast** menus are the exceptions that *stay* open on an inside press (their cells are
    inside the respective `…__snap-menu` / `…__shift-menu` / `…__contrast-menu`), so several
-   toggles / nudges / settings can be made in one open.
+   toggles / nudges / settings can be made in one open. (The **align** menu is a one-shot: picking
+   a direction performs the align *and* closes the menu.)
+
+   *The **order** popover is **STICKY** — it is the exception to all of the above.* A learner
+   selects an icon in the order list and then operates the per-icon tools on it (delete / mirror /
+   lock / align / shift / …), so tapping **any** toolbar item or **any** other dropdown does **not**
+   close the order popover. It dismisses **only** on a press fully **outside the editor UI** (the
+   card canvas, the page chrome, etc.) — the `pointerdown` handler computes `insideEditorUi`
+   (`closest('.card-edit-toolbar, …__align-menu, …__order-popover, …__snap-menu, …__shift-menu,
+   …__contrast-menu')`, the menus being portaled to `<body>` rather than nested in
+   `.card-edit-toolbar`) and clears the order anchor only when a press lands outside all of it.
+   `toggleDropdown` reflects this: opening a transient dropdown leaves the order anchor untouched,
+   and only the **order** button itself toggles order (which also closes the four transients).
+
+   *Guard against accidental deselect when tapping a dropdown.* The page's outside-tap deselect
+   (the `ContentArea` `onPointerDown` in `FlashcardsLearnPage.tsx` — clears the selected icon when
+   a press lands outside the canvas/toolbar) must also exempt presses inside an open dropdown.
+   The catch: those dropdowns are MUI `Menu`/`Popover` **portaled to `<body>`**, so a menu cell is
+   NOT a DOM-descendant of `.card-edit-toolbar` — yet React **synthetic events bubble through the
+   React tree, not the DOM tree**, so a press on a cell still fires `ContentArea`'s handler, and a
+   `closest('.card-edit-toolbar')` test misses it. Left unhandled, the deselect runs *before* the
+   cell's `onClick`, so `handleAlign` / `handleNudgeMove` see `selectedIcon === null` and no-op.
+   The handler therefore also skips when `el.closest(TOOLBAR_DROPDOWN_SELECTOR)` matches — the
+   shared selector exported from `CardEditToolbar.tsx` covering the five portaled dropdown root
+   classes (`…__align-menu` / `…__order-popover` / `…__snap-menu` / `…__shift-menu` /
+   `…__contrast-menu`).
 
    *Each trigger button toggles its own dropdown.* Tapping a dropdown's toolbar button (snap /
-   order / shift / align / contrast) opens it, or **closes it if it's already open**; opening one
-   always closes any other that was open (only one dropdown is open at a time). This is driven by
-   `toggleDropdown(which, e)` in `CardEditToolbar.tsx`, which sets the target anchor with a
-   functional toggle (`a ? null : anchor`) and nulls the rest. For the toggle to read the true
-   open state, the capture-phase `pointerdown` handler **exempts the trigger buttons themselves**
-   (`closest('.card-edit-toolbar__align, .card-edit-toolbar__order, .card-edit-toolbar__snap,
+   order / shift / align / contrast) opens it, or **closes it if it's already open**. The four
+   **transient** dropdowns are mutually exclusive — opening one closes the other three; the
+   **order** popover is independent (sticky) and is toggled only by the order button. This is
+   driven by `toggleDropdown(which, e)` in `CardEditToolbar.tsx`, which sets the target anchor
+   with a functional toggle (`a ? null : anchor`) and nulls the other transients. For the toggle
+   to read the true open state, the capture-phase `pointerdown` handler **exempts the transient
+   trigger buttons** (`closest('.card-edit-toolbar__align, .card-edit-toolbar__snap,
    .card-edit-toolbar__shift, .card-edit-toolbar__contrast')`) — otherwise it would clear the
-   anchor before the button's `onClick` fired and the menu would re-open instead of closing.
+   anchor before the button's `onClick` fired and the menu would re-open instead of closing. (The
+   order button needs no such exemption: its press lands inside `insideEditorUi`, so the sticky
+   rule already leaves order open for its own `onClick` to toggle.)
 
    - **shift** (`ControlCamera`) — opens a **3×3 step-nudge pad** that fine-tunes the selected
      icon one step per tap. Layout (row-major): the four **corners** are CCW rotate / CW rotate
@@ -364,7 +417,7 @@ All in `src/pages/FlashcardsLearnPage/`.
        the nearest **5% of the card width** (`snapScaleToStep`, clamped to the scale range).
 
      **Two-layer behavior.** (1) *Turning a toggle ON snaps every icon immediately* — the page
-     handlers (`handleToggleSnapMove/Rotate/Resize` → shared `applySnapAll`) snapshot history
+     handlers (`handleToggleSnapMove/Rotate/Resize` → shared `toggleSnap`) snapshot history
      once, then map the snap over `advDraft`, so existing off-grid placements jump onto the
      grid in one undo step. (2) *Future gestures stay quantized* — the toggles are passed to
      `CardIconCanvas` as a `snap: { move, rotate, resize }` `SnapConfig`, and its drag /
@@ -372,6 +425,13 @@ All in `src/pages/FlashcardsLearnPage/`.
      `snapRotation` live while the matching flag is on. Turning a toggle OFF only flips the
      flag (icons keep their snapped values). The align action's fixed rotations (multiples of
      45°) are already on the 22.5° grid, so rotate-snap never fights it.
+
+     **Snap toggles are undoable (both directions).** `toggleSnap` snapshots history on
+     **every** toggle — ON *and* OFF — and the snapshot includes the three toggle states (see
+     "Undo/redo history"), so undo restores the toggle flag itself, not just any geometry it
+     snapped. So undoing a "snap move ON" both un-snaps the icons and flips the toggle back off,
+     and undoing a "snap OFF" turns it back on (the OFF case pushes history but changes no
+     geometry).
 
      **Snap state PERSISTS per card** (migration 88, `vet.snapConfig` jsonb `{move,rotate,resize}`;
      NULL = all off). On `enterEdit` the three toggles are **seeded** from the card's
@@ -407,9 +467,16 @@ All in `src/pages/FlashcardsLearnPage/`.
 
    **Undo/redo history** — the undo/redo buttons sit between **mirror** and **lock**; the
    **Shift** nudges + every other action push history too. The page keeps two capped stacks
-   (`ADV_HISTORY_MAX = 100`) of prior `advDraft` snapshots: `advHistory` (undo) and `advFuture`
-   (redo). Every discrete action pushes the PRE-change snapshot onto `advHistory` via
-   `pushAdvHistory` *before*
+   (`ADV_HISTORY_MAX = 100`) of prior **editor snapshots**: `advHistory` (undo) and `advFuture`
+   (redo). A snapshot (`AdvSnapshot`) captures **both** the `advDraft` layout **and** the three
+   snap toggle states (`{ layout, move, rotate, resize }`), so undo/redo restores the snap setup
+   the same way it restores the icons — **toggling a snap on OR off is undoable** (see the snap
+   tool). **Order changes** ride along inside `layout` (a reorder only permutes each icon's `z`),
+   so they are undone with no special handling. `snapshotDraft` reads the layout + snap toggles
+   from synchronous refs (`advDraftRef`, `snapMoveRef`/`snapRotateRef`/`snapResizeRef`); `undoAdv`/
+   `redoAdv` restore a snapshot through the shared `applySnapshot` (writes both refs and state for
+   layout + all three toggles). Every discrete action pushes the PRE-change snapshot onto
+   `advHistory` via `pushAdvHistory` *before*
    mutating: gestures snapshot once on the **first real movement** (`onInteractionStart`,
    fired by `CardIconCanvas` from the `onDrag`/`onPinch` memo factory, and from the corner
    handle's `first` frame) — deliberately **NOT** on `onDragStart`/`onPinchStart`, because a
@@ -465,25 +532,48 @@ All in `src/pages/FlashcardsLearnPage/`.
    `iconLayout` via `editingCurrentEntry`, so the basic-mode card is WYSIWYG without a
    live canvas). The canvas is built on `@use-gesture/react` (`useGesture`, bound
    per-icon via `bind(index)`):
-   - drag moves an icon (updates `x`,`y`); pinch resizes + rotates (two-finger:
+   - drag translates an icon (updates `x`,`y`); pinch resizes + rotates (two-finger:
      distance → `scale`, angle → `rotation`).
-   - **Pinch-to-zoom works from anywhere on the canvas and targets the SELECTED icon.**
-     Unlike drag (which acts on whatever icon it lands on / its protected zone), pinch
-     deliberately ignores which icon the fingers are over and resizes/rotates the current
-     selection via the shared `beginPinch`/`runPinch` handlers — so you can zoom in empty
-     space or over a different icon. It falls back to the icon under the pinch only when
-     nothing is selected (a pinch directly on an icon still grabs it). Implementation:
-     pinches that **start on an icon** route through the per-icon `bindIcon`; pinches that
-     **start on empty space** route through a second `useGesture` bound to the canvas root
-     (`bindCanvas`); both call the same shared handlers. Because `bindCanvas` also owns the
-     empty-canvas behaviour, the **tap-to-deselect was moved off the root's raw
-     `onPointerDown` onto `bindCanvas`'s drag `tap`** — otherwise the first finger of an
-     empty-space pinch would wipe the selection (via the old `onPointerDown` deselect)
-     before the pinch could read it. Icon presses `stopPropagation` in their own
-     `onPointerDown`, so they never reach `bindCanvas` (no double-handling).
+   - **All three transforms (translate / resize / rotate) work from ANYWHERE on the canvas
+     and act on the SELECTED icon.** They differ only in whether the gesture can switch the
+     selection:
+     - **Drag (translate)** targets the topmost **unlocked** icon under the pointer when there
+       is one — grabbing **and selecting** it ("a drag over an unselected unlocked icon
+       translates that icon instead") — and otherwise the **selected** icon, so a drag over
+       empty space, over a **locked** icon, or over the selection itself translates the
+       selection from anywhere. The choice is made once at gesture start by `resolveDragTarget`
+       (= `topmostUnlockedIconAt(px,py) ?? selected`).
+     - **Pinch (resize + rotate)** and the **corner handle** **never switch selection**: they
+       deliberately ignore which icon the fingers are over and resize/rotate the current
+       selection via the shared `beginPinch`/`runPinch` handlers — so you can zoom/rotate in
+       empty space or over a different icon **without selecting it**. Pinch falls back to the
+       icon under the fingers only when nothing is selected (a pinch directly on an icon still
+       grabs it).
+   - **Implementation.** Gestures that **start on an icon** route through the per-icon
+     `bindIcon` (drag + pinch); gestures that **start on empty space** route through a second
+     `useGesture` bound to the canvas root (`bindCanvas`, also drag + pinch). Both bindings
+     call the **same shared handlers** (`beginDragMotion`/`runDrag`, `beginPinch`/`runPinch`),
+     so behaviour is identical wherever the fingers land — `bindCanvas`'s drag is what lets a
+     translate of the selected icon **start on empty space**. Icon presses `stopPropagation`
+     in their own `onPointerDown`, so they never also reach `bindCanvas` (no double-handling).
+     A two-finger pinch's **first finger also drives the drag recognizer**, so **both** drag
+     handlers short-circuit on **`touches >= 2`** — without this, the resize/rotate's stray
+     finger would translate and/or grab+select whatever icon it landed on, defeating
+     "off-icon resize/rotation must not select a new icon". Because `bindCanvas` also owns the
+     empty-canvas behaviour, the **tap-to-deselect lives on `bindCanvas`'s drag `tap`** (not
+     the root's raw `onPointerDown`) — otherwise the first finger of an empty-space pinch would
+     wipe the selection before the pinch could read it (`filterTaps` means a pinch is never
+     reported as a tap).
    - Desktop: drag plus a corner handle on the selected icon for resize/rotate (the
      handle computes scale from the pointer's distance to the icon center, rotation
-     from its angle).
+     from its angle). The handle's `onDrag` **short-circuits on `touches >= 2`** for the
+     same reason the icon/canvas drags do: the handle sits at the selected icon's corner
+     and `stopPropagation`s, so a two-finger pinch whose first finger lands on the handle
+     would otherwise be read as a lone-finger drag and write the **absolute-angle** rotation
+     every frame — the icon could then only rotate (never resize/translate) until all fingers
+     lift ("locked into a rotate command"). To keep the handle from being a pinch **dead
+     zone** in that case, `bindHandle` also has an `onPinch` that routes through the shared
+     `beginPinch`/`runPinch` handlers (acting on the selected icon), exactly like `bindIcon`.
    - **Locked icons** (`item.locked`, set via the toolbar's lock button): drag / pinch /
      handle-resize all early-return for a locked icon, so it ignores translate / resize /
      rotate. It is still **tap-selectable** (the `onDrag` tap branch is not gated), so it
@@ -500,7 +590,7 @@ All in `src/pages/FlashcardsLearnPage/`.
        action can't be performed (mirroring the front-card "can't do that" shake in
        `FlashCardSection.tsx`). Driven by a `{ i, nonce }` state in `CardIconCanvas`: the
        blocked-gesture early-returns each call `triggerShake(i)` (once per gesture — at
-       `beginPinch`, the drag's first-real-frame memo init, and the handle's `first` frame),
+       `beginPinch`, the drag's first-real-frame `beginDragMotion`, and the handle's `first` frame),
        which bumps `nonce`. The icon box's `@keyframes` animation NAME embeds the nonce, so a
        repeat trigger is a fresh animation that restarts cleanly **without remounting** the
        box (a remount would abort the in-flight pointer gesture). Each keyframe PREPENDS a
@@ -509,29 +599,49 @@ All in `src/pages/FlashcardsLearnPage/`.
        `onAnimationEnd` clears the state.
    - **Selecting / selection switching** — a **tap** selects an icon under it (the
      `onDrag` tap branch, via `filterTaps`), preferring the topmost unlocked icon at that
-     point (`pickTapTarget`, see "Locked icons" above). A **drag/pinch** does not blindly grab the
-     icon it lands on: `resolveTarget` decides whether it acts on the **already-selected**
-     icon or **auto-switches** to the one pressed:
-       - The selected icon (when **unlocked**) owns a **protected zone** = its box expanded
-         outward by `PROTECT_MARGIN_FRAC` (10% of the card width) on every side. A gesture
-         STARTING inside the zone keeps acting on the
-         selected icon, so an overlapping neighbour can't steal a fine manipulation; a
-         gesture starting OUTSIDE the zone switches selection to the icon it landed on and
-         acts there. The zone test (`withinSelectedZone`) is an axis-aligned box check in
-         normalized canvas space (rotation ignored — a good-enough heuristic).
-       - A **locked** selected icon has **no** protected zone (it can't be manipulated
-         anyway), so a gesture in ANY location passes straight through: it switches
-         selection to the pressed icon and acts there.
-       - **Actions only ever apply to the resolved target** (which is also the icon selection
-         switches to). The target is committed **synchronously** to `gestureTargetRef` at
-         gesture start (and pinned in `memo`), so a gesture that starts outside the zone both
-         switches selection AND moves/resizes the new icon in the SAME stroke — it does NOT
-         re-derive the target from the async `selected` state (which lags a render, so the
-         old code dropped the motion and "only selected"). A locked TARGET still becomes
-         selected but is frozen (no move/resize/rotate).
+     point (`pickTapTarget`, see "Locked icons" above). A **drag (translate)** does not blindly
+     grab the icon it lands on either: `resolveDragTarget` decides whether it acts on the
+     icon under the pointer or on the **already-selected** icon:
+       - It targets (and **auto-switches selection to**) the **topmost UNLOCKED icon** under the
+         pointer when there is one — so a drag over any unselected unlocked icon translates that
+         icon. `topmostUnlockedIconAt` is an axis-aligned box hit-test in normalized canvas
+         space (rotation ignored — a good-enough heuristic), preferring the highest `z`.
+       - Otherwise (empty space, only **locked** icons under the pointer, or the selection
+         itself) it falls back to the **selected** icon — translating the selection from
+         anywhere. A locked fallback target is frozen (shake feedback, no move).
+       - **A pinch (resize/rotate) NEVER switches selection** — it always acts on the selection
+         (`beginPinch`, ignoring which icon the fingers are over). Its first finger also drives
+         the drag recognizer, so both drag handlers bail on `touches >= 2` to avoid grabbing or
+         selecting an icon mid-pinch. (When nothing is selected, a pinch still falls back to the
+         icon under the fingers so it can grab one to start.)
+       - **Drag actions only ever apply to the resolved target** (which is also the icon
+         selection switches to). The target is committed **synchronously** to `gestureTargetRef`
+         at gesture start (and pinned in `memo`), so a drag that grabs a new icon both switches
+         selection AND moves it in the SAME stroke — it does NOT re-derive the target from the
+         async `selected` state (which lags a render, so the old code dropped the motion and
+         "only selected").
      Selection shows a dashed outline + the corner handle and floats the icon visually
      (transient high `zIndex`) — but does **not** change its stored `z` (paint order is
      owned by the order dropdown). Selection is controlled by the page (`selected`/`onSelect`).
+   - **Selection indicators render on top of all icons, and may overflow the card edge.**
+     The dashed outline + corner handle are NOT drawn on the selected icon's box; they are
+     drawn in a separate **selection-overlay layer** that the canvas renders ABOVE the icon
+     clip layer. The canvas root is split into two children:
+     - a **clip layer** (`card-icon-canvas__clip`, `overflow: hidden`, `zIndex 0`) holding
+       every icon — the only thing clipped to the card boundary. Its explicit `zIndex` +
+       position establishes a stacking context that confines each icon's `z` (including the
+       transient float-to-front `9999`) **below** the overlay.
+     - a **selection overlay** (`card-icon-canvas__overlay`, `overflow: visible`, `zIndex 1`,
+       `pointerEvents: none`) holding the outline + handle for the selected icon. Because it
+       is unclipped and above the clip layer, the indicators always paint **on top of every
+       icon** and can poke **past the card edge** (the card face is `overflow: visible` —
+       see the face-split note above — and the surrounding card padding lets them show before
+       the card slot clips). The overlay box mirrors the selected icon's exact geometry
+       (`iconItemStyle(sel, false)`) so the outline frames the icon, is pointer-transparent
+       so a drag through it still reaches the icon below, and **re-enables `pointerEvents` on
+       the handle only**. It also shakes in lockstep with the icon when a denied gesture
+       targets the selected (locked) icon, so the outline never drifts away from the shaking
+       icon. The canvas root itself is `overflow: visible` (clipping moved to the clip layer).
    - **Off-card drag** = on release, an icon dragged too far off-card is snapped back via
      `clampIconCenter` so at least 15% of the **icon's own size** (`MIN_ON_CARD_FRAC`, in
      `cardIconLayout.ts`) stays on-card in both axes — it is NOT deleted. The threshold is
@@ -543,15 +653,29 @@ All in `src/pages/FlashcardsLearnPage/`.
    - The canvas sits BEHIND the card content (icons are always behind the text), and
      the content is kept fully visible but `pointerEvents: none` while editing, so the
      edit is WYSIWYG and pointers fall through the text to the icons below.
+     `pointerEvents: none` on the `CardContent` wrapper alone is **not** sufficient: the
+     cpcd pinyin spans set `pointer-events: auto` **inline** (CPCDRow — so pinyin is
+     drag-selectable in normal use), and an inline style beats an inherited `none`, so a
+     tap on pinyin text used to register on the span instead of falling through. While
+     editing, the wrapper therefore also forces `& *` to `pointer-events: none !important`
+     to defeat those inline overrides. See `CardFaceSide`'s `CardContent` sx in
+     `FlashCardSection.tsx`.
    - The card is **locked** while editing: `FlashCardSection` does not attach the
      drag/flip handlers (`editMode` gate), so it can't be swiped away or flipped.
 
    Three non-obvious gotchas the implementation handles (don't regress them):
-   - **Stacking context**: both `CardIconLayer` and `CardIconCanvas` roots set an
-     explicit `zIndex: 0`, which establishes a stacking context that CONFINES the
-     per-icon zIndex values. Without it, an icon with `z >= 1` competes directly with
-     the content (`zIndex: 1`) and paints OVER the text (the "text beneath the icons"
-     bug, visible once 3+ icons exist).
+   - **Stacking context**: both `CardIconLayer` and the `CardIconCanvas` root (and its
+     inner **clip layer**) set an explicit `zIndex: 0`, which establishes a stacking
+     context that CONFINES the per-icon zIndex values. Without it, an icon with `z >= 1`
+     competes directly with the content (`zIndex: 1`) and paints OVER the text (the "text
+     beneath the icons" bug, visible once 3+ icons exist). The canvas's clip-layer context
+     also confines the icons' `z` (incl. the float-to-front `9999`) below the
+     selection-overlay layer (`zIndex 1`), so the indicators always sit on top of all icons.
+   - **Canvas clips its own icons (face is now unclipped)**: the card face's
+     `overflow: hidden` moved off the outer face box onto an inner clip box, and the edit
+     canvas sits in the outer (`overflow: visible`) box so its selection overlay can escape
+     the card edge. The canvas therefore clips its OWN icons via the inner `…__clip` layer —
+     don't remove that or partially-off-card icons stop being cut off at the boundary.
    - **Handler composition**: each icon spreads `{...bind(i)}` (which includes
      @use-gesture's `onPointerDown` that *starts* the gesture). Our own
      `onPointerDown` (stopPropagation + select) must be declared after the spread and
@@ -566,7 +690,9 @@ All in `src/pages/FlashcardsLearnPage/`.
    - **Inner-img inline gap (entering/exiting must not jump)**: the static
      `CardIconLayer` positions each icon by styling the `<img>` *itself* as the box
      (`iconItemStyle`), but the canvas wraps the `<img>` in a positioned `<div>`
-     (so it can carry the selection outline + handle). A default `display: inline`
+     (so the mirror transform can be isolated on the `<img>` while the wrapper stays the
+     gesture target; the selection outline + handle now live in the overlay layer, not on
+     this wrapper). A default `display: inline`
      `<img>` adds a baseline descender gap (~4px) that inflates the wrapper past its
      `aspect-ratio: 1/1` height; because the box is centered via
      `translate(-50%, -50%)`, that shifted the icon ~2px UP versus the saved render —
@@ -605,9 +731,10 @@ All in `src/pages/FlashcardsLearnPage/`.
    The basic-vs-advanced split is inferred from geometry (no stored mode flag): the
    basic "change icon" swap always writes exactly the default placement, so anything
    else reads back as advanced. `isAdvancedLayout` / `isDefaultPlacement` live in
-   `cardIconLayout.ts`. `isDefaultPlacement` accepts the current default scale (1.2)
-   **or** the legacy 1.0 (basic saves before the 20%-larger bump), so pre-existing
-   basic-saved cards still open in basic mode rather than auto-opening advanced.
+   `cardIconLayout.ts`. `isDefaultPlacement` accepts the current default scale (1.25)
+   **or** the legacy 1.2 / 1.0 (basic saves before the size-snap-aligned and 20%-larger
+   bumps), so pre-existing basic-saved cards still open in basic mode rather than
+   auto-opening advanced.
 
 5. **Icon picker dialog** (`src/components/IconPickerDialog.tsx`) — the shared icon
    search + browser used by both this editor and the avatar picker (Account page). One

@@ -1,8 +1,15 @@
 import React, { useMemo, useRef, useState } from "react";
 import { Box, Typography } from "@mui/material";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
+import LockIcon from "@mui/icons-material/Lock";
+import LockOpenIcon from "@mui/icons-material/LockOpen";
 import type { IconLayoutItem } from "../../types";
 import { iconImageUrl } from "./cardIconLayout";
+
+// The locked-state gold (matches the canvas corner indicator + toolbar lock button) and the
+// unlocked grey, so the order list reads the same lock affordance as the rest of the editor.
+const LOCK_GOLD = "#E0A82E";
+const LOCK_GREY = "rgba(0,0,0,0.4)";
 
 /**
  * CardIconOrderList — the body of the advanced toolbar's "render order" dropdown
@@ -52,13 +59,16 @@ const CardIconOrderList: React.FC<{
     // Called ONCE per drag, the first time the order actually changes, so the page can
     // snapshot undo history before the (live) reorder mutates the draft.
     onReorderStart: () => void;
+    // Toggle the lock of the row's icon (the per-row gold/grey lock symbol). Independent of
+    // selection and of the reorder drag.
+    onToggleLockAt: (layoutIdx: number) => void;
     // Select the icon for the pressed row (so the canvas highlights it + the per-icon
     // tools target it). Fired on row press, before/regardless of any reorder drag.
     onSelectIcon: (layoutIdx: number) => void;
     // Layout index of the selected icon (or null). Its row gets the same dashed-outline
     // indicator the canvas draws around the selected icon, so the two views stay in sync.
     selectedIndex: number | null;
-}> = ({ layout, onReorder, onReorderStart, onSelectIcon, selectedIndex }) => {
+}> = ({ layout, onReorder, onReorderStart, onToggleLockAt, onSelectIcon, selectedIndex }) => {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const [drag, setDrag] = useState<DragState | null>(null);
 
@@ -215,8 +225,28 @@ const CardIconOrderList: React.FC<{
                                 transform: `rotate(${item.rotation}deg) scaleX(${item.flipX ? -1 : 1})`,
                             }}
                         />
+                        {/* Per-row lock toggle — gold closed padlock when locked, grey open
+                        padlock when not. `stopPropagation` on pointerdown keeps the press from
+                        starting a reorder drag (or selecting the row); the tap toggles lock. */}
+                        <Box
+                            className={`card-icon-order-list__lock${item.locked ? " card-icon-order-list__lock--locked" : ""}`}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onToggleLockAt(layoutIdx);
+                            }}
+                            sx={{
+                                ml: "auto",
+                                display: "flex",
+                                alignItems: "center",
+                                cursor: "pointer",
+                                color: item.locked ? LOCK_GOLD : LOCK_GREY,
+                            }}
+                        >
+                            {item.locked ? <LockIcon sx={{ fontSize: 18 }} /> : <LockOpenIcon sx={{ fontSize: 18 }} />}
+                        </Box>
                         {/* Trailing triple-dot — purely a visual movement indicator. */}
-                        <DragIndicatorIcon sx={{ fontSize: 20, color: "rgba(0,0,0,0.4)", ml: "auto" }} />
+                        <DragIndicatorIcon sx={{ fontSize: 20, color: "rgba(0,0,0,0.4)" }} />
                     </Box>
                 );
             })}
@@ -257,7 +287,11 @@ const CardIconOrderList: React.FC<{
                             transform: `rotate(${draggedItem.rotation}deg) scaleX(${draggedItem.flipX ? -1 : 1})`,
                         }}
                     />
-                    <DragIndicatorIcon sx={{ fontSize: 20, color: "rgba(0,0,0,0.4)", ml: "auto" }} />
+                    {/* Static lock glyph mirroring the row (the clone is inert — pointerEvents none). */}
+                    <Box sx={{ ml: "auto", display: "flex", alignItems: "center", color: draggedItem.locked ? LOCK_GOLD : LOCK_GREY }}>
+                        {draggedItem.locked ? <LockIcon sx={{ fontSize: 18 }} /> : <LockOpenIcon sx={{ fontSize: 18 }} />}
+                    </Box>
+                    <DragIndicatorIcon sx={{ fontSize: 20, color: "rgba(0,0,0,0.4)" }} />
                 </Box>
             )}
         </Box>

@@ -43,6 +43,12 @@ interface IconPickerDialogProps {
     /** Pre-fills the search box on open. Empty (default) opens in browse-all mode. */
     initialTerm?: string;
     /**
+     * Called whenever the user edits the search term (typing or the clear button) — NOT
+     * on the open-reset that re-seeds from `initialTerm`. Lets a parent remember the
+     * latest query and feed it back as `initialTerm` on the next open (fie behavior).
+     */
+    onTermChange?: (term: string) => void;
+    /**
      * Optional pre-fetched first page of results for the default query. When the box's
      * term matches `prefetched.term`, page 0 renders from here with NO network fetch
      * (instant open); typing a different term — or paging past page 0 — falls back to
@@ -78,6 +84,7 @@ function IconPickerDialog({
     title,
     onPick,
     initialTerm = "",
+    onTermChange,
     prefetched = null,
     currentIconId = null,
     onRemove,
@@ -98,6 +105,8 @@ function IconPickerDialog({
     const [savingId, setSavingId] = useState<string | null>(null);
 
     const sentinelRef = useRef<HTMLDivElement | null>(null);
+    // The search box's underlying <input>, so the clear button can restore cursor focus.
+    const searchInputRef = useRef<HTMLInputElement | null>(null);
     const offsetRef = useRef(0);
     // The term the current results belong to (read inside loadMore without re-creating it).
     const termRef = useRef("");
@@ -266,7 +275,11 @@ function IconPickerDialog({
                     size="small"
                     placeholder="Search icons (e.g. cat, house, star)"
                     value={term}
-                    onChange={(e) => setTerm(e.target.value)}
+                    inputRef={searchInputRef}
+                    onChange={(e) => {
+                        setTerm(e.target.value);
+                        onTermChange?.(e.target.value);
+                    }}
                     sx={{ mb: 1.5 }}
                     InputProps={{
                         startAdornment: (
@@ -281,7 +294,13 @@ function IconPickerDialog({
                                     className="icon-picker-dialog__clear"
                                     size="small"
                                     aria-label="Clear search"
-                                    onClick={() => setTerm("")}
+                                    onClick={() => {
+                                        setTerm("");
+                                        onTermChange?.("");
+                                        // Keep the cursor in the search box so the user can
+                                        // immediately retype without re-tapping the field.
+                                        searchInputRef.current?.focus();
+                                    }}
                                     edge="end"
                                 >
                                     <ClearIcon fontSize="small" />

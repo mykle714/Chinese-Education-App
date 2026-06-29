@@ -33,7 +33,7 @@ dotenv.config({ path: path.join(__dirname, '../../../.env.docker') });
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
 import { ALLOWED_POS_TAGS, ALLOWED_POS_TAG_SET } from '../shared/lib/posTags.js';
-import { initRunLog } from '../run-log.js';
+import { initRunLog, cachedSystem } from '../run-log.js';
 const SCRIPT_VERSION = 2; // bump when this script's logic/prompt changes
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -181,21 +181,24 @@ function formatDefinitions(definitions) {
 async function generatePartsOfSpeech(word, definitions, model = GEN_MODEL) {
   const definitionText = formatDefinitions(definitions);
 
-  const prompt = `You are a Chinese linguistics expert assigning parts of speech for a learner dictionary.
-
-Word: ${word}
-Definitions: ${definitionText}
+  // Static instructions (persona + rules + task) → cached system; per-entry
+  // word + definitions → user message. See cachedSystem in run-log.js.
+  const systemText = `You are a Chinese linguistics expert assigning parts of speech for a learner dictionary.
 
 ${POS_RULES_TEXT}
 
-Task: List every part of speech this word genuinely functions as in modern Mandarin, across ALL of its pronunciations/readings, ordered from most to least common. The definitions above may span multiple readings — include the POS for every sense that appears, regardless of which reading it belongs to.
+Task: List every part of speech the given word genuinely functions as in modern Mandarin, across ALL of its pronunciations/readings, ordered from most to least common. The definitions may span multiple readings — include the POS for every sense that appears, regardless of which reading it belongs to.
 
 Respond with ONLY a JSON array of lowercase strings, e.g. ["noun", "verb"]. No markdown, no explanation.`;
+
+  const prompt = `Word: ${word}
+Definitions: ${definitionText}`;
 
   const response = await anthropic.messages.create({
     model,
     max_tokens: 64,
     temperature: 0,
+    system: cachedSystem(systemText),
     messages: [{ role: 'user', content: prompt }],
   });
 
@@ -211,13 +214,11 @@ Respond with ONLY a JSON array of lowercase strings, e.g. ["noun", "verb"]. No m
 async function validatePartsOfSpeech(word, definitions, proposedTags) {
   const definitionText = formatDefinitions(definitions);
 
-  const prompt = `You are a strict Chinese-grammar reviewer judging a proposed parts-of-speech assignment for a learner dictionary. Apply the rules formally — do not approve a tag just because the English translation suggests it.
+  // Static reviewer scaffold (rules + violation codes + response format) → cached
+  // system; per-entry word/definitions/proposed tags → user message.
+  const systemText = `You are a strict Chinese-grammar reviewer judging a proposed parts-of-speech assignment for a learner dictionary. Apply the rules formally — do not approve a tag just because the English translation suggests it. Respond only with valid JSON.
 
 ${POS_RULES_TEXT}
-
-Word: ${word}
-Definitions: ${definitionText}
-Proposed tags: ${JSON.stringify(proposedTags)}
 
 The proposed list should cover every reading/pronunciation represented in the definitions — do not reject a tag merely because it belongs to a different reading than another sense. For each proposed tag, judge whether it passes the formal tests above. Also consider whether any clearly valid POS is missing.
 
@@ -229,11 +230,15 @@ Respond with ONLY one of these JSON forms:
 or
   {"accept": false, "rejectedTags": ["tag1", "tag2"], "violatedRules": ["code1", "code2"], "critique": "1-2 sentences explaining the specific failures and what the corrected list should look like"}`;
 
+  const prompt = `Word: ${word}
+Definitions: ${definitionText}
+Proposed tags: ${JSON.stringify(proposedTags)}`;
+
   const response = await anthropic.messages.create({
     model: VALIDATOR_MODEL,
     max_tokens: 300,
     temperature: 0.1,
-    system: 'You are a strict reviewer of Chinese parts-of-speech assignments. Respond only with valid JSON.',
+    system: cachedSystem(systemText),
     messages: [{ role: 'user', content: prompt }],
   });
 

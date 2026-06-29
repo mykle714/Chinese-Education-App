@@ -17,7 +17,7 @@ import EipTabStrip from "./EipTabStrip";
 import TooManyTabsSnackbar from "./TooManyTabsSnackbar";
 import FlashCardSection from "./FlashCardSection";
 import CardIconCanvas from "./CardIconCanvas";
-import CardEditToolbar, { type AlignDirection, CARD_EDIT_ANIM_MS, CARD_EDIT_ANIM_EASING } from "./CardEditToolbar";
+import CardEditToolbar, { type AlignDirection, CARD_EDIT_ANIM_MS, CARD_EDIT_ANIM_EASING, TOOLBAR_DROPDOWN_SELECTOR } from "./CardEditToolbar";
 import IconPickerDialog from "../../components/IconPickerDialog";
 import { defaultLayoutForEntry, maxZ, isAdvancedLayout, isPlainDefaultLayout, DEFAULT_ICON_X, DEFAULT_ICON_Y, DEFAULT_ICON_SCALE, ALIGN_ROTATION, snapCenterToGrid, snapScaleToStep, snapRotation, nudgeCenter, nudgeRotationStep, nudgeScaleStep } from "./cardIconLayout";
 import { saveIconLayout, fetchDefaultIconResults, type IconSearchItem } from "./cardIconApi";
@@ -166,15 +166,26 @@ const FlashcardsLearnPage: React.FC = () => {
     // Cancel discards them). 'theme' = follow the device/app theme (default).
     const [textForeign, setTextForeign] = useState<TextColorMode>("theme");
     const [textEnglish, setTextEnglish] = useState<TextColorMode>("theme");
-    // Undo/redo history for the advanced draft: two capped stacks of advDraft snapshots.
+    // Undo/redo history for the advanced draft: two capped stacks of editor snapshots.
+    // A snapshot captures BOTH the icon layout AND the three snap toggle states, so undo
+    // restores the snap setup the same way it restores the icons — toggling a snap on/off
+    // is undoable (the toggle flag is part of the snapshot, not just the geometry it
+    // produced). Order changes ride along in `layout` (reorder only permutes each icon's z).
     // - advHistory (undo): each discrete action (gesture, add, delete, align, mirror,
-    //   reorder) pushes the PRE-change snapshot via pushAdvHistory; undo pops and restores it.
-    // - advFuture (redo): undo pushes the current draft here before restoring; redo replays
-    //   it. Any NEW tracked action (pushAdvHistory) clears the redo stack — the standard
-    //   editor rule that branching off an undo discards the abandoned future.
+    //   reorder, snap toggle) pushes the PRE-change snapshot via pushAdvHistory; undo pops
+    //   and restores it.
+    // - advFuture (redo): undo pushes the current snapshot here before restoring; redo
+    //   replays it. Any NEW tracked action (pushAdvHistory) clears the redo stack — the
+    //   standard editor rule that branching off an undo discards the abandoned future.
+    type AdvSnapshot = {
+        layout: IconLayoutItem[];
+        move: boolean;
+        rotate: boolean;
+        resize: boolean;
+    };
     const ADV_HISTORY_MAX = 100;
-    const [advHistory, setAdvHistory] = useState<IconLayoutItem[][]>([]);
-    const [advFuture, setAdvFuture] = useState<IconLayoutItem[][]>([]);
+    const [advHistory, setAdvHistory] = useState<AdvSnapshot[]>([]);
+    const [advFuture, setAdvFuture] = useState<AdvSnapshot[]>([]);
     // Refs are the SYNCHRONOUS source of truth for the draft + both history stacks. They
     // are kept current two ways: refreshed on every render (below) AND written immediately
     // by the mutators (setAdvDraftBoth / undo / redo / pushAdvHistory). The synchronous
@@ -188,8 +199,25 @@ const FlashcardsLearnPage: React.FC = () => {
     advHistoryRef.current = advHistory;
     const advFutureRef = useRef(advFuture);
     advFutureRef.current = advFuture;
+    // Snap toggles are also part of every history snapshot, so they need synchronous refs
+    // too (same rapid-press reasoning as advDraftRef). Refreshed on each render below and
+    // written synchronously by undo/redo when a snapshot is restored. The toggle HANDLERS
+    // (handleToggleSnap*) call setSnap*(next) then pushAdvHistory in the same tick — at
+    // that point the ref still holds the OLD (pre-toggle) value, which is exactly the
+    // pre-change state we want recorded.
+    const snapMoveRef = useRef(snapMove);
+    snapMoveRef.current = snapMove;
+    const snapRotateRef = useRef(snapRotate);
+    snapRotateRef.current = snapRotate;
+    const snapResizeRef = useRef(snapResize);
+    snapResizeRef.current = snapResize;
     const snapshotDraft = useCallback(
-        () => advDraftRef.current.map((it) => ({ ...it })),
+        (): AdvSnapshot => ({
+            layout: advDraftRef.current.map((it) => ({ ...it })),
+            move: snapMoveRef.current,
+            rotate: snapRotateRef.current,
+            resize: snapResizeRef.current,
+        }),
         [],
     );
     // Set the draft through BOTH the ref (synchronous) and state (re-render). Use this in
@@ -201,7 +229,7 @@ const FlashcardsLearnPage: React.FC = () => {
     }, []);
     // Cap-aware push of the current draft onto an undo-style stack.
     const pushCapped = useCallback(
-        (stack: IconLayoutItem[][]) => {
+        (stack: AdvSnapshot[]) => {
             const next = [...stack, snapshotDraft()];
             return next.length > ADV_HISTORY_MAX ? next.slice(next.length - ADV_HISTORY_MAX) : next;
         },
@@ -220,42 +248,55 @@ const FlashcardsLearnPage: React.FC = () => {
     // index against the live draft) so undo/redo never flips a lock. Icons that no longer
     // exist live (e.g. one resurrected by undoing a delete) come back unlocked.
     const withLiveLocks = useCallback(
-        (snapshot: IconLayoutItem[]) =>
-            snapshot.map((it, idx) => ({ ...it, locked: advDraftRef.current[idx]?.locked })),
+        (layout: IconLayoutItem[]) =>
+            layout.map((it, idx) => ({ ...it, locked: advDraftRef.current[idx]?.locked })),
         [],
+    );
+    // Apply a restored snapshot to the live editor: the layout (carrying live lock flags
+    // across — lock is not undone) AND the snap toggle states, through both refs (sync) and
+    // state (re-render). Shared by undo + redo so they restore the snap setup identically.
+    const applySnapshot = useCallback(
+        (snap: AdvSnapshot) => {
+            const restored = withLiveLocks(snap.layout);
+            advDraftRef.current = restored;
+            snapMoveRef.current = snap.move;
+            snapRotateRef.current = snap.rotate;
+            snapResizeRef.current = snap.resize;
+            setAdvDraft(restored);
+            setSnapMove(snap.move);
+            setSnapRotate(snap.rotate);
+            setSnapResize(snap.resize);
+        },
+        [withLiveLocks],
     );
     const undoAdv = useCallback(() => {
         const h = advHistoryRef.current;
         if (h.length === 0) return;
-        // Stash the current draft on the redo stack, then restore the previous snapshot
-        // (carrying the live lock flags across — lock is not undone).
+        // Stash the current snapshot on the redo stack, then restore the previous one
+        // (layout + snap toggles; lock flags carried live).
         const nextFuture = [...advFutureRef.current, snapshotDraft()];
         const nextHistory = h.slice(0, -1);
-        const restored = withLiveLocks(h[h.length - 1]);
         advFutureRef.current = nextFuture;
         advHistoryRef.current = nextHistory;
-        advDraftRef.current = restored;
         setAdvFuture(nextFuture);
         setAdvHistory(nextHistory);
-        setAdvDraft(restored);
+        applySnapshot(h[h.length - 1]);
         setSelectedIcon(null);
-    }, [snapshotDraft, withLiveLocks]);
+    }, [snapshotDraft, applySnapshot]);
     const redoAdv = useCallback(() => {
         const f = advFutureRef.current;
         if (f.length === 0) return;
-        // Re-stash the current draft on the undo stack, then replay the redo snapshot
-        // (carrying the live lock flags across — lock is not redone).
+        // Re-stash the current snapshot on the undo stack, then replay the redo snapshot
+        // (layout + snap toggles; lock flags carried live).
         const nextHistory = pushCapped(advHistoryRef.current);
         const nextFuture = f.slice(0, -1);
-        const replayed = withLiveLocks(f[f.length - 1]);
         advHistoryRef.current = nextHistory;
         advFutureRef.current = nextFuture;
-        advDraftRef.current = replayed;
         setAdvHistory(nextHistory);
         setAdvFuture(nextFuture);
-        setAdvDraft(replayed);
+        applySnapshot(f[f.length - 1]);
         setSelectedIcon(null);
-    }, [pushCapped, withLiveLocks]);
+    }, [pushCapped, applySnapshot]);
     // Whether "reset to default" has anything to clear (drives greying it out). A draft
     // that is just the plain default icon offers nothing to reset.
     //  - Advanced: also enabled while the action stack is non-empty (a saved design opens
@@ -272,6 +313,11 @@ const FlashcardsLearnPage: React.FC = () => {
     // write isn't swallowed into console.error behind a dead-looking Save button.
     const [saveError, setSaveError] = useState<string | null>(null);
     const [iconSearchOpen, setIconSearchOpen] = useState(false);
+    // The user's last-typed icon-search query, remembered across picker opens for the
+    // whole edit session (cleared on exitEdit). null = never searched → fall back to the
+    // current card's definition-derived default term. "" is a real value (user cleared
+    // the box → reopen in browse-all mode), so we test against null, not falsiness.
+    const [lastIconQuery, setLastIconQuery] = useState<string | null>(null);
     // Prefetched icons8 results for the current card's DEFAULT query, warmed on enter-
     // edit so the picker can render instantly on open. Tagged with the card id + term so
     // a stale prefetch (from a previously-edited card) is never shown for another card.
@@ -333,6 +379,9 @@ const FlashcardsLearnPage: React.FC = () => {
         setIconSearchOpen(false);
         setResetConfirmOpen(false);
         setSelectedIcon(null);
+        // Forget the remembered icon-search query so the next edit session re-seeds the
+        // picker from the card's definition rather than a previous session's query.
+        setLastIconQuery(null);
         // Clear the live toggles on exit; the next edit session re-seeds them from the
         // card's saved snapConfig in enterEdit (they persist per card, migration 88).
         setSnapMove(false);
@@ -449,7 +498,7 @@ const FlashcardsLearnPage: React.FC = () => {
                 const prev = advDraftRef.current;
                 if (prev.length >= ICON_LAYOUT_MAX_ITEMS) return;
                 pushAdvHistory();
-                // New icons spawn at the card center, 20% larger (DEFAULT_ICON_SCALE), on top.
+                // New icons spawn at the card center, 25% larger (DEFAULT_ICON_SCALE), on top.
                 setAdvDraftBoth([
                     ...prev,
                     { iconId, x: 0.5, y: 0.5, scale: DEFAULT_ICON_SCALE, rotation: 0, z: maxZ(prev) + 1 },
@@ -474,7 +523,9 @@ const FlashcardsLearnPage: React.FC = () => {
     // Duplicate the selected icon: clone its appearance (iconId / scale / rotation /
     // flipX) but drop the copy at the default new-icon spawn spot (card center) on top
     // of the stack, mirroring handlePickIcon's append. The new copy becomes selected so
-    // the user can immediately drag it off the original.
+    // the user can immediately drag it off the original. The copy is always unlocked even
+    // when the source is locked, so the user can immediately drag/edit it without first
+    // unlocking (a locked copy spawned on top of its locked original would be a trap).
     const handleDuplicateSelected = useCallback(() => {
         if (selectedIcon === null) return;
         const prev = advDraftRef.current;
@@ -482,7 +533,7 @@ const FlashcardsLearnPage: React.FC = () => {
         const src = prev[selectedIcon];
         if (!src) return;
         pushAdvHistory();
-        const copy: IconLayoutItem = { ...src, x: 0.5, y: 0.5, z: maxZ(prev) + 1 };
+        const copy: IconLayoutItem = { ...src, x: 0.5, y: 0.5, z: maxZ(prev) + 1, locked: false };
         setAdvDraftBoth([...prev, copy]);
         // The appended copy is the last item — select it (index = old length).
         setSelectedIcon(prev.length);
@@ -512,12 +563,21 @@ const FlashcardsLearnPage: React.FC = () => {
     // Lock is deliberately NOT a tracked action — it pushes no undo history, and undo/redo
     // carry the live lock flags across (see withLiveLocks). So you can lock an icon and
     // still undo/redo its geometry, and undo/redo never flips the lock back on/off.
+    // Toggle the lock of the icon at a specific layout index. Shared by the toolbar's
+    // lock button (acts on the selection) and the order list's per-row lock symbol (acts
+    // on that row's icon, regardless of selection).
+    const handleToggleLockAt = useCallback(
+        (idx: number) => {
+            setAdvDraftBoth(
+                advDraftRef.current.map((it, i) => (i === idx ? { ...it, locked: !it.locked } : it)),
+            );
+        },
+        [setAdvDraftBoth],
+    );
     const handleToggleLock = useCallback(() => {
         if (selectedIcon === null) return;
-        setAdvDraftBoth(
-            advDraftRef.current.map((it, idx) => (idx === selectedIcon ? { ...it, locked: !it.locked } : it)),
-        );
-    }, [selectedIcon, setAdvDraftBoth]);
+        handleToggleLockAt(selectedIcon);
+    }, [selectedIcon, handleToggleLockAt]);
 
     // Whether the currently selected advanced icon is locked (drives the lock button state).
     const selectedLocked =
@@ -536,32 +596,39 @@ const FlashcardsLearnPage: React.FC = () => {
 
     // ── Snap toggles ──────────────────────────────────────────────────────────
     // Each toggle quantizes one operation to a discrete increment. Turning a toggle ON
-    // snaps EVERY icon for that property immediately (one undo step) so existing placements
-    // jump onto the grid; the canvas then keeps future gestures quantized while it's on.
-    // Turning it OFF only flips the flag (icons keep their snapped values). The shared
-    // `applySnapAll` snapshots history once, then maps the patch over the live draft.
-    const applySnapAll = useCallback(
-        (patch: (it: IconLayoutItem) => Partial<IconLayoutItem>) => {
+    // snaps EVERY icon for that property immediately so existing placements jump onto the
+    // grid; the canvas then keeps future gestures quantized while it's on. Turning it OFF
+    // just flips the flag (icons keep their snapped values).
+    //
+    // Either direction is a SINGLE undoable step. `toggleSnap` snapshots history FIRST
+    // (capturing the pre-change toggle states + geometry), then flips the flag, then — only
+    // when turning ON — maps the snap over every icon. Because the toggle states are part of
+    // the snapshot, undo/redo restores the toggle itself (not just the geometry it produced)
+    // and turning a snap OFF is now undoable too (it pushes history like turning it on).
+    const toggleSnap = useCallback(
+        (
+            on: boolean,
+            setFlag: (v: boolean) => void,
+            patch: (it: IconLayoutItem) => Partial<IconLayoutItem>,
+        ) => {
             pushAdvHistory();
-            setAdvDraftBoth(advDraftRef.current.map((it) => ({ ...it, ...patch(it) })));
+            setFlag(on);
+            if (on) setAdvDraftBoth(advDraftRef.current.map((it) => ({ ...it, ...patch(it) })));
         },
         [pushAdvHistory, setAdvDraftBoth],
     );
-    const handleToggleSnapMove = useCallback(() => {
-        const next = !snapMove;
-        setSnapMove(next);
-        if (next) applySnapAll((it) => snapCenterToGrid(it.x, it.y));
-    }, [snapMove, applySnapAll]);
-    const handleToggleSnapRotate = useCallback(() => {
-        const next = !snapRotate;
-        setSnapRotate(next);
-        if (next) applySnapAll((it) => ({ rotation: snapRotation(it.rotation) }));
-    }, [snapRotate, applySnapAll]);
-    const handleToggleSnapResize = useCallback(() => {
-        const next = !snapResize;
-        setSnapResize(next);
-        if (next) applySnapAll((it) => ({ scale: snapScaleToStep(it.scale) }));
-    }, [snapResize, applySnapAll]);
+    const handleToggleSnapMove = useCallback(
+        () => toggleSnap(!snapMove, setSnapMove, (it) => snapCenterToGrid(it.x, it.y)),
+        [snapMove, toggleSnap],
+    );
+    const handleToggleSnapRotate = useCallback(
+        () => toggleSnap(!snapRotate, setSnapRotate, (it) => ({ rotation: snapRotation(it.rotation) })),
+        [snapRotate, toggleSnap],
+    );
+    const handleToggleSnapResize = useCallback(
+        () => toggleSnap(!snapResize, setSnapResize, (it) => ({ scale: snapScaleToStep(it.scale) })),
+        [snapResize, toggleSnap],
+    );
 
     // ── Shift menu: fine step-nudges of the selected icon ──────────────────────
     // The Shift dropdown nudges the selected icon by one step per tap: cardinal moves,
@@ -874,10 +941,22 @@ const FlashcardsLearnPage: React.FC = () => {
                 // landing inside the canvas are left alone (it handles its own deselect), and
                 // taps on the toolbar/menus are ignored so adjusting controls keeps the
                 // selection. See docs/CARD_ICON_LAYOUT.md.
+                //
+                // The toolbar's dropdowns (align / shift / snap / order / contrast) are MUI
+                // Menu/Popover PORTALED to <body>, so their cells are NOT DOM-descendants of
+                // `.card-edit-toolbar`. But React synthetic events bubble through the React
+                // tree, not the DOM tree, so a press on a menu cell still fires THIS handler —
+                // and `closest(".card-edit-toolbar")` misses it, deselecting before the cell's
+                // onClick runs (turning align / shift into no-ops). So also exempt presses
+                // inside any open dropdown via its own portaled class.
                 onPointerDown={(e) => {
                     if (!(editMode && advMode) || selectedIcon === null) return;
                     const el = e.target as HTMLElement;
-                    if (!el.closest(".card-icon-canvas") && !el.closest(".card-edit-toolbar")) {
+                    if (
+                        !el.closest(".card-icon-canvas") &&
+                        !el.closest(".card-edit-toolbar") &&
+                        !el.closest(TOOLBAR_DROPDOWN_SELECTOR)
+                    ) {
                         setSelectedIcon(null);
                     }
                 }}
@@ -915,6 +994,7 @@ const FlashcardsLearnPage: React.FC = () => {
                             selectedLocked={selectedLocked}
                             onReorder={handleReorder}
                             onReorderStart={pushAdvHistory}
+                            onToggleLockAt={handleToggleLockAt}
                             onSelectIcon={setSelectedIcon}
                             selectedIndex={selectedIcon}
                             snapMove={snapMove}
@@ -1091,10 +1171,12 @@ const FlashcardsLearnPage: React.FC = () => {
                 onClose={() => setIconSearchOpen(false)}
                 title={advMode ? "Add an icon" : "Change icon"}
                 onPick={handlePickIcon}
-                // Seed the search with the card's English meaning (parsed via the shared
-                // iconSearchTerm: stripParentheses to match the card display, then the
-                // "to " / "to be " infinitive strips) so relevant icons show immediately.
-                initialTerm={iconSearchTerm(displayCurrentEntry?.definition)}
+                // Seed the search with the user's last-typed query if they've searched
+                // this edit session (remembered across opens); otherwise the card's English
+                // meaning (parsed via the shared iconSearchTerm: stripParentheses to match
+                // the card display, then the "to " / "to be " infinitive strips).
+                initialTerm={lastIconQuery ?? iconSearchTerm(displayCurrentEntry?.definition)}
+                onTermChange={setLastIconQuery}
                 // Render the warmed default-query results instantly on open (when they
                 // belong to THIS card); typing a new term reverts to a live search.
                 prefetched={pickerPrefetched}

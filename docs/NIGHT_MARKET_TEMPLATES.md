@@ -60,9 +60,18 @@ Every cell has exactly one walkability class:
 
 > **Note:** `communal-walkable` is a **new walkability tier** the current pedestrian
 > algorithm does not model yet. The street graph ignores these cells entirely; only
-> the tile graph marks them walkable. How peds use communal space (free roaming vs.
-> only as last-mile connective tissue) is an open question — see
-> [Open questions](#open-questions).
+> the tile graph marks them walkable.
+>
+> **What communal space is for:** parks, plazas, and similar open areas meant for
+> **relaxing and playing — not for traffic or servicing.** This is a hard authoring
+> invariant: **a stand's access tile never lives in a `communal-walkable` cell**
+> (access tiles are always on a `street-walkable` edge body or inside a node — see
+> [PEDESTRIAN_WALKING_ALGORITHM.md](./PEDESTRIAN_WALKING_ALGORITHM.md) last-mile).
+> Because nothing a pedestrian *must* reach is ever in communal space, the current
+> street-graph-only movement model needs **no changes** to support these cells.
+> Future pedestrian behaviors **may** opt in to communal space (e.g. peds wandering
+> into a park to idle/play), but that is additive and not required for the system to
+> function.
 
 ---
 
@@ -102,7 +111,8 @@ terminates cleanly.
 - Because a cell's class can flip at runtime (see
   [Conditional cell classes](#conditional-cell-classes--template-versions)), the
   autotile sprite of a cell **and its neighbors** must be recomputed whenever any
-  trigger changes (placeholder occupancy *or* a neighbor template appearing/leaving),
+  trigger changes (placeholder occupancy *or* a neighbor template appearing —
+  templates are append-only, so they only ever appear, never leave),
   not just at template placement.
 
 > **TBD:** the exact tileset scheme (4-bit edge-only vs 8-bit blob/47-tile, which
@@ -185,7 +195,8 @@ Consequences:
 
 - The **tile graph, street graph, and autotile sprites must be recomputed** whenever
   any input to these conditions changes — a placeholder's occupancy *or* a neighbor
-  template being placed/removed — not just when a template is first placed.
+  template being placed (templates are append-only — never removed) — not just when
+  a template is first placed.
 - **No speculative edge-signature matching.** A new template is only placed when the
   existing template is **full** (all placeholders occupied — see
   [Tiling & Placement](#tiling--placement)). At that moment every *occupancy-driven*
@@ -348,9 +359,27 @@ it runs in the **same transaction** that debits the minutes:
 1. After the debit, compute `target = unlocks(totalMinutePoints)`.
 2. While the user has **more** unlocks than `target`, **delete unlocks at random**
    from `nightmarketunlocks` until the count matches.
-3. **Remove now-empty templates.** Any placed template left with **zero occupied
-   placeholders** is deleted from `nightmarkettemplates` — **except the hub/origin
-   template**, which always persists (it is the 0-minute baseline).
+
+**Templates are append-only — they are never removed.** Decay only ever deletes
+*unlocks* (placeholder occupants); the placed templates themselves persist for the
+life of the account, even if they decay to **zero occupied placeholders**. An
+emptied-out template simply renders its default (unoccupied) version and keeps its
+cells/streets in the graph.
+
+Consequences:
+
+- **No empty-template cleanup, ever.** There is no "remove now-empty templates"
+  step and no hub-exception to special-case — *everything* persists, including the
+  hub.
+- **Freed placeholders return to the pool.** A deleted unlock reverts its
+  placeholder to empty, and that slot is reusable by a future unlock. Because
+  placement picks among **all** placed templates' free placeholders (see
+  [Tiling & Placement](#tiling--placement)), a later re-granted unlock backfills
+  these empties before any new template is spawned.
+- **Adjacency-triggered streets become permanent.** A conditional street kept alive
+  by a `templateAdjacent` trigger ([Why streets carry an adjacency
+  dependency](#why-streets-carry-an-adjacency-dependency-decay-safety)) can never be
+  orphaned, since the neighbor template it depends on is itself never removed.
 
 > **No new `minutesLost` table.** The minute deduction is already recorded as
 > `userminutepoints.penaltyMinutes` (keyed `userId, streakDate, language`) by the
@@ -445,23 +474,24 @@ Templates **replace hand-authored tile registration** as the source for the grap
 
 ## Open questions
 
-1. **Communal-walkable routing:** do pedestrians free-roam communal cells, or are
-   they only connective tissue for last-mile approach? The street graph ignores
-   them, so the pedestrian algorithm needs a defined behavior for them.
-2. **Placement algorithm:** selection/ordering policy, gap/overlap handling,
+1. **Placement algorithm:** selection/ordering policy, gap/overlap handling,
    multi-edge constraints (see [Tiling & Placement](#tiling--placement)).
-3. **Street-recovery algorithm:** how to derive `Street` objects from a stitched
+2. **Street-recovery algorithm:** how to derive `Street` objects from a stitched
    cell grid (see [Feeding TILE_GRAPH / STREET_GRAPH](#feeding-tile_graph--street_graph)).
-4. **Tileset scheme:** the autotiling bitmask/atlas
+3. **Tileset scheme:** the autotiling bitmask/atlas
    (see [Tile rendering](#tile-rendering-autotiling)).
-5. **Empty-template removal vs. structural dependency:** decay safety keeps a
-   conditional *street* alive via the neighbor's adjacency trigger
-   ([Why streets carry an adjacency dependency](#why-streets-carry-an-adjacency-dependency-decay-safety)),
-   but if the template *holding* that street decays to **zero occupants**, the
-   empty-template cleanup ([Unlock economy](#losing-minutes-removes-unlocks)) would
-   delete it and orphan the neighbor that attached through it. Must cleanup refuse to
-   remove an empty template that a still-present neighbor depends on (i.e. is the
-   "remove empty templates" rule subordinate to template-adjacency dependencies)?
+
+> **Resolved — communal-walkable routing.** Communal cells are for parks/plazas
+> (relax/play), never for traffic or servicing — and a stand's access tile never
+> sits in one (see [Cell walkability classes](#cell-walkability-classes)). Nothing a
+> pedestrian must reach lives there, so the street-graph-only movement model needs
+> no changes; future ped behaviors may opt in to communal space additively.
+
+> **Resolved — empty-template removal.** Templates are **append-only**: once placed
+> they are never removed, even when they decay to zero occupants (see
+> [Losing minutes removes unlocks](#losing-minutes-removes-unlocks)). This removes
+> the orphaning risk entirely, so the former "empty-template removal vs. structural
+> dependency" question no longer applies.
 
 ---
 
@@ -479,7 +509,8 @@ Code this doc will depend on / drive once implemented:
 - `users.totalMinutePoints` — the minute accumulator the unlock schedule reads
   (see [MINUTE_POINTS_SYSTEM.md](./MINUTE_POINTS_SYSTEM.md)).
 - `database/cron/expire-stale-streaks.sql` — the hourly maintenance cron gains an
-  unlock-removal + empty-template-cleanup branch (see
+  **unlock-removal** branch (templates are append-only, so there is no
+  template-cleanup step; see
   [STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md)). Reuses
   `userminutepoints.penaltyMinutes` as the loss audit trail (no new table).
 

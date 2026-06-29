@@ -42,7 +42,7 @@ dotenv.config({ path: path.join(__dirname, '../../../.env.docker') });
 
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
-import { initRunLog } from '../run-log.js';
+import { initRunLog, cachedSystem } from '../run-log.js';
 const SCRIPT_VERSION = 2; // bump when this script's logic/prompt changes
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -188,19 +188,22 @@ async function generateDefinition(word, partsOfSpeech, model = GEN_MODEL) {
   const posList = Array.isArray(partsOfSpeech) ? partsOfSpeech.filter(Boolean) : [];
   const posLine = posList.length > 0 ? `Parts of speech: ${posList.join(', ')}` : '';
 
-  const prompt = `You are a Spanish language expert writing concise English definitions for a learner dictionary.
-
-Word: ${word}
-${posLine}
+  // Static instruction prefix → cached system block; per-entry word/POS → user
+  // message so the cached prefix is byte-identical across the run.
+  const systemText = `You are a Spanish language expert writing concise English definitions for a learner dictionary.
 
 ${DEFINITION_RULES_TEXT}
 
-Respond with ONLY the JSON object (keys = the parts of speech above, values = each definition) — no markdown fences, no extra prose.`;
+Respond with ONLY the JSON object (keys = the parts of speech given, values = each definition) — no markdown fences, no extra prose.`;
+
+  const prompt = `Word: ${word}
+${posLine}`;
 
   const response = await anthropic.messages.create({
     model,
     max_tokens: 600,
     temperature: 0.3,
+    system: cachedSystem(systemText),
     messages: [{ role: 'user', content: prompt }],
   });
 
@@ -215,17 +218,16 @@ Respond with ONLY the JSON object (keys = the parts of speech above, values = ea
 async function validateDefinition(word, partsOfSpeech, proposed) {
   const posList = Array.isArray(partsOfSpeech) ? partsOfSpeech.filter(Boolean) : [];
 
-  const prompt = `You are a strict reviewer checking a per-POS English definition object for a Spanish word. Apply every constraint formally — do not approve if any rule is violated, including for any single POS value.
+  // Static reviewer scaffold (rules + violation codes + response format) → cached
+  // system; the per-entry word/POS/proposed object → user message.
+  const systemText = `You are a strict reviewer checking a per-POS English definition object for a Spanish word. Apply every constraint formally — do not approve if any rule is violated, including for any single POS value. Respond only with valid JSON.
 
 ${DEFINITION_RULES_TEXT}
 
-Word: ${word}
-Parts of speech: ${posList.join(', ') || 'N/A'}
-Proposed definition object (per-POS char counts shown; per-POS budget is ${MAX_LEN_PER_POS}):
-${annotateDefForPrompt(proposed)}
-
 Violation codes you may cite:
 ${Object.entries(VIOLATION_CODE_LABELS).map(([k, v]) => `  - "${k}": ${v}`).join('\n')}
+
+The per-POS budget is ${MAX_LEN_PER_POS} characters.
 
 If the object satisfies every constraint, respond with: {"accept": true}
 If any constraint is violated (for any POS value), respond with:
@@ -233,11 +235,16 @@ If any constraint is violated (for any POS value), respond with:
 
 Respond with ONLY valid JSON, no markdown.`;
 
+  const prompt = `Word: ${word}
+Parts of speech: ${posList.join(', ') || 'N/A'}
+Proposed definition object (per-POS char counts shown):
+${annotateDefForPrompt(proposed)}`;
+
   const response = await anthropic.messages.create({
     model: VALIDATOR_MODEL,
     max_tokens: 300,
     temperature: 0.1,
-    system: 'You are a strict reviewer of English definitions for Spanish words. Respond only with valid JSON.',
+    system: cachedSystem(systemText),
     messages: [{ role: 'user', content: prompt }],
   });
 

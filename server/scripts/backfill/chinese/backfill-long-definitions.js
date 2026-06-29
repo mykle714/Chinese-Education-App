@@ -48,7 +48,7 @@ dotenv.config({ path: path.join(__dirname, '../../../.env.docker') });
 
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
-import { initRunLog } from '../run-log.js';
+import { initRunLog, cachedSystem } from '../run-log.js';
 const SCRIPT_VERSION = 11; // bump when this script's logic/prompt changes
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -262,20 +262,24 @@ async function generateDefinition(word, partsOfSpeech, displayDefinition, model 
   const posList = Array.isArray(partsOfSpeech) ? partsOfSpeech.filter(Boolean) : [];
   const posLine = posList.length > 0 ? `Parts of speech (primary first): ${posList.join(', ')}` : '';
 
-  const prompt = `You are a Chinese language expert writing concise English definitions for a learner dictionary.
-
-Word: ${word}
-${posLine}
-${displayDefinitionBlock(displayDefinition)}
+  // Static instruction prefix (identical for every entry) → cached system block.
+  // Per-entry data (word/POS/displayed gloss) stays in the user message so the
+  // cached prefix is byte-identical across the run. See cachedSystem in run-log.js.
+  const systemText = `You are a Chinese language expert writing concise English definitions for a learner dictionary.
 
 ${definitionRulesText()}
 
-Respond with ONLY the JSON object (keys = the parts of speech above, values = each definition) — no markdown fences, no extra prose.`;
+Respond with ONLY the JSON object (keys = the parts of speech given, values = each definition) — no markdown fences, no extra prose.`;
+
+  const prompt = `Word: ${word}
+${posLine}
+${displayDefinitionBlock(displayDefinition)}`;
 
   const response = await anthropic.messages.create({
     model,
     max_tokens: 600,
     temperature: 0.3,
+    system: cachedSystem(systemText),
     messages: [{ role: 'user', content: prompt }],
   });
 
@@ -290,18 +294,16 @@ Respond with ONLY the JSON object (keys = the parts of speech above, values = ea
 async function validateDefinition(word, partsOfSpeech, displayDefinition, proposed) {
   const posList = Array.isArray(partsOfSpeech) ? partsOfSpeech.filter(Boolean) : [];
 
-  const prompt = `You are a strict reviewer checking a per-POS English definition object for a Chinese word. Apply every constraint formally — do not approve if any rule is violated, including for any single POS value.
+  // Static reviewer scaffold (rules + violation codes + response format) → cached
+  // system block; the per-entry word/POS/gloss/proposed object → user message.
+  const systemText = `You are a strict reviewer checking a per-POS English definition object for a Chinese word. Apply every constraint formally — do not approve if any rule is violated, including for any single POS value. Respond only with valid JSON.
 
 ${definitionRulesText()}
 
-Word: ${word}
-Parts of speech (primary first): ${posList.join(', ') || 'N/A'}
-${displayDefinitionBlock(displayDefinition)}
-Proposed definition object (per-POS char counts shown; per-POS budget is ${MAX_LEN_PER_POS}):
-${annotateDefForPrompt(proposed)}
-
 Violation codes you may cite:
 ${Object.entries(VIOLATION_CODE_LABELS).map(([k, v]) => `  - "${k}": ${v}`).join('\n')}
+
+The per-POS budget is ${MAX_LEN_PER_POS} characters.
 
 If the object satisfies every constraint, respond with: {"accept": true}
 If any constraint is violated (for any POS value), respond with:
@@ -309,11 +311,17 @@ If any constraint is violated (for any POS value), respond with:
 
 Respond with ONLY valid JSON, no markdown.`;
 
+  const prompt = `Word: ${word}
+Parts of speech (primary first): ${posList.join(', ') || 'N/A'}
+${displayDefinitionBlock(displayDefinition)}
+Proposed definition object (per-POS char counts shown):
+${annotateDefForPrompt(proposed)}`;
+
   const response = await anthropic.messages.create({
     model: VALIDATOR_MODEL,
     max_tokens: 300,
     temperature: 0.1,
-    system: 'You are a strict reviewer of English definitions for Chinese words. Respond only with valid JSON.',
+    system: cachedSystem(systemText),
     messages: [{ role: 'user', content: prompt }],
   });
 

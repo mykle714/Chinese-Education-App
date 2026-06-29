@@ -31,6 +31,7 @@ sdet = spanish dictionary entries table
 cvet = chinese vocab entries table
 svet = spanish vocab entries table
 fie = flashcard icon editor
+dd = display definition (the definition that we display on a flashcard)
 
 
 ## Terminology: "Learn Now" cards

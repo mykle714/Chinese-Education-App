@@ -263,6 +263,11 @@ const CardFaceSide: React.FC<{
     const hasCustom = showIcon && !!iconLayout && iconLayout.length > 0;
     const editing = !!editCanvas;
     return (
+        // OUTER face box — carries the 3D flip transform, backface culling, and the
+        // away-face visibility/inert logic, but is OVERFLOW:VISIBLE. This lets the edit
+        // canvas's selection overlay (outline + resize handle) overflow the card edge into
+        // the surrounding padding (see docs/CARD_ICON_LAYOUT.md). The card-boundary clipping
+        // is done by the INNER box below, not here.
         <Box sx={{
             position: "absolute",
             top: 0, left: 0, width: "100%", height: "100%",
@@ -271,9 +276,10 @@ const CardFaceSide: React.FC<{
             ...(rotated && { transform: "rotateY(180deg)" }),
             backgroundColor: fc.flashCard,
             borderRadius: "12px",
-            // Clip the custom icon layer / edit canvas to the card boundary so icons
-            // partially off the card are cut off and never paint outside it.
-            overflow: "hidden",
+            // NOT clipped here — see the inner clip box. The edit canvas (a child of this
+            // outer box) needs overflow:visible so its selection indicators can poke past
+            // the card edge into the surrounding padding.
+            overflow: "visible",
             // Explicit visual hiding of the away-facing face. `backfaceVisibility:hidden`
             // alone is unreliable on some mobile WebKit/Blink builds (prod bug: the
             // rotated-away Side 1 bled through the back, mirrored by the parent's
@@ -286,71 +292,104 @@ const CardFaceSide: React.FC<{
             visibility: inert ? "hidden" : "visible",
             transition: `visibility 0s ${inert ? CARD_FLY_OUT_MS / 2 : 0}ms`,
             ...(inert && { pointerEvents: "none" }),
-            display: "flex",
-            alignItems: "center",
-            justifyContent: CARD_FACE_JUSTIFY,
         }}>
-            {cornerBadge}
-            {/* Icon layer sits BEHIND the content (cpcd / English / buttons) so the
-                card info always reads on top — for a saved arrangement AND while
-                editing. During edit the live canvas replaces the static layer; the
-                content above is made non-interactive so pointer events fall through to
-                the canvas even where they overlap the text. */}
-            {editing ? editCanvas : (hasCustom && <CardIconLayer layout={iconLayout!} />)}
-            {/* Default single icon — rendered through the SAME CardIconLayer geometry as
-                the editor's seeded basic icon (defaultLayoutForIcon: centered upper-third,
-                default scale), so its on-screen size is identical whether or not the editor
-                is open. When the entry has no icon at all, fall back to the empty
-                placeholder box (positioned at the same 33.33% spot). zIndex 0 keeps it
-                behind the text. */}
-            {showIcon && !hasCustom && !editing && (
-                iconId
-                    ? <CardIconLayer layout={defaultLayoutForIcon(iconId)} />
-                    : (
-                        <Box sx={{ position: "absolute", top: "33.33%", left: "50%", transform: "translate(-50%, -50%)", zIndex: 0 }}>
-                            <CardImage iconId={null} />
-                        </Box>
-                    )
-            )}
-            <CardContent
-                className={rotated ? undefined : "mobile-demo-flashcard-content"}
-                sx={{
-                    width: "100%",
-                    height: "100%",
-                    padding: "clamp(16px, 7%, 72px) 30px",
-                    boxSizing: "border-box",
-                    // Content sits above the icon layer. While editing it stays fully
-                    // visible but non-interactive, so the icons (canvas) below can be
-                    // manipulated through it.
-                    position: "relative",
-                    zIndex: 1,
-                    ...(editing && { pointerEvents: "none" }),
-                }}
-            >
-                <Box
-                    className={rotated ? undefined : "mobile-demo-flashcard-inner"}
-                    sx={{ position: "relative", height: "100%", width: "100%", minHeight: 0 }}
+            {/* Edit canvas lives in the OUTER (overflow:visible) box so its selection
+                overlay can escape the card boundary. The canvas clips its OWN icons to the
+                card internally, so partially-off-card icons are still cut off. */}
+            {editing && editCanvas}
+            {/* INNER clip box — clips the static icon layer + content to the card boundary
+                (icons partially off the card are cut off and never paint outside it). Carries
+                the rounded corners and the centered-content flex layout that used to live on
+                the face box.
+                While editing it MUST be `pointerEvents: none`: it is a sibling painted ABOVE
+                the edit canvas (the canvas is zIndex 0, this box is later in DOM order), so as
+                an opaque-to-hit-testing wrapper it would otherwise intercept every press over
+                the card — blocking icon select/drag AND the overlay's resize handle. Making it
+                inert while editing lets presses fall through to the canvas below. (Its
+                CardContent is already inert via the editing gate; nothing inside needs pointer
+                events during an edit.) */}
+            <Box sx={{
+                position: "absolute",
+                inset: 0,
+                overflow: "hidden",
+                borderRadius: "12px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: CARD_FACE_JUSTIFY,
+                ...(editing && { pointerEvents: "none" }),
+            }}>
+                {cornerBadge}
+                {/* Icon layer sits BEHIND the content (cpcd / English / buttons) so the
+                    card info always reads on top — for a saved arrangement. (While editing the
+                    live canvas in the outer box replaces this static layer; the content below
+                    is made non-interactive so pointer events fall through to the canvas even
+                    where they overlap the text.) */}
+                {!editing && hasCustom && <CardIconLayer layout={iconLayout!} />}
+                {/* Default single icon — rendered through the SAME CardIconLayer geometry as
+                    the editor's seeded basic icon (defaultLayoutForIcon: centered upper-third,
+                    default scale), so its on-screen size is identical whether or not the editor
+                    is open. When the entry has no icon at all, fall back to the empty
+                    placeholder box (positioned at the same 33.33% spot). zIndex 0 keeps it
+                    behind the text. */}
+                {showIcon && !hasCustom && !editing && (
+                    iconId
+                        ? <CardIconLayer layout={defaultLayoutForIcon(iconId)} />
+                        : (
+                            <Box sx={{ position: "absolute", top: "33.33%", left: "50%", transform: "translate(-50%, -50%)", zIndex: 0 }}>
+                                <CardImage iconId={null} />
+                            </Box>
+                        )
+                )}
+                <CardContent
+                    className={rotated ? undefined : "mobile-demo-flashcard-content"}
+                    sx={{
+                        width: "100%",
+                        height: "100%",
+                        padding: "clamp(16px, 7%, 72px) 30px",
+                        boxSizing: "border-box",
+                        // Content sits above the icon layer. While editing it stays fully
+                        // visible but non-interactive, so the icons (canvas) below can be
+                        // manipulated through it.
+                        position: "relative",
+                        zIndex: 1,
+                        // `pointer-events: none` here is NOT enough on its own: the cpcd pinyin
+                        // spans set `pointer-events: auto` INLINE (CPCDRow — so they're
+                        // drag-selectable normally), and an inline style beats an inherited
+                        // `none`. That let a tap on pinyin text register on the span instead of
+                        // falling through to the icon canvas behind. Forcing every descendant to
+                        // `none !important` while editing defeats those inline overrides so the
+                        // whole content layer is truly inert and taps reach the canvas.
+                        ...(editing && {
+                            pointerEvents: "none",
+                            "& *": { pointerEvents: "none !important" },
+                        }),
+                    }}
                 >
-                    {/* Card text — lower third of the card (≈1/3 up from the bottom). */}
                     <Box
-                        className={contentClassName}
-                        sx={{
-                            position: "absolute",
-                            top: "66.67%",
-                            left: "50%",
-                            transform: "translate(-50%, -50%)",
-                            width: "100%",
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: contentGap,
-                            alignItems: "center",
-                            boxSizing: "border-box",
-                        }}
+                        className={rotated ? undefined : "mobile-demo-flashcard-inner"}
+                        sx={{ position: "relative", height: "100%", width: "100%", minHeight: 0 }}
                     >
-                        {children}
+                        {/* Card text — lower third of the card (≈1/3 up from the bottom). */}
+                        <Box
+                            className={contentClassName}
+                            sx={{
+                                position: "absolute",
+                                top: "66.67%",
+                                left: "50%",
+                                transform: "translate(-50%, -50%)",
+                                width: "100%",
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: contentGap,
+                                alignItems: "center",
+                                boxSizing: "border-box",
+                            }}
+                        >
+                            {children}
+                        </Box>
                     </Box>
-                </Box>
-            </CardContent>
+                </CardContent>
+            </Box>
         </Box>
     );
 };

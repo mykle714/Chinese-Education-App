@@ -56,7 +56,7 @@ dotenv.config({ path: path.join(__dirname, '../../../.env.docker') });
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
 import { posAbbrevToFriendly } from '../shared/lib/esPos.js';
-import { initRunLog } from '../run-log.js';
+import { initRunLog, cachedSystem } from '../run-log.js';
 const SCRIPT_VERSION = 1; // bump when this script's logic/prompt changes
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -199,10 +199,11 @@ function checkShape(result, senses) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function generateGroups(word, senses, model = GEN_MODEL) {
-  const prompt = `${DELEGATION_RULES}
+  // Static delegation rules + output shape → cached system; per-entry word +
+  // source senses → user message.
+  const systemText = `You are a Spanish lexicographer reorganizing dictionary senses by part of speech. Respond only with valid JSON.
 
-Word: ${word}
-Source senses (JSON): ${JSON.stringify(senses)}
+${DELEGATION_RULES}
 
 Respond with ONLY this JSON shape, no markdown, no commentary:
 {
@@ -218,10 +219,13 @@ Respond with ONLY this JSON shape, no markdown, no commentary:
   "droppedSenses": [ { "pos": "<abbrev>", "gender": "<token>", "gloss": "<short gloss>" } ]
 }`;
 
+  const prompt = `Word: ${word}
+Source senses (JSON): ${JSON.stringify(senses)}`;
+
   const response = await anthropic.messages.create({
     model,
     max_tokens: 1500,
-    system: 'You are a Spanish lexicographer reorganizing dictionary senses by part of speech. Respond only with valid JSON.',
+    system: cachedSystem(systemText),
     messages: [{ role: 'user', content: prompt }],
   });
   return parseJsonFromResponse(response.content[0].text);
@@ -233,13 +237,11 @@ Respond with ONLY this JSON shape, no markdown, no commentary:
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function validateGroups(word, senses, proposed) {
-  const prompt = `You are a strict reviewer of a Spanish dictionary reorganization. Apply the rules formally.
+  // Static reviewer scaffold (rules + checklist + response format) → cached system;
+  // per-entry word + senses + proposed grouping → user message.
+  const systemText = `You are a strict reviewer of a Spanish dictionary reorganization. Apply the rules formally. Respond only with valid JSON.
 
 ${DELEGATION_RULES}
-
-Word: ${word}
-Source senses (JSON): ${JSON.stringify(senses)}
-Proposed grouping (JSON): ${JSON.stringify(proposed)}
 
 Check specifically:
   - Is every source definition delegated to the right POS (rule 2)?
@@ -254,11 +256,15 @@ Respond with ONLY one of:
 or
   {"accept": false, "critique": "1-2 sentences naming the specific fix needed"}`;
 
+  const prompt = `Word: ${word}
+Source senses (JSON): ${JSON.stringify(senses)}
+Proposed grouping (JSON): ${JSON.stringify(proposed)}`;
+
   const response = await anthropic.messages.create({
     model: VALIDATOR_MODEL,
     max_tokens: 300,
     temperature: 0.1,
-    system: 'You are a strict reviewer of Spanish dictionary POS/gender reorganization. Respond only with valid JSON.',
+    system: cachedSystem(systemText),
     messages: [{ role: 'user', content: prompt }],
   });
   const parsed = parseJsonFromResponse(response.content[0].text);

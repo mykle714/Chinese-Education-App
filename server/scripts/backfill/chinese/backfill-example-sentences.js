@@ -34,7 +34,7 @@ dotenv.config({ path: path.join(__dirname, '../../../.env.docker') });
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
 import { ALLOWED_POS_TAGS } from '../shared/lib/posTags.js';
-import { initRunLog } from '../run-log.js';
+import { initRunLog, cachedSystem } from '../run-log.js';
 const SCRIPT_VERSION = 2; // bump when this script's logic/prompt changes (v2: numberDict per noun token)
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -275,26 +275,32 @@ async function validatorAgent(word, pronunciation, definitionText, sentences) {
     .map((s, i) => `${i}. ${s.foreignText}  —  ${s.english}  [tense: ${s.tense}]`)
     .join('\n');
 
-  const response = await anthropic.messages.create({
-    model: VALIDATOR_MODEL,
-    max_tokens: 900,
-    temperature: 0.1,
-    system: 'You are a strict native-Mandarin reviewer of example sentences for a Chinese learning app. You catch subtle grammatical and naturalness errors that automated generation tends to make. Respond only with valid JSON.',
-    messages: [{
-      role: 'user',
-      content: `Review each example sentence below for the target word "${word}" (${pronunciation}; meaning: ${definitionText}). Judge each sentence independently. Accept sentences that are natural and correct, even if simple — only reject on a genuine error.
+  // Static reviewer instructions (persona + common-mistakes catalog + response
+  // format) → cached system; the per-entry word + numbered sentences → user.
+  const systemText = `You are a strict native-Mandarin reviewer of example sentences for a Chinese learning app. You catch subtle grammatical and naturalness errors that automated generation tends to make. Respond only with valid JSON.
+
+Judge each sentence independently. Accept sentences that are natural and correct, even if simple — only reject on a genuine error.
 
 ${COMMON_MISTAKES_TEXT}
 
-Sentences:
-${numbered}
-
-Respond with ONLY a JSON array with one object per sentence index above:
+Respond with ONLY a JSON array with one object per sentence index given:
 [
   {"index": 0, "accept": true},
   {"index": 1, "accept": false, "violatedRules": ["degree_complement_order"], "critique": "1-2 sentence explanation of the error and how to fix it"}
 ]
-Include "violatedRules" and "critique" only when accept is false.`,
+Include "violatedRules" and "critique" only when accept is false.`;
+
+  const response = await anthropic.messages.create({
+    model: VALIDATOR_MODEL,
+    max_tokens: 900,
+    temperature: 0.1,
+    system: cachedSystem(systemText),
+    messages: [{
+      role: 'user',
+      content: `Review each example sentence below for the target word "${word}" (${pronunciation}; meaning: ${definitionText}).
+
+Sentences:
+${numbered}`,
     }],
   });
 

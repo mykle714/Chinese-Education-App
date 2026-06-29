@@ -2,6 +2,7 @@ import { memo } from "react";
 import { Box, Typography, Chip, IconButton } from "@mui/material";
 import ForeignText from "./ForeignText";
 import CardIconLayer from "../pages/FlashcardsLearnPage/CardIconLayer";
+import { isAdvancedLayout } from "../pages/FlashcardsLearnPage/cardIconLayout";
 import { stripParentheses } from "../utils/definitionUtils";
 import { resolveTextColor } from "../utils/cardTextColor";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
@@ -27,11 +28,14 @@ interface MiniVocabCardProps {
 // card detail page and the flashcard-learn back-of-card chip).
 
 const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete, onCycle, animationDelayMs }) => {
-    // Render a custom icon arrangement behind the text only for ADVANCED layouts
-    // (2+ icons). Single-icon "basic" layouts and plain default-icon cards keep
-    // the icon-free thumbnail. CardIconLayer is fully percentage-based, so it
-    // scales to this 92×132 card with no pixel math. See docs/CARD_ICON_LAYOUT.md.
-    const hasAdvancedLayout = !!entry.iconLayout && entry.iconLayout.length > 1;
+    // Render a custom icon arrangement behind the text only for ADVANCED layouts:
+    // multiple icons, OR a single icon that has been moved/resized/rotated off its
+    // default placement. Plain default-icon cards keep the icon-free thumbnail. Uses
+    // the shared isAdvancedLayout() gate (cardIconLayout.ts) rather than a hand-rolled
+    // length check so single-icon advanced designs aren't dropped. CardIconLayer is
+    // fully percentage-based, so it scales to this 92×132 card with no pixel math.
+    // See docs/CARD_ICON_LAYOUT.md.
+    const hasAdvancedLayout = isAdvancedLayout(entry.iconLayout);
     // Per-card Contrast text-color overrides (migration 89): apply the same foreign/English
     // colors the flashcard face uses so the thumbnail matches. Undefined = theme default.
     const characterColor = resolveTextColor(entry.textColors?.foreign);

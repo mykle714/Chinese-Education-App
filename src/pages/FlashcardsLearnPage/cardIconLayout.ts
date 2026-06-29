@@ -26,11 +26,21 @@ export const SCALE_MAX = 5;
 export const DEFAULT_ICON_X = 0.5;
 export const DEFAULT_ICON_Y = 0.3333;
 
-/** Default per-icon scale for a freshly seeded / swapped / spawned icon. 1.2 = the
- *  default icon renders 20% larger than the base box (basic-mode display and icons
- *  spawned into advanced mode both start here). Existing saved layouts keep their own
- *  stored scale; only newly created items use this. */
-export const DEFAULT_ICON_SCALE = 1.2;
+/** Default per-icon scale for a freshly seeded / swapped / spawned icon. 1.25 = the
+ *  default icon renders 25% larger than the base box (basic-mode display and icons
+ *  spawned into advanced mode both start here). 1.25 is chosen so the default lands
+ *  EXACTLY on the size-snap grid: BASE_ICON_FRAC·1.25 = 0.28·1.25 = 0.35 = 7 × the
+ *  0.05 SNAP_SIZE_STEP_FRAC, so toggling size-snap on never nudges a default icon.
+ *  Existing saved layouts keep their own stored scale; only newly created items use this. */
+export const DEFAULT_ICON_SCALE = 1.25;
+
+/** Scales that count as a "default placement" for the basic-vs-advanced inference: the
+ *  current default (1.25) plus legacy basic-save defaults (1.2 before the size-snap
+ *  alignment, 1.0 before the 20%-larger bump). A single icon at default x/y with one of
+ *  these scales (no rotation/flip) reads back as basic, so pre-existing basic-saved cards
+ *  keep opening in basic mode. Kept here as the single source of truth; the server mirror
+ *  in `server/dal/shared/advancedLayout.ts` re-lists these values and must stay in sync. */
+export const DEFAULT_PLACEMENT_SCALES = [DEFAULT_ICON_SCALE, 1.2, 1] as const;
 
 /** Our cached-icon image endpoint (transparent SVG/PNG bytes from our DB). */
 export const iconImageUrl = (id: string) =>
@@ -99,9 +109,9 @@ export const iconFlipTransform = (item: IconLayoutItem) =>
  * exactly this, so it's the signature of a basic-saved layout.
  */
 export function isDefaultPlacement(it: IconLayoutItem): boolean {
-  // Accept the current default scale (1.2) OR the legacy 1.0 that basic saves used before
-  // the 20%-larger bump, so pre-existing basic-saved cards still open in basic mode.
-  const defaultScale = it.scale === DEFAULT_ICON_SCALE || it.scale === 1;
+  // Accept the current default scale OR the legacy ones (see DEFAULT_PLACEMENT_SCALES),
+  // so pre-existing basic-saved cards still open in basic mode.
+  const defaultScale = (DEFAULT_PLACEMENT_SCALES as readonly number[]).includes(it.scale);
   return (
     defaultScale &&
     it.rotation === 0 &&

@@ -56,7 +56,7 @@ dotenv.config({ path: path.join(__dirname, '../../../.env.docker') });
 
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
-import { initRunLog } from '../run-log.js';
+import { initRunLog, cachedSystem } from '../run-log.js';
 const SCRIPT_VERSION = 3; // bump when this script's logic/prompt changes
 
 const isSpotCheck = process.argv.includes('--spot-check');
@@ -93,8 +93,9 @@ const REVIEW_LOG_PATH = `/tmp/process-definitions-array-review-${Date.now()}.log
 
 const PASS1_SYSTEM = `You are a Spanish linguistics expert ranking English definitions of a Spanish word for a modern (2020s) Spanish learner's vocabulary card.`;
 
-function pass1Prompt(word, definitions) {
-  return `Reorder the definitions of "${word}" from most to least useful for a modern learner, and remove very low-confidence glosses.
+// Static instruction body (identical every call) → cached system block; the
+// per-entry word + definitions array stays in the user message (pass1User).
+const PASS1_INSTRUCTIONS = `Reorder the given word's definitions from most to least useful for a modern learner, and remove very low-confidence glosses.
 
 Ranking principles (apply in order):
 1. FIRST — The sense a modern Spanish learner is most likely to encounter today. For everyday and tech terms, this is the modern usage, not the etymological core. (e.g. for "móvil", "mobile phone" beats "motive"; for "ratón", "computer mouse" is a common modern sense alongside the animal.)
@@ -139,9 +140,10 @@ Rules:
 - You MAY drop low-value definitions per the Removal guidance above, but you must NEVER add, rephrase, or alter any string. Every definition you return must be copied character-for-character exactly as it appears in the input, including parenthetical notes, punctuation, and formatting.
 - Return at least one definition; never return an empty array.
 - Do not place an exclusively-parenthetical gloss first.
-- Return ONLY a valid JSON array of strings, no explanation.
+- Return ONLY a valid JSON array of strings, no explanation.`;
 
-Word: ${word}
+function pass1User(word, definitions) {
+  return `Word: ${word}
 
 Definitions:
 ${JSON.stringify(definitions, null, 2)}`;
@@ -151,8 +153,10 @@ ${JSON.stringify(definitions, null, 2)}`;
 
 const PASS2_SYSTEM = `You are a Spanish linguistics expert reviewing a junior annotator's ranking of English definitions for a modern Spanish learner's vocabulary card.`;
 
-function pass2Prompt(word, original, pass1) {
-  return `Review the proposed ordering for "${word}" and decide whether to confirm, refine, or flag it.
+// Static instruction body → cached system block; per-entry word + the two orderings
+// go in the user message (pass2User). All instructions lead so the cached prefix is
+// byte-identical across calls.
+const PASS2_INSTRUCTIONS = `Review the proposed ordering for the given word and decide whether to confirm, refine, or flag it.
 
 Ranking principles (the junior was given these — apply the same ones):
 1. FIRST — sense a modern (2020s) Spanish learner is most likely to encounter; for everyday/tech terms, modern usage beats etymological core.
@@ -175,14 +179,6 @@ Common mistakes to catch:
 - Wrongly dropping a valid, useful sense — restore it (copy it verbatim from the original input).
 - Placing an exclusively-parenthetical gloss first.
 
-Word: ${word}
-
-Original input order:
-${JSON.stringify(original, null, 2)}
-
-Junior's proposed order:
-${JSON.stringify(pass1, null, 2)}
-
 Decide:
 - "confirmed" — the junior's order is fine as-is.
 - "refined" — you have a clearly better order. Provide it.
@@ -200,6 +196,15 @@ Rules:
 - You may restore a definition the junior wrongly dropped — it must still come verbatim from the original input.
 - Keep at least one definition, and do not place an exclusively-parenthetical gloss first.
 - Return ONLY the JSON object.`;
+
+function pass2User(word, original, pass1) {
+  return `Word: ${word}
+
+Original input order:
+${JSON.stringify(original, null, 2)}
+
+Junior's proposed order:
+${JSON.stringify(pass1, null, 2)}`;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -254,8 +259,8 @@ async function callPass1(word, definitions, model) {
   const response = await anthropic.messages.create({
     model,
     max_tokens: 1024,
-    system: PASS1_SYSTEM,
-    messages: [{ role: 'user', content: pass1Prompt(word, definitions) }],
+    system: cachedSystem(`${PASS1_SYSTEM}\n\n${PASS1_INSTRUCTIONS}`),
+    messages: [{ role: 'user', content: pass1User(word, definitions) }],
   });
   const raw = response.content[0].text;
   const arrMatch = raw.match(/\[[\s\S]*\]/);
@@ -281,8 +286,8 @@ async function callPass2(word, original, pass1, model) {
   const response = await anthropic.messages.create({
     model,
     max_tokens: 1024,
-    system: PASS2_SYSTEM,
-    messages: [{ role: 'user', content: pass2Prompt(word, original, pass1) }],
+    system: cachedSystem(`${PASS2_SYSTEM}\n\n${PASS2_INSTRUCTIONS}`),
+    messages: [{ role: 'user', content: pass2User(word, original, pass1) }],
   });
   const raw = response.content[0].text;
   const objMatch = raw.match(/\{[\s\S]*\}/);
@@ -320,8 +325,8 @@ async function pass2Critique(word, original, pass1) {
 
 const SHORT_GLOSS_SYSTEM = `You are a Spanish linguistics expert writing an ultra-concise English headword gloss for a modern Spanish learner's vocabulary card.`;
 
-function shortGlossPrompt(word, definitions) {
-  return `The card for "${word}" leads with a definition longer than ${MAX_FIRST_GLOSS_LEN} characters, which is too long for the card's headline slot.
+// Static instruction body → cached system block; word + definitions → user message.
+const SHORT_GLOSS_INSTRUCTIONS = `The given word's card leads with a definition longer than ${MAX_FIRST_GLOSS_LEN} characters, which is too long for the card's headline slot.
 
 Write ONE short English gloss — at most ${MAX_FIRST_GLOSS_LEN} characters, including spaces — that captures the word's most common modern (2020s) meaning. It will be shown first, ahead of the fuller definitions.
 
@@ -329,21 +334,24 @@ Requirements:
 - ${MAX_FIRST_GLOSS_LEN} characters or fewer total.
 - Reads like a clean dictionary headword gloss, NOT a sentence. No trailing period.
 - No parentheticals, no usage notes, no examples.
-- Base it on the most prototypical modern sense; the definitions below (already ordered most- to least-useful) are your guide.
-
-Existing definitions:
-${JSON.stringify(definitions, null, 2)}
+- Base it on the most prototypical modern sense; the provided definitions (already ordered most- to least-useful) are your guide.
 
 Return ONLY a JSON object, no explanation:
 { "gloss": "<short gloss>" }`;
+
+function shortGlossUser(word, definitions) {
+  return `Word: ${word}
+
+Existing definitions:
+${JSON.stringify(definitions, null, 2)}`;
 }
 
 async function callShortGloss(word, definitions, model) {
   const response = await anthropic.messages.create({
     model,
     max_tokens: 256,
-    system: SHORT_GLOSS_SYSTEM,
-    messages: [{ role: 'user', content: shortGlossPrompt(word, definitions) }],
+    system: cachedSystem(`${SHORT_GLOSS_SYSTEM}\n\n${SHORT_GLOSS_INSTRUCTIONS}`),
+    messages: [{ role: 'user', content: shortGlossUser(word, definitions) }],
   });
   const raw = response.content[0].text;
   const objMatch = raw.match(/\{[\s\S]*\}/);

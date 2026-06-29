@@ -37,10 +37,31 @@ const LOG_PATH = path.join(SERVER_DIR, 'logs', 'backfill-runs.jsonl');
  * 0.1x base input (standard Anthropic prompt-cache multipliers).
  */
 const PRICING_PER_MTOK = {
-  'claude-opus-4-8':   { input: 15, output: 75, cacheWrite: 18.75, cacheRead: 1.5 },
-  'claude-sonnet-4-6': { input: 3,  output: 15, cacheWrite: 3.75,  cacheRead: 0.3 },
-  'claude-haiku-4-5':  { input: 1,  output: 5,  cacheWrite: 1.25,  cacheRead: 0.1 },
+  // Opus 4.8 list price is $5/$25 per Mtok (NOT the old $15/$75 Opus-3-era rate).
+  'claude-opus-4-8':   { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
+  'claude-sonnet-4-6': { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 },
+  'claude-haiku-4-5':  { input: 1, output: 5,  cacheWrite: 1.25, cacheRead: 0.1 },
 };
+
+/**
+ * Build a cache-enabled `system` parameter for anthropic.messages.create.
+ *
+ * Prompt caching is a PREFIX match: the cached span must lead the request and be
+ * byte-identical across calls. The backfill scripts send the same large static
+ * instructions/few-shots on every entry and vary only a small per-entry tail, so
+ * we hoist the static text into a single `system` block with an ephemeral
+ * cache_control breakpoint and keep the variable data in the user message.
+ *
+ * Caveat: the cached prefix must clear the model's minimum (~2048 tokens for
+ * Sonnet 4.6, ~4096 for Opus 4.8) or it silently won't cache — keep the full
+ * static instruction set in `staticText`, not just a one-line persona.
+ *
+ * Returns the value for the `system` field: a one-element array of a text block
+ * carrying `cache_control: { type: 'ephemeral' }` (5-minute TTL).
+ */
+export function cachedSystem(staticText) {
+  return [{ type: 'text', text: staticText, cache_control: { type: 'ephemeral' } }];
+}
 
 function humanizeMs(ms) {
   const s = Math.round(ms / 1000);

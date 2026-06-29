@@ -158,7 +158,11 @@ export function useCardDrag(
     const handleTouchEnd = (e: React.TouchEvent) => {
         // Prevent the browser from firing synthetic mouse events (mousedown/mouseup/click)
         // after this touch interaction, which would cause a double-flip bug.
-        e.preventDefault();
+        // Guard on `cancelable`: when the touch sequence was a scroll, the browser marks
+        // touchend as non-cancelable and logs an "[Intervention] Ignored attempt to cancel a
+        // touchend event with cancelable=false" warning if we call preventDefault anyway. In
+        // that case there are no synthetic mouse events to suppress, so skipping it is safe.
+        if (e.cancelable) e.preventDefault();
 
         // A flip is still animating — swallow this tap entirely (no flip, no shake)
         // so it can't remount the card mid-flip.

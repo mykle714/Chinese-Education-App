@@ -2,7 +2,7 @@ import { Container, Typography, Box, Button, CircularProgress, Alert, LinearProg
 import { Upload, Add, Search, Clear } from "@mui/icons-material";
 import { useState, useRef, useEffect } from "react";
 import { useAuth } from "../AuthContext";
-import VocabEntryCards from "../VocabEntryCards";
+import VocabEntryCards from "../components/VocabEntryCards";
 import AddEntryModal from "../components/AddEntryModal";
 import { API_BASE_URL, VOCAB_SEARCH_CONFIG } from "../constants";
 import { usePageTitle } from "../hooks/usePageTitle";

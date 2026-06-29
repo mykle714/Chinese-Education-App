@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { stripParentheses } from './utils/definitionUtils';
+import { stripParentheses } from '../utils/definitionUtils';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from './AuthContext';
+import { useAuth } from '../AuthContext';
 import {
   Box,
   Card,
@@ -11,9 +11,9 @@ import {
   CardActionArea,
   Divider
 } from '@mui/material';
-import DelayedCircularProgress from './components/DelayedCircularProgress';
-import { API_BASE_URL, VOCAB_SEARCH_CONFIG } from './constants';
-import type { VocabEntry } from './types';
+import DelayedCircularProgress from './DelayedCircularProgress';
+import { API_BASE_URL, VOCAB_SEARCH_CONFIG } from '../constants';
+import type { VocabEntry } from '../types';
 
 const ENTRIES_PER_PAGE = 10;
 

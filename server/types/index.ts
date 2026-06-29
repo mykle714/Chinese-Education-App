@@ -285,6 +285,23 @@ export interface SnapConfig {
   resize: boolean;
 }
 
+/**
+ * One side of a per-card text-color override (vet."textColors", migration 89). 'theme'
+ * follows the device/app theme (the default), 'dark' forces black, 'light' forces white.
+ */
+export type TextColorMode = 'theme' | 'dark' | 'light';
+
+/**
+ * Per-card flashcard text-color overrides (vet."textColors", migration 89; see
+ * docs/CARD_ICON_LAYOUT.md). `foreign` colors the foreign-word GLYPHS (Chinese characters
+ * / Spanish word) — the pinyin overlay is never affected; `english` colors the English
+ * definition. NULL on the row = both 'theme'.
+ */
+export interface TextColors {
+  foreign: TextColorMode;
+  english: TextColorMode;
+}
+
 export interface VocabEntry {
   id: number;
   userId: string;
@@ -317,6 +334,7 @@ export interface VocabEntry {
   iconId?: string | null;  // Representative icons8 icon (FK to icons8.icons8Id) joined from det; client renders via <img src="/api/icons8/<iconId>/image">
   iconLayout?: IconLayoutItem[] | null;  // Custom flashcard icon arrangement (vet column, migration 82). NULL = use the default centered iconId. See docs/CARD_ICON_LAYOUT.md
   snapConfig?: SnapConfig | null;  // Per-card icon-editor snap toggles (vet column, migration 88). NULL = all off. See docs/CARD_ICON_LAYOUT.md
+  textColors?: TextColors | null;  // Per-card flashcard text-color overrides (vet column, migration 89). NULL = both 'theme'. See docs/CARD_ICON_LAYOUT.md
   exampleSentences?: Array<{
     foreignText: string;
     english: string;

@@ -3,6 +3,7 @@ import { Box, Typography, Chip, IconButton } from "@mui/material";
 import ForeignText from "./ForeignText";
 import CardIconLayer from "../pages/FlashcardsLearnPage/CardIconLayer";
 import { stripParentheses } from "../utils/definitionUtils";
+import { resolveTextColor } from "../utils/cardTextColor";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import RepeatIcon from "@mui/icons-material/Repeat";
 import type { VocabEntry } from "../types";
@@ -31,6 +32,10 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
     // the icon-free thumbnail. CardIconLayer is fully percentage-based, so it
     // scales to this 92×132 card with no pixel math. See docs/CARD_ICON_LAYOUT.md.
     const hasAdvancedLayout = !!entry.iconLayout && entry.iconLayout.length > 1;
+    // Per-card Contrast text-color overrides (migration 89): apply the same foreign/English
+    // colors the flashcard face uses so the thumbnail matches. Undefined = theme default.
+    const characterColor = resolveTextColor(entry.textColors?.foreign);
+    const definitionColor = resolveTextColor(entry.textColors?.english);
     return (
         <Box
             className="mini-vocab-card"
@@ -204,6 +209,7 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
                     justifyContent="center"
                     text={entry.entryKey}
                     pronunciation={entry.pronunciation}
+                    characterColor={characterColor}
                 />
             </Box>
 
@@ -212,7 +218,7 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
                 className="mini-vocab-card__entry-value"
                 sx={{
                     fontSize: SIZE.caption,
-                    color: COLORS.textSecondary,
+                    color: definitionColor ?? COLORS.textSecondary,
                     textAlign: 'center',
                     lineHeight: 1.2,
                     overflow: 'hidden',

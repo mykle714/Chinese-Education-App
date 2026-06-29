@@ -163,7 +163,8 @@ export class VocabEntryController {
 
   /**
    * Persist (or clear) a custom flashcard icon arrangement for one vet row.
-   * PATCH /api/vocabEntries/:id/icon-layout   body: { iconLayout: Item[] | null }
+   * PATCH /api/vocabEntries/:id/icon-layout
+   *   body: { iconLayout: Item[] | null, snapConfig?: {...} | null, textColors?: {...} | null }
    * See docs/CARD_ICON_LAYOUT.md.
    */
   async updateIconLayout(req: Request, res: Response): Promise<void> {
@@ -179,7 +180,7 @@ export class VocabEntryController {
 
       // Accept the layout array or null (reset to default). Anything else is rejected
       // by the service's validateIconLayout.
-      const { iconLayout, snapConfig } = req.body ?? {};
+      const { iconLayout, snapConfig, textColors } = req.body ?? {};
       if (iconLayout !== null && !Array.isArray(iconLayout)) {
         res.status(400).json({ error: 'iconLayout must be an array or null' });
         return;
@@ -191,10 +192,17 @@ export class VocabEntryController {
         res.status(400).json({ error: 'snapConfig must be an object or null' });
         return;
       }
+      // textColors is optional, same tri-state contract as snapConfig: omit = leave the
+      // column untouched, null = clear (both 'theme'), object = the Contrast settings
+      // (validated by the service). The editor always sends it with the layout.
+      if (textColors !== undefined && textColors !== null && typeof textColors !== 'object') {
+        res.status(400).json({ error: 'textColors must be an object or null' });
+        return;
+      }
 
       const language = await getUserLanguage(userId);
       const updated = await this.vocabEntryService.updateIconLayout(
-        userId, entryId, language, iconLayout, snapConfig
+        userId, entryId, language, iconLayout, snapConfig, textColors
       );
 
       // Echo back just what the client needs to refresh the card in place.
@@ -202,6 +210,7 @@ export class VocabEntryController {
         id: updated.id,
         iconLayout: updated.iconLayout ?? null,
         snapConfig: updated.snapConfig ?? null,
+        textColors: updated.textColors ?? null,
       });
     } catch (error) {
       handleControllerError(error, res, 'VocabEntryController.updateIconLayout');

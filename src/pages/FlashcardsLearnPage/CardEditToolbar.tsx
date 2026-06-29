@@ -23,13 +23,21 @@ import LockIcon from "@mui/icons-material/Lock";
 import LockOpenIcon from "@mui/icons-material/LockOpen";
 import LayersIcon from "@mui/icons-material/Layers";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
+import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
+import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import GridOnIcon from "@mui/icons-material/GridOn";
 import OpenWithIcon from "@mui/icons-material/OpenWith";
+import ControlCameraIcon from "@mui/icons-material/ControlCamera";
+import ContrastIcon from "@mui/icons-material/Contrast";
 import RotateRightIcon from "@mui/icons-material/RotateRight";
+import RotateLeftIcon from "@mui/icons-material/RotateLeft";
+import RemoveIcon from "@mui/icons-material/Remove";
 import AspectRatioIcon from "@mui/icons-material/AspectRatio";
 import CheckIcon from "@mui/icons-material/Check";
 import { SIZE, WEIGHT } from "../../theme/scale";
-import { ICON_LAYOUT_MAX_ITEMS, type IconLayoutItem } from "../../types";
+import { COLORS } from "../../theme/colors";
+import { ICON_LAYOUT_MAX_ITEMS, type IconLayoutItem, type TextColorMode } from "../../types";
 import { ALIGN_ROTATION, type AlignDirection as AlignDir } from "./cardIconLayout";
 import CardIconOrderList from "./CardIconOrderList";
 
@@ -56,17 +64,20 @@ export type { AlignDirection } from "./cardIconLayout";
  *  - **Advanced**: the gesture canvas is live (drag / resize / rotate); the left button
  *    is **add icon** (＋), and a **wrapping flex list** of per-icon tools drops in below
  *    (items hug their content and collect onto the next line when a row overflows), in this
- *    order: the `count/12` readout, then **delete** (remove the selected icon), **duplicate**
- *    (clone the selected icon at the default spawn spot), **undo** (history-stack revert),
- *    **redo** (replay an undone step), **mirror** (horizontal flip of the selected icon),
- *    **lock**, **align** (a 3×3 grid of direction arrows — center empty, 8 directions incl.
+ *    order: **delete** (remove the selected icon), **duplicate** (clone the selected icon at
+ *    the default spawn spot), **mirror** (horizontal flip of the selected icon), **undo**
+ *    (history-stack revert), **redo** (replay an undone step), **lock**, **shift** (a 3×3
+ *    step-nudge pad — corners rotate/resize, cardinals translate, center shows "snap is on"),
+ *    **contrast** (two rows — foreign word + English — each a theme/dark/light text-color
+ *    control), **align** (a 3×3 grid of direction arrows — center empty, 8 directions incl.
  *    the 45° diagonals — snapping the selected icon's orientation), **snap** (a dropdown of
  *    three independent toggles — move / rotate / resize — that quantize those operations to
- *    discrete increments), and
- *    **order** (a dropdown listing every icon in paint order with drag-to-reorder).
- *    Delete / duplicate / align / mirror / lock are disabled when no icon is selected;
- *    duplicate is also disabled at the 12-icon max; undo is disabled with an empty undo
- *    stack and redo with an empty redo stack.
+ *    discrete increments), **order** (a dropdown listing every icon in paint order with
+ *    drag-to-reorder), and finally the `count/12` readout.
+ *    Delete / duplicate / mirror / lock / shift / align are disabled when no icon is selected;
+ *    duplicate is also disabled at the 12-icon max; undo is disabled with an empty undo stack
+ *    and redo with an empty redo stack; contrast (which recolors card text, not icons) needs
+ *    no selection.
  *
  * **Reset** (resets to the default icon) is a standalone button in the right cluster,
  * available in both modes (it clears the saved arrangement back to the default icon).
@@ -76,6 +87,8 @@ const CardEditToolbar: React.FC<{
     count: number;
     layout: IconLayoutItem[];
     hasSelection: boolean;
+    // Undo/redo state + handlers. The buttons sit between mirror and lock in the advanced
+    // menu. See docs/CARD_ICON_LAYOUT.md.
     canUndo: boolean;
     canRedo: boolean;
     onChangeIcon: () => void;
@@ -95,7 +108,10 @@ const CardEditToolbar: React.FC<{
     onReorderStart: () => void;
     // Select the icon at a given layout index (the order list selects on row press).
     onSelectIcon: (i: number) => void;
-    // Snap toggles (move = grid, rotate = 11.25°, resize = 5%-of-width size) and their
+    // Layout index of the currently selected icon (or null), so the order list can
+    // mark its row with the same dashed-outline indicator the canvas uses.
+    selectedIndex: number | null;
+    // Snap toggles (move = 5%-of-width grid, rotate = 22.5°, resize = 5%-of-width size) and their
     // current on/off state. Turning one on snaps every icon for that property immediately
     // (handled on the page) and keeps future gestures quantized.
     snapMove: boolean;
@@ -104,6 +120,21 @@ const CardEditToolbar: React.FC<{
     onToggleSnapMove: () => void;
     onToggleSnapRotate: () => void;
     onToggleSnapResize: () => void;
+    // Shift menu — fine step-nudges of the selected icon. Each step honors the matching snap
+    // toggle (one snap unit when on, a fine 1px/1° nudge when off — magnitudes computed on
+    // the page). move = cardinal translate; rotate = CCW/CW; resize = minus/plus size.
+    onNudgeMove: (dir: "up" | "down" | "left" | "right") => void;
+    onRotateStep: (ccw: boolean) => void;
+    onResizeStep: (increase: boolean) => void;
+    // Contrast menu — per-card text-color overrides. Two rows: the foreign word (label =
+    // the card's characters) and the English (label = the card's definition), each settable
+    // to theme / dark / light. Applies to the card text regardless of basic/advanced mode.
+    foreignLabel: string;
+    englishLabel: string;
+    textForeign: TextColorMode;
+    textEnglish: TextColorMode;
+    onSetTextForeign: (mode: TextColorMode) => void;
+    onSetTextEnglish: (mode: TextColorMode) => void;
     canReset: boolean;
     onReset: () => void;
     onSave: () => void;
@@ -130,520 +161,790 @@ const CardEditToolbar: React.FC<{
     onReorder,
     onReorderStart,
     onSelectIcon,
+    selectedIndex,
     snapMove,
     snapRotate,
     snapResize,
     onToggleSnapMove,
     onToggleSnapRotate,
     onToggleSnapResize,
+    onNudgeMove,
+    onRotateStep,
+    onResizeStep,
+    foreignLabel,
+    englishLabel,
+    textForeign,
+    textEnglish,
+    onSetTextForeign,
+    onSetTextEnglish,
     canReset,
     onReset,
     onSave,
     onCancel,
     saving,
 }) => {
-    const theme = useTheme();
-    const fc = theme.palette.flashcard;
-    const atMax = count >= ICON_LAYOUT_MAX_ITEMS;
+        const theme = useTheme();
+        const fc = theme.palette.flashcard;
+        const atMax = count >= ICON_LAYOUT_MAX_ITEMS;
 
-    // Anchors for the three advanced-row dropdowns (alignment menu, order popover, snap menu).
-    const [alignAnchor, setAlignAnchor] = useState<null | HTMLElement>(null);
-    const [orderAnchor, setOrderAnchor] = useState<null | HTMLElement>(null);
-    const [snapAnchor, setSnapAnchor] = useState<null | HTMLElement>(null);
+        // Anchors for the advanced-row dropdowns (alignment menu, order popover, snap menu,
+        // and the Shift step-nudge menu).
+        const [alignAnchor, setAlignAnchor] = useState<null | HTMLElement>(null);
+        const [orderAnchor, setOrderAnchor] = useState<null | HTMLElement>(null);
+        const [snapAnchor, setSnapAnchor] = useState<null | HTMLElement>(null);
+        const [shiftAnchor, setShiftAnchor] = useState<null | HTMLElement>(null);
+        const [contrastAnchor, setContrastAnchor] = useState<null | HTMLElement>(null);
 
-    // Whether any snap toggle is on — drives the snap button's active (filled) styling.
-    const anySnapOn = snapMove || snapRotate || snapResize;
+        // Whether any snap toggle is on — drives the snap button's active (filled) styling.
+        const anySnapOn = snapMove || snapRotate || snapResize;
 
-    // The align/order dropdowns are rendered NON-MODAL (root `pointerEvents: none`,
-    // paper `auto` — see their slotProps) so a press outside them is NOT swallowed by a
-    // modal backdrop and falls straight through to the canvas/toolbar. That means MUI's
-    // own backdrop-click `onClose` never fires, so we close them ourselves here: a single
-    // capture-phase pointerdown anywhere outside the open dropdown closes it AND still
-    // reaches the underlying target, so that one press both dismisses the menu and
-    // performs its action (drag an icon, hit another tool, etc.).
-    useEffect(() => {
-        if (!alignAnchor && !orderAnchor && !snapAnchor) return;
-        const onDocPointerDown = (e: PointerEvent) => {
-            const t = e.target as Element | null;
-            // Presses inside an open dropdown stay (reorder drag, align option, snap toggle, etc.).
-            if (t?.closest(".card-edit-toolbar__align-menu, .card-edit-toolbar__order-popover, .card-edit-toolbar__snap-menu")) return;
-            setAlignAnchor(null);
-            setOrderAnchor(null);
-            setSnapAnchor(null);
+        // The align/order dropdowns are rendered NON-MODAL (root `pointerEvents: none`,
+        // paper `auto` — see their slotProps) so a press outside them is NOT swallowed by a
+        // modal backdrop and falls straight through to the canvas/toolbar. That means MUI's
+        // own backdrop-click `onClose` never fires, so we close them ourselves here: a single
+        // capture-phase pointerdown anywhere outside the open dropdown closes it AND still
+        // reaches the underlying target, so that one press both dismisses the menu and
+        // performs its action (drag an icon, hit another tool, etc.).
+        useEffect(() => {
+            if (!alignAnchor && !orderAnchor && !snapAnchor && !shiftAnchor && !contrastAnchor) return;
+            const onDocPointerDown = (e: PointerEvent) => {
+                const t = e.target as Element | null;
+                // Presses inside an open dropdown stay (reorder drag, align option, snap toggle,
+                // Shift nudge, Contrast setting, etc.). The snap, Shift, and Contrast menus stay
+                // open on an inside press so several changes can be made in one open.
+                if (t?.closest(".card-edit-toolbar__align-menu, .card-edit-toolbar__order-popover, .card-edit-toolbar__snap-menu, .card-edit-toolbar__shift-menu, .card-edit-toolbar__contrast-menu")) return;
+                // Presses on a dropdown's OWN trigger button are also left alone here so the
+                // button's onClick can run its toggle (tapping an open menu's button closes it).
+                // Without this exemption, pointerdown would clear the anchor before the click
+                // fired, so the toggle would always read "closed" and re-open instead of closing.
+                if (t?.closest(".card-edit-toolbar__align, .card-edit-toolbar__order, .card-edit-toolbar__snap, .card-edit-toolbar__shift, .card-edit-toolbar__contrast")) return;
+                setAlignAnchor(null);
+                setOrderAnchor(null);
+                setSnapAnchor(null);
+                setShiftAnchor(null);
+                setContrastAnchor(null);
+            };
+            document.addEventListener("pointerdown", onDocPointerDown, true);
+            return () => document.removeEventListener("pointerdown", onDocPointerDown, true);
+        }, [alignAnchor, orderAnchor, snapAnchor, shiftAnchor, contrastAnchor]);
+
+        // Toggle a dropdown from its trigger button: open it if closed, close it if it's already
+        // the open one, and always close every OTHER dropdown so only one is open at a time.
+        // Tapping a button while its menu is open now dismisses the menu (the pointerdown
+        // handler above exempts the trigger buttons so this toggle sees the true open state).
+        const toggleDropdown = (
+            which: "align" | "order" | "snap" | "shift" | "contrast",
+            e: React.MouseEvent<HTMLButtonElement>,
+        ) => {
+            const anchor = e.currentTarget;
+            setAlignAnchor(which === "align" ? (a) => (a ? null : anchor) : null);
+            setOrderAnchor(which === "order" ? (a) => (a ? null : anchor) : null);
+            setSnapAnchor(which === "snap" ? (a) => (a ? null : anchor) : null);
+            setShiftAnchor(which === "shift" ? (a) => (a ? null : anchor) : null);
+            setContrastAnchor(which === "contrast" ? (a) => (a ? null : anchor) : null);
         };
-        document.addEventListener("pointerdown", onDocPointerDown, true);
-        return () => document.removeEventListener("pointerdown", onDocPointerDown, true);
-    }, [alignAnchor, orderAnchor, snapAnchor]);
 
-    const smallBtnSx = {
-        minWidth: "unset",
-        px: 1,
-        py: 0.25,
-        height: "30px",
-        fontSize: SIZE.micro,
-        textTransform: "lowercase" as const,
-        borderRadius: "6px",
-        color: fc.onSurface,
-        // Without this, the buttons inherit `touch-action: auto`, so on a touchscreen the
-        // browser holds each tap ~300ms to disambiguate a double-tap-to-zoom — which makes
-        // rapid undo/redo taps feel like they must wait for the previous one to "finish"
-        // before registering. `manipulation` opts out of double-tap zoom so taps fire
-        // immediately. (Click handling itself was never blocked — this is the tap latency.)
-        touchAction: "manipulation",
-        // The explicit `color` above out-specifies MUI's default `.Mui-disabled` grey, so a
-        // disabled button (e.g. redo at the top of the redo stack, undo with an empty stack)
-        // would otherwise still look fully active. Re-assert the greyed-out look here so the
-        // disabled state reads as uninteractable. (MUI already sets pointer-events:none.)
-        "&.Mui-disabled": { color: fc.onSurface, opacity: 0.38 },
-    };
+        const smallBtnSx = {
+            minWidth: "unset",
+            px: 0.5,
+            py: 0.25,
+            height: "30px",
+            fontSize: SIZE.micro,
+            textTransform: "lowercase" as const,
+            borderRadius: "6px",
+            color: fc.onSurface,
+            // Without this, the buttons inherit `touch-action: auto`, so on a touchscreen the
+            // browser holds each tap ~300ms to disambiguate a double-tap-to-zoom — which makes
+            // rapid undo/redo taps feel like they must wait for the previous one to "finish"
+            // before registering. `manipulation` opts out of double-tap zoom so taps fire
+            // immediately. (Click handling itself was never blocked — this is the tap latency.)
+            touchAction: "manipulation",
+            // Tighten the gap between the startIcon and the label (MUI defaults to an 8px margin
+            // between them); pull them closer so each button hugs its content.
+            "& .MuiButton-startIcon": { marginRight: "2px" },
+            // The explicit `color` above out-specifies MUI's default `.Mui-disabled` grey, so a
+            // disabled button (e.g. redo at the top of the redo stack, undo with an empty stack)
+            // would otherwise still look fully active. Re-assert the greyed-out look here so the
+            // disabled state reads as uninteractable. (MUI already sets pointer-events:none.)
+            "&.Mui-disabled": { color: fc.onSurface, opacity: 0.38 },
+        };
 
-    // The align dropdown renders as a 3×3 grid of direction cells with the CENTER cell empty
-    // (8 directions total). Row-major order: top row, middle row (center hole), bottom row.
-    // Each cell points an upward arrow toward its direction by rotating it `ALIGN_ROTATION`
-    // degrees — the same angle the align action snaps the icon to, so arrow ⇔ result match.
-    const alignGrid: (AlignDir | null)[] = [
-        "up-left", "up", "up-right",
-        "left", null, "right",
-        "down-left", "down", "down-right",
-    ];
+        // Shared sizing for every tool button's startIcon (kept in one place so all the
+        // advanced-row icons stay visually consistent).
+        const iconSx = { fontSize: "16px !important" } as const;
 
-    // The snap dropdown's three toggle rows. Each enables a discrete increment for its
-    // operation: move → 5%-of-width grid, rotate → 11.25° steps, resize → 5%-of-width size.
-    const snapRows: { key: string; label: string; icon: React.ReactNode; active: boolean; onToggle: () => void }[] = [
-        { key: "move", label: "move", icon: <OpenWithIcon sx={{ fontSize: 16 }} />, active: snapMove, onToggle: onToggleSnapMove },
-        { key: "rotate", label: "rotate", icon: <RotateRightIcon sx={{ fontSize: 16 }} />, active: snapRotate, onToggle: onToggleSnapRotate },
-        { key: "resize", label: "resize", icon: <AspectRatioIcon sx={{ fontSize: 16 }} />, active: snapResize, onToggle: onToggleSnapResize },
-    ];
+        // The advanced-menu tool buttons, in render order. Each tool is a plain config object
+        // consumed by ONE <Button> renderer in the JSX below — so the markup is DRY (size /
+        // variant / icon sizing / smallBtnSx live in a single spot) and reordering, adding, or
+        // removing a tool is a one-line list edit instead of a block copy.
+        //  - `onClick` receives the click event (the dropdown tools read `e.currentTarget` for
+        //    their anchor; the plain actions just ignore it).
+        //  - `sx` (optional) merges onto smallBtnSx — used by the toggle-styled tools (lock,
+        //    snap) for their active-state fill.
+        const advButtons: {
+            key: string;
+            className: string;
+            icon: React.ReactNode;
+            label: string;
+            onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
+            disabled: boolean;
+            sx?: object;
+        }[] = [
+            {
+                key: "delete",
+                className: "card-edit-toolbar__delete",
+                icon: <DeleteOutlineIcon sx={iconSx} />,
+                label: "delete",
+                onClick: onDeleteSelected,
+                disabled: !hasSelection || saving,
+            },
+            {
+                key: "mirror",
+                className: "card-edit-toolbar__mirror",
+                icon: <FlipIcon sx={iconSx} />,
+                label: "mirror",
+                onClick: onMirror,
+                disabled: !hasSelection || saving,
+            },
+            {
+                // Per-card text-color overrides for the foreign word + the English. Independent
+                // of icon selection (recolors card text), so only disabled while saving.
+                key: "contrast",
+                className: "card-edit-toolbar__contrast",
+                icon: <ContrastIcon sx={iconSx} />,
+                label: "contrast",
+                onClick: (e) => toggleDropdown("contrast", e),
+                disabled: saving,
+            },
+            {
+                key: "undo",
+                className: "card-edit-toolbar__undo",
+                icon: <UndoIcon sx={iconSx} />,
+                label: "undo",
+                onClick: onUndo,
+                disabled: !canUndo || saving,
+            },
+            {
+                key: "redo",
+                className: "card-edit-toolbar__redo",
+                icon: <RedoIcon sx={iconSx} />,
+                label: "redo",
+                onClick: onRedo,
+                disabled: !canRedo || saving,
+            },
+            {
+                key: "duplicate",
+                className: "card-edit-toolbar__duplicate",
+                icon: <ContentCopyIcon sx={iconSx} />,
+                label: "duplicate",
+                onClick: onDuplicate,
+                // Needs a selection to clone, and room under the 12-icon cap.
+                disabled: !hasSelection || atMax || saving,
+            },
+            {
+                // Lock toggle — freezes the selected icon against translate/resize/rotate
+                // gestures (it stays selectable). Label stays "lock" in both states; the active
+                // (locked) state shows the filled golden styling + the closed-padlock icon.
+                key: "lock",
+                className: `card-edit-toolbar__lock${selectedLocked ? " card-edit-toolbar__lock--active" : ""}`,
+                icon: selectedLocked ? <LockIcon sx={iconSx} /> : <LockOpenIcon sx={iconSx} />,
+                label: "lock",
+                onClick: onToggleLock,
+                disabled: !hasSelection || saving,
+                // Match the golden corner indicator the locked icon shows.
+                sx: selectedLocked ? { color: "#E0A82E", backgroundColor: "rgba(224,168,46,0.14)" } : undefined,
+            },
+            {
+                key: "align",
+                className: "card-edit-toolbar__align",
+                icon: <CropSquareIcon sx={iconSx} />,
+                label: "align",
+                onClick: (e) => toggleDropdown("align", e),
+                disabled: !hasSelection || saving,
+            },
+            {
+                // 3×3 step-nudge pad — corners rotate/resize, cardinals translate, center shows
+                // "snap is on" when any snap is active. Disabled with no selection.
+                key: "shift",
+                className: "card-edit-toolbar__shift",
+                icon: <ControlCameraIcon sx={iconSx} />,
+                label: "shift",
+                onClick: (e) => toggleDropdown("shift", e),
+                disabled: !hasSelection || saving,
+            },
+            {
+                // Independent move / rotate / resize quantization toggles. Filled when ANY snap
+                // is on. Disabled with no icons to snap.
+                key: "snap",
+                className: `card-edit-toolbar__snap${anySnapOn ? " card-edit-toolbar__snap--active" : ""}`,
+                icon: <GridOnIcon sx={iconSx} />,
+                label: "snap",
+                onClick: (e) => toggleDropdown("snap", e),
+                disabled: count === 0 || saving,
+                sx: anySnapOn
+                    ? { backgroundColor: fc.toggleActiveBg, "&:hover": { backgroundColor: fc.toggleActiveBg } }
+                    : undefined,
+            },
+            {
+                key: "order",
+                className: "card-edit-toolbar__order",
+                icon: <LayersIcon sx={iconSx} />,
+                label: "order",
+                onClick: (e) => toggleDropdown("order", e),
+                disabled: count === 0 || saving,
+            },
+        ];
 
-    return (
-        // Enter/exit slide (drop-in from behind the header, slide back up on close) is
-        // owned by the <Slide> wrapper in FlashcardsLearnPage so it animates in BOTH
-        // directions; this root is just the static container.
-        <Box className="card-edit-toolbar">
-            {/* Primary toolbar row. */}
-            <Box
-                className="card-edit-toolbar__row"
-                sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 1,
-                    px: 1.5,
-                    py: 0.75,
-                    backgroundColor: fc.toggleInactiveBg,
-                    borderBottom: "1px solid rgba(0,0,0,0.08)",
-                }}
-            >
-                {/* Contextual left button — ONE persistent <Button> in both modes so it
-                    never remounts/jumps on the adv toggle; only its label, icon, and action
-                    swap (advanced = "add icon" + AddIcon + append; basic = "swap icon" +
-                    AutorenewIcon + replace). This is the ONLY thing that changes on this
-                    row between modes — the count readout has moved to the advanced row so
-                    the basic toolbar row is otherwise static. A fixed width keeps the button
-                    itself from resizing as the label changes. */}
-                <Button
-                    className={advMode ? "card-edit-toolbar__add" : "card-edit-toolbar__swap-icon"}
-                    size="small"
-                    variant="text"
-                    startIcon={
-                        advMode
-                            ? <AddIcon sx={{ fontSize: "16px !important" }} />
-                            : <AutorenewIcon sx={{ fontSize: "16px !important" }} />
-                    }
-                    onClick={advMode ? onAddIcon : onChangeIcon}
-                    disabled={(advMode && atMax) || saving}
-                    sx={{ ...smallBtnSx, minWidth: "60px", justifyContent: "flex-start", whiteSpace: "nowrap" }}
-                >
-                    {advMode ? "add icon" : "swap icon"}
-                </Button>
+        // The align dropdown renders as a 3×3 grid of direction cells with the CENTER cell empty
+        // (8 directions total). Row-major order: top row, middle row (center hole), bottom row.
+        // Each cell points an upward arrow toward its direction by rotating it `ALIGN_ROTATION`
+        // degrees — the same angle the align action snaps the icon to, so arrow ⇔ result match.
+        const alignGrid: (AlignDir | null)[] = [
+            "up-left", "up", "up-right",
+            "left", null, "right",
+            "down-left", "down", "down-right",
+        ];
 
-                {/* Push the adv toggle + Save/Cancel to the right. */}
-                <Box sx={{ flex: 1 }} />
+        // Each snap operation gets a distinct app accent color, reused EVERYWHERE that
+        // operation is highlighted — the snap dropdown's active row AND the matching Shift-pad
+        // cells — so the two surfaces read as the same setting at a glance: move/grid = light
+        // green, rotate = light blue, resize/size = light orange. Keyed by the snap group.
+        const SNAP_GROUP_COLOR: Record<"move" | "rotate" | "resize", string> = {
+            move: COLORS.greenAccent,
+            rotate: COLORS.blueAccent,
+            resize: COLORS.yellowAccent,
+        };
 
-                {/* Reset to default — standalone, available in both modes. */}
-                <Button
-                    className="card-edit-toolbar__reset"
-                    size="small"
-                    variant="text"
-                    startIcon={<RestartAltIcon sx={{ fontSize: "16px !important" }} />}
-                    onClick={onReset}
-                    disabled={!canReset || saving}
-                    sx={smallBtnSx}
-                >
-                    reset
-                </Button>
+        // The snap dropdown's three toggle rows. Each enables a discrete increment for its
+        // operation: move → 5%-of-width grid, rotate → 22.5° steps, resize → 5%-of-width size.
+        const snapRows: { key: "move" | "rotate" | "resize"; label: string; icon: React.ReactNode; active: boolean; onToggle: () => void }[] = [
+            { key: "move", label: "grid", icon: <OpenWithIcon sx={{ fontSize: 16 }} />, active: snapMove, onToggle: onToggleSnapMove },
+            { key: "rotate", label: "rotate", icon: <RotateRightIcon sx={{ fontSize: 16 }} />, active: snapRotate, onToggle: onToggleSnapRotate },
+            { key: "resize", label: "size", icon: <AspectRatioIcon sx={{ fontSize: 16 }} />, active: snapResize, onToggle: onToggleSnapResize },
+        ];
 
-                {/* Advanced-mode toggle. Filled when active. */}
-                <Button
-                    className="card-edit-toolbar__adv"
-                    size="small"
-                    variant="text"
-                    startIcon={<TuneIcon sx={{ fontSize: "16px !important" }} />}
-                    onClick={onToggleAdv}
-                    disabled={saving}
-                    sx={{
-                        ...smallBtnSx,
-                        backgroundColor: advMode ? fc.toggleActiveBg : "transparent",
-                        "&:hover": { backgroundColor: advMode ? fc.toggleActiveBg : fc.toggleInactiveBg },
-                    }}
-                >
-                    adv
-                </Button>
+        // The Shift dropdown is a 3×3 nudge pad (row-major). The four corners rotate (CCW/CW)
+        // and resize (−/＋); the four cardinals translate; the center is null (it shows the
+        // "snap is on" hint when any snap is active). Each cell declares which snap GROUP it
+        // belongs to so the menu can highlight every cell whose snap is currently on
+        // (move → cardinals, rotate → CCW/CW corners, resize → −/＋ corners).
+        type ShiftGroup = "move" | "rotate" | "resize";
+        const shiftCell = (key: string, icon: React.ReactNode, group: ShiftGroup, onClick: () => void) => ({ key, icon, group, onClick });
+        const shiftGrid: (ReturnType<typeof shiftCell> | null)[] = [
+            shiftCell("rotate-ccw", <RotateLeftIcon sx={{ fontSize: 18 }} />, "rotate", () => onRotateStep(true)),
+            shiftCell("up", <ArrowUpwardIcon sx={{ fontSize: 18 }} />, "move", () => onNudgeMove("up")),
+            shiftCell("rotate-cw", <RotateRightIcon sx={{ fontSize: 18 }} />, "rotate", () => onRotateStep(false)),
+            shiftCell("left", <ArrowBackIcon sx={{ fontSize: 18 }} />, "move", () => onNudgeMove("left")),
+            null, // center: the "snap is on" hint
+            shiftCell("right", <ArrowForwardIcon sx={{ fontSize: 18 }} />, "move", () => onNudgeMove("right")),
+            shiftCell("size-minus", <RemoveIcon sx={{ fontSize: 18 }} />, "resize", () => onResizeStep(false)),
+            shiftCell("down", <ArrowDownwardIcon sx={{ fontSize: 18 }} />, "move", () => onNudgeMove("down")),
+            shiftCell("size-plus", <AddIcon sx={{ fontSize: 18 }} />, "resize", () => onResizeStep(true)),
+        ];
+        // Per-group "is this snap on" lookup, for highlighting the matching cells.
+        const shiftGroupActive: Record<ShiftGroup, boolean> = { move: snapMove, rotate: snapRotate, resize: snapResize };
 
-                <Button
-                    className="card-edit-toolbar__cancel"
-                    size="small"
-                    variant="text"
-                    onClick={onCancel}
-                    disabled={saving}
-                    sx={smallBtnSx}
-                >
-                    cancel
-                </Button>
-                <Button
-                    className="card-edit-toolbar__save"
-                    size="small"
-                    variant="contained"
-                    onClick={onSave}
-                    disabled={saving}
-                    sx={{
-                        ...smallBtnSx,
-                        fontWeight: WEIGHT.semibold,
-                        backgroundColor: fc.toggleActiveBg,
-                        "&:hover": { backgroundColor: fc.toggleActiveBg },
-                    }}
-                >
-                    {saving ? (
-                        <CircularProgress
-                            size={16}
-                            thickness={5}
-                            sx={{ color: fc.onSurface }}
-                            className="card-edit-toolbar__save-spinner"
-                        />
-                    ) : (
-                        "save"
-                    )}
-                </Button>
-            </Box>
+        // The Contrast dropdown's two rows — one per text run on the card. Each row's label is
+        // the actual card text (so the learner sees what they're recoloring) and a 3-way
+        // segmented control (theme / dark / light). 'theme' follows the device/app theme.
+        const contrastRows: { key: string; label: string; value: TextColorMode; onSet: (m: TextColorMode) => void }[] = [
+            { key: "foreign", label: foreignLabel, value: textForeign, onSet: onSetTextForeign },
+            { key: "english", label: englishLabel, value: textEnglish, onSet: onSetTextEnglish },
+        ];
+        const contrastModes: TextColorMode[] = ["theme", "dark", "light"];
 
-            {/* Advanced toolbar — ALL per-icon tools merged into ONE menu, laid out as a
-                wrapping flex LIST (the count readout, then delete, duplicate, undo, redo,
-                mirror, lock, align, order). Items hug their content and collect onto the next
-                line when a row overflows — no fixed columns. Drops in below the static basic
-                row while advanced mode is on. Replaces the earlier pair of separate flex rows. */}
-            {/* Reveal / collapse the menu via MUI <Collapse> (height transition) so it
-                animates in BOTH directions — drop down on adv-on, collapse up on adv-off —
-                at the same timing as the toolbar Slide and the card push-down. unmountOnExit
-                keeps it out of the DOM in basic mode. The align/order dropdowns are portaled,
-                so Collapse's height clipping doesn't affect them. */}
-            <Collapse
-                in={advMode}
-                timeout={CARD_EDIT_ANIM_MS}
-                easing={CARD_EDIT_ANIM_EASING}
-                unmountOnExit
-            >
+        return (
+            // Enter/exit slide (drop-in from behind the header, slide back up on close) is
+            // owned by the <Slide> wrapper in FlashcardsLearnPage so it animates in BOTH
+            // directions; this root is just the static container.
+            <Box className="card-edit-toolbar">
+                {/* Primary toolbar row. */}
                 <Box
-                    className="card-edit-toolbar__adv-menu"
+                    className="card-edit-toolbar__row"
                     sx={{
-                        // A wrapping flex LIST (not a grid): each tool hugs its own content
-                        // and items flow left-to-right, collecting onto the next line when the
-                        // row overflows. No fixed columns, so the buttons aren't padded out to
-                        // a uniform table width.
                         display: "flex",
-                        flexWrap: "wrap",
                         alignItems: "center",
-                        gap: 0.5,
+                        gap: 1,
                         px: 1.5,
                         py: 0.75,
                         backgroundColor: fc.toggleInactiveBg,
                         borderBottom: "1px solid rgba(0,0,0,0.08)",
                     }}
                 >
-                    {/* Count readout — flows as the FIRST list item, vertically centered. */}
-                    <Typography
-                        className="card-edit-toolbar__count"
-                        sx={{ fontSize: SIZE.micro, color: fc.onSurface, opacity: 0.7, alignSelf: "center", px: 0.5 }}
-                    >
-                        {count}/{ICON_LAYOUT_MAX_ITEMS}
-                    </Typography>
-
-                    {/* Tools flow as list items; each hugs its content via smallBtnSx. */}
+                    {/* Contextual left button — ONE persistent <Button> in both modes so it
+                    never remounts/jumps on the adv toggle; only its label, icon, and action
+                    swap (advanced = "add icon" + AddIcon + append; basic = "swap icon" +
+                    AutorenewIcon + replace). This is the ONLY thing that changes on this
+                    row between modes — the count readout has moved to the advanced row so
+                    the basic toolbar row is otherwise static. A fixed width keeps the button
+                    itself from resizing as the label changes. */}
                     <Button
-                        className="card-edit-toolbar__delete"
-                        size="small"
-                        variant="text"
-                        startIcon={<DeleteOutlineIcon sx={{ fontSize: "16px !important" }} />}
-                        onClick={onDeleteSelected}
-                        disabled={!hasSelection || saving}
-                        sx={smallBtnSx}
-                    >
-                        delete
-                    </Button>
-
-                    <Button
-                        className="card-edit-toolbar__duplicate"
-                        size="small"
-                        variant="text"
-                        startIcon={<ContentCopyIcon sx={{ fontSize: "16px !important" }} />}
-                        onClick={onDuplicate}
-                        // Needs a selection to clone, and room under the 12-icon cap.
-                        disabled={!hasSelection || atMax || saving}
-                        sx={smallBtnSx}
-                    >
-                        duplicate
-                    </Button>
-
-                    <Button
-                        className="card-edit-toolbar__undo"
-                        size="small"
-                        variant="text"
-                        startIcon={<UndoIcon sx={{ fontSize: "16px !important" }} />}
-                        onClick={onUndo}
-                        disabled={!canUndo || saving}
-                        sx={smallBtnSx}
-                    >
-                        undo
-                    </Button>
-
-                    <Button
-                        className="card-edit-toolbar__redo"
-                        size="small"
-                        variant="text"
-                        startIcon={<RedoIcon sx={{ fontSize: "16px !important" }} />}
-                        onClick={onRedo}
-                        disabled={!canRedo || saving}
-                        sx={smallBtnSx}
-                    >
-                        redo
-                    </Button>
-
-                    <Button
-                        className="card-edit-toolbar__mirror"
-                        size="small"
-                        variant="text"
-                        startIcon={<FlipIcon sx={{ fontSize: "16px !important" }} />}
-                        onClick={onMirror}
-                        disabled={!hasSelection || saving}
-                        sx={smallBtnSx}
-                    >
-                        mirror
-                    </Button>
-
-                    {/* Lock toggle — freezes the selected icon against translate/resize/
-                        rotate gestures (it stays selectable). Label stays "lock" in both
-                        states; the active (locked) state is shown by the filled golden
-                        styling and the closed-padlock icon. */}
-                    <Button
-                        className={`card-edit-toolbar__lock${selectedLocked ? " card-edit-toolbar__lock--active" : ""}`}
+                        className={advMode ? "card-edit-toolbar__add" : "card-edit-toolbar__swap-icon"}
                         size="small"
                         variant="text"
                         startIcon={
-                            selectedLocked
-                                ? <LockIcon sx={{ fontSize: "16px !important" }} />
-                                : <LockOpenIcon sx={{ fontSize: "16px !important" }} />
+                            advMode
+                                ? <AddIcon sx={{ fontSize: "16px !important" }} />
+                                : <AutorenewIcon sx={{ fontSize: "16px !important" }} />
                         }
-                        onClick={onToggleLock}
-                        disabled={!hasSelection || saving}
-                        sx={{
-                            ...smallBtnSx,
-                            // Match the golden corner indicator the locked icon shows.
-                            ...(selectedLocked
-                                ? { color: "#E0A82E", backgroundColor: "rgba(224,168,46,0.14)" }
-                                : {}),
-                        }}
+                        onClick={advMode ? onAddIcon : onChangeIcon}
+                        disabled={(advMode && atMax) || saving}
+                        sx={{ ...smallBtnSx, minWidth: "60px", justifyContent: "flex-start", whiteSpace: "nowrap" }}
                     >
-                        lock
+                        {advMode ? "add icon" : "swap icon"}
                     </Button>
 
+                    {/* Push the adv toggle + Save/Cancel to the right. */}
+                    <Box sx={{ flex: 1 }} />
+
+                    {/* Reset to default — standalone, available in both modes. */}
                     <Button
-                        className="card-edit-toolbar__align"
+                        className="card-edit-toolbar__reset"
                         size="small"
                         variant="text"
-                        startIcon={<CropSquareIcon sx={{ fontSize: "16px !important" }} />}
-                        onClick={(e) => setAlignAnchor(e.currentTarget)}
-                        disabled={!hasSelection || saving}
+                        startIcon={<RestartAltIcon sx={{ fontSize: "16px !important" }} />}
+                        onClick={onReset}
+                        disabled={!canReset || saving}
                         sx={smallBtnSx}
                     >
-                        align
+                        reset
                     </Button>
 
-                    {/* Snap dropdown — independent move / rotate / resize quantization
-                        toggles. Filled when ANY snap is on. Disabled with no icons to snap. */}
+                    {/* Advanced-mode toggle. Filled when active. */}
                     <Button
-                        className={`card-edit-toolbar__snap${anySnapOn ? " card-edit-toolbar__snap--active" : ""}`}
+                        className="card-edit-toolbar__adv"
                         size="small"
                         variant="text"
-                        startIcon={<GridOnIcon sx={{ fontSize: "16px !important" }} />}
-                        onClick={(e) => setSnapAnchor(e.currentTarget)}
-                        disabled={count === 0 || saving}
+                        startIcon={<TuneIcon sx={{ fontSize: "16px !important" }} />}
+                        onClick={onToggleAdv}
+                        disabled={saving}
                         sx={{
                             ...smallBtnSx,
-                            ...(anySnapOn
-                                ? {
-                                      backgroundColor: fc.toggleActiveBg,
-                                      "&:hover": { backgroundColor: fc.toggleActiveBg },
-                                  }
-                                : {}),
+                            backgroundColor: advMode ? fc.toggleActiveBg : "transparent",
+                            "&:hover": { backgroundColor: advMode ? fc.toggleActiveBg : fc.toggleInactiveBg },
                         }}
                     >
-                        snap
+                        adv
                     </Button>
 
                     <Button
-                        className="card-edit-toolbar__order"
+                        className="card-edit-toolbar__cancel"
                         size="small"
                         variant="text"
-                        startIcon={<LayersIcon sx={{ fontSize: "16px !important" }} />}
-                        onClick={(e) => setOrderAnchor(e.currentTarget)}
-                        disabled={count === 0 || saving}
+                        onClick={onCancel}
+                        disabled={saving}
                         sx={smallBtnSx}
                     >
-                        order
+                        cancel
                     </Button>
+                    <Button
+                        className="card-edit-toolbar__save"
+                        size="small"
+                        variant="contained"
+                        onClick={onSave}
+                        disabled={saving}
+                        sx={{
+                            ...smallBtnSx,
+                            fontWeight: WEIGHT.semibold,
+                            backgroundColor: fc.toggleActiveBg,
+                            "&:hover": { backgroundColor: fc.toggleActiveBg },
+                        }}
+                    >
+                        {saving ? (
+                            <CircularProgress
+                                size={16}
+                                thickness={5}
+                                sx={{ color: fc.onSurface }}
+                                className="card-edit-toolbar__save-spinner"
+                            />
+                        ) : (
+                            "save"
+                        )}
+                    </Button>
+                </Box>
 
-                    {/* Alignment dropdown: a 3×3 grid of direction cells (center empty = 8
+                {/* Advanced toolbar — ALL per-icon tools merged into ONE menu, laid out as a
+                wrapping flex LIST (the count readout, then delete, duplicate, undo, redo,
+                mirror, lock, align, order). Items hug their content and collect onto the next
+                line when a row overflows — no fixed columns. Drops in below the static basic
+                row while advanced mode is on. Replaces the earlier pair of separate flex rows. */}
+                {/* Reveal / collapse the menu via MUI <Collapse> (height transition) so it
+                animates in BOTH directions — drop down on adv-on, collapse up on adv-off —
+                at the same timing as the toolbar Slide and the card push-down. unmountOnExit
+                keeps it out of the DOM in basic mode. The align/order dropdowns are portaled,
+                so Collapse's height clipping doesn't affect them. */}
+                <Collapse
+                    in={advMode}
+                    timeout={CARD_EDIT_ANIM_MS}
+                    easing={CARD_EDIT_ANIM_EASING}
+                    unmountOnExit
+                >
+                    <Box
+                        className="card-edit-toolbar__adv-menu"
+                        sx={{
+                            // A wrapping flex LIST (not a grid): each tool hugs its own content
+                            // and items flow left-to-right, collecting onto the next line when the
+                            // row overflows. No fixed columns, so the buttons aren't padded out to
+                            // a uniform table width.
+                            display: "flex",
+                            flexWrap: "wrap",
+                            alignItems: "center",
+                            gap: "3px",
+                            px: 1.5,
+                            py: 0.75,
+                            backgroundColor: fc.toggleInactiveBg,
+                            borderBottom: "1px solid rgba(0,0,0,0.08)",
+                        }}
+                    >
+                        {/* Count readout — flows as the FIRST list item, vertically centered. */}
+                        <Typography
+                            className="card-edit-toolbar__count"
+                            sx={{
+                                fontSize: SIZE.micro,
+                                color: fc.onSurface,
+                                opacity: 0.7,
+                                alignSelf: "center",
+                                px: 0.5,
+                                // Reserve enough width for the widest readout ("12/12") and use
+                                // tabular figures so the count never changes width as digits roll
+                                // over (1→12) — otherwise the whole tool row would shift right.
+                                minWidth: "6ch",
+                                textAlign: "center",
+                                fontVariantNumeric: "tabular-nums",
+                            }}
+                        >
+                            {count}/{ICON_LAYOUT_MAX_ITEMS}
+                        </Typography>
+
+                        {/* Tools flow as list items; each hugs its content via smallBtnSx.
+                        Rendered from the advButtons config (order = list order); per-tool
+                        active-state overrides merge onto smallBtnSx via `btn.sx`. */}
+                        {advButtons.map((btn) => (
+                            <Button
+                                key={btn.key}
+                                className={btn.className}
+                                size="small"
+                                variant="text"
+                                startIcon={btn.icon}
+                                onClick={btn.onClick}
+                                disabled={btn.disabled}
+                                sx={btn.sx ? { ...smallBtnSx, ...btn.sx } : smallBtnSx}
+                            >
+                                {btn.label}
+                            </Button>
+                        ))}
+
+                        {/* Alignment dropdown: a 3×3 grid of direction cells (center empty = 8
                         directions) that snap the selected icon's orientation, including the four
                         45° diagonals. Portaled (or null when closed), so it takes no slot in the
                         flex list. */}
-                    <Menu
-                        className="card-edit-toolbar__align-menu"
-                        anchorEl={alignAnchor}
-                        open={Boolean(alignAnchor)}
-                        onClose={() => setAlignAnchor(null)}
-                        // Non-modal: let presses outside the menu fall through to the
-                        // canvas/toolbar (we close it from a document pointerdown above).
-                        hideBackdrop
-                        disableEnforceFocus
-                        disableAutoFocus
-                        slotProps={{
-                            root: { sx: { pointerEvents: "none" } },
-                            paper: { sx: { pointerEvents: "auto" } },
-                        }}
-                        // MUI's MenuList padding would offset the grid; strip it so the grid
-                        // sits flush inside the paper.
-                        MenuListProps={{ sx: { py: 0 } }}
-                    >
-                        <Box
-                            className="card-edit-toolbar__align-grid"
-                            sx={{
-                                display: "grid",
-                                gridTemplateColumns: "repeat(3, 36px)",
-                                gridTemplateRows: "repeat(3, 36px)",
-                                gap: 0.5,
-                                p: 0.75,
+                        <Menu
+                            className="card-edit-toolbar__align-menu"
+                            anchorEl={alignAnchor}
+                            open={Boolean(alignAnchor)}
+                            onClose={() => setAlignAnchor(null)}
+                            // Non-modal: let presses outside the menu fall through to the
+                            // canvas/toolbar (we close it from a document pointerdown above).
+                            hideBackdrop
+                            disableEnforceFocus
+                            disableAutoFocus
+                            slotProps={{
+                                root: { sx: { pointerEvents: "none" } },
+                                paper: { sx: { pointerEvents: "auto" } },
                             }}
+                            // MUI's MenuList padding would offset the grid; strip it so the grid
+                            // sits flush inside the paper.
+                            MenuListProps={{ sx: { py: 0 } }}
                         >
-                            {alignGrid.map((dir) =>
-                                dir === null ? (
-                                    // Empty center cell — no direction lives here.
-                                    <Box key="center" className="card-edit-toolbar__align-cell--center" />
-                                ) : (
-                                    <Box
-                                        key={dir}
-                                        className={`card-edit-toolbar__align-cell card-edit-toolbar__align-cell--${dir}`}
-                                        onClick={() => {
-                                            onAlign(dir);
-                                            setAlignAnchor(null);
-                                        }}
-                                        sx={{
-                                            display: "flex",
-                                            alignItems: "center",
-                                            justifyContent: "center",
-                                            cursor: "pointer",
-                                            borderRadius: "6px",
-                                            border: "1px solid rgba(0,0,0,0.18)",
-                                            color: fc.onSurface,
-                                            "&:hover": { backgroundColor: fc.toggleInactiveBg },
-                                        }}
-                                    >
-                                        {/* One upward arrow spun toward the cell's direction. */}
-                                        <ArrowUpwardIcon
-                                            fontSize="small"
-                                            sx={{ transform: `rotate(${ALIGN_ROTATION[dir]}deg)` }}
-                                        />
-                                    </Box>
-                                ),
-                            )}
-                        </Box>
-                    </Menu>
+                            <Box
+                                className="card-edit-toolbar__align-grid"
+                                sx={{
+                                    display: "grid",
+                                    gridTemplateColumns: "repeat(3, 36px)",
+                                    gridTemplateRows: "repeat(3, 36px)",
+                                    gap: 0.5,
+                                    p: 0.75,
+                                }}
+                            >
+                                {alignGrid.map((dir) =>
+                                    dir === null ? (
+                                        // Empty center cell — no direction lives here.
+                                        <Box key="center" className="card-edit-toolbar__align-cell--center" />
+                                    ) : (
+                                        <Box
+                                            key={dir}
+                                            className={`card-edit-toolbar__align-cell card-edit-toolbar__align-cell--${dir}`}
+                                            onClick={() => {
+                                                onAlign(dir);
+                                                setAlignAnchor(null);
+                                            }}
+                                            sx={{
+                                                display: "flex",
+                                                alignItems: "center",
+                                                justifyContent: "center",
+                                                cursor: "pointer",
+                                                borderRadius: "6px",
+                                                border: "1px solid rgba(0,0,0,0.18)",
+                                                color: fc.onSurface,
+                                                "&:hover": { backgroundColor: fc.toggleInactiveBg },
+                                            }}
+                                        >
+                                            {/* One upward arrow spun toward the cell's direction. */}
+                                            <ArrowUpwardIcon
+                                                fontSize="small"
+                                                sx={{ transform: `rotate(${ALIGN_ROTATION[dir]}deg)` }}
+                                            />
+                                        </Box>
+                                    ),
+                                )}
+                            </Box>
+                        </Menu>
 
-                    {/* Snap dropdown: a vertical list of three independent toggle rows
+                        {/* Snap dropdown: a vertical list of three independent toggle rows
                         (move / rotate / resize). Non-modal like align/order — pressing a row
                         toggles it WITHOUT closing the menu (the row is inside
                         `.card-edit-toolbar__snap-menu`, guarded by the document pointerdown
                         handler), so several can be toggled in one open. Portaled, so it takes
                         no slot in the flex list. */}
-                    <Menu
-                        className="card-edit-toolbar__snap-menu"
-                        anchorEl={snapAnchor}
-                        open={Boolean(snapAnchor)}
-                        onClose={() => setSnapAnchor(null)}
-                        hideBackdrop
-                        disableEnforceFocus
-                        disableAutoFocus
-                        slotProps={{
-                            root: { sx: { pointerEvents: "none" } },
-                            paper: { sx: { pointerEvents: "auto" } },
-                        }}
-                        MenuListProps={{ sx: { py: 0 } }}
-                    >
-                        <Box
-                            className="card-edit-toolbar__snap-list"
-                            sx={{ display: "flex", flexDirection: "column", gap: 0.5, p: 0.75, minWidth: "132px" }}
+                        <Menu
+                            className="card-edit-toolbar__snap-menu"
+                            anchorEl={snapAnchor}
+                            open={Boolean(snapAnchor)}
+                            onClose={() => setSnapAnchor(null)}
+                            hideBackdrop
+                            disableEnforceFocus
+                            disableAutoFocus
+                            slotProps={{
+                                root: { sx: { pointerEvents: "none" } },
+                                paper: { sx: { pointerEvents: "auto" } },
+                            }}
+                            MenuListProps={{ sx: { py: 0 } }}
                         >
-                            {snapRows.map((row) => (
-                                <Box
-                                    key={row.key}
-                                    className={`card-edit-toolbar__snap-row card-edit-toolbar__snap-row--${row.key}${row.active ? " card-edit-toolbar__snap-row--active" : ""}`}
-                                    onClick={row.onToggle}
-                                    sx={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: 1,
-                                        px: 1,
-                                        py: 0.5,
-                                        cursor: "pointer",
-                                        borderRadius: "6px",
-                                        color: fc.onSurface,
-                                        backgroundColor: row.active ? fc.toggleActiveBg : "transparent",
-                                        "&:hover": { backgroundColor: row.active ? fc.toggleActiveBg : fc.toggleInactiveBg },
-                                    }}
-                                >
-                                    {row.icon}
-                                    <Typography sx={{ fontSize: SIZE.micro, textTransform: "lowercase" }}>
-                                        {row.label}
-                                    </Typography>
-                                    {/* Push the check to the right; shown only when the toggle is on. */}
-                                    <Box sx={{ flex: 1 }} />
-                                    <CheckIcon sx={{ fontSize: 14, opacity: row.active ? 1 : 0 }} />
-                                </Box>
-                            ))}
-                        </Box>
-                    </Menu>
+                            <Box
+                                className="card-edit-toolbar__snap-list"
+                                sx={{ display: "flex", flexDirection: "column", gap: 0.5, p: 0.75, minWidth: "132px" }}
+                            >
+                                {snapRows.map((row) => (
+                                    <Box
+                                        key={row.key}
+                                        className={`card-edit-toolbar__snap-row card-edit-toolbar__snap-row--${row.key}${row.active ? " card-edit-toolbar__snap-row--active" : ""}`}
+                                        onClick={row.onToggle}
+                                        sx={{
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: 1,
+                                            px: 1,
+                                            py: 0.5,
+                                            cursor: "pointer",
+                                            borderRadius: "6px",
+                                            color: fc.onSurface,
+                                            // Active row tints with its operation's accent color
+                                            // (green/blue/orange), matching the Shift-pad cells.
+                                            backgroundColor: row.active ? SNAP_GROUP_COLOR[row.key] : "transparent",
+                                            "&:hover": { backgroundColor: row.active ? SNAP_GROUP_COLOR[row.key] : fc.toggleInactiveBg },
+                                        }}
+                                    >
+                                        {row.icon}
+                                        <Typography sx={{ fontSize: SIZE.micro, textTransform: "lowercase" }}>
+                                            {row.label}
+                                        </Typography>
+                                        {/* Push the check to the right; shown only when the toggle is on. */}
+                                        <Box sx={{ flex: 1 }} />
+                                        <CheckIcon sx={{ fontSize: 14, opacity: row.active ? 1 : 0 }} />
+                                    </Box>
+                                ))}
+                            </Box>
+                        </Menu>
 
-                    {/* Render-order dropdown: drag-to-reorder list of all icons.
+                        {/* Shift dropdown: a 3×3 step-nudge pad. Non-modal AND stays open on an
+                        inside press (like the snap menu — its cells live inside
+                        `.card-edit-toolbar__shift-menu`), so a learner can tap several nudges in
+                        one open. Cells whose snap group is on are highlighted; the center shows
+                        the two-line "snap is on" hint while any snap is active. Portaled, so it
+                        takes no slot in the flex list. */}
+                        <Menu
+                            className="card-edit-toolbar__shift-menu"
+                            anchorEl={shiftAnchor}
+                            open={Boolean(shiftAnchor)}
+                            onClose={() => setShiftAnchor(null)}
+                            hideBackdrop
+                            disableEnforceFocus
+                            disableAutoFocus
+                            slotProps={{
+                                root: { sx: { pointerEvents: "none" } },
+                                paper: { sx: { pointerEvents: "auto" } },
+                            }}
+                            MenuListProps={{ sx: { py: 0 } }}
+                        >
+                            <Box
+                                className="card-edit-toolbar__shift-grid"
+                                sx={{
+                                    display: "grid",
+                                    gridTemplateColumns: "repeat(3, 36px)",
+                                    gridTemplateRows: "repeat(3, 36px)",
+                                    gap: 0.5,
+                                    p: 0.75,
+                                }}
+                            >
+                                {shiftGrid.map((cell) =>
+                                    cell === null ? (
+                                        // Center cell — the two-line "snap is on" hint, shown only
+                                        // while any snap toggle is active (otherwise empty).
+                                        <Box
+                                            key="center"
+                                            className="card-edit-toolbar__shift-cell--center"
+                                            sx={{
+                                                display: "flex",
+                                                alignItems: "center",
+                                                justifyContent: "center",
+                                                textAlign: "center",
+                                                lineHeight: 1.1,
+                                            }}
+                                        >
+                                            {anySnapOn && (
+                                                <Typography
+                                                    className="card-edit-toolbar__shift-snap-hint"
+                                                    sx={{ fontSize: "9px", color: fc.onSurface, opacity: 0.7, lineHeight: 1.1 }}
+                                                >
+                                                    snap
+                                                    <br />
+                                                    is on
+                                                </Typography>
+                                            )}
+                                        </Box>
+                                    ) : (
+                                        <Box
+                                            key={cell.key}
+                                            className={`card-edit-toolbar__shift-cell card-edit-toolbar__shift-cell--${cell.key}${shiftGroupActive[cell.group] ? " card-edit-toolbar__shift-cell--snapped" : ""}`}
+                                            onClick={cell.onClick}
+                                            sx={{
+                                                display: "flex",
+                                                alignItems: "center",
+                                                justifyContent: "center",
+                                                cursor: "pointer",
+                                                borderRadius: "6px",
+                                                border: "1px solid rgba(0,0,0,0.18)",
+                                                color: fc.onSurface,
+                                                // Highlight cells whose snap group is on, using
+                                                // that group's accent color (green/blue/orange)
+                                                // so they visibly match the snap dropdown row.
+                                                backgroundColor: shiftGroupActive[cell.group] ? SNAP_GROUP_COLOR[cell.group] : "transparent",
+                                                "&:hover": { backgroundColor: shiftGroupActive[cell.group] ? SNAP_GROUP_COLOR[cell.group] : fc.toggleInactiveBg },
+                                            }}
+                                        >
+                                            {cell.icon}
+                                        </Box>
+                                    ),
+                                )}
+                            </Box>
+                        </Menu>
+
+                        {/* Contrast dropdown: two rows (foreign word + English), each a 3-way
+                        theme/dark/light segmented control. Non-modal AND stays open on an
+                        inside press (cells live inside `.card-edit-toolbar__contrast-menu`), so
+                        both rows can be set in one open. Portaled, so it takes no slot in the
+                        flex list. */}
+                        <Menu
+                            className="card-edit-toolbar__contrast-menu"
+                            anchorEl={contrastAnchor}
+                            open={Boolean(contrastAnchor)}
+                            onClose={() => setContrastAnchor(null)}
+                            hideBackdrop
+                            disableEnforceFocus
+                            disableAutoFocus
+                            slotProps={{
+                                root: { sx: { pointerEvents: "none" } },
+                                paper: { sx: { pointerEvents: "auto" } },
+                            }}
+                            MenuListProps={{ sx: { py: 0 } }}
+                        >
+                            <Box
+                                className="card-edit-toolbar__contrast-list"
+                                sx={{ display: "flex", flexDirection: "column", gap: 1, p: 0.75, minWidth: "200px" }}
+                            >
+                                {contrastRows.map((row) => (
+                                    <Box
+                                        key={row.key}
+                                        className={`card-edit-toolbar__contrast-row card-edit-toolbar__contrast-row--${row.key}`}
+                                        sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}
+                                    >
+                                        {/* The card's actual text for this run, ellipsized so a long
+                                        word/definition doesn't blow out the menu width. */}
+                                        <Typography
+                                            className="card-edit-toolbar__contrast-label"
+                                            sx={{
+                                                fontSize: SIZE.micro,
+                                                color: fc.onSurface,
+                                                opacity: 0.85,
+                                                whiteSpace: "nowrap",
+                                                overflow: "hidden",
+                                                textOverflow: "ellipsis",
+                                                maxWidth: "100%",
+                                            }}
+                                        >
+                                            {row.label || (row.key === "foreign" ? "word" : "english")}
+                                        </Typography>
+                                        {/* 3-way segmented control: theme | dark | light. */}
+                                        <Box
+                                            className="card-edit-toolbar__contrast-modes"
+                                            sx={{ display: "flex", gap: 0.5 }}
+                                        >
+                                            {contrastModes.map((mode) => {
+                                                const active = row.value === mode;
+                                                return (
+                                                    <Box
+                                                        key={mode}
+                                                        className={`card-edit-toolbar__contrast-mode card-edit-toolbar__contrast-mode--${mode}${active ? " card-edit-toolbar__contrast-mode--active" : ""}`}
+                                                        onClick={() => row.onSet(mode)}
+                                                        sx={{
+                                                            flex: 1,
+                                                            textAlign: "center",
+                                                            px: 1,
+                                                            py: 0.5,
+                                                            cursor: "pointer",
+                                                            borderRadius: "6px",
+                                                            border: "1px solid rgba(0,0,0,0.18)",
+                                                            fontSize: SIZE.micro,
+                                                            textTransform: "lowercase",
+                                                            color: fc.onSurface,
+                                                            backgroundColor: active ? fc.toggleActiveBg : "transparent",
+                                                            "&:hover": { backgroundColor: active ? fc.toggleActiveBg : fc.toggleInactiveBg },
+                                                        }}
+                                                    >
+                                                        {mode}
+                                                    </Box>
+                                                );
+                                            })}
+                                        </Box>
+                                    </Box>
+                                ))}
+                            </Box>
+                        </Menu>
+
+                        {/* Render-order dropdown: drag-to-reorder list of all icons.
                         Portaled (or null when closed), so it takes no slot in the flex list. */}
-                    <Popover
-                        className="card-edit-toolbar__order-popover"
-                        anchorEl={orderAnchor}
-                        open={Boolean(orderAnchor)}
-                        onClose={() => setOrderAnchor(null)}
-                        anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
-                        // Non-modal: see the align Menu — presses outside fall through and
-                        // we close it ourselves from the document pointerdown listener.
-                        hideBackdrop
-                        disableEnforceFocus
-                        disableAutoFocus
-                        slotProps={{
-                            root: { sx: { pointerEvents: "none" } },
-                            paper: { sx: { pointerEvents: "auto" } },
-                        }}
-                    >
-                        <CardIconOrderList layout={layout} onReorder={onReorder} onReorderStart={onReorderStart} onSelectIcon={onSelectIcon} />
-                    </Popover>
-                </Box>
-            </Collapse>
-        </Box>
-    );
-};
+                        <Popover
+                            className="card-edit-toolbar__order-popover"
+                            anchorEl={orderAnchor}
+                            open={Boolean(orderAnchor)}
+                            onClose={() => setOrderAnchor(null)}
+                            anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
+                            // Non-modal: see the align Menu — presses outside fall through and
+                            // we close it ourselves from the document pointerdown listener.
+                            hideBackdrop
+                            disableEnforceFocus
+                            disableAutoFocus
+                            slotProps={{
+                                root: { sx: { pointerEvents: "none" } },
+                                paper: { sx: { pointerEvents: "auto" } },
+                            }}
+                        >
+                            <CardIconOrderList layout={layout} onReorder={onReorder} onReorderStart={onReorderStart} onSelectIcon={onSelectIcon} selectedIndex={selectedIndex} />
+                        </Popover>
+                    </Box>
+                </Collapse>
+            </Box>
+        );
+    };
 
 export default CardEditToolbar;

@@ -112,14 +112,8 @@ export class CommunityLayoutDAL implements ICommunityLayoutDAL {
         WHERE ve.language = $2
           AND ve."userId" <> $1
           AND ${IS_ADVANCED_LAYOUT}
-          -- "Top THIS WEEK" means designs that actually earned a vote this week; a 0-vote
-          -- design is not a top design, so it never appears in this feed.
-          AND EXISTS (
-            SELECT 1 FROM community_layout_votes v
-            WHERE v."ownerUserId" = ve."userId" AND v."entryKey" = ve."entryKey"
-              AND v.language = ve.language
-              AND v."votedAt" >= ${WEEK_BOUNDARY}
-          )
+          -- Every advanced layout is eligible for the Top feed; designs with no vote this
+          -- week still appear, sorted to the bottom by the vote-count ORDER BY below.
           ${this.excludeClause}
         ORDER BY "voteCountThisWeek" DESC, ve."userId", ve."entryKey"  -- top this week, stable tiebreak
         LIMIT $5

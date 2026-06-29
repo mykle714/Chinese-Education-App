@@ -14,10 +14,9 @@ horizontally-scrolling, infinitely-paginated feeds:
 1. **"For words you're learning"** — other users' advanced layouts for words in the viewer's
    **non-mastered library** (`starterPackBucket = 'library'` and category ≠ `Mastered`).
    Returned in random order, a page (10) at a time.
-2. **"Top designs this week"** — advanced layouts across all other users **that earned at least
-   one upvote this week**, ranked by vote count (descending, stable `(ownerUserId, entryKey)`
-   tiebreak). Designs with zero votes this week are excluded (a 0-vote design isn't a "top"
-   design), so the feed is empty until designs start getting upvoted each week.
+2. **"Top designs this week"** — advanced layouts across all other users, ranked by this-week
+   vote count (descending, stable `(ownerUserId, entryKey)` tiebreak). Designs with zero votes
+   this week are still included; they sort to the bottom of the feed.
 
 Both feeds share the same tap→zoom→vote/apply flow.
 

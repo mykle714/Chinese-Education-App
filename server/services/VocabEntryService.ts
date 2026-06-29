@@ -3,7 +3,7 @@ import csv from 'csv-parser';
 import { IVocabEntryDAL } from '../dal/interfaces/IVocabEntryDAL.js';
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import { DictionaryService } from './DictionaryService.js';
-import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, Language, IconLayoutItem, ICON_LAYOUT_MAX_ITEMS, SnapConfig } from '../types/index.js';
+import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, Language, IconLayoutItem, ICON_LAYOUT_MAX_ITEMS, SnapConfig, TextColors, TextColorMode } from '../types/index.js';
 import { ValidationError, NotFoundError, BulkResult } from '../types/dal.js';
 import db from '../db.js';
 import { vetTableForLanguage } from '../dal/shared/vetTable.js';
@@ -198,27 +198,46 @@ export class VocabEntryService {
 
   /**
    * Persist (or clear) a custom flashcard icon arrangement for one of the user's vet
-   * rows. `layout` of null clears it back to the default centered icon. The editor's
-   * per-card snap toggles ride along on the same write: `snapConfig` of `undefined`
-   * leaves the column untouched (community copy path), `null` clears it (all off), an
-   * object sets it. Validates both shapes here (business rule), then writes via the
-   * ownership-scoped DAL method. See docs/CARD_ICON_LAYOUT.md.
+   * rows. `layout` of null clears it back to the default centered icon. Two per-card
+   * editor settings ride along on the same write — each follows the SAME tri-state rule:
+   * `undefined` leaves the column untouched (community copy path), `null` clears it, an
+   * object sets it. `snapConfig` = the snap toggles (migration 88); `textColors` = the
+   * Contrast text-color overrides (migration 89). Validates each shape here (business
+   * rule), then writes via the ownership-scoped DAL method. See docs/CARD_ICON_LAYOUT.md.
    */
   async updateIconLayout(
     userId: string,
     entryId: number,
     language: string,
     layout: IconLayoutItem[] | null,
-    snapConfig?: SnapConfig | null
+    snapConfig?: SnapConfig | null,
+    textColors?: TextColors | null
   ): Promise<VocabEntry> {
     const clean = layout === null ? null : this.validateIconLayout(layout);
     const cleanSnap = snapConfig === undefined ? undefined : this.validateSnapConfig(snapConfig);
-    const updated = await this.vocabEntryDAL.updateIconLayout(userId, entryId, language, clean, cleanSnap);
+    const cleanColors = textColors === undefined ? undefined : this.validateTextColors(textColors);
+    const updated = await this.vocabEntryDAL.updateIconLayout(userId, entryId, language, clean, cleanSnap, cleanColors);
     if (!updated) {
       // No row matched the id for this user — either it doesn't exist or isn't theirs.
       throw new NotFoundError('Vocabulary entry not found');
     }
     return updated;
+  }
+
+  /**
+   * Validate the per-card text-color overrides: null (both 'theme') or an object with a
+   * `foreign` + `english` side, each one of 'theme' | 'dark' | 'light'. Any missing /
+   * unrecognized side falls back to 'theme', so a partial/loosely-typed body is normalized.
+   * See docs/CARD_ICON_LAYOUT.md.
+   */
+  private validateTextColors(colors: unknown): TextColors | null {
+    if (colors === null) return null;
+    if (typeof colors !== 'object' || Array.isArray(colors)) {
+      throw new ValidationError('textColors must be an object or null');
+    }
+    const c = colors as Record<string, unknown>;
+    const coerce = (v: unknown): TextColorMode => (v === 'dark' || v === 'light' ? v : 'theme');
+    return { foreign: coerce(c.foreign), english: coerce(c.english) };
   }
 
   /**

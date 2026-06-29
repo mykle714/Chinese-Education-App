@@ -1,12 +1,13 @@
 # Custom Card Icon Layout (flp)
 
 > Status: **implemented**. Backed by migration 82 (`iconLayout`) + migration 88
-> (`snapConfig`, per-card snap toggles), the icons8 search/ensure and vocabEntries
-> icon-layout endpoints, and the flp edit-mode UI.
+> (`snapConfig`, per-card snap toggles) + migration 89 (`textColors`, per-card Contrast
+> text colors), the icons8 search/ensure and vocabEntries icon-layout endpoints, and the
+> flp edit-mode UI.
 > The editor has **two modes** — basic (swap the single icon) and advanced (the full
 > drag/resize/rotate canvas, plus per-icon tools merged into **one wrapping flex-list menu**:
-> undo / redo / delete / duplicate / mirror / lock / align / snap / order / count, flowing onto
-> the next line when a row overflows). In
+> delete / duplicate / mirror / undo / redo / lock / shift / contrast / align / snap / order /
+> count, flowing onto the next line when a row overflows). In
 > **advanced** mode the card is pushed (animated) down toward the bottom of the screen so
 > the three-row toolbar clears it (basic mode keeps its single static row, card stays
 > centered). While editing the **More Info pill stays drawn but greyed + inert**; in
@@ -104,6 +105,19 @@ keep their own stored `scale`. `flipX` is mirrored at render time via
 editor's snap setup per saved word (see the snap tool under "Edit-mode UX"). Written
 together with `iconLayout` by the same `PATCH …/icon-layout`. Type `SnapConfig` lives in
 `src/types.ts` + `server/types/index.ts` (re-exported from `CardIconCanvas.tsx`).
+
+**Per-card Contrast text colors — `textColors` jsonb** on both vet tables (migration
+`database/migrations/89-add-text-colors-to-vocabentries.sql`). Shape
+`{ "foreign": "theme"|"dark"|"light", "english": "theme"|"dark"|"light" }`; `NULL` = both
+`theme`. Persists the editor's **Contrast** menu per saved word (see the Contrast tool under
+"Edit-mode UX"). `foreign` colors the foreign-word **glyphs only** (the Chinese characters /
+Spanish word) — the pinyin overlay is **never** affected; `english` colors the English
+definition. `theme` follows the device/app theme (the existing default), `dark` forces black
+(`#000`), `light` forces white (`#fff`). Written together with `iconLayout` by the same
+`PATCH …/icon-layout`. Types `TextColorMode` / `TextColors` live in `src/types.ts` +
+`server/types/index.ts`; the resolver `resolveTextColor` lives in
+`src/utils/cardTextColor.ts` (returns `undefined` for `theme` so callers keep their
+theme-aware default).
 
 **Coordinates are normalized** (fractions of the rendered card size), so a saved
 layout survives the card being rendered at different pixel sizes across viewports.
@@ -242,10 +256,11 @@ All in `src/pages/FlashcardsLearnPage/`.
    columns / table widths). The align/order dropdowns are children of the list but portal /
    return null, so they take no slot. The tools, in order:
 
-   - **undo** (`Undo`) — reverts the last edit action. Disabled with an empty undo stack.
-   - **redo** (`Redo`) — replays the most recently undone action. Disabled with an empty
-     redo stack; the redo stack is cleared whenever a fresh tracked action occurs (see
-     "Undo/redo history" below).
+   - **undo** (`Undo`) — reverts the last edit action (between **mirror** and **lock** in the
+     menu). Disabled with an empty undo stack.
+   - **redo** (`Redo`) — replays the most recently undone action. Disabled with an empty redo
+     stack; the redo stack is cleared whenever a fresh tracked action occurs (see "Undo/redo
+     history" below).
    - **delete** (`DeleteOutline`) — removes the **selected** icon (no confirmation).
      Disabled when nothing is selected.
    - **duplicate** (`ContentCopy`) — clones the **selected** icon's appearance
@@ -263,23 +278,65 @@ All in `src/pages/FlashcardsLearnPage/`.
      filled-golden button styling (`selectedLocked` drives it), vs. the open-lock icon when
      unlocked. Disabled when nothing is selected. Lock is **not** an undoable action — see
      "Undo/redo history" below.
-   - **align** / **snap** / **order** — the three dropdown tools (see below).
+   - **shift** / **contrast** / **align** / **snap** / **order** — the five dropdown tools
+     (see below).
    - the **`count/12` readout** (`Typography`) — the last item in the list, vertically
      centered (`alignSelf: center`); moved here off the basic row.
 
-   *The align + snap + order dropdowns are **non-modal**.* They render with `hideBackdrop` +
-   `slotProps.root.sx.pointerEvents: "none"` / `slotProps.paper: "auto"`, so a press
-   anywhere outside the open dropdown is **not** swallowed by a modal backdrop — it falls
+   *The shift + contrast + align + snap + order dropdowns are **non-modal**.* They render with
+   `hideBackdrop` + `slotProps.root.sx.pointerEvents: "none"` / `slotProps.paper: "auto"`, so a
+   press anywhere outside the open dropdown is **not** swallowed by a modal backdrop — it falls
    straight through to the canvas/toolbar. Because that removes MUI's own backdrop-click
    `onClose`, the toolbar closes them itself: a capture-phase `document` `pointerdown`
-   (effect keyed on the three anchors) closes whichever is open whenever the press lands
+   (effect keyed on the five anchors) closes whichever is open whenever the press lands
    outside it (`closest('.card-edit-toolbar__align-menu, .card-edit-toolbar__order-popover,
-   .card-edit-toolbar__snap-menu')` guards inside presses). Net effect: trying any action while
-   a dropdown is open (drag an icon, hit another tool) **both dismisses the dropdown and performs
-   the action** in the one press, instead of the first press being eaten just to close the menu.
-   The snap menu is the exception that *stays* open on an inside press (its rows are inside
-   `.card-edit-toolbar__snap-menu`), so several toggles can be flipped in one open.
+   .card-edit-toolbar__snap-menu, .card-edit-toolbar__shift-menu, .card-edit-toolbar__contrast-menu')`
+   guards inside presses). Net effect: trying any action while a dropdown is open (drag an icon,
+   hit another tool) **both dismisses the dropdown and performs the action** in the one press,
+   instead of the first press being eaten just to close the menu. The snap, **shift**, and
+   **contrast** menus are the exceptions that *stay* open on an inside press (their cells are
+   inside the respective `…__snap-menu` / `…__shift-menu` / `…__contrast-menu`), so several
+   toggles / nudges / settings can be made in one open.
 
+   *Each trigger button toggles its own dropdown.* Tapping a dropdown's toolbar button (snap /
+   order / shift / align / contrast) opens it, or **closes it if it's already open**; opening one
+   always closes any other that was open (only one dropdown is open at a time). This is driven by
+   `toggleDropdown(which, e)` in `CardEditToolbar.tsx`, which sets the target anchor with a
+   functional toggle (`a ? null : anchor`) and nulls the rest. For the toggle to read the true
+   open state, the capture-phase `pointerdown` handler **exempts the trigger buttons themselves**
+   (`closest('.card-edit-toolbar__align, .card-edit-toolbar__order, .card-edit-toolbar__snap,
+   .card-edit-toolbar__shift, .card-edit-toolbar__contrast')`) — otherwise it would clear the
+   anchor before the button's `onClick` fired and the menu would re-open instead of closing.
+
+   - **shift** (`ControlCamera`) — opens a **3×3 step-nudge pad** that fine-tunes the selected
+     icon one step per tap. Layout (row-major): the four **corners** are CCW rotate / CW rotate
+     (top) and − size / ＋ size (bottom); the four **cardinals** translate (up/left/right/down);
+     the **center** shows the two-line "snap is on" hint while any snap toggle is active
+     (otherwise empty). Each step honors the matching snap toggle: with the snap ON it steps by
+     exactly one snap unit (and re-lands on the snap grid) — grid = 5%-of-width, rotate = 22.5°,
+     size = 5%-of-width; with the snap OFF it makes a fine nudge of **1 design px** (move/size)
+     or **1°** (rotate). Cells whose snap group is on are **highlighted** (move → the four
+     cardinals, rotate → the two rotate corners, resize → the two size corners), each tinted
+     with that operation's **accent color** — move/grid = light green (`COLORS.greenAccent`),
+     rotate = light blue (`COLORS.blueAccent`), resize/size = light orange (`COLORS.yellowAccent`)
+     — the **same colors the snap dropdown's active rows use** (`SNAP_GROUP_COLOR` in
+     `CardEditToolbar.tsx`), so the two surfaces read as the same setting. Magnitudes +
+     helpers (`nudgeCenter` / `nudgeRotationStep` / `nudgeScaleStep`, and the `CARD_DESIGN_WIDTH`
+     / `CARD_DESIGN_HEIGHT` / `NUDGE_*` constants) live in `cardIconLayout.ts`; the page handlers
+     (`handleNudgeMove` / `handleRotateStep` / `handleResizeStep`) each snapshot undo history, so
+     a nudge is a discrete undoable action. Disabled when nothing is selected.
+   - **contrast** (`Contrast`) — opens a dropdown of **two rows** — the **foreign word** (label =
+     the card's characters) and the **English** (label = the card's definition) — each a 3-way
+     **theme / dark / light** segmented control. `theme` follows the device/app theme (default),
+     `dark` forces black, `light` forces white. It recolors **card text**, not icons, so it is
+     **independent of icon selection** (disabled only while saving). `foreign` colors the
+     foreign-word **glyphs only** (the pinyin overlay is never affected — the character color is
+     threaded through `ForeignText` → `CPCDRow`'s `characterColor` prop, and the plain-text path
+     for Spanish; pinyin keeps its own tone color); `english` colors the definition Typography.
+     The setting persists per card in `vet.textColors` (migration 89) and previews live on the
+     card while editing (the page merges the live `{foreign,english}` onto `editingCurrentEntry`).
+     It also applies on the **mini card thumbnails** (`MiniVocabCard`). Saved/cancelled with the
+     layout (Save folds it in; `null` when both sides are `theme`); reset-to-default clears it.
    - **align** (`CropSquare`) — opens a dropdown laid out as a **3×3 grid of direction
      cells with the center cell empty** (8 directions: the 4 cardinals + the 4 **45°
      diagonals**). Each cell shows an upward arrow spun toward its direction; clicking it
@@ -294,13 +351,16 @@ All in `src/pages/FlashcardsLearnPage/`.
      **filled when ANY toggle is on** (`anySnapOn`) and is disabled when the card is empty
      (`count === 0`). Each row shows an icon + label + a trailing check that fades in when
      active; pressing a row toggles it **without closing the menu** (so several can be set in
-     one open). The increments (helpers in `cardIconLayout.ts`):
-     - **move** → icon CENTER snaps to a grid whose spacing is **5% of the card width** in
+     one open). An **active row is tinted with its operation's accent color** (move = light
+     green, rotate = light blue, resize = light orange — `SNAP_GROUP_COLOR`), the same colors
+     the Shift pad uses to highlight that operation's cells. The increments (helpers in
+     `cardIconLayout.ts`):
+     - **move** (labeled **grid**) → icon CENTER snaps to a grid whose spacing is **5% of the card width** in
        both physical axes (`snapCenterToGrid`; the y-step is `0.05 × CARD_ASPECT` in height
        fractions since the grid is square in pixels — `CARD_ASPECT = 295/426`, the fixed card
        aspect, so the math needs no pixel rect).
      - **rotate** → rotation snaps to the nearest **22.5°** (`snapRotation`; 16 steps/turn).
-     - **resize** → the rendered icon SIZE (`BASE_ICON_FRAC × scale` of card width) snaps to
+     - **resize** (labeled **size**) → the rendered icon SIZE (`BASE_ICON_FRAC × scale` of card width) snaps to
        the nearest **5% of the card width** (`snapScaleToStep`, clamped to the scale range).
 
      **Two-layer behavior.** (1) *Turning a toggle ON snaps every icon immediately* — the page
@@ -345,9 +405,11 @@ All in `src/pages/FlashcardsLearnPage/`.
      paths, which silently aborted the whole drag → the old "drag does nothing" bug).
      Window listeners make the drag complete wherever the pointer travels or releases.
 
-   **Undo/redo history** — the page keeps two capped stacks (`ADV_HISTORY_MAX = 100`) of
-   prior `advDraft` snapshots: `advHistory` (undo) and `advFuture` (redo). Every discrete
-   action pushes the PRE-change snapshot onto `advHistory` via `pushAdvHistory` *before*
+   **Undo/redo history** — the undo/redo buttons sit between **mirror** and **lock**; the
+   **Shift** nudges + every other action push history too. The page keeps two capped stacks
+   (`ADV_HISTORY_MAX = 100`) of prior `advDraft` snapshots: `advHistory` (undo) and `advFuture`
+   (redo). Every discrete action pushes the PRE-change snapshot onto `advHistory` via
+   `pushAdvHistory` *before*
    mutating: gestures snapshot once on the **first real movement** (`onInteractionStart`,
    fired by `CardIconCanvas` from the `onDrag`/`onPinch` memo factory, and from the corner
    handle's `first` frame) — deliberately **NOT** on `onDragStart`/`onPinchStart`, because a
@@ -433,13 +495,25 @@ All in `src/pages/FlashcardsLearnPage/`.
      `OpenWith` resize glyph to a **golden** (`#E0A82E`) `Lock` glyph and becomes inert,
      and the icon box drops its grab cursor. `locked` persists in the saved jsonb but is
      **ignored by the read-only renderer** (`CardIconLayer`) — it's an editor-only concept.
+     - **Denied-action shake** — when a translate / pinch / handle-resize gesture is
+       attempted on a locked icon, the icon plays a brief horizontal **shake** to signal the
+       action can't be performed (mirroring the front-card "can't do that" shake in
+       `FlashCardSection.tsx`). Driven by a `{ i, nonce }` state in `CardIconCanvas`: the
+       blocked-gesture early-returns each call `triggerShake(i)` (once per gesture — at
+       `beginPinch`, the drag's first-real-frame memo init, and the handle's `first` frame),
+       which bumps `nonce`. The icon box's `@keyframes` animation NAME embeds the nonce, so a
+       repeat trigger is a fresh animation that restarts cleanly **without remounting** the
+       box (a remount would abort the in-flight pointer gesture). Each keyframe PREPENDS a
+       screen-space x-offset to the icon's base `translate(-50%,-50%) rotate(...)` transform,
+       so it composes with the icon's placement and settles back exactly at rest;
+       `onAnimationEnd` clears the state.
    - **Selecting / selection switching** — a **tap** selects an icon under it (the
      `onDrag` tap branch, via `filterTaps`), preferring the topmost unlocked icon at that
      point (`pickTapTarget`, see "Locked icons" above). A **drag/pinch** does not blindly grab the
      icon it lands on: `resolveTarget` decides whether it acts on the **already-selected**
      icon or **auto-switches** to the one pressed:
        - The selected icon (when **unlocked**) owns a **protected zone** = its box expanded
-         outward by `PROTECT_MARGIN_FRAC` (15% of the card width) on every side. A gesture
+         outward by `PROTECT_MARGIN_FRAC` (10% of the card width) on every side. A gesture
          STARTING inside the zone keeps acting on the
          selected icon, so an overlapping neighbour can't steal a fine manipulation; a
          gesture starting OUTSIDE the zone switches selection to the icon it landed on and
@@ -560,7 +634,7 @@ All in `src/pages/FlashcardsLearnPage/`.
 | `GET /api/icons8/search?term=&offset=&limit=` | yes | Proxy the live icons8 v7 search; returns `{ icons: [{ id, name }], hasMore }`. |
 | `POST /api/icons8/default-results` | yes | Body `{ language, entryKey, pos?, term }`. Return (and cache on first call, on det `defaultIconResults`) the first page of the card's default-query results: `{ icons: [{ id, name }] }`. Warms the picker so it renders instantly on open. |
 | `POST /api/icons8/:iconId/ensure` | yes | Download + cache the icon's SVG into the `icons8` table if missing (so `/api/icons8/<id>/image` can serve it). Idempotent. |
-| `PATCH /api/vocabEntries/:id/icon-layout` | yes | Body `{ iconLayout: Item[] \| null, snapConfig?: {move,rotate,resize} \| null }`. Persist or clear the layout **and** the per-card snap toggles for the caller's vet row. `snapConfig` omitted = leave the column untouched (community copy path); `null` = clear; object = set. Echoes back `{ id, iconLayout, snapConfig }`. |
+| `PATCH /api/vocabEntries/:id/icon-layout` | yes | Body `{ iconLayout: Item[] \| null, snapConfig?: {move,rotate,resize} \| null, textColors?: {foreign,english} \| null }`. Persist or clear the layout **and** the per-card snap toggles **and** the Contrast text colors for the caller's vet row. `snapConfig` / `textColors` omitted = leave that column untouched (community copy path); `null` = clear; object = set. Echoes back `{ id, iconLayout, snapConfig, textColors }`. |
 | `GET /api/icons8/:iconId/image` | no (existing) | Serves cached icon bytes. Unchanged ([Icons8Controller.ts](../server/controllers/Icons8Controller.ts)). |
 
 **Search filters** mirror the representative-icon backfill exactly:
@@ -578,21 +652,28 @@ the separate download-on-select step.
 - `server/controllers/Icons8Controller.ts` — `searchIcons`, `ensureIcon` handlers;
   routes registered in `server/server.ts` (near the existing icons8 routes).
 - `server/controllers/VocabEntryController.ts` + `VocabEntryDAL.ts`
-  (`IVocabEntryDAL`) — `updateIconLayout(userId, id, layout, snapConfig?)`, scoped by
-  `userId`. Layout validation: `null` OR an array of ≤ 12 items with a string `iconId`,
-  numeric `x`/`y`/`scale`/`rotation`/`z`, and optional booleans `flipX` and `locked`
+  (`IVocabEntryDAL`) — `updateIconLayout(userId, id, layout, snapConfig?, textColors?)`,
+  scoped by `userId`. Layout validation: `null` OR an array of ≤ 12 items with a string
+  `iconId`, numeric `x`/`y`/`scale`/`rotation`/`z`, and optional booleans `flipX` and `locked`
   (both coerced; omitted when false) — else `400`. `scale` is clamped to `[0.25, 5]` and
   the `x`/`y` **center** is clamped by the same 15%-on-card rule the edit canvas uses
   (`clampIconCenter`), NOT to `[0,1]` — so a mostly-off-card icon is not pulled inward on
-  save (see the Data model note above). `z` is renumbered 0..n-1 by ascending `z` on save. `snapConfig` validation (`validateSnapConfig`): `undefined` leaves the
-  column untouched (community copy path), `null` clears it, an object is coerced to
-  `{move,rotate,resize}` booleans — else `400`. Layout + snap are written in **one
-  UPDATE** (the DAL builds the SET list conditionally).
+  save (see the Data model note above). `z` is renumbered 0..n-1 by ascending `z` on save.
+  `snapConfig` validation (`validateSnapConfig`): `undefined` leaves the column untouched
+  (community copy path), `null` clears it, an object is coerced to `{move,rotate,resize}`
+  booleans — else `400`. `textColors` validation (`validateTextColors`): same tri-state —
+  `undefined` leaves the column untouched, `null` clears it (both `theme`), an object is
+  coerced to `{foreign,english}` where each side is `theme`/`dark`/`light` (any unknown side
+  falls back to `theme`) — else `400`. Layout + snap + colors are written in **one UPDATE**
+  (the DAL builds the SET list conditionally).
 
 **Types** — `IconLayoutItem` (with the optional `flipX` and `locked`) + `iconLayout?:
-IconLayoutItem[] | null` and `SnapConfig` (`{move,rotate,resize}`) + `snapConfig?:
-SnapConfig | null` on the `VocabEntry` interface, in both `server/types/index.ts` and
-client `src/types.ts`. `SnapConfig` is re-exported from `CardIconCanvas.tsx`.
+IconLayoutItem[] | null`, `SnapConfig` (`{move,rotate,resize}`) + `snapConfig?:
+SnapConfig | null`, and `TextColors` (`{foreign,english}` of `TextColorMode =
+'theme'|'dark'|'light'`) + `textColors?: TextColors | null` on the `VocabEntry` interface,
+in both `server/types/index.ts` and client `src/types.ts`. `SnapConfig` is re-exported from
+`CardIconCanvas.tsx`. The Contrast color resolver `resolveTextColor` lives in
+`src/utils/cardTextColor.ts`.
 
 ## Dependencies / cross-references
 
@@ -606,6 +687,10 @@ client `src/types.ts`. `SnapConfig` is re-exported from `CardIconCanvas.tsx`.
   `users."avatarIconId"` (migration 77).
 - vet read plumbing: `server/dal/shared/vetTable.ts`, `server/dal/shared/dictJoin.ts`,
   `server/dal/implementations/VocabEntryDAL.ts`.
+- Contrast text-color path (migration 89): resolver `src/utils/cardTextColor.ts`
+  (`resolveTextColor`) → `characterColor` prop on `src/components/ForeignText.tsx` +
+  `src/components/CPCDRow.tsx` (glyph-only color; pinyin untouched) and the English
+  Typography in `FlashCardSection.tsx` `EnglishBlock` + the `MiniVocabCard.tsx` thumbnail.
 - Greyed-lockout edit pattern: [PRACTICE_WRITING.md](./PRACTICE_WRITING.md).
 - Multi-language vet scoping: [MULTI_LANGUAGE_IMPLEMENTATION.md](./MULTI_LANGUAGE_IMPLEMENTATION.md).
 - **Community sharing** — advanced layouts (`isAdvancedLayout`, multi-icon or a moved single

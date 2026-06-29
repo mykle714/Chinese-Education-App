@@ -72,7 +72,7 @@ const CardIconCanvas: React.FC<{
     onSelect: (i: number | null) => void;
     onInteractionStart: () => void;
     // Live snap toggles: while a toggle is on, the matching gesture quantizes to its
-    // discrete increment (move grid / 11.25° rotation / 5%-of-width size).
+    // discrete increment (move grid / 22.5° rotation / 5%-of-width size).
     snap: SnapConfig;
 }> = ({ layout, onChange, selected, onSelect, onInteractionStart, snap }) => {
     const rootRef = useRef<HTMLDivElement | null>(null);
@@ -90,6 +90,16 @@ const CardIconCanvas: React.FC<{
     // the new target THIS gesture, without waiting for the async `selected` state to commit.
     const gestureTargetRef = useRef<number | null>(null);
 
+    // Drives the "denied" shake on a LOCKED icon: when a translate / resize / rotate gesture
+    // is attempted on a locked icon (and therefore frozen), we shake that icon to signal the
+    // action can't be performed — mirroring the front-card shake in FlashCardSection. `i` is
+    // the icon index; `nonce` increments per trigger so the keyframe NAME changes each time,
+    // which restarts the CSS animation WITHOUT remounting the icon box (a remount would kill
+    // the in-flight pointer gesture). Cleared on animation end. See docs/CARD_ICON_LAYOUT.md.
+    const [shake, setShake] = useState<{ i: number; nonce: number } | null>(null);
+    const triggerShake = (i: number) =>
+        setShake(prev => ({ i, nonce: (prev?.nonce ?? 0) + 1 }));
+
     const rect = () => rootRef.current?.getBoundingClientRect() ?? null;
 
     // Replace one item (by index) with a patch; pushes the new array upward.
@@ -98,14 +108,14 @@ const CardIconCanvas: React.FC<{
     };
 
     // The selected (unlocked) icon owns a "protected zone" = its box expanded outward by a
-    // fixed margin of 15% of the CARD WIDTH on every side. A drag/pinch STARTING inside the
+    // fixed margin of 10% of the CARD WIDTH on every side. A drag/pinch STARTING inside the
     // zone keeps acting on the selected icon so an overlapping neighbour can't steal it; one
     // starting outside switches to the icon under the pointer. A LOCKED selected icon has NO
     // zone (it can't be manipulated, so any gesture passes straight through to whatever it
     // landed on). See docs/CARD_ICON_LAYOUT.md.
-    const PROTECT_MARGIN_FRAC = 0.15; // fraction of card width
+    const PROTECT_MARGIN_FRAC = 0.1; // fraction of card width
 
-    // Is a client-space point within the selected icon's boundary + 15%-card-width margin?
+    // Is a client-space point within the selected icon's boundary + 10%-card-width margin?
     // Rotation is ignored (axis-aligned box approximation) — close enough for this
     // grab-vs-switch test.
     const withinSelectedZone = (px: number, py: number): boolean => {
@@ -114,7 +124,7 @@ const CardIconCanvas: React.FC<{
         if (!r) return false;
         const sel = layout[selected];
         // Half-extent as a fraction of card width (icons are square in px), plus the fixed
-        // 15%-card-width margin. The same px margin applies on the y-axis, so converting the
+        // 10%-card-width margin. The same px margin applies on the y-axis, so converting the
         // width-fraction extent to a height-fraction via the aspect ratio keeps it square.
         const hx = (BASE_ICON_FRAC * sel.scale) / 2 + PROTECT_MARGIN_FRAC;
         const hy = hx * (r.width / r.height); // convert width-fraction → height-fraction
@@ -201,6 +211,8 @@ const CardIconCanvas: React.FC<{
         if (!layout[t].locked) {
             onInteractionStart(); // snapshot undo history once, on the first real frame
             setInteracting(true); // float the target to the front while pinching
+        } else {
+            triggerShake(t); // frozen target: signal the denied resize/rotate with a shake
         }
         return { t, d0: d || 1, a0: a, scale: layout[t].scale, rot: layout[t].rotation };
     };
@@ -261,6 +273,8 @@ const CardIconCanvas: React.FC<{
                         if (!layout[t].locked) {
                             onInteractionStart();
                             setInteracting(true);
+                        } else {
+                            triggerShake(t); // frozen target: signal the denied move with a shake
                         }
                         return { t, x: layout[t].x, y: layout[t].y };
                     })();
@@ -305,7 +319,11 @@ const CardIconCanvas: React.FC<{
             event?.stopPropagation?.();
             if (selected === null) return;
             // A locked icon's corner indicator is inert — no resize/rotate via the handle.
-            if (layout[selected].locked) return;
+            // Shake the icon on the first frame to signal the action is denied.
+            if (layout[selected].locked) {
+                if (first) triggerShake(selected);
+                return;
+            }
             // Snapshot once at the start of a resize/rotate drag for undo; float the icon
             // to the front for the duration of the resize, then drop it back to its z.
             if (first) { onInteractionStart(); setInteracting(true); }
@@ -392,6 +410,15 @@ const CardIconCanvas: React.FC<{
                 // a drag across an unselected icon never grabs or selects it.
                 const bound = bindIcon(i);
                 const gestureDown = (bound as React.HTMLAttributes<HTMLDivElement>).onPointerDown;
+                // "Denied" shake on a locked icon. The animation must COMPOSE with the icon's
+                // own positioning transform (translate(-50%,-50%) rotate(...) from
+                // iconItemStyle), so each keyframe prepends a SCREEN-SPACE horizontal offset
+                // to that base — at rest (0%/100%) it equals the static transform, so the icon
+                // settles back exactly where it was. The keyframe NAME carries the nonce so a
+                // repeat trigger is a brand-new animation that restarts cleanly (no remount).
+                const isShaking = shake?.i === i;
+                const baseTransform = `translate(-50%, -50%) rotate(${item.rotation}deg)`;
+                const shakeName = isShaking ? `cardIconShake-${shake!.nonce}` : "";
                 return (
                     <Box
                         key={`${item.iconId}-${i}`}
@@ -402,11 +429,22 @@ const CardIconCanvas: React.FC<{
                             // icon press is handled here by bindIcon instead.
                             gestureDown?.(e);
                         }}
+                        onAnimationEnd={isShaking ? () => setShake(null) : undefined}
                         className={`card-icon-canvas__icon${isSel ? " card-icon-canvas__icon--selected" : ""}`}
                         sx={{
                             // Mirror is applied to the inner <img> (below), NOT this wrapper,
                             // so flipping the icon never moves the resize/rotate handle.
                             ...iconItemStyle(item, false),
+                            ...(isShaking ? {
+                                animation: `${shakeName} 0.42s ease-in-out`,
+                                [`@keyframes ${shakeName}`]: {
+                                    "0%, 100%": { transform: baseTransform },
+                                    "20%": { transform: `translate(-6px, 0) ${baseTransform}` },
+                                    "40%": { transform: `translate(6px, 0) ${baseTransform}` },
+                                    "60%": { transform: `translate(-4px, 0) ${baseTransform}` },
+                                    "80%": { transform: `translate(4px, 0) ${baseTransform}` },
+                                },
+                            } : {}),
                             // The selected icon floats above the rest ONLY while it is being
                             // actively manipulated; otherwise it keeps its real `z` so the
                             // order list's reordering is visible immediately.

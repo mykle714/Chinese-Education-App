@@ -30,6 +30,11 @@ interface ForeignTextBaseProps {
     // CPCDRow.selectable. Ignored for Latin-script plain text, which inherits the
     // app-wide non-selectable default.
     selectable?: boolean;
+    // Optional override for the word/character color (the per-card flashcard Contrast
+    // setting — see docs/CARD_ICON_LAYOUT.md). Applies to the cpcd glyphs and the
+    // Latin-script plain text; the pinyin overlay is never affected. Undefined = theme
+    // default.
+    characterColor?: string;
 }
 
 interface ForeignTextProps extends ForeignTextBaseProps {
@@ -115,6 +120,7 @@ const ForeignText: React.FC<ForeignTextProps> = ({
     items,
     pinyinShift = true,
     selectable = false,
+    characterColor,
 }) => {
     // Resolve language: explicit prop wins, otherwise the user's selection.
     const { user } = useAuth();
@@ -135,7 +141,8 @@ const ForeignText: React.FC<ForeignTextProps> = ({
                     fontSize,
                     fontWeight: bold ? WEIGHT.bold : WEIGHT.regular,
                     fontFamily: FONTS.sans,
-                    color: "text.primary",
+                    // Per-card Contrast override (docs/CARD_ICON_LAYOUT.md); theme default otherwise.
+                    color: characterColor ?? "text.primary",
                     lineHeight: 1.21,
                 }}
             >
@@ -158,6 +165,7 @@ const ForeignText: React.FC<ForeignTextProps> = ({
             className={className}
             pinyinShift={pinyinShift}
             selectable={selectable}
+            characterColor={characterColor}
         />
     );
 };

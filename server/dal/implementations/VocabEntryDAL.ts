@@ -2,7 +2,7 @@ import { PoolClient, QueryResult } from 'pg';
 import { BaseDAL } from '../base/BaseDAL.js';
 import { IVocabEntryDAL } from '../interfaces/IVocabEntryDAL.js';
 import { dbManager } from '../base/DatabaseManager.js';
-import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, UsedInItem, IconLayoutItem, SnapConfig } from '../../types/index.js';
+import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, UsedInItem, IconLayoutItem, SnapConfig, TextColors } from '../../types/index.js';
 import { ValidationError, NotFoundError, BulkResult, ITransaction, DALError } from '../../types/dal.js';
 import db from '../../db.js';
 import { DICT_COLS, DICT_JOIN } from '../shared/dictJoin.js';
@@ -99,7 +99,8 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     id: string | number,
     language: string,
     layout: IconLayoutItem[] | null,
-    snapConfig?: SnapConfig | null
+    snapConfig?: SnapConfig | null,
+    textColors?: TextColors | null
   ): Promise<VocabEntry | null> {
     if (!userId) throw new ValidationError('userId is required');
     if (!id) throw new ValidationError('id is required');
@@ -111,15 +112,21 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     // null clears the layout; an array is stored as jsonb.
     const layoutValue = layout === null ? null : JSON.stringify(layout);
 
-    // snapConfig === undefined means "leave the column untouched" (community copy path);
-    // null clears it (all off), an object sets it. Build the SET list accordingly so the
-    // editor's Save writes layout + snap atomically while the copy path touches only layout.
+    // snapConfig / textColors === undefined means "leave the column untouched" (community
+    // copy path); null clears it, an object sets it. Build the SET list accordingly so the
+    // editor's Save writes layout + snap + colors atomically while the copy path touches
+    // only the layout column.
     const sets = [`"iconLayout" = $1::jsonb`];
     const params: (string | number | null)[] = [layoutValue];
     if (snapConfig !== undefined) {
       const snapValue = snapConfig === null ? null : JSON.stringify(snapConfig);
       params.push(snapValue);
       sets.push(`"snapConfig" = $${params.length}::jsonb`);
+    }
+    if (textColors !== undefined) {
+      const colorsValue = textColors === null ? null : JSON.stringify(textColors);
+      params.push(colorsValue);
+      sets.push(`"textColors" = $${params.length}::jsonb`);
     }
     params.push(id, userId);
 

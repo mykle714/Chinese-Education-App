@@ -48,7 +48,7 @@ Migrations are **tracked** in a `schema_migrations` table (defined in `database/
 | `name` | filename, e.g. `54-add-user-last-penalty-date.sql` |
 | `applied_at` | timestamp, defaults to `NOW()` |
 
-**To check which migrations prod has applied** (do this before deploying to learn what's pending):
+**To check which migrations prod has applied** (the authoritative source — do this before deploying to learn what's pending):
 
 ```bash
 docker exec cow-postgres-prod psql -U cow_user -d cow_db \
@@ -56,6 +56,35 @@ docker exec cow-postgres-prod psql -U cow_user -d cow_db \
 ```
 
 The highest `version` is where prod stands. Pending = any migration file in `database/migrations/` numbered higher.
+
+### Inferring pending migrations from the last deployed commit (preferred, no DB query)
+
+Prod runs on the **same machine as dev** and its checkout lives at `~/vocabulary-app`,
+so the commit prod is currently serving is simply that repo's `HEAD` **before** the
+`git pull`. Diffing that commit against what you're about to deploy tells you exactly
+which migration files this deploy introduces — without needing to read the prod DB.
+
+Run this **before** the deploy block to compute the pending set:
+
+```bash
+# Commit prod is currently on (read its checkout's HEAD before pulling):
+PROD_SHA=$(git -C ~/vocabulary-app rev-parse HEAD)
+
+# Migration files ADDED between prod's commit and what you're deploying (origin/main),
+# in apply order. --diff-filter=A = only newly-added files (edits to existing
+# migrations are never re-applied; migrations are immutable once shipped).
+git -C ~/vocabulary-app fetch origin main
+git -C ~/vocabulary-app log --name-only --diff-filter=A --pretty=format: \
+  "${PROD_SHA}..origin/main" -- database/migrations/ \
+  | grep -E '^database/migrations/[0-9]+.*\.sql$' | sort -Vu
+```
+
+Each line is a migration to run, already in `sort -V` order. Use this list to fill in
+the inline migration commands in the deploy block (Step 3). Cross-check against the
+`schema_migrations` query above if anything looks off — the DB table is authoritative,
+the git diff is the fast path. (If the local repo is what's deployed rather than a
+separate `~/vocabulary-app` checkout, substitute the appropriate path / use the
+`schema_migrations` query instead.)
 
 **The canonical runner is `database/deploy/migrate.sh`.** It reads `MAX(version)`, applies every file numbered higher (in `sort -V` order), and **records each one into `schema_migrations`**. It is idempotent — already-applied files are skipped, so re-running is safe.
 
@@ -86,13 +115,26 @@ If it fails:
 
 Stage and commit all relevant changes, then push to `origin main`.
 
-Determine which migrations are pending by comparing the files in `database/migrations/` against prod's `schema_migrations` table (see the "Database Migrations & Tracking" section above for the query) — note the pending ones so the user knows what will run.
+Determine which migrations are pending using the **"Inferring pending migrations from
+the last deployed commit"** method above (diff `prodSHA..origin/main` over
+`database/migrations/`). This is what drives the inline migration commands in Step 3 —
+note the exact filenames + version numbers so they can be dropped into the command
+block verbatim. The `schema_migrations` query is the authoritative fallback if the
+git diff is ambiguous.
 
 ### 3. Tell the user to run on the server
 
 Check if host nginx is running first (`systemctl is-active nginx`). If it is, the user must stop it before starting prod containers.
 
-Always present ALL server commands as a single copy-pasteable block — never split across multiple steps or prose sections. Include the nginx stop if needed. If there are migrations, include them inline. Example:
+Always present ALL server commands as a single copy-pasteable block — never split across multiple steps or prose sections. Include the nginx stop if needed.
+
+**Expand the inferred pending migrations inline.** Take the file list produced by the
+"Inferring pending migrations from the last deployed commit" step and emit **one
+`docker cp` + `psql -f` + `INSERT` triple per pending file**, in `sort -V` order, with
+the real filenames and version numbers substituted in (no `<migration-file>`
+placeholders left in the block the user pastes). If the inference found no added
+migration files, omit the migration section entirely. Example below shows the shape
+with two pending migrations (87 and 88) already substituted:
 
 ```bash
 cd ~/vocabulary-app
@@ -107,12 +149,18 @@ docker-compose -f docker-compose.prod.yml up --build -d
 # Safe to run every deploy. See docs/STREAK_EXPIRATION_CRON.md
 bash database/cron/install-cron.sh
 
-# Migration(s) — copy file into container, run with -f, then RECORD it in schema_migrations
+# Migration(s) — one cp + -f + INSERT triple per pending file (inferred from prodSHA..origin/main),
+# in sort -V order. Copy file into container, run with -f, then RECORD it in schema_migrations.
 # (never use < redirect, it breaks in pasted blocks; always insert the tracking row so migrate.sh stays correct)
-docker cp database/migrations/<migration-file>.sql cow-postgres-prod:/tmp/<migration-file>.sql
-docker exec cow-postgres-prod psql -U cow_user -d cow_db -v ON_ERROR_STOP=1 -f /tmp/<migration-file>.sql
+docker cp database/migrations/87-add-default-icon-results-to-dictionaryentries.sql cow-postgres-prod:/tmp/87-add-default-icon-results-to-dictionaryentries.sql
+docker exec cow-postgres-prod psql -U cow_user -d cow_db -v ON_ERROR_STOP=1 -f /tmp/87-add-default-icon-results-to-dictionaryentries.sql
 docker exec cow-postgres-prod psql -U cow_user -d cow_db \
-  -c "INSERT INTO schema_migrations (version, name) VALUES (<version>, '<migration-file>.sql');"
+  -c "INSERT INTO schema_migrations (version, name) VALUES (87, '87-add-default-icon-results-to-dictionaryentries.sql');"
+
+docker cp database/migrations/88-add-snap-config-to-vocabentries.sql cow-postgres-prod:/tmp/88-add-snap-config-to-vocabentries.sql
+docker exec cow-postgres-prod psql -U cow_user -d cow_db -v ON_ERROR_STOP=1 -f /tmp/88-add-snap-config-to-vocabentries.sql
+docker exec cow-postgres-prod psql -U cow_user -d cow_db \
+  -c "INSERT INTO schema_migrations (version, name) VALUES (88, '88-add-snap-config-to-vocabentries.sql');"
 
 # Verify
 docker-compose -f docker-compose.prod.yml ps

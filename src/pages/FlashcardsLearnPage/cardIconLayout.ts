@@ -216,6 +216,64 @@ export function snapRotation(rotation: number): number {
   return roundToStep(rotation, SNAP_ROTATION_DEG);
 }
 
+// ── Fine "Shift" nudge helpers (the toolbar's Shift menu step controls) ────────────────
+// The Shift menu nudges the selected icon by one step per tap. Each control's step size
+// depends on whether the matching snap toggle is ON: a snap-on control steps by exactly one
+// snap unit (and re-lands on the snap grid); a snap-off control makes a fine 1px-ish nudge.
+// See docs/CARD_ICON_LAYOUT.md.
+
+/** Nominal DESIGN pixel size of the card (the CardAspectWrapper renders at aspectRatio
+ *  295/426). The page-level Shift handlers carry no absolute pixel rect, so a "1px" nudge
+ *  is reckoned against these design dimensions — consistent with CARD_ASPECT being the
+ *  canonical card shape used by the snap math. */
+export const CARD_DESIGN_WIDTH = 295;
+export const CARD_DESIGN_HEIGHT = 426;
+
+/** Snap-OFF Shift step magnitudes (one tap = one step). Move/size are in design px;
+ *  rotation is in degrees. */
+export const NUDGE_MOVE_PX = 1;
+export const NUDGE_ROTATE_DEG = 1;
+export const NUDGE_SIZE_PX = 1;
+
+/** One-step cardinal nudge of an icon center (normalized coords). Grid snap ON → step by
+ *  one move-grid cell and re-land on the grid; OFF → step by NUDGE_MOVE_PX design px
+ *  (converted to width/height fractions). */
+export function nudgeCenter(
+  item: Pick<IconLayoutItem, "x" | "y">,
+  dir: "up" | "down" | "left" | "right",
+  gridSnap: boolean,
+): { x: number; y: number } {
+  const stepX = gridSnap ? SNAP_MOVE_STEP_FRAC : NUDGE_MOVE_PX / CARD_DESIGN_WIDTH;
+  const stepY = gridSnap ? SNAP_MOVE_STEP_FRAC * CARD_ASPECT : NUDGE_MOVE_PX / CARD_DESIGN_HEIGHT;
+  let { x, y } = item;
+  if (dir === "left") x -= stepX;
+  if (dir === "right") x += stepX;
+  if (dir === "up") y -= stepY;
+  if (dir === "down") y += stepY;
+  // When snapping, re-quantize so the result lands exactly on the grid regardless of any
+  // prior off-grid drift.
+  return gridSnap ? snapCenterToGrid(x, y) : { x, y };
+}
+
+/** One-step rotation nudge. Rotate snap ON → ±22.5° (one snap unit, re-snapped); OFF →
+ *  ±NUDGE_ROTATE_DEG. `ccw` rotates counter-clockwise (negative degrees). */
+export function nudgeRotationStep(rotation: number, ccw: boolean, rotateSnap: boolean): number {
+  const step = rotateSnap ? SNAP_ROTATION_DEG : NUDGE_ROTATE_DEG;
+  const next = rotation + (ccw ? -step : step);
+  return rotateSnap ? snapRotation(next) : next;
+}
+
+/** One-step size nudge (changes the rendered icon SIZE, then back-solves the scale). Size
+ *  snap ON → ±5%-of-width (one snap unit, re-snapped); OFF → ±NUDGE_SIZE_PX design px.
+ *  Result clamped to the scale range. */
+export function nudgeScaleStep(scale: number, increase: boolean, sizeSnap: boolean): number {
+  const sizeStep = sizeSnap ? SNAP_SIZE_STEP_FRAC : NUDGE_SIZE_PX / CARD_DESIGN_WIDTH;
+  const curSize = BASE_ICON_FRAC * scale; // icon width as fraction of card width
+  const nextSize = curSize + (increase ? sizeStep : -sizeStep);
+  const nextScale = clampScale(nextSize / BASE_ICON_FRAC);
+  return sizeSnap ? snapScaleToStep(nextScale) : nextScale;
+}
+
 const clampRange = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
 
 /**

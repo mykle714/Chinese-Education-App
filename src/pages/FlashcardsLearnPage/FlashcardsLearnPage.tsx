@@ -19,10 +19,10 @@ import FlashCardSection from "./FlashCardSection";
 import CardIconCanvas from "./CardIconCanvas";
 import CardEditToolbar, { type AlignDirection, CARD_EDIT_ANIM_MS, CARD_EDIT_ANIM_EASING } from "./CardEditToolbar";
 import IconPickerDialog from "../../components/IconPickerDialog";
-import { defaultLayoutForEntry, maxZ, isAdvancedLayout, isPlainDefaultLayout, DEFAULT_ICON_X, DEFAULT_ICON_Y, DEFAULT_ICON_SCALE, ALIGN_ROTATION, snapCenterToGrid, snapScaleToStep, snapRotation } from "./cardIconLayout";
+import { defaultLayoutForEntry, maxZ, isAdvancedLayout, isPlainDefaultLayout, DEFAULT_ICON_X, DEFAULT_ICON_Y, DEFAULT_ICON_SCALE, ALIGN_ROTATION, snapCenterToGrid, snapScaleToStep, snapRotation, nudgeCenter, nudgeRotationStep, nudgeScaleStep } from "./cardIconLayout";
 import { saveIconLayout, fetchDefaultIconResults, type IconSearchItem } from "./cardIconApi";
-import { iconSearchTerm } from "../../utils/definitionUtils";
-import { ICON_LAYOUT_MAX_ITEMS, type IconLayoutItem, type SnapConfig, type VocabEntry } from "../../types";
+import { iconSearchTerm, stripParentheses } from "../../utils/definitionUtils";
+import { ICON_LAYOUT_MAX_ITEMS, type IconLayoutItem, type SnapConfig, type TextColorMode, type TextColors, type VocabEntry } from "../../types";
 import { setMinutePointsPaused } from "../../utils/minutePointsPause";
 import SheetPanel, { type SheetPanelBodyHandle } from "./SheetPanel";
 import SettingsPanelBody from "./SettingsPanelBody";
@@ -159,6 +159,12 @@ const FlashcardsLearnPage: React.FC = () => {
     const [snapMove, setSnapMove] = useState(false);
     const [snapRotate, setSnapRotate] = useState(false);
     const [snapResize, setSnapResize] = useState(false);
+    // Contrast text-color overrides (vet.textColors, migration 89): force the foreign-word
+    // glyphs and/or the English definition to a fixed color. Seeded from the card on
+    // enterEdit, previewed live on the card while editing, and saved with the layout (so
+    // Cancel discards them). 'theme' = follow the device/app theme (default).
+    const [textForeign, setTextForeign] = useState<TextColorMode>("theme");
+    const [textEnglish, setTextEnglish] = useState<TextColorMode>("theme");
     // Undo/redo history for the advanced draft: two capped stacks of advDraft snapshots.
     // - advHistory (undo): each discrete action (gesture, add, delete, align, mirror,
     //   reorder) pushes the PRE-change snapshot via pushAdvHistory; undo pops and restores it.
@@ -276,18 +282,22 @@ const FlashcardsLearnPage: React.FC = () => {
     // migration 88) — so re-opening the editor on a card just saved this session seeds
     // the toggles from the latest save rather than the stale server value.
     const [snapConfigOverrides, setSnapConfigOverrides] = useState<Record<number, SnapConfig | null>>({});
+    // Same session-override pattern for the per-card Contrast text colors (vet.textColors,
+    // migration 89).
+    const [textColorsOverrides, setTextColorsOverrides] = useState<Record<number, TextColors | null>>({});
 
-    // Merge any saved-this-session icon-layout / snap-config overrides into an entry
-    // before render (and before enterEdit seeds the drafts + snap toggles from it).
+    // Merge any saved-this-session icon-layout / snap-config / text-color overrides into an
+    // entry before render (and before enterEdit seeds the drafts + toggles + colors from it).
     const applyIconOverride = useCallback(
         (e: VocabEntry | null): VocabEntry | null => {
             if (!e) return e;
             let merged = e;
             if (e.id in iconLayoutOverrides) merged = { ...merged, iconLayout: iconLayoutOverrides[e.id] };
             if (e.id in snapConfigOverrides) merged = { ...merged, snapConfig: snapConfigOverrides[e.id] };
+            if (e.id in textColorsOverrides) merged = { ...merged, textColors: textColorsOverrides[e.id] };
             return merged;
         },
-        [iconLayoutOverrides, snapConfigOverrides],
+        [iconLayoutOverrides, snapConfigOverrides, textColorsOverrides],
     );
     const displayCurrentEntry = applyIconOverride(currentEntry);
     const displayNextEntry = applyIconOverride(nextEntry);
@@ -306,10 +316,11 @@ const FlashcardsLearnPage: React.FC = () => {
 
     // While editing, the active card reflects the live draft (WYSIWYG). In basic mode
     // there is no gesture canvas, so the draft is rendered through the normal static
-    // icon-layer path by feeding it onto the entry's iconLayout.
+    // icon-layer path by feeding it onto the entry's iconLayout. The live Contrast text
+    // colors are merged on too so the card previews them as the learner changes them.
     const editingCurrentEntry =
         editMode && displayCurrentEntry
-            ? { ...displayCurrentEntry, iconLayout: draftLayout }
+            ? { ...displayCurrentEntry, iconLayout: draftLayout, textColors: { foreign: textForeign, english: textEnglish } }
             : displayCurrentEntry;
 
     const exitEdit = useCallback(() => {
@@ -323,6 +334,10 @@ const FlashcardsLearnPage: React.FC = () => {
         setSnapMove(false);
         setSnapRotate(false);
         setSnapResize(false);
+        // Clear the live Contrast colors too; re-seeded from the card's saved textColors on
+        // the next enterEdit (migration 89).
+        setTextForeign("theme");
+        setTextEnglish("theme");
         // Reset both the state AND the synchronous refs so a fresh edit session never sees
         // a stale stack from the previous one.
         advHistoryRef.current = [];
@@ -366,6 +381,11 @@ const FlashcardsLearnPage: React.FC = () => {
         setSnapMove(snap?.move ?? false);
         setSnapRotate(snap?.rotate ?? false);
         setSnapResize(snap?.resize ?? false);
+        // Seed the Contrast colors from this card's saved textColors (migration 89); NULL/
+        // absent → both 'theme'. Discarded on Cancel (only Save persists them).
+        const colors = displayCurrentEntry.textColors ?? null;
+        setTextForeign(colors?.foreign ?? "theme");
+        setTextEnglish(colors?.english ?? "theme");
         // Reset both the state AND the synchronous refs (see exitEdit).
         advHistoryRef.current = [];
         advFutureRef.current = [];
@@ -533,6 +553,49 @@ const FlashcardsLearnPage: React.FC = () => {
         if (next) applySnapAll((it) => ({ scale: snapScaleToStep(it.scale) }));
     }, [snapResize, applySnapAll]);
 
+    // ── Shift menu: fine step-nudges of the selected icon ──────────────────────
+    // The Shift dropdown nudges the selected icon by one step per tap: cardinal moves,
+    // CCW/CW rotation, and minus/plus size. Each step size honors the matching snap toggle
+    // (one snap unit when on, a fine 1px/1° nudge when off — see cardIconLayout helpers).
+    // Each is a discrete tracked action, so it snapshots undo history first (this is also
+    // how undo/redo keeps working now that the toolbar's undo/redo buttons are hidden).
+    const handleNudgeMove = useCallback(
+        (dir: "up" | "down" | "left" | "right") => {
+            if (selectedIcon === null) return;
+            pushAdvHistory();
+            setAdvDraftBoth(
+                advDraftRef.current.map((it, idx) =>
+                    idx === selectedIcon ? { ...it, ...nudgeCenter(it, dir, snapMove) } : it,
+                ),
+            );
+        },
+        [selectedIcon, snapMove, pushAdvHistory, setAdvDraftBoth],
+    );
+    const handleRotateStep = useCallback(
+        (ccw: boolean) => {
+            if (selectedIcon === null) return;
+            pushAdvHistory();
+            setAdvDraftBoth(
+                advDraftRef.current.map((it, idx) =>
+                    idx === selectedIcon ? { ...it, rotation: nudgeRotationStep(it.rotation, ccw, snapRotate) } : it,
+                ),
+            );
+        },
+        [selectedIcon, snapRotate, pushAdvHistory, setAdvDraftBoth],
+    );
+    const handleResizeStep = useCallback(
+        (increase: boolean) => {
+            if (selectedIcon === null) return;
+            pushAdvHistory();
+            setAdvDraftBoth(
+                advDraftRef.current.map((it, idx) =>
+                    idx === selectedIcon ? { ...it, scale: nudgeScaleStep(it.scale, increase, snapResize) } : it,
+                ),
+            );
+        },
+        [selectedIcon, snapResize, pushAdvHistory, setAdvDraftBoth],
+    );
+
     const handleSaveLayout = useCallback(async () => {
         if (!currentEntry) return;
         setSavingLayout(true);
@@ -543,9 +606,16 @@ const FlashcardsLearnPage: React.FC = () => {
             const snapConfig: SnapConfig | null = anySnapOn
                 ? { move: snapMove, rotate: snapRotate, resize: snapResize }
                 : null;
-            const res = await saveIconLayout(token, currentEntry.id, draftLayout, snapConfig);
+            // Persist Contrast colors alongside the layout (folded into one Save, so Cancel
+            // discards them). NULL when both sides are 'theme', keeping clean rows. migration 89.
+            const textColors: TextColors | null =
+                textForeign === "theme" && textEnglish === "theme"
+                    ? null
+                    : { foreign: textForeign, english: textEnglish };
+            const res = await saveIconLayout(token, currentEntry.id, draftLayout, snapConfig, textColors);
             setIconLayoutOverrides((o) => ({ ...o, [currentEntry.id]: res.iconLayout }));
             setSnapConfigOverrides((o) => ({ ...o, [currentEntry.id]: res.snapConfig }));
+            setTextColorsOverrides((o) => ({ ...o, [currentEntry.id]: res.textColors }));
             exitEdit();
         } catch (err) {
             console.error("Failed to save icon layout:", err);
@@ -555,7 +625,7 @@ const FlashcardsLearnPage: React.FC = () => {
         } finally {
             setSavingLayout(false);
         }
-    }, [currentEntry, draftLayout, token, exitEdit, snapMove, snapRotate, snapResize]);
+    }, [currentEntry, draftLayout, token, exitEdit, snapMove, snapRotate, snapResize, textForeign, textEnglish]);
 
     // Reset-to-default: clear the saved layout (null), restoring the default centered
     // icon, then exit edit mode. Confirmation-gated by resetConfirmOpen.
@@ -563,11 +633,13 @@ const FlashcardsLearnPage: React.FC = () => {
         if (!currentEntry) return;
         setSavingLayout(true);
         try {
-            // Reset-to-default clears the layout AND the snap config (no icons → snap is
-            // meaningless), so the next edit session on this card starts unsnapped.
-            await saveIconLayout(token, currentEntry.id, null, null);
+            // Reset-to-default clears the layout AND the snap config + Contrast colors (a
+            // default card carries no custom decoration), so the next edit session on this
+            // card starts unsnapped with theme text colors.
+            await saveIconLayout(token, currentEntry.id, null, null, null);
             setIconLayoutOverrides((o) => ({ ...o, [currentEntry.id]: null }));
             setSnapConfigOverrides((o) => ({ ...o, [currentEntry.id]: null }));
+            setTextColorsOverrides((o) => ({ ...o, [currentEntry.id]: null }));
             exitEdit();
         } catch (err) {
             console.error("Failed to reset icon layout:", err);
@@ -775,7 +847,22 @@ const FlashcardsLearnPage: React.FC = () => {
                 onToggleEdit={() => (editMode ? exitEdit() : enterEdit())}
                 onSettingsClick={() => setSettingsOpen(true)}
             />
-            <ContentArea className="mobile-demo-content">
+            <ContentArea
+                className="mobile-demo-content"
+                // While the icon editor is open (advanced mode, an icon selected), a tap on
+                // the white space OUTSIDE the card canvas and the edit toolbar deselects the
+                // active icon — mirroring the empty-canvas deselect (CardIconCanvas). Taps
+                // landing inside the canvas are left alone (it handles its own deselect), and
+                // taps on the toolbar/menus are ignored so adjusting controls keeps the
+                // selection. See docs/CARD_ICON_LAYOUT.md.
+                onPointerDown={(e) => {
+                    if (!(editMode && advMode) || selectedIcon === null) return;
+                    const el = e.target as HTMLElement;
+                    if (!el.closest(".card-icon-canvas") && !el.closest(".card-edit-toolbar")) {
+                        setSelectedIcon(null);
+                    }
+                }}
+            >
                 {/* Floating edit toolbar — overlays the top of the content area while
                     editing so it does NOT push the card down (docs/CARD_ICON_LAYOUT.md).
                     Wrapped in <Slide> so it drops in on enter AND slides back up on exit
@@ -810,12 +897,22 @@ const FlashcardsLearnPage: React.FC = () => {
                             onReorder={handleReorder}
                             onReorderStart={pushAdvHistory}
                             onSelectIcon={setSelectedIcon}
+                            selectedIndex={selectedIcon}
                             snapMove={snapMove}
                             snapRotate={snapRotate}
                             snapResize={snapResize}
                             onToggleSnapMove={handleToggleSnapMove}
                             onToggleSnapRotate={handleToggleSnapRotate}
                             onToggleSnapResize={handleToggleSnapResize}
+                            onNudgeMove={handleNudgeMove}
+                            onRotateStep={handleRotateStep}
+                            onResizeStep={handleResizeStep}
+                            foreignLabel={currentEntry?.entryKey ?? ""}
+                            englishLabel={stripParentheses(currentEntry?.definition ?? "")}
+                            textForeign={textForeign}
+                            textEnglish={textEnglish}
+                            onSetTextForeign={setTextForeign}
+                            onSetTextEnglish={setTextEnglish}
                             canReset={canReset}
                             onReset={() => setResetConfirmOpen(true)}
                             onSave={handleSaveLayout}

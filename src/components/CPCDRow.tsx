@@ -46,6 +46,10 @@ interface CPCDRowProps {
     // non-text surfaces; only prose-like surfaces (example sentences) opt in.
     // Mobile stays non-selectable regardless (see the `(pointer: coarse)` block).
     selectable?: boolean;
+    // Optional override for the CHARACTER glyph color only (the per-card Contrast
+    // setting on the flashcard — see docs/CARD_ICON_LAYOUT.md). The pinyin overlay is
+    // never affected. Undefined keeps the theme default (text.primary).
+    characterColor?: string;
 }
 
 // Per-size visual constants. Mirror the table that used to live in
@@ -84,6 +88,7 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
     bold = false,
     pinyinShift = true,
     selectable = false,
+    characterColor,
 }) => {
     const charsBlockRef = useRef<HTMLDivElement | null>(null);
     const cellRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -284,7 +289,9 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
                                 fontSize: charFontSize,
                                 fontWeight: bold ? WEIGHT.bold : WEIGHT.regular,
                                 fontFamily: FONTS.cjk,
-                                color: "text.primary",
+                                // Per-card Contrast override colors the glyph only (not the
+                                // pinyin); falls back to the theme default. docs/CARD_ICON_LAYOUT.md.
+                                color: characterColor ?? "text.primary",
                                 lineHeight: 1.21,
                             }}
                         >

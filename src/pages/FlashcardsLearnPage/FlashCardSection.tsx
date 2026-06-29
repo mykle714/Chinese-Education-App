@@ -22,6 +22,7 @@ import ForeignText from "../../components/ForeignText";
 import { SpeakerButton } from "../../components/SpeakerButton";
 import PracticeWritingButton from "../../components/handwriting/PracticeWritingButton";
 import { getCategoryColor } from "../../utils/categoryColors";
+import { resolveTextColor } from "../../utils/cardTextColor";
 
 // Re-exported so existing imports `from './FlashCardSection'` keep working.
 export { SpeakerButton };
@@ -95,6 +96,9 @@ export const ChineseBlock: React.FC<{
     showWriting?: boolean;
 }> = ({ entry, showPinyin, showPinyinColor, onSpeak, speakingKey, showWriting = false }) => {
     const showWritingButton = showWriting && entry.language === "zh";
+    // Per-card Contrast override for the foreign-word GLYPHS only (pinyin is untouched).
+    // Undefined = theme default. See docs/CARD_ICON_LAYOUT.md.
+    const characterColor = resolveTextColor(entry.textColors?.foreign);
     return (
         // Outer row fills the width and centers the Chinese text within the card.
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }} className="mobile-demo-flashcard-chinese-block">
@@ -110,6 +114,7 @@ export const ChineseBlock: React.FC<{
                     pronunciation={entry.pronunciation}
                     showPinyin={showPinyin}
                     useToneColor={showPinyinColor}
+                    characterColor={characterColor}
                 />
                 {/* Writing-practice + audio icons stacked vertically (writing on
                     top, speaker below), mirroring the eip header stack. The column
@@ -160,11 +165,13 @@ const englishFontSize = (text: string): number => {
 export const EnglishBlock: React.FC<{ entry: VocabEntry }> = ({ entry }) => {
     const theme = useTheme();
     const text = stripParentheses(entry.definition ?? '');
+    // Per-card Contrast override for the English definition; theme default otherwise.
+    const englishColor = resolveTextColor(entry.textColors?.english) ?? theme.palette.flashcard.onSurface;
     return (
         <Typography sx={{
             fontSize: englishFontSize(text),
             fontWeight: WEIGHT.regular,
-            color: theme.palette.flashcard.onSurface,
+            color: englishColor,
             fontFamily: FC_FONT_CJK,
             textAlign: 'center',
             lineHeight: 1.25,

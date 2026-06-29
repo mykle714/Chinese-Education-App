@@ -64,6 +64,16 @@ export function useCardDrag(
     const flipLockRef = useRef(false);
     const flipLockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+    // Tracks whether the current touch interaction's touchstart was actually
+    // accepted (i.e. not swallowed by the isAnimating/flipLock gate). dragStart is
+    // a single ref shared across every card and is only refreshed inside an
+    // accepted touchstart, so a touch whose start was gated would leave dragStart
+    // pointing at the *previous* card's coordinates. handleTouchEnd reads this flag
+    // and bails when false, so it never measures tap distance against a stale point
+    // (which would misclassify a genuine tap as a drag attempt and shake instead of
+    // flipping).
+    const touchAcceptedRef = useRef(false);
+
     // Perform the one-way Side 1 → Side 2 flip and arm the lockout. Shared by the
     // touch and mouse tap paths so the lock behaves identically across input types.
     const beginFlip = () => {
@@ -103,8 +113,14 @@ export function useCardDrag(
     const getCardWidth = () => cardRef.current?.offsetWidth ?? window.innerWidth;
 
     const handleTouchStart = (e: React.TouchEvent) => {
-        // Ignore the whole interaction while a flip is mid-animation.
-        if (isAnimating || flipLockRef.current) return;
+        // Ignore the whole interaction while a flip is mid-animation. Mark this
+        // touch as not-accepted so the matching touchend can't act on a stale
+        // dragStart left over from the previous card.
+        if (isAnimating || flipLockRef.current) {
+            touchAcceptedRef.current = false;
+            return;
+        }
+        touchAcceptedRef.current = true;
 
         // Always record the start position so handleTouchEnd can measure drag distance,
         // even when dragging is blocked (card not yet flipped).
@@ -147,6 +163,12 @@ export function useCardDrag(
         // A flip is still animating — swallow this tap entirely (no flip, no shake)
         // so it can't remount the card mid-flip.
         if (flipLockRef.current) return;
+
+        // The matching touchstart was swallowed by the gate, so dragStart still
+        // holds the previous card's coordinates — measuring tap distance against it
+        // would misread this tap as a drag attempt and shake instead of flipping.
+        // Ignore the end entirely.
+        if (!touchAcceptedRef.current) return;
 
         // If dragging hasn't started (blocked because card wasn't flipped),
         // only flip if this was a genuine tap — finger barely moved.

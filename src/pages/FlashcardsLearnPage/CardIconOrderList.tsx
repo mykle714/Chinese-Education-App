@@ -28,6 +28,10 @@ import { iconImageUrl } from "./cardIconLayout";
  * `onReorderStart` fires once at the first change so the page records a single undo step
  * for the whole drag. The layout ARRAY order is left untouched (only z values permute) so
  * selection indices the page holds stay valid.
+ *
+ * The row whose layout index equals `selectedIndex` gets the same dashed outline the
+ * canvas draws around the selected icon, so the order list and canvas agree on which
+ * icon is selected.
  */
 const ROW_H = 46; // px — fixed row height; drop position is derived from pointer / ROW_H.
 
@@ -51,7 +55,10 @@ const CardIconOrderList: React.FC<{
     // Select the icon for the pressed row (so the canvas highlights it + the per-icon
     // tools target it). Fired on row press, before/regardless of any reorder drag.
     onSelectIcon: (layoutIdx: number) => void;
-}> = ({ layout, onReorder, onReorderStart, onSelectIcon }) => {
+    // Layout index of the selected icon (or null). Its row gets the same dashed-outline
+    // indicator the canvas draws around the selected icon, so the two views stay in sync.
+    selectedIndex: number | null;
+}> = ({ layout, onReorder, onReorderStart, onSelectIcon, selectedIndex }) => {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const [drag, setDrag] = useState<DragState | null>(null);
 
@@ -157,6 +164,7 @@ const CardIconOrderList: React.FC<{
             {order.map((layoutIdx) => {
                 const item = layout[layoutIdx];
                 const isDragged = drag?.layoutIdx === layoutIdx;
+                const isSelected = selectedIndex === layoutIdx;
                 if (isDragged) {
                     // Blank placeholder showing where the row will land.
                     return (
@@ -188,6 +196,11 @@ const CardIconOrderList: React.FC<{
                             cursor: "grab",
                             touchAction: "none",
                             "&:active": { cursor: "grabbing" },
+                            // Match the canvas's selected-icon indicator: same dashed outline,
+                            // inset so it hugs the row rather than the popover edge.
+                            outline: isSelected ? "2px dashed rgba(0,0,0,0.45)" : "none",
+                            outlineOffset: "-3px",
+                            borderRadius: "8px",
                         }}
                     >
                         <Box

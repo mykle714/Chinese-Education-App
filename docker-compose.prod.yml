@@ -1,6 +1,16 @@
 version: "3.8"
 name: cow-prod
 
+# Bounded container stdout/stderr logs. The default json-file driver is UNBOUNDED;
+# over long uptimes (auth noise, perf/error summaries) that file can grow to GBs.
+# Cap each service to 5 × 10MB rolling files. Anchored here so all services share
+# one definition. (Separate from the app's JSONL diagnostics logs in ./server/logs.)
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   postgres:
     image: postgres:15-alpine
@@ -27,6 +37,7 @@ services:
       -c effective_cache_size=1GB
     networks:
       - cow-network
+    logging: *default-logging
 
   backend:
     build:
@@ -40,6 +51,10 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - CLIENT_URL=${CLIENT_URL}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      # Persist the client diagnostics JSONL logs to the bind-mounted host dir
+      # below so they SURVIVE container rebuilds (they default to <dist>/logs
+      # inside the container, which `up --build` wipes). See utils/diagnosticsLog.ts.
+      - DIAGNOSTICS_LOG_DIR=/app/logs
     env_file:
       - ./.env
     ports:
@@ -48,10 +63,12 @@ services:
       - ./cedict_ts.u8:/app/cedict_ts.u8:ro
       - ./data/dictionaries:/app/data/dictionaries:ro
       - ./server/google-tts-credentials.json:/app/google-tts-credentials.json:ro
+      - ./server/logs:/app/logs  # persisted client diagnostics logs (perf + error)
     depends_on:
       - postgres
     networks:
       - cow-network
+    logging: *default-logging
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:5000/api/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
       interval: 30s
@@ -75,6 +92,7 @@ services:
       - backend
     networks:
       - cow-network
+    logging: *default-logging
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/"]
       interval: 30s

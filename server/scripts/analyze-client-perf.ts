@@ -31,8 +31,27 @@ import readline from 'readline';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-// scripts/ sits directly under server/, so logs/ is one level up.
-const LOG_PATH = path.join(__dirname, '..', 'logs', 'client-perf.jsonl');
+// scripts/ sits directly under server/, so logs/ is one level up. Honors the same
+// DIAGNOSTICS_LOG_DIR override the writer uses (utils/diagnosticsLog.ts) so it
+// reads from the persisted/bind-mounted location when set.
+const LOG_DIR = process.env.DIAGNOSTICS_LOG_DIR || path.join(__dirname, '..', 'logs');
+
+// The perf log is now DAILY-rotated (`client-perf-YYYY-MM-DD.jsonl`). Read every
+// dated file plus the legacy single `client-perf.jsonl` (pre-rotation data), in
+// chronological order so `--since` and batch ordering behave across day boundaries.
+function perfLogFiles(): string[] {
+  let entries: string[] = [];
+  try {
+    entries = fs.readdirSync(LOG_DIR);
+  } catch {
+    return [];
+  }
+  const dated = entries
+    .filter((f) => /^client-perf-\d{4}-\d{2}-\d{2}\.jsonl$/.test(f))
+    .sort(); // lexical sort == chronological for YYYY-MM-DD
+  const legacy = entries.includes('client-perf.jsonl') ? ['client-perf.jsonl'] : [];
+  return [...legacy, ...dated].map((f) => path.join(LOG_DIR, f));
+}
 
 // ---- CLI args -------------------------------------------------------------
 function argVal(flag: string): string | undefined {
@@ -88,48 +107,51 @@ function pad(s: string | number, n: number): string {
 }
 
 async function main() {
-  if (!fs.existsSync(LOG_PATH)) {
-    console.error(`No telemetry log found at ${LOG_PATH}`);
-    console.error('It is created once a client beacons data to POST /api/diagnostics/perf.');
+  const files = perfLogFiles();
+  if (files.length === 0) {
+    console.error(`No telemetry logs found in ${LOG_DIR} (expected client-perf-YYYY-MM-DD.jsonl)`);
+    console.error('They are created once a client beacons data to POST /api/diagnostics/perf.');
     process.exit(1);
   }
-
-  const rl = readline.createInterface({
-    input: fs.createReadStream(LOG_PATH),
-    crlfDelay: Infinity,
-  });
 
   let batches = 0;
   let kept = 0;
 
-  for await (const line of rl) {
-    if (!line.trim()) continue;
-    let batch: any;
-    try {
-      batch = JSON.parse(line);
-    } catch {
-      continue; // tolerate a truncated final line / partial write
-    }
-    if (sinceTs && batch.receivedAt && new Date(batch.receivedAt).getTime() < sinceTs) {
-      continue;
-    }
-    batches++;
-    const records: FlatRecord[] = Array.isArray(batch.records) ? batch.records : [];
-    for (const r of records) {
-      if (!r || typeof r.duration !== 'number') continue;
-      if (filterPath && r.path !== filterPath) continue;
-      if (r.duration < minDuration) continue;
-      kept++;
-      const b = bucketFor(`${r.kind}  ${r.path}`);
-      b.durations.push(r.duration);
-      if (typeof r.inputDelay === 'number') b.inputDelays.push(r.inputDelay);
-      if (typeof r.processing === 'number') b.processings.push(r.processing);
-      if (typeof r.presentation === 'number') b.presentations.push(r.presentation);
-      if (r.target) b.targets.set(r.target, (b.targets.get(r.target) || 0) + 1);
+  // Read each daily file in turn, accumulating into the shared buckets.
+  for (const file of files) {
+    const rl = readline.createInterface({
+      input: fs.createReadStream(file),
+      crlfDelay: Infinity,
+    });
+    for await (const line of rl) {
+      if (!line.trim()) continue;
+      let batch: any;
+      try {
+        batch = JSON.parse(line);
+      } catch {
+        continue; // tolerate a truncated final line / partial write
+      }
+      if (sinceTs && batch.receivedAt && new Date(batch.receivedAt).getTime() < sinceTs) {
+        continue;
+      }
+      batches++;
+      const records: FlatRecord[] = Array.isArray(batch.records) ? batch.records : [];
+      for (const r of records) {
+        if (!r || typeof r.duration !== 'number') continue;
+        if (filterPath && r.path !== filterPath) continue;
+        if (r.duration < minDuration) continue;
+        kept++;
+        const b = bucketFor(`${r.kind}  ${r.path}`);
+        b.durations.push(r.duration);
+        if (typeof r.inputDelay === 'number') b.inputDelays.push(r.inputDelay);
+        if (typeof r.processing === 'number') b.processings.push(r.processing);
+        if (typeof r.presentation === 'number') b.presentations.push(r.presentation);
+        if (r.target) b.targets.set(r.target, (b.targets.get(r.target) || 0) + 1);
+      }
     }
   }
 
-  console.log(`\nParsed ${batches} batch(es), ${kept} matching record(s) from ${LOG_PATH}`);
+  console.log(`\nParsed ${batches} batch(es), ${kept} matching record(s) from ${files.length} file(s) in ${LOG_DIR}`);
   if (filterPath) console.log(`Filter: path = ${filterPath}`);
   if (sinceStr) console.log(`Filter: since = ${sinceStr}`);
   if (minDuration) console.log(`Filter: duration ≥ ${minDuration}ms`);

@@ -7,6 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { authenticateToken } from './authMiddleware.js';
+import { appendDiagnostic } from './utils/diagnosticsLog.js';
 import { User, VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, UserCreateData, UserLoginData, Text, ReviewMark, FlashcardCategory } from './types/index.js';
 import db from './db.js';
 import { VET_PHYSICAL_TABLES, vetTableForLanguage } from './dal/shared/vetTable.js';
@@ -185,8 +186,9 @@ app.post('/api/auth/on-login', authenticateToken, async (req, res) => {
 // UNAUTHENTICATED: the payload arrives via navigator.sendBeacon, which cannot
 // attach an Authorization header, and the lag also affects public/demo
 // sessions. It only appends to a git-ignored JSONL log + prints a one-line
-// summary; it never touches the database or returns data.
-const CLIENT_PERF_LOG = path.join(__dirname, 'logs', 'client-perf.jsonl');
+// summary; it never touches the database or returns data. The log is written via
+// the shared diagnostics writer (daily-rotated + persisted across rebuilds — see
+// utils/diagnosticsLog.ts and docs/CLIENT_PERF_DIAGNOSTICS.md).
 // @ts-ignore
 app.post('/api/diagnostics/perf', (req, res) => {
   try {
@@ -207,8 +209,7 @@ app.post('/api/diagnostics/perf', (req, res) => {
       records,
     };
 
-    fs.mkdirSync(path.dirname(CLIENT_PERF_LOG), { recursive: true });
-    fs.appendFile(CLIENT_PERF_LOG, JSON.stringify(entry) + '\n', () => {});
+    appendDiagnostic('client-perf', entry);
 
     // Compact console summary: the worst interaction in this batch, so prod logs
     // surface the lag without needing to open the JSONL.
@@ -241,8 +242,9 @@ app.post('/api/diagnostics/perf', (req, res) => {
 // Auth-free because a crash can happen before/around auth and the client posts
 // via keepalive fetch / sendBeacon (no Authorization header). The CLIENT scrubs
 // tokens/PII before sending (see src/utils/errorReporting.ts); we additionally
-// cap field lengths here. See docs/CLIENT_PERF_DIAGNOSTICS.md.
-const CLIENT_ERROR_LOG = path.join(__dirname, 'logs', 'client-error.jsonl');
+// cap field lengths here. The log is written via the shared diagnostics writer
+// (daily-rotated + persisted across rebuilds — see utils/diagnosticsLog.ts).
+// See docs/CLIENT_PERF_DIAGNOSTICS.md.
 // @ts-ignore
 app.post('/api/diagnostics/error', (req, res) => {
   try {
@@ -266,8 +268,7 @@ app.post('/api/diagnostics/error', (req, res) => {
       at: typeof body.at === 'number' ? body.at : undefined,
     };
 
-    fs.mkdirSync(path.dirname(CLIENT_ERROR_LOG), { recursive: true });
-    fs.appendFile(CLIENT_ERROR_LOG, JSON.stringify(entry) + '\n', () => {});
+    appendDiagnostic('client-error', entry);
 
     // Compact console summary so prod logs surface crashes without opening the JSONL.
     console.error(

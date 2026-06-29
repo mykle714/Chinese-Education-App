@@ -10,9 +10,10 @@ page (the lag does not reproduce locally, so synthetic profiling is not enough).
 |---|---|---|
 | **Client capture** | `src/utils/perfDiagnostics.ts` | Observes the platform Performance APIs, buffers interesting entries, beacons batches to the server. |
 | **Client bootstrap** | `src/main.tsx` | Calls `initPerfDiagnostics()` once, gated to production (or `localStorage.perfDiag === "1"`). |
-| **Server sink** | `server/server.ts` → `POST /api/diagnostics/perf` | Unauthenticated endpoint; appends each batch to a JSONL log + prints a one-line summary. |
-| **Analysis** | `server/scripts/analyze-client-perf.ts` | Read-only aggregator; prints per-route p50/p95 latency breakdowns. |
-| **Storage** | `server/logs/client-perf.jsonl` | Append-only JSONL, git-ignored (like `backfill-runs.jsonl`). |
+| **Server sink** | `server/server.ts` → `POST /api/diagnostics/perf` | Unauthenticated endpoint; appends each batch via the shared writer + prints a one-line summary. |
+| **Shared writer** | `server/utils/diagnosticsLog.ts` | `appendDiagnostic(prefix, record)` — resolves the (configurable) log dir, daily-rotates, and sweeps expired files. Used by **both** the perf and error sinks. |
+| **Analysis** | `server/scripts/analyze-client-perf.ts` | Read-only aggregator; reads every `client-perf-*.jsonl` (+ legacy single file) and prints per-route p50/p95 latency breakdowns. |
+| **Storage** | `server/logs/client-perf-YYYY-MM-DD.jsonl` (host) | Append-only JSONL, git-ignored. **Persisted + daily-rotated** — see "Persistence & rotation" below. |
 
 ## What is captured
 
@@ -77,6 +78,32 @@ Output groups by `(kind, route)`, sorted by p95 duration, and prints a
 - `processing` dominates → the click handler itself is slow (not expected here,
   since the footer/decks handlers only call `navigate()`).
 
+## Persistence & rotation (shared by both sinks)
+
+Both the perf and error sinks write through `server/utils/diagnosticsLog.ts`
+(`appendDiagnostic(prefix, record)`), which owns three behaviors:
+
+- **Persistence across rebuilds.** The log directory is `DIAGNOSTICS_LOG_DIR` when
+  set, else `<dist>/logs` (the historical in-container path). In prod,
+  `docker-compose.prod.yml` sets `DIAGNOSTICS_LOG_DIR=/app/logs` and bind-mounts
+  `./server/logs:/app/logs`, so the logs live on the **host** at
+  `~/vocabulary-app/server/logs/` and **survive `docker-compose up --build`** (they
+  used to be wiped on every rebuild). The bind-mount dir must be writable by the
+  container's `nodejs` user (uid 1001) — the host `server/logs` dir is `chmod 777`
+  for that reason; the writer swallows errors, so a perms mismatch would silently
+  drop logs.
+- **Time-based (daily) rotation.** Records append to `<prefix>-YYYY-MM-DD.jsonl`
+  (UTC day). A new file starts each day automatically — no single file grows
+  unbounded, no rename/lock dance.
+- **Retention sweep.** Dated files older than `DIAGNOSTICS_LOG_RETENTION_DAYS`
+  (default **30**; `0` disables) are deleted, throttled to an hourly readdir per
+  prefix. Keeps the directory bounded without an external cron.
+
+**Container stdout/stderr logs** are a *separate* concern (not the JSONL above):
+all three prod services set a `json-file` `max-size: 10m` / `max-file: 5` cap (a
+shared `x-logging` anchor in `docker-compose.prod.yml`) so docker's default
+*unbounded* driver can't grow to GBs over long uptimes.
+
 ## Lifecycle / removal
 
 This is a **diagnostic instrument**, not a permanent feature. Once the lag is
@@ -102,8 +129,8 @@ logged anywhere** — so user-reported "crashes" were invisible. This captures t
 | **Error boundary** | `src/components/AppErrorBoundary.tsx` | Top-level React boundary; catches render/commit throws in the tree, reports them, and renders a recoverable "Something went wrong / Reload" fallback instead of a blank page. Wraps `<App/>` in `src/main.tsx`. |
 | **Global listeners + reporter** | `src/utils/errorReporting.ts` | `initErrorReporting()` attaches `window` `error` + `unhandledrejection` listeners (handler/async throws the boundary can't see). `reportClientError()` scrubs + ships one record. |
 | **Client bootstrap** | `src/main.tsx` | Calls `initErrorReporting()` once, **always on** (crashes were invisible in every environment, not just prod — unlike the prod-gated perf init). |
-| **Server sink** | `server/server.ts` → `POST /api/diagnostics/error` | Unauthenticated endpoint; appends one scrubbed record per POST to a JSONL log + prints a `💥 client-error …` one-line summary. |
-| **Storage** | `dist/logs/client-error.jsonl` (**inside the backend container**) | Append-only JSONL via `path.join(__dirname, 'logs', …)`. **Container-local and ephemeral** — a rebuild/`down` wipes it; read it between deploys. |
+| **Server sink** | `server/server.ts` → `POST /api/diagnostics/error` | Unauthenticated endpoint; appends one scrubbed record per POST via the shared writer + prints a `💥 client-error …` one-line summary. |
+| **Storage** | `server/logs/client-error-YYYY-MM-DD.jsonl` (host) | Append-only JSONL via `appendDiagnostic` — **persisted + daily-rotated** (see "Persistence & rotation"). |
 
 ## What is captured
 
@@ -142,11 +169,13 @@ Always responds `204`; only appends to the JSONL log, never touches the database
 
 ## Reading the data
 
+Logs are persisted on the **host** (survive rebuilds), one file per UTC day:
+
 ```bash
-# the live log (container-local; grab it BEFORE any rebuild — a rebuild wipes it)
-docker exec cow-backend-prod cat dist/logs/client-error.jsonl
-# real crashes only (filter out manual SMOKE/TEST lines)
-docker exec cow-backend-prod cat dist/logs/client-error.jsonl | grep -iv 'test'
-# one-line summaries in the container console log
+# today's crashes (read straight from the host — no docker exec needed)
+cat server/logs/client-error-$(date -u +%F).jsonl
+# all days, real crashes only (filter out manual SMOKE/TEST lines)
+cat server/logs/client-error-*.jsonl | grep -iv 'test'
+# one-line summaries in the container console log (capped at 10m × 5 files)
 docker logs cow-backend-prod 2>&1 | grep '💥 client-error'
 ```

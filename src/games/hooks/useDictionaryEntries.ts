@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import apiClient from "../../utils/apiClient";
+import { apiGet } from "../../api/http";
 
 export interface DictionaryEntry {
     id: string;
@@ -54,9 +54,7 @@ export function useDictionaryEntries(options: UseDictionaryEntriesOptions = {}):
         setError(null);
 
         const lookups = terms.map((term) =>
-            apiClient
-                .get<DictionaryEntry>(`/api/dictionary/lookup/${encodeURIComponent(term)}`)
-                .then((res) => res.data)
+            apiGet<DictionaryEntry>(`/api/dictionary/lookup/${encodeURIComponent(term)}`)
                 // Swallow individual 404s — a missing term isn't an error for the whole batch.
                 .catch(() => null)
         );

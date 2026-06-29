@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import apiClient from "../../utils/apiClient";
+import { apiGet, apiPost } from "../../api/http";
 import { useAuth } from "../../AuthContext";
 import type { GameProgress } from "../types";
 
@@ -38,11 +38,10 @@ export function useGameProgress<TState extends Record<string, unknown> = Record<
         setLoading(true);
         setError(null);
 
-        apiClient
-            .get<{ gameId: string; progress: GameProgress | null }>(`/api/games/${encodeURIComponent(gameId)}/progress`)
-            .then((res) => {
+        apiGet<{ gameId: string; progress: GameProgress | null }>(`/api/games/${encodeURIComponent(gameId)}/progress`)
+            .then((data) => {
                 if (cancelled) return;
-                setProgress(res.data?.progress ?? null);
+                setProgress(data?.progress ?? null);
             })
             .catch((err) => {
                 if (cancelled) return;
@@ -62,11 +61,11 @@ export function useGameProgress<TState extends Record<string, unknown> = Record<
         async (state: TState) => {
             if (!canPersist || !gameId) return;
             try {
-                const res = await apiClient.post<{ gameId: string; progress: GameProgress }>(
+                const data = await apiPost<{ gameId: string; progress: GameProgress }>(
                     `/api/games/${encodeURIComponent(gameId)}/progress`,
                     { state }
                 );
-                setProgress(res.data?.progress ?? null);
+                setProgress(data?.progress ?? null);
             } catch (err) {
                 setError(err instanceof Error ? err : new Error(String(err)));
                 throw err;

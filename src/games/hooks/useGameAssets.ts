@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import apiClient from "../../utils/apiClient";
+import { apiGet } from "../../api/http";
 import type { GameAsset } from "../types";
 
 export interface UseGameAssetsResult {
@@ -28,11 +28,10 @@ export function useGameAssets(gameId: string | null | undefined): UseGameAssetsR
         setLoading(true);
         setError(null);
 
-        apiClient
-            .get<{ gameId: string; assets: GameAsset[] }>(`/api/games/${encodeURIComponent(gameId)}/assets`)
-            .then((res) => {
+        apiGet<{ gameId: string; assets: GameAsset[] }>(`/api/games/${encodeURIComponent(gameId)}/assets`)
+            .then((data) => {
                 if (cancelled) return;
-                setAssets(res.data?.assets ?? []);
+                setAssets(data?.assets ?? []);
             })
             .catch((err) => {
                 if (cancelled) return;

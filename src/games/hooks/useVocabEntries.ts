@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import apiClient from "../../utils/apiClient";
+import { apiGet } from "../../api/http";
 
 // Distinct from the canonical src/types VocabEntry: this mirrors the raw
 // /api/vocabentries payload shape games consume (note string id), so it is named
@@ -60,11 +60,10 @@ export function useVocabEntries(options: UseVocabEntriesOptions = {}): UseVocabE
         if (category) params.category = category;
         if (language) params.language = language;
 
-        apiClient
-            .get<GameVocabEntry[]>("/api/vocabentries", { params })
-            .then((res) => {
+        apiGet<GameVocabEntry[]>("/api/vocabentries", { params })
+            .then((data) => {
                 if (cancelled) return;
-                setEntries(res.data ?? []);
+                setEntries(data ?? []);
             })
             .catch((err) => {
                 if (cancelled) return;

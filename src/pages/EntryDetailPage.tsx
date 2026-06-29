@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../AuthContext";
 import { useConfirmation } from "../contexts/ConfirmationContext";
 import { useVocabularyUpdate } from "../contexts/VocabularyUpdateContext";
-import apiClient from "../utils/apiClient";
+import { apiGet, apiDelete } from "../api/http";
 import { stripParentheses } from "../utils/definitionUtils";
 import {
     Container,
@@ -78,8 +78,8 @@ function EntryDetailPage() {
         const fetchEntry = async () => {
             try {
                 setLoading(true);
-                const response = await apiClient.get(`/api/vocabEntries/${id}`);
-                setEntry(response.data);
+                const data = await apiGet<VocabEntry>(`/api/vocabEntries/${id}`);
+                setEntry(data);
                 setLoading(false);
             } catch (err: unknown) {
                 const e = err as { response?: { data?: { error?: string; code?: string } }; message?: string };
@@ -104,7 +104,7 @@ function EntryDetailPage() {
         }
 
         try {
-            await apiClient.delete(`/api/vocabEntries/${id}`);
+            await apiDelete(`/api/vocabEntries/${id}`);
 
             // Notify vocabulary update context
             vocabularyUpdate.removeVocabEntry(parseInt(id!));

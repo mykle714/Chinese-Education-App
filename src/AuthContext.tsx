@@ -3,7 +3,6 @@ import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { API_BASE_URL } from './constants';
 import type { Language } from './types';
-import { setAuthHandlers } from './utils/apiClient';
 import { setFetchInterceptorHandlers, setupFetchInterceptor } from './utils/fetchInterceptor';
 import { setRefreshHandlers, attemptTokenRefresh } from './utils/tokenRefresh';
 import { notifyLogin } from './utils/authSync';
@@ -70,10 +69,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
             setUser(null);
         };
 
-        // Register handlers with apiClient (for axios-based calls)
-        setAuthHandlers(handleTokenExpiration, clearAuth);
-
-        // Register handlers with fetch interceptor (for native fetch calls)
+        // Register handlers with the global fetch interceptor — the single auth
+        // layer now that all HTTP goes through fetch (api/http.ts).
         setFetchInterceptorHandlers(handleTokenExpiration, clearAuth);
 
         // When the shared refresh core mints a new access token, mirror it into

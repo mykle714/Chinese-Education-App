@@ -84,3 +84,69 @@ root-caused and fixed, it can be removed (delete the client module + bootstrap
 guard, the endpoint, and the script) or left in place behind the
 production gate. There is no rate-limiting on the endpoint; if it is kept
 long-term, add throttling or a feature flag.
+
+---
+
+# Client Error Reporting (crash sink)
+
+A sibling of the perf pipeline above, on the same `/api/diagnostics/*` family. The
+app previously had **no** front-end error capture: an uncaught render or
+event-handler throw (e.g. an out-of-range icon-layout index in the flashcard icon
+editor, fie) unmounted the React tree into a **blank white screen with nothing
+logged anywhere** — so user-reported "crashes" were invisible. This captures them.
+
+## Layers / components
+
+| Layer | File | Responsibility |
+|---|---|---|
+| **Error boundary** | `src/components/AppErrorBoundary.tsx` | Top-level React boundary; catches render/commit throws in the tree, reports them, and renders a recoverable "Something went wrong / Reload" fallback instead of a blank page. Wraps `<App/>` in `src/main.tsx`. |
+| **Global listeners + reporter** | `src/utils/errorReporting.ts` | `initErrorReporting()` attaches `window` `error` + `unhandledrejection` listeners (handler/async throws the boundary can't see). `reportClientError()` scrubs + ships one record. |
+| **Client bootstrap** | `src/main.tsx` | Calls `initErrorReporting()` once, **always on** (crashes were invisible in every environment, not just prod — unlike the prod-gated perf init). |
+| **Server sink** | `server/server.ts` → `POST /api/diagnostics/error` | Unauthenticated endpoint; appends one scrubbed record per POST to a JSONL log + prints a `💥 client-error …` one-line summary. |
+| **Storage** | `dist/logs/client-error.jsonl` (**inside the backend container**) | Append-only JSONL via `path.join(__dirname, 'logs', …)`. **Container-local and ephemeral** — a rebuild/`down` wipes it; read it between deploys. |
+
+## What is captured
+
+One record per error, from three sources (all funnelled through
+`reportClientError`, every path wrapped in try/catch — reporting never throws or
+recurses):
+
+- **`react`** — render-phase throws caught by `AppErrorBoundary.componentDidCatch`
+  (carries a `componentStack`).
+- **`window-error`** — uncaught runtime errors incl. event-handler throws.
+- **`unhandledrejection`** — async / promise rejections.
+
+Each record: `kind`, `message`, `stack`, `componentStack?` (react only), `path`
+(route), `userAgent`, `at` (client ts); the server adds `receivedAt` + `ip`.
+
+**Guardrails (client):** capped at `MAX_REPORTS_PER_SESSION = 25`; identical
+`kind|message` signatures deduped within `DEDUPE_WINDOW_MS = 5000` (React can fire
+the same throw several times during a failed render). Shipped via `keepalive`
+fetch (falls back to `sendBeacon`) so a report survives the crash-induced unload.
+
+## Privacy / scrubbing
+
+Error text can contain secrets and PII (a token baked into a URL, a `Bearer`
+header echoed in a message). `scrub()` redacts before anything leaves the browser:
+`Bearer <token>` → `Bearer [redacted]`, bare JWTs (`eyJ…`) → `[jwt]`, and
+`?token=` / `access_token` / `refresh_token` query params → `[redacted]`. The
+server additionally caps field lengths. **Keep any new fields scrubbed.**
+
+## Endpoint contract
+
+`POST /api/diagnostics/error` — **unauthenticated by design** (a crash can happen
+before/around auth, and the client posts via keepalive fetch / `sendBeacon` with no
+`Authorization` header). Body is `application/json`; a record with no `message` is
+dropped. `message`/`stack`/`componentStack`/`path`/`userAgent` are length-capped.
+Always responds `204`; only appends to the JSONL log, never touches the database.
+
+## Reading the data
+
+```bash
+# the live log (container-local; grab it BEFORE any rebuild — a rebuild wipes it)
+docker exec cow-backend-prod cat dist/logs/client-error.jsonl
+# real crashes only (filter out manual SMOKE/TEST lines)
+docker exec cow-backend-prod cat dist/logs/client-error.jsonl | grep -iv 'test'
+# one-line summaries in the container console log
+docker logs cow-backend-prod 2>&1 | grep '💥 client-error'
+```

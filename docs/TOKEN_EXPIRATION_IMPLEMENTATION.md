@@ -33,13 +33,28 @@ rotation → forms a per-login "family" chain), `"userAgent"`. Unique index on
 - `issueRefreshToken(userId, userAgent?)` (~130-145) — mints a random token,
   stores its hash, returns the **raw** token + expiry (the family root on login,
   or a successor on rotation).
-- `rotateRefreshToken(raw, userAgent?)` (~158-200) — the refresh exchange:
+- `rotateRefreshToken(raw, userAgent?)` (~165-215) — the refresh exchange:
   - unknown hash → reject (`Invalid refresh token`)
-  - **already-revoked hash → REUSE DETECTED**: `revokeAllForUser` (burn the whole
-    family) then reject
+  - **already-revoked hash** → either a benign concurrency race OR a theft replay,
+    indistinguishable from the token alone, so a **grace window** decides
+    (`REFRESH_REUSE_GRACE_MS = 20_000`):
+    - revoked **within** the grace window **and** has a successor
+      (`replacedByHash !== null`) → treat as a **benign race** (a second tab / a
+      retried refresh whose `Set-Cookie` was lost): fall through and issue a fresh
+      pair, do **not** burn the family. `revoke` is idempotent (COALESCE), so the
+      original revoke moment + successor link are preserved; the re-presentation
+      just mints an additional sibling token.
+    - otherwise (revoked too long ago, or no successor) → **REUSE DETECTED**:
+      `revokeAllForUser` (burn the whole family) then reject.
   - expired → reject
   - valid → issue successor, revoke the presented token linked to it
     (`replacedByHash`), return new access token + new refresh token + user.
+
+  The grace window fixes a false-positive logout: two tabs (or a network-retried
+  refresh) racing the rotation near the 15m access-token boundary used to burn the
+  family and bounce **both** sessions to `/login` mid-use (observed as a "crash" /
+  lost in-progress edit). A genuine stolen-token replay surfaces minutes/hours
+  later — outside the 20s window — so it still burns the family.
 - `revokeRefreshToken(raw)` / `revokeAllRefreshTokens(userId)` — logout / "log out
   everywhere" / account deletion.
 
@@ -104,16 +119,29 @@ retry uses a `_retried` flag.
 - Registers the refresh handler (`setRefreshHandlers`) to mirror a refreshed token
   into React state.
 - `login` stores only the access token (refresh lives in the httpOnly cookie).
-- `checkAuth` (on mount): with a valid access token, calls `/api/auth/me` (the
-  interceptor auto-refreshes on 401). With **no** usable access token, it still
-  attempts a silent `attemptTokenRefresh()` so a valid refresh cookie keeps the
-  user signed in across reloads / localStorage clears.
+- `checkAuth` (effect keyed on `token`): with a valid access token, calls
+  `/api/auth/me` (the interceptor auto-refreshes on 401). With **no** usable access
+  token, it still attempts a silent `attemptTokenRefresh()` so a valid refresh
+  cookie keeps the user signed in across reloads / localStorage clears.
+  - **Refresh-driven token changes skip the `/me` refetch** (`if (token && user)
+    return;` at the top): a background access-token refresh changes `token` while
+    the authenticated `user` is already set, and the user is unchanged, so the
+    re-validation round-trip is redundant. Skipping it also **narrows the rotation
+    race window** that contributed to the false-positive reuse logout above
+    (one fewer request firing right after a token change). Initial load and the
+    silent-refresh-on-load path both have `user === null`, so they fall through and
+    still validate. The effect stays keyed on `token` only (an
+    `eslint-disable react-hooks/exhaustive-deps` documents that `user` is read as a
+    guard, not a trigger).
 
 ## Security model
 - Refresh tokens are opaque + **hashed at rest** → a DB leak yields no usable
   tokens.
 - **Rotation + reuse detection**: replaying a spent refresh token revokes the
-  entire family, forcing re-login (standard stolen-token defense).
+  entire family, forcing re-login (standard stolen-token defense). A short **20s
+  reuse grace window** (`REFRESH_REUSE_GRACE_MS`) exempts benign concurrency races
+  (multi-tab / retried refresh) from the family burn while keeping the theft-replay
+  window tiny — the standard "reuse interval" trade-off.
 - httpOnly cookies → tokens invisible to JS (XSS can't read them).
 - Short 15m access window limits the blast radius of a leaked access token.
 
@@ -124,8 +152,11 @@ revocation) is exercisable with curl against `http://localhost:5000`:
    Max-Age ~2.6M, path `/api/auth`).
 2. `POST /api/auth/refresh` (with cookies) → 200, new `token`, rotated
    `refreshToken`.
-3. Replay the pre-rotation refresh token → `401 Refresh token reuse detected`; the
-   post-rotation token is now dead too (family burned).
+3. Replay the pre-rotation refresh token. **Within 20s** of the rotation it's
+   treated as a benign race → `200` with a fresh pair (family preserved). **After
+   20s** it's `401 Refresh token reuse detected` and the family is burned (the
+   post-rotation token is dead too). To exercise the theft path deterministically,
+   wait out `REFRESH_REUSE_GRACE_MS` before replaying.
 4. `POST /api/auth/logout` → both cookies cleared; the token can no longer refresh.
 
 To observe the client refresh-and-retry in a browser: log in, delete the `token`

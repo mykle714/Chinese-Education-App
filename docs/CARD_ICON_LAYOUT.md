@@ -573,6 +573,23 @@ All in `src/pages/FlashcardsLearnPage/`.
      a visible jump when entering/exiting the editor. The canvas's inner `<img>` is
      therefore `display: block` so both renderers share identical geometry.
 
+   **Crash-safety guards (`CardIconCanvas.tsx` + `cardIconLayout.ts`).** The canvas
+   gesture handlers index `layout[selected]` / `layout[m.t]` / `layout[t]`, where
+   `selected` is page-owned state and `layout` (advDraft) is a separate prop. A
+   transient desync or a target deleted mid-gesture would dereference `undefined`
+   (`.scale`/`.locked`/`.rotation`) and throw — and with the app's top-level
+   `AppErrorBoundary` (added alongside this) that throw would white-screen the
+   whole app. So **every `layout[i]` access is bounds-guarded** (`resolveTarget`,
+   `withinSelectedZone`, `beginPinch`, `runPinch`, the `onDrag` memo factory, and
+   `bindHandle` all bail when the indexed item is missing). Separately,
+   `clampScale` / `sanitizeRotation` (`cardIconLayout.ts`) **reject non-finite
+   values** (NaN/±Infinity): `Math.min`/`Math.max` pass NaN through, so a degenerate
+   pinch frame (`da` distance 0/undefined) could otherwise write `scale: NaN` into
+   the layout — the icon renders at width `"NaN%"` (vanishes) and the broken value
+   could even be **saved**, permanently breaking the card. A NaN scale now falls
+   back to `DEFAULT_ICON_SCALE`, a NaN rotation to `0`. Front-end crashes are
+   captured by the client error sink (docs/CLIENT_PERF_DIAGNOSTICS.md).
+
 4. **Seeding** — entering edit mode seeds both drafts from `currentEntry.iconLayout`,
    and chooses the starting mode by its size:
    - **advanced layout** (`isAdvancedLayout` — multiple icons, OR a single icon that's

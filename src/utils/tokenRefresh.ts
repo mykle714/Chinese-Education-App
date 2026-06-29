@@ -10,6 +10,7 @@
  * and broadcast to AuthContext via the registered handler.
  */
 import { API_BASE_URL } from '../constants';
+import * as authStorage from './authStorage';
 
 // Capture the native fetch at module-eval time — this runs before
 // setupFetchInterceptor() patches window.fetch (that happens in a useEffect),
@@ -55,7 +56,7 @@ async function doRefresh(): Promise<string | null> {
     const data = await res.json();
     const newToken: unknown = data?.token;
     if (typeof newToken === 'string' && newToken.length > 0) {
-      localStorage.setItem('token', newToken);
+      authStorage.setToken(newToken);
       onAccessTokenRefreshed?.(newToken);
       return newToken;
     }

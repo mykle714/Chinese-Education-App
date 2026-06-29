@@ -7,6 +7,7 @@ import { setAuthHandlers } from './utils/apiClient';
 import { setFetchInterceptorHandlers, setupFetchInterceptor } from './utils/fetchInterceptor';
 import { setRefreshHandlers, attemptTokenRefresh } from './utils/tokenRefresh';
 import { notifyLogin } from './utils/authSync';
+import * as authStorage from './utils/authStorage';
 
 // Define the User type
 interface User {
@@ -46,11 +47,8 @@ interface AuthProviderProps {
 // Create the AuthProvider component
 export function AuthProvider({ children }: AuthProviderProps) {
     const [user, setUser] = useState<User | null>(null);
-    const [token, setToken] = useState<string | null>(() => {
-        const storedToken = localStorage.getItem('token');
-        // Handle both null and string 'null' cases
-        return (!storedToken || storedToken === 'null' || storedToken === 'undefined') ? null : storedToken;
-    });
+    // authStorage.getToken() already normalizes blank / "null" / "undefined" → null.
+    const [token, setToken] = useState<string | null>(authStorage.getToken);
     const [isLoading, setIsLoading] = useState<boolean>(true);
     const [error, setError] = useState<string | null>(null);
     const navigate = useNavigate();
@@ -59,7 +57,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     useEffect(() => {
         const handleTokenExpiration = () => {
             // Clear auth state
-            localStorage.removeItem('token');
+            authStorage.clearToken();
             setToken(null);
             setUser(null);
             // Navigate to login
@@ -67,7 +65,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         };
 
         const clearAuth = () => {
-            localStorage.removeItem('token');
+            authStorage.clearToken();
             setToken(null);
             setUser(null);
         };
@@ -117,12 +115,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
                     } else {
                         // If the token is invalid, clear it
                         console.log('Token validation failed, clearing stored token');
-                        localStorage.removeItem('token');
+                        authStorage.clearToken();
                         setToken(null);
                     }
                 } catch (error) {
                     console.error('Error checking authentication:', error);
-                    localStorage.removeItem('token');
+                    authStorage.clearToken();
                     setToken(null);
                 }
             } else {
@@ -133,7 +131,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 // token, re-running this effect down the validToken path above.
                 if (token) {
                     console.log('Invalid token detected, clearing:', token);
-                    localStorage.removeItem('token');
+                    authStorage.clearToken();
                 }
                 const refreshed = await attemptTokenRefresh();
                 if (!refreshed) {
@@ -176,7 +174,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             const data = await response.json();
             setUser(data.user);
             setToken(data.token);
-            localStorage.setItem('token', data.token);
+            authStorage.setToken(data.token);
             notifyLogin(data.token);
             navigate('/');
         } catch (error: unknown) {
@@ -219,7 +217,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 credentials: 'include' // Include cookies
             });
 
-            localStorage.removeItem('token');
+            authStorage.clearToken();
             setToken(null);
             setUser(null);
             navigate('/login');
@@ -251,7 +249,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             }
 
             // Clear local state and redirect
-            localStorage.removeItem('token');
+            authStorage.clearToken();
             setToken(null);
             setUser(null);
             navigate('/login');

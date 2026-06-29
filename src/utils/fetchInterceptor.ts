@@ -1,4 +1,5 @@
 import { attemptTokenRefresh } from './tokenRefresh';
+import * as authStorage from './authStorage';
 
 // Store navigation and auth clearing functions
 let navigateToLogin: (() => void) | null = null;
@@ -86,9 +87,9 @@ export const setupFetchInterceptor = () => {
       if (clearAuthState) {
         clearAuthState();
       }
-      localStorage.removeItem('token');
+      authStorage.clearToken();
       // Flag for LoginPage to show the "session expired" notice.
-      localStorage.setItem('sessionExpired', 'true');
+      authStorage.markSessionExpired();
       if (navigateToLogin) {
         navigateToLogin();
       }

@@ -1,4 +1,5 @@
 import { API_BASE_URL } from '../../constants';
+import * as authStorage from '../../utils/authStorage';
 import type { TTSProvider, TTSRequest } from './types';
 import { timeStretchBuffer } from './timeStretch';
 
@@ -81,7 +82,7 @@ export class CloudTTSProvider implements TTSProvider {
 
     private getToken(): string | null {
         if (typeof window === 'undefined') return null;
-        return window.localStorage.getItem('token');
+        return authStorage.getToken();
     }
 
     async isAvailable(): Promise<boolean> {

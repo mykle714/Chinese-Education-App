@@ -1,6 +1,7 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import { API_BASE_URL } from '../constants';
 import { attemptTokenRefresh } from './tokenRefresh';
+import * as authStorage from './authStorage';
 
 // Mirror the fetch interceptor: don't auto-refresh on auth-mutation endpoints
 // (a 401 there is a real failure / would recurse). /api/auth/me is eligible.
@@ -37,8 +38,8 @@ export const setAuthHandlers = (
 apiClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     // Token is sent via cookies, but we could add it to headers if needed
-    const token = localStorage.getItem('token');
-    if (token && token !== 'null' && token !== 'undefined') {
+    const token = authStorage.getToken();
+    if (token) {
       // Optional: Add to headers if your backend expects it
       // config.headers.Authorization = `Bearer ${token}`;
     }
@@ -79,8 +80,8 @@ apiClient.interceptors.response.use(
       if (clearAuthState) {
         clearAuthState();
       }
-      localStorage.removeItem('token');
-      localStorage.setItem('sessionExpired', 'true');
+      authStorage.clearToken();
+      authStorage.markSessionExpired();
       if (navigateToLogin) {
         navigateToLogin();
       }

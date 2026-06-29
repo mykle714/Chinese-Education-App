@@ -4,6 +4,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useAuth } from '../AuthContext';
+import * as authStorage from '../utils/authStorage';
 import {
     Container,
     Typography,
@@ -42,11 +43,10 @@ function LoginPage() {
 
     // Check for session expiration on mount
     useEffect(() => {
-        const sessionExpired = localStorage.getItem('sessionExpired');
-        if (sessionExpired === 'true') {
+        if (authStorage.wasSessionExpired()) {
             setSessionExpiredMessage('Your session has expired. Please log in again.');
-            // Clear the flag
-            localStorage.removeItem('sessionExpired');
+            // Clear the flag (consume-once)
+            authStorage.clearSessionExpired();
         }
     }, []);
 

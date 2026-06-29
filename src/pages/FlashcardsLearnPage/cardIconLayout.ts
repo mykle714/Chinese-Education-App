@@ -166,8 +166,18 @@ export function isAdvancedLayout(layout: IconLayoutItem[] | null | undefined): b
   return !isDefaultPlacement(layout[0]);
 }
 
-/** Clamp a scale into the allowed range. */
-export const clampScale = (s: number) => Math.min(Math.max(s, SCALE_MIN), SCALE_MAX);
+/** Clamp a scale into the allowed range. A non-finite input (NaN/±Infinity — e.g.
+ *  a degenerate pinch frame where the finger distance was 0/undefined) is coerced
+ *  to the default scale rather than passed through: Math.min/Math.max do NOT filter
+ *  NaN, so without this a bad gesture frame could write `scale: NaN` into the layout
+ *  (icon renders at width "NaN%" → vanishes) and even get saved, permanently
+ *  breaking the card. */
+export const clampScale = (s: number) =>
+  Number.isFinite(s) ? Math.min(Math.max(s, SCALE_MIN), SCALE_MAX) : DEFAULT_ICON_SCALE;
+
+/** Sanitize a rotation (degrees): a non-finite value falls back to 0. Same NaN
+ *  concern as clampScale — a bad pinch/handle frame must never persist NaN. */
+export const sanitizeRotation = (deg: number) => (Number.isFinite(deg) ? deg : 0);
 
 // ── Snap-to-increment helpers (the toolbar's "snap" toggles) ──────────────────────────
 // The editor's snap dropdown offers three independent toggles — move / rotate / resize —

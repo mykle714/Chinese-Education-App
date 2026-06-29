@@ -91,6 +91,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
     // Check if the user is authenticated on mount
     useEffect(() => {
+        // A *pure access-token refresh* changes `token` while we already have an
+        // authenticated `user` — the authenticated user is unchanged, so skip the
+        // redundant GET /api/auth/me. Besides saving a round-trip, this narrows the
+        // window in which a token change kicks off another request that could race
+        // the refresh rotation and trip "Refresh token reuse detected" (the
+        // mid-edit logout). Initial load AND the silent-refresh-on-load path both
+        // have user === null, so they fall through and still validate/refresh below.
+        if (token && user) return;
         const checkAuth = async () => {
             // Only proceed if we have a valid token
             if (token && token !== 'null' && token !== 'undefined' && token.length > 10) {
@@ -136,6 +144,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
         };
 
         checkAuth();
+        // Intentionally keyed on `token` only. `user` is read solely as a guard to
+        // skip re-validation on a refresh-driven token change; we must NOT re-run
+        // this effect when `user` changes (that would re-fire on every setUser).
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [token]);
 
     // Login function

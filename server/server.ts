@@ -231,6 +231,56 @@ app.post('/api/diagnostics/perf', (req, res) => {
   }
 });
 
+// UNAUTHENTICATED client-error sink (mirrors the perf sink above). The app has no
+// other way to surface front-end crashes — there is no client error reporting
+// otherwise, so an uncaught render/handler throw (e.g. in the flashcard icon
+// editor) just white-screens with nothing logged anywhere. This receives one
+// scrubbed error record per POST from the client error boundary + global
+// error/unhandledrejection listeners, appends it to a git-ignored JSONL log, and
+// prints a one-line summary. It never touches the database or returns data.
+// Auth-free because a crash can happen before/around auth and the client posts
+// via keepalive fetch / sendBeacon (no Authorization header). The CLIENT scrubs
+// tokens/PII before sending (see src/utils/errorReporting.ts); we additionally
+// cap field lengths here. See docs/CLIENT_PERF_DIAGNOSTICS.md.
+const CLIENT_ERROR_LOG = path.join(__dirname, 'logs', 'client-error.jsonl');
+// @ts-ignore
+app.post('/api/diagnostics/error', (req, res) => {
+  try {
+    const body = req.body || {};
+    const message = typeof body.message === 'string' ? body.message.slice(0, 2000) : undefined;
+    // Require at least a message; ignore empty/garbage beacons.
+    if (!message) {
+      return res.status(204).end();
+    }
+
+    const entry = {
+      receivedAt: new Date().toISOString(),
+      ip: req.headers['x-forwarded-for'] || req.socket?.remoteAddress,
+      kind: typeof body.kind === 'string' ? body.kind.slice(0, 40) : undefined,
+      message,
+      stack: typeof body.stack === 'string' ? body.stack.slice(0, 8000) : undefined,
+      componentStack:
+        typeof body.componentStack === 'string' ? body.componentStack.slice(0, 8000) : undefined,
+      path: typeof body.path === 'string' ? body.path.slice(0, 300) : undefined,
+      userAgent: typeof body.userAgent === 'string' ? body.userAgent.slice(0, 400) : undefined,
+      at: typeof body.at === 'number' ? body.at : undefined,
+    };
+
+    fs.mkdirSync(path.dirname(CLIENT_ERROR_LOG), { recursive: true });
+    fs.appendFile(CLIENT_ERROR_LOG, JSON.stringify(entry) + '\n', () => {});
+
+    // Compact console summary so prod logs surface crashes without opening the JSONL.
+    console.error(
+      `💥 client-error [${entry.kind || 'error'}] on ${entry.path || '?'}: ${message.slice(0, 200)}`
+    );
+
+    return res.status(204).end();
+  } catch (err) {
+    console.error('Error handling client error diagnostics:', err);
+    return res.status(204).end();
+  }
+});
+
 // Handwriting recognition proxy — converts canonical Ink to the Google Input
 // Tools request, returns ranked candidate characters. Behind auth so it can't be
 // abused as an open proxy to Google's endpoint. See docs/HANDWRITING_RECOGNITION.md

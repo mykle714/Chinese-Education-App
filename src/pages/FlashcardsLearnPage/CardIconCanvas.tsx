@@ -9,6 +9,7 @@ import {
     iconItemStyle,
     iconFlipTransform,
     clampScale,
+    sanitizeRotation,
     clampIconCenter,
     snapCenterToGrid,
     snapScaleToStep,
@@ -123,6 +124,11 @@ const CardIconCanvas: React.FC<{
         const r = rect();
         if (!r) return false;
         const sel = layout[selected];
+        // Defensive: `selected` is page-owned state and `layout` a separate prop, so a
+        // transient desync (or a stale index) could point past the array. Bail rather
+        // than dereference undefined — with no error boundary that throw white-screened
+        // the whole app. (Belt-and-suspenders alongside AppErrorBoundary.)
+        if (!sel) return false;
         // Half-extent as a fraction of card width (icons are square in px), plus the fixed
         // 10%-card-width margin. The same px margin applies on the y-axis, so converting the
         // width-fraction extent to a height-fraction via the aspect ratio keeps it square.
@@ -139,7 +145,9 @@ const CardIconCanvas: React.FC<{
     //  - selected icon UNLOCKED → keep the selected icon if the gesture started inside its
     //    protected zone, else switch to `i`.
     const resolveTarget = (i: number, px: number, py: number): number => {
-        if (selected === null || layout[selected].locked) return i;
+        // `!layout[selected]` guards a stale/out-of-range selection index (see
+        // withinSelectedZone) — treat it as "no selection" and act on `i`.
+        if (selected === null || !layout[selected] || layout[selected].locked) return i;
         return withinSelectedZone(px, py) ? selected : i;
     };
 
@@ -207,20 +215,24 @@ const CardIconCanvas: React.FC<{
     const beginPinch = (fallback: number | null, d: number, a: number): PinchMemo | null => {
         const t = selected !== null ? selected : fallback;
         if (t === null) return null; // nothing selected and no icon under the pinch
+        const target = layout[t];
+        if (!target) return null; // stale/out-of-range index — don't dereference undefined
         if (t !== selected) onSelect(t); // adopt the fallback icon as the selection
-        if (!layout[t].locked) {
+        if (!target.locked) {
             onInteractionStart(); // snapshot undo history once, on the first real frame
             setInteracting(true); // float the target to the front while pinching
         } else {
             triggerShake(t); // frozen target: signal the denied resize/rotate with a shake
         }
-        return { t, d0: d || 1, a0: a, scale: layout[t].scale, rot: layout[t].rotation };
+        return { t, d0: d || 1, a0: a, scale: target.scale, rot: target.rotation };
     };
     const runPinch = (m: PinchMemo, d: number, a: number, last: boolean) => {
-        if (layout[m.t].locked) return; // frozen target: no resize/rotate
+        const target = layout[m.t];
+        if (!target) return; // target deleted mid-gesture — nothing to update
+        if (target.locked) return; // frozen target: no resize/rotate
         if (last) setInteracting(false);
         let nScale = clampScale(m.scale * (d / m.d0));
-        let nRot = m.rot + (a - m.a0);
+        let nRot = sanitizeRotation(m.rot + (a - m.a0));
         // Quantize size / rotation live per the active snap toggles.
         if (snap.resize) nScale = snapScaleToStep(nScale);
         if (snap.rotate) nRot = snapRotation(nRot);
@@ -270,15 +282,20 @@ const CardIconCanvas: React.FC<{
                     (memo as DragMemo | undefined) ??
                     (() => {
                         const t = gestureTargetRef.current ?? resolveTarget(i, px, py);
-                        if (!layout[t].locked) {
+                        const titem = layout[t];
+                        if (!titem) return undefined; // stale index — abandon this frame
+                        if (!titem.locked) {
                             onInteractionStart();
                             setInteracting(true);
                         } else {
                             triggerShake(t); // frozen target: signal the denied move with a shake
                         }
-                        return { t, x: layout[t].x, y: layout[t].y };
+                        return { t, x: titem.x, y: titem.y };
                     })();
-                if (layout[m.t].locked) return m; // frozen target: no translation
+                if (!m) return memo; // couldn't resolve a valid target this frame
+                const target = layout[m.t];
+                if (!target) return m; // target deleted mid-drag — nothing to update
+                if (target.locked) return m; // frozen target: no translation
                 const r = rect();
                 if (!r) return m;
                 let nx = m.x + mx / r.width;
@@ -290,7 +307,7 @@ const CardIconCanvas: React.FC<{
                     gestureTargetRef.current = null; // clear the per-gesture target
                     // Snap an icon dragged too far off-card back onto it, keeping at least
                     // 15% of the icon on-card (replaces the old drag-off-to-delete).
-                    const clamped = clampIconCenter({ x: nx, y: ny, scale: layout[m.t].scale }, r);
+                    const clamped = clampIconCenter({ x: nx, y: ny, scale: target.scale }, r);
                     nx = clamped.x;
                     ny = clamped.y;
                 }
@@ -318,9 +335,11 @@ const CardIconCanvas: React.FC<{
         onDrag: ({ xy: [px, py], event, first, last }) => {
             event?.stopPropagation?.();
             if (selected === null) return;
+            const it = layout[selected];
+            if (!it) return; // stale/out-of-range selection — don't dereference undefined
             // A locked icon's corner indicator is inert — no resize/rotate via the handle.
             // Shake the icon on the first frame to signal the action is denied.
-            if (layout[selected].locked) {
+            if (it.locked) {
                 if (first) triggerShake(selected);
                 return;
             }
@@ -330,7 +349,6 @@ const CardIconCanvas: React.FC<{
             if (last) setInteracting(false);
             const r = rect();
             if (!r) return;
-            const it = layout[selected];
             const cx = r.left + it.x * r.width;
             const cy = r.top + it.y * r.height;
             const dx = px - cx;
@@ -341,7 +359,7 @@ const CardIconCanvas: React.FC<{
             const baseDiag = baseHalf * Math.SQRT2;
             const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
             let nScale = clampScale(dist / baseDiag);
-            let nRot = angle - 45;
+            let nRot = sanitizeRotation(angle - 45);
             // Quantize size / rotation live per the active snap toggles.
             if (snap.resize) nScale = snapScaleToStep(nScale);
             if (snap.rotate) nRot = snapRotation(nRot);

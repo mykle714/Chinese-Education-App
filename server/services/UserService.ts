@@ -18,6 +18,17 @@ const SALT_ROUNDS = 10;
 const ACCESS_TOKEN_TTL = '15m';
 const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
+// Reuse-detection grace window (ms). When an ALREADY-revoked refresh token is
+// presented, a genuine replay/theft is indistinguishable from a benign
+// concurrency race (two tabs, or a network retry of a refresh whose Set-Cookie
+// response was lost) purely from the token. We treat a re-presentation as a
+// benign race — and issue a fresh pair instead of burning the user's whole token
+// family — only when the token was rotated very recently AND legitimately (it has
+// a successor). A token revoked longer ago than this, or one that was revoked
+// without a successor, is treated as theft. 20s comfortably covers sub-second
+// rotation races while keeping the theft-replay window tiny.
+const REFRESH_REUSE_GRACE_MS = 20 * 1000;
+
 /** Result of issuing a refresh token: the RAW token (handed to the client once)
  *  plus its expiry (used to set the cookie maxAge). The raw token is never stored. */
 export interface IssuedRefreshToken {
@@ -148,8 +159,11 @@ export class UserService {
    * token. Implements rotation with reuse detection:
    *   - unknown token            -> reject (invalid)
    *   - expired token            -> reject (must re-login)
-   *   - ALREADY-revoked token    -> THEFT/replay: revoke the user's entire family
-   *                                 and reject (neither party can continue)
+   *   - ALREADY-revoked token:
+   *       • rotated within the reuse grace window AND has a successor -> benign
+   *         concurrency race (two tabs / a retried refresh): issue a fresh pair,
+   *         do NOT burn the family
+   *       • otherwise -> THEFT/replay: revoke the user's entire family and reject
    *   - valid token              -> revoke it (linked to its successor) and issue
    *                                 a new access + refresh pair
    */
@@ -165,11 +179,23 @@ export class UserService {
       throw new ValidationError('Invalid refresh token');
     }
 
-    // Reuse of a revoked token => the chain was already spent (replay or stolen
-    // token used after the legit client rotated). Burn the whole family.
+    // Reuse of a revoked token. This is EITHER a benign concurrency race (the
+    // legit client rotated the token in another tab / a retried request a moment
+    // ago) OR a replay of a stolen token. We can't tell from the token alone, so
+    // we use a short grace window: a token revoked very recently AND legitimately
+    // (it has a successor) is treated as a race and allowed to mint a fresh pair;
+    // anything else burns the whole family. revoke() is idempotent (COALESCE), so
+    // re-presenting within the window does not move the original revoke moment or
+    // successor link — the fall-through below just issues an additional sibling.
     if (stored.revokedAt) {
-      await this.refreshTokenDAL.revokeAllForUser(stored.userId);
-      throw new ValidationError('Refresh token reuse detected');
+      const revokedAgeMs = Date.now() - stored.revokedAt.getTime();
+      const benignRace =
+        revokedAgeMs <= REFRESH_REUSE_GRACE_MS && stored.replacedByHash !== null;
+      if (!benignRace) {
+        await this.refreshTokenDAL.revokeAllForUser(stored.userId);
+        throw new ValidationError('Refresh token reuse detected');
+      }
+      // Benign race: fall through to issue a fresh access + refresh pair below.
     }
 
     if (stored.expiresAt.getTime() <= Date.now()) {

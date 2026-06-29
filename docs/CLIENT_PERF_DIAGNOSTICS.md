@@ -134,7 +134,7 @@ logged anywhere** — so user-reported "crashes" were invisible. This captures t
 
 ## What is captured
 
-One record per error, from three sources (all funnelled through
+One record per error, from four sources (all funnelled through
 `reportClientError`, every path wrapped in try/catch — reporting never throws or
 recurses):
 
@@ -142,9 +142,37 @@ recurses):
   (carries a `componentStack`).
 - **`window-error`** — uncaught runtime errors incl. event-handler throws.
 - **`unhandledrejection`** — async / promise rejections.
+- **`unexpected-reload`** — a browser/OS-initiated full reload caught mid-flow via
+  the **reload-surviving breadcrumb** (see below). This is **not** a JS exception —
+  it's the one crash class the boundary + listeners are blind to.
 
 Each record: `kind`, `message`, `stack`, `componentStack?` (react only), `path`
-(route), `userAgent`, `at` (client ts); the server adds `receivedAt` + `ip`.
+(route), `userAgent`, `at` (client ts); the server adds `receivedAt` + `ip`. For
+`unexpected-reload`, `stack` holds the breadcrumb context as JSON
+(`flow`, `phase`, `ref`, `path`, `deviceMemory`, `ageMs`) since there is no JS stack.
+
+### Reload-surviving breadcrumb (catching OS reloads)
+
+iOS WebKit can tear down and **reload** a memory-pressured tab outright — e.g. the
+flashcard icon editor (fie) holding up to a dozen icon images plus the live gesture
+canvas. That destroys the JS context with **no throw**, so the boundary and `window`
+listeners never see it; the page just silently reloads (symptom: Save → page
+refreshes back to flp on a *different* card, edit button greyed, card un-flippable —
+flp's cold-mount state after a real reload). To observe it:
+
+- `setEditBreadcrumb({ flow, phase, ref })` writes `diag:edit-breadcrumb` to
+  `localStorage` (+ `ts`, `path`, `deviceMemory`) when a reload-risky flow starts.
+  fie calls it in `enterEdit` (`phase: "editing"`) and re-stamps it at the start of
+  `handleSaveLayout` (`phase: "saving"` — the suspected reload moment).
+- `clearEditBreadcrumb()` removes it on every **clean** exit: `exitEdit` (cancel /
+  post-save) and an flp unmount effect (in-app navigation away).
+- On boot, `initErrorReporting()` → `reportUnexpectedReload()` finds a leftover
+  breadcrumb younger than `BREADCRUMB_TTL_MS` (10 min) and reports it, then clears
+  it. A clean exit leaves nothing, so a normal load reports nothing.
+
+Code: `src/utils/errorReporting.ts` (breadcrumb helpers + boot check),
+`src/pages/FlashcardsLearnPage/FlashcardsLearnPage.tsx` (`enterEdit`, `exitEdit`,
+`handleSaveLayout`, unmount effect).
 
 **Guardrails (client):** capped at `MAX_REPORTS_PER_SESSION = 25`; identical
 `kind|message` signatures deduped within `DEDUPE_WINDOW_MS = 5000` (React can fire

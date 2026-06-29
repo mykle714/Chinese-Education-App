@@ -37,7 +37,13 @@ let started = false;
 // signature -> last-sent timestamp, for short-window dedupe.
 const recentSignatures = new Map<string, number>();
 
-export type ClientErrorKind = "react" | "window-error" | "unhandledrejection";
+export type ClientErrorKind =
+    | "react"
+    | "window-error"
+    | "unhandledrejection"
+    // A browser/OS-initiated reload caught mid-flow via the breadcrumb below — NOT
+    // a JS exception. See "Reload-surviving breadcrumb" further down.
+    | "unexpected-reload";
 
 export interface ClientErrorReport {
     kind: ClientErrorKind;
@@ -118,6 +124,109 @@ export function reportClientError(report: ClientErrorReport): void {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Reload-surviving breadcrumb (catches OS/browser-initiated reloads)
+//
+// Some "crashes" are NOT JS exceptions: iOS WebKit can tear down and RELOAD a
+// memory-pressured tab outright (e.g. the flashcard icon editor holding up to a
+// dozen icon images + the live gesture canvas). That destroys the JS context
+// with no throw, so the error boundary and the window listeners above never see
+// it — the page just silently reloads. To observe it, a reload-risky flow drops
+// a breadcrumb in localStorage on entry and clears it on a CLEAN exit. If we
+// boot and still find a recent breadcrumb, the page must have reloaded mid-flow
+// without exiting cleanly — we report that as `unexpected-reload`.
+// ---------------------------------------------------------------------------
+
+const BREADCRUMB_KEY = "diag:edit-breadcrumb";
+// Only treat a leftover breadcrumb as a reload signal if it's recent. A
+// reload-then-reboot is near-instant; this generous window still covers a tab
+// evicted while backgrounded and reopened minutes later, while ignoring any
+// ancient crumb that somehow outlived a clean session.
+const BREADCRUMB_TTL_MS = 10 * 60 * 1000;
+
+export interface EditBreadcrumb {
+    /** Which reload-risky flow is in progress, e.g. "fie". */
+    flow: string;
+    /** Sub-phase, so we can tell plain editing apart from the save re-render. */
+    phase: string;
+    /** Best-effort identifier of what's being edited (e.g. the card key). */
+    ref?: string;
+}
+
+/** Record that a reload-risky flow is in progress (overwrites any prior crumb). */
+export function setEditBreadcrumb(info: EditBreadcrumb): void {
+    try {
+        localStorage.setItem(
+            BREADCRUMB_KEY,
+            JSON.stringify({
+                ...info,
+                ts: Date.now(),
+                path: window.location.pathname,
+                // Device memory (GB) where exposed — correlates reloads with weak hardware.
+                deviceMemory: (navigator as Navigator & { deviceMemory?: number })
+                    .deviceMemory,
+            })
+        );
+    } catch {
+        /* localStorage can throw (private mode / quota) — never disrupt the flow */
+    }
+}
+
+/** Clear the breadcrumb on a clean exit (save success, cancel, unmount). */
+export function clearEditBreadcrumb(): void {
+    try {
+        localStorage.removeItem(BREADCRUMB_KEY);
+    } catch {
+        /* ignore */
+    }
+}
+
+/**
+ * On boot: if a recent breadcrumb is still present, the page reloaded mid-flow
+ * without a clean exit (an OS/browser-initiated reload). Report it once, then
+ * clear it. Called from initErrorReporting before listeners are attached.
+ */
+function reportUnexpectedReload(): void {
+    try {
+        const raw = localStorage.getItem(BREADCRUMB_KEY);
+        if (!raw) return;
+        localStorage.removeItem(BREADCRUMB_KEY); // consume regardless of outcome
+        let crumb: {
+            ts?: number;
+            flow?: string;
+            phase?: string;
+            ref?: string;
+            path?: string;
+            deviceMemory?: number;
+        };
+        try {
+            crumb = JSON.parse(raw);
+        } catch {
+            return;
+        }
+        const ts = typeof crumb?.ts === "number" ? crumb.ts : 0;
+        const ageMs = Date.now() - ts;
+        if (!ts || ageMs > BREADCRUMB_TTL_MS) return; // stale — not a reload signal
+
+        reportClientError({
+            kind: "unexpected-reload",
+            message: `Unexpected reload during ${crumb.flow ?? "?"} (phase=${crumb.phase ?? "?"})`,
+            // An OS reload leaves no JS stack; pack the breadcrumb context into the
+            // stack field instead (the only persisted free-form field besides message).
+            stack: JSON.stringify({
+                flow: crumb.flow,
+                phase: crumb.phase,
+                ref: crumb.ref,
+                path: crumb.path,
+                deviceMemory: crumb.deviceMemory,
+                ageMs,
+            }),
+        });
+    } catch {
+        /* never throw from reporting */
+    }
+}
+
 /**
  * Attach global listeners for errors the React boundary can't catch (event
  * handlers, async rejections, resource/runtime errors). Call once at startup.
@@ -125,6 +234,9 @@ export function reportClientError(report: ClientErrorReport): void {
 export function initErrorReporting(): void {
     if (started) return;
     started = true;
+
+    // Before anything else, surface a reload that happened mid-flow last session.
+    reportUnexpectedReload();
 
     window.addEventListener("error", (e: ErrorEvent) => {
         // `e.error` carries the stack when available; fall back to the message.

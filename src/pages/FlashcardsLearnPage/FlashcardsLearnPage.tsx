@@ -24,6 +24,7 @@ import { saveIconLayout, fetchDefaultIconResults, type IconSearchItem } from "./
 import { iconSearchTerm, stripParentheses } from "../../utils/definitionUtils";
 import { ICON_LAYOUT_MAX_ITEMS, type IconLayoutItem, type SnapConfig, type TextColorMode, type TextColors, type VocabEntry } from "../../types";
 import { setMinutePointsPaused } from "../../utils/minutePointsPause";
+import { setEditBreadcrumb, clearEditBreadcrumb } from "../../utils/errorReporting";
 import SheetPanel, { type SheetPanelBodyHandle } from "./SheetPanel";
 import SettingsPanelBody from "./SettingsPanelBody";
 import {
@@ -324,6 +325,9 @@ const FlashcardsLearnPage: React.FC = () => {
             : displayCurrentEntry;
 
     const exitEdit = useCallback(() => {
+        // Clean exit — drop the reload breadcrumb so the next page load doesn't
+        // misread it as an OS reload (see utils/errorReporting.ts).
+        clearEditBreadcrumb();
         setEditMode(false);
         setAdvMode(false);
         setIconSearchOpen(false);
@@ -392,6 +396,12 @@ const FlashcardsLearnPage: React.FC = () => {
         setAdvHistory([]);
         setAdvFuture([]);
         setEditMode(true);
+
+        // Drop a reload-surviving breadcrumb: the fie holds many icon images + the
+        // gesture canvas, which can push iOS WebKit to silently reload the tab (no JS
+        // throw). If that happens before a clean exit, the next boot reports it as an
+        // `unexpected-reload`. Cleared by exitEdit / unmount. See utils/errorReporting.ts.
+        setEditBreadcrumb({ flow: "fie", phase: "editing", ref: displayCurrentEntry.entryKey });
 
         // Warm the icon picker: fetch (and cache on the server) the default-query
         // results for this card so they're ready the instant the picker opens. Fire-and
@@ -598,6 +608,10 @@ const FlashcardsLearnPage: React.FC = () => {
 
     const handleSaveLayout = useCallback(async () => {
         if (!currentEntry) return;
+        // Advance the breadcrumb to the "saving" phase: the save's state updates +
+        // re-render are the suspected moment of the iOS reload, so a reload caught now
+        // is reported with phase=saving (vs phase=editing). exitEdit clears it on success.
+        setEditBreadcrumb({ flow: "fie", phase: "saving", ref: currentEntry.entryKey });
         setSavingLayout(true);
         try {
             // Persist the snap toggles alongside the layout (folded into one Save, so
@@ -648,6 +662,11 @@ const FlashcardsLearnPage: React.FC = () => {
             setSavingLayout(false);
         }
     }, [currentEntry, token, exitEdit]);
+
+    // Clear the fie reload breadcrumb if the page unmounts while still in edit mode
+    // (e.g. an in-app navigation away). That's a clean exit, not an OS reload, so the
+    // next full page load must NOT misread a lingering crumb. See utils/errorReporting.ts.
+    useEffect(() => () => clearEditBreadcrumb(), []);
 
     // Hard-clear the preserved writing-practice draft when a card is marked (which
     // advances currentIndex) and when leaving the flp (cleanup on unmount).

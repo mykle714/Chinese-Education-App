@@ -4,9 +4,9 @@ import { stripParentheses } from "../utils/definitionUtils";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "../AuthContext";
 import { FLASHCARD_CONTENT_UPDATE_DELAY, API_BASE_URL } from "../constants";
-import { useMinutePoints } from "../hooks/useMinutePoints";
+import { useMinutePoints } from "../minutePoints/useMinutePoints";
 import { useFlashcardSettings } from "../hooks/useFlashcardSettings";
-import MinutePointsBadge from "../components/MinutePointsBadge";
+import MinutePointsBadge from "../minutePoints/MinutePointsBadge";
 import FlashcardSettings from "../components/FlashcardSettings";
 import {
     Container,

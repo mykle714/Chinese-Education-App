@@ -12,7 +12,7 @@ import {
     TouchApp as TouchAppIcon
 } from "@mui/icons-material";
 import LeafPage from "../components/LeafPage";
-import MinutePointsFireBadge from "../components/MinutePointsFireBadge";
+import MinutePointsFireBadge from "../minutePoints/MinutePointsFireBadge";
 import { useAuth } from "../AuthContext";
 import { useTheme as useCustomTheme } from "../contexts/ThemeContext";
 import { API_BASE_URL } from "../constants";

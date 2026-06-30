@@ -7,7 +7,7 @@ import UndoIcon from "@mui/icons-material/Undo";
 import { useDrag } from "@use-gesture/react";
 import { useSpring, animated } from "@react-spring/web";
 import LeafPage from "../components/LeafPage";
-import MinutePointsFireBadge from "../components/MinutePointsFireBadge";
+import MinutePointsFireBadge from "../minutePoints/MinutePointsFireBadge";
 import ForeignText from "../components/ForeignText";
 import PosBadge from "../components/PosBadge";
 import { API_BASE_URL } from "../constants";

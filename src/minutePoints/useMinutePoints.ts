@@ -7,12 +7,12 @@ import {
   calculatePointsFromMilliseconds,
   loadMinutePointsDataSync,
   type MinutePointsStorage
-} from '../utils/minutePointsStorage';
+} from './minutePointsStorage';
 import { MINUTE_POINTS_ELIGIBLE_PAGES, MINUTE_POINTS_CONFIG, STREAK_CONFIG } from '../constants';
-import { useActivityDetection } from './useActivityDetection';
-import { incrementMinutePoint, fetchLanguageSummary } from '../utils/minutePointsSync';
-import { isSameStreakDay } from '../utils/streakDay';
-import { getMinutePointsPaused } from '../utils/minutePointsPause';
+import { useActivityDetection } from '../hooks/useActivityDetection';
+import { incrementMinutePoint, fetchLanguageSummary } from './minutePointsSync';
+import { isSameStreakDay } from './streakDay';
+import { getMinutePointsPaused } from './minutePointsPause';
 
 export interface UseMinutePointsReturn {
   currentPoints: number;

@@ -23,7 +23,7 @@ import MarketEngineViewer, {
 } from './MarketEngineViewer';
 import type { EngineLayer, DebugFlags } from './MarketEngineViewer';
 import { useNightMarket } from './useNightMarket';
-import { useMinutePoints } from '../../hooks/useMinutePoints';
+import { useMinutePoints } from '../../minutePoints/useMinutePoints';
 import { usePageTitle } from '../../hooks/usePageTitle';
 import { usePixiPedestrians } from '../../hooks/usePixiPedestrians';
 import { NIGHT_MARKET_ASSET_MAP } from '../../engine/market/nightMarketRegistry';

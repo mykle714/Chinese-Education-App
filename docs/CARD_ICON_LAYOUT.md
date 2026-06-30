@@ -522,7 +522,7 @@ All in `src/pages/FlashcardsLearnPage/`.
    (`CircularProgress` replacing the label) while the PATCH is in flight (`saving`).
 
    While editing, minute-points accumulation is **paused** (decorating a card isn't
-   study time): the page sets a global flag (`utils/minutePointsPause.ts`) that
+   study time): the page sets a global flag (`minutePoints/minutePointsPause.ts`) that
    `useMinutePoints` reads to skip its per-second tick, and `MinutePointsFireBadge`
    greys the flame and overlays a red no-entry symbol.
 

@@ -8,7 +8,7 @@
  */
 
 import { API_BASE_URL } from '../constants';
-import { getBrowserTimezone } from './minutePointsSync';
+import { getBrowserTimezone } from '../minutePoints/minutePointsSync';
 
 export async function notifyLogin(token?: string | null): Promise<void> {
   try {

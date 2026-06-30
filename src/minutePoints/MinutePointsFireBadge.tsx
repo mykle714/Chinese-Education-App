@@ -3,8 +3,8 @@ import { Badge, Box, IconButton, Typography, useTheme } from "@mui/material";
 import LocalFireDepartmentIcon from "@mui/icons-material/LocalFireDepartment";
 import BlockIcon from "@mui/icons-material/Block";
 import { FIRE_ACTIVE_COLOR } from "../pages/FlashcardsLearnPage/constants";
-import { useMinutePoints } from "../hooks/useMinutePoints";
-import { useMinutePointsPaused } from "../utils/minutePointsPause";
+import { useMinutePoints } from "./useMinutePoints";
+import { useMinutePointsPaused } from "./minutePointsPause";
 import { SIZE , WEIGHT} from "../theme/scale";
 
 // Calls useMinutePoints internally rather than accepting it as a prop, so the

@@ -6,7 +6,7 @@ import SettingsIcon from "@mui/icons-material/Settings";
 // (the two were swapped per design).
 import BrushIcon from "@mui/icons-material/Brush";
 import PageHeader from "../../components/PageHeader";
-import MinutePointsFireBadge from "../../components/MinutePointsFireBadge";
+import MinutePointsFireBadge from "../../minutePoints/MinutePointsFireBadge";
 import type { LastMarkUndoSnapshot } from "./types";
 import { SIZE } from "../../theme/scale";
 

@@ -2,7 +2,7 @@ import { Box, Container, Typography } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import Message from "../components/Message";
 import LeafPage from "../components/LeafPage";
-import { useMinutePoints } from "../hooks/useMinutePoints";
+import { useMinutePoints } from "../minutePoints/useMinutePoints";
 import TimeDisplay from "../components/TimeDisplay";
 import StreakCounter from "../components/StreakCounter";
 import MonthlyCalendar from "../components/MonthlyCalendar";

@@ -1,6 +1,6 @@
 import React from "react";
 import { Button, useTheme } from "@mui/material";
-import MinutePointsFireBadge from "../../components/MinutePointsFireBadge";
+import MinutePointsFireBadge from "../../minutePoints/MinutePointsFireBadge";
 import { SIZE } from "../../theme/scale";
 
 interface BubbleMatchHeaderControlsProps {

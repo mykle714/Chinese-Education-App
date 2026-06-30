@@ -25,7 +25,7 @@ import {
     type TextColors,
     type VocabEntry,
 } from "../../types";
-import { setMinutePointsPaused } from "../../utils/minutePointsPause";
+import { setMinutePointsPaused } from "../../minutePoints/minutePointsPause";
 import { setEditBreadcrumb, clearEditBreadcrumb } from "../../utils/errorReporting";
 import type { AlignDirection } from "./CardEditToolbar";
 

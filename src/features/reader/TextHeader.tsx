@@ -1,7 +1,7 @@
 import { Box, Typography, Chip, CircularProgress, Button } from "@mui/material";
-import { WEIGHT } from '../theme/scale';
+import { WEIGHT } from '../../theme/scale';
 import { ArrowBack as ArrowBackIcon, Edit as EditIcon, Delete as DeleteIcon } from "@mui/icons-material";
-import type { VocabEntry, Text } from "../types";
+import type { VocabEntry, Text } from "../../types";
 
 interface TextHeaderProps {
     selectedText: Text;

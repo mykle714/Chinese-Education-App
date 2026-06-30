@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from "react";
-import { findExactMatch, findDictionaryMatch, getSelectedText } from "../utils/textSelection";
-import { isWordBoundary } from "../utils/textSelectionUtils";
-import type { VocabEntry, DictionaryEntry } from "../types";
+import { findExactMatch, findDictionaryMatch, getSelectedText } from "./textSelection";
+import { isWordBoundary } from "./textSelectionUtils";
+import type { VocabEntry, DictionaryEntry } from "../../types";
 
 interface UseTextSelectionReturn {
     selectedPersonalCard: VocabEntry | null;

@@ -56,33 +56,33 @@ Successfully implemented a complete user-specific blank document creation featur
 
 ### New Components Created:
 
-1. **`src/components/CreateDocumentDialog.tsx`**
+1. **`src/features/reader/CreateDocumentDialog.tsx`**
    - Modal dialog for creating new blank documents
    - Fields: title, description, language selection
    - Starts with empty content
    - Form validation and error handling
 
-2. **`src/components/EditDocumentDialog.tsx`**
+2. **`src/features/reader/EditDocumentDialog.tsx`**
    - Modal dialog for editing existing user documents
    - Editable fields: title, description, content, language
    - Pre-populates with current document data
    - Content field with multi-line text area
 
-3. **`src/components/DeleteDocumentDialog.tsx`**
+3. **`src/features/reader/DeleteDocumentDialog.tsx`**
    - Confirmation dialog for document deletion
    - Shows document title in confirmation message
    - Cannot be undone warning
 
 ### Updated Components:
 
-1. **`src/components/TextSidebar.tsx`**
+1. **`src/features/reader/TextSidebar.tsx`**
    - Added "New Document" button at top of sidebar
    - Added edit/delete icon buttons for user-created documents only
    - Added person icon to visually identify user documents
    - Updated props to include dialog handlers
    - Extra padding for documents with action buttons
 
-2. **`src/pages/ReaderPage.tsx`**
+2. **`src/features/reader/ReaderPage.tsx`**
    - Integrated all three dialog components
    - Added dialog state management (open/close, selected text)
    - Added handlers for create, edit, delete actions
@@ -174,11 +174,11 @@ texts (
 
 ### Frontend:
 - ✅ `src/types.ts` (updated)
-- ✅ `src/components/CreateDocumentDialog.tsx` (new)
-- ✅ `src/components/EditDocumentDialog.tsx` (new)
-- ✅ `src/components/DeleteDocumentDialog.tsx` (new)
-- ✅ `src/components/TextSidebar.tsx` (updated)
-- ✅ `src/pages/ReaderPage.tsx` (updated)
+- ✅ `src/features/reader/CreateDocumentDialog.tsx` (new)
+- ✅ `src/features/reader/EditDocumentDialog.tsx` (new)
+- ✅ `src/features/reader/DeleteDocumentDialog.tsx` (new)
+- ✅ `src/features/reader/TextSidebar.tsx` (updated)
+- ✅ `src/features/reader/ReaderPage.tsx` (updated)
 
 ## Architecture Highlights
 

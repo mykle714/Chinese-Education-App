@@ -5,10 +5,10 @@ import {
     selectNextWord,
     moveCursorLeftFromPosition,
     moveCursorRightFromPosition
-} from "../utils/textSelectionUtils";
+} from "./textSelectionUtils";
 import ReaderTapOverlay from "./ReaderTapOverlay";
-import { FONTS } from "../theme/fonts";
-import { SIZE } from "../theme/scale";
+import { FONTS } from "../../theme/fonts";
+import { SIZE } from "../../theme/scale";
 
 // Text interface for TypeScript
 interface Text {

@@ -16,7 +16,7 @@ import NotFoundPage from "./pages/NotFoundPage";
 import FlashcardsPage from "./pages/FlashcardsPage";
 import FlashcardsLearnPage from "./pages/FlashcardsLearnPage";
 import FlashcardsDecksPage from "./pages/FlashcardsDecksPage";
-import ReaderPage from "./pages/ReaderPage";
+import ReaderPage from "./features/reader/ReaderPage";
 import NightMarketEnginePage from "./features/nightmarket/NightMarketEnginePage";
 import DictionaryPage from "./pages/DictionaryPage";
 import DiscoverPage from "./pages/DiscoverPage";

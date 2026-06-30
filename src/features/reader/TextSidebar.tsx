@@ -1,8 +1,8 @@
 import { Box, Typography, List, ListItem, ListItemButton, Alert, Chip, IconButton, Button, Tooltip } from "@mui/material";
-import DelayedCircularProgress from "./DelayedCircularProgress";
+import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import { Article as ArticleIcon, Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, Person as PersonIcon } from "@mui/icons-material";
-import type { Text } from "../types";
-import { SIZE , WEIGHT} from "../theme/scale";
+import type { Text } from "../../types";
+import { SIZE , WEIGHT} from "../../theme/scale";
 
 interface TextSidebarProps {
     texts: Text[];

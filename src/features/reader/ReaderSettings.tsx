@@ -1,5 +1,5 @@
 import { Box, Typography, FormControlLabel, Checkbox, IconButton } from "@mui/material";
-import { WEIGHT } from '../theme/scale';
+import { WEIGHT } from '../../theme/scale';
 import { Settings as SettingsIcon, ChevronRight as ChevronRightIcon } from "@mui/icons-material";
 
 interface ReaderSettingsProps {

@@ -9,9 +9,9 @@ import {
     Box,
     Alert
 } from '@mui/material';
-import type { Language } from '../types';
-import { useAuth } from '../AuthContext';
-import { API_BASE_URL } from '../constants';
+import type { Language } from '../../types';
+import { useAuth } from '../../AuthContext';
+import { API_BASE_URL } from '../../constants';
 
 interface CreateDocumentDialogProps {
     open: boolean;

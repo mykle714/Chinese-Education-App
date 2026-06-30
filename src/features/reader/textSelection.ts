@@ -1,4 +1,4 @@
-import type { VocabEntry, DictionaryEntry } from '../types';
+import type { VocabEntry, DictionaryEntry } from '../../types';
 
 /**
  * Finds exact matches for selected text in the loaded vocabulary cards

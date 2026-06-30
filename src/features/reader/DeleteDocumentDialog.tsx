@@ -8,9 +8,9 @@ import {
     Button,
     Alert
 } from '@mui/material';
-import type { Text } from '../types';
-import { useAuth } from '../AuthContext';
-import { API_BASE_URL } from '../constants';
+import type { Text } from '../../types';
+import { useAuth } from '../../AuthContext';
+import { API_BASE_URL } from '../../constants';
 
 interface DeleteDocumentDialogProps {
     open: boolean;

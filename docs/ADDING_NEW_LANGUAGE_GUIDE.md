@@ -718,7 +718,7 @@ return {
 
 ### Update Text Selection Matching
 
-**File**: `src/utils/textSelection.ts`
+**File**: `src/features/reader/textSelection.ts`
 
 The `findDictionaryMatch` function needs to match on both `word1` and `word2`:
 
@@ -1076,7 +1076,7 @@ docker restart cow-postgres-local
 
 1. **`src/utils/vocabCache.ts`** - Added dictionary cache functions
 2. **`src/utils/vocabApi.ts`** - Integrated dictionary caching
-3. **`src/utils/textSelection.ts`** - Fixed word1/word2 matching
+3. **`src/features/reader/textSelection.ts`** - Fixed word1/word2 matching
 4. **`src/components/VocabDisplayCard.tsx`** - Used correct properties
 
 ### Test Files Created

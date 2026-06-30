@@ -11,31 +11,31 @@ import {
     Settings as SettingsIcon,
     TouchApp as TouchAppIcon
 } from "@mui/icons-material";
-import LeafPage from "../components/LeafPage";
-import MinutePointsFireBadge from "../minutePoints/MinutePointsFireBadge";
-import { useAuth } from "../AuthContext";
-import { useTheme as useCustomTheme } from "../contexts/ThemeContext";
-import { API_BASE_URL } from "../constants";
-import VocabDisplayCard from "../components/VocabDisplayCard";
-import { useVocabularyUpdate } from "../contexts/VocabularyUpdateContext";
-import { processDocumentForTokens } from "../utils/tokenUtils";
-import type { VocabEntry, Text } from "../types";
+import LeafPage from "../../components/LeafPage";
+import MinutePointsFireBadge from "../../minutePoints/MinutePointsFireBadge";
+import { useAuth } from "../../AuthContext";
+import { useTheme as useCustomTheme } from "../../contexts/ThemeContext";
+import { API_BASE_URL } from "../../constants";
+import VocabDisplayCard from "../../components/VocabDisplayCard";
+import { useVocabularyUpdate } from "../../contexts/VocabularyUpdateContext";
+import { processDocumentForTokens } from "../../utils/tokenUtils";
+import type { VocabEntry, Text } from "../../types";
 
 // Extracted components
-import EmptyState from "../components/EmptyState";
-import TextHeader from "../components/TextHeader";
-import TextSidebar from "../components/TextSidebar";
-import TextArea from "../components/TextArea";
-import ReaderSettings from "../components/ReaderSettings";
-import CreateDocumentDialog from "../components/CreateDocumentDialog";
-import EditDocumentDialog from "../components/EditDocumentDialog";
-import DeleteDocumentDialog from "../components/DeleteDocumentDialog";
+import EmptyState from "../../components/EmptyState";
+import TextHeader from "./TextHeader";
+import TextSidebar from "./TextSidebar";
+import TextArea from "./TextArea";
+import ReaderSettings from "./ReaderSettings";
+import CreateDocumentDialog from "./CreateDocumentDialog";
+import EditDocumentDialog from "./EditDocumentDialog";
+import DeleteDocumentDialog from "./DeleteDocumentDialog";
 
 // Extracted hooks
-import { useVocabularyProcessing } from "../hooks/useVocabularyProcessing";
-import { useTextSelection } from "../hooks/useTextSelection";
-import { useReaderSettings } from "../hooks/useReaderSettings";
-import { usePageTitle } from "../hooks/usePageTitle";
+import { useVocabularyProcessing } from "../../hooks/useVocabularyProcessing";
+import { useTextSelection } from "./useTextSelection";
+import { useReaderSettings } from "./useReaderSettings";
+import { usePageTitle } from "../../hooks/usePageTitle";
 
 function ReaderPage() {
     usePageTitle("Reader");

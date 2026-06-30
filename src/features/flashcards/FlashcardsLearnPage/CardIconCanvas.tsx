@@ -15,7 +15,7 @@ import {
     snapScaleToStep,
     snapRotation,
     BASE_ICON_FRAC,
-} from "./cardIconLayout";
+} from "../../../cardIcons/cardIconLayout";
 
 /** Live snap toggles fed from the toolbar — each quantizes its gesture to a discrete
  *  increment (move grid / 22.5° rotation / 5%-of-width size). Canonical type lives in

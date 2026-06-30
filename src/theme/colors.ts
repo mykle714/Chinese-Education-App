@@ -37,6 +37,9 @@ export const COLORS = {
     blueMain: CATEGORY_COLORS.Mastered,     // #779BE7 — Mastered
     blueAccent: "#BAD7F2",
     hskChip: "#779BE7",
+
+    // ── Streak / activity ─────────────────────────────────────────
+    fireActive: "#E65100",       // the "active" streak-flame color (MinutePointsFireBadge)
 } as const;
 
 export type ColorToken = keyof typeof COLORS;

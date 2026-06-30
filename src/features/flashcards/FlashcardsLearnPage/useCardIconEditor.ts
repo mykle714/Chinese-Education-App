@@ -14,8 +14,8 @@ import {
     nudgeCenter,
     nudgeRotationStep,
     nudgeScaleStep,
-} from "./cardIconLayout";
-import { saveIconLayout, fetchDefaultIconResults, type IconSearchItem } from "./cardIconApi";
+} from "../../../cardIcons/cardIconLayout";
+import { saveIconLayout, fetchDefaultIconResults, type IconSearchItem } from "../../../cardIcons/cardIconApi";
 import { iconSearchTerm } from "../../../utils/definitionUtils";
 import {
     ICON_LAYOUT_MAX_ITEMS,

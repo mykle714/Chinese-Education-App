@@ -31,7 +31,7 @@ Both feeds share the same tap→zoom→vote/apply flow.
   advanced mode": designs the owner sees in *basic* mode are correctly excluded. The check exists
   in two mirrored forms — SQL (`IS_ADVANCED_LAYOUT`) and JS (`isAdvancedLayout`), both in
   `server/dal/shared/advancedLayout.ts`, mirroring the client
-  `src/features/flashcards/FlashcardsLearnPage/cardIconLayout.ts` (`isAdvancedLayout`/`isDefaultPlacement`,
+  `src/cardIcons/cardIconLayout.ts` (`isAdvancedLayout`/`isDefaultPlacement`,
   constants `x=0.5, y=0.3333, scale∈{1,1.2}, rotation=0, !flipX`).
 - **Sharing is automatic** — every advanced layout is eligible; there is no opt-in flag/column.
 - **"This week"** = most-recent **Sunday 04:00 in the viewer's local timezone**, the same

@@ -9,8 +9,8 @@
 // the card's pixel rect to convert drag/pinch deltas back into fractions.
 
 import type { CSSProperties } from "react";
-import type { IconLayoutItem, VocabEntry } from "../../../types";
-import { API_BASE_URL } from "../../../constants";
+import type { IconLayoutItem, VocabEntry } from "../types";
+import { API_BASE_URL } from "../constants";
 
 /** Base icon box as a fraction of card width (before per-icon scale). */
 export const BASE_ICON_FRAC = 0.28;

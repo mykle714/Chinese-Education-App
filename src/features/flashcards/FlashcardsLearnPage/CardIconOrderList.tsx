@@ -4,7 +4,7 @@ import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import LockIcon from "@mui/icons-material/Lock";
 import LockOpenIcon from "@mui/icons-material/LockOpen";
 import type { IconLayoutItem } from "../../../types";
-import { iconImageUrl } from "./cardIconLayout";
+import { iconImageUrl } from "../../../cardIcons/cardIconLayout";
 
 // The locked-state gold (matches the canvas corner indicator + toolbar lock button) and the
 // unlocked grey, so the order list reads the same lock affordance as the rest of the editor.

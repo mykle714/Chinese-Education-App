@@ -16,8 +16,8 @@ import {
 import { SIZE, WEIGHT, LEADING, TRACKING } from "../../../theme/scale";
 import type { VocabEntry, SideOneLanguage } from "./types";
 import type { IconLayoutItem } from "../../../types";
-import CardIconLayer from "./CardIconLayer";
-import { defaultLayoutForIcon } from "./cardIconLayout";
+import CardIconLayer from "../../../cardIcons/CardIconLayer";
+import { defaultLayoutForIcon } from "../../../cardIcons/cardIconLayout";
 import ForeignText from "../../../components/ForeignText";
 import { SpeakerButton } from "../../../components/SpeakerButton";
 import PracticeWritingButton from "../../../components/handwriting/PracticeWritingButton";

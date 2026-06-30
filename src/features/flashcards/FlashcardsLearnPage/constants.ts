@@ -3,7 +3,8 @@ import { FONTS } from "../../../theme/fonts";
 // Semantic indicator colors — theme-invariant (functional, not surface)
 export const CORRECT_COLOR   = "#05C793";
 export const INCORRECT_COLOR = "#EF476F";
-export const FIRE_ACTIVE_COLOR = "#E65100";
+// (The streak-flame "fire active" color moved to theme/colors.ts → COLORS.fireActive,
+// since only MinutePointsFireBadge used it — it was never a flashcard color.)
 
 // Shared font stacks for the learn page. These now alias the app-wide tokens
 // (src/theme/fonts.ts) so the learn page and the rest of the app stay in sync.

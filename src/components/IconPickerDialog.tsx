@@ -19,8 +19,8 @@ import { useAuth } from "../AuthContext";
 import { COLORS } from "../theme/colors";
 import { FONTS } from "../theme/fonts";
 import { SIZE, WEIGHT } from "../theme/scale";
-import { searchIcons8, listIcons8, ensureIcon8 } from "../features/flashcards/FlashcardsLearnPage/cardIconApi";
-import { iconImageUrl, iconCdnPreviewUrl } from "../features/flashcards/FlashcardsLearnPage/cardIconLayout";
+import { searchIcons8, listIcons8, ensureIcon8 } from "../cardIcons/cardIconApi";
+import { iconImageUrl, iconCdnPreviewUrl } from "../cardIcons/cardIconLayout";
 
 interface IconItem { id: string; name: string }
 

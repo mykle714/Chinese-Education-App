@@ -38,7 +38,7 @@ import CheckIcon from "@mui/icons-material/Check";
 import { SIZE, WEIGHT } from "../../../theme/scale";
 import { COLORS } from "../../../theme/colors";
 import { ICON_LAYOUT_MAX_ITEMS, type IconLayoutItem, type TextColorMode } from "../../../types";
-import { ALIGN_ROTATION, type AlignDirection as AlignDir } from "./cardIconLayout";
+import { ALIGN_ROTATION, type AlignDirection as AlignDir } from "../../../cardIcons/cardIconLayout";
 import CardIconOrderList from "./CardIconOrderList";
 import { useToolbarMenus } from "./useToolbarMenus";
 
@@ -51,7 +51,7 @@ export const CARD_EDIT_ANIM_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
 // AlignDirection (the 4 cardinals + 4 diagonals) and its rotation map are defined alongside
 // the geometry helpers in cardIconLayout.ts; re-exported here so existing importers (the page)
 // keep getting it from the toolbar.
-export type { AlignDirection } from "./cardIconLayout";
+export type { AlignDirection } from "../../../cardIcons/cardIconLayout";
 
 // The portaled-dropdown class selector lives in its own module (so useToolbarMenus can use it
 // without a circular import). Re-exported here for callers that import it from this file

@@ -1,8 +1,8 @@
 import { memo } from "react";
 import { Box, Typography, Chip, IconButton } from "@mui/material";
 import ForeignText from "./ForeignText";
-import CardIconLayer from "../features/flashcards/FlashcardsLearnPage/CardIconLayer";
-import { isAdvancedLayout } from "../features/flashcards/FlashcardsLearnPage/cardIconLayout";
+import CardIconLayer from "../cardIcons/CardIconLayer";
+import { isAdvancedLayout } from "../cardIcons/cardIconLayout";
 import { stripParentheses } from "../utils/definitionUtils";
 import { resolveTextColor } from "../utils/cardTextColor";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";

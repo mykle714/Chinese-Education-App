@@ -2,10 +2,10 @@ import React from "react";
 import { Badge, Box, IconButton, Typography, useTheme } from "@mui/material";
 import LocalFireDepartmentIcon from "@mui/icons-material/LocalFireDepartment";
 import BlockIcon from "@mui/icons-material/Block";
-import { FIRE_ACTIVE_COLOR } from "../features/flashcards/FlashcardsLearnPage/constants";
 import { useMinutePoints } from "./useMinutePoints";
 import { useMinutePointsPaused } from "./minutePointsPause";
 import { SIZE , WEIGHT} from "../theme/scale";
+import { COLORS } from "../theme/colors";
 
 // Calls useMinutePoints internally rather than accepting it as a prop, so the
 // per-second TICK only re-renders this leaf component instead of whatever page
@@ -18,7 +18,7 @@ const MinutePointsFireBadge: React.FC = () => {
     const theme = useTheme();
     const inactiveColor = theme.palette.text.secondary;
     const borderColor = theme.palette.divider;
-    const activeColor = paused ? inactiveColor : (minutePoints.isActive ? FIRE_ACTIVE_COLOR : inactiveColor);
+    const activeColor = paused ? inactiveColor : (minutePoints.isActive ? COLORS.fireActive : inactiveColor);
 
     return (
         <Box

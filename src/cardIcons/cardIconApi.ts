@@ -1,8 +1,8 @@
 // Thin client for the custom card icon layout endpoints (docs/CARD_ICON_LAYOUT.md).
 // All are auth-gated; the caller passes the bearer token from useAuth().
 
-import { API_BASE_URL } from "../../../constants";
-import type { IconLayoutItem, SnapConfig, TextColors } from "../../../types";
+import { API_BASE_URL } from "../constants";
+import type { IconLayoutItem, SnapConfig, TextColors } from "../types";
 
 export interface IconSearchItem { id: string; name: string }
 interface IconSearchPage { icons: IconSearchItem[]; hasMore: boolean }

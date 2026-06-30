@@ -2,7 +2,7 @@ import React from "react";
 import { Box, Typography } from "@mui/material";
 import ForeignText from "../../components/ForeignText";
 import { stripParentheses } from "../../utils/definitionUtils";
-import { FC_FONT_CJK } from "../../features/flashcards/FlashcardsLearnPage/constants";
+import { FONTS } from "../../theme/fonts";
 import { API_BASE_URL } from "../../constants";
 import type { BubbleBody, BubbleStatus } from "./types";
 import {
@@ -221,7 +221,7 @@ const Bubble: React.FC<BubbleProps> = ({
                                 // (q/g/y/p) aren't clipped by the -webkit-box overflow.
                                 lineHeight: 1.3,
                                 fontWeight: 500,
-                                fontFamily: FC_FONT_CJK,
+                                fontFamily: FONTS.cjk,
                                 color: status === "wrong" || status === "nomatch" || status === "correct" || status === "revealed" ? "#fff" : "#3a3a3a",
                                 textAlign: "center",
                                 // Clamp very long definitions so they never overflow the

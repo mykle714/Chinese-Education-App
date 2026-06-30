@@ -1,4 +1,4 @@
-import type { VocabEntry } from "../../features/flashcards/FlashcardsLearnPage/types";
+import type { VocabEntry } from "../../types";
 
 /**
  * Bubble Match — domain types.

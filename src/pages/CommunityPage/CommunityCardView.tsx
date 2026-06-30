@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { Box, useTheme } from "@mui/material";
-import CardIconLayer from "../../features/flashcards/FlashcardsLearnPage/CardIconLayer";
+import CardIconLayer from "../../cardIcons/CardIconLayer";
 import { ChineseBlock, EnglishBlock } from "../../features/flashcards/FlashcardsLearnPage/FlashCardSection";
 import type { CommunityDesign, VocabEntry } from "../../types";
 

@@ -32,24 +32,24 @@ import {
 
 // Re-export Street so consumers can import it from either config module.
 export type { Street };
-import { buildTileGraph, tileKey } from '../utils/tileGraph';
-import { buildStreetGraph } from '../utils/streetGraph';
-import { TILE_WIDTH } from '../utils/isometric';
+import { buildTileGraph, tileKey } from './tileGraph';
+import { buildStreetGraph } from './streetGraph';
+import { TILE_WIDTH } from './isometric';
 
 // Stall sprite layers — reuse existing test assets.
-import baseImgUrl from '../assets/test-assets/base.png';
-import floorImgUrl from '../assets/test-assets/floor.png';
-import humanImgUrl from '../assets/test-assets/human.png';
-import roofImgUrl from '../assets/test-assets/roof.png';
+import baseImgUrl from '../../assets/test-assets/base.png';
+import floorImgUrl from '../../assets/test-assets/floor.png';
+import humanImgUrl from '../../assets/test-assets/human.png';
+import roofImgUrl from '../../assets/test-assets/roof.png';
 
-import walkBackLeft1 from '../assets/test-assets/test-walk-animation/walk_backward_left_1.png';
-import walkBackLeft2 from '../assets/test-assets/test-walk-animation/walk_backward_left_2.png';
-import walkBackRight1 from '../assets/test-assets/test-walk-animation/walk_backward_right_1.png';
-import walkBackRight2 from '../assets/test-assets/test-walk-animation/walk_backward_right_2.png';
-import walkFwdLeft1 from '../assets/test-assets/test-walk-animation/walk_forward_left_1.png';
-import walkFwdLeft2 from '../assets/test-assets/test-walk-animation/walk_forward_left_2.png';
-import walkFwdRight1 from '../assets/test-assets/test-walk-animation/walk_forward_right_1.png';
-import walkFwdRight2 from '../assets/test-assets/test-walk-animation/walk_forward_right_2.png';
+import walkBackLeft1 from '../../assets/test-assets/test-walk-animation/walk_backward_left_1.png';
+import walkBackLeft2 from '../../assets/test-assets/test-walk-animation/walk_backward_left_2.png';
+import walkBackRight1 from '../../assets/test-assets/test-walk-animation/walk_backward_right_1.png';
+import walkBackRight2 from '../../assets/test-assets/test-walk-animation/walk_backward_right_2.png';
+import walkFwdLeft1 from '../../assets/test-assets/test-walk-animation/walk_forward_left_1.png';
+import walkFwdLeft2 from '../../assets/test-assets/test-walk-animation/walk_forward_left_2.png';
+import walkFwdRight1 from '../../assets/test-assets/test-walk-animation/walk_forward_right_1.png';
+import walkFwdRight2 from '../../assets/test-assets/test-walk-animation/walk_forward_right_2.png';
 
 // ---------------------------------------------------------------------------
 // Tile authoring helpers

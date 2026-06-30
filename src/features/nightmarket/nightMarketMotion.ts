@@ -1,4 +1,4 @@
-import type { FrameAnimation, MotionSpec } from '../config/nightMarketRegistry';
+import type { FrameAnimation, MotionSpec } from '../../engine/market/nightMarketRegistry';
 
 /**
  * Pure, time-driven evaluators for night-market motion and frame animation.

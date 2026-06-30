@@ -5,9 +5,9 @@
  * the tile graph, so any change to street layout should be caught here.
  */
 import { describe, it, expect } from 'vitest';
-import { STREETS, TILES, STREET_GRAPH } from '../../config/tileRegistry';
-import { bfsStreetPath, findEdge } from '../../utils/streetGraph';
-import { tileKey } from '../../utils/tileGraph';
+import { STREETS, TILES, STREET_GRAPH } from '../tileRegistry';
+import { bfsStreetPath, findEdge } from '../streetGraph';
+import { tileKey } from '../tileGraph';
 
 describe('streetGraph nodes', () => {
   it('produces at least one node', () => {

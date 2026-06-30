@@ -31,7 +31,7 @@ import {
   type Street,
   type TileCoord,
   type TileDef,
-} from '../config/nightMarketRegistry';
+} from './nightMarketRegistry';
 import { tileKey } from './tileGraph';
 
 /** One contiguous overlap region; a stopping point in the high-level plan. */

@@ -8,7 +8,7 @@
  * per tick is simply `dtMs/1000 * speed`.
  */
 
-import { TILE_SIZE, type TileCoord } from '../config/nightMarketRegistry';
+import { TILE_SIZE, type TileCoord } from './nightMarketRegistry';
 
 /** Linear interpolation in iso space between two tiles. */
 export function lerpTile(from: TileCoord, to: TileCoord, t: number): [number, number] {

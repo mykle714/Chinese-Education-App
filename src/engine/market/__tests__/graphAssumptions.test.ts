@@ -8,8 +8,8 @@
  * before touching the algorithm.
  */
 import { describe, it, expect } from 'vitest';
-import { STREET_GRAPH, TILE_GRAPH } from '../../config/tileRegistry';
-import { parseTileKey } from '../../utils/tileGraph';
+import { STREET_GRAPH, TILE_GRAPH } from '../tileRegistry';
+import { parseTileKey } from '../tileGraph';
 
 // Pull perpendicular-axis coords (i.e. lane coords) from a set of tile keys.
 function perpCoordsOf(tileKeys: Iterable<string>, isNorthSouth: boolean): Set<number> {

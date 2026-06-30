@@ -15,7 +15,7 @@
  *   - No duplicate tile coordinates.
  */
 
-import { TILE_SIZE, type NightMarketAssetDef, type TileCoord, type TileDef } from '../config/nightMarketRegistry';
+import { TILE_SIZE, type NightMarketAssetDef, type TileCoord, type TileDef } from './nightMarketRegistry';
 
 /** Canonical key for a tile coordinate. */
 export const tileKey = (isoX: number, isoY: number): string => `${isoX},${isoY}`;

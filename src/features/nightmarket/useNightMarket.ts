@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { API_BASE_URL } from '../constants';
-import { useAuth } from '../AuthContext';
-import { useMinutePoints } from './useMinutePoints';
+import { API_BASE_URL } from '../../constants';
+import { useAuth } from '../../AuthContext';
+import { useMinutePoints } from '../../hooks/useMinutePoints';
 
 /** A single unlock record from the server */
 export interface NightMarketUnlock {

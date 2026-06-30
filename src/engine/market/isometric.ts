@@ -1,5 +1,5 @@
-import type { RenderSlot } from '../config/nightMarketRegistry';
-import { RENDER_SLOT_Z } from '../config/nightMarketRegistry';
+import type { RenderSlot } from './nightMarketRegistry';
+import { RENDER_SLOT_Z } from './nightMarketRegistry';
 
 /**
  * Isometric coordinate system utilities for the Night Market.

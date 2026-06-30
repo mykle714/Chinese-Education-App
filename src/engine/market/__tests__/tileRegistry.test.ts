@@ -4,9 +4,9 @@
  * across the variable-thickness regions.
  */
 import { describe, it, expect } from 'vitest';
-import { TILES, TILE_GRAPH, DEMO_STALLS, STREETS, streetTiles } from '../../config/tileRegistry';
-import { TILE_SIZE } from '../../config/nightMarketRegistry';
-import { bfsTilePath, tileKey } from '../../utils/tileGraph';
+import { TILES, TILE_GRAPH, DEMO_STALLS, STREETS, streetTiles } from '../tileRegistry';
+import { TILE_SIZE } from '../nightMarketRegistry';
+import { bfsTilePath, tileKey } from '../tileGraph';
 
 describe('tileRegistry', () => {
   it('produces a non-empty tile set', () => {

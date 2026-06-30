@@ -7,7 +7,7 @@
  */
 
 import { useRef, useMemo } from 'react';
-import type { PedestrianState } from '../config/nightMarketRegistry';
+import type { PedestrianState } from '../engine/market/nightMarketRegistry';
 import {
   tickPedestrian,
   ensureAmbientAgenda,
@@ -15,14 +15,14 @@ import {
   updateTileOccupancy,
   type PedestrianDrawable,
   type PedestrianTickContext,
-} from '../utils/pedestrianAgent';
+} from '../engine/market/pedestrianAgent';
 import {
   TILE_GRAPH,
   TILE_MAP,
   STREET_GRAPH,
   DEMO_STALLS,
   makeDemoPedestrians,
-} from '../config/tileRegistry';
+} from '../engine/market/tileRegistry';
 
 /** Per-tick dt cap — prevents large jumps if the tab was backgrounded. */
 const MAX_DT_MS = 100;

@@ -1,13 +1,13 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { WEIGHT } from '../theme/scale';
+import { WEIGHT } from '../../theme/scale';
 import {
   Box, Typography, Button, Alert,
   Dialog, DialogTitle, DialogContent, DialogActions, Snackbar,
   Tooltip,
 } from '@mui/material';
-import LeafPage from '../components/LeafPage';
-import DelayedCircularProgress from '../components/DelayedCircularProgress';
+import LeafPage from '../../components/LeafPage';
+import DelayedCircularProgress from '../../components/DelayedCircularProgress';
 import CropFreeIcon from '@mui/icons-material/CropFree';
 import StorefrontIcon from '@mui/icons-material/Storefront';
 import AltRouteIcon from '@mui/icons-material/AltRoute';
@@ -20,16 +20,16 @@ import FastForwardIcon from '@mui/icons-material/FastForward';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import MarketEngineViewer, {
   ALL_DEBUG_OFF,
-} from '../components/MarketEngineViewer';
-import type { EngineLayer, DebugFlags } from '../components/MarketEngineViewer';
-import { useNightMarket } from '../hooks/useNightMarket';
-import { useMinutePoints } from '../hooks/useMinutePoints';
-import { usePageTitle } from '../hooks/usePageTitle';
-import { usePixiPedestrians } from '../hooks/usePixiPedestrians';
-import { NIGHT_MARKET_ASSET_MAP } from '../config/nightMarketRegistry';
-import type { NightMarketAssetDef, MotionSpec } from '../config/nightMarketRegistry';
-import { DEMO_STALLS } from '../config/tileRegistry';
-import { isoToScreen, computeLayerZ } from '../utils/isometric';
+} from './MarketEngineViewer';
+import type { EngineLayer, DebugFlags } from './MarketEngineViewer';
+import { useNightMarket } from './useNightMarket';
+import { useMinutePoints } from '../../hooks/useMinutePoints';
+import { usePageTitle } from '../../hooks/usePageTitle';
+import { usePixiPedestrians } from '../../hooks/usePixiPedestrians';
+import { NIGHT_MARKET_ASSET_MAP } from '../../engine/market/nightMarketRegistry';
+import type { NightMarketAssetDef, MotionSpec } from '../../engine/market/nightMarketRegistry';
+import { DEMO_STALLS } from '../../engine/market/tileRegistry';
+import { isoToScreen, computeLayerZ } from '../../engine/market/isometric';
 
 /**
  * Night Market Engine Page

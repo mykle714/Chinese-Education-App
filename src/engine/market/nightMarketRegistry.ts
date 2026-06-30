@@ -15,7 +15,7 @@
 
 // Type-only import — `streetGraph.ts` imports value types (TILE_SIZE, etc.)
 // from this file. Using `import type` keeps the cycle erased at runtime.
-import type { NavLeg } from '../utils/streetGraph';
+import type { NavLeg } from './streetGraph';
 
 /**
  * Render slot determines sub-layer ordering within a stand's depth.

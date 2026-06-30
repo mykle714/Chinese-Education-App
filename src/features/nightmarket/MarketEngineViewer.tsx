@@ -3,18 +3,18 @@ import { Application, extend, useTick, useApplication } from '@pixi/react';
 import { Container, Sprite, Graphics, Text, Assets, Texture, Rectangle } from 'pixi.js';
 import type { FederatedPointerEvent } from 'pixi.js';
 import { Box, Alert } from '@mui/material';
-import DelayedCircularProgress from './DelayedCircularProgress';
-import { TILE_SIZE, type FrameAnimation, type MotionSpec } from '../config/nightMarketRegistry';
-import { evaluateMotion } from '../utils/nightMarketMotion';
+import DelayedCircularProgress from '../../components/DelayedCircularProgress';
+import { TILE_SIZE, type FrameAnimation, type MotionSpec } from '../../engine/market/nightMarketRegistry';
+import { evaluateMotion } from './nightMarketMotion';
 import {
   isoToScreen,
   computeLayerZ,
   computePedestrianZ,
   computeStripPlacements,
   type StripPlacement,
-} from '../utils/isometric';
-import { TILES, DEMO_STALLS, STREETS, STREET_GRAPH, FLOOR_TILE_IMAGE_PATH, FLOOR_TILE_SCALE } from '../config/tileRegistry';
-import type { UsePixiPedestriansHandle } from '../hooks/usePixiPedestrians';
+} from '../../engine/market/isometric';
+import { TILES, DEMO_STALLS, STREETS, STREET_GRAPH, FLOOR_TILE_IMAGE_PATH, FLOOR_TILE_SCALE } from '../../engine/market/tileRegistry';
+import type { UsePixiPedestriansHandle } from '../../hooks/usePixiPedestrians';
 
 // Register Pixi.js classes as pixiContainer / pixiSprite / pixiGraphics / pixiText JSX elements.
 extend({ Container, Sprite, Graphics, Text });

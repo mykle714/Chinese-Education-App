@@ -50,7 +50,7 @@ import {
   type PedestrianFsmState,
   type PedestrianState,
   type TileCoord,
-} from '../config/nightMarketRegistry';
+} from './nightMarketRegistry';
 import {
   parseTileKey,
   tileKey,
@@ -316,7 +316,7 @@ function isForwardJumpTileValid(
 function tryForwardJump(
   p: PedestrianState,
   next: TileCoord,
-  currentTileDef: import('../config/nightMarketRegistry').TileDef | undefined,
+  currentTileDef: import('./nightMarketRegistry').TileDef | undefined,
   ctx: PedestrianTickContext,
   leg: NavLeg,
 ): boolean {
@@ -807,7 +807,7 @@ export function ensureAmbientAgenda(p: PedestrianState, wanderDwellMs: number): 
  */
 export function updateTileOccupancy(
   pedestrians: PedestrianState[],
-  tileMap: Map<string, import('../config/nightMarketRegistry').TileDef>,
+  tileMap: Map<string, import('./nightMarketRegistry').TileDef>,
 ): void {
   for (const tile of tileMap.values()) {
     tile.isOccupied = false;

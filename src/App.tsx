@@ -17,7 +17,7 @@ import FlashcardsPage from "./pages/FlashcardsPage";
 import FlashcardsLearnPage from "./pages/FlashcardsLearnPage";
 import FlashcardsDecksPage from "./pages/FlashcardsDecksPage";
 import ReaderPage from "./pages/ReaderPage";
-import NightMarketEnginePage from "./pages/NightMarketEnginePage";
+import NightMarketEnginePage from "./features/nightmarket/NightMarketEnginePage";
 import DictionaryPage from "./pages/DictionaryPage";
 import DiscoverPage from "./pages/DiscoverPage";
 import TesterDashboardPage from "./pages/TesterDashboardPage";

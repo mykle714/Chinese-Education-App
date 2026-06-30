@@ -474,7 +474,7 @@ const SortCardsPage: React.FC = () => {
                         onClick={handleUndo}
                         size="small"
                         disabled={!lastSort}
-                        sx={{ color: "#1C1C1E" }}
+                        sx={{ color: COLORS.onSurface }}
                     >
                         <UndoIcon className="sort-cards__undo-icon" />
                     </IconButton>

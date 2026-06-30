@@ -1,4 +1,5 @@
 import React from "react";
+import { COLORS } from "../theme/colors";
 import { Box, IconButton, Typography } from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import { styled } from "@mui/material/styles";
@@ -7,7 +8,7 @@ import { FONTS } from "../theme/fonts";
 import { SIZE, WEIGHT } from "../theme/scale";
 
 const Header = styled(Box)(() => ({
-    backgroundColor: "#F2F2F4",
+    backgroundColor: COLORS.header,
     height: 60,
     minHeight: 60,
     display: "flex",
@@ -60,7 +61,7 @@ const PageHeader: React.FC<PageHeaderProps> = ({ title, onBack, showBack = true,
                     <IconButton
                         className="page-header__back-button"
                         size="small"
-                        sx={{ color: "#1C1C1E" }}
+                        sx={{ color: COLORS.onSurface }}
                         onClick={onBack ?? (() => navigate(-1))}
                     >
                         {/* Rotate the down chevron 90° for the "left" (node-page) arrow
@@ -87,7 +88,7 @@ const PageHeader: React.FC<PageHeaderProps> = ({ title, onBack, showBack = true,
                         flex: 1,
                         fontSize: SIZE.bodyLg,
                         fontWeight: WEIGHT.regular,
-                        color: "#1C1C1E",
+                        color: COLORS.onSurface,
                         fontFamily: FONTS.sans,
                         whiteSpace: "nowrap",
                     }}

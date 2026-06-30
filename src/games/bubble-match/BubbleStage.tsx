@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { COLORS } from "../../theme/colors";
 import { Box, Typography } from "@mui/material";
 import { SIZE, WEIGHT } from "../../theme/scale";
 import type { VocabEntry } from "../../types";
@@ -806,7 +807,7 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
                 minHeight: 0,
                 width: "100%",
                 overflow: "hidden",
-                backgroundColor: "#FAFAFB",
+                backgroundColor: COLORS.background,
                 // Swallow touch gestures so dragging on the playfield never
                 // scrolls/pans the page on mobile — the stage owns all touch input.
                 touchAction: "none",

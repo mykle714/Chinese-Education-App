@@ -107,7 +107,7 @@ function AccountPage() {
             aria-label="Open settings"
             size="small"
             onClick={() => slideNavigate("/settings")}
-            sx={{ color: "#1C1C1E" }}
+            sx={{ color: COLORS.onSurface }}
         >
             <SettingsIcon />
         </IconButton>
@@ -278,7 +278,7 @@ function AccountPage() {
                                     sx={{
                                         width: 56,
                                         height: 56,
-                                        bgcolor: "#779BE7",
+                                        bgcolor: COLORS.hskChip,
                                         fontSize: SIZE.title,
                                         fontWeight: WEIGHT.medium,
                                         cursor: "pointer",
@@ -302,7 +302,7 @@ function AccountPage() {
                                         className="account-page__user-email"
                                         sx={{
                                             fontSize: SIZE.caption,
-                                            color: "#5C5C66",
+                                            color: COLORS.textSecondary,
                                             fontFamily: FONTS.sans,
                                         }}
                                     >
@@ -318,7 +318,7 @@ function AccountPage() {
                                     className="account-page__user-id"
                                     sx={{
                                         fontSize: SIZE.caption,
-                                        color: "#5C5C66",
+                                        color: COLORS.textSecondary,
                                         fontFamily: FONTS.sans,
                                     }}
                                 >
@@ -329,7 +329,7 @@ function AccountPage() {
                                     aria-label="Copy user ID"
                                     size="small"
                                     onClick={() => handleCopyUserId(String(userId))}
-                                    sx={{ color: "#5C5C66", padding: "2px" }}
+                                    sx={{ color: COLORS.textSecondary, padding: "2px" }}
                                 >
                                     <ContentCopy sx={{ fontSize: SIZE.body }} />
                                 </IconButton>

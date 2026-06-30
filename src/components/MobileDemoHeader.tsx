@@ -1,4 +1,5 @@
 import { type ReactNode } from "react";
+import { COLORS } from "../theme/colors";
 import HomeIcon from "@mui/icons-material/Home";
 import StyleIcon from "@mui/icons-material/Style";
 import LanguageIcon from "@mui/icons-material/Language";
@@ -16,10 +17,10 @@ import type { FooterTab } from "./MobileFooter";
 // `extraActions` rendered flush-right.
 
 const ACTIVE_PAGE_ICON: Record<FooterTab, ReactNode> = {
-    flashcards: <StyleIcon sx={{ fontSize: 22, color: "#323232" }} />,
-    discover: <LanguageIcon sx={{ fontSize: 22, color: "#323232" }} />,
-    home: <HomeIcon sx={{ fontSize: 22, color: "#323232" }} />,
-    account: <AccountCircleIcon sx={{ fontSize: 22, color: "#323232" }} />,
+    flashcards: <StyleIcon sx={{ fontSize: 22, color: COLORS.iconColor }} />,
+    discover: <LanguageIcon sx={{ fontSize: 22, color: COLORS.iconColor }} />,
+    home: <HomeIcon sx={{ fontSize: 22, color: COLORS.iconColor }} />,
+    account: <AccountCircleIcon sx={{ fontSize: 22, color: COLORS.iconColor }} />,
 };
 
 interface MobileDemoHeaderProps {

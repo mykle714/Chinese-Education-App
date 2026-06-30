@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { COLORS } from "../../theme/colors";
 import { Application, extend, useApplication, useTick } from "@pixi/react";
 import { Assets, Container, Graphics, Sprite, Text, Texture } from "pixi.js";
 import type { Application as PixiApplication } from "pixi.js";
@@ -96,7 +97,7 @@ function StageInner({
  * Games render their actor / sprite layout as pixi JSX `children` (e.g.
  * `<pixiContainer>...<pixiSprite texture={textures.get('hero')} /></pixiContainer>`).
  */
-function GameStage({ assets, onReady, onTick, children, background = "#FAFAFB" }: GameStageProps) {
+function GameStage({ assets, onReady, onTick, children, background = COLORS.background }: GameStageProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const [textures, setTextures] = useState<Map<string, Texture> | null>(null);
     const [loadError, setLoadError] = useState<string | null>(null);

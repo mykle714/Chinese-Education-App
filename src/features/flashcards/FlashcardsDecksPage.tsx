@@ -73,7 +73,7 @@ const EasyButton = styled(Button, {
     flex: 1,
     // Softer blue accent tone from the deck buckets (Mastered accent).
     color: COLORS.onSurface,
-    backgroundColor: greyed ? "#C7C7CC" : "#BAD7F2",
+    backgroundColor: greyed ? "#C7C7CC" : COLORS.blueAccent,
     opacity: greyed ? 0.6 : 1,
     "&:hover": {
         backgroundColor: greyed ? "#C7C7CC" : "#A6C9EC",
@@ -87,7 +87,7 @@ const HardButton = styled(Button, {
     flex: 1,
     // Softer red accent tone from the deck buckets (Unfamiliar accent).
     color: COLORS.onSurface,
-    backgroundColor: greyed ? "#C7C7CC" : "#F2BAC9",
+    backgroundColor: greyed ? "#C7C7CC" : COLORS.redAccent,
     opacity: greyed ? 0.6 : 1,
     "&:hover": {
         backgroundColor: greyed ? "#C7C7CC" : "#EBA6B9",

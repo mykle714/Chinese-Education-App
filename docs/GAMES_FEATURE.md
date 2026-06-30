@@ -189,7 +189,9 @@ component. No edits to `GamesPage`, `App`, or `Layout`.
 
 ### Layer 3 — Data hooks (`src/games/hooks/`)
 
-All reuse `src/utils/apiClient.ts` (cookie-auth axios instance).
+All reuse `src/api/http.ts` (the typed cookie-auth `fetch` wrapper — `apiGet` /
+`apiPost`). It inherits transparent token-refresh from the global fetch
+interceptor (`src/utils/fetchInterceptor.ts`).
 
 | Hook | Endpoint | Notes |
 | --- | --- | --- |

@@ -141,7 +141,7 @@ This means the user never sees the content scroll past the top of its page while
 
 ### Tile object (`TileDef`)
 
-Defined in `src/config/nightMarketRegistry.ts:137`.
+Defined in `src/engine/market/nightMarketRegistry.ts:137`.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -151,13 +151,13 @@ Defined in `src/config/nightMarketRegistry.ts:137`.
 | `intersectingStreets?` | `Street[]` | *Every* street that tried to claim this slot. `length >= 2` ⇒ intersection tile (the seed for nodes); `length === 1` ⇒ body tile on a single street. |
 | `isOccupied?` | `boolean` | Mutated each sim tick — true if a pedestrian's current or next tile is here. Pathfinder avoids these. |
 
-Streets are authored as `Street { isNorthSouth, start, end, offset, width }` and expanded to tiles by `streetTiles()` in `src/config/tileRegistry.ts:107`. `buildTilesFromStreets()` then deduplicates by priority and stamps `street` + `intersectingStreets` onto each surviving tile.
+Streets are authored as `Street { isNorthSouth, start, end, offset, width }` and expanded to tiles by `streetTiles()` in `src/engine/market/tileRegistry.ts:107`. `buildTilesFromStreets()` then deduplicates by priority and stamps `street` + `intersectingStreets` onto each surviving tile.
 
 > **Future layout source:** the tiles above are authored today via the hand-written tile/street registry. The template system ([NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md), DESIGN stage) will replace that registry as the source of truth — the tile and street graphs will be computed from tiled, placed templates instead.
 
 ### Two graphs are derived from tiles
 
-#### 1. Tile graph (fine-grained) — `src/utils/tileGraph.ts`
+#### 1. Tile graph (fine-grained) — `src/engine/market/tileGraph.ts`
 
 Built by `buildTileGraph(TILES, DEMO_STALLS)` at `tileRegistry.ts:338`.
 
@@ -167,7 +167,7 @@ Built by `buildTileGraph(TILES, DEMO_STALLS)` at `tileRegistry.ts:338`.
 
 Used for per-tile stepping and last-mile pathing (BFS in `bfsTilePath`).
 
-#### 2. Street graph (coarse) — `src/utils/streetGraph.ts`
+#### 2. Street graph (coarse) — `src/engine/market/streetGraph.ts`
 
 Built by `buildStreetGraph(STREETS, TILES)` at `tileRegistry.ts:345`. This is the high-level routing graph.
 

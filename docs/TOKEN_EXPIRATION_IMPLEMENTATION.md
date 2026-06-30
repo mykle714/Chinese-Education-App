@@ -97,7 +97,12 @@ broadcasts it via `setRefreshHandlers`, and returns it; returns `null` on failur
 Captures the **native** fetch at module load so refresh requests are never
 self-intercepted.
 
-### Interceptors — `src/utils/fetchInterceptor.ts` + `src/utils/apiClient.ts`
+### Interceptor — `src/utils/fetchInterceptor.ts`
+
+This is the single auth layer: it monkeypatches the global `fetch`, so every
+request (including those made via the `src/api/http.ts` typed wrapper) is covered.
+(The former axios `apiClient` was retired — the app now uses one fetch-based
+transport.)
 On a 401/403 from a **refreshable** endpoint:
 1. `attemptTokenRefresh()`.
 2. On success, **retry the original request once** with the fresh token, then

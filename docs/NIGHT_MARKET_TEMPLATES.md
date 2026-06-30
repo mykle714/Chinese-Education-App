@@ -89,7 +89,7 @@ assetMap: { [localCellKey: "col,row"]: assetId }
   asset-map entries.
 - **Multi-cell assets are anchored at a single cell.** The registry knows the
   asset's footprint (mirroring how stands work today: a stand's footprint/access
-  is derived from one tile — see `standFootprintTiles` in `src/utils/tileGraph.ts`).
+  is derived from one tile — see `standFootprintTiles` in `src/engine/market/tileGraph.ts`).
   The anchor cell holds the `assetId`; the asset's footprint extends from there.
 
 ---
@@ -397,7 +397,7 @@ and DB-persisted user state:
 Template grids, walkability classes, asset maps, placeholder areas, **conditional
 cell-class rules** (occupancy + adjacency triggers — see
 [Conditional cell classes](#conditional-cell-classes--template-versions)), and edge
-signatures are authored in code alongside `src/config/nightMarketRegistry.ts`
+signatures are authored in code alongside `src/engine/market/nightMarketRegistry.ts`
 (and its server twin `server/config/nightMarketRegistry.ts`). Signatures can be
 **derived** from the cell grid at build time rather than hand-entered, to avoid
 drift. The static **minutes→unlocks schedule** (see
@@ -426,7 +426,7 @@ slot that an *unlock* fills — so occupancy is recorded on the existing
 | `createdAt` | TIMESTAMPTZ | |
 
 Offset is stored in **local `col/row` cell units** (not global isoX/isoY); the
-`(col,row) → (isoX, isoY)` conversion happens at render via `src/utils/isometric.ts`.
+`(col,row) → (isoX, isoY)` conversion happens at render via `src/engine/market/isometric.ts`.
 
 **Proposed additions to existing `nightmarketunlocks`** (an unlock occupies a
 placeholder area). Both are **NOT NULL** — every unlock is placed into a
@@ -454,10 +454,10 @@ Templates **replace hand-authored tile registration** as the source for the grap
    placeholder occupancy + neighbor-template adjacency).
 2. **Tile graph:** all `street-walkable` + `communal-walkable` cells become
    walkable tiles, 4-connected by adjacency (today's construction in
-   `src/utils/tileGraph.ts`).
+   `src/engine/market/tileGraph.ts`).
 3. **Street graph:** built from `street-walkable` cells **only**;
    `communal-walkable` cells are excluded from edge/node computation
-   (`src/utils/streetGraph.ts`).
+   (`src/engine/market/streetGraph.ts`).
 4. The stitched result must still satisfy every invariant in
    [NIGHT_MARKET_GRAPH_ASSUMPTIONS.md](./NIGHT_MARKET_GRAPH_ASSUMPTIONS.md)
    (rectangular nodes, uniform edge widths, etc.). The edge-signature matching
@@ -499,11 +499,11 @@ Templates **replace hand-authored tile registration** as the source for the grap
 
 Code this doc will depend on / drive once implemented:
 
-- `src/config/nightMarketRegistry.ts` / `server/config/nightMarketRegistry.ts` —
+- `src/engine/market/nightMarketRegistry.ts` / `server/config/nightMarketRegistry.ts` —
   will gain template definitions.
-- `src/utils/tileGraph.ts` — tile graph built from placed-template cells.
-- `src/utils/streetGraph.ts` — street graph built from `street-walkable` cells.
-- `src/utils/isometric.ts` — local `(col,row)` → global `(isoX, isoY)` mapping.
+- `src/engine/market/tileGraph.ts` — tile graph built from placed-template cells.
+- `src/engine/market/streetGraph.ts` — street graph built from `street-walkable` cells.
+- `src/engine/market/isometric.ts` — local `(col,row)` → global `(isoX, isoY)` mapping.
 - New DB table `nightmarkettemplates` (placements) + new `placedTemplateId` /
   `placeholderAreaId` columns on `nightmarketunlocks` (occupants).
 - `users.totalMinutePoints` — the minute accumulator the unlock schedule reads

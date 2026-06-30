@@ -13,7 +13,7 @@ The Night Market is a visual reward system tied to work points. As users study a
 ## Coordinate System
 
 When coordinates are given for night market assets, they are always in **isometric
-grid units (isoX, isoY)**. See `src/utils/isometric.ts` for the full definition.
+grid units (isoX, isoY)**. See `src/engine/market/isometric.ts` for the full definition.
 
 - **isoX** — distance along the isometric X axis (toward top-right on screen / east)
 - **isoY** — distance along the isometric Y axis (toward top-left on screen / north)
@@ -82,7 +82,7 @@ All unlockable items are defined in TypeScript config files (not in the database
 
 **Location:**
 - Server: `server/config/nightMarketRegistry.ts`
-- Frontend: `src/config/nightMarketRegistry.ts`
+- Frontend: `src/engine/market/nightMarketRegistry.ts`
 
 **Exports:**
 - `NIGHT_MARKET_BASE_SET` — items every user receives automatically (unlockOrder = 0)
@@ -151,13 +151,13 @@ On the first call to `GET /api/night-market/unlocks`, if the user has no unlock 
 |------|------|
 | `server/types/nightMarket.ts` | TypeScript interfaces for unlocks and API responses |
 | `server/config/nightMarketRegistry.ts` | Server-side asset registry (base set + unlock pool) |
-| `src/config/nightMarketRegistry.ts` | Frontend asset registry (same data) |
+| `src/engine/market/nightMarketRegistry.ts` | Frontend asset registry (same data) |
 | `database/migrations/47-create-night-market-unlocks.sql` | Table creation migration |
 | `server/dal/interfaces/INightMarketDAL.ts` | DAL interface |
 | `server/dal/implementations/NightMarketDAL.ts` | DAL implementation |
 | `server/services/NightMarketService.ts` | Business logic (unlock verification, random selection, base set seeding) |
 | `server/controllers/NightMarketController.ts` | HTTP request/response handling |
-| `src/hooks/useNightMarket.ts` | Frontend hook for fetching unlocks and triggering new unlocks |
+| `src/features/nightmarket/useNightMarket.ts` | Frontend hook for fetching unlocks and triggering new unlocks |
 | `src/pages/MarketViewerPage.tsx` | Page component — builds layers from unlocks + registry |
 | `src/components/MarketViewer.tsx` | Canvas renderer with pan/zoom and tap interaction |
 
@@ -165,7 +165,7 @@ On the first call to `GET /api/night-market/unlocks`, if the user has no unlock 
 
 ### Ped z-sort against stands at extreme zoom-out (zoom-aware fallback)
 
-**Where:** `src/components/MarketEngineViewer.tsx` strip-emission path, `src/utils/isometric.ts` `computeStripPlacements`.
+**Where:** `src/features/nightmarket/MarketEngineViewer.tsx` strip-emission path, `src/engine/market/isometric.ts` `computeStripPlacements`.
 
 **Symptom:** When the camera is zoomed far enough that each sprite strip would be under ~8 screen px wide, the renderer falls back to emitting a stand as a single unsliced sprite (instead of 2F strips) to keep the per-frame sprite count bounded. In that mode, the painter's-algorithm foot anchor is the stand's SW corner, so a pedestrian whose `isoX + isoY` exceeds the stand's SW sum renders in front of the entire roof — even when the ped is geometrically *beside* the stand rather than in front of it. Slicing fixes this at normal zoom; the fallback re-exposes the pre-fix behavior.
 

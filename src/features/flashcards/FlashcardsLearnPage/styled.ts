@@ -1,8 +1,8 @@
 import { Box, Card, Typography } from "@mui/material";
 import { styled, alpha } from "@mui/material/styles";
 import { CORRECT_COLOR, INCORRECT_COLOR, FC_FONT } from "./constants";
-import { FONTS } from "../../theme/fonts";
-import { SIZE, WEIGHT } from "../../theme/scale";
+import { FONTS } from "../../../theme/fonts";
+import { SIZE, WEIGHT } from "../../../theme/scale";
 
 // IPhoneFrame removed — phone-frame sizing comes from MobileDemoFrame via Layout.tsx.
 

@@ -21,12 +21,12 @@ import { useAuth } from '../AuthContext';
 import { API_BASE_URL } from '../constants';
 import type { DictionaryEntry, Language } from '../types';
 import DictionaryEntryRow from '../components/DictionaryEntryRow';
-import InfoCardPopup from './FlashcardsLearnPage/InfoCardPopup';
-import { dictionaryEntryToVocabEntry } from './FlashcardsLearnPage/dictEntryAdapter';
-import type { VocabEntry } from './FlashcardsLearnPage/types';
-import { useEipTabs } from './FlashcardsLearnPage/useEipTabs';
-import EipTabStrip from './FlashcardsLearnPage/EipTabStrip';
-import TooManyTabsSnackbar from './FlashcardsLearnPage/TooManyTabsSnackbar';
+import InfoCardPopup from '../features/flashcards/FlashcardsLearnPage/InfoCardPopup';
+import { dictionaryEntryToVocabEntry } from '../features/flashcards/FlashcardsLearnPage/dictEntryAdapter';
+import type { VocabEntry } from '../features/flashcards/FlashcardsLearnPage/types';
+import { useEipTabs } from '../features/flashcards/FlashcardsLearnPage/useEipTabs';
+import EipTabStrip from '../features/flashcards/FlashcardsLearnPage/EipTabStrip';
+import TooManyTabsSnackbar from '../features/flashcards/FlashcardsLearnPage/TooManyTabsSnackbar';
 import { usePageTitle } from '../hooks/usePageTitle';
 import { useTTS } from '../hooks/useTTS';
 

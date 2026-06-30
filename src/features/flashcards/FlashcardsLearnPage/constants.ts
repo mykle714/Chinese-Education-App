@@ -1,4 +1,4 @@
-import { FONTS } from "../../theme/fonts";
+import { FONTS } from "../../../theme/fonts";
 
 // Semantic indicator colors — theme-invariant (functional, not surface)
 export const CORRECT_COLOR   = "#05C793";

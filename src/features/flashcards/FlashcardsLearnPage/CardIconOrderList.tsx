@@ -3,7 +3,7 @@ import { Box, Typography } from "@mui/material";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import LockIcon from "@mui/icons-material/Lock";
 import LockOpenIcon from "@mui/icons-material/LockOpen";
-import type { IconLayoutItem } from "../../types";
+import type { IconLayoutItem } from "../../../types";
 import { iconImageUrl } from "./cardIconLayout";
 
 // The locked-state gold (matches the canvas corner indicator + toolbar lock button) and the

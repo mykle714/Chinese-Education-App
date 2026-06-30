@@ -1,13 +1,13 @@
 import { useState, useEffect, memo, useRef } from "react";
-import { WEIGHT } from '../theme/scale';
-import { stripParentheses } from "../utils/definitionUtils";
+import { WEIGHT } from '../../theme/scale';
+import { stripParentheses } from "../../utils/definitionUtils";
 import { useLocation } from "react-router-dom";
-import { useAuth } from "../AuthContext";
-import { FLASHCARD_CONTENT_UPDATE_DELAY, API_BASE_URL } from "../constants";
-import { useMinutePoints } from "../minutePoints/useMinutePoints";
-import { useFlashcardSettings } from "../hooks/useFlashcardSettings";
-import MinutePointsBadge from "../minutePoints/MinutePointsBadge";
-import FlashcardSettings from "../components/FlashcardSettings";
+import { useAuth } from "../../AuthContext";
+import { FLASHCARD_CONTENT_UPDATE_DELAY, API_BASE_URL } from "../../constants";
+import { useMinutePoints } from "../../minutePoints/useMinutePoints";
+import { useFlashcardSettings } from "./useFlashcardSettings";
+import MinutePointsBadge from "../../minutePoints/MinutePointsBadge";
+import FlashcardSettings from "./FlashcardSettings";
 import {
     Container,
     Typography,
@@ -24,7 +24,7 @@ import {
     Fab,
     IconButton,
 } from "@mui/material";
-import DelayedCircularProgress from "../components/DelayedCircularProgress";
+import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import CheckIcon from "@mui/icons-material/Check";
 import CloseIcon from "@mui/icons-material/Close";
 import HistoryIcon from "@mui/icons-material/History";
@@ -33,9 +33,9 @@ import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import FlipCameraAndroidIcon from "@mui/icons-material/FlipCameraAndroid";
 import RemoveIcon from "@mui/icons-material/Remove";
 import SettingsIcon from "@mui/icons-material/Settings";
-import FlashCard from "../components/FlashCard";
-import { usePageTitle } from "../hooks/usePageTitle";
-import type { VocabEntry } from "../types";
+import FlashCard from "../../components/FlashCard";
+import { usePageTitle } from "../../hooks/usePageTitle";
+import type { VocabEntry } from "../../types";
 
 
 interface HistoryEntry {

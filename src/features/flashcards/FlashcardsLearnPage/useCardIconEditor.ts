@@ -16,7 +16,7 @@ import {
     nudgeScaleStep,
 } from "./cardIconLayout";
 import { saveIconLayout, fetchDefaultIconResults, type IconSearchItem } from "./cardIconApi";
-import { iconSearchTerm } from "../../utils/definitionUtils";
+import { iconSearchTerm } from "../../../utils/definitionUtils";
 import {
     ICON_LAYOUT_MAX_ITEMS,
     type IconLayoutItem,
@@ -24,9 +24,9 @@ import {
     type TextColorMode,
     type TextColors,
     type VocabEntry,
-} from "../../types";
-import { setMinutePointsPaused } from "../../minutePoints/minutePointsPause";
-import { setEditBreadcrumb, clearEditBreadcrumb } from "../../utils/errorReporting";
+} from "../../../types";
+import { setMinutePointsPaused } from "../../../minutePoints/minutePointsPause";
+import { setEditBreadcrumb, clearEditBreadcrumb } from "../../../utils/errorReporting";
 import type { AlignDirection } from "./CardEditToolbar";
 
 export interface UseCardIconEditorParams {

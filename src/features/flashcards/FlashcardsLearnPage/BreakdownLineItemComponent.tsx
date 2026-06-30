@@ -1,7 +1,7 @@
 import React from "react";
-import ForeignText from "../../components/ForeignText";
+import ForeignText from "../../../components/ForeignText";
 import { BreakdownLineItem, DefinitionColumn, DefinitionText } from "./styled";
-import { stripParentheses } from "../../utils/definitionUtils";
+import { stripParentheses } from "../../../utils/definitionUtils";
 
 const BreakdownLineItemComponent: React.FC<{
     character: string;

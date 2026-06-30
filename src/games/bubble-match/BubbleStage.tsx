@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Box, Typography } from "@mui/material";
 import { SIZE, WEIGHT } from "../../theme/scale";
-import type { VocabEntry } from "../../pages/FlashcardsLearnPage/types";
+import type { VocabEntry } from "../../features/flashcards/FlashcardsLearnPage/types";
 import { stripParentheses } from "../../utils/definitionUtils";
 import Bubble from "./Bubble";
 import { stepPhysics, planSpawn, fillRatio, randRange, type Bounds } from "./physics";

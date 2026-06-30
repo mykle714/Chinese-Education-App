@@ -37,10 +37,10 @@ The button renders only for **`language === "zh"`** and **1–4 code points**
 (`charCount`), else `null` (the recognizer is `zh_CN`; the 2×2 grid has only four
 slots). Placements:
 
-- **eip** header (icon variant) — `src/pages/FlashcardsLearnPage/InfoCardPanelBody.tsx`
+- **eip** header (icon variant) — `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx`
 - **flp main flashcard** front face, stacked above the audio icon (icon variant) —
-  `src/pages/FlashcardsLearnPage/FlashCardSection.tsx` (`ChineseBlock`)
-- **cdp** (word details) — `src/pages/VocabCardDetailPage.tsx`
+  `src/features/flashcards/FlashcardsLearnPage/FlashCardSection.tsx` (`ChineseBlock`)
+- **cdp** (word details) — `src/features/flashcards/VocabCardDetailPage.tsx`
 
 The button owns `completedLevels: Set<string>` as the single source of truth: it
 fetches on mount (`fetchCompletedLevels`), passes it into the popup, and updates it

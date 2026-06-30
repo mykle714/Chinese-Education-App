@@ -1,4 +1,4 @@
-import type { DictionaryEntry } from "../../types";
+import type { DictionaryEntry } from "../../../types";
 import type { VocabEntry, DifficultyLevel, UsedInItem } from "./types";
 
 // Adapts a dictionaryentries-table record (det) returned by

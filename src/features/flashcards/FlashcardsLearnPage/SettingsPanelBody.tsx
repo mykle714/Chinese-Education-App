@@ -2,9 +2,9 @@ import { forwardRef, useImperativeHandle, useRef } from "react";
 import { Box, Switch, Typography, useTheme } from "@mui/material";
 import { InfoSheetEntryHeader } from "./styled";
 import { FC_FONT } from "./constants";
-import { SIZE } from "../../theme/scale";
+import { SIZE } from "../../../theme/scale";
 import type { SheetPanelBodyHandle } from "./SheetPanel";
-import type { FlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
+import type { FlashcardLearnSettings } from "../../../hooks/useFlashcardLearnSettings";
 
 export interface SettingsPanelBodyProps {
     settings: FlashcardLearnSettings;

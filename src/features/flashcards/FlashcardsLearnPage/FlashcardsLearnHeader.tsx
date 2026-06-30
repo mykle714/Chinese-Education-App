@@ -5,10 +5,10 @@ import SettingsIcon from "@mui/icons-material/Settings";
 // Edit (icon-layout) uses the brush; the writing-practice button uses the pencil
 // (the two were swapped per design).
 import BrushIcon from "@mui/icons-material/Brush";
-import PageHeader from "../../components/PageHeader";
-import MinutePointsFireBadge from "../../minutePoints/MinutePointsFireBadge";
+import PageHeader from "../../../components/PageHeader";
+import MinutePointsFireBadge from "../../../minutePoints/MinutePointsFireBadge";
 import type { LastMarkUndoSnapshot } from "./types";
-import { SIZE } from "../../theme/scale";
+import { SIZE } from "../../../theme/scale";
 
 interface FlashcardsLearnHeaderProps {
     selectedCategory: string | null;

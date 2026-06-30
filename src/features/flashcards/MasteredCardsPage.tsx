@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import NodePage from "../components/NodePage";
-import { useSlideNavigate } from "../hooks/useSlideNavigate";
-import MiniVocabCardGrid from "../components/MiniVocabCardGrid";
-import { useAuth } from "../AuthContext";
-import { API_BASE_URL } from "../constants";
-import type { VocabEntry } from "../types";
-import { usePageTitle } from "../hooks/usePageTitle";
+import NodePage from "../../components/NodePage";
+import { useSlideNavigate } from "../../hooks/useSlideNavigate";
+import MiniVocabCardGrid from "../../components/MiniVocabCardGrid";
+import { useAuth } from "../../AuthContext";
+import { API_BASE_URL } from "../../constants";
+import type { VocabEntry } from "../../types";
+import { usePageTitle } from "../../hooks/usePageTitle";
 
 // Dedicated page for the user's full Mastered deck. Linked from /flashcards/decks,
 // where the inline preview used to be. Kept separate because a mastered deck can be

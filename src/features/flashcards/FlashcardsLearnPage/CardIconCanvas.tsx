@@ -3,7 +3,7 @@ import { Box } from "@mui/material";
 import { useGesture } from "@use-gesture/react";
 import OpenWithIcon from "@mui/icons-material/OpenWith";
 import LockIcon from "@mui/icons-material/Lock";
-import type { IconLayoutItem, SnapConfig } from "../../types";
+import type { IconLayoutItem, SnapConfig } from "../../../types";
 import {
     iconImageUrl,
     iconItemStyle,

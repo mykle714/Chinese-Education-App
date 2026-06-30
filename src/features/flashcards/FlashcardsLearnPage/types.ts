@@ -2,7 +2,7 @@
 // here so existing `from "./types"` imports across the flashcards page keep
 // working. (FlashcardCategory/ParticleOrClassifierInfo also live in src/types —
 // import them from there directly if needed.)
-import type { VocabEntry, UsedInItem, DifficultyLevel } from "../../types";
+import type { VocabEntry, UsedInItem, DifficultyLevel } from "../../../types";
 export type { VocabEntry, UsedInItem, DifficultyLevel };
 
 export interface BreakdownItem {

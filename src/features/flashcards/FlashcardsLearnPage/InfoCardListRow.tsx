@@ -1,8 +1,8 @@
 import { Box, Typography, useTheme } from "@mui/material";
-import ForeignText from "../../components/ForeignText";
-import { stripParentheses } from "../../utils/definitionUtils";
+import ForeignText from "../../../components/ForeignText";
+import { stripParentheses } from "../../../utils/definitionUtils";
 import { FC_FONT } from "./constants";
-import { SIZE } from "../../theme/scale";
+import { SIZE } from "../../../theme/scale";
 
 export interface InfoCardListRowProps {
     character: string;

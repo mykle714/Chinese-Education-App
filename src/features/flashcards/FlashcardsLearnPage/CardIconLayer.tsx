@@ -1,6 +1,6 @@
 import React from "react";
 import { Box } from "@mui/material";
-import type { IconLayoutItem } from "../../types";
+import type { IconLayoutItem } from "../../../types";
 import { iconImageUrl, iconItemStyle } from "./cardIconLayout";
 
 /**

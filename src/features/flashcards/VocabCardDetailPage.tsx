@@ -1,24 +1,24 @@
 import { useState, useEffect } from "react";
-import { stripParentheses } from "../utils/definitionUtils";
+import { stripParentheses } from "../../utils/definitionUtils";
 import { useParams, useNavigate } from "react-router-dom";
 import { Box, Typography, Chip, Button, Alert, Divider } from "@mui/material";
-import DelayedCircularProgress from "../components/DelayedCircularProgress";
+import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import { styled } from "@mui/material/styles";
-import LeafPage from "../components/LeafPage";
-import { API_BASE_URL } from "../constants";
-import type { VocabEntry, DictionaryEntry } from "../types";
-import ForeignText from "../components/ForeignText";
-import PosBadge from "../components/PosBadge";
-import SegmentedSentenceDisplay from "../components/SegmentedSentenceDisplay";
-import PracticeWritingButton from "../components/handwriting/PracticeWritingButton";
-import { clearWritingDraft } from "../components/handwriting/writingDraftStore";
-import { getBreakdownItems } from "../utils/breakdownUtils";
-import { usePageTitle } from "../hooks/usePageTitle";
-import { getCategoryColor } from "../utils/categoryColors";
-import { COLORS } from "../theme/colors";
-import { FONTS } from "../theme/fonts";
-import { SIZE, WEIGHT, LEADING, TRACKING } from "../theme/scale";
+import LeafPage from "../../components/LeafPage";
+import { API_BASE_URL } from "../../constants";
+import type { VocabEntry, DictionaryEntry } from "../../types";
+import ForeignText from "../../components/ForeignText";
+import PosBadge from "../../components/PosBadge";
+import SegmentedSentenceDisplay from "../../components/SegmentedSentenceDisplay";
+import PracticeWritingButton from "../../components/handwriting/PracticeWritingButton";
+import { clearWritingDraft } from "../../components/handwriting/writingDraftStore";
+import { getBreakdownItems } from "../../utils/breakdownUtils";
+import { usePageTitle } from "../../hooks/usePageTitle";
+import { getCategoryColor } from "../../utils/categoryColors";
+import { COLORS } from "../../theme/colors";
+import { FONTS } from "../../theme/fonts";
+import { SIZE, WEIGHT, LEADING, TRACKING } from "../../theme/scale";
 
 // Phone-frame sizing comes from MobileDemoFrame via Layout.tsx
 const ContentArea = styled(Box)(() => ({

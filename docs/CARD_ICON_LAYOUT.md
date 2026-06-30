@@ -23,7 +23,7 @@ By default every flashcard shows one representative icons8 icon (`entry.iconId`,
 joined from det) centered on the card. The default icon renders through the **same
 `CardIconLayer` geometry** as the editor (`defaultLayoutForIcon(iconId)` in
 `cardIconLayout.ts`, fed to `CardIconLayer` from
-`src/pages/FlashcardsLearnPage/FlashCardSection.tsx` `CardFaceSide`), so its on-screen
+`src/features/flashcards/FlashcardsLearnPage/FlashCardSection.tsx` `CardFaceSide`), so its on-screen
 size is identical whether or not the editor is open. (`CardImage` in that file is now
 only the empty-state placeholder box for entries with no icon at all.) This feature lets
 a learner **compose a custom multi-icon arrangement
@@ -203,7 +203,7 @@ paging past page 0 — falls back to the live `/api/icons8/search` as before.
 
 ## Edit-mode UX (presentation layer)
 
-All in `src/pages/FlashcardsLearnPage/`.
+All in `src/features/flashcards/FlashcardsLearnPage/`.
 
 1. **Header** (`FlashcardsLearnHeader.tsx`)
    - The `autoplay` quick-toggle is **removed** from the header (it remains in the

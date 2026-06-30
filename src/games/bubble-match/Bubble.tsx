@@ -2,7 +2,7 @@ import React from "react";
 import { Box, Typography } from "@mui/material";
 import ForeignText from "../../components/ForeignText";
 import { stripParentheses } from "../../utils/definitionUtils";
-import { FC_FONT_CJK } from "../../pages/FlashcardsLearnPage/constants";
+import { FC_FONT_CJK } from "../../features/flashcards/FlashcardsLearnPage/constants";
 import { API_BASE_URL } from "../../constants";
 import type { BubbleBody, BubbleStatus } from "./types";
 import {

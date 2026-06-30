@@ -1,20 +1,20 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { useSlideNavigate } from "../hooks/useSlideNavigate";
+import { useSlideNavigate } from "../../hooks/useSlideNavigate";
 import { Box, Typography, Alert, Button, Snackbar } from "@mui/material";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import { styled } from "@mui/material/styles";
-import MobileTabScreen from "../components/MobileTabScreen";
-import MiniVocabCardGrid from "../components/MiniVocabCardGrid";
-import { useAuth } from "../AuthContext";
-import { API_BASE_URL } from "../constants";
-import type { VocabEntry } from "../types";
-import { usePageTitle } from "../hooks/usePageTitle";
-import { useDiscoverNavigation } from "../hooks/useDiscoverNavigation";
-import { useCategoryCounts } from "../hooks/useCategoryCounts";
-import { COLORS } from "../theme/colors";
-import { FONTS } from "../theme/fonts";
-import { SIZE, WEIGHT } from "../theme/scale";
+import MobileTabScreen from "../../components/MobileTabScreen";
+import MiniVocabCardGrid from "../../components/MiniVocabCardGrid";
+import { useAuth } from "../../AuthContext";
+import { API_BASE_URL } from "../../constants";
+import type { VocabEntry } from "../../types";
+import { usePageTitle } from "../../hooks/usePageTitle";
+import { useDiscoverNavigation } from "../../hooks/useDiscoverNavigation";
+import { useCategoryCounts } from "../../hooks/useCategoryCounts";
+import { COLORS } from "../../theme/colors";
+import { FONTS } from "../../theme/fonts";
+import { SIZE, WEIGHT } from "../../theme/scale";
 
 // Minimum number of cards a user must have sorted into their library before the
 // /flashcards/learn page is worth opening. Below this, we nudge them to Discover

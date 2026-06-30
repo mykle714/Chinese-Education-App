@@ -1,12 +1,12 @@
 import React, { forwardRef, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
 import { Box, IconButton, Typography, useTheme } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
-import { stripParentheses } from "../../utils/definitionUtils";
-import ForeignText, { type CPCDSize } from "../../components/ForeignText";
-import PosBadge from "../../components/PosBadge";
-import SegmentedSentenceDisplay from "../../components/SegmentedSentenceDisplay";
-import PracticeWritingButton from "../../components/handwriting/PracticeWritingButton";
-import LongDefinitionDisplay from "../../components/LongDefinitionDisplay";
+import { stripParentheses } from "../../../utils/definitionUtils";
+import ForeignText, { type CPCDSize } from "../../../components/ForeignText";
+import PosBadge from "../../../components/PosBadge";
+import SegmentedSentenceDisplay from "../../../components/SegmentedSentenceDisplay";
+import PracticeWritingButton from "../../../components/handwriting/PracticeWritingButton";
+import LongDefinitionDisplay from "../../../components/LongDefinitionDisplay";
 import InfoCardListRow from "./InfoCardListRow";
 import {
     InfoSheetEntryHeader,
@@ -15,7 +15,7 @@ import {
     SharedCharsLabel,
 } from "./styled";
 import { TAB_LABELS, FC_FONT } from "./constants";
-import { SIZE, WEIGHT, LEADING, TRACKING } from "../../theme/scale";
+import { SIZE, WEIGHT, LEADING, TRACKING } from "../../../theme/scale";
 import { SpeakerButton } from "./FlashCardSection";
 import { buildSentencePronunciation } from "./sentencePronunciation";
 import type { VocabEntry, BreakdownItem, UsedInItem } from "./types";

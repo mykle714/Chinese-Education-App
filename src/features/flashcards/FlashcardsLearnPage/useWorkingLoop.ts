@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
-import { API_BASE_URL } from "../../constants";
+import { API_BASE_URL } from "../../../constants";
 import { CARD_FLY_OUT_MS } from "./constants";
 import type {
     VocabEntry,

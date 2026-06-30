@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { VocabEntry } from '../pages/FlashcardsLearnPage/types';
+import type { VocabEntry } from '../features/flashcards/FlashcardsLearnPage/types';
 import { tts } from '../services/tts';
 import type { TTSLang, TTSProvider } from '../services/tts';
 import { useTTSSettings } from './useTTSSettings';

@@ -2,7 +2,7 @@ import React from "react";
 import { Badge, Box, IconButton, Typography, useTheme } from "@mui/material";
 import LocalFireDepartmentIcon from "@mui/icons-material/LocalFireDepartment";
 import BlockIcon from "@mui/icons-material/Block";
-import { FIRE_ACTIVE_COLOR } from "../pages/FlashcardsLearnPage/constants";
+import { FIRE_ACTIVE_COLOR } from "../features/flashcards/FlashcardsLearnPage/constants";
 import { useMinutePoints } from "./useMinutePoints";
 import { useMinutePointsPaused } from "./minutePointsPause";
 import { SIZE , WEIGHT} from "../theme/scale";

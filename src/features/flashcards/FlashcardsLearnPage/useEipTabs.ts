@@ -1,11 +1,11 @@
 import { useCallback, useRef, useState } from "react";
 import type { RefObject } from "react";
-import { TONE_COLORS } from "../../utils/toneColors";
+import { TONE_COLORS } from "../../../utils/toneColors";
 import { dictionaryEntryToVocabEntry } from "./dictEntryAdapter";
-import { getBreakdownItems } from "../../utils/breakdownUtils";
-import type { DictionaryEntry } from "../../types";
+import { getBreakdownItems } from "../../../utils/breakdownUtils";
+import type { DictionaryEntry } from "../../../types";
 import type { VocabEntry, BreakdownItem } from "./types";
-import { FONTS } from "../../theme/fonts";
+import { FONTS } from "../../../theme/fonts";
 
 export interface EipTab {
     id: string;            // entryKey — used as React key and for dedupe

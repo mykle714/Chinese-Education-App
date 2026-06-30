@@ -8,7 +8,7 @@ import { usePageTitle } from "../../hooks/usePageTitle";
 import { useTTS } from "../../hooks/useTTS";
 import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
 import { useBlockEdgeSwipe } from "../../hooks/useBlockEdgeSwipe";
-import type { VocabEntry } from "../../pages/FlashcardsLearnPage/types";
+import type { VocabEntry } from "../../features/flashcards/FlashcardsLearnPage/types";
 import LeafPage from "../../components/LeafPage";
 import BubbleMatchHeaderControls from "./BubbleMatchHeader";
 import BubbleMatchEndPopup from "./BubbleMatchEndPopup";

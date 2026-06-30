@@ -171,7 +171,7 @@ flp's cold-mount state after a real reload). To observe it:
   it. A clean exit leaves nothing, so a normal load reports nothing.
 
 Code: `src/utils/errorReporting.ts` (breadcrumb helpers + boot check),
-`src/pages/FlashcardsLearnPage/FlashcardsLearnPage.tsx` (`enterEdit`, `exitEdit`,
+`src/features/flashcards/FlashcardsLearnPage/FlashcardsLearnPage.tsx` (`enterEdit`, `exitEdit`,
 `handleSaveLayout`, unmount effect).
 
 **Guardrails (client):** capped at `MAX_REPORTS_PER_SESSION = 25`; identical

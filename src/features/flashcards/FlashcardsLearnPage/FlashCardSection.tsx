@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Card, CardContent, Typography, useTheme } from "@mui/material";
-import { stripParentheses } from "../../utils/definitionUtils";
+import { stripParentheses } from "../../../utils/definitionUtils";
 import { DraggableCardContainer, SwipeHintLabel, FlipHintLabel } from "./styled";
 import {
     CORRECT_COLOR,
@@ -13,16 +13,16 @@ import {
     FC_FONT,
     FC_FONT_CJK,
 } from "./constants";
-import { SIZE, WEIGHT, LEADING, TRACKING } from "../../theme/scale";
+import { SIZE, WEIGHT, LEADING, TRACKING } from "../../../theme/scale";
 import type { VocabEntry, SideOneLanguage } from "./types";
-import type { IconLayoutItem } from "../../types";
+import type { IconLayoutItem } from "../../../types";
 import CardIconLayer from "./CardIconLayer";
 import { defaultLayoutForIcon } from "./cardIconLayout";
-import ForeignText from "../../components/ForeignText";
-import { SpeakerButton } from "../../components/SpeakerButton";
-import PracticeWritingButton from "../../components/handwriting/PracticeWritingButton";
-import { getCategoryColor } from "../../utils/categoryColors";
-import { resolveTextColor } from "../../utils/cardTextColor";
+import ForeignText from "../../../components/ForeignText";
+import { SpeakerButton } from "../../../components/SpeakerButton";
+import PracticeWritingButton from "../../../components/handwriting/PracticeWritingButton";
+import { getCategoryColor } from "../../../utils/categoryColors";
+import { resolveTextColor } from "../../../utils/cardTextColor";
 
 // Re-exported so existing imports `from './FlashCardSection'` keep working.
 export { SpeakerButton };

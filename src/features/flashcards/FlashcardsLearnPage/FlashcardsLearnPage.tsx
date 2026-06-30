@@ -1,26 +1,26 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Box, Slide, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
-import DelayedCircularProgress from "../../components/DelayedCircularProgress";
-import { useAuth } from "../../AuthContext";
-import { API_BASE_URL } from "../../constants";
+import DelayedCircularProgress from "../../../components/DelayedCircularProgress";
+import { useAuth } from "../../../AuthContext";
+import { API_BASE_URL } from "../../../constants";
 import { ContentArea, MoreInfoPill } from "./styled";
 import { FC_FONT } from "./constants";
-import { SIZE, WEIGHT, TRACKING } from "../../theme/scale";
+import { SIZE, WEIGHT, TRACKING } from "../../../theme/scale";
 import { useCardDrag } from "./useCardDrag";
 import { useWorkingLoop, type CardDragControls, type StudyMode } from "./useWorkingLoop";
 import { useCardIconEditor } from "./useCardIconEditor";
 import FlashcardsLearnHeader from "./FlashcardsLearnHeader";
 import InfoCardSection from "./InfoCardSection";
-import { getBreakdownItems as buildBreakdownItems } from "../../utils/breakdownUtils";
+import { getBreakdownItems as buildBreakdownItems } from "../../../utils/breakdownUtils";
 import { useEipTabs } from "./useEipTabs";
 import EipTabStrip from "./EipTabStrip";
 import TooManyTabsSnackbar from "./TooManyTabsSnackbar";
 import FlashCardSection from "./FlashCardSection";
 import CardIconCanvas from "./CardIconCanvas";
 import CardEditToolbar, { CARD_EDIT_ANIM_MS, CARD_EDIT_ANIM_EASING, TOOLBAR_DROPDOWN_SELECTOR } from "./CardEditToolbar";
-import IconPickerDialog from "../../components/IconPickerDialog";
-import { iconSearchTerm, stripParentheses } from "../../utils/definitionUtils";
+import IconPickerDialog from "../../../components/IconPickerDialog";
+import { iconSearchTerm, stripParentheses } from "../../../utils/definitionUtils";
 import SheetPanel, { type SheetPanelBodyHandle } from "./SheetPanel";
 import SettingsPanelBody from "./SettingsPanelBody";
 import {
@@ -33,10 +33,10 @@ import {
     Snackbar,
     Alert,
 } from "@mui/material";
-import { clearWritingDraft } from "../../components/handwriting/writingDraftStore";
-import { usePageTitle } from "../../hooks/usePageTitle";
-import { useTTS, SLOW_SENTENCE_RATE } from "../../hooks/useTTS";
-import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
+import { clearWritingDraft } from "../../../components/handwriting/writingDraftStore";
+import { usePageTitle } from "../../../hooks/usePageTitle";
+import { useTTS, SLOW_SENTENCE_RATE } from "../../../hooks/useTTS";
+import { useFlashcardLearnSettings } from "../../../hooks/useFlashcardLearnSettings";
 
 const FlashcardsLearnPage: React.FC = () => {
     usePageTitle("Learn");

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import {
     Box,
     Button,
@@ -40,6 +40,7 @@ import { COLORS } from "../../theme/colors";
 import { ICON_LAYOUT_MAX_ITEMS, type IconLayoutItem, type TextColorMode } from "../../types";
 import { ALIGN_ROTATION, type AlignDirection as AlignDir } from "./cardIconLayout";
 import CardIconOrderList from "./CardIconOrderList";
+import { useToolbarMenus } from "./useToolbarMenus";
 
 // Shared transition timing for the editor's open/close motions (toolbar Slide, adv-rows
 // Collapse, and the card push-down). Kept in one place so they animate in lockstep — same
@@ -52,15 +53,10 @@ export const CARD_EDIT_ANIM_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
 // keep getting it from the toolbar.
 export type { AlignDirection } from "./cardIconLayout";
 
-// Class selector matching the root of every advanced-row dropdown (align / order / snap /
-// shift / contrast). These MUI Menu/Popover surfaces are PORTALED to <body>, so they are not
-// DOM-descendants of `.card-edit-toolbar`. Anything that needs to recognize "the press landed
-// inside an open dropdown" must key off these portaled classes. Used by this toolbar's own
-// outside-press handler AND by the page's outside-tap deselect (which only sees these presses
-// because React synthetic events bubble through the React tree, not the DOM tree). Keep this in
-// sync with the className on each <Menu>/<Popover> below. See docs/CARD_ICON_LAYOUT.md.
-export const TOOLBAR_DROPDOWN_SELECTOR =
-    ".card-edit-toolbar__align-menu, .card-edit-toolbar__order-popover, .card-edit-toolbar__snap-menu, .card-edit-toolbar__shift-menu, .card-edit-toolbar__contrast-menu";
+// The portaled-dropdown class selector lives in its own module (so useToolbarMenus can use it
+// without a circular import). Re-exported here for callers that import it from this file
+// (e.g. FlashcardsLearnPage's outside-tap deselect). See toolbarDropdownSelector.ts.
+export { TOOLBAR_DROPDOWN_SELECTOR } from "./toolbarDropdownSelector";
 
 /**
  * CardEditToolbar — the floating bar shown just below the page header while the custom
@@ -201,86 +197,24 @@ const CardEditToolbar: React.FC<{
         const fc = theme.palette.flashcard;
         const atMax = count >= ICON_LAYOUT_MAX_ITEMS;
 
-        // Anchors for the advanced-row dropdowns (alignment menu, order popover, snap menu,
-        // and the Shift step-nudge menu).
-        const [alignAnchor, setAlignAnchor] = useState<null | HTMLElement>(null);
-        const [orderAnchor, setOrderAnchor] = useState<null | HTMLElement>(null);
-        const [snapAnchor, setSnapAnchor] = useState<null | HTMLElement>(null);
-        const [shiftAnchor, setShiftAnchor] = useState<null | HTMLElement>(null);
-        const [contrastAnchor, setContrastAnchor] = useState<null | HTMLElement>(null);
+        // Dropdown open/close state + coordination (5 anchors, sticky-order outside-press
+        // handling, mutually-exclusive transient toggling) lives in useToolbarMenus.
+        const {
+            alignAnchor,
+            orderAnchor,
+            snapAnchor,
+            shiftAnchor,
+            contrastAnchor,
+            setAlignAnchor,
+            setOrderAnchor,
+            setSnapAnchor,
+            setShiftAnchor,
+            setContrastAnchor,
+            toggleDropdown,
+        } = useToolbarMenus();
 
         // Whether any snap toggle is on — drives the snap button's active (filled) styling.
         const anySnapOn = snapMove || snapRotate || snapResize;
-
-        // The align/order/snap/shift/contrast dropdowns are rendered NON-MODAL (root
-        // `pointerEvents: none`, paper `auto` — see their slotProps) so a press outside them is
-        // NOT swallowed by a modal backdrop and falls straight through to the canvas/toolbar.
-        // That means MUI's own backdrop-click `onClose` never fires, so we close them ourselves
-        // here from a single capture-phase pointerdown — which still reaches the underlying
-        // target, so one press both dismisses a menu and performs its action.
-        //
-        // The **order** popover is the exception: it is STICKY. A learner selects an icon in the
-        // order list and then operates the toolbar tools (delete / mirror / lock / align / …) on
-        // it, so tapping any toolbar item — or any other dropdown — must NOT close the order
-        // popover. It closes only on a press fully OUTSIDE the editor UI (e.g. the card canvas).
-        // The other four ("transient") dropdowns keep the dismiss-on-outside-press behaviour.
-        useEffect(() => {
-            if (!alignAnchor && !orderAnchor && !snapAnchor && !shiftAnchor && !contrastAnchor) return;
-            const onDocPointerDown = (e: PointerEvent) => {
-                const t = e.target as Element | null;
-
-                // --- Sticky order popover. The toolbar and every dropdown menu (the menus are
-                // portaled to <body>, so they are NOT inside `.card-edit-toolbar`) count as
-                // "editor UI"; a press anywhere in there leaves order open. Only a press outside
-                // all of it dismisses order. ---
-                const insideEditorUi = t?.closest(`.card-edit-toolbar, ${TOOLBAR_DROPDOWN_SELECTOR}`);
-                if (orderAnchor && !insideEditorUi) setOrderAnchor(null);
-
-                // --- Transient dropdowns (align / snap / shift / contrast). ---
-                // Presses inside an open transient menu stay (align option, snap toggle, Shift
-                // nudge, Contrast setting — the snap/Shift/Contrast menus allow several changes
-                // per open). Presses on a transient's OWN trigger button are also left alone so
-                // the button's onClick can run its toggle (tapping an open menu's button closes
-                // it); without this, pointerdown would clear the anchor before the click fired,
-                // so the toggle would always read "closed" and re-open instead of closing.
-                const insideTransientMenu = t?.closest(
-                    ".card-edit-toolbar__align-menu, .card-edit-toolbar__snap-menu, .card-edit-toolbar__shift-menu, .card-edit-toolbar__contrast-menu",
-                );
-                const onTransientTrigger = t?.closest(
-                    ".card-edit-toolbar__align, .card-edit-toolbar__snap, .card-edit-toolbar__shift, .card-edit-toolbar__contrast",
-                );
-                if (!insideTransientMenu && !onTransientTrigger) {
-                    setAlignAnchor(null);
-                    setSnapAnchor(null);
-                    setShiftAnchor(null);
-                    setContrastAnchor(null);
-                }
-            };
-            document.addEventListener("pointerdown", onDocPointerDown, true);
-            return () => document.removeEventListener("pointerdown", onDocPointerDown, true);
-        }, [alignAnchor, orderAnchor, snapAnchor, shiftAnchor, contrastAnchor]);
-
-        // Toggle a dropdown from its trigger button: open it if closed, close it if it's already
-        // the open one. Tapping a button while its menu is open dismisses the menu (the
-        // pointerdown handler above exempts the trigger buttons so this toggle sees the true
-        // open state).
-        //
-        // The four "transient" dropdowns (align / snap / shift / contrast) are still mutually
-        // exclusive — opening one closes the other three. The **order** popover is independent:
-        // opening a transient leaves order as-is (it is sticky so the user can operate tools
-        // out of it), and only the order button itself toggles order (which also closes the
-        // transients, since order replaces them as the active tool surface).
-        const toggleDropdown = (
-            which: "align" | "order" | "snap" | "shift" | "contrast",
-            e: React.MouseEvent<HTMLButtonElement>,
-        ) => {
-            const anchor = e.currentTarget;
-            setAlignAnchor(which === "align" ? (a) => (a ? null : anchor) : null);
-            setSnapAnchor(which === "snap" ? (a) => (a ? null : anchor) : null);
-            setShiftAnchor(which === "shift" ? (a) => (a ? null : anchor) : null);
-            setContrastAnchor(which === "contrast" ? (a) => (a ? null : anchor) : null);
-            if (which === "order") setOrderAnchor((a) => (a ? null : anchor));
-        };
 
         const smallBtnSx = {
             minWidth: "unset",

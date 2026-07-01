@@ -2,7 +2,8 @@
  * Backfill Script: AI-powered HSK level assignment for dictionaryentries_zh
  *
  * For each discoverable zh entry where difficulty IS NULL, asks Claude Sonnet
- * to assign a single HSK level from HSK1..HSK6 based on common learner-level usage.
+ * to assign a single HSK level, stored as the bare integer 1..6 in the smallint
+ * `difficulty` column (migration 92; the model's "HSKn" token is parsed to n).
  *
  * Usage:
  *   docker exec cow-backend-local npx tsx scripts/backfill-hsk-level.js               # full backfill
@@ -36,7 +37,7 @@ const wordsFilter = targetWords?.length
 
 /**
  * Ask Claude for the best-fit HSK level for a Chinese word.
- * Returns one of HSK1..HSK6, or null if parsing fails.
+ * Returns the integer 1..6, or null if parsing fails.
  */
 async function askClaudeForDifficultyLevel(word, pronunciation, definitions) {
   const definitionText = Array.isArray(definitions)
@@ -75,8 +76,11 @@ Respond with ONLY the level token.`;
   });
 
   const text = response.content[0].text.trim().toUpperCase();
-  const match = text.match(/HSK[1-6]/);
-  return match ? match[0] : null;
+  // The model answers with an "HSKn" token, but the `difficulty` column is a
+  // smallint holding the bare 1..6 level (migration 92) — so parse out the digit
+  // and return a Number. Storing the literal 'HSK1' would now fail the cast.
+  const match = text.match(/HSK([1-6])/);
+  return match ? Number(match[1]) : null;
 }
 
 async function run() {
@@ -121,7 +125,7 @@ async function run() {
 
         const difficulty = await askClaudeForDifficultyLevel(row.word1, row.pronunciation, row.definitions);
 
-        if (!difficulty) {
+        if (difficulty == null) {
           console.log('FAILED: could not parse HSK level');
           failed++;
           continue;

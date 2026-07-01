@@ -1,4 +1,5 @@
 import StyleIcon from "@mui/icons-material/Style";
+import SkipNextIcon from "@mui/icons-material/SkipNext";
 import MobileTabScreen from "../components/MobileTabScreen";
 import { HubMenu, HubMenuRow } from "../components/HubMenu";
 import { usePageTitle } from "../hooks/usePageTitle";
@@ -13,8 +14,8 @@ import { COLORS } from "../theme/colors";
 
 const DiscoverPage: React.FC = () => {
     usePageTitle("Discover");
-    // The Sort Cards row links to the language-keyed sort page.
-    const { sortPath } = useDiscoverNavigation();
+    // Rows link to the language-keyed sort + skipped pages.
+    const { sortPath, skippedPath } = useDiscoverNavigation();
 
     return (
         <MobileTabScreen title="Discover" activePage="discover" contentClassName="discover-page__content">
@@ -25,6 +26,13 @@ const DiscoverPage: React.FC = () => {
                     title="Sort Cards"
                     subtitle="Sort new cards into your decks"
                     icon={<StyleIcon sx={{ color: COLORS.textSecondary }} />}
+                />
+                <HubMenuRow
+                    to={skippedPath}
+                    className="discover-page__menu-item discover-page__menu-item--skipped"
+                    title="Skipped Cards"
+                    subtitle="Revisit cards you skipped"
+                    icon={<SkipNextIcon sx={{ color: COLORS.textSecondary }} />}
                 />
             </HubMenu>
         </MobileTabScreen>

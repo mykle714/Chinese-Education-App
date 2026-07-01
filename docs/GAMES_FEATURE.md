@@ -284,6 +284,16 @@ themselves automatically from the registry.
 - `server/scripts/seedGameAssets.js` — asset seed helper
 - `database/migrations/52-create-game-tables.sql` — `gameassets` + `gameprogress`
 
+## Game: Word Search (`/games/word-search`)
+
+Second game (built). Find 20 of your own vocab words — shown as English glosses —
+hidden as snaking (orthogonal) paths in a 12×16 grid of colored-pinyin (cpcd)
+characters. Drag or tap to trace; any valid multi-char selection pops a
+dictionary info-card + audio. Count-up timer → medal on completion. Reuses
+Bubble Match's pool + fallback distribution, adds a substring de-dup pass and a
+server-side snaking grid generator (`GET /api/onDeck/word-search-grid`). Full
+spec + file map: → [WORD_SEARCH_GAME.md](./WORD_SEARCH_GAME.md).
+
 ## Game: Bubble Match (`/games/bubble-match`)
 
 The first shipped game. **Does not use the Pixi `GameStage`/`useGameActors`
@@ -302,6 +312,10 @@ activePage="home"`), not `GamePage`.
   elastic collisions (`physics.ts`). Drag a bubble onto its partner to match
   (bidirectional). Correct → green pop + removal; wrong → red shake + release.
   Picking up / dropping **onto** a Chinese word triggers autoplay TTS.
+- **Restart (header):** during active play the header's right slot shows a
+  restart icon (`BubbleMatchHeaderControls.onRestart`, wired only while
+  `phase === "playing"`) that re-runs the **same level with the same words**
+  (reshuffled launch order) via `startLevel(level)`.
 - **Levels do not chain** — a level picker selects difficulty (launch cadence +
   ceiling-shrink speed); all use the full pool. **There is no clock.** Once the
   whole pool has launched, on the next launch-tick a **descending ceiling**
@@ -320,7 +334,12 @@ activePage="home"`), not `GamePage`.
   picker → playing → won | lost), `BubbleStage.tsx` (rAF loop, launcher,
   descending ceiling, drag/hover/match, HUD, red glow), `Bubble.tsx` (one bubble; outer
   node carries the loop's transform, inner node carries CSS pop/shake),
-  `physics.ts`, `BubbleMatchHeader.tsx`, `constants.ts`, `types.ts`.
+  `physics.ts`, `BubbleMatchHeader.tsx` (right-slot controls: restart button +
+  pinyin/autoplay toggles + fire badge), `BubbleMatchEndPopup.tsx` (won/lost card
+  + minimize-to-corner puck), `BubbleMatchLevelMenu.tsx` (the floating
+  "Different Level / Same Cards" level picker layered over the end popup — lists
+  all levels, marks the current one, replays the loaded pool at the picked
+  level), `constants.ts`, `types.ts`.
 - `src/games/registry.ts` — registers the game (`requiresAuth: true`).
 
 ### Backend

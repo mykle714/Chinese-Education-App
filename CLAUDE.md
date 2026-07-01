@@ -133,6 +133,10 @@ An hourly Postgres cron on the prod server (a) breaks stale streaks (mirroring `
 ### Vocabulary Enrichment
 → See [docs/VOCAB_ENRICHMENT_IMPLEMENTATION.md](./docs/VOCAB_ENRICHMENT_IMPLEMENTATION.md)
 
+### Definition Mapping
+→ See [docs/DEFINITION_MAPPING.md](./docs/DEFINITION_MAPPING.md) — index of every definition *form* across the app (flat `definitions`, lead gloss, dd, `shortDefinition`, `longDefinition`, per-segment defs) and the enrichment operations that transform one into the next.
+  → Sense clustering: [docs/DEFINITION_CLUSTERS.md](./docs/DEFINITION_CLUSTERS.md) — splitting `definitions` into orthogonal sense clusters (`definitionClusters`, migration 90); per-cluster reading + 1–5 vernacular score.
+
 ### Character Breakdown Feature
 → See [docs/BREAKDOWN_FEATURE_IMPLEMENTATION.md](./docs/BREAKDOWN_FEATURE_IMPLEMENTATION.md)
 

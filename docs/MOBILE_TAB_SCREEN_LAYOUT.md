@@ -61,6 +61,10 @@ soften/lighten out as they scroll past the screen edges (NYT-Games style).
   where they pass behind the pill.
 - The footer is a **sibling** of `ScrollArea` (not masked), so the pill stays
   fully opaque while content fades behind it.
+- **Opt-out (`edgeFade` prop, default `true`).** The fade only makes sense when the
+  content actually scrolls. A fixed, non-scrolling page (e.g. the drag-to-sort
+  screen) passes `edgeFade={false}` — through `NodePage` → `MobileTabScreen` — so the
+  mask is dropped and its top/bottom rows (buckets, card tray) aren't clipped.
 
 ## Footer geometry (single source of truth)
 

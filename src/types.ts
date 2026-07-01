@@ -11,12 +11,13 @@ export const LANGUAGE_NAMES: Record<Language, string> = {
   es: 'Spanish'
 };
 
-// Generalized difficulty label stored in dictionaryentries_*.difficulty (drives the
-// discover band). One bare-integer '1'..'6' scale for every language (migration 79):
-//   - zh: '1'..'6' — these ARE HSK levels (1 = HSK1 .. 6 = HSK6); the UI re-adds an
-//     "HSK n" badge for zh. Only the stored 'HSK' prefix was dropped.
-//   - es: '1'..'6'  (learner-acquisition difficulty, 1=easiest)
-export type DifficultyLevel = '1' | '2' | '3' | '4' | '5' | '6';
+// Generalized difficulty band stored in dictionaryentries_*.difficulty (drives the
+// discover band). One 1..6 integer scale for every language; the column is a
+// smallint (migration 92, finishing migration 79's intent), so these are NUMBERS:
+//   - zh: 1..6 — these ARE HSK levels (1 = HSK1 .. 6 = HSK6); the UI re-adds an
+//     "HSK n" badge for zh.
+//   - es: 1..6  (learner-acquisition difficulty, 1=easiest)
+export type DifficultyLevel = 1 | 2 | 3 | 4 | 5 | 6;
 
 // Particle or classifier annotation for a segment in example sentence metadata
 export interface ParticleOrClassifierInfo {
@@ -82,6 +83,38 @@ export interface SnapConfig {
   move: boolean;
   rotate: boolean;
   resize: boolean;
+}
+
+/**
+ * Which back-face text block a movable-text placement targets (vet."textLayout",
+ * migration 91; see docs/CARD_ICON_LAYOUT.md). `foreign` = the Chinese/Spanish word
+ * glyphs (+ pinyin); `english` = the English definition.
+ */
+export type TextBlock = 'foreign' | 'english';
+
+/**
+ * One movable text block's placement (vet."textLayout", migration 91). Coordinates are
+ * NORMALIZED (fractions of the rendered card size) like IconLayoutItem, so a saved layout
+ * survives the card being shown at different pixel sizes. Unlike icons there is no iconId,
+ * no flipX (mirrored text is unreadable), and no z (text always paints ABOVE the icon
+ * layer). See docs/CARD_ICON_LAYOUT.md.
+ */
+export interface TextLayoutItem {
+  x: number;        // block CENTER as a fraction of card WIDTH  [0..1]
+  y: number;        // block CENTER as a fraction of card HEIGHT [0..1]
+  scale: number;    // multiplier on the block's base font size; clamped ~[0.5, 3]
+  rotation: number; // degrees
+  locked?: boolean; // when true the block ignores canvas translate/resize/rotate gestures (the "lock" toolbar action); omitted/false = freely editable
+}
+
+/**
+ * Per-card movable-text placement for the two back-face text blocks (vet."textLayout",
+ * migration 91; see docs/CARD_ICON_LAYOUT.md). Each block is optional — an absent block
+ * renders at its default lower-third spot. NULL on the row = both blocks at default.
+ */
+export interface TextLayout {
+  foreign?: TextLayoutItem;
+  english?: TextLayoutItem;
 }
 
 /**
@@ -175,6 +208,8 @@ export interface VocabEntry {
   iconLayout?: IconLayoutItem[] | null;  // Custom flashcard icon arrangement (vet column, migration 82). NULL = use the default centered iconId. See docs/CARD_ICON_LAYOUT.md
   snapConfig?: SnapConfig | null;  // Per-card icon-editor snap toggles (vet column, migration 88). NULL = all off. See docs/CARD_ICON_LAYOUT.md
   textColors?: TextColors | null;  // Per-card flashcard text-color overrides (vet column, migration 89). NULL = both 'theme'. See docs/CARD_ICON_LAYOUT.md
+  textLayout?: TextLayout | null;  // Per-card movable-text placement for the two back-face text blocks (vet column, migration 91). NULL = default lower-third layout. See docs/CARD_ICON_LAYOUT.md
+  cardColor?: string | null;  // Per-card flashcard background fill (CSS hex, vet column, migration 94). NULL = follow theme. See docs/CARD_ICON_LAYOUT.md
   exampleSentences?: Array<{
     foreignText: string;
     english: string;
@@ -223,13 +258,26 @@ export interface DictionaryEntry {
   tone?: string | null;
   partsOfSpeech?: string[] | null;
   vernacularScore?: number | null;  // 1=literary … 5=natural colloquial
-  definitions: string[]; // Array of definition strings
+  definitions: string[]; // Array of definition strings (flat cache)
+  definitionClusters?: DefinitionCluster[] | null;  // Orthogonal sense clusters (zh; migration 90) — see docs/DEFINITION_CLUSTERS.md
   shortDefinitionPronunciationOverride?: ShortDefinitionPronunciationOverride | null; // Raw override object from DB
   shortDefinition?: string | null;
   longDefinition?: string | null;
   longDefinitionParts?: LongDefinitionPart[] | null;  // Computed at runtime: longDefinition split into English + cpcd-able Chinese runs
   discoverable?: boolean;  // Whether the entry appears in vocab discovery (set during data import). Undiscoverable entries are lookup-only.
   createdAt: string;
+}
+
+// One orthogonal sense cluster within a Chinese entry's `definitionClusters`
+// (migration 90). Glosses sharing one core meaning are grouped and ordered
+// prototypical→vernacular within the cluster; clusters are mutually orthogonal.
+// See docs/DEFINITION_CLUSTERS.md.
+export interface DefinitionCluster {
+  sense: string;                  // short English label for the shared meaning
+  reading: string;                // numbered pinyin for THIS sense (heteronyms differ, e.g. 会计 → "kuai4")
+  pos: string | string[] | null;  // part(s) of speech for this sense
+  vernacularScore: number | null; // 1–5 register, scored independently per cluster
+  glosses: string[];              // verbatim source glosses, ordered prototypical→vernacular
 }
 
 // Discover Card type — a curated DictionaryEntry shaped for the sort-cards UI
@@ -242,7 +290,7 @@ export interface DiscoverCard {
   language: Language;
   word2?: string | null;
   script?: string | null;
-  difficulty?: string | null;
+  difficulty?: DifficultyLevel | null;
   // Spanish (es) only: this card's POS, and whether the word1 has multiple
   // discoverable POS (→ show a "(v)"/"(n)" badge). Null/false for Chinese.
   pos?: string | null;
@@ -264,26 +312,52 @@ export interface DiscoverCard {
   // Optional icons8 icon assigned to this entry (icons8Id); the client renders
   // the icon via <img src="/api/icons8/<iconId>/image">. Null when no icon assigned.
   iconId?: string | null;
+  // Sort-pack card state (set by the pack supply). `sorted` → the user already has a
+  // library row for this card: it renders locked with a "sorted!" watermark and is not
+  // draggable. `skipped` → currently in discover_skips but shown inside an authored
+  // pack, so it is draggable again.
+  sorted?: boolean;
+  skipped?: boolean;
+}
+
+/**
+ * A sort pack: the on-deck unit of the discover sort flow — one sentence + up to 3
+ * cards to sort. Authored packs come from the sort_packs table; system fallback
+ * packs-of-1 are built on the fly from a single word's own first example sentence.
+ * `sentence` is fed straight into <SegmentedSentenceDisplay>.
+ */
+export interface SortPack {
+  packKey: string;            // "pack:<id>" (authored) | "single:<cardId>" (fallback)
+  packId: number | null;      // sort_packs.id for authored; null for fallback singles
+  level: number;
+  // Enriched sentence for the band (SegmentedSentenceDisplay shape); null when a
+  // fallback single has no example sentence (render a bare card, no band).
+  sentence: NonNullable<DiscoverCard['exampleSentences']>[number] | null;
+  cards: DiscoverCard[];
 }
 
 // GET /api/starter-packs/:language response shape — the initial FIFO queue fill.
 // The server owns all leveling; the client just shows these cards in order.
 export interface DiscoverFetchResponse {
-  cards: DiscoverCard[];
+  packs: SortPack[];  // the client holds a short FIFO queue of packs (on-deck + buffer)
   exhausted: boolean; // true only when the whole discoverable dictionary is sorted
   level: number;      // user's estimated difficulty level — DISPLAY ONLY (a chip), never a filter
 }
 
-// POST /api/starter-packs/sort response shape. A sort shrinks the client queue by
-// one, so the response carries the single replacement card (nextCard) for the tail —
-// there is no separate "load more" call.
+// POST /api/starter-packs/next-pack response: one replacement pack for the FIFO tail,
+// requested when the on-deck pack completes.
+export interface DiscoverNextPackResponse {
+  nextPack: SortPack | null; // null when exhausted
+  exhausted: boolean;
+  level: number;
+}
+
+// POST /api/starter-packs/sort response (pack mode, per-card). The client owns its
+// pack queue, so there is no replacement card — only the (possibly updated) level.
 export interface DiscoverSortResponse {
   success: boolean;
-  message: string;
   bucket: string;
-  nextCard: DiscoverCard | null; // replacement for the queue tail; null when exhausted
-  exhausted: boolean;
-  level: number;                 // user's (possibly updated) estimated level — DISPLAY ONLY
+  level: number;
 }
 
 // Combined vocab lookup response

@@ -25,7 +25,7 @@
  * grammatically/semantically hard (or formal yet easy), so both are scored.
  *
  * NULL "vernacularScore" means "not yet scored". After processing, vernacularScore
- * holds an integer 1–5 and difficulty holds '1'..'5'.
+ * holds an integer 1–5 and difficulty holds the integer 1..5 (smallint, migration 92).
  *
  * TODO(es-linguistics): The register scale examples below were adapted from the
  * Chinese version to plausible Spanish words. Have a Spanish speaker review the
@@ -239,13 +239,14 @@ async function run() {
         }
 
         // Difficulty is stored in the shared difficulty column as a bare integer
-        // string '1'..'5' (the Spanish encoding — see _levelConfig in
-        // StarterPacksService). Both columns are written in one statement.
+        // 1..5 (the Spanish encoding — see _levelConfig in StarterPacksService).
+        // The column is a smallint (migration 92), so the score is written as a
+        // number. Both columns are written in one statement.
         await client.query(
           `UPDATE dictionaryentries_es
              SET "vernacularScore" = $1, "difficulty" = $2
            WHERE id = $3`,
-          [result.vernacular, String(result.difficulty), row.id]
+          [result.vernacular, result.difficulty, row.id]
         );
         await stampEntries(client, 'dictionaryentries_es', row.id);
 

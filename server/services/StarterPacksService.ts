@@ -1,6 +1,8 @@
 import { VocabEntryDAL } from '../dal/implementations/VocabEntryDAL.js';
 import { DictionaryDAL } from '../dal/implementations/DictionaryDAL.js';
-import { DiscoverCard, StarterPackBucket } from '../types/index.js';
+import { SortPacksDAL } from '../dal/implementations/SortPacksDAL.js';
+import { DiscoverCard, StarterPackBucket, SortPack } from '../types/index.js';
+import { SortPackRow } from '../types/sortPacks.js';
 import db from '../db.js';
 import { dictTableForLanguage } from '../dal/shared/dictTable.js';
 import { vetTableForLanguage } from '../dal/shared/vetTable.js';
@@ -9,7 +11,7 @@ import { vetTableForLanguage } from '../dal/shared/vetTable.js';
  * Starter Packs Service
  * Business logic for the discover / "sort cards" flow.
  *
- * DESIGN (see docs/SORT_CARDS_DESIGN.md): the SERVER owns the level; the client is a
+ * DESIGN (see docs/SORT_CARDS_REQUIREMENTS.md): the SERVER owns the level; the client is a
  * dumb FIFO queue. All level estimation and card selection happen here; the client
  * just shows the head of a short queue and asks for one replacement per sort.
  *
@@ -33,7 +35,7 @@ import { vetTableForLanguage } from '../dal/shared/vetTable.js';
  */
 export class StarterPacksService {
   /**
-   * Leveling tuning knobs (docs/SORT_CARDS_DESIGN.md §4.3 / §12).
+   * Leveling tuning knobs (docs/SORT_CARDS_REQUIREMENTS.md §6 — adaptive leveling).
    * A level L is "cleared" (so the user advances past it) when:
    *     mastered[L] >= MIN_MASTERED_TO_ADVANCE  AND  learning[L] <= LEARN_LATER_TOLERANCE
    * - MIN_MASTERED_TO_ADVANCE: master at least this many cards at L before advancing.
@@ -46,7 +48,8 @@ export class StarterPacksService {
 
   constructor(
     private vocabEntryDAL: VocabEntryDAL,
-    private dictionaryDAL: DictionaryDAL
+    private dictionaryDAL: DictionaryDAL,
+    private sortPacksDAL: SortPacksDAL
   ) {}
 
   /**
@@ -168,10 +171,12 @@ export class StarterPacksService {
   } {
     // Single generalized config (kept the `_language` param in case a future
     // language needs to diverge from the shared 1..6 integer scale).
+    // `difficulty` is a smallint (migration 92), so it is used directly — no
+    // CAST, and the validity check is a numeric range rather than a text regex.
     return {
       maxLevel: 6,
-      levelExpr: `CAST(de."difficulty" AS INTEGER)`,
-      validPredicate: `de."difficulty" ~ '^[1-6]$'`,
+      levelExpr: `de."difficulty"`,
+      validPredicate: `de."difficulty" BETWEEN 1 AND 6`,
     };
   }
 
@@ -246,7 +251,7 @@ export class StarterPacksService {
     userId: string,
     level: number,
     excludeIds: number[],
-    opts: { includeSkips: boolean; limit: number }
+    opts: { includeSkips: boolean; limit: number; exactLevel?: number }
   ): Promise<any[]> {
     if (opts.limit <= 0) return [];
 
@@ -263,6 +268,14 @@ export class StarterPacksService {
       if (excludeIds.length > 0) {
         params.push(excludeIds);
         excludeFilter = ` AND de.id != ALL($${params.length}::int[])`;
+      }
+
+      // When the caller pins an exact level (pack supply drives level drift itself),
+      // constrain to that band so level is honored before any pack-vs-single ordering.
+      let exactLevelFilter = '';
+      if (typeof opts.exactLevel === 'number') {
+        params.push(opts.exactLevel);
+        exactLevelFilter = ` AND ${levelExpr} = $${params.length}`;
       }
 
       // Skip phase: fresh supply EXCLUDES skipped cards; recycle phase keeps ONLY them.
@@ -302,6 +315,7 @@ export class StarterPacksService {
           )
           ${skipFilter}
           ${excludeFilter}
+          ${exactLevelFilter}
         ORDER BY ${recycleOrder} ABS(${levelExpr} - $3) ASC, de.id ASC
         LIMIT ${limitParam}
       `, params);
@@ -361,7 +375,20 @@ export class StarterPacksService {
    *   - library         → "Add to Learn Now": upsert vet row, empty history (Unfamiliar).
    *   - already-learned → upsert vet row + perfect 8/8 history → GENERATED category Mastered.
    */
-  async sortCard(userId: string, cardId: number, bucket: string, language: string, excludeIds: number[] = []): Promise<any> {
+  async sortCard(
+    userId: string,
+    cardId: number,
+    bucket: string,
+    language: string,
+    excludeIds: number[] = [],
+    // Pack mode: when `packId` is present (number OR null), the caller is the sort-pack
+    // flow — it manages its own pack queue, so we DON'T compute a legacy replacement
+    // card. When `lastInPack` is true the final card of an authored pack was just
+    // sorted, so the pack is marked seen (never shown again). Legacy single-card
+    // callers (and the Skipped-page popup) omit `opts` entirely and get `nextCard`.
+    opts: { packId?: number | null; lastInPack?: boolean } = {}
+  ): Promise<any> {
+    const inPackMode = opts.packId !== undefined;
     const validBuckets: string[] = ['already-learned', 'library', 'skip'];
     if (!validBuckets.includes(bucket)) {
       throw new Error(`Invalid bucket: ${bucket}`);
@@ -446,8 +473,23 @@ export class StarterPacksService {
       client.release();
     }
 
-    // Compute the one replacement card AFTER the sort is persisted, so the new vet
-    // row is reflected in the estimate and the supply exclusions.
+    // Sorting a card OVERRIDES any prior "skip for now" on it: a card that was skipped
+    // and later sorted (from an authored pack, or the Skipped-page popup) must leave
+    // discover_skips so it no longer shows on the Skipped page.
+    await this._clearSkip(userId, cardId, language);
+
+    // Pack mode: the client owns its pack queue, so there is no single replacement
+    // card. Mark the pack seen when its last card was just sorted.
+    if (inPackMode) {
+      if (opts.packId != null && opts.lastInPack) {
+        await this.markPackSeen(userId, opts.packId);
+      }
+      const level = await this.estimateLevel(userId, language);
+      return { success: true, message: 'Card sorted successfully', bucket: actualBucket, level };
+    }
+
+    // Legacy single-card flow: compute the one replacement card AFTER the sort is
+    // persisted, so the new vet row is reflected in the estimate and the exclusions.
     const { cards, exhausted, level } = await this.getNextCards(language, userId, excludeIds, 1);
     return { success: true, message: 'Card sorted successfully', bucket: actualBucket, nextCard: cards[0] ?? null, exhausted, level };
   }
@@ -477,7 +519,15 @@ export class StarterPacksService {
    * Returns { success } — the client already has the card to re-show; it does not
    * need a replacement.
    */
-  async undoSort(userId: string, cardId: number, bucket: string, language: string): Promise<any> {
+  async undoSort(userId: string, cardId: number, bucket: string, language: string, packId: number | null = null): Promise<any> {
+    // Undoing any card action within a pack means that pack is no longer fully
+    // finished/skipped, so it must be un-seen (array_remove) — otherwise it would be
+    // wrongly suppressed and never re-served. array_remove is a no-op when the id is
+    // absent, so this is safe for non-completing undos too.
+    if (packId != null) {
+      await this._unseePack(userId, packId);
+    }
+
     if (bucket === 'skip') {
       const client = await db.getClient();
       try {
@@ -552,6 +602,314 @@ export class StarterPacksService {
         SELECT word1, language, ${posSelect} FROM ${table} WHERE id = $1
       `, [cardId]);
       return result.rows[0] ?? null;
+    } finally {
+      client.release();
+    }
+  }
+
+  // ===========================================================================
+  // Sort packs (docs/SORT_PACKS_IMPLEMENTATION.md §3). The on-deck unit becomes a
+  // SortPack (sentence + up to 3 cards). Authored packs come from sort_packs; system
+  // fallback packs-of-1 are built on the fly from a single fresh word.
+  // ===========================================================================
+
+  /** Delete any discover_skips row for (userId, language, cardId). No-op if absent. */
+  private async _clearSkip(userId: string, cardId: number, language: string): Promise<void> {
+    const client = await db.getClient();
+    try {
+      await client.query(
+        `DELETE FROM discover_skips WHERE "userId" = $1 AND language = $2 AND "cardId" = $3`,
+        [userId, language, cardId]
+      );
+    } finally {
+      client.release();
+    }
+  }
+
+  /** The authored pack ids this user has already finished or skipped (users.seenPacks). */
+  private async _getSeenPacks(userId: string): Promise<number[]> {
+    const client = await db.getClient();
+    try {
+      const result = await client.query<{ seenPacks: number[] }>(
+        `SELECT "seenPacks" FROM users WHERE id = $1`,
+        [userId]
+      );
+      return result.rows[0]?.seenPacks ?? [];
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Record an authored pack as seen (finished or skipped) so it is never served again.
+   * Appends only if absent, keeping seenPacks free of duplicates.
+   */
+  async markPackSeen(userId: string, packId: number): Promise<void> {
+    const client = await db.getClient();
+    try {
+      await client.query(
+        `UPDATE users SET "seenPacks" = array_append("seenPacks", $2)
+         WHERE id = $1 AND NOT ($2 = ANY("seenPacks"))`,
+        [userId, packId]
+      );
+    } finally {
+      client.release();
+    }
+  }
+
+  /** Remove a pack id from seenPacks (undo of the finishing/skipping action). */
+  private async _unseePack(userId: string, packId: number): Promise<void> {
+    const client = await db.getClient();
+    try {
+      await client.query(
+        `UPDATE users SET "seenPacks" = array_remove("seenPacks", $2) WHERE id = $1`,
+        [userId, packId]
+      );
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Hydrate a set of det ids into DiscoverCards (in the given id order) tagged with
+   * per-user pack state: `sorted` (has a library vet row → locked + "sorted!") and
+   * `skipped` (currently in discover_skips → draggable again inside a pack). Used for
+   * authored-pack cards; Spanish matches vet per (word1, pos).
+   */
+  private async _hydrateCards(entryIds: number[], userId: string, language: string): Promise<DiscoverCard[]> {
+    if (entryIds.length === 0) return [];
+    const det = this._dictTable(language);
+    const vetTable = this._vetTable(language);
+    const isEs = language === 'es';
+    const posCols = isEs ? `, de.pos, de."hasMultiplePos"` : `, NULL::varchar AS pos, FALSE AS "hasMultiplePos"`;
+    const excludePos = isEs ? ` AND ve.pos IS NOT DISTINCT FROM de.pos` : '';
+
+    const client = await db.getClient();
+    try {
+      const result = await client.query(`
+        SELECT de.id, de.word1, de.word2, de.pronunciation, de.tone, de.definitions,
+               de.language, de.script, de."difficulty", de.breakdown, de.synonyms,
+               de."exampleSentences", de.expansion, de."expansionLiteralTranslation",
+               de."iconId"${posCols},
+               EXISTS (
+                 SELECT 1 FROM ${vetTable} ve
+                 WHERE ve."userId" = $2 AND ve."entryKey" = de.word1 AND ve.language = de.language${excludePos}
+               ) AS sorted,
+               EXISTS (
+                 SELECT 1 FROM discover_skips ds
+                 WHERE ds."userId" = $2 AND ds.language = de.language AND ds."cardId" = de.id
+               ) AS skipped
+        FROM ${det} de
+        WHERE de.id = ANY($1::int[]) AND de.language = $3
+        ORDER BY array_position($1::int[], de.id)
+      `, [entryIds, userId, language]);
+
+      // Preserve authored card order; attach the pack-state flags onto each DTO.
+      return this._rowsToDiscoverCards(result.rows).map((card, i) => ({
+        ...card,
+        sorted: result.rows[i].sorted === true,
+        skipped: result.rows[i].skipped === true,
+      }));
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Enrich a bare (foreignText, english) sentence into the SegmentedSentenceDisplay
+   * shape (_segments + segmentMetadata, incl. pinyin) by wrapping it as a synthetic
+   * example sentence and running the shared est enrichment. Authored sentences carry
+   * no AI partOfSpeechDict, which only disables optional particle/classifier
+   * annotations — segmentation + pinyin are unaffected.
+   */
+  private async _enrichSentenceForPack(
+    foreignText: string,
+    english: string,
+    language: string
+  ): Promise<SortPack['sentence']> {
+    const carrier = { exampleSentences: [{ foreignText, english, partOfSpeechDict: {} }] };
+    const [enriched] = await this.dictionaryDAL.enrichExampleSentencesMetadataBatch([carrier], language);
+    return enriched.exampleSentences?.[0] ?? null;
+  }
+
+  /** Turn authored sort_packs rows into SortPack DTOs (cards hydrated, sentence enriched). */
+  private async _hydrateAuthoredPacks(rows: SortPackRow[], userId: string, language: string): Promise<SortPack[]> {
+    return Promise.all(rows.map(async (row) => ({
+      packKey: `pack:${row.id}`,
+      packId: row.id,
+      level: row.level,
+      sentence: await this._enrichSentenceForPack(row.sentenceForeign, row.sentenceEnglish, language),
+      cards: await this._hydrateCards(row.entryIds, userId, language),
+    })));
+  }
+
+  /**
+   * Build system fallback packs-of-1 from fresh (un-sorted, un-skipped) words nearest
+   * the level, each using the word's OWN first example sentence for the band. Reuses
+   * the card supply query, then wraps each enriched card as a single-card pack.
+   */
+  private async _buildFallbackPacks(
+    language: string,
+    userId: string,
+    level: number,
+    excludeCardIds: number[],
+    limit: number
+  ): Promise<SortPack[]> {
+    if (limit <= 0) return [];
+    // Pin to EXACTLY this level — getNextPacks drives the nearest-level drift, so a
+    // level's singles are served before drifting away (level honored first).
+    const rows = await this._fetchSupplyRows(language, userId, level, excludeCardIds, { includeSkips: false, limit, exactLevel: level });
+    const cards = await this._enrichDiscoverCards(this._rowsToDiscoverCards(rows), language);
+    return cards.map((card) => ({
+      packKey: `single:${card.id}`,
+      packId: null,
+      level: (card.difficulty as number | null) ?? level,
+      sentence: card.exampleSentences?.[0] ?? null,
+      cards: [{ ...card, sorted: false, skipped: false }],
+    }));
+  }
+
+  /**
+   * Level visit order for the supply drift: the estimated level first, then outward by
+   * distance, biased UPWARD on ties (adapt-up — a level-3 pack is preferred over a
+   * level-1 pack for a level-2 user). e.g. level 2 → [2, 3, 1, 4, 5, 6].
+   */
+  private _levelDriftOrder(level: number): number[] {
+    const { maxLevel } = this._levelConfig('');
+    const levels: number[] = [];
+    for (let l = 1; l <= maxLevel; l++) levels.push(l);
+    return levels.sort((a, b) => {
+      const da = Math.abs(a - level);
+      const db = Math.abs(b - level);
+      if (da !== db) return da - db;
+      return b - a; // tie → higher level first (adapt upward)
+    });
+  }
+
+  /**
+   * Client-facing supply for the sort-pack flow. Serves AUTHORED packs first
+   * (nearest-level-first by packOrder, excluding seen packs and any the client still
+   * holds, dropping packs whose cards are ALL already sorted), then fills the rest with
+   * fallback packs-of-1. `excludePackKeys` are the packKeys the client currently holds
+   * so a replacement is never a duplicate. Skips are NOT auto-recycled (requirements §5.2).
+   */
+  async getNextPacks(
+    language: string,
+    userId: string,
+    excludePackKeys: string[] = [],
+    limit = 2
+  ): Promise<{ packs: SortPack[]; exhausted: boolean; level: number }> {
+    const level = await this.estimateLevel(userId, language);
+    const seen = await this._getSeenPacks(userId);
+
+    // Split the client-held packKeys into authored ids and single card ids.
+    const heldPackIds: number[] = [];
+    const heldSingleIds: number[] = [];
+    for (const key of excludePackKeys) {
+      if (key.startsWith('pack:')) heldPackIds.push(Number(key.slice(5)));
+      else if (key.startsWith('single:')) heldSingleIds.push(Number(key.slice(7)));
+    }
+
+    // LEVEL is honored before the authored-packs-first rule: walk levels nearest-first
+    // and, WITHIN each level, serve authored packs then fallback singles, before ever
+    // drifting to the next level. So a level-2 user exhausts ALL level-2 supply (packs
+    // AND singles) before seeing any level-1 or level-3 card.
+    const excludePackIds = [...seen, ...heldPackIds];
+    const excludeCardIds = [...heldSingleIds];
+    const packs: SortPack[] = [];
+
+    for (const lvl of this._levelDriftOrder(level)) {
+      if (packs.length >= limit) break;
+
+      // Authored packs at this level (over-fetch: some may drop as all-cards-sorted).
+      const remaining1 = limit - packs.length;
+      const candidates = await this.sortPacksDAL.fetchPacksAtLevel(language, lvl, excludePackIds, remaining1 * 3 + 5);
+      const authored = await this._hydrateAuthoredPacks(candidates, userId, language);
+      for (const p of authored) {
+        if (packs.length >= limit) break;
+        if (p.cards.some((c) => !c.sorted)) { // never serve an all-sorted pack (§4.5)
+          packs.push(p);
+          if (p.packId != null) excludePackIds.push(p.packId);
+          excludeCardIds.push(...p.cards.map((c) => c.id));
+        }
+      }
+
+      if (packs.length >= limit) break;
+
+      // Then fallback packs-of-1 at this SAME level.
+      const remaining2 = limit - packs.length;
+      const fallback = await this._buildFallbackPacks(language, userId, lvl, excludeCardIds, remaining2);
+      for (const p of fallback) {
+        packs.push(p);
+        excludeCardIds.push(...p.cards.map((c) => c.id));
+      }
+    }
+
+    return { packs, exhausted: packs.length === 0, level };
+  }
+
+  /**
+   * Skip a whole pack: record a discover_skips row for each remaining unsorted card
+   * (each independently recoverable on the Skipped page) and mark the pack seen (for
+   * authored packs). Signal-free — no vet rows, no level movement (requirements §5.1).
+   */
+  async skipPack(userId: string, cardIds: number[], language: string, packId: number | null = null): Promise<void> {
+    if (cardIds.length > 0) {
+      const client = await db.getClient();
+      try {
+        await client.query(`
+          INSERT INTO discover_skips ("userId", language, "cardId")
+          SELECT $1, $2, UNNEST($3::int[])
+          ON CONFLICT ("userId", language, "cardId") DO NOTHING
+        `, [userId, language, cardIds]);
+      } finally {
+        client.release();
+      }
+    }
+    if (packId != null) {
+      await this.markPackSeen(userId, packId);
+    }
+  }
+
+  /**
+   * All words the user has currently skipped in a language, newest-first, as
+   * DiscoverCards for the Skipped page grid. (No example-sentence enrichment — the grid
+   * only needs the card face.)
+   */
+  async listSkipped(userId: string, language: string): Promise<DiscoverCard[]> {
+    const det = this._dictTable(language);
+    const isEs = language === 'es';
+    const posCols = isEs ? `, de.pos, de."hasMultiplePos"` : `, NULL::varchar AS pos, FALSE AS "hasMultiplePos"`;
+    const client = await db.getClient();
+    try {
+      const result = await client.query(`
+        SELECT de.id, de.word1, de.word2, de.pronunciation, de.tone, de.definitions,
+               de.language, de.script, de."difficulty", de.breakdown, de.synonyms,
+               de."exampleSentences", de.expansion, de."expansionLiteralTranslation",
+               de."iconId"${posCols}
+        FROM discover_skips ds
+        JOIN ${det} de ON de.id = ds."cardId" AND de.language = ds.language
+        WHERE ds."userId" = $1 AND ds.language = $2
+        ORDER BY ds."createdAt" DESC
+      `, [userId, language]);
+      return this._rowsToDiscoverCards(result.rows);
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Recycle ALL of the user's skips for a language back into the normal supply (the
+   * Skipped page "Recycle all" action). Returns how many were cleared.
+   */
+  async recycleAllSkips(userId: string, language: string): Promise<number> {
+    const client = await db.getClient();
+    try {
+      const result = await client.query(
+        `DELETE FROM discover_skips WHERE "userId" = $1 AND language = $2 RETURNING id`,
+        [userId, language]
+      );
+      return result.rows.length;
     } finally {
       client.release();
     }

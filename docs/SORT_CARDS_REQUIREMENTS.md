@@ -60,10 +60,12 @@ This asymmetry drives two requirements:
 
 ## 4. Core interaction requirements
 
-### 4.1 One card at a time
-- The user considers exactly **one card** at a time ("on deck").
-- The user sorts it into one of the destinations (see §5), then the next card
-  appears.
+### 4.1 One pack at a time
+- The on-deck unit is a **sort pack**: one short sentence plus **up to 3 cards** to
+  sort (see §4.5), not a single bare card.
+- The user sorts each card in the pack independently into one of the destinations
+  (see §5). When **every** card in the pack has been sorted (or the pack is skipped),
+  the next pack appears.
 
 ### 4.2 The on-deck card is immutable
 - **Once a card is shown, it must not change** while the user is considering it.
@@ -87,26 +89,91 @@ This asymmetry drives two requirements:
   out**. A literal "all cards sorted" terminal state is an edge case, not a normal
   outcome.
 
+### 4.5 Sort packs (the on-deck unit)
+A **sort pack** groups a short sentence with the vocabulary it teaches:
+
+- **A sentence band.** One example sentence sits at the top of the on-deck area: the
+  foreign-language sentence together with its English translation. The band is
+  **context only** — it is never sorted. (For Chinese it is rendered with
+  per-character pronunciation; for Spanish, as plain text — see §3 and the
+  per-language note below.)
+- **Up to 3 cards, shown at once.** Below the band, up to three word cards are shown
+  simultaneously, all draggable. The user may sort them in **any order** into any
+  destination (§5).
+- **Two pack sources, one shape:**
+  - **Authored packs** — hand-curated for a level, carrying their **own authored
+    sentence + translation** and their chosen up-to-3 cards (the cards are words drawn
+    from that sentence). These are served first (§6.3).
+  - **System fallback packs** — when no authored pack is available, the system serves
+    a single word as a pack of **one**, using **that word's own first example
+    sentence** for the band.
+- **Already-sorted cards are locked.** A card already in the user's library (Add to
+  Learn Now *or* Already Learned) appears **undraggable** with a **"sorted!"**
+  watermark, so the user still sees the context but cannot re-sort it. A pack in which
+  **every** card is already sorted is **never served** — the system skips over it.
+- **Previously-skipped cards reappear draggable inside authored packs.** If a card the
+  user skipped is part of an authored pack, it is shown **draggable again** (not
+  locked) — the pack's context is a fresh chance to sort it. Re-sorting it there clears
+  its skip (§5.2).
+- **Per-language scope.** The sentence band is a pronunciation-annotated row for
+  Chinese and plain text for Spanish; the multi-card sorting behavior is otherwise
+  identical across languages.
+- **A pack is shown at most once.** Once the user has **finished** a pack (every card
+  sorted) **or skipped** it, that pack never appears again — regardless of whether its
+  cards were sorted or skipped. (This is the per-user "seen packs" record; it applies
+  to authored packs. System fallback packs-of-1 are already de-duplicated by the
+  individual card's sorted/skipped state.)
+
+### 4.6 Undo
+- The user can **undo** recent actions one at a time. An undoable **action** is a
+  single card outcome: a card sorted into a destination, **or** a card skipped. A Skip
+  press skips every remaining unsorted card in the pack, so it enqueues **one undoable
+  action per card skipped** (both sorts and skips are undoable by the same mechanism).
+- The **3** most recent card actions are undoable (a pack holds at most 3 cards).
+- Undo reverses exactly one action: it removes that card's library/skip record and
+  **re-shows the card draggable**. If reversing it requires a pack that has already
+  advanced off-deck (e.g. undoing a Skip), that pack is brought back on deck; if the
+  action had marked the pack as **seen** (§4.5), undo clears that mark too.
+
 ---
 
-## 5. Sort destinations
+## 5. Sort destinations and Skip
 
-The user sorts each card into one of these destinations:
+Each card is dragged into one of **two** destinations:
 
 | Destination | Meaning | Effect |
 | --- | --- | --- |
 | **Add to Learn Now** | "I want to learn this" — the user **does not yet know** this card. | Card enters the user's library, and counts as evidence about the user's level (they did not know this card). |
 | **Already Learned** | "I already know this." | Card is **stamped as mastered immediately**, and counts as evidence the user's level is at or above this card. |
-| **Skip for now** | "Not now." | Card is **deferred** — see §5.1. Has **no effect** on the level estimate. |
 
-### 5.1 Skip-for-now behavior
-- A skipped card is **not shown again** while the user still has **unsorted cards at
-  their level**.
-- Skipped cards only **re-enter** the pool once the user has run out of in-level
-  cards to see (see §6.3).
+**Skip is no longer a destination** — it is a de-emphasized action (§5.1), deliberately
+removed from the drag targets so the user reaches for a real destination first.
+
+### 5.1 Skip is a de-emphasized action, not a drag target
+- Skip is a single **button in the top-right corner** of the sort screen — not a drag
+  bucket. The intent is to **de-emphasize** skipping as an option.
+- Pressing Skip **defers all remaining unsorted cards in the current pack** at once,
+  then advances to the next pack. (Already-sorted/locked cards in the pack are
+  unaffected — they were never the user's to sort.)
+- Each deferred card is recorded **individually**, so it appears on its own in the
+  Skipped cards page (§7) and can be brought back one at a time.
 - A skip carries **no level signal**. Users skip for any number of unknown reasons
   (not interested, distracted, undecided), so a skip must never move the level
   estimate up or down.
+
+### 5.2 When skipped cards come back
+Skipped cards do **not** re-enter the sort flow automatically (this **replaces** the
+earlier "recycle once in-level cards run out" rule). A skipped card returns only when
+the user **chooses** to bring it back, in one of three ways:
+
+- **Recycle all** — a button in the Skipped cards page header (§7) clears the user's
+  skips for the language, returning all of them to the normal supply as fresh
+  single-card fallback packs.
+- **Sort it individually** — opening a skipped card's detail page (§7) and choosing
+  Add to Learn Now / Already Learned sorts it directly and removes it from the skipped
+  list.
+- **Inside an authored pack** — a skipped card that happens to belong to an authored
+  pack is shown draggable again (§4.5); sorting it there also clears its skip.
 
 ---
 
@@ -127,15 +194,17 @@ The user sorts each card into one of these destinations:
 - Cards too easy or too hard relative to the estimate are not served during normal
   operation.
 
-### 6.3 Running out of in-level cards
-- When the user has **sorted all cards at their level**, the flow should **offer
-  cards above and below their level** so the user always has something to sort
-  (§4.4).
-- When offering these out-of-level cards, the flow must serve cards **as close to
-  the user's estimated level as possible** — exhaust the nearest levels first and
-  only reach further out as those are depleted. The user should drift away from their
+### 6.3 Supply order and running out of in-level cards
+- **At the estimated level, authored packs are served first** (in their curation
+  order), then **system fallback single-card packs** for the remaining un-sorted,
+  un-skipped words at that level (§4.5).
+- When the user has **sorted all packs at their level**, the flow **offers packs from
+  adjacent levels** so the user always has something to sort (§4.4), serving them **as
+  close to the user's estimated level as possible** — exhaust the nearest levels first
+  and only reach further out as those deplete. The user should drift away from their
   estimated level as gradually as the available cards allow.
-- Previously skipped cards (§5.1) become eligible again at this point.
+- Previously skipped cards do **not** become eligible again here. They re-enter the
+  flow only by explicit user action (§5.2), never automatically.
 
 ### 6.4 Adaptation must not disturb the on-deck card
 - Re-estimation runs in the background and changes which cards are **served next**.
@@ -144,25 +213,57 @@ The user sorts each card into one of these destinations:
 
 ---
 
-## 7. Acceptance criteria (testable)
+## 7. Skipped cards page
+
+- A dedicated page lists **all words the user has currently skipped** in the active
+  language, modeled on the Mastered cards page. It is reachable from the **Discover
+  hub menu** (a row alongside Sort Cards).
+- **Tapping a skipped card** opens a small **action popup** with three choices —
+  **Cancel**, **Mark as Already Learned**, **Mark as Learn Now**. Choosing a
+  destination sorts the card into the library and **removes it from the skipped list**;
+  Cancel dismisses the popup with no change. (It does **not** navigate to the card
+  detail page.)
+- The page header carries a **Recycle all** action that returns *every* skipped card to
+  the normal sort supply at once (§5.2).
+- The list is **per-language** (§3) and shows only currently-skipped cards: a card that
+  has since been sorted (by any path) no longer appears.
+
+---
+
+## 8. Acceptance criteria (testable)
 
 1. **Cold start:** a brand-new user entering the flow is shown the easiest cards, not
    hard ones.
 2. **Per-language isolation:** a user's progress/level in one language does not affect
    the cards or level shown in another.
-3. **Immutability:** while a card is on deck, no background event changes or removes
-   it; it leaves the screen only via a user sort.
-4. **No wait:** after sorting, the next card is on screen with no perceptible network
-   delay; the client always has ≥1 card ready behind the on-deck card.
+3. **Immutability:** while a pack is on deck, no background event changes, reorders, or
+   removes its cards; a card leaves the pack only via a user sort, and the pack
+   advances only when all its cards are sorted or it is skipped.
+4. **No wait:** after a pack is finished, the next pack is on screen with no perceptible
+   network delay; the client always has ≥1 pack ready behind the on-deck pack.
 5. **Already Learned:** sorting a card as already learned stamps it mastered
    immediately.
-6. **Skip is signal-free:** skipping cards, in any quantity, does not change the
-   user's level estimate.
-7. **Upward adaptation:** after the user sorts a run of cards indicating a higher
-   level, subsequent cards move up toward that level — without overshooting into
+6. **Skip is de-emphasized and signal-free:** Skip is a header button (not a drag
+   target); pressing it defers all remaining unsorted cards in the pack and never
+   changes the user's level estimate, in any quantity.
+7. **Pack composition:** a pack shows its sentence band plus up to 3 cards; cards
+   already in the library render locked with a "sorted!" watermark; a pack whose cards
+   are all already sorted is never served.
+8. **Authored-first supply:** at a level, authored packs are served before system
+   fallback single-card packs.
+9. **Upward adaptation:** after the user sorts a run of cards indicating a higher
+   level, subsequent packs move up toward that level — without overshooting into
    persistently-too-hard territory.
-8. **Out of in-level cards:** when the in-level pool is exhausted, the user is served
-   above/below-level cards (and previously skipped cards) rather than hitting a dead
-   end.
-9. **Never empty:** under normal data volumes the user can sort indefinitely without
-   reaching an "all sorted" state.
+10. **Out of in-level cards:** when the in-level pool is exhausted, the user is served
+    nearest adjacent-level packs rather than hitting a dead end.
+11. **Skips never auto-return:** skipped cards re-enter the flow only via the Skipped
+    page (Recycle all / individual sort) or when shown inside an authored pack — never
+    automatically.
+12. **Skipped page truthfulness:** a skipped card appears on the Skipped page until it
+    is sorted (incl. via the tap popup) or recycled, then disappears from it.
+13. **Pack shown once:** a pack the user has finished or skipped is never served again.
+14. **Per-card undo:** undo reverses one card action at a time — a sort **or** a skip —
+    up to 3 actions back, restoring the card (bringing its pack back on deck if needed)
+    and clearing any seen mark.
+15. **Never empty:** under normal data volumes the user can sort indefinitely without
+    reaching an "all sorted" state.

@@ -35,12 +35,12 @@ import { SIZE } from "../theme/scale";
 // bare-integer scale '1'..'6' (migration 79); for zh these are HSK levels.
 const getDifficultyIcon = (difficulty: DifficultyLevel) => {
     switch (difficulty) {
-        case '1': return <LooksOneIcon fontSize="small" />;
-        case '2': return <LooksTwoIcon fontSize="small" />;
-        case '3': return <Looks3Icon fontSize="small" />;
-        case '4': return <Looks4Icon fontSize="small" />;
-        case '5': return <Looks5Icon fontSize="small" />;
-        case '6': return <Looks6Icon fontSize="small" />;
+        case 1: return <LooksOneIcon fontSize="small" />;
+        case 2: return <LooksTwoIcon fontSize="small" />;
+        case 3: return <Looks3Icon fontSize="small" />;
+        case 4: return <Looks4Icon fontSize="small" />;
+        case 5: return <Looks5Icon fontSize="small" />;
+        case 6: return <Looks6Icon fontSize="small" />;
         default: return <LooksOneIcon fontSize="small" />; // Default fallback
     }
 };

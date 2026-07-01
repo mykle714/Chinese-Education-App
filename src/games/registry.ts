@@ -24,6 +24,13 @@ export const GAME_REGISTRY: GameDef[] = [
         // requiresAuth — that just made the row invisible while debugging.
         Component: lazy(() => import("./bubble-match/BubbleMatchPage")),
     },
+    {
+        gameId: "word-search",
+        title: "Word Search",
+        subtitle: "Hunt your vocab words hidden in a grid of characters",
+        route: "/games/word-search",
+        Component: lazy(() => import("./word-search/WordSearchPage")),
+    },
 ];
 
 /** Routes for every registered game; consumed by `MOBILE_DEMO_PATHS`. */

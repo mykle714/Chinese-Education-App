@@ -13,6 +13,7 @@ export const COLORS = {
     background: "#FAFAFB",
     header: "#F2F2F4",
     card: "#D8D8DC",
+    cardBeige: "#F5EBE0",        // light beige flashcard fill (fie "card" menu; shares the infoCard beige)
     infoCard: "#F5EBE0",
     sectionCard: "#EDE7DC",
     iconBg: "#F1ECE3",
@@ -36,6 +37,7 @@ export const COLORS = {
     greenAccent: "#BAF2D8",
     blueMain: CATEGORY_COLORS.Mastered,     // #779BE7 — Mastered
     blueAccent: "#BAD7F2",
+    purpleAccent: "#D8BAF2",                // pastel purple, same accent family (fie "card" fill)
     hskChip: "#779BE7",
 
     // ── Streak / activity ─────────────────────────────────────────

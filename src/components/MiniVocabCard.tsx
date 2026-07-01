@@ -5,6 +5,7 @@ import CardIconLayer from "../cardIcons/CardIconLayer";
 import { isAdvancedLayout } from "../cardIcons/cardIconLayout";
 import { stripParentheses } from "../utils/definitionUtils";
 import { resolveTextColor } from "../utils/cardTextColor";
+import { resolveCardColor } from "../utils/cardColor";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import RepeatIcon from "@mui/icons-material/Repeat";
 import type { VocabEntry } from "../types";
@@ -40,6 +41,9 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
     // colors the flashcard face uses so the thumbnail matches. Undefined = theme default.
     const characterColor = resolveTextColor(entry.textColors?.foreign);
     const definitionColor = resolveTextColor(entry.textColors?.english);
+    // Per-card background fill (migration 94): tint the thumbnail to match the flashcard face.
+    // Undefined = the default thumbnail color.
+    const faceBg = resolveCardColor(entry.cardColor) ?? COLORS.card;
     return (
         <Box
             className="mini-vocab-card"
@@ -47,7 +51,7 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
             sx={{
                 width: 92,
                 height: 132,
-                backgroundColor: COLORS.card,
+                backgroundColor: faceBg,
                 borderRadius: '12px',
                 boxShadow: '2px 4px 4px rgba(0, 0, 0, 0.25)',
                 cursor: onClick ? 'pointer' : 'default',

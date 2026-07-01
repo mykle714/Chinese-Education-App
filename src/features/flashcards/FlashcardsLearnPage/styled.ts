@@ -303,6 +303,13 @@ export const MoreInfoPill = styled(Box, {
 // so that height: 100% resolves correctly (flex-grown heights are not definite in CSS).
 // containerType: "size" makes this the @container query target for CardAspectWrapper:
 // the wrapper switches which axis it fills based on this element's aspect ratio.
+// Card-slot vertical padding in the NON-pushed (centered) layout. The push-down keeps the
+// SUM constant so the card never resizes (see DraggableCardContainer below). Exported so the
+// toolbar-overlap detector (useToolbarOverlap) can compute where the card's top sits when
+// centered without duplicating these magic numbers.
+export const CARD_SLOT_TOP_PAD = 48; // top padding when centered
+export const CARD_SLOT_VPAD_SUM = 96; // top + bottom padding sum (INVARIANT across push states)
+
 export const DraggableCardContainer = styled(Box, {
     shouldForwardProp: (prop) => prop !== "pushDown",
 })<{ pushDown?: boolean }>(({ pushDown }) => ({
@@ -310,18 +317,36 @@ export const DraggableCardContainer = styled(Box, {
     inset: 0,
     // Normally the card is centered with symmetric padding. In ADVANCED edit mode the
     // toolbar grows to three rows and overlays the top of the content area, so we push
-    // the card DOWN with a large top inset that clears the toolbar with a healthy gap,
-    // and keep a comfortable bottom margin. (Basic mode keeps its single static row, so
-    // it stays centered.) The padding change is TRANSITIONED so the card glides down/up
-    // rather than snapping; as it slides down it paints over the greyed More Info pill.
-    padding: pushDown ? "148px 40px 28px" : "48px 40px",
+    // the card DOWN to clear as much of it as possible.
+    //
+    // CRITICAL — the push-down must NOT resize the card (the fie must show the card at its
+    // exact flp size). Because this element is the `@container` sizing target
+    // (containerType:"size") and the CardAspectWrapper fills its padded content box, the
+    // card's height-bound size is `containerHeight − (topPad + botPad)`. So we keep the
+    // vertical padding SUM constant at 96px and only REDISTRIBUTE it downward
+    // (48/48 → 72/24) instead of growing it. Because the sum is unchanged the card keeps the
+    // identical size it has on flp on every viewport (previously the old 148/28 grew the sum
+    // to 176px and shrank any height-bound card by 80px).
+    //
+    // The card is also BOTTOM-ANCHORED while pushed (alignItems flex-end), so its bottom
+    // margin is a constant 24px (= botPad) on EVERY screen — matching the More Info pill's own
+    // `bottom: 24` (of ContentArea). The card's bottom edge therefore lands exactly at the
+    // pill's bottom edge, so it slides down JUST far enough to cover the greyed pill and no
+    // further. Centering alone was not enough: on a width-bound viewport with vertical slack a
+    // centered card floats with a large bottom margin and never reaches the pill. flex-end only
+    // moves the card (never resizes it), so the flp-size guarantee holds. Basic mode keeps the
+    // symmetric 48/48 + center so the card stays centered. The padding change is TRANSITIONED
+    // so the card glides down/up rather than snapping. Both states keep the vertical sum at
+    // CARD_SLOT_VPAD_SUM (48+48 = 72+24 = 96) so the card size is identical either way.
+    padding: pushDown ? "72px 40px 24px" : `${CARD_SLOT_TOP_PAD}px 40px`,
     // Keep this in lockstep with the toolbar's drop / adv-rows reveal (CardEditToolbar)
     // so the card and toolbar move together — same duration + easing curve.
     transition: "padding 0.3s cubic-bezier(0.22, 1, 0.36, 1)",
     boxSizing: "border-box",
     perspective: "1200px",
     display: "flex",
-    alignItems: "center",
+    // Bottom-anchor when pushed (covers the More Info pill on all viewports); center otherwise.
+    alignItems: pushDown ? "flex-end" : "center",
     justifyContent: "center",
     touchAction: "none",
     userSelect: "none",

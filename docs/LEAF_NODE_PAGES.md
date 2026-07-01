@@ -120,17 +120,26 @@ routes. So a node page slides horizontally while the footer stays put; entering 
 leaf page slides the page up while the footer drops away.
 
 `FooterPresenter` holds the single source of truth for which routes show the
-footer (and which tab is active): `/` (home), `/flashcards/decks`, `/discover`,
-`/account`, `/games`, `/community`, `/flashcards/mastered`. Every other route (all leaf pages,
-login, etc.) is absent → the footer slides out. `MobileTabScreen` no longer
-renders `MobileFooter` itself (it still reserves `FLOATING_FOOTER_CLEARANCE` and
-uses `activePage` for the header badge).
+footer (and which tab is active). Two match modes:
+
+- **Exact** (`FOOTER_ROUTES`): `/` (home), `/flashcards/decks`, `/discover`,
+  `/account`, `/games`, `/community`, `/flashcards/mastered`.
+- **Prefix** (`FOOTER_ROUTE_PREFIXES`, for parameterized node routes): `/discover/sort/`
+  and `/discover/skipped/` (both → `discover` tab). Because these paths carry a
+  `:language` segment, an exact-key lookup would miss them and the footer would slide
+  away — so node pages reached via a parameterized path must be registered here.
+  Keep in sync with `NODE_PREFIXES` in `utils/pageTransition.ts`.
+
+Every other route (all leaf pages, login, etc.) is absent → the footer slides out.
+`MobileTabScreen` no longer renders `MobileFooter` itself (it still reserves
+`FLOATING_FOOTER_CLEARANCE` and uses `activePage` for the header badge).
 
 ## Current classification
 
 | Route | Page | Archetype |
 |---|---|---|
-| `/discover/sort/:language` | `SortCardsPage` | Leaf |
+| `/discover/sort/:language` | `SortCardsPage` | Node |
+| `/discover/skipped/:language` | `SkippedCardsPage` | Node |
 | `/dictionary` | `DictionaryPage` | Leaf |
 | `/reader` | `ReaderPage` | Leaf |
 | `/tester-dashboard` | `TesterDashboardPage` | Leaf |

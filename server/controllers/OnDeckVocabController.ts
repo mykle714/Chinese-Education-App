@@ -137,4 +137,39 @@ export class OnDeckVocabController {
       handleControllerError(error, res, 'OnDeckVocabController.getGamePool');
     }
   };
+
+  /**
+   * Build the Word Search game grid.
+   * GET /api/onDeck/word-search-grid?Unfamiliar=2&Target=10&Comfortable=6&Mastered=2
+   * Same requested distribution + fallback semantics as the bubble-match pool,
+   * plus a substring de-dup pass and snaking grid generation. Returns
+   * { grid, words, rows, cols, total, available, sufficient, reason? }.
+   */
+  getWordSearchGrid = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
+      const distribution: Record<string, number> = {};
+      for (const cat of OnDeckVocabController.GAME_POOL_CATEGORIES) {
+        const raw = req.query[cat];
+        if (raw != null) {
+          const n = parseInt(String(raw), 10);
+          if (Number.isFinite(n) && n > 0) distribution[cat] = n;
+        }
+      }
+      if (Object.keys(distribution).length === 0) {
+        distribution.Unfamiliar = 2;
+        distribution.Target = 10;
+        distribution.Comfortable = 6;
+        distribution.Mastered = 2;
+      }
+
+      const language = await getUserLanguage(userId);
+      const result = await this.onDeckVocabService.getWordSearchGrid(userId, language, distribution);
+      res.json(result);
+    } catch (error: any) {
+      handleControllerError(error, res, 'OnDeckVocabController.getWordSearchGrid');
+    }
+  };
 }

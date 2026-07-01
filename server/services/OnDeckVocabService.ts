@@ -8,6 +8,12 @@ import { dictTableForLanguage } from '../dal/shared/dictTable.js';
 import { vetTableForLanguage, vetReadFrom } from '../dal/shared/vetTable.js';
 import { DICT_COLS, DICT_JOIN } from '../dal/shared/dictJoin.js';
 import { ttsService } from './TTSService.js';
+import {
+  generateWordSearchGrid,
+  type GridCell,
+  type WordSearchInput,
+  type WordSearchGrid,
+} from './wordSearchGrid.js';
 
 // Difficulty-targeted study modes launched from the decks page (Easy/Hard
 // buttons). Each mode shapes BOTH the initial working-loop distribution and the
@@ -621,6 +627,211 @@ export class OnDeckVocabService {
       const withAudio = await this.prewarmAudio(enriched);
 
       return { cards: withAudio, requested: { ...distribution }, available, total, sufficient };
+    } finally {
+      client.release();
+    }
+  }
+
+  // ---- Word Search game ----------------------------------------------------
+
+  // Grid dimensions: 14 columns wide × 12 rows tall (portrait play area).
+  // See docs/WORD_SEARCH_GAME.md §2.
+  static readonly WORD_SEARCH_ROWS = 12;
+  static readonly WORD_SEARCH_COLS = 14;
+  // Cap on how many library candidates we pull per category up front. Word Search
+  // needs a working set to run the substring de-dup / replacement loop against;
+  // this bounds memory for users with very large libraries.
+  private static readonly WORD_SEARCH_CANDIDATE_CAP = 500;
+
+  /**
+   * Build the Word Search game payload: a clean 20-word set (no word's Chinese
+   * text is a substring of another's) hidden as snaking paths in a 12×16 grid of
+   * filler characters.
+   *
+   * Selection reuses the bubble-match pool shape (requested distribution + the
+   * same fallback top-up order), then adds a de-dup pass unique to this game:
+   *
+   *   1. Assemble `total` cards (distribution → fallback top-up).
+   *   2. While any selected word's `entryKey` is a substring of another's, drop
+   *      the shorter word and pull a replacement — same category first, then the
+   *      fallback order — from the remaining library candidates. Repeat until the
+   *      set is clean or the library is exhausted.
+   *   3. If a clean set of `total` can't be assembled, return `sufficient: false`
+   *      so the client can block entry with the "20 distinct-character cards"
+   *      message.
+   *
+   * The final words are enriched + TTS-prewarmed (so the found-word audio is
+   * instant), the empty cells are flooded with random single characters pulled
+   * from `dictionaryentries_zh` (real chars carry real pinyin, so filler cells
+   * are indistinguishable from word cells), and the snaking grid is generated.
+   *
+   * Word Search is Chinese-only for now (the grid is a cpcd character lattice);
+   * non-`zh` languages return `sufficient: false` with a language note.
+   */
+  async getWordSearchGrid(
+    userId: string,
+    language: string,
+    distribution: Record<string, number>
+  ): Promise<{
+    grid: GridCell[][] | null;
+    words: WordSearchGrid['words'];
+    rows: number;
+    cols: number;
+    total: number;
+    available: Record<string, number>;
+    sufficient: boolean;
+    reason?: string;
+  }> {
+    if (!userId) {
+      throw new ValidationError('User ID is required');
+    }
+
+    const rows = OnDeckVocabService.WORD_SEARCH_ROWS;
+    const cols = OnDeckVocabService.WORD_SEARCH_COLS;
+    const total = Object.values(distribution).reduce((sum, n) => sum + n, 0);
+
+    const countCategories = Array.from(
+      new Set([...Object.keys(distribution), ...OnDeckVocabService.GAME_FALLBACK_ORDER])
+    );
+    const available = await this.getCategoryCounts(userId, language, countCategories);
+    const emptyResult = { grid: null, words: [], rows, cols, total, available };
+
+    // The grid is a Chinese-character lattice with per-character pinyin, so the
+    // game only makes sense for zh. Block other languages cleanly.
+    if (language !== 'zh') {
+      return { ...emptyResult, sufficient: false, reason: 'language' };
+    }
+
+    const client = await db.getClient();
+    try {
+      // Per-category shuffled candidate queues. We pop from these both for the
+      // initial selection and for substring replacements, so a card is never
+      // reused across passes.
+      const queues: Record<string, VocabEntry[]> = {};
+      for (const category of countCategories) {
+        const result = await client.query<VocabEntry>(`
+          SELECT ve.*, ${DICT_COLS}
+          FROM ${vetReadFrom(language)} ${DICT_JOIN}
+          WHERE ve."userId" = $1
+          AND ve."language" = $4
+          AND ve."starterPackBucket" = 'library'
+          AND ve.category = $2
+          ORDER BY RANDOM()
+          LIMIT $3
+        `, [userId, category, OnDeckVocabService.WORD_SEARCH_CANDIDATE_CAP, language]);
+        queues[category] = result.rows;
+      }
+
+      const selectedIds = new Set<number>();
+      const selected: VocabEntry[] = [];
+
+      // Pop up to `limit` unused cards from one category queue into `selected`.
+      const pull = (category: string, limit: number): void => {
+        const queue = queues[category] ?? [];
+        while (limit > 0 && queue.length > 0) {
+          const card = queue.shift()!;
+          if (selectedIds.has(card.id)) continue;
+          selectedIds.add(card.id);
+          selected.push(card);
+          limit--;
+        }
+      };
+
+      // Pull ONE replacement for a dropped word, preferring `preferredCategory`
+      // then the fallback order. Returns the added card, or null if the whole
+      // library is exhausted.
+      const pullReplacement = (preferredCategory: string): VocabEntry | null => {
+        const order = [preferredCategory, ...OnDeckVocabService.GAME_FALLBACK_ORDER];
+        for (const category of order) {
+          const before = selected.length;
+          pull(category, 1);
+          if (selected.length > before) return selected[selected.length - 1];
+        }
+        return null;
+      };
+
+      // 1. Fill each requested bucket, then 2. top up to `total` from fallbacks.
+      for (const [category, count] of Object.entries(distribution)) pull(category, count);
+      for (const category of OnDeckVocabService.GAME_FALLBACK_ORDER) {
+        if (selected.length >= total) break;
+        pull(category, total - selected.length);
+      }
+
+      // 3. Substring de-dup. Find any pair where one entryKey is contained in the
+      //    other, drop the shorter (substring) word, and replace it. Re-scan until
+      //    clean or no replacement is available. The iteration cap is a safety net;
+      //    the natural terminator is the queues emptying.
+      const findSubstringVictim = (): number => {
+        for (let i = 0; i < selected.length; i++) {
+          for (let j = 0; j < selected.length; j++) {
+            if (i === j) continue;
+            // selected[i] is contained in selected[j] → drop i (the shorter/equal one).
+            if (selected[j].entryKey.includes(selected[i].entryKey)) return i;
+          }
+        }
+        return -1;
+      };
+
+      let iterations = 0;
+      const MAX_DEDUP_ITERATIONS = 1000;
+      while (iterations++ < MAX_DEDUP_ITERATIONS) {
+        const victimIdx = findSubstringVictim();
+        if (victimIdx === -1) break; // clean set
+
+        const victim = selected[victimIdx];
+        selected.splice(victimIdx, 1);
+        selectedIds.delete(victim.id);
+
+        const replacement = pullReplacement(victim.category);
+        if (!replacement) break; // library exhausted — can't reach a clean `total`
+      }
+
+      const clean = findSubstringVictim() === -1;
+      if (!clean || selected.length < total) {
+        return { ...emptyResult, sufficient: false, reason: 'insufficient-distinct' };
+      }
+
+      // Enrich + prewarm audio for the final set (found-word narration is instant).
+      const enriched = await this.enrichEntriesPipeline(selected.slice(0, total), language);
+      const withAudio = await this.prewarmAudio(enriched);
+
+      // Filler pool: random single characters from the Chinese dictionary. Each
+      // carries a real reading, so a filler cell is indistinguishable from a word
+      // cell when pinyin is toggled on.
+      const wordChars = withAudio.reduce((sum, w) => sum + [...w.entryKey].length, 0);
+      const fillerNeeded = rows * cols - wordChars;
+      const fillerResult = await client.query<{ word1: string; pronunciation: string | null }>(`
+        SELECT word1, pronunciation
+        FROM dictionaryentries_zh
+        WHERE language = 'zh' AND char_length(word1) = 1
+        ORDER BY RANDOM()
+        LIMIT $1
+      `, [Math.max(fillerNeeded, 50)]);
+      const fillerPool: GridCell[] = fillerResult.rows.map((r) => ({
+        char: r.word1,
+        pinyin: (r.pronunciation ?? '').trim(),
+      }));
+      if (fillerPool.length === 0) {
+        // No single-char dictionary rows to draw from — can't build a grid.
+        return { ...emptyResult, sufficient: false, reason: 'no-filler' };
+      }
+
+      const inputs: WordSearchInput[] = withAudio.map((w) => ({
+        entryKey: w.entryKey,
+        pinyin: w.pronunciation ?? '',
+        definition: w.definition ?? '',
+      }));
+      const generated = generateWordSearchGrid(inputs, fillerPool, rows, cols);
+
+      return {
+        grid: generated.grid,
+        words: generated.words,
+        rows,
+        cols,
+        total,
+        available,
+        sufficient: true,
+      };
     } finally {
       client.release();
     }

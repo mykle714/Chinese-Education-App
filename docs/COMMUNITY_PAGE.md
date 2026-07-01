@@ -32,7 +32,7 @@ Both feeds share the same tap→zoom→vote/apply flow.
   in two mirrored forms — SQL (`IS_ADVANCED_LAYOUT`) and JS (`isAdvancedLayout`), both in
   `server/dal/shared/advancedLayout.ts`, mirroring the client
   `src/cardIcons/cardIconLayout.ts` (`isAdvancedLayout`/`isDefaultPlacement`,
-  constants `x=0.5, y=0.3333, scale∈{1,1.2}, rotation=0, !flipX`).
+  constants `x=0.5, y ∈ {≈0.34624 grid-aligned, 0.3333 legacy}, scale∈{1.25,1.2,1}, rotation=0, !flipX`).
 - **Sharing is automatic** — every advanced layout is eligible; there is no opt-in flag/column.
 - **"This week"** = most-recent **Sunday 04:00 in the viewer's local timezone**, the same
   boundary the wins/weeklies system uses. The expression is shared at

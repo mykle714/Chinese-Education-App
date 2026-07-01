@@ -3,7 +3,7 @@ import { Box } from "@mui/material";
 import { useGesture } from "@use-gesture/react";
 import OpenWithIcon from "@mui/icons-material/OpenWith";
 import LockIcon from "@mui/icons-material/Lock";
-import type { IconLayoutItem, SnapConfig } from "../../../types";
+import type { IconLayoutItem, SnapConfig, TextBlock, TextLayoutItem } from "../../../types";
 import {
     iconImageUrl,
     iconItemStyle,
@@ -16,11 +16,28 @@ import {
     snapRotation,
     BASE_ICON_FRAC,
 } from "../../../cardIcons/cardIconLayout";
+import {
+    clampTextScale,
+    sanitizeTextRotation,
+    clampTextCenterFully,
+    snapTextScale,
+    textItemTransform,
+    TEXT_BLOCKS,
+} from "../../../cardIcons/cardTextLayout";
 
 /** Live snap toggles fed from the toolbar — each quantizes its gesture to a discrete
  *  increment (move grid / 22.5° rotation / 5%-of-width size). Canonical type lives in
  *  ../../types; re-exported here for the editor modules. See docs/CARD_ICON_LAYOUT.md. */
 export type { SnapConfig };
+
+/** A unified canvas selection target: either an icon (by index into `layout`) or one of the
+ *  two movable text blocks. The page maps this onto its mutually-exclusive `selectedIcon` /
+ *  `selectedText` state. See docs/CARD_ICON_LAYOUT.md "Movable text". */
+export type CanvasTarget = { kind: "icon"; index: number } | { kind: "text"; block: TextBlock };
+
+/** The two text blocks the canvas positions while editing — both always present (the page
+ *  seeds absent saved blocks to their default). */
+export type TextCanvasLayout = { foreign: TextLayoutItem; english: TextLayoutItem };
 
 /**
  * CardIconCanvas — the interactive editor for a custom flashcard icon arrangement,
@@ -73,14 +90,32 @@ export type { SnapConfig };
 const CardIconCanvas: React.FC<{
     layout: IconLayoutItem[];
     onChange: (layout: IconLayoutItem[]) => void;
-    selected: number | null;
-    onSelect: (i: number | null) => void;
+    // Selection is split into two mutually-exclusive page-owned pieces so the rest of this
+    // file's (heavily tuned) ICON gesture logic keeps operating on a plain icon index. The
+    // canvas reports selection changes through the unified `onSelectTarget`.
+    selectedIcon: number | null;
+    selectedText: TextBlock | null;
+    onSelectTarget: (t: CanvasTarget | null) => void;
     onInteractionStart: () => void;
     // Live snap toggles: while a toggle is on, the matching gesture quantizes to its
     // discrete increment (move grid / 22.5° rotation / 5%-of-width size).
     snap: SnapConfig;
-}> = ({ layout, onChange, selected, onSelect, onInteractionStart, snap }) => {
+    // ── Movable text (migration 91) ───────────────────────────────────────────
+    // The two back-face text blocks the canvas positions/edits, and the live content to
+    // render inside each draggable box (the real cpcd / English nodes, so it's WYSIWYG). The
+    // static renderer suppresses its own back-face text while the canvas is mounted.
+    textLayout: TextCanvasLayout;
+    onTextChange: (next: TextCanvasLayout) => void;
+    foreignNode: React.ReactNode;
+    englishNode: React.ReactNode;
+}> = ({ layout, onChange, selectedIcon, selectedText, onSelectTarget, onInteractionStart, snap, textLayout, onTextChange, foreignNode, englishNode }) => {
     const rootRef = useRef<HTMLDivElement | null>(null);
+    // Alias the icon selection back to the names the existing icon gesture code uses, so none
+    // of that logic below needs to change. `onSelect(i)` reports an ICON selection (or null to
+    // clear everything); text selection is reported separately via onSelectTarget.
+    const selected = selectedIcon;
+    const onSelect = (i: number | null) =>
+        onSelectTarget(i === null ? null : { kind: "icon", index: i });
 
     // True only WHILE the selected icon is being actively manipulated (drag / pinch /
     // handle-resize). The selected icon floats to the front (zIndex 9999) during that
@@ -94,6 +129,17 @@ const CardIconCanvas: React.FC<{
     // we switch selection to — so a drag that switches selection mid-stroke still acts on
     // the new target THIS gesture, without waiting for the async `selected` state to commit.
     const gestureTargetRef = useRef<number | null>(null);
+
+    // Latches true the moment a gesture ever sees two fingers (a pinch), and stays true until
+    // that whole gesture ends (all fingers up). While latched, the drag handlers refuse to
+    // translate. This closes the "resize repositions on release" bug: the drag recognizer is
+    // driven by the pinch's FIRST finger, so its `touches >= 2` short-circuit holds only WHILE
+    // both fingers are down — as the fingers lift, `touches` drops below 2 for the final drag
+    // frame(s) and, with no drag `memo` yet, `beginDragMotion` would start a fresh drag and
+    // apply the first finger's ENTIRE accumulated pinch movement (plus the last-frame clamp),
+    // jumping the icon. The latch makes the post-pinch tail a no-op. Reset on each drag `first`
+    // frame and cleared on the final frame, so a brand-new pure drag always starts unlatched.
+    const pinchLatchRef = useRef(false);
 
     // Drives the "denied" shake on a LOCKED icon: when a translate / resize / rotate gesture
     // is attempted on a locked icon (and therefore frozen), we shake that icon to signal the
@@ -280,8 +326,12 @@ const CardIconCanvas: React.FC<{
                 // phantom snapshots first). We snapshot on the first REAL movement in onDrag
                 // instead. See docs/CARD_ICON_LAYOUT.md.
             },
-            onDrag: ({ args: [i], xy: [px, py], movement: [mx, my], last, tap, touches, memo }) => {
-                if (touches >= 2) return memo; // pinch's stray finger — no translate/select
+            onDrag: ({ args: [i], xy: [px, py], movement: [mx, my], first, last, tap, touches, memo }) => {
+                if (first) pinchLatchRef.current = false; // fresh gesture starts unlatched
+                if (touches >= 2) { pinchLatchRef.current = true; return memo; } // pinch's stray finger — no translate/select
+                // A pinch happened this gesture — ignore the single-finger tail so lifting fingers
+                // doesn't start a fresh drag from the first finger's accumulated pinch movement.
+                if (pinchLatchRef.current) { if (last) pinchLatchRef.current = false; return memo; }
                 // A tap (no real movement) selects an icon — locked icons included (only
                 // their dragging is frozen, not their selectability). Among overlapping
                 // icons under the tap, prefer the topmost UNLOCKED one (pickTapTarget), only
@@ -313,7 +363,7 @@ const CardIconCanvas: React.FC<{
                 return m;
             },
         },
-        { drag: { filterTaps: true } }
+        { drag: { filterTaps: true, threshold: 1, tapsThreshold: 1 } }
     );
 
     // The selected icon's corner handle: drag to resize + rotate. Computes scale from
@@ -390,8 +440,12 @@ const CardIconCanvas: React.FC<{
     // doesn't also translate — onPinch owns that gesture.
     const bindCanvas = useGesture(
         {
-            onDrag: ({ xy: [px, py], movement: [mx, my], last, tap, touches, memo }) => {
-                if (touches >= 2) return memo; // pinch's stray finger — no translate
+            onDrag: ({ xy: [px, py], movement: [mx, my], first, last, tap, touches, memo }) => {
+                if (first) pinchLatchRef.current = false; // fresh gesture starts unlatched
+                if (touches >= 2) { pinchLatchRef.current = true; return memo; } // pinch's stray finger — no translate
+                // A pinch happened this gesture — ignore the single-finger tail so lifting fingers
+                // doesn't start a fresh drag from the first finger's accumulated pinch movement.
+                if (pinchLatchRef.current) { if (last) pinchLatchRef.current = false; return memo; }
                 if (tap) {
                     onSelect(null);
                     return memo;
@@ -411,8 +465,152 @@ const CardIconCanvas: React.FC<{
                 return m;
             },
         },
-        { drag: { filterTaps: true } }
+        { drag: { filterTaps: true, threshold: 1, tapsThreshold: 1 } }
     );
+
+    // ── Movable text gestures (migration 91) ──────────────────────────────────
+    // The two text blocks are a separate, simpler gesture system than icons: there are only
+    // two fixed blocks (no add/delete/duplicate, no selection-switching heuristics), and they
+    // must stay FULLY on-card (a stricter clamp than icons). They reuse the same shared idea —
+    // tap selects, drag translates, pinch/handle resize+rotate, lock freezes + shakes — but
+    // operate on the text draft, not the icon array. See docs/CARD_ICON_LAYOUT.md.
+
+    // Live DOM refs to each text wrapper so the on-release clamp can measure the rendered
+    // (scaled + rotated) bounding box and keep the WHOLE block on-card.
+    const textRefs = useRef<Record<TextBlock, HTMLDivElement | null>>({ foreign: null, english: null });
+    // Denied-gesture shake for a LOCKED text block (mirrors the icon shake), keyed by block.
+    const [textShake, setTextShake] = useState<{ block: TextBlock; nonce: number } | null>(null);
+    const triggerTextShake = (block: TextBlock) =>
+        setTextShake((prev) => ({ block, nonce: (prev?.nonce ?? 0) + 1 }));
+    // True while a text block is being actively dragged/pinched/resized (floats it above the
+    // other block + icons during the manipulation).
+    const [textInteracting, setTextInteracting] = useState(false);
+
+    const updateText = (block: TextBlock, patch: Partial<TextLayoutItem>) =>
+        onTextChange({ ...textLayout, [block]: { ...textLayout[block], ...patch } });
+
+    // Clamp a text block's center on release so the whole rendered box stays on-card. Measures
+    // the wrapper's AABB (already includes scale + rotation) and converts px → fractions.
+    const clampTextRelease = (block: TextBlock, x: number, y: number): { x: number; y: number } => {
+        const r = rect();
+        const el = textRefs.current[block];
+        if (!r || !el) return { x, y };
+        const box = el.getBoundingClientRect();
+        const halfWFrac = box.width / 2 / r.width;
+        const halfHFrac = box.height / 2 / r.height;
+        return clampTextCenterFully(x, y, halfWFrac, halfHFrac);
+    };
+
+    type TextDragMemo = { block: TextBlock; x: number; y: number };
+    type TextPinchMemo = { block: TextBlock; d0: number; a0: number; scale: number; rot: number };
+
+    const beginTextDrag = (block: TextBlock): TextDragMemo | null => {
+        const item = textLayout[block];
+        if (!item) return null;
+        if (block !== selectedText) onSelectTarget({ kind: "text", block }); // grabbing selects it
+        if (!item.locked) { onInteractionStart(); setTextInteracting(true); }
+        else triggerTextShake(block);
+        return { block, x: item.x, y: item.y };
+    };
+    const runTextDrag = (m: TextDragMemo, mx: number, my: number, last: boolean) => {
+        const item = textLayout[m.block];
+        if (!item || item.locked) return;
+        const r = rect();
+        if (!r) return;
+        let nx = m.x + mx / r.width;
+        let ny = m.y + my / r.height;
+        if (snap.move) ({ x: nx, y: ny } = snapCenterToGrid(nx, ny));
+        if (last) {
+            setTextInteracting(false);
+            ({ x: nx, y: ny } = clampTextRelease(m.block, nx, ny));
+        }
+        updateText(m.block, { x: nx, y: ny });
+    };
+    const beginTextPinch = (block: TextBlock, d: number, a: number): TextPinchMemo | null => {
+        const item = textLayout[block];
+        if (!item) return null;
+        if (block !== selectedText) onSelectTarget({ kind: "text", block }); // pinching selects it
+        if (!item.locked) { onInteractionStart(); setTextInteracting(true); }
+        else { triggerTextShake(block); }
+        return { block, d0: d || 1, a0: a, scale: item.scale, rot: item.rotation };
+    };
+    const runTextPinch = (m: TextPinchMemo, d: number, a: number, last: boolean) => {
+        const item = textLayout[m.block];
+        if (!item || item.locked) return;
+        if (last) setTextInteracting(false);
+        let nScale = clampTextScale(m.scale * (d / m.d0));
+        let nRot = sanitizeTextRotation(m.rot + (a - m.a0));
+        if (snap.resize) nScale = snapTextScale(nScale);
+        if (snap.rotate) nRot = snapRotation(nRot);
+        updateText(m.block, { scale: nScale, rotation: nRot });
+    };
+
+    // Per-block drag (move) + pinch (resize/rotate). Bound per block via bindText(block).
+    const bindText = useGesture(
+        {
+            onDrag: ({ args: [block], movement: [mx, my], first, last, tap, touches, memo }) => {
+                if (first) pinchLatchRef.current = false; // fresh gesture starts unlatched
+                if (touches >= 2) { pinchLatchRef.current = true; return memo; } // pinch's stray finger — let onPinch own it
+                // A pinch happened this gesture — ignore the single-finger tail so lifting fingers
+                // doesn't start a fresh drag from the first finger's accumulated pinch movement.
+                if (pinchLatchRef.current) { if (last) pinchLatchRef.current = false; return memo; }
+                if (tap) { onSelectTarget({ kind: "text", block }); return memo; }
+                const m = (memo as TextDragMemo | undefined) ?? beginTextDrag(block);
+                if (!m) return memo;
+                runTextDrag(m, mx, my, last);
+                return m;
+            },
+            onPinch: ({ args: [block], da: [d, a], last, memo }) => {
+                const m = (memo as TextPinchMemo | undefined) ?? beginTextPinch(block, d, a);
+                if (!m) return memo;
+                runTextPinch(m, d, a, last);
+                return m;
+            },
+        },
+        { drag: { filterTaps: true, threshold: 1, tapsThreshold: 1 } },
+    );
+
+    // The selected text block's corner handle (desktop): RELATIVE resize/rotate (text boxes
+    // aren't square, so absolute distance→scale like the icon handle doesn't map cleanly). The
+    // memo captures the start pointer distance/angle to the block center + the start scale/rot.
+    type TextHandleMemo = { block: TextBlock; cx: number; cy: number; dist0: number; ang0: number; scale: number; rot: number };
+    const bindTextHandle = useGesture({
+        onDrag: ({ xy: [px, py], event, first, last, touches, memo }) => {
+            event?.stopPropagation?.();
+            if (touches >= 2) return memo; // multi-touch → let the pinch recognizer own it
+            if (selectedText === null) return memo;
+            const block = selectedText;
+            const item = textLayout[block];
+            if (!item) return memo;
+            if (item.locked) { if (first) triggerTextShake(block); return memo; }
+            const r = rect();
+            if (!r) return memo;
+            const cx = r.left + item.x * r.width;
+            const cy = r.top + item.y * r.height;
+            let m = memo as TextHandleMemo | undefined;
+            if (!m) {
+                onInteractionStart();
+                setTextInteracting(true);
+                m = { block, cx, cy, dist0: Math.hypot(px - cx, py - cy) || 1, ang0: Math.atan2(py - cy, px - cx), scale: item.scale, rot: item.rotation };
+            }
+            if (last) setTextInteracting(false);
+            const dist = Math.hypot(px - m.cx, py - m.cy);
+            const ang = Math.atan2(py - m.cy, px - m.cx);
+            let nScale = clampTextScale(m.scale * (dist / m.dist0));
+            let nRot = sanitizeTextRotation(m.rot + ((ang - m.ang0) * 180) / Math.PI);
+            if (snap.resize) nScale = snapTextScale(nScale);
+            if (snap.rotate) nRot = snapRotation(nRot);
+            updateText(block, { scale: nScale, rotation: nRot });
+            return m;
+        },
+        onPinch: ({ da: [d, a], last, memo }) => {
+            if (selectedText === null) return memo;
+            const m = (memo as TextPinchMemo | undefined) ?? beginTextPinch(selectedText, d, a);
+            if (!m) return memo;
+            runTextPinch(m, d, a, last);
+            return m;
+        },
+    });
 
     // The selected icon (guarded against a stale index, e.g. just after a delete) — drives
     // the selection-overlay layer below. Its outline + corner handle are drawn there, NOT on
@@ -551,9 +749,128 @@ const CardIconCanvas: React.FC<{
                 })}
             </Box>
 
+            {/* Text layer — holds the two movable text blocks. Sits ABOVE the icon clip layer
+                (text always paints over icons) but below the icon selection overlay. Clipped to
+                the card so text dragged toward the edge is cut at the boundary (it is also
+                clamped fully on-card on release). Its explicit zIndex establishes a stacking
+                context that confines each block's float-to-front below the overlay. */}
+            <Box
+                className="card-icon-canvas__text-layer"
+                sx={{
+                    position: "absolute",
+                    inset: 0,
+                    overflow: "hidden",
+                    borderRadius: "12px",
+                    zIndex: 1,
+                    // The layer spans the whole canvas (above the icon clip layer), but only the
+                    // two text blocks should be interactive — make the layer itself transparent
+                    // to hits so empty-area presses fall through to the icons / canvas below.
+                    pointerEvents: "none",
+                }}
+            >
+                {TEXT_BLOCKS.map((block) => {
+                    const item = textLayout[block];
+                    const isSel = selectedText === block;
+                    const locked = !!item.locked;
+                    const node = block === "foreign" ? foreignNode : englishNode;
+                    const bound = bindText(block);
+                    const gestureDown = (bound as React.HTMLAttributes<HTMLDivElement>).onPointerDown;
+                    // Denied-gesture shake (locked block) — same keyframe-name-with-nonce restart
+                    // trick as icons, composed onto the block's base positioning transform.
+                    const isShaking = textShake?.block === block;
+                    const baseTransform = textItemTransform(item);
+                    const shakeName = isShaking ? `cardTextShake-${textShake!.nonce}` : "";
+                    // english paints above foreign by default; the actively-manipulated block
+                    // floats above everything in this layer.
+                    const baseZ = block === "english" ? 2 : 1;
+                    return (
+                        <Box
+                            key={block}
+                            ref={(el: HTMLDivElement | null) => { textRefs.current[block] = el; }}
+                            {...bound}
+                            onPointerDown={(e) => { e.stopPropagation(); gestureDown?.(e); }}
+                            onAnimationEnd={isShaking ? () => setTextShake(null) : undefined}
+                            className={`card-icon-canvas__text card-icon-canvas__text--${block}${isSel ? " card-icon-canvas__text--selected" : ""}`}
+                            sx={{
+                                position: "absolute",
+                                left: `${item.x * 100}%`,
+                                top: `${item.y * 100}%`,
+                                // Hug the content: the inner blocks set width:100%, so `max-content`
+                                // makes the wrapper size to the text (capped so long English wraps
+                                // instead of overflowing). Centered + scaled + rotated about its
+                                // center, matching the static renderer's textItemTransform.
+                                width: "max-content",
+                                maxWidth: "92%",
+                                transform: baseTransform,
+                                transformOrigin: "center center",
+                                ...(isShaking ? {
+                                    animation: `${shakeName} 0.42s ease-in-out`,
+                                    [`@keyframes ${shakeName}`]: {
+                                        "0%, 100%": { transform: baseTransform },
+                                        "20%": { transform: `translate(-6px, 0) ${baseTransform}` },
+                                        "40%": { transform: `translate(6px, 0) ${baseTransform}` },
+                                        "60%": { transform: `translate(-4px, 0) ${baseTransform}` },
+                                        "80%": { transform: `translate(4px, 0) ${baseTransform}` },
+                                    },
+                                } : {}),
+                                zIndex: isSel && textInteracting ? 9999 : baseZ,
+                                // Re-enable hits on the block itself (the layer is pointer-none).
+                                pointerEvents: "auto",
+                                touchAction: "none",
+                                cursor: locked ? "default" : "grab",
+                                "&:active": { cursor: locked ? "default" : "grabbing" },
+                                // Dashed selection outline drawn directly on the block (text stays
+                                // fully on-card, so — unlike icons — it never needs to overflow).
+                                ...(isSel ? { outline: "2px dashed rgba(0,0,0,0.45)", outlineOffset: "4px", borderRadius: "4px" } : {}),
+                            }}
+                        >
+                            {/* The real text content, made inert so taps reach the wrapper gesture.
+                                The `& *` !important defeats cpcd pinyin's inline pointer-events:auto
+                                (same defense as CardContent while editing). */}
+                            <Box sx={{ pointerEvents: "none", userSelect: "none", "& *": { pointerEvents: "none !important" } }}>
+                                {node}
+                            </Box>
+                            {/* Corner resize/rotate handle for the SELECTED block (desktop). Placed
+                                just INSIDE the bottom-right corner so the clip layer never cuts it
+                                (text can sit flush to the card edge). Locked → golden, inert. */}
+                            {isSel && (() => {
+                                const hbound = bindTextHandle();
+                                const handleDown = (hbound as React.HTMLAttributes<HTMLDivElement>).onPointerDown;
+                                return (
+                                    <Box
+                                        {...hbound}
+                                        onPointerDown={(e) => { e.stopPropagation(); handleDown?.(e); }}
+                                        className={`card-icon-canvas__text-handle${locked ? " card-icon-canvas__text-handle--locked" : ""}`}
+                                        sx={{
+                                            position: "absolute",
+                                            right: "-2px",
+                                            bottom: "-2px",
+                                            width: "22px",
+                                            height: "22px",
+                                            borderRadius: "50%",
+                                            backgroundColor: locked ? "#E0A82E" : "#fff",
+                                            boxShadow: "0 1px 4px rgba(0,0,0,0.35)",
+                                            display: "flex",
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            color: locked ? "#fff" : "rgba(0,0,0,0.6)",
+                                            cursor: locked ? "default" : "nwse-resize",
+                                            touchAction: "none",
+                                            pointerEvents: "auto",
+                                        }}
+                                    >
+                                        {locked ? <LockIcon sx={{ fontSize: 13 }} /> : <OpenWithIcon sx={{ fontSize: 13 }} />}
+                                    </Box>
+                                );
+                            })()}
+                        </Box>
+                    );
+                })}
+            </Box>
+
             {/* Selection overlay — NOT clipped (overflow visible) and at a higher zIndex than
-                the clip layer, so the selected icon's outline + corner handle paint ON TOP OF
-                ALL ICONS and may overflow the card edge into the surrounding padding. The
+                the clip + text layers, so the selected icon's outline + corner handle paint ON
+                TOP OF ALL ICONS and may overflow the card edge into the surrounding padding. The
                 layer is pointer-transparent (so a drag through it still reaches the icon
                 below); only the handle re-enables pointer events. The overlay box mirrors the
                 selected icon's exact geometry (iconItemStyle, no flip) so the outline tracks
@@ -566,7 +883,9 @@ const CardIconCanvas: React.FC<{
                     inset: 0,
                     overflow: "visible",
                     pointerEvents: "none",
-                    zIndex: 1,
+                    // Above the clip (0) AND the text layer (1) so an icon's selection outline
+                    // sits on top of everything.
+                    zIndex: 2,
                 }}
             >
                 {selItem && (() => {

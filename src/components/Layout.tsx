@@ -56,6 +56,7 @@ function Layout({ children }: LayoutProps) {
     const isMobileDemoPage =
         MOBILE_DEMO_PATHS.includes(location.pathname) ||
         location.pathname.startsWith("/discover/sort/") ||
+        location.pathname.startsWith("/discover/skipped/") ||
         location.pathname.startsWith("/flashcards/card/");
 
     if (isMobileDemoPage) {

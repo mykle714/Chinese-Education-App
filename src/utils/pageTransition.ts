@@ -19,6 +19,8 @@ export type SlideDir = "up" | "right";
 // Node pages (keep footer, slide from the right). Everything else that slides is a
 // leaf (slide up). Keep in sync with LeafPage/NodePage usage + FooterPresenter.
 const NODE_ROUTES = new Set<string>(["/games", "/flashcards/mastered"]);
+// Node pages reached via a parameterized path (matched by prefix).
+const NODE_PREFIXES = ["/discover/skipped/", "/discover/sort/"];
 const LEAF_EXACT = new Set<string>([
     "/dictionary",
     "/reader",
@@ -27,11 +29,11 @@ const LEAF_EXACT = new Set<string>([
     "/night-market",
     "/games/bubble-match",
 ]);
-const LEAF_PREFIXES = ["/discover/sort/", "/flashcards/card/"];
+const LEAF_PREFIXES = ["/flashcards/card/"];
 
 export function routeSlideDir(to: string): SlideDir | null {
     const path = to.split(/[?#]/)[0];
-    if (NODE_ROUTES.has(path)) return "right";
+    if (NODE_ROUTES.has(path) || NODE_PREFIXES.some((p) => path.startsWith(p))) return "right";
     if (LEAF_EXACT.has(path) || LEAF_PREFIXES.some((p) => path.startsWith(p))) return "up";
     return null;
 }

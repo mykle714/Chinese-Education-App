@@ -519,6 +519,12 @@ app.get('/api/onDeck/game-pool', authenticateToken, async (req, res) => {
   await onDeckVocabController.getGamePool(req, res);
 });
 
+// Word Search game grid (2 Unfamiliar + 10 Target + 6 Comfortable + 2 Mastered by default)
+// @ts-ignore
+app.get('/api/onDeck/word-search-grid', authenticateToken, async (req, res) => {
+  await onDeckVocabController.getWordSearchGrid(req, res);
+});
+
 // Minute Points API Routes - USING NEW DAL ARCHITECTURE
 
 // Increment minute points by 1
@@ -1022,6 +1028,30 @@ app.post('/api/starter-packs/sort', authenticateToken, async (req, res) => {
 app.post('/api/starter-packs/undo', authenticateToken, async (req, res) => {
   console.log('🔄 Using NEW DAL architecture for undo sort');
   await starterPacksController.undoSort(req, res);
+});
+
+// Refill one sort pack after the client's on-deck pack completes (protected route)
+// @ts-ignore
+app.post('/api/starter-packs/next-pack', authenticateToken, async (req, res) => {
+  await starterPacksController.nextPack(req, res);
+});
+
+// Skip a whole pack — defer all remaining unsorted cards at once (protected route)
+// @ts-ignore
+app.post('/api/starter-packs/skip-pack', authenticateToken, async (req, res) => {
+  await starterPacksController.skipPack(req, res);
+});
+
+// List the user's currently-skipped words for a language (Skipped page) (protected route)
+// @ts-ignore
+app.get('/api/starter-packs/:language/skipped', authenticateToken, async (req, res) => {
+  await starterPacksController.getSkipped(req, res);
+});
+
+// Recycle ALL of the user's skips for a language back into the supply (protected route)
+// @ts-ignore
+app.post('/api/starter-packs/:language/recycle-skips', authenticateToken, async (req, res) => {
+  await starterPacksController.recycleSkips(req, res);
 });
 
 // Dictionary API Routes - USING NEW DAL ARCHITECTURE

@@ -2,12 +2,16 @@
 
 > Status: **implemented**. Backed by migration 82 (`iconLayout`) + migration 88
 > (`snapConfig`, per-card snap toggles) + migration 89 (`textColors`, per-card Contrast
-> text colors), the icons8 search/ensure and vocabEntries icon-layout endpoints, and the
-> flp edit-mode UI.
+> text colors) + migration 91 (`textLayout`, per-card **movable text** — see "Movable text"
+> below) + migration 94 (`cardColor`, per-card **card background fill** — see "Card
+> background fill" below), the icons8 search/ensure and vocabEntries icon-layout endpoints,
+> and the flp edit-mode UI.
 > The editor has **two modes** — basic (swap the single icon) and advanced (the full
 > drag/resize/rotate canvas, plus per-icon tools merged into **one wrapping flex-list menu**:
-> delete / duplicate / mirror / undo / redo / lock / shift / contrast / align / snap / order /
-> count, flowing onto the next line when a row overflows). In
+> delete / duplicate / mirror / undo / redo / lock / shift / **card** / align / snap / order /
+> count, flowing onto the next line when a row overflows). The **card** tool (internal key
+> `contrast`) opens a per-card appearance menu — a background-fill swatch row plus the two
+> text-color rows. In
 > **advanced** mode the card is pushed (animated) down toward the bottom of the screen so
 > the three-row toolbar clears it (basic mode keeps its single static row, card stays
 > centered). While editing the **More Info pill stays drawn but greyed + inert**; in
@@ -133,6 +137,26 @@ definition. `theme` follows the device/app theme (the existing default), `dark` 
 `src/utils/cardTextColor.ts` (returns `undefined` for `theme` so callers keep their
 theme-aware default).
 
+**Per-card card background fill — `cardColor` text** on both vet tables (migration
+`database/migrations/94-add-card-color-to-vocabentries.sql`). A raw CSS hex string (NOT a
+palette key), or `NULL` = the **auto** option = follow the active theme's default face
+color. Persists the editor's **card** menu background swatch per saved word (the "card"
+tool — internal key `contrast` — see "Edit-mode UX"). The offered chips (laid out in TWO
+rows of five) are — row 1 (neutrals): `auto` (`NULL`, shown as the red no-fill glyph), grey
+`#D8D8DC`, beige `#F5EBE0`, white `#FFFFFF`, black `#000000`; row 2 (pastel hues): red
+`#F2BAC9`, green `#BAF2D8`, blue `#BAD7F2`, yellow `#F2E2BA`, purple `#D8BAF2` (`grey` pins
+the light-theme face color; `auto` merely follows the theme). It tints the **whole flashcard
+face (both sides)** and the mini card thumbnails (`MiniVocabCard`). The single source of truth
+for the palette is `CARD_COLOR_OPTIONS` in `src/utils/cardColor.ts` (explicit fills built from
+`COLORS` design tokens —
+`card`/`cardBeige`/`redAccent`/`greenAccent`/`blueAccent`/`yellowAccent`/`purpleAccent` — plus
+white/black literals); the resolver
+`resolveCardColor` there returns the hex for a vetted value or `undefined` (→ theme default).
+The server keeps a hand-synced copy of the allowed hex set in `CARD_COLOR_VALUES`
+(`server/types/index.ts`) and `VocabEntryService.validateCardColor` normalizes any
+off-palette value to `NULL`. Written together with `iconLayout` by the same
+`PATCH …/icon-layout` (stored via `"cardColor" = $n::text`, unlike the jsonb columns).
+
 **Coordinates are normalized** (fractions of the rendered card size), so a saved
 layout survives the card being rendered at different pixel sizes across viewports.
 The on-screen box for an icon is `BASE_ICON_FRAC × cardWidth × scale`
@@ -148,10 +172,13 @@ the card edge (only `MIN_ON_CARD_FRAC` of the icon need stay on-card); clamping 
 to `[0,1]` on save would yank a mostly-off-card icon **deeper inward**, disagreeing with
 what the editor showed.
 
-**Default placement (no custom layout)** — the card lays its content in vertical
-thirds (`FlashCardSection.tsx` `CardFaceSide`): the default single icon sits in the
-upper third (`DEFAULT_ICON_Y = 0.3333`, ≈2/3 up from the bottom), the word text in the
-lower third (`top: 66.67%`, ≈1/3 up from the bottom). The default icon is rendered by
+**Default placement (no custom layout)** — the default single icon sits ≈1/3 down from the
+top at a **grid-aligned** spot (`DEFAULT_ICON_X = 0.5`, `DEFAULT_ICON_Y = 10 × 0.05 × 295/426
+≈ 0.34624`), and the two text blocks at their grid-aligned `DEFAULT_TEXT_CENTER` (see "Movable
+text"). Both x/y and the default scale (1.25) lie exactly on the move/size snap grids, so
+toggling snap in the editor never nudges a default icon or default text. (Legacy basic saves
+wrote `y = 0.3333`; `DEFAULT_PLACEMENT_YS` still accepts it so they keep reading as basic — see
+the basic-vs-advanced inference.) The default icon is rendered by
 the **same `CardIconLayer` + `defaultLayoutForIcon` path the editor seeds with**
 (`{ x: DEFAULT_ICON_X, y: DEFAULT_ICON_Y, scale: DEFAULT_ICON_SCALE }`), so its size
 (`BASE_ICON_FRAC × DEFAULT_ICON_SCALE` of card width) matches the edit-mode display
@@ -216,10 +243,48 @@ All in `src/features/flashcards/FlashcardsLearnPage/`.
    overlay inside `ContentArea`** (which is `position: relative`), so the toolbar itself
    does NOT change the card-slot's flow height. Instead, in **advanced** mode (when the
    toolbar grows to three rows) the **card is pushed down** toward the bottom of the
-   screen so the toolbar clears it with a healthy gap: `DraggableCardContainer` takes a
-   `pushDown` prop (`editMode && advMode`) that swaps its symmetric `48px 40px` padding
-   for a large top inset (`148px 40px 28px`), **transitioned** so the card glides
-   down/up. Basic mode keeps the single static row, so the card stays centered.
+   screen to clear as much of the toolbar as possible: `DraggableCardContainer` takes a
+   `pushDown` prop that **redistributes** its symmetric `48px 40px` padding downward to
+   `72px 40px 24px`, **transitioned** so the card glides down/up. Basic mode keeps the single
+   static row, so the card stays centered.
+
+   **The push-down is gated on ACTUAL overlap** — it fires only when
+   `editMode && advMode && toolbarOverlaps`, not merely whenever advanced mode is on. On roomy
+   viewports the card is small enough that the toolbar clears it with space to spare, so no
+   shift is needed and the card stays centered (the greyed More Info pill simply remains
+   visible below it). `toolbarOverlaps` is computed by **`useToolbarOverlap`**
+   (`useToolbarOverlap.ts`): it compares the toolbar's measured bottom edge against where the
+   card's TOP would sit in its **centered (non-pushed)** layout. That centered top is derived
+   from the `ContentArea` box + the card's height and the exported slot-padding constants
+   (`CARD_SLOT_TOP_PAD` / `CARD_SLOT_VPAD_SUM` in `styled.ts`). Crucially the card's on-screen
+   height is **invariant to the push** (the size guarantee below), so the decision is computed
+   from a value the push never changes — pushing the card can't feed back and un-trigger
+   itself (no oscillation). The same `pushDown` gates the card slot's zIndex lift over the pill
+   (`FlashCardSection.tsx`): a centered card doesn't reach the pill, so it must not steal the
+   pill's stacking. The hook re-measures on ContentArea/toolbar/card resize, on window resize,
+   and once after the `CARD_EDIT_ANIM_MS` entry animation settles (the toolbar's `<Slide>`
+   transform isn't caught by `ResizeObserver`).
+
+   **The push-down must NOT resize the card** — the fie shows the card at its exact flp
+   size. `DraggableCardContainer` is the `@container` sizing target (`containerType:"size"`)
+   and `CardAspectWrapper` fills its padded content box, so a height-bound card's size is
+   `containerHeight − (topPad + botPad)`. The push-down therefore keeps the **vertical
+   padding SUM constant at 96px** and only shifts the distribution downward (48/48 → 72/24),
+   keeping the identical size on every viewport. (Growing the sum — the old `148/28` = 176px
+   — shrank any height-bound card by 80px, the "canvas shrinks on certain screen sizes" bug;
+   width-bound narrow viewports were unaffected because vertical padding isn't their size
+   constraint.) On tight (height-bound) viewports a full-size card can't fully clear the
+   3-row toolbar, so the toolbar simply overlays the top of the card — size preservation
+   wins over clearance.
+
+   **The pushed card is BOTTOM-ANCHORED** (`alignItems: flex-end` when `pushDown`), so its
+   bottom margin is a constant 24px (= `botPad`) on **every** viewport — matching the More
+   Info pill's own `bottom: 24` (of `ContentArea`). The card's bottom edge thus lands exactly
+   at the pill's bottom edge, sliding down **just far enough to cover the greyed pill and no
+   further**. Centering alone was not enough: on a width-bound viewport with vertical slack a
+   centered card floats with a large bottom margin and never reaches the pill. `flex-end` only
+   repositions the card (never resizes it), so the flp-size guarantee above still holds. Basic
+   mode keeps `center` + the symmetric 48/48 padding.
 
    **Animations (all share one timing — both directions).** The toolbar drop, the
    advanced-rows reveal, and the card push-down all run at `CARD_EDIT_ANIM_MS = 300` with
@@ -263,7 +328,10 @@ All in `src/features/flashcards/FlashcardsLearnPage/`.
 
    **Advanced mode**: the gesture canvas is live (drag / resize / rotate / add /
    delete) over `advDraft`. The left button (on the static basic row) becomes **add
-   icon** (`Add` ＋, disabled once 12 icons are placed), and **one merged tool menu** drops
+   icon** (`Add` ＋, disabled once 12 icons are placed) — a newly picked icon spawns at the
+   **basic-mode default icon spot** (`DEFAULT_ICON_X`/`DEFAULT_ICON_Y`, the centered upper-third)
+   at `DEFAULT_ICON_SCALE`, on top of the stack (`handlePickIcon`), so it lands exactly where the
+   single default icon sits. And **one merged tool menu** drops
    in below — a single container (`card-edit-toolbar__adv-menu`) laid out as a **wrapping
    flex list** (`display: flex; flexWrap: wrap`): each tool hugs its own content (`smallBtnSx`)
    and items flow left-to-right, collecting onto the next line when a row overflows (no fixed
@@ -278,10 +346,11 @@ All in `src/features/flashcards/FlashcardsLearnPage/`.
    - **delete** (`DeleteOutline`) — removes the **selected** icon (no confirmation).
      Disabled when nothing is selected.
    - **duplicate** (`ContentCopy`) — clones the **selected** icon's appearance
-     (`iconId` / `scale` / `rotation` / `flipX`) but drops the copy at the **default
-     new-icon spawn spot** (card center `x:0.5, y:0.5`) on top of the stack, then selects
-     the copy (`handleDuplicateSelected`). Disabled when nothing is selected **or** at the
-     12-icon max.
+     (`iconId` / `scale` / `rotation` / `flipX`) but drops the copy at **card center**
+     (`x:0.5, y:0.5`) on top of the stack, then selects the copy
+     (`handleDuplicateSelected`). Disabled when nothing is selected **or** at the 12-icon max.
+     (Note: unlike **add icon** — which spawns at the basic default spot — duplicate still drops
+     at card center, so the copy visibly offsets from an original sitting at the default spot.)
    - **mirror** (`Flip`) — toggles `flipX` on the selected icon. Disabled when nothing
      is selected.
    - **lock** (`LockOpen` → `Lock`) — toggles `locked` on the selected icon
@@ -378,18 +447,32 @@ All in `src/features/flashcards/FlashcardsLearnPage/`.
      / `CARD_DESIGN_HEIGHT` / `NUDGE_*` constants) live in `cardIconLayout.ts`; the page handlers
      (`handleNudgeMove` / `handleRotateStep` / `handleResizeStep`) each snapshot undo history, so
      a nudge is a discrete undoable action. Disabled when nothing is selected.
-   - **contrast** (`Contrast`) — opens a dropdown of **two rows** — the **foreign word** (label =
-     the card's characters) and the **English** (label = the card's definition) — each a 3-way
-     **theme / dark / light** segmented control. `theme` follows the device/app theme (default),
-     `dark` forces black, `light` forces white. It recolors **card text**, not icons, so it is
-     **independent of icon selection** (disabled only while saving). `foreign` colors the
-     foreign-word **glyphs only** (the pinyin overlay is never affected — the character color is
-     threaded through `ForeignText` → `CPCDRow`'s `characterColor` prop, and the plain-text path
-     for Spanish; pinyin keeps its own tone color); `english` colors the definition Typography.
-     The setting persists per card in `vet.textColors` (migration 89) and previews live on the
-     card while editing (the page merges the live `{foreign,english}` onto `editingCurrentEntry`).
-     It also applies on the **mini card thumbnails** (`MiniVocabCard`). Saved/cancelled with the
-     layout (Save folds it in; `null` when both sides are `theme`); reset-to-default clears it.
+   - **card** (`Style`; labeled "card", internal key/class/anchor stay `contrast`) — opens a
+     per-card **appearance** dropdown grouping the card background fill AND the text colors.
+     It styles the **card**, not icons, so it is **independent of icon selection** (disabled
+     only while saving). Live-previews on the card while editing (the page merges the live
+     values onto `editingCurrentEntry`) and also applies on the **mini card thumbnails**
+     (`MiniVocabCard`). Everything here saves/cancels with the layout (Save folds it in);
+     reset-to-default clears it. The dropdown has:
+     - a **background** swatch grid — the chips from `CARD_COLOR_OPTIONS`
+       (`src/utils/cardColor.ts`), laid out in **two rows** (a 5-column grid): **auto**
+       (`value: null`) first — drawn as the **red circle-with-slash `Block` glyph** (not a
+       color) to signal "no override / use the theme color". Row 1 is the neutrals (auto /
+       grey / beige / white / black); row 2 the pastel hues (red / green / blue / yellow /
+       purple). Tapping a chip tints the **whole
+       card face (both sides)** via `vet.cardColor` (migration 94); the active chip shows an
+       accent ring. `auto`/`null` = follow the theme, so an auto card stores `NULL`; the
+       explicit `grey` chip pins the light-theme face color regardless of theme. The fill is
+       applied in `FlashCardSection.tsx` `CardFaceSide`
+       (`resolveCardColor(cardColor) ?? fc.flashCard`).
+     - two **text-color rows** — the **foreign word** (label = the card's characters) and the
+       **English** (label = the card's definition) — each a 3-way **theme / dark / light**
+       segmented control. `theme` follows the device/app theme (default), `dark` forces black,
+       `light` forces white. `foreign` colors the foreign-word **glyphs only** (the pinyin
+       overlay is never affected — the character color is threaded through `ForeignText` →
+       `CPCDRow`'s `characterColor` prop, and the plain-text path for Spanish; pinyin keeps its
+       own tone color); `english` colors the definition Typography. Persists per card in
+       `vet.textColors` (migration 89); `null` when both sides are `theme`.
    - **align** (`CropSquare`) — opens a dropdown laid out as a **3×3 grid of direction
      cells with the center cell empty** (8 directions: the 4 cardinals + the 4 **45°
      diagonals**). Each cell shows an upward arrow spun toward its direction; clicking it
@@ -564,6 +647,16 @@ All in `src/features/flashcards/FlashcardsLearnPage/`.
      the root's raw `onPointerDown`) — otherwise the first finger of an empty-space pinch would
      wipe the selection before the pinch could read it (`filterTaps` means a pinch is never
      reported as a tap).
+     - **Pinch-tail latch (resize must not reposition on release).** The `touches >= 2`
+       short-circuit only holds *while both fingers are down*. As the fingers lift, `touches`
+       drops below 2 for the drag's final frame(s) — and since no drag `memo` was ever created
+       during the pinch, `beginDragMotion` would start a fresh drag there and apply the first
+       finger's **entire accumulated pinch movement** (plus the `last`-frame `clampIconCenter`),
+       jumping the icon to a new spot on release. To prevent this, a shared `pinchLatchRef`
+       latches `true` the instant any drag frame sees `touches >= 2` and stays latched until the
+       gesture fully ends; while latched, all three drag handlers (`bindIcon` / `bindCanvas` /
+       `bindText`) refuse to translate. It resets on each drag `first` frame (so a brand-new pure
+       drag starts unlatched) and clears on the final frame.
    - Desktop: drag plus a corner handle on the selected icon for resize/rotate (the
      handle computes scale from the pointer's distance to the icon center, rotation
      from its angle). The handle's `onDrag` **short-circuits on `touches >= 2`** for the
@@ -650,16 +743,16 @@ All in `src/features/flashcards/FlashcardsLearnPage/`.
      axis's own units via the canvas aspect ratio.
    - **Delete** = use the advanced toolbar's delete button on the selected icon (the only
      way to remove an icon now that off-card drag snaps back).
-   - The canvas sits BEHIND the card content (icons are always behind the text), and
-     the content is kept fully visible but `pointerEvents: none` while editing, so the
-     edit is WYSIWYG and pointers fall through the text to the icons below.
-     `pointerEvents: none` on the `CardContent` wrapper alone is **not** sufficient: the
-     cpcd pinyin spans set `pointer-events: auto` **inline** (CPCDRow — so pinyin is
-     drag-selectable in normal use), and an inline style beats an inherited `none`, so a
-     tap on pinyin text used to register on the span instead of falling through. While
-     editing, the wrapper therefore also forces `& *` to `pointer-events: none !important`
-     to defeat those inline overrides. See `CardFaceSide`'s `CardContent` sx in
-     `FlashCardSection.tsx`.
+   - The canvas sits BEHIND the card content (icons are always behind the text). While
+     editing, the back face's **static** content is not rendered at all — the icon layer and
+     the movable-text layer are both suppressed (`!editing` / `editing ? null` gates), and the
+     live canvas in the outer face box renders the icons + text instead — so the edit is WYSIWYG.
+     Presses reach the canvas because the **inner clip box** is made `pointerEvents: none` while
+     editing (it is painted above the canvas in DOM order, so without this it would intercept
+     every press). Because the static text is entirely absent during an edit, the old
+     cpcd-inline-`pointer-events: auto` problem (a tap on pinyin registering on the span instead
+     of falling through) no longer arises — there is no static content to force inert. See
+     `CardFaceSide`'s inner clip box `sx` in `FlashCardSection.tsx`.
    - The card is **locked** while editing: `FlashCardSection` does not attach the
      drag/flip handlers (`editMode` gate), so it can't be swiped away or flipped.
 
@@ -770,6 +863,105 @@ All in `src/features/flashcards/FlashcardsLearnPage/`.
    - **Basic**: enabled when `basicDraft` differs from the plain default — a saved
      changed icon opens enabled; an untouched default stays greyed until a "swap icon".
 
+## Movable text (migration 91)
+
+In **advanced** mode the two back-face text blocks — the **foreign word** (the
+Chinese/Spanish characters + pinyin) and the **English definition** — are independently
+**movable / resizable / rotatable**, just like icons. The placement is stored per card in a
+new nullable **`textLayout` jsonb** column on both vet tables
+(`database/migrations/91-add-text-layout-to-vocabentries.sql`).
+
+**Scope / decisions:**
+- **Two independent blocks.** Each block is its own draggable object with its own
+  center / scale / rotation. There is no `iconId`, **no `flipX`** (mirror is disabled for
+  text — mirrored text is unreadable), and **no `z`**: text **always paints ABOVE the icon
+  layer**, and the two blocks keep a fixed order (english over foreign on overlap).
+- **Back face only.** Side 1 always uses the default centered layout; only Side 2 (the face
+  the editor decorates) honors `textLayout`.
+- **Fully on-card.** Unlike icons (which keep only 15% on-card), text is clamped so the
+  **whole** rendered box stays on the card — the editor measures the block's rendered
+  (scaled + rotated) bounding box and clamps the center so no part can leave (`clampTextCenterFully`).
+- **Resize floor.** Font scale is clamped to `[TEXT_SCALE_MIN=0.5, TEXT_SCALE_MAX=3]` so text
+  can't shrink to unreadable.
+- **flp only.** The **mini card thumbnails** (`MiniVocabCard`) and **community** copies do
+  **not** honor `textLayout` (the column is simply ignored there; the community copy path
+  leaves it untouched).
+
+**Data model** — `textLayout` shape (NULL ⇒ both blocks at their default grid-aligned centers;
+each block optional, an absent block renders at its default spot):
+
+```jsonc
+{
+  "foreign": { "x": 0.5, "y": 0.623, "scale": 1, "rotation": 0, "locked": false },
+  "english": { "x": 0.5, "y": 0.762, "scale": 1, "rotation": 0 }
+}
+```
+
+`x`/`y` = block CENTER (fractions of card w/h); `scale` multiplies the block's base font
+size; `rotation` in degrees. Types `TextBlock` / `TextLayoutItem` / `TextLayout` live in
+`src/types.ts` + `server/types/index.ts`; the geometry/helpers live in
+**`src/cardIcons/cardTextLayout.ts`** (`DEFAULT_TEXT_CENTER`, `resolveTextLayout`,
+`clampTextScale`, `clampTextCenterFully`, `snapTextScale`, `nudgeTextScale`,
+`textItemTransform`, `isDefaultTextItem`, `textLayoutForSave`, `hasCustomTextLayout`).
+
+**Grid-aligned defaults.** `DEFAULT_TEXT_CENTER` is built FROM the move-grid constants
+(`SNAP_MOVE_STEP_FRAC` for x, `SNAP_MOVE_STEP_FRAC·CARD_ASPECT` for y): `x = 10` steps `= 0.5`
+(card center); foreign `y = 18` steps (≈0.623), english `y = 22` steps (≈0.762). So the
+default text sits **exactly on the move-snap grid** (`snapCenterToGrid` is a verified no-op on
+both) — toggling snap-move never nudges default text (`scale:1`/`rotation:0` are likewise on
+the size/rotate grids). The same default is used by the **flp display AND the fie seed**, so
+they match 1:1. The wide separation is deliberate: these centers are FIXED (unlike the old
+flex column they can't grow), so the gap clears a multi-line English definition.
+
+**Rendering split (the same edit-vs-saved pattern as icons):**
+- **Static / saved** (`FlashCardSection.tsx` `CardFaceSide`): the back face receives its two
+  blocks SEPARATELY via `textBlocks={{ foreign, english }}` and renders them in a **full-card
+  text layer** (`mobile-demo-flashcard-text-layer`, `position: absolute; inset: 0`, no padding),
+  positioning **each block absolutely** at its center. **Critical:** this layer is full-card —
+  NOT nested inside the padded `CardContent` (`padding: clamp(16px,7%,72px) 30px`) as it once
+  was. The canvas positions text relative to the full card face, so nesting the static text in
+  the padded box made the same normalized `x`/`y` resolve against a smaller box and land in a
+  DIFFERENT spot than the fie. Both now share the full-card coordinate system, so the default
+  (and any saved) placement matches the fie **1:1**. `resolveTextLayout(textLayout)` fills a
+  null/absent block with the grid-aligned `DEFAULT_TEXT_CENTER`. (The old lower-third flex column
+  was removed for the back face; the front face / Side 1 still uses a padded `CardContent` flex
+  column via `children`.) While the edit canvas is mounted (advanced) the back-face text is
+  **suppressed** — the canvas renders it live.
+- **Live canvas** (`CardIconCanvas.tsx`): a `__text-layer` (zIndex 1, between the icon clip
+  layer and the selection overlay; **`pointerEvents: none`** so empty-area presses fall
+  through to icons) renders the two real text nodes inside draggable wrappers. The foreign
+  block renders the **same speaker + writing-practice buttons** the flp back face shows
+  (so the learner previews WHERE those buttons land relative to the moved text); they are
+  inert here (the text-content wrapper is `pointerEvents: none`). The foreign block's buttons
+  are laid out **in-flow** (`ChineseBlock inlineActions`) instead of absolutely off the text's
+  right edge, so they're **part of the block's measured box** — the selection outline frames
+  them and the on-card clamp keeps them on-card. The static back-face render uses
+  `inlineActions` too (default and custom), so it matches the fie 1:1; only the **front face /
+  Side 1** keeps the absolute-button flex column (its text stays centered). A **separate,
+  simpler gesture path** (`bindText` / `bindTextHandle`, with `beginText*`/`runText*`
+  handlers) drives them — tap selects, drag translates, pinch + a corner handle resize/rotate,
+  lock freezes + shakes. It's separate from the icon path (only two fixed blocks: no
+  add/delete/duplicate, no selection-switching heuristics) but reuses the shared snap helpers.
+  The text handle uses **relative** resize/rotate (text boxes aren't square, so the icon
+  handle's absolute distance→scale doesn't map cleanly).
+
+**Selection** is unified but stored as two mutually-exclusive page pieces: `selectedIcon`
+(index) and `selectedText` (`'foreign'|'english'`). The canvas reports changes through one
+`onSelectTarget(CanvasTarget | null)` (`{kind:'icon',index} | {kind:'text',block}`), and the
+hook's `selectTarget` enforces that at most one is set. The toolbar gates the icon-only tools
+(**delete / duplicate / mirror**) on `selectionKind === 'icon'`, while **move / resize /
+rotate (shift pad) / align / snap / lock** apply to a selected text block too. **Contrast**
+is unchanged (it already recolors text). The **snap** tool is now available even on a card
+with no icons (the two text blocks are always present in advanced mode).
+
+**State** (`useCardIconEditor.ts`): a `textDraft` (both blocks, seeded via
+`resolveTextLayout(entry.textLayout)` on enter — a card with custom text auto-opens
+advanced), folded into the **undo/redo snapshot** (`AdvSnapshot.text`, so text edits are
+undoable; text lock IS part of the snapshot, unlike the orthogonal icon lock), a
+`textLayoutOverrides` session map, and Save/Reset. Save persists `textLayoutForSave(textDraft)`
+(null when both blocks are default) via the same PATCH; Reset clears it to null. Turning a
+**snap** toggle on also snaps the two text blocks (one undo step covers icons + text).
+
 ## API (server)
 
 | Method & path | Auth | Purpose |
@@ -778,7 +970,7 @@ All in `src/features/flashcards/FlashcardsLearnPage/`.
 | `GET /api/icons8/search?term=&offset=&limit=` | yes | Proxy the live icons8 v7 search; returns `{ icons: [{ id, name }], hasMore }`. |
 | `POST /api/icons8/default-results` | yes | Body `{ language, entryKey, pos?, term }`. Return (and cache on first call, on det `defaultIconResults`) the first page of the card's default-query results: `{ icons: [{ id, name }] }`. Warms the picker so it renders instantly on open. |
 | `POST /api/icons8/:iconId/ensure` | yes | Download + cache the icon's SVG into the `icons8` table if missing (so `/api/icons8/<id>/image` can serve it). Idempotent. |
-| `PATCH /api/vocabEntries/:id/icon-layout` | yes | Body `{ iconLayout: Item[] \| null, snapConfig?: {move,rotate,resize} \| null, textColors?: {foreign,english} \| null }`. Persist or clear the layout **and** the per-card snap toggles **and** the Contrast text colors for the caller's vet row. `snapConfig` / `textColors` omitted = leave that column untouched (community copy path); `null` = clear; object = set. Echoes back `{ id, iconLayout, snapConfig, textColors }`. |
+| `PATCH /api/vocabEntries/:id/icon-layout` | yes | Body `{ iconLayout: Item[] \| null, snapConfig?: {move,rotate,resize} \| null, textColors?: {foreign,english} \| null, textLayout?: {foreign?,english?} \| null }`. Persist or clear the layout **and** the per-card snap toggles, Contrast text colors, **and movable-text placement** for the caller's vet row. `snapConfig` / `textColors` / `textLayout` omitted = leave that column untouched (community copy path); `null` = clear; object = set. Echoes back `{ id, iconLayout, snapConfig, textColors, textLayout }`. |
 | `GET /api/icons8/:iconId/image` | no (existing) | Serves cached icon bytes. Unchanged ([Icons8Controller.ts](../server/controllers/Icons8Controller.ts)). |
 
 **Search filters** mirror the representative-icon backfill exactly:
@@ -808,16 +1000,24 @@ the separate download-on-select step.
   booleans — else `400`. `textColors` validation (`validateTextColors`): same tri-state —
   `undefined` leaves the column untouched, `null` clears it (both `theme`), an object is
   coerced to `{foreign,english}` where each side is `theme`/`dark`/`light` (any unknown side
-  falls back to `theme`) — else `400`. Layout + snap + colors are written in **one UPDATE**
-  (the DAL builds the SET list conditionally).
+  falls back to `theme`) — else `400`. `textLayout` validation (`validateTextLayout`,
+  migration 91): same tri-state — `undefined` leaves the column untouched, `null` clears it,
+  an object is coerced to `{foreign?,english?}` where each present block has finite numeric
+  `x`/`y`/`scale`/`rotation` (+ optional `locked`); `scale` clamps to `[0.5,3]` and the center
+  to `[0,1]` (a safe outer bound — the client already clamps the whole box on-card); a block
+  that normalizes to nothing collapses to `null` — else `400`. Layout + snap + colors + text
+  placement are written in **one UPDATE** (the DAL builds the SET list conditionally).
 
 **Types** — `IconLayoutItem` (with the optional `flipX` and `locked`) + `iconLayout?:
 IconLayoutItem[] | null`, `SnapConfig` (`{move,rotate,resize}`) + `snapConfig?:
 SnapConfig | null`, and `TextColors` (`{foreign,english}` of `TextColorMode =
-'theme'|'dark'|'light'`) + `textColors?: TextColors | null` on the `VocabEntry` interface,
-in both `server/types/index.ts` and client `src/types.ts`. `SnapConfig` is re-exported from
+'theme'|'dark'|'light'`) + `textColors?: TextColors | null`, and `cardColor?: string | null`
+(the card background fill, migration 94) on the `VocabEntry` interface, in both
+`server/types/index.ts` and client `src/types.ts`. `SnapConfig` is re-exported from
 `CardIconCanvas.tsx`. The Contrast color resolver `resolveTextColor` lives in
-`src/utils/cardTextColor.ts`.
+`src/utils/cardTextColor.ts`; the card-fill palette + resolver (`CARD_COLOR_OPTIONS` /
+`resolveCardColor`) live in `src/utils/cardColor.ts`, with the server's allow-list
+`CARD_COLOR_VALUES` in `server/types/index.ts` (kept in sync by hand).
 
 ## Dependencies / cross-references
 

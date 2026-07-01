@@ -2,7 +2,7 @@ import { PoolClient, QueryResult } from 'pg';
 import { BaseDAL } from '../base/BaseDAL.js';
 import { IVocabEntryDAL } from '../interfaces/IVocabEntryDAL.js';
 import { dbManager } from '../base/DatabaseManager.js';
-import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, UsedInItem, IconLayoutItem, SnapConfig, TextColors } from '../../types/index.js';
+import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, UsedInItem, IconLayoutItem, SnapConfig, TextColors, TextLayout } from '../../types/index.js';
 import { ValidationError, NotFoundError, BulkResult, ITransaction, DALError } from '../../types/dal.js';
 import db from '../../db.js';
 import { DICT_COLS, DICT_JOIN } from '../shared/dictJoin.js';
@@ -100,7 +100,9 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     language: string,
     layout: IconLayoutItem[] | null,
     snapConfig?: SnapConfig | null,
-    textColors?: TextColors | null
+    textColors?: TextColors | null,
+    textLayout?: TextLayout | null,
+    cardColor?: string | null
   ): Promise<VocabEntry | null> {
     if (!userId) throw new ValidationError('userId is required');
     if (!id) throw new ValidationError('id is required');
@@ -127,6 +129,17 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
       const colorsValue = textColors === null ? null : JSON.stringify(textColors);
       params.push(colorsValue);
       sets.push(`"textColors" = $${params.length}::jsonb`);
+    }
+    if (textLayout !== undefined) {
+      const textLayoutValue = textLayout === null ? null : JSON.stringify(textLayout);
+      params.push(textLayoutValue);
+      sets.push(`"textLayout" = $${params.length}::jsonb`);
+    }
+    // cardColor is a plain hex TEXT column (migration 94), not jsonb: null clears it, a
+    // validated hex string sets it. Same tri-state (undefined = leave untouched) as above.
+    if (cardColor !== undefined) {
+      params.push(cardColor);
+      sets.push(`"cardColor" = $${params.length}::text`);
     }
     params.push(id, userId);
 

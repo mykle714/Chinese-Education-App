@@ -1,0 +1,675 @@
+sort_order,id,word1,pronunciation,difficulty,definition,has_icon
+1,347,一,yī,1,one,yes
+2,353,一下,yī xià,1,"a little (indicating brief duration, or softening the tone, or suggesting giving something a try)",yes
+3,900,一起,yī qǐ,1,together,yes
+4,1061,七,qī,1,seven,yes
+5,1155,三,sān,1,three,yes
+6,1548,上,shàng,1,upper,yes
+7,1589,上午,shàng wǔ,1,morning,yes
+8,1803,上课,shàng kè,1,to attend class,yes
+9,1858,下,xià,1,down,yes
+10,1889,下午,xià wǔ,1,afternoon,yes
+11,2022,下课,xià kè,1,to finish class,yes
+12,2057,下雨,xià yǔ,1,to rain,yes
+13,2085,不,bù,1,not,yes
+14,2555,不是,bù shì,1,is not,yes
+15,3216,中,zhōng,1,in,
+16,3260,中午,zhōng wǔ,1,noon,
+17,3281,中国,zhōng guó,1,China,
+18,3539,中文,zhōng wén,1,Chinese language,
+19,4231,九,jiǔ,1,nine,yes
+20,4555,了,le,1,"(modal particle indicating change of state, situation now)",yes
+21,4662,二,èr,1,two,yes
+22,4936,五,wǔ,1,five,yes
+23,5624,人,rén,1,person,yes
+24,5653,人们,rén men,1,people,yes
+25,5997,什么,shén me,1,what?,yes
+26,6002,什么时候,shén me shí hou,1,when?,yes
+27,6084,今天,jīn tiān,1,today,yes
+28,6085,今年,jīn nián,1,this year,yes
+29,6153,他,tā,1,"(third-person singular) (since the early 20th century, usu. male) he",yes
+30,6157,他们,tā men,1,they,yes
+31,6457,以后,yǐ hoù,1,after,yes
+32,6870,休息,xiū xi,1,to rest,yes
+33,7494,你,nǐ,1,"you (informal, as opposed to courteous 您[nin2])",yes
+34,7497,你好,nǐ hǎo,1,hello,yes
+35,7638,来,lái,1,to come,yes
+36,7645,来到,lái dào,1,to arrive,yes
+37,9132,做,zuò,1,to do,yes
+38,10877,儿子,ér zi,1,son,yes
+39,11527,八,bā,1,eight,yes
+40,11711,公共汽车,gōng gòng qì chē,1,bus,yes
+41,11753,公园,gōng yuán,1,park (for public recreation),yes
+42,11954,六,liù,1,six,yes
+43,12320,再见,zài jiàn,1,goodbye,yes
+44,12502,冬天,dōng tiān,1,winter,yes
+45,12662,冷,lěng,1,cold,yes
+46,13055,出去,chū qù,1,to go out,yes
+47,13567,分钟,fēn zhōng,1,minute,yes
+48,14293,前,qián,1,front,yes
+49,16085,北京,běi jīng,1,Beijing,yes
+50,16416,十,shí,1,ten,yes
+51,16525,千,qiān,1,thousand,yes
+52,17948,去,qù,1,to go,yes
+53,18071,又,yoù,1,(once) again,yes
+54,18961,叫,jiào,1,to call,yes
+55,19026,可以,kě yǐ,1,can,
+56,19319,右,yoù,1,right-hand side,yes
+57,19409,吃,chī,1,to eat,yes
+58,19522,吃饭,chī fàn,1,to have a meal,yes
+59,19942,同学,tóng xué,1,classmate,yes
+60,20209,后,hoù,1,behind,yes
+61,20453,听,tīng,1,to listen to,yes
+62,21082,和,hé,1,and; with; sum,yes
+63,21629,哥哥,gē ge,1,older brother,yes
+64,21672,哪,nǎ,1,which,yes
+65,21678,哪个,nǎ ge,1,which,yes
+66,21680,哪儿,nǎ r,1,where?,yes
+67,21689,哪里,nǎ lǐ,1,where?,yes
+68,21954,唱歌,chàng gē,1,to sing a song,yes
+69,22134,问,wèn,1,to ask,yes
+70,22473,喜欢,xǐ huan,1,to like,yes
+71,22508,喝,hē,1,to drink,yes
+72,23556,四,sì,1,four,yes
+73,23735,回来,huí lai,1,to come back,yes
+74,23773,回家,huí jiā,1,to return home,yes
+75,24751,在,zài,1,(of somebody or something) to be (located) at,yes
+76,25145,坐下,zuò xia,1,to sit down,yes
+77,25199,坐车,zuò chē,1,"to take the car, bus, train etc",yes
+78,26814,夏天,xià tiān,1,summer,yes
+79,26864,外,wài,1,outside,yes
+80,27112,多,duō,1,many,yes
+81,27181,多少,duō shǎo,1,how much?,yes
+82,27468,大,dà,1,big,yes
+83,28468,天,tiān,1,sky,yes
+84,28640,天气,tiān qì,1,weather,yes
+85,29667,女儿,nǚ ér,1,daughter,yes
+86,29778,奶奶,nǎi nai,1,paternal grandmother,yes
+87,29844,她,tā,1,she,yes
+88,29851,好,hǎo,1,good,yes
+89,30217,妹妹,mèi mei,1,younger sister,yes
+90,30281,姐姐,jiě jie,1,older sister,yes
+91,30787,妈妈,mā ma,1,mother,yes
+92,31404,孩子,hái zi,1,child,yes
+93,31511,学校,xué xiào,1,school,yes
+94,31528,学生,xué sheng,1,student,yes
+95,31540,学习,xué xí,1,to study,yes
+96,32558,家,jiā,1,home,yes
+97,33363,写,xiě,1,to write,yes
+98,33889,对,duì,1,correct,yes
+99,33894,对不起,duì bu qǐ,1,I'm sorry,yes
+100,34123,小,xiǎo,1,small,yes
+101,34329,小时,xiǎo shí,1,hour,yes
+102,34795,就,jiù,1,just,yes
+103,35345,山,shān,1,mountain,yes
+104,36108,工作,gōng zuò,1,work,yes
+105,37636,年,nián,1,year,yes
+106,37925,几点,jǐ diǎn,1,what time?,yes
+107,37943,床,chuáng,1,bed,yes
+108,38896,弟弟,dì di,1,younger brother,yes
+109,39653,很,hěn,1,very,yes
+110,40896,快,kuài,1,quick,yes
+111,41044,怎么,zěn me,1,how?,yes
+112,42378,爱,ài,1,to love,yes
+113,43537,我,wǒ,1,I,yes
+114,43540,我们,wǒ men,1,we,yes
+115,43867,房子,fáng zi,1,house,yes
+116,43892,房间,fáng jiān,1,room,yes
+117,43995,手,shǒu,1,hand,yes
+118,44541,打电话,dǎ diàn huà,1,to make a telephone call,yes
+119,51376,新,xīn,1,new,yes
+120,52290,早,zǎo,1,early,yes
+121,52292,早上,zǎo shang,1,early morning,yes
+122,52519,明天,míng tiān,1,tomorrow,yes
+123,52746,星期,xīng qī,1,week,yes
+124,52747,星期一,xīng qī yī,1,Monday,yes
+125,52748,星期三,xīng qī sān,1,Wednesday,yes
+126,52749,星期二,xīng qī èr,1,Tuesday,yes
+127,52750,星期五,xīng qī wǔ,1,Friday,yes
+128,52752,星期四,xīng qī sì,1,Thursday,yes
+129,52832,春天,chūn tiān,1,spring (season),yes
+130,52873,春节,chūn jié,1,Spring Festival (Chinese New Year),yes
+131,52912,昨天,zuó tiān,1,yesterday,yes
+132,52936,是,shì,1,to be (followed by substantives only),yes
+133,53066,时间,shí jiān,1,(duration of) time,yes
+134,53135,晚,wǎn,1,evening,yes
+135,53136,晚上,wǎn shang,1,evening,yes
+136,53965,书,shū,1,book,yes
+137,54294,月,yuè,1,moon,
+138,54392,有,yǒu,1,to have,
+139,54748,朋友,péng you,1,friend,yes
+140,57240,桌子,zhuō zi,1,table,yes
+141,57854,椅子,yǐ zi,1,chair,yes
+142,58797,树,shù,1,tree,yes
+143,60921,每天,měi tiān,1,every day,yes
+144,61691,水,shuǐ,1,water,yes
+145,61798,水果,shuǐ guǒ,1,fruit,yes
+146,62464,汽车,qì chē,1,car,yes
+147,62673,没有,méi yǒu,1,to not have,
+148,62728,没关系,méi guān xi,1,it doesn't matter,yes
+149,64669,海,hǎi,1,sea,yes
+150,67371,汉语,hàn yǔ,1,Chinese language,yes
+151,68436,火车,huǒ chē,1,train,yes
+152,68776,为什么,wèi shén me,1,why?,yes
+153,70723,爸爸,bà ba,1,dad,yes
+154,70731,爷爷,yé ye,1,grandpa,yes
+155,70912,牛,niú,1,cow,yes
+156,70923,牛奶,niú nǎi,1,cow's milk,yes
+157,71565,狗,gǒu,1,dog,yes
+158,72716,现在,xiàn zài,1,now,yes
+159,73706,生日,shēng rì,1,birthday,yes
+160,76032,白色,bái sè,1,white,yes
+161,76202,百,bǎi,1,hundred,
+162,76378,的,de,1,~'s (possessive particle),yes
+163,77461,看,kàn,1,to look at,yes
+164,77486,看到,kàn dào,1,to see,yes
+165,77513,看书,kàn shū,1,to read,yes
+166,77785,眼睛,yǎn jing,1,eye,yes
+167,77950,睡觉,shuì jiào,1,to sleep,yes
+168,80439,秋天,qiū tiān,1,autumn,yes
+169,81530,窗户,chuāng hu,1,window,yes
+170,82160,第一,dì yī,1,first,yes
+171,82201,第二,dì èr,1,second,yes
+172,83109,米饭,mǐ fàn,1,(cooked) rice,yes
+173,83930,红色,hóng sè,1,red (color),yes
+174,84924,给,gěi,1,to give,yes
+175,85329,绿色,lǜ sè,1,green,yes
+176,86965,羊,yáng,1,sheep,yes
+177,87784,老师,lǎo shī,1,teacher,yes
+178,88174,耳朵,ěr duo,1,ear,yes
+179,89627,能,néng,1,can,yes
+180,92273,花,huā,1,flower,yes
+181,93001,茶,chá,1,tea,yes
+182,93504,菜,cài,1,dish (of food),yes
+183,95286,蓝色,lán sè,1,blue (color),yes
+184,95646,苹果,píng guǒ,1,apple,yes
+185,97428,衣服,yī fu,1,clothes,yes
+186,97952,里,lǐ,1,inside,yes
+187,98619,要,yào,1,to want,yes
+188,100379,说,shuō,1,to say,yes
+189,100449,说话,shuō huà,1,to speak,yes
+190,100470,谁,shéi,1,who,yes
+191,100673,请,qǐng,1,please (do something),yes
+192,101038,谢谢,xiè xie,1,thank you,yes
+193,101366,读,dú,1,to read,yes
+194,101918,猫,māo,1,cat,yes
+195,102407,买,mǎi,1,to buy,yes
+196,102428,买东西,mǎi dōng xi,1,to do one's shopping,yes
+197,103360,走路,zǒu lù,1,to walk,yes
+198,103433,起床,qǐ chuáng,1,to get up,yes
+199,104095,路,lù,1,road,yes
+200,106611,这,zhè,1,(pronoun) this,yes
+201,107143,进来,jìn lái,1,to come in,yes
+202,108778,都,dōu,1,all,yes
+203,109533,医院,yī yuàn,1,hospital,yes
+204,111092,钱,qián,1,money,yes
+205,112178,门,mén,1,door,yes
+206,112437,开始,kāi shǐ,1,to begin,yes
+207,115257,鸡,jī,1,chicken,yes
+208,115313,鸡蛋,jī dàn,1,(chicken) egg,yes
+209,115677,零,líng,1,zero,yes
+210,115915,电影,diàn yǐng,1,movie,yes
+211,116034,电视,diàn shì,1,TV,yes
+212,116050,电话,diàn huà,1,phone call,yes
+213,117246,音乐,yīn yuè,1,music,yes
+214,117781,头,tóu,1,head,yes
+215,118054,颜色,yán sè,1,color,yes
+216,118510,飞机,fēi jī,1,airplane,yes
+217,119357,马,mǎ,1,horse,yes
+218,120464,高,gāo,1,tall,yes
+219,120765,高兴,gāo xìng,1,happy,yes
+220,121257,鱼,yú,1,fish,yes
+221,122434,面包,miàn bāo,1,bread,yes
+222,122739,黄色,huáng sè,1,yellow,yes
+223,123110,黑色,hēi sè,1,black,yes
+224,123559,鼻子,bí zi,1,nose,yes
+225,124003,一个,yī ge,1,a,yes
+226,124005,坐,zuò,1,to sit,yes
+227,124006,画,huà,1,picture,yes
+228,124008,很多,hěn duō,1,a lot of,yes
+229,373,一些,yī xiē,2,some,yes
+230,530,一家,yī jiā,2,the whole family,yes
+231,750,一直,yī zhí,2,continuously,yes
+232,990,一点,yī diǎn,2,a bit,yes
+233,997,一点点,yī diǎn diǎn,2,a little bit,yes
+234,1150,丈夫,zhàng fu,2,husband,yes
+235,1738,上班,shàng bān,2,to go to work,yes
+236,1982,下班,xià bān,2,to get off work,yes
+237,2058,下雪,xià xuě,2,to snow,yes
+238,4450,干净,gān jìng,2,clean,yes
+239,6122,介绍,jiè shào,2,to introduce (somebody to somebody),yes
+240,6212,付钱,fù qián,2,to pay,yes
+241,6429,以前,yǐ qián,2,before,yes
+242,7070,但是,dàn shì,2,but,yes
+243,7093,位,wèi,2,position,yes
+244,7447,作业,zuò yè,2,homework,yes
+245,9966,像,xiàng,2,to resemble,yes
+246,10449,先,xiān,2,first,yes
+247,11258,全家,quán jiā,2,whole family,yes
+248,13033,出来,chū lái,2,to come out,yes
+249,13185,出租车,chū zū chē,2,taxi,yes
+250,13246,出门,chū mén,2,to go out,yes
+251,13871,别,bié,2,don't ...!,yes
+252,15846,包,bāo,2,bag,yes
+253,19153,可能,kě néng,2,possible,
+254,20762,告诉,gào sù,2,to tell,yes
+255,20799,周,zhōu,2,week,yes
+256,21677,哪些,nǎ xiē,2,which ones?,yes
+257,22163,问题,wèn tí,2,problem,yes
+258,23835,回答,huí dá,2,to answer,yes
+259,23928,因为,yīn wèi,2,because,yes
+260,24917,地方,dì fāng,2,place,yes
+261,25505,城市,chéng shì,2,city,yes
+262,26002,报纸,bào zhǐ,2,newspaper,yes
+263,26658,坏,huài,2,bad,yes
+264,27745,大小,dà xiǎo,2,size,yes
+265,29896,好好,hǎo hǎo,2,well,yes
+266,30227,妻子,qī zǐ,2,wife,yes
+267,32528,害怕,hài pà,2,to be afraid,yes
+268,32564,家人,jiā rén,2,family member,yes
+269,33496,宝宝,bǎo bao,2,baby,yes
+270,36481,已经,yǐ jīng,2,already,yes
+271,37341,帮助,bāng zhù,2,to help,yes
+272,38020,店,diàn,2,store,yes
+273,38239,厕所,cè suǒ,2,toilet,yes
+274,42739,慢,màn,2,slow,yes
+275,42756,慢慢,màn màn,2,slowly,yes
+276,43896,所以,suǒ yǐ,2,so,yes
+277,44076,手机,shǒu jī,2,mobile phone,yes
+278,44377,打扫,dǎ sǎo,2,to clean,yes
+279,49929,放假,fàng jià,2,to have a holiday or vacation,yes
+280,50510,散步,sàn bù,2,to take a walk,yes
+281,51940,旁边,páng biān,2,side,yes
+282,53383,晴天,qíng tiān,2,sunny day,yes
+283,54194,最近,zuì jìn,2,recently,yes
+284,54303,月份,yuè fèn,2,month,
+285,54412,有些人,yǒu xiē rén,2,some people,
+286,54549,有时候,yǒu shí hou,2,sometimes,
+287,56324,果汁,guǒ zhī,2,fruit juice,yes
+288,58589,楼,lóu,2,floor,yes
+289,62929,河,hé,2,river,yes
+290,63952,洗澡,xǐ zǎo,2,to bathe,yes
+291,66226,游泳,yóu yǒng,2,to swim,yes
+292,66415,汤,tāng,2,soup,yes
+293,66503,准备,zhǔn bèi,2,to prepare,yes
+294,67174,漂亮,piào liang,2,beautiful,yes
+295,69591,然后,rán hoù,2,then,yes
+296,70060,热,rè,2,hot (of weather),yes
+297,70966,牛肉,niú roù,2,beef,yes
+298,74587,画画,huà huà,2,to draw,yes
+299,77566,真,zhēn,2,real,yes
+300,81779,站,zhàn,2,to stand,yes
+301,81796,站起来,zhàn qǐ lai,2,to stand up,yes
+302,82659,节日,jié rì,2,festival,yes
+303,82972,篮球,lán qiú,2,basketball,yes
+304,87693,老人,lǎo rén,2,old man or woman,yes
+305,87989,考试,kǎo shì,2,exam,yes
+306,89056,肚子,dù zi,2,belly,yes
+307,90114,脚,jiǎo,2,foot,yes
+308,90239,腿,tuǐ,2,leg,yes
+309,93834,万,wàn,2,ten thousand,yes
+310,97259,街上,jiē shang,2,on the street,yes
+311,97338,卫生间,wèi shēng jiān,2,toilet,yes
+312,97793,裙子,qún zi,2,skirt,yes
+313,98235,裤子,kù zi,2,pants,yes
+314,99711,许多,xǔ duō,2,many,yes
+315,102340,贵,guì,2,expensive,yes
+316,102430,买票,mǎi piào,2,to buy tickets,yes
+317,102815,卖,mài,2,to sell,yes
+318,103406,起来,qǐ lai,2,to get up,yes
+319,103833,足球,zú qiú,2,soccer,yes
+320,103933,跑,pǎo,2,to run,yes
+321,103953,跑步,pǎo bù,2,to run,yes
+322,104186,跳,tiào,2,to jump,yes
+323,104218,跳舞,tiào wǔ,2,to dance,yes
+324,107130,周末,zhōu mò,2,weekend,yes
+325,107153,进去,jìn qù,2,to go in,yes
+326,107384,运动,yùn dòng,2,sports,yes
+327,107495,过去,guò qù,2,(in the) past,yes
+328,108371,还有,hái yǒu,2,in addition,
+329,110701,银行,yín háng,2,bank,yes
+330,111189,错,cuò,2,wrong,yes
+331,111893,长,cháng,2,long,yes
+332,115471,雨伞,yǔ sǎn,2,umbrella,yes
+333,116015,电脑,diàn nǎo,2,computer,yes
+334,117036,鞋子,xié zi,2,shoe,yes
+335,118908,餐厅,cān tīng,2,restaurant,yes
+336,119366,马上,mǎ shàng,2,immediately,yes
+337,119621,马路,mǎ lù,2,road,yes
+338,120421,体育,tǐ yù,2,sports,yes
+339,121679,鸟,niǎo,2,bird,yes
+340,122454,面条,miàn tiáo,2,noodles,yes
+341,607,一排,yī pái,3,row,yes
+342,837,一般,yī bān,3,ordinary,yes
+343,935,一边,yī biān,3,one side,yes
+344,1770,上网,shàng wǎng,3,to go online,yes
+345,1898,下去,xià qù,3,to continue,yes
+346,1949,下棋,xià qí,3,to play chess,yes
+347,2409,不少,bù shǎo,3,many,yes
+348,3627,中秋节,zhōng qiū jié,3,the Mid-Autumn Festival on 15th of 8th lunar month,yes
+349,3757,中间,zhōng jiān,3,in the middle,
+350,7107,位置,wèi zhi,3,position,yes
+351,7929,便宜,pián yi,3,cheap,yes
+352,8967,假期,jià qī,3,vacation,yes
+353,9256,停车场,tíng chē chǎng,3,parking lot,yes
+354,9283,健康,jiàn kāng,3,health,yes
+355,10068,价格,jià gé,3,price,yes
+356,10319,元旦,yuán dàn,3,New Year's Day,yes
+357,10893,兔子,tù zi,3,rabbit,yes
+358,11738,公司,gōng sī,3,company,yes
+359,12175,其实,qí shí,3,actually,yes
+360,12616,冰箱,bīng xiāng,3,refrigerator,yes
+361,13162,出生,chū shēng,3,to be born,yes
+362,15176,加油站,jiā yóu zhàn,3,gas station,yes
+363,15460,动作,dòng zuò,3,action,yes
+364,15873,包子,bāo zi,3,steamed stuffed bun,yes
+365,17800,原因,yuán yīn,3,reason,yes
+366,19124,可乐,kě lè,3,(loanword) cola,
+367,19565,各种,gè zhǒng,3,all kinds of,yes
+368,19904,同事,tóng shì,3,colleague,yes
+369,19970,同意,tóng yì,3,to agree,yes
+370,21214,咖啡,kā fēi,3,(loanword) coffee,yes
+371,21221,咖啡店,kā fēi diàn,3,café,yes
+372,22231,啤酒,pí jiǔ,3,beer (loanword),yes
+373,23116,嘴,zuǐ,3,mouth,yes
+374,23977,困难,kùn nan,3,difficult,yes
+375,24194,国庆节,guó qìng jié,3,PRC National Day (October 1st),yes
+376,24539,图书馆,tú shū guǎn,3,library,yes
+377,24723,土豆,tǔ doù,3,potato,yes
+378,24876,地图,dì tú,3,map,yes
+379,25032,地铁,dì tiě,3,subway,yes
+380,26948,外套,wài tào,3,coat,yes
+381,27918,大概,dà gài,3,probably,yes
+382,30033,如果,rú guǒ,3,if,yes
+383,31332,季节,jì jié,3,season,yes
+384,32357,客厅,kè tīng,3,living room,yes
+385,36406,差,chà,3,inferior,yes
+386,36412,差不多,chà bu duō,3,almost,yes
+387,37273,帽子,mào zi,3,hat,yes
+388,37665,年夜饭,nián yè fàn,3,reunion dinner on Lunar New Year's Eve (Chinese New Year tradition),yes
+389,38299,厨房,chú fáng,3,kitchen,yes
+390,39219,弹琴,tán qín,3,to play or strum a lute or other stringed instrument,yes
+391,39359,形状,xíng zhuàng,3,shape,yes
+392,39702,后天,hoù tiān,3,the day after tomorrow,yes
+393,39996,从来,cóng lái,3,never (if used in negative sentence),yes
+394,40535,心情,xīn qíng,3,mood,yes
+395,40857,忙着,máng zhe,3,to be occupied with (doing something),yes
+396,41887,情人节,qíng rén jié,3,Valentine's Day,yes
+397,42405,爱好,ài hào,3,hobby,yes
+398,42525,感冒,gǎn mào,3,(common) cold,yes
+399,42527,感到,gǎn dào,3,to feel,yes
+400,42585,感谢,gǎn xiè,3,thanks,yes
+401,43497,成绩,chéng jì,3,grades,yes
+402,44018,手套,shǒu tào,3,glove,yes
+403,44101,手纸,shǒu zhǐ,3,toilet paper,yes
+404,44145,手表,shǒu biǎo,3,wristwatch,yes
+405,44364,打折,dǎ zhé,3,to give a discount,yes
+406,44520,打针,dǎ zhēn,3,to give or get an injection,yes
+407,44870,找钱,zhǎo qián,3,to give change,yes
+408,45857,拍照,pāi zhào,3,to take a picture,yes
+409,46417,拿铁,ná tiě,3,latte (loanword),yes
+410,49170,担心,dān xīn,3,to worry,yes
+411,49803,收音机,shōu yīn jī,3,radio,yes
+412,50764,数字,shù zì,3,number,yes
+413,51772,方便,fāng biàn,3,convenient,yes
+414,51821,方法,fāng fǎ,3,method,yes
+415,51968,旅行,lǚ xíng,3,to travel,yes
+416,51977,旅游,lǚ yóu,3,to travel,yes
+417,53310,普通话,pǔ tōng huà,3,Mandarin Chinese,yes
+418,54700,有趣,yǒu qù,3,interesting,
+419,55104,未来,wèi lái,3,future,yes
+420,57174,桃子,táo zi,3,peach,yes
+421,57490,梨,lí,3,pear,yes
+422,57537,梳子,shū zi,3,comb,yes
+423,58933,橙子,chéng zi,3,orange,yes
+424,58944,橙色,chéng sè,3,orange (color),yes
+425,58974,机场,jī chǎng,3,airport,yes
+426,59324,柠檬,níng méng,3,lemon,yes
+427,59344,柜子,guì zi,3,cupboard,yes
+428,60902,母亲节,mǔ qīn jié,3,Mother's Day,yes
+429,61134,毛巾,máo jīn,3,towel,yes
+430,61186,毛衣,máo yī,3,(wool) sweater,yes
+431,62870,沙发,shā fā,3,sofa (loanword),yes
+432,63929,洗手液,xǐ shǒu yè,3,liquid hand soap,yes
+433,63984,洗衣机,xǐ yī jī,3,washing machine,yes
+434,63997,洗发水,xǐ fà shuǐ,3,shampoo (liquid),yes
+435,64313,派对,pài duì,3,(loanword) party,yes
+436,66323,湖,hú,3,lake,yes
+437,66629,温度,wēn dù,3,temperature,
+438,68446,火锅,huǒ guō,3,hotpot,yes
+439,68657,炒饭,chǎo fàn,3,fried rice,yes
+440,70624,爬山,pá shān,3,to go for a hike (esp. in the hills or mountains),yes
+441,70858,牙刷,yá shuā,3,toothbrush,yes
+442,70894,牙膏,yá gāo,3,toothpaste,yes
+443,73328,瓜子,guā zǐ,3,"seeds of pumpkin, watermelon or sunflower etc, roasted and flavored, consumed as a snack",yes
+444,73735,生气,shēng qì,3,to get angry,yes
+445,75624,发烧,fā shāo,3,to have a fever,yes
+446,75648,发短信,fā duǎn xìn,3,to send a text message,yes
+447,75732,发音,fā yīn,3,pronunciation,yes
+448,76103,白开水,bái kāi shuǐ,3,plain boiled water,yes
+449,77526,看病,kàn bìng,3,to visit a doctor,yes
+450,77544,看起来,kàn qǐ lai,3,to seem,yes
+451,77832,眼镜,yǎn jìng,3,eyeglasses,yes
+452,78270,短,duǎn,3,short,yes
+453,78347,矮,ǎi,3,(of a person) short,yes
+454,79505,矿泉水,kuàng quán shuǐ,3,mineral water,yes
+455,80602,秒,miǎo,3,second (unit of time),yes
+456,81333,空气,kōng qì,3,air,
+457,81386,空调,kōng tiáo,3,air conditioner (including units that have a heating mode),
+458,81704,立刻,lì kè,3,immediately,yes
+459,82139,笨,bèn,3,stupid,yes
+460,82402,答案,dá àn,3,answer,yes
+461,82639,节,jié,3,seasonal festival,yes
+462,82848,简单,jiǎn dān,3,simple,yes
+463,83160,粉色,fěn sè,3,pink,yes
+464,83262,粥,zhōu,3,congee,yes
+465,83489,糖果,táng guǒ,3,candy,yes
+466,83884,红绿灯,hóng lǜ dēng,3,traffic light,yes
+467,83940,红茶,hóng chá,3,black tea,yes
+468,84423,紫色,zǐ sè,3,purple,yes
+469,84709,结婚,jié hūn,3,to get married,yes
+470,85149,经常,jīng cháng,3,often,yes
+471,85929,练,liàn,3,to practice,yes
+472,85935,练习,liàn xí,3,to practice,yes
+473,86158,总是,zǒng shì,3,always,yes
+474,87480,习惯,xí guàn,3,habit,yes
+475,87910,老板,lǎo bǎn,3,boss,yes
+476,88017,而,ér,3,and,yes
+477,88300,聊天,liáo tiān,3,to chat,yes
+478,88435,圣诞节,shèng dàn jié,3,Christmas,yes
+479,88493,聚会,jù huì,3,party,yes
+480,88672,聪明,cōng ming,3,intelligent,yes
+481,89293,背,bēi,3,the back of a body or object,yes
+482,90559,脏,zāng,3,dirty,yes
+483,90584,卧室,wò shì,3,bedroom,yes
+484,91459,兴趣,xìng qù,3,interest (desire to know about something),yes
+485,91517,旧,jiù,3,old,yes
+486,92167,芒果,máng guǒ,3,(loanword) mango,yes
+487,92391,花生,huā shēng,3,peanut,yes
+488,93089,草,cǎo,3,grass,yes
+489,93155,草莓,cǎo méi,3,strawberry,yes
+490,93508,菜单,cài dān,3,menu,yes
+491,94266,葡萄,pú tao,3,grape,yes
+492,94826,蔬菜,shū cài,3,vegetables,yes
+493,95422,药,yào,3,medicine,yes
+494,96175,蛋糕,dàn gāo,3,cake,yes
+495,96436,虾,xiā,3,shrimp,yes
+496,97159,行李,xíng li,3,luggage,yes
+497,97276,街道,jiē dào,3,street,yes
+498,98324,袜子,wà zi,3,socks,yes
+499,98337,衬衫,chèn shān,3,shirt,yes
+500,98523,西瓜,xī guā,3,watermelon,yes
+501,98543,西红柿,xī hóng shì,3,tomato,yes
+502,99440,计划,jì huà,3,plan,yes
+503,99509,讨厌,tǎo yàn,3,annoying,yes
+504,99861,词典,cí diǎn,3,dictionary,yes
+505,100173,认真,rèn zhēn,3,serious,yes
+506,101221,警察,jǐng chá,3,police,yes
+507,101415,变化,biàn huà,3,change,yes
+508,101624,豆腐,doù fu,3,tofu,yes
+509,101830,猪,zhū,3,pig,yes
+510,101862,猪肉,zhū roù,3,pork,yes
+511,102496,贴,tiē,3,to stick,yes
+512,102739,宾馆,bīn guǎn,3,hotel,yes
+513,103553,超市,chāo shì,3,supermarket,yes
+514,106844,逛街,guàng jiē,3,to window-shop,yes
+515,107484,过来,guò lái,3,to come over,yes
+516,107518,过年,guò nián,3,to celebrate the Chinese New Year,yes
+517,107691,道歉,dào qiàn,3,to apologize,yes
+518,108989,邻居,lín jū,3,neighbor,yes
+519,109837,重要,zhòng yào,3,important,yes
+520,110437,钓鱼,diào yú,3,to fish (with line and hook),yes
+521,110702,银行卡,yín háng kǎ,3,bank card,yes
+522,111099,钱包,qián bāo,3,wallet,yes
+523,111280,锻炼,duàn liàn,3,to work out,yes
+524,111515,镜子,jìng zi,3,mirror,yes
+525,111818,钥匙,yào shi,3,key,yes
+526,112524,开会,kāi huì,3,to hold a meeting,yes
+527,112993,关系,guān xi,3,relationship,yes
+528,113028,关心,guān xīn,3,to care about,yes
+529,113719,附近,fù jìn,3,nearby,yes
+530,113842,院子,yuàn zi,3,courtyard,yes
+531,113946,阴天,yīn tiān,3,cloudy day,yes
+532,114260,阳台,yáng tái,3,balcony,yes
+533,114957,虽然,suī rán,3,although,yes
+534,115236,杂志,zá zhì,3,magazine,yes
+535,115305,鸡肉,jī roù,3,chicken meat,yes
+536,115447,难看,nán kàn,3,ugly,yes
+537,115463,难过,nán guò,3,to feel sad,yes
+538,115940,电梯,diàn tī,3,elevator,yes
+539,115973,电灯,diàn dēng,3,electric light,yes
+540,116847,靠窗,kào chuāng,3,by the window (referring to seats on a plane etc),yes
+541,117858,头疼,tóu téng,3,headache,yes
+542,118428,刮风,guā fēng,3,to be windy,yes
+543,118810,饺子,jiǎo zi,3,dumpling,yes
+544,119303,香皂,xiāng zào,3,perfumed soap,yes
+545,119331,香蕉,xiāng jiāo,3,banana,yes
+546,1573,上来,shàng lái,4,to come up,yes
+547,1578,上传,shàng chuán,4,to upload,yes
+548,1901,下单,xià dān,4,to place an order,yes
+549,2032,下载,xià zǎi,4,to download,yes
+550,2166,不仅,bù jǐn,4,not just,yes
+551,4488,干货,gān huò,4,(fig.) (coll.) knowledge presented in readily assimilable form,yes
+552,5415,交流,jiāo liú,4,exchange,yes
+553,6199,付款,fù kuǎn,4,to pay a sum of money,yes
+554,6595,任务,rèn wu,4,task,yes
+555,7249,住院,zhù yuàn,4,to be hospitalized,yes
+556,8912,假,jiǎ,4,fake,yes
+557,9304,健身,jiàn shēn,4,to work out,yes
+558,9378,偶尔,ǒu ěr,4,occasionally,yes
+559,10226,优点,yōu diǎn,4,advantage,yes
+560,10855,免费,miǎn fèi,4,free (of charge),yes
+561,10965,入境,rù jìng,4,to enter a country,yes
+562,13079,出境,chū jìng,4,to leave a country or region,yes
+563,13096,出差,chū chāi,4,to go on an official or business trip,yes
+564,13346,分享,fēn xiǎng,4,to share (let others have some of something good),yes
+565,13420,分手,fēn shǒu,4,to break up,yes
+566,14257,剃须刀,tì xū dāo,4,razor,yes
+567,15196,加班,jiā bān,4,to work overtime,yes
+568,16483,十字路口,shí zì lù kǒu,4,intersection,yes
+569,17894,原谅,yuán liàng,4,to forgive,yes
+570,17949,去世,qù shì,4,to die,yes
+571,28903,太极,tài jí,4,"the Absolute or Supreme Ultimate, the source of all things according to some interpretations of Chinese mythology",yes
+572,28907,太极拳,tài jí quán,4,tai chi,yes
+573,29963,好处,hǎo chu,4,benefit,yes
+574,32900,密码,mì mǎ,4,password,yes
+575,36715,市中心,shì zhōng xīn,4,city center,
+576,37615,平静,píng jìng,4,tranquil,yes
+577,37712,年货,nián huò,4,merchandise sold for Chinese New Year,yes
+578,37877,几乎,jī hū,4,almost,yes
+579,38635,建议,jiàn yì,4,to suggest,yes
+580,39145,强身健体,qiáng shēn jiàn tǐ,4,to keep fit and healthy,yes
+581,40950,快递,kuài dì,4,express delivery,yes
+582,41118,思念,sī niàn,4,to miss,yes
+583,41299,性格,xìng gé,4,character,yes
+584,41773,悠闲,yōu xián,4,leisurely,yes
+585,42185,想念,xiǎng niàn,4,to miss,yes
+586,43208,怀孕,huái yùn,4,pregnant,yes
+587,43573,戒指,jiè zhi,4,(finger) ring,
+588,44121,手术,shǒu shù,4,surgery,yes
+589,44810,批评,pī píng,4,to criticize,yes
+590,45279,折,zhé,4,discount,yes
+591,45905,拒绝,jù jué,4,to refuse,yes
+592,47827,提问,tí wèn,4,to question,yes
+593,48296,搜索,sōu suǒ,4,"to search (a place, a database, online etc)",yes
+594,48664,折裙,zhé qún,4,pleated skirt,yes
+595,48952,播放,bō fàng,4,to broadcast,yes
+596,49635,支持,zhī chí,4,to support,yes
+597,49730,收据,shōu jù,4,receipt,yes
+598,50057,放松,fàng sōng,4,to relax,yes
+599,50075,政府,zhèng fǔ,4,government,yes
+600,52876,春联,chūn lián,4,"Spring Festival couplet (the first line of which is pasted on the right side of a doorway at New Year, and the second on the left side)",yes
+601,53991,书房,shū fáng,4,study (room),yes
+602,64946,海关,hǎi guān,4,customs (i.e. border crossing inspection),yes
+603,65825,清单,qīng dān,4,list of items,yes
+604,66042,减肥,jiǎn féi,4,to lose weight,yes
+605,68534,灰色,huī sè,4,gray,yes
+606,69447,无聊,wú liáo,4,bored,yes
+607,70987,牛角包,niú jiǎo bāo,4,croissant,yes
+608,71308,特长,tè cháng,4,one's special ability or strong points,yes
+609,71902,奖学金,jiǎng xué jīn,4,scholarship,yes
+610,73014,瑜伽,yú jiā,4,(loanword) yoga,yes
+611,74390,留学,liú xué,4,to study abroad,yes
+612,74488,毕业,bì yè,4,to graduate,yes
+613,75482,登机牌,dēng jī pái,4,boarding pass,yes
+614,75495,登录,dēng lù,4,to log in,yes
+615,77067,直,zhí,4,straight,yes
+616,80993,称赞,chēng zàn,4,to praise,yes
+617,82867,简历,jiǎn lì,4,résumé,yes
+618,82952,签证,qiān zhèng,4,visa,yes
+619,83645,纪念日,jì niàn rì,4,memorial day,yes
+620,83687,约会,yuē huì,4,date,yes
+621,84738,结果,jié guǒ,4,result,yes
+622,85513,网络,wǎng luò,4,internet,yes
+623,85565,网购,wǎng goù,4,to purchase online,yes
+624,85684,紧张,jǐn zhāng,4,nervous,yes
+625,85890,缓慢,huǎn màn,4,slow,yes
+626,86600,缺点,quē diǎn,4,shortcoming,yes
+627,87639,翻译,fān yì,4,to translate,yes
+628,88192,耳环,ěr huán,4,earring,yes
+629,91410,兴奋,xīng fèn,4,excited,yes
+630,91717,舞蹈,wǔ dǎo,4,dance (performance art),yes
+631,91764,航班,háng bān,4,(scheduled) flight,yes
+632,95391,艺术,yì shù,4,art,yes
+633,97511,表白,biǎo bái,4,confession,yes
+634,98805,规则,guī zé,4,rule,yes
+635,99252,解释,jiě shì,4,to explain,yes
+636,99415,订票,dìng piào,4,to book tickets,yes
+637,99530,讨论,tǎo lùn,4,to discuss,yes
+638,99757,注册,zhù cè,4,to register,yes
+639,99869,词汇,cí huì,4,vocabulary,yes
+640,100268,语法,yǔ fǎ,4,grammar,yes
+641,100675,请假,qǐng jià,4,to request leave of absence,yes
+642,101329,护照,hù zhào,4,passport,yes
+643,102069,负责,fù zé,4,to be responsible for,yes
+644,105775,辞职,cí zhí,4,to resign,yes
+645,105853,农村,nóng cūn,4,rural area,yes
+646,106343,退票,tuì piào,4,to return a ticket,yes
+647,106358,退货,tuì huò,4,to return merchandise,yes
+648,106396,送货,sòng huò,4,to deliver goods,yes
+649,106713,通常,tōng cháng,4,usually,yes
+650,107534,过敏,guò mǐn,4,(medicine) allergic,yes
+651,115351,离婚,lí hūn,4,to divorce,yes
+652,116934,面试,miàn shì,4,interview,yes
+653,117456,项链,xiàng liàn,4,necklace,yes
+654,117717,领带,lǐng dài,4,necktie,yes
+655,117755,领头,lǐng tóu,4,to take the lead,yes
+656,119225,香味,xiāng wèi,4,fragrance,yes
+657,120403,体检,tǐ jiǎn,4,medical checkup,yes
+658,123461,鼓励,gǔ lì,4,to encourage,yes
+659,10225,优雅,yōu yǎ,5,graceful,yes
+660,33066,寓意,yù yì,5,moral (of a story),yes
+661,39263,弥漫,mí màn,5,to pervade,yes
+662,47315,挂念,guà niàn,5,to have (something) weighing on one's mind,yes
+663,47801,描述,miáo shù,5,to describe,yes
+664,51386,新任,xīn rèn,5,newly-appointed,yes
+665,51842,方言,fāng yán,5,dialect,yes
+666,66674,温馨,wēn xīn,5,warm,
+667,67948,浓郁,nóng yù,5,rich,yes
+668,67971,湿度,shī dù,5,humidity level,
+669,69448,无声,wú shēng,5,silent,yes
+670,74559,画作,huà zuò,5,painting,yes
+671,94321,葬礼,zàng lǐ,5,funeral,yes
+672,105186,轻柔,qīng róu,5,gentle,yes
+673,108800,都会,dū huì,5,metropolis,yes
+674,48643,摸脉,mō mài,6,to feel somebody's pulse,yes

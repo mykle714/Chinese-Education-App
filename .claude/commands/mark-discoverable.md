@@ -82,9 +82,12 @@ docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-long-def
 docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-example-sentences.js --words=未来,摸脉
 docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-classifier.js --words=未来,摸脉
 docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-vernacular-score.js --words=未来,摸脉
+docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --words=未来,摸脉
 ```
 
 **Parts of speech must run before `backfill-word-forms`, `backfill-long-definitions`, AND `backfill-example-sentences`.** All three depend on `partsOfSpeech`: word-forms and long-definitions only process rows where `partsOfSpeech IS NOT NULL` (they silently skip otherwise), and the example-sentence prompt enforces at least one sentence per listed POS. `backfill-word-forms` additionally reads `definitions[0]`, so it must also run after `backfill-process-definitions-array`. It writes an English `wordForms` map (e.g. `{"past":"ran",...}`), or `{}` when no forms apply, so re-runs skip already-processed rows.
+
+**`backfill-cluster-definitions` runs last** (it reads the finalized `definitions` and writes `definitionClusters` — orthogonal sense clusters; see `docs/DEFINITION_CLUSTERS.md`). It self-flags any sense it is even slightly unsure about by printing **`⚠ CLUSTER REVIEW <word> (id=...): <reason>`** lines to stdout (uncertain readings/heteronyms, borderline split/merge calls, low-confidence ordering, etc.). **Scan this step's output for `⚠ CLUSTER REVIEW` lines and surface every one of them to the user for human review** — these are the cases most likely to need a manual fix (e.g. a wrong heteronym reading) before `/data-deploy`.
 
 ### A4. Verify enrichment
 

@@ -30,15 +30,16 @@ interface CPCDRowProps {
     // Renders the characters at bold weight instead of the default regular.
     // Only affects the glyphs; the pinyin overlay stays at its normal weight.
     bold?: boolean;
-    // When true (default), any syllable whose pinyin is "long" (renders wider than
-    // its own character column, e.g. "chuáng" in 起床) spaces itself out from its
-    // neighbors: it stays centered over its own character and pushes each immediate
-    // neighbor outward by one discrete push unit. Pushes from a long left neighbor
-    // and a long right neighbor cancel, so a syllable sandwiched between two long
-    // ones doesn't move.
-    // Narrow pinyin and ordinary words are left untouched. Exposed as a property so
-    // every cpcd surface (flp example sentences, bubble-match word bubbles, etc.)
-    // shares one behavior. See docs/CPCD_PINYIN_SHIFT.md.
+    // When true (default), neighboring pinyin syllables that would otherwise
+    // collide are nudged apart just enough that their text stops overlapping.
+    // The character cells overlap (negative margin) to keep narrow CJK glyphs
+    // visually tight, but each pinyin span is as wide as a full column — so a
+    // syllable whose romanization fills the column (e.g. "shén" in 神诞节) bleeds
+    // into its neighbor's pinyin. This measures the actual rendered text width
+    // and spreads only the offending syllables, leaving narrow pinyin and long
+    // sentences untouched. Exposed as a property so every cpcd surface (flp
+    // example sentences, bubble-match word bubbles, etc.) shares one behavior.
+    // See docs/CPCD_PINYIN_SHIFT.md.
     pinyinShift?: boolean;
     // When true, the characters/pinyin may be selected (and a text cursor may
     // appear) on desktop — gated by the `.cpcd-row--selectable` CSS hook in
@@ -67,16 +68,10 @@ const COMPACT_PINYIN_FONT: Record<CPCDSize, string> = { xs: "9px", sm: "11px", m
 const VERTICAL_PADDING: Record<CPCDSize, string> = { xs: "2px", sm: "4px", md: "8px", lg: "8px" };
 // Negative left-margin per child to overlap cells, preserving the prior visual density.
 const OVERLAP_BY_SIZE: Record<CPCDSize, number> = { xs: -4, sm: -6, md: -4, lg: -2 };
-// A pinyin syllable counts as "long" (and so pushes its neighbors apart) when its
-// rendered text overflows its own character column by more than this slack (px,
-// unscaled). The slack keeps a syllable sitting right at the column edge from
-// flickering in and out of "long" as measurement/font rounding jitters.
-const LONG_PINYIN_OVERFLOW_SLACK_PX = 2;
-// A long syllable nudges each neighbor by one discrete push unit — a fixed
-// fraction of the column width, NOT a magnitude derived from the exact overflow.
-// A syllable is therefore either pushed (by one unit) or not; pushes from a long
-// left and a long right neighbor cancel to a net zero so it stays put.
-const PINYIN_PUSH_FRACTION = 0.05;
+// Minimum breathing space (unscaled px) kept between adjacent pinyin texts when
+// de-overlapping. Only applied to pairs that actually collide, so non-colliding
+// rows are never disturbed.
+const PINYIN_MIN_GAP_PX = 2;
 
 const CPCDRow: React.FC<CPCDRowProps> = ({
     items,
@@ -145,36 +140,68 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
             const idxs = row.indices;
             const n = idxs.length;
 
-            // Measure each syllable in this visual row: its rendered pinyin text
-            // width, its character column-box width, and whether it is "long".
-            const textWidths: number[] = [];
-            const boxWidths: number[] = [];
-            const isLong: boolean[] = [];
+            // For each syllable collect its cell center and how far its pinyin text
+            // extends left/right of that center. The pinyin span is a fixed,
+            // cell-width box with text-align:center, so the text extent is
+            // ASYMMETRIC when the romanization is wider than the box: text-align
+            // only centers content that fits — an overflowing syllable is anchored
+            // at the box's left edge and spills to the right (LTR). So a wide
+            // syllable reaches boxWidth/2 to its left but (textWidth − boxWidth/2)
+            // to its right. Modeling this correctly is what keeps a wide syllable's
+            // narrow neighbor from being over-pushed.
+            const centers: number[] = [];
+            const halfLefts: number[] = [];
+            const halfRights: number[] = [];
             for (let k = 0; k < n; k++) {
+                const cell = cellRefs.current[idxs[k]];
                 const item = items[idxs[k]];
                 const charCount = Math.max(1, [...item.character].length);
                 const boxWidth = charCount * columnWidth;
-                const pinyin = item.pinyin ?? "";
-                const textWidth = measureTextWidth(pinyinRefs.current[idxs[k]], pinyin);
-                textWidths.push(textWidth);
-                boxWidths.push(boxWidth);
-                // Long = the rendered pinyin overflows its own column (with slack),
-                // i.e. it is too wide on screen for its character.
-                isLong.push(textWidth > boxWidth + LONG_PINYIN_OVERFLOW_SLACK_PX);
+                const textWidth = measureTextWidth(pinyinRefs.current[idxs[k]], item.pinyin ?? "");
+                const overflow = textWidth > boxWidth;
+                centers.push(cell ? cell.offsetLeft + boxWidth / 2 : 0);
+                halfLefts.push(overflow ? boxWidth / 2 : textWidth / 2);
+                halfRights.push(overflow ? textWidth - boxWidth / 2 : textWidth / 2);
             }
 
-            // Each long syllable stays put (centered over its own char, below) and
-            // pushes its two immediate in-row neighbors outward by one discrete push
-            // unit — left neighbor left, right neighbor right. The pushes accumulate
-            // additively, so a syllable shoved right by a long left neighbor and left
-            // by a long right neighbor nets zero and stays anchored.
-            const pushUnit = columnWidth * PINYIN_PUSH_FRACTION;
+            // Compute per-syllable horizontal offsets that keep adjacent pinyin
+            // texts from touching. Each pinyin starts anchored on its own character
+            // (offset 0). When two collide, the required separation is ALWAYS split
+            // evenly — both syllables give ground equally. Even splitting is what
+            // lets a crowded cluster spread symmetrically: e.g. a narrow syllable
+            // sandwiched between two wide ones (夫 fu between 丈 zhàng and 上 shàng)
+            // stays centered on its own char while the two wide neighbors drift
+            // apart to make room. (An earlier variant let a wide syllable "anchor"
+            // and dump the whole push on the narrow neighbor; that made such
+            // sandwiches infeasible and shoved the narrow pinyin INTO a neighbor.)
+            // Solved by relaxation: repeatedly push apart any overlapping pair by
+            // half the deficit until stable. Capped passes; converges quickly for
+            // the short runs cpcd renders (a word, or one wrapped line).
             const offsets = new Array<number>(n).fill(0);
-            if (pinyinShift) {
-                for (let k = 0; k < n; k++) {
-                    if (!isLong[k]) continue;
-                    if (k - 1 >= 0) offsets[k - 1] -= pushUnit; // left neighbor yields leftward
-                    if (k + 1 < n) offsets[k + 1] += pushUnit; // right neighbor yields rightward
+            if (pinyinShift && n === 1) {
+                // Lone syllable: no neighbor to de-overlap against, so nothing
+                // constrains it. An overflowing pinyin would otherwise stay
+                // browser-left-anchored (spilling only rightward); recentre it
+                // over its glyph by pulling it left by half its overflow. For a
+                // fitting syllable halfRight == halfLeft, so this is a no-op.
+                offsets[0] = -(halfRights[0] - halfLefts[0]) / 2;
+            } else if (pinyinShift && n > 1) {
+                const maxPasses = Math.max(4, n);
+                for (let pass = 0; pass < maxPasses; pass++) {
+                    let moved = false;
+                    for (let i = 0; i < n - 1; i++) {
+                        // Required center spacing = left syllable's right reach +
+                        // right syllable's left reach + gap.
+                        const minSpacing = halfRights[i] + halfLefts[i + 1] + PINYIN_MIN_GAP_PX;
+                        const actualSpacing = centers[i + 1] + offsets[i + 1] - (centers[i] + offsets[i]);
+                        const deficit = minSpacing - actualSpacing;
+                        if (deficit <= 0.01) continue;
+                        // Split the push evenly: left yields left, right yields right.
+                        offsets[i] -= deficit / 2;
+                        offsets[i + 1] += deficit / 2;
+                        moved = true;
+                    }
+                    if (!moved) break;
                 }
             }
 
@@ -182,15 +209,11 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
                 const cell = cellRefs.current[idxs[k]];
                 const span = pinyinRefs.current[idxs[k]];
                 if (!cell || !span) continue;
-                // The pinyin span is a fixed, cell-width box with text-align:center.
-                // When the text fits, that already centers it over the char. When it
-                // overflows, the browser left-anchors it (spilling only rightward),
-                // so we add a correction that re-centers the overflow over the char —
-                // which is what lets a long syllable spill symmetrically and push
-                // both neighbors evenly.
-                const overflow = textWidths[k] - boxWidths[k];
-                const centeringCorrection = overflow > 0 ? -overflow / 2 : 0;
-                const x = cell.offsetLeft + centeringCorrection + offsets[k];
+                // Pinyin span is fixed-width (= cell width) with text-align:center,
+                // so we align its left edge to the cell's left edge plus the offset.
+                // An overflowing syllable keeps the browser's left-anchored spill
+                // (it reaches right, into its yielded neighbor's freed space).
+                const x = cell.offsetLeft + offsets[k];
                 // Pinyin sits at the bottom of the cell, inside the reserved padding-bottom region.
                 const y = cell.offsetTop + cell.offsetHeight - pinyinReservedHeight;
                 span.style.transform = `translate(${x}px, ${y}px)`;

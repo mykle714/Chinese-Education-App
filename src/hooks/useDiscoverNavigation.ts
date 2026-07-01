@@ -29,6 +29,7 @@ export function useDiscoverNavigation() {
   const language = user?.selectedLanguage || DEFAULT_DISCOVER_LANGUAGE;
   const discoverPath = "/discover";
   const sortPath = `/discover/sort/${language}`;
+  const skippedPath = `/discover/skipped/${language}`;
 
   const goToDiscover = useCallback(() => {
     navigate(discoverPath);
@@ -38,5 +39,9 @@ export function useDiscoverNavigation() {
     navigate(sortPath);
   }, [navigate, sortPath]);
 
-  return { goToDiscover, discoverPath, goToSort, sortPath };
+  const goToSkipped = useCallback(() => {
+    navigate(skippedPath);
+  }, [navigate, skippedPath]);
+
+  return { goToDiscover, discoverPath, goToSort, sortPath, goToSkipped, skippedPath };
 }

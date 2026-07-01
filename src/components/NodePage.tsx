@@ -37,6 +37,9 @@ interface NodePageProps {
     surfaceColor?: string;
     contentSx?: SxProps<Theme>;
     contentClassName?: string;
+    // Fixed, non-scrolling node pages set this false so content is clipped (not
+    // scrolled) — the inner flex column shrinks to fit — and the edge fade is dropped.
+    scrollable?: boolean;
     children: ReactNode;
 }
 
@@ -48,6 +51,7 @@ const NodePage: React.FC<NodePageProps> = ({
     surfaceColor,
     contentSx,
     contentClassName,
+    scrollable,
     children,
 }) => {
     const { surfaceRef, style, exit } = usePageSlide({ axis: "x" });
@@ -69,6 +73,7 @@ const NodePage: React.FC<NodePageProps> = ({
                 surfaceColor={surfaceColor}
                 contentSx={contentSx}
                 contentClassName={contentClassName}
+                scrollable={scrollable}
             >
                 {children}
             </MobileTabScreen>

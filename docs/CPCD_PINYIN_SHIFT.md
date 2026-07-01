@@ -14,57 +14,92 @@ either be clipped/left-anchored or visually collide with the neighbor's pinyin.
 The shift system gives those wide syllables room **without disturbing the rest of
 the row**.
 
-## The model (current, intentionally simple)
+## The model (collision relaxation)
 
-A syllable is **"long"** when its **rendered pinyin overflows its own character
-column** — `textWidth > boxWidth + LONG_PINYIN_OVERFLOW_SLACK_PX`. The slack (px)
-keeps a syllable sitting right at the column edge from flickering in and out of
-"long" as measurement/font rounding jitters. This is a purely on-screen measure,
-not a character count.
+The system solves a small 1-D **non-overlap constraint problem**: nudge adjacent
+pinyin texts apart by *exactly* enough that they stop touching (plus a small gap),
+and no more. Narrow pinyin and long sentences that don't collide are never
+disturbed.
 
-Then, **per visual row** (wrapped lines are handled independently):
+### Asymmetric text-extent model
 
-- A long syllable **stays anchored** — centered over its own character. It does
-  not move.
-- It **pushes each immediate neighbor outward by one discrete push unit**:
-  - the **left** neighbor moves **left** by `pushUnit`,
-  - the **right** neighbor moves **right** by `pushUnit`,
-  - where `pushUnit = columnWidth × PINYIN_PUSH_FRACTION` — a **fixed quantum**,
-    not a magnitude derived from the syllable's exact overflow. A neighbor is
-    therefore either pushed (by one unit) or it isn't.
-- Pushes **accumulate additively**. A syllable that has a long neighbor on its
-  **left** (pushing it right) *and* a long neighbor on its **right** (pushing it
-  left) receives both pushes, which **cancel to net zero** → it stays put. Two
-  adjacent long syllables push each other apart (each is the other's neighbor).
+For each syllable the layout measures its **rendered pinyin width** `textWidth`
+and its **column-box width** `boxWidth = charCount × COLUMN_WIDTH`, then records
+how far the text reaches **left** (`halfLeft`) and **right** (`halfRight`) of the
+cell center. This is asymmetric when the text overflows, because the span is a
+fixed, cell-width box with `text-align: center`:
 
-Short syllables with no long neighbor get offset `0` and never move. Because the
-push is always outward, a syllable is never pulled *inward*.
+- **Fits** (`textWidth ≤ boxWidth`): text is centered → `halfLeft = halfRight = textWidth / 2`.
+- **Overflows** (`textWidth > boxWidth`): the browser **left-anchors** the text
+  (left edge at the box's left edge, spilling only rightward — verified
+  empirically) → `halfLeft = boxWidth / 2`, `halfRight = textWidth − boxWidth / 2`.
 
-### Worked example — 起床 (qǐ chuáng)
+So a wide syllable barely intrudes on its **left** neighbor but reaches far into
+its **right** neighbor. Modeling this asymmetry is what keeps a wide syllable's
+narrow neighbor from being over-pushed.
 
-- `qǐ` (起): renders narrower than its column → not long.
-- `chuáng` (床): renders wider than its column → **long**.
+### The constraint + relaxation solver
 
-`chuáng` stays centered over 床 and pushes its left neighbor `qǐ` left by one
-push unit. Result: **qǐ shifts left, chuáng stays centered** — the wide syllable
-holds the anchor and the narrow neighbor yields.
-
-## Rendering detail: re-centering overflow
-
-The pinyin span is a fixed, cell-width box with `text-align: center`. When the
-text fits, that centers it over the glyph. But when the text **overflows**, the
-browser **left-anchors** it (the text's left edge sits at the box's left edge and
-it spills only rightward — verified empirically). So for any overflowing syllable
-the layout adds a **centering correction** of `−(textWidth − boxWidth)/2` to its
-transform, re-centering the overflow over the character. This is what lets a long
-syllable spill symmetrically and push both neighbors evenly, instead of hanging
-off the right of its character.
-
-Final horizontal placement of each span:
+Each syllable gets a horizontal `offset` (initially `0`). For every adjacent pair
+`(i, i+1)` in a visual row, their texts must not touch:
 
 ```
-x = cell.offsetLeft + centeringCorrection + offset
+minSpacing   = halfRight[i] + halfLeft[i+1] + PINYIN_MIN_GAP_PX
+actualSpacing = (center[i+1] + offset[i+1]) − (center[i] + offset[i])
+deficit      = minSpacing − actualSpacing        # > 0 means overlapping
 ```
+
+When a pair overlaps, the `deficit` is **split evenly** — the left syllable yields
+left by `deficit / 2` and the right yields right by `deficit / 2`. Both give
+ground equally, regardless of which is wider.
+
+This is solved by **relaxation**: sweep the pairs left-to-right, pushing apart any
+overlapping pair by half the deficit, and repeat until a full pass moves nothing
+(or a `max(4, n)` pass cap is hit). Fixing one pair can re-violate its neighbor,
+so the repeated sweeps let the row settle. It converges in a handful of passes for
+the short runs cpcd renders (a word, or one wrapped line).
+
+**Why even splitting (not "wide syllable anchors").** An earlier variant let a
+syllable that overflows its column **anchor** (never move) and dumped the whole
+push on its narrower neighbor. That breaks when a narrow syllable is sandwiched
+between two wide ones — e.g. 丈夫上班 = `zhàng·fu·shàng`, where `fu` sits between
+the wide `zhàng` and the wide `shàng`. Both wide neighbors refuse to move, so
+there is no room for `fu`; the constraint becomes **infeasible** and the sweep
+shoves `fu` *into* `zhàng` (they overlap by ~3.5px). Even splitting instead lets
+the wide neighbors drift apart symmetrically: `zhàng` moves left, `shàng` moves
+right, and `fu` stays centered on 夫 with clean gaps on both sides.
+
+### Worked example — 丈夫上班 (zhàng fu shàng bān)
+
+- `fu` (夫): narrow, fits its column.
+- `zhàng` (丈) and `shàng` (上): both overflow their columns.
+
+`fu` collides with both wide neighbors. Even splitting drifts `zhàng` left and
+`shàng` right to open room, leaving `fu` centered over 夫 with a
+`PINYIN_MIN_GAP_PX` gap on each side, versus an *overlap* on the `zhàng` side
+under the old anchoring rule.
+
+## Rendering detail
+
+In a **multi-character** row an overflowing syllable keeps the browser's default
+**left-anchored spill** — it is *not* re-centered over its glyph. The asymmetric
+extent model already accounts for that rightward spill, and the relaxation frees
+space on the right by pushing the right neighbor over. Final horizontal placement
+of each span:
+
+```
+x = cell.offsetLeft + offset
+```
+
+### Lone syllable (`n === 1`)
+
+When a visual row holds a **single** character there is no neighbor to
+de-overlap against, so the relaxation solver is skipped. Instead the lone
+syllable is **re-centered** over its glyph: it is pulled left by half its
+overflow (`offset = −(halfRight − halfLeft) / 2`), which cancels the browser's
+left-anchored spill. A fitting syllable has `halfRight == halfLeft`, so this is a
+no-op. This keeps a single wide pinyin (e.g. `shuāng` over a lone 双) centered
+rather than spilling only rightward.
 
 ## Where it runs
 
@@ -80,19 +115,25 @@ x = cell.offsetLeft + centeringCorrection + offset
 
 | Constant | Meaning |
 |---|---|
-| `LONG_PINYIN_OVERFLOW_SLACK_PX` | Px a syllable must overflow its column to count as "long" (2). |
-| `PINYIN_PUSH_FRACTION` | One push unit as a fraction of the column width (0.05). |
+| `PINYIN_MIN_GAP_PX` | Minimum breathing space kept between adjacent pinyin texts when de-overlapping (2). |
 | `COLUMN_WIDTH` | Per-size column-box width that defines overflow. |
 | `OVERLAP_BY_SIZE` | Negative inter-cell margin (visual density of the glyphs). |
 
 The `pinyinShift` prop (default `true`) toggles the whole behavior; with it off,
-pinyin is simply centered/left-anchored per browser default with no neighbor
-pushes.
+every pinyin stays at `offset 0` (centered/left-anchored per browser default)
+with no neighbor pushes.
 
 ## History
 
-This replaced an earlier relaxation-based model that modeled asymmetric
-left/right text reach per syllable and iteratively pushed apart every colliding
-pair (with per-pair "who anchors" share logic). It was removed in favor of the
-simpler "long syllables push neighbors, pushes cancel" rule above because the
-extra precision wasn't worth the complexity for the short runs cpcd renders.
+An interim version replaced this relaxation model with a simpler "long syllables
+push each neighbor by one discrete unit; opposing pushes cancel" rule (plus a
+`−overflow/2` re-centering so overflow spilled symmetrically). The relaxation
+model was **restored** because the discrete quantum could under- or over-space
+colliding pairs, whereas the constraint solver spaces each pair by exactly what it
+needs — worth the modest extra logic for the short runs cpcd renders.
+
+The restored solver initially kept the original **"wide syllable anchors"**
+share rule, which turned out to overlap a narrow syllable into a wide neighbor
+whenever it was sandwiched between two wide ones (see *Why even splitting* above).
+It was simplified to an **unconditional even split**, which resolves those
+sandwiches and drops the per-pair `overflows[]` branching.

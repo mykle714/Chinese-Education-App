@@ -22,6 +22,7 @@ import DictionaryPage from "./pages/DictionaryPage";
 import DiscoverPage from "./pages/DiscoverPage";
 import TesterDashboardPage from "./pages/TesterDashboardPage";
 import SortCardsPage from "./pages/SortCardsPage";
+import SkippedCardsPage from "./pages/SkippedCardsPage";
 import VocabCardDetailPage from "./features/flashcards/VocabCardDetailPage";
 import MasteredCardsPage from "./features/flashcards/MasteredCardsPage";
 import { Suspense, createElement } from "react";
@@ -109,6 +110,11 @@ function App() {
                 <Route path="/discover/sort/:language" element={
                   <ProtectedRoute allowPublic>
                     <SortCardsPage />
+                  </ProtectedRoute>
+                } />
+                <Route path="/discover/skipped/:language" element={
+                  <ProtectedRoute allowPublic>
+                    <SkippedCardsPage />
                   </ProtectedRoute>
                 } />
                 <Route path="/flashcards/card/:id" element={

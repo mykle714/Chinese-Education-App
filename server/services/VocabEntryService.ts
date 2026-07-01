@@ -3,7 +3,7 @@ import csv from 'csv-parser';
 import { IVocabEntryDAL } from '../dal/interfaces/IVocabEntryDAL.js';
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import { DictionaryService } from './DictionaryService.js';
-import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, Language, IconLayoutItem, ICON_LAYOUT_MAX_ITEMS, SnapConfig, TextColors, TextColorMode } from '../types/index.js';
+import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, Language, IconLayoutItem, ICON_LAYOUT_MAX_ITEMS, SnapConfig, TextColors, TextColorMode, TextLayout, TextLayoutItem, TextBlock, CARD_COLOR_VALUES } from '../types/index.js';
 import { ValidationError, NotFoundError, BulkResult } from '../types/dal.js';
 import db from '../db.js';
 import { vetTableForLanguage } from '../dal/shared/vetTable.js';
@@ -201,9 +201,10 @@ export class VocabEntryService {
    * rows. `layout` of null clears it back to the default centered icon. Two per-card
    * editor settings ride along on the same write — each follows the SAME tri-state rule:
    * `undefined` leaves the column untouched (community copy path), `null` clears it, an
-   * object sets it. `snapConfig` = the snap toggles (migration 88); `textColors` = the
-   * Contrast text-color overrides (migration 89). Validates each shape here (business
-   * rule), then writes via the ownership-scoped DAL method. See docs/CARD_ICON_LAYOUT.md.
+   * object/value sets it. `snapConfig` = the snap toggles (migration 88); `textColors` = the
+   * Contrast text-color overrides (migration 89); `cardColor` = the card background fill
+   * (migration 94). Validates each shape here (business rule), then writes via the
+   * ownership-scoped DAL method. See docs/CARD_ICON_LAYOUT.md.
    */
   async updateIconLayout(
     userId: string,
@@ -211,12 +212,16 @@ export class VocabEntryService {
     language: string,
     layout: IconLayoutItem[] | null,
     snapConfig?: SnapConfig | null,
-    textColors?: TextColors | null
+    textColors?: TextColors | null,
+    textLayout?: TextLayout | null,
+    cardColor?: string | null
   ): Promise<VocabEntry> {
     const clean = layout === null ? null : this.validateIconLayout(layout);
     const cleanSnap = snapConfig === undefined ? undefined : this.validateSnapConfig(snapConfig);
     const cleanColors = textColors === undefined ? undefined : this.validateTextColors(textColors);
-    const updated = await this.vocabEntryDAL.updateIconLayout(userId, entryId, language, clean, cleanSnap, cleanColors);
+    const cleanText = textLayout === undefined ? undefined : this.validateTextLayout(textLayout);
+    const cleanCardColor = cardColor === undefined ? undefined : this.validateCardColor(cardColor);
+    const updated = await this.vocabEntryDAL.updateIconLayout(userId, entryId, language, clean, cleanSnap, cleanColors, cleanText, cleanCardColor);
     if (!updated) {
       // No row matched the id for this user — either it doesn't exist or isn't theirs.
       throw new NotFoundError('Vocabulary entry not found');
@@ -238,6 +243,59 @@ export class VocabEntryService {
     const c = colors as Record<string, unknown>;
     const coerce = (v: unknown): TextColorMode => (v === 'dark' || v === 'light' ? v : 'theme');
     return { foreign: coerce(c.foreign), english: coerce(c.english) };
+  }
+
+  /**
+   * Validate the per-card background fill (migration 94): null (follow theme) or one of the
+   * six offered hex swatches (CARD_COLOR_VALUES). Any other value — including a well-formed
+   * but off-palette hex — normalizes to null, so only vetted fills reach the DB. See
+   * docs/CARD_ICON_LAYOUT.md.
+   */
+  private validateCardColor(color: unknown): string | null {
+    if (typeof color === 'string' && CARD_COLOR_VALUES.includes(color)) return color;
+    return null;
+  }
+
+  /**
+   * Validate the per-card movable-text placement (migration 91): null (both blocks default)
+   * or an object with optional `foreign` / `english` blocks, each carrying finite numeric
+   * x/y/scale/rotation (+ optional `locked`). Each block's scale is clamped to the readable
+   * text range and its center to [0,1]; an invalid/absent block is dropped. If neither block
+   * survives, the whole thing normalizes to null (keeps clean rows). See docs/CARD_ICON_LAYOUT.md.
+   */
+  private validateTextLayout(layout: unknown): TextLayout | null {
+    if (layout === null) return null;
+    if (typeof layout !== 'object' || Array.isArray(layout)) {
+      throw new ValidationError('textLayout must be an object or null');
+    }
+    const clamp = (n: number, lo: number, hi: number) => Math.min(Math.max(n, lo), hi);
+    const src = layout as Record<string, unknown>;
+    const out: TextLayout = {};
+    for (const block of ['foreign', 'english'] as TextBlock[]) {
+      const raw = src[block] as Record<string, unknown> | undefined;
+      if (raw == null) continue; // absent block → render at default
+      if (typeof raw !== 'object' || Array.isArray(raw)) {
+        throw new ValidationError(`textLayout.${block} must be an object`);
+      }
+      for (const k of ['x', 'y', 'scale', 'rotation']) {
+        if (typeof raw[k] !== 'number' || !Number.isFinite(raw[k] as number)) {
+          throw new ValidationError(`textLayout.${block}.${k} must be a finite number`);
+        }
+      }
+      const item: TextLayoutItem = {
+        // Text must stay on-card; the client already clamps the whole box on, so a plain
+        // [0,1] center clamp here is a safe outer bound that never fights that.
+        x: clamp(raw.x as number, 0, 1),
+        y: clamp(raw.y as number, 0, 1),
+        scale: clamp(raw.scale as number, 0.5, 3), // readable-text range (mirrors TEXT_SCALE_MIN/MAX)
+        rotation: raw.rotation as number,
+        // Optional lock flag; coerced + omitted when false so unlocked blocks stay clean.
+        ...(raw.locked === true ? { locked: true } : {}),
+      };
+      out[block] = item;
+    }
+    // Normalize "no surviving blocks" back to null so a default layout is stored as NULL.
+    return out.foreign || out.english ? out : null;
   }
 
   /**

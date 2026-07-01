@@ -50,29 +50,36 @@ const ScreenRoot = styled(Box)(() => ({
     overflow: "hidden",
 }));
 
-// The one scrollable region. The header scrolls inside it; bottom padding keeps
-// content clear of the floating footer.
-const ScrollArea = styled(Box)(() => ({
+// The main content region. Normally it scrolls (`scrollable`, the default). A fixed,
+// non-scrolling page (e.g. the drag-to-sort screen) sets `scrollable={false}`, which
+// switches it to `overflow: hidden` — critical because it lets the inner flex column
+// SHRINK to fit the viewport (an `overflow: auto` box would instead scroll, so its
+// flex children keep their intrinsic size and overflow under the floating footer).
+// Non-scrolling pages also drop the edge-fade mask (it would clip their edge rows).
+const ScrollArea = styled(Box)<{ scrollable: boolean }>(({ scrollable }) => ({
     flex: 1,
-    overflowY: "auto",
+    minHeight: 0,
+    overflowY: scrollable ? "auto" : "hidden",
     overflowX: "hidden",
     display: "flex",
     flexDirection: "column",
-    // Allow vertical pan but contain the scroll so it never chains to the phone
-    // frame / browser (no rubber-banding at the boundaries).
-    touchAction: "pan-y",
+    // Scrollable pages allow vertical pan but contain the scroll so it never chains to
+    // the phone frame / browser (no rubber-banding); fixed pages take no scroll.
+    touchAction: scrollable ? "pan-y" : "none",
     overscrollBehavior: "contain",
     WebkitOverflowScrolling: "touch",
     paddingBottom: FLOATING_FOOTER_CLEARANCE,
-    // Soft fade at the top/bottom edges (see EDGE_FADE_MASK above).
-    maskImage: EDGE_FADE_MASK,
-    WebkitMaskImage: EDGE_FADE_MASK,
+    // Soft fade at the top/bottom edges (see EDGE_FADE_MASK above), scrollable pages only.
+    ...(scrollable ? { maskImage: EDGE_FADE_MASK, WebkitMaskImage: EDGE_FADE_MASK } : {}),
 }));
 
 // Page content column. `flex: 1` makes it fill the viewport on short pages so the
 // surface color covers the full height; per-page styling comes via `contentSx`.
+// `minHeight: 0` lets a non-scrolling page's inner flex column shrink to fit the
+// viewport (without it the flex-shrink chain breaks here and children overflow).
 const ContentInner = styled(Box)(() => ({
     flex: 1,
+    minHeight: 0,
     display: "flex",
     flexDirection: "column",
     width: "100%",
@@ -99,6 +106,9 @@ interface MobileTabScreenProps {
     contentSx?: SxProps<Theme>;
     contentClassName?: string;
     className?: string;
+    // Fixed, non-scrolling pages set this false: content is clipped (not scrolled) so
+    // the inner flex column shrinks to fit, and the edge-fade mask is dropped.
+    scrollable?: boolean;
     children: ReactNode;
 }
 
@@ -113,10 +123,11 @@ const MobileTabScreen: React.FC<MobileTabScreenProps> = ({
     contentSx,
     contentClassName,
     className,
+    scrollable = true,
     children,
 }) => (
     <ScreenRoot className={className ?? "mobile-tab-screen"} sx={{ backgroundColor: surfaceColor }}>
-        <ScrollArea className="mobile-tab-screen__scroll">
+        <ScrollArea className="mobile-tab-screen__scroll" scrollable={scrollable}>
             <MobileDemoHeader
                 title={title}
                 activePage={activePage}

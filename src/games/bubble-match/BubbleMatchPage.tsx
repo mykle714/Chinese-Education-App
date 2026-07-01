@@ -12,6 +12,7 @@ import type { VocabEntry } from "../../types";
 import LeafPage from "../../components/LeafPage";
 import BubbleMatchHeaderControls from "./BubbleMatchHeader";
 import BubbleMatchEndPopup from "./BubbleMatchEndPopup";
+import BubbleMatchLevelMenu from "./BubbleMatchLevelMenu";
 import BubbleStage from "./BubbleStage";
 import { GAME_DISTRIBUTION, LEVEL_CONFIGS, TOTAL_PAIRS } from "./constants";
 import type { LevelConfig } from "./types";
@@ -145,6 +146,9 @@ const BubbleMatchPage: React.FC = () => {
     const [level, setLevel] = useState<LevelConfig>(LEVEL_CONFIGS[0]);
     // Whether the game-over card is collapsed into the top-right corner puck.
     const [popupMinimized, setPopupMinimized] = useState(false);
+    // Whether the "Different Level / Same Cards" floating level menu is open over
+    // the end popup. Selecting a level replays the loaded pool at that level.
+    const [levelMenuOpen, setLevelMenuOpen] = useState(false);
     // Set of level numbers the user has won this week (derived from the wins log
     // via GET /api/users/me/wins). Seeded on mount and updated optimistically on a
     // fresh win, so the picker / win popup can surface the per-level ⭐ badges.
@@ -263,6 +267,7 @@ const BubbleMatchPage: React.FC = () => {
     const beginRun = useCallback((cfg: LevelConfig, runPool: VocabEntry[]) => {
         setLevel(cfg);
         setPopupMinimized(false);
+        setLevelMenuOpen(false);
         setPool(shuffle(runPool));
         runIdRef.current += 1;
         setRunId(runIdRef.current);
@@ -289,9 +294,6 @@ const BubbleMatchPage: React.FC = () => {
         if (!cards) return; // fetchGamePool already switched to the blocked phase
         beginRun(cfg, cards);
     }, [tts.unlockAudio, fetchGamePool, beginRun]);
-
-    // Drop back to the level picker (keeps the loaded pool for a quick replay).
-    const backToPicker = useCallback(() => setPhase("start"), []);
 
     // Record a flashcard review mark for a matched/mismatched bubble's vocab
     // entry, reusing the same endpoint flp's working loop calls. Fire-and-forget:
@@ -384,55 +386,42 @@ const BubbleMatchPage: React.FC = () => {
         </Box>
     );
 
-    // Shared replay actions for the end-of-run popups (won / lost). Levels don't
-    // chain, so both offer: replay this level (same / different vocab set), jump
-    // back to the picker, or quit. `level` is the level that just ended.
-    const endActions = (
-        <Box className="bubble-match__popup-actions" sx={{ display: "flex", flexDirection: "column", gap: 1.5, width: "100%" }}>
-            <Button variant="contained" onClick={() => startLevel(level)} sx={{ textTransform: "none" }}>
-                Play Level {level.level} again (same vocab set)
-            </Button>
-            <Button variant="outlined" onClick={() => startLevelNewVocab(level)} sx={{ textTransform: "none" }}>
-                Play again with a different vocab set
-            </Button>
-            <Button variant="text" onClick={backToPicker}>Choose another level</Button>
-            <Button variant="text" onClick={() => navigate("/games")}>Back to Games</Button>
-        </Box>
-    );
-
-    // Game-over (lost) replay actions, laid out as a 2×2 grid:
+    // Shared replay actions for BOTH end-of-run popups (won / lost), laid out as
+    // a 2×2 grid so the victory and game-over cards share identical controls and
+    // differ only in their text box:
     //   Same Level / Same Cards        Same Level / Different Cards
     //   Different Level / Same Cards   Back to Games
-    // "Different Level / Same Cards" drops to the picker, which keeps the loaded
-    // pool so a newly chosen level replays the same vocab set.
-    const lostActions = (
+    // "Different Level / Same Cards" opens the floating level menu (over the end
+    // popup); picking a level replays the same loaded pool at that level. `level`
+    // is the level that just ended.
+    const replayGridActions = (
         <Box
-            className="bubble-match__lost-actions"
+            className="bubble-match__replay-actions"
             sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1.5, width: "100%" }}
         >
             <ReplayGridButton
-                className="bubble-match__lost-btn bubble-match__lost-btn--same-same"
+                className="bubble-match__replay-btn bubble-match__replay-btn--same-same"
                 variant="contained"
                 topLabel="Same Level"
                 bottomLabel="Same Cards"
                 onClick={() => startLevel(level)}
             />
             <ReplayGridButton
-                className="bubble-match__lost-btn bubble-match__lost-btn--same-diff"
+                className="bubble-match__replay-btn bubble-match__replay-btn--same-diff"
                 variant="contained"
                 topLabel="Same Level"
                 bottomLabel="Different Cards"
                 onClick={() => startLevelNewVocab(level)}
             />
             <ReplayGridButton
-                className="bubble-match__lost-btn bubble-match__lost-btn--diff-same"
+                className="bubble-match__replay-btn bubble-match__replay-btn--diff-same"
                 variant="outlined"
                 topLabel="Different Level"
                 bottomLabel="Same Cards"
-                onClick={backToPicker}
+                onClick={() => setLevelMenuOpen(true)}
             />
             <Button
-                className="bubble-match__lost-btn bubble-match__lost-btn--back"
+                className="bubble-match__replay-btn bubble-match__replay-btn--back"
                 variant="outlined"
                 onClick={() => navigate("/games")}
                 sx={{ textTransform: "none", borderRadius: "14px", fontWeight: WEIGHT.medium }}
@@ -524,7 +513,7 @@ const BubbleMatchPage: React.FC = () => {
                 <Typography className="bubble-match__popup-weekly" sx={{ fontSize: SIZE.body, fontWeight: WEIGHT.bold, color: fc.onSurface }}>
                     ⭐ Weekly badge unlocked: {level.label}!
                 </Typography>
-                {endActions}
+                {replayGridActions}
             </BubbleMatchEndPopup>
         );
     } else if (phase === "lost") {
@@ -535,7 +524,7 @@ const BubbleMatchPage: React.FC = () => {
                 onRestore={() => setPopupMinimized(false)}
             >
                 <Typography className="bubble-match__popup-title" sx={{ fontSize: SIZE.heading, fontWeight: WEIGHT.bold, color: fc.onSurface }}>Try again?</Typography>
-                {lostActions}
+                {replayGridActions}
             </BubbleMatchEndPopup>
         );
     }
@@ -557,6 +546,9 @@ const BubbleMatchPage: React.FC = () => {
                     onTogglePinyin={() => update({ showPinyin: !showPinyin })}
                     autoplayChinese={autoplayChinese}
                     onToggleAutoplayChinese={() => update({ autoplayChinese: !autoplayChinese })}
+                    // Restart is only meaningful mid-run; the won/lost popup owns
+                    // replay otherwise. Restarts the live level on the same words.
+                    onRestart={phase === "playing" ? () => startLevel(level) : undefined}
                 />
             }
         >
@@ -599,6 +591,21 @@ const BubbleMatchPage: React.FC = () => {
                             studyMode={phase === "lost" && popupMinimized}
                         />
                         {popup}
+                        {/* "Different Level / Same Cards" floating menu — layered
+                            over the end popup; picking a level replays the loaded
+                            pool at that level. */}
+                        {(phase === "won" || phase === "lost") && levelMenuOpen && (
+                            <BubbleMatchLevelMenu
+                                levels={LEVEL_CONFIGS}
+                                currentLevel={level.level}
+                                clearedLevels={clearedLevels}
+                                onPick={(cfg) => {
+                                    setLevelMenuOpen(false);
+                                    startLevel(cfg);
+                                }}
+                                onClose={() => setLevelMenuOpen(false)}
+                            />
+                        )}
                     </>
                 ) : (
                     centered

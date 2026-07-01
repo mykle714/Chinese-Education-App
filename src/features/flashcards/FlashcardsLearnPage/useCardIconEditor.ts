@@ -15,16 +15,29 @@ import {
     nudgeRotationStep,
     nudgeScaleStep,
 } from "../../../cardIcons/cardIconLayout";
+import {
+    resolveTextLayout,
+    hasCustomTextLayout,
+    isDefaultTextItem,
+    textLayoutForSave,
+    snapTextScale,
+    nudgeTextScale,
+    TEXT_BLOCKS,
+} from "../../../cardIcons/cardTextLayout";
 import { saveIconLayout, fetchDefaultIconResults, type IconSearchItem } from "../../../cardIcons/cardIconApi";
 import { iconSearchTerm } from "../../../utils/definitionUtils";
 import {
     ICON_LAYOUT_MAX_ITEMS,
     type IconLayoutItem,
     type SnapConfig,
+    type TextBlock,
     type TextColorMode,
     type TextColors,
+    type TextLayout,
+    type TextLayoutItem,
     type VocabEntry,
 } from "../../../types";
+import type { CanvasTarget } from "./CardIconCanvas";
 import { setMinutePointsPaused } from "../../../minutePoints/minutePointsPause";
 import { setEditBreadcrumb, clearEditBreadcrumb } from "../../../utils/errorReporting";
 import type { AlignDirection } from "./CardEditToolbar";
@@ -66,9 +79,35 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
     const [basicDraft, setBasicDraft] = useState<IconLayoutItem[]>([]);
     const [advDraft, setAdvDraft] = useState<IconLayoutItem[]>([]);
     const draftLayout = advMode ? advDraft : basicDraft;
+    // ── Movable text (migration 91) ───────────────────────────────────────────
+    // The two back-face text blocks (the foreign word + the English definition) are
+    // independently movable/resizable/rotatable in ADVANCED mode, just like icons. The
+    // draft always carries BOTH blocks (absent saved blocks seeded to their default spot)
+    // so the canvas can position them; Save normalizes default blocks back out. See
+    // docs/CARD_ICON_LAYOUT.md "Movable text".
+    type TextDraft = { foreign: TextLayoutItem; english: TextLayoutItem };
+    const [textDraft, setTextDraft] = useState<TextDraft>(() => resolveTextLayout(null));
+    const textDraftRef = useRef(textDraft);
+    textDraftRef.current = textDraft;
+    const setTextDraftBoth = useCallback((next: TextDraft) => {
+        textDraftRef.current = next;
+        setTextDraft(next);
+    }, []);
     // Which advanced-canvas icon is selected (index into advDraft), driving the per-icon
-    // toolbar controls (delete / align / mirror). Null = nothing selected.
+    // toolbar controls (delete / align / mirror). Null = nothing selected. Selection is a
+    // single logical thing across icons AND text: `selectedIcon` and `selectedText` are
+    // mutually exclusive (at most one is non-null), enforced by `selectTarget`.
     const [selectedIcon, setSelectedIcon] = useState<number | null>(null);
+    // Which text block (if any) is selected — drives the per-block toolbar tools (move /
+    // resize / rotate / align / snap / lock). Mutually exclusive with selectedIcon.
+    const [selectedText, setSelectedText] = useState<TextBlock | null>(null);
+    // Unified selection setter the canvas + order list call. Enforces mutual exclusion so a
+    // text block and an icon are never both "selected". Null clears both.
+    const selectTarget = useCallback((t: CanvasTarget | null) => {
+        if (t === null) { setSelectedIcon(null); setSelectedText(null); return; }
+        if (t.kind === "icon") { setSelectedText(null); setSelectedIcon(t.index); }
+        else { setSelectedIcon(null); setSelectedText(t.block); }
+    }, []);
     // Snap toggles: each quantizes one operation to a discrete increment — move →
     // 5%-of-width grid, rotate → 22.5° steps, resize → 5%-of-width size. Turning one ON
     // snaps every icon for that property immediately (one undo step) and keeps future
@@ -84,6 +123,11 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
     // Cancel discards them). 'theme' = follow the device/app theme (default).
     const [textForeign, setTextForeign] = useState<TextColorMode>("theme");
     const [textEnglish, setTextEnglish] = useState<TextColorMode>("theme");
+    // Card background fill (vet.cardColor, migration 94): tints the whole flashcard face with
+    // one of six swatches. Lives in the same "card" menu as the Contrast text colors and rides
+    // along on the same Save (so Cancel discards it). null = follow the theme (grey default).
+    // Like the Contrast colors it is NOT part of the undo/redo history.
+    const [cardColor, setCardColor] = useState<string | null>(null);
     // Undo/redo history for the advanced draft: two capped stacks of editor snapshots.
     // A snapshot captures BOTH the icon layout AND the three snap toggle states, so undo
     // restores the snap setup the same way it restores the icons — toggling a snap on/off
@@ -97,6 +141,9 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
     //   standard editor rule that branching off an undo discards the abandoned future.
     type AdvSnapshot = {
         layout: IconLayoutItem[];
+        // The two text blocks ride along in every snapshot, so moving/resizing/rotating text
+        // is undoable the same way icon edits are.
+        text: TextDraft;
         move: boolean;
         rotate: boolean;
         resize: boolean;
@@ -132,6 +179,10 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
     const snapshotDraft = useCallback(
         (): AdvSnapshot => ({
             layout: advDraftRef.current.map((it) => ({ ...it })),
+            text: {
+                foreign: { ...textDraftRef.current.foreign },
+                english: { ...textDraftRef.current.english },
+            },
             move: snapMoveRef.current,
             rotate: snapRotateRef.current,
             resize: snapResizeRef.current,
@@ -184,6 +235,14 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
             setSnapMove(snap.move);
             setSnapRotate(snap.rotate);
             setSnapResize(snap.resize);
+            // Restore the text blocks too (text edits live in the same history). Unlike icons,
+            // text lock IS part of the snapshot (only two fixed blocks — no live-lock carry).
+            const text: TextDraft = {
+                foreign: { ...snap.text.foreign },
+                english: { ...snap.text.english },
+            };
+            textDraftRef.current = text;
+            setTextDraft(text);
         },
         [withLiveLocks],
     );
@@ -200,6 +259,7 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
         setAdvHistory(nextHistory);
         applySnapshot(h[h.length - 1]);
         setSelectedIcon(null);
+        setSelectedText(null);
     }, [snapshotDraft, applySnapshot]);
     const redoAdv = useCallback(() => {
         const f = advFutureRef.current;
@@ -214,6 +274,7 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
         setAdvFuture(nextFuture);
         applySnapshot(f[f.length - 1]);
         setSelectedIcon(null);
+        setSelectedText(null);
     }, [pushCapped, applySnapshot]);
     // Whether "reset to default" has anything to clear (drives greying it out). A draft
     // that is just the plain default icon offers nothing to reset.
@@ -223,8 +284,13 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
     //  - Basic: enabled once the single icon differs from the default (a saved design
     //    opens changed → enabled; an untouched default stays greyed until "swap icon").
     const defaultIconId = currentEntry?.iconId ?? null;
+    // Whether the text draft has any non-default block (drives reset + save-vs-null). Computed
+    // off the live draft so a moved text block keeps reset enabled even on a default-icon card.
+    const hasCustomTextDraft = TEXT_BLOCKS.some(
+        (b) => !isDefaultTextItem(textDraft[b], b),
+    );
     const canReset = advMode
-        ? (!isPlainDefaultLayout(advDraft, defaultIconId) || advHistory.length > 0)
+        ? (!isPlainDefaultLayout(advDraft, defaultIconId) || hasCustomTextDraft || advHistory.length > 0)
         : !isPlainDefaultLayout(basicDraft, defaultIconId);
     const [savingLayout, setSavingLayout] = useState(false);
     // Surfaced as a toast when an icon-layout save/reset PATCH fails, so a failed
@@ -250,9 +316,15 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
     // Same session-override pattern for the per-card Contrast text colors (vet.textColors,
     // migration 89).
     const [textColorsOverrides, setTextColorsOverrides] = useState<Record<number, TextColors | null>>({});
+    // Same session-override pattern for the per-card card background fill (vet.cardColor,
+    // migration 94).
+    const [cardColorOverrides, setCardColorOverrides] = useState<Record<number, string | null>>({});
+    // Same session-override pattern for the per-card movable-text placement (vet.textLayout,
+    // migration 91).
+    const [textLayoutOverrides, setTextLayoutOverrides] = useState<Record<number, TextLayout | null>>({});
 
-    // Merge any saved-this-session icon-layout / snap-config / text-color overrides into an
-    // entry before render (and before enterEdit seeds the drafts + toggles + colors from it).
+    // Merge any saved-this-session icon-layout / snap-config / text-color / text-layout
+    // overrides into an entry before render (and before enterEdit seeds the drafts from it).
     const applyIconOverride = useCallback(
         (e: VocabEntry | null): VocabEntry | null => {
             if (!e) return e;
@@ -260,9 +332,11 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
             if (e.id in iconLayoutOverrides) merged = { ...merged, iconLayout: iconLayoutOverrides[e.id] };
             if (e.id in snapConfigOverrides) merged = { ...merged, snapConfig: snapConfigOverrides[e.id] };
             if (e.id in textColorsOverrides) merged = { ...merged, textColors: textColorsOverrides[e.id] };
+            if (e.id in textLayoutOverrides) merged = { ...merged, textLayout: textLayoutOverrides[e.id] };
+            if (e.id in cardColorOverrides) merged = { ...merged, cardColor: cardColorOverrides[e.id] };
             return merged;
         },
-        [iconLayoutOverrides, snapConfigOverrides, textColorsOverrides],
+        [iconLayoutOverrides, snapConfigOverrides, textColorsOverrides, textLayoutOverrides, cardColorOverrides],
     );
     const displayCurrentEntry = applyIconOverride(currentEntry);
     const displayNextEntry = applyIconOverride(nextEntry);
@@ -283,9 +357,21 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
     // there is no gesture canvas, so the draft is rendered through the normal static
     // icon-layer path by feeding it onto the entry's iconLayout. The live Contrast text
     // colors are merged on too so the card previews them as the learner changes them.
+    // The live text placement merged on too (textLayoutForSave → null when both blocks are at
+    // default, so a default card renders its normal flex-column text). In ADVANCED mode the
+    // back-face static text is suppressed and the canvas renders the live text instead; this
+    // merge is what makes BASIC mode preview any text the learner moved in advanced. The canvas
+    // text nodes are built from this entry too, so they pick up the live Contrast colors.
     const editingCurrentEntry =
         editMode && displayCurrentEntry
-            ? { ...displayCurrentEntry, iconLayout: draftLayout, textColors: { foreign: textForeign, english: textEnglish } }
+            ? {
+                ...displayCurrentEntry,
+                iconLayout: draftLayout,
+                textColors: { foreign: textForeign, english: textEnglish },
+                textLayout: textLayoutForSave(textDraft),
+                // Live-preview the picked card fill (null = follow theme) as the learner taps swatches.
+                cardColor,
+            }
             : displayCurrentEntry;
 
     const exitEdit = useCallback(() => {
@@ -297,6 +383,10 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
         setIconSearchOpen(false);
         setResetConfirmOpen(false);
         setSelectedIcon(null);
+        setSelectedText(null);
+        // Reset the text draft to default; re-seeded from the card's saved textLayout on the
+        // next enterEdit (migration 91).
+        setTextDraftBoth(resolveTextLayout(null));
         // Forget the remembered icon-search query so the next edit session re-seeds the
         // picker from the card's definition rather than a previous session's query.
         setLastIconQuery(null);
@@ -309,6 +399,9 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
         // the next enterEdit (migration 89).
         setTextForeign("theme");
         setTextEnglish("theme");
+        // Clear the live card fill too; re-seeded from the card's saved cardColor on the next
+        // enterEdit (migration 94).
+        setCardColor(null);
         // Reset both the state AND the synchronous refs so a fresh edit session never sees
         // a stale stack from the previous one.
         advHistoryRef.current = [];
@@ -323,6 +416,11 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
         const clone = (l: IconLayoutItem[]) => l.map((it) => ({ ...it }));
         // The single default det icon at its default spot (basic-mode fallback).
         const def = defaultLayoutForEntry(displayCurrentEntry);
+        // Seed the movable-text draft from the card's saved textLayout (both blocks, absent
+        // ones filled with their default). A card with custom-placed text must open ADVANCED
+        // (basic mode has no canvas to show/move it). migration 91.
+        const customText = hasCustomTextLayout(displayCurrentEntry.textLayout);
+        setTextDraftBoth(resolveTextLayout(displayCurrentEntry.textLayout));
         if (existing && isAdvancedLayout(existing)) {
             // A saved ADVANCED arrangement (multiple icons, or a single icon that's been
             // moved / resized / rotated) → seed advanced from it and auto-open advanced.
@@ -343,7 +441,11 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
             setAdvDraftBoth(def);
             setAdvMode(false);
         }
+        // Custom-placed text forces advanced mode even when the icon layout is basic/default,
+        // so the canvas can show and edit the moved text.
+        if (customText) setAdvMode(true);
         setSelectedIcon(null);
+        setSelectedText(null);
         // Seed the snap toggles from this card's saved snapConfig (vet.snapConfig,
         // migration 88) so they persist per card. NULL/absent → all off. The toggles
         // only quantize FUTURE gestures here; existing placements aren't re-snapped on
@@ -357,6 +459,9 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
         const colors = displayCurrentEntry.textColors ?? null;
         setTextForeign(colors?.foreign ?? "theme");
         setTextEnglish(colors?.english ?? "theme");
+        // Seed the card fill from this card's saved cardColor (migration 94); NULL/absent →
+        // follow theme. Discarded on Cancel (only Save persists it).
+        setCardColor(displayCurrentEntry.cardColor ?? null);
         // Reset both the state AND the synchronous refs (see exitEdit).
         advHistoryRef.current = [];
         advFutureRef.current = [];
@@ -388,9 +493,9 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
     }, [displayCurrentEntry, token, setAdvDraftBoth]);
 
     // Selection only makes sense inside the advanced canvas — clear it whenever advanced
-    // mode is toggled off (the basic view has no selectable icons).
+    // mode is toggled off (the basic view has no selectable icons / text).
     useEffect(() => {
-        if (!advMode) setSelectedIcon(null);
+        if (!advMode) { setSelectedIcon(null); setSelectedText(null); }
     }, [advMode]);
 
     // Pause minute-points accumulation while editing the icon layout (decorating a
@@ -416,10 +521,13 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
                 const prev = advDraftRef.current;
                 if (prev.length >= ICON_LAYOUT_MAX_ITEMS) return;
                 pushAdvHistory();
-                // New icons spawn at the card center, 25% larger (DEFAULT_ICON_SCALE), on top.
+                // New icons spawn at the SAME spot the basic-mode default icon uses
+                // (DEFAULT_ICON_X/Y — centered upper-third), 25% larger (DEFAULT_ICON_SCALE),
+                // on top. Matches the basic layout's default placement so a freshly added icon
+                // lands where the single default icon would sit.
                 setAdvDraftBoth([
                     ...prev,
-                    { iconId, x: 0.5, y: 0.5, scale: DEFAULT_ICON_SCALE, rotation: 0, z: maxZ(prev) + 1 },
+                    { iconId, x: DEFAULT_ICON_X, y: DEFAULT_ICON_Y, scale: DEFAULT_ICON_SCALE, rotation: 0, z: maxZ(prev) + 1 },
                 ]);
             } else {
                 setBasicDraft([{ iconId, x: DEFAULT_ICON_X, y: DEFAULT_ICON_Y, scale: DEFAULT_ICON_SCALE, rotation: 0, z: 0 }]);
@@ -457,15 +565,31 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
         setSelectedIcon(prev.length);
     }, [selectedIcon, pushAdvHistory, setAdvDraftBoth]);
 
+    // ── Movable-text per-block actions (mirror the per-icon ones) ──────────────
+    // Snapshot history, then patch the selected text block. Shared by align / lock / the
+    // Shift-pad nudges when a TEXT block (not an icon) is selected. See docs/CARD_ICON_LAYOUT.md.
+    const patchTextBlock = useCallback(
+        (block: TextBlock, patch: Partial<TextLayoutItem>, snapshot = true) => {
+            if (snapshot) pushAdvHistory();
+            setTextDraftBoth({
+                ...textDraftRef.current,
+                [block]: { ...textDraftRef.current[block], ...patch },
+            });
+        },
+        [pushAdvHistory, setTextDraftBoth],
+    );
+
     const handleAlign = useCallback(
         (dir: AlignDirection) => {
+            // Text selected → rotate the block; icon selected → rotate the icon.
+            if (selectedText !== null) { patchTextBlock(selectedText, { rotation: ALIGN_ROTATION[dir] }); return; }
             if (selectedIcon === null) return;
             pushAdvHistory();
             setAdvDraftBoth(
                 advDraftRef.current.map((it, idx) => (idx === selectedIcon ? { ...it, rotation: ALIGN_ROTATION[dir] } : it)),
             );
         },
-        [selectedIcon, pushAdvHistory, setAdvDraftBoth],
+        [selectedIcon, selectedText, patchTextBlock, pushAdvHistory, setAdvDraftBoth],
     );
 
     const handleMirror = useCallback(() => {
@@ -493,13 +617,19 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
         [setAdvDraftBoth],
     );
     const handleToggleLock = useCallback(() => {
+        // Text selected → toggle that block's lock; icon selected → toggle the icon's lock.
+        // (Text lock IS undoable — patchTextBlock snapshots — unlike the icon lock, which is
+        // orthogonal to history. Text has only two fixed blocks, so the simpler model is fine.)
+        if (selectedText !== null) { patchTextBlock(selectedText, { locked: !textDraftRef.current[selectedText].locked }); return; }
         if (selectedIcon === null) return;
         handleToggleLockAt(selectedIcon);
-    }, [selectedIcon, handleToggleLockAt]);
+    }, [selectedIcon, selectedText, patchTextBlock, handleToggleLockAt]);
 
-    // Whether the currently selected advanced icon is locked (drives the lock button state).
+    // Whether the current selection (icon OR text block) is locked — drives the lock button.
     const selectedLocked =
-        selectedIcon !== null && advDraft[selectedIcon]?.locked === true;
+        selectedText !== null
+            ? textDraft[selectedText]?.locked === true
+            : selectedIcon !== null && advDraft[selectedIcon]?.locked === true;
 
     // Reorder commits a fully rebuilt layout (z values permuted) from the order list.
     // Live reorder: the order list applies the new z-order on every placeholder move (so
@@ -528,23 +658,33 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
             on: boolean,
             setFlag: (v: boolean) => void,
             patch: (it: IconLayoutItem) => Partial<IconLayoutItem>,
+            // The matching snap for the two text blocks, so turning a toggle ON jumps the text
+            // onto the same grid as the icons (one undo step covers both).
+            textPatch: (it: TextLayoutItem) => Partial<TextLayoutItem>,
         ) => {
             pushAdvHistory();
             setFlag(on);
-            if (on) setAdvDraftBoth(advDraftRef.current.map((it) => ({ ...it, ...patch(it) })));
+            if (on) {
+                setAdvDraftBoth(advDraftRef.current.map((it) => ({ ...it, ...patch(it) })));
+                const t = textDraftRef.current;
+                setTextDraftBoth({
+                    foreign: { ...t.foreign, ...textPatch(t.foreign) },
+                    english: { ...t.english, ...textPatch(t.english) },
+                });
+            }
         },
-        [pushAdvHistory, setAdvDraftBoth],
+        [pushAdvHistory, setAdvDraftBoth, setTextDraftBoth],
     );
     const handleToggleSnapMove = useCallback(
-        () => toggleSnap(!snapMove, setSnapMove, (it) => snapCenterToGrid(it.x, it.y)),
+        () => toggleSnap(!snapMove, setSnapMove, (it) => snapCenterToGrid(it.x, it.y), (it) => snapCenterToGrid(it.x, it.y)),
         [snapMove, toggleSnap],
     );
     const handleToggleSnapRotate = useCallback(
-        () => toggleSnap(!snapRotate, setSnapRotate, (it) => ({ rotation: snapRotation(it.rotation) })),
+        () => toggleSnap(!snapRotate, setSnapRotate, (it) => ({ rotation: snapRotation(it.rotation) }), (it) => ({ rotation: snapRotation(it.rotation) })),
         [snapRotate, toggleSnap],
     );
     const handleToggleSnapResize = useCallback(
-        () => toggleSnap(!snapResize, setSnapResize, (it) => ({ scale: snapScaleToStep(it.scale) })),
+        () => toggleSnap(!snapResize, setSnapResize, (it) => ({ scale: snapScaleToStep(it.scale) }), (it) => ({ scale: snapTextScale(it.scale) })),
         [snapResize, toggleSnap],
     );
 
@@ -556,6 +696,9 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
     // how undo/redo keeps working now that the toolbar's undo/redo buttons are hidden).
     const handleNudgeMove = useCallback(
         (dir: "up" | "down" | "left" | "right") => {
+            // Text selected → nudge the block's center (move snap is generic on fractions, so
+            // the icon helper is reused). Icon selected → nudge the icon.
+            if (selectedText !== null) { patchTextBlock(selectedText, nudgeCenter(textDraftRef.current[selectedText], dir, snapMove)); return; }
             if (selectedIcon === null) return;
             pushAdvHistory();
             setAdvDraftBoth(
@@ -564,10 +707,11 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
                 ),
             );
         },
-        [selectedIcon, snapMove, pushAdvHistory, setAdvDraftBoth],
+        [selectedIcon, selectedText, snapMove, patchTextBlock, pushAdvHistory, setAdvDraftBoth],
     );
     const handleRotateStep = useCallback(
         (ccw: boolean) => {
+            if (selectedText !== null) { patchTextBlock(selectedText, { rotation: nudgeRotationStep(textDraftRef.current[selectedText].rotation, ccw, snapRotate) }); return; }
             if (selectedIcon === null) return;
             pushAdvHistory();
             setAdvDraftBoth(
@@ -576,10 +720,12 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
                 ),
             );
         },
-        [selectedIcon, snapRotate, pushAdvHistory, setAdvDraftBoth],
+        [selectedIcon, selectedText, snapRotate, patchTextBlock, pushAdvHistory, setAdvDraftBoth],
     );
     const handleResizeStep = useCallback(
         (increase: boolean) => {
+            // Text resize uses the text-scale nudge (direct font multiplier, not the icon box).
+            if (selectedText !== null) { patchTextBlock(selectedText, { scale: nudgeTextScale(textDraftRef.current[selectedText].scale, increase, snapResize) }); return; }
             if (selectedIcon === null) return;
             pushAdvHistory();
             setAdvDraftBoth(
@@ -588,7 +734,7 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
                 ),
             );
         },
-        [selectedIcon, snapResize, pushAdvHistory, setAdvDraftBoth],
+        [selectedIcon, selectedText, snapResize, patchTextBlock, pushAdvHistory, setAdvDraftBoth],
     );
 
     const handleSaveLayout = useCallback(async () => {
@@ -611,10 +757,18 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
                 textForeign === "theme" && textEnglish === "theme"
                     ? null
                     : { foreign: textForeign, english: textEnglish };
-            const res = await saveIconLayout(token, currentEntry.id, draftLayout, snapConfig, textColors);
+            // Persist the movable-text placement alongside the layout (folded into one Save, so
+            // Cancel discards it). NULL when both blocks are at default, keeping clean rows.
+            // migration 91. Saved regardless of mode (text persists even from basic mode).
+            const textLayout: TextLayout | null = textLayoutForSave(textDraft);
+            // Persist the card fill alongside the layout (already null when the default swatch
+            // is picked, keeping clean rows). migration 94.
+            const res = await saveIconLayout(token, currentEntry.id, draftLayout, snapConfig, textColors, textLayout, cardColor);
             setIconLayoutOverrides((o) => ({ ...o, [currentEntry.id]: res.iconLayout }));
             setSnapConfigOverrides((o) => ({ ...o, [currentEntry.id]: res.snapConfig }));
             setTextColorsOverrides((o) => ({ ...o, [currentEntry.id]: res.textColors }));
+            setTextLayoutOverrides((o) => ({ ...o, [currentEntry.id]: res.textLayout }));
+            setCardColorOverrides((o) => ({ ...o, [currentEntry.id]: res.cardColor }));
             exitEdit();
         } catch (err) {
             console.error("Failed to save icon layout:", err);
@@ -624,7 +778,7 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
         } finally {
             setSavingLayout(false);
         }
-    }, [currentEntry, draftLayout, token, exitEdit, snapMove, snapRotate, snapResize, textForeign, textEnglish]);
+    }, [currentEntry, draftLayout, textDraft, token, exitEdit, snapMove, snapRotate, snapResize, textForeign, textEnglish, cardColor]);
 
     // Reset-to-default: clear the saved layout (null), restoring the default centered
     // icon, then exit edit mode. Confirmation-gated by resetConfirmOpen.
@@ -632,13 +786,16 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
         if (!currentEntry) return;
         setSavingLayout(true);
         try {
-            // Reset-to-default clears the layout AND the snap config + Contrast colors (a
-            // default card carries no custom decoration), so the next edit session on this
-            // card starts unsnapped with theme text colors.
-            await saveIconLayout(token, currentEntry.id, null, null, null);
+            // Reset-to-default clears the layout AND the snap config + Contrast colors + text
+            // placement + card fill (a default card carries no custom decoration), so the next
+            // edit session on this card starts unsnapped, theme-colored, default-positioned
+            // text, and the default (theme) background.
+            await saveIconLayout(token, currentEntry.id, null, null, null, null, null);
             setIconLayoutOverrides((o) => ({ ...o, [currentEntry.id]: null }));
             setSnapConfigOverrides((o) => ({ ...o, [currentEntry.id]: null }));
             setTextColorsOverrides((o) => ({ ...o, [currentEntry.id]: null }));
+            setTextLayoutOverrides((o) => ({ ...o, [currentEntry.id]: null }));
+            setCardColorOverrides((o) => ({ ...o, [currentEntry.id]: null }));
             exitEdit();
         } catch (err) {
             console.error("Failed to reset icon layout:", err);
@@ -659,11 +816,15 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
         advMode,
         advDraft,
         selectedIcon,
+        // Movable text (migration 91)
+        textDraft,
+        selectedText,
         snapMove,
         snapRotate,
         snapResize,
         textForeign,
         textEnglish,
+        cardColor,
         advHistory,
         advFuture,
         savingLayout,
@@ -681,12 +842,15 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
         // setters
         setAdvMode,
         setSelectedIcon,
+        selectTarget,
+        setTextDraftBoth,
         setIconSearchOpen,
         setLastIconQuery,
         setResetConfirmOpen,
         setSaveError,
         setTextForeign,
         setTextEnglish,
+        setCardColor,
         setAdvDraftBoth,
         // actions
         enterEdit,

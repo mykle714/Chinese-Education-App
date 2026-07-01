@@ -29,7 +29,8 @@ import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import GridOnIcon from "@mui/icons-material/GridOn";
 import OpenWithIcon from "@mui/icons-material/OpenWith";
 import ControlCameraIcon from "@mui/icons-material/ControlCamera";
-import ContrastIcon from "@mui/icons-material/Contrast";
+import StyleIcon from "@mui/icons-material/Style";
+import BlockIcon from "@mui/icons-material/Block";
 import RotateRightIcon from "@mui/icons-material/RotateRight";
 import RotateLeftIcon from "@mui/icons-material/RotateLeft";
 import RemoveIcon from "@mui/icons-material/Remove";
@@ -38,6 +39,7 @@ import CheckIcon from "@mui/icons-material/Check";
 import { SIZE, WEIGHT } from "../../../theme/scale";
 import { COLORS } from "../../../theme/colors";
 import { ICON_LAYOUT_MAX_ITEMS, type IconLayoutItem, type TextColorMode } from "../../../types";
+import { CARD_COLOR_OPTIONS } from "../../../utils/cardColor";
 import { ALIGN_ROTATION, type AlignDirection as AlignDir } from "../../../cardIcons/cardIconLayout";
 import CardIconOrderList from "./CardIconOrderList";
 import { useToolbarMenus } from "./useToolbarMenus";
@@ -74,16 +76,18 @@ export { TOOLBAR_DROPDOWN_SELECTOR } from "./toolbarDropdownSelector";
  *    the default spawn spot), **mirror** (horizontal flip of the selected icon), **undo**
  *    (history-stack revert), **redo** (replay an undone step), **lock**, **shift** (a 3×3
  *    step-nudge pad — corners rotate/resize, cardinals translate, center shows "snap is on"),
- *    **contrast** (two rows — foreign word + English — each a theme/dark/light text-color
- *    control), **align** (a 3×3 grid of direction arrows — center empty, 8 directions incl.
+ *    **card** (labeled "card"; internal key stays `contrast`): a per-card appearance menu —
+ *    a **background** swatch row (six card fills, migration 94) plus two text-color rows
+ *    (foreign word + English, each a theme/dark/light control), **align** (a 3×3 grid of
+ *    direction arrows — center empty, 8 directions incl.
  *    the 45° diagonals — snapping the selected icon's orientation), **snap** (a dropdown of
  *    three independent toggles — move / rotate / resize — that quantize those operations to
  *    discrete increments), **order** (a dropdown listing every icon in paint order with
  *    drag-to-reorder), and finally the `count/12` readout.
  *    Delete / duplicate / mirror / lock / shift / align are disabled when no icon is selected;
  *    duplicate is also disabled at the 12-icon max; undo is disabled with an empty undo stack
- *    and redo with an empty redo stack; contrast (which recolors card text, not icons) needs
- *    no selection.
+ *    and redo with an empty redo stack; the card menu (which styles the card — text colors +
+ *    background — not icons) needs no selection.
  *
  * **Reset** (resets to the default icon) is a standalone button in the right cluster,
  * available in both modes (it clears the saved arrangement back to the default icon).
@@ -92,7 +96,12 @@ const CardEditToolbar: React.FC<{
     advMode: boolean;
     count: number;
     layout: IconLayoutItem[];
+    // Whether ANYTHING is selected (an icon OR a text block) — enables the tools that apply to
+    // both (move / resize / rotate via shift, align, lock).
     hasSelection: boolean;
+    // What KIND of object is selected. 'text' blocks are intrinsic (always two, never added),
+    // so the icon-only tools — delete / duplicate / mirror — are disabled for them. null = none.
+    selectionKind: "icon" | "text" | null;
     // Undo/redo state + handlers. The buttons sit between mirror and lock in the advanced
     // menu. See docs/CARD_ICON_LAYOUT.md.
     canUndo: boolean;
@@ -144,6 +153,10 @@ const CardEditToolbar: React.FC<{
     textEnglish: TextColorMode;
     onSetTextForeign: (mode: TextColorMode) => void;
     onSetTextEnglish: (mode: TextColorMode) => void;
+    // Card background fill (vet.cardColor, migration 94) — a swatch row in the same "card"
+    // dropdown as the text colors. null = the theme default (grey). See docs/CARD_ICON_LAYOUT.md.
+    cardColor: string | null;
+    onSetCardColor: (color: string | null) => void;
     canReset: boolean;
     onReset: () => void;
     onSave: () => void;
@@ -154,6 +167,7 @@ const CardEditToolbar: React.FC<{
     count,
     layout,
     hasSelection,
+    selectionKind,
     canUndo,
     canRedo,
     onChangeIcon,
@@ -187,6 +201,8 @@ const CardEditToolbar: React.FC<{
     textEnglish,
     onSetTextForeign,
     onSetTextEnglish,
+    cardColor,
+    onSetCardColor,
     canReset,
     onReset,
     onSave,
@@ -293,7 +309,8 @@ const CardEditToolbar: React.FC<{
                 icon: <DeleteOutlineIcon sx={iconSx} />,
                 label: "delete",
                 onClick: onDeleteSelected,
-                disabled: !hasSelection || saving,
+                // Icon-only: text blocks are intrinsic and can't be deleted (migration 91).
+                disabled: selectionKind !== "icon" || saving,
             },
             {
                 key: "mirror",
@@ -301,15 +318,20 @@ const CardEditToolbar: React.FC<{
                 icon: <FlipIcon sx={iconSx} />,
                 label: "mirror",
                 onClick: onMirror,
-                disabled: !hasSelection || saving,
+                // Icon-only: mirrored text is unreadable, so mirror is disabled for text.
+                disabled: selectionKind !== "icon" || saving,
             },
             {
-                // Per-card text-color overrides for the foreign word + the English. Independent
-                // of icon selection (recolors card text), so only disabled while saving.
+                // The "card" menu — per-card appearance settings: the text-color overrides
+                // (foreign word + English) AND the card background fill. Independent of icon
+                // selection (it styles the card, not icons), so only disabled while saving.
+                // NOTE: the internal key / class / anchor stay "contrast" (the menu machinery,
+                // CSS selectors, and useToolbarMenus are keyed on it); only the user-facing
+                // label + icon read "card". See docs/CARD_ICON_LAYOUT.md.
                 key: "contrast",
                 className: "card-edit-toolbar__contrast",
-                icon: <ContrastIcon sx={iconSx} />,
-                label: "contrast",
+                icon: <StyleIcon sx={iconSx} />,
+                label: "card",
                 onClick: (e) => toggleDropdown("contrast", e),
                 disabled: saving,
             },
@@ -335,8 +357,9 @@ const CardEditToolbar: React.FC<{
                 icon: <ContentCopyIcon sx={iconSx} />,
                 label: "duplicate",
                 onClick: onDuplicate,
-                // Needs a selection to clone, and room under the 12-icon cap.
-                disabled: !hasSelection || atMax || saving,
+                // Icon-only: text blocks are a fixed pair, so they can't be duplicated. Needs a
+                // selected icon and room under the 12-icon cap.
+                disabled: selectionKind !== "icon" || atMax || saving,
             },
             {
                 // Lock toggle — freezes the selected icon against translate/resize/rotate
@@ -371,13 +394,14 @@ const CardEditToolbar: React.FC<{
             },
             {
                 // Independent move / rotate / resize quantization toggles. Filled when ANY snap
-                // is on. Disabled with no icons to snap.
+                // Snap applies to both icons AND the two movable text blocks (always present in
+                // advanced mode), so it stays available even on a card with no icons.
                 key: "snap",
                 className: `card-edit-toolbar__snap${anySnapOn ? " card-edit-toolbar__snap--active" : ""}`,
                 icon: <GridOnIcon sx={iconSx} />,
                 label: "snap",
                 onClick: (e) => toggleDropdown("snap", e),
-                disabled: count === 0 || saving,
+                disabled: saving,
                 // Segmented highlight: left/middle/right thirds light green/blue/orange for
                 // move/rotate/resize when each is on (see snapHighlightBg). `background` (not
                 // `backgroundColor`) so the gradient takes; pin it on hover too so it doesn't
@@ -854,6 +878,73 @@ const CardEditToolbar: React.FC<{
                                 className="card-edit-toolbar__contrast-list"
                                 sx={{ display: "flex", flexDirection: "column", gap: 1, p: 0.75, minWidth: "200px" }}
                             >
+                                {/* Card background fill (migration 94) — swatch chips laid out in
+                                TWO rows (5 per row). The FIRST chip is **auto** (value null): the
+                                theme default / no override, drawn as the red circle-with-slash
+                                "no-fill" glyph rather than a color. The rest are explicit fills
+                                (grey / beige / pink / blue / green / yellow / white / black). The
+                                active chip shows an accent ring. Tapping one previews it live on
+                                the card and stays open (like the text rows below). */}
+                                <Box
+                                    className="card-edit-toolbar__card-color-row"
+                                    sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}
+                                >
+                                    <Typography
+                                        className="card-edit-toolbar__card-color-label"
+                                        sx={{ fontSize: SIZE.micro, color: fc.onSurface, opacity: 0.85 }}
+                                    >
+                                        background
+                                    </Typography>
+                                    <Box
+                                        className="card-edit-toolbar__card-color-swatches"
+                                        sx={{
+                                            // Fixed 5-column grid → the 9 chips fall into two rows (5 + 4).
+                                            display: "grid",
+                                            gridTemplateColumns: "repeat(5, 26px)",
+                                            gap: 0.75,
+                                            justifyContent: "start",
+                                        }}
+                                    >
+                                        {CARD_COLOR_OPTIONS.map((opt) => {
+                                            const active = (cardColor ?? null) === opt.value;
+                                            return (
+                                                <Box
+                                                    key={opt.label}
+                                                    className={`card-edit-toolbar__card-color-swatch card-edit-toolbar__card-color-swatch--${opt.label}${active ? " card-edit-toolbar__card-color-swatch--active" : ""}`}
+                                                    onClick={() => onSetCardColor(opt.value)}
+                                                    title={opt.label}
+                                                    sx={{
+                                                        width: 26,
+                                                        height: 26,
+                                                        borderRadius: "50%",
+                                                        cursor: "pointer",
+                                                        display: "flex",
+                                                        alignItems: "center",
+                                                        justifyContent: "center",
+                                                        // Auto chip carries no color fill (the glyph is the affordance);
+                                                        // explicit chips paint their swatch color.
+                                                        backgroundColor: opt.auto ? "transparent" : opt.swatch,
+                                                        // Auto chip has no hairline border (its glyph already reads as a
+                                                        // circle); explicit chips get a subtle border so pale fills stay
+                                                        // visible. Either way the active chip gets an outer accent ring.
+                                                        border: opt.auto
+                                                            ? (active ? `2px solid ${fc.onSurface}` : "none")
+                                                            : (active ? `2px solid ${fc.onSurface}` : "1px solid rgba(0,0,0,0.18)"),
+                                                        boxShadow: active ? `0 0 0 2px ${fc.toggleActiveBg}` : "none",
+                                                    }}
+                                                >
+                                                    {/* Auto = "use the theme color" — the red no-fill (prohibition) glyph. */}
+                                                    {opt.auto && (
+                                                        <BlockIcon
+                                                            className="card-edit-toolbar__card-color-auto-glyph"
+                                                            sx={{ fontSize: 24, color: COLORS.redMain }}
+                                                        />
+                                                    )}
+                                                </Box>
+                                            );
+                                        })}
+                                    </Box>
+                                </Box>
                                 {contrastRows.map((row) => (
                                     <Box
                                         key={row.key}

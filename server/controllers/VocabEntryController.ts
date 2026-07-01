@@ -164,7 +164,8 @@ export class VocabEntryController {
   /**
    * Persist (or clear) a custom flashcard icon arrangement for one vet row.
    * PATCH /api/vocabEntries/:id/icon-layout
-   *   body: { iconLayout: Item[] | null, snapConfig?: {...} | null, textColors?: {...} | null }
+   *   body: { iconLayout: Item[] | null, snapConfig?: {...} | null, textColors?: {...} | null,
+   *           textLayout?: {...} | null, cardColor?: string | null }
    * See docs/CARD_ICON_LAYOUT.md.
    */
   async updateIconLayout(req: Request, res: Response): Promise<void> {
@@ -180,7 +181,7 @@ export class VocabEntryController {
 
       // Accept the layout array or null (reset to default). Anything else is rejected
       // by the service's validateIconLayout.
-      const { iconLayout, snapConfig, textColors } = req.body ?? {};
+      const { iconLayout, snapConfig, textColors, textLayout, cardColor } = req.body ?? {};
       if (iconLayout !== null && !Array.isArray(iconLayout)) {
         res.status(400).json({ error: 'iconLayout must be an array or null' });
         return;
@@ -199,10 +200,26 @@ export class VocabEntryController {
         res.status(400).json({ error: 'textColors must be an object or null' });
         return;
       }
+      // textLayout is optional, same tri-state contract as snapConfig/textColors: omit =
+      // leave the column untouched (community copy path), null = clear (default layout),
+      // object = the movable-text placement (validated by the service). The editor always
+      // sends it with the layout (migration 91).
+      if (textLayout !== undefined && textLayout !== null && (typeof textLayout !== 'object' || Array.isArray(textLayout))) {
+        res.status(400).json({ error: 'textLayout must be an object or null' });
+        return;
+      }
+      // cardColor is optional, same tri-state contract: omit = leave the column untouched
+      // (community copy path), null = clear (follow theme), string = a hex fill (the service
+      // validates it against the offered palette). The editor always sends it with the
+      // layout (migration 94).
+      if (cardColor !== undefined && cardColor !== null && typeof cardColor !== 'string') {
+        res.status(400).json({ error: 'cardColor must be a string or null' });
+        return;
+      }
 
       const language = await getUserLanguage(userId);
       const updated = await this.vocabEntryService.updateIconLayout(
-        userId, entryId, language, iconLayout, snapConfig, textColors
+        userId, entryId, language, iconLayout, snapConfig, textColors, textLayout, cardColor
       );
 
       // Echo back just what the client needs to refresh the card in place.
@@ -211,6 +228,8 @@ export class VocabEntryController {
         iconLayout: updated.iconLayout ?? null,
         snapConfig: updated.snapConfig ?? null,
         textColors: updated.textColors ?? null,
+        textLayout: updated.textLayout ?? null,
+        cardColor: updated.cardColor ?? null,
       });
     } catch (error) {
       handleControllerError(error, res, 'VocabEntryController.updateIconLayout');

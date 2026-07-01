@@ -13,10 +13,10 @@ export class StarterPacksController {
   constructor(private starterPacksService: StarterPacksService) {}
 
   /**
-   * Get the initial starter-pack queue for a language (the client holds a short FIFO
-   * queue — the service default fills 2: head + one buffer).
+   * Get the initial sort-pack queue for a language (the client holds a short FIFO queue
+   * of PACKS — the service default fills 2: on-deck + one buffer).
    * GET /api/starter-packs/:language
-   * Response: { cards: DiscoverCard[], exhausted: boolean }
+   * Response: { packs: SortPack[], exhausted: boolean, level: number }
    */
   getStarterPackCards = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -29,10 +29,114 @@ export class StarterPacksController {
         return;
       }
 
-      const result = await this.starterPacksService.getStarterPackCards(language, userId);
+      const result = await this.starterPacksService.getNextPacks(language, userId);
       res.json(result);
     } catch (error: any) {
       handleControllerError(error, res, 'StarterPacksController.getStarterPackCards');
+    }
+  };
+
+  /**
+   * Refill one pack after the client's on-deck pack completes (the FIFO tail).
+   * POST /api/starter-packs/next-pack
+   * Body: { language: string, excludePackKeys?: string[] }
+   * Response: { nextPack: SortPack | null, exhausted: boolean, level: number }
+   */
+  nextPack = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
+      const { language, excludePackKeys } = req.body;
+      if (!language || !VALID_LANGUAGES.includes(language as any)) {
+        res.status(400).json({ error: 'Invalid language parameter' });
+        return;
+      }
+      const held: string[] = Array.isArray(excludePackKeys)
+        ? excludePackKeys.filter((k: any) => typeof k === 'string')
+        : [];
+
+      const { packs, exhausted, level } = await this.starterPacksService.getNextPacks(language, userId, held, 1);
+      res.json({ nextPack: packs[0] ?? null, exhausted, level });
+    } catch (error: any) {
+      handleControllerError(error, res, 'StarterPacksController.nextPack');
+    }
+  };
+
+  /**
+   * Skip a whole pack: defers all remaining unsorted cards at once (each recorded
+   * individually) and marks an authored pack seen.
+   * POST /api/starter-packs/skip-pack
+   * Body: { cardIds: number[], language: string, packId?: number | null }
+   * Response: { success: true }
+   */
+  skipPack = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
+      const { cardIds, language, packId } = req.body;
+      if (!language || !VALID_LANGUAGES.includes(language as any)) {
+        res.status(400).json({ error: 'Invalid language parameter' });
+        return;
+      }
+      const validatedCardIds: number[] = Array.isArray(cardIds)
+        ? cardIds.filter((id: any) => typeof id === 'number' && Number.isInteger(id))
+        : [];
+
+      await this.starterPacksService.skipPack(
+        userId, validatedCardIds, language,
+        typeof packId === 'number' ? packId : null
+      );
+      res.json({ success: true });
+    } catch (error: any) {
+      handleControllerError(error, res, 'StarterPacksController.skipPack');
+    }
+  };
+
+  /**
+   * List the user's currently-skipped words for a language (Skipped page grid).
+   * GET /api/starter-packs/:language/skipped
+   * Response: DiscoverCard[]
+   */
+  getSkipped = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
+      const { language } = req.params;
+      if (!language || !VALID_LANGUAGES.includes(language as any)) {
+        res.status(400).json({ error: 'Invalid language parameter' });
+        return;
+      }
+
+      const cards = await this.starterPacksService.listSkipped(userId, language);
+      res.json(cards);
+    } catch (error: any) {
+      handleControllerError(error, res, 'StarterPacksController.getSkipped');
+    }
+  };
+
+  /**
+   * Recycle ALL of the user's skips for a language back into the sort supply.
+   * POST /api/starter-packs/:language/recycle-skips
+   * Response: { recycled: number }
+   */
+  recycleSkips = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
+      const { language } = req.params;
+      if (!language || !VALID_LANGUAGES.includes(language as any)) {
+        res.status(400).json({ error: 'Invalid language parameter' });
+        return;
+      }
+
+      const recycled = await this.starterPacksService.recycleAllSkips(userId, language);
+      res.json({ recycled });
+    } catch (error: any) {
+      handleControllerError(error, res, 'StarterPacksController.recycleSkips');
     }
   };
 
@@ -71,7 +175,7 @@ export class StarterPacksController {
       const userId = requireUserId(req, res);
       if (!userId) return;
 
-      const { cardId, bucket, language, excludeIds } = req.body;
+      const { cardId, bucket, language, excludeIds, packId, lastInPack } = req.body;
 
       if (!cardId || !bucket || !language) {
         res.status(400).json({ error: 'Missing required fields: cardId, bucket, language' });
@@ -85,12 +189,20 @@ export class StarterPacksController {
       }
 
       // excludeIds = the ids the client still holds in its queue, so the returned
-      // replacement card is never a duplicate. Validate to a clean int array.
+      // replacement card is never a duplicate (legacy single-card flow). Validate to a
+      // clean int array.
       const validatedExcludeIds: number[] = Array.isArray(excludeIds)
         ? excludeIds.filter((id: any) => typeof id === 'number' && Number.isInteger(id))
         : [];
 
-      const result = await this.starterPacksService.sortCard(userId, cardId, bucket, language, validatedExcludeIds);
+      // Pack mode: the client sends `packId` (a number for authored packs, null for
+      // fallback singles) — its PRESENCE switches the service off the legacy
+      // replacement-card path. `lastInPack` marks the pack seen on its final sort.
+      const opts = 'packId' in req.body
+        ? { packId: typeof packId === 'number' ? packId : null, lastInPack: lastInPack === true }
+        : {};
+
+      const result = await this.starterPacksService.sortCard(userId, cardId, bucket, language, validatedExcludeIds, opts);
       res.json(result);
     } catch (error: any) {
       handleControllerError(error, res, 'StarterPacksController.sortCard');
@@ -108,14 +220,18 @@ export class StarterPacksController {
       const userId = requireUserId(req, res);
       if (!userId) return;
 
-      const { cardId, bucket, language } = req.body;
+      const { cardId, bucket, language, packId } = req.body;
 
       if (!cardId || !bucket || !language) {
         res.status(400).json({ error: 'Missing required fields: cardId, bucket, language' });
         return;
       }
 
-      const result = await this.starterPacksService.undoSort(userId, cardId, bucket, language);
+      // packId (authored pack) → the service un-sees the pack so it can be re-served.
+      const result = await this.starterPacksService.undoSort(
+        userId, cardId, bucket, language,
+        typeof packId === 'number' ? packId : null
+      );
       res.json(result);
     } catch (error: any) {
       handleControllerError(error, res, 'StarterPacksController.undoSort');

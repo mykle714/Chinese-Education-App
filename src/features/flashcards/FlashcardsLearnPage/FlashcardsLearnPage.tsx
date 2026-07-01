@@ -10,13 +10,14 @@ import { SIZE, WEIGHT, TRACKING } from "../../../theme/scale";
 import { useCardDrag } from "./useCardDrag";
 import { useWorkingLoop, type CardDragControls, type StudyMode } from "./useWorkingLoop";
 import { useCardIconEditor } from "./useCardIconEditor";
+import { useToolbarOverlap } from "./useToolbarOverlap";
 import FlashcardsLearnHeader from "./FlashcardsLearnHeader";
 import InfoCardSection from "./InfoCardSection";
 import { getBreakdownItems as buildBreakdownItems } from "../../../utils/breakdownUtils";
 import { useEipTabs } from "./useEipTabs";
 import EipTabStrip from "./EipTabStrip";
 import TooManyTabsSnackbar from "./TooManyTabsSnackbar";
-import FlashCardSection from "./FlashCardSection";
+import FlashCardSection, { ChineseBlock, EnglishBlock } from "./FlashCardSection";
 import CardIconCanvas from "./CardIconCanvas";
 import CardEditToolbar, { CARD_EDIT_ANIM_MS, CARD_EDIT_ANIM_EASING, TOOLBAR_DROPDOWN_SELECTOR } from "./CardEditToolbar";
 import IconPickerDialog from "../../../components/IconPickerDialog";
@@ -135,11 +136,14 @@ const FlashcardsLearnPage: React.FC = () => {
         advMode,
         advDraft,
         selectedIcon,
+        textDraft,
+        selectedText,
         snapMove,
         snapRotate,
         snapResize,
         textForeign,
         textEnglish,
+        cardColor,
         advHistory,
         advFuture,
         savingLayout,
@@ -154,13 +158,15 @@ const FlashcardsLearnPage: React.FC = () => {
         editingCurrentEntry,
         pickerPrefetched,
         setAdvMode,
-        setSelectedIcon,
+        selectTarget,
+        setTextDraftBoth,
         setIconSearchOpen,
         setLastIconQuery,
         setResetConfirmOpen,
         setSaveError,
         setTextForeign,
         setTextEnglish,
+        setCardColor,
         setAdvDraftBoth,
         enterEdit,
         exitEdit,
@@ -184,6 +190,17 @@ const FlashcardsLearnPage: React.FC = () => {
         redoAdv,
         pushAdvHistory,
     } = useCardIconEditor({ currentEntry, nextEntry, token });
+
+    // ── Toolbar-overlap push-down gate ────────────────────────────────────────
+    // The advanced-edit push-down slides the card down to clear the three-row toolbar, but we
+    // only want it when the toolbar would ACTUALLY overlap the card (on roomy viewports the
+    // card is small enough that the toolbar clears it with no shift needed). These refs feed
+    // useToolbarOverlap, which compares the toolbar's bottom edge to the card's centered top.
+    const contentAreaRef = useRef<HTMLDivElement | null>(null);
+    const toolbarRef = useRef<HTMLDivElement | null>(null);
+    const toolbarOverlaps = useToolbarOverlap(editMode && advMode, contentAreaRef, toolbarRef, cardRef);
+    // Push (and lift the card over the More Info pill) only when the toolbar would overlap.
+    const pushCardDown = editMode && advMode && toolbarOverlaps;
 
     // Hard-clear the preserved writing-practice draft when a card is marked (which
     // advances currentIndex) and when leaving the flp (cleanup on unmount).
@@ -384,6 +401,7 @@ const FlashcardsLearnPage: React.FC = () => {
                 onSettingsClick={() => setSettingsOpen(true)}
             />
             <ContentArea
+                ref={contentAreaRef}
                 className="mobile-demo-content"
                 // While the icon editor is open (advanced mode, an icon selected), a tap on
                 // the white space OUTSIDE the card canvas and the edit toolbar deselects the
@@ -400,14 +418,14 @@ const FlashcardsLearnPage: React.FC = () => {
                 // onClick runs (turning align / shift into no-ops). So also exempt presses
                 // inside any open dropdown via its own portaled class.
                 onPointerDown={(e) => {
-                    if (!(editMode && advMode) || selectedIcon === null) return;
+                    if (!(editMode && advMode) || (selectedIcon === null && selectedText === null)) return;
                     const el = e.target as HTMLElement;
                     if (
                         !el.closest(".card-icon-canvas") &&
                         !el.closest(".card-edit-toolbar") &&
                         !el.closest(TOOLBAR_DROPDOWN_SELECTOR)
                     ) {
-                        setSelectedIcon(null);
+                        selectTarget(null);
                     }
                 }}
             >
@@ -423,12 +441,13 @@ const FlashcardsLearnPage: React.FC = () => {
                     mountOnEnter
                     unmountOnExit
                 >
-                    <Box sx={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 20 }}>
+                    <Box ref={toolbarRef} sx={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 20 }}>
                         <CardEditToolbar
                             advMode={advMode}
                             count={advDraft.length}
                             layout={advDraft}
-                            hasSelection={selectedIcon !== null}
+                            hasSelection={selectedIcon !== null || selectedText !== null}
+                            selectionKind={selectedText !== null ? "text" : selectedIcon !== null ? "icon" : null}
                             canUndo={advHistory.length > 0}
                             canRedo={advFuture.length > 0}
                             onChangeIcon={() => setIconSearchOpen(true)}
@@ -445,7 +464,9 @@ const FlashcardsLearnPage: React.FC = () => {
                             onReorder={handleReorder}
                             onReorderStart={pushAdvHistory}
                             onToggleLockAt={handleToggleLockAt}
-                            onSelectIcon={setSelectedIcon}
+                            // The order list selects an icon — route through selectTarget so it
+                            // also clears any text-block selection (mutual exclusion).
+                            onSelectIcon={(i) => selectTarget({ kind: "icon", index: i })}
                             selectedIndex={selectedIcon}
                             snapMove={snapMove}
                             snapRotate={snapRotate}
@@ -462,6 +483,8 @@ const FlashcardsLearnPage: React.FC = () => {
                             textEnglish={textEnglish}
                             onSetTextForeign={setTextForeign}
                             onSetTextEnglish={setTextEnglish}
+                            cardColor={cardColor}
+                            onSetCardColor={setCardColor}
                             canReset={canReset}
                             onReset={() => setResetConfirmOpen(true)}
                             onSave={handleSaveLayout}
@@ -501,14 +524,39 @@ const FlashcardsLearnPage: React.FC = () => {
                         <CardIconCanvas
                             layout={advDraft}
                             onChange={setAdvDraftBoth}
-                            selected={selectedIcon}
-                            onSelect={setSelectedIcon}
+                            selectedIcon={selectedIcon}
+                            selectedText={selectedText}
+                            onSelectTarget={selectTarget}
                             onInteractionStart={pushAdvHistory}
                             snap={{ move: snapMove, rotate: snapRotate, resize: snapResize }}
+                            // Movable text (migration 91): the live draft + the two real text
+                            // nodes (built from the live-colored editingCurrentEntry). The foreign
+                            // block renders the SAME speaker + writing-practice buttons the flp
+                            // back face shows (onSpeak/showWriting), so the learner previews WHERE
+                            // those buttons will sit relative to the moved text. They're inert here
+                            // (the text-content wrapper is pointerEvents:none) — pure preview chrome.
+                            textLayout={textDraft}
+                            onTextChange={setTextDraftBoth}
+                            foreignNode={editingCurrentEntry ? (
+                                <ChineseBlock
+                                    entry={editingCurrentEntry}
+                                    showPinyin={showPinyin}
+                                    showPinyinColor={showPinyinColor}
+                                    onSpeak={tts.enabled ? tts.speak : undefined}
+                                    speakingKey={tts.speakingKey}
+                                    showWriting
+                                    // In-flow so the buttons are part of the block's box — the
+                                    // selection outline + on-card clamp include them.
+                                    inlineActions
+                                />
+                            ) : null}
+                            englishNode={editingCurrentEntry ? <EnglishBlock entry={editingCurrentEntry} /> : null}
                         />
                     ) : undefined}
                     editMode={editMode}
-                    advMode={advMode}
+                    // Push down (and lift over the More Info pill) only when the advanced toolbar
+                    // would actually overlap the card — see useToolbarOverlap.
+                    pushDown={pushCardDown}
                 />
                 {/* Centered pill button — ghosted before flip, full opacity after. While
                     the icon editor is open it stays DRAWN but greyed + inert (isDisabled);

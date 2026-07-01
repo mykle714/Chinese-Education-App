@@ -1,0 +1,40 @@
+-- Migration 90: Add definitionClusters column to dictionaryentries_zh (cdet)
+--
+-- Splits the flat `definitions` array into orthogonal sense clusters. Many
+-- Chinese headwords carry several mutually unrelated meanings (会 = "can" /
+-- "will" / "to meet" / "meeting" / the kuai4 "to reckon accounts" sense). A
+-- flat, globally-ranked list forces those orthogonal senses to interleave; a
+-- 2D structure groups each sense and ranks glosses prototypical→vernacular
+-- WITHIN the cluster, while keeping clusters themselves orthogonal.
+--
+-- Shape: jsonb array of cluster objects —
+--   [
+--     {
+--       "sense": "modal: ability",        -- short human-readable cluster label
+--       "reading": "hui4",                 -- numbered pinyin for THIS sense (heteronyms differ)
+--       "pos": "verb" | ["verb","noun"],  -- part(s) of speech for this sense
+--       "vernacularScore": 5,              -- integer 1-5, same scale as the word-level vernacularScore
+--       "glosses": ["can", "to know how to", ...]  -- ordered prototypical -> vernacular
+--     },
+--     ...
+--   ]
+--
+-- Heteronyms stay in ONE row (sub-clusters), with the reading carried per
+-- cluster, so a future row-split would be a pure data migration, not a schema
+-- change. Difficulty intentionally stays at the WORD level (the existing
+-- `difficulty` column) and is NOT duplicated per cluster.
+--
+-- `definitions` remains the flat cache and the contract for ~40 downstream
+-- consumers (flashcards, dd, segmentation); it stays OWNED by the flat reorder
+-- script (backfill-process-definitions-array.js). definitionClusters is purely
+-- ADDITIVE sense-grouping metadata written by a separate clusterer — it does
+-- NOT clobber definitions. The two intentionally diverge: definitions may carry
+-- a synthetic short headline gloss that exists in no source cluster, and a
+-- cluster may prune a low-value gloss that definitions still lists. So
+-- definitions is NOT a strict flatten of definitionClusters.
+--
+-- NULL = not yet clustered. Populated by
+-- server/scripts/backfill/chinese/backfill-cluster-definitions.js.
+
+ALTER TABLE dictionaryentries_zh
+    ADD COLUMN IF NOT EXISTS "definitionClusters" jsonb;

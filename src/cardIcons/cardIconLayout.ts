@@ -21,10 +21,15 @@ export const BASE_ICON_FRAC = 0.28;
 export const SCALE_MIN = 0.25;
 export const SCALE_MAX = 5;
 
-/** Default placement of the seeded single icon: horizontally centered, ~2/3 up from
- *  the bottom of the card (i.e. 1/3 down from the top). */
+/** Default placement of the seeded single icon: horizontally centered, ~1/3 down from the
+ *  top of the card. Both coordinates sit EXACTLY on the move-snap grid so toggling snap-move
+ *  never nudges a default icon (matching the grid-aligned default text — see cardTextLayout.ts):
+ *   - x = 0.5 = 10 × SNAP_MOVE_STEP_FRAC (card center).
+ *   - y = 10 × (SNAP_MOVE_STEP_FRAC × CARD_ASPECT) ≈ 0.34624 — grid step 10, which is exactly
+ *     where the legacy 0.3333 snapped to. Written as the explicit grid product (0.05 and 295/426
+ *     ARE SNAP_MOVE_STEP_FRAC and CARD_ASPECT, defined lower in this file; kept in sync). */
 export const DEFAULT_ICON_X = 0.5;
-export const DEFAULT_ICON_Y = 0.3333;
+export const DEFAULT_ICON_Y = 10 * (0.05 * (295 / 426));
 
 /** Default per-icon scale for a freshly seeded / swapped / spawned icon. 1.25 = the
  *  default icon renders 25% larger than the base box (basic-mode display and icons
@@ -41,6 +46,13 @@ export const DEFAULT_ICON_SCALE = 1.25;
  *  keep opening in basic mode. Kept here as the single source of truth; the server mirror
  *  in `server/dal/shared/advancedLayout.ts` re-lists these values and must stay in sync. */
 export const DEFAULT_PLACEMENT_SCALES = [DEFAULT_ICON_SCALE, 1.2, 1] as const;
+
+/** Y centers that count as a "default placement" for the basic-vs-advanced inference: the
+ *  current grid-aligned default (≈0.34624) PLUS the legacy 0.3333 that basic "change icon"
+ *  swaps wrote before the grid alignment. Accepting both keeps pre-existing basic-saved cards
+ *  opening in basic mode (and out of the Community feed). Single source of truth; the server
+ *  mirror in `server/dal/shared/advancedLayout.ts` re-lists these and must stay in sync. */
+export const DEFAULT_PLACEMENT_YS = [DEFAULT_ICON_Y, 0.3333] as const;
 
 /** Our cached-icon image endpoint (transparent SVG/PNG bytes from our DB). */
 export const iconImageUrl = (id: string) =>
@@ -112,12 +124,14 @@ export function isDefaultPlacement(it: IconLayoutItem): boolean {
   // Accept the current default scale OR the legacy ones (see DEFAULT_PLACEMENT_SCALES),
   // so pre-existing basic-saved cards still open in basic mode.
   const defaultScale = (DEFAULT_PLACEMENT_SCALES as readonly number[]).includes(it.scale);
+  // Accept the current grid-aligned default Y OR the legacy 0.3333 (see DEFAULT_PLACEMENT_YS).
+  const defaultY = (DEFAULT_PLACEMENT_YS as readonly number[]).includes(it.y);
   return (
     defaultScale &&
     it.rotation === 0 &&
     !it.flipX &&
     it.x === DEFAULT_ICON_X &&
-    it.y === DEFAULT_ICON_Y
+    defaultY
   );
 }
 

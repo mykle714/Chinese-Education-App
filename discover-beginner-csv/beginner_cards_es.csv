@@ -1,0 +1,191 @@
+sort_order,id,word1,pronunciation,pos,difficulty,definition,has_icon
+1,12409,agua,,n,1,water,yes
+2,12671,ahora,,adv,1,now (at the present time),
+3,12672,ahora,,conj,1,"now...now, whether...or",
+4,14816,amigo,,n,1,friend,yes
+5,15971,antes,,adv,1,before,
+6,17683,aquí,,adv,1,here,
+7,21128,año,,n,1,year,
+8,22579,beber,,v,1,to drink,yes
+9,23207,bien,,adv,1,well,
+10,23209,bien,,n,1,good,
+11,25307,bueno,,adj,1,good,yes
+12,25308,bueno,,interj,1,okay,yes
+13,28814,casa,,n,1,house,yes
+14,31192,chico,,adj,1,small,
+15,31193,chico,,n,1,"guy, lad",
+16,33125,claro,,adj,1,clear (easily understood),
+17,33126,claro,,adv,1,"certainly, naturally, of course",
+18,34628,comer,,n,1,"eating, food",yes
+19,34629,comer,,v,1,to eat,yes
+20,37693,cosa,,n,1,"thing (object, concept)",
+21,40147,cómo,,adv,1,how?,
+22,40149,cómo,,n,1,how,
+23,41352,decir,,n,1,saying,
+24,41353,decir,,v,1,"to say, to tell",
+25,44102,después,,adv,1,"later, afterwards, afterward, post",
+26,45148,dinero,,n,1,money,yes
+27,46730,día,,n,1,day (any period of 24 hours),yes
+28,46780,dónde,,adv,1,where?,
+29,46781,dónde,,n,1,where,
+30,51289,escuela,,n,1,school (an institution dedicated to teaching and learning),yes
+31,55255,favor,,n,1,favor/favour,
+32,55386,feliz,,adj,1,"happy, merry (trait)",yes
+33,58985,gato,,n,1,cat (unspecified gender),yes
+34,59262,gente,,n,1,people,
+35,60310,gracias,,interj,1,"thank you, thanks",yes
+36,60311,gracias,,n,1,thanks,yes
+37,60464,grande,,adj,1,"big, large",yes
+38,61673,hablar,,v,1,to talk,yes
+39,63332,hijo,,n,1,son,
+40,64067,hola,,interj,1,"hello, hi, hey",
+41,64136,hombre,,n,1,"man, (adult male human)",yes
+42,64353,hora,,n,1,"time (the moment, as indicated by a clock or similar device)",
+43,71380,leche,,n,1,milk,yes
+44,72088,libro,,n,1,book,yes
+45,72742,llamar,,v,1,"to summon, to call",
+46,73474,luna,,n,1,moon,yes
+47,75060,mano,,n,1,hand,yes
+48,76292,mañana,,adv,1,tomorrow,
+49,76293,mañana,,n,1,tomorrow,
+50,76767,mejor,,adj,1,better,
+51,76768,mejor,,adv,1,better,
+52,77044,menos,,adv,1,less,
+53,77046,menos,,determiner,1,"less, fewer",
+54,77047,menos,,n,1,minus sign,
+55,77048,menos,,prep,1,minus,
+56,77325,mesa,,n,1,table,yes
+57,78810,mirar,,v,1,"to look at (to try to see, to pay attention to with one’s eyes)",
+58,80453,mucho,,adv,1,"much, a lot, far, way, many times",
+59,80454,mucho,,determiner,1,"much, a lot of",
+60,80455,mucho,,pron,1,"a lot, much",
+61,80572,mujer,,n,1,woman,yes
+62,80895,mundo,,n,1,"world, globe (the Earth)",
+63,81174,más,,adv,1,more,
+64,81175,más,,conj,1,plus,
+65,81176,más,,determiner,1,"more, any more",
+66,81963,necesitar,,v,1,to need,
+67,82977,niño,,n,1,"child, boy",
+68,83159,noche,,adv,1,"after dark, (late) at night, nocturnally",yes
+69,83160,noche,,n,1,night (the period between sunset and sunrise),yes
+70,83745,nuevo,,adj,1,new,
+71,83798,nunca,,adv,1,never,
+72,84516,oh,,interj,1,"oh (expression of awe, surprise, pain or realization)",
+73,86154,padre,,n,1,father,
+74,86718,pan,,n,1,bread (food made by baking cereal dough),yes
+75,87135,papá,,n,1,dad,
+76,89330,pequeño,,adj,1,small,yes
+77,89875,perro,,adj,1,awful,yes
+78,89876,perro,,n,1,"dog (# The species Canis familiaris (sometimes designated Canis lupus familiaris), domesticated for thousands of years and of highly variable appearance because of human breeding.)",yes
+79,89933,persona,,n,1,person (an individual,
+80,92069,poco,,adv,1,little (not much),
+81,92070,poco,,determiner,1,"little, not much",
+82,92071,poco,,n,1,little (a small amount),
+83,94743,primero,,adj,1,"first, first up",
+84,94744,primero,,adv,1,first,
+85,94745,primero,,n,1,"former (in contrast to the latter), first, first one",
+86,94932,problema,,n,1,"problem, issue, challenge (a difficulty or obstacle that has to be dealt with)",
+87,105382,señor,,n,1,"mister, sir, lord (title conferred on a married or older male)",
+88,105647,siempre,,adv,1,always,
+89,107011,sol,,n,1,sun,
+90,107121,solo,,adj,1,"alone, by oneself",
+91,107122,solo,,adv,1,only,
+92,109832,también,,adv,1,"also, too, as well",
+93,110977,tener,,v,1,to have,
+94,117297,ver,,v,1,"to see, to look at, to view (perceive)",
+95,117366,verdad,,n,1,truth,
+96,117825,vida,,n,1,life,
+97,118507,vivir,,n,1,life,yes
+98,118508,vivir,,v,1,to live,yes
+99,12726,ahí,,adv,2,there: used to designate a place near the listener,
+100,15972,antes,,prep,2,before (earlier than) (triggers the subjunctive in subordinate clauses),
+101,19321,así,,adv,2,so,
+102,20879,ayudar,,v,2,to help,
+103,25616,buscar,,v,2,"to seek, search for, look for, try to find, to scour",
+104,32997,ciudad,,n,2,city,yes
+105,33127,claro,,interj,2,of course,
+106,33128,claro,,n,2,clearing,
+107,38073,creer,,v,2,"to think, to believe, to reckon, to be of the opinion",
+108,40148,cómo,,interj,2,sorry? what? (expressing surprise or asking to repeat),
+109,49032,encontrar,,v,2,"to find, encounter, come across",
+110,49866,entender,,n,2,understanding,
+111,49867,entender,,v,2,"to understand, to fathom",
+112,49945,entonces,,adv,2,"then, therefore, so, thus",
+113,51274,escuchar,,v,2,to listen,
+114,57824,fuera,,adv,2,outside,
+115,57825,fuera,,interj,2,"out!, get out!",
+116,60465,grande,,n,2,"adult, grown-up",yes
+117,61721,hacer,,n,2,"task, action",
+118,62342,hecho,,adj,2,"done, completed",
+119,64135,hombre,,interj,2,man!,yes
+120,68608,ir,,v,2,to go (away from speaker and listener),
+121,72822,llegar,,v,2,"to arrive, get (to)",
+122,73391,lugar,,n,2,place,
+123,75991,matar,,v,2,"to kill, slay",
+124,79395,momento,,n,2,"moment, instant",
+125,80066,morir,,v,2,to die,
+126,87724,parte,,n,2,part,
+127,89173,pensar,,v,2,"to think of, think that (have an opinion on)",
+128,89402,perder,,v,2,to lose,
+129,92103,poder,,n,2,"power (the ability to coerce, influence or control)",
+130,92104,poder,,v,2,"to be able to, can",
+131,97159,querer,,n,2,love,
+132,97160,querer,,v,2,"to desire, to want, to want to",
+133,102603,saber,,n,2,knowledge,
+134,103024,salir,,v,2,"to go out, to leave, to depart, to head out",
+135,104278,seguro,,adj,2,safe (free from danger),
+136,104279,seguro,,adv,2,surely,
+137,104280,seguro,,n,2,safety,
+138,109881,tan,,adv,2,"so, as",
+139,111843,tiempo,,n,2,time,
+140,112125,tipo,,n,2,"kind, type, sort, manner",
+141,112628,tomar,,v,2,to take,
+142,113231,trabajar,,v,2,to work,yes
+143,113236,trabajo,,n,2,"work, job",
+144,117205,venir,,v,2,"Senses relating to literal movement. [+de (from) or desde (from), along with a (to) or para (to, toward) or hacia (toward)]",
+145,117365,verdad,,interj,2,right,
+146,121021,último,,adj,2,last,
+147,10268,acabar,,v,3,to finish,
+148,11141,acuerdo,,n,3,agreement,
+149,35986,conocer,,v,3,"to know (a person or a place), to be familiar with, to be acquainted with",
+150,40382,dar,,v,3,"to give, to give out",
+151,41213,deber,,n,3,"obligation, duty",
+152,41214,deber,,v,3,"must, need to, have to (indicates an obligation or requirement) [(optionally) +de]",
+153,41664,dejar,,v,3,to leave (to place),
+154,51823,esperar,,v,3,"to wait, wait (for) [(optionally) +direct object (for something) or a que (+ subjunctive clause) (for something to happen)]",
+155,52394,estar,,v,3,"to be (denotes a copula, in a transient fashion)",
+156,61450,gustar,,v,3,"translated as ""to like"", analyzable in structure as ""to please"" [+dative (someone)] (the thing being liked is the subject, while the ""liker"" is in the dative case (""indirect object"")). See the usage notes for more. Compare similar structures in Italian ""piacere"", Romanian ""plăcea"", German ""gefallen"" and Russian ""нравиться""",
+157,61615,haber,,v,3,"“there is”, “there are” (hay)",
+158,61722,hacer,,v,3,to do,
+159,62343,hecho,,n,3,fact,
+160,72858,llevar,,v,3,"to take, to carry, to take away, to carry away, to carry around, to bring, to bear, to lug (implies to move something further from who speaks)",
+161,77045,menos,,conj,3,"except, besides",
+162,78912,mismo,,adj,3,same,
+163,78913,mismo,,adv,3,"right, exactly, immediately",
+164,86040,oír,,v,3,to hear,
+165,87522,parecer,,n,3,appearance (used generally when a person is pretty),
+166,87523,parecer,,v,3,"to seem, to see fit",
+167,87916,pasar,,v,3,to happen,
+168,92657,poner,,v,3,"to put, to put up, to place, to lay",
+169,97029,quedar,,v,3,to stay,
+170,102604,saber,,v,3,"to know, to understand (a fact)",
+171,104228,seguir,,v,3,to follow,
+172,104804,sentir,,n,3,feeling,
+173,104805,sentir,,v,3,to feel,
+174,104892,ser,,n,3,"nature, essence",
+175,104893,ser,,v,3,to be (essentially or identified as),
+176,105381,señor,,adj,3,great big,
+177,109882,tan,,determiner,3,"such, such a",
+178,112126,tipo,,particle,3,like,
+179,114017,tratar,,v,3,"to try, to seek, to attempt, to strive, to endeavor [+de (+ infinitive) (to do something)]",
+180,117645,vez,,n,3,"time, instance",
+181,118705,volver,,v,3,"to come back, go back",
+182,119303,ya,,adv,3,already,
+183,119305,ya,,interj,3,OK,
+184,23206,bien,,adj,4,well-to-do,
+185,23208,bien,,conj,4,either ... or,
+186,61614,haber,,n,4,asset,
+187,71379,leche,,interj,4,shit,yes
+188,86153,padre,,adj,4,"cool, acceptable, easy",
+189,112124,tipo,,adj,4,"dolled up, smartened up, dressed for a special occasion",
+190,119304,ya,,conj,4,first (something) then (something else),

@@ -11,6 +11,7 @@ import { UserMinutePointsService } from '../services/UserMinutePointsService.js'
 import { DictionaryService } from '../services/DictionaryService.js';
 import { TextService } from '../services/TextService.js';
 import { StarterPacksService } from '../services/StarterPacksService.js';
+import { SortPacksDAL } from './implementations/SortPacksDAL.js';
 import { UserController } from '../controllers/UserController.js';
 import { VocabEntryController } from '../controllers/VocabEntryController.js';
 import { OnDeckVocabController } from '../controllers/OnDeckVocabController.js';
@@ -40,6 +41,7 @@ const refreshTokenDAL = new RefreshTokenDAL();
 const vocabEntryDAL = new VocabEntryDAL();
 const userMinutePointsDAL = new UserMinutePointsDAL();
 const dictionaryDAL = new DictionaryDAL();
+const sortPacksDAL = new SortPacksDAL();
 const nightMarketDAL = new NightMarketDAL();
 const gameAssetDAL = new GameAssetDAL();
 const gameProgressDAL = new GameProgressDAL();
@@ -54,7 +56,7 @@ const vocabEntryService = new VocabEntryService(vocabEntryDAL, userDAL, dictiona
 const onDeckVocabService = new OnDeckVocabService(vocabEntryDAL, dictionaryService);
 const userMinutePointsService = new UserMinutePointsService(userMinutePointsDAL, userDAL);
 const textService = new TextService(userDAL);
-const starterPacksService = new StarterPacksService(vocabEntryDAL, dictionaryDAL);
+const starterPacksService = new StarterPacksService(vocabEntryDAL, dictionaryDAL, sortPacksDAL);
 const nightMarketService = new NightMarketService(nightMarketDAL, userDAL);
 const gameAssetService = new GameAssetService(gameAssetDAL);
 const gameProgressService = new GameProgressService(gameProgressDAL);
@@ -83,6 +85,7 @@ export {
   vocabEntryDAL,
   userMinutePointsDAL,
   dictionaryDAL,
+  sortPacksDAL,
   userService,
   vocabEntryService,
   onDeckVocabService,

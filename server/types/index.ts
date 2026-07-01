@@ -80,12 +80,13 @@ export interface RefreshToken {
 // supported (their per-language dictionary tables don't exist — see CLAUDE.md).
 export type Language = 'zh' | 'es';
 
-// Generalized difficulty label stored in dictionaryentries_*.difficulty (drives the
-// discover band). One bare-integer '1'..'6' scale for every language (migration 79):
-//   - zh: '1'..'6' — these ARE HSK levels (1 = HSK1 .. 6 = HSK6), shown as an
-//     "HSK 3" badge in the UI; only the stored 'HSK' prefix was dropped.
-//   - es: '1'..'6'  (learner-acquisition difficulty, 1=easiest)
-export type DifficultyLevel = '1' | '2' | '3' | '4' | '5' | '6';
+// Generalized difficulty band stored in dictionaryentries_*.difficulty (drives the
+// discover band). One 1..6 integer scale for every language; the column is a
+// smallint (migration 92, finishing migration 79's intent), so these are NUMBERS:
+//   - zh: 1..6 — these ARE HSK levels (1 = HSK1 .. 6 = HSK6), shown as an
+//     "HSK 3" badge in the UI.
+//   - es: 1..6  (learner-acquisition difficulty, 1=easiest)
+export type DifficultyLevel = 1 | 2 | 3 | 4 | 5 | 6;
 export type TenseLabel = 'past' | 'present' | 'future';
 
 // Particle or classifier annotation attached to a segmented character in example sentence metadata
@@ -145,10 +146,11 @@ export interface DictionaryEntry {
 
   // Classification
   partsOfSpeech?: string[] | null;
-  difficulty?: string | null;
+  difficulty?: DifficultyLevel | null;
 
   // Definitions
-  definitions: string[];  // Parsed JSON array
+  definitions: string[];  // Parsed JSON array (flat cache; owned by backfill-process-definitions-array.js)
+  definitionClusters?: DefinitionCluster[] | null;  // Orthogonal sense clusters (migration 90); additive metadata, see docs/DEFINITION_CLUSTERS.md
   shortDefinitionPronunciationOverride?: ShortDefinitionPronunciationOverride | null; // Raw override object from DB
   shortDefinition?: string | null; // Resolved at runtime: override.definition ?? generateShortDefinition()
   exampleSentenceDefinitionPronunciationOverride?: ExampleSentenceDefinitionPronunciationOverride | null; // Raw override object from DB; applied verbatim in segment popups
@@ -177,6 +179,20 @@ export interface DictionaryEntry {
   wordForms?: Record<string, string> | null;  // AI-generated English conjugation map (e.g. {past: "ran", present: "runs"})
 };
 
+// One orthogonal sense cluster within a Chinese dictionary entry's
+// `definitionClusters` (migration 90). Glosses sharing one core meaning are
+// grouped and ordered prototypical→vernacular WITHIN the cluster; clusters
+// themselves are mutually orthogonal and ordered most→least useful. Heteronyms
+// stay in one row, distinguished by per-cluster `reading`. Difficulty stays at
+// the word level (not duplicated here). See docs/DEFINITION_CLUSTERS.md.
+export interface DefinitionCluster {
+  sense: string;                  // short English label for the shared meaning
+  reading: string;                // numbered pinyin for THIS sense (e.g. 会计 → "kuai4")
+  pos: string | string[] | null;  // part(s) of speech for this sense
+  vernacularScore: number | null; // 1–5 register, scored independently per cluster (null = scoring failed)
+  glosses: string[];              // verbatim source glosses, ordered prototypical→vernacular
+}
+
 // Discover Card type — a curated DictionaryEntry shaped for the sort-cards UI
 export interface DiscoverCard {
   id: number;               // dictionaryEntry.id — sent in sort POST
@@ -187,7 +203,7 @@ export interface DiscoverCard {
   language: Language;
   word2?: string | null;
   script?: string | null;
-  difficulty?: string | null;
+  difficulty?: DifficultyLevel | null;
   // Spanish (es) only: this card's POS + whether the word1 has multiple
   // discoverable POS (→ client shows a "(v)"/"(n)" badge). Null/false for Chinese.
   pos?: string | null;
@@ -212,6 +228,32 @@ export interface DiscoverCard {
   // Optional icons8 icon id (FK → icons8."icons8Id"). When set, the client renders
   // the icon via <img src="/api/icons8/<iconId>/image">. Null when no icon assigned.
   iconId?: string | null;
+  // Sort-pack card state (set by getNextPacks; absent in the legacy single-card flow).
+  // `sorted` → the user already has a library vet row for this card: it renders locked
+  // with a "sorted!" watermark and is not draggable. `skipped` → the card is currently
+  // in discover_skips but appears inside an authored pack, so it is draggable again.
+  sorted?: boolean;
+  skipped?: boolean;
+}
+
+/**
+ * A sort pack: the on-deck unit of the discover sort flow — one sentence + up to 3
+ * cards to sort (see docs/SORT_CARDS_REQUIREMENTS.md §4.5). Authored packs come from
+ * `sort_packs`; system fallback packs-of-1 are built on the fly from a single word's
+ * own first example sentence. The client renders `sentence` via <SegmentedSentenceDisplay>.
+ */
+export interface SortPack {
+  // Stable client identity used for de-dup / exclusion. Authored: "pack:<id>";
+  // fallback single: "single:<cardId>".
+  packKey: string;
+  // sort_packs.id for authored packs; null for fallback packs-of-1 (nothing to mark seen).
+  packId: number | null;
+  level: number;
+  // Enriched sentence for the band: the enrichExampleSentencesMetadataBatch output
+  // shape ({ foreignText, english, _segments, segmentMetadata, ... }). null when a
+  // fallback single has no example sentence (client renders a bare card, no band).
+  sentence: NonNullable<DiscoverCard['exampleSentences']>[number] | null;
+  cards: DiscoverCard[];
 }
 
 export interface DictionaryEntryCreateData {
@@ -302,6 +344,46 @@ export interface TextColors {
   english: TextColorMode;
 }
 
+/**
+ * The exact set of EXPLICIT card-background fills the fie "card" menu offers (vet."cardColor",
+ * migration 94). Any incoming cardColor is validated against this list (else NULL) so only
+ * these hexes — or NULL (the "auto" option = follow theme) — are ever stored. This MUST stay
+ * in sync with the client palette in src/utils/cardColor.ts (CARD_COLOR_OPTIONS). See
+ * docs/CARD_ICON_LAYOUT.md.
+ *   grey #D8D8DC · beige #F5EBE0 · white #FFFFFF · black #000000 · red #F2BAC9 ·
+ *   green #BAF2D8 · blue #BAD7F2 · yellow #F2E2BA · purple #D8BAF2
+ */
+export const CARD_COLOR_VALUES: readonly string[] = ['#D8D8DC', '#F5EBE0', '#FFFFFF', '#000000', '#F2BAC9', '#BAF2D8', '#BAD7F2', '#F2E2BA', '#D8BAF2'];
+
+/**
+ * Which back-face text block a movable-text placement targets (vet."textLayout",
+ * migration 91; see docs/CARD_ICON_LAYOUT.md).
+ */
+export type TextBlock = 'foreign' | 'english';
+
+/**
+ * One movable text block's placement (vet."textLayout", migration 91). NORMALIZED coords
+ * (fractions of the card size) like IconLayoutItem; no iconId/flipX/z. See
+ * docs/CARD_ICON_LAYOUT.md.
+ */
+export interface TextLayoutItem {
+  x: number;        // block CENTER as a fraction of card WIDTH  [0..1]
+  y: number;        // block CENTER as a fraction of card HEIGHT [0..1]
+  scale: number;    // multiplier on the block's base font size; clamped ~[0.5, 3]
+  rotation: number; // degrees
+  locked?: boolean; // when true the block ignores canvas translate/resize/rotate gestures; omitted/false = freely editable
+}
+
+/**
+ * Per-card movable-text placement for the two back-face text blocks (vet."textLayout",
+ * migration 91; see docs/CARD_ICON_LAYOUT.md). Each block optional (absent = default spot);
+ * NULL on the row = both at default.
+ */
+export interface TextLayout {
+  foreign?: TextLayoutItem;
+  english?: TextLayoutItem;
+}
+
 export interface VocabEntry {
   id: number;
   userId: string;
@@ -335,6 +417,8 @@ export interface VocabEntry {
   iconLayout?: IconLayoutItem[] | null;  // Custom flashcard icon arrangement (vet column, migration 82). NULL = use the default centered iconId. See docs/CARD_ICON_LAYOUT.md
   snapConfig?: SnapConfig | null;  // Per-card icon-editor snap toggles (vet column, migration 88). NULL = all off. See docs/CARD_ICON_LAYOUT.md
   textColors?: TextColors | null;  // Per-card flashcard text-color overrides (vet column, migration 89). NULL = both 'theme'. See docs/CARD_ICON_LAYOUT.md
+  textLayout?: TextLayout | null;  // Per-card movable-text placement for the two back-face text blocks (vet column, migration 91). NULL = default lower-third layout. See docs/CARD_ICON_LAYOUT.md
+  cardColor?: string | null;  // Per-card flashcard background fill (CSS hex, one of CARD_COLOR_VALUES, vet column, migration 94). NULL = follow theme. See docs/CARD_ICON_LAYOUT.md
   exampleSentences?: Array<{
     foreignText: string;
     english: string;

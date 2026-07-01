@@ -27,6 +27,14 @@ const FOOTER_ROUTES: Record<string, FooterTab> = {
     "/flashcards/mastered": "flashcards",
 };
 
+// Footer-bearing NODE pages reached via a parameterized path (e.g.
+// /discover/sort/:language). Matched by prefix since the exact pathname carries a
+// language segment. Keep in sync with NODE_PREFIXES in utils/pageTransition.ts.
+const FOOTER_ROUTE_PREFIXES: Array<[string, FooterTab]> = [
+    ["/discover/sort/", "discover"],
+    ["/discover/skipped/", "discover"],
+];
+
 // Match the page-slide feel so the footer and pages decelerate together.
 const DURATION_MS = 340;
 const EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
@@ -37,7 +45,8 @@ const HIDDEN_OFFSET = FLOATING_FOOTER_INSET + FLOATING_FOOTER_HEIGHT + 16;
 
 const FooterPresenter: React.FC = () => {
     const { pathname } = useLocation();
-    const activePage = FOOTER_ROUTES[pathname];
+    const activePage =
+        FOOTER_ROUTES[pathname] ?? FOOTER_ROUTE_PREFIXES.find(([prefix]) => pathname.startsWith(prefix))?.[1];
     const visible = activePage !== undefined;
 
     // Keep showing the last active tab while sliding OUT, so the pill doesn't

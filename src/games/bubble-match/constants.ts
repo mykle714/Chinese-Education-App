@@ -34,8 +34,8 @@ export const TOTAL_PAIRS = Object.values(GAME_DISTRIBUTION).reduce((a, b) => a +
 // was dropped, leaving Chill / Hustle / Torture.
 export const LEVEL_CONFIGS: LevelConfig[] = [
     { level: 1, label: "Chill", launchIntervalMs: 1800, shrinkSpeedPxPerSec: 9 },
-    { level: 2, label: "Hustle", launchIntervalMs: 1100, shrinkSpeedPxPerSec: 16 },
-    { level: 3, label: "Torture", launchIntervalMs: 700, shrinkSpeedPxPerSec: 26 },
+    { level: 2, label: "Hustle", launchIntervalMs: 1100, shrinkSpeedPxPerSec: 26 },
+    { level: 3, label: "Torture", launchIntervalMs: 700, shrinkSpeedPxPerSec: 42 },
 ];
 
 // ---- Bubble sizing (px radius) -------------------------------------------

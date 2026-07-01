@@ -1,5 +1,6 @@
 import React from "react";
-import { Button, useTheme } from "@mui/material";
+import { Button, IconButton, useTheme } from "@mui/material";
+import RestartAltRoundedIcon from "@mui/icons-material/RestartAltRounded";
 import MinutePointsFireBadge from "../../minutePoints/MinutePointsFireBadge";
 import { SIZE } from "../../theme/scale";
 
@@ -8,11 +9,15 @@ interface BubbleMatchHeaderControlsProps {
     onTogglePinyin: () => void;
     autoplayChinese: boolean;
     onToggleAutoplayChinese: () => void;
+    /** Restart the current level with the same words. When omitted (e.g. outside
+     *  the live "playing" phase) the restart button is hidden. */
+    onRestart?: () => void;
 }
 
 /**
- * Right-side header controls for the Bubble Match game: two quick toggles (pinyin
- * + autoplay, mirroring FlashcardsLearnHeader) and the minute-points fire badge.
+ * Right-side header controls for the Bubble Match game: an optional restart button
+ * (same level, same words), two quick toggles (pinyin + autoplay, mirroring
+ * FlashcardsLearnHeader) and the minute-points fire badge.
  *
  * Bubble Match is a LEAF PAGE (see docs/LEAF_NODE_PAGES.md), so the header bar +
  * down-arrow back button come from LeafPage/LeafPageHeader; this component just
@@ -23,6 +28,7 @@ const BubbleMatchHeaderControls: React.FC<BubbleMatchHeaderControlsProps> = ({
     onTogglePinyin,
     autoplayChinese,
     onToggleAutoplayChinese,
+    onRestart,
 }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
@@ -43,6 +49,25 @@ const BubbleMatchHeaderControls: React.FC<BubbleMatchHeaderControlsProps> = ({
 
     return (
         <>
+            {/* Restart the live level with the same word set (reshuffled launch
+                order). Only present during active play — the end-of-run popup owns
+                replay from the won/lost screens. */}
+            {onRestart && (
+                <IconButton
+                    className="bubble-match__restart-btn"
+                    aria-label="Restart level"
+                    size="small"
+                    onClick={onRestart}
+                    sx={{
+                        color: fc.onSurface,
+                        width: "30px",
+                        height: "30px",
+                        "&:hover": { backgroundColor: fc.toggleInactiveBg },
+                    }}
+                >
+                    <RestartAltRoundedIcon fontSize="small" />
+                </IconButton>
+            )}
             <Button
                 className="pinyin-toggle-btn"
                 variant={showPinyin ? "contained" : "text"}

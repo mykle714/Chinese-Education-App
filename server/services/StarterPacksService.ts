@@ -609,7 +609,7 @@ export class StarterPacksService {
 
   // ===========================================================================
   // Sort packs (docs/SORT_PACKS_IMPLEMENTATION.md §3). The on-deck unit becomes a
-  // SortPack (sentence + up to 3 cards). Authored packs come from sort_packs; system
+  // SortPack (up to 3 cards, no sentence). Authored packs come from sort_packs; system
   // fallback packs-of-1 are built on the fly from a single fresh word.
   // ===========================================================================
 
@@ -715,38 +715,20 @@ export class StarterPacksService {
     }
   }
 
-  /**
-   * Enrich a bare (foreignText, english) sentence into the SegmentedSentenceDisplay
-   * shape (_segments + segmentMetadata, incl. pinyin) by wrapping it as a synthetic
-   * example sentence and running the shared est enrichment. Authored sentences carry
-   * no AI partOfSpeechDict, which only disables optional particle/classifier
-   * annotations — segmentation + pinyin are unaffected.
-   */
-  private async _enrichSentenceForPack(
-    foreignText: string,
-    english: string,
-    language: string
-  ): Promise<SortPack['sentence']> {
-    const carrier = { exampleSentences: [{ foreignText, english, partOfSpeechDict: {} }] };
-    const [enriched] = await this.dictionaryDAL.enrichExampleSentencesMetadataBatch([carrier], language);
-    return enriched.exampleSentences?.[0] ?? null;
-  }
-
-  /** Turn authored sort_packs rows into SortPack DTOs (cards hydrated, sentence enriched). */
+  /** Turn authored sort_packs rows into SortPack DTOs (cards hydrated; no sentence — not shown in this flow). */
   private async _hydrateAuthoredPacks(rows: SortPackRow[], userId: string, language: string): Promise<SortPack[]> {
     return Promise.all(rows.map(async (row) => ({
       packKey: `pack:${row.id}`,
       packId: row.id,
       level: row.level,
-      sentence: await this._enrichSentenceForPack(row.sentenceForeign, row.sentenceEnglish, language),
       cards: await this._hydrateCards(row.entryIds, userId, language),
     })));
   }
 
   /**
    * Build system fallback packs-of-1 from fresh (un-sorted, un-skipped) words nearest
-   * the level, each using the word's OWN first example sentence for the band. Reuses
-   * the card supply query, then wraps each enriched card as a single-card pack.
+   * the level. Reuses the card supply query, then wraps each enriched card as a
+   * single-card pack.
    */
   private async _buildFallbackPacks(
     language: string,
@@ -764,7 +746,6 @@ export class StarterPacksService {
       packKey: `single:${card.id}`,
       packId: null,
       level: (card.difficulty as number | null) ?? level,
-      sentence: card.exampleSentences?.[0] ?? null,
       cards: [{ ...card, sorted: false, skipped: false }],
     }));
   }
@@ -792,12 +773,21 @@ export class StarterPacksService {
    * holds, dropping packs whose cards are ALL already sorted), then fills the rest with
    * fallback packs-of-1. `excludePackKeys` are the packKeys the client currently holds
    * so a replacement is never a duplicate. Skips are NOT auto-recycled (requirements §5.2).
+   *
+   * `requestedLevel` is the manual HSK/difficulty override from the sort-menu level
+   * dropdown (docs/SORT_CARDS_REQUIREMENTS.md §HSK level dropdown): when set, supply is
+   * pinned to EXACTLY that level — no nearest-level drift — so switching levels never
+   * silently serves a different one. `null` (the default / "auto" menu entry) keeps
+   * today's adaptive-drift behavior. Either way the returned `level` is always the
+   * server's true adaptive ESTIMATE (never the override) — the client uses it only to
+   * render the "auto: <level>" label, never as a filter.
    */
   async getNextPacks(
     language: string,
     userId: string,
     excludePackKeys: string[] = [],
-    limit = 2
+    limit = 2,
+    requestedLevel: number | null = null
   ): Promise<{ packs: SortPack[]; exhausted: boolean; level: number }> {
     const level = await this.estimateLevel(userId, language);
     const seen = await this._getSeenPacks(userId);
@@ -813,12 +803,14 @@ export class StarterPacksService {
     // LEVEL is honored before the authored-packs-first rule: walk levels nearest-first
     // and, WITHIN each level, serve authored packs then fallback singles, before ever
     // drifting to the next level. So a level-2 user exhausts ALL level-2 supply (packs
-    // AND singles) before seeing any level-1 or level-3 card.
+    // AND singles) before seeing any level-1 or level-3 card. A manual `requestedLevel`
+    // collapses this walk to a single level — no drift out of the requested level.
     const excludePackIds = [...seen, ...heldPackIds];
     const excludeCardIds = [...heldSingleIds];
     const packs: SortPack[] = [];
 
-    for (const lvl of this._levelDriftOrder(level)) {
+    const levelsToVisit = requestedLevel != null ? [requestedLevel] : this._levelDriftOrder(level);
+    for (const lvl of levelsToVisit) {
       if (packs.length >= limit) break;
 
       // Authored packs at this level (over-fetch: some may drop as all-cards-sorted).

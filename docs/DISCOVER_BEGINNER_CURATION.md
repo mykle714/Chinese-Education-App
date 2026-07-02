@@ -7,8 +7,8 @@ sees in Sort Cards (scp), so we can **hand-curate** a deliberate beginner experi
 
 > **Direction update.** The original plan here was a `discoverOrder` integer column
 > that re-sorted individual cards. That has been **superseded** by **authored sort
-> packs** (`sort_packs`) — the curation unit is now a small pack (a sentence + up to 3
-> cards), not a single re-ordered card. The export below is still the right starting
+> packs** (`sort_packs`) — the curation unit is now a small pack (up to 3 cards, no
+> sentence involved), not a single re-ordered card. The export below is still the right starting
 > point (it tells us which beginner words exist, in what order), but the hand-crafted
 > output is now authored packs, ordered by `sort_packs.packOrder`, not a per-card
 > `discoverOrder`. See [SORT_CARDS_REQUIREMENTS.md](./SORT_CARDS_REQUIREMENTS.md)
@@ -126,37 +126,34 @@ Exported files live in `discover-beginner-csv/` (gitignored working area):
 ## 4. Hand-curation workflow
 
 1. Export the CSV (§2) to see which beginner words exist at each level, in order.
-2. Group words into **authored packs**: a short sentence + the up-to-3 cards it
-   teaches. The author writes the sentence + English translation and lists the cards
-   (by `id` / `word1`), guaranteeing every listed card actually appears in the
-   sentence (validated by the build-time test in §5).
+2. Group words into **authored packs**: up to 3 cards each. No sentence is authored —
+   just group cards that make sense to sort together (by `id` / `word1`).
 3. Import the packs into `sort_packs` (one row per pack), assigning `packOrder` to
    control the beginner sequence within each level.
 4. Sync `sort_packs` to prod via `/data-deploy` (reference-table change).
 
 ---
 
-## 5. Mechanism: authored `sort_packs`  *(NOT yet built — schema confirmed, see implementation plan)*
+## 5. Mechanism: authored `sort_packs`
 
-The curation unit is a **sort pack**, stored per-language. A pack carries its own
-authored sentence (not a det example sentence) plus references to up-to-3 cards:
+The curation unit is a **sort pack**, stored per-language. A pack is just references to
+up-to-3 cards — no authored sentence (dropped in migration 95; see history note below):
 
 ```sql
--- confirmed shape (see SORT_PACKS_IMPLEMENTATION.md §2 for the migration)
+-- current shape (see SORT_PACKS_IMPLEMENTATION.md §2 for the migrations)
 CREATE TABLE sort_packs (
   id               SERIAL PRIMARY KEY,
   language         VARCHAR  NOT NULL,            -- 'zh' | 'es'
   level            SMALLINT NOT NULL,            -- 1..6, the pack's difficulty band
   "packOrder"      INTEGER  NOT NULL,            -- curation sort key within a level
-  "sentenceForeign" TEXT    NOT NULL,            -- authored sentence (zh chars / es text)
-  "sentenceEnglish"  TEXT   NOT NULL,            -- authored translation
   "entryIds"       INTEGER[] NOT NULL            -- up to 3 det ids, the draggable cards
 );
 ```
 
-- **No stored gloss.** The cpcdRow is enriched on the fly from `sentenceForeign` at
-  serve time via `enrichExampleSentencesMetadataBatch` (same path as est) — nothing to
-  precompute. zh gets the pinyin overlay; es renders as plain text.
+- **No sentence.** `sort_packs` originally carried authored `sentenceForeign`/
+  `sentenceEnglish` columns purely to constrain curation ("every card appears in a
+  coherent sentence"); they were never fetched or rendered by the client and were
+  dropped in migration 95. Authoring is now just picking up to 3 `entryIds`.
 - **`entryIds`** reference the per-language det table (`dictionaryentries_zh` /
   `_es`). Cards already in the user's library render locked + "sorted!"; a pack whose
   cards are *all* already sorted is skipped at serve time.
@@ -165,15 +162,12 @@ CREATE TABLE sort_packs (
 
 **Serving** (see [SORT_CARDS_REQUIREMENTS.md](./SORT_CARDS_REQUIREMENTS.md) §6.3):
 at the user's level, authored packs are served first (by `packOrder`), then system
-fallback packs-of-1 built on the fly from any remaining un-packed, un-skipped words
-(using each word's own first example sentence). Level drift is nearest-first.
+fallback packs-of-1 built on the fly from any remaining un-packed, un-skipped words.
+Level drift is nearest-first.
 
 **Build/deploy validation test (required):** `server/scripts/validate-sort-packs.ts`.
-For every `sort_packs` row it asserts each `entryIds` card's `word1` actually occurs
-within `sentenceForeign` (zh: substring / segmentation match; es: token match), and that
-**zh `sentenceForeign` is ≤ 11 code points, punctuation included**. This enforces the
-"cards-appear-in-sentence" and zh sentence-length invariants at build/deploy time rather
-than at runtime.
+For every `sort_packs` row it asserts structural validity: 1–3 `entryIds`, level in
+1..6, and every `entryId` exists in the per-language det table.
 
 ---
 

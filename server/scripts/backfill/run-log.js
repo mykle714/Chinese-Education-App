@@ -40,7 +40,13 @@ const PRICING_PER_MTOK = {
   // Opus 4.8 list price is $5/$25 per Mtok (NOT the old $15/$75 Opus-3-era rate).
   'claude-opus-4-8':   { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
   'claude-sonnet-4-6': { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 },
+  // Sonnet 5 list price ($3/$15; intro pricing through 2026-08-31 is $2/$10 —
+  // we log at list so estimates don't silently drop when the intro ends).
+  'claude-sonnet-5':   { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 },
   'claude-haiku-4-5':  { input: 1, output: 5,  cacheWrite: 1.25, cacheRead: 0.1 },
+  // Dated full ID used by DictionaryService.generateLongDefinition — same model,
+  // same price as the alias above.
+  'claude-haiku-4-5-20251001': { input: 1, output: 5, cacheWrite: 1.25, cacheRead: 0.1 },
 };
 
 /**
@@ -129,7 +135,7 @@ export async function stampEntryRun(client, table, ids, scriptId, version) {
  * @param {number}  opts.version   - SCRIPT_VERSION integer (start at 1)
  * @param {object} [opts.anthropic]- the Anthropic client to instrument (omit for deterministic scripts)
  * @param {string[]}[opts.argv]    - defaults to process.argv.slice(2)
- * @returns {{ finalize: (extra?: object) => void, state: object, stampEntries: (client: object, table: string, ids: number|number[]) => Promise<void> }}
+ * @returns {{ finalize: (extra?: object) => void, state: object, stampEntries: (client: object, table: string, ids: number|number[]) => Promise<void>, accrueUsage: (model: string, usage: object) => void }}
  */
 export function initRunLog({ script, version, anthropic, argv } = {}) {
   const rawArgs = argv ?? process.argv.slice(2);
@@ -146,21 +152,30 @@ export function initRunLog({ script, version, anthropic, argv } = {}) {
     finalized: false,
   };
 
+  /**
+   * Accrue one API response's token usage into the run record. Used by the
+   * messages.create wrapper below, and exported (bound) so the Batches API
+   * runner can account usage too — batch results come back through
+   * messages.batches.results(), which the wrapper never sees.
+   * @param {string} model - model id the request ran on
+   * @param {object} u     - the response `usage` object (snake_case fields)
+   */
+  const accrueUsage = (model, u) => {
+    state.apiCalls++;
+    if (!u) return;
+    const acc = (state.usage[model || 'unknown'] ||= { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 });
+    acc.input += u.input_tokens || 0;
+    acc.output += u.output_tokens || 0;
+    acc.cacheWrite += u.cache_creation_input_tokens || 0;
+    acc.cacheRead += u.cache_read_input_tokens || 0;
+  };
+
   // Instrument the Anthropic client so every messages.create accrues token usage.
   if (anthropic?.messages?.create) {
     const orig = anthropic.messages.create.bind(anthropic.messages);
     anthropic.messages.create = async (params, ...rest) => {
       const res = await orig(params, ...rest);
-      state.apiCalls++;
-      const model = params?.model || 'unknown';
-      const u = res?.usage;
-      if (u) {
-        const acc = (state.usage[model] ||= { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 });
-        acc.input += u.input_tokens || 0;
-        acc.output += u.output_tokens || 0;
-        acc.cacheWrite += u.cache_creation_input_tokens || 0;
-        acc.cacheRead += u.cache_read_input_tokens || 0;
-      }
+      accrueUsage(params?.model, res?.usage);
       return res;
     };
   }
@@ -215,7 +230,7 @@ export function initRunLog({ script, version, anthropic, argv } = {}) {
   const stampEntries = (client, table, ids) =>
     stampEntryRun(client, table, ids, state.script, state.version);
 
-  return { finalize, state, stampEntries };
+  return { finalize, state, stampEntries, accrueUsage };
 }
 
 export default initRunLog;

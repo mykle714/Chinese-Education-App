@@ -5,9 +5,17 @@
  * to assign a single HSK level, stored as the bare integer 1..6 in the smallint
  * `difficulty` column (migration 92; the model's "HSKn" token is parsed to n).
  *
+ * PROMPT CACHING: the static rules live in a cachedSystem block and only the
+ * per-word line varies in the user message, so the prefix is byte-identical
+ * across the run. (This prompt is below the model's minimum cacheable prefix,
+ * so the marker is currently a silent no-op — the structure is kept correct so
+ * caching engages automatically if the rules grow.)
+ *
  * Usage:
- *   docker exec cow-backend-local npx tsx scripts/backfill-hsk-level.js               # full backfill
- *   docker exec cow-backend-local npx tsx scripts/backfill-hsk-level.js --spot-check  # test 5 entries
+ *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-hsk-level.js               # full backfill (serial)
+ *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-hsk-level.js --batch       # full backfill via Batches API (50% price)
+ *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-hsk-level.js --spot-check  # test 5 entries
+ *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-hsk-level.js --words=未来,摸脉
  */
 
 import dotenv from 'dotenv';
@@ -19,38 +27,24 @@ dotenv.config({ path: path.join(__dirname, '../../../.env.docker') });
 
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
-import { initRunLog } from '../run-log.js';
-const SCRIPT_VERSION = 1; // bump when this script's logic/prompt changes
+import { initRunLog, cachedSystem } from '../run-log.js';
+import { parseBackfillArgs, wordsWhereClause } from '../shared/lib/cli.js';
+import { runBackfill } from '../shared/lib/runner.js';
+
+const SCRIPT_VERSION = 2; // bump when this script's logic/prompt changes (v2: cached system block + shared runner/batch mode)
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // run-log: track duration, version, words/mode, and token usage/cost
-const { stampEntries } = initRunLog({ script: 'chinese/backfill-hsk-level', version: SCRIPT_VERSION, anthropic: anthropic });
-const isSpotCheck = process.argv.includes('--spot-check');
+const { stampEntries, accrueUsage } = initRunLog({ script: 'chinese/backfill-hsk-level', version: SCRIPT_VERSION, anthropic });
+const { isSpotCheck, isBatch, targetWords } = parseBackfillArgs();
 
-// --words=未来,摸脉 → scope to specific entries only; omit to target all discoverable entries with difficulty IS NULL
-const wordsArg = process.argv.find(a => a.startsWith('--words='));
-const targetWords = wordsArg ? wordsArg.slice('--words='.length).split(',').map(s => s.trim()).filter(Boolean) : null;
-const wordsFilter = targetWords?.length
-  ? `AND word1 = ANY(ARRAY[${targetWords.map(w => `'${w.replace(/'/g, "''")}'`).join(', ')}])`
-  : '';
+const MODEL = 'claude-sonnet-4-6';
 
-/**
- * Ask Claude for the best-fit HSK level for a Chinese word.
- * Returns the integer 1..6, or null if parsing fails.
- */
-async function askClaudeForDifficultyLevel(word, pronunciation, definitions) {
-  const definitionText = Array.isArray(definitions)
-    ? definitions.slice(0, 5).join('; ')
-    : String(definitions ?? '');
+// Static instruction block — identical for every entry → cached system prefix.
+const SYSTEM_TEXT = `You are a Chinese pedagogy expert.
 
-  const prompt = `You are a Chinese pedagogy expert.
-
-Word: ${word}
-Pronunciation: ${pronunciation || 'N/A'}
-Definitions: ${definitionText}
-
-Task: Assign exactly one HSK level for this word.
+Task: Assign exactly one HSK level for the given word.
 
 Rules:
 - Return one label only: HSK1, HSK2, HSK3, HSK4, HSK5, or HSK6.
@@ -68,27 +62,27 @@ Rules:
 
 Respond with ONLY the level token.`;
 
-  const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
+/** Build the messages.create params for one entry (per-word data only in the user turn). */
+function buildRequest(row) {
+  const definitionText = Array.isArray(row.definitions)
+    ? row.definitions.slice(0, 5).join('; ')
+    : String(row.definitions ?? '');
+  return {
+    model: MODEL,
     max_tokens: 16,
     temperature: 0,
-    messages: [{ role: 'user', content: prompt }],
-  });
-
-  const text = response.content[0].text.trim().toUpperCase();
-  // The model answers with an "HSKn" token, but the `difficulty` column is a
-  // smallint holding the bare 1..6 level (migration 92) — so parse out the digit
-  // and return a Number. Storing the literal 'HSK1' would now fail the cast.
-  const match = text.match(/HSK([1-6])/);
-  return match ? Number(match[1]) : null;
+    system: cachedSystem(SYSTEM_TEXT),
+    messages: [{
+      role: 'user',
+      content: `Word: ${row.word1}\nPronunciation: ${row.pronunciation || 'N/A'}\nDefinitions: ${definitionText}`,
+    }],
+  };
 }
 
 async function run() {
-  if (isSpotCheck) {
-    console.log('🔍 SPOT CHECK MODE — processing 5 entries only\n');
-  }
+  if (isSpotCheck) console.log('🔍 SPOT CHECK MODE — processing 5 entries only\n');
   if (targetWords?.length) console.log(`🎯 Scoped to: ${targetWords.join(', ')}\n`);
-  console.log('🚀 Starting AI-powered HSK level backfill...\n');
+  console.log(`🚀 Starting AI-powered HSK level backfill${isBatch ? ' (batch mode)' : ''}...\n`);
 
   if (!process.env.ANTHROPIC_API_KEY) {
     console.error('❌ ANTHROPIC_API_KEY not set');
@@ -98,6 +92,8 @@ async function run() {
   const client = await db.getClient();
 
   try {
+    const params = [];
+    const wordsFilter = wordsWhereClause('word1', targetWords, params);
     const { rows: entries } = await client.query(`
       SELECT id, word1, pronunciation, definitions
       FROM dictionaryentries_zh
@@ -107,7 +103,7 @@ async function run() {
         ${wordsFilter}
       ORDER BY id ASC
       ${isSpotCheck ? 'LIMIT 5' : ''}
-    `);
+    `, params);
 
     console.log(`📊 Found ${entries.length} entries needing HSK level backfill\n`);
 
@@ -116,44 +112,28 @@ async function run() {
       return;
     }
 
-    let updated = 0;
-    let failed = 0;
-
-    for (const row of entries) {
-      try {
-        process.stdout.write(`  ${row.word1} (${row.pronunciation || 'N/A'}) ... `);
-
-        const difficulty = await askClaudeForDifficultyLevel(row.word1, row.pronunciation, row.definitions);
-
-        if (difficulty == null) {
-          console.log('FAILED: could not parse HSK level');
-          failed++;
-          continue;
-        }
-
+    await runBackfill({
+      anthropic,
+      entries,
+      batch: isBatch,
+      buildRequest,
+      accrueUsage,
+      // Parse the model's "HSKn" token to the bare smallint 1..6 (migration 92 —
+      // storing the literal 'HSK1' would fail the cast), then update + stamp.
+      handleResponse: async (row, message) => {
+        const text = (message.content[0]?.text ?? '').trim().toUpperCase();
+        const match = text.match(/HSK([1-6])/);
+        if (!match) return false;
+        const difficulty = Number(match[1]);
         await client.query(
           `UPDATE dictionaryentries_zh SET "difficulty" = $1 WHERE id = $2`,
           [difficulty, row.id]
         );
         await stampEntries(client, 'dictionaryentries_zh', row.id);
-
         console.log(difficulty);
-        updated++;
-      } catch (err) {
-        console.log(`FAILED: ${err.message}`);
-        failed++;
-      }
-
-      await new Promise(r => setTimeout(r, 200));
-    }
-
-    console.log('\n' + '='.repeat(60));
-    console.log('📊 Backfill Complete!');
-    console.log('='.repeat(60));
-    console.log(`Total processed : ${entries.length}`);
-    console.log(`Updated         : ${updated}`);
-    console.log(`Errors          : ${failed}`);
-    console.log('='.repeat(60) + '\n');
+        return true;
+      },
+    });
   } finally {
     client.release();
     await db.end?.();

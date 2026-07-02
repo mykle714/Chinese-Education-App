@@ -18,20 +18,47 @@ export const GRID_QUERY = Object.entries(GAME_DISTRIBUTION)
     .join("&");
 
 /**
- * cpcd size for each grid cell. `sm` (32px column) for now; 16 rows with pinyin
+ * Hint meter (see docs/WORD_SEARCH_GAME.md §5a). The bar holds `HINT_BAR_UNITS`
+ * hollow segments; each successful find fills one. A hint becomes usable once at
+ * least `HINT_COST` segments are filled, and spending a hint drains that many.
+ * The threshold line in the bar is drawn after `HINT_COST` segments. Tunable.
+ */
+export const HINT_BAR_UNITS = 8;
+export const HINT_COST = 4;
+
+/**
+ * cpcd size for each grid cell. `sm` (32px column) for now; 10 rows with pinyin
  * may crowd the height on a ~393px frame — accepted for v1, revisit a compact
  * variant later (see docs/WORD_SEARCH_GAME.md §3).
  */
 export const CELL_SIZE: CPCDSize = "sm";
 
 /**
- * Selections shorter than this never trigger a dictionary lookup (a single
- * character is too noisy to pop an info card for). See doc §4.
+ * Gap (px) between adjacent cpcd cells. Applied directly as the CSS grid
+ * column gap; `WordSearchGrid` derives the row gap from this same value (a
+ * fixed row track of `columnWidth + CELL_GAP`) so row and column spacing —
+ * measured character-center to character-center — stay equal on both axes.
+ * Tunable. See docs/WORD_SEARCH_GAME.md §3.
  */
-export const MIN_LOOKUP_LENGTH = 2;
+export const CELL_GAP = 16;
 
-/** How long the discovery info-card stays up before auto-dismissing (ms). */
-export const INFO_CARD_DURATION_MS = 2600;
+/**
+ * Breathing room (px) reserved on every side of the fitted grid inside its
+ * container. Applied in `useFitScale` (not as a CSS margin) so the centered,
+ * scaled grid never touches — or gets clipped at — the container edges. Tunable.
+ * See docs/WORD_SEARCH_GAME.md §3.
+ */
+export const GRID_MARGIN = 12;
+
+/**
+ * Extra downward nudge for the selection/found circle, as a fraction of the
+ * circle's own diameter (not px) — since `cellDiameter` is measured live and
+ * varies with cell size/scale, a fraction keeps the nudge proportional across
+ * screen sizes instead of over- or under-shooting on smaller/larger cells.
+ * Applied on top of the glyph-centering `discOffsetY` in `WordSearchGrid`.
+ * Tunable.
+ */
+export const DISC_EXTRA_OFFSET_Y_FRAC = 0.15;
 
 /**
  * Medal thresholds by total completion time, best-first. The last tier is the

@@ -41,9 +41,10 @@ RUN adduser -S nodejs -u 1001
 COPY package*.json ./
 RUN npm ci --only=production && npm cache clean --force
 
-# Copy built application from build stage
+# Copy built application from build stage. NOTE: node_modules is NOT copied from
+# the build stage — that would overwrite the prod-only install above with the
+# full dev dependency tree (typescript, tsx, etc.), bloating the image.
 COPY --from=build /app/dist ./dist
-COPY --from=build /app/node_modules ./node_modules
 
 # Change ownership to nodejs user
 RUN chown -R nodejs:nodejs /app

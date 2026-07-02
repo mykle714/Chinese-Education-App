@@ -175,7 +175,7 @@ Because `lastWorkPointIncrement` is only updated on complete success, failed ope
 - Calls service layer
 
 ### Routes
-- `server/server.ts` - Added new `/increment` route
+- `server/routes/userRoutes.ts` - the `/increment` route (moved from server.ts in the 2026-07 route split)
 - Kept old `/sync` route with deprecation notice
 
 ## Usage Example (Client-Side)
@@ -342,7 +342,7 @@ If issues arise, you can rollback by:
 
 1. **Switch client to old endpoint** - Change `/increment` to `/sync` in client code
 2. **Keep database column** - No need to remove it, just stops being used
-3. **Remove new route** - Comment out the `/increment` route in server.ts
+3. **Remove new route** - Comment out the `/increment` route in server/routes/userRoutes.ts
 
 The old sync endpoint remains functional as a fallback.
 

@@ -218,7 +218,12 @@ const CardIconCanvas: React.FC<{
         return u !== null ? u : selected;
     };
 
-    type DragMemo = { t: number; x: number; y: number };
+    // mx0/my0 = the gesture movement already accumulated at the instant the drag is first
+    // recognized. filterTaps + threshold hold back the first few px (tap-vs-drag disambiguation),
+    // so `movement` is NON-ZERO on the first drag frame; subtracting this baseline in runDrag
+    // makes the icon track from exactly where it was picked up instead of jumping forward by
+    // that accumulated distance on the first frame (most visible on a slow, careful drag).
+    type DragMemo = { t: number; x: number; y: number; mx0: number; my0: number };
     type PinchMemo = { t: number; d0: number; a0: number; scale: number; rot: number };
 
     // PINCH always targets the SELECTED icon, regardless of where on the canvas the
@@ -261,7 +266,7 @@ const CardIconCanvas: React.FC<{
     // that pins the target for the rest of the gesture. Shared by the per-icon drag
     // (`bindIcon`) and the empty-canvas drag (`bindCanvas`). Returns null when there is
     // nothing to translate (`t === null`). NOT called on a tap — the tap branch only selects.
-    const beginDragMotion = (t: number | null): DragMemo | null => {
+    const beginDragMotion = (t: number | null, mx: number, my: number): DragMemo | null => {
         if (t === null) return null;
         const target = layout[t];
         if (!target) return null; // stale/out-of-range index — don't dereference undefined
@@ -271,7 +276,9 @@ const CardIconCanvas: React.FC<{
         } else {
             triggerShake(t); // frozen target: signal the denied move with a shake
         }
-        return { t, x: target.x, y: target.y };
+        // Baseline the accumulated movement (mx0/my0) so runDrag measures displacement FROM this
+        // pickup point — no first-frame jump by the pre-recognition distance. See DragMemo.
+        return { t, x: target.x, y: target.y, mx0: mx, my0: my };
     };
     const runDrag = (m: DragMemo, mx: number, my: number, last: boolean) => {
         const target = layout[m.t];
@@ -279,8 +286,8 @@ const CardIconCanvas: React.FC<{
         if (target.locked) return; // frozen target: no translation
         const r = rect();
         if (!r) return;
-        let nx = m.x + mx / r.width;
-        let ny = m.y + my / r.height;
+        let nx = m.x + (mx - m.mx0) / r.width;
+        let ny = m.y + (my - m.my0) / r.height;
         // Snap the center onto the move grid live while the toggle is on.
         if (snap.move) ({ x: nx, y: ny } = snapCenterToGrid(nx, ny));
         if (last) {
@@ -347,7 +354,7 @@ const CardIconCanvas: React.FC<{
                 // somehow didn't run.)
                 const m =
                     (memo as DragMemo | undefined) ??
-                    beginDragMotion(gestureTargetRef.current ?? resolveDragTarget(px, py));
+                    beginDragMotion(gestureTargetRef.current ?? resolveDragTarget(px, py), mx, my);
                 if (!m) return memo;
                 runDrag(m, mx, my, last);
                 return m;
@@ -453,7 +460,7 @@ const CardIconCanvas: React.FC<{
                 // Empty-space drag → translate the selected icon (resolveDragTarget finds no
                 // unlocked icon under the pointer, so it returns the selection). No-op when
                 // nothing is selected.
-                const m = (memo as DragMemo | undefined) ?? beginDragMotion(resolveDragTarget(px, py));
+                const m = (memo as DragMemo | undefined) ?? beginDragMotion(resolveDragTarget(px, py), mx, my);
                 if (!m) return memo;
                 runDrag(m, mx, my, last);
                 return m;
@@ -501,24 +508,26 @@ const CardIconCanvas: React.FC<{
         return clampTextCenterFully(x, y, halfWFrac, halfHFrac);
     };
 
-    type TextDragMemo = { block: TextBlock; x: number; y: number };
+    // mx0/my0 baseline the pre-recognition movement — same first-frame-jump fix as the icon
+    // DragMemo (filterTaps + threshold make `movement` non-zero on the first drag frame).
+    type TextDragMemo = { block: TextBlock; x: number; y: number; mx0: number; my0: number };
     type TextPinchMemo = { block: TextBlock; d0: number; a0: number; scale: number; rot: number };
 
-    const beginTextDrag = (block: TextBlock): TextDragMemo | null => {
+    const beginTextDrag = (block: TextBlock, mx: number, my: number): TextDragMemo | null => {
         const item = textLayout[block];
         if (!item) return null;
         if (block !== selectedText) onSelectTarget({ kind: "text", block }); // grabbing selects it
         if (!item.locked) { onInteractionStart(); setTextInteracting(true); }
         else triggerTextShake(block);
-        return { block, x: item.x, y: item.y };
+        return { block, x: item.x, y: item.y, mx0: mx, my0: my };
     };
     const runTextDrag = (m: TextDragMemo, mx: number, my: number, last: boolean) => {
         const item = textLayout[m.block];
         if (!item || item.locked) return;
         const r = rect();
         if (!r) return;
-        let nx = m.x + mx / r.width;
-        let ny = m.y + my / r.height;
+        let nx = m.x + (mx - m.mx0) / r.width;
+        let ny = m.y + (my - m.my0) / r.height;
         if (snap.move) ({ x: nx, y: ny } = snapCenterToGrid(nx, ny));
         if (last) {
             setTextInteracting(false);
@@ -555,7 +564,7 @@ const CardIconCanvas: React.FC<{
                 // doesn't start a fresh drag from the first finger's accumulated pinch movement.
                 if (pinchLatchRef.current) { if (last) pinchLatchRef.current = false; return memo; }
                 if (tap) { onSelectTarget({ kind: "text", block }); return memo; }
-                const m = (memo as TextDragMemo | undefined) ?? beginTextDrag(block);
+                const m = (memo as TextDragMemo | undefined) ?? beginTextDrag(block, mx, my);
                 if (!m) return memo;
                 runTextDrag(m, mx, my, last);
                 return m;

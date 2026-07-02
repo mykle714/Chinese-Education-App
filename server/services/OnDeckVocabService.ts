@@ -2,6 +2,7 @@ import { PoolClient } from 'pg';
 import { ReviewMark, VocabEntry } from '../types/index.js';
 import { IVocabEntryDAL } from '../dal/interfaces/IVocabEntryDAL.js';
 import { DictionaryService } from './DictionaryService.js';
+import { StarterPacksService } from './StarterPacksService.js';
 import { ValidationError } from '../types/dal.js';
 import db from '../db.js';
 import { dictTableForLanguage } from '../dal/shared/dictTable.js';
@@ -70,7 +71,10 @@ const WORKING_LOOP_SIZE = 10;
 export class OnDeckVocabService {
   constructor(
     private vocabEntryDAL: IVocabEntryDAL,
-    private dictionaryService: DictionaryService
+    private dictionaryService: DictionaryService,
+    // Used only by Word Search, to bound the filler pool to the user's estimated
+    // difficulty level (and below) — see getWordSearchGrid.
+    private starterPacksService: StarterPacksService
   ) {}
 
   // Per-category cooldown after a correct mark: a card that was recently marked
@@ -634,18 +638,18 @@ export class OnDeckVocabService {
 
   // ---- Word Search game ----------------------------------------------------
 
-  // Grid dimensions: 14 columns wide × 12 rows tall (portrait play area).
+  // Grid dimensions: 7 columns wide × 7 rows tall (portrait play area).
   // See docs/WORD_SEARCH_GAME.md §2.
-  static readonly WORD_SEARCH_ROWS = 12;
-  static readonly WORD_SEARCH_COLS = 14;
+  static readonly WORD_SEARCH_ROWS = 7;
+  static readonly WORD_SEARCH_COLS = 7;
   // Cap on how many library candidates we pull per category up front. Word Search
   // needs a working set to run the substring de-dup / replacement loop against;
   // this bounds memory for users with very large libraries.
   private static readonly WORD_SEARCH_CANDIDATE_CAP = 500;
 
   /**
-   * Build the Word Search game payload: a clean 20-word set (no word's Chinese
-   * text is a substring of another's) hidden as snaking paths in a 12×16 grid of
+   * Build the Word Search game payload: a clean 10-word set (no word's Chinese
+   * text is a substring of another's) hidden as snaking paths in an 8×8 grid of
    * filler characters.
    *
    * Selection reuses the bubble-match pool shape (requested distribution + the
@@ -661,9 +665,10 @@ export class OnDeckVocabService {
    *      message.
    *
    * The final words are enriched + TTS-prewarmed (so the found-word audio is
-   * instant), the empty cells are flooded with random single characters pulled
-   * from `dictionaryentries_zh` (real chars carry real pinyin, so filler cells
-   * are indistinguishable from word cells), and the snaking grid is generated.
+   * instant), the empty cells are flooded with filler characters harvested from
+   * real words at or below the user's estimated level (each `dictionaryentries_zh`
+   * word split into its component chars, so filler stays level-appropriate yet
+   * carries real chars + pinyin), and the snaking grid is generated.
    *
    * Word Search is Chinese-only for now (the grid is a cpcd character lattice);
    * non-`zh` languages return `sufficient: false` with a language note.
@@ -795,28 +800,65 @@ export class OnDeckVocabService {
       const enriched = await this.enrichEntriesPipeline(selected.slice(0, total), language);
       const withAudio = await this.prewarmAudio(enriched);
 
-      // Filler pool: random single characters from the Chinese dictionary. Each
-      // carries a real reading, so a filler cell is indistinguishable from a word
-      // cell when pinyin is toggled on.
+      // Filler pool: characters harvested from real words at or below the user's
+      // estimated difficulty level, so the noise stays level-appropriate (a
+      // beginner never sees advanced characters as filler). We pull whole words
+      // (single- AND multi-character) with difficulty <= the estimate, then break
+      // each into its component characters — pairing each char with its pinyin
+      // syllable from the word's space-separated `pronunciation` — and use the
+      // resulting multiset as the bag. Keeping duplicates means frequent
+      // characters naturally recur, which reads as authentic filler. Each cell
+      // still carries a real character + reading, so filler is indistinguishable
+      // from word cells when pinyin is toggled on.
       const wordChars = withAudio.reduce((sum, w) => sum + [...w.entryKey].length, 0);
       const fillerNeeded = rows * cols - wordChars;
-      const fillerResult = await client.query<{ word1: string; pronunciation: string | null }>(`
+      const level = await this.starterPacksService.estimateLevel(userId, language);
+
+      // Break a batch of level-bounded words into a char-level GridCell bag.
+      const harvestFillerChars = (
+        wordRows: { word1: string; pronunciation: string | null }[]
+      ): GridCell[] => {
+        const bag: GridCell[] = [];
+        for (const row of wordRows) {
+          const chars = [...row.word1];
+          const syllables = (row.pronunciation ?? '').trim().split(/\s+/).filter(Boolean);
+          chars.forEach((char, i) => {
+            bag.push({ char, pinyin: syllables[i] ?? '' });
+          });
+        }
+        return bag;
+      };
+
+      // Pull generously so the bag has variety even after the char split; each
+      // word yields >= 1 character, so this comfortably covers `fillerNeeded`.
+      const fillerWordResult = await client.query<{ word1: string; pronunciation: string | null }>(`
         SELECT word1, pronunciation
         FROM dictionaryentries_zh
-        WHERE language = 'zh' AND char_length(word1) = 1
+        WHERE language = 'zh' AND difficulty BETWEEN 1 AND $1
         ORDER BY RANDOM()
-        LIMIT $1
-      `, [Math.max(fillerNeeded, 50)]);
-      const fillerPool: GridCell[] = fillerResult.rows.map((r) => ({
-        char: r.word1,
-        pinyin: (r.pronunciation ?? '').trim(),
-      }));
+        LIMIT $2
+      `, [level, Math.max(fillerNeeded, 100)]);
+      let fillerPool = harvestFillerChars(fillerWordResult.rows);
+
+      // Fallback: if no level-tagged words exist (e.g. difficulty un-backfilled),
+      // fall back to any single-character rows so the grid can still be built.
       if (fillerPool.length === 0) {
-        // No single-char dictionary rows to draw from — can't build a grid.
+        const fallback = await client.query<{ word1: string; pronunciation: string | null }>(`
+          SELECT word1, pronunciation
+          FROM dictionaryentries_zh
+          WHERE language = 'zh' AND char_length(word1) = 1
+          ORDER BY RANDOM()
+          LIMIT $1
+        `, [Math.max(fillerNeeded, 50)]);
+        fillerPool = harvestFillerChars(fallback.rows);
+      }
+      if (fillerPool.length === 0) {
+        // Nothing to draw from at all — can't build a grid.
         return { ...emptyResult, sufficient: false, reason: 'no-filler' };
       }
 
       const inputs: WordSearchInput[] = withAudio.map((w) => ({
+        id: w.id,
         entryKey: w.entryKey,
         pinyin: w.pronunciation ?? '',
         definition: w.definition ?? '',

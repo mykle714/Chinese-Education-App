@@ -6,8 +6,9 @@
  *
  * Flow: POST /api/auth/refresh sends the httpOnly refresh-token cookie; on
  * success the server rotates the refresh cookie and returns a new short-lived
- * access token, which we persist to localStorage (for the Authorization header)
- * and broadcast to AuthContext via the registered handler.
+ * access token, which we hold in authStorage's in-memory slot (for the
+ * Authorization header) and broadcast to AuthContext via the registered
+ * handler. The token is never persisted to disk.
  */
 import { API_BASE_URL } from '../constants';
 import * as authStorage from './authStorage';

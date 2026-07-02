@@ -14,6 +14,8 @@ export interface GridCell {
 
 /** A target word plus the ordered cell path it snakes through. */
 export interface PlacedWord {
+    /** vet id — used to mark the card correct via /api/flashcards/mark on find. */
+    id: number;
     entryKey: string;
     /** Space-separated tone-marked pinyin, one syllable per character. */
     pinyin: string;

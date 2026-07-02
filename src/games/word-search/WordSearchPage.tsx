@@ -10,14 +10,13 @@ import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings
 import { useBlockEdgeSwipe } from "../../hooks/useBlockEdgeSwipe";
 import LeafPage from "../../components/LeafPage";
 import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
-import type { DictionaryEntry } from "../hooks/useDictionaryEntries";
-import WordSearchHeaderControls from "./WordSearchHeader";
+import WordSearchHeaderControls, { type PinyinMode } from "./WordSearchHeader";
 import WordSearchWordList from "./WordSearchWordList";
 import WordSearchGrid, { type WordSearchGridHandle } from "./WordSearchGrid";
+import WordSearchHintBar from "./WordSearchHintBar";
 import GameEndPopup from "../runtime/GameEndPopup";
-import WordSearchInfoCard, { type InfoCardData } from "./WordSearchInfoCard";
-import { GRID_QUERY, TOTAL_WORDS, medalForTime } from "./constants";
-import type { PlacedWord, WordSearchResponse } from "./types";
+import { GRID_QUERY, TOTAL_WORDS, HINT_BAR_UNITS, HINT_COST, medalForTime } from "./constants";
+import type { Coord, PlacedWord, WordSearchResponse } from "./types";
 
 type Phase = "loading" | "blocked" | "playing" | "won";
 
@@ -57,12 +56,17 @@ const WordSearchPage: React.FC = () => {
     const [blockMessage, setBlockMessage] = useState("");
     const [data, setData] = useState<WordSearchResponse | null>(null);
     const [found, setFound] = useState<Set<string>>(new Set());
-    const [infoCard, setInfoCard] = useState<InfoCardData | null>(null);
     // Timer visibility only — the clock keeps ticking regardless (see HUD below).
     const [showTimer, setShowTimer] = useState(true);
     // Whether the end-of-run popup is collapsed into the corner puck.
     const [popupMinimized, setPopupMinimized] = useState(false);
     const gridRef = useRef<WordSearchGridHandle>(null);
+
+    // Hint meter: each successful find adds a unit (capped at HINT_BAR_UNITS); a
+    // hint is spendable once >= HINT_COST units are banked. `hintCell` is the
+    // first cell of the currently-hinted word, pulsed in the grid until found.
+    const [hintUnits, setHintUnits] = useState(0);
+    const [hintCell, setHintCell] = useState<Coord | null>(null);
 
     // Tapping anywhere that isn't a grid cell deselects the in-progress word.
     const handleBackgroundPointerDown = useCallback((e: React.PointerEvent) => {
@@ -126,7 +130,8 @@ const WordSearchPage: React.FC = () => {
     const startBoard = useCallback((payload: WordSearchResponse) => {
         setData(payload);
         setFound(new Set());
-        setInfoCard(null);
+        setHintUnits(0);
+        setHintCell(null);
         setElapsedMs(0);
         setFinalMs(0);
         setPopupMinimized(false);
@@ -182,30 +187,54 @@ const WordSearchPage: React.FC = () => {
         }).catch((err) => console.error("[WordSearch] win record failed:", err));
     }, [token]);
 
+    // Record a flashcard review mark for a found word's vet entry, reusing the
+    // same endpoint flp's working loop and Bubble Match call. Fire-and-forget:
+    // the game never blocks on it, and a failure only logs.
+    const markWordFound = useCallback((word: PlacedWord) => {
+        const headers: HeadersInit = { "Content-Type": "application/json" };
+        if (token && token !== "null" && token !== "undefined") {
+            headers["Authorization"] = `Bearer ${token}`;
+        }
+        fetch(`${API_BASE_URL}/api/flashcards/mark`, {
+            method: "POST",
+            headers,
+            credentials: "include",
+            // excludeIds empty: the game doesn't use the replacement card the
+            // endpoint returns, so there's nothing to dedupe against.
+            body: JSON.stringify({ cardId: word.id, isCorrect: true, excludeIds: [] }),
+        }).catch((err) => console.error(`[WordSearch] mark failed → card ${word.id}:`, err));
+    }, [token]);
+
     const onFound = useCallback((word: PlacedWord) => {
-        setInfoCard({
-            word: word.entryKey,
-            pronunciation: word.pinyin,
-            definition: word.definition,
-            isTarget: true,
-        });
         if (tts.enabled) tts.speakSentence(word.entryKey, word.pinyin);
+        markWordFound(word);
         setFound((prev) => {
             const next = new Set(prev);
             next.add(word.entryKey);
             return next;
         });
-    }, [tts]);
+        // Reward the successful query with one hint unit (capped at the bar size).
+        setHintUnits((u) => Math.min(HINT_BAR_UNITS, u + 1));
+        // If the player found the word we were hinting, retire the pulse.
+        setHintCell((cell) =>
+            cell && word.cells[0][0] === cell[0] && word.cells[0][1] === cell[1] ? null : cell
+        );
+    }, [tts, markWordFound]);
 
-    const onDiscover = useCallback((entry: DictionaryEntry) => {
-        setInfoCard({
-            word: entry.word1,
-            pronunciation: entry.pronunciation,
-            definition: entry.definition,
-            isTarget: false,
-        });
-        if (tts.enabled) tts.speakSentence(entry.word1, entry.pronunciation ?? undefined);
-    }, [tts]);
+    // Spend a hint: drain HINT_COST units and pulse the first cell of a random
+    // still-unfound word (preferring one we aren't already pointing at).
+    const useHint = useCallback(() => {
+        if (!data || hintUnits < HINT_COST) return;
+        const unfound = data.words.filter((w) => !found.has(w.entryKey));
+        if (unfound.length === 0) return;
+        const notCurrent = unfound.filter(
+            (w) => !hintCell || w.cells[0][0] !== hintCell[0] || w.cells[0][1] !== hintCell[1]
+        );
+        const pool = notCurrent.length > 0 ? notCurrent : unfound;
+        const pick = pool[Math.floor(Math.random() * pool.length)];
+        setHintCell(pick.cells[0]);
+        setHintUnits((u) => u - HINT_COST);
+    }, [data, hintUnits, found, hintCell]);
 
     // Win when every target is found. Freeze the timer, capture the final time.
     useEffect(() => {
@@ -227,6 +256,15 @@ const WordSearchPage: React.FC = () => {
         if (!payload) return; // fetchGrid already switched to blocked
         startBoard(payload);
     }, [tts, fetchGrid, startBoard]);
+
+    // Collapse the two boolean settings into a single 3-state control. The button
+    // cycles off → plain → color → off; only "on" states write showPinyinColor.
+    const pinyinMode: PinyinMode = !showPinyin ? "off" : showPinyinColor ? "color" : "plain";
+    const cyclePinyin = useCallback(() => {
+        if (!showPinyin) update({ showPinyin: true, showPinyinColor: false });
+        else if (!showPinyinColor) update({ showPinyinColor: true });
+        else update({ showPinyin: false });
+    }, [showPinyin, showPinyinColor, update]);
 
     const renderCentered = (children: React.ReactNode) => (
         <Box
@@ -285,7 +323,7 @@ const WordSearchPage: React.FC = () => {
                     timer toggle is off, but the clock keeps ticking. */}
                 <Box
                     className="word-search__hud"
-                    sx={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", px: 1.5, pt: 0.75 }}
+                    sx={{ position: "relative", display: "flex", justifyContent: "space-between", alignItems: "baseline", px: 1.5, pt: 0.75 }}
                 >
                     <Typography
                         className="word-search__hud-timer"
@@ -293,6 +331,20 @@ const WordSearchPage: React.FC = () => {
                     >
                         {showTimer ? `⏱ ${formatTime(phase === "won" ? finalMs : elapsedMs)}` : ""}
                     </Typography>
+                    {/* Hint meter: fills on finds, arms at HINT_COST. Positioned
+                        absolutely (not a flex sibling) so toggling the timer's
+                        visibility off — which shrinks the timer Typography — can't
+                        shift it via space-between. */}
+                    <Box
+                        sx={{
+                            position: "absolute",
+                            left: "50%",
+                            top: "50%",
+                            transform: "translate(-50%, -50%)",
+                        }}
+                    >
+                        <WordSearchHintBar units={hintUnits} />
+                    </Box>
                     <Typography
                         className="word-search__hud-count"
                         sx={{ fontSize: SIZE.body, fontWeight: WEIGHT.bold, color: "#6b6b6b", lineHeight: 1.25 }}
@@ -309,19 +361,10 @@ const WordSearchPage: React.FC = () => {
                     found={found}
                     showPinyin={showPinyin}
                     showPinyinColor={showPinyinColor}
+                    hintCell={hintCell}
                     onFound={onFound}
-                    onDiscover={onDiscover}
                     onFirstInteraction={handleFirstInteraction}
                 />
-
-                {infoCard && (
-                    <WordSearchInfoCard
-                        data={infoCard}
-                        showPinyin={showPinyin}
-                        showPinyinColor={showPinyinColor}
-                        onDismiss={() => setInfoCard(null)}
-                    />
-                )}
 
                 {phase === "won" && (
                     <GameEndPopup
@@ -356,12 +399,12 @@ const WordSearchPage: React.FC = () => {
             onBack={() => navigate("/games")}
             rightContent={
                 <WordSearchHeaderControls
-                    showPinyin={showPinyin}
-                    onTogglePinyin={() => update({ showPinyin: !showPinyin })}
-                    showPinyinColor={showPinyinColor}
-                    onTogglePinyinColor={() => update({ showPinyinColor: !showPinyinColor })}
+                    pinyinMode={pinyinMode}
+                    onCyclePinyin={cyclePinyin}
                     showTimer={showTimer}
                     onToggleTimer={() => setShowTimer((v) => !v)}
+                    hintReady={phase === "playing" && hintUnits >= HINT_COST}
+                    onHint={useHint}
                 />
             }
         >

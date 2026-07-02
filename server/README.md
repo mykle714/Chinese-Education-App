@@ -62,6 +62,22 @@ server/
 │   ├── UserService.ts
 │   ├── VocabEntryService.ts
 │   └── OnDeckVocabService.ts
+├── routes/               # HTTP route layer — one router per feature area
+│   ├── authRoutes.ts     # /api/auth/* (login/register behind authLimiter)
+│   ├── userRoutes.ts     # /api/users/* incl. minute-points + wins
+│   ├── vocabEntryRoutes.ts
+│   ├── flashcardRoutes.ts # mark/undo (inline logic — candidate for service extraction)
+│   ├── textRoutes.ts
+│   ├── onDeckRoutes.ts
+│   ├── starterPacksRoutes.ts
+│   ├── dictionaryRoutes.ts
+│   ├── gamesRoutes.ts    # games + night-market + community + leaderboard
+│   ├── mediaRoutes.ts    # TTS + icons8 (behind proxyLimiter)
+│   ├── handwritingRoutes.ts
+│   ├── diagnosticsRoutes.ts # unauthenticated sinks (behind diagnosticsLimiter)
+│   └── metaRoutes.ts     # changelog + health
+├── middleware/
+│   └── rateLimits.ts     # per-route-group express-rate-limit configs
 ├── types/                # TypeScript type definitions
 │   ├── index.ts          # Shared type definitions
 │   └── dal.ts            # DAL-specific types
@@ -69,8 +85,9 @@ server/
 ├── authMiddleware.ts     # JWT authentication middleware
 ├── db.ts                 # Database connection setup
 ├── db-config.ts          # Database configuration
-├── server.ts             # Main server file with API routes
+├── server.ts             # App bootstrap only: env, helmet/CORS/parsers, router mounts, listen
 ├── Dockerfile            # Docker container configuration
+├── .dockerignore         # keeps secrets/logs/node_modules out of image layers
 ├── tsconfig.json         # TypeScript configuration
 └── package.json          # Project dependencies and scripts
 ```

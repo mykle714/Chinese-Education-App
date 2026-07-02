@@ -281,12 +281,26 @@ export abstract class BaseDAL<T, TCreate, TUpdate> implements IBaseDAL<T, TCreat
   /**
    * Build INSERT query components for PostgreSQL
    */
+  /**
+   * Defense-in-depth: column names are interpolated into SQL (values are always
+   * parameterized), so every key must look like a plain identifier. Callers are
+   * expected to build the data object from destructured, known fields — this
+   * guard exists so a future `dal.update(id, req.body)` can't smuggle a quoted
+   * identifier (`foo" = $1 --`) into the statement.
+   */
+  protected assertSafeColumnName(key: string): void {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+      throw new ValidationError(`Invalid column name in query data: "${key}"`);
+    }
+  }
+
   protected buildInsertQuery(data: TCreate): {
     columns: string;
     placeholders: string;
     values: any[];
   } {
     const entries = Object.entries(data as any);
+    entries.forEach(([key]) => this.assertSafeColumnName(key));
     const columns = entries.map(([key]) => `"${key}"`).join(', ');
     const placeholders = entries.map((_, index) => `$${index + 1}`).join(', ');
     const values = entries.map(([, value]) => value);
@@ -302,6 +316,7 @@ export abstract class BaseDAL<T, TCreate, TUpdate> implements IBaseDAL<T, TCreat
     values: any[];
   } {
     const entries = Object.entries(data as any);
+    entries.forEach(([key]) => this.assertSafeColumnName(key));
     const setClause = entries.map(([key], index) => `"${key}" = $${index + 1}`).join(', ');
     const values = entries.map(([, value]) => value);
 

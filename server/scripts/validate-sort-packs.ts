@@ -1,16 +1,10 @@
 /**
- * Build/deploy validation for authored sort packs (sort_packs, migration 93).
+ * Build/deploy validation for authored sort packs (sort_packs, migration 93; sentence
+ * columns dropped in migration 95).
  *
  * LAYER: reference-data integrity check (read-only). Run before deploying sort_packs
- * to prod (or in CI) to enforce the invariant the sort-pack UX relies on:
- *
- *   EVERY card referenced by a pack (entryIds) must actually appear in that pack's
- *   authored sentence (sentenceForeign).
- *
- * The runtime does NOT re-check this (docs/SORT_CARDS_REQUIREMENTS.md §4.5 — "author
- * will make it so"), so this script is the guardrail. Also flags structural problems:
- * empty/oversized packs, non-existent entryIds, level out of 1..6, and zh sentences
- * longer than MAX_ZH_SENTENCE_CHARS code points (punctuation included).
+ * to prod (or in CI). Flags structural problems: empty/oversized packs, non-existent
+ * entryIds, level out of 1..6.
  *
  * Usage (from server/):  npx tsx scripts/validate-sort-packs.ts
  * Exit code 0 = all valid; 1 = at least one violation (fails the pipeline).
@@ -21,18 +15,14 @@ import db from '../db.js';
 import { dictTableForLanguage } from '../dal/shared/dictTable.js';
 
 const MAX_CARDS_PER_PACK = 3;
-// zh sort-pack sentences must stay short enough to render on the on-deck band without
-// wrapping/shrinking. The cap counts EVERY code point, punctuation included (。，etc.).
-// zh only — Spanish sentences are whitespace-delimited words and are naturally longer.
-const MAX_ZH_SENTENCE_CHARS = 11;
 
 interface PackRow {
   id: number;
   language: string;
   level: number;
   packOrder: number;
-  sentenceForeign: string;
   entryIds: number[];
+  entryWords: string[];
 }
 
 async function main(): Promise<void> {
@@ -41,7 +31,7 @@ async function main(): Promise<void> {
 
   try {
     const { rows: packs } = await client.query<PackRow>(
-      `SELECT id, language, level, "packOrder", "sentenceForeign", "entryIds"
+      `SELECT id, language, level, "packOrder", "entryIds", "entryWords"
        FROM sort_packs ORDER BY language, level, "packOrder", id`
     );
     console.log(`Validating ${packs.length} sort pack(s)…`);
@@ -60,13 +50,6 @@ async function main(): Promise<void> {
       if (pack.level < 1 || pack.level > 6) {
         violations.push(`${where}: level ${pack.level} out of range 1..6`);
       }
-      // zh sentence-length cap (code points, punctuation included).
-      if (pack.language === 'zh') {
-        const len = [...pack.sentenceForeign].length;
-        if (len > MAX_ZH_SENTENCE_CHARS) {
-          violations.push(`${where}: zh sentence is ${len} chars (max ${MAX_ZH_SENTENCE_CHARS}): "${pack.sentenceForeign}"`);
-        }
-      }
 
       // Load the referenced cards' headwords from the per-language det table.
       const det = dictTableForLanguage(pack.language);
@@ -77,16 +60,16 @@ async function main(): Promise<void> {
       const byId = new Map(cards.map((c) => [c.id, c.word1]));
 
       for (const id of pack.entryIds) {
-        const word1 = byId.get(id);
-        if (!word1) {
+        if (!byId.has(id)) {
           violations.push(`${where}: entryId ${id} not found in ${det}`);
-          continue;
         }
-        // The invariant: the card's headword occurs in the authored sentence.
-        // Substring match works for both scripts (zh characters; es whitespace words).
-        if (!pack.sentenceForeign.includes(word1)) {
-          violations.push(`${where}: card "${word1}" (id ${id}) not found in sentence "${pack.sentenceForeign}"`);
-        }
+      }
+
+      // entryWords (migration 96) is trigger-maintained, but check it hasn't drifted
+      // (e.g. from a bulk write that bypassed the trigger's UPDATE OF columns).
+      const expectedWords = pack.entryIds.map((id) => byId.get(id)).filter((w): w is string => w !== undefined);
+      if (JSON.stringify(pack.entryWords) !== JSON.stringify(expectedWords)) {
+        violations.push(`${where}: entryWords ${JSON.stringify(pack.entryWords)} out of sync with entryIds (expected ${JSON.stringify(expectedWords)})`);
       }
     }
   } finally {

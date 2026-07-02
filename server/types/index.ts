@@ -237,10 +237,11 @@ export interface DiscoverCard {
 }
 
 /**
- * A sort pack: the on-deck unit of the discover sort flow — one sentence + up to 3
- * cards to sort (see docs/SORT_CARDS_REQUIREMENTS.md §4.5). Authored packs come from
- * `sort_packs`; system fallback packs-of-1 are built on the fly from a single word's
- * own first example sentence. The client renders `sentence` via <SegmentedSentenceDisplay>.
+ * A sort pack: the on-deck unit of the discover sort flow — up to 3 cards to sort
+ * (see docs/SORT_CARDS_REQUIREMENTS.md §4.5). Authored packs come from `sort_packs`;
+ * system fallback packs-of-1 are built on the fly. No sentence is shown in this flow —
+ * `sort_packs.sentenceForeign`/`sentenceEnglish` exist only to constrain authoring
+ * (each entryId's word must occur in the authored sentence), not for display.
  */
 export interface SortPack {
   // Stable client identity used for de-dup / exclusion. Authored: "pack:<id>";
@@ -249,10 +250,6 @@ export interface SortPack {
   // sort_packs.id for authored packs; null for fallback packs-of-1 (nothing to mark seen).
   packId: number | null;
   level: number;
-  // Enriched sentence for the band: the enrichExampleSentencesMetadataBatch output
-  // shape ({ foreignText, english, _segments, segmentMetadata, ... }). null when a
-  // fallback single has no example sentence (client renders a bare card, no band).
-  sentence: NonNullable<DiscoverCard['exampleSentences']>[number] | null;
   cards: DiscoverCard[];
 }
 

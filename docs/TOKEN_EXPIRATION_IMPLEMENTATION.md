@@ -67,12 +67,17 @@ Pure storage (interface `server/dal/interfaces/IRefreshTokenDAL.ts`): `create`,
 revoke moment is preserved), `revokeAllForUser`. Wired in `server/dal/setup.ts`
 (`refreshTokenDAL` → injected into `UserService`).
 
-### HTTP — `server/controllers/UserController.ts` + `server/server.ts`
-- `setAuthCookies` / `clearAuthCookies` (~33-46) — the access cookie is path `/`
+### HTTP — `server/controllers/UserController.ts` + `server/routes/authRoutes.ts`
+- Route registrations live in `server/routes/authRoutes.ts` (split out of
+  server.ts). `login`/`register` sit behind `authLimiter` (20/15min/IP) and
+  `refresh` behind the looser `refreshLimiter` (120/15min/IP) — see
+  `server/middleware/rateLimits.ts`.
+- `setAuthCookies` / `clearAuthCookies` — the access cookie is path `/`
   (sent with every request); the refresh cookie is path `/api/auth` (only sent to
   refresh/logout/delete-account, shrinking exposure). **`clearCookie` must use the
-  same path or the browser keeps the cookie.** Add `secure: true` to both under
-  HTTPS.
+  same path + flags or the browser keeps the cookie.** Both cookies carry
+  `secure: true` when `NODE_ENV === 'production'` (prod is HTTPS-only; dev is
+  http://localhost where `secure` would drop the cookies).
 - `login` — authenticate → `issueRefreshToken` → `setAuthCookies`. The refresh
   token is **cookie-only**, never in the response body.
 - `refresh` (`POST /api/auth/refresh`) — reads the refresh cookie, calls
@@ -92,7 +97,8 @@ revoke moment is preserved), `revokeAllForUser`. Wired in `server/dal/setup.ts`
 Single source of truth so the fetch interceptor, axios client, and AuthContext
 share **one** in-flight refresh (a burst of concurrent 401s → exactly one
 `/api/auth/refresh`). `attemptTokenRefresh()` POSTs to `/api/auth/refresh` (with
-the refresh cookie), on success persists the new access token to localStorage,
+the refresh cookie), on success stores the new access token in authStorage's
+**in-memory slot** (`src/utils/authStorage.ts` — the token is never persisted),
 broadcasts it via `setRefreshHandlers`, and returns it; returns `null` on failure.
 Captures the **native** fetch at module load so refresh requests are never
 self-intercepted.
@@ -123,11 +129,14 @@ retry uses a `_retried` flag.
 ### `src/AuthContext.tsx`
 - Registers the refresh handler (`setRefreshHandlers`) to mirror a refreshed token
   into React state.
-- `login` stores only the access token (refresh lives in the httpOnly cookie).
+- `login` stores only the access token, **in memory** via
+  `src/utils/authStorage.ts` (refresh lives in the httpOnly cookie; the access
+  token is deliberately not persisted — see below).
 - `checkAuth` (effect keyed on `token`): with a valid access token, calls
   `/api/auth/me` (the interceptor auto-refreshes on 401). With **no** usable access
-  token, it still attempts a silent `attemptTokenRefresh()` so a valid refresh
-  cookie keeps the user signed in across reloads / localStorage clears.
+  token — which is now every fresh page load — it attempts a silent
+  `attemptTokenRefresh()` so a valid refresh cookie keeps the user signed in
+  across reloads and new tabs.
   - **Refresh-driven token changes skip the `/me` refetch** (`if (token && user)
     return;` at the top): a background access-token refresh changes `token` while
     the authenticated `user` is already set, and the user is unchanged, so the
@@ -148,6 +157,13 @@ retry uses a `_retried` flag.
   (multi-tab / retried refresh) from the family burn while keeping the theft-replay
   window tiny — the standard "reuse interval" trade-off.
 - httpOnly cookies → tokens invisible to JS (XSS can't read them).
+- **Access token is never persisted client-side** (`src/utils/authStorage.ts`
+  holds it in a module variable; the old `localStorage['token']` copy — which an
+  XSS payload could read off disk — is purged on load). Reloads/new tabs
+  re-establish the session via the httpOnly refresh cookie; concurrent per-tab
+  refreshes are covered by the 20s rotation-race grace window.
+- Login/register are rate-limited (20/15min/IP) against bcrypt brute force;
+  refresh at 120/15min/IP. `server/middleware/rateLimits.ts`.
 - Short 15m access window limits the blast radius of a leaked access token.
 
 ## Manual testing
@@ -177,4 +193,3 @@ notice.
    everywhere" button (server already supports `revokeAllRefreshTokens`).
 3. Periodic cleanup of expired/revoked `refresh_tokens` rows (not required for
    correctness — expiry is checked at use).
-4. `secure: true` cookies once served over HTTPS.

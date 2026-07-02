@@ -247,7 +247,7 @@ character is top-1-correct in one Verify (a partial pass awards nothing).
   one row per first completion of `(userId, language, entryKey, level)`, bounded at
   ≤4 rows/character/user. Stars = `COUNT(*)` grouped by `entryKey`. State, not
   history. Helper: `server/utils/writingPracticeStore.ts`; routes
-  `GET/POST /api/handwriting/completions` (`server/server.ts`).
+  `GET/POST /api/handwriting/completions` (`server/routes/handwritingRoutes.ts`).
 - **Tab star:** a gold ★ sits **above** a level's label once that level is
   completed for the word. The label stays centered in the tab; the star is
   absolutely positioned above it (out of flow), so it overlays on completion
@@ -305,8 +305,8 @@ dependency (consistent with the offline-fallback stance of the recognition layer
 | Domain (contract) | `Stroke` / `Ink` / `WritingCanvasHandle` types; client recognition adapter | `src/components/handwriting/types.ts`, `recognize.ts` |
 | Domain (draft) | Preserve-on-close / hard-clear draft store | `src/components/handwriting/writingDraftStore.ts` |
 | Persistence (stars) | `writing_practice_completions` table (Shape A) + completion helper | migration `database/migrations/81-create-writing-practice-completions-table.sql`, `server/utils/writingPracticeStore.ts` |
-| API (proxy) | `POST /api/handwriting/recognize` — `Ink` → `{ candidates, top1 }` | `server/server.ts` |
-| API (stars) | `GET/POST /api/handwriting/completions` — read/record completed levels | `server/server.ts`; client `src/components/handwriting/completions.ts` |
+| API (proxy) | `POST /api/handwriting/recognize` — `Ink` → `{ candidates, top1 }` | `server/routes/handwritingRoutes.ts` |
+| API (stars) | `GET/POST /api/handwriting/completions` — read/record completed levels | `server/routes/handwritingRoutes.ts`; client `src/components/handwriting/completions.ts` |
 | Integration (adapter) | Google adapter (server-side; the only file touching the endpoint) | `server/utils/handwritingRecognizer.ts` |
 | Integration (fallback) | HanziLookupJS adapter (client fallback) | *not yet built* |
 

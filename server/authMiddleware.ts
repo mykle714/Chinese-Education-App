@@ -30,34 +30,24 @@ export function authenticateToken(req: Request, res: Response, next: NextFunctio
     const error: CustomError = new Error('Authentication token is required');
     error.code = 'ERR_MISSING_TOKEN';
     error.statusCode = 401;
-    return res.status(401).json({ 
+    return res.status(401).json({
       error: error.message,
       code: error.code
     });
   }
-  
-  // Additional validation for malformed tokens
-  if (token === 'undefined' || token === 'null' || token === '') {
-    console.error('🚨 Malformed token detected:', { token, type: typeof token });
-    const customError: CustomError = new Error('Malformed authentication token');
-    customError.code = 'ERR_MALFORMED_TOKEN';
-    customError.statusCode = 401;
-    return res.status(401).json({ 
-      error: customError.message,
-      code: customError.code
-    });
-  }
-  
+
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as { userId: string; email: string };
     req.user = decoded;
     next();
   } catch (error) {
-    console.error('Error verifying token:', error);
-    console.error('🚨 Token that failed verification:', { 
-      token: token.substring(0, 50) + '...', 
+    // Log only the shape of the failing token, never its contents — a JWT prefix
+    // in the logs is credential material (header+payload are merely base64).
+    console.error('Error verifying token:', error instanceof Error ? error.message : error);
+    console.error('🚨 Token failed verification:', {
       length: token.length,
-      type: typeof token 
+      segments: token.split('.').length, // 3 for a well-formed JWT
+      source: headerToken ? 'authorization-header' : 'cookie',
     });
     const customError: CustomError = new Error('Invalid or expired token');
     customError.code = 'ERR_INVALID_TOKEN';

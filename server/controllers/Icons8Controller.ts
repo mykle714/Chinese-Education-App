@@ -160,6 +160,10 @@ export class Icons8Controller {
       res.setHeader('Content-Type', this.contentTypeFor(asset.downloadedFormat));
       res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
       res.setHeader('Content-Length', String(asset.assetBytes.length));
+      // helmet() defaults Cross-Origin-Resource-Policy to same-origin, which blocks this
+      // route's whole purpose: being loaded via a plain <img src> that may be cross-origin
+      // (e.g. frontend dev server on a different port than this API). Widen just this route.
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
       res.end(asset.assetBytes);
     } catch (err: any) {
       console.error('[Icons8Controller] getIconImage error:', err);

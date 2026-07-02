@@ -41,7 +41,7 @@ markHistory?: ReviewMark[];  // Last 16 flashcard review marks
 ```
 
 ### 3. API Endpoint Update
-**File:** `server/server.ts`
+**File:** `server/routes/flashcardRoutes.ts` (moved from server.ts in the 2026-07 route split)
 
 Updated `/api/flashcards/mark` endpoint to:
 1. Fetch current review history from database
@@ -130,7 +130,7 @@ docker exec -i cow-postgres-local psql -U cow_user -d cow_db -c \
 
 1. `database/migrations/15-add-flashcard-history.sql` (new)
 2. `server/types/index.ts` (updated)
-3. `server/server.ts` (updated)
+3. `server/routes/flashcardRoutes.ts` (route split, 2026-07)
 
 ## Notes
 

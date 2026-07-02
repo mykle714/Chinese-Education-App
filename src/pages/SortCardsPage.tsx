@@ -1,16 +1,16 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Box, Typography, IconButton, Button, Chip } from "@mui/material";
+import { Box, Typography, IconButton, Button, Chip, Menu, MenuItem } from "@mui/material";
 import DelayedCircularProgress from "../components/DelayedCircularProgress";
 import { styled } from "@mui/material/styles";
 import UndoIcon from "@mui/icons-material/Undo";
+import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import { useDrag } from "@use-gesture/react";
 import { useSpring, animated } from "@react-spring/web";
 import NodePage from "../components/NodePage";
 import MinutePointsFireBadge from "../minutePoints/MinutePointsFireBadge";
 import ForeignText from "../components/ForeignText";
 import PosBadge from "../components/PosBadge";
-import SegmentedSentenceDisplay from "../components/SegmentedSentenceDisplay";
 import { API_BASE_URL } from "../constants";
 import { stripParentheses } from "../utils/definitionUtils";
 import type { Language, DiscoverCard, SortPack, DiscoverFetchResponse, DiscoverNextPackResponse } from "../types";
@@ -22,14 +22,19 @@ import { COLORS } from "../theme/colors";
 import { FONTS } from "../theme/fonts";
 import { SIZE, WEIGHT, LEADING, TRACKING } from "../theme/scale";
 
-// The on-deck unit is now a SORT PACK (docs/SORT_CARDS_REQUIREMENTS.md §4.5): a sentence
-// band + up to 3 draggable cards. The client holds a short FIFO queue of PACKS (target
-// 2: on-deck + buffer). The server owns all selection/leveling; the client renders the
-// head pack, sorts its cards one at a time, and asks for one replacement pack when a
-// pack completes. Skip is a de-emphasized header button (not a drag target). Undo
-// reverses one card action at a time (sort OR skip), 3 deep.
+// The on-deck unit is now a SORT PACK (docs/SORT_CARDS_REQUIREMENTS.md §4.5): up to 3
+// draggable cards (no sentence band). The client holds a short FIFO queue of PACKS
+// (target 2: on-deck + buffer). The server owns all selection/leveling; the client
+// renders the head pack, sorts its cards one at a time, and asks for one replacement
+// pack when a pack completes. Skip is a de-emphasized header button (not a drag
+// target). Undo reverses one card action at a time (sort OR skip), 3 deep.
 
 const UNDO_DEPTH = 3;
+
+// Manual HSK/difficulty dropdown levels — mirrors the server's generalized 1..6
+// difficulty scale (StarterPacksService._levelConfig, migration 79) for every
+// language. `null` is the "auto" entry (today's adaptive-estimate flow).
+const DIFFICULTY_LEVELS = [1, 2, 3, 4, 5, 6];
 
 // Drag destinations (Skip is intentionally NOT here — §5.1).
 interface BucketZone {
@@ -62,18 +67,23 @@ const ContentArea = styled(Box)({
 
 // The two destination buckets, laid out evenly across the top. A definite height lets
 // each bucket resolve its `height: 100%` while keeping the card aspect ratio (below).
+const BUCKET_GAP = "36px"; // healthy fixed breathing room between the two buckets
+const BUCKET_EDGE_PADDING = "28px"; // healthy fixed breathing room between each bucket and the screen edge
+
 const BucketsContainer = styled(Box)({
     width: "100%",
     flex: 1, // absorb the page's spare vertical space (and yield it back on short screens)
     minHeight: 0,
-    containerType: "size", // establishes cqw/cqh for the buckets' "contain" sizing (below)
-    paddingTop: 0,
-    paddingBottom: 12,
-    // No horizontal padding: it would be added on top of the two outer `space-evenly`
-    // gaps, making the side margins larger than the middle. Zero padding keeps all three
-    // gaps equal (the min-width cqw math still reserves room via the `- 8px` term).
+    containerType: "size", // establishes cqw/cqh for the buckets' "contain" sizing (below) —
+    // reflects THIS element's content box, so the horizontal padding below is already
+    // excluded from cqw and the bucket-width formula needs no further adjustment for it.
+    paddingTop: 16,
+    paddingBottom: 20,
+    paddingLeft: BUCKET_EDGE_PADDING,
+    paddingRight: BUCKET_EDGE_PADDING,
     display: "flex",
     flexDirection: "row",
+    gap: BUCKET_GAP, // enforced minimum between the two buckets; space-evenly grows it further when there's room
     justifyContent: "space-evenly", // even spacing before / between / after the two buckets
     alignItems: "center",
 });
@@ -81,14 +91,13 @@ const BucketsContainer = styled(Box)({
 const Bucket = styled(Box)<{ mainColor: string; accentColor: string; highlight?: boolean }>(
     ({ mainColor, accentColor, highlight }) => ({
         // Card-shaped drop targets that keep the 136:200 card aspect ratio in EVERY
-        // regime. Width is the largest value that fits BOTH constraints — half the
-        // container width (minus half the 16px gap) AND the full container height mapped
-        // back through the ratio — i.e. a true "contain" fit. Height then follows from
-        // aspect-ratio. So the buckets grow to fill tall screens and shrink on short
-        // ones, always card-shaped, never overflowing or colliding. Uses the container
-        // query units established by BucketsContainer's `containerType: size`.
+        // regime. Width is the smallest of: half the container width (minus half the
+        // gap), the full container height mapped back through the ratio (a true
+        // "contain" fit), and a hard cap so the buckets never balloon on wide/tall
+        // screens. Height then follows from aspect-ratio. Uses the container query
+        // units established by BucketsContainer's `containerType: size`.
         aspectRatio: "136 / 200",
-        width: "min(calc(50cqw - 8px), calc(100cqh * 136 / 200))",
+        width: "min(calc(50cqw - 18px), calc(100cqh * 136 / 200), 190px)",
         minWidth: 0,
         padding: 8,
         backgroundColor: mainColor,
@@ -121,21 +130,6 @@ const Bucket = styled(Box)<{ mainColor: string; accentColor: string; highlight?:
         },
     })
 );
-
-// The pack's sentence — its OWN dedicated band: a full-width, solid, opaque strip
-// sized to its CONTENT only (never flex-filling), so it stays compact and hands the
-// spare vertical space to the buckets above. Sits just above the card tray.
-const SentenceSection = styled(Box)({
-    width: "100%",
-    flex: "0 0 auto",
-    padding: "14px 18px",
-    backgroundColor: COLORS.sectionCard,
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-});
 
 // The up-to-3 draggable cards. Shrinks to fit its contents (does NOT flex-fill the
 // remaining space); it sits at the bottom because BucketsContainer above it flex-fills.
@@ -172,19 +166,31 @@ const CardShell = styled(AnimatedBox)<{ locked?: boolean }>(({ locked }) => ({
     height: 150,
     maxHeight: "100%",
     maxWidth: "31%",
-    backgroundColor: COLORS.card,
+    // A flex item's default min-width is "auto" (its max-content size), which can
+    // override the aspect-ratio width and stop the definition text below from
+    // wrapping at all. minWidth: 0 lets the card actually hold to its fixed size
+    // and forces long definitions to wrap instead of pushing the card wider.
+    minWidth: 0,
+    // Locked (already-sorted) cards sink toward the page background instead of
+    // sitting on the card surface color, reinforcing "not draggable".
+    backgroundColor: locked ? COLORS.header : COLORS.card,
     borderRadius: 12,
-    boxShadow: "2px 4px 4px rgba(0, 0, 0, 0.25)",
+    // A dropped shadow reads as "raised"; a locked card instead gets a soft
+    // inward shadow so it reads as recessed/pressed-into-the-background.
+    boxShadow: locked
+        ? "inset 0 2px 5px rgba(0, 0, 0, 0.22)"
+        : "2px 4px 4px rgba(0, 0, 0, 0.25)",
     padding: 10,
     display: "flex",
     flexDirection: "column",
     justifyContent: "center",
     alignItems: "center",
     gap: 8,
-    cursor: locked ? "default" : "grab",
+    cursor: locked ? "not-allowed" : "grab",
     touchAction: "none",
-    opacity: locked ? 0.55 : 1,
-    "&:active": { cursor: locked ? "default" : "grabbing" },
+    opacity: locked ? 0.5 : 1,
+    filter: locked ? "grayscale(0.85)" : "none",
+    "&:active": { cursor: locked ? "not-allowed" : "grabbing" },
 }));
 
 // Occupies the exact footprint of a card that has been sorted away this session, so
@@ -244,6 +250,24 @@ const DraggableCard: React.FC<{
         api.start({ y: 0, opacity: 1, config: { tension: 280, friction: 26 } });
     }, [api]);
 
+    const valueRef = useRef<HTMLElement | null>(null);
+    useEffect(() => {
+        const el = valueRef.current;
+        if (!el) return;
+        const rect = el.getBoundingClientRect();
+        const cs = getComputedStyle(el);
+        console.log("[sort-cards] definition geometry v2", {
+            entryKey: card.entryKey,
+            definition: card.definition,
+            elRect: { width: rect.width, height: rect.height },
+            scrollWidth: el.scrollWidth,
+            scrollHeight: el.scrollHeight,
+            clientWidth: el.clientWidth,
+            clientHeight: el.clientHeight,
+            computed: { display: cs.display, whiteSpace: cs.whiteSpace, lineHeight: cs.lineHeight, maxHeight: cs.maxHeight, overflow: cs.overflow, fontSize: cs.fontSize, width: cs.width },
+        });
+    }, [card.entryKey, card.definition]);
+
     const bind = useDrag(
         ({ first, down, movement: [mx, my], xy: [px, py] }) => {
             if (locked) return;
@@ -271,31 +295,50 @@ const DraggableCard: React.FC<{
             {...(locked ? {} : bind())}
             style={{ x, y, scale, opacity, zIndex: 1000 }}
         >
-            {card.iconId && (
-                <Box
-                    component="img"
-                    className="sort-cards__card-icon"
-                    src={`${API_BASE_URL}/api/icons8/${encodeURIComponent(card.iconId)}/image`}
-                    alt=""
-                    draggable={false}
-                    sx={{ width: 44, height: 44, objectFit: "contain", pointerEvents: "none" }}
-                />
-            )}
+            <Box className="sort-cards__card-icon-slot" sx={{ width: 44, height: 44, flex: "0 0 auto" }}>
+                {card.iconId && (
+                    <Box
+                        component="img"
+                        className="sort-cards__card-icon"
+                        src={`${API_BASE_URL}/api/icons8/${encodeURIComponent(card.iconId)}/image`}
+                        alt=""
+                        draggable={false}
+                        sx={{ width: 44, height: 44, objectFit: "contain", pointerEvents: "none" }}
+                    />
+                )}
+            </Box>
             <Box className="sort-cards__card-key-group" sx={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
                 <ForeignText size="sm" className="sort-cards__card-key" text={card.entryKey} pronunciation={card.pronunciation} />
                 <PosBadge pos={card.pos} hasMultiplePos={card.hasMultiplePos} />
             </Box>
             <Typography
+                ref={valueRef}
                 className="sort-cards__card-value"
                 sx={{
                     fontSize: SIZE.micro,
                     fontWeight: WEIGHT.regular,
                     textAlign: "center",
                     width: "100%",
-                    display: "-webkit-box",
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: "vertical",
+                    // 2-line cap via an explicit line-height + maxHeight, NOT
+                    // `-webkit-box`/`WebkitLineClamp`: some browsers resolve that
+                    // combo's computed `display` to `flow-root` instead of
+                    // `-webkit-box`, which silently disables the clamp and collapses
+                    // the box to a single line's height — clipping the second line
+                    // with no ellipsis. lineHeight + maxHeight clips the same way but
+                    // works everywhere since it never depends on that mechanism.
+                    lineHeight: 1.3,
+                    maxHeight: "2.6em",
                     overflow: "hidden",
+                    whiteSpace: "normal",
+                    overflowWrap: "break-word",
+                    wordBreak: "break-word",
+                    // CardShell is a fixed-height (150px) column flex container whose
+                    // total content can exceed that height. Because this element has
+                    // overflow: hidden, its flexbox "automatic minimum size" collapses
+                    // to 0 (spec behavior), so without flexShrink: 0 the browser was
+                    // squeezing it down to whatever space was left (~1 line) instead
+                    // of honoring maxHeight above.
+                    flexShrink: 0,
                 }}
             >
                 {stripParentheses(card.definition)}
@@ -331,6 +374,11 @@ const SortCardsPage: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [highlightedBucket, setHighlightedBucket] = useState<string | null>(null);
     const [level, setLevel] = useState<number | null>(null);
+    // Manual HSK/difficulty override from the level dropdown; null = "auto" (the
+    // adaptive estimate the server computes today). Not persisted — reverts to auto
+    // on reload, matching the request-scoped nature of a "show me level N" session.
+    const [selectedLevel, setSelectedLevel] = useState<number | null>(null);
+    const [levelMenuAnchor, setLevelMenuAnchor] = useState<HTMLElement | null>(null);
 
     const bucketRefs = useRef<Map<string, HTMLElement>>(new Map());
 
@@ -344,11 +392,23 @@ const SortCardsPage: React.FC = () => {
         [token]
     );
 
-    // Initial pack queue.
+    // Pack queue: (re)fetched on mount AND whenever the level dropdown changes — a
+    // level switch is allowed to replace the on-deck pack (docs/SORT_CARDS_REQUIREMENTS.md
+    // §HSK level dropdown), so it re-runs the same initial-fill fetch rather than
+    // patching the existing queue.
     useEffect(() => {
         const fetchPacks = async () => {
+            setLoading(true);
+            // A level switch starts a fresh on-deck session: undo history and resolved
+            // markers from the previous level/queue no longer refer to anything the new
+            // queue holds, so carrying them over would let Undo resurrect a stale pack.
+            doneRef.current = {};
+            setDone({});
+            setUndoStack([]);
             try {
-                const response = await fetch(`${API_BASE_URL}/api/starter-packs/${language}`, {
+                const url = new URL(`${API_BASE_URL}/api/starter-packs/${language}`);
+                if (selectedLevel != null) url.searchParams.set("level", String(selectedLevel));
+                const response = await fetch(url.toString(), {
                     headers: token ? { Authorization: `Bearer ${token}` } : {},
                     credentials: "include",
                 });
@@ -367,21 +427,36 @@ const SortCardsPage: React.FC = () => {
             }
         };
         if (language) fetchPacks();
-    }, [language, token]);
+    }, [language, token, selectedLevel]);
 
     const currentPack = queue[0];
     const doneForCurrent = currentPack ? done[currentPack.packKey] : undefined;
 
-    const levelLabel = level == null ? null : (language === "zh" ? `HSK ${level}` : `Level ${level}`);
+    // Difficulty label for a bare level number ("HSK 3" for zh, "Level 3" otherwise).
+    const difficultyLabel = useCallback(
+        (lvl: number) => (language === "zh" ? `HSK ${lvl}` : `Level ${lvl}`),
+        [language]
+    );
+    // The chip shows "auto: <estimate>" while on auto, or the bare label once the
+    // user has pinned a specific difficulty via the dropdown.
+    const levelLabel =
+        selectedLevel != null
+            ? difficultyLabel(selectedLevel)
+            : level == null
+                ? null
+                : `auto: ${difficultyLabel(level)}`;
 
-    // Narrate the on-deck pack's sentence (or first card) when it changes.
+    // Log every time a new sort pack lands on-deck (queue[0] changes).
     useEffect(() => {
-        if (!tts.enabled || !discoverSettings.autoplay || !currentPack) return;
-        const text = currentPack.sentence?.foreignText ?? currentPack.cards[0]?.entryKey;
-        if (text) tts.speakSentence(text);
-        return () => tts.cancel();
+        if (!currentPack) return;
+        console.log("[sort-flow] pack on-deck", {
+            packKey: currentPack.packKey,
+            packId: currentPack.packId,
+            cardIds: currentPack.cards.map((c) => c.id),
+            queueLength: queue.length,
+        });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentPack?.packKey, tts.enabled, discoverSettings.autoplay]);
+    }, [currentPack?.packKey]);
 
     // DOM collision test: is the pointer over a bucket?
     const checkBucketCollision = useCallback((clientX: number, clientY: number): string | null => {
@@ -400,9 +475,22 @@ const SortCardsPage: React.FC = () => {
         }
     }, [tts]);
 
+    // Fires when a card is first picked up (drag start). Unlocks audio (mobile
+    // requires a user gesture) and, when autoplay is on, speaks that card's own
+    // word audio — NOT the pack sentence, which never auto-narrates in this flow.
+    const handleCardPickup = useCallback((card: DiscoverCard) => {
+        unlockAudioOnce();
+        if (tts.enabled && discoverSettings.autoplay) {
+            tts.speakSentence(card.entryKey, card.pronunciation ?? undefined);
+        }
+    }, [unlockAudioOnce, tts, discoverSettings.autoplay]);
+
     // Advance past a completed pack: drop the head and refill the tail with one pack,
     // excluding the packKeys we still hold so the replacement is never a duplicate.
-    const advancePack = useCallback(async (completedKey: string) => {
+    // Called only after the completing card's own /sort call has resolved (see
+    // handleSortCard) — calling it any earlier lets /next-pack race ahead of the
+    // server-side markPackSeen and re-serve the pack that's still finishing.
+    const advancePack = useCallback(async (completedKey: string, attempt = 0) => {
         const rest = queue.filter((p) => p.packKey !== completedKey);
         setQueue(rest);
         try {
@@ -410,7 +498,11 @@ const SortCardsPage: React.FC = () => {
                 method: "POST",
                 headers: authHeaders,
                 credentials: "include",
-                body: JSON.stringify({ language, excludePackKeys: rest.map((p) => p.packKey) }),
+                body: JSON.stringify({
+                    language,
+                    excludePackKeys: rest.map((p) => p.packKey),
+                    ...(selectedLevel != null ? { level: selectedLevel } : {}),
+                }),
             });
             if (!response.ok) throw new Error(`next-pack failed: ${response.status}`);
             const data: DiscoverNextPackResponse = await response.json();
@@ -422,8 +514,12 @@ const SortCardsPage: React.FC = () => {
             }
         } catch (error) {
             console.error("Error fetching next pack:", error);
+            // The completed pack was already dropped above, so a swallowed failure here
+            // permanently strands the queue at one slot short. One retry covers
+            // transient network blips instead of leaving the user with an empty queue.
+            if (attempt < 1) setTimeout(() => advancePack(completedKey, attempt + 1), 800);
         }
-    }, [queue, authHeaders, language]);
+    }, [queue, authHeaders, language, selectedLevel]);
 
     // doneRef helpers — the authoritative resolved-card store. Mutations mirror into
     // `done` state to re-render. Reading from the ref (not the `done` closure) is what
@@ -456,11 +552,10 @@ const SortCardsPage: React.FC = () => {
     const handleSortCard = useCallback(async (cardId: number, bucketId: string) => {
         const pack = currentPack;
         if (!pack) return;
+        console.log("[sort-flow] sort", { cardId, bucketId, packKey: pack.packKey, packId: pack.packId });
         pushUndo({ action: "sort", cardId, bucket: bucketId, pack });
         markResolved(pack.packKey, [cardId]);
-        // Now (after marking) — did this sort finish the pack? → mark authored pack seen + advance.
         const lastInPack = isPackComplete(pack);
-        if (lastInPack) advancePack(pack.packKey);
 
         try {
             const response = await fetch(`${API_BASE_URL}/api/starter-packs/sort`, {
@@ -472,6 +567,10 @@ const SortCardsPage: React.FC = () => {
             if (!response.ok) throw new Error(`sort failed: ${response.status}`);
             const data = await response.json();
             if (typeof data.level === "number") setLevel(data.level);
+            // Only request the replacement pack once the server has recorded this sort
+            // (and, for a pack-completing sort, marked the pack seen) — requesting it
+            // any earlier lets /next-pack race ahead and re-serve the completing pack.
+            if (lastInPack) advancePack(pack.packKey);
         } catch (error) {
             console.error("Error sorting card:", error);
         }
@@ -487,7 +586,6 @@ const SortCardsPage: React.FC = () => {
         // Enqueue one undo action per skipped card (Undo reverses them one at a time).
         for (const c of toSkip) pushUndo({ action: "skip", cardId: c.id, bucket: "skip", pack });
         markResolved(pack.packKey, toSkip.map((c) => c.id));
-        advancePack(pack.packKey);
 
         try {
             const response = await fetch(`${API_BASE_URL}/api/starter-packs/skip-pack`, {
@@ -497,6 +595,9 @@ const SortCardsPage: React.FC = () => {
                 body: JSON.stringify({ cardIds: toSkip.map((c) => c.id), language, packId: pack.packId }),
             });
             if (!response.ok) throw new Error(`skip-pack failed: ${response.status}`);
+            // Only now that the server has recorded the skip is it safe to request the
+            // replacement pack — same race as handleSortCard's advancePack call.
+            advancePack(pack.packKey);
         } catch (error) {
             console.error("Error skipping pack:", error);
         }
@@ -617,11 +718,44 @@ const SortCardsPage: React.FC = () => {
                 {levelLabel && (
                     <Chip
                         className="sort-cards__level-chip"
-                        label={levelLabel}
+                        label={
+                            <Box sx={{ display: "flex", alignItems: "center", gap: 0.25 }}>
+                                {levelLabel}
+                                <KeyboardArrowDownIcon className="sort-cards__level-chip-arrow" sx={{ fontSize: "1rem" }} />
+                            </Box>
+                        }
                         size="small"
-                        sx={{ backgroundColor: COLORS.hskChip, color: "white", fontSize: SIZE.micro, fontWeight: WEIGHT.bold, letterSpacing: TRACKING.caps }}
+                        onClick={(e) => setLevelMenuAnchor(e.currentTarget)}
+                        sx={{
+                            backgroundColor: COLORS.hskChip, color: "white", fontSize: SIZE.micro, fontWeight: WEIGHT.bold,
+                            letterSpacing: TRACKING.caps, cursor: "pointer",
+                        }}
                     />
                 )}
+                <Menu
+                    className="sort-cards__level-menu"
+                    anchorEl={levelMenuAnchor}
+                    open={Boolean(levelMenuAnchor)}
+                    onClose={() => setLevelMenuAnchor(null)}
+                >
+                    <MenuItem
+                        className="sort-cards__level-menu-item"
+                        selected={selectedLevel == null}
+                        onClick={() => { setSelectedLevel(null); setLevelMenuAnchor(null); }}
+                    >
+                        {level == null ? "Auto" : `Auto: ${difficultyLabel(level)}`}
+                    </MenuItem>
+                    {DIFFICULTY_LEVELS.map((lvl) => (
+                        <MenuItem
+                            className="sort-cards__level-menu-item"
+                            key={lvl}
+                            selected={selectedLevel === lvl}
+                            onClick={() => { setSelectedLevel(lvl); setLevelMenuAnchor(null); }}
+                        >
+                            {difficultyLabel(lvl)}
+                        </MenuItem>
+                    ))}
+                </Menu>
             </Box>
 
             <ContentArea className="sort-cards__content">
@@ -645,27 +779,6 @@ const SortCardsPage: React.FC = () => {
                         </Bucket>
                     ))}
                 </BucketsContainer>
-
-                {/* Sentence — a compact solid band just above the card tray */}
-                {currentPack.sentence && (
-                    <SentenceSection className="sort-cards__sentence-section">
-                        <SegmentedSentenceDisplay
-                            className="sort-cards__sentence"
-                            sentence={currentPack.sentence}
-                            language={language}
-                            size="sm"
-                            showPinyin={language === "zh"}
-                            flexWrap="wrap"
-                            justifyContent="center"
-                        />
-                        <Typography
-                            className="sort-cards__sentence-english"
-                            sx={{ fontSize: SIZE.micro, color: COLORS.textSecondary, textAlign: "center" }}
-                        >
-                            {currentPack.sentence.english}
-                        </Typography>
-                    </SentenceSection>
-                )}
 
                 {/* On-deck: up to 3 draggable cards (tray shrinks to fit). A card the
                     user resolved this session leaves an invisible placeholder in its
@@ -692,7 +805,7 @@ const SortCardsPage: React.FC = () => {
                                     onCheckCollision={checkBucketCollision}
                                     onHighlight={setHighlightedBucket}
                                     onSort={handleSortCard}
-                                    onFirstDrag={unlockAudioOnce}
+                                    onFirstDrag={() => handleCardPickup(card)}
                                 />
                             );
                         })}

@@ -1,0 +1,34 @@
+# Backend build-context ignore file (build context is ./server — the root
+# .dockerignore does NOT apply here; each docker build context reads only its
+# own .dockerignore).
+#
+# Two goals:
+#   1. SECRETS never enter image layers. Credentials are provided at runtime:
+#      google-tts-credentials.json is bind-mounted by docker-compose.prod.yml,
+#      and env comes from env_file/environment entries — never from baked .env.
+#   2. Keep the context small: host node_modules (musl/glibc mismatch risk),
+#      dist, logs, and the TTS disk cache are all rebuilt or mounted at runtime.
+
+# Secrets — runtime-mounted, never baked
+google-tts-credentials.json
+*credentials*.json
+.env
+.env.*
+
+# Host artifacts rebuilt inside the image
+node_modules
+dist
+
+# Runtime state (bind-mounted in prod; regenerated in dev)
+logs
+cache
+
+# Non-runtime files
+tests
+*.test.ts
+*.test.js
+README.md
+CONTRIBUTING.md
+auth-setup-guide.md
+.dockerignore
+Dockerfile

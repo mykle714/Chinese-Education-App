@@ -657,6 +657,16 @@ All in `src/features/flashcards/FlashcardsLearnPage/`.
        gesture fully ends; while latched, all three drag handlers (`bindIcon` / `bindCanvas` /
        `bindText`) refuse to translate. It resets on each drag `first` frame (so a brand-new pure
        drag starts unlatched) and clears on the final frame.
+     - **Pickup baseline (no first-frame jump on a slow drag).** `filterTaps` + `threshold: 1`
+       hold back the first few px so the gesture can disambiguate tap-vs-drag, so `movement`
+       (`[mx, my]`) is already **non-zero** on the first real drag frame. `beginDragMotion` /
+       `beginTextDrag` therefore snapshot that movement as `mx0`/`my0` in the memo, and
+       `runDrag` / `runTextDrag` measure displacement as `(mx - mx0)` / `(my - my0)` — so the
+       icon/text tracks from exactly where it was picked up instead of jerking forward by the
+       held-back distance. The jump is most visible on a **slow, careful adjustment on a real
+       touch device** (iOS Chrome/Safari coalesce pointer events, so more distance accumulates
+       before recognition than a desktop mouse or devtools touch-emulation, which recognize at
+       ~1px and hide it).
    - Desktop: drag plus a corner handle on the selected icon for resize/rotate (the
      handle computes scale from the pointer's distance to the icon center, rotation
      from its angle). The handle's `onDrag` **short-circuits on `touches >= 2`** for the
@@ -986,7 +996,7 @@ the separate download-on-select step.
 - `server/dal/implementations/Icons8DAL.ts` — `ensureCached(iconId)` inserts/updates
   the row via the same column set as the backfill's `insertIcons8Row`.
 - `server/controllers/Icons8Controller.ts` — `searchIcons`, `ensureIcon` handlers;
-  routes registered in `server/server.ts` (near the existing icons8 routes).
+  routes registered in `server/routes/mediaRoutes.ts` (with the other icons8 routes).
 - `server/controllers/VocabEntryController.ts` + `VocabEntryDAL.ts`
   (`IVocabEntryDAL`) — `updateIconLayout(userId, id, layout, snapConfig?, textColors?)`,
   scoped by `userId`. Layout validation: `null` OR an array of ≤ 12 items with a string

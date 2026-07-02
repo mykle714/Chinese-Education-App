@@ -321,18 +321,14 @@ export interface DiscoverCard {
 }
 
 /**
- * A sort pack: the on-deck unit of the discover sort flow — one sentence + up to 3
- * cards to sort. Authored packs come from the sort_packs table; system fallback
- * packs-of-1 are built on the fly from a single word's own first example sentence.
- * `sentence` is fed straight into <SegmentedSentenceDisplay>.
+ * A sort pack: the on-deck unit of the discover sort flow — up to 3 cards to sort.
+ * Authored packs come from the sort_packs table; system fallback packs-of-1 are
+ * built on the fly. No sentence is shown in this flow.
  */
 export interface SortPack {
   packKey: string;            // "pack:<id>" (authored) | "single:<cardId>" (fallback)
   packId: number | null;      // sort_packs.id for authored; null for fallback singles
   level: number;
-  // Enriched sentence for the band (SegmentedSentenceDisplay shape); null when a
-  // fallback single has no example sentence (render a bare card, no band).
-  sentence: NonNullable<DiscoverCard['exampleSentences']>[number] | null;
   cards: DiscoverCard[];
 }
 

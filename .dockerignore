@@ -1,6 +1,17 @@
 # Dependencies
 node_modules
 server/node_modules
+
+# Backend secrets & runtime state — the frontend build context is the repo root,
+# so without these the frontend image would bake in backend credentials/env.
+# (The frontend genuinely needs parts of server/ — src/minutePoints imports
+# server/shared/streakDay — so server/ cannot be excluded wholesale.)
+server/google-tts-credentials.json
+server/*credentials*.json
+server/.env
+server/.env.*
+server/logs
+server/cache
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

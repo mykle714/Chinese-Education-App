@@ -10,9 +10,14 @@
  * After processing, it is set to either a non-empty array (e.g. ["辆"]) or an empty
  * array [] — both are "done". NULL means "not yet run".
  *
+ * PROMPT CACHING: static rules live in a cachedSystem block; only the per-word
+ * line varies in the user message. (Below the model's minimum cacheable prefix
+ * today, so the marker is a silent no-op — structure kept caching-correct.)
+ *
  * Usage:
- *   docker exec cow-backend-local npx tsx scripts/backfill-classifier.js             # full backfill
- *   docker exec cow-backend-local npx tsx scripts/backfill-classifier.js --spot-check # test 5 entries
+ *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-classifier.js               # full backfill (serial)
+ *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-classifier.js --batch       # via Batches API (50% price)
+ *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-classifier.js --spot-check  # test 5 entries
  */
 
 import dotenv from 'dotenv';
@@ -24,40 +29,25 @@ dotenv.config({ path: path.join(__dirname, '../../../.env.docker') });
 
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
-import { initRunLog } from '../run-log.js';
-const SCRIPT_VERSION = 1; // bump when this script's logic/prompt changes
+import { initRunLog, cachedSystem } from '../run-log.js';
+import { parseBackfillArgs, wordsWhereClause } from '../shared/lib/cli.js';
+import { parseModelJson } from '../shared/lib/json.js';
+import { runBackfill } from '../shared/lib/runner.js';
+
+const SCRIPT_VERSION = 2; // bump when this script's logic/prompt changes (v2: cached system block + shared runner/batch mode)
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // run-log: track duration, version, words/mode, and token usage/cost
-const { stampEntries } = initRunLog({ script: 'chinese/backfill-classifier', version: SCRIPT_VERSION, anthropic: anthropic });
+const { stampEntries, accrueUsage } = initRunLog({ script: 'chinese/backfill-classifier', version: SCRIPT_VERSION, anthropic });
+const { isSpotCheck, isBatch, targetWords } = parseBackfillArgs();
 
-const isSpotCheck = process.argv.includes('--spot-check');
+const MODEL = 'claude-sonnet-4-6';
 
-// --words=未来,摸脉 → scope to specific entries only; omit to target all discoverable entries with classifier IS NULL
-const wordsArg = process.argv.find(a => a.startsWith('--words='));
-const targetWords = wordsArg ? wordsArg.slice('--words='.length).split(',').map(s => s.trim()).filter(Boolean) : null;
-const wordsFilter = targetWords?.length
-  ? `AND word1 = ANY(ARRAY[${targetWords.map(w => `'${w.replace(/'/g, "''")}'`).join(', ')}])`
-  : '';
+// Static instruction block — identical for every entry → cached system prefix.
+const SYSTEM_TEXT = `You are a Chinese linguistics expert.
 
-/**
- * Ask Claude Sonnet whether a Chinese word takes a measure word (量词), and if so which ones.
- *
- * Returns an array of measure word characters (e.g. ["辆"]) if classifiers exist,
- * or an empty array [] if the word does not take a measure word.
- */
-async function askClaudeForClassifiers(word, pronunciation, definitions) {
-  const definitionText = Array.isArray(definitions)
-    ? definitions.slice(0, 4).join('; ')
-    : definitions;
-
-  const prompt = `You are a Chinese linguistics expert.
-
-Word: ${word} (${pronunciation})
-Definitions: ${definitionText}
-
-Task: Determine whether "${word}" is a count noun that takes a Chinese measure word (量词/liàngcí).
+Task: Determine whether the given word is a count noun that takes a Chinese measure word (量词/liàngcí).
 
 Rules:
 - If it is a concrete or animate noun that Chinese speakers count with a specific measure word, list all standard measure words used with it (most common first).
@@ -68,23 +58,21 @@ Rules:
 Respond with ONLY a JSON array of Chinese measure word characters, e.g. ["辆"] or ["只", "条"] or [].
 No markdown, no explanation.`;
 
-  const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
+/** Build the messages.create params for one entry (per-word data only in the user turn). */
+function buildRequest(row) {
+  const definitionText = Array.isArray(row.definitions)
+    ? row.definitions.slice(0, 4).join('; ')
+    : row.definitions;
+  return {
+    model: MODEL,
     max_tokens: 128,
     temperature: 0.1,
-    messages: [{ role: 'user', content: prompt }],
-  });
-
-  const text = response.content[0].text.trim();
-  // Strip markdown code fences if present
-  let cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
-  // Extract outermost JSON array
-  const arrMatch = cleaned.match(/\[(?:[^\[\]]|"(?:[^"\\]|\\.)*")*\]/);
-  if (arrMatch) cleaned = arrMatch[0];
-
-  const parsed = JSON.parse(cleaned);
-  if (!Array.isArray(parsed)) return [];
-  return parsed.filter(s => typeof s === 'string' && s.length > 0);
+    system: cachedSystem(SYSTEM_TEXT),
+    messages: [{
+      role: 'user',
+      content: `Word: ${row.word1} (${row.pronunciation})\nDefinitions: ${definitionText}`,
+    }],
+  };
 }
 
 async function run() {
@@ -92,7 +80,7 @@ async function run() {
     console.log('🔍 SPOT CHECK MODE — processing 5 entries only\n');
   }
   if (targetWords?.length) console.log(`🎯 Scoped to: ${targetWords.join(', ')}\n`);
-  console.log('🚀 Starting AI-powered classifier (量词) backfill...\n');
+  console.log(`🚀 Starting AI-powered classifier (量词) backfill${isBatch ? ' (batch mode)' : ''}...\n`);
 
   if (!process.env.ANTHROPIC_API_KEY) {
     console.error('❌ ANTHROPIC_API_KEY not set');
@@ -102,6 +90,8 @@ async function run() {
   const client = await db.getClient();
 
   try {
+    const params = [];
+    const wordsFilter = wordsWhereClause('word1', targetWords, params);
     const { rows: entries } = await client.query(`
       SELECT id, word1, pronunciation, definitions
       FROM dictionaryentries_zh
@@ -111,7 +101,7 @@ async function run() {
         ${wordsFilter}
       ORDER BY id ASC
       ${isSpotCheck ? 'LIMIT 5' : ''}
-    `);
+    `, params);
 
     console.log(`📊 Found ${entries.length} entries needing classifier backfill\n`);
 
@@ -122,13 +112,17 @@ async function run() {
 
     let withClassifier = 0;
     let noClassifier = 0;
-    let failed = 0;
 
-    for (const row of entries) {
-      try {
-        process.stdout.write(`  ${row.word1} (${row.pronunciation}) ... `);
-
-        const classifiers = await askClaudeForClassifiers(row.word1, row.pronunciation, row.definitions);
+    await runBackfill({
+      anthropic,
+      entries,
+      batch: isBatch,
+      buildRequest,
+      accrueUsage,
+      handleResponse: async (row, message) => {
+        const parsed = parseModelJson(message.content[0]?.text ?? '');
+        if (!Array.isArray(parsed)) return false;
+        const classifiers = parsed.filter(s => typeof s === 'string' && s.length > 0);
 
         if (classifiers.length > 0) {
           console.log(`[${classifiers.join(', ')}]`);
@@ -137,7 +131,6 @@ async function run() {
             `UPDATE dictionaryentries_zh SET classifier = $1::jsonb WHERE id = $2`,
             [JSON.stringify(classifiers), row.id]
           );
-          await stampEntries(client, 'dictionaryentries_zh', row.id);
           withClassifier++;
         } else {
           console.log('no classifier');
@@ -146,26 +139,15 @@ async function run() {
             `UPDATE dictionaryentries_zh SET classifier = '[]'::jsonb WHERE id = $1`,
             [row.id]
           );
-          await stampEntries(client, 'dictionaryentries_zh', row.id);
           noClassifier++;
         }
-      } catch (err) {
-        console.log(`FAILED: ${err.message}`);
-        failed++;
-      }
+        await stampEntries(client, 'dictionaryentries_zh', row.id);
+        return true;
+      },
+    });
 
-      // Small delay to avoid rate-limiting
-      await new Promise(r => setTimeout(r, 200));
-    }
-
-    console.log('\n' + '='.repeat(60));
-    console.log('📊 Backfill Complete!');
-    console.log('='.repeat(60));
-    console.log(`Total processed  : ${entries.length}`);
     console.log(`With classifier  : ${withClassifier}`);
-    console.log(`No classifier    : ${noClassifier}`);
-    console.log(`Errors           : ${failed}`);
-    console.log('='.repeat(60) + '\n');
+    console.log(`No classifier    : ${noClassifier}\n`);
   } finally {
     client.release();
     await db.end?.();

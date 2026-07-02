@@ -4,6 +4,18 @@ import { DictionaryEntry, VocabEntry } from '../types/index.js';
 import { ValidationError } from '../types/dal.js';
 import { getAllSubstrings, buildDictMap, buildExcludeSet, segmentWithDict } from '../dal/shared/segmentString.js';
 
+// One shared Anthropic client for the service's AI helpers (expansion + long
+// definition). Constructed lazily so a missing ANTHROPIC_API_KEY only disables
+// the AI paths (callers already null-check) instead of throwing at import time.
+let anthropicClient: Anthropic | null = null;
+function getAnthropicClient(): Anthropic | null {
+  if (anthropicClient) return anthropicClient;
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return null;
+  anthropicClient = new Anthropic({ apiKey });
+  return anthropicClient;
+}
+
 /**
  * Dictionary Service - Contains business logic for dictionary operations
  * Handles CC-CEDICT dictionary lookups for the reader feature
@@ -433,16 +445,19 @@ export class DictionaryService {
       return null;
     }
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
+    const anthropic = getAnthropicClient();
+    if (!anthropic) {
       return null;
     }
 
     try {
-      const anthropic = new Anthropic({ apiKey });
       const trimmedWord = word.trim();
 
-      const prompt = `You are a Chinese language expert. Your task is to expand a Chinese word into a more vernacular phrase that reveals *why the word is constructed the way it is* — i.e., what each morpheme means in everyday speech.
+      // Static instructions live in a cache_control system block; only the word
+      // varies per call, so repeated calls in a 5-min window share the prefix.
+      // (Below the model's minimum cacheable prefix this is a silent no-op —
+      // the structure still keeps the volatile tail out of the static prefix.)
+      const systemText = `You are a Chinese language expert. Your task is to expand a Chinese word into a more vernacular phrase that reveals *why the word is constructed the way it is* — i.e., what each morpheme means in everyday speech.
 
 Rules:
 - Every character from the original word must appear in the expansion, in their original order
@@ -480,8 +495,6 @@ Null examples:
   * 网络 → null (网络网络 is circular nonsense)
   * 感冒 → null (感觉冒出来 changes the meaning)
 
-Word: ${trimmedWord}
-
 Respond with ONLY a JSON object in this exact format, no extra text:
 {"expansion": "expanded form"} or {"expansion": null}`;
 
@@ -489,8 +502,8 @@ Respond with ONLY a JSON object in this exact format, no extra text:
         model: 'claude-sonnet-4-6',
         max_tokens: 256,
         temperature: 0.3,
-        system: 'You are a Chinese language expert. You respond only with valid JSON — no explanations, no reasoning, no extra text.',
-        messages: [{ role: 'user', content: prompt }]
+        system: [{ type: 'text', text: systemText, cache_control: { type: 'ephemeral' } }],
+        messages: [{ role: 'user', content: `Word: ${trimmedWord}` }]
       });
 
       const content = (response.content[0] as { type: string; text: string }).text.trim();
@@ -561,22 +574,20 @@ Respond with ONLY a JSON object in this exact format, no extra text:
       return null;
     }
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
+    const anthropic = getAnthropicClient();
+    if (!anthropic) {
       return null;
     }
 
     try {
-      const anthropic = new Anthropic({ apiKey });
-
       const posList = Array.isArray(partsOfSpeech) ? partsOfSpeech.filter(Boolean) : [];
       const posLine = posList.length > 0
         ? `\nParts of speech: ${posList.join(', ')}\n- Address each grammatical role in the definition where meaningful.`
         : '';
 
-      const prompt = `You are a Chinese language expert providing dictionary definitions.
-Word: ${word.trim()}
-${posLine}
+      // Static rules in a cache_control system block; per-word data (word + POS)
+      // stays in the user message so the cached prefix is byte-identical.
+      const systemText = `You are a Chinese language expert providing dictionary definitions.
 Write a single English definition that is between 25 and 150 characters long.
 Goals (address whichever are most relevant to this word):
 - Dispel common misconceptions or mistranslations
@@ -590,7 +601,8 @@ Respond with only the definition text — no quotes, no extra text.`;
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 256,
         temperature: 0.3,
-        messages: [{ role: 'user', content: prompt }]
+        system: [{ type: 'text', text: systemText, cache_control: { type: 'ephemeral' } }],
+        messages: [{ role: 'user', content: `Word: ${word.trim()}${posLine}` }]
       });
 
       const text = (response.content[0] as { type: string; text: string }).text.trim();

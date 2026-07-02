@@ -35,7 +35,8 @@
  * not yet accounted for.
  *
  * Usage:
- *   docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-vernacular-score.js                          # full backfill
+ *   docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-vernacular-score.js                          # full backfill (serial)
+ *   docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-vernacular-score.js --batch                  # via Batches API (50% price)
  *   docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-vernacular-score.js --spot-check             # test 5 entries with reasoning
  *   docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-vernacular-score.js --spot-check --random    # random 5 entries
  *   docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-vernacular-score.js --spot-check --random --limit=25
@@ -50,18 +51,24 @@ dotenv.config({ path: path.join(__dirname, '../../../.env.docker') });
 
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
-import { initRunLog } from '../run-log.js';
-const SCRIPT_VERSION = 2; // bump when this script's logic/prompt changes (v2: + difficulty score → difficulty column)
+import { initRunLog, cachedSystem } from '../run-log.js';
+import { parseBackfillArgs } from '../shared/lib/cli.js';
+import { parseModelJson } from '../shared/lib/json.js';
+import { runBackfill } from '../shared/lib/runner.js';
+
+const SCRIPT_VERSION = 3; // bump when this script's logic/prompt changes (v3: cached system block + shared runner/batch mode)
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // run-log: track duration, version, words/mode, and token usage/cost
-const { stampEntries } = initRunLog({ script: 'spanish/backfill-vernacular-score', version: SCRIPT_VERSION, anthropic: anthropic });
+const { stampEntries, accrueUsage } = initRunLog({ script: 'spanish/backfill-vernacular-score', version: SCRIPT_VERSION, anthropic });
 
-const isSpotCheck = process.argv.includes('--spot-check');
+const { isSpotCheck, isBatch } = parseBackfillArgs();
 const isRandom = process.argv.includes('--random');
 const limitArg = process.argv.find(a => a.startsWith('--limit='));
 const spotCheckLimit = limitArg ? parseInt(limitArg.split('=')[1], 10) : 5;
+
+const MODEL = 'claude-sonnet-4-6';
 
 // Shared scale and guidelines used in both prompt modes
 // TODO(es-linguistics): example words per band are first-pass and need a Spanish
@@ -109,44 +116,14 @@ function parseScore(raw, label) {
   return n;
 }
 
-/**
- * Ask Claude Sonnet, in a SINGLE call, for both the vernacular-register score and
- * the learner-acquisition difficulty score of a Spanish word. The two judgments
- * are orthogonal but share the same word context, so one call is cheaper and
- * keeps them consistent.
- *
- * Normal mode:    returns { vernacular: number, difficulty: number }
- * Spot-check mode: returns { vernacular, difficulty, vernacularReasoning, difficultyReasoning }
- */
-async function askClaudeForScores(word, pronunciation, definitions) {
-  const definitionText = Array.isArray(definitions)
-    ? definitions.slice(0, 4).join('; ')
-    : definitions;
-
-  // Spanish det rows usually have no `pronunciation` (no IPA imported) — only
-  // show it when present so the prompt doesn't read "(null)".
-  const wordLine = pronunciation ? `${word} (${pronunciation})` : word;
-
-  const header = `You are a Spanish linguistics expert specializing in sociolinguistics, register, and second-language acquisition.
-
-Word: ${wordLine}
-Definitions: ${definitionText}
-
-Task: Give the word "${word}" TWO independent scores, each an integer from 1 to 5.
-
-(A) VERNACULAR REGISTER — does this word live primarily in casual everyday speech (score high), or in written, formal, or literary contexts (score low)? The question is not whether the word is common or well-known, but whether it sounds natural and at home in everyday spoken Spanish.
-
-${SCALE_AND_GUIDELINES}
-
-(B) DIFFICULTY — how hard is this word for an English-speaking learner to acquire?
-
-${DIFFICULTY_SCALE_AND_GUIDELINES}`;
-
-  // Both modes now return JSON (difficulty makes a bare-digit response impossible).
-  const prompt = isSpotCheck
-    ? `${header}
-
-Respond with ONLY a JSON object with four fields:
+// Static instruction prefix (identical for every entry) → cached system block.
+// PROMPT CACHING: the scales/guidelines/response-format all live here; only the
+// per-word lines vary in the user message. Spot-check and normal mode have
+// DIFFERENT system texts (reasoning fields requested), which is fine — each mode
+// caches its own prefix within a run.
+function systemText() {
+  const responseFormat = isSpotCheck
+    ? `Respond with ONLY a JSON object with four fields:
   "vernacular": integer 1–5
   "difficulty": integer 1–5
   "vernacularReasoning": one sentence explaining the vernacular score
@@ -154,27 +131,57 @@ Respond with ONLY a JSON object with four fields:
 
 Example: {"vernacular": 2, "difficulty": 4, "vernacularReasoning": "Clinical, written register.", "difficultyReasoning": "Low-frequency and abstract for learners."}
 No markdown, no extra text.`
-    : `${header}
-
-Respond with ONLY a JSON object with two integer fields:
+    : `Respond with ONLY a JSON object with two integer fields:
   "vernacular": integer 1–5
   "difficulty": integer 1–5
 
 Example: {"vernacular": 4, "difficulty": 2}
 No markdown, no extra text.`;
 
-  const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
+  return `You are a Spanish linguistics expert specializing in sociolinguistics, register, and second-language acquisition.
+
+Task: Give the given word TWO independent scores, each an integer from 1 to 5.
+
+(A) VERNACULAR REGISTER — does this word live primarily in casual everyday speech (score high), or in written, formal, or literary contexts (score low)? The question is not whether the word is common or well-known, but whether it sounds natural and at home in everyday spoken Spanish.
+
+${SCALE_AND_GUIDELINES}
+
+(B) DIFFICULTY — how hard is this word for an English-speaking learner to acquire?
+
+${DIFFICULTY_SCALE_AND_GUIDELINES}
+
+${responseFormat}`;
+}
+
+/** Build the messages.create params for one entry (per-word data only in the user turn). */
+function buildRequest(row) {
+  const definitionText = Array.isArray(row.definitions)
+    ? row.definitions.slice(0, 4).join('; ')
+    : row.definitions;
+  // Spanish det rows usually have no `pronunciation` (no IPA imported) — only
+  // show it when present so the prompt doesn't read "(null)".
+  const wordLine = row.pronunciation ? `${row.word1} (${row.pronunciation})` : row.word1;
+  return {
+    model: MODEL,
     max_tokens: isSpotCheck ? 300 : 40,
     temperature: 0.1,
-    messages: [{ role: 'user', content: prompt }],
-  });
+    system: cachedSystem(systemText()),
+    messages: [{ role: 'user', content: `Word: ${wordLine}\nDefinitions: ${definitionText}` }],
+  };
+}
 
-  const text = response.content[0].text.trim();
-  // Strip markdown code fences if present, then parse the JSON object.
-  const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
-  const parsed = JSON.parse(cleaned);
-
+/**
+ * Parse + validate the model output. The two judgments are orthogonal but share
+ * the same word context, so one call is cheaper and keeps them consistent.
+ *
+ * Normal mode:     returns { vernacular: number, difficulty: number }
+ * Spot-check mode: returns { vernacular, difficulty, vernacularReasoning, difficultyReasoning }
+ */
+function parseScores(text) {
+  const parsed = parseModelJson(text);
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error(`Unparseable JSON from Claude: ${String(text).slice(0, 120)}`);
+  }
   const result = {
     vernacular: parseScore(parsed.vernacular, 'vernacular score'),
     difficulty: parseScore(parsed.difficulty, 'difficulty score'),
@@ -190,7 +197,7 @@ async function run() {
   if (isSpotCheck) {
     console.log(`SPOT CHECK MODE — processing ${spotCheckLimit} entries with reasoning${isRandom ? ' (random sample)' : ''}\n`);
   }
-  console.log('Starting AI-powered vernacularScore + difficulty (difficulty) backfill...\n');
+  console.log(`Starting AI-powered vernacularScore + difficulty backfill${isBatch ? ' (batch mode)' : ''}...\n`);
 
   if (!process.env.ANTHROPIC_API_KEY) {
     console.error('ANTHROPIC_API_KEY not set');
@@ -218,24 +225,24 @@ async function run() {
     }
 
     let processed = 0;
-    let failed = 0;
 
     // Tally per score value for the final distribution summaries (both scores)
     const vernacularCounts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
     const difficultyCounts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
 
-    for (const row of entries) {
-      try {
-        process.stdout.write(`  ${row.word1} (${row.pronunciation}) ... `);
+    await runBackfill({
+      anthropic,
+      entries,
+      batch: isBatch,
+      buildRequest,
+      accrueUsage,
+      handleResponse: async (row, message) => {
+        const result = parseScores(message.content[0]?.text ?? '');
 
-        const result = await askClaudeForScores(row.word1, row.pronunciation, row.definitions);
-
+        console.log(`vern=${result.vernacular} diff=${result.difficulty}`);
         if (isSpotCheck) {
-          console.log(`vern=${result.vernacular} diff=${result.difficulty}`);
           console.log(`      vern: ${result.vernacularReasoning}`);
           console.log(`      diff: ${result.difficultyReasoning}`);
-        } else {
-          console.log(`vern=${result.vernacular} diff=${result.difficulty}`);
         }
 
         // Difficulty is stored in the shared difficulty column as a bare integer
@@ -253,14 +260,9 @@ async function run() {
         vernacularCounts[result.vernacular]++;
         difficultyCounts[result.difficulty]++;
         processed++;
-      } catch (err) {
-        console.log(`FAILED: ${err.message}`);
-        failed++;
-      }
-
-      // Small delay to avoid rate-limiting
-      await new Promise(r => setTimeout(r, 200));
-    }
+        return true;
+      },
+    });
 
     const vernacularLabels = {
       1: 'Literary/classical/formal only',
@@ -277,14 +279,8 @@ async function run() {
       5: 'Expert/rare',
     };
 
-    console.log('\n' + '='.repeat(60));
-    console.log('Backfill Complete!');
-    console.log('='.repeat(60));
-    console.log(`Total processed  : ${processed + failed}`);
-    console.log(`Successfully set : ${processed}`);
-    console.log(`Errors           : ${failed}`);
     if (processed > 0) {
-      console.log('\nVernacular (register) distribution:');
+      console.log('Vernacular (register) distribution:');
       for (const score of [1, 2, 3, 4, 5]) {
         console.log(`  ${score} (${vernacularLabels[score]}): ${vernacularCounts[score]}`);
       }
@@ -292,8 +288,8 @@ async function run() {
       for (const score of [1, 2, 3, 4, 5]) {
         console.log(`  ${score} (${difficultyLabels[score]}): ${difficultyCounts[score]}`);
       }
+      console.log('');
     }
-    console.log('='.repeat(60) + '\n');
   } finally {
     client.release();
     await db.end?.();

@@ -18,9 +18,8 @@ export class SortPacksDAL implements ISortPacksDAL {
       language: row.language,
       level: row.level,
       packOrder: row.packOrder,
-      sentenceForeign: row.sentenceForeign,
-      sentenceEnglish: row.sentenceEnglish,
       entryIds: row.entryIds ?? [],
+      entryWords: row.entryWords ?? [],
     };
   }
 
@@ -38,7 +37,7 @@ export class SortPacksDAL implements ISortPacksDAL {
       // as an int[] and excluded with != ALL so an empty array is a no-op. The service
       // calls this once per level (nearest-first) so level is honored strictly.
       return await client.query(`
-        SELECT id, language, level, "packOrder", "sentenceForeign", "sentenceEnglish", "entryIds"
+        SELECT id, language, level, "packOrder", "entryIds", "entryWords"
         FROM sort_packs
         WHERE language = $1
           AND level = $2
@@ -56,7 +55,7 @@ export class SortPacksDAL implements ISortPacksDAL {
 
     const result = await dbManager.executeQuery<any>(async (client) => {
       return await client.query(`
-        SELECT id, language, level, "packOrder", "sentenceForeign", "sentenceEnglish", "entryIds"
+        SELECT id, language, level, "packOrder", "entryIds", "entryWords"
         FROM sort_packs
         WHERE language = $1
         ORDER BY level ASC, "packOrder" ASC, id ASC

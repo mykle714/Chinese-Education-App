@@ -1,40 +1,58 @@
 /**
- * authStorage — the single owner of the auth-related localStorage keys.
+ * authStorage — the single owner of client-side auth state.
  *
- * The access token (`token`) and the post-logout banner flag (`sessionExpired`)
- * were previously read/written as raw `localStorage` calls scattered across six
- * modules (AuthContext, apiClient, fetchInterceptor, tokenRefresh,
- * CloudTTSProvider, LoginPage). Centralizing them here:
- *   - removes the stringly-typed key duplication (a typo'd 'token' silently
- *     breaks auth), and
- *   - folds in the sentinel-string guard that previously lived only in
- *     apiClient — a token of the literal string "null"/"undefined" (which can
- *     land in storage when `JSON.stringify(null)`-style values are written) is
- *     treated as absent.
+ * ACCESS TOKEN IS IN-MEMORY ONLY. It was previously persisted to
+ * localStorage['token'], which let any XSS payload exfiltrate a live
+ * credential from disk. The server also sets the token as an httpOnly cookie
+ * (invisible to JS) on every login/refresh, and every request already sends
+ * `credentials: 'include'`, so the JS-visible copy exists only to populate the
+ * Authorization header some call sites still attach — it never needs to
+ * survive a reload:
  *
- * Keys are intentionally NOT renamed — they are an implicit contract with any
- * already-persisted browser state, so the on-disk names stay 'token' /
- * 'sessionExpired'.
+ *   - Page reload → getToken() is null → AuthContext's checkAuth falls through
+ *     to attemptTokenRefresh(), which uses the httpOnly REFRESH cookie to mint
+ *     a fresh access token into memory. (This "no stored token" path predates
+ *     this change — it used to handle manual localStorage clears.)
+ *   - New tab → same silent-refresh path. Concurrent refreshes across tabs are
+ *     covered by the server's 20s rotation-race grace window (UserService).
+ *
+ * The consumer-facing API (getToken/setToken/clearToken) is unchanged, so
+ * AuthContext, tokenRefresh, fetchInterceptor, and CloudTTSProvider work
+ * without modification.
+ *
+ * The post-logout banner flag (`sessionExpired`) stays in localStorage — it is
+ * not sensitive and must survive the redirect-to-login navigation.
  */
 
-const TOKEN_KEY = 'token';
 const SESSION_EXPIRED_KEY = 'sessionExpired';
+const LEGACY_TOKEN_KEY = 'token';
 
-/** The stored access token, or null if absent/blank/sentinel ("null"/"undefined"). */
+// One-time cleanup: purge any access token persisted by previous app versions
+// so stale credentials don't linger on disk after this deploy.
+try {
+  localStorage.removeItem(LEGACY_TOKEN_KEY);
+} catch {
+  // Storage unavailable (private mode / SSR) — nothing persisted to clean.
+}
+
+/** The current access token, held in module memory only. */
+let inMemoryToken: string | null = null;
+
+/** The in-memory access token, or null if absent/blank/sentinel ("null"/"undefined"). */
 export function getToken(): string | null {
-  const token = localStorage.getItem(TOKEN_KEY);
+  const token = inMemoryToken;
   if (!token || token === 'null' || token === 'undefined') return null;
   return token;
 }
 
-/** Persist the access token. */
+/** Hold the access token for this tab's lifetime (never persisted). */
 export function setToken(token: string): void {
-  localStorage.setItem(TOKEN_KEY, token);
+  inMemoryToken = token;
 }
 
-/** Remove the access token (logout / expiry). */
+/** Drop the access token (logout / expiry). */
 export function clearToken(): void {
-  localStorage.removeItem(TOKEN_KEY);
+  inMemoryToken = null;
 }
 
 /**

@@ -79,7 +79,7 @@ server/
 ├── CONTRIBUTING.md      # Contributing guidelines
 ├── db.ts                # Database connection setup
 ├── db-config.ts         # Database configuration
-└── server.ts            # Main server file with API routes
+└── server.ts            # App bootstrap (routes live in server/routes/*)
 ```
 
 ## Contributing

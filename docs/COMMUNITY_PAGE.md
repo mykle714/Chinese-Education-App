@@ -99,7 +99,7 @@ next-week votes), so it is enforced in the DAL's `recordVote` (insert-iff-not-ex
 | DAL | `server/dal/implementations/CommunityLayoutDAL.ts` (`ICommunityLayoutDAL`) | feed reads (via `vetReadFrom` + `DICT_JOIN`), vote log, `findViewerEntry`, `getDesignLayout` |
 | Service | `server/services/CommunityLayoutService.ts` | once-a-week vote guard delegation; `applyDesign` (reuses `VocabEntryService.addToLibrary` + `updateIconLayout`) |
 | Controller | `server/controllers/CommunityLayoutController.ts` | request parsing (exclude arrays, page clamp, language resolution) |
-| Routes | `server/server.ts` (`/api/community/*`); wired in `server/dal/setup.ts` | |
+| Routes | `server/routes/gamesRoutes.ts` (`/api/community/*`); wired in `server/dal/setup.ts` | |
 | Types | `server/types/community.ts`, client `src/types.ts` (`CommunityDesign`, `VotedDesignKey`, `VoteResult`, `ApplyDesignResult`, `designKey`) | |
 | Client | `src/pages/CommunityPage/` — `CommunityPage`, `CommunityFeedRow`, `CommunityDesignCard`, `CommunityDesignZoom`, `ApplyDesignButton`, `VoteButton`, `CommunityCardView`, `communityApi.ts` | |
 | Menu/route | `src/pages/HomePage.tsx` (`community` HubMenuRow), `src/App.tsx` (`/community`) | |

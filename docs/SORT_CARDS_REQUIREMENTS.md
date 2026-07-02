@@ -61,8 +61,8 @@ This asymmetry drives two requirements:
 ## 4. Core interaction requirements
 
 ### 4.1 One pack at a time
-- The on-deck unit is a **sort pack**: one short sentence plus **up to 3 cards** to
-  sort (see §4.5), not a single bare card.
+- The on-deck unit is a **sort pack**: **up to 3 cards** to sort (see §4.5), not a
+  single bare card. No sentence is shown in this flow.
 - The user sorts each card in the pack independently into one of the destinations
   (see §5). When **every** card in the pack has been sorted (or the pack is skipped),
   the next pack appears.
@@ -90,23 +90,19 @@ This asymmetry drives two requirements:
   outcome.
 
 ### 4.5 Sort packs (the on-deck unit)
-A **sort pack** groups a short sentence with the vocabulary it teaches:
+A **sort pack** is a small group of vocabulary cards shown together:
 
-- **A sentence band.** One example sentence sits at the top of the on-deck area: the
-  foreign-language sentence together with its English translation. The band is
-  **context only** — it is never sorted. (For Chinese it is rendered with
-  per-character pronunciation; for Spanish, as plain text — see §3 and the
-  per-language note below.)
-- **Up to 3 cards, shown at once.** Below the band, up to three word cards are shown
-  simultaneously, all draggable. The user may sort them in **any order** into any
-  destination (§5).
+- **Up to 3 cards, shown at once.** Up to three word cards are shown simultaneously,
+  all draggable. The user may sort them in **any order** into any destination (§5). No
+  sentence is displayed — earlier versions of this flow showed a sentence band above
+  the cards; it was removed. `sort_packs` no longer carries an authored sentence either
+  (migration 95 dropped `sentenceForeign`/`sentenceEnglish` — authoring a pack is just
+  picking its up-to-3 `entryIds`, see docs/SORT_PACKS_IMPLEMENTATION.md §2/§6).
 - **Two pack sources, one shape:**
-  - **Authored packs** — hand-curated for a level, carrying their **own authored
-    sentence + translation** and their chosen up-to-3 cards (the cards are words drawn
-    from that sentence). These are served first (§6.3).
+  - **Authored packs** — hand-curated for a level, their up-to-3 cards chosen directly
+    (no sentence). These are served first (§6.3).
   - **System fallback packs** — when no authored pack is available, the system serves
-    a single word as a pack of **one**, using **that word's own first example
-    sentence** for the band.
+    a single word as a pack of **one**.
 - **Already-sorted cards are locked.** A card already in the user's library (Add to
   Learn Now *or* Already Learned) appears **undraggable** with a **"sorted!"**
   watermark, so the user still sees the context but cannot re-sort it. A pack in which
@@ -115,9 +111,6 @@ A **sort pack** groups a short sentence with the vocabulary it teaches:
   user skipped is part of an authored pack, it is shown **draggable again** (not
   locked) — the pack's context is a fresh chance to sort it. Re-sorting it there clears
   its skip (§5.2).
-- **Per-language scope.** The sentence band is a pronunciation-annotated row for
-  Chinese and plain text for Spanish; the multi-card sorting behavior is otherwise
-  identical across languages.
 - **A pack is shown at most once.** Once the user has **finished** a pack (every card
   sorted) **or skipped** it, that pack never appears again — regardless of whether its
   cards were sorted or skipped. (This is the per-user "seen packs" record; it applies
@@ -213,6 +206,27 @@ the user **chooses** to bring it back, in one of three ways:
 
 ---
 
+## 6.5 Manual level override (dropdown)
+
+- The level indicator is a **dropdown**, not a static readout: the first entry is
+  **Auto**, labeled with the current adaptive estimate (e.g. "auto: HSK 3" — §6.1),
+  and one further entry per difficulty level.
+- Selecting **Auto** restores §6's adaptive-estimate flow exactly as described above.
+- Selecting a **specific level** pins supply to **exactly that level** — no
+  adjacent-level drift (§6.3) while a manual level is active. The adaptive estimate
+  itself keeps updating in the background (still driven by mastery/library evidence,
+  §6.1) so switching back to Auto resumes from an up-to-date estimate.
+- A level switch is **exempt** from §6.4's "must not disturb the on-deck card" rule: it
+  is an explicit user action, and it is acceptable (expected) for it to replace the
+  on-deck pack with one matching the newly-selected level.
+- Client implementation: `src/pages/SortCardsPage.tsx` (the `sort-cards__level-chip` /
+  `sort-cards__level-menu`). Server: `StarterPacksService.getNextPacks`'s
+  `requestedLevel` parameter, threaded through `GET /api/starter-packs/:language` and
+  `POST /api/starter-packs/next-pack` (`StarterPacksController`) as a `level` query/body
+  param.
+
+---
+
 ## 7. Skipped cards page
 
 - A dedicated page lists **all words the user has currently skipped** in the active
@@ -246,9 +260,9 @@ the user **chooses** to bring it back, in one of three ways:
 6. **Skip is de-emphasized and signal-free:** Skip is a header button (not a drag
    target); pressing it defers all remaining unsorted cards in the pack and never
    changes the user's level estimate, in any quantity.
-7. **Pack composition:** a pack shows its sentence band plus up to 3 cards; cards
-   already in the library render locked with a "sorted!" watermark; a pack whose cards
-   are all already sorted is never served.
+7. **Pack composition:** a pack shows up to 3 cards (no sentence); cards already in the
+   library render locked with a "sorted!" watermark; a pack whose cards are all already
+   sorted is never served.
 8. **Authored-first supply:** at a level, authored packs are served before system
    fallback single-card packs.
 9. **Upward adaptation:** after the user sorts a run of cards indicating a higher
@@ -267,3 +281,6 @@ the user **chooses** to bring it back, in one of three ways:
     and clearing any seen mark.
 15. **Never empty:** under normal data volumes the user can sort indefinitely without
     reaching an "all sorted" state.
+16. **Manual level override:** picking a specific level from the dropdown serves only
+    that level (no drift to adjacent levels) until switched back to Auto; the Auto
+    entry always reflects the current adaptive estimate.

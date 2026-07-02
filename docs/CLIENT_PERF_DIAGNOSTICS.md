@@ -10,7 +10,7 @@ page (the lag does not reproduce locally, so synthetic profiling is not enough).
 |---|---|---|
 | **Client capture** | `src/utils/perfDiagnostics.ts` | Observes the platform Performance APIs, buffers interesting entries, beacons batches to the server. |
 | **Client bootstrap** | `src/main.tsx` | Calls `initPerfDiagnostics()` once, gated to production (or `localStorage.perfDiag === "1"`). |
-| **Server sink** | `server/server.ts` → `POST /api/diagnostics/perf` | Unauthenticated endpoint; appends each batch via the shared writer + prints a one-line summary. |
+| **Server sink** | `server/routes/diagnosticsRoutes.ts` → `POST /api/diagnostics/perf` | Unauthenticated endpoint; appends each batch via the shared writer + prints a one-line summary. |
 | **Shared writer** | `server/utils/diagnosticsLog.ts` | `appendDiagnostic(prefix, record)` — resolves the (configurable) log dir, daily-rotates, and sweeps expired files. Used by **both** the perf and error sinks. |
 | **Analysis** | `server/scripts/analyze-client-perf.ts` | Read-only aggregator; reads every `client-perf-*.jsonl` (+ legacy single file) and prints per-route p50/p95 latency breakdowns. |
 | **Storage** | `server/logs/client-perf-YYYY-MM-DD.jsonl` (host) | Append-only JSONL, git-ignored. **Persisted + daily-rotated** — see "Persistence & rotation" below. |
@@ -53,8 +53,11 @@ and `pagehide` / `visibilitychange→hidden`.
 `POST /api/diagnostics/perf` — **unauthenticated by design**: `sendBeacon`
 cannot attach an `Authorization` header, and the lag also affects public/demo
 sessions. Body is `application/json` (parsed by `express.json()`, 100kb cap).
-Batches with 0 or >100 records are dropped. Always responds `204` with no body.
-It only appends to the JSONL log; it never reads/writes the database.
+Batches with 0 or >100 records are dropped. Rate-limited to 60 req/min per IP
+(`diagnosticsLimiter` in `server/middleware/rateLimits.ts`; over-limit requests
+also get an empty `204` since the beacon never reads the response). Always
+responds `204` with no body. It only appends to the JSONL log; it never
+reads/writes the database.
 
 ## Reading the data
 
@@ -109,8 +112,8 @@ shared `x-logging` anchor in `docker-compose.prod.yml`) so docker's default
 This is a **diagnostic instrument**, not a permanent feature. Once the lag is
 root-caused and fixed, it can be removed (delete the client module + bootstrap
 guard, the endpoint, and the script) or left in place behind the
-production gate. There is no rate-limiting on the endpoint; if it is kept
-long-term, add throttling or a feature flag.
+production gate. Both diagnostics endpoints are rate-limited (60 req/min per
+IP via `diagnosticsLimiter`) so a runaway client loop can't fill the disk.
 
 ---
 
@@ -129,7 +132,7 @@ logged anywhere** — so user-reported "crashes" were invisible. This captures t
 | **Error boundary** | `src/components/AppErrorBoundary.tsx` | Top-level React boundary; catches render/commit throws in the tree, reports them, and renders a recoverable "Something went wrong / Reload" fallback instead of a blank page. Wraps `<App/>` in `src/main.tsx`. |
 | **Global listeners + reporter** | `src/utils/errorReporting.ts` | `initErrorReporting()` attaches `window` `error` + `unhandledrejection` listeners (handler/async throws the boundary can't see). `reportClientError()` scrubs + ships one record. |
 | **Client bootstrap** | `src/main.tsx` | Calls `initErrorReporting()` once, **always on** (crashes were invisible in every environment, not just prod — unlike the prod-gated perf init). |
-| **Server sink** | `server/server.ts` → `POST /api/diagnostics/error` | Unauthenticated endpoint; appends one scrubbed record per POST via the shared writer + prints a `💥 client-error …` one-line summary. |
+| **Server sink** | `server/routes/diagnosticsRoutes.ts` → `POST /api/diagnostics/error` | Unauthenticated endpoint; appends one scrubbed record per POST via the shared writer + prints a `💥 client-error …` one-line summary. |
 | **Storage** | `server/logs/client-error-YYYY-MM-DD.jsonl` (host) | Append-only JSONL via `appendDiagnostic` — **persisted + daily-rotated** (see "Persistence & rotation"). |
 
 ## What is captured
@@ -193,7 +196,8 @@ server additionally caps field lengths. **Keep any new fields scrubbed.**
 before/around auth, and the client posts via keepalive fetch / `sendBeacon` with no
 `Authorization` header). Body is `application/json`; a record with no `message` is
 dropped. `message`/`stack`/`componentStack`/`path`/`userAgent` are length-capped.
-Always responds `204`; only appends to the JSONL log, never touches the database.
+Rate-limited to 60 req/min per IP (`diagnosticsLimiter`). Always responds `204`;
+only appends to the JSONL log, never touches the database.
 
 ## Reading the data
 

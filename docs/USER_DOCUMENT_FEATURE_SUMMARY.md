@@ -34,7 +34,7 @@ Successfully implemented a complete user-specific blank document creation featur
    - Initialized TextService and TextController instances
    - Proper dependency injection following existing pattern
 
-### API Endpoints Added to `server/server.ts`:
+### API Endpoints (now in `server/routes/textRoutes.ts`):
 
 - `GET /api/texts` - Get all texts for user (user-created + system texts in their language)
 - `GET /api/texts/stats` - Get text statistics
@@ -170,7 +170,7 @@ texts (
 - ✅ `server/controllers/TextController.ts` (new)
 - ✅ `server/types/index.ts` (updated)
 - ✅ `server/dal/setup.ts` (updated)
-- ✅ `server/server.ts` (updated)
+- ✅ `server/routes/textRoutes.ts` (route split, 2026-07)
 
 ### Frontend:
 - ✅ `src/types.ts` (updated)

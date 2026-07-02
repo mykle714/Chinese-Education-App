@@ -168,3 +168,43 @@ DB_PASSWORD=cow_password_local
 - Schema definition: `database/init/04-dictionary-schema.sql`
 - Dictionary DAL: `server/dal/implementations/DictionaryDAL.ts`
 - Dictionary Service: `server/services/DictionaryService.ts`
+
+## Shared backfill infrastructure (`server/scripts/backfill/shared/lib/`)
+
+Every AI backfill script under `server/scripts/backfill/{chinese,spanish}/`
+builds on a small shared layer instead of copy-pasting boilerplate:
+
+| Module | Provides |
+|---|---|
+| `shared/lib/cli.js` | `parseBackfillArgs()` — the standard `--spot-check` / `--batch` / `--words=a,b` flags; `wordsWhereClause(column, words, params)` — a **parameterized** `AND col = ANY($n)` filter (never string-built SQL). |
+| `shared/lib/json.js` | `parseModelJson()` / `extractJsonSlice()` — fence-stripping + balanced-brace JSON extraction from model output (string-aware; replaces the old per-script regexes). |
+| `shared/lib/runner.js` | `runBackfill({ anthropic, entries, batch, buildRequest, handleResponse, accrueUsage })` — the per-entry execution engine with two modes (below) and the standard completion summary. |
+| `run-log.js` | `initRunLog()` (now also returns `accrueUsage` for batch-mode usage accounting), `cachedSystem()` (prompt-caching system block), `stampEntryRun` provenance stamping, cost estimation. |
+
+### Serial vs `--batch` mode
+
+- **Serial** (default): one `messages.create` per entry with a 200ms throttle —
+  same behavior as the historical loops. Use for spot checks and small scopes.
+- **`--batch`**: submits every entry as one **Message Batches API** batch —
+  **50% of standard token price**, results usually within an hour, no
+  throttling. Results return in arbitrary order and are matched to rows by
+  `custom_id` (`row-<id>`), never by position. Batch token usage is accounted
+  into `logs/backfill-runs.jsonl` via `accrueUsage` (batch results bypass the
+  instrumented `messages.create`). Use for full-table runs.
+  The multi-agent `backfill-expansion-claude.js` is serial-only (its
+  generate→validate→retry pipeline is sequential per word).
+
+### Prompt-caching convention
+
+Every script sends its static instructions/rules/examples as a
+`cachedSystem(...)` system block (5-min ephemeral `cache_control`) and keeps
+ONLY per-entry data in the user message, so the cached prefix is byte-identical
+across the run. Small prompts below the model's minimum cacheable prefix
+(~1–2k tokens) silently don't cache — the marker is a harmless no-op there, and
+the structure means caching engages automatically if the rules grow.
+
+### Script versioning
+
+Each script declares `SCRIPT_VERSION`; bump it whenever the prompt/logic
+changes so `logs/backfill-runs.jsonl` and the per-row `enrichmentLog` column
+attribute results to the right revision.

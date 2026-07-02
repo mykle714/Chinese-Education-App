@@ -46,7 +46,9 @@ interface AuthProviderProps {
 // Create the AuthProvider component
 export function AuthProvider({ children }: AuthProviderProps) {
     const [user, setUser] = useState<User | null>(null);
-    // authStorage.getToken() already normalizes blank / "null" / "undefined" → null.
+    // authStorage holds the access token in memory only (never persisted) — on a
+    // fresh load this is null and checkAuth's silent-refresh path restores the
+    // session from the httpOnly refresh cookie.
     const [token, setToken] = useState<string | null>(authStorage.getToken);
     const [isLoading, setIsLoading] = useState<boolean>(true);
     const [error, setError] = useState<string | null>(null);
@@ -74,8 +76,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setFetchInterceptorHandlers(handleTokenExpiration, clearAuth);
 
         // When the shared refresh core mints a new access token, mirror it into
-        // React state (localStorage is already updated by the refresh core). This
-        // keeps the Authorization header future requests send in sync.
+        // React state (authStorage's in-memory slot is already updated by the
+        // refresh core). This keeps the Authorization header future requests
+        // send in sync.
         setRefreshHandlers((newToken: string) => {
             setToken(newToken);
         });
@@ -121,11 +124,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
                     setToken(null);
                 }
             } else {
-                // No usable access token in localStorage. A valid httpOnly refresh
-                // cookie may still exist (e.g. the access token expired while away,
-                // or localStorage was cleared) — try a silent refresh so a reload
-                // keeps the user signed in. On success the refresh handler sets the
-                // token, re-running this effect down the validToken path above.
+                // No usable access token in memory (normal on every fresh load —
+                // the token is never persisted). A valid httpOnly refresh cookie
+                // may still exist — try a silent refresh so a reload keeps the
+                // user signed in. On success the refresh handler sets the token,
+                // re-running this effect down the validToken path above.
                 if (token) {
                     console.log('Invalid token detected, clearing:', token);
                     authStorage.clearToken();
@@ -133,7 +136,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 const refreshed = await attemptTokenRefresh();
                 if (!refreshed) {
                     setToken(null);
+                    setIsLoading(false);
                 }
+                // On success, KEEP isLoading=true: `user` is still null here, so
+                // ending the loading state now would let ProtectedRoute bounce to
+                // /login before the re-run of this effect (triggered by the token
+                // the refresh handler just set) fetches /api/auth/me and sets the
+                // user. The re-run's valid-token path ends the loading state.
+                return;
             }
             setIsLoading(false);
         };

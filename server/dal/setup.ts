@@ -53,10 +53,11 @@ const communityLayoutDAL = new CommunityLayoutDAL();
 const userService = new UserService(userDAL, refreshTokenDAL);
 const dictionaryService = new DictionaryService(dictionaryDAL);
 const vocabEntryService = new VocabEntryService(vocabEntryDAL, userDAL, dictionaryService);
-const onDeckVocabService = new OnDeckVocabService(vocabEntryDAL, dictionaryService);
+// Created before onDeckVocabService because Word Search borrows its level estimate.
+const starterPacksService = new StarterPacksService(vocabEntryDAL, dictionaryDAL, sortPacksDAL);
+const onDeckVocabService = new OnDeckVocabService(vocabEntryDAL, dictionaryService, starterPacksService);
 const userMinutePointsService = new UserMinutePointsService(userMinutePointsDAL, userDAL);
 const textService = new TextService(userDAL);
-const starterPacksService = new StarterPacksService(vocabEntryDAL, dictionaryDAL, sortPacksDAL);
 const nightMarketService = new NightMarketService(nightMarketDAL, userDAL);
 const gameAssetService = new GameAssetService(gameAssetDAL);
 const gameProgressService = new GameProgressService(gameProgressDAL);

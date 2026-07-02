@@ -12,8 +12,9 @@
  * Characters Claude confirms as neither are simply not inserted.
  *
  * Usage:
- *   docker exec cow-backend-local npx tsx scripts/backfill-particles-and-classifiers.js             # full backfill
- *   docker exec cow-backend-local npx tsx scripts/backfill-particles-and-classifiers.js --spot-check # test 5 entries
+ *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-particles-and-classifiers.js               # full backfill (serial)
+ *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-particles-and-classifiers.js --batch       # via Batches API (50% price)
+ *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-particles-and-classifiers.js --spot-check  # test 5 entries
  */
 
 import dotenv from 'dotenv';
@@ -25,36 +26,28 @@ dotenv.config({ path: path.join(__dirname, '../../../.env.docker') });
 
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
-import { initRunLog } from '../run-log.js';
-const SCRIPT_VERSION = 1; // bump when this script's logic/prompt changes
+import { initRunLog, cachedSystem } from '../run-log.js';
+import { parseBackfillArgs } from '../shared/lib/cli.js';
+import { parseModelJson } from '../shared/lib/json.js';
+import { runBackfill } from '../shared/lib/runner.js';
+
+const SCRIPT_VERSION = 2; // bump when this script's logic/prompt changes (v2: cached system block + shared runner/batch mode)
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // run-log: track duration, version, words/mode, and token usage/cost
-initRunLog({ script: 'chinese/backfill-particles-and-classifiers', version: SCRIPT_VERSION, anthropic: anthropic });
+const { accrueUsage } = initRunLog({ script: 'chinese/backfill-particles-and-classifiers', version: SCRIPT_VERSION, anthropic });
+const { isSpotCheck, isBatch } = parseBackfillArgs();
 
-const isSpotCheck = process.argv.includes('--spot-check');
+const MODEL = 'claude-sonnet-4-6';
 
-/**
- * Ask Claude Sonnet whether a Chinese character is a grammatical particle, a classifier
- * (measure word), both, or neither. Returns an array of { type, definition } objects.
- *
- * Returns [] if the character does not qualify as either role.
- * Each returned item has:
- *   - type: 'particle' | 'classifier'
- *   - definition: concise contextual phrase (max ~8 words), e.g. "possessive/attributive particle"
- */
-async function askClaudeForParticleClassifier(word, pronunciation, definitions) {
-  const definitionText = Array.isArray(definitions)
-    ? definitions.slice(0, 4).join('; ')
-    : definitions;
+// Static instruction block — identical for every character → cached system prefix.
+// PROMPT CACHING: only the per-character line varies in the user message. (Below
+// the model's minimum cacheable prefix today, so the marker is a silent no-op —
+// structure kept caching-correct.)
+const SYSTEM_TEXT = `You are a Chinese linguistics expert.
 
-  const prompt = `You are a Chinese linguistics expert.
-
-Character: ${word} (${pronunciation})
-Definitions: ${definitionText}
-
-Task: Determine whether "${word}" functions as a grammatical particle, a classifier (measure word), both, or neither.
+Task: Determine whether the given character functions as a grammatical particle, a classifier (measure word), both, or neither.
 
 Definitions:
 - "particle": a grammatical function word with no independent lexical meaning used to mark grammatical relationships (e.g. 的 as possessive marker, 了 as aspect particle, 吗 as question particle, 把 as disposal particle)
@@ -76,23 +69,30 @@ Examples:
 
 No markdown, no explanation. Only the JSON array.`;
 
-  const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
+/** Build the messages.create params for one character (per-char data only in the user turn). */
+function buildRequest(row) {
+  const definitionText = Array.isArray(row.definitions)
+    ? row.definitions.slice(0, 4).join('; ')
+    : row.definitions;
+  return {
+    model: MODEL,
     max_tokens: 256,
     temperature: 0.1,
-    messages: [{ role: 'user', content: prompt }],
-  });
+    system: cachedSystem(SYSTEM_TEXT),
+    messages: [{
+      role: 'user',
+      content: `Character: ${row.word1} (${row.pronunciation})\nDefinitions: ${definitionText}`,
+    }],
+  };
+}
 
-  const text = response.content[0].text.trim();
-  // Strip markdown code fences if present
-  let cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
-  // Extract outermost JSON array
-  const arrMatch = cleaned.match(/\[[\s\S]*\]/);
-  if (arrMatch) cleaned = arrMatch[0];
-
-  const parsed = JSON.parse(cleaned);
-  if (!Array.isArray(parsed)) return [];
-
+/**
+ * Parse + validate the model output into { type, definition } items.
+ * Returns [] for "neither"; null for unusable output.
+ */
+function parseRoles(text) {
+  const parsed = parseModelJson(text);
+  if (!Array.isArray(parsed)) return null;
   return parsed.filter(item =>
     item &&
     typeof item.type === 'string' &&
@@ -106,7 +106,7 @@ async function run() {
   if (isSpotCheck) {
     console.log('🔍 SPOT CHECK MODE — processing 5 entries only\n');
   }
-  console.log('🚀 Starting particle and classifier backfill...\n');
+  console.log(`🚀 Starting particle and classifier backfill${isBatch ? ' (batch mode)' : ''}...\n`);
 
   if (!process.env.ANTHROPIC_API_KEY) {
     console.error('❌ ANTHROPIC_API_KEY not set');
@@ -347,7 +347,9 @@ async function run() {
     );
     const dictMap = new Map(dictRows.map(r => [r.word1, r]));
 
+    // `id` feeds the batch runner's custom_id — the character itself is unique here.
     const candidates = spotCheckList.map(char => ({
+      id: char,
       word1: char,
       pronunciation: dictMap.get(char)?.pronunciation ?? null,
       definitions: dictMap.get(char)?.definitions ?? [],
@@ -369,60 +371,49 @@ async function run() {
     let inserted = 0;
     let skipped = 0;
     let neitherCount = 0;
-    let failed = 0;
 
-    for (const row of candidates) {
-      try {
-        process.stdout.write(`  ${row.word1} (${row.pronunciation}) ... `);
-
-        const results = await askClaudeForParticleClassifier(
-          row.word1,
-          row.pronunciation,
-          row.definitions
-        );
+    await runBackfill({
+      anthropic,
+      entries: candidates,
+      batch: isBatch,
+      buildRequest,
+      accrueUsage,
+      handleResponse: async (row, message) => {
+        const results = parseRoles(message.content[0]?.text ?? '');
+        if (results == null) return false;
 
         if (results.length === 0) {
           console.log('neither');
           neitherCount++;
-        } else {
-          const labels = results.map(r => `[${r.type}: ${r.definition}]`).join(', ');
-          console.log(labels);
-
-          for (const item of results) {
-            const doneKey = `${row.word1}::${item.type}`;
-            if (doneSet.has(doneKey)) {
-              skipped++;
-              continue;
-            }
-
-            await client.query(
-              `INSERT INTO particlesandclassifiers (character, language, type, definition)
-               VALUES ($1, 'zh', $2, $3)
-               ON CONFLICT (character, language, type) DO NOTHING`,
-              [row.word1, item.type, item.definition]
-            );
-            doneSet.add(doneKey);
-            inserted++;
-          }
+          return true;
         }
-      } catch (err) {
-        console.log(`FAILED: ${err.message}`);
-        failed++;
-      }
 
-      // Small delay to avoid rate-limiting
-      await new Promise(r => setTimeout(r, 200));
-    }
+        const labels = results.map(r => `[${r.type}: ${r.definition}]`).join(', ');
+        console.log(labels);
 
-    console.log('\n' + '='.repeat(60));
-    console.log('📊 Backfill Complete!');
-    console.log('='.repeat(60));
-    console.log(`Total candidates : ${candidates.length}`);
+        for (const item of results) {
+          const doneKey = `${row.word1}::${item.type}`;
+          if (doneSet.has(doneKey)) {
+            skipped++;
+            continue;
+          }
+
+          await client.query(
+            `INSERT INTO particlesandclassifiers (character, language, type, definition)
+             VALUES ($1, 'zh', $2, $3)
+             ON CONFLICT (character, language, type) DO NOTHING`,
+            [row.word1, item.type, item.definition]
+          );
+          doneSet.add(doneKey);
+          inserted++;
+        }
+        return true;
+      },
+    });
+
     console.log(`Rows inserted    : ${inserted}`);
     console.log(`Already present  : ${skipped}`);
-    console.log(`Neither role     : ${neitherCount}`);
-    console.log(`Errors           : ${failed}`);
-    console.log('='.repeat(60) + '\n');
+    console.log(`Neither role     : ${neitherCount}\n`);
   } finally {
     client.release();
     await db.end?.();

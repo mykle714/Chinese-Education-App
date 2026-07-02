@@ -38,8 +38,9 @@ import {
   buildExcludeSet,
   segmentWithDict,
 } from '../../../dal/shared/segmentString.js';
-import { initRunLog } from '../run-log.js';
-const SCRIPT_VERSION = 1; // bump when this script's logic/prompt changes
+import { initRunLog, cachedSystem } from '../run-log.js';
+import { parseModelJson } from '../shared/lib/json.js';
+const SCRIPT_VERSION = 2; // bump when this script's logic/prompt changes (v2: cached system blocks for all four agents)
 
 const DRY_RUN = process.argv.includes('--dry-run');
 const CONCURRENCY = parseInt(process.argv.find(a => a.startsWith('--concurrency='))?.split('=')[1] || '5', 10);
@@ -128,46 +129,32 @@ function deterministicCheck(original, expansion) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Anthropic call helper — extracts a JSON object from the response
-// ─────────────────────────────────────────────────────────────────────────────
-
-function parseJsonFromResponse(content) {
-  const stripped = content.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
-  const objMatch = stripped.match(/\{[\s\S]*\}/);
-  if (!objMatch) return null;
-  try {
-    return JSON.parse(objMatch[0]);
-  } catch {
-    return null;
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 //  Agent 1: initial expansion generator
 // ─────────────────────────────────────────────────────────────────────────────
+
+// Static prompt (persona + task + rules + response format) → cached system
+// block; only the word varies per call. See cachedSystem in run-log.js.
+const GENERATOR_SYSTEM = `You are a Chinese language expert. Respond only with valid JSON — no explanations, no reasoning, no extra text.
+
+Your task is to expand a Chinese word into a more vernacular phrase that reveals *why the word is constructed the way it is* — what each morpheme means in everyday speech.
+
+${EXPANSION_RULES_TEXT}
+
+Respond with ONLY a JSON object:
+{"expansion": "expanded form"}
+or
+{"expansion": null}`;
 
 async function generateExpansion(word) {
   const response = await anthropic.messages.create({
     model: MODEL,
     max_tokens: 200,
     temperature: 0.3,
-    system: 'You are a Chinese language expert. Respond only with valid JSON — no explanations, no reasoning, no extra text.',
-    messages: [{
-      role: 'user',
-      content: `Your task is to expand a Chinese word into a more vernacular phrase that reveals *why the word is constructed the way it is* — what each morpheme means in everyday speech.
-
-${EXPANSION_RULES_TEXT}
-
-Word: ${word}
-
-Respond with ONLY a JSON object:
-{"expansion": "expanded form"}
-or
-{"expansion": null}`,
-    }],
+    system: cachedSystem(GENERATOR_SYSTEM),
+    messages: [{ role: 'user', content: `Word: ${word}` }],
   });
 
-  const parsed = parseJsonFromResponse(response.content[0].text);
+  const parsed = parseModelJson(response.content[0].text);
   if (!parsed) return null;
   return typeof parsed.expansion === 'string' ? parsed.expansion : null;
 }
@@ -177,15 +164,11 @@ or
 //  Returns { accept: bool, violatedRules: string[], critique: string }
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function validatorAgent(word, expansion) {
-  const response = await anthropic.messages.create({
-    model: MODEL,
-    max_tokens: 300,
-    temperature: 0.1,
-    system: 'You are a strict reviewer of Chinese word expansions. You enforce semantic rules. Respond only with valid JSON.',
-    messages: [{
-      role: 'user',
-      content: `An expansion has been proposed for a Chinese word. Judge whether it satisfies the hard rules. The "insight" goal is preferred but not required — do not reject solely because the insight is modest. Sentence form is also not by itself a reason to reject; reject only if the sentence scaffolding includes characters that don't meaningfully expand a morpheme (rule 3).
+// Static reviewer scaffold (persona + rules + violation codes + response
+// format) → cached system block; per-entry word/expansion → user message.
+const VALIDATOR_SYSTEM = `You are a strict reviewer of Chinese word expansions. You enforce semantic rules. Respond only with valid JSON.
+
+An expansion has been proposed for a Chinese word. Judge whether it satisfies the hard rules. The "insight" goal is preferred but not required — do not reject solely because the insight is modest. Sentence form is also not by itself a reason to reject; reject only if the sentence scaffolding includes characters that don't meaningfully expand a morpheme (rule 3).
 
 ${EXPANSION_RULES_TEXT}
 
@@ -199,17 +182,24 @@ Use these violation codes when the expansion fails:
   - "unnatural_phrasing": doesn't sound like something a native would naturally say
   - "already_vernacular": the original word is already maximally vernacular
 
-Word: ${word}
-Proposed expansion: ${expansion}
-
 Respond with ONLY:
 {"accept": true}
 or
-{"accept": false, "violatedRules": ["code1", "code2"], "critique": "1-2 sentence explanation of why this fails and what would make it better"}`,
+{"accept": false, "violatedRules": ["code1", "code2"], "critique": "1-2 sentence explanation of why this fails and what would make it better"}`;
+
+async function validatorAgent(word, expansion) {
+  const response = await anthropic.messages.create({
+    model: MODEL,
+    max_tokens: 300,
+    temperature: 0.1,
+    system: cachedSystem(VALIDATOR_SYSTEM),
+    messages: [{
+      role: 'user',
+      content: `Word: ${word}\nProposed expansion: ${expansion}`,
     }],
   });
 
-  const parsed = parseJsonFromResponse(response.content[0].text);
+  const parsed = parseModelJson(response.content[0].text);
   if (!parsed) {
     // If validator response is unparseable, fail closed (treat as reject) so the retry path runs
     return { accept: false, violatedRules: ['unparseable_validator_response'], critique: 'Validator response could not be parsed.' };
@@ -226,6 +216,21 @@ or
 //  Agent 3: regenerator — correction-task prompt informed by prior failure
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Static corrector scaffold (persona + task + rules + response format) →
+// cached system block; the per-attempt failure details go in the user message.
+const REGENERATOR_SYSTEM = `You are a Chinese language expert correcting a previous flawed expansion attempt. Respond only with valid JSON.
+
+Your previous attempt to expand a Chinese word was rejected. Produce a new expansion that addresses the specific issues given.
+
+${EXPANSION_RULES_TEXT}
+
+Take the feedback seriously. If no valid expansion can be crafted that satisfies all rules, return null rather than producing another flawed attempt.
+
+Respond with ONLY:
+{"expansion": "corrected expansion"}
+or
+{"expansion": null}`;
+
 async function regenerateExpansion(word, priorAttempt, violations, critique) {
   const violationLines = violations
     .map(v => `  - ${v}: ${DETERMINISTIC_RULE_LABELS[v] ?? v}`)
@@ -239,28 +244,18 @@ async function regenerateExpansion(word, priorAttempt, violations, critique) {
     model: MODEL,
     max_tokens: 200,
     temperature: 0.5,
-    system: 'You are a Chinese language expert correcting a previous flawed expansion attempt. Respond only with valid JSON.',
+    system: cachedSystem(REGENERATOR_SYSTEM),
     messages: [{
       role: 'user',
-      content: `Your previous attempt to expand a Chinese word was rejected. Produce a new expansion that addresses the specific issues below.
-
-${EXPANSION_RULES_TEXT}
-
-Original word: ${word}
+      content: `Original word: ${word}
 Previous attempt: ${priorAttempt ?? '(none)'}
 Violated rules:
 ${violationLines || '  (none)'}
-${critiqueBlock}
-Take the feedback seriously. If no valid expansion can be crafted that satisfies all rules, return null rather than producing another flawed attempt.
-
-Respond with ONLY:
-{"expansion": "corrected expansion"}
-or
-{"expansion": null}`,
+${critiqueBlock}`,
     }],
   });
 
-  const parsed = parseJsonFromResponse(response.content[0].text);
+  const parsed = parseModelJson(response.content[0].text);
   if (!parsed) return null;
   return typeof parsed.expansion === 'string' ? parsed.expansion : null;
 }
@@ -355,28 +350,11 @@ async function segmentAndFetchDefinitions(client, expansion) {
 //  segment, composes a short colloquial English phrase.
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function generateLiteralTranslation(word, expansion, segmentsWithDefs) {
-  const segmentLines = segmentsWithDefs.map(({ segment, definitions }) => {
-    if (definitions.length === 0) {
-      return `  - ${segment}: (no dictionary entry — use your own knowledge)`;
-    }
-    const defList = definitions.map(d => `      • ${d}`).join('\n');
-    return `  - ${segment}:\n${defList}`;
-  }).join('\n');
+// Static gloss-composer scaffold (persona + task + output rules + examples +
+// response format) → cached system block; word/expansion/segments → user message.
+const LITERAL_SYSTEM = `You are a Chinese language expert producing literal English glosses. Respond only with valid JSON.
 
-  const response = await anthropic.messages.create({
-    model: MODEL,
-    max_tokens: 200,
-    temperature: 0.3,
-    system: 'You are a Chinese language expert producing literal English glosses. Respond only with valid JSON.',
-    messages: [{
-      role: 'user',
-      content: `The Chinese word "${word}" has been expanded to "${expansion}".
-
-For each segment of the expansion, the dictionary glosses are listed below. For each segment, pick the gloss that best fits the meaning of the expansion in context, then weave the chosen glosses into a short colloquial English phrase or concept that captures how the expansion explains the word.
-
-Segments and their dictionary definitions:
-${segmentLines}
+A Chinese word has been expanded to a more vernacular phrase. For each segment of the expansion, dictionary glosses are provided. For each segment, pick the gloss that best fits the meaning of the expansion in context, then weave the chosen glosses into a short colloquial English phrase or concept that captures how the expansion explains the word.
 
 Output rules:
   - Output a short phrase or concept, NOT a full sentence
@@ -393,11 +371,32 @@ Examples:
 Respond with ONLY:
 {"expansionLiteralTranslation": "short colloquial phrase"}
 or
-{"expansionLiteralTranslation": null}`,
+{"expansionLiteralTranslation": null}`;
+
+async function generateLiteralTranslation(word, expansion, segmentsWithDefs) {
+  const segmentLines = segmentsWithDefs.map(({ segment, definitions }) => {
+    if (definitions.length === 0) {
+      return `  - ${segment}: (no dictionary entry — use your own knowledge)`;
+    }
+    const defList = definitions.map(d => `      • ${d}`).join('\n');
+    return `  - ${segment}:\n${defList}`;
+  }).join('\n');
+
+  const response = await anthropic.messages.create({
+    model: MODEL,
+    max_tokens: 200,
+    temperature: 0.3,
+    system: cachedSystem(LITERAL_SYSTEM),
+    messages: [{
+      role: 'user',
+      content: `The Chinese word "${word}" has been expanded to "${expansion}".
+
+Segments and their dictionary definitions:
+${segmentLines}`,
     }],
   });
 
-  const parsed = parseJsonFromResponse(response.content[0].text);
+  const parsed = parseModelJson(response.content[0].text);
   if (!parsed) return null;
   return typeof parsed.expansionLiteralTranslation === 'string'
     ? parsed.expansionLiteralTranslation

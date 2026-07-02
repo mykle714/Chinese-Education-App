@@ -25,7 +25,7 @@ function EditEntryPage() {
     usePageTitle("Edit Entry");
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
-    const { token } = useAuth();
+    const { token, isAuthenticated } = useAuth();
     const vocabularyUpdate = useVocabularyUpdate();
     const [formData, setFormData] = useState<Partial<VocabEntry>>({
         entryKey: "",
@@ -71,7 +71,10 @@ function EditEntryPage() {
         if (id && token) {
             fetchEntry();
         }
-    }, [id, token]);
+    // isAuthenticated not `token`: a silent refresh must not re-fetch and discard
+    // in-progress form edits. See CLAUDE.md "Never reload on token refresh".
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [id, isAuthenticated]);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;

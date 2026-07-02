@@ -355,7 +355,7 @@ const DraggableCard: React.FC<{
 const SortCardsPage: React.FC = () => {
     usePageTitle("Discover");
     const navigate = useNavigate();
-    const { token } = useAuth();
+    const { token, isAuthenticated } = useAuth();
     const { language } = useParams<{ language: Language }>();
     const tts = useTTS();
     const { settings: discoverSettings, update: updateDiscoverSettings } = useDiscoverSettings();
@@ -427,7 +427,11 @@ const SortCardsPage: React.FC = () => {
             }
         };
         if (language) fetchPacks();
-    }, [language, token, selectedLevel]);
+    // isAuthenticated not `token`: a silent refresh must not restart the sort
+    // session (wiping undo history + resolved markers). See CLAUDE.md "Never
+    // reload on token refresh".
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [language, isAuthenticated, selectedLevel]);
 
     const currentPack = queue[0];
     const doneForCurrent = currentPack ? done[currentPack.packKey] : undefined;

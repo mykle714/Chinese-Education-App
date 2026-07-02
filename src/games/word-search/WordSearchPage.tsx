@@ -54,7 +54,7 @@ const WordSearchPage: React.FC = () => {
     const navigate = useNavigate();
     const theme = useTheme();
     const fc = theme.palette.flashcard;
-    const { token } = useAuth();
+    const { token, user } = useAuth();
     const tts = useTTS();
     const { settings, update } = useFlashcardLearnSettings();
     const { showPinyin, showPinyinColor } = settings;
@@ -296,7 +296,14 @@ const WordSearchPage: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [stopTimer, startTicking]);
 
-    // Initial load on mount: resume a saved board if one exists, else fetch new.
+    // Initial load, once per authenticated session: resume a saved board if one
+    // exists, else fetch a new one. Keyed on the STABLE auth identity (`user?.id`),
+    // NOT `token`: the access token silently refreshes every ~15 min, and re-running
+    // this effect on that refresh would reload a brand-new board and wipe the
+    // in-progress game (found words + timer). See the "Never reload on token
+    // refresh" rule in CLAUDE.md. `fetchGrid`/`startBoard`/`restoreBoard` are
+    // deliberately omitted from the deps for the same reason (`fetchGrid` is
+    // memoized on `token`, so it churns on refresh).
     useEffect(() => {
         if (!token) {
             setBlockMessage("Sign in to play Word Search.");
@@ -317,7 +324,8 @@ const WordSearchPage: React.FC = () => {
         return () => {
             cancelled = true;
         };
-    }, [token, fetchGrid, startBoard, restoreBoard]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.id]);
 
     // Pause on backgrounding (tab hidden / app switched away), resume on
     // return — snapshot to localStorage first so a background pause that

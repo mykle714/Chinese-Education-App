@@ -125,6 +125,41 @@ export function reportClientError(report: ClientErrorReport): void {
 }
 
 // ---------------------------------------------------------------------------
+// TEMPORARY auth-bootstrap tracer — diagnosing the prod "sort page loads
+// forever" report (a SILENT hang: no throw is captured, so the normal error
+// pipeline never sees it). Emits ordered breadcrumbs to the same client-error
+// sink so we can read exactly which AuthContext bootstrap branch runs and where
+// it stops. Isolated from reportClientError (own budget, NO dedupe so loop
+// iterations show). NEVER logs token VALUES — only presence/length/HTTP status.
+// Remove once the root cause is confirmed and fixed.
+// ---------------------------------------------------------------------------
+let authTraceCount = 0;
+export function reportAuthTrace(message: string): void {
+    try {
+        if (authTraceCount >= 60) return; // hard cap so a loop can't flood
+        authTraceCount += 1;
+        const body = JSON.stringify({
+            kind: "auth-trace",
+            message: `[auth] ${message}`,
+            path: window.location.pathname,
+            userAgent: navigator.userAgent,
+            at: Date.now(),
+        });
+        void fetch(ENDPOINT, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body,
+            credentials: "include",
+            keepalive: true,
+        }).catch(() => {
+            /* never throw from tracing */
+        });
+    } catch {
+        /* never throw from tracing */
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Reload-surviving breadcrumb (catches OS/browser-initiated reloads)
 //
 // Some "crashes" are NOT JS exceptions: iOS WebKit can tear down and RELOAD a

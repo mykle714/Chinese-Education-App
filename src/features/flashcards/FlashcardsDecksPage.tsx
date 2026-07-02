@@ -126,7 +126,7 @@ const FlashcardsDecksPage: React.FC = () => {
     // use the view-transition navigate so Decks is held beneath. See useSlideNavigate.
     const slideNavigate = useSlideNavigate();
     const location = useLocation();
-    const { token } = useAuth();
+    const { token, isAuthenticated } = useAuth();
     const { goToDiscover } = useDiscoverNavigation();
     const [vocabEntries, setVocabEntries] = useState<VocabEntry[]>([]);
     const [loading, setLoading] = useState(true);
@@ -171,7 +171,11 @@ const FlashcardsDecksPage: React.FC = () => {
         if (token) {
             fetchLibraryCards();
         }
-    }, [token]);
+    // Keyed on isAuthenticated — the stable auth-presence flag, not the `token`
+    // string — so a silent refresh doesn't re-fetch and reset the deck list.
+    // See CLAUDE.md "Never reload on token refresh".
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isAuthenticated]);
 
     // Refresh card lists when navigating back from CDP after an action
     useEffect(() => {

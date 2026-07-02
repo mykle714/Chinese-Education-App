@@ -6,6 +6,7 @@ import type { Language } from './types';
 import { setFetchInterceptorHandlers, setupFetchInterceptor } from './utils/fetchInterceptor';
 import { setRefreshHandlers, attemptTokenRefresh } from './utils/tokenRefresh';
 import { notifyLogin } from './utils/authSync';
+import { reportAuthTrace } from './utils/errorReporting'; // TEMP: bootstrap-hang diagnosis
 import * as authStorage from './utils/authStorage';
 
 // Define the User type
@@ -96,54 +97,94 @@ export function AuthProvider({ children }: AuthProviderProps) {
         // the refresh rotation and trip "Refresh token reuse detected" (the
         // mid-edit logout). Initial load AND the silent-refresh-on-load path both
         // have user === null, so they fall through and still validate/refresh below.
+        // TEMP: trace bootstrap so we can see (via /api/diagnostics/error logs)
+        // exactly which branch runs and where isLoading gets stuck.
+        reportAuthTrace(`effect fire: token=${token ? 'present' : 'none'} len=${token?.length ?? 0} user=${user ? 'present' : 'none'}`);
         if (token && user) return;
-        const checkAuth = async () => {
-            // Only proceed if we have a valid token
-            if (token && token !== 'null' && token !== 'undefined' && token.length > 10) {
-                try {
-                    const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
-                        headers: {
-                            'Authorization': `Bearer ${token}`
-                        },
-                        credentials: 'include' // Include cookies for new DAL architecture
-                    });
+        // Load the user for a given access token; returns false if the token is
+        // rejected. Factored out so BOTH the "already have a token" path and the
+        // fresh-load silent-refresh path can validate and populate `user` the same
+        // way — the latter now does it INLINE (below) instead of relying on an
+        // effect re-run.
+        const loadUser = async (tok: string): Promise<boolean> => {
+            const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
+                headers: { 'Authorization': `Bearer ${tok}` },
+                credentials: 'include', // cookies for the DAL architecture
+            });
+            reportAuthTrace(`/me status=${response.status}`); // TEMP
+            if (!response.ok) return false;
+            const userData = await response.json();
+            setUser(userData);
+            notifyLogin(tok);
+            return true;
+        };
 
-                    if (response.ok) {
-                        const userData = await response.json();
-                        setUser(userData);
-                        notifyLogin(token);
-                    } else {
-                        // If the token is invalid, clear it
+        const checkAuth = async () => {
+            // Path A — we already hold a usable access token: validate it.
+            if (token && token !== 'null' && token !== 'undefined' && token.length > 10) {
+                reportAuthTrace('valid-token path: GET /me'); // TEMP
+                try {
+                    const ok = await loadUser(token);
+                    if (!ok) {
+                        // Token rejected — drop it. The resulting token=null re-run
+                        // takes Path B and attempts a silent refresh.
                         console.log('Token validation failed, clearing stored token');
                         authStorage.clearToken();
                         setToken(null);
                     }
                 } catch (error) {
+                    reportAuthTrace(`valid-token path: /me THREW ${String((error as Error)?.message).slice(0, 80)}`); // TEMP
                     console.error('Error checking authentication:', error);
                     authStorage.clearToken();
                     setToken(null);
                 }
-            } else {
-                // No usable access token in memory (normal on every fresh load —
-                // the token is never persisted). A valid httpOnly refresh cookie
-                // may still exist — try a silent refresh so a reload keeps the
-                // user signed in. On success the refresh handler sets the token,
-                // re-running this effect down the validToken path above.
-                if (token) {
-                    console.log('Invalid token detected, clearing:', token);
-                    authStorage.clearToken();
-                }
-                const refreshed = await attemptTokenRefresh();
-                if (!refreshed) {
-                    setToken(null);
-                    setIsLoading(false);
-                }
-                // On success, KEEP isLoading=true: `user` is still null here, so
-                // ending the loading state now would let ProtectedRoute bounce to
-                // /login before the re-run of this effect (triggered by the token
-                // the refresh handler just set) fetches /api/auth/me and sets the
-                // user. The re-run's valid-token path ends the loading state.
+                setIsLoading(false);
                 return;
+            }
+
+            // Path B — no usable access token in memory (normal on every fresh load;
+            // the token is never persisted). A valid httpOnly refresh cookie may
+            // still exist, so try a silent refresh to restore the session.
+            reportAuthTrace('else path: no usable token -> attempt silent refresh'); // TEMP
+            if (token) {
+                console.log('Invalid token detected, clearing:', token);
+                authStorage.clearToken();
+            }
+            let refreshed: string | null = null;
+            try {
+                refreshed = await attemptTokenRefresh();
+            } catch {
+                refreshed = null;
+            }
+            reportAuthTrace(`else path: refresh result=${refreshed ? 'token(len=' + refreshed.length + ')' : 'null'}`); // TEMP
+            if (!refreshed) {
+                // No/expired/revoked refresh cookie — session is truly over.
+                reportAuthTrace('else path: refresh FAILED -> setIsLoading(false) -> /login'); // TEMP
+                setToken(null);
+                setIsLoading(false);
+                return;
+            }
+
+            // Silent refresh succeeded. Load the user INLINE with the just-minted
+            // token and end the loading state deterministically. We must NOT return
+            // here with isLoading still true to await an effect re-run: that handoff
+            // left isLoading permanently stuck when the re-run never reached the
+            // valid-token path, which is the prod "loads forever" spinner. setToken
+            // keeps React state + the Authorization header in sync; the re-run it
+            // triggers is a no-op because the top guard sees `token && user`.
+            reportAuthTrace('else path: refresh OK -> load user inline'); // TEMP
+            setToken(refreshed);
+            try {
+                const ok = await loadUser(refreshed);
+                if (!ok) {
+                    authStorage.clearToken();
+                    setToken(null);
+                }
+            } catch (error) {
+                reportAuthTrace(`else path: inline /me THREW ${String((error as Error)?.message).slice(0, 80)}`); // TEMP
+                console.error('Error loading user after refresh:', error);
+                authStorage.clearToken();
+                setToken(null);
             }
             setIsLoading(false);
         };

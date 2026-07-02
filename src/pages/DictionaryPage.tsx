@@ -187,7 +187,11 @@ function DictionaryPage() {
         };
 
         fetchResults();
-    }, [debouncedSearchTerm, page, token]);
+    // `token` intentionally omitted: a silent refresh must not re-run the search.
+    // The header reads the current `token` when the query/page actually changes.
+    // See CLAUDE.md "Never reload on token refresh".
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [debouncedSearchTerm, page]);
 
     const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         setSearchInput(event.target.value);

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { API_BASE_URL } from '../../constants';
-import { useAuth } from '../../AuthContext';
+import { authHeader } from '../../utils/authHeader';
 import { useMinutePoints } from '../../minutePoints/useMinutePoints';
 
 /** A single unlock record from the server */
@@ -61,8 +61,6 @@ export function useNightMarket(): UseNightMarketReturn {
   const [newUnlock, setNewUnlock] = useState<NightMarketUnlock | null>(null);
   const [isUnlocking, setIsUnlocking] = useState(false);
 
-  const { token } = useAuth();
-
   // Get accumulated work points to determine unlock eligibility
   const { accumulativeMinutePoints } = useMinutePoints();
   const canUnlock = accumulativeMinutePoints >= nextThreshold && !isUnlocking;
@@ -78,7 +76,7 @@ export function useNightMarket(): UseNightMarketReturn {
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+          ...authHeader(),
         },
       });
 
@@ -101,7 +99,10 @@ export function useNightMarket(): UseNightMarketReturn {
     } finally {
       setIsLoading(false);
     }
-  }, [token]);
+    // `token` is intentionally NOT a dep — authHeader() reads the live token, so
+    // a silent refresh doesn't recreate this fetcher and re-fire the mount load
+    // effect below. See CLAUDE.md "Never reload on token refresh".
+  }, []);
 
   /** Unlock the next random item */
   const unlockNext = useCallback(async () => {
@@ -114,7 +115,7 @@ export function useNightMarket(): UseNightMarketReturn {
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+          ...authHeader(),
         },
       });
 
@@ -136,7 +137,8 @@ export function useNightMarket(): UseNightMarketReturn {
     } finally {
       setIsUnlocking(false);
     }
-  }, [token]);
+    // Live token via authHeader() → no `token` dep needed (stable identity).
+  }, []);
 
   const clearNewUnlock = useCallback(() => {
     setNewUnlock(null);

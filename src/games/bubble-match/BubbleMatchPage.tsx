@@ -129,7 +129,7 @@ const BubbleMatchPage: React.FC = () => {
     const navigate = useNavigate();
     const theme = useTheme();
     const fc = theme.palette.flashcard;
-    const { token } = useAuth();
+    const { token, user } = useAuth();
     const tts = useTTS();
     const { settings, update } = useFlashcardLearnSettings();
     const { showPinyin, showPinyinColor, autoplayChinese } = settings;
@@ -216,7 +216,11 @@ const BubbleMatchPage: React.FC = () => {
         return () => {
             cancelled = true;
         };
-    }, [token, fetchGamePool]);
+        // Keyed on the STABLE auth identity, NOT `token`: a silent access-token
+        // refresh (~every 15 min) must not re-run this loader and reload a fresh
+        // pool mid-game. See CLAUDE.md "Never reload on token refresh".
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.id]);
 
     // Seed the picker badges from GET /api/users/me/wins, which returns both:
     //   • `weekly`   — distinct (game, level) won since the user's week boundary
@@ -260,7 +264,10 @@ const BubbleMatchPage: React.FC = () => {
         return () => {
             cancelled = true;
         };
-    }, [token]);
+        // Stable auth identity, not `token` — the badges don't need re-seeding on
+        // a silent token refresh. See CLAUDE.md "Never reload on token refresh".
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.id]);
 
     // Apply the state transitions that kick off a fresh run with the given pool.
     // The pool is reshuffled here so the launch order differs every run.

@@ -186,6 +186,59 @@ API call — it should refresh transparently and NOT redirect to login. Delete t
 `refreshToken` too and the next 401 redirects to `/login` with the session-expired
 notice.
 
+## ⛔ Client rule: never reload/reset a page on a silent token refresh
+
+The access token rotates **every ~15 min** (and on the first 401 after idle), so
+the `token` string from `useAuth()` **changes identity on every refresh** even
+though the user and their session are unchanged. Any React effect that lists
+`token` (or a `token`-memoized callback) in its dependency array therefore
+**re-runs on each refresh** — reloading data and wiping in-progress UI.
+
+**Real incident (2026-07-02 01:52 AM PDT, user `michael@michael.com`, iOS Chrome):**
+a mid-game Word Search reset itself and broke until manual reload. Root cause was
+`WordSearchPage`'s mount effect keyed on `[token, fetchGrid, startBoard]`: a
+background refresh burst (3 rotations in 278 ms, visible in `refresh_tokens`)
+changed `token`, re-ran the loader, and fetched a brand-new board (wiping found
+words + timer). The concurrent `fetchGrid` calls racing the rotation left the
+page in the broken state.
+
+### The rule
+> **A data-load / state-reset `useEffect` must key on a STABLE auth identity —
+> `user?.id` or `isAuthenticated` (both `!!user`-derived, unchanged across a
+> refresh) — NEVER on the raw `token` string.**
+
+- `token` is still fine **inside** a memoized *fetch callback* (it closes over
+  `token` for the `Authorization` header and self-heals via the interceptor's
+  refresh-and-retry) — it just must not be a **reload trigger**. Pass `user?.id`
+  as the trigger and read the callback without depending on it
+  (`// eslint-disable-next-line react-hooks/exhaustive-deps` + a one-line reason).
+- If a **fetch callback itself drives a load effect** (e.g. `useEffect(() => {
+  fetchX(); }, [fetchX])`), the callback must not churn on refresh either: build
+  its header with **`authHeader()`** (`src/utils/authHeader.ts`, reads the live
+  in-memory token) and **drop `token` from the callback's deps**. Its identity
+  then stays stable while the header stays fresh.
+- Hooks that receive `token` as a prop/arg (no `useAuth()` in scope, e.g.
+  `useWorkingLoop`) key on `Boolean(token)` — the stable auth-presence flag.
+
+### `authHeader()` helper — `src/utils/authHeader.ts`
+Returns `{ Authorization: 'Bearer <live token>' }` from authStorage's in-memory
+slot (kept current by the refresh core), or `{}` when there is no token (the
+request then falls back to the httpOnly access-token cookie every request already
+sends). Use it in fetch callbacks that drive load effects so they don't need
+`token` in their deps.
+
+### Sites converted (reference)
+Loader effects re-keyed to `user?.id` / `isAuthenticated` / `Boolean(token)`:
+`WordSearchPage.tsx` (mount load), `BubbleMatchPage.tsx` (pool load + wins seed),
+`useWorkingLoop.ts` (distributed-loop fetch), `ReaderPage.tsx`,
+`FlashcardsPage.tsx` (×2), `FlashcardsDecksPage.tsx`, `MasteredCardsPage.tsx`,
+`VocabEntryCards.tsx` (×3), `PracticeWritingButton.tsx`, `useCategoryCounts.ts`,
+`EntryDetailPage.tsx`, `EditEntryPage.tsx`, `SortCardsPage.tsx`,
+`SkippedCardsPage.tsx`, `DictionaryPage.tsx`, `CommunityPage.tsx`,
+`useMinutePoints.ts` (reads `tokenRef.current`). Driver callbacks moved to
+`authHeader()`: `useLeaderboard.ts`, `useCalendarMinutePoints.ts`,
+`useNightMarket.ts`.
+
 ## Future enhancements
 1. Proactive refresh (decode `exp`, refresh just before expiry) in addition to the
    reactive path.

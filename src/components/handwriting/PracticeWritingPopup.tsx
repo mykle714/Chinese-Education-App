@@ -35,7 +35,7 @@ interface TabSpec {
   guideMs: number;
   /** whether drawing is locked while the guide is visible. */
   lockWhileGuide: boolean;
-  /** bottom button caption (walkthrough = "Show", memorize = "Start Writing"). */
+  /** bottom button caption (walkthrough = "Show"; memorize has no button). */
   buttonLabel?: string;
 }
 
@@ -44,13 +44,13 @@ interface TabSpec {
 //   trace       — persistent guide, freely traceable (easiest)
 //   walkthrough — guide flashes on entry + a "Show" button re-flashes it (1.5s,
 //                 drawing locked while visible)
-//   memorize    — study the guide as long as you want (drawing blocked), then tap
-//                 "Start Writing" to dismiss it and write from memory
+//   memorize    — study the guide as long as you want (drawing blocked); the first
+//                 stroke dismisses it and starts writing from memory
 //   test        — no guide at all (hardest)
 const TABS: TabSpec[] = [
   { mode: "trace", label: "Trace", guideMs: 0, lockWhileGuide: false },
   { mode: "walkthrough", label: "Step Through", guideMs: 1500, lockWhileGuide: true, buttonLabel: "Show" },
-  { mode: "memorize", label: "Memorize", guideMs: 0, lockWhileGuide: false, buttonLabel: "Start Writing" },
+  { mode: "memorize", label: "Memorize", guideMs: 0, lockWhileGuide: false },
   { mode: "test", label: "Test", guideMs: 0, lockWhileGuide: false },
 ];
 
@@ -114,9 +114,6 @@ export default function PracticeWritingPopup({
   });
   // Bumped on collapse so the grid previews remount and repaint the new ink.
   const [previewNonce, setPreviewNonce] = useState(0);
-  // Bumped each time the user tries to draw during Memorize's study-first lock; the
-  // increment (used as a React key on the "Start Writing" button) replays the pulse.
-  const [startPulseNonce, setStartPulseNonce] = useState(0);
 
   // Guide / draw-lock / cooldown state, driven by the active level + focus.
   const [outlineVisible, setOutlineVisible] = useState(false);
@@ -131,13 +128,16 @@ export default function PracticeWritingPopup({
   const drawingIndex = isMulti ? focusedIndex : 0;
   const isDrawing = drawingIndex !== null;
   // Memorize's study-first phase: the guide is up and drawing is locked until the
-  // user taps "Start Writing". Drives the "no writing" badge + the blocked-attempt nudge.
+  // first stroke unlocks it. Drives the "no writing" badge + the unlock-on-attempt.
   const memorizeBlocked = spec.mode === "memorize" && drawLocked;
 
   // The user pressed to draw while locked. In Memorize that means "study first" —
-  // pulse the "Start Writing" button to point them at the unlock action.
+  // the press itself is the unlock signal, so dismiss the guide and let this same
+  // pointerdown fall through into starting the stroke (see WritingCanvas.onDown).
   const handleBlockedAttempt = () => {
-    if (memorizeBlocked) setStartPulseNonce((n) => n + 1);
+    if (!memorizeBlocked) return false;
+    startWriting();
+    return true;
   };
 
   const clearTimers = () => {
@@ -180,14 +180,13 @@ export default function PracticeWritingPopup({
     clearTimers();
     setCooldown(0);
     setDrawLocked(false);
-    setStartPulseNonce(0); // fresh entry — no stale pulse on the Start Writing button
     if (spec.mode === "trace") {
       setOutlineVisible(true); // persistent guide (+ looped stroke order)
     } else if (spec.mode === "test") {
       setOutlineVisible(false); // no assistance
     } else if (spec.mode === "memorize") {
       // Study-then-write: show the guide persistently and BLOCK drawing (no timer —
-      // study as long as you want) until the user taps "Start Writing".
+      // study as long as you want) until the first stroke unlocks it.
       setOutlineVisible(true);
       setDrawLocked(true);
     } else {
@@ -443,31 +442,11 @@ export default function PracticeWritingPopup({
   );
 
   // Bottom assist button, mode-dependent:
-  //   • Memorize → "Start Writing": dismisses the persistent guide + unlocks drawing.
-  //     Shown only while still studying (guide up); no cooldown.
+  //   • Memorize → none: the first stroke itself dismisses the guide and unlocks
+  //     drawing (see handleBlockedAttempt / WritingCanvas.onDown).
   //   • Walkthrough → "Show": re-flashes the timed guide, with a 6s cooldown.
   const assistButton =
-    spec.mode === "memorize" ? (
-      outlineVisible ? (
-        <Button
-          // Re-keyed on each blocked-write attempt so the pulse animation replays.
-          key={`start-${startPulseNonce}`}
-          className="practice-writing__start"
-          variant="contained"
-          disableElevation
-          onClick={startWriting}
-          sx={{
-            minWidth: 140,
-            borderRadius: 3,
-            textTransform: "none",
-            // Pulse once per blocked attempt (nonce > 0; re-keyed to replay).
-            animation: startPulseNonce > 0 ? "practiceStartPulse 0.5s ease-in-out 1" : "none",
-          }}
-        >
-          {spec.buttonLabel}
-        </Button>
-      ) : null
-    ) : spec.buttonLabel ? (
+    spec.mode === "memorize" ? null : spec.buttonLabel ? (
       <Button
         className="practice-writing__peek"
         variant="contained"
@@ -615,7 +594,7 @@ export default function PracticeWritingPopup({
             // Spinner only for the timed walkthrough lockout — NOT memorize, whose
             // lock is open-ended (a perpetual spinner there would be misleading).
             loading={drawLocked && spec.mode === "walkthrough"}
-            // Memorize study-first lock: red "no writing" badge + nudge on attempts.
+            // Memorize study-first lock: red "no writing" badge; first stroke unlocks.
             blocked={memorizeBlocked}
             onBlockedAttempt={handleBlockedAttempt}
             initialInk={inks[0]}
@@ -662,7 +641,7 @@ export default function PracticeWritingPopup({
             // Spinner only for the timed walkthrough lockout — NOT memorize, whose
             // lock is open-ended (a perpetual spinner there would be misleading).
             loading={drawLocked && spec.mode === "walkthrough"}
-            // Memorize study-first lock: red "no writing" badge + nudge on attempts.
+            // Memorize study-first lock: red "no writing" badge; first stroke unlocks.
             blocked={memorizeBlocked}
             onBlockedAttempt={handleBlockedAttempt}
             initialInk={inks[focusedIndex]}

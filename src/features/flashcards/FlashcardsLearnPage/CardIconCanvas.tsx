@@ -71,8 +71,12 @@ export type TextCanvasLayout = { foreign: TextLayoutItem; english: TextLayoutIte
  *     selection would mask the order list's reordering of that icon (a fixed bug).
  *   - tapping empty canvas deselects.
  *
- * Selection switching during a gesture: a tap selects the pressed icon (`pickTapTarget`,
- * preferring an unlocked icon under the point). A DRAG resolves its target ONCE at gesture
+ * Selection switching during a gesture: a tap selects an icon at the pressed point via
+ * `pickTapTarget`/`tapCycleOrder`. Overlapping icons form a stack under the tap point; a tap
+ * on a fresh stack picks the topmost UNLOCKED icon there (locked only if nothing there is
+ * unlocked), and a REPEAT tap on the already-selected icon cycles to the icon behind it —
+ * unlocked icons first (topmost to bottommost), then locked icons — wrapping back to the top
+ * once the whole stack has been walked. A DRAG resolves its target ONCE at gesture
  * start via `resolveDragTarget` — the topmost unlocked icon under the pointer, else the
  * selection — and auto-switches selection to it. A PINCH never switches selection (it acts on
  * the selection from anywhere). The drag target is committed synchronously to
@@ -191,18 +195,35 @@ const CardIconCanvas: React.FC<{
     const topmostUnlockedIconAt = (px: number, py: number): number | null =>
         topmostHit(iconHitsAt(px, py).filter(({ it }) => !it.locked));
 
-    // Which icon a TAP at client point (px,py) should select. The pressed icon `i` is the
-    // topmost one under the pointer (it owns the DOM hit), but a locked icon should never
-    // steal selection from an unlocked one sitting beneath it — locked icons can't be
-    // manipulated, so reaching the editable icon under the stack matters more. So we PREFER
-    // unlocked icons: pick the topmost unlocked icon under the tap, and only fall back to the
-    // topmost locked icon when every icon there is locked. `i` is the fallback if nothing
-    // boxes the point.
+    // The cycle order for a stack of overlapping icons at a tap point: every UNLOCKED icon
+    // first (topmost z first), then every LOCKED icon (topmost z first) appended after — so a
+    // locked icon never jumps ahead of a still-unpicked unlocked one, mirroring the old
+    // "prefer unlocked" rule but as a full ordering instead of a single pick. Feeds
+    // `pickTapTarget`'s cycling below.
+    const tapCycleOrder = (hits: { it: IconLayoutItem; idx: number }[]): number[] => {
+        const byZDesc = (a: { it: IconLayoutItem }, b: { it: IconLayoutItem }) => b.it.z - a.it.z;
+        const unlocked = hits.filter(({ it }) => !it.locked).sort(byZDesc).map(({ idx }) => idx);
+        const locked = hits.filter(({ it }) => it.locked).sort(byZDesc).map(({ idx }) => idx);
+        return [...unlocked, ...locked];
+    };
+
+    // Which icon a TAP at client point (px,py) should select. Overlapping icons stack under a
+    // single tap point, so a tap CYCLES through them: tapping the currently-selected icon
+    // steps to the icon behind it (`tapCycleOrder`'s next entry), tapping again steps to the
+    // one behind THAT, and so on, wrapping back to the top once the whole stack has been
+    // walked. A tap that lands on a fresh stack (the current selection isn't one of the icons
+    // under the point — a new location, or nothing selected) restarts at the top of that
+    // stack, which is the topmost UNLOCKED icon there (falling back to the topmost locked icon
+    // only when every icon under the tap is locked) — same "prefer unlocked" first pick as
+    // before. `i` is the fallback if nothing boxes the point.
     const pickTapTarget = (i: number, px: number, py: number): number => {
         const hits = iconHitsAt(px, py);
         if (hits.length === 0) return i;
-        const unlocked = hits.filter(({ it }) => !it.locked);
-        return topmostHit(unlocked.length > 0 ? unlocked : hits) ?? i;
+        const order = tapCycleOrder(hits);
+        if (order.length === 0) return i;
+        const pos = selected !== null ? order.indexOf(selected) : -1;
+        if (pos === -1) return order[0]; // fresh stack — start from the top
+        return order[(pos + 1) % order.length]; // cycle to the next icon behind it
     };
 
     // Which icon a DRAG (translate) at client point (px,py) should act on:
@@ -430,21 +451,31 @@ const CardIconCanvas: React.FC<{
         },
     });
 
-    // Canvas-level gestures, bound to the ROOT (not a specific icon) so they fire for
-    // presses on EMPTY space:
-    //   - DRAG anywhere → translate the SELECTED icon (beginDragMotion/runDrag). Empty-space
-    //     drags can't land on an icon, so resolveDragTarget falls back to the selection — this
-    //     is what lets a translate gesture work from anywhere in the card canvas and move the
-    //     selected icon. Drags that start ON an icon are handled by bindIcon above (their
-    //     onPointerDown stopPropagation keeps them from also reaching this binding).
-    //   - PINCH anywhere → resize/rotate the SELECTED icon (beginPinch/runPinch). Same idea:
-    //     a zoom/rotate gesture works from anywhere and targets the selected icon, even when
+    // Canvas-level gestures, bound to the ROOT (not a specific icon/text block) so they fire
+    // for presses on EMPTY space:
+    //   - DRAG anywhere → translate the SELECTED icon OR SELECTED text block
+    //     (beginDragMotion/runDrag, beginTextDrag/runTextDrag). Empty-space drags can't land on
+    //     an icon, so resolveDragTarget falls back to the icon selection first; if that's empty
+    //     (no icon selected) we fall back further to the selected TEXT block — selection is
+    //     mutually exclusive between icon/text (CanvasTarget), so at most one of these fallbacks
+    //     ever fires. This is what lets a translate gesture work from anywhere in the card
+    //     canvas and move whichever is selected. Drags that start ON an icon/text block are
+    //     handled by bindIcon/bindText above (their onPointerDown stopPropagation keeps them
+    //     from also reaching this binding).
+    //   - PINCH anywhere → resize/rotate the SELECTED icon or SELECTED text block. Same idea:
+    //     a zoom/rotate gesture works from anywhere and targets whichever is selected, even when
     //     the fingers land on empty space or a non-selected icon.
     //   - a TAP on empty canvas deselects (moved here off the raw onPointerDown so the
     //     first finger of an empty-space pinch no longer wipes the selection before the
     //     pinch can read it — `filterTaps` means a pinch is never reported as a tap).
     // `touches >= 2` short-circuits the drag handler so an empty-space pinch's first finger
     // doesn't also translate — onPinch owns that gesture.
+    //
+    // The memo is tagged with which kind of target it resolved to (icon vs text) so the same
+    // canvas-root binding can drive either sub-system's begin/run pair for the gesture's
+    // duration, without re-resolving the target (and possibly flip-flopping) mid-gesture.
+    type CanvasDragMemo = { kind: "icon"; memo: DragMemo } | { kind: "text"; memo: TextDragMemo };
+    type CanvasPinchMemo = { kind: "icon"; memo: PinchMemo } | { kind: "text"; memo: TextPinchMemo };
     const bindCanvas = useGesture(
         {
             onDrag: ({ xy: [px, py], movement: [mx, my], first, last, tap, touches, memo }) => {
@@ -454,21 +485,41 @@ const CardIconCanvas: React.FC<{
                 // doesn't start a fresh drag from the first finger's accumulated pinch movement.
                 if (pinchLatchRef.current) { if (last) pinchLatchRef.current = false; return memo; }
                 if (tap) {
-                    onSelect(null);
+                    onSelectTarget(null);
                     return memo;
                 }
-                // Empty-space drag → translate the selected icon (resolveDragTarget finds no
-                // unlocked icon under the pointer, so it returns the selection). No-op when
-                // nothing is selected.
-                const m = (memo as DragMemo | undefined) ?? beginDragMotion(resolveDragTarget(px, py), mx, my);
+                // Empty-space drag → translate the selected icon first (resolveDragTarget finds
+                // no unlocked icon under the pointer, so it returns the icon selection); when
+                // there's no icon selection either, fall back to the selected text block.
+                let m = memo as CanvasDragMemo | undefined;
+                if (!m) {
+                    const iconTarget = resolveDragTarget(px, py);
+                    if (iconTarget !== null) {
+                        const dm = beginDragMotion(iconTarget, mx, my);
+                        if (dm) m = { kind: "icon", memo: dm };
+                    } else if (selectedText !== null) {
+                        const tm = beginTextDrag(selectedText, mx, my);
+                        if (tm) m = { kind: "text", memo: tm };
+                    }
+                }
                 if (!m) return memo;
-                runDrag(m, mx, my, last);
+                if (m.kind === "icon") runDrag(m.memo, mx, my, last);
+                else runTextDrag(m.memo, mx, my, last);
                 return m;
             },
             onPinch: ({ origin: [ox, oy], da: [d, a], last, memo }) => {
-                const m = (memo as PinchMemo | undefined) ?? beginPinch(topmostIconAt(ox, oy), d, a);
+                let m = memo as CanvasPinchMemo | undefined;
+                if (!m) {
+                    const pm = beginPinch(topmostIconAt(ox, oy), d, a);
+                    if (pm) m = { kind: "icon", memo: pm };
+                    else if (selectedText !== null) {
+                        const tm = beginTextPinch(selectedText, d, a);
+                        if (tm) m = { kind: "text", memo: tm };
+                    }
+                }
                 if (!m) return memo;
-                runPinch(m, d, a, last);
+                if (m.kind === "icon") runPinch(m.memo, d, a, last);
+                else runTextPinch(m.memo, d, a, last);
                 return m;
             },
         },
@@ -839,9 +890,11 @@ const CardIconCanvas: React.FC<{
                             <Box sx={{ pointerEvents: "none", userSelect: "none", "& *": { pointerEvents: "none !important" } }}>
                                 {node}
                             </Box>
-                            {/* Corner resize/rotate handle for the SELECTED block (desktop). Placed
-                                just INSIDE the bottom-right corner so the clip layer never cuts it
-                                (text can sit flush to the card edge). Locked → golden, inert. */}
+                            {/* Corner resize/rotate handle for the SELECTED block (desktop). Offset
+                                to match the icon selection overlay's handle exactly (-12px / 24px,
+                                see the icon overlay below) rather than hugging the text's
+                                max-content box — the two indicators should look identical
+                                regardless of what's selected. Locked → golden, inert. */}
                             {isSel && (() => {
                                 const hbound = bindTextHandle();
                                 const handleDown = (hbound as React.HTMLAttributes<HTMLDivElement>).onPointerDown;
@@ -852,10 +905,10 @@ const CardIconCanvas: React.FC<{
                                         className={`card-icon-canvas__text-handle${locked ? " card-icon-canvas__text-handle--locked" : ""}`}
                                         sx={{
                                             position: "absolute",
-                                            right: "-2px",
-                                            bottom: "-2px",
-                                            width: "22px",
-                                            height: "22px",
+                                            right: "-12px",
+                                            bottom: "-12px",
+                                            width: "24px",
+                                            height: "24px",
                                             borderRadius: "50%",
                                             backgroundColor: locked ? "#E0A82E" : "#fff",
                                             boxShadow: "0 1px 4px rgba(0,0,0,0.35)",
@@ -868,7 +921,7 @@ const CardIconCanvas: React.FC<{
                                             pointerEvents: "auto",
                                         }}
                                     >
-                                        {locked ? <LockIcon sx={{ fontSize: 13 }} /> : <OpenWithIcon sx={{ fontSize: 13 }} />}
+                                        {locked ? <LockIcon sx={{ fontSize: 14 }} /> : <OpenWithIcon sx={{ fontSize: 14 }} />}
                                     </Box>
                                 );
                             })()}

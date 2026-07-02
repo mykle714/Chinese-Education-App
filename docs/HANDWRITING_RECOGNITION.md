@@ -163,17 +163,19 @@ across levels.
 |---|---|---|---|---|---|
 | 1 | **Trace** (`trace`) | **Always shown** (persistent grey background w/ stroke order) | guide visible | — (always on) | Yes |
 | 2 | **Step Through** (`walkthrough`) | Default **off** | guide shown **1.5s**, then fades | **"Show"** — re-flashes guide for **1.5s**; **6s cooldown** | **No** — drawing is locked while the guide is visible |
-| 3 | **Memorize** (`memorize`) | Shown persistently on entry; **no timer** (study as long as you want) | guide visible, **drawing blocked** | **"Start Writing"** — dismisses the guide + unlocks drawing (no cooldown) | **No** until "Start Writing", then **Yes** |
+| 3 | **Memorize** (`memorize`) | Shown persistently on entry; **no timer** (study as long as you want) | guide visible, **drawing blocked** | — (no button) | **No** until the first stroke, which unlocks + starts drawing |
 | 4 | **Test** (`test`) | Never shown; no button | blank | — | n/a |
 
 Notes:
 - **Step Through** = the only *timed* guide: it flashes on entry and on each "Show"
   press for **1.5s**, with **drawing disabled** while the guide is on screen.
 - **Memorize** = study-then-write. The guide is shown indefinitely with drawing
-  **blocked**; the bottom **"Start Writing"** button hides the guide and unlocks
-  drawing (and then disappears). No timer, no cooldown — re-entering the level (or,
-  multi-char, re-focusing a slot) re-arms the study gate. No lock spinner is shown
-  (the lock is open-ended, unlike Step Through's timed flash).
+  **blocked**; there is no unlock button — the first stroke itself hides the guide
+  and unlocks drawing, and that same pointerdown starts the stroke (see
+  `WritingCanvas.onDown`'s `onBlockedAttempt` return-to-continue contract). No
+  timer, no cooldown — re-entering the level (or, multi-char, re-focusing a slot)
+  re-arms the study gate. No lock spinner is shown (the lock is open-ended, unlike
+  Step Through's timed flash).
 - **"Show" button cooldown (Step Through only): 6s from press.** When pressed, it is
   disabled for 6 seconds **measured from the press** — the cooldown overlaps the
   1.5s guide-visible window, so the button re-enables 6s after press. The automatic
@@ -286,7 +288,7 @@ display-only.
 canvas on top, same coordinate box. Tab assistance maps to Hanzi Writer calls:
 **Trace** = persistent `showOutline` (+ optional looped stroke-order animation);
 **Step Through** = `showOutline`/`hideOutline` driven by the entry timer and the
-"Show" button; **Memorize** = persistent `showOutline` cleared by "Start Writing";
+"Show" button; **Memorize** = persistent `showOutline` cleared by the first stroke;
 **Test** = no Hanzi Writer instance.
 
 **Data source:** feed Hanzi Writer our **local** `makemeahanzi` data via

@@ -25,10 +25,25 @@ export interface PlacedWord {
     cells: [number, number][];
 }
 
+/**
+ * A det headword whose entire character sequence is drawn exclusively from
+ * characters that appear somewhere on the grid — NOT necessarily one of the
+ * 10 targets, and not guaranteed to trace an adjacent-cell path (the client
+ * still checks the actual dragged path). Used to recognize a "bonus" find:
+ * a real word the player traced that isn't a target (see doc §4).
+ */
+export interface BonusWord {
+    entryKey: string;
+    /** Space-separated tone-marked pinyin, one syllable per character. */
+    pinyin: string;
+    definition: string;
+}
+
 /** Shape returned by GET /api/onDeck/word-search-grid. */
 export interface WordSearchResponse {
     grid: GridCell[][] | null; // null when !sufficient
     words: PlacedWord[];
+    bonusWords: BonusWord[];
     rows: number;
     cols: number;
     total: number;

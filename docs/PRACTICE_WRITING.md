@@ -63,13 +63,14 @@ Defined in `TABS` (`PracticeWritingPopup.tsx`).
 |---|---|---|---|---|---|
 | 1 | **Trace** | `trace` | persistent grey guide + looped stroke-order animation | — | always allowed |
 | 2 | **Step Through** | `walkthrough` | guide flashes **1.5s** then fades | **"Show"** — re-flash 1.5s, **6s cooldown** | **locked while guide visible** |
-| 3 | **Memorize** | `memorize` | guide shown **persistently, no timer** | **"Start Writing"** — dismiss guide + unlock | **locked until "Start Writing"** |
+| 3 | **Memorize** | `memorize` | guide shown **persistently, no timer** | — | **locked until the first stroke** (which unlocks + starts drawing) |
 | 4 | **Test** | `test` | none | — | always allowed |
 
 State driving this (per active level + focus):
 `outlineVisible` (guide shown), `drawLocked` (canvas locked), `cooldown` (Show
 button countdown). `applyGuideForEntry()` sets the on-entry behavior; `flashGuide()`
-runs the timed Step-Through reveal; `startWriting()` performs the Memorize unlock.
+runs the timed Step-Through reveal; `startWriting()` performs the Memorize unlock
+(called from `handleBlockedAttempt` on the first blocked stroke).
 
 ### Step Through cooldown
 "Show" calls `flashGuide(1500, lock=true, cooldown=true)`: re-flashes the guide for
@@ -80,22 +81,18 @@ lock (Step Through only).
 
 ### Memorize study-first lock
 On entry: `outlineVisible = true`, `drawLocked = true`, **no timer** (study as long
-as you want). Cues while locked (`memorizeBlocked = mode === "memorize" && drawLocked`):
+as you want). Cue while locked (`memorizeBlocked = mode === "memorize" && drawLocked`):
 
 - **"No writing" badge** — a red circle-with-a-slash (`Block` icon, `COLORS.redMain`)
   in the panel's top-left corner (`WritingStage` `blocked` prop).
-- **Blocked-attempt nudge** — if the user presses to draw while locked,
-  `WritingCanvas` fires `onBlockedAttempt`; the popup bumps `startPulseNonce`, which
-  is the React `key` on the **"Start Writing"** button, replaying a glow-ring pulse
-  (`@keyframes practiceStartPulse` in `src/index.css`).
 
-Tapping **"Start Writing"** (`startWriting`) hides the guide, unlocks drawing, and
-the button disappears (it only renders while `outlineVisible`). The bottom button
-sits in an **absolutely-positioned slot** (`practice-writing__assist-slot`) anchored
-below the panel (the drawing-area is `position: relative`), so its appearance/removal
-never reflows or shifts the panel. No timer/cooldown.
-No lock spinner (the lock is open-ended). `startPulseNonce` is reset to 0 on every
-level entry (`applyGuideForEntry`) so re-entering never auto-pulses.
+There is **no unlock button**. The first stroke itself unlocks: a `pointerdown`
+while locked fires `WritingCanvas`'s `onBlockedAttempt`, which the popup's
+`handleBlockedAttempt` handles by calling `startWriting()` (hides the guide, clears
+`drawLocked`) and returning `true`. `WritingCanvas.onDown` reads that return value —
+`true` means "unlocked, continue" — so the **same pointerdown** falls through and
+starts the stroke, instead of being swallowed. No timer/cooldown, no lock spinner
+(the lock is open-ended).
 
 ---
 
@@ -105,7 +102,9 @@ level entry (`applyGuideForEntry`) so re-entering never auto-pulses.
   still completes. Ink is drawn imperatively (the source of truth is `inkRef`, not
   React state) because a stroke can carry hundreds of points.
 - `disabled` (= `!drawable || drawLocked`) blocks new strokes. A `pointerdown` while
-  disabled calls `onBlockedAttempt` and returns (no stroke started).
+  disabled calls `onBlockedAttempt`; if it returns `true` (caller unlocked in
+  response, e.g. Memorize) the same pointerdown falls through and starts a stroke,
+  otherwise it's swallowed (no stroke started).
 - Imperative handle (`WritingCanvasHandle`): `clear` / `undo` / `getInk` / `isEmpty`.
 - **Touch/selection safety:** `touchAction: none` (no scroll / edge-swipe) plus
   `userSelect/WebkitUserSelect/WebkitTouchCallout: none` so a draw gesture can never
@@ -225,6 +224,5 @@ a new card or unmounts, and when the cdp unmounts (`clearWritingDraft`).
 
 - Selection/touch safety: `src/index.css` (`@media (pointer: coarse)` cpcd block;
   `.flashcard-container`), `WritingCanvas` style.
-- Pulse animation: `@keyframes practiceStartPulse` (`src/index.css`).
 - Recognition internals, stroke format, backends, Hanzi Writer guide:
   [HANDWRITING_RECOGNITION.md](./HANDWRITING_RECOGNITION.md).

@@ -23,8 +23,12 @@ interface WritingCanvasProps {
   initialInk?: Ink;
   /** Fires whenever the stroke set changes (start/finish a stroke, clear). */
   onInkChange?: (ink: Ink) => void;
-  /** Fires when the user presses down to draw while `disabled` (a blocked attempt). */
-  onBlockedAttempt?: () => void;
+  /**
+   * Fires when the user presses down to draw while `disabled`. Return true to
+   * unlock and let this same pointerdown start the stroke (e.g. Memorize's
+   * first-stroke-unlocks-writing); return false/undefined to keep it blocked.
+   */
+  onBlockedAttempt?: () => boolean | void;
   strokeColor?: string;
   strokeWidth?: number;
 }
@@ -121,11 +125,14 @@ const WritingCanvas = forwardRef<WritingCanvasHandle, WritingCanvasProps>(functi
 
     const onDown = (e: PointerEvent) => {
       if (disabledRef.current) {
-        // Drawing is locked — surface the blocked attempt so the UI can nudge the
-        // user toward the unlock action (e.g. pulse "Start Writing" in Memorize).
-        e.preventDefault();
-        blockedAttemptRef.current?.();
-        return;
+        // Drawing is locked — surface the blocked attempt so the caller can decide
+        // whether to unlock (e.g. Memorize: the first stroke itself unlocks writing,
+        // so this same pointerdown falls through and starts the stroke below).
+        const unlocked = blockedAttemptRef.current?.();
+        if (!unlocked) {
+          e.preventDefault();
+          return;
+        }
       }
       e.preventDefault();
       e.stopPropagation(); // keep draw gestures from reaching the flashcard's document-level drag/flip

@@ -9,6 +9,8 @@
  * Referenced by docs/WORD_SEARCH_GAME.md §2 (grid generation).
  */
 
+import { WORD_SEARCH_TEMPLATES } from './wordSearchTemplates.js';
+
 export type Rng = () => number;
 
 /** One target word to hide in the grid. */
@@ -47,6 +49,17 @@ const NEIGHBORS: [number, number][] = [
 ];
 
 /**
+ * Down/right only — used for 2-character words so their single step always
+ * reads in character order (top-to-bottom or left-to-right), never reversed.
+ * Longer words still snake through all 4 NEIGHBORS since a mid-word turn makes
+ * "reading order" ambiguous anyway.
+ */
+const FORWARD_NEIGHBORS: [number, number][] = [
+  [1, 0],
+  [0, 1],
+];
+
+/**
  * Per-word placement attempts before we give up on the whole grid and
  * regenerate from scratch. The spec calls for ~10: each attempt picks a fresh
  * random start and snakes forward, so 10 independent tries almost always find a
@@ -61,6 +74,16 @@ export const MAX_WORD_ATTEMPTS = 10;
 export const MAX_GRID_ATTEMPTS = 100;
 
 /**
+ * Whole-grid regenerations that use random snaking placement before falling
+ * back to a fixed template (see docs/WORD_SEARCH_TEMPLATES.md). 10 words all
+ * at the 4-character cap can wall each other off badly enough that random
+ * retries burn through many attempts on bad luck; a template guarantees a fit
+ * instead of continuing to gamble. Attempts `RANDOM_GRID_ATTEMPTS` and above
+ * (up to MAX_GRID_ATTEMPTS) use template mode when it applies (§ below).
+ */
+export const RANDOM_GRID_ATTEMPTS = 5;
+
+/**
  * Anti-duplicate fixup passes (see §2a below) before we give up and regenerate
  * the whole grid. Each pass patches every offending filler cell it finds, so
  * convergence is typically 1-2 passes; this is a generous ceiling against
@@ -70,6 +93,36 @@ const MAX_DEDUP_PASSES = 20;
 
 function randInt(rng: Rng, n: number): number {
   return Math.floor(rng() * n);
+}
+
+/** Fisher-Yates shuffle using the grid's own rng, so placement stays deterministic under a seeded rng. */
+function shuffle<T>(arr: T[], rng: Rng): T[] {
+  const out = arr.slice();
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = randInt(rng, i + 1);
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+/**
+ * Template mode (docs/WORD_SEARCH_TEMPLATES.md) only applies to the shape this
+ * game actually ships: a 7x7 board with exactly 10 words, each <= 4 characters
+ * (one word per template slot, no leftover words or slots). Any other shape
+ * (e.g. a differently-sized test board) keeps retrying random placement for
+ * the full MAX_GRID_ATTEMPTS instead.
+ */
+function templateModeApplicable(
+  prepared: { chars: string[] }[],
+  rows: number,
+  cols: number
+): boolean {
+  return (
+    rows === 7 &&
+    cols === 7 &&
+    prepared.length === WORD_SEARCH_TEMPLATES[0]?.slots.length &&
+    prepared.every((p) => p.chars.length >= 1 && p.chars.length <= 4)
+  );
 }
 
 /** Coordinate-list equality (order matters). */
@@ -128,8 +181,10 @@ function findWordOccurrences(
 /**
  * Try to lay a single word of `len` characters as a snaking path of empty cells.
  * Picks a random empty start, then repeatedly steps to a random empty orthogonal
- * neighbor. Returns the ordered path, or null if it hit a dead end (the caller
- * retries with a new random start).
+ * neighbor. 2-character words step only down or right (FORWARD_NEIGHBORS) so
+ * they always read in character order; longer words snake through all 4
+ * NEIGHBORS. Returns the ordered path, or null if it hit a dead end (the
+ * caller retries with a new random start).
  */
 function tryPlaceWord(
   len: number,
@@ -144,12 +199,13 @@ function tryPlaceWord(
 
   const path: [number, number][] = [[startR, startC]];
   const inPath = new Set<string>([`${startR},${startC}`]);
+  const directions = len === 2 ? FORWARD_NEIGHBORS : NEIGHBORS;
 
   for (let i = 1; i < len; i++) {
     const [r, c] = path[path.length - 1];
     // Empty, in-bounds neighbors not already on this path.
     const options: [number, number][] = [];
-    for (const [dr, dc] of NEIGHBORS) {
+    for (const [dr, dc] of directions) {
       const nr = r + dr;
       const nc = c + dc;
       if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
@@ -196,6 +252,7 @@ export function generateWordSearchGrid(
   // Longest-first placement order minimizes dead-end restarts on a sparsely-
   // filled board.
   const ordered = [...prepared].sort((a, b) => b.chars.length - a.chars.length);
+  const canUseTemplates = templateModeApplicable(prepared, rows, cols);
 
   for (let gridAttempt = 0; gridAttempt < MAX_GRID_ATTEMPTS; gridAttempt++) {
     const occupied: boolean[][] = Array.from({ length: rows }, () =>
@@ -206,24 +263,52 @@ export function generateWordSearchGrid(
     );
     const placed: PlacedWord[] = [];
 
+    const useTemplate = canUseTemplates && gridAttempt >= RANDOM_GRID_ATTEMPTS;
     let allPlaced = true;
-    for (const { word, chars, syllables } of ordered) {
-      let path: [number, number][] | null = null;
-      for (let attempt = 0; attempt < MAX_WORD_ATTEMPTS; attempt++) {
-        path = tryPlaceWord(chars.length, occupied, rows, cols, rng);
-        if (path) break;
-      }
-      if (!path) {
-        allPlaced = false; // regenerate the whole grid
-        break;
-      }
 
-      // Commit the word's characters into the board.
-      path.forEach(([r, c], i) => {
-        occupied[r][c] = true;
-        cells[r][c] = { char: chars[i], pinyin: syllables[i] ?? '' };
+    if (useTemplate) {
+      // Template mode (docs/WORD_SEARCH_TEMPLATES.md): pick a random fixed 7x7
+      // layout, shuffle words across its 10 four-cell slots, and for any word
+      // shorter than 4 characters take a random contiguous run within its
+      // slot — the rest of that slot is left null and picked up by the normal
+      // filler flood below, same as every other empty cell. Cell-count-wise
+      // this can never fail (every word is <= 4 chars, every slot is 4 cells),
+      // so `allPlaced` stays true here.
+      const template = WORD_SEARCH_TEMPLATES[randInt(rng, WORD_SEARCH_TEMPLATES.length)];
+      const shuffled = shuffle(prepared, rng);
+
+      shuffled.forEach(({ word, chars, syllables }, i) => {
+        const slot = template.slots[i];
+        const len = chars.length;
+        const maxOffset = slot.length - len;
+        const offset = maxOffset > 0 ? randInt(rng, maxOffset + 1) : 0;
+        const path = slot.slice(offset, offset + len);
+
+        path.forEach(([r, c], idx) => {
+          occupied[r][c] = true;
+          cells[r][c] = { char: chars[idx], pinyin: syllables[idx] ?? '' };
+        });
+        placed.push({ ...word, cells: path });
       });
-      placed.push({ ...word, cells: path });
+    } else {
+      for (const { word, chars, syllables } of ordered) {
+        let path: [number, number][] | null = null;
+        for (let attempt = 0; attempt < MAX_WORD_ATTEMPTS; attempt++) {
+          path = tryPlaceWord(chars.length, occupied, rows, cols, rng);
+          if (path) break;
+        }
+        if (!path) {
+          allPlaced = false; // regenerate the whole grid
+          break;
+        }
+
+        // Commit the word's characters into the board.
+        path.forEach(([r, c], i) => {
+          occupied[r][c] = true;
+          cells[r][c] = { char: chars[i], pinyin: syllables[i] ?? '' };
+        });
+        placed.push({ ...word, cells: path });
+      }
     }
 
     if (!allPlaced) continue;

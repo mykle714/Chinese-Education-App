@@ -10,13 +10,18 @@ import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings
 import { useBlockEdgeSwipe } from "../../hooks/useBlockEdgeSwipe";
 import LeafPage from "../../components/LeafPage";
 import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
-import WordSearchHeaderControls, { type PinyinMode } from "./WordSearchHeader";
+import WordSearchHeaderControls from "./WordSearchHeader";
+import WordSearchSettingsDialog from "./WordSearchSettingsDialog";
 import WordSearchWordList from "./WordSearchWordList";
+import WordSearchHintRow from "./WordSearchHintRow";
 import WordSearchGrid, { type WordSearchGridHandle } from "./WordSearchGrid";
 import WordSearchHintBar from "./WordSearchHintBar";
 import GameEndPopup from "../runtime/GameEndPopup";
+import { useWordSearchSettings } from "./useWordSearchSettings";
+import { saveGameState, loadGameState, clearGameState, type SavedWordSearchState } from "./gameStateStorage";
 import { GRID_QUERY, TOTAL_WORDS, HINT_BAR_UNITS, HINT_COST, medalForTime } from "./constants";
-import type { Coord, PlacedWord, WordSearchResponse } from "./types";
+import { countPinyinUnits } from "./pinyinUnits";
+import type { BonusWord, PlacedWord, WordSearchResponse } from "./types";
 
 type Phase = "loading" | "blocked" | "playing" | "won";
 
@@ -38,6 +43,11 @@ function formatTime(ms: number): string {
  * runs from the first interaction until all 20 words are found, and the finish
  * time earns a medal (see docs/WORD_SEARCH_GAME.md §5). Word Search is a LEAF
  * PAGE (down-arrow back → /games, no footer).
+ *
+ * Pause/resume (§5b): the board + timer + hint state are snapshotted to
+ * localStorage (gameStateStorage.ts) whenever the tab is backgrounded or the
+ * page unmounts, and restored on the next mount instead of fetching a fresh
+ * board — see `persistSnapshot` / `restoreBoard` below.
  */
 const WordSearchPage: React.FC = () => {
     usePageTitle("Word Search");
@@ -48,6 +58,8 @@ const WordSearchPage: React.FC = () => {
     const tts = useTTS();
     const { settings, update } = useFlashcardLearnSettings();
     const { showPinyin, showPinyinColor } = settings;
+    const { settings: wsSettings, update: updateWsSettings } = useWordSearchSettings();
+    const { showTimer } = wsSettings;
 
     // An edge swipe would navigate away mid-drag; block it while mounted.
     useBlockEdgeSwipe(true);
@@ -56,17 +68,33 @@ const WordSearchPage: React.FC = () => {
     const [blockMessage, setBlockMessage] = useState("");
     const [data, setData] = useState<WordSearchResponse | null>(null);
     const [found, setFound] = useState<Set<string>>(new Set());
-    // Timer visibility only — the clock keeps ticking regardless (see HUD below).
-    const [showTimer, setShowTimer] = useState(true);
     // Whether the end-of-run popup is collapsed into the corner puck.
     const [popupMinimized, setPopupMinimized] = useState(false);
+    // Settings sheet (pinyin display + timer visibility), behind the header cog.
+    const [settingsOpen, setSettingsOpen] = useState(false);
     const gridRef = useRef<WordSearchGridHandle>(null);
 
     // Hint meter: each successful find adds a unit (capped at HINT_BAR_UNITS); a
-    // hint is spendable once >= HINT_COST units are banked. `hintCell` is the
-    // first cell of the currently-hinted word, pulsed in the grid until found.
+    // hint is spendable once >= HINT_COST units are banked. The hint row is
+    // BLANK until the first hint spend. `hintEntryKey` is the one word currently
+    // being hinted (or null); `hintRevealCount` is how many of its pinyin
+    // units (see pinyinUnits.ts) have been revealed, hangman-style — each further
+    // hint reveals another unit of the SAME word until it's found (row clears)
+    // or fully spelled out. Once fully spelled out, pressing hint again doesn't
+    // move on to a different word: it flips `hintLocationRevealed` (the word's
+    // actual grid cells show in yellow, persistently, until it's found) and
+    // bumps `hintShakeNonce` to re-shake those cells. See §5a.
     const [hintUnits, setHintUnits] = useState(0);
-    const [hintCell, setHintCell] = useState<Coord | null>(null);
+    const [hintEntryKey, setHintEntryKey] = useState<string | null>(null);
+    const [hintRevealCount, setHintRevealCount] = useState(0);
+    const [hintLocationRevealed, setHintLocationRevealed] = useState(false);
+    const [hintShakeNonce, setHintShakeNonce] = useState(0);
+    // Each DISTINCT "blue match" (multi-character bonus word, see
+    // WordSearchGrid's onBonusFound) awards one hint unit the first time it's
+    // traced. Tracked by entryKey so re-tracing the SAME bonus word again
+    // (its popup has no auto-dismiss, so it's easy to re-trigger) doesn't
+    // re-award — a different bonus word still grants its own unit.
+    const rewardedBonusWordsRef = useRef<Set<string>>(new Set());
 
     // Tapping anywhere that isn't a grid cell deselects the in-progress word.
     const handleBackgroundPointerDown = useCallback((e: React.PointerEvent) => {
@@ -75,17 +103,109 @@ const WordSearchPage: React.FC = () => {
         }
     }, []);
 
-    // Count-up timer. Starts on first interaction, freezes on win.
+    // Count-up timer. `startRef` is non-null ONLY while the interval is
+    // actively ticking (invariant relied on by pause/resume/win below);
+    // `pausedElapsedRef` mirrors the last known elapsed value so a paused (or
+    // not-yet-started) board can be measured/resumed without it.
+    // `hasStartedRef` records whether the clock has EVER been started on this
+    // board, independent of whether it's currently ticking — this is what
+    // gates whether a resumed board should auto-resume ticking.
     const [elapsedMs, setElapsedMs] = useState(0);
     const startRef = useRef<number | null>(null);
+    const pausedElapsedRef = useRef(0);
+    const hasStartedRef = useRef(false);
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const [finalMs, setFinalMs] = useState(0);
 
+    // Hard stop: clears the interval only (used on win / starting a fresh
+    // board, where nothing needs to resume afterward).
     const stopTimer = useCallback(() => {
         if (timerRef.current) {
             clearInterval(timerRef.current);
             timerRef.current = null;
         }
+    }, []);
+
+    // (Re)start ticking from a given elapsed baseline. Shared by the first
+    // real interaction, resuming after a pause, and restoring a saved board.
+    const startTicking = useCallback((fromElapsedMs: number) => {
+        if (timerRef.current) return;
+        startRef.current = Date.now() - fromElapsedMs;
+        hasStartedRef.current = true;
+        timerRef.current = setInterval(() => {
+            if (startRef.current !== null) {
+                const ms = Date.now() - startRef.current;
+                pausedElapsedRef.current = ms;
+                setElapsedMs(ms);
+            }
+        }, 500);
+    }, []);
+
+    // Temporary pause (tab hidden / navigating away, board still resumable):
+    // freezes elapsed time instead of letting it keep advancing with the wall
+    // clock while backgrounded.
+    const pauseTimer = useCallback(() => {
+        if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+        }
+        if (startRef.current !== null) {
+            const ms = Date.now() - startRef.current;
+            pausedElapsedRef.current = ms;
+            setElapsedMs(ms);
+            startRef.current = null;
+        }
+    }, []);
+
+    const resumeTimer = useCallback(() => {
+        if (!hasStartedRef.current) return; // never interacted yet — nothing to resume
+        if (startRef.current !== null) return; // already ticking
+        startTicking(pausedElapsedRef.current);
+    }, [startTicking]);
+
+    // Always-fresh snapshot of state a background listener might need to read
+    // without a stale closure — updated after every render (no dep array).
+    const latestStateRef = useRef<{
+        phase: Phase;
+        data: WordSearchResponse | null;
+        found: Set<string>;
+        hintUnits: number;
+        hintEntryKey: string | null;
+        hintRevealCount: number;
+        hintLocationRevealed: boolean;
+    }>({
+        phase: "loading",
+        data: null,
+        found: new Set(),
+        hintUnits: 0,
+        hintEntryKey: null,
+        hintRevealCount: 0,
+        hintLocationRevealed: false,
+    });
+    useEffect(() => {
+        latestStateRef.current = { phase, data, found, hintUnits, hintEntryKey, hintRevealCount, hintLocationRevealed };
+    });
+
+    // Snapshot the current board to localStorage — no-op unless a board is
+    // actually in progress and unfinished. Reads elapsed time directly off
+    // startRef/pausedElapsedRef (not the `elapsedMs` state) so it's accurate
+    // even mid-tick, not lagged by up to one 500ms interval step.
+    const persistSnapshot = useCallback(() => {
+        const s = latestStateRef.current;
+        if (s.phase !== "playing" || !s.data || !s.data.grid) return;
+        if (s.found.size >= s.data.words.length) return;
+        const elapsedNow = startRef.current !== null ? Date.now() - startRef.current : pausedElapsedRef.current;
+        saveGameState({
+            data: s.data,
+            found: [...s.found],
+            elapsedMs: elapsedNow,
+            timerStarted: hasStartedRef.current,
+            hintUnits: s.hintUnits,
+            hintEntryKey: s.hintEntryKey,
+            hintRevealCount: s.hintRevealCount,
+            hintLocationRevealed: s.hintLocationRevealed,
+            rewardedBonusWords: [...rewardedBonusWordsRef.current],
+        });
     }, []);
 
     // Fetch a fresh randomized grid. Returns the payload, or null after switching
@@ -126,21 +246,57 @@ const WordSearchPage: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [token]);
 
-    // Load a fresh board and drop into play (resetting timer + found state).
+    // Load a fresh board and drop into play (resetting found state, then
+    // starting the count-up timer immediately — the player doesn't need to
+    // touch the grid first).
     const startBoard = useCallback((payload: WordSearchResponse) => {
         setData(payload);
         setFound(new Set());
         setHintUnits(0);
-        setHintCell(null);
+        setHintEntryKey(null);
+        setHintRevealCount(0);
+        setHintLocationRevealed(false);
+        setHintShakeNonce(0);
+        rewardedBonusWordsRef.current = new Set();
         setElapsedMs(0);
         setFinalMs(0);
         setPopupMinimized(false);
         startRef.current = null;
+        pausedElapsedRef.current = 0;
+        hasStartedRef.current = false;
         stopTimer();
         setPhase("playing");
-    }, [stopTimer]);
+        startTicking(0);
+    }, [stopTimer, startTicking]);
 
-    // Initial load on mount.
+    // Restore a previously saved board in place of fetching a new one — same
+    // end state as startBoard, but seeded from a SavedWordSearchState instead
+    // of a fresh server payload. Always resumes ticking from the saved
+    // elapsed time, even if the timer had never been started when the board
+    // was saved (older snapshots) — the timer now always runs while playing.
+    const restoreBoard = useCallback((saved: SavedWordSearchState) => {
+        setData(saved.data);
+        setFound(new Set(saved.found));
+        setHintUnits(saved.hintUnits);
+        setHintEntryKey(saved.hintEntryKey);
+        setHintRevealCount(saved.hintRevealCount);
+        setHintLocationRevealed(saved.hintLocationRevealed);
+        setHintShakeNonce(0);
+        rewardedBonusWordsRef.current = new Set(saved.rewardedBonusWords);
+        setFinalMs(0);
+        setPopupMinimized(false);
+        stopTimer();
+        pausedElapsedRef.current = saved.elapsedMs;
+        setElapsedMs(saved.elapsedMs);
+        startTicking(saved.elapsedMs);
+        // Re-warm TTS for the restored targets.
+        saved.data.words.forEach((w) => tts.prefetchSentence(w.entryKey, w.pinyin));
+        setPhase("playing");
+        // tts.prefetchSentence is stable; only re-create on auth change.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [stopTimer, startTicking]);
+
+    // Initial load on mount: resume a saved board if one exists, else fetch new.
     useEffect(() => {
         if (!token) {
             setBlockMessage("Sign in to play Word Search.");
@@ -149,6 +305,11 @@ const WordSearchPage: React.FC = () => {
         }
         let cancelled = false;
         (async () => {
+            const saved = loadGameState();
+            if (saved) {
+                if (!cancelled) restoreBoard(saved);
+                return;
+            }
             const payload = await fetchGrid();
             if (cancelled || !payload) return;
             startBoard(payload);
@@ -156,21 +317,48 @@ const WordSearchPage: React.FC = () => {
         return () => {
             cancelled = true;
         };
-    }, [token, fetchGrid, startBoard]);
+    }, [token, fetchGrid, startBoard, restoreBoard]);
 
-    // Tick the timer once per second while playing (after the first interaction).
+    // Pause on backgrounding (tab hidden / app switched away), resume on
+    // return — snapshot to localStorage first so a background pause that
+    // never comes back (tab closed while hidden) still isn't lost.
     useEffect(() => {
-        return () => stopTimer();
-    }, [stopTimer]);
+        if (phase !== "playing") return;
+        const handleVisibility = () => {
+            if (document.hidden) {
+                persistSnapshot();
+                pauseTimer();
+            } else {
+                resumeTimer();
+            }
+        };
+        document.addEventListener("visibilitychange", handleVisibility);
+        return () => document.removeEventListener("visibilitychange", handleVisibility);
+    }, [phase, persistSnapshot, pauseTimer, resumeTimer]);
 
+    // Safety net for a hard close/refresh (visibilitychange won't fire for these).
+    useEffect(() => {
+        if (phase !== "playing") return;
+        const handleUnload = () => persistSnapshot();
+        window.addEventListener("beforeunload", handleUnload);
+        return () => window.removeEventListener("beforeunload", handleUnload);
+    }, [phase, persistSnapshot]);
+
+    // Exiting the page (the leaf-page back arrow, or any other unmount) saves
+    // the board the same way backgrounding does.
+    useEffect(() => {
+        return () => {
+            persistSnapshot();
+            stopTimer();
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // The timer now starts as soon as the board loads (see startBoard /
+    // restoreBoard); this handler only needs to unlock audio inside the real
+    // pointer gesture so the first find narrates.
     const handleFirstInteraction = useCallback(() => {
-        // Unlock audio inside the real pointer gesture so the first find narrates.
         tts.unlockAudio();
-        if (startRef.current !== null) return;
-        startRef.current = Date.now();
-        timerRef.current = setInterval(() => {
-            if (startRef.current !== null) setElapsedMs(Date.now() - startRef.current);
-        }, 500);
     }, [tts]);
 
     // Log one Word Search completion (fire-and-forget), mirroring Bubble Match.
@@ -215,26 +403,73 @@ const WordSearchPage: React.FC = () => {
         });
         // Reward the successful query with one hint unit (capped at the bar size).
         setHintUnits((u) => Math.min(HINT_BAR_UNITS, u + 1));
-        // If the player found the word we were hinting, retire the pulse.
-        setHintCell((cell) =>
-            cell && word.cells[0][0] === cell[0] && word.cells[0][1] === cell[1] ? null : cell
-        );
-    }, [tts, markWordFound]);
+        // If the player found the word we were hinting, clear the row (and the
+        // grid's yellow location reveal, if it got that far) back to blank.
+        if (hintEntryKey === word.entryKey) {
+            setHintEntryKey(null);
+            setHintRevealCount(0);
+            setHintLocationRevealed(false);
+        }
+    }, [tts, markWordFound, hintEntryKey]);
 
-    // Spend a hint: drain HINT_COST units and pulse the first cell of a random
-    // still-unfound word (preferring one we aren't already pointing at).
+    // The first multi-character bonus word ("blue match") found on a board
+    // awards one hint unit, one time only — see WordSearchGrid's onBonusFound.
+    const onBonusFound = useCallback((bonus: BonusWord) => {
+        if (rewardedBonusWordsRef.current.has(bonus.entryKey)) return;
+        rewardedBonusWordsRef.current.add(bonus.entryKey);
+        setHintUnits((u) => Math.min(HINT_BAR_UNITS, u + 1));
+    }, []);
+
+    // Pressing hint is "usable" if the currently-hinted word's location is
+    // already revealed (re-shaking it is FREE — see useHint), or if there are
+    // spare units and any word is still unfound.
+    const canUseHint = useCallback((): boolean => {
+        if (!data) return false;
+        const current = data.words.find((w) => w.entryKey === hintEntryKey);
+        if (hintLocationRevealed && current && !found.has(current.entryKey)) return true;
+        if (hintUnits < HINT_COST) return false;
+        return data.words.some((w) => !found.has(w.entryKey));
+    }, [data, hintEntryKey, hintLocationRevealed, hintUnits, found]);
+
+    // Spend a hint:
+    // - Current hinted word already has its LOCATION revealed (fully spelled
+    //   out and nagged once before): re-shake it for FREE, no unit cost — the
+    //   player has already paid for this reveal, so repeat presses are just a
+    //   "where was that again?" nudge, not a new hint.
+    // - Current hinted word still unfound, pinyin units left to reveal: drain
+    //   HINT_COST and reveal one more.
+    // - Current hinted word still unfound, fully spelled out for the first
+    //   time: drain HINT_COST, lock onto it, and reveal its actual grid
+    //   location in yellow (persists until found).
+    // - No active hint, or the active word was just found: drain HINT_COST,
+    //   pick a new random unfound word, and reveal its first unit.
     const useHint = useCallback(() => {
-        if (!data || hintUnits < HINT_COST) return;
+        if (!data) return;
+        const current = data.words.find((w) => w.entryKey === hintEntryKey);
+        if (current && !found.has(current.entryKey)) {
+            if (hintLocationRevealed) {
+                setHintShakeNonce((n) => n + 1);
+                return;
+            }
+            if (hintUnits < HINT_COST) return;
+            if (hintRevealCount < countPinyinUnits(current.pinyin)) {
+                setHintRevealCount((c) => c + 1);
+            } else {
+                setHintLocationRevealed(true);
+                setHintShakeNonce((n) => n + 1);
+            }
+            setHintUnits((u) => u - HINT_COST);
+            return;
+        }
+        if (hintUnits < HINT_COST) return;
         const unfound = data.words.filter((w) => !found.has(w.entryKey));
         if (unfound.length === 0) return;
-        const notCurrent = unfound.filter(
-            (w) => !hintCell || w.cells[0][0] !== hintCell[0] || w.cells[0][1] !== hintCell[1]
-        );
-        const pool = notCurrent.length > 0 ? notCurrent : unfound;
-        const pick = pool[Math.floor(Math.random() * pool.length)];
-        setHintCell(pick.cells[0]);
+        const pick = unfound[Math.floor(Math.random() * unfound.length)];
+        setHintEntryKey(pick.entryKey);
+        setHintRevealCount(1);
+        setHintLocationRevealed(false);
         setHintUnits((u) => u - HINT_COST);
-    }, [data, hintUnits, found, hintCell]);
+    }, [data, hintUnits, hintEntryKey, hintRevealCount, hintLocationRevealed, found]);
 
     // Win when every target is found. Freeze the timer, capture the final time.
     useEffect(() => {
@@ -245,26 +480,21 @@ const WordSearchPage: React.FC = () => {
             setFinalMs(ms);
             setPopupMinimized(false);
             recordWin();
+            clearGameState();
             setPhase("won");
         }
     }, [found, phase, data, elapsedMs, stopTimer, recordWin]);
 
-    const playAgain = useCallback(async () => {
+    // Discard the current board (win-screen "Play Again", or the header
+    // restart button mid-game) and load a fresh one.
+    const resetBoard = useCallback(async () => {
+        clearGameState();
         tts.unlockAudio();
         setPhase("loading");
         const payload = await fetchGrid();
         if (!payload) return; // fetchGrid already switched to blocked
         startBoard(payload);
     }, [tts, fetchGrid, startBoard]);
-
-    // Collapse the two boolean settings into a single 3-state control. The button
-    // cycles off → plain → color → off; only "on" states write showPinyinColor.
-    const pinyinMode: PinyinMode = !showPinyin ? "off" : showPinyinColor ? "color" : "plain";
-    const cyclePinyin = useCallback(() => {
-        if (!showPinyin) update({ showPinyin: true, showPinyinColor: false });
-        else if (!showPinyinColor) update({ showPinyinColor: true });
-        else update({ showPinyin: false });
-    }, [showPinyin, showPinyinColor, update]);
 
     const renderCentered = (children: React.ReactNode) => (
         <Box
@@ -352,17 +582,25 @@ const WordSearchPage: React.FC = () => {
                         {found.size}/{data.words.length}
                     </Typography>
                 </Box>
-                <WordSearchWordList words={data.words} found={found} />
+                <WordSearchWordList words={data.words} found={found} hintedEntryKey={hintEntryKey} />
+
+                <WordSearchHintRow
+                    word={data.words.find((w) => w.entryKey === hintEntryKey) ?? null}
+                    revealCount={hintRevealCount}
+                />
 
                 <WordSearchGrid
                     ref={gridRef}
                     grid={data.grid}
                     words={data.words}
                     found={found}
+                    bonusWords={data.bonusWords}
                     showPinyin={showPinyin}
                     showPinyinColor={showPinyinColor}
-                    hintCell={hintCell}
+                    hintedWord={hintLocationRevealed ? data.words.find((w) => w.entryKey === hintEntryKey) ?? null : null}
+                    hintShakeNonce={hintShakeNonce}
                     onFound={onFound}
+                    onBonusFound={onBonusFound}
                     onFirstInteraction={handleFirstInteraction}
                 />
 
@@ -380,7 +618,7 @@ const WordSearchPage: React.FC = () => {
                             Time {formatTime(finalMs)} — {medal.medal} medal
                         </Typography>
                         <Box className="word-search__win-actions" sx={{ display: "flex", flexDirection: "column", gap: 1.5, width: "100%", maxWidth: 260 }}>
-                            <Button className="word-search__play-again" variant="contained" onClick={playAgain} sx={{ borderRadius: "12px", textTransform: "none", fontWeight: WEIGHT.bold }}>
+                            <Button className="word-search__play-again" variant="contained" onClick={resetBoard} sx={{ borderRadius: "12px", textTransform: "none", fontWeight: WEIGHT.bold }}>
                                 Play Again
                             </Button>
                             <Button className="word-search__back-to-games" variant="outlined" onClick={() => navigate("/games")} sx={{ borderRadius: "12px", textTransform: "none" }}>
@@ -394,22 +632,32 @@ const WordSearchPage: React.FC = () => {
     }
 
     return (
-        <LeafPage
-            title="Word Search"
-            onBack={() => navigate("/games")}
-            rightContent={
-                <WordSearchHeaderControls
-                    pinyinMode={pinyinMode}
-                    onCyclePinyin={cyclePinyin}
-                    showTimer={showTimer}
-                    onToggleTimer={() => setShowTimer((v) => !v)}
-                    hintReady={phase === "playing" && hintUnits >= HINT_COST}
-                    onHint={useHint}
-                />
-            }
-        >
-            {content}
-        </LeafPage>
+        <>
+            <LeafPage
+                title="Word Search"
+                onBack={() => navigate("/games")}
+                rightContent={
+                    <WordSearchHeaderControls
+                        hintReady={phase === "playing" && canUseHint()}
+                        onHint={useHint}
+                        onRestart={resetBoard}
+                        onSettingsClick={() => setSettingsOpen(true)}
+                    />
+                }
+            >
+                {content}
+            </LeafPage>
+            <WordSearchSettingsDialog
+                open={settingsOpen}
+                onClose={() => setSettingsOpen(false)}
+                showPinyin={showPinyin}
+                onToggleShowPinyin={(v) => update({ showPinyin: v })}
+                showPinyinColor={showPinyinColor}
+                onToggleShowPinyinColor={(v) => update({ showPinyinColor: v })}
+                showTimer={showTimer}
+                onToggleShowTimer={(v) => updateWsSettings({ showTimer: v })}
+            />
+        </>
     );
 };
 

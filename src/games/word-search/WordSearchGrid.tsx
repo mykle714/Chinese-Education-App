@@ -3,10 +3,17 @@ import { Box, Popper, Typography } from "@mui/material";
 import ForeignText from "../../components/ForeignText";
 import { stripParentheses } from "../../utils/definitionUtils";
 import { FONTS } from "../../theme/fonts";
-import { SIZE } from "../../theme/scale";
+import { SIZE, WEIGHT } from "../../theme/scale";
 import { COLORS } from "../../theme/colors";
-import { CELL_SIZE, CELL_GAP, GRID_MARGIN, DISC_EXTRA_OFFSET_Y_FRAC } from "./constants";
-import type { Coord, GridCell, PlacedWord } from "./types";
+import {
+    CELL_SIZE,
+    CELL_GAP,
+    GRID_MARGIN,
+    SELECTION_EXTRA_OFFSET_Y_FRAC,
+    SELECTION_EXTRA_OFFSET_Y_FRAC_NO_PINYIN,
+    MISS_FLASH_MS,
+} from "./constants";
+import type { BonusWord, Coord, GridCell, PlacedWord } from "./types";
 
 /** Imperative handle so the page can clear an in-progress selection (e.g. on a
  *  background tap). */
@@ -19,12 +26,32 @@ interface WordSearchGridProps {
     words: PlacedWord[];
     /** entryKeys already found — drives locked highlights + remaining targets. */
     found: Set<string>;
+    /**
+     * Every det headword composed exclusively of characters somewhere on this
+     * grid (not necessarily a target, not guaranteed traceable — see
+     * `types.ts`). A miss that spells one of these is a "bonus" find: it
+     * flashes blue instead of red and reveals the word's definition in a
+     * popup, instead of the plain red miss shake.
+     */
+    bonusWords: BonusWord[];
     showPinyin: boolean;
     showPinyinColor: boolean;
-    /** First cell of the currently-hinted word (pulsed until found), or null. */
-    hintCell: Coord | null;
+    /**
+     * Once a hint has fully spelled out a word's pinyin (see WordSearchHintRow)
+     * and the player presses hint again anyway, its cells are revealed here in
+     * yellow — persistently, until the word is found — instead of advancing to
+     * a different word. Null when no word is in that "location revealed" state.
+     */
+    hintedWord: PlacedWord | null;
+    /** Bumped each time hint is pressed while `hintedWord` is already showing,
+     *  to retrigger the nag shake on its cells (nonce trick, see `invalid`). */
+    hintShakeNonce: number;
     /** A target's path was traced correctly. */
     onFound: (word: PlacedWord) => void;
+    /** A multi-character bonus word was traced (the "blue match" — see
+     *  `isMultiCharBonus`). Not fired for the colorless single-character
+     *  bonus case. */
+    onBonusFound?: (bonus: BonusWord) => void;
     /** Fired on the player's first interaction, to start the timer. */
     onFirstInteraction?: () => void;
 }
@@ -142,10 +169,13 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
     grid,
     words,
     found,
+    bonusWords,
     showPinyin,
     showPinyinColor,
-    hintCell,
+    hintedWord,
+    hintShakeNonce,
     onFound,
+    onBonusFound,
     onFirstInteraction,
 }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -172,14 +202,49 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
     const [popupWord, setPopupWord] = useState<PlacedWord | null>(null);
     const [popupAnchorRect, setPopupAnchorRect] = useState<DOMRect | null>(null);
 
+    // Lookup from a word's Chinese text to its bonus-word record, so `submit`
+    // can check a traced-but-non-target path's spelled-out characters in O(1).
+    const bonusWordMap = useMemo(() => new Map(bonusWords.map((w) => [w.entryKey, w])), [bonusWords]);
+
+    // A just-submitted query that traced no target. Kept alive (path isn't
+    // cleared yet) so the traced cells can show feedback before the selection
+    // resets. `nonce` restarts the CSS shake animation on back-to-back wrong
+    // guesses. `bonus` is set when the traced (non-target) path still spells a
+    // real det word (see `bonusWords`):
+    //   - length >= 2: the flash turns blue instead of red, shakes the same as
+    //     a miss, and the word's definition appears in the review-popup style.
+    //   - length === 1: no color change and no shake (a single character is a
+    //     much smaller "find" than a whole word) — just the definition popup.
+    // Either way a bonus match has NO auto-dismiss timer (unlike a true miss,
+    // which auto-clears after MISS_FLASH_MS): it stays up until the player
+    // taps elsewhere, handled by `onPointerDown`/`clearSelection` below.
+    const [invalid, setInvalid] = useState<{ nonce: number; bonus: BonusWord | null } | null>(null);
+    const invalidTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // Whether the current bonus match is 2+ characters — the only case that
+    // gets the blue/shake "miss-flash" treatment (a single character just
+    // shows its popup with no highlight change).
+    const isMultiCharBonus = (bonus: BonusWord | null): boolean => !!bonus && [...bonus.entryKey].length > 1;
+
     // Let the page clear an in-progress selection on a background tap. Also closes
     // any open found-word popup.
     const clearSelection = useCallback(() => {
+        if (invalidTimeoutRef.current) {
+            clearTimeout(invalidTimeoutRef.current);
+            invalidTimeoutRef.current = null;
+        }
         setPathBoth([]);
         draggingRef.current = false;
         setPopupWord(null);
+        setInvalid(null);
     }, [setPathBoth]);
     useImperativeHandle(ref, () => ({ clearSelection }), [clearSelection]);
+
+    // Any pending invalid-flash timeout must not fire after unmount.
+    useEffect(() => {
+        return () => {
+            if (invalidTimeoutRef.current) clearTimeout(invalidTimeoutRef.current);
+        };
+    }, []);
 
     // Cells locked as part of a found word (disjoint — words never overlap), plus
     // a reverse index from a locked cell back to its word so a tap can resolve
@@ -196,6 +261,16 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
         if (found.has(w.entryKey)) w.cells.forEach(([r, c]) => foundCells.add(key(r, c)));
     }
 
+    // Cells of the hint's revealed-location word (see `hintedWord` above), for
+    // the per-cell shake below. Empty once the word is found.
+    const hintedCells = useMemo(() => {
+        const set = new Set<string>();
+        if (hintedWord && !found.has(hintedWord.entryKey)) {
+            hintedWord.cells.forEach(([r, c]) => set.add(key(r, c)));
+        }
+        return set;
+    }, [hintedWord, found]);
+
     // DOM refs for each cell, keyed the same as `key()`, so bridge geometry can be
     // measured from actual layout (cell size varies with pinyin/font — see
     // useFitScale above) rather than assumed from constants.
@@ -208,21 +283,6 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
         []
     );
 
-    // Diameter (px, in the inner grid's unscaled coordinate space) of the circular
-    // per-cell highlight disc. Derived from the smaller of a cell's width/height —
-    // cells aren't always square (pinyin adds a row, making cells taller than
-    // wide), so sizing off `min()` and centering the disc keeps it a true circle
-    // instead of stretching into an ellipse. All cells share one grid track size,
-    // so a single sample is representative of every cell.
-    const [cellDiameter, setCellDiameter] = useState(0);
-
-    // Vertical correction (px) so the highlight disc centers on the character
-    // glyph itself rather than the char+pinyin block. With pinyin on, the small
-    // pinyin line sits above the character, so the block's geometric center
-    // (what flex centering gives us for free) sits above the glyph's own visual
-    // center — this nudges the disc down to match. Zero when pinyin is off.
-    const [discOffsetY, setDiscOffsetY] = useState(0);
-
     // Row track height (px), forced equal to `columnWidth + CELL_GAP` so the
     // vertical distance between adjacent rows' character centers matches the
     // horizontal distance between adjacent columns'. Pinyin makes a cell's own
@@ -232,13 +292,18 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
     // measured (renders with normal auto row sizing for that first pass).
     const [rowPitchPx, setRowPitchPx] = useState<number | null>(null);
 
-    // "Bridge" bars connecting consecutive cells of a multi-cell highlight (the
-    // in-progress yellow drag, and each found/reviewing green word) so the circular
-    // per-cell highlights read as one continuous shape rather than disconnected
-    // dots. Measured in the inner grid's own (unscaled) coordinate space via
-    // offsetLeft/Top/Width/Height, which — unlike getBoundingClientRect — ignore
-    // the CSS `scale()` transform, so no rescaling is needed here.
-    const [bridgeRects, setBridgeRects] = useState<
+    // Selection shapes: one continuous stadium (a rounded rectangle whose corner
+    // radius is half its cross-axis thickness, so the ends read as full
+    // semicircles) per consecutive pair of cells in a highlight (the in-progress
+    // yellow drag, and each found/reviewing green word), plus a single circular
+    // node (radius = half the diameter) for a one-cell highlight, which has no
+    // pair to connect. Consecutive stadiums overlap fully at their shared cell so
+    // a multi-cell highlight — including a snaking, multi-turn one — reads as one
+    // unbroken shape with no separate cap/connector elements. Measured in the
+    // inner grid's own (unscaled) coordinate space via offsetLeft/Top/Width/Height,
+    // which — unlike getBoundingClientRect — ignore the CSS `scale()` transform,
+    // so no rescaling is needed here.
+    const [selectionRects, setSelectionRects] = useState<
         { key: string; left: number; top: number; width: number; height: number; radius: number; color: string }[]
     >([]);
 
@@ -247,10 +312,9 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
     // vertical extension is needed). Adjacent cells' extensions meet exactly at
     // the gutter's midpoint, so together they physically claim the whole gap
     // with no seam left un-owned by any element — the gap only ever *looks*
-    // empty. Same measured-DOM approach as `bridgeRects` below, kept as a
+    // empty. Same measured-DOM approach as `selectionRects` below, kept as a
     // separate overlay so the visible per-cell box (and everything measured off
-    // its offsetWidth/Left — row pitch, disc diameter, bridge geometry) is
-    // untouched.
+    // its offsetWidth/Left — row pitch, selection geometry) is untouched.
     const [hitboxRects, setHitboxRects] = useState<
         { key: string; row: number; col: number; left: number; top: number; width: number; height: number }[]
     >([]);
@@ -262,7 +326,7 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
         // Pass 1: measure the natural column width (an axis the row-pitch change
         // never touches) and lock the row track to match + CELL_GAP. Bail out and
         // let the re-render with the new fixed row height land before measuring
-        // anything that depends on it (diameter, disc offset, bridge geometry).
+        // anything that depends on it (diameter, center offset, selection geometry).
         const columnWidth = sample.offsetWidth;
         const targetPitch = columnWidth + CELL_GAP;
         if (rowPitchPx === null || Math.abs(rowPitchPx - targetPitch) > 0.5) {
@@ -278,7 +342,6 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
 
         const rowHeight = sample.offsetHeight;
         const diameter = Math.min(columnWidth, rowHeight) * 1.72;
-        setCellDiameter(diameter);
         const thickness = diameter;
 
         let offsetY = 0;
@@ -289,13 +352,30 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
             const charCenterFrac = (charRect.top + charRect.height / 2 - cellRect.top) / cellRect.height;
             offsetY = (charCenterFrac - 0.5) * rowHeight;
         }
-        // Bridges connect disc centers, so they share the same total offset
-        // (glyph-centering + the extra tunable nudge) as the discs themselves.
-        offsetY += diameter * DISC_EXTRA_OFFSET_Y_FRAC;
-        setDiscOffsetY(offsetY);
+        // Every selection shape is centered on cell centers, so they share the
+        // same total offset (glyph-centering + the extra tunable nudge).
+        offsetY += diameter * (showPinyin ? SELECTION_EXTRA_OFFSET_Y_FRAC : SELECTION_EXTRA_OFFSET_Y_FRAC_NO_PINYIN);
 
         const rects: { key: string; left: number; top: number; width: number; height: number; radius: number; color: string }[] = [];
-        const addBridges = (coords: Coord[], color: string, groupKey: string) => {
+        const addSelectionShapes = (coords: Coord[], color: string, groupKey: string) => {
+            if (coords.length === 1) {
+                // No pair to connect — draw a standalone circular node (a stadium
+                // degenerates to a circle when its length is zero).
+                const box = cellBox(coords[0][0], coords[0][1]);
+                if (!box) return;
+                const cx = box.left + box.width / 2;
+                const cy = box.top + box.height / 2 + offsetY;
+                rects.push({
+                    key: `${groupKey}-0`,
+                    left: cx - diameter / 2,
+                    top: cy - diameter / 2,
+                    width: diameter,
+                    height: diameter,
+                    radius: diameter / 2,
+                    color,
+                });
+                return;
+            }
             for (let i = 0; i < coords.length - 1; i++) {
                 const a = cellBox(coords[i][0], coords[i][1]);
                 const b = cellBox(coords[i + 1][0], coords[i + 1][1]);
@@ -304,26 +384,54 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                 const acy = a.top + a.height / 2 + offsetY;
                 const bcx = b.left + b.width / 2;
                 const bcy = b.top + b.height / 2 + offsetY;
+                // The box extends `thickness / 2` past each cell center on the
+                // long axis (not just center-to-center) — a stadium's semicircle
+                // caps stick out beyond its straight flat sides, so rounding a box
+                // that stops exactly at the centers would pinch the corners inward
+                // instead of bulging them outward into full semicircles there.
                 const rect =
                     acy === bcy
-                        ? { left: Math.min(acx, bcx), top: acy - thickness / 2, width: Math.abs(bcx - acx), height: thickness }
-                        : { left: acx - thickness / 2, top: Math.min(acy, bcy), width: thickness, height: Math.abs(bcy - acy) };
-                // Square corners, not a stadium (radius: thickness/2) — the discs
-                // at each end (painted on top, see the per-cell disc above) already
-                // supply the rounded caps, so the bridge itself only needs to fill
-                // the straight-sided connector between them. A fully-rounded bridge
-                // at this thickness (== disc diameter) reads as just another circle
-                // rather than a tube.
-                rects.push({ key: `${groupKey}-${i}`, ...rect, radius: 0, color });
+                        ? {
+                              left: Math.min(acx, bcx) - thickness / 2,
+                              top: acy - thickness / 2,
+                              width: Math.abs(bcx - acx) + thickness,
+                              height: thickness,
+                          }
+                        : {
+                              left: acx - thickness / 2,
+                              top: Math.min(acy, bcy) - thickness / 2,
+                              width: thickness,
+                              height: Math.abs(bcy - acy) + thickness,
+                          };
+                // Fully rounded (radius = half the cross-axis thickness) — a
+                // stadium whose semicircular ends sit exactly at the two cell
+                // centers. Consecutive segments' end-caps coincide at their shared
+                // cell, so a snaking multi-cell path reads as one unbroken tube
+                // with no separate cap elements needed.
+                rects.push({ key: `${groupKey}-${i}`, ...rect, radius: thickness / 2, color });
             }
         };
-        addBridges(path, COLORS.yellowAccent, "sel");
+        // A single-character bonus match shows no highlight at all — not even
+        // the normal yellow in-progress color — just its definition popup.
+        const selectionColor = invalid
+            ? invalid.bonus
+                ? (isMultiCharBonus(invalid.bonus) ? COLORS.blueAccent : null)
+                : COLORS.redAccent
+            : COLORS.yellowAccent;
+        if (selectionColor) addSelectionShapes(path, selectionColor, "sel");
         for (const w of words) {
             if (!found.has(w.entryKey)) continue;
             const reviewing = popupWord?.entryKey === w.entryKey;
-            addBridges(w.cells, reviewing ? "#A5D6A7" : "#C8E6C9", `found-${w.entryKey}`);
+            addSelectionShapes(w.cells, reviewing ? "#A5D6A7" : "#C8E6C9", `found-${w.entryKey}`);
         }
-        setBridgeRects(rects);
+        // A hint that's already fully spelled out its word's pinyin and got
+        // pressed again reveals the word's actual path — persistently, until
+        // found — instead of moving on to a different word (see WordSearchPage's
+        // `useHint`). Drawn under the same yellow as an in-progress selection.
+        if (hintedWord && !found.has(hintedWord.entryKey)) {
+            addSelectionShapes(hintedWord.cells, COLORS.yellowAccent, `hint-${hintedWord.entryKey}`);
+        }
+        setSelectionRects(rects);
 
         const halfGap = CELL_GAP / 2;
         const hitboxes: { key: string; row: number; col: number; left: number; top: number; width: number; height: number }[] = [];
@@ -344,7 +452,7 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
         }
         setHitboxRects(hitboxes);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [path, words, found, popupWord, scale, grid, showPinyin, rowPitchPx]);
+    }, [path, words, found, popupWord, scale, grid, showPinyin, rowPitchPx, invalid, hintedWord]);
 
     const markInteracted = useCallback(() => {
         if (interactedRef.current) return;
@@ -364,14 +472,15 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
         return Number.isFinite(r) && Number.isFinite(c) ? [r, c] : null;
     };
 
-    // Viewport rect anchoring a found word's popup: the union of the word's cells
-    // on its topmost row (so a snaking/multi-row word still anchors its popup over
-    // the first line). getBoundingClientRect already reflects the CSS scale, so the
-    // Popper lands correctly over the shrunk grid.
-    const anchorRectForWord = useCallback((word: PlacedWord): DOMRect | null => {
+    // Viewport rect anchoring a popup over a set of cells: the union of the
+    // topmost row among them (so a snaking/multi-row word still anchors its
+    // popup over the first line). getBoundingClientRect already reflects the
+    // CSS scale, so the Popper lands correctly over the shrunk grid. Shared by
+    // the found-word review popup and the bonus-word miss popup.
+    const anchorRectForCells = useCallback((cells: Coord[]): DOMRect | null => {
         const inner = innerRef.current;
         if (!inner) return null;
-        const rects = word.cells
+        const rects = cells
             .map(([r, c]) => inner.querySelector(`[data-row="${r}"][data-col="${c}"]`))
             .filter((el): el is Element => el != null)
             .map((el) => el.getBoundingClientRect());
@@ -394,14 +503,38 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
     // Keep the popup anchor in sync with the open word and the current fit scale
     // (a resize re-scales the grid, moving every cell's viewport rect).
     useLayoutEffect(() => {
-        setPopupAnchorRect(popupWord ? anchorRectForWord(popupWord) : null);
-    }, [popupWord, scale, anchorRectForWord]);
+        setPopupAnchorRect(popupWord ? anchorRectForCells(popupWord.cells) : null);
+    }, [popupWord, scale, anchorRectForCells]);
+
+    // Anchor for the bonus-word miss popup — mirrors the found-word popup above,
+    // but keyed off the traced path (`invalid.bonus`) instead of a found word.
+    const [bonusAnchorRect, setBonusAnchorRect] = useState<DOMRect | null>(null);
+    useLayoutEffect(() => {
+        setBonusAnchorRect(invalid?.bonus ? anchorRectForCells(path) : null);
+        // `path` is intentionally excluded: a bonus match has no auto-dismiss
+        // timer, so `path` and `invalid` are always cleared together in the same
+        // tick (`onPointerDown` / `clearSelection`) — re-running this effect off
+        // `path` too would just re-measure the identical rect on every render.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [invalid, scale, anchorRectForCells]);
+
+    // The single review popup shown at a time: either a tapped found word, or a
+    // just-missed bonus word — both render through the same Popper/style below.
+    // `entryKey` is carried through and prepended in the correct reading order
+    // (§4) because the grid's snaking path can visually read in any direction —
+    // up/down/backwards — so the on-grid glyphs alone don't reliably show the
+    // word in order.
+    const activePopup = popupWord
+        ? { rect: popupAnchorRect, entryKey: popupWord.entryKey, definition: popupWord.definition }
+        : invalid?.bonus
+        ? { rect: bonusAnchorRect, entryKey: invalid.bonus.entryKey, definition: invalid.bonus.definition }
+        : null;
 
     // Popper takes a "virtual element" anchor (an object exposing
     // getBoundingClientRect); rebuild it whenever the rect changes so Popper reflows.
     const popperAnchorEl = useMemo(
-        () => (popupAnchorRect ? { getBoundingClientRect: () => popupAnchorRect, nodeType: 1 } : null),
-        [popupAnchorRect]
+        () => (activePopup?.rect ? { getBoundingClientRect: () => activePopup.rect!, nodeType: 1 } : null),
+        [activePopup]
     );
 
     // Client-side check against the working set: does this path trace a not-yet-
@@ -425,21 +558,50 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
 
     // Finalize a selection on pointer release. Check the working set client-side
     // (any length — so single-character targets register too); a matched target
-    // clears + idles inside tryFoundTarget. Anything else just clears the trail.
-    // A lone tap counts as a one-character query.
+    // clears + idles inside tryFoundTarget. Anything else holds the traced path
+    // visible instead of resetting silently — a true miss auto-clears (red +
+    // shake) after MISS_FLASH_MS, while a bonus-word match (see `bonusWords`)
+    // has no timer at all: it stays up, with its definition popup, until the
+    // player dismisses it by tapping elsewhere. A lone tap counts as a
+    // one-character query, so a single character that's itself a headword
+    // resolves here too (as a no-shake, no-color-change bonus match).
     const submit = useCallback(
         (selection: Coord[]) => {
             if (selection.length === 0) return;
             if (tryFoundTarget(selection)) return;
-            clearSelection();
+            draggingRef.current = false;
+            const forward = selection.map(([r, c]) => grid[r]?.[c]?.char ?? "").join("");
+            const reversed = [...forward].reverse().join("");
+            const bonus = bonusWordMap.get(forward) ?? bonusWordMap.get(reversed) ?? null;
+            setInvalid((prev) => ({ nonce: (prev?.nonce ?? 0) + 1, bonus }));
+            if (bonus) {
+                if (isMultiCharBonus(bonus)) onBonusFound?.(bonus);
+                return; // no auto-dismiss — stays until the player taps elsewhere
+            }
+            invalidTimeoutRef.current = setTimeout(() => {
+                invalidTimeoutRef.current = null;
+                clearSelection();
+            }, MISS_FLASH_MS);
         },
-        [tryFoundTarget, clearSelection]
+        [tryFoundTarget, clearSelection, grid, bonusWordMap, onBonusFound]
     );
 
     const onPointerDown = useCallback(
         (e: React.PointerEvent) => {
             const cell = cellFromPoint(e.clientX, e.clientY);
             if (!cell) return;
+            // Any new interaction dismisses a still-showing miss/bonus flash first
+            // — checked before the found-word branch below so tapping a locked
+            // word while a bonus popup is open (which has no auto-dismiss timer)
+            // still clears the stale trail instead of leaving it drawn underneath.
+            if (invalidTimeoutRef.current) {
+                clearTimeout(invalidTimeoutRef.current);
+                invalidTimeoutRef.current = null;
+            }
+            if (invalid) {
+                setInvalid(null);
+                setPathBoth([]);
+            }
             // A tap on a cell locked by an already-found word never contributes to
             // a new find (words are disjoint), so treat it as a review tap: toggle
             // that word's English gloss popup and skip the drag entirely.
@@ -456,7 +618,45 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
             setPathBoth([cell]);
             (e.target as Element).setPointerCapture?.(e.pointerId);
         },
-        [markInteracted, setPathBoth, foundWordByCell, toggleWordPopup]
+        [markInteracted, setPathBoth, foundWordByCell, toggleWordPopup, invalid]
+    );
+
+    // Extend the in-progress path to `cell` — shared by `onPointerMove` (each
+    // intermediate sample) and `onPointerUp` (one final sample at release, see
+    // below). Returns the extended path without committing it to state, so the
+    // caller can decide whether to set it or submit it directly.
+    const extendPathTo = useCallback(
+        (cur: Coord[], cell: Coord): Coord[] => {
+            const last = cur[cur.length - 1];
+            if (!last || eq(cell, last)) return cur;
+
+            // Backtrack onto an earlier cell already in the path → shrink back to
+            // it. Checking the whole path (not just the second-to-last cell)
+            // covers a fast pointer move that skips straight past several cells
+            // of an existing trail on its way back.
+            const backIdx = cur.findIndex((c) => eq(c, cell));
+            if (backIdx !== -1) return cur.slice(0, backIdx + 1);
+
+            // Cells locked by an already-found word are off-limits to a new
+            // selection (words are disjoint, so re-tracing one can never
+            // contribute to a find) — ignore the sample instead of extending
+            // onto it.
+            if (foundCells.has(key(cell[0], cell[1]))) return cur;
+
+            // Extend to an orthogonal neighbor.
+            if (adjacent(cell, last)) return [...cur, cell];
+
+            // The pointer jumped to a non-adjacent cell (fast swipe outrunning
+            // elementFromPoint sampling) — bridge the gap with the shortest
+            // orthogonal path from the last selected cell instead of letting the
+            // highlight stall. Cells already in the path, as well as found-word
+            // cells, are treated as blocked so the bridge can't cross/reuse the
+            // existing trail or pass through a locked word.
+            const foundCoords: Coord[] = [...foundCells].map((k) => k.split(",").map(Number) as Coord);
+            const bridge = shortestOrthogonalPath(last, cell, [...cur, ...foundCoords], grid.length, grid[0]?.length ?? 0);
+            return bridge ? [...cur, ...bridge] : cur;
+        },
+        [grid, foundCells]
     );
 
     const onPointerMove = useCallback(
@@ -465,40 +665,30 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
             const cell = cellFromPoint(e.clientX, e.clientY);
             if (!cell) return;
             const cur = pathRef.current;
-            const last = cur[cur.length - 1];
-            if (!last || eq(cell, last)) return;
-
-            // Backtrack onto an earlier cell already in the path → shrink back to
-            // it. Checking the whole path (not just the second-to-last cell)
-            // covers a fast pointer move that skips straight past several cells
-            // of an existing trail on its way back.
-            const backIdx = cur.findIndex((c) => eq(c, cell));
-            if (backIdx !== -1) {
-                setPathBoth(cur.slice(0, backIdx + 1));
-                return;
-            }
-            // Extend to an orthogonal neighbor.
-            if (adjacent(cell, last)) {
-                setPathBoth([...cur, cell]);
-                return;
-            }
-            // The pointer jumped to a non-adjacent cell (fast swipe outrunning
-            // elementFromPoint sampling) — bridge the gap with the shortest
-            // orthogonal path from the last selected cell instead of letting the
-            // highlight stall. Cells already in the path are treated as blocked
-            // so the bridge can't cross/reuse the existing trail.
-            const bridge = shortestOrthogonalPath(last, cell, cur, grid.length, grid[0]?.length ?? 0);
-            if (bridge) setPathBoth([...cur, ...bridge]);
+            const extended = extendPathTo(cur, cell);
+            if (extended !== cur) setPathBoth(extended);
         },
-        [setPathBoth, grid]
+        [setPathBoth, extendPathTo]
     );
 
     // Releasing (or lifting after a single tap) submits the traced path as a
-    // query, then clears the selection regardless of the outcome.
-    const onPointerUp = useCallback(() => {
-        if (!draggingRef.current) return;
-        submit(pathRef.current);
-    }, [submit]);
+    // query, then clears the selection regardless of the outcome. A very fast
+    // drag can outrun pointermove sampling entirely — zero move events fire
+    // between down and up — leaving `pathRef.current` stuck at just the
+    // starting cell even though the finger crossed several more. Pointerup
+    // carries the release coordinates, so take one last sample here and extend
+    // the path to it (same adjacent/backtrack/bridge logic as a move event)
+    // before submitting, instead of submitting the stale one-cell path.
+    const onPointerUp = useCallback(
+        (e: React.PointerEvent) => {
+            if (!draggingRef.current) return;
+            const cell = cellFromPoint(e.clientX, e.clientY);
+            const cur = pathRef.current;
+            const final = cell ? extendPathTo(cur, cell) : cur;
+            submit(final);
+        },
+        [submit, extendPathTo]
+    );
 
     // Clear any in-progress selection whenever a find changes the board (so a
     // stale trail doesn't linger over newly-locked cells).
@@ -549,8 +739,9 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                     WebkitUserSelect: "none",
                 }}
             >
-                {/* Bridge bars connecting consecutive cells of a multi-cell highlight.
-                    Absolutely positioned within the grid's padding box, so its
+                {/* Selection stadiums/nodes (see `selectionRects` above) — the single
+                    shape type covering both in-progress drags and found/reviewing
+                    words. Absolutely positioned within the grid's padding box, so its
                     coordinate space matches each cell's offsetLeft/Top exactly. Grid
                     items with a z-index (all our cells set one below) always paint
                     above absolutely-positioned siblings per the CSS Grid painting
@@ -559,17 +750,17 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                     aria-hidden
                     sx={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 0 }}
                 >
-                    {bridgeRects.map((b) => (
+                    {selectionRects.map((r) => (
                         <Box
-                            key={b.key}
+                            key={r.key}
                             sx={{
                                 position: "absolute",
-                                left: b.left,
-                                top: b.top,
-                                width: b.width,
-                                height: b.height,
-                                borderRadius: `${b.radius}px`,
-                                backgroundColor: b.color,
+                                left: r.left,
+                                top: r.top,
+                                width: r.width,
+                                height: r.height,
+                                borderRadius: `${r.radius}px`,
+                                backgroundColor: r.color,
                             }}
                         />
                     ))}
@@ -609,16 +800,27 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                         // Cells of the found word whose gloss popup is open — ringed
                         // so it reads as the actively-reviewed word.
                         const isPopup = !!popupWord && popupWord.entryKey === foundWordByCell.get(key(r, c))?.entryKey;
-                        // Pulse the hinted cell until it's traced/found (a found
-                        // or in-progress highlight takes visual precedence).
-                        const isHint = !isFound && !selected && !!hintCell && hintCell[0] === r && hintCell[1] === c;
-                        // Selected/found/reviewing highlights render as a fixed-size
-                        // circular disc (sized off the cell's smaller dimension, see
-                        // `cellDiameter` above) so they stay true circles even when
-                        // pinyin makes cells taller than wide, and read as beads
-                        // strung along the bridge bars.
-                        const isCircle = selected || isFound;
-                        const circleColor = selected ? COLORS.yellowAccent : isPopup ? "#A5D6A7" : isFound ? "#C8E6C9" : undefined;
+                        // Selected/found/reviewing highlights are painted entirely by
+                        // the `selectionRects` stadium/node overlay below the cells
+                        // (see above) — this cell only needs to know whether it's
+                        // mid-flash for the shake animation. A single-character bonus
+                        // match is deliberately excluded (see `invalid` above): no
+                        // shake, just its definition popup.
+                        const isInvalidCell = selected && !!invalid && (!invalid.bonus || isMultiCharBonus(invalid.bonus));
+                        // Nonce-keyed keyframe name so back-to-back wrong guesses restart
+                        // the shake cleanly (same trick as fie/flp's shake — see
+                        // CardIconCanvas.tsx / FlashCardSection.tsx cardShake) — but at a
+                        // much smaller amplitude, since this shakes a handful of cells
+                        // rather than the whole card.
+                        const invalidShakeName = isInvalidCell ? `wsInvalidShake-${invalid!.nonce}` : "";
+                        // The hint's revealed-location cells (see `hintedCells` above).
+                        // Same nonce trick as the miss shake, but re-fires every time
+                        // hint is pressed again on an already-fully-spelled-out word
+                        // (`hintShakeNonce` in WordSearchPage's `useHint`) — the yellow
+                        // fill itself (painted by the stadium overlay) stays put the
+                        // whole time; only the shake replays.
+                        const isHintCell = hintedCells.has(key(r, c));
+                        const hintShakeName = isHintCell && hintShakeNonce > 0 ? `wsHintShake-${hintShakeNonce}` : "";
                         return (
                             <Box
                                 key={key(r, c)}
@@ -626,7 +828,7 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                                 data-cell="1"
                                 data-row={r}
                                 data-col={c}
-                                className={`word-search__cell${selected ? " word-search__cell--selected" : ""}${isFound ? " word-search__cell--found" : ""}${isPopup ? " word-search__cell--reviewing" : ""}${isHint ? " word-search__cell--hint" : ""}`}
+                                className={`word-search__cell${selected ? " word-search__cell--selected" : ""}${isFound ? " word-search__cell--found" : ""}${isPopup ? " word-search__cell--reviewing" : ""}${isInvalidCell ? " word-search__cell--invalid" : ""}${isHintCell ? " word-search__cell--hint-reveal" : ""}`}
                                 sx={{
                                     position: "relative",
                                     zIndex: 1,
@@ -634,48 +836,30 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                                     alignItems: "center",
                                     justifyContent: "center",
                                     borderRadius: "8px",
-                                    backgroundColor: isHint ? "#FFE0B2" : "transparent",
-                                    // Amber ring pulse draws the eye to the hinted cell.
-                                    "@keyframes wsHintPulse": {
-                                        "0%, 100%": { boxShadow: "0 0 0 0 rgba(255,167,38,0.55)" },
-                                        "50%": { boxShadow: "0 0 0 7px rgba(255,167,38,0)" },
-                                    },
-                                    animation: isHint ? "wsHintPulse 1.25s ease-in-out infinite" : "none",
+                                    backgroundColor: "transparent",
+                                    ...(isInvalidCell && {
+                                        [`@keyframes ${invalidShakeName}`]: {
+                                            "0%, 100%": { transform: "translate(0, 0) rotate(0deg)" },
+                                            "25%": { transform: "translate(-4px, 0) rotate(-0.5deg)" },
+                                            "50%": { transform: "translate(4px, 0) rotate(0.5deg)" },
+                                            "75%": { transform: "translate(-2px, 0) rotate(-0.25deg)" },
+                                        },
+                                    }),
+                                    ...(hintShakeName && {
+                                        [`@keyframes ${hintShakeName}`]: {
+                                            "0%, 100%": { transform: "translate(0, 0) rotate(0deg)" },
+                                            "25%": { transform: "translate(-4px, 0) rotate(-0.5deg)" },
+                                            "50%": { transform: "translate(4px, 0) rotate(0.5deg)" },
+                                            "75%": { transform: "translate(-2px, 0) rotate(-0.25deg)" },
+                                        },
+                                    }),
+                                    animation: isInvalidCell
+                                        ? `${invalidShakeName} 0.32s ease-in-out`
+                                        : hintShakeName
+                                        ? `${hintShakeName} 0.32s ease-in-out`
+                                        : "none",
                                 }}
                             >
-                                {isCircle && (
-                                    <Box
-                                        aria-hidden
-                                        sx={{
-                                            position: "absolute",
-                                            // left/top 50% + translate(-50%, -50%) is a more
-                                            // reliable centering technique here than
-                                            // inset:0 + margin:auto — the latter needs the
-                                            // browser to solve an over-constrained/auto-margin
-                                            // system for a flex child that's out of flow, which
-                                            // was resolving asymmetrically on the horizontal
-                                            // axis in testing (disc centered vertically but
-                                            // pinned to the cell's left edge horizontally).
-                                            left: "50%",
-                                            top: "50%",
-                                            width: cellDiameter,
-                                            height: cellDiameter,
-                                            // Shift down onto the character glyph's own
-                                            // center (see `discOffsetY` above) rather
-                                            // than the char+pinyin block's center.
-                                            transform: `translate(-50%, calc(-50% + ${discOffsetY}px))`,
-                                            borderRadius: "50%",
-                                            backgroundColor: circleColor,
-                                            transition: "background-color 0.12s ease",
-                                            // Negative z-index within this cell's own
-                                            // stacking context (the cell is a grid item
-                                            // with z-index set, so it establishes one)
-                                            // paints the disc behind the char/pinyin
-                                            // text but still above the bridge overlay.
-                                            zIndex: -1,
-                                        }}
-                                    />
-                                )}
                                 <ForeignText
                                     size={CELL_SIZE}
                                     justifyContent="center"
@@ -690,11 +874,13 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                 )}
             </Box>
 
-            {/* English-gloss popup for the tapped found word. Rendered through a
-                Popper portal (like the est segment popup) so it escapes the grid
-                container's overflow:hidden and is never clipped. */}
+            {/* English-gloss popup — either a tapped found word (review) or a just-
+                missed bonus word's definition (see `activePopup`). Rendered
+                through a Popper portal (like the est segment popup) so it
+                escapes the grid container's overflow:hidden and is never
+                clipped. */}
             <Popper
-                open={!!popupWord && !!popupWord.definition && !!popupAnchorRect}
+                open={!!activePopup && !!activePopup.definition && !!activePopup.rect}
                 anchorEl={popperAnchorEl}
                 placement="top"
                 modifiers={[
@@ -727,7 +913,19 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                             wordBreak: "break-word",
                         }}
                     >
-                        {popupWord?.definition ? stripParentheses(popupWord.definition) : ""}
+                        {activePopup?.entryKey && (
+                            <Box
+                                component="span"
+                                className="word-search__gloss-popup-entry-key"
+                                sx={{ fontWeight: WEIGHT.bold }}
+                            >
+                                {activePopup.entryKey}
+                                {/* Two non-breaking spaces — plain " " would collapse to one
+                                    under normal CSS whitespace handling. */}
+                                {"  "}
+                            </Box>
+                        )}
+                        {activePopup?.definition ? stripParentheses(activePopup.definition) : ""}
                     </Typography>
                 </Box>
             </Popper>

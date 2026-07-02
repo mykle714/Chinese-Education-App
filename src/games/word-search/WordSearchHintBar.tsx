@@ -10,7 +10,7 @@ interface WordSearchHintBarProps {
 /**
  * The hint meter shown in the HUD: a row of `HINT_BAR_UNITS` (8) hollow segments
  * that fill left-to-right as the player makes successful finds. A threshold line
- * is drawn after the `HINT_COST` (4th) segment to signal "a hint is usable from
+ * is drawn after the `HINT_COST`-th segment to signal "a hint is usable from
  * here." Once `units >= HINT_COST` the already-filled segments switch to the
  * "ready" (brighter) fill so the meter itself reads as armed. Purely presentational
  * — spending/arming logic lives in WordSearchPage. See docs/WORD_SEARCH_GAME.md §5a.

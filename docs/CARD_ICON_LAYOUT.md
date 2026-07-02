@@ -680,11 +680,11 @@ All in `src/features/flashcards/FlashcardsLearnPage/`.
    - **Locked icons** (`item.locked`, set via the toolbar's lock button): drag / pinch /
      handle-resize all early-return for a locked icon, so it ignores translate / resize /
      rotate. It is still **tap-selectable** (the `onDrag` tap branch is not gated), so it
-     can be unlocked or deleted — but a tap on overlapping icons **prefers the unlocked one
-     beneath it** (`pickTapTarget`): it hit-tests every icon box under the tap and selects
-     the topmost UNLOCKED icon, only landing on a locked icon when there is no unlocked icon
-     at that point. So a locked icon sitting on top never blocks selection of an editable
-     icon under it. The selected icon's corner indicator swaps from the
+     can be unlocked or deleted — but a tap on overlapping icons **prefers the unlocked ones
+     beneath it** (`pickTapTarget`/`tapCycleOrder`): a fresh tap hit-tests every icon box
+     under the tap and selects the topmost UNLOCKED icon, only landing on a locked icon when
+     there is no unlocked icon at that point. So a locked icon sitting on top never blocks
+     selection of an editable icon under it. The selected icon's corner indicator swaps from the
      `OpenWith` resize glyph to a **golden** (`#E0A82E`) `Lock` glyph and becomes inert,
      and the icon box drops its grab cursor. `locked` persists in the saved jsonb but is
      **ignored by the read-only renderer** (`CardIconLayer`) — it's an editor-only concept.
@@ -701,8 +701,15 @@ All in `src/features/flashcards/FlashcardsLearnPage/`.
        so it composes with the icon's placement and settles back exactly at rest;
        `onAnimationEnd` clears the state.
    - **Selecting / selection switching** — a **tap** selects an icon under it (the
-     `onDrag` tap branch, via `filterTaps`), preferring the topmost unlocked icon at that
-     point (`pickTapTarget`, see "Locked icons" above). A **drag (translate)** does not blindly
+     `onDrag` tap branch, via `filterTaps`) via `pickTapTarget`/`tapCycleOrder`. Overlapping
+     icons at a tap point form a **stack**, ordered UNLOCKED-first (topmost `z` to bottommost),
+     then LOCKED (topmost to bottommost) appended after — so a locked icon never outranks a
+     still-unpicked unlocked one (see "Locked icons" above). A tap on a **fresh** stack (the
+     current selection isn't one of the icons under the point) picks the top of that order. A
+     **repeat tap on the already-selected icon cycles to the icon behind it** — the next entry
+     in the stack's order — wrapping back to the top once every icon in the stack has been
+     visited, so tapping the same spot repeatedly walks the whole overlap including locked
+     icons at the bottom. A **drag (translate)** does not blindly
      grab the icon it lands on either: `resolveDragTarget` decides whether it acts on the
      icon under the pointer or on the **already-selected** icon:
        - It targets (and **auto-switches selection to**) the **topmost UNLOCKED icon** under the

@@ -220,6 +220,7 @@ const CardEditToolbar: React.FC<{
             orderAnchor,
             snapAnchor,
             shiftAnchor,
+            shiftFlipUp,
             contrastAnchor,
             setAlignAnchor,
             setOrderAnchor,
@@ -783,6 +784,16 @@ const CardEditToolbar: React.FC<{
                             anchorEl={shiftAnchor}
                             open={Boolean(shiftAnchor)}
                             onClose={() => setShiftAnchor(null)}
+                            // Default (MUI's own top/left, top/left) opens below the button, same
+                            // as align/snap. When that would cover the current selection (decided
+                            // once at open time — see `computeShiftFlipUp`), flip the paper's
+                            // origin to its BOTTOM edge so it opens ABOVE the button instead.
+                            {...(shiftFlipUp
+                                ? {
+                                      anchorOrigin: { vertical: "top", horizontal: "left" },
+                                      transformOrigin: { vertical: "bottom", horizontal: "left" },
+                                  }
+                                : {})}
                             hideBackdrop
                             disableEnforceFocus
                             disableAutoFocus

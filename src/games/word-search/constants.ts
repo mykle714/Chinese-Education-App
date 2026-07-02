@@ -24,7 +24,24 @@ export const GRID_QUERY = Object.entries(GAME_DISTRIBUTION)
  * The threshold line in the bar is drawn after `HINT_COST` segments. Tunable.
  */
 export const HINT_BAR_UNITS = 8;
-export const HINT_COST = 4;
+export const HINT_COST = 1;
+
+/**
+ * Shared amber "hint" accent color — the Bopomofo mask text (`WordSearchHintRow`)
+ * and the matching gloss in the top word list (`WordSearchWordList`) both use
+ * this so the two visually pair up as "this is the word that mask is for."
+ * Matches the armed-state amber already used by the header hint button /
+ * hint meter (`WordSearchHeader.tsx`, `WordSearchHintBar.tsx`).
+ */
+export const HINT_ACCENT_COLOR = "#FB8C00";
+
+/**
+ * Trailing underscore count in a per-character hint island for a syllable
+ * whose Bopomofo reveal isn't yet complete — always `LETTER_HINT_BLANK_WIDTH`,
+ * regardless of how many units have been revealed or the syllable's actual
+ * unit count, so the island never leaks how many units remain. See §5a.
+ */
+export const LETTER_HINT_BLANK_WIDTH = 3;
 
 /**
  * cpcd size for each grid cell. `sm` (32px column) for now; 10 rows with pinyin
@@ -51,14 +68,33 @@ export const CELL_GAP = 16;
 export const GRID_MARGIN = 12;
 
 /**
- * Extra downward nudge for the selection/found circle, as a fraction of the
- * circle's own diameter (not px) — since `cellDiameter` is measured live and
+ * Extra downward nudge for the selection/found stadium shape, as a fraction of
+ * its own thickness (not px) — since that thickness is measured live and
  * varies with cell size/scale, a fraction keeps the nudge proportional across
  * screen sizes instead of over- or under-shooting on smaller/larger cells.
- * Applied on top of the glyph-centering `discOffsetY` in `WordSearchGrid`.
- * Tunable.
+ * Applied on top of the glyph-centering offset computed in `WordSearchGrid`.
+ * Tunable. Used when `showPinyin` is true; see
+ * `SELECTION_EXTRA_OFFSET_Y_FRAC_NO_PINYIN` for the pinyin-less variant.
  */
-export const DISC_EXTRA_OFFSET_Y_FRAC = 0.15;
+export const SELECTION_EXTRA_OFFSET_Y_FRAC = 0.15;
+
+/**
+ * Same nudge as `SELECTION_EXTRA_OFFSET_Y_FRAC`, but for pinyin-less mode.
+ * Without the pinyin row pulling the character upward within its cell, the
+ * glyph sits lower and closer to true cell-center already, so the downward
+ * nudge tuned for pinyin mode overshoots and reads as off-center. Tunable
+ * independently of the pinyin-mode value.
+ */
+export const SELECTION_EXTRA_OFFSET_Y_FRAC_NO_PINYIN = 0.05;
+
+/**
+ * How long a true miss's flash (red highlight + shake) stays visible before
+ * auto-clearing. A bonus-word match (blue for 2+ characters, or plain yellow
+ * with no shake for a single character — see `WordSearchGrid.tsx`) has NO
+ * auto-dismiss timer: its definition popup stays open until the player taps
+ * elsewhere. Tunable.
+ */
+export const MISS_FLASH_MS = 320;
 
 /**
  * Medal thresholds by total completion time, best-first. The last tier is the

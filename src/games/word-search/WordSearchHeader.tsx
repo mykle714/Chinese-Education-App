@@ -1,45 +1,39 @@
 import React from "react";
-import { Button, useTheme } from "@mui/material";
+import { Button, IconButton, useTheme } from "@mui/material";
+import RestartAltIcon from "@mui/icons-material/RestartAlt";
+import SettingsIcon from "@mui/icons-material/Settings";
 import MinutePointsFireBadge from "../../minutePoints/MinutePointsFireBadge";
 import { SIZE } from "../../theme/scale";
-import { TONE_COLORS } from "../../utils/toneColors";
-
-/** The three states of the pinyin display toggle, in cycle order. */
-export type PinyinMode = "off" | "plain" | "color";
 
 interface WordSearchHeaderControlsProps {
-    /** Current pinyin display mode (off → plain → color, cycled by the button). */
-    pinyinMode: PinyinMode;
-    onCyclePinyin: () => void;
-    showTimer: boolean;
-    onToggleTimer: () => void;
-    /** Whether the hint button is armed (enough meter units collected). */
+    /** Whether the hint button is armed (enough meter units collected, and at
+     *  least one word is still unfound). */
     hintReady: boolean;
-    /** Spend a hint (highlight the first cell of a random unfound word). */
+    /** Spend a hint (reveal the next pinyin unit of the least-hinted unfound word). */
     onHint: () => void;
+    /** Discard the current board and load a fresh one. */
+    onRestart: () => void;
+    /** Open the settings sheet (pinyin display + timer visibility). */
+    onSettingsClick: () => void;
 }
 
-// "pinyin", one tone color per letter, shown when the toggle is in color mode so
-// the button previews what colored pinyin looks like.
-const PINYIN_LETTER_TONES = [1, 2, 3, 4, 1, 2];
-
 /**
- * Right-side header controls for Word Search: a THREE-STATE pinyin toggle
- * (off → plain → tone-colored, replacing the old separate pinyin + color
- * buttons), a timer-visibility toggle, and a hint button. Ends with the
- * minute-points fire badge.
+ * Right-side header controls for Word Search: a restart button, a hint
+ * button, and the settings cog. Pinyin display and timer visibility used to
+ * live here as toggle buttons — they now live in the settings sheet (see
+ * WordSearchSettingsDialog), mirroring flp's "quick controls in the header,
+ * everything else behind the cog" split. Ends with the minute-points fire
+ * badge.
  *
  * Word Search is a LEAF PAGE (see docs/LEAF_NODE_PAGES.md), so the header bar +
  * down-arrow back button come from LeafPage/LeafPageHeader; this component just
  * fills LeafPage's `rightContent` slot. See docs/WORD_SEARCH_GAME.md §3.
  */
 const WordSearchHeaderControls: React.FC<WordSearchHeaderControlsProps> = ({
-    pinyinMode,
-    onCyclePinyin,
-    showTimer,
-    onToggleTimer,
     hintReady,
     onHint,
+    onRestart,
+    onSettingsClick,
 }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
@@ -58,43 +52,20 @@ const WordSearchHeaderControls: React.FC<WordSearchHeaderControlsProps> = ({
         "&:hover": { backgroundColor: active ? fc.toggleActiveBg : fc.toggleInactiveBg },
     });
 
-    // The 3-state pinyin button reads as active in both "on" states; the color
-    // state additionally tints each letter of "pinyin" with a tone color.
-    const pinyinActive = pinyinMode !== "off";
-    const pinyinLabel =
-        pinyinMode === "color"
-            ? "pinyin".split("").map((ch, i) => (
-                  <span key={i} style={{ color: TONE_COLORS[PINYIN_LETTER_TONES[i]] }}>
-                      {ch}
-                  </span>
-              ))
-            : "pinyin";
-
     return (
         <>
-            {/* One button cycling off → plain → color; the color state previews
-                tone-colored pinyin in its own label. */}
-            <Button
-                className={`pinyin-toggle-btn pinyin-toggle-btn--${pinyinMode}`}
-                variant={pinyinActive ? "contained" : "text"}
+            <IconButton
+                className="word-search__restart-btn"
                 size="small"
-                onClick={onCyclePinyin}
-                sx={toggleSx(pinyinActive)}
+                sx={{ color: fc.onSurface }}
+                onClick={onRestart}
+                aria-label="Restart board"
             >
-                {pinyinLabel}
-            </Button>
-            {/* Toggles only the timer's VISIBILITY — the clock keeps ticking so the
-                finish time / medal is still accurate when it's hidden. */}
-            <Button
-                className="timer-toggle-btn"
-                variant={showTimer ? "contained" : "text"}
-                size="small"
-                onClick={onToggleTimer}
-                sx={toggleSx(showTimer)}
-            >
-                timer
-            </Button>
-            {/* Hint: greyed out (disabled) until the meter reaches HINT_COST. */}
+                <RestartAltIcon />
+            </IconButton>
+            {/* Hint: greyed out (disabled) until the meter reaches HINT_COST and
+                at least one word is still unfound. Reveals one pinyin unit at
+                a time — see WordSearchHintRow / pinyinUnits.ts. */}
             <Button
                 className="word-search__hint-btn"
                 variant="contained"
@@ -110,6 +81,15 @@ const WordSearchHeaderControls: React.FC<WordSearchHeaderControlsProps> = ({
             >
                 hint
             </Button>
+            <IconButton
+                className="word-search__settings-btn"
+                size="small"
+                sx={{ color: fc.onSurface }}
+                onClick={onSettingsClick}
+                aria-label="Open settings"
+            >
+                <SettingsIcon />
+            </IconButton>
             <MinutePointsFireBadge />
         </>
     );

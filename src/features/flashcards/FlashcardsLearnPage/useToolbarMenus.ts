@@ -4,6 +4,32 @@ import { TOOLBAR_DROPDOWN_SELECTOR } from "./toolbarDropdownSelector";
 /** Which of the toolbar's five advanced-row dropdowns a toggle/anchor refers to. */
 export type ToolbarDropdown = "align" | "order" | "snap" | "shift" | "contrast";
 
+// The Shift dropdown's rendered footprint: a 3×3 grid of 36px cells, 0.5-spacing (4px) gaps,
+// and 0.75-spacing (6px) padding on each side (see its Box sx in CardEditToolbar). Used to
+// project where the menu WOULD land before it opens, so we can decide up-front whether it
+// would cover the selection (see `computeShiftFlipUp`).
+const SHIFT_MENU_SIZE = 3 * 36 + 2 * 4 + 2 * 6; // 128px, square
+
+/**
+ * Whether the Shift dropdown, opened below `anchor` (its normal side), would overlap the
+ * current selection (icon or text block) on the canvas — in which case the caller should
+ * open it ABOVE the anchor instead. Reads the DOM directly (selection state lives on the
+ * page, not in this hook) via the selected-item classes CardIconCanvas already sets.
+ */
+function computeShiftFlipUp(anchor: HTMLElement): boolean {
+    const selected = document.querySelector(
+        ".card-icon-canvas__icon--selected, .card-icon-canvas__text--selected",
+    );
+    if (!selected) return false;
+    const sel = selected.getBoundingClientRect();
+    const a = anchor.getBoundingClientRect();
+    const menuLeft = a.left;
+    const menuRight = menuLeft + SHIFT_MENU_SIZE;
+    const menuTop = a.bottom;
+    const menuBottom = menuTop + SHIFT_MENU_SIZE;
+    return menuLeft < sel.right && menuRight > sel.left && menuTop < sel.bottom && menuBottom > sel.top;
+}
+
 /**
  * useToolbarMenus — owns the open/close state + coordination of the card-edit
  * toolbar's five advanced-row dropdowns (align / order / snap / shift / contrast).
@@ -32,6 +58,11 @@ export function useToolbarMenus() {
     const [snapAnchor, setSnapAnchor] = useState<null | HTMLElement>(null);
     const [shiftAnchor, setShiftAnchor] = useState<null | HTMLElement>(null);
     const [contrastAnchor, setContrastAnchor] = useState<null | HTMLElement>(null);
+    // Whether the Shift dropdown should open ABOVE its button instead of below — decided once,
+    // at open time, when opening below would cover the current selection (see
+    // `computeShiftFlipUp`). Left stale (not re-computed) while the menu stays open; it's
+    // reset fresh on every open.
+    const [shiftFlipUp, setShiftFlipUp] = useState(false);
 
     // The align/order/snap/shift/contrast dropdowns are rendered NON-MODAL (root
     // `pointerEvents: none`, paper `auto` — see their slotProps) so a press outside them is
@@ -98,7 +129,15 @@ export function useToolbarMenus() {
         const anchor = e.currentTarget;
         setAlignAnchor(which === "align" ? (a) => (a ? null : anchor) : null);
         setSnapAnchor(which === "snap" ? (a) => (a ? null : anchor) : null);
-        setShiftAnchor(which === "shift" ? (a) => (a ? null : anchor) : null);
+        if (which === "shift") {
+            setShiftAnchor((a) => {
+                if (a) return null; // already open — this tap closes it
+                setShiftFlipUp(computeShiftFlipUp(anchor));
+                return anchor;
+            });
+        } else {
+            setShiftAnchor(null);
+        }
         setContrastAnchor(which === "contrast" ? (a) => (a ? null : anchor) : null);
         if (which === "order") setOrderAnchor((a) => (a ? null : anchor));
     };
@@ -108,6 +147,7 @@ export function useToolbarMenus() {
         orderAnchor,
         snapAnchor,
         shiftAnchor,
+        shiftFlipUp,
         contrastAnchor,
         setAlignAnchor,
         setOrderAnchor,

@@ -1,9 +1,7 @@
-import { useEffect } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../AuthContext';
 import { Box } from '@mui/material';
 import DelayedCircularProgress from './DelayedCircularProgress';
-import { reportAuthTrace } from '../utils/errorReporting'; // TEMP: bootstrap-hang diagnosis
 
 interface ProtectedRouteProps {
     children: React.ReactNode;
@@ -12,12 +10,6 @@ interface ProtectedRouteProps {
 
 function ProtectedRoute({ children, allowPublic }: ProtectedRouteProps) {
     const { isAuthenticated, isLoading, user } = useAuth();
-
-    // TEMP: record the gate decision so we can see whether the spinner branch is
-    // the terminal state on a "loads forever" load.
-    useEffect(() => {
-        reportAuthTrace(`ProtectedRoute gate: isLoading=${isLoading} isAuthenticated=${isAuthenticated} isPublic=${user?.isPublic ?? '?'} allowPublic=${!!allowPublic}`);
-    }, [isLoading, isAuthenticated, user?.isPublic, allowPublic]);
 
     // Show loading spinner while checking authentication
     if (isLoading) {

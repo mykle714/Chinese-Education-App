@@ -406,9 +406,14 @@ const SortCardsPage: React.FC = () => {
             setDone({});
             setUndoStack([]);
             try {
-                const url = new URL(`${API_BASE_URL}/api/starter-packs/${language}`);
-                if (selectedLevel != null) url.searchParams.set("level", String(selectedLevel));
-                const response = await fetch(url.toString(), {
+                // Build the URL as a plain relative template string (NOT `new URL(...)`):
+                // in the prod build API_BASE_URL is "" (relative), and `new URL("/api/...")`
+                // with no base THROWS "Invalid URL" — which fell into the catch below and
+                // left the page spinning forever (loading=false, no pack, not exhausted).
+                // The sibling starter-packs calls already use this relative style.
+                // `selectedLevel` is a bare 1..6 integer, so no query-encoding is needed.
+                const qs = selectedLevel != null ? `?level=${selectedLevel}` : "";
+                const response = await fetch(`${API_BASE_URL}/api/starter-packs/${language}${qs}`, {
                     headers: token ? { Authorization: `Bearer ${token}` } : {},
                     credentials: "include",
                 });

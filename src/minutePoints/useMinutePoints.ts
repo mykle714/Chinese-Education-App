@@ -170,7 +170,10 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
 
       // Server is authoritative per language: lifetime total, today's minutes
       // (cross-device), and the global streak. Fall back to local storage offline.
-      const serverData = await fetchLanguageSummary(language, token);
+      // Read the token from the stable ref (kept current above), NOT the `token`
+      // dep — so a silent refresh doesn't re-run this loader and re-dispatch a
+      // full LOAD_DATA. See CLAUDE.md "Never reload on token refresh".
+      const serverData = await fetchLanguageSummary(language, tokenRef.current);
 
       const accumulativePoints = serverData?.totalMinutePoints ?? stored.totalMinutePoints;
       const currentStreak = serverData?.currentStreak ?? 0;
@@ -202,7 +205,7 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
     };
 
     loadData();
-  }, [user?.id, language, token]);
+  }, [user?.id, language]);
 
   // 1-second accumulation timer
   useEffect(() => {

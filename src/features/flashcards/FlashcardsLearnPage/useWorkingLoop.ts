@@ -162,10 +162,13 @@ export function useWorkingLoop({
         if (token) {
             fetchInitialCards();
         }
-    // prefetch and cardDragRef are stable references; depending on them would
-    // not re-run the fetch, which should only react to token/category/mode changes.
+    // Keyed on Boolean(token) — the STABLE auth-presence flag — NOT the raw
+    // `token` string. The access token silently refreshes every ~15 min; keying
+    // on `token` would re-fetch the working loop and reset the card stack
+    // mid-study. Boolean(token) only flips on login/logout. See CLAUDE.md
+    // "Never reload on token refresh". prefetch/cardDragRef are stable refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [token, selectedCategory, mode]);
+    }, [Boolean(token), selectedCategory, mode]);
 
     // Mark card with retry logic.
     // `excludeIds` tells the server which cards are already in the working loop,

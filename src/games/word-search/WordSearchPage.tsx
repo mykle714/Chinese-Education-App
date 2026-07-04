@@ -8,6 +8,7 @@ import { usePageTitle } from "../../hooks/usePageTitle";
 import { useTTS } from "../../hooks/useTTS";
 import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
 import { useBlockEdgeSwipe } from "../../hooks/useBlockEdgeSwipe";
+import { authHeader } from "../../utils/authHeader";
 import LeafPage from "../../components/LeafPage";
 import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
 import WordSearchHeaderControls from "./WordSearchHeader";
@@ -216,7 +217,7 @@ const WordSearchPage: React.FC = () => {
         try {
             const res = await fetch(`${API_BASE_URL}/api/onDeck/word-search-grid?${GRID_QUERY}`, {
                 credentials: "include",
-                headers: { Authorization: `Bearer ${token}` },
+                headers: authHeader(),
             });
             if (!res.ok) throw new Error("Failed to load grid");
             const payload: WordSearchResponse = await res.json();
@@ -250,9 +251,11 @@ const WordSearchPage: React.FC = () => {
             setPhase("blocked");
             return null;
         }
-        // tts.prefetchSentence is stable; only re-create on auth change.
+        // authHeader() reads the token at call time, so this callback's identity
+        // stays stable across a silent token refresh. See CLAUDE.md "Never
+        // reload on token refresh".
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [token]);
+    }, []);
 
     // Load a fresh board and drop into play (resetting found state, then
     // starting the count-up timer immediately — the player doesn't need to
@@ -304,9 +307,15 @@ const WordSearchPage: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [stopTimer, startTicking]);
 
-    // Initial load on mount: resume a saved board if one exists, else fetch new.
+    // Initial load, once per authenticated session: resume a saved board if one
+    // exists, else fetch a new one. Keyed on the STABLE auth identity (`user?.id`),
+    // NOT `token`: the access token silently refreshes every ~15 min, and re-running
+    // this effect on that refresh would reload a brand-new board and wipe the
+    // in-progress game (found words + timer). See the "Never reload on token
+    // refresh" rule in CLAUDE.md. `fetchGrid`/`startBoard`/`restoreBoard` are
+    // deliberately omitted from the deps for the same reason.
     useEffect(() => {
-        if (!token || !userId) {
+        if (!userId) {
             setBlockMessage("Sign in to play Word Search.");
             setPhase("blocked");
             return;
@@ -325,7 +334,8 @@ const WordSearchPage: React.FC = () => {
         return () => {
             cancelled = true;
         };
-    }, [token, userId, fetchGrid, startBoard, restoreBoard]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.id]);
 
     // Pause on backgrounding (tab hidden / app switched away), resume on
     // return — snapshot to localStorage first so a background pause that

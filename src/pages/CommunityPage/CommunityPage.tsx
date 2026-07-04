@@ -22,7 +22,7 @@ import type { CommunityDesign, Language } from "../../types";
 function CommunityPage() {
   usePageTitle();
   const navigate = useNavigate();
-  const { token, user } = useAuth();
+  const { token, user, isAuthenticated } = useAuth();
   const language: Language = user?.selectedLanguage ?? "zh";
 
   // Design keys (ownerUserId|entryKey) the viewer has voted on this week → greyed everywhere.
@@ -40,7 +40,10 @@ function CommunityPage() {
       })
       .catch(() => {/* non-fatal: nothing greyed if votes fail to load */});
     return () => { cancelled = true; };
-  }, [token]);
+  // isAuthenticated not `token`: a silent refresh needn't re-fetch votes.
+  // See CLAUDE.md "Never reload on token refresh".
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated]);
 
   // Toggle a design's voted state in the shared set so both feeds + the zoom stay in sync.
   const setVote = useCallback((design: CommunityDesign, voted: boolean) => {

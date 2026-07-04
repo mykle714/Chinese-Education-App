@@ -1,4 +1,4 @@
-import { RefObject, useEffect } from "react";
+import { useEffect, type RefObject } from "react";
 
 /**
  * Adds desktop click-and-drag horizontal panning to a scrollable container. Touch/trackpad

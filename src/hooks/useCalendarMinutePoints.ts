@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../AuthContext';
 import { API_BASE_URL } from '../constants';
+import { authHeader } from '../utils/authHeader';
 
 // Calendar data types
 export interface CalendarDayData {
@@ -40,7 +41,7 @@ interface ServerCalendarResponse {
 }
 
 export const useCalendarMinutePoints = (initialYearMonth?: string): UseCalendarMinutePointsReturn => {
-  const { user, token } = useAuth();
+  const { user } = useAuth();
   // Calendar is scoped to the user's selected language (matches the per-language
   // minute-points tracking). Default 'zh' for legacy accounts.
   const language: string = user?.selectedLanguage || 'zh';
@@ -68,7 +69,7 @@ export const useCalendarMinutePoints = (initialYearMonth?: string): UseCalendarM
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+          ...authHeader(),
         },
       });
 
@@ -112,7 +113,10 @@ export const useCalendarMinutePoints = (initialYearMonth?: string): UseCalendarM
     } finally {
       setIsLoading(false);
     }
-  }, [user?.id, token, language]);
+    // `token` is intentionally NOT a dep — authHeader() reads the live token, so
+    // a silent refresh doesn't recreate this fetcher and re-fire the load effect
+    // below. See CLAUDE.md "Never reload on token refresh".
+  }, [user?.id, language]);
 
   useEffect(() => {
     if (user?.id) {

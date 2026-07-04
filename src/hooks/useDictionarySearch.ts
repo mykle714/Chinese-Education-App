@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { API_BASE_URL } from "../constants";
 import { hasChinese } from "../utils/textUtils";
+import { authHeader } from "../utils/authHeader";
 import type { DictionaryEntry, AiDictionaryEntry } from "../types";
 
 export interface SegmentGroup {
@@ -42,7 +43,7 @@ interface UseDictionarySearchResult {
  * `limit` defaults to the dictionary page's page size; callers that don't paginate (e.g. the
  * community search bar) can pass a smaller one and ignore `page`/`totalPages`.
  */
-export function useDictionarySearch(token: string | null, limit: number = 50): UseDictionarySearchResult {
+export function useDictionarySearch(limit: number = 50): UseDictionarySearchResult {
   const [searchInput, setSearchInputState] = useState("");
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
   const [entries, setEntries] = useState<DictionaryEntry[]>([]);
@@ -97,7 +98,7 @@ export function useDictionarySearch(token: string | null, limit: number = 50): U
         if (hasChinese(debouncedSearchTerm)) {
           const response = await fetch(
             `${API_BASE_URL}/api/dictionary/segment?text=${encodeURIComponent(debouncedSearchTerm)}`,
-            { headers: { Authorization: `Bearer ${token}` }, credentials: "include" },
+            { headers: authHeader(), credentials: "include" },
           );
           if (cancelled) return;
           if (response.ok) {
@@ -115,7 +116,7 @@ export function useDictionarySearch(token: string | null, limit: number = 50): U
         } else {
           const response = await fetch(
             `${API_BASE_URL}/api/dictionary/search?term=${encodeURIComponent(debouncedSearchTerm)}&page=${page}&limit=${limit}`,
-            { headers: { Authorization: `Bearer ${token}` }, credentials: "include" },
+            { headers: authHeader(), credentials: "include" },
           );
           if (cancelled) return;
           if (response.ok) {
@@ -145,7 +146,11 @@ export function useDictionarySearch(token: string | null, limit: number = 50): U
 
     fetchResults();
     return () => { cancelled = true; };
-  }, [debouncedSearchTerm, page, limit, token]);
+    // `token` intentionally omitted: authHeader() reads it at call time, so a
+    // silent refresh (~every 15 min) doesn't re-run the search. See CLAUDE.md
+    // "Never reload on token refresh".
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearchTerm, page, limit]);
 
   const clearSearch = () => {
     setSearchInputState("");
@@ -167,7 +172,7 @@ export function useDictionarySearch(token: string | null, limit: number = 50): U
     setAiError(false);
     fetch(`${API_BASE_URL}/api/dictionary/ai-entry`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: { "Content-Type": "application/json", ...authHeader() },
       credentials: "include",
       body: JSON.stringify({ term }),
     })

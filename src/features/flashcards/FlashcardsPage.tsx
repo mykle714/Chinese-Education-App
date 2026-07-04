@@ -318,7 +318,7 @@ function FlashcardsPage() {
     const [touchEnd, setTouchEnd] = useState<{ x: number; y: number } | null>(null);
     const [feedbackAnimation, setFeedbackAnimation] = useState<'correct' | 'incorrect' | null>(null);
     const [navigationAnimation, setNavigationAnimation] = useState<'previous' | 'next' | null>(null);
-    const { token } = useAuth();
+    const { token, isAuthenticated } = useAuth();
 
     // Ref for the flashcard container to attach touch handlers
     const flashcardContainerRef = useRef<HTMLDivElement>(null);
@@ -343,10 +343,12 @@ function FlashcardsPage() {
     const drawerWidth = 250;
     const settingsWidth = 200;
 
-    // Initial load effect
+    // Initial load effect. Keyed on isAuthenticated (stable, = !!user), not the
+    // `token` string — so a silent refresh doesn't reload cards. See CLAUDE.md
+    // "Never reload on token refresh".
     useEffect(() => {
         fetchEntries();
-    }, [token]);
+    }, [isAuthenticated]);
 
     // Tab navigation effect - reload cards when user navigates to flashcards page
     useEffect(() => {
@@ -372,7 +374,11 @@ function FlashcardsPage() {
         if (location.pathname === '/flashcards' && !hasLoadedOnce) {
             setHasLoadedOnce(true);
         }
-    }, [location.pathname, hasLoadedOnce, token]);
+    // isAuthenticated not `token`: a silent refresh must NOT re-run this and wipe
+    // the in-progress session state above. See CLAUDE.md "Never reload on token
+    // refresh".
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [location.pathname, hasLoadedOnce, isAuthenticated]);
 
     useEffect(() => {
         if (entries.length > 0 && !currentEntry) {

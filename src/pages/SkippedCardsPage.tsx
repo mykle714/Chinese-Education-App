@@ -23,7 +23,7 @@ import { SIZE, WEIGHT } from "../theme/scale";
 const SkippedCardsPage: React.FC = () => {
     usePageTitle("Skipped Cards");
     const navigate = useNavigate();
-    const { token } = useAuth();
+    const { token, isAuthenticated } = useAuth();
     const { language } = useParams<{ language: Language }>();
 
     const [cards, setCards] = useState<DiscoverCard[]>([]);
@@ -57,7 +57,10 @@ const SkippedCardsPage: React.FC = () => {
             }
         };
         if (language && token) fetchSkipped();
-    }, [language, token]);
+    // isAuthenticated not `token`: a silent refresh must not re-fetch mid-scroll.
+    // See CLAUDE.md "Never reload on token refresh".
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [language, isAuthenticated]);
 
     // MiniVocabCardGrid takes VocabEntry[]; a DiscoverCard supplies id + entryKey +
     // definition + pronunciation, which is all the mini card needs. Referentially

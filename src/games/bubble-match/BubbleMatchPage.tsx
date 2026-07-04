@@ -9,6 +9,7 @@ import { useTTS } from "../../hooks/useTTS";
 import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
 import { useBlockEdgeSwipe } from "../../hooks/useBlockEdgeSwipe";
 import { useGameWins } from "../../hooks/useGameWins";
+import { authHeader } from "../../utils/authHeader";
 import type { VocabEntry } from "../../types";
 import LeafPage from "../../components/LeafPage";
 import BubbleMatchHeaderControls from "./BubbleMatchHeader";
@@ -119,7 +120,7 @@ const BubbleMatchPage: React.FC = () => {
     const location = useLocation();
     const theme = useTheme();
     const fc = theme.palette.flashcard;
-    const { token } = useAuth();
+    const { token, user } = useAuth();
     const tts = useTTS();
     const { settings, update } = useFlashcardLearnSettings();
     const { showPinyin, showPinyinColor, autoplayChinese } = settings;
@@ -160,7 +161,7 @@ const BubbleMatchPage: React.FC = () => {
         try {
             const res = await fetch(`${API_BASE_URL}/api/onDeck/game-pool?${poolQuery}`, {
                 credentials: "include",
-                headers: { Authorization: `Bearer ${token}` },
+                headers: authHeader(),
             });
             if (!res.ok) throw new Error("Failed to load game pool");
             const data: GamePoolResponse = await res.json();
@@ -184,9 +185,11 @@ const BubbleMatchPage: React.FC = () => {
             setPhase("blocked");
             return null;
         }
-        // tts.prefetch is stable; only re-create on auth change.
+        // authHeader() reads the token at call time, so this callback's identity
+        // stays stable across a silent token refresh. See CLAUDE.md "Never
+        // reload on token refresh".
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [token]);
+    }, []);
 
     // Apply the state transitions that kick off a fresh run with the given pool.
     // The pool is reshuffled here so the launch order differs every run.
@@ -203,7 +206,7 @@ const BubbleMatchPage: React.FC = () => {
     // Fetch the game pool once on mount, then start straight into the level
     // requested from the hub (no in-game picker to land on anymore).
     useEffect(() => {
-        if (!token) {
+        if (!user) {
             setBlockMessage("Sign in to play Bubble Match.");
             setPhase("blocked");
             return;
@@ -217,11 +220,12 @@ const BubbleMatchPage: React.FC = () => {
         return () => {
             cancelled = true;
         };
-        // initialLevel is derived from location.state on mount; re-running this
-        // effect off its identity isn't intended (only token/fetchGamePool should
-        // re-trigger the initial load).
+        // Keyed on the STABLE auth identity, NOT `token`: a silent access-token
+        // refresh (~every 15 min) must not re-run this loader mid-game. initialLevel
+        // is derived from location.state on mount, so it's intentionally excluded
+        // too. See CLAUDE.md "Never reload on token refresh".
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [token, fetchGamePool, beginRun]);
+    }, [user?.id]);
 
     // Start (or replay) the given level on the already-loaded card set
     // (reshuffled launch order). Primes the audio element inside this real click

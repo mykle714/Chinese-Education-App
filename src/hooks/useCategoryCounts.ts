@@ -17,7 +17,7 @@ interface CategoryCountsResult {
  * Shared by the /decks page (navigation guard) and the Account page (display stats).
  */
 export function useCategoryCounts(): CategoryCountsResult {
-    const { token } = useAuth();
+    const { token, isAuthenticated } = useAuth();
     const [counts, setCounts] = useState<Record<string, number>>({});
     const [loaded, setLoaded] = useState(false);
 
@@ -39,7 +39,10 @@ export function useCategoryCounts(): CategoryCountsResult {
                 setLoaded(true);
             }
         })();
-    }, [token]);
+    // isAuthenticated not `token`: a silent refresh must not re-fetch counts.
+    // See CLAUDE.md "Never reload on token refresh".
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isAuthenticated]);
 
     return { counts, loaded };
 }

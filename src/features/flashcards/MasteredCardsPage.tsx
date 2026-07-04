@@ -23,7 +23,7 @@ const MasteredCardsPage: React.FC = () => {
     const navigate = useNavigate();
     // Card Detail (leaf) slides over this page; keep Mastered held beneath.
     const slideNavigate = useSlideNavigate();
-    const { token } = useAuth();
+    const { token, isAuthenticated } = useAuth();
     const [entries, setEntries] = useState<VocabEntry[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -57,7 +57,11 @@ const MasteredCardsPage: React.FC = () => {
         if (token) {
             fetchMasteredCards();
         }
-    }, [token]);
+    // Keyed on isAuthenticated — the stable auth-presence flag, not the `token`
+    // string — so a silent refresh doesn't re-fetch mid-scroll. See CLAUDE.md
+    // "Never reload on token refresh".
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isAuthenticated]);
 
     // Stable tap handler so the memoized cards don't all re-render on parent renders.
     const handleCardClick = useCallback(

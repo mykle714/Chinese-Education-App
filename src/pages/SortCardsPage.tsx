@@ -361,7 +361,7 @@ const DraggableCard: React.FC<{
 const SortCardsPage: React.FC = () => {
     usePageTitle("Discover");
     const navigate = useNavigate();
-    const { token } = useAuth();
+    const { token, isAuthenticated } = useAuth();
     const { language } = useParams<{ language: Language }>();
     const tts = useTTS();
     const { settings: discoverSettings, update: updateDiscoverSettings } = useDiscoverSettings();
@@ -430,11 +430,19 @@ const SortCardsPage: React.FC = () => {
             setUndoStack([]);
             packBucketsRef.current = {};
             try {
-                const url = new URL(`${API_BASE_URL}/api/starter-packs/${language}`);
+                // Build the URL as a plain relative template string (NOT `new URL(...)`):
+                // in the prod build API_BASE_URL is "" (relative), and `new URL("/api/...")`
+                // with no base THROWS "Invalid URL" — which fell into the catch below and
+                // left the page spinning forever (loading=false, no pack, not exhausted).
+                // The sibling starter-packs calls already use this relative style.
+                // requestLevel/selectedLevel are bare 1..6 integers, so no query-encoding
+                // is needed.
                 const requestLevel = selectedLevel != null ? selectedLevel : autoLevelRef.current;
-                if (requestLevel != null) url.searchParams.set("level", String(requestLevel));
-                if (selectedLevel != null) url.searchParams.set("mode", "manual");
-                const response = await fetch(url.toString(), {
+                const params: string[] = [];
+                if (requestLevel != null) params.push(`level=${requestLevel}`);
+                if (selectedLevel != null) params.push("mode=manual");
+                const qs = params.length ? `?${params.join("&")}` : "";
+                const response = await fetch(`${API_BASE_URL}/api/starter-packs/${language}${qs}`, {
                     headers: token ? { Authorization: `Bearer ${token}` } : {},
                     credentials: "include",
                 });
@@ -457,7 +465,11 @@ const SortCardsPage: React.FC = () => {
             }
         };
         if (language) fetchPacks();
-    }, [language, token, selectedLevel]);
+    // isAuthenticated not `token`: a silent refresh must not restart the sort
+    // session (wiping undo history + resolved markers). See CLAUDE.md "Never
+    // reload on token refresh".
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [language, isAuthenticated, selectedLevel]);
 
     const currentPack = queue[0];
     const doneForCurrent = currentPack ? done[currentPack.packKey] : undefined;

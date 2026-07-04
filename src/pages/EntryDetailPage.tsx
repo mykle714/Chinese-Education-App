@@ -66,7 +66,7 @@ function EntryDetailPage() {
     usePageTitle("Entry");
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
-    const { token } = useAuth();
+    const { token, isAuthenticated } = useAuth();
     const { confirm } = useConfirmation();
     const vocabularyUpdate = useVocabularyUpdate();
     const [entry, setEntry] = useState<VocabEntry | null>(null);
@@ -95,7 +95,10 @@ function EntryDetailPage() {
         if (id && token) {
             fetchEntry();
         }
-    }, [id, token]);
+    // isAuthenticated not `token`: a silent refresh must not re-fetch/reset this
+    // page. See CLAUDE.md "Never reload on token refresh".
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [id, isAuthenticated]);
 
     const handleDelete = async () => {
         const confirmed = await confirm("Are you sure you want to delete this vocabulary entry? This action cannot be undone.");

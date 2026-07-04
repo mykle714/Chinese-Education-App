@@ -172,7 +172,11 @@ function ReaderPage() {
         if (token) {
             fetchTexts();
         }
-    }, [token]);
+    // Keyed on the STABLE auth identity, not `token` — a silent access-token
+    // refresh (~15 min) must not re-fetch and reset the reader's text list.
+    // See CLAUDE.md "Never reload on token refresh".
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.id]);
 
     // Set up vocabulary update listeners
     useEffect(() => {

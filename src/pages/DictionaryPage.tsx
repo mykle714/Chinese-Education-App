@@ -60,7 +60,7 @@ function DictionaryPage() {
         searchInput, setSearchInput, debouncedSearchTerm, entries, segmentGroups,
         isSegmentMode, loading, error, page, setPage, total, totalPages, clearSearch,
         aiEntry, canAskAi, askingAi, aiNoMatch, aiError, askAi,
-    } = useDictionarySearch(token, 50);
+    } = useDictionarySearch(50);
 
     // Entry-tab system: tapping a result-card opens the EIP popup; tapping a
     // breakdown/used-in row inside it adds a tab instead of stacking another
@@ -452,7 +452,7 @@ function DictionaryPage() {
 
             {/* Error Message */}
             {error && (
-                <Alert className="dictionary-page__error-alert" severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
+                <Alert className="dictionary-page__error-alert" severity="error" sx={{ mb: 3 }}>
                     {error}
                 </Alert>
             )}

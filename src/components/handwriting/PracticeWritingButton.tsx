@@ -38,7 +38,7 @@ export default function PracticeWritingButton({
   iconOnly = false,
   hideStarBadge = false,
 }: PracticeWritingButtonProps) {
-  const { token } = useAuth();
+  const { token, isAuthenticated } = useAuth();
   const [open, setOpen] = useState(false);
   // Completed assistance levels for this character (the stars). Owned here so the
   // superscript count and the popup's per-tab stars share one source of truth.
@@ -66,7 +66,10 @@ export default function PracticeWritingButton({
     return () => {
       cancelled = true;
     };
-  }, [eligible, character, token]);
+  // isAuthenticated not `token`: the star count needn't re-fetch on a silent
+  // refresh. See CLAUDE.md "Never reload on token refresh".
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eligible, character, isAuthenticated]);
 
   // Called by the popup when a level is freshly completed (it returns the new set).
   const handleLevelsChange = useCallback((levels: string[]) => {

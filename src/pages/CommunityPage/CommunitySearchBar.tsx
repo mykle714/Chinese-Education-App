@@ -63,7 +63,7 @@ const CommunitySearchBar: React.FC<{
   const {
     searchInput, setSearchInput, debouncedSearchTerm, entries, segmentGroups,
     isSegmentMode, loading, clearSearch,
-  } = useDictionarySearch(token, SEARCH_LIMIT);
+  } = useDictionarySearch(SEARCH_LIMIT);
 
   useEffect(() => {
     onActiveChange(debouncedSearchTerm.trim().length > 0);

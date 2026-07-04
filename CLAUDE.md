@@ -282,6 +282,18 @@ When reviewing or writing code, actively look for and address:
 - **Potential failure paths** — database clients not released in all branches, missing error handling in async code, `Promise.all` failing mid-batch without individual error capture
 - **Complex code without comments** — algorithms, non-obvious state management (stale closure workarounds, ref sync patterns), and transaction flows should have inline comments explaining *why*, not just *what*
 
+### ⛔ Never reload/reset a page on a silent token refresh
+The access token rotates every ~15 min, so the `token` from `useAuth()` **changes
+identity on every refresh** while the session is unchanged. A data-load or
+state-reset `useEffect` **must key on a stable auth identity** (`user?.id` or
+`isAuthenticated`), **never on `token`** — keying on `token` re-runs the effect on
+each refresh and wipes in-progress UI (this caused a mid-game Word Search reset,
+2026-07-02). `token` is fine *inside* a fetch callback's header (it self-heals via
+the interceptor); if such a callback *drives* a load effect, build its header with
+`authHeader()` (`src/utils/authHeader.ts`) and drop `token` from its deps.
+Full rule + rationale + converted-sites list:
+→ [docs/TOKEN_EXPIRATION_IMPLEMENTATION.md](./docs/TOKEN_EXPIRATION_IMPLEMENTATION.md) (§ "Client rule: never reload/reset a page on a silent token refresh")
+
 ## Documentation
 Do not add to CLAUDE.md without asking me. Generally speaking I would like new documents to be linked as grandchild documents to CLAUDE.md so that this file does not grow too large.
 

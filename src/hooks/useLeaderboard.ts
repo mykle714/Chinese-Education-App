@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '../AuthContext';
 import { API_BASE_URL } from '../constants';
+import { authHeader } from '../utils/authHeader';
 
 export interface LeaderboardEntry {
   userId: string;
@@ -38,7 +38,6 @@ export const useLeaderboard = (options: UseLeaderboardOptions = {}) => {
     autoRefresh = false,
     refreshInterval = 30000 // 30 seconds
   } = options;
-  const { token } = useAuth();
 
   const [leaderboardData, setLeaderboardData] = useState<LeaderboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -61,7 +60,7 @@ export const useLeaderboard = (options: UseLeaderboardOptions = {}) => {
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+          ...authHeader(),
         },
       });
 
@@ -87,7 +86,10 @@ export const useLeaderboard = (options: UseLeaderboardOptions = {}) => {
     } finally {
       setLoading(false);
     }
-  }, [limit, token]);
+    // `token` is intentionally NOT a dep — the header reads the live token via
+    // authHeader(), so a silent refresh doesn't recreate this fetcher and
+    // re-fire the load effect. See CLAUDE.md "Never reload on token refresh".
+  }, [limit]);
 
   // Manually refresh the leaderboard
   const refresh = useCallback(() => {

@@ -26,7 +26,7 @@ interface VocabEntryCardsProps {
 
 const VocabEntryCards = ({ refreshTrigger, searchTerm = '' }: VocabEntryCardsProps) => {
   const navigate = useNavigate();
-  const { token } = useAuth();
+  const { isAuthenticated } = useAuth();
   const [entries, setEntries] = useState<VocabEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
@@ -60,14 +60,19 @@ const VocabEntryCards = ({ refreshTrigger, searchTerm = '' }: VocabEntryCardsPro
     } else {
       fetchEntries(0);
     }
-  }, [token, searchTerm]);
+  // isAuthenticated (stable, = !!user) not `token`: a silent refresh must not
+  // reset the list + scroll. See CLAUDE.md "Never reload on token refresh".
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, searchTerm]);
 
   // Fetch more entries when offset changes (only when not searching)
   useEffect(() => {
     if (offset > 0 && !searchTerm) {
       fetchEntries(offset);
     }
-  }, [offset, token, searchTerm]);
+  // isAuthenticated not `token` (see above).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [offset, isAuthenticated, searchTerm]);
 
   // Refresh entries when refreshTrigger changes
   useEffect(() => {
@@ -83,7 +88,9 @@ const VocabEntryCards = ({ refreshTrigger, searchTerm = '' }: VocabEntryCardsPro
         fetchEntries(0);
       }
     }
-  }, [refreshTrigger, token, searchTerm]);
+  // isAuthenticated not `token` (see above).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshTrigger, isAuthenticated, searchTerm]);
 
   const fetchEntries = async (currentOffset: number) => {
     setLoading(true);

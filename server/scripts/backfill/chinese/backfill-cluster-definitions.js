@@ -172,10 +172,25 @@ Candidate clusters:
 ${JSON.stringify(candidates, null, 2)}`;
 }
 
+// Numbered-pinyin reading: one or more space-separated syllables (multi-character
+// words/idioms are multi-syllable, e.g. "gong1 zuo4" 工作, "dui4 bu qi3" 对不起).
+// Each syllable's tone digit (1-4, 5 = neutral) is OPTIONAL — the project's own
+// numberedPinyin data drops it entirely for neutral tone ("de" 的, "le" 了, "men"
+// 们), so cluster readings follow the same convention.
+const READING_RE = /^[A-Za-z]+[1-5]?(?:\s[A-Za-z]+[1-5]?)*$/;
+
+// Single syllable WITH an explicit tone digit — the narrower shape that
+// participates in the same-syllable-different-tone heuristic below. A heteronym
+// tone mix-up (see docs/DEFINITION_CLUSTERS_EVAL.md, Open issue #1) is a
+// single-hanzi-character phenomenon; multi-syllable compound readings and
+// digit-less neutral tones don't fit the same check.
+const SINGLE_TONED_SYLLABLE_RE = /^[A-Za-z]+[1-5]$/;
+
 // ─── Stage A validation ───────────────────────────────────────────────────────
 // Stage A must be an exact PARTITION of the input glosses (pruning is Stage B's
 // job). Verifies: well-formed cluster objects, every gloss assigned exactly once,
-// verbatim, with no additions.
+// verbatim, with no additions, and that each reading is well-formed numbered
+// pinyin (catches garbled/missing tones, e.g. "gan" or "gan9").
 function validatePartition(inputGlosses, clusters) {
   if (!Array.isArray(clusters) || clusters.length === 0) {
     return { ok: false, error: 'clusters not a non-empty array' };
@@ -185,6 +200,7 @@ function validatePartition(inputGlosses, clusters) {
   for (const c of clusters) {
     if (!c || typeof c.sense !== 'string' || !c.sense.trim()) return { ok: false, error: 'cluster missing sense label' };
     if (typeof c.reading !== 'string' || !c.reading.trim()) return { ok: false, error: `cluster "${c.sense}" missing reading` };
+    if (!READING_RE.test(c.reading.trim())) return { ok: false, error: `cluster "${c.sense}" has malformed reading (expected syllable+tone digit): ${JSON.stringify(c.reading)}` };
     if (!Array.isArray(c.glosses) || c.glosses.length === 0) return { ok: false, error: `cluster "${c.sense}" has no glosses` };
     for (const g of c.glosses) {
       if (!inputSet.has(g)) return { ok: false, error: `cluster gloss not in input (added/rephrased): ${JSON.stringify(g)}` };
@@ -196,6 +212,31 @@ function validatePartition(inputGlosses, clusters) {
   const missing = inputGlosses.filter(g => !seen.has(g));
   if (missing.length) return { ok: false, error: `gloss not assigned to any cluster: ${JSON.stringify(missing)}` };
   return { ok: true };
+}
+
+// A wrong Stage-A tone can't be caught by exact-partition validation (the
+// reading is well-formed, just factually wrong — e.g. 干 "tree trunk" tagged
+// gan1 instead of gan4). It also can't be fixed by the merge pass, since merge
+// refuses to cross a reading boundary (see docs/DEFINITION_CLUSTERS_EVAL.md,
+// Open issue #1). The one structural signal available without a ground-truth
+// reading list: two clusters landing on the SAME syllable but DIFFERENT tones
+// is exactly the shape a tone typo takes, so flag it for human review rather
+// than trusting the split silently.
+function flagSameSyllableToneMismatch(clusters) {
+  const notes = [];
+  const tonesBySyllable = new Map(); // lowercased syllable → Set(reading strings)
+  for (const c of clusters) {
+    if (!SINGLE_TONED_SYLLABLE_RE.test(c.reading)) continue;
+    const syllable = c.reading.slice(0, -1).toLowerCase();
+    if (!tonesBySyllable.has(syllable)) tonesBySyllable.set(syllable, new Set());
+    tonesBySyllable.get(syllable).add(c.reading);
+  }
+  for (const [syllable, readings] of tonesBySyllable) {
+    if (readings.size > 1) {
+      notes.push(`possible tone mix-up: clusters on ${[...readings].join('/')} share syllable "${syllable}" — verify each cluster's tone is correct`);
+    }
+  }
+  return notes;
 }
 
 async function callCluster(word, primaryReading, definitions, model) {
@@ -329,7 +370,7 @@ async function run() {
         // Collect everything a human should double-check. Seeded by the model's
         // own uncertainty (prompt rule 6), then augmented with low-confidence
         // signals from the per-cluster ordering critic + scoring failures.
-        const reviewNotes = [...c.reviewNotes];
+        const reviewNotes = [...c.reviewNotes, ...flagSameSyllableToneMismatch(c.clusters)];
 
         // Stage A.5 — consolidate over-fine clusters (opt-in). On any error we
         // keep Stage A's clusters (the merge pass must never lose a gloss).
@@ -340,6 +381,7 @@ async function run() {
             reviewNotes.push(`merge pass skipped (${m.error})`);
           } else {
             clusters = m.clusters;
+            reviewNotes.push(...flagSameSyllableToneMismatch(clusters));
             reviewNotes.push(...m.reviewNotes);
           }
         }

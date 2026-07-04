@@ -410,7 +410,7 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
         setAdvFuture([]);
     }, []);
 
-    const enterEdit = useCallback(() => {
+    const enterEdit = useCallback((measureDefaultEnglishCenter?: () => number | null) => {
         if (!displayCurrentEntry) return;
         const existing = displayCurrentEntry.iconLayout;
         const clone = (l: IconLayoutItem[]) => l.map((it) => ({ ...it }));
@@ -420,7 +420,19 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
         // ones filled with their default). A card with custom-placed text must open ADVANCED
         // (basic mode has no canvas to show/move it). migration 91.
         const customText = hasCustomTextLayout(displayCurrentEntry.textLayout);
-        setTextDraftBoth(resolveTextLayout(displayCurrentEntry.textLayout));
+        const seededText = resolveTextLayout(displayCurrentEntry.textLayout);
+        // English specifically (independent of `customText`, which is true if EITHER block is
+        // custom): with no saved/temp textLayout.english, the basic renderer just showed it
+        // TOP-anchored (defaultEnglishTopAnchorTransform) at a height depending on the
+        // definition's line count — not the fixed center DEFAULT_TEXT_CENTER.english. Measure
+        // the actual on-screen position so opening the canvas doesn't jump the block.
+        if (!displayCurrentEntry.textLayout?.english) {
+            const measuredY = measureDefaultEnglishCenter?.();
+            if (measuredY != null) {
+                seededText.english = { ...seededText.english, y: measuredY };
+            }
+        }
+        setTextDraftBoth(seededText);
         if (existing && isAdvancedLayout(existing)) {
             // A saved ADVANCED arrangement (multiple icons, or a single icon that's been
             // moved / resized / rotated) → seed advanced from it and auto-open advanced.

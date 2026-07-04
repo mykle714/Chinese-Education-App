@@ -10,10 +10,15 @@ const VALID_LANGUAGES = ['zh', 'es'] as const;
 // override on the sort-pack fetch endpoints.
 const MAX_DIFFICULTY_LEVEL = 6;
 
-/** Parse+validate a manual level override (1..MAX_DIFFICULTY_LEVEL); anything else → null ("auto"). */
+/** Parse+validate a level (1..MAX_DIFFICULTY_LEVEL) — the auto target OR the manual pin; anything else → null. */
 function parseRequestedLevel(raw: unknown): number | null {
   const n = typeof raw === 'string' ? parseInt(raw, 10) : typeof raw === 'number' ? raw : NaN;
   return Number.isInteger(n) && n >= 1 && n <= MAX_DIFFICULTY_LEVEL ? n : null;
+}
+
+/** `mode === 'manual'` → the level dropdown pin (no drift); anything else → auto (drifts). */
+function parseManual(raw: unknown): boolean {
+  return raw === 'manual';
 }
 
 /**
@@ -26,9 +31,12 @@ export class StarterPacksController {
   /**
    * Get the initial sort-pack queue for a language (the client holds a short FIFO queue
    * of PACKS — the service default fills 2: on-deck + one buffer).
-   * GET /api/starter-packs/:language?level=<1-6>
-   * `level` is the manual HSK/difficulty dropdown override (omit, or any non-1..6
-   * value, for "auto" — the adaptive estimate).
+   * GET /api/starter-packs/:language?level=<1-6>&mode=auto|manual
+   * `level` is the level to center supply on: the client's own adaptive target (auto,
+   * docs §6 rewritten) or its dropdown pin (manual). Omit `level` on a brand-new
+   * session's first call so the server seeds a cold-start estimate. `mode=manual`
+   * pins to exactly `level` (no drift); anything else drifts to adjacent levels when
+   * `level`'s supply runs out.
    * Response: { packs: SortPack[], exhausted: boolean, level: number }
    */
   getStarterPackCards = async (req: Request, res: Response): Promise<void> => {
@@ -43,7 +51,8 @@ export class StarterPacksController {
       }
 
       const requestedLevel = parseRequestedLevel(req.query.level);
-      const result = await this.starterPacksService.getNextPacks(language, userId, [], 2, requestedLevel);
+      const manual = parseManual(req.query.mode);
+      const result = await this.starterPacksService.getNextPacks(language, userId, [], 2, requestedLevel, manual);
       res.json(result);
     } catch (error: any) {
       handleControllerError(error, res, 'StarterPacksController.getStarterPackCards');
@@ -53,8 +62,10 @@ export class StarterPacksController {
   /**
    * Refill one pack after the client's on-deck pack completes (the FIFO tail).
    * POST /api/starter-packs/next-pack
-   * Body: { language: string, excludePackKeys?: string[], level?: number }
-   * `level` is the manual HSK/difficulty dropdown override (omit for "auto").
+   * Body: { language: string, excludePackKeys?: string[], level?: number, mode?: 'auto' | 'manual' }
+   * `level`/`mode` mean the same as on GET /api/starter-packs/:language — the client
+   * always has a level to send by the time it calls this (either its adaptive target,
+   * already updated from the completing pack's signal, or its dropdown pin).
    * Response: { nextPack: SortPack | null, exhausted: boolean, level: number }
    */
   nextPack = async (req: Request, res: Response): Promise<void> => {
@@ -62,7 +73,7 @@ export class StarterPacksController {
       const userId = requireUserId(req, res);
       if (!userId) return;
 
-      const { language, excludePackKeys, level } = req.body;
+      const { language, excludePackKeys, level, mode } = req.body;
       if (!language || !VALID_LANGUAGES.includes(language as any)) {
         res.status(400).json({ error: 'Invalid language parameter' });
         return;
@@ -71,9 +82,10 @@ export class StarterPacksController {
         ? excludePackKeys.filter((k: any) => typeof k === 'string')
         : [];
       const requestedLevel = parseRequestedLevel(level);
+      const manual = parseManual(mode);
 
-      const { packs, exhausted, level: estimatedLevel } = await this.starterPacksService.getNextPacks(language, userId, held, 1, requestedLevel);
-      res.json({ nextPack: packs[0] ?? null, exhausted, level: estimatedLevel });
+      const { packs, exhausted, level: centerLevel } = await this.starterPacksService.getNextPacks(language, userId, held, 1, requestedLevel, manual);
+      res.json({ nextPack: packs[0] ?? null, exhausted, level: centerLevel });
     } catch (error: any) {
       handleControllerError(error, res, 'StarterPacksController.nextPack');
     }

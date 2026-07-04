@@ -21,6 +21,12 @@ router.get('/api/dictionary/segment', authenticateToken, async (req, res) => {
   await dictionaryController.segmentSearch(req, res);
 });
 
+// Generate an AI synthetic dictionary entry for a pinyin query with no real match ("AI" button)
+// @ts-ignore
+router.post('/api/dictionary/ai-entry', authenticateToken, async (req, res) => {
+  await dictionaryController.aiEntry(req, res);
+});
+
 // Lookup dictionary term by exact match
 // @ts-ignore
 router.get('/api/dictionary/lookup/:term', authenticateToken, async (req, res) => {

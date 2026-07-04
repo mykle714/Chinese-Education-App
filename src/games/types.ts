@@ -15,6 +15,9 @@ export interface GameDef {
     iconAsset?: string;
     /** Frontend route, e.g. "/games/memory-match". */
     route: string;
+    /** Persistent hub card background color, e.g. `COLORS.blueAccent`. Assigned
+        once per game here — not randomized at render time. */
+    bgColor: string;
     /** Lazy-loaded page component for the game. Page components take no props,
         so the default `ComponentType` ({}-props) is what `React.lazy` of a plain
         `React.FC` resolves to. */

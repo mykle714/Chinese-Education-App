@@ -1,13 +1,15 @@
 import StyleIcon from "@mui/icons-material/Style";
 import SkipNextIcon from "@mui/icons-material/SkipNext";
 import MobileTabScreen from "../components/MobileTabScreen";
-import { HubMenu, HubMenuRow } from "../components/HubMenu";
+import { HubMenu, HubMenuRow, HubMenuSpacer } from "../components/HubMenu";
+import TipBox from "../components/TipBox";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useDiscoverNavigation } from "../hooks/useDiscoverNavigation";
 import { COLORS } from "../theme/colors";
 
 // Discover hub (`/discover`) — the landing surface for the footer's Discover tab.
-// Mirrors the Games hub: a vertical HubMenu of discover activities. Today the only
+// Mirrors the Games hub: a vertical HubMenu of discover activities (tip-box
+// header + spacer footer, see docs/HUB_MENU_SYSTEM.md). Today the only
 // activity is Sort Cards (the drag-to-sort page, keyed by the user's language).
 // Phone-frame sizing comes from MobileDemoFrame; the scroll-away header + floating
 // footer come from MobileTabScreen; the row list comes from the shared HubMenu.
@@ -19,13 +21,18 @@ const DiscoverPage: React.FC = () => {
 
     return (
         <MobileTabScreen title="Discover" activePage="discover" contentClassName="discover-page__content">
-            <HubMenu className="discover-page__menu">
+            <HubMenu
+                className="discover-page__menu"
+                header={<TipBox className="discover-page__tip-box" />}
+                footer={<HubMenuSpacer />}
+            >
                 <HubMenuRow
                     to={sortPath}
                     className="discover-page__menu-item discover-page__menu-item--sort"
                     title="Sort Cards"
                     subtitle="Sort new cards into your decks"
                     icon={<StyleIcon sx={{ color: COLORS.textSecondary }} />}
+                    bgColor={COLORS.greenAccent}
                 />
                 <HubMenuRow
                     to={skippedPath}
@@ -33,6 +40,7 @@ const DiscoverPage: React.FC = () => {
                     title="Skipped Cards"
                     subtitle="Revisit cards you skipped"
                     icon={<SkipNextIcon sx={{ color: COLORS.textSecondary }} />}
+                    bgColor={COLORS.yellowAccent}
                 />
             </HubMenu>
         </MobileTabScreen>

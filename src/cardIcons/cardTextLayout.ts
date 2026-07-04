@@ -133,6 +133,44 @@ export function textItemTransform(item: TextLayoutItem): string {
   return `translate(-50%, -50%) rotate(${item.rotation}deg) scale(${item.scale})`;
 }
 
+/**
+ * Transform for the DEFAULT (unsaved) English block in the BASIC static render only —
+ * anchored by its TOP edge instead of its center, so a multi-line definition grows downward
+ * only instead of reserving symmetric headroom above DEFAULT_TEXT_CENTER.english for upward
+ * growth too. Deliberately scoped to that one case:
+ *   - The advanced fie editor (CardIconCanvas) and any block with a SAVED/custom textLayout
+ *     keep textItemTransform's center anchor unchanged — a saved position was captured in
+ *     center coordinates while dragging, and rotating/resizing around a top edge reads oddly.
+ *   - The Chinese (foreign) block is unaffected either way.
+ * Scale/rotation are threaded through for consistency with textItemTransform, though a true
+ * default item is always scale 1 / rotation 0.
+ */
+export function defaultEnglishTopAnchorTransform(item: TextLayoutItem): string {
+  return `translate(-50%, 0%) rotate(${item.rotation}deg) scale(${item.scale})`;
+}
+
+/**
+ * Measure the CURRENT on-screen center-y (as a fraction of the card's own height) of the
+ * basic/default English block, given the card face's container element. Used ONLY when
+ * entering the advanced fie editor with no saved custom textLayout.english: without this, the
+ * editor would seed its (center-anchored) draft from the fixed DEFAULT_TEXT_CENTER.english,
+ * and the block would visibly jump the instant advanced mode opens, since the basic renderer
+ * now top-anchors it instead (defaultEnglishTopAnchorTransform) at a height that depends on
+ * the definition's actual line count. Computing this requires a real DOM measurement — there's
+ * no way to derive rendered text height from data alone.
+ *
+ * Returns null if the row isn't found (e.g. no English content mounted at the container), so
+ * the caller can fall back to the plain center default.
+ */
+export function measureDefaultEnglishCenterY(cardContainer: HTMLElement): number | null {
+  const rowEl = cardContainer.querySelector<HTMLElement>(".mobile-demo-flashcard-english-row");
+  if (!rowEl) return null;
+  const cardRect = cardContainer.getBoundingClientRect();
+  const rowRect = rowEl.getBoundingClientRect();
+  if (cardRect.height <= 0) return null;
+  return ((rowRect.top - cardRect.top) + rowRect.height / 2) / cardRect.height;
+}
+
 /** Whether a text block sits at its untouched default placement (default center, scale 1,
  *  no rotation, unlocked). A block that IS default is omitted from the saved layout so a
  *  default card stores NULL. */

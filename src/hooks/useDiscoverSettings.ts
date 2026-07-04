@@ -5,9 +5,9 @@ import { useCallback, useEffect, useState } from 'react';
 const STORAGE_KEY = 'discover.settings';
 
 export interface DiscoverSettings {
-    // Narrate the on-deck word automatically each time a new card becomes the
-    // active (head) card. Gated additionally by the global TTS enable flag
-    // (useTTSSettings) — if narration is off entirely, this is a no-op.
+    // Narrate every card in the on-deck pack, left to right, automatically each
+    // time a new pack lands on-deck. Gated additionally by the global TTS enable
+    // flag (useTTSSettings) — if narration is off entirely, this is a no-op.
     autoplay: boolean;
 }
 

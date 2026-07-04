@@ -5,8 +5,9 @@
  * and to Postgres via the shared `db` pool — no service/DAL layer involved.
  *
  * Pipeline, per det row (deterministic — no LLM):
- *   1. SEARCH  — GET icons8 v7 search with amount=1 for the row's term, taking the
- *                single top icon's id. (Term = word1 headword; see TERM NOTE below.)
+ *   1. SEARCH  — GET icons8 v7 search with amount=1, trying a cascade of terms
+ *                (dd → word1 → remaining definitions[]; see TERM CASCADE below)
+ *                until one returns a match, taking that top icon's id.
  *   2. UPSERT? — if that icons8Id is NOT already in the local `icons8` table, call
  *                getIconById to fetch the icon's full metadata + raw SVG bytes and
  *                INSERT it (assetBytes + downloadedFormat='svg'). If the id already
@@ -26,10 +27,16 @@
  * AUTH: the public API key (ICONS8_API_KEY) is passed as the `token` query param on
  * both endpoints, replacing the browser's Bearer-JWT auth.
  *
- * TERM NOTE: we search with the raw `word1` headword (per request). icons8's catalog
- * is English-indexed, so non-English headwords (Chinese/Spanish) will often return no
- * match or a weak one — such rows are simply left with iconId = NULL and reported as
- * "no icon". Override the term source here if match quality needs improving.
+ * TERM CASCADE: icons8's catalog is English-indexed, so a single term often misses.
+ * We try, in order, until one search returns a hit:
+ *   1. dd        — `iconSearchTerm(definitions[0])` (stripParentheses + leading
+ *                  "to (be) " strip; mirrors src/utils/definitionUtils.ts, same
+ *                  term the flp icon picker pre-fills with).
+ *   2. word1     — the raw headword, as a fallback for when dd is empty/unmatched.
+ *   3. ddt(definitions[i]), i = 1..n-1 — the same stripParentheses transform
+ *      applied to each remaining gloss in turn, stopping at the first hit.
+ * Rows where every candidate term misses are left with iconId = NULL and reported
+ * as "no icon".
  *
  * Idempotent: only processes discoverable rows where "iconId" IS NULL, and getById is skipped when
  * the icon is already cached locally, so re-running only fills gaps.
@@ -107,8 +114,60 @@ const DELAY_MS = 300;
  * Returns the raw icon object (search shape) or null if nothing matched.
  */
 async function searchTopIcon(term) {
+  if (!term) return null;
   const { icons } = await searchIcons(term, { amount: 1 });
   return icons[0] ?? null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Search-term cascade (dd → word1 → remaining definitions[] via ddt)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Mirror of src/utils/definitionUtils.ts (stripParentheses / iconSearchTerm / ddt).
+// Kept as a plain JS copy rather than imported since this script runs outside the
+// frontend build (same pattern as backfill-long-definitions.js's stripParentheses
+// mirror). Keep in sync if the frontend versions change.
+
+function stripParentheses(text) {
+  return (text ?? '').replace(/\s*\([^)]*\)/g, '').trim();
+}
+
+const ICON_SEARCH_LEADING_STRIPS = [
+  /^to\s+be\s+/i, // copular infinitive ("to be hungry")
+  /^to\s+/i,      // plain infinitive ("to understand")
+];
+
+/** dd/ddt → icons8 search term: stripParentheses + leading-infinitive strip. */
+function iconSearchTerm(definition) {
+  let term = stripParentheses(definition ?? '');
+  for (const re of ICON_SEARCH_LEADING_STRIPS) term = term.replace(re, '');
+  return term.trim();
+}
+
+/**
+ * Ordered list of candidate search terms for a det row:
+ *   1. dd = iconSearchTerm(definitions[0])
+ *   2. word1 (fallback headword)
+ *   3. ddt(definitions[i]) for the remaining glosses, in array order
+ * Empty/duplicate candidates are dropped so we never re-search the same term twice.
+ */
+function buildSearchTerms(row) {
+  const definitions = Array.isArray(row.definitions) ? row.definitions : [];
+  const candidates = [
+    iconSearchTerm(definitions[0]),
+    (row.word1 ?? '').trim(),
+    ...definitions.slice(1).map(iconSearchTerm),
+  ];
+
+  const seen = new Set();
+  const terms = [];
+  for (const term of candidates) {
+    if (term && !seen.has(term)) {
+      seen.add(term);
+      terms.push(term);
+    }
+  }
+  return terms;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -198,17 +257,27 @@ async function setEntryIconId(client, id, iconId) {
 
 /**
  * Process one det row. Returns a small result describing what happened so the
- * caller can tally + log: { status, iconId?, name?, fetched?, storedBytes? }.
+ * caller can tally + log: { status, iconId?, name?, term?, fetched?, storedBytes? }.
  *   status: 'linked' | 'no-icon'
  *   fetched: true when getById was called (icon was new locally)
  */
 async function processEntry(client, row) {
-  const term = (row.word1 ?? '').trim();
-  if (!term) return { status: 'no-icon', reason: 'empty word1' };
+  const terms = buildSearchTerms(row);
+  if (terms.length === 0) return { status: 'no-icon', reason: 'no usable search term' };
 
-  // 1. SEARCH (amount=1) → top icon id.
-  const searchIcon = await searchTopIcon(term);
-  if (!searchIcon?.id) return { status: 'no-icon', reason: 'no search match' };
+  // 1. SEARCH (amount=1) → try each candidate term in order until one hits.
+  let term = null;
+  let searchIcon = null;
+  for (const candidate of terms) {
+    searchIcon = await searchTopIcon(candidate);
+    if (searchIcon?.id) {
+      term = candidate;
+      break;
+    }
+  }
+  if (!searchIcon?.id) {
+    return { status: 'no-icon', reason: `no search match (tried: ${terms.join(', ')})` };
+  }
 
   const iconId = searchIcon.id;
 
@@ -226,7 +295,7 @@ async function processEntry(client, row) {
   // 3. LINK det → icon.
   await setEntryIconId(client, row.id, iconId);
 
-  return { status: 'linked', iconId, name: searchIcon.name, fetched, storedBytes };
+  return { status: 'linked', iconId, name: searchIcon.name, term, fetched, storedBytes };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -247,9 +316,10 @@ async function run() {
   const client = await db.getClient();
 
   try {
-    // Only rows still missing an icon. word1 drives the search term.
+    // Only rows still missing an icon. definitions[]/word1 drive the search-term
+    // cascade (see buildSearchTerms).
     const { rows: entries } = await client.query(`
-      SELECT id, word1
+      SELECT id, word1, definitions
       FROM ${table}
       WHERE "iconId" IS NULL
         AND discoverable = TRUE
@@ -283,7 +353,7 @@ async function run() {
           const tag = result.fetched
             ? `(fetched${result.storedBytes ? ' +svg' : ' meta-only'})`
             : '(cached)';
-          console.log(`→ ${result.iconId} "${result.name}" ${tag}`);
+          console.log(`→ ${result.iconId} "${result.name}" via "${result.term}" ${tag}`);
         } else {
           noIcon++;
           console.log(`no icon (${result.reason})`);

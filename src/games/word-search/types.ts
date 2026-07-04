@@ -51,6 +51,8 @@ export interface WordSearchResponse {
     sufficient: boolean;
     /** Why the game is blocked when !sufficient (client picks the copy). */
     reason?: "language" | "insufficient-distinct" | "no-filler";
+    /** Index into WORD_SEARCH_TEMPLATES if template mode placed this grid, else null (random snaking). */
+    templateIndex?: number | null;
 }
 
 /** A cell coordinate in the grid. */

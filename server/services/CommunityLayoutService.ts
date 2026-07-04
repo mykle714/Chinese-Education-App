@@ -43,6 +43,17 @@ export class CommunityLayoutService {
     return this.communityLayoutDAL.getTopFeed(viewerUserId, language, excludeOwners, excludeKeys, limit);
   }
 
+  getDesignsForEntry(
+    viewerUserId: string,
+    language: Language,
+    entryKey: string,
+    excludeOwners: string[],
+    excludeKeys: string[],
+    limit: number,
+  ): Promise<CommunityDesign[]> {
+    return this.communityLayoutDAL.getDesignsForEntry(viewerUserId, language, entryKey, excludeOwners, excludeKeys, limit);
+  }
+
   getMyVotesThisWeek(viewerUserId: string): Promise<VotedDesignKey[]> {
     return this.communityLayoutDAL.getMyVotesThisWeek(viewerUserId);
   }

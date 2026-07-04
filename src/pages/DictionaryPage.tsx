@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import LeafPage from '../components/LeafPage';
 import {
@@ -14,9 +14,13 @@ import {
     Chip,
     Divider,
     Snackbar,
+    CircularProgress,
 } from '@mui/material';
-import { Search, Clear } from '@mui/icons-material';
+import { Search, Clear, AutoAwesome } from '@mui/icons-material';
 import DelayedCircularProgress from '../components/DelayedCircularProgress';
+import AiDictionaryEntryCard from '../components/AiDictionaryEntryCard';
+import { SIZE } from '../theme/scale';
+import { COLORS } from '../theme/colors';
 import { useAuth } from '../AuthContext';
 import { API_BASE_URL } from '../constants';
 import type { DictionaryEntry, Language, VocabEntry } from '../types';
@@ -28,15 +32,7 @@ import EipTabStrip from '../features/flashcards/FlashcardsLearnPage/EipTabStrip'
 import TooManyTabsSnackbar from '../features/flashcards/FlashcardsLearnPage/TooManyTabsSnackbar';
 import { usePageTitle } from '../hooks/usePageTitle';
 import { useTTS } from '../hooks/useTTS';
-
-// Matches any CJK Unified Ideograph (common + extension A/B blocks)
-const hasChinese = (text: string) => /[\u4e00-\u9fff\u3400-\u4dbf]/.test(text);
-
-interface SegmentGroup {
-    segment: string;
-    exactEntries: DictionaryEntry[];
-    prefixEntries: DictionaryEntry[];
-}
+import { useDictionarySearch } from '../hooks/useDictionarySearch';
 
 // Special characters for each language
 const SPECIAL_CHARACTERS: Record<Language, string[]> = {
@@ -60,29 +56,18 @@ function DictionaryPage() {
     const { token, user } = useAuth();
     const tts = useTTS();
 
-    const [searchInput, setSearchInput] = useState('');
-    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
-    // Regular search results (paginated)
-    const [entries, setEntries] = useState<DictionaryEntry[]>([]);
-    // Segment search results (grouped by segment, ordered by length)
-    const [segmentGroups, setSegmentGroups] = useState<SegmentGroup[]>([]);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
+    const {
+        searchInput, setSearchInput, debouncedSearchTerm, entries, segmentGroups,
+        isSegmentMode, loading, error, page, setPage, total, totalPages, clearSearch,
+        aiEntry, canAskAi, askingAi, aiNoMatch, aiError, askAi,
+    } = useDictionarySearch(token, 50);
+
     // Entry-tab system: tapping a result-card opens the EIP popup; tapping a
     // breakdown/used-in row inside it adds a tab instead of stacking another
     // popup. Scrim tap closes the popup and clears every tab.
     const [isEipOpen, setIsEipOpen] = useState(false);
     const eipStripRef = useRef<HTMLDivElement | null>(null);
     const eip = useEipTabs({ apiBaseUrl: API_BASE_URL, token, stripRef: eipStripRef });
-
-    // Pagination state (only used in regular search mode)
-    const [page, setPage] = useState(1);
-    const [totalPages, setTotalPages] = useState(1);
-    const [total, setTotal] = useState(0);
-    const limit = 50;
-
-    // Whether the current search term triggers GSA segment mode
-    const isSegmentMode = hasChinese(debouncedSearchTerm);
 
     const userLanguage = (user?.selectedLanguage || 'zh') as Language;
     const specialChars = SPECIAL_CHARACTERS[userLanguage] || [];
@@ -122,88 +107,18 @@ function DictionaryPage() {
         },
     });
 
-    // Debounce search input
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            setDebouncedSearchTerm(searchInput);
-            setPage(1); // Reset to first page on new search
-        }, 400);
-
-        return () => clearTimeout(timer);
-    }, [searchInput]);
-
-    // Fetch search results — switches between segment mode (CJK input) and regular paginated search
-    useEffect(() => {
-        const fetchResults = async () => {
-            if (!debouncedSearchTerm.trim()) {
-                setEntries([]);
-                setSegmentGroups([]);
-                setTotal(0);
-                setTotalPages(1);
-                return;
-            }
-
-            setLoading(true);
-            setError(null);
-
-            try {
-                if (hasChinese(debouncedSearchTerm)) {
-                    // GSA segment mode: look up all segments of the input
-                    const response = await fetch(
-                        `${API_BASE_URL}/api/dictionary/segment?text=${encodeURIComponent(debouncedSearchTerm)}`,
-                        { headers: { 'Authorization': `Bearer ${token}` }, credentials: 'include' }
-                    );
-                    if (response.ok) {
-                        const data = await response.json();
-                        setSegmentGroups(data.segments || []);
-                        setEntries([]);
-                    } else {
-                        const errorData = await response.json();
-                        setError(errorData.error || 'Failed to segment search');
-                    }
-                } else {
-                    // Regular paginated search
-                    const response = await fetch(
-                        `${API_BASE_URL}/api/dictionary/search?term=${encodeURIComponent(debouncedSearchTerm)}&page=${page}&limit=${limit}`,
-                        { headers: { 'Authorization': `Bearer ${token}` }, credentials: 'include' }
-                    );
-                    if (response.ok) {
-                        const data = await response.json();
-                        setEntries(data.entries || []);
-                        setSegmentGroups([]);
-                        setTotal(data.pagination?.total || 0);
-                        setTotalPages(data.pagination?.totalPages || 1);
-                    } else {
-                        const errorData = await response.json();
-                        setError(errorData.error || 'Failed to search dictionary');
-                    }
-                }
-            } catch (err) {
-                console.error('Error searching dictionary:', err);
-                setError('An error occurred while searching');
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchResults();
-    }, [debouncedSearchTerm, page, token]);
-
     const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         setSearchInput(event.target.value);
     };
 
     const handleClearSearch = () => {
-        setSearchInput('');
-        setDebouncedSearchTerm('');
-        setEntries([]);
-        setSegmentGroups([]);
+        clearSearch();
     };
 
     const handleSpecialCharClick = (char: string) => {
         const input = searchInputRef.current;
         if (!input) {
-            setSearchInput(prev => prev + char);
+            setSearchInput(searchInput + char);
             return;
         }
 
@@ -397,6 +312,7 @@ function DictionaryPage() {
                                 </InputAdornment>
                             ),
                         }}
+                        sx={{ mt: 2 }}
                     />
                 </Box>
             )}
@@ -430,9 +346,9 @@ function DictionaryPage() {
                                 </InputAdornment>
                             ),
                         }}
-                        sx={{ flex: 1 }}
+                        sx={{ flex: 1, mt: 2 }}
                     />
-                    <Box className="dictionary-page__special-chars--desktop" sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                    <Box className="dictionary-page__special-chars--desktop" sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                         {/* Row 1: a, e, i */}
                         <Box className="dictionary-page__special-chars-row" sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
                             {specialChars.slice(0, 12).map((char) => (
@@ -467,14 +383,15 @@ function DictionaryPage() {
                 </Box>
             )}
 
-            {/* Results Info */}
+            {/* Results Info — a blue results-count pill, optionally followed by the orange "AI" pill
+                that generates a synthetic entry for an unmatched pinyin query (canAskAi). */}
             {debouncedSearchTerm && !loading && (
-                <Box className="dictionary-page__results-info" sx={{ mb: 2 }}>
+                <Box className="dictionary-page__results-info" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                     {isSegmentMode
                         ? <Chip
                             className="dictionary-page__results-chip--segment"
-                            label={`${segmentGroups.length} segment${segmentGroups.length !== 1 ? 's' : ''} · ${segmentGroups.reduce((n, g) => n + g.exactEntries.length + g.prefixEntries.length, 0)} results for "${debouncedSearchTerm}"`}
-                            color="secondary"
+                            label={`${segmentGroups.reduce((n, g) => n + g.exactEntries.length + g.prefixEntries.length, 0)} results for "${debouncedSearchTerm}"`}
+                            color="primary"
                             variant="outlined"
                           />
                         : <Chip
@@ -484,6 +401,52 @@ function DictionaryPage() {
                             variant="outlined"
                           />
                     }
+                    {(canAskAi || askingAi) && (
+                        <Chip
+                            className="dictionary-page__results-chip--ai"
+                            label="AI"
+                            icon={<AutoAwesome sx={{ fontSize: SIZE.body }} />}
+                            variant="outlined"
+                            clickable={!askingAi}
+                            disabled={askingAi}
+                            onClick={askingAi ? undefined : askAi}
+                            sx={{
+                                color: COLORS.yellowMain,
+                                borderColor: COLORS.yellowMain,
+                                '& .MuiChip-icon': { color: COLORS.yellowMain },
+                            }}
+                          />
+                    )}
+                </Box>
+            )}
+
+            {/* AI synthetic entry — rendered at the TOP of the results (above breakdown / regular
+                results) so a just-generated answer is immediately visible. A cached answer shows
+                without a tap; an "Ask AI" tap shows the spinner, then the card or a no-match note.
+                See docs/DICTIONARY_AI_FALLBACK_SEARCH.md. */}
+            {!loading && aiEntry && (
+                <Box className="dictionary-page__ai-result" sx={{ mb: 3 }}>
+                    <AiDictionaryEntryCard entry={aiEntry} />
+                </Box>
+            )}
+            {askingAi && (
+                <Box className="dictionary-page__ai-loading" sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3, color: COLORS.yellowMain }}>
+                    <CircularProgress size={20} sx={{ color: COLORS.yellowMain }} />
+                    <Typography variant="body2" sx={{ color: COLORS.yellowMain }}>Asking AI…</Typography>
+                </Box>
+            )}
+            {!askingAi && aiNoMatch && (
+                <Box className="dictionary-page__ai-no-match" sx={{ mb: 3 }}>
+                    <Typography variant="body2" color="text.secondary">
+                        AI couldn't find a likely match for "{debouncedSearchTerm}".
+                    </Typography>
+                </Box>
+            )}
+            {!askingAi && aiError && (
+                <Box className="dictionary-page__ai-error" sx={{ mb: 3 }}>
+                    <Typography variant="body2" color="error">
+                        The AI request didn't go through. Tap AI to try again.
+                    </Typography>
                 </Box>
             )}
 
@@ -582,8 +545,9 @@ function DictionaryPage() {
                 </Box>
             )}
 
-            {/* No Results */}
-            {!loading && debouncedSearchTerm && entries.length === 0 && segmentGroups.length === 0 && (
+            {/* No Results — suppressed while an AI card / no-match / error note stands in for it. */}
+            {!loading && debouncedSearchTerm && entries.length === 0 && segmentGroups.length === 0
+                && !aiEntry && !askingAi && !aiNoMatch && !aiError && (
                 <Box className="dictionary-page__no-results" sx={{ textAlign: 'center', py: 4 }}>
                     <Typography variant="body1" color="text.secondary">
                         No results found for "{debouncedSearchTerm}"

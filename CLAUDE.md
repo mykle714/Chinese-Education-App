@@ -32,6 +32,8 @@ cvet = chinese vocab entries table
 svet = spanish vocab entries table
 fie = flashcard icon editor
 dd = display definition (the definition that we display on a flashcard)
+ddt = display definition transformation
+utcm = mastery progress (unfamiliar, target, comfortable, mastered)
 
 
 ## Terminology: "Learn Now" cards
@@ -105,6 +107,17 @@ Those languages are **not user-selectable** for now; build the per-language
 tables before re-enabling them. Relevant migrations: 55 (gender), 57 (rename →
 `dictionaryentries_zh`), 58 (create `dictionaryentries_es`), 59 (es etymology), 60 (affixes), 61 (affix gender/number + interfix/infix).
 
+### Marking Words Discoverable
+
+It is **illegal** to set `discoverable = TRUE` on any `dictionaryentries_zh` or
+`dictionaryentries_es` row outside of the `/mark-discoverable` skill. Setting
+the flag directly (a bare `UPDATE ... SET discoverable = TRUE`) without running
+the rest of that skill's pipeline leaves the row's enrichment columns
+(`partsOfSpeech`, `longDefinition`, `exampleSentences`, `vernacularScore`, zh's
+`breakdown`/`classifier`/`wordForms`/`definitionClusters`, etc.) null, and the
+word ships to learners incompletely enriched. Always go through
+`/mark-discoverable` end to end, including its verification step.
+
 ## 🗣️ Multi-Language Support
 
 For adding or modifying language support:
@@ -151,6 +164,9 @@ An hourly Postgres cron on the prod server (a) breaks stale streaks (mirroring `
 
 ### UX & Navigation
 → See [docs/UX_AND_NAVIGATION.md](./docs/UX_AND_NAVIGATION.md) — umbrella for navigation + the mobile shell: app navigation structure (footer tabs + `/` Home menu + back-arrow drill-ins), the `MobileTabScreen` scroll-away-header layout, the **Leaf**/**Node** drill-in archetypes, the Discover two-level surface, and the global touch/scroll/selection rules.
+
+### Hub Menu System
+→ See [docs/HUB_MENU_SYSTEM.md](./docs/HUB_MENU_SYSTEM.md) — the shared `HubMenu`/`HubMenuRow` component behind the Home/Discover/Games hubs: rounded cards, per-item persistent pastel colors, header/footer slots (welcome text, tip box, floating-footer spacer), and horizontally-scrolling "array" menu items (used by Bubble Match's level picker).
 
 ### Games
 → See [docs/GAMES_FEATURE.md](./docs/GAMES_FEATURE.md)

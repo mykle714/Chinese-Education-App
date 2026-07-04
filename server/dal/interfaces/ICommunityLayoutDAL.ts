@@ -37,6 +37,21 @@ export interface ICommunityLayoutDAL {
     limit: number,
   ): Promise<CommunityDesign[]>;
 
+  /**
+   * Feed 3 — a page of other users' advanced layouts for ONE specific word (`entryKey`), ranked
+   * by votes this week (descending, stable tiebreak), excluding already-shown designs. Backs the
+   * Community page's search bar: "highest rated designs for this entry." `inLibrary` reflects
+   * whether the viewer already owns the word.
+   */
+  getDesignsForEntry(
+    viewerUserId: string,
+    language: string,
+    entryKey: string,
+    excludeOwners: string[],
+    excludeKeys: string[],
+    limit: number,
+  ): Promise<CommunityDesign[]>;
+
   /** The design keys the viewer has voted on since their current week boundary. */
   getMyVotesThisWeek(viewerUserId: string): Promise<VotedDesignKey[]>;
 

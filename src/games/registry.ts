@@ -1,5 +1,6 @@
 import { lazy } from "react";
 import type { GameDef } from "./types";
+import { COLORS } from "../theme/colors";
 
 /**
  * Central registry of all games available in the Games hub.
@@ -23,6 +24,7 @@ export const GAME_REGISTRY: GameDef[] = [
         // (shortfall message), so we don't gate it out of the menu with
         // requiresAuth — that just made the row invisible while debugging.
         Component: lazy(() => import("./bubble-match/BubbleMatchPage")),
+        bgColor: COLORS.redAccent,
     },
     {
         gameId: "word-search",
@@ -30,6 +32,7 @@ export const GAME_REGISTRY: GameDef[] = [
         subtitle: "Hunt your vocab words hidden in a grid of characters",
         route: "/games/word-search",
         Component: lazy(() => import("./word-search/WordSearchPage")),
+        bgColor: COLORS.purpleAccent,
     },
 ];
 

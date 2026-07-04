@@ -18,17 +18,17 @@ import { routeSlideDir, supportsViewTransitions } from "../utils/pageTransition"
 export function useSlideNavigate() {
     const navigate = useNavigate();
     return useCallback(
-        (to: string) => {
+        (to: string, options?: { state?: unknown }) => {
             const dir = routeSlideDir(to);
             if (!dir || !supportsViewTransitions()) {
-                navigate(to);
+                navigate(to, options);
                 return;
             }
             document.documentElement.dataset.vtDir = dir;
             armSkipNextEnter();
             document.startViewTransition(() => {
                 flushSync(() => {
-                    navigate(to);
+                    navigate(to, options);
                 });
             });
         },

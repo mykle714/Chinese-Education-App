@@ -11,16 +11,21 @@ import { vetTableForLanguage } from '../dal/shared/vetTable.js';
  * Starter Packs Service
  * Business logic for the discover / "sort cards" flow.
  *
- * DESIGN (see docs/SORT_CARDS_REQUIREMENTS.md): the SERVER owns the level; the client is a
- * dumb FIFO queue. All level estimation and card selection happen here; the client
- * just shows the head of a short queue and asks for one replacement per sort.
+ * DESIGN (see docs/SORT_CARDS_REQUIREMENTS.md §6 — adaptive leveling, rewritten): the
+ * CLIENT owns the adaptive level once the session starts. The server's only leveling
+ * job is (a) a one-time COLD-START seed via `estimateLevel` when the client enters the
+ * flow with no level yet, and (b) serving supply centered on whatever level the client
+ * asks for next, drifting to adjacent levels when that level's supply runs out (unless
+ * the request is a manual dropdown pin, which never drifts). The client tracks its own
+ * running target level and the "already learned" streak that promotes it — see
+ * `SortCardsPage.tsx` — because the level must react to a SortPack's outcome as soon as
+ * it completes, not on the next server round-trip.
  *
  * Card source is the per-language dictionaryentries table (discoverable=TRUE). Per-user
  * sort state lives in two places:
- *   - vocabentries (vet): "Add to Learn Now" / "Already Learned" rows. The GENERATED
- *     `category` column (from markHistory) is the only mastery signal the estimator
- *     reads — so a card mastered via flashcard review (or DEMOTED by a later wrong
- *     answer) automatically moves the level, with no Discover-specific bookkeeping.
+ *   - vocabentries (vet): "Add to Learn Now" / "Already Learned" rows persist what the
+ *     user did with a card; the GENERATED `category` column (from markHistory) is what
+ *     `estimateLevel`'s cold-start seed reads.
  *   - discover_skips: "Skip for now" deferrals (migration 80). Deliberately separate
  *     so a skip carries NO level signal and never enters the library.
  *
@@ -35,8 +40,10 @@ import { vetTableForLanguage } from '../dal/shared/vetTable.js';
  */
 export class StarterPacksService {
   /**
-   * Leveling tuning knobs (docs/SORT_CARDS_REQUIREMENTS.md §6 — adaptive leveling).
-   * A level L is "cleared" (so the user advances past it) when:
+   * Cold-start tuning knobs for `estimateLevel` (docs/SORT_CARDS_REQUIREMENTS.md §6.1).
+   * Used ONLY to seed the level the very first time a user enters the flow (no client
+   * target level yet). A level L is "cleared" (so the cold-start seed skips past it)
+   * when:
    *     mastered[L] >= MIN_MASTERED_TO_ADVANCE  AND  learning[L] <= LEARN_LATER_TOLERANCE
    * - MIN_MASTERED_TO_ADVANCE: master at least this many cards at L before advancing.
    * - LEARN_LATER_TOLERANCE: how many "Add to Learn Now" (not-yet-mastered) cards a
@@ -181,10 +188,13 @@ export class StarterPacksService {
   }
 
   /**
-   * Estimate the user's current difficulty level: the lowest level they have NOT yet
-   * cleared (docs §4.3). Pure function of vet mastery state, recomputed on demand —
-   * never accumulated from sort events, so it is order-independent and picks up
-   * flashcard-review progress (and demotions) automatically.
+   * COLD-START ONLY (docs §6.1): the lowest level the user has NOT yet cleared, used to
+   * seed the client's adaptive target level the first time it enters the flow with no
+   * level of its own to send. Once seeded, the client tracks and moves its own target
+   * level per-SortPack-signal (§6, rewritten) — this is never called again mid-session
+   * to re-derive or override that running estimate. Pure function of vet mastery state,
+   * so it still picks up flashcard-review progress (and demotions) automatically for
+   * the NEXT cold start (e.g. a fresh session after time away).
    *
    * For each level L we count, in ONE grouped query:
    *   - mastered[L]: vet rows at L with category = 'Mastered'.
@@ -478,14 +488,15 @@ export class StarterPacksService {
     // discover_skips so it no longer shows on the Skipped page.
     await this._clearSkip(userId, cardId, language);
 
-    // Pack mode: the client owns its pack queue, so there is no single replacement
-    // card. Mark the pack seen when its last card was just sorted.
+    // Pack mode: the client owns its pack queue AND its own adaptive target level
+    // (docs §6, rewritten) — it derives the pack's signal from the buckets it already
+    // knows client-side, so there is nothing level-related for the server to compute or
+    // echo back here. Mark the pack seen when its last card was just sorted.
     if (inPackMode) {
       if (opts.packId != null && opts.lastInPack) {
         await this.markPackSeen(userId, opts.packId);
       }
-      const level = await this.estimateLevel(userId, language);
-      return { success: true, message: 'Card sorted successfully', bucket: actualBucket, level };
+      return { success: true, message: 'Card sorted successfully', bucket: actualBucket };
     }
 
     // Legacy single-card flow: compute the one replacement card AFTER the sort is
@@ -774,22 +785,30 @@ export class StarterPacksService {
    * fallback packs-of-1. `excludePackKeys` are the packKeys the client currently holds
    * so a replacement is never a duplicate. Skips are NOT auto-recycled (requirements §5.2).
    *
-   * `requestedLevel` is the manual HSK/difficulty override from the sort-menu level
-   * dropdown (docs/SORT_CARDS_REQUIREMENTS.md §HSK level dropdown): when set, supply is
-   * pinned to EXACTLY that level — no nearest-level drift — so switching levels never
-   * silently serves a different one. `null` (the default / "auto" menu entry) keeps
-   * today's adaptive-drift behavior. Either way the returned `level` is always the
-   * server's true adaptive ESTIMATE (never the override) — the client uses it only to
-   * render the "auto: <level>" label, never as a filter.
+   * `requestedLevel` is the level to center supply on. Two callers, same param:
+   *   - AUTO (client's adaptive target): the client sends the level it is currently
+   *     tracking (docs §6, rewritten — it moves the target itself as SortPacks resolve,
+   *     no server round-trip needed to decide the next level). `null` means the client
+   *     has no target yet (its very first fetch this session) — the server seeds one
+   *     via the cold-start `estimateLevel`.
+   *   - MANUAL (the level dropdown, docs §6.5): the client sends its pinned level with
+   *     `manual: true`.
+   * `manual` controls drift: auto requests (manual=false, whether cold-started or
+   * client-tracked) drift to adjacent levels when `requestedLevel`'s supply runs out
+   * (§6.3); a manual pin never drifts — it collapses the walk to a single level. Either
+   * way the returned `level` just echoes the center actually used, for the client to
+   * remember (e.g. to capture the cold-start seed) — never re-derived from vet state
+   * after cold start, and never shown as a fluctuating number in the auto UI.
    */
   async getNextPacks(
     language: string,
     userId: string,
     excludePackKeys: string[] = [],
     limit = 2,
-    requestedLevel: number | null = null
+    requestedLevel: number | null = null,
+    manual = false
   ): Promise<{ packs: SortPack[]; exhausted: boolean; level: number }> {
-    const level = await this.estimateLevel(userId, language);
+    const level = requestedLevel != null ? requestedLevel : await this.estimateLevel(userId, language);
     const seen = await this._getSeenPacks(userId);
 
     // Split the client-held packKeys into authored ids and single card ids.
@@ -802,14 +821,14 @@ export class StarterPacksService {
 
     // LEVEL is honored before the authored-packs-first rule: walk levels nearest-first
     // and, WITHIN each level, serve authored packs then fallback singles, before ever
-    // drifting to the next level. So a level-2 user exhausts ALL level-2 supply (packs
-    // AND singles) before seeing any level-1 or level-3 card. A manual `requestedLevel`
+    // drifting to the next level. So a level-2 request exhausts ALL level-2 supply
+    // (packs AND singles) before seeing any level-1 or level-3 card. A manual pin
     // collapses this walk to a single level — no drift out of the requested level.
     const excludePackIds = [...seen, ...heldPackIds];
     const excludeCardIds = [...heldSingleIds];
     const packs: SortPack[] = [];
 
-    const levelsToVisit = requestedLevel != null ? [requestedLevel] : this._levelDriftOrder(level);
+    const levelsToVisit = manual ? [level] : this._levelDriftOrder(level);
     for (const lvl of levelsToVisit) {
       if (packs.length >= limit) break;
 

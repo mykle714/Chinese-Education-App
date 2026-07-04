@@ -24,17 +24,23 @@ import { SIZE, WEIGHT, LEADING, TRACKING } from "../theme/scale";
 
 // The on-deck unit is now a SORT PACK (docs/SORT_CARDS_REQUIREMENTS.md §4.5): up to 3
 // draggable cards (no sentence band). The client holds a short FIFO queue of PACKS
-// (target 2: on-deck + buffer). The server owns all selection/leveling; the client
-// renders the head pack, sorts its cards one at a time, and asks for one replacement
-// pack when a pack completes. Skip is a de-emphasized header button (not a drag
-// target). Undo reverses one card action at a time (sort OR skip), 3 deep.
+// (target 2: on-deck + buffer). The server selects card CONTENT; the CLIENT owns
+// adaptive LEVELING (docs §6, rewritten) — see the autoLevelRef/levelStreakRef state
+// below. Skip is a de-emphasized header button (not a drag target). Undo reverses one
+// card action at a time (sort OR skip), 3 deep.
 
 const UNDO_DEPTH = 3;
 
 // Manual HSK/difficulty dropdown levels — mirrors the server's generalized 1..6
 // difficulty scale (StarterPacksService._levelConfig, migration 79) for every
-// language. `null` is the "auto" entry (today's adaptive-estimate flow).
+// language. `null` is the "auto" entry (the adaptive target the client tracks itself).
 const DIFFICULTY_LEVELS = [1, 2, 3, 4, 5, 6];
+const MIN_DIFFICULTY_LEVEL = DIFFICULTY_LEVELS[0];
+const MAX_DIFFICULTY_LEVEL = DIFFICULTY_LEVELS[DIFFICULTY_LEVELS.length - 1];
+// How many consecutive "Already Learned"-only SortPacks at a level are required before
+// the auto target moves up a level (docs §6, rewritten). A single "Add to Learn Now"
+// anywhere in a pack downgrades immediately — no streak needed in that direction.
+const ALREADY_LEARNED_STREAK_TO_UPGRADE = 2;
 
 // Drag destinations (Skip is intentionally NOT here — §5.1).
 interface BucketZone {
@@ -373,12 +379,27 @@ const SortCardsPage: React.FC = () => {
     const [undoStack, setUndoStack] = useState<UndoEntry[]>([]);
     const [loading, setLoading] = useState(true);
     const [highlightedBucket, setHighlightedBucket] = useState<string | null>(null);
-    const [level, setLevel] = useState<number | null>(null);
     // Manual HSK/difficulty override from the level dropdown; null = "auto" (the
-    // adaptive estimate the server computes today). Not persisted — reverts to auto
-    // on reload, matching the request-scoped nature of a "show me level N" session.
+    // client-tracked adaptive target below). Not persisted — reverts to auto on
+    // reload, matching the request-scoped nature of a "show me level N" session.
     const [selectedLevel, setSelectedLevel] = useState<number | null>(null);
     const [levelMenuAnchor, setLevelMenuAnchor] = useState<HTMLElement | null>(null);
+
+    // Adaptive leveling state (docs/SORT_CARDS_REQUIREMENTS.md §6, rewritten): the
+    // CLIENT is the sole owner of the auto target level once seeded. Refs (not state)
+    // because they must be read synchronously by advancePack right after a signal
+    // updates them — no re-render round-trip, and the number is never displayed
+    // (fluctuates too much to show live — the chip just reads "Auto").
+    //   - autoLevelRef: the current auto target; null until the first (cold-start)
+    //     server response seeds it.
+    //   - levelStreakRef: per-level count of consecutive "Already Learned"-only packs
+    //     seen at that level, toward the 2-pack upgrade threshold.
+    //   - packBucketsRef: which bucket each card in a pack was actually sorted into
+    //     THIS session, so a completing pack's signal can be derived (a pack counts as
+    //     ONE signal no matter how many of its cards were sorted — §6).
+    const autoLevelRef = useRef<number | null>(null);
+    const levelStreakRef = useRef<Record<number, number>>({});
+    const packBucketsRef = useRef<Record<string, Record<number, string>>>({});
 
     const bucketRefs = useRef<Map<string, HTMLElement>>(new Map());
 
@@ -394,8 +415,10 @@ const SortCardsPage: React.FC = () => {
 
     // Pack queue: (re)fetched on mount AND whenever the level dropdown changes — a
     // level switch is allowed to replace the on-deck pack (docs/SORT_CARDS_REQUIREMENTS.md
-    // §HSK level dropdown), so it re-runs the same initial-fill fetch rather than
-    // patching the existing queue.
+    // §6.5), so it re-runs the same initial-fill fetch rather than patching the
+    // existing queue. Auto's request level is whatever the client is already tracking
+    // (autoLevelRef) — null only on the very first call this session, which asks the
+    // server for a cold-start seed.
     useEffect(() => {
         const fetchPacks = async () => {
             setLoading(true);
@@ -405,9 +428,12 @@ const SortCardsPage: React.FC = () => {
             doneRef.current = {};
             setDone({});
             setUndoStack([]);
+            packBucketsRef.current = {};
             try {
                 const url = new URL(`${API_BASE_URL}/api/starter-packs/${language}`);
-                if (selectedLevel != null) url.searchParams.set("level", String(selectedLevel));
+                const requestLevel = selectedLevel != null ? selectedLevel : autoLevelRef.current;
+                if (requestLevel != null) url.searchParams.set("level", String(requestLevel));
+                if (selectedLevel != null) url.searchParams.set("mode", "manual");
                 const response = await fetch(url.toString(), {
                     headers: token ? { Authorization: `Bearer ${token}` } : {},
                     credentials: "include",
@@ -416,7 +442,11 @@ const SortCardsPage: React.FC = () => {
                     const data: DiscoverFetchResponse = await response.json();
                     setQueue(data.packs);
                     setExhausted(data.exhausted);
-                    if (typeof data.level === "number") setLevel(data.level);
+                    // Only auto ever needs to learn the level from the server — the
+                    // cold-start seed. A manual pin's level is already known locally
+                    // (selectedLevel), and re-echoes of an already-tracked auto level
+                    // are harmless no-ops.
+                    if (selectedLevel == null && typeof data.level === "number") autoLevelRef.current = data.level;
                 } else {
                     console.error("Failed to fetch starter packs");
                 }
@@ -437,23 +467,17 @@ const SortCardsPage: React.FC = () => {
         (lvl: number) => (language === "zh" ? `HSK ${lvl}` : `Level ${lvl}`),
         [language]
     );
-    // The chip shows "auto: <estimate>" while on auto, or the bare label once the
-    // user has pinned a specific difficulty via the dropdown.
-    const levelLabel =
-        selectedLevel != null
-            ? difficultyLabel(selectedLevel)
-            : level == null
-                ? null
-                : `auto: ${difficultyLabel(level)}`;
+    // The chip shows the bare label once the user has pinned a specific difficulty via
+    // the dropdown, or just "Auto" — the adaptive target moves per-pack and fluctuates
+    // too much to show live (docs §6, rewritten), so it is never rendered as a number.
+    const levelLabel = selectedLevel != null ? difficultyLabel(selectedLevel) : "Auto";
 
     // Log every time a new sort pack lands on-deck (queue[0] changes).
     useEffect(() => {
         if (!currentPack) return;
         console.log("[sort-flow] pack on-deck", {
-            packKey: currentPack.packKey,
-            packId: currentPack.packId,
-            cardIds: currentPack.cards.map((c) => c.id),
-            queueLength: queue.length,
+            sortPack: currentPack,
+            estimatedLevel: autoLevelRef.current,
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentPack?.packKey]);
@@ -475,15 +499,35 @@ const SortCardsPage: React.FC = () => {
         }
     }, [tts]);
 
-    // Fires when a card is first picked up (drag start). Unlocks audio (mobile
-    // requires a user gesture) and, when autoplay is on, speaks that card's own
-    // word audio — NOT the pack sentence, which never auto-narrates in this flow.
-    const handleCardPickup = useCallback((card: DiscoverCard) => {
+    // Fires when a card is first picked up (drag start). Just unlocks audio
+    // (mobile requires a user gesture) — narration itself is handled by the
+    // pack-level autoplay effect below, not per-pickup.
+    const handleCardPickup = useCallback(() => {
         unlockAudioOnce();
-        if (tts.enabled && discoverSettings.autoplay) {
-            tts.speakSentence(card.entryKey, card.pronunciation ?? undefined);
-        }
-    }, [unlockAudioOnce, tts, discoverSettings.autoplay]);
+    }, [unlockAudioOnce]);
+
+    // Autoplay: narrate every card in the on-deck pack, left to right, once per
+    // pack (keyed on packKey so it fires exactly once when a pack lands on-deck,
+    // not on every re-render). Cards already resolved/locked are still narrated —
+    // this is about hearing the pack's words, not just the still-sortable ones.
+    // Cancelled (and any in-flight utterance stopped) if the pack changes or
+    // autoplay/TTS gets turned off mid-sequence.
+    useEffect(() => {
+        if (!currentPack) return;
+        if (!tts.enabled || !discoverSettings.autoplay) return;
+        let cancelled = false;
+        (async () => {
+            for (const card of currentPack.cards) {
+                if (cancelled) return;
+                await tts.speakSentence(card.entryKey, card.pronunciation ?? undefined);
+            }
+        })();
+        return () => {
+            cancelled = true;
+            tts.cancel();
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentPack?.packKey, tts.enabled, discoverSettings.autoplay]);
 
     // Advance past a completed pack: drop the head and refill the tail with one pack,
     // excluding the packKeys we still hold so the replacement is never a duplicate.
@@ -494,6 +538,11 @@ const SortCardsPage: React.FC = () => {
         const rest = queue.filter((p) => p.packKey !== completedKey);
         setQueue(rest);
         try {
+            // Reads autoLevelRef fresh (not a stale closure) — handleSortCard updates it
+            // synchronously from the completing pack's signal BEFORE calling advancePack,
+            // so a downgrade/upgrade is reflected in THIS replenish request already
+            // (docs §6, rewritten: "set to sortPackLevel±1", never a stale increment).
+            const requestLevel = selectedLevel != null ? selectedLevel : autoLevelRef.current;
             const response = await fetch(`${API_BASE_URL}/api/starter-packs/next-pack`, {
                 method: "POST",
                 headers: authHeaders,
@@ -501,13 +550,13 @@ const SortCardsPage: React.FC = () => {
                 body: JSON.stringify({
                     language,
                     excludePackKeys: rest.map((p) => p.packKey),
-                    ...(selectedLevel != null ? { level: selectedLevel } : {}),
+                    ...(requestLevel != null ? { level: requestLevel } : {}),
+                    ...(selectedLevel != null ? { mode: "manual" } : {}),
                 }),
             });
             if (!response.ok) throw new Error(`next-pack failed: ${response.status}`);
             const data: DiscoverNextPackResponse = await response.json();
             setExhausted(data.exhausted);
-            if (typeof data.level === "number") setLevel(data.level);
             if (data.nextPack) {
                 const next = data.nextPack;
                 setQueue((prev) => (prev.some((p) => p.packKey === next.packKey) ? prev : [...prev, next]));
@@ -549,13 +598,48 @@ const SortCardsPage: React.FC = () => {
 
     // Sort one card into a bucket (per-card POST). Optimistic: resolve locally first,
     // then decide (from the ref) whether that completed the pack.
+    // A completing pack contributes exactly ONE adaptive-leveling signal, derived from
+    // every bucket sorted into it this session (docs §6, rewritten): any "Add to Learn
+    // Now" outweighs everything else (negative — the user didn't know at least one card
+    // at this level), otherwise an all-"Already Learned" pack is positive. Anchored on
+    // the completing pack's OWN level (not the running auto target), since the target
+    // may already have drifted from an earlier in-flight signal — this is exactly why
+    // the update is "set to packLevel±1", never "increment the target".
+    const applyPackSignal = useCallback((pack: SortPack) => {
+        const outcomes = Object.values(packBucketsRef.current[pack.packKey] ?? {});
+        if (outcomes.includes("library")) {
+            levelStreakRef.current[pack.level] = 0;
+            autoLevelRef.current = Math.max(MIN_DIFFICULTY_LEVEL, pack.level - 1);
+        } else if (outcomes.includes("already-learned")) {
+            const streak = (levelStreakRef.current[pack.level] ?? 0) + 1;
+            if (streak >= ALREADY_LEARNED_STREAK_TO_UPGRADE) {
+                levelStreakRef.current[pack.level] = 0;
+                autoLevelRef.current = Math.min(MAX_DIFFICULTY_LEVEL, pack.level + 1);
+            } else {
+                levelStreakRef.current[pack.level] = streak;
+            }
+        }
+        // A pack with no library/already-learned outcomes (fully skipped) carries no
+        // signal at all — nothing to do (§5.1).
+    }, []);
+
     const handleSortCard = useCallback(async (cardId: number, bucketId: string) => {
         const pack = currentPack;
         if (!pack) return;
         console.log("[sort-flow] sort", { cardId, bucketId, packKey: pack.packKey, packId: pack.packId });
         pushUndo({ action: "sort", cardId, bucket: bucketId, pack });
         markResolved(pack.packKey, [cardId]);
+        packBucketsRef.current = {
+            ...packBucketsRef.current,
+            [pack.packKey]: { ...(packBucketsRef.current[pack.packKey] ?? {}), [cardId]: bucketId },
+        };
         const lastInPack = isPackComplete(pack);
+
+        // Update the auto target (if active) as soon as the pack completes, BEFORE the
+        // network round-trip — advancePack must see the new target immediately so the
+        // very next replenish request already reflects it (only the pack already queued
+        // behind this one lags by one card, per docs §6).
+        if (lastInPack && selectedLevel == null) applyPackSignal(pack);
 
         try {
             const response = await fetch(`${API_BASE_URL}/api/starter-packs/sort`, {
@@ -565,8 +649,7 @@ const SortCardsPage: React.FC = () => {
                 body: JSON.stringify({ cardId, bucket: bucketId, language, packId: pack.packId, lastInPack }),
             });
             if (!response.ok) throw new Error(`sort failed: ${response.status}`);
-            const data = await response.json();
-            if (typeof data.level === "number") setLevel(data.level);
+            await response.json();
             // Only request the replacement pack once the server has recorded this sort
             // (and, for a pack-completing sort, marked the pack seen) — requesting it
             // any earlier lets /next-pack race ahead and re-serve the completing pack.
@@ -574,7 +657,7 @@ const SortCardsPage: React.FC = () => {
         } catch (error) {
             console.error("Error sorting card:", error);
         }
-    }, [currentPack, pushUndo, markResolved, isPackComplete, advancePack, authHeaders, language]);
+    }, [currentPack, pushUndo, markResolved, isPackComplete, selectedLevel, applyPackSignal, advancePack, authHeaders, language]);
 
     // Skip the whole on-deck pack: defer every remaining unsorted card at once.
     const handleSkipPack = useCallback(async () => {
@@ -743,7 +826,7 @@ const SortCardsPage: React.FC = () => {
                         selected={selectedLevel == null}
                         onClick={() => { setSelectedLevel(null); setLevelMenuAnchor(null); }}
                     >
-                        {level == null ? "Auto" : `Auto: ${difficultyLabel(level)}`}
+                        Auto
                     </MenuItem>
                     {DIFFICULTY_LEVELS.map((lvl) => (
                         <MenuItem
@@ -805,7 +888,7 @@ const SortCardsPage: React.FC = () => {
                                     onCheckCollision={checkBucketCollision}
                                     onHighlight={setHighlightedBucket}
                                     onSort={handleSortCard}
-                                    onFirstDrag={() => handleCardPickup(card)}
+                                    onFirstDrag={handleCardPickup}
                                 />
                             );
                         })}

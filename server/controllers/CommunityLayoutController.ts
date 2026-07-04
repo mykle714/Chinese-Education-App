@@ -13,6 +13,7 @@ const DEFAULT_PAGE = 10;
  *
  * POST /api/community/learning-feed { language?, excludeOwners[], excludeKeys[], limit? }
  * POST /api/community/top-feed      { language?, excludeOwners[], excludeKeys[], limit? }
+ * POST /api/community/entry-feed    { entryKey, language?, excludeOwners[], excludeKeys[], limit? }
  * GET  /api/community/my-votes
  * POST /api/community/vote          { ownerUserId, entryKey, language? }
  * POST /api/community/apply-design  { ownerUserId, entryKey, language?, override? }
@@ -68,6 +69,25 @@ export class CommunityLayoutController {
       res.json({ designs });
     } catch (error) {
       handleControllerError(error, res, 'CommunityLayoutController.topFeed');
+    }
+  }
+
+  /** POST /api/community/entry-feed — designs for one word, ranked by votes this week. */
+  async entryFeed(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+      const entryKey = req.body?.entryKey;
+      if (typeof entryKey !== 'string' || !entryKey.trim()) {
+        res.status(400).json({ error: 'entryKey is required', code: 'ERR_INVALID_INPUT' });
+        return;
+      }
+      const language = await this.resolveLanguage(req, userId);
+      const { excludeOwners, excludeKeys, limit } = this.parsePaging(req);
+      const designs = await this.service.getDesignsForEntry(userId, language, entryKey.trim(), excludeOwners, excludeKeys, limit);
+      res.json({ designs });
+    } catch (error) {
+      handleControllerError(error, res, 'CommunityLayoutController.entryFeed');
     }
   }
 

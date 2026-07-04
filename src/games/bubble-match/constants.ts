@@ -1,5 +1,11 @@
 import type { LevelConfig } from "./types";
 
+/** Game key under which Bubble Match wins are logged in the shared `wins` table
+ *  ({ game, level }), read via useGameWins (src/hooks/useGameWins.ts). Shared
+ *  by BubbleMatchPage (in-run badges) and the Games hub (level sub-card
+ *  badges) so both read the same win data under the same key. */
+export const GAME_KEY = "bubbleMatch";
+
 /**
  * Bubble Match — tunable constants.
  *

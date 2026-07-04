@@ -1,6 +1,8 @@
 import React from "react";
-import { Box, Card, CardContent, Typography, useTheme } from "@mui/material";
-import { stripParentheses } from "../../../utils/definitionUtils";
+import { Box, Card, CardContent, IconButton, ListItemIcon, ListItemText, Menu, MenuItem, Typography, useTheme } from "@mui/material";
+import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
+import StarIcon from "@mui/icons-material/Star";
+import { ddt, stripParentheses } from "../../../utils/definitionUtils";
 import { DraggableCardContainer, SwipeHintLabel, FlipHintLabel } from "./styled";
 import {
     CORRECT_COLOR,
@@ -17,8 +19,8 @@ import { SIZE, WEIGHT, LEADING, TRACKING } from "../../../theme/scale";
 import type { VocabEntry, SideOneLanguage } from "./types";
 import type { IconLayoutItem, TextLayout } from "../../../types";
 import CardIconLayer from "../../../cardIcons/CardIconLayer";
-import { defaultLayoutForIcon, DEFAULT_ICON_X, DEFAULT_ICON_Y } from "../../../cardIcons/cardIconLayout";
-import { resolveTextLayout, textItemTransform } from "../../../cardIcons/cardTextLayout";
+import { defaultLayoutForIcon } from "../../../cardIcons/cardIconLayout";
+import { resolveTextLayout, textItemTransform, defaultEnglishTopAnchorTransform } from "../../../cardIcons/cardTextLayout";
 import ForeignText from "../../../components/ForeignText";
 import { SpeakerButton } from "../../../components/SpeakerButton";
 import PracticeWritingButton from "../../../components/handwriting/PracticeWritingButton";
@@ -134,15 +136,20 @@ export const ChineseBlock: React.FC<{
     return (
         // Outer row fills the width and centers the Chinese text within the card.
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }} className="mobile-demo-flashcard-chinese-block">
-            {/* Inner wrapper shrinks to the text width so the Chinese stays truly
-                centered in the card. In the default layout the actions are absolutely
-                positioned just off the text's right edge (so they don't shift the centered
-                Chinese); in inlineActions mode they sit in-flow to the right, becoming part of
-                the block's box so the fie selection/clamp include them. */}
+            {/* Inner wrapper shrinks to the whole assembly's width. In the default (non-inline)
+                layout the actions are absolutely positioned off the text's right edge, so they
+                don't affect this wrapper's hugged width at all — centering it centers the row.
+                In inlineActions mode the actions sit in-flow (so the fie selection outline +
+                on-card clamp include them), which would otherwise pull the row's visual center
+                to the left; a same-width HIDDEN spacer mirrors them on the left so the row
+                (cpcd-row) stays the true center of the assembly regardless. */}
             <Box
                 sx={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}
                 className="mobile-demo-flashcard-chinese-inner"
             >
+                {inlineActions && actions && (
+                    <Box aria-hidden sx={{ visibility: 'hidden', mr: 1 }}>{actions}</Box>
+                )}
                 <ForeignText
                     size="md"
                     justifyContent="center"
@@ -156,6 +163,7 @@ export const ChineseBlock: React.FC<{
                 {actions && (
                     inlineActions ? (
                         // In-flow: a column to the right of the text, part of the measured box.
+                        // Balanced by the hidden spacer above so the row itself stays centered.
                         <Box sx={{ ml: 1, display: 'flex' }}>{actions}</Box>
                     ) : (
                         // Absolute: hangs off the text's right edge without shifting it.
@@ -182,22 +190,144 @@ const englishFontSize = (text: string): number => {
 };
 
 // English definition Typography reused on both Side 1 (when English) and Side 2.
-export const EnglishBlock: React.FC<{ entry: VocabEntry }> = ({ entry }) => {
+// When the entry has zh orthogonal sense clusters (definitionClusters, migration 90 —
+// see docs/DEFINITION_CLUSTERS.md), a small triangle trigger appears beside the text,
+// opening a menu of the word's other senses (one item per cluster, via the ddt display
+// transformation). Undiscoverable/unclustered entries (definitionClusters null or a
+// single cluster) render exactly as before — no trigger, no picker.
+export const EnglishBlock: React.FC<{
+    entry: VocabEntry;
+    // Index into the vernacular-sorted cluster list currently shown. Owned by CardFace
+    // (per-entry state) so both faces (Side 1 English mode + Side 2) stay in sync and
+    // the pick resets to the top (starred) sense whenever the card changes.
+    selectedSenseIndex?: number;
+    onSelectSense?: (index: number) => void;
+    // When true, the sense-trigger renders IN-FLOW (mirrors ChineseBlock's inlineActions):
+    // Side 2's movable-text editor measures the text block's own (width: max-content) box
+    // for its selection outline + clamp, so an absolutely-positioned trigger would escape
+    // that measurement. Side 1 (front, English mode) omits this — same asymmetry as
+    // ChineseBlock. See docs/CARD_ICON_LAYOUT.md "Movable text".
+    inlineActions?: boolean;
+}> = ({ entry, selectedSenseIndex = 0, onSelectSense, inlineActions = false }) => {
     const theme = useTheme();
-    const text = stripParentheses(entry.definition ?? '');
     // Per-card Contrast override for the English definition; theme default otherwise.
     const englishColor = resolveTextColor(entry.textColors?.english) ?? theme.palette.flashcard.onSurface;
+
+    // A picker only makes sense with a real choice — a single-cluster (or unclustered)
+    // entry falls back to the plain definitions[0] dd, unchanged from before this feature.
+    // Sorted highest vernacular register first (nulls last) so index 0 is always the
+    // starred/default sense.
+    const sortedClusters = React.useMemo(() => {
+        const clusters = entry.definitionClusters;
+        if (!clusters || clusters.length < 2) return null;
+        return [...clusters].sort((a, b) => (b.vernacularScore ?? -1) - (a.vernacularScore ?? -1));
+    }, [entry.definitionClusters]);
+
+    const text = sortedClusters
+        ? ddt(sortedClusters[selectedSenseIndex] ?? sortedClusters[0])
+        : stripParentheses(entry.definition ?? '');
+
+    const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
+    // Mirrors SpeakerButton: the trigger sits inside the draggable/flippable card, so
+    // press events must not bubble to the card's own touch/mouse handlers.
+    const stopCardHandlers = (e: React.SyntheticEvent) => e.stopPropagation();
+
+    // The sense-picker trigger, structured exactly like ChineseBlock's `actions`
+    // (writing + speaker buttons): a small column Box, so the two blocks stay
+    // visually/structurally consistent even though English currently has only
+    // one action.
+    const actions = sortedClusters ? (
+        <Box
+            className="mobile-demo-flashcard-actions"
+            sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.25 }}
+        >
+            <IconButton
+                className="mobile-demo-flashcard-sense-trigger"
+                size="small"
+                aria-label="Switch definition"
+                onClick={(e) => { stopCardHandlers(e); setAnchorEl(e.currentTarget); }}
+                onMouseDown={stopCardHandlers}
+                onTouchStart={stopCardHandlers}
+                onTouchEnd={stopCardHandlers}
+                sx={{ color: englishColor }}
+            >
+                <ArrowDropDownIcon fontSize="small" />
+            </IconButton>
+        </Box>
+    ) : null;
+
     return (
-        <Typography sx={{
-            fontSize: englishFontSize(text),
-            fontWeight: WEIGHT.regular,
-            color: englishColor,
-            fontFamily: FC_FONT_CJK,
-            textAlign: 'center',
-            lineHeight: 1.25,
-        }}>
-            {text}
-        </Typography>
+        // Outer row fills the width and centers the English text within the card —
+        // mirrors ChineseBlock's outer row exactly.
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }} className="mobile-demo-flashcard-english-block">
+            {/* Inner wrapper shrinks to the whole assembly's width — same role as
+                ChineseBlock's inner wrapper (see its comment for the centering rationale). */}
+            <Box
+                sx={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}
+                className="mobile-demo-flashcard-english-inner"
+            >
+                {inlineActions && actions && (
+                    <Box aria-hidden sx={{ visibility: 'hidden', mr: 1 }}>{actions}</Box>
+                )}
+                {/* Dedicated row layer around just the text — mirrors CPCDRow's own root Box
+                    (position:relative, distinct from ForeignText's enclosing "-inner" flex
+                    container). Keeps English structurally parallel to Chinese: a plain
+                    text/glyph layer as one sibling, the actions box as the other. This is the
+                    layer that stays the true visual center of the assembly — the hidden spacer
+                    above balances the in-flow actions below so centering the "-inner" wrapper
+                    (via "-block"'s justifyContent:center) centers THIS row, not the row+actions
+                    group. */}
+                <Box className="mobile-demo-flashcard-english-row" sx={{ position: 'relative' }}>
+                    <Typography sx={{
+                        fontSize: englishFontSize(text),
+                        fontWeight: WEIGHT.regular,
+                        color: englishColor,
+                        fontFamily: FC_FONT_CJK,
+                        textAlign: 'center',
+                        lineHeight: 1.25,
+                    }}>
+                        {text}
+                    </Typography>
+                </Box>
+                {actions && (
+                    inlineActions ? (
+                        // In-flow: part of the measured box, so the fie selection/clamp include it.
+                        // Balanced by the hidden spacer above so the row itself stays centered.
+                        <Box sx={{ ml: 1, display: 'flex' }}>{actions}</Box>
+                    ) : (
+                        // Absolute: hangs off the text's right edge without shifting it —
+                        // same positioning ChineseBlock uses for its (non-inline) actions.
+                        <Box sx={{ position: 'absolute', left: '100%', top: '50%', transform: 'translateY(-50%)', ml: 1 }}>
+                            {actions}
+                        </Box>
+                    )
+                )}
+                {sortedClusters && (
+                    <Menu
+                        className="mobile-demo-flashcard-sense-menu"
+                        anchorEl={anchorEl}
+                        open={Boolean(anchorEl)}
+                        onClose={() => setAnchorEl(null)}
+                        MenuListProps={{ sx: { py: 0.5 } }}
+                    >
+                        {sortedClusters.map((cluster, i) => (
+                            <MenuItem
+                                key={`${cluster.reading}-${i}`}
+                                selected={i === selectedSenseIndex}
+                                onClick={() => { onSelectSense?.(i); setAnchorEl(null); }}
+                            >
+                                {i === 0 && (
+                                    <ListItemIcon sx={{ minWidth: 28 }}>
+                                        <StarIcon fontSize="small" sx={{ color: theme.palette.warning.main }} />
+                                    </ListItemIcon>
+                                )}
+                                <ListItemText inset={i !== 0} primary={ddt(cluster)} />
+                            </MenuItem>
+                        ))}
+                    </Menu>
+                )}
+            </Box>
+        </Box>
     );
 };
 
@@ -231,26 +361,11 @@ const CategoryChip: React.FC<{ category?: string }> = ({ category }) => {
     );
 };
 
-// Empty-icon placeholder box shown at the top of a face when the entry has no
-// representative icon assigned, so the card layout stays consistent across cards.
-// (Cards that DO have an icon — default or custom — render it through CardIconLayer
-// instead, so the icon's on-screen size matches the edit-mode editor exactly.)
-const CardImage: React.FC<{ iconId?: string | null }> = () => {
-    const theme = useTheme();
-    const fc = theme.palette.flashcard;
-    return (
-        <Box
-            className="mobile-demo-flashcard-image"
-            sx={{ width: 106, height: 83, backgroundColor: fc.imagePlaceholder, borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}
-        />
-    );
-};
-
 // Shared scaffold for a single card face: the absolutely-positioned, backface-
 // hidden face box + its CardContent + the inner flex column holding the image
 // placeholder and a content slot. `rotated` flips the face to the back (Side 2);
 // `contentGap` differs between the single-block front and the stacked back.
-const CardFaceSide: React.FC<{
+export const CardFaceSide: React.FC<{
     rotated: boolean;
     contentGap: number;
     contentClassName?: string;
@@ -373,17 +488,10 @@ const CardFaceSide: React.FC<{
                 {/* Default single icon — rendered through the SAME CardIconLayer geometry as
                     the editor's seeded basic icon (defaultLayoutForIcon: centered upper-third,
                     default scale), so its on-screen size is identical whether or not the editor
-                    is open. When the entry has no icon at all, fall back to the empty
-                    placeholder box (positioned at the same default-icon spot — DEFAULT_ICON_X/Y).
+                    is open. When the entry has no icon at all, render nothing (no placeholder box).
                     zIndex 0 keeps it behind the text. */}
-                {showIcon && !hasCustom && !editing && (
-                    iconId
-                        ? <CardIconLayer layout={defaultLayoutForIcon(iconId)} />
-                        : (
-                            <Box sx={{ position: "absolute", top: `${DEFAULT_ICON_Y * 100}%`, left: `${DEFAULT_ICON_X * 100}%`, transform: "translate(-50%, -50%)", zIndex: 0 }}>
-                                <CardImage iconId={null} />
-                            </Box>
-                        )
+                {showIcon && !hasCustom && !editing && iconId && (
+                    <CardIconLayer layout={defaultLayoutForIcon(iconId)} />
                 )}
                 {textBlocks ? (
                     // Back face — MOVABLE TEXT. Rendered in a FULL-CARD layer (inset:0, no
@@ -405,6 +513,12 @@ const CardFaceSide: React.FC<{
                                 ["english", textBlocks.english] as const,
                             ]).map(([block, node]) => {
                                 const it = resolvedText[block];
+                                // Basic (unsaved) English only: anchor by top edge so a
+                                // multi-line definition grows downward, not up into the Chinese
+                                // word above it. A saved/custom position (set via the advanced
+                                // fie editor) keeps the normal center anchor — see
+                                // defaultEnglishTopAnchorTransform's doc comment.
+                                const isDefaultEnglish = block === "english" && !textLayout?.english;
                                 return (
                                     <Box
                                         key={block}
@@ -417,7 +531,7 @@ const CardFaceSide: React.FC<{
                                             // centered + scaled + rotated about the center.
                                             width: "max-content",
                                             maxWidth: "92%",
-                                            transform: textItemTransform(it),
+                                            transform: isDefaultEnglish ? defaultEnglishTopAnchorTransform(it) : textItemTransform(it),
                                             transformOrigin: "center center",
                                             // english paints above foreign if they overlap.
                                             zIndex: block === "english" ? 2 : 1,
@@ -504,6 +618,13 @@ const CardFace: React.FC<{
     const theme = useTheme();
     const fc = theme.palette.flashcard;
 
+    // Which definitionClusters sense EnglishBlock currently displays (index into its
+    // vernacular-sorted list). Lives here — not inside EnglishBlock — so Side 1 (English
+    // mode) and Side 2 stay in sync on the same pick, and resets to the top/starred sense
+    // whenever the card is promoted to a new entry.
+    const [selectedSenseIndex, setSelectedSenseIndex] = React.useState(0);
+    React.useEffect(() => { setSelectedSenseIndex(0); }, [entry.id]);
+
     return (
         <Card
             className="mobile-demo-flashcard"
@@ -544,7 +665,7 @@ const CardFace: React.FC<{
             >
                 {sideOneLanguage === 'zh'
                     ? <ChineseBlock entry={entry} showPinyin={showPinyin} showPinyinColor={showPinyinColor} onSpeak={onSpeak} speakingKey={speakingKey} showWriting={false} />
-                    : <EnglishBlock entry={entry} />}
+                    : <EnglishBlock entry={entry} selectedSenseIndex={selectedSenseIndex} onSelectSense={setSelectedSenseIndex} />}
             </CardFaceSide>
 
             {/* Side 2 — always shows both Chinese and English, and the icon arrangement. */}
@@ -574,7 +695,7 @@ const CardFace: React.FC<{
                             inlineActions
                         />
                     ),
-                    english: <EnglishBlock entry={entry} />,
+                    english: <EnglishBlock entry={entry} selectedSenseIndex={selectedSenseIndex} onSelectSense={setSelectedSenseIndex} inlineActions />,
                 }}
                 editCanvas={editCanvas}
                 // Side 2 faces away when the card is showing its front.

@@ -123,6 +123,43 @@ export class CommunityLayoutDAL implements ICommunityLayoutDAL {
     return result.recordset.map(this.normalize);
   }
 
+  async getDesignsForEntry(
+    viewerUserId: string,
+    language: string,
+    entryKey: string,
+    excludeOwners: string[],
+    excludeKeys: string[],
+    limit: number,
+  ): Promise<CommunityDesign[]> {
+    if (!viewerUserId) throw new ValidationError('viewerUserId is required');
+    if (!entryKey) throw new ValidationError('entryKey is required');
+    const libTable = vetTableForLanguage(language);
+
+    const result = await dbManager.executeQuery<CommunityDesign>(async (client) => {
+      return await client.query(`
+        SELECT
+          ${this.feedSelect()},
+          EXISTS (
+            SELECT 1 FROM ${libTable} mine
+            WHERE mine."userId" = $1 AND mine.language = $2 AND mine."entryKey" = ve."entryKey"
+          ) AS "inLibrary"
+        FROM ${vetReadFrom(language)}
+        JOIN users u ON u.id = $1
+        JOIN users owner ON owner.id = ve."userId"  -- design author → display name
+        ${DICT_JOIN}
+        WHERE ve.language = $2
+          AND ve."userId" <> $1
+          AND ve."entryKey" = $5
+          AND ${IS_ADVANCED_LAYOUT}
+          ${this.excludeClause}
+        ORDER BY "voteCountThisWeek" DESC, ve."userId"  -- top for this word, stable tiebreak
+        LIMIT $6
+      `, [viewerUserId, language, excludeOwners, excludeKeys, entryKey, limit]);
+    });
+
+    return result.recordset.map(this.normalize);
+  }
+
   async getMyVotesThisWeek(viewerUserId: string): Promise<VotedDesignKey[]> {
     if (!viewerUserId) throw new ValidationError('viewerUserId is required');
 

@@ -8,8 +8,8 @@
 
 A discovery surface where learners browse, upvote, and copy **advanced card-icon layouts**
 (the per-word icon arrangements from [CARD_ICON_LAYOUT.md](./CARD_ICON_LAYOUT.md)) that *other*
-users have saved. The page (`CommunityPage.tsx`, a Home-hub `NodePage`) has two
-horizontally-scrolling, infinitely-paginated feeds:
+users have saved. The page (`CommunityPage.tsx`, a Home-hub `NodePage`) has a search bar
+(`CommunitySearchBar`) above two horizontally-scrolling, infinitely-paginated feeds:
 
 1. **"For words you're learning"** — other users' advanced layouts for words in the viewer's
    **non-mastered library** (`starterPackBucket = 'library'` and category ≠ `Mastered`).
@@ -18,7 +18,24 @@ horizontally-scrolling, infinitely-paginated feeds:
    vote count (descending, stable `(ownerUserId, entryKey)` tiebreak). Designs with zero votes
    this week are still included; they sort to the bottom of the feed.
 
-Both feeds share the same tap→zoom→vote/apply flow.
+All three (the two feeds and the search bar's per-entry rows) share the same tap→zoom→vote/apply
+flow.
+
+### Search bar (feed 3 — per-entry designs)
+
+`CommunitySearchBar.tsx` shares its search behavior with `DictionaryPage.tsx` via the
+`useDictionarySearch` hook (`src/hooks/useDictionarySearch.ts`): a 400ms-debounced input,
+CJK-segment mode (`GET /api/dictionary/segment`) for multi-character Chinese input, and plain
+`GET /api/dictionary/search` otherwise — including numbered-pinyin queries like "jian4 shen1"
+(`buildNumberedPinyinPattern` in `server/dal/implementations/DictionaryDAL.ts`; see
+[DICTIONARY_NUMBERED_PINYIN_SEARCH.md](./DICTIONARY_NUMBERED_PINYIN_SEARCH.md)).
+Instead of rendering dictionary-entry cards, each matched `DictionaryEntry` heads a
+`CommunityFeedRow` scoped to that one word (`entryKey = word1`) via `POST
+/api/community/entry-feed` — "highest rated designs for this entry," ranked by this-week votes
+the same way as the Top feed. An entry with no shared designs still renders, with
+`CommunityFeedRow`'s empty-hint. While the search term is non-empty
+(`CommunityPage`'s `searchActive`), the two default feeds are hidden so the search results are
+the whole page.
 
 ## Key concepts
 
@@ -96,12 +113,12 @@ next-week votes), so it is enforced in the DAL's `recordVote` (insert-iff-not-ex
 |---|---|---|
 | Migration | `database/migrations/86-*.sql` | the votes table |
 | Shared SQL | `server/dal/shared/weekBoundary.ts`, `advancedLayout.ts` | `WEEK_BOUNDARY`, `IS_ADVANCED_LAYOUT` + JS `isAdvancedLayout` |
-| DAL | `server/dal/implementations/CommunityLayoutDAL.ts` (`ICommunityLayoutDAL`) | feed reads (via `vetReadFrom` + `DICT_JOIN`), vote log, `findViewerEntry`, `getDesignLayout` |
+| DAL | `server/dal/implementations/CommunityLayoutDAL.ts` (`ICommunityLayoutDAL`) | feed reads (via `vetReadFrom` + `DICT_JOIN`), vote log, `findViewerEntry`, `getDesignLayout`, `getDesignsForEntry` |
 | Service | `server/services/CommunityLayoutService.ts` | once-a-week vote guard delegation; `applyDesign` (reuses `VocabEntryService.addToLibrary` + `updateIconLayout`) |
 | Controller | `server/controllers/CommunityLayoutController.ts` | request parsing (exclude arrays, page clamp, language resolution) |
 | Routes | `server/routes/gamesRoutes.ts` (`/api/community/*`); wired in `server/dal/setup.ts` | |
 | Types | `server/types/community.ts`, client `src/types.ts` (`CommunityDesign`, `VotedDesignKey`, `VoteResult`, `ApplyDesignResult`, `designKey`) | |
-| Client | `src/pages/CommunityPage/` — `CommunityPage`, `CommunityFeedRow`, `CommunityDesignCard`, `CommunityDesignZoom`, `ApplyDesignButton`, `VoteButton`, `CommunityCardView`, `communityApi.ts` | |
+| Client | `src/pages/CommunityPage/` — `CommunityPage`, `CommunitySearchBar`, `CommunityFeedRow`, `CommunityDesignCard`, `CommunityDesignZoom`, `ApplyDesignButton`, `VoteButton`, `CommunityCardView`, `communityApi.ts` | |
 | Menu/route | `src/pages/HomePage.tsx` (`community` HubMenuRow), `src/App.tsx` (`/community`) | |
 
 The read-only design render (`CommunityCardView.tsx`) reuses the same `CardIconLayer` + cpcd
@@ -117,6 +134,7 @@ entryKey)` pairs (the no-duplicates contract); `language` defaults to the user's
 |---|---|---|
 | `POST /api/community/learning-feed` | `{ language?, excludeOwners[], excludeKeys[], limit? }` | `{ designs: CommunityDesign[] }` |
 | `POST /api/community/top-feed` | `{ language?, excludeOwners[], excludeKeys[], limit? }` | `{ designs: CommunityDesign[] }` |
+| `POST /api/community/entry-feed` | `{ entryKey, language?, excludeOwners[], excludeKeys[], limit? }` | `{ designs: CommunityDesign[] }` |
 | `GET  /api/community/my-votes` | — | `{ votes: VotedDesignKey[] }` |
 | `POST /api/community/vote` | `{ ownerUserId, entryKey, language? }` | `{ result: 'recorded' \| 'already-voted' }` |
 | `POST /api/community/unvote` | `{ ownerUserId, entryKey, language? }` | `{ removed: boolean }` (deletes this week's vote) |

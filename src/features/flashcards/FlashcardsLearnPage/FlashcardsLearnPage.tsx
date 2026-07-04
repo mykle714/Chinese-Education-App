@@ -19,6 +19,7 @@ import EipTabStrip from "./EipTabStrip";
 import TooManyTabsSnackbar from "./TooManyTabsSnackbar";
 import FlashCardSection, { ChineseBlock, EnglishBlock } from "./FlashCardSection";
 import CardIconCanvas from "./CardIconCanvas";
+import { measureDefaultEnglishCenterY } from "../../../cardIcons/cardTextLayout";
 import CardEditToolbar, { CARD_EDIT_ANIM_MS, CARD_EDIT_ANIM_EASING, TOOLBAR_DROPDOWN_SELECTOR } from "./CardEditToolbar";
 import IconPickerDialog from "../../../components/IconPickerDialog";
 import { iconSearchTerm, stripParentheses } from "../../../utils/definitionUtils";
@@ -397,7 +398,7 @@ const FlashcardsLearnPage: React.FC = () => {
                 onTogglePinyin={() => updateLearnSettings({ showPinyin: !showPinyin })}
                 isFlipped={isFlipped}
                 editMode={editMode}
-                onToggleEdit={() => (editMode ? exitEdit() : enterEdit())}
+                onToggleEdit={() => (editMode ? exitEdit() : enterEdit(() => cardRef.current ? measureDefaultEnglishCenterY(cardRef.current) : null))}
                 onSettingsClick={() => setSettingsOpen(true)}
             />
             <ContentArea

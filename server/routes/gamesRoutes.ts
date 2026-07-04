@@ -57,6 +57,10 @@ router.post('/api/community/top-feed', authenticateToken, async (req, res) => {
   await communityLayoutController.topFeed(req, res);
 });
 // @ts-ignore
+router.post('/api/community/entry-feed', authenticateToken, async (req, res) => {
+  await communityLayoutController.entryFeed(req, res);
+});
+// @ts-ignore
 router.get('/api/community/my-votes', authenticateToken, async (req, res) => {
   await communityLayoutController.myVotes(req, res);
 });

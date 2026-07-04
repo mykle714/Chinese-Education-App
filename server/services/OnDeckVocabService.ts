@@ -691,6 +691,7 @@ export class OnDeckVocabService {
     available: Record<string, number>;
     sufficient: boolean;
     reason?: string;
+    templateIndex?: number | null;
   }> {
     if (!userId) {
       throw new ValidationError('User ID is required');
@@ -930,6 +931,7 @@ export class OnDeckVocabService {
         total,
         available,
         sufficient: true,
+        templateIndex: generated.templateIndex,
       };
     } finally {
       client.release();

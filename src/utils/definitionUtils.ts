@@ -7,6 +7,18 @@ export function stripParentheses(text: string): string {
   return text.replace(/\s*\([^)]*\)/g, '').trim();
 }
 
+/**
+ * Display Definition Transformation (ddt) — the per-cluster analog of dd
+ * (`definitions[0]`, stripped of parentheticals). A cluster's `glosses` are
+ * already ordered prototypical→vernacular within the sense (backfill Stage B),
+ * so the lead gloss is the cluster's own "definitions[0]". Used by the flp
+ * sense-picker dropdown (EnglishBlock) to render each `DefinitionCluster` as a
+ * single display string. See docs/DEFINITION_CLUSTERS.md.
+ */
+export function ddt(cluster: { glosses: string[] }): string {
+  return stripParentheses(cluster.glosses[0] ?? '');
+}
+
 // Ordered leading-phrase strips applied (after stripParentheses) to turn a card's
 // English definition into an icons8 *search* term. Verb infinitives / copulas search
 // far better without their leading particle: "to understand" -> "understand",

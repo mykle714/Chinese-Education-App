@@ -7,6 +7,8 @@ import { resolveShortDefinition, longDefObjectToDisplayString } from '../../util
 import { ShortDefinitionPronunciationOverride, ExampleSentenceDefinitionPronunciationOverride } from '../../types/index.js';
 import { getAllSubstrings, buildDictMap, buildExcludeSet, segmentWithDict, buildSegmentMetadata, splitHanRuns, RenderedSegmentMeta } from '../shared/segmentString.js';
 import { LongDefinitionPart } from '../../types/index.js';
+import { segmentPinyin } from '../../utils/pinyinSegment.js';
+import { AiDictionaryCacheRow } from '../../types/index.js';
 
 // Standard column list for all dictionary SELECT queries
 const DICTIONARY_COLUMNS = `
@@ -23,6 +25,63 @@ const DICTIONARY_COLUMNS = `
   "vernacularScore",
   "wordForms"
 `.trim();
+
+/**
+ * Parse a numbered-pinyin search query (e.g. "jian4 shen1") into a Postgres regex matched
+ * against the numberedPinyin column (space-separated syllables; neutral-tone syllables carry
+ * no digit at all — see server/scripts/backfill/chinese/backfill-numbered-pinyin.js). Per
+ * syllable: "0"/"5" means neutral tone (matched as the bare base), no digit means "any tone"
+ * (base with an optional 1–4 digit), and 1–4 means that exact tone. Each token ends in a `\y`
+ * word-boundary so a syllable match can't bleed into a longer one sharing the same prefix (e.g.
+ * "shen" any-tone must not match "sheng1", and neutral "shen0" must not match "shen1" — digits
+ * count as word characters, so without the boundary an optional/absent digit would just let the
+ * regex consume whatever digit followed). Anchored at the start only (a "starts with" match,
+ * consistent with the other search paths' prefix semantics), so a query can name a leading
+ * subset of a multi-syllable word's syllables.
+ *
+ * Returns null — falling back to the existing word1/pronunciation/definitions search — if any
+ * token isn't syllable-shaped, or if no token carries an explicit digit (otherwise a plain
+ * multi-word phrase like "to work out" would be misread as an all-any-tone pinyin query).
+ */
+function buildNumberedPinyinPattern(searchTerm: string): string | null {
+  return buildTokenPinyinPattern(searchTerm.trim().split(/\s+/).filter(Boolean), true);
+}
+
+/**
+ * Build the numberedPinyin regex from an array of already-separated syllable tokens (each a base
+ * optionally suffixed with a tone digit 0–5). Shared by the direct numbered-pinyin path (via
+ * buildNumberedPinyinPattern, `requireDigit = true`) and the stage-2 spaceless-segmentation path
+ * (docs/DICTIONARY_AI_FALLBACK_SEARCH.md), which passes tilings from `segmentPinyin` with
+ * `requireDigit = false` — those tokens are already confirmed valid pinyin, so an all-any-tone
+ * (digit-free) query is legitimate rather than an ambiguous English phrase.
+ *
+ * Returns null if any token isn't syllable-shaped, or if `requireDigit` is set and no token
+ * carries an explicit tone digit.
+ */
+function buildTokenPinyinPattern(tokens: string[], requireDigit: boolean): string | null {
+  if (tokens.length === 0) return null;
+
+  let hasExplicitDigit = false;
+  const tokenPatterns: string[] = [];
+  for (const token of tokens) {
+    const match = /^([a-zü]+)([0-5])?$/.exec(token);
+    if (!match) return null;
+    const [, base, digit] = match;
+    const escapedBase = base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (digit === undefined) {
+      tokenPatterns.push(`${escapedBase}[1-4]?\\y`); // any tone
+    } else if (digit === '0' || digit === '5') {
+      hasExplicitDigit = true;
+      tokenPatterns.push(`${escapedBase}\\y`); // neutral tone: no digit in the column
+    } else {
+      hasExplicitDigit = true;
+      tokenPatterns.push(`${escapedBase}${digit}\\y`); // exact tone
+    }
+  }
+
+  if (requireDigit && !hasExplicitDigit) return null;
+  return `^${tokenPatterns.join('\\s+')}`;
+}
 
 /**
  * Dictionary Data Access Layer implementation
@@ -204,10 +263,26 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
     // This regex matches: start of string + search pattern + 'g' (no space between)
     const excludePattern = `^${expandedWords.join('\\s+')}g`;
 
-    // Detect numbered pinyin input (e.g. "ni3 hao3", "gan1", "lv3") — any letter immediately
-    // followed by a tone digit 1–4. When detected, also search the numberedPinyin column.
-    const isNumberedPinyin = /[a-zA-ZüvÜV][1-4]/.test(searchTerm);
-    const numberedPinyinClause = isNumberedPinyin ? '\n          OR "numberedPinyin" ILIKE $2' : '';
+    // Numbered-pinyin syllable query (e.g. "jian4 shen1"), built against the numberedPinyin
+    // column (space-separated syllables; neutral-tone syllables carry no digit at all —
+    // never "0"/"5" — see server/scripts/backfill/chinese/backfill-numbered-pinyin.js). Per
+    // syllable: an explicit "0"/"5" means neutral (matched as the bare base, no digit); no
+    // digit at all means "any tone" (base with an optional 1–4 digit); 1–4 means that exact
+    // tone. Requires at least one explicit digit somewhere in the query so a plain multi-word
+    // English/pinyin-shaped phrase without any tone digit (ambiguous with a definitions search)
+    // isn't misread as an all-any-tone pinyin query. Returns null (falls back to the existing
+    // word1/pronunciation/definitions search) if any token isn't syllable-shaped.
+    const numberedPinyinPattern = buildNumberedPinyinPattern(searchTerm);
+
+    const params: any[] = [language, searchPattern, regexPattern, excludePattern];
+    let paramIdx = params.length;
+
+    let numberedPinyinClause = '';
+    if (numberedPinyinPattern) {
+      paramIdx += 1;
+      numberedPinyinClause = `\n          OR "numberedPinyin" ~* $${paramIdx}`;
+      params.push(numberedPinyinPattern);
+    }
 
     // Word/pinyin match (everything except the English-definition contains search).
     // Reused both as the WHERE word-match group and as the ORDER BY priority test so
@@ -220,25 +295,26 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
     // stripped — i.e. regexp_replace(definitions->>0, '\s*\([^)]*\)', '', 'g'), mirroring
     // the frontend stripParentheses(definitions[0]). Matching is whole-word only, via the
     // Postgres word-boundary anchor \y, so "art" matches "art"/"fine art" but not "start".
-    // $5 holds the anchored, regex-escaped pattern. Case-insensitive (~*) since the query
-    // term is lowercased but card text may be capitalised.
+    // Case-insensitive (~*) since the query term is lowercased but card text may be capitalised.
     // Guarded by a minimum length so trivial single-letter searches don't scan the table.
     const definitionsSearchEnabled = searchTerm.trim().length >= 2;
     // Escape regex metacharacters in the user term, then anchor it to word boundaries.
     const escapedTerm = searchTerm.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const wholeWordDefinitionPattern = `\\y${escapedTerm}\\y`;
-    const definitionsClause = definitionsSearchEnabled
-      ? `\n          OR regexp_replace(definitions->>0, '\\s*\\([^)]*\\)', '', 'g') ~* $5`
-      : '';
+    let definitionsClause = '';
+    if (definitionsSearchEnabled) {
+      paramIdx += 1;
+      definitionsClause = `\n          OR regexp_replace(definitions->>0, '\\s*\\([^)]*\\)', '', 'g') ~* $${paramIdx}`;
+      params.push(wholeWordDefinitionPattern);
+    }
 
-    // Placeholder indices for LIMIT/OFFSET shift by one when the definition param ($5) is present.
-    const limitPlaceholder = definitionsSearchEnabled ? '$6' : '$5';
-    const offsetPlaceholder = definitionsSearchEnabled ? '$7' : '$6';
+    // Placeholder indices for LIMIT/OFFSET shift with however many optional params preceded them.
+    const limitPlaceholder = `$${paramIdx + 1}`;
+    const offsetPlaceholder = `$${paramIdx + 2}`;
 
     // Build the parameter lists so their count exactly matches the referenced placeholders.
-    const countParams: any[] = [language, searchPattern, regexPattern, excludePattern];
-    if (definitionsSearchEnabled) countParams.push(wholeWordDefinitionPattern);
-    const entriesParams = [...countParams, limit, offset];
+    const countParams: any[] = params;
+    const entriesParams = [...params, limit, offset];
 
     // Get total count for pagination
     // Search with regex for pronunciation (accent-agnostic + word boundaries), LIKE for word1/definitions
@@ -277,10 +353,116 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
 
     console.log(`[DICTIONARY-DAL] ✅ Found ${entriesResult.recordset.length}/${total} matches in ${queryTime.toFixed(2)}ms`);
 
+    // Stage 2 — spaceless-pinyin fallback (docs/DICTIONARY_AI_FALLBACK_SEARCH.md). Only when the
+    // primary search found nothing: segment the (possibly space-free) term into pinyin syllables,
+    // enumerate every valid tiling, and match each re-spaced form against numberedPinyin. This lets
+    // "jianshen"/"jian4shen1" resolve even though the direct numbered-pinyin path (which needs
+    // spaces + a digit) matched nothing.
+    if (total === 0) {
+      const tilings = segmentPinyin(searchTerm);
+      if (tilings.length > 0) {
+        // Build one pattern per tiling; tokens are already valid pinyin so digits aren't required.
+        const patterns = [...new Set(
+          tilings
+            .map(tokens => buildTokenPinyinPattern(tokens, false))
+            .filter((p): p is string => p !== null)
+        )];
+        if (patterns.length > 0) {
+          return this.searchByNumberedPinyinPatterns(patterns, language, limit, offset);
+        }
+      }
+    }
+
     return {
       entries: entriesResult.recordset.map(row => this.mapRowToEntity(row)),
       total: total
     };
+  }
+
+  /**
+   * Stage-2 helper (docs/DICTIONARY_AI_FALLBACK_SEARCH.md): match numberedPinyin against any of a
+   * set of regex patterns (one per spaceless-segmentation tiling), OR-ed together. Same
+   * count+paginate shape as searchByWord1's primary query, ordered shortest-word-first.
+   */
+  private async searchByNumberedPinyinPatterns(
+    patterns: string[],
+    language: string,
+    limit: number,
+    offset: number
+  ): Promise<{ entries: DictionaryEntry[], total: number }> {
+    // $1 = language, $2..$(n+1) = patterns, then LIMIT/OFFSET.
+    const orClause = patterns.map((_, i) => `"numberedPinyin" ~* $${i + 2}`).join('\n          OR ');
+    const baseParams: any[] = [language, ...patterns];
+    const limitPlaceholder = `$${baseParams.length + 1}`;
+    const offsetPlaceholder = `$${baseParams.length + 2}`;
+
+    const countResult = await this.dbManager.executeQuery<any>(async (client) => {
+      return await client.query(`
+        SELECT COUNT(*) as count
+        FROM ${this.tableName}
+        WHERE language = $1 AND (
+          ${orClause}
+        )
+      `, baseParams);
+    });
+
+    const entriesResult = await this.dbManager.executeQuery<any>(async (client) => {
+      return await client.query(`
+        SELECT ${DICTIONARY_COLUMNS}
+        FROM ${this.tableName}
+        WHERE language = $1 AND (
+          ${orClause}
+        )
+        ORDER BY LENGTH(word1), word1
+        LIMIT ${limitPlaceholder} OFFSET ${offsetPlaceholder}
+      `, [...baseParams, limit, offset]);
+    });
+
+    const total = parseInt(countResult.recordset[0].count, 10);
+    console.log(`[DICTIONARY-DAL] 🈶 Spaceless-pinyin fallback matched ${entriesResult.recordset.length}/${total}`);
+    return {
+      entries: entriesResult.recordset.map(row => this.mapRowToEntity(row)),
+      total,
+    };
+  }
+
+  /**
+   * Read a cached AI-synthesized dictionary entry by its exact query key (see
+   * docs/DICTIONARY_AI_FALLBACK_SEARCH.md). Returns the row (word1 NULL ⇒ cached empty result) or
+   * null on a miss.
+   */
+  async getAiCacheEntry(queryKey: string, language: string): Promise<AiDictionaryCacheRow | null> {
+    const result = await this.dbManager.executeQuery<AiDictionaryCacheRow>(async (client) => {
+      return await client.query(`
+        SELECT id, "queryKey", language, word1, pinyin, definition, "queriedAt"
+        FROM ai_dictionary_cache
+        WHERE "queryKey" = $1 AND language = $2
+      `, [queryKey, language]);
+    });
+    return result.recordset[0] || null;
+  }
+
+  /**
+   * Insert or refresh a cached AI result for (queryKey, language). A null `word1` records an empty
+   * result (AI found no likely meaning); `queriedAt` is reset to now() so the 3-month empty-row
+   * staleness clock restarts on every (re-)prompt.
+   */
+  async upsertAiCacheEntry(
+    queryKey: string,
+    language: string,
+    entry: { word1: string; pinyin: string; definition: string } | null
+  ): Promise<void> {
+    await this.dbManager.executeQuery(async (client) => {
+      return await client.query(`
+        INSERT INTO ai_dictionary_cache ("queryKey", language, word1, pinyin, definition, "queriedAt")
+        VALUES ($1, $2, $3, $4, $5, now())
+        ON CONFLICT ("queryKey", language) DO UPDATE
+          SET word1 = EXCLUDED.word1,
+              pinyin = EXCLUDED.pinyin,
+              definition = EXCLUDED.definition,
+              "queriedAt" = now()
+      `, [queryKey, language, entry?.word1 ?? null, entry?.pinyin ?? null, entry?.definition ?? null]);
+    });
   }
 
   /**

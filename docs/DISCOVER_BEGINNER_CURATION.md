@@ -12,7 +12,7 @@ sees in Sort Cards (scp), so we can **hand-curate** a deliberate beginner experi
 > point (it tells us which beginner words exist, in what order), but the hand-crafted
 > output is now authored packs, ordered by `sort_packs.packOrder`, not a per-card
 > `discoverOrder`. See [SORT_CARDS_REQUIREMENTS.md](./SORT_CARDS_REQUIREMENTS.md)
-> §4.5 / §6.3 for the runtime behavior and §5 below for the schema.
+> §4.5 / §6.4 for the runtime behavior and §5 below for the schema.
 
 It is a reproducible recipe: run it once per language (zh done first, es next).
 

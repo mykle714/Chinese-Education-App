@@ -35,7 +35,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
 import { ALLOWED_POS_TAGS } from '../shared/lib/posTags.js';
 import { initRunLog, cachedSystem } from '../run-log.js';
-const SCRIPT_VERSION = 2; // bump when this script's logic/prompt changes (v2: numberDict per noun token)
+const SCRIPT_VERSION = 3; // bump when this script's logic/prompt changes (v3: per-slot retry instead of whole-batch discard on parse failure)
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -176,21 +176,12 @@ function isValidSentenceShape(s) {
 }
 
 /**
- * Ask Claude to generate 3 natural example sentences for a Chinese word.
- * Returns an array of { chinese, english, partOfSpeechDict } objects.
+ * Ask Claude to generate a batch of natural example sentences for a Chinese word.
+ * Returns the raw parsed array (not shape-filtered) or null if unparseable.
  */
-async function generateExampleSentences(word, pronunciation, definitions, partsOfSpeech) {
+async function generateSentenceBatch(word, pronunciation, definitionText, posList, sentenceCount) {
   const allowedPosTags = ALLOWED_POS_TAGS;
-  const definitionText = formatDefinitions(definitions);
-
-  // partsOfSpeech is a JSONB array of POS tags from the dictionaryentries_zh row.
-  // We enforce at least one sentence per listed POS so every grammatical role
-  // the word can take is exemplified.
-  const posList = Array.isArray(partsOfSpeech) ? partsOfSpeech.filter(Boolean) : [];
-  const sentenceCount = Math.max(3, posList.length);
   const posCoverageClause = posList.length > 0
-    ? `\n- The target word "${word}" must appear used as EACH of these parts of speech across the sentences, with at least one sentence per POS: ${posList.join(', ')}. If a POS has no sentence dedicated to it, add another sentence that demonstrates that role.`
-    : '';
 
   const prompt = `You are a Chinese language teacher creating example sentences for a vocabulary app.
 
@@ -225,26 +216,27 @@ Write exactly ${sentenceCount} natural example sentences using "${word}". Each s
 
 Across the ${sentenceCount} sentences, vary the sentence structure so they don't feel templated. Do NOT start most sentences with a time word followed by a verb, and avoid leaning on a single repeated mold. Mix it up: vary the sentence-initial element, include a question where natural, and draw on a diverse range of grammatical constructions rather than reusing the same one.
 
-Respond with ONLY a JSON array of exactly ${sentenceCount} objects in this format (no markdown, no explanation):
+Respond with ONLY a JSON array of exactly ${sentenceCount} objects. Fill in every field of the template below for each sentence — do not skip, rename, or omit any key, and every string value must be immediately preceded by its key name (e.g. "english": "..."); never write a bare string value with no key name before it:
 [
   {
-    "foreignText": "Chinese sentence",
-    "english": "English translation",
-    "translatedVocab": "english word",
+    "foreignText": "<Chinese sentence>",
+    "english": "<English translation>",
+    "translatedVocab": "<english word or phrase>",
     "tense": "past" | "present" | "future",
     "partOfSpeechDict": {
-      "wordToken1": "pos_tag",
-      "wordToken2": "pos_tag"
+      "<wordToken1>": "<pos_tag>",
+      "<wordToken2>": "<pos_tag>"
     },
     "numberDict": {
       "<each noun token>": "singular" | "plural"
     },
     "segmentGloss": [
-      {"index": 0, "segment": "wordToken1", "english": "contextual english gloss"},
-      {"index": 1, "segment": "wordToken2", "english": "contextual english gloss"}
+      {"index": 0, "segment": "<wordToken1>", "english": "<contextual english gloss>"},
+      {"index": 1, "segment": "<wordToken2>", "english": "<contextual english gloss>"}
     ]
   }
-]`;
+]
+Every segmentGloss item MUST have all three keys — "index", "segment", AND "english" — spelled exactly as shown. Never write a segmentGloss item as {"index": 0, "segment": "X", "some text"} with the "english" key name missing.`;
 
   const response = await anthropic.messages.create({
     // segmentGloss roughly doubles per-sentence output size, so budget ~500 tokens
@@ -255,11 +247,92 @@ Respond with ONLY a JSON array of exactly ${sentenceCount} objects in this forma
     messages: [{ role: 'user', content: prompt }],
   });
 
-  const parsed = parseJsonFromResponse(response.content[0].text, { array: true });
-  if (!Array.isArray(parsed) || parsed.length === 0) return null;
+  return parseJsonFromResponse(response.content[0].text, { array: true });
+}
 
-  // Keep only sentences with the required fields + a well-formed partOfSpeechDict
-  const valid = parsed.filter(isValidSentenceShape);
+/**
+ * Ask Claude to generate exactly ONE natural example sentence — used to backfill
+ * a single missing/malformed slot without re-rolling the whole batch. targetPos,
+ * when given, asks specifically for that grammatical role so POS coverage isn't
+ * lost when a batch item drops out.
+ */
+async function generateSingleExampleSentence(word, pronunciation, definitionText, posList, targetPos) {
+  const roleClause = targetPos
+    ? `\nThis sentence specifically must use "${word}" as a ${targetPos}.`
+    : posList.length > 0
+      ? `\nParts of speech this word can take: ${posList.join(', ')}.`
+      : '';
+
+  const prompt = `You are a Chinese language teacher creating one example sentence for a vocabulary app.
+
+Word: ${word} (${pronunciation})
+Meaning: ${definitionText}${roleClause}
+
+Write ONE natural example sentence using "${word}". It should:
+- Use the word naturally as a native speaker would
+- Be simple enough for an intermediate learner (HSK 3–4 level vocabulary otherwise)
+- Have an accurate English translation that mirrors the Chinese punctuation and clause structure
+- Include "translatedVocab": the English word/phrase in the translation that corresponds to "${word}"
+- Include "tense": one of "past", "present", or "future" — the sentence's natural temporal meaning
+- Include "partOfSpeechDict": every word token in the Chinese sentence as a key (no punctuation keys), each value one of: ${ALLOWED_POS_TAGS.join(', ')}. Include "${word}" as a key.
+- Include "numberDict": for EVERY token tagged "noun" in partOfSpeechDict, its grammatical number in this sentence — "singular" or "plural" — judged from the English translation. Only noun tokens need an entry.
+- Include "segmentGloss": an ORDERED, segment-by-segment English gloss of the sentence covering the same tokens in left-to-right order, index starting at 0 and incrementing by 1.
+
+Respond with ONLY one JSON object. Fill in every field of the template below — do not skip, rename, or omit any key, and every string value must be immediately preceded by its key name; never write a bare string value with no key name before it:
+{
+  "foreignText": "<Chinese sentence>",
+  "english": "<English translation>",
+  "translatedVocab": "<english word or phrase>",
+  "tense": "past" | "present" | "future",
+  "partOfSpeechDict": {"<token>": "<pos_tag>"},
+  "numberDict": {"<nounToken>": "singular" | "plural"},
+  "segmentGloss": [{"index": 0, "segment": "<token>", "english": "<contextual gloss>"}]
+}
+Every segmentGloss item MUST have all three keys — "index", "segment", AND "english" — spelled exactly as shown. Never write a segmentGloss item as {"index": 0, "segment": "X", "some text"} with the "english" key name missing.`;
+
+  const response = await anthropic.messages.create({
+    model: GENERATOR_MODEL,
+    max_tokens: 700,
+    temperature: 0.7,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  const parsed = parseJsonFromResponse(response.content[0].text);
+  return parsed && isValidSentenceShape(parsed) ? parsed : null;
+}
+
+/**
+ * Generate the full set of example sentences for a word. A whole-batch parse
+ * failure (or a malformed individual item) no longer discards everything —
+ * valid sentences from the batch are kept, and only the shortfall is re-rolled
+ * one sentence at a time (generateSingleExampleSentence), targeting any POS
+ * role the batch failed to cover.
+ */
+async function generateExampleSentences(word, pronunciation, definitions, partsOfSpeech) {
+  const definitionText = formatDefinitions(definitions);
+
+  // partsOfSpeech is a JSONB array of POS tags from the dictionaryentries_zh row.
+  // We enforce at least one sentence per listed POS so every grammatical role
+  // the word can take is exemplified.
+  const posList = Array.isArray(partsOfSpeech) ? partsOfSpeech.filter(Boolean) : [];
+  const sentenceCount = Math.max(3, posList.length);
+
+  const batch = await generateSentenceBatch(word, pronunciation, definitionText, posList, sentenceCount);
+  const valid = Array.isArray(batch) ? batch.filter(isValidSentenceShape) : [];
+
+  const coveredPos = new Set(valid.map(s => s.partOfSpeechDict?.[word]).filter(Boolean));
+  const missingPos = posList.filter(p => !coveredPos.has(p));
+
+  const MAX_ATTEMPTS_PER_SLOT = 3;
+  while (valid.length < sentenceCount) {
+    const targetPos = missingPos.shift();
+    let sentence = null;
+    for (let attempt = 0; attempt < MAX_ATTEMPTS_PER_SLOT && !sentence; attempt++) {
+      sentence = await generateSingleExampleSentence(word, pronunciation, definitionText, posList, targetPos);
+    }
+    if (!sentence) break; // give up on this slot rather than retry forever
+    valid.push(sentence);
+  }
 
   return valid.length > 0 ? valid : null;
 }

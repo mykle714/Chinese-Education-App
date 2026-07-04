@@ -54,7 +54,8 @@ const WordSearchPage: React.FC = () => {
     const navigate = useNavigate();
     const theme = useTheme();
     const fc = theme.palette.flashcard;
-    const { token } = useAuth();
+    const { token, user } = useAuth();
+    const userId = user?.id;
     const tts = useTTS();
     const { settings, update } = useFlashcardLearnSettings();
     const { showPinyin, showPinyinColor } = settings;
@@ -191,11 +192,12 @@ const WordSearchPage: React.FC = () => {
     // startRef/pausedElapsedRef (not the `elapsedMs` state) so it's accurate
     // even mid-tick, not lagged by up to one 500ms interval step.
     const persistSnapshot = useCallback(() => {
+        if (!userId) return;
         const s = latestStateRef.current;
         if (s.phase !== "playing" || !s.data || !s.data.grid) return;
         if (s.found.size >= s.data.words.length) return;
         const elapsedNow = startRef.current !== null ? Date.now() - startRef.current : pausedElapsedRef.current;
-        saveGameState({
+        saveGameState(userId, {
             data: s.data,
             found: [...s.found],
             elapsedMs: elapsedNow,
@@ -206,7 +208,7 @@ const WordSearchPage: React.FC = () => {
             hintLocationRevealed: s.hintLocationRevealed,
             rewardedBonusWords: [...rewardedBonusWordsRef.current],
         });
-    }, []);
+    }, [userId]);
 
     // Fetch a fresh randomized grid. Returns the payload, or null after switching
     // to the blocked phase (insufficient cards / wrong language / network error).
@@ -232,6 +234,12 @@ const WordSearchPage: React.FC = () => {
                 setPhase("blocked");
                 return null;
             }
+            if (payload.templateIndex != null) {
+                console.log(`[word-search] used template #${payload.templateIndex}`);
+            } else {
+                console.log("[word-search] used random generation");
+            }
+
             // Warm TTS for every target so the found-word narration is instant.
             payload.words.forEach((w) =>
                 tts.prefetchSentence(w.entryKey, w.pinyin)
@@ -298,14 +306,14 @@ const WordSearchPage: React.FC = () => {
 
     // Initial load on mount: resume a saved board if one exists, else fetch new.
     useEffect(() => {
-        if (!token) {
+        if (!token || !userId) {
             setBlockMessage("Sign in to play Word Search.");
             setPhase("blocked");
             return;
         }
         let cancelled = false;
         (async () => {
-            const saved = loadGameState();
+            const saved = loadGameState(userId);
             if (saved) {
                 if (!cancelled) restoreBoard(saved);
                 return;
@@ -317,7 +325,7 @@ const WordSearchPage: React.FC = () => {
         return () => {
             cancelled = true;
         };
-    }, [token, fetchGrid, startBoard, restoreBoard]);
+    }, [token, userId, fetchGrid, startBoard, restoreBoard]);
 
     // Pause on backgrounding (tab hidden / app switched away), resume on
     // return — snapshot to localStorage first so a background pause that
@@ -480,21 +488,21 @@ const WordSearchPage: React.FC = () => {
             setFinalMs(ms);
             setPopupMinimized(false);
             recordWin();
-            clearGameState();
+            if (userId) clearGameState(userId);
             setPhase("won");
         }
-    }, [found, phase, data, elapsedMs, stopTimer, recordWin]);
+    }, [found, phase, data, elapsedMs, stopTimer, recordWin, userId]);
 
     // Discard the current board (win-screen "Play Again", or the header
     // restart button mid-game) and load a fresh one.
     const resetBoard = useCallback(async () => {
-        clearGameState();
+        if (userId) clearGameState(userId);
         tts.unlockAudio();
         setPhase("loading");
         const payload = await fetchGrid();
         if (!payload) return; // fetchGrid already switched to blocked
         startBoard(payload);
-    }, [tts, fetchGrid, startBoard]);
+    }, [tts, fetchGrid, startBoard, userId]);
 
     const renderCentered = (children: React.ReactNode) => (
         <Box

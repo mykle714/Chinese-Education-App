@@ -59,6 +59,26 @@ export function fetchTopFeed(
   return fetchFeed("/api/community/top-feed", token, language, excludeOwners, excludeKeys, limit);
 }
 
+/** Feed 3 — page of advanced layouts for one specific word, ranked by votes this week. */
+export async function fetchEntryFeed(
+  token: string | null,
+  language: Language,
+  entryKey: string,
+  excludeOwners: string[],
+  excludeKeys: string[],
+  limit: number,
+): Promise<CommunityDesign[]> {
+  const res = await fetch(`${API_BASE_URL}/api/community/entry-feed`, {
+    method: "POST",
+    credentials: "include",
+    headers: authHeaders(token),
+    body: JSON.stringify({ entryKey, language, excludeOwners, excludeKeys, limit }),
+  });
+  if (!res.ok) throw new Error(`Entry feed failed (${res.status})`);
+  const data = await res.json();
+  return data.designs ?? [];
+}
+
 /** The design keys the viewer voted on this week (drives the greyed/voted state). */
 export async function fetchMyVotes(token: string | null): Promise<VotedDesignKey[]> {
   const res = await fetch(`${API_BASE_URL}/api/community/my-votes`, {

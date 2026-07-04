@@ -119,6 +119,12 @@ export class DictionaryController {
 
       res.json({
         entries: result.entries,
+        // AI synthetic-entry fallback (docs/DICTIONARY_AI_FALLBACK_SEARCH.md): canAskAi tells the
+        // client to offer the "AI" button; aiEntry is a cached AI answer to auto-render (orange);
+        // aiNoMatch flags a cached EMPTY answer (show the "couldn't find a match" note).
+        canAskAi: result.canAskAi,
+        aiEntry: result.aiEntry,
+        aiNoMatch: result.aiNoMatch,
         pagination: {
           page: pageNum,
           limit: limitNum,
@@ -129,6 +135,41 @@ export class DictionaryController {
     } catch (error: any) {
       console.error('Error searching dictionary:', error);
       res.status(500).json({ error: error.message || 'Failed to search dictionary' });
+    }
+  }
+
+  /**
+   * Generate an AI synthetic dictionary entry for a pinyin query with no real match — the "AI"
+   * button target (docs/DICTIONARY_AI_FALLBACK_SEARCH.md). Returns `{ entry }`, where `entry` is a
+   * display-only AiDictionaryEntry, or `null` for an empty result / disabled feature / invalid input.
+   * POST /api/dictionary/ai-entry  { term, language? }
+   */
+  async aiEntry(req: Request, res: Response): Promise<void> {
+    try {
+      const { term, language } = req.body;
+      const userId = (req as any).user?.userId;
+
+      if (!term || typeof term !== 'string') {
+        res.status(400).json({ error: 'Term is required' });
+        return;
+      }
+
+      if (!userId) {
+        res.status(401).json({ error: 'User not authenticated' });
+        return;
+      }
+
+      let searchLanguage = language as string;
+      if (!searchLanguage) {
+        const user = await this.userDAL.findById(userId);
+        searchLanguage = user?.selectedLanguage || 'zh';
+      }
+
+      const entry = await this.dictionaryService.generateAiEntry(term, searchLanguage);
+      res.json({ entry });
+    } catch (error: any) {
+      console.error('Error generating AI dictionary entry:', error);
+      res.status(500).json({ error: error.message || 'Failed to generate AI entry' });
     }
   }
 
@@ -160,7 +201,15 @@ export class DictionaryController {
       const language = user?.selectedLanguage || 'zh';
 
       const segments = await this.dictionaryService.segmentAndLookup(text, language);
-      res.json({ segments });
+
+      // AI fallback (docs/DICTIONARY_AI_FALLBACK_SEARCH.md): when the full typed string isn't itself
+      // a headword (only breakdown/prefix matches came back), offer the "AI" button for it too. A
+      // "complete match" is a segment group for the whole trimmed input that has an exact entry.
+      const trimmed = text.trim();
+      const hasCompleteMatch = segments.some(g => g.segment === trimmed && g.exactEntries.length > 0);
+      const { canAskAi, aiEntry, aiNoMatch } = await this.dictionaryService.resolveChineseAiFallback(trimmed, language, hasCompleteMatch);
+
+      res.json({ segments, canAskAi, aiEntry, aiNoMatch });
     } catch (error: any) {
       console.error('Error in segment search:', error);
       res.status(500).json({ error: error.message || 'Failed to perform segment search' });

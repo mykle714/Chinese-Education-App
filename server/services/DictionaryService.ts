@@ -1,8 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { IDictionaryDAL } from '../dal/interfaces/IDictionaryDAL.js';
-import { DictionaryEntry, VocabEntry } from '../types/index.js';
+import { DictionaryEntry, VocabEntry, AiDictionaryEntry } from '../types/index.js';
 import { ValidationError } from '../types/dal.js';
 import { getAllSubstrings, buildDictMap, buildExcludeSet, segmentWithDict } from '../dal/shared/segmentString.js';
+import { isAllPinyin } from '../utils/pinyinSegment.js';
 
 // One shared Anthropic client for the service's AI helpers (expansion + long
 // definition). Constructed lazily so a missing ANTHROPIC_API_KEY only disables
@@ -14,6 +15,36 @@ function getAnthropicClient(): Anthropic | null {
   if (!apiKey) return null;
   anthropicClient = new Anthropic({ apiKey });
   return anthropicClient;
+}
+
+// Separate client for the dictionary AI synthetic-entry fallback (docs/DICTIONARY_AI_FALLBACK_SEARCH.md),
+// keyed on its OWN DICT_AI_API_KEY so this feature's usage/billing is isolated from the enrichment
+// helpers above. Missing key ⇒ the feature is silently disabled (no "AI" button ever offered).
+let dictAiClient: Anthropic | null = null;
+function getDictAiClient(): Anthropic | null {
+  if (dictAiClient) return dictAiClient;
+  const apiKey = process.env.DICT_AI_API_KEY;
+  if (!apiKey) return null;
+  dictAiClient = new Anthropic({ apiKey });
+  return dictAiClient;
+}
+
+// A cached EMPTY AI result older than this is treated as a miss so the model is re-prompted.
+const AI_EMPTY_CACHE_TTL_MS = 90 * 24 * 60 * 60 * 1000; // ~3 months
+
+// CJK-ideograph test (BMP + Ext-A), mirroring the client's textUtils.hasChinese. Used to route a
+// query down the Chinese (vs pinyin) branch of the AI synthetic-entry fallback.
+const hasChinese = (text: string): boolean => /[一-鿿㐀-䶿]/.test(text);
+
+// The AI-fallback UI state a search resolves to (docs/DICTIONARY_AI_FALLBACK_SEARCH.md):
+//   canAskAi  — offer the "AI" button (cache miss or stale-empty)
+//   aiEntry   — a cached non-empty answer to auto-render (orange card)
+//   aiNoMatch — a fresh cached EMPTY answer: the AI already found nothing → show the no-match note
+// At most one of the three is "active" at a time.
+interface AiFallbackState {
+  canAskAi: boolean;
+  aiEntry: AiDictionaryEntry | null;
+  aiNoMatch: boolean;
 }
 
 /**
@@ -111,7 +142,7 @@ export class DictionaryService {
     language: string,
     limit: number = 50,
     offset: number = 0
-  ): Promise<{ entries: DictionaryEntry[], total: number }> {
+  ): Promise<{ entries: DictionaryEntry[], total: number } & AiFallbackState> {
     // Validation
     if (!searchTerm || searchTerm.trim().length === 0) {
       throw new ValidationError('Search term is required');
@@ -130,14 +161,180 @@ export class DictionaryService {
     }
 
     const trimmedTerm = searchTerm.trim();
-    
+
     const result = await this.dictionaryDAL.searchByWord1(trimmedTerm, language, limit, offset);
     const withExpansionMeta = await this.enrichExpansionMetadataBatch(result.entries, language);
+
+    // AI synthetic-entry fallback (docs/DICTIONARY_AI_FALLBACK_SEARCH.md): only when stages 1–2
+    // found nothing. Surface either a cached AI answer (auto-shown orange card) or the flag that
+    // tells the client to offer the "AI" button. Non-zh / non-pinyin queries never qualify.
+    let canAskAi = false;
+    let aiEntry: AiDictionaryEntry | null = null;
+    let aiNoMatch = false;
+    if (result.total === 0 && language === 'zh' && isAllPinyin(trimmedTerm)) {
+      ({ canAskAi, aiEntry, aiNoMatch } = await this.resolveAiCache(trimmedTerm, language));
+    }
 
     return {
       entries: withExpansionMeta,
       total: result.total,
+      canAskAi,
+      aiEntry,
+      aiNoMatch,
     };
+  }
+
+  /**
+   * AI-fallback state for a Chinese segment-mode query with no complete-word match
+   * (docs/DICTIONARY_AI_FALLBACK_SEARCH.md). The /segment path only ever surfaces breakdown /
+   * prefix matches, so when the full typed string isn't itself a headword we offer the same "AI"
+   * button as the pinyin path. `hasCompleteMatch` is computed by the caller from the segment groups.
+   */
+  async resolveChineseAiFallback(
+    term: string,
+    language: string,
+    hasCompleteMatch: boolean
+  ): Promise<AiFallbackState> {
+    const trimmed = (term || '').trim();
+    if (language !== 'zh' || hasCompleteMatch || !hasChinese(trimmed)) {
+      return { canAskAi: false, aiEntry: null, aiNoMatch: false };
+    }
+    return this.resolveAiCache(trimmed, language);
+  }
+
+  /**
+   * Resolve the AI-fallback state for a qualifying zero-/no-match query (the caller has already
+   * decided the query qualifies — valid pinyin, or Chinese with no complete match). See
+   * docs/DICTIONARY_AI_FALLBACK_SEARCH.md:
+   *   • cached non-empty hit           → show the cached orange card (no button)
+   *   • cached empty hit, fresh (<3mo) → nothing (AI already found no meaning)
+   *   • cached empty hit, stale (>3mo) → offer the button again (re-prompt on tap)
+   *   • cache miss                     → offer the button
+   */
+  private async resolveAiCache(
+    term: string,
+    language: string
+  ): Promise<AiFallbackState> {
+    const cached = await this.dictionaryDAL.getAiCacheEntry(term, language);
+    if (!cached) {
+      return { canAskAi: true, aiEntry: null, aiNoMatch: false };
+    }
+    if (cached.word1) {
+      return {
+        canAskAi: false,
+        aiEntry: { word1: cached.word1, pronunciation: cached.pinyin || '', definition: cached.definition || '', source: 'ai' },
+        aiNoMatch: false,
+      };
+    }
+    // Empty cached result: re-offer the button only once it has gone stale. While it's fresh, the AI
+    // already checked and found nothing — surface the "no match" note (no button), same as a live ask.
+    const stale = Date.now() - new Date(cached.queriedAt).getTime() > AI_EMPTY_CACHE_TTL_MS;
+    return { canAskAi: stale, aiEntry: null, aiNoMatch: !stale };
+  }
+
+  /**
+   * Button-triggered AI synthetic-entry generation (docs/DICTIONARY_AI_FALLBACK_SEARCH.md). Given a
+   * pinyin query with no real det match, ask Sonnet for one likely Chinese word (Han + tone-marked
+   * pinyin + a ≤100-char gloss), cache the answer (empty result cached as word1 NULL), and return
+   * the display-only entry (or null for "no likely meaning" / feature disabled / invalid input).
+   *
+   * Idempotent against the cache: a fresh cached row short-circuits the model call, so repeated
+   * taps (or concurrent requests) don't re-bill.
+   */
+  async generateAiEntry(term: string, language: string): Promise<AiDictionaryEntry | null> {
+    const trimmed = (term || '').trim();
+    // Qualifies if it's valid pinyin OR Chinese characters (the segment-mode "no complete match" case).
+    if (language !== 'zh' || (!isAllPinyin(trimmed) && !hasChinese(trimmed))) return null;
+
+    // Re-check the cache: honor a fresh row (empty or not) without hitting the model again.
+    const cached = await this.dictionaryDAL.getAiCacheEntry(trimmed, language);
+    if (cached) {
+      if (cached.word1) {
+        return { word1: cached.word1, pronunciation: cached.pinyin || '', definition: cached.definition || '', source: 'ai' };
+      }
+      const fresh = Date.now() - new Date(cached.queriedAt).getTime() <= AI_EMPTY_CACHE_TTL_MS;
+      if (fresh) return null; // AI already found no meaning recently
+    }
+
+    const anthropic = getDictAiClient();
+    if (!anthropic) return null; // feature disabled (no DICT_AI_API_KEY)
+
+    try {
+      // Instructions are static → live in a cache_control system block so repeated calls in a
+      // 5-min window share the cached prefix; only the query varies per call.
+      const systemText = `You are a Mandarin Chinese dictionary. You are given a query that is EITHER Hanyu Pinyin (tone digits may be present: 1–4 = tones, 0/5 = neutral; or absent = any tone) OR Chinese characters. Return the single Chinese word/expression the query denotes.
+
+You have a web_search tool. Use it to identify real people, places, brands, works, or any current/recent information you are not certain about — SEARCH before falling back to a generic description. Never fabricate facts; if you're unsure who or what a proper noun refers to, search for it first.
+
+Your FINAL message must be ONLY a JSON object, no other prose and no citations, in exactly this format:
+{"word1": "汉字", "pinyin": "tone-marked pinyin", "definition": "one concise English gloss"}
+
+Rules:
+- Treat the query as CORRECT exactly as written. Assume the pinyin is spelled correctly — do NOT correct, "fix", or reinterpret it as an apparent typo, and do NOT substitute a similar-sounding or similar-looking word. Match the query exactly.
+- Return a result for ANY query that maps to a valid concept. This includes ordinary words and expressions AND proper nouns — real people, place names, brand/company names, titles of works.
+- When a query names a real, identifiable entity, identify THAT entity — say who or what it is (e.g. "Taiwanese singer, member of ...", "city in Jiangsu, China", "smartphone brand"). This is what the user wants: the referent, not a character breakdown. If you don't already know it, use web_search to find out before answering.
+- Only fall back to describing a name generically (its being a personal name + the literal meanings of its characters, e.g. "Chinese given name; 翊 'assist' + 恩 'grace/kindness'") when even a web search cannot identify a specific real-world referent. Do NOT fabricate biographical facts (roles, groups, dates).
+- For a pinyin query: the answer's pronunciation must match the given pinyin exactly (including any specified tones). If no word, name, or concept has exactly this pinyin, respond with {"word1": null}.
+- For a Chinese-character query: interpret exactly those characters. Respond with {"word1": null} ONLY if the characters map to no coherent concept at all (e.g. a random, meaningless jumble of unrelated characters).
+- "word1": the Chinese characters (simplified).
+- "pinyin": tone-marked Hanyu Pinyin with diacritics (e.g. "jiàn shēn"), matching word1.
+- "definition": ONE short, COMPLETE English gloss — a single phrase or clause of at most ~12 words (and never more than 100 characters). Identify the core meaning and stop; do NOT write a multi-clause sentence stacking "founded in…", "known for…", examples, or dates. It must read as finished, not trailing off. E.g. 喜茶 → "Heytea, a popular Chinese premium tea drink chain" (good), NOT "Heytea; popular Chinese tea chain founded in 2012, known for cheese tea and fruit tea…" (too long).`;
+
+      // Give the model a web_search tool so it can identify current/obscure referents (recent
+      // singers, places, brands) beyond its training cutoff (docs/DICTIONARY_AI_FALLBACK_SEARCH.md).
+      // The model decides when to search (stable words won't trigger one); max_uses caps cost at
+      // 3 searches/tap. A search-heavy turn can be paused (stop_reason 'pause_turn') — we echo the
+      // assistant content back to continue until it finishes.
+      const messages: Anthropic.MessageParam[] = [{ role: 'user', content: `Query: ${trimmed}` }];
+      let response: Anthropic.Message | null = null;
+      for (let i = 0; i < 5; i++) {
+        response = await anthropic.messages.create({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 512,
+          temperature: 0.2,
+          system: [{ type: 'text', text: systemText, cache_control: { type: 'ephemeral' } }],
+          tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }],
+          messages,
+        });
+        if (response.stop_reason !== 'pause_turn') break;
+        messages.push({ role: 'assistant', content: response.content });
+      }
+      if (!response) return null;
+
+      // Concatenate the final turn's text blocks (with web search, content also holds
+      // server_tool_use / web_search_tool_result blocks we ignore) and pull out the JSON object.
+      // Our JSON is flat (no nested braces), so match each {...} and take the last that parses.
+      const content = response.content
+        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+        .map(b => b.text)
+        .join('\n');
+      const candidates = content.match(/\{[^{}]*\}/g) || [];
+      let parsed: any = null;
+      for (let i = candidates.length - 1; i >= 0; i--) {
+        try {
+          const obj = JSON.parse(candidates[i]);
+          if (obj && Object.prototype.hasOwnProperty.call(obj, 'word1')) { parsed = obj; break; }
+        } catch { /* not valid JSON — try an earlier candidate */ }
+      }
+      if (!parsed) return null; // couldn't parse a result — transient, don't cache
+
+      // Validate: an empty result (word1 null/missing) is a legitimate, cacheable outcome.
+      const word1 = typeof parsed.word1 === 'string' ? parsed.word1.trim() : '';
+      if (!word1) {
+        await this.dictionaryDAL.upsertAiCacheEntry(trimmed, language, null);
+        return null;
+      }
+      const pinyin = typeof parsed.pinyin === 'string' ? parsed.pinyin.trim() : '';
+      // No length cap — the column is unbounded text (migration 98) and the card wraps the full
+      // gloss; the prompt asks the model to keep it concise and complete.
+      const definition = typeof parsed.definition === 'string' ? parsed.definition.trim() : '';
+
+      await this.dictionaryDAL.upsertAiCacheEntry(trimmed, language, { word1, pinyin, definition });
+      return { word1, pronunciation: pinyin, definition, source: 'ai' };
+    } catch (error: any) {
+      console.error(`Failed to generate AI dictionary entry for "${trimmed}":`, error.message);
+      return null;
+    }
   }
 
   /**

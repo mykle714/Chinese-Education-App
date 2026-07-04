@@ -1,8 +1,8 @@
 import { memo } from "react";
-import { Box, Typography, Chip, IconButton } from "@mui/material";
+import { Box, Typography, IconButton } from "@mui/material";
 import ForeignText from "./ForeignText";
 import CardIconLayer from "../cardIcons/CardIconLayer";
-import { isAdvancedLayout } from "../cardIcons/cardIconLayout";
+import { iconImageUrl, isAdvancedLayout } from "../cardIcons/cardIconLayout";
 import { stripParentheses } from "../utils/definitionUtils";
 import { resolveTextColor } from "../utils/cardTextColor";
 import { resolveCardColor } from "../utils/cardColor";
@@ -37,6 +37,13 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
     // fully percentage-based, so it scales to this 92×132 card with no pixel math.
     // See docs/CARD_ICON_LAYOUT.md.
     const hasAdvancedLayout = isAdvancedLayout(entry.iconLayout);
+    // BASIC layout: a single default-placed icon (or none saved yet, but the entry still
+    // has a det icon). Rendered as a plain image inside the fixed-height icon slot below
+    // (NOT via CardIconLayer's card-wide percentage placement — that geometry puts the
+    // default icon ~35% down the full card, which collides with the word at this small
+    // size). The slot itself is always rendered, with or without an icon, so every mini
+    // card reserves identical vertical space and the word sits at the same height.
+    const hasBasicIcon = !hasAdvancedLayout && !!entry.iconId;
     // Per-card Contrast text-color overrides (migration 89): apply the same foreign/English
     // colors the flashcard face uses so the thumbnail matches. Undefined = theme default.
     const characterColor = resolveTextColor(entry.textColors?.foreign);
@@ -69,9 +76,6 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
                 ...(typeof animationDelayMs === "number" && {
                     animation: `cardPopIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) ${animationDelayMs}ms backwards`,
                 }),
-                display: 'flex',
-                flexDirection: 'column',
-                padding: '8px',
                 position: 'relative',
                 overflow: 'hidden',
                 '&:hover': {
@@ -157,54 +161,83 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
                     </IconButton>
                 )}
             </Box>
-            {/* Category Badge - top left */}
+            {/* UTCM Badge - top left. Shrunk to a single-letter dot (Unfamiliar/Target/
+                Comfortable/Mastered) so the freed-up top space can hold the basic-layout
+                icon instead. */}
             {entry.category && (
                 <Box
-                    className="mini-vocab-card__category-wrapper"
+                    className="mini-vocab-card__category-badge"
                     sx={{
                         position: 'absolute',
                         top: 8,
                         left: 8,
                         zIndex: 1,
+                        width: 18,
+                        height: 18,
+                        borderRadius: '50%',
+                        backgroundColor: getCategoryColor(entry.category),
+                        color: 'white',
+                        fontSize: SIZE.micro,
+                        fontWeight: WEIGHT.bold,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
                     }}
                 >
-                    <Chip
-                        className="mini-vocab-card__category-chip"
-                        label={entry.category}
-                        size="small"
-                        sx={{
-                            backgroundColor: getCategoryColor(entry.category),
-                            color: 'white',
-                            fontSize: SIZE.micro,
-                            height: '20px',
-                            fontWeight: WEIGHT.bold,
-                            '& .MuiChip-label': {
-                                padding: '0 6px',
-                            },
-                        }}
-                    />
+                    {entry.category.charAt(0)}
                 </Box>
             )}
+
+            {/* Icon slot - fixed position/height, always rendered (empty when the card has
+                no basic icon) so every mini card reserves identical space here regardless
+                of icon presence. Positioned absolutely (independent of the word/definition
+                below) so nudging it doesn't cascade into their positions. */}
+            <Box
+                className="mini-vocab-card__icon-slot"
+                sx={{
+                    position: 'absolute',
+                    top: 14,
+                    left: 8,
+                    right: 8,
+                    height: 26,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 1,
+                }}
+            >
+                {hasBasicIcon && (
+                    <Box
+                        component="img"
+                        className="mini-vocab-card__icon"
+                        src={iconImageUrl(entry.iconId!)}
+                        alt=""
+                        draggable={false}
+                        sx={{ width: 26, height: 26, objectFit: 'contain', userSelect: 'none' }}
+                    />
+                )}
+            </Box>
 
             {/* Entry Key (Word/Character) + pronunciation, rendered per-character
                 via cpcd (ForeignText): each character carries its tone-colored
                 pinyin overlay. For Latin-script languages (es) ForeignText falls
                 back to plain text with no pinyin row. Items wrap so multi-character
-                phrases reflow within the narrow (~76px) card body. */}
+                phrases reflow within the narrow (~76px) card body. Positioned
+                absolutely, below the icon slot, independent of the definition's
+                position (see below). */}
             <Box
                 className="mini-vocab-card__key-wrapper"
                 sx={{
+                    position: 'absolute',
+                    top: 46,
+                    left: 8,
+                    right: 8,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    flexGrow: 1,
-                    minHeight: 48,
-                    mt: 1.5, // shift down so the category chip doesn't cover the word
-                    mb: 0.5,
-                    width: '100%',
                     minWidth: 0,
                     // Sit above the advanced icon layer (zIndex 0) so the word reads on top.
-                    position: 'relative',
                     zIndex: 1,
                 }}
             >
@@ -221,10 +254,16 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
                 />
             </Box>
 
-            {/* Entry Value (Definition) */}
+            {/* Entry Value (Definition). Anchored to the bottom independently of the icon
+                slot / word above — it keeps its original resting spot no matter how those
+                are nudged. */}
             <Typography
                 className="mini-vocab-card__entry-value"
                 sx={{
+                    position: 'absolute',
+                    bottom: 8,
+                    left: 8,
+                    right: 8,
                     fontSize: SIZE.caption,
                     color: definitionColor ?? COLORS.textSecondary,
                     textAlign: 'center',
@@ -235,7 +274,6 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
                     WebkitBoxOrient: 'vertical',
                     minHeight: 24,
                     // Above the advanced icon layer (zIndex 0).
-                    position: 'relative',
                     zIndex: 1,
                 }}
             >

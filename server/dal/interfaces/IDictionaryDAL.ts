@@ -1,4 +1,4 @@
-import { DictionaryEntry, DictionaryEntryCreateData } from '../../types/index.js';
+import { DictionaryEntry, DictionaryEntryCreateData, AiDictionaryCacheRow } from '../../types/index.js';
 import { IBaseDAL } from './IBaseDAL.js';
 
 /**
@@ -41,6 +41,23 @@ export interface IDictionaryDAL extends IBaseDAL<DictionaryEntry, DictionaryEntr
    * Get total count of dictionary entries
    */
   getTotalCount(): Promise<number>;
+
+  /**
+   * Read a cached AI-synthesized dictionary entry by exact query key (migration 97).
+   * Returns the row (word1 NULL ⇒ cached empty result) or null on a miss.
+   * See docs/DICTIONARY_AI_FALLBACK_SEARCH.md.
+   */
+  getAiCacheEntry(queryKey: string, language: string): Promise<AiDictionaryCacheRow | null>;
+
+  /**
+   * Insert or refresh a cached AI result for (queryKey, language). A null `entry` records a
+   * cached empty result; `queriedAt` is reset to now() on every (re-)prompt.
+   */
+  upsertAiCacheEntry(
+    queryKey: string,
+    language: string,
+    entry: { word1: string; pinyin: string; definition: string } | null
+  ): Promise<void>;
 
   /**
    * Enrich each example sentence in a batch of entries with:

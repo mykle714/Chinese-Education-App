@@ -144,10 +144,13 @@ Replace `DiscoverFetchResponse.cards` with `packs`.
 
 ### 5.2 `src/pages/SortCardsPage.tsx`
 - FIFO is now a **queue of packs** (target 2: on-deck + buffer).
-- Render: up to **3 resized draggable cards** (no sentence band — removed; autoplay
-  now speaks the picked-up card's own word audio via `tts.speakSentence(card.entryKey,
-  card.pronunciation)` on drag start instead of narrating a sentence). Locked
-  (`sorted`) cards: undraggable + "sorted!" watermark.
+- Render: up to **3 resized draggable cards** (no sentence band — removed). Autoplay
+  is pack-level, not per-pickup: an effect keyed on `currentPack.packKey` narrates
+  every card's own word audio via `tts.speakSentence(card.entryKey, card.pronunciation)`
+  left to right, once per pack landing on-deck, whenever `discoverSettings.autoplay`
+  and `tts.enabled` are both true. Drag start only unlocks audio (mobile gesture
+  requirement); it no longer triggers narration itself. Locked (`sorted`) cards:
+  undraggable + "sorted!" watermark, but still narrated in the sequence.
 - Per-card drag → `POST /sort` (`lastInPack` true on the final unsorted card). Card
   animates out; pack stays on deck (immutability §4.2).
 - Pack complete → pop head, append buffer, `POST /next-pack` to refill tail.

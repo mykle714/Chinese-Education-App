@@ -38,6 +38,8 @@ export interface WordSearchGrid {
   cols: number;
   grid: GridCell[][]; // grid[row][col]
   words: PlacedWord[];
+  /** Index into WORD_SEARCH_TEMPLATES if template mode placed this grid, else null (random snaking). */
+  templateIndex: number | null;
 }
 
 /** Orthogonal (4-direction) neighbor offsets — no diagonals (see doc §2). */
@@ -265,6 +267,7 @@ export function generateWordSearchGrid(
 
     const useTemplate = canUseTemplates && gridAttempt >= RANDOM_GRID_ATTEMPTS;
     let allPlaced = true;
+    let templateIndex: number | null = null;
 
     if (useTemplate) {
       // Template mode (docs/WORD_SEARCH_TEMPLATES.md): pick a random fixed 7x7
@@ -274,7 +277,8 @@ export function generateWordSearchGrid(
       // filler flood below, same as every other empty cell. Cell-count-wise
       // this can never fail (every word is <= 4 chars, every slot is 4 cells),
       // so `allPlaced` stays true here.
-      const template = WORD_SEARCH_TEMPLATES[randInt(rng, WORD_SEARCH_TEMPLATES.length)];
+      templateIndex = randInt(rng, WORD_SEARCH_TEMPLATES.length);
+      const template = WORD_SEARCH_TEMPLATES[templateIndex];
       const shuffled = shuffle(prepared, rng);
 
       shuffled.forEach(({ word, chars, syllables }, i) => {
@@ -380,6 +384,7 @@ export function generateWordSearchGrid(
       grid: cells as GridCell[][],
       // Return words in the original (top-list) order, not placement order.
       words: words.map((w) => placed.find((p) => p.entryKey === w.entryKey)!),
+      templateIndex,
     };
   }
 

@@ -179,6 +179,28 @@ export interface DictionaryEntry {
   wordForms?: Record<string, string> | null;  // AI-generated English conjugation map (e.g. {past: "ran", present: "runs"})
 };
 
+// A row of `ai_dictionary_cache` (migration 97) — a cached AI-synthesized dictionary answer for a
+// pinyin query with no real det match. `word1` NULL ⇒ cached empty result (no likely meaning).
+// See docs/DICTIONARY_AI_FALLBACK_SEARCH.md.
+export interface AiDictionaryCacheRow {
+  id: number;
+  queryKey: string;
+  language: string;
+  word1: string | null;
+  pinyin: string | null;
+  definition: string | null;
+  queriedAt: string;
+}
+
+// A display-only AI-synthesized dictionary entry surfaced to the client (rendered as an unclickable
+// orange card). No id / metadata — it is not a real det row. `source: 'ai'` tags its provenance.
+export interface AiDictionaryEntry {
+  word1: string;
+  pronunciation: string;  // tone-marked pinyin
+  definition: string;     // one concise, complete gloss (no length cap; migration 98)
+  source: 'ai';
+}
+
 // One orthogonal sense cluster within a Chinese dictionary entry's
 // `definitionClusters` (migration 90). Glosses sharing one core meaning are
 // grouped and ordered prototypical→vernacular WITHIN the cluster; clusters
@@ -393,6 +415,7 @@ export interface VocabEntry {
   difficulty?: DifficultyLevel | null;
   partsOfSpeech?: string[] | null;  // POS tags from dictionaryentries_zh (e.g. ["noun", "verb"])
   vernacularScore?: number | null;  // 1–5 register score from dictionaryentries_zh (1=literary, 5=natural colloquial)
+  definitionClusters?: DefinitionCluster[] | null;  // Orthogonal sense clusters (zh; migration 90), joined from det via DICT_JOIN — see docs/DEFINITION_CLUSTERS.md
   markHistory?: ReviewMark[];  // Last 16 flashcard mark results
   totalMarkCount?: number;  // Total cumulative count of all marks
   totalCorrectCount?: number;  // Lifetime count of correct marks

@@ -9,6 +9,10 @@
 //
 // `iconId` is the optional FK to icons8 (migration 72), present on both det tables.
 // The client renders the icon via <img src="/api/icons8/<iconId>/image">.
+//
+// `definitionClusters` is the zh-only orthogonal sense-cluster column (migration
+// 90, docs/DEFINITION_CLUSTERS.md) — NULL for Spanish and for zh entries not yet
+// backfilled. Drives the flp sense-picker dropdown (EnglishBlock).
 export const DICT_COLS =
   `de.script, de.pronunciation, de.tone, de."difficulty", de."partsOfSpeech", ` +
   `de."vernacularScore", ` +
@@ -16,6 +20,7 @@ export const DICT_COLS =
   `de.expansion, de."expansionLiteralTranslation", de."longDefinition", ` +
   `de.pos, de."hasMultiplePos", de."alternateGender", de."alternateMeaning", ` +
   `de."iconId", ` +
+  `de."definitionClusters", ` +
   `de.definition`;
 
 // The columns selected inside each branch of the lateral join. Kept identical
@@ -34,15 +39,19 @@ const DICT_LATERAL_SELECT_ZH =
   `       NULL::varchar AS pos, FALSE AS "hasMultiplePos",` +
   `       NULL::varchar AS "alternateGender", NULL::text AS "alternateMeaning",` +
   `       "iconId",` +
+  `       "definitionClusters",` +
   `       1 AS match_rank,` +
   `       definitions, definitions->>0 AS definition`;
 
+// Spanish det has no definitionClusters column (zh-only, migration 90) — substitute
+// a typed NULL so the UNION ALL below still type-checks at the SQL level.
 const DICT_LATERAL_SELECT_ES =
   `SELECT script, pronunciation, tone, "difficulty", "partsOfSpeech", "vernacularScore",` +
   `       breakdown, synonyms,` +
   `       "exampleSentences", expansion, "expansionLiteralTranslation", "longDefinition",` +
   `       pos, "hasMultiplePos", "alternateGender", "alternateMeaning",` +
   `       "iconId",` +
+  `       NULL::jsonb AS "definitionClusters",` +
   `       (CASE WHEN ve.pos IS NOT NULL AND pos = ve.pos THEN 0 ELSE 1 END) AS match_rank,` +
   `       definitions, definitions->>0 AS definition`;
 

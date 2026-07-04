@@ -33,19 +33,20 @@ A user's tolerance for mismatch is **asymmetric**:
 | Too **easy** | Fine / reassuring | Mildly bored, but tolerant of a few |
 | Too **hard** | **Demoralized — will quit** | Fine |
 
-This asymmetry drives two requirements:
+This asymmetry drives the core requirement:
 
 - **Start at the lowest level.** Every user begins at the easiest level for that
   language. A novice will abandon the flow if hit with hard cards; an advanced user
-  will patiently sort through a few easy ones (and quickly signal that they're too
-  easy). Easy-first is the safe default for an unknown user.
-- **Only adapt upward.** Because everyone starts at the bottom, the only adjustment
-  the system needs to make is **moving the user's level up** as evidence accumulates.
-  There is no symmetric "move down" requirement.
-- **Adapt up carefully.** Moving up too aggressively is the failure mode to avoid: a
-  user should not end up **consistently** seeing cards far too hard for them. If that
-  happens, the level was raised too quickly. Upward adjustment should be paced so
-  that being persistently over-leveled does not occur in practice.
+  will patiently sort through a few easy ones. Easy-first is the safe default for an
+  unknown user.
+- **Never overshoot above the user's actual level.** Elevating the estimate past what
+  the user actually knows is the failure mode to avoid above all others — once that
+  happens, the user stops seeing cards at their real level and the flow can't recover
+  on its own (§6.1 downgrade is the recovery path, but overshoot should be avoided in
+  the first place, not relied on to be corrected after the fact).
+- **Don't leave an advanced user stranded at a low level.** The estimate must climb
+  fast enough that a genuinely advanced user reaches their real level in a reasonable
+  number of sorts, not linger at the bottom for an extended session.
 
 ---
 
@@ -172,58 +173,93 @@ the user **chooses** to bring it back, in one of three ways:
 
 ## 6. Adaptive leveling
 
-### 6.1 The system estimates a user level
-- The system maintains an **estimated skill level** for the user, per language (§3).
-- Every user starts at the **lowest** level (§2).
-- The estimate is **refined upward** as the user sorts, based on sort actions that
-  carry signal:
-  - **Add to Learn Now** tells us the user **does not yet know** that card.
-  - **Already Learned** tells us the user **already knows** that card.
+### 6.1 Cold start, then a client-owned target level
+- Every user starts at the **lowest level they have not yet cleared** for that
+  language (§2), computed from their existing account state (mastered/library cards)
+  the moment they enter the flow.
+- From that point on, the **running target level lives on the client**, not
+  recomputed from account state on every request. The client tracks it for the
+  rest of the session and tells the server what to serve next.
+- The target **moves in either direction** — there is no upward-only constraint.
+- Two competing failure modes bound the adaptation (§2): the target must not
+  **overshoot** above the user's real level, and it must not **undershoot** —
+  leaving an advanced user stuck at a low level for too long.
 
-  Both inform the level estimate. **Skips carry no signal** (§5.1).
+### 6.2 A SortPack is one signal
+- A **SortPack counts as exactly one signal**, however many of its (up to 3) cards
+  get sorted — never one signal per card.
+- **Any "Add to Learn Now" in the pack** makes the whole pack's signal negative,
+  even if other cards in the same pack were "Already Learned". The target drops to
+  **(that pack's level) − 1**.
+- A pack where **every** sorted card is "Already Learned" (no "Add to Learn Now" at
+  all) is a positive signal. After **2** positive signals **at the same level**, the
+  target rises to **(that level) + 1**.
+- **Skips carry no signal** (§5.1) — a pack that is skipped, or partially skipped
+  with no library/already-learned cards in it, moves the target in neither
+  direction.
+- The new target is always computed as **(the completing pack's own level) ± 1**,
+  never as an increment of whatever the client's current running target happens to
+  be — the two can differ because a replacement pack may already be in flight (see
+  §6.4), and anchoring on the completing pack's level keeps the adjustment from
+  compounding on a value that's already stale.
 
-### 6.2 Cards are matched to the level
-- The user is normally served cards **at their estimated level**.
-- Cards too easy or too hard relative to the estimate are not served during normal
+### 6.3 Cards are matched to the level
+- The user is normally served cards **at the current target level**.
+- Cards too easy or too hard relative to the target are not served during normal
   operation.
 
-### 6.3 Supply order and running out of in-level cards
-- **At the estimated level, authored packs are served first** (in their curation
+### 6.4 Supply order, running out of in-level cards, and queue lag
+- **At the target level, authored packs are served first** (in their curation
   order), then **system fallback single-card packs** for the remaining un-sorted,
   un-skipped words at that level (§4.5).
 - When the user has **sorted all packs at their level**, the flow **offers packs from
   adjacent levels** so the user always has something to sort (§4.4), serving them **as
-  close to the user's estimated level as possible** — exhaust the nearest levels first
-  and only reach further out as those deplete. The user should drift away from their
-  estimated level as gradually as the available cards allow.
+  close to the target level as possible** — exhaust the nearest levels first and only
+  reach further out as those deplete. The user should drift away from the target level
+  as gradually as the available cards allow.
 - Previously skipped cards do **not** become eligible again here. They re-enter the
   flow only by explicit user action (§5.2), never automatically.
+- Because the client always keeps a small queue ready ahead of the user (§4.3), a
+  target-level change triggered by the pack now on deck only affects the
+  **replenishment requested after it** — the pack already sitting in the buffer was
+  fetched at the prior target and still gets shown. A one-pack lag on every level
+  change is expected and acceptable.
 
-### 6.4 Adaptation must not disturb the on-deck card
-- Re-estimation runs in the background and changes which cards are **served next**.
-  It must never reorder, swap, or remove the card the user is currently looking at
-  (restates §4.2 from the leveling side).
+### 6.5 Adaptation must not disturb the on-deck card
+- A target-level change changes which cards are **served next**. It must never
+  reorder, swap, or remove the card the user is currently looking at (restates §4.2
+  from the leveling side) — it only affects the pack requested to replenish the
+  queue after the change.
 
 ---
 
-## 6.5 Manual level override (dropdown)
+## 6.6 Manual level override (dropdown)
 
 - The level indicator is a **dropdown**, not a static readout: the first entry is
-  **Auto**, labeled with the current adaptive estimate (e.g. "auto: HSK 3" — §6.1),
-  and one further entry per difficulty level.
-- Selecting **Auto** restores §6's adaptive-estimate flow exactly as described above.
+  **Auto**, and one further entry per difficulty level.
+- The **Auto** entry always just reads "Auto" — it never shows the live target level
+  number, since the target can change every pack and a fluctuating number in the
+  chip would be noisy rather than informative.
+- Selecting **Auto** resumes serving from the client's current running target level
+  exactly as §6.1–§6.4 describe.
 - Selecting a **specific level** pins supply to **exactly that level** — no
-  adjacent-level drift (§6.3) while a manual level is active. The adaptive estimate
-  itself keeps updating in the background (still driven by mastery/library evidence,
-  §6.1) so switching back to Auto resumes from an up-to-date estimate.
-- A level switch is **exempt** from §6.4's "must not disturb the on-deck card" rule: it
+  adjacent-level drift (§6.4) while a manual level is active, and pack outcomes seen
+  while pinned do **not** feed §6.2's signal (the running auto target is untouched
+  until the user switches back to Auto).
+- A level switch is **exempt** from §6.5's "must not disturb the on-deck card" rule: it
   is an explicit user action, and it is acceptable (expected) for it to replace the
   on-deck pack with one matching the newly-selected level.
-- Client implementation: `src/pages/SortCardsPage.tsx` (the `sort-cards__level-chip` /
-  `sort-cards__level-menu`). Server: `StarterPacksService.getNextPacks`'s
-  `requestedLevel` parameter, threaded through `GET /api/starter-packs/:language` and
-  `POST /api/starter-packs/next-pack` (`StarterPacksController`) as a `level` query/body
-  param.
+- Client implementation: `src/pages/SortCardsPage.tsx` — `autoLevelRef` (running
+  target), `levelStreakRef` (per-level already-learned streak toward §6.2's
+  upgrade), `packBucketsRef` (per-pack bucket outcomes this session, to derive each
+  pack's one signal), and the `sort-cards__level-chip` / `sort-cards__level-menu`
+  dropdown. Server: `StarterPacksService.getNextPacks`'s `requestedLevel` (the level
+  to center supply on — client's tracked target, or its dropdown pin) and `manual`
+  (whether to drift on exhaustion) parameters, threaded through
+  `GET /api/starter-packs/:language` (`level`/`mode` query params) and
+  `POST /api/starter-packs/next-pack` (`level`/`mode` body fields) via
+  `StarterPacksController`. `estimateLevel` is called **only** for the cold-start
+  seed (§6.1) — never again mid-session.
 
 ---
 
@@ -265,9 +301,12 @@ the user **chooses** to bring it back, in one of three ways:
    sorted is never served.
 8. **Authored-first supply:** at a level, authored packs are served before system
    fallback single-card packs.
-9. **Upward adaptation:** after the user sorts a run of cards indicating a higher
-   level, subsequent packs move up toward that level — without overshooting into
-   persistently-too-hard territory.
+9. **Level adaptation:** a finished pack contributes exactly one signal — any "Add to
+   Learn Now" in it drops the target to that pack's level minus 1; an all-"Already
+   Learned" pack counts toward a 2-pack streak at that level before raising the target
+   to that level plus 1; a skipped (or partially skipped, signal-less) pack changes
+   nothing. The new target is always anchored on the completing pack's own level, not
+   an increment of a possibly-stale running target.
 10. **Out of in-level cards:** when the in-level pool is exhausted, the user is served
     nearest adjacent-level packs rather than hitting a dead end.
 11. **Skips never auto-return:** skipped cards re-enter the flow only via the Skipped
@@ -282,5 +321,10 @@ the user **chooses** to bring it back, in one of three ways:
 15. **Never empty:** under normal data volumes the user can sort indefinitely without
     reaching an "all sorted" state.
 16. **Manual level override:** picking a specific level from the dropdown serves only
-    that level (no drift to adjacent levels) until switched back to Auto; the Auto
-    entry always reflects the current adaptive estimate.
+    that level (no drift to adjacent levels, and pack outcomes seen while pinned don't
+    feed the auto target) until switched back to Auto; the Auto entry always just reads
+    "Auto" — it never displays the target level number.
+17. **Undo/level interaction (known simplification):** undoing a card action does not
+    reverse any level-target change that action's completing pack already triggered —
+    the target it moved to stays in effect. See `SortCardsPage.tsx`'s
+    `applyPackSignal`.

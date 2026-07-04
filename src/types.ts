@@ -195,6 +195,7 @@ export interface VocabEntry {
   alternateGender?: string | null;
   alternateMeaning?: string | null;
   vernacularScore?: number | null;  // 1=literary … 5=natural colloquial
+  definitionClusters?: DefinitionCluster[] | null;  // Orthogonal sense clusters (zh; migration 90) — see docs/DEFINITION_CLUSTERS.md
   category?: FlashcardCategory;
   starterPackBucket?: StarterPackBucket | null;
   breakdown?: Record<string, { definition: string; pronunciation?: string }> | null;
@@ -268,6 +269,16 @@ export interface DictionaryEntry {
   createdAt: string;
 }
 
+// Display-only AI-synthesized dictionary entry (docs/DICTIONARY_AI_FALLBACK_SEARCH.md) — surfaced
+// when a pinyin query matches no real det row. Rendered as an unclickable orange card; it is NOT a
+// real DictionaryEntry (no id / metadata). `source: 'ai'` tags its provenance.
+export interface AiDictionaryEntry {
+  word1: string;
+  pronunciation: string;  // tone-marked pinyin
+  definition: string;     // one concise, complete gloss (no length cap)
+  source: 'ai';
+}
+
 // One orthogonal sense cluster within a Chinese entry's `definitionClusters`
 // (migration 90). Glosses sharing one core meaning are grouped and ordered
 // prototypical→vernacular within the cluster; clusters are mutually orthogonal.
@@ -333,11 +344,12 @@ export interface SortPack {
 }
 
 // GET /api/starter-packs/:language response shape — the initial FIFO queue fill.
-// The server owns all leveling; the client just shows these cards in order.
+// The CLIENT owns adaptive leveling after this call (docs §6, rewritten); the server
+// only seeds a cold-start level when the request omits one.
 export interface DiscoverFetchResponse {
   packs: SortPack[];  // the client holds a short FIFO queue of packs (on-deck + buffer)
   exhausted: boolean; // true only when the whole discoverable dictionary is sorted
-  level: number;      // user's estimated difficulty level — DISPLAY ONLY (a chip), never a filter
+  level: number;      // the level supply was centered on — echoed back so a level-less (cold-start) request can seed the client's running target; never displayed as a number
 }
 
 // POST /api/starter-packs/next-pack response: one replacement pack for the FIFO tail,
@@ -345,15 +357,15 @@ export interface DiscoverFetchResponse {
 export interface DiscoverNextPackResponse {
   nextPack: SortPack | null; // null when exhausted
   exhausted: boolean;
-  level: number;
+  level: number; // echoes the level the request centered on (see DiscoverFetchResponse)
 }
 
 // POST /api/starter-packs/sort response (pack mode, per-card). The client owns its
-// pack queue, so there is no replacement card — only the (possibly updated) level.
+// pack queue AND its own adaptive target level (docs §6, rewritten), so there is
+// nothing level-related for the server to return here.
 export interface DiscoverSortResponse {
   success: boolean;
   bucket: string;
-  level: number;
 }
 
 // Combined vocab lookup response

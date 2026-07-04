@@ -6,6 +6,7 @@ import { designKey } from "../../types";
 import type { CommunityDesign, Language } from "../../types";
 import { COLORS } from "../../theme/colors";
 import { SIZE, WEIGHT } from "../../theme/scale";
+import { useDragScroll } from "../../hooks/useDragScroll";
 
 const PAGE_SIZE = 10;
 
@@ -36,6 +37,9 @@ const CommunityFeedRow: React.FC<{
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const loadingRef = useRef(false);
+
+  // Desktop mouse click-and-drag panning (touch/trackpad already scroll natively via touchAction).
+  useDragScroll(scrollRef);
 
   const loadMore = useCallback(async () => {
     if (loadingRef.current || !hasMore) return;
@@ -87,12 +91,14 @@ const CommunityFeedRow: React.FC<{
 
   return (
     <Box className="community-feed-row" sx={{ mb: 3 }}>
-      <Typography
-        className="community-feed-row__title"
-        sx={{ fontSize: SIZE.subtitle, fontWeight: WEIGHT.bold, color: COLORS.onSurface, px: 2, mb: 1 }}
-      >
-        {title}
-      </Typography>
+      {title && (
+        <Typography
+          className="community-feed-row__title"
+          sx={{ fontSize: SIZE.subtitle, fontWeight: WEIGHT.bold, color: COLORS.onSurface, px: 2, mb: 1 }}
+        >
+          {title}
+        </Typography>
+      )}
 
       {loadedOnce && designs.length === 0 ? (
         <Typography

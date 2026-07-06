@@ -57,7 +57,7 @@ import { initRunLog, cachedSystem } from '../run-log.js';
 import { createGlossOrderer } from './lib/orderGlosses.js';
 import { createVernacularScorer } from './lib/vernacularScore.js';
 
-const SCRIPT_VERSION = 1; // bump when this script's logic/prompt changes
+const SCRIPT_VERSION = 2; // bump when this script's logic/prompt changes (v2: cluster single-definition entries too — dropped the `definitions > 1` gate; single-def uses a zero-API fast path, definition verbatim as the sense; cluster `pos` now always a string[] via toPosArray)
 
 const isSpotCheck = process.argv.includes('--spot-check');
 const includeAll  = process.argv.includes('--all');
@@ -111,7 +111,7 @@ Rules:
 6. For each cluster provide:
    - "sense": a short English label (2–5 words) naming the shared meaning.
    - "reading": the numbered-pinyin reading for THIS sense. Use the entry's primary reading unless this sense is a genuine heteronym pronounced differently (e.g. 会 in 会计 "accounting" is kuai4, not hui4) — then give that reading.
-   - "pos": the part(s) of speech for this sense — a string, or an array of strings if several apply.
+   - "pos": the part(s) of speech for this sense — ALWAYS a JSON array of strings, even when only one applies (e.g. ["verb"] or ["verb","noun"]).
    - "glosses": the input glosses belonging to this sense (any order — they are re-ranked later).
 
 7. FLAG YOUR UNCERTAINTY. If you are even slightly unsure about ANY decision, add a short note to "reviewNotes" so a human can double-check. Err heavily toward flagging — a false alarm is cheap, a wrong card is not. Flag things like: an ambiguous origin boundary (could reasonably split or merge), a gloss that plausibly belongs in two clusters, a register split you were unsure whether to make, an uncertain or guessed "reading" (especially heteronyms), a sense whose register/pos you're unsure of, broken/cryptic source glosses, or anything that just looks off. If you are fully confident, return an empty array.
@@ -122,10 +122,10 @@ Input: ["can","to know how to","to have the skill","to be likely to","to be sure
 Output:
 {
   "clusters": [
-    {"sense":"to be able to / will (likely)","reading":"hui4","pos":"verb","glosses":["can","to know how to","to have the skill","to be likely to","to be sure to"]},
+    {"sense":"to be able to / will (likely)","reading":"hui4","pos":["verb"],"glosses":["can","to know how to","to have the skill","to be likely to","to be sure to"]},
     {"sense":"to assemble / a meeting","reading":"hui4","pos":["verb","noun"],"glosses":["meeting","gathering","to meet","to get together","association","group","(suffix) union"]},
-    {"sense":"a moment","reading":"hui4","pos":"noun","glosses":["(bound form) a moment (Taiwan pr. [hui3])"]},
-    {"sense":"to reckon accounts","reading":"kuai4","pos":"verb","glosses":["(bound form) to reckon accounts"]}
+    {"sense":"a moment","reading":"hui4","pos":["noun"],"glosses":["(bound form) a moment (Taiwan pr. [hui3])"]},
+    {"sense":"to reckon accounts","reading":"kuai4","pos":["verb"],"glosses":["(bound form) to reckon accounts"]}
   ],
   "reviewNotes": ["Merged 'to be likely to / sure to' with 'can / know how' as one modal origin (ability → probability); flag in case you'd separate future-probability."]
 }
@@ -157,7 +157,7 @@ Rules:
 5. For each output cluster provide:
    - "sense": a short English label (2–5 words) for the (possibly merged) meaning.
    - "reading": the shared numbered-pinyin reading.
-   - "pos": the part(s) of speech — a string, or array of strings.
+   - "pos": the part(s) of speech — ALWAYS a JSON array of strings, even for a single POS (e.g. ["noun"]).
    - "glosses": all glosses belonging to this cluster (any order).
 6. FLAG uncertainty in "reviewNotes": any merge you were unsure about, or two clusters you left apart but might belong together. Empty array if fully confident.
 
@@ -237,6 +237,16 @@ function flagSameSyllableToneMismatch(clusters) {
     }
   }
   return notes;
+}
+
+// Normalize a cluster `pos` to the canonical array shape (`string[] | null`).
+// Stage-A model output may be a bare string ("verb") or an array (["verb","noun"]);
+// the fast path passes the word-level partsOfSpeech array. We always store an array
+// so every consumer sees one shape (single-POS senses → a 1-element array).
+function toPosArray(pos) {
+  if (pos == null) return null;
+  const arr = (Array.isArray(pos) ? pos : [pos]).filter(p => typeof p === 'string' && p.trim());
+  return arr.length ? arr : null;
 }
 
 async function callCluster(word, primaryReading, definitions, model) {
@@ -323,23 +333,25 @@ async function run() {
   const client = await db.getClient();
 
   try {
-    // Only multi-gloss entries are worth clustering; single-gloss entries are
-    // trivially one cluster. --force re-clusters; otherwise skip already-set rows.
+    // Every entry with ≥1 definition is clustered (single-gloss words too — they
+    // become a trivial one-cluster array, never left NULL, so downstream consumers
+    // like backfill-example-sentences that key on "definitionClusters IS NULL" treat
+    // them as clustered). --force re-clusters; otherwise skip already-set rows.
     const { rows: entries } = await client.query(
       targetIds
-        ? `SELECT id, word1, pronunciation, "numberedPinyin", definitions
+        ? `SELECT id, word1, pronunciation, "numberedPinyin", definitions, "partsOfSpeech", "vernacularScore"
            FROM dictionaryentries_zh WHERE id = ANY($1) ORDER BY id ASC`
         : targetWords?.length
-        ? `SELECT id, word1, pronunciation, "numberedPinyin", definitions
+        ? `SELECT id, word1, pronunciation, "numberedPinyin", definitions, "partsOfSpeech", "vernacularScore"
            FROM dictionaryentries_zh
            WHERE language = 'zh' AND word1 = ANY($1)
              AND jsonb_array_length(definitions) >= 1
            ORDER BY id ASC`
-        : `SELECT id, word1, pronunciation, "numberedPinyin", definitions
+        : `SELECT id, word1, pronunciation, "numberedPinyin", definitions, "partsOfSpeech", "vernacularScore"
            FROM dictionaryentries_zh
            WHERE language = 'zh'
              ${includeAll ? '' : 'AND discoverable = TRUE'}
-             AND jsonb_array_length(definitions) > 1
+             AND jsonb_array_length(definitions) >= 1
              ${force ? '' : 'AND "definitionClusters" IS NULL'}
            ORDER BY id ASC
            ${isSpotCheck ? 'LIMIT 5' : ''}`,
@@ -362,73 +374,99 @@ async function run() {
       try {
         process.stdout.write(`  [${row.id}] ${row.word1} (${definitions.length} defs) ... `);
 
-        // Stage A — cluster (fine, atomic senses)
-        const c = await clusterEntry(row.word1, primaryReading, definitions);
-        if (c.error) { console.log(`FAIL cluster (${c.error})`); failed++; continue; }
-        if (c.retried) opusRetries++;
+        let finalClusters;
+        let reviewNotes;
 
-        // Collect everything a human should double-check. Seeded by the model's
-        // own uncertainty (prompt rule 6), then augmented with low-confidence
-        // signals from the per-cluster ordering critic + scoring failures.
-        const reviewNotes = [...c.reviewNotes, ...flagSameSyllableToneMismatch(c.clusters)];
+        if (definitions.length === 1) {
+          // ── Fast path (zero API calls) ──────────────────────────────────────
+          // A single-definition entry is trivially one cluster, so skip EVERY model
+          // call — Stage A split, A.5 merge, B ordering, C scoring — and use the lone
+          // definition verbatim as BOTH the sense label and the cluster's only gloss.
+          // `pos`/`vernacularScore` are pulled straight from the WORD-LEVEL columns
+          // (`partsOfSpeech`, `vernacularScore`) instead of re-deriving them per cluster:
+          // for a single-sense word the word-level values already describe that one
+          // sense, so no API call is needed. Both fall back to null if their column
+          // isn't populated yet (e.g. clustering run standalone before those backfills;
+          // in the mark-discoverable pipeline both run before clustering). There is
+          // nothing for a human to review, so reviewNotes is empty.
+          const gloss = String(definitions[0]);
+          finalClusters = [{
+            sense: gloss,
+            reading: primaryReading,
+            pos: toPosArray(row.partsOfSpeech),
+            vernacularScore: row.vernacularScore != null ? Number(row.vernacularScore) : null,
+            glosses: [gloss],
+          }];
+          reviewNotes = [];
+        } else {
+          // Stage A — cluster (fine, atomic senses)
+          const c = await clusterEntry(row.word1, primaryReading, definitions);
+          if (c.error) { console.log(`FAIL cluster (${c.error})`); failed++; continue; }
+          if (c.retried) opusRetries++;
 
-        // Stage A.5 — consolidate over-fine clusters (opt-in). On any error we
-        // keep Stage A's clusters (the merge pass must never lose a gloss).
-        let clusters = c.clusters;
-        if (mergePass && clusters.length > 1) {
-          const m = await mergeClusters(row.word1, definitions, clusters, CLUSTER_MODEL);
-          if (m.error) {
-            reviewNotes.push(`merge pass skipped (${m.error})`);
-          } else {
-            clusters = m.clusters;
-            reviewNotes.push(...flagSameSyllableToneMismatch(clusters));
-            reviewNotes.push(...m.reviewNotes);
+          // Collect everything a human should double-check. Seeded by the model's
+          // own uncertainty (prompt rule 6), then augmented with low-confidence
+          // signals from the per-cluster ordering critic + scoring failures.
+          reviewNotes = [...c.reviewNotes, ...flagSameSyllableToneMismatch(c.clusters)];
+
+          // Stage A.5 — consolidate over-fine clusters (opt-in). On any error we
+          // keep Stage A's clusters (the merge pass must never lose a gloss).
+          let clusters = c.clusters;
+          if (mergePass && clusters.length > 1) {
+            const m = await mergeClusters(row.word1, definitions, clusters, CLUSTER_MODEL);
+            if (m.error) {
+              reviewNotes.push(`merge pass skipped (${m.error})`);
+            } else {
+              clusters = m.clusters;
+              reviewNotes.push(...flagSameSyllableToneMismatch(clusters));
+              reviewNotes.push(...m.reviewNotes);
+            }
           }
-        }
 
-        // Stages B + C — order/prune + score each cluster
-        const finalClusters = [];
-        for (const cluster of clusters) {
-          let glosses = cluster.glosses;
+          // Stages B + C — order/prune + score each cluster
+          finalClusters = [];
+          for (const cluster of clusters) {
+            let glosses = cluster.glosses;
 
-          // Stage B: reuse the shared Pass-1/2 ordering+pruning. Skip the API
-          // for trivial (≤1 gloss) clusters — nothing to reorder.
-          if (glosses.length > 1) {
-            const p1 = await pass1Sort(row.word1, glosses);
-            if (!p1.error) {
-              if (p1.retried) opusRetries++;
-              glosses = p1.order;
-              if (!skipCritic) {
-                const p2 = await pass2Critique(row.word1, cluster.glosses, p1.order);
-                if (!p2.error) {
-                  glosses = p2.order;
-                  if (p2.retried) opusRetries++;
-                  // The ordering critic is itself unsure about this cluster's gloss order.
-                  if (p2.action === 'low_confidence') {
-                    reviewNotes.push(`uncertain gloss order in "${cluster.sense}" cluster${p2.reason ? `: ${p2.reason}` : ''}`);
+            // Stage B: reuse the shared Pass-1/2 ordering+pruning. Skip the API
+            // for trivial (≤1 gloss) clusters — nothing to reorder.
+            if (glosses.length > 1) {
+              const p1 = await pass1Sort(row.word1, glosses);
+              if (!p1.error) {
+                if (p1.retried) opusRetries++;
+                glosses = p1.order;
+                if (!skipCritic) {
+                  const p2 = await pass2Critique(row.word1, cluster.glosses, p1.order);
+                  if (!p2.error) {
+                    glosses = p2.order;
+                    if (p2.retried) opusRetries++;
+                    // The ordering critic is itself unsure about this cluster's gloss order.
+                    if (p2.action === 'low_confidence') {
+                      reviewNotes.push(`uncertain gloss order in "${cluster.sense}" cluster${p2.reason ? `: ${p2.reason}` : ''}`);
+                    }
                   }
                 }
               }
+              // On ordering failure, keep the model's original cluster order.
             }
-            // On ordering failure, keep the model's original cluster order.
-          }
 
-          // Stage C: per-cluster vernacular register (1–5), scored independently.
-          let vernacularScore = null;
-          try {
-            const s = await scoreVernacular(row.word1, cluster.reading, glosses);
-            vernacularScore = s.score;
-          } catch {
-            reviewNotes.push(`vernacular score failed for "${cluster.sense}" cluster (left null)`);
-          }
+            // Stage C: per-cluster vernacular register (1–5), scored independently.
+            let vernacularScore = null;
+            try {
+              const s = await scoreVernacular(row.word1, cluster.reading, glosses);
+              vernacularScore = s.score;
+            } catch {
+              reviewNotes.push(`vernacular score failed for "${cluster.sense}" cluster (left null)`);
+            }
 
-          finalClusters.push({
-            sense: cluster.sense,
-            reading: cluster.reading,
-            pos: cluster.pos ?? null,
-            vernacularScore,
-            glosses,
-          });
+            finalClusters.push({
+              sense: cluster.sense,
+              reading: cluster.reading,
+              pos: toPosArray(cluster.pos),
+              vernacularScore,
+              glosses,
+            });
+          }
         }
 
         totalClusters += finalClusters.length;
@@ -464,7 +502,9 @@ async function run() {
         failed++;
       }
 
-      await new Promise(r => setTimeout(r, 200));
+      // Rate-limit delay only matters after a real API call; the single-definition
+      // fast path makes none, so don't sleep between those rows.
+      if (definitions.length > 1) await new Promise(r => setTimeout(r, 200));
     }
 
     console.log('\n' + '='.repeat(60));

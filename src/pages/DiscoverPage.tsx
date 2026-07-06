@@ -1,7 +1,8 @@
 import StyleIcon from "@mui/icons-material/Style";
 import SkipNextIcon from "@mui/icons-material/SkipNext";
 import MobileTabScreen from "../components/MobileTabScreen";
-import { HubMenu, HubMenuRow, HubMenuSpacer } from "../components/HubMenu";
+import { HubMenu, HubMenuRow } from "../components/HubMenu";
+import { FooterSpacer } from "../components/MobileFooter";
 import TipBox from "../components/TipBox";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useDiscoverNavigation } from "../hooks/useDiscoverNavigation";
@@ -24,7 +25,7 @@ const DiscoverPage: React.FC = () => {
             <HubMenu
                 className="discover-page__menu"
                 header={<TipBox className="discover-page__tip-box" />}
-                footer={<HubMenuSpacer />}
+                footer={<FooterSpacer />}
             >
                 <HubMenuRow
                     to={sortPath}

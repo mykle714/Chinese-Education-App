@@ -58,9 +58,12 @@ const PRICING_PER_MTOK = {
  * we hoist the static text into a single `system` block with an ephemeral
  * cache_control breakpoint and keep the variable data in the user message.
  *
- * Caveat: the cached prefix must clear the model's minimum (~2048 tokens for
- * Sonnet 4.6, ~4096 for Opus 4.8) or it silently won't cache — keep the full
- * static instruction set in `staticText`, not just a one-line persona.
+ * Caveat: the cached prefix must clear the model's minimum-cacheable length or it
+ * silently won't cache — keep the full static instruction set in `staticText`, not
+ * just a one-line persona. Observed floor is ~1024 tokens for Sonnet 4.6 (a
+ * 1038-token system block caches; see the backfill-example-sentences cache
+ * write/read in backfill-runs.jsonl) and ~1024 for Opus 4.8. A one-line persona
+ * (~tens of tokens) will not cache.
  *
  * Returns the value for the `system` field: a one-element array of a text block
  * carrying `cache_control: { type: 'ephemeral' }` (5-minute TTL).

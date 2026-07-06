@@ -206,11 +206,36 @@ against it (§4), so an untraceable entry is simply never matched, not a bug.
 
 ## 3. Layout & rendering (frontend)
 
+### Two hub entries (pinyin mode), no in-game toggle
+
+Word Search ships as **two separate Games-hub sub-cards** (like Bubble Match's
+difficulty levels — a `HubMenuArrayItem` fan-out, see
+[HUB_MENU_SYSTEM.md](./HUB_MENU_SYSTEM.md) and `GamesPage.tsx`):
+
+| Sub-card | `mode` | Pinyin |
+|---|---|---|
+| **Pinyin** | `"pinyin"` | grid pinyin on, **always tone-colored** |
+| **No Pinyin** | `"no-pinyin"` | grid pinyin off |
+
+- The chosen mode is passed via React-Router nav `state.mode` (both sub-cards
+  share the single `/games/word-search` route) and is **fixed for the whole
+  run** — there is no in-game pinyin toggle. `WordSearchPage` reads it once on
+  mount (`modeConfigFor`, `MODE_CONFIGS` in `constants.ts`).
+- A direct/stray visit with **no valid mode** (manual URL) **redirects to
+  `/games`** rather than defaulting — the player must pick a card. (Bubble Match
+  does the same for a missing level.)
+- The **colorless pinyin option was removed**: when pinyin is shown it is always
+  tone-colored (`showPinyinColor` is a fixed `true`).
+- Each mode keeps its **own saved board** — the resume snapshot key is scoped by
+  mode as well as user (see §5b).
+- Word Search no longer reads the shared `useFlashcardLearnSettings`
+  pinyin/colorless toggles; that hook is gone from `WordSearchPage`.
+
 Vertical stack inside the standard leaf-page content area:
 
 ```
 ┌─────────────────────────────┐
-│ header (down-arrow · pinyin toggle · fire badge)
+│ header (down-arrow · restart · hint · settings cog · fire badge)
 ├─────────────────────────────┤
 │  10 English glosses, 1–2 compact lines              │  ← "Lv1 Chill" type style
 ├─────────────────────────────┤
@@ -235,8 +260,9 @@ Vertical stack inside the standard leaf-page content area:
   height, containing the 7×7 array of cpcd cells. Each cell is one cpcd
   character (may be wrapped per-row in `CPCDRow`). The grid respects the header
   pinyin toggle uniformly across word + filler cells. Because the prompts are
-  English, the **pinyin toggle only affects the grid** (there is no Chinese in
-  the top list to toggle).
+  English, the **pinyin display only affects the grid** (there is no Chinese in
+  the top list to toggle). Whether pinyin shows is fixed by the launched mode
+  (see "Two hub entries" above), not a per-session toggle.
 
 ### Header controls
 
@@ -515,8 +541,12 @@ is generated on demand; an optional best-time could reuse the existing
 
 Client-only, no server/DB involvement (same design posture as §5a's hint
 meter) — the full board payload is already on the client, so a single
-localStorage blob (`gameStateStorage.ts`, key `wordSearch.savedGame`) is
-enough to survive an exit or the app being backgrounded.
+localStorage blob (`gameStateStorage.ts`, key
+`wordSearch.savedGame.<userId>.<mode>`) is enough to survive an exit or the app
+being backgrounded. The key is scoped by **both** `userId` and `mode`
+("pinyin"/"no-pinyin"), so the two hub entries (§3) resume independently —
+`saveGameState`/`loadGameState`/`clearGameState` each take the `mode` as a
+parameter.
 
 - **What's saved** (`SavedWordSearchState`): the grid payload (`data`),
   `found` entryKeys, elapsed timer ms, whether the timer had ever been
@@ -582,18 +612,21 @@ Frontend (`src/games/word-search/`):
   informed but rendered as plain pinyin text; used by `WordSearchHintRow` and
   `WordSearchPage`'s reveal-cap check (§5a).
 - `WordSearchHeader.tsx` — restart button + hint button + settings cog + fire
-  badge (LeafPage `rightContent`); pinyin/timer toggles moved into the
-  settings dialog (see §3 Header controls).
-- `WordSearchSettingsDialog.tsx` — the cog's settings sheet: pinyin display
-  (shared `useFlashcardLearnSettings`) + timer visibility
-  (`useWordSearchSettings`). See §3 Header controls.
+  badge (LeafPage `rightContent`); the timer toggle lives in the settings
+  dialog (see §3 Header controls). Pinyin is no longer a toggle — it's fixed by
+  the launched hub mode (§3).
+- `WordSearchSettingsDialog.tsx` — the cog's settings sheet: now **timer
+  visibility only** (`useWordSearchSettings`). The pinyin display rows were
+  removed — pinyin is set by the launched hub mode, not a toggle. See §3.
 - `useWordSearchSettings.ts` — localStorage-backed hook for Word-Search-only
   prefs (currently just `showTimer`), mirrors `useFlashcardLearnSettings`.
-- `gameStateStorage.ts` — `saveGameState`/`loadGameState`/`clearGameState`,
-  the localStorage save/resume layer for an in-progress board. See §5b.
+- `gameStateStorage.ts` — `saveGameState`/`loadGameState`/`clearGameState`
+  (each takes `(userId, mode, …)`), the mode-scoped localStorage save/resume
+  layer for an in-progress board. See §5b.
 - `constants.ts` — grid query, `CELL_SIZE`, medal thresholds, hint tunables
-  (`HINT_BAR_UNITS`, `HINT_COST`, `LETTER_HINT_BLANK_WIDTH`, `HINT_ACCENT_COLOR`); re-exports
-  `GAME_DISTRIBUTION` from bubble-match.
+  (`HINT_BAR_UNITS`, `HINT_COST`, `LETTER_HINT_BLANK_WIDTH`, `HINT_ACCENT_COLOR`),
+  and the pinyin-mode config (`WordSearchMode`, `MODE_CONFIGS`, `modeConfigFor`;
+  see §3); re-exports `GAME_DISTRIBUTION` from bubble-match.
 - `types.ts` — `GridCell`, `PlacedWord`, `WordSearchResponse`, `Medal`.
 - `src/games/registry.ts` — registers the `word-search` `GameDef`.
 - `src/constants.ts` — `/games/word-search` added to `MINUTE_POINTS_ELIGIBLE_PAGES`.

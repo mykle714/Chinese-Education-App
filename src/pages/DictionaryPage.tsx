@@ -1,6 +1,6 @@
-import { useState, useRef, useCallback } from 'react';
+import { useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import LeafPage from '../components/LeafPage';
+import NodePage from '../components/NodePage';
 import {
     Container,
     Typography,
@@ -13,7 +13,6 @@ import {
     Pagination,
     Chip,
     Divider,
-    Snackbar,
     CircularProgress,
 } from '@mui/material';
 import { Search, Clear, AutoAwesome } from '@mui/icons-material';
@@ -22,17 +21,13 @@ import AiDictionaryEntryCard from '../components/AiDictionaryEntryCard';
 import { SIZE } from '../theme/scale';
 import { COLORS } from '../theme/colors';
 import { useAuth } from '../AuthContext';
-import { API_BASE_URL } from '../constants';
-import type { DictionaryEntry, Language, VocabEntry } from '../types';
+import type { DictionaryEntry, Language } from '../types';
 import DictionaryEntryRow from '../components/DictionaryEntryRow';
-import InfoCardPopup from '../features/flashcards/FlashcardsLearnPage/InfoCardPopup';
-import { dictionaryEntryToVocabEntry } from '../features/flashcards/FlashcardsLearnPage/dictEntryAdapter';
-import { useEipTabs } from '../features/flashcards/FlashcardsLearnPage/useEipTabs';
-import EipTabStrip from '../features/flashcards/FlashcardsLearnPage/EipTabStrip';
-import TooManyTabsSnackbar from '../features/flashcards/FlashcardsLearnPage/TooManyTabsSnackbar';
+import { FooterSpacer } from '../components/MobileFooter';
 import { usePageTitle } from '../hooks/usePageTitle';
-import { useTTS } from '../hooks/useTTS';
 import { useDictionarySearch } from '../hooks/useDictionarySearch';
+import { useSlideNavigate } from '../hooks/useSlideNavigate';
+import { dictionaryBrowseState } from './dictionaryBrowseState';
 
 // Special characters for each language
 const SPECIAL_CHARACTERS: Record<Language, string[]> = {
@@ -47,33 +42,72 @@ const SPECIAL_CHARACTERS: Record<Language, string[]> = {
     es: ['á', 'é', 'í', 'ó', 'ú', 'ñ', 'ü', '¿', '¡'],
 };
 
+// dictionaryBrowseState (the persisted query/page/scroll singleton) now lives in
+// ./dictionaryBrowseState so the Layout route watcher can reset it on exit from
+// the Dictionary space. It is still seeded into useDictionarySearch below and
+// kept in sync by the effects further down.
+
 function DictionaryPage() {
     usePageTitle("Dictionary");
     const navigate = useNavigate();
+    const slideNavigate = useSlideNavigate();
     // Dictionary is always rendered in its mobile layout regardless of viewport
     // width — the desktop two-column layout has been retired.
     const isMobile = true;
-    const { token, user } = useAuth();
-    const tts = useTTS();
+    const { user } = useAuth();
 
     const {
         searchInput, setSearchInput, debouncedSearchTerm, entries, segmentGroups,
         isSegmentMode, loading, error, page, setPage, total, totalPages, clearSearch,
-        aiEntry, canAskAi, askingAi, aiNoMatch, aiError, askAi,
-    } = useDictionarySearch(50);
-
-    // Entry-tab system: tapping a result-card opens the EIP popup; tapping a
-    // breakdown/used-in row inside it adds a tab instead of stacking another
-    // popup. Scrim tap closes the popup and clears every tab.
-    const [isEipOpen, setIsEipOpen] = useState(false);
-    const eipStripRef = useRef<HTMLDivElement | null>(null);
-    const eip = useEipTabs({ apiBaseUrl: API_BASE_URL, token, stripRef: eipStripRef });
+        aiEntry, canAskAi, askingAi, aiNoMatch, aiError, aiLimitReached, aiLimitMessage, askAi,
+    } = useDictionarySearch(50, { search: dictionaryBrowseState.search, page: dictionaryBrowseState.page });
 
     const userLanguage = (user?.selectedLanguage || 'zh') as Language;
     const specialChars = SPECIAL_CHARACTERS[userLanguage] || [];
 
     // Ref for search input to maintain focus
     const searchInputRef = useRef<HTMLInputElement>(null);
+    // Ref on the page Container, used to reach the MobileTabScreen scroll container
+    // (.mobile-tab-screen__scroll) that NodePage owns, for scroll save/restore.
+    const containerRef = useRef<HTMLDivElement | null>(null);
+
+    // Keep the persisted query + page in sync so a drill-in → back restores them.
+    useEffect(() => { dictionaryBrowseState.search = searchInput; }, [searchInput]);
+    useEffect(() => { dictionaryBrowseState.page = page; }, [page]);
+
+    // Save scroll position continuously (so it's current whenever the user drills in)
+    // and restore it once results have rendered (which give the page its height).
+    const didRestoreScroll = useRef(false);
+    useEffect(() => {
+        const scroller = containerRef.current?.closest('.mobile-tab-screen__scroll') as HTMLElement | null;
+        if (!scroller) return;
+        const onScroll = () => { dictionaryBrowseState.scrollTop = scroller.scrollTop; };
+        scroller.addEventListener('scroll', onScroll, { passive: true });
+        return () => scroller.removeEventListener('scroll', onScroll);
+    }, []);
+    useEffect(() => {
+        if (didRestoreScroll.current) return;
+        const target = dictionaryBrowseState.scrollTop;
+        if (!target) { didRestoreScroll.current = true; return; }
+        // Only restore after the fetch settles AND results exist — otherwise the page
+        // is still empty/short and scrollTop would clamp back to 0.
+        if (loading) return;
+        if (entries.length === 0 && segmentGroups.length === 0) return;
+        const scroller = containerRef.current?.closest('.mobile-tab-screen__scroll') as HTMLElement | null;
+        if (!scroller) return;
+        didRestoreScroll.current = true;
+        // The result rows keep growing in height for a few frames after mount (cpcd /
+        // pinyin layout settling), which would clamp an early scrollTop set. Retry
+        // each frame until the target sticks, or the content simply isn't that tall.
+        let tries = 0;
+        const attempt = () => {
+            scroller.scrollTop = target;
+            if (Math.abs(scroller.scrollTop - target) > 1 && ++tries < 20) {
+                requestAnimationFrame(attempt);
+            }
+        };
+        requestAnimationFrame(attempt);
+    }, [loading, entries.length, segmentGroups.length]);
 
     // Helper function to get background color for each vowel group
     const getVowelColor = (char: string): string => {
@@ -137,60 +171,13 @@ function DictionaryPage() {
         }, 0);
     };
 
-    // Open the EIP for a result-card click. Fetches the full dictionary entry
-    // (includes breakdown, exampleSentences, usedIn, expansion — fields the
-    // search endpoint may not return) and seeds it as the root entry-tab.
-    const handleEntryClick = useCallback(async (entry: DictionaryEntry) => {
-        try {
-            const res = await fetch(
-                `${API_BASE_URL}/api/dictionary/lookup/${encodeURIComponent(entry.word1)}`,
-                { headers: { 'Authorization': `Bearer ${token}` }, credentials: 'include' }
-            );
-            if (!res.ok) return;
-            const dictData: DictionaryEntry = await res.json();
-            const adapted = dictionaryEntryToVocabEntry(dictData);
-            setIsEipOpen(true);
-            eip.openForRoot(adapted);
-        } catch (err) {
-            console.error(`Failed to look up dictionary entry "${entry.word1}":`, err);
-        }
-    }, [token, eip]);
-
-    const closeEip = useCallback(() => {
-        setIsEipOpen(false);
-        eip.clear();
-    }, [eip]);
-
-    // Snackbar shown after the "+ to library" button in the EIP header is tapped.
-    // Message reflects whether the word was newly added or was already in the library.
-    const [addToLibSnack, setAddToLibSnack] = useState<string | null>(null);
-
-    const handleAddToLibrary = useCallback(async (entry: VocabEntry) => {
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/vocabEntries/add-to-library`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                },
-                credentials: 'include',
-                body: JSON.stringify({ entryKey: entry.entryKey, language: userLanguage }),
-            });
-            if (!res.ok) {
-                setAddToLibSnack('Failed to add to Learn Now');
-                return;
-            }
-            const data: { status: 'added' | 'already-in-library' } = await res.json();
-            if (data.status === 'already-in-library') {
-                setAddToLibSnack('Already in Learn Now');
-            } else {
-                setAddToLibSnack('Added to Learn Now');
-            }
-        } catch (err) {
-            console.error('Failed to add to library:', err);
-            setAddToLibSnack('Failed to add to Learn Now');
-        }
-    }, [token]);
+    // Tapping a result-card opens the read-only dictionary card-detail page (cdp)
+    // for that word — a NODE-page slide (in from the right), replacing the old EIP
+    // popup. The cdp fetches the full det row itself (breakdown, examples, usedIn,
+    // etc.). See docs/LEAF_NODE_PAGES.md + DictionaryCardDetailPage.
+    const handleEntryClick = useCallback((entry: DictionaryEntry) => {
+        slideNavigate(`/dictionary/card/${encodeURIComponent(entry.word1)}`);
+    }, [slideNavigate]);
 
     const handlePageChange = (_event: React.ChangeEvent<unknown>, value: number) => {
         setPage(value);
@@ -198,12 +185,15 @@ function DictionaryPage() {
     };
 
     return (
-        // Dictionary is a LEAF PAGE (see docs/LEAF_NODE_PAGES.md): no footer, DOWN
-        // back arrow (returns to the Home menu), slides up on enter / down on exit.
-        <LeafPage title="Dictionary" onBack={() => navigate("/")}>
-            <Box className="dictionary-page__scroll" sx={{ flex: 1, overflowY: 'auto' }}>
+        // Dictionary is a NODE PAGE (see docs/LEAF_NODE_PAGES.md): keeps the footer,
+        // LEFT back arrow (returns to the Home menu), slides in from the right. The
+        // NodePage/MobileTabScreen scroll area owns scrolling + floating-footer
+        // clearance, so the page no longer wraps its content in its own scroll box.
+        // Opened from the Home menu, so the Home tab stays active.
+        <NodePage title="Dictionary" activePage="home" onBack={() => navigate("/")}>
         <Container
             className="dictionary-page"
+            ref={containerRef}
             maxWidth="lg"
             sx={{
                 py: 4,
@@ -449,6 +439,13 @@ function DictionaryPage() {
                     </Typography>
                 </Box>
             )}
+            {!askingAi && aiLimitReached && (
+                <Box className="dictionary-page__ai-limit" sx={{ mb: 3 }}>
+                    <Typography variant="body2" color="text.secondary">
+                        {aiLimitMessage || "You've reached your daily limit of AI lookups. Try again tomorrow."}
+                    </Typography>
+                </Box>
+            )}
 
             {/* Error Message */}
             {error && (
@@ -547,7 +544,7 @@ function DictionaryPage() {
 
             {/* No Results — suppressed while an AI card / no-match / error note stands in for it. */}
             {!loading && debouncedSearchTerm && entries.length === 0 && segmentGroups.length === 0
-                && !aiEntry && !askingAi && !aiNoMatch && !aiError && (
+                && !aiEntry && !askingAi && !aiNoMatch && !aiError && !aiLimitReached && (
                 <Box className="dictionary-page__no-results" sx={{ textAlign: 'center', py: 4 }}>
                     <Typography variant="body1" color="text.secondary">
                         No results found for "{debouncedSearchTerm}"
@@ -581,63 +578,9 @@ function DictionaryPage() {
                 </Box>
             )}
 
-            {/* Extra Info popup — opened on result-card tap. Tapping a breakdown
-                or used-in row inside the popup adds an entry tab above the
-                panel chrome instead of stacking another popup. Scrim tap or
-                drag-dismiss closes the popup and clears every tab. */}
-            {isEipOpen && eip.activeTab && (
-                <Box
-                    className="dictionary-page__eip-overlay"
-                    sx={{ position: 'fixed', inset: 0, zIndex: 1300 }}
-                >
-                    <InfoCardPopup
-                        currentEntry={eip.activeTab.entry}
-                        selectedTab={eip.activeTab.selectedSubTab}
-                        onTabChange={eip.setActiveSubTab}
-                        breakdownItems={eip.activeTab.breakdownItems}
-                        showPinyin={true}
-                        isFlipped={true}
-                        onClose={closeEip}
-                        onBreakdownItemClick={(item) => eip.openForEntryKey(item.character)}
-                        onUsedInItemClick={(item) => eip.openForEntryKey(item.entryKey)}
-                        onSpeak={tts.enabled ? tts.speak : undefined}
-                        onAddToLibrary={handleAddToLibrary}
-                        onSpeakSentence={tts.enabled ? tts.speakSentence : undefined}
-                        speakingKey={tts.speakingKey}
-                        tabStrip={
-                            <EipTabStrip
-                                tabs={eip.tabs}
-                                activeIndex={eip.activeIndex}
-                                onSelect={eip.setActive}
-                                onCloseActiveTab={() => {
-                                    if (eip.closeActiveTab()) closeEip();
-                                }}
-                                isTabbedMode={eip.isTabbedMode}
-                                stripRef={eipStripRef}
-                            />
-                        }
-                    />
-                </Box>
-            )}
-            <TooManyTabsSnackbar signal={eip.overflowSignal} />
-            <Snackbar
-                className="dictionary-page__add-to-library-snackbar"
-                open={addToLibSnack !== null}
-                autoHideDuration={2500}
-                onClose={() => setAddToLibSnack(null)}
-                anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-            >
-                <Alert
-                    severity={addToLibSnack === 'Failed to add to Learn Now' ? 'error' : 'success'}
-                    variant="filled"
-                    onClose={() => setAddToLibSnack(null)}
-                >
-                    {addToLibSnack}
-                </Alert>
-            </Snackbar>
+            <FooterSpacer />
         </Container>
-            </Box>
-        </LeafPage>
+        </NodePage>
     );
 }
 

@@ -15,6 +15,7 @@ export interface InfoCardPopupProps {
     onClose: () => void;
     onBreakdownItemClick?: (item: BreakdownItem) => void;
     onUsedInItemClick?: (item: UsedInItem) => void;
+    onExampleSegmentClick?: (segment: string) => void;
     onSpeak?: (entry: VocabEntry) => void;
     onAddToLibrary?: (entry: VocabEntry) => void;
     onSpeakSentence?: (text: string, pronunciation?: string) => void;
@@ -43,6 +44,7 @@ function InfoCardPopup({
     onClose,
     onBreakdownItemClick,
     onUsedInItemClick,
+    onExampleSegmentClick,
     onSpeak,
     onAddToLibrary,
     onSpeakSentence,
@@ -97,6 +99,7 @@ function InfoCardPopup({
                     isFlipped={isFlipped}
                     onBreakdownItemClick={onBreakdownItemClick}
                     onUsedInItemClick={onUsedInItemClick}
+                    onExampleSegmentClick={onExampleSegmentClick}
                     onSpeak={onSpeak}
                     onAddToLibrary={onAddToLibrary}
                     onSpeakSentence={onSpeakSentence}

@@ -164,9 +164,12 @@ export interface DictionaryEntry {
     foreignText: string;
     english: string;
     translatedVocab?: string;  // English word/phrase in the translation that corresponds to the vocab word
-    tense?: TenseLabel;        // Temporal meaning of the sentence: past, present, or future
-    partOfSpeechDict: Record<string, string>;  // AI-generated POS tag per sentence token (e.g. "particle", "verb", "noun")
-    numberDict?: Record<string, 'singular' | 'plural'>;  // AI-generated grammatical number per noun token; selects the plural English form in the segment popup
+    sense?: string;            // Exact definitionClusters sense label the target word carries in this sentence (zh only)
+    segments?: string[];       // Authoritative GSA segmentation authored by the tagging pass; the read path renders these verbatim (falls back to live GSA when absent)
+    partOfSpeechDict: Record<string, string>;  // POS tag per GSA segment (from the tagging pass); drives form modification + particle/classifier annotation
+    numberDict?: Record<string, 'singular' | 'plural'>;  // Grammatical number per noun segment; selects the plural English form in the segment popup
+    tenseDict?: Record<string, TenseLabel>;    // Tense per verb segment (from the tagging pass); selects the verb's inflected English form in the segment popup. Per-verb because a sentence can mix tenses
+    senseDict?: Record<string, string>;        // definitionClusters sense label per segment (from the tagging pass); resolves each segment's dd = ddt(matching cluster)
     _segments?: string[];
     segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo; wordForms?: Record<string, string> }>;
   }> | null;
@@ -210,7 +213,7 @@ export interface AiDictionaryEntry {
 export interface DefinitionCluster {
   sense: string;                  // short English label for the shared meaning
   reading: string;                // numbered pinyin for THIS sense (e.g. 会计 → "kuai4")
-  pos: string | string[] | null;  // part(s) of speech for this sense
+  pos: string[] | null;           // part(s) of speech for this sense (always an array; single-POS senses are a 1-element array)
   vernacularScore: number | null; // 1–5 register, scored independently per cluster (null = scoring failed)
   glosses: string[];              // verbatim source glosses, ordered prototypical→vernacular
 }
@@ -226,6 +229,10 @@ export interface DiscoverCard {
   word2?: string | null;
   script?: string | null;
   difficulty?: DifficultyLevel | null;
+  // Colloquial-register score for the whole entry (1 = literary … 5 = natural
+  // colloquial), read straight from the det `vernacularScore` column. Drives the
+  // sort-flow supply ordering (highest register first) and the mini-card badge.
+  vernacularScore?: number | null;
   // Spanish (es) only: this card's POS + whether the word1 has multiple
   // discoverable POS (→ client shows a "(v)"/"(n)" badge). Null/false for Chinese.
   pos?: string | null;
@@ -236,9 +243,12 @@ export interface DiscoverCard {
     foreignText: string;
     english: string;
     translatedVocab?: string;  // English word/phrase in the translation that corresponds to the vocab word
-    tense?: TenseLabel;        // Temporal meaning of the sentence: past, present, or future
-    partOfSpeechDict: Record<string, string>;  // AI-generated POS tag per sentence token (e.g. "particle", "verb", "noun")
-    numberDict?: Record<string, 'singular' | 'plural'>;  // AI-generated grammatical number per noun token; selects the plural English form in the segment popup
+    sense?: string;            // Exact definitionClusters sense label the target word carries in this sentence (zh only)
+    segments?: string[];       // Authoritative GSA segmentation authored by the tagging pass; the read path renders these verbatim (falls back to live GSA when absent)
+    partOfSpeechDict: Record<string, string>;  // POS tag per GSA segment (from the tagging pass); drives form modification + particle/classifier annotation
+    numberDict?: Record<string, 'singular' | 'plural'>;  // Grammatical number per noun segment; selects the plural English form in the segment popup
+    tenseDict?: Record<string, TenseLabel>;    // Tense per verb segment (from the tagging pass); selects the verb's inflected English form in the segment popup. Per-verb because a sentence can mix tenses
+    senseDict?: Record<string, string>;        // definitionClusters sense label per segment (from the tagging pass); resolves each segment's dd = ddt(matching cluster)
     _segments?: string[];
     segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo; wordForms?: Record<string, string> }>;
   }> | null;
@@ -416,6 +426,7 @@ export interface VocabEntry {
   partsOfSpeech?: string[] | null;  // POS tags from dictionaryentries_zh (e.g. ["noun", "verb"])
   vernacularScore?: number | null;  // 1–5 register score from dictionaryentries_zh (1=literary, 5=natural colloquial)
   definitionClusters?: DefinitionCluster[] | null;  // Orthogonal sense clusters (zh; migration 90), joined from det via DICT_JOIN — see docs/DEFINITION_CLUSTERS.md
+  selectedSense?: string | null;  // Per-card chosen cluster `sense` label (vet column, migration 99). NULL = default/starred sense. See docs/DEFINITION_CLUSTERS.md
   markHistory?: ReviewMark[];  // Last 16 flashcard mark results
   totalMarkCount?: number;  // Total cumulative count of all marks
   totalCorrectCount?: number;  // Lifetime count of correct marks
@@ -443,9 +454,12 @@ export interface VocabEntry {
     foreignText: string;
     english: string;
     translatedVocab?: string;  // English word/phrase in the translation that corresponds to the vocab word
-    tense?: TenseLabel;        // Temporal meaning of the sentence: past, present, or future
-    partOfSpeechDict: Record<string, string>;  // AI-generated POS tag per sentence token (e.g. "particle", "verb", "noun")
-    numberDict?: Record<string, 'singular' | 'plural'>;  // AI-generated grammatical number per noun token; selects the plural English form in the segment popup
+    sense?: string;            // Exact definitionClusters sense label the target word carries in this sentence (zh only)
+    segments?: string[];       // Authoritative GSA segmentation authored by the tagging pass; the read path renders these verbatim (falls back to live GSA when absent)
+    partOfSpeechDict: Record<string, string>;  // POS tag per GSA segment (from the tagging pass); drives form modification + particle/classifier annotation
+    numberDict?: Record<string, 'singular' | 'plural'>;  // Grammatical number per noun segment; selects the plural English form in the segment popup
+    tenseDict?: Record<string, TenseLabel>;    // Tense per verb segment (from the tagging pass); selects the verb's inflected English form in the segment popup. Per-verb because a sentence can mix tenses
+    senseDict?: Record<string, string>;        // definitionClusters sense label per segment (from the tagging pass); resolves each segment's dd = ddt(matching cluster)
     _segments?: string[];
     segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo; wordForms?: Record<string, string> }>;
   }>;  // Example sentences enriched at runtime with greedy segmentation and per-segment metadata

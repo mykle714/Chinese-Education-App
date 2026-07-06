@@ -9,7 +9,7 @@
 // the card's pixel rect to convert drag/pinch deltas back into fractions.
 
 import type { CSSProperties } from "react";
-import type { IconLayoutItem, VocabEntry } from "../types";
+import type { IconLayoutItem, TextLayout, VocabEntry } from "../types";
 import { API_BASE_URL } from "../constants";
 
 /** Base icon box as a fraction of card width (before per-icon scale). */
@@ -179,12 +179,24 @@ export const ALIGN_ROTATION: Record<AlignDirection, number> = {
 };
 
 /**
- * Whether a saved layout should open the editor straight into ADVANCED mode: any
- * arrangement that isn't a single default-placed icon — i.e. multiple icons, or one
- * icon that has been moved / resized / rotated. Lets us distinguish basic-saved from
- * advanced-saved layouts without storing an explicit mode flag.
+ * Whether a saved layout counts as ADVANCED (vs. a plain basic/default card). An arrangement
+ * is advanced when either:
+ *  - the ICON layout isn't a single default-placed icon — i.e. multiple icons, or one icon
+ *    that has been moved / resized / rotated; OR
+ *  - a custom TEXT layout is present (either text block was placed off its default spot).
+ * Used both to open the editor straight into advanced mode and to gate advanced-only
+ * decorations (e.g. the per-card background fill), without storing an explicit mode flag.
+ *
+ * `textLayout` is OPTIONAL: icon-only callers (editor seeding, community-layout snapshots)
+ * omit it and get the icon-only verdict unchanged. The text-emptiness test is inlined
+ * (rather than importing hasCustomTextLayout from cardTextLayout.ts) because that module
+ * already imports from THIS one — importing back would form a circular dependency.
  */
-export function isAdvancedLayout(layout: IconLayoutItem[] | null | undefined): boolean {
+export function isAdvancedLayout(
+  layout: IconLayoutItem[] | null | undefined,
+  textLayout?: TextLayout | null,
+): boolean {
+  if (textLayout && (!!textLayout.foreign || !!textLayout.english)) return true;
   if (!layout || layout.length === 0) return false;
   if (layout.length > 1) return true;
   return !isDefaultPlacement(layout[0]);

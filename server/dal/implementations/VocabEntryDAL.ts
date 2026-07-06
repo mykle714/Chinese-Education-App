@@ -156,6 +156,34 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     return result.recordset[0] ?? null;
   }
 
+  // Persist (or clear) the chosen definition-cluster sense for one vet row (migration 99).
+  // `selectedSense` is the cluster's `sense` label (stable identity across re-sort/re-score);
+  // null clears it back to the default/starred sense. Ownership enforced in the WHERE
+  // (id + userId), routed to the language's physical vet table. See docs/DEFINITION_CLUSTERS.md.
+  async updateSelectedSense(
+    userId: string,
+    id: string | number,
+    language: string,
+    selectedSense: string | null
+  ): Promise<VocabEntry | null> {
+    if (!userId) throw new ValidationError('userId is required');
+    if (!id) throw new ValidationError('id is required');
+    if (!language) throw new ValidationError('language is required');
+
+    const table = vetTableForLanguage(language);
+    const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
+      return await client.query(
+        `UPDATE ${table}
+            SET "selectedSense" = $1::text
+          WHERE id = $2 AND "userId" = $3
+          RETURNING *`,
+        [selectedSense, id, userId]
+      );
+    });
+
+    return result.recordset[0] ?? null;
+  }
+
   // Look up a single vet row by id, scoped to a language so it routes to that
   // language's physical table (vet is split per language — migration 66). Callers
   // resolve the language from the request / the user's active language.

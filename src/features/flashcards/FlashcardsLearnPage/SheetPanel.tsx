@@ -41,18 +41,12 @@ interface SheetPanelProps {
     tabStrip?: React.ReactNode;
 }
 
-// Sheet snaps to one of three stops on drag release: max height, the initial
-// (natural-content) height, or 0 height. Snapping to 0 dismisses after the
-// shrink animation finishes.
+// Sheet snaps to one of three stops on drag release: max height, the default
+// (open) height, or 0 height. Anything released below the default height snaps
+// to 0 and dismisses after the shrink animation; at or above it, the sheet
+// snaps to the nearer of {default, max}. There is no resting stop below the
+// default height — the default height is the floor.
 const SNAP_DURATION_MS = 220;
-
-// Approximate height of the sticky "header" inside the sheet (grabber + entry
-// header row + tab strip). Hard-coded from a one-time measurement so the
-// dismiss threshold doesn't depend on a runtime layout query. If the panel's
-// height drops below this on release, snap to 0 instead of springing back to
-// the natural height — at that point the entry/tabs are already clipped, so
-// keeping the panel partially open looks broken.
-const EIP_HEADER_HEIGHT = 174;
 
 // Module-level set of currently mounted panel depths. The window-level wheel
 // listener installed by each panel checks this set so only the top-most depth
@@ -75,8 +69,10 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     const dragStartHeightRef = useRef<number>(0);
     // Parent container height used as the cap for resize drags.
     const parentHeightRef = useRef<number>(0);
-    // Natural content height measured on first paint — one of the snap stops.
-    const initialHeightRef = useRef<number>(0);
+    // The height the sheet opens to (its default/open extent). Doubles as both
+    // the middle snap stop and the dismiss floor: any release below this height
+    // snaps to 0 rather than springing back up.
+    const defaultHeightRef = useRef<number>(0);
     // True only while a release-snap animation is playing.
     const [isSnapping, setIsSnapping] = useState(false);
     // Flag set when the chosen snap target is 0; the transitionend handler
@@ -91,8 +87,8 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
         const measured = sheetContainerRef.current.offsetHeight;
         const parentH = sheetContainerRef.current.parentElement?.clientHeight ?? window.innerHeight;
         parentHeightRef.current = parentH;
-        initialHeightRef.current = measured;
         const targetHeight = initialHeight != null ? Math.min(initialHeight, parentH * 0.92) : measured;
+        defaultHeightRef.current = targetHeight;
         sheetHeightRef.current = 0;
         setSheetHeight(0);
         requestAnimationFrame(() => {
@@ -130,14 +126,14 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
                 setSheetHeight(clampedH);
                 return;
             }
-            // Below header height → commit to dismiss. Otherwise snap to the
-            // nearest of {initial, max}; 0 is only reachable via the header
-            // cutoff, not by being marginally closer to 0 than to initial.
+            // Below the default (open) height → commit to dismiss. Otherwise
+            // snap to the nearer of {default, max}; 0 is only reachable via the
+            // below-default cutoff, never by being closer to 0 than to default.
             let target: number;
-            if (clampedH < EIP_HEADER_HEIGHT) {
+            if (clampedH < defaultHeightRef.current) {
                 target = 0;
             } else {
-                const stops = [initialHeightRef.current, maxH];
+                const stops = [defaultHeightRef.current, maxH];
                 target = stops.reduce((best, s) =>
                     Math.abs(s - clampedH) < Math.abs(best - clampedH) ? s : best
                 );
@@ -225,7 +221,7 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
                 const h = sheetHeightRef.current ?? 0;
                 if (st === 0 && h > 0) {
                     const next = Math.max(h + dy, 0);
-                    const dismissThreshold = EIP_HEADER_HEIGHT;
+                    const dismissThreshold = defaultHeightRef.current;
                     if (next < dismissThreshold) {
                         sheetHeightRef.current = 0;
                         setSheetHeight(0);
@@ -288,9 +284,9 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
         const onTouchEnd = () => {
             lastTouchY = null;
             const hOnRelease = sheetHeightRef.current ?? 0;
-            if (touchConsumedAny && hOnRelease < EIP_HEADER_HEIGHT) {
-                // Below header height on release → animate to 0 and dismiss,
-                // mirroring the grabber-drag snap rule.
+            if (touchConsumedAny && hOnRelease < defaultHeightRef.current) {
+                // Below the default (open) height on release → animate to 0 and
+                // dismiss, mirroring the grabber-drag snap rule.
                 sheetHeightRef.current = 0;
                 setSheetHeight(0);
                 pendingDismissRef.current = true;
@@ -350,7 +346,7 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
                         return;
                     }
                 }
-                if ((sheetHeightRef.current ?? 0) < EIP_HEADER_HEIGHT && v < 0) {
+                if ((sheetHeightRef.current ?? 0) < defaultHeightRef.current && v < 0) {
                     sheetHeightRef.current = 0;
                     setSheetHeight(0);
                     pendingDismissRef.current = true;

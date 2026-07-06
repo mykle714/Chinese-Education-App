@@ -145,13 +145,32 @@ tool — internal key `contrast` — see "Edit-mode UX"). The offered chips (lai
 rows of five) are — row 1 (neutrals): `auto` (`NULL`, shown as the red no-fill glyph), grey
 `#D8D8DC`, beige `#F5EBE0`, white `#FFFFFF`, black `#000000`; row 2 (pastel hues): red
 `#F2BAC9`, green `#BAF2D8`, blue `#BAD7F2`, yellow `#F2E2BA`, purple `#D8BAF2` (`grey` pins
-the light-theme face color; `auto` merely follows the theme). It tints the **whole flashcard
-face (both sides)** and the mini card thumbnails (`MiniVocabCard`). The single source of truth
+the light-theme face color; `auto` merely follows the theme). It tints any flashcard face that is
+**rendering the advanced layout** (always the back/answer side; the front only when it is the English
+side) and the mini card thumbnails (`MiniVocabCard`) — see the gating note below. The single source
+of truth
 for the palette is `CARD_COLOR_OPTIONS` in `src/utils/cardColor.ts` (explicit fills built from
 `COLORS` design tokens —
 `card`/`cardBeige`/`redAccent`/`greenAccent`/`blueAccent`/`yellowAccent`/`purpleAccent` — plus
 white/black literals); the resolver
 `resolveCardColor` there returns the hex for a vetted value or `undefined` (→ theme default).
+**The fill only paints on a face that is rendering the ADVANCED layout**, expressed as the
+`isUsingAdvancedLayout` gate. The entry-level predicate is `isAdvancedLayout(iconLayout, textLayout)`
+— advanced = a multi-icon / moved-icon arrangement **or** a custom text placement (the `textLayout`
+arg was added so text-only advanced designs count). `CardFaceSide` (`FlashCardSection.tsx` —
+`faceBg`) takes `isUsingAdvancedLayout` as a per-face prop that the **caller** decides:
+
+- **flp back / answer side** and the **card-detail hero** pass the entry verdict directly (the hero
+  is an un-rotated back face — this gate is intentionally independent of the `rotated` flip
+  transform, which only the flp flip-pair uses).
+- **flp front / question side** passes `entryVerdict && sideOneLanguage === 'en'` — the **Chinese
+  question side is kept a plain basic card** (no advanced icons, no fill), matching the icon layer,
+  which is likewise limited to English-bearing faces via `showIcon`.
+
+The mini thumbnail (`MiniVocabCard`) mirrors the back face, so it applies the entry verdict directly
+(its icon-only `hasAdvancedLayout` stays separate — that one drives icon rendering and must not fire
+for a text-only-advanced card with no `iconLayout`). The value is stored regardless; it just isn't
+rendered until a face shows the advanced layout.
 The server keeps a hand-synced copy of the allowed hex set in `CARD_COLOR_VALUES`
 (`server/types/index.ts`) and `VocabEntryService.validateCardColor` normalizes any
 off-palette value to `NULL`. Written together with `iconLayout` by the same
@@ -613,7 +632,12 @@ All in `src/features/flashcards/FlashcardsLearnPage/`.
    mode only** (`editMode && advMode`); basic mode renders the draft through the static
    icon-layer path instead (the page feeds `draftLayout` onto the active entry's
    `iconLayout` via `editingCurrentEntry`, so the basic-mode card is WYSIWYG without a
-   live canvas). The canvas is built on `@use-gesture/react` (`useGesture`, bound
+   live canvas). **Movable text is advanced-only**, gated on `advMode` in BOTH the preview
+   (`editingCurrentEntry.textLayout = advMode ? textLayoutForSave(textDraft) : null`) and the
+   Save (`handleSaveLayout` writes the same). So basic mode renders both text blocks at their
+   DEFAULT positions, and **saving in basic layout produces a basic card** (`textLayout` NULL) —
+   WYSIWYG. Only advanced mode previews and persists a custom placement. The canvas is built on
+   `@use-gesture/react` (`useGesture`, bound
    per-icon via `bind(index)`):
    - drag translates an icon (updates `x`,`y`); pinch resizes + rotates (two-finger:
      distance → `scale`, angle → `rotation`).

@@ -6,59 +6,38 @@ import { SIZE, WEIGHT } from "../../theme/scale";
 interface WordSearchSettingsDialogProps {
     open: boolean;
     onClose: () => void;
-    showPinyin: boolean;
-    onToggleShowPinyin: (value: boolean) => void;
-    showPinyinColor: boolean;
-    onToggleShowPinyinColor: (value: boolean) => void;
     showTimer: boolean;
     onToggleShowTimer: (value: boolean) => void;
 }
 
 /**
- * Word Search's settings sheet, behind the header cog. Mirrors flp's Settings
- * sheet (SettingsPanelBody): the header keeps only the highest-frequency
- * controls (hint, restart), everything else — pinyin display, timer
- * visibility — moves here. See docs/WORD_SEARCH_GAME.md §3.
+ * Word Search's settings sheet, behind the header cog. Pinyin display is NO
+ * LONGER a setting here: it's fixed by which hub entry (Pinyin / No Pinyin) the
+ * player launched, so the only remaining control is timer visibility. See
+ * docs/WORD_SEARCH_GAME.md §3.
  */
 const WordSearchSettingsDialog: React.FC<WordSearchSettingsDialogProps> = ({
     open,
     onClose,
-    showPinyin,
-    onToggleShowPinyin,
-    showPinyinColor,
-    onToggleShowPinyinColor,
     showTimer,
     onToggleShowTimer,
 }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
 
-    const row = (
-        key: string,
-        label: string,
-        checked: boolean,
-        onChange: (v: boolean) => void,
-        indented = false
-    ) => (
+    const row = (key: string, label: string, checked: boolean, onChange: (v: boolean) => void) => (
         <Box
             key={key}
-            className={`word-search-settings-row word-search-settings-row--${key}${indented ? " word-search-settings-row--nested" : ""}`}
+            className={`word-search-settings-row word-search-settings-row--${key}`}
             sx={{
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
                 padding: "12px 0",
-                ...(indented && {
-                    paddingLeft: "14px",
-                    marginLeft: "4px",
-                    borderLeft: `2px solid ${fc.border}`,
-                }),
                 borderBottom: `1px solid ${fc.border}`,
             }}
         >
-            <Typography sx={{ fontSize: indented ? 13 : 14, color: indented ? fc.textSecondary : fc.onSurface }}>
-                {label}
-            </Typography>
+            <Typography sx={{ fontSize: 14, color: fc.onSurface }}>{label}</Typography>
             <Switch size="small" checked={checked} onChange={(e) => onChange(e.target.checked)} />
         </Box>
     );
@@ -74,8 +53,6 @@ const WordSearchSettingsDialog: React.FC<WordSearchSettingsDialogProps> = ({
                 </IconButton>
             </DialogTitle>
             <DialogContent sx={{ pb: 2 }}>
-                {row("pinyin", "Show pinyin", showPinyin, onToggleShowPinyin)}
-                {showPinyin && row("pinyin-color", "Color pinyin by tone", showPinyinColor, onToggleShowPinyinColor, true)}
                 {row("timer", "Show timer", showTimer, onToggleShowTimer)}
             </DialogContent>
         </Dialog>

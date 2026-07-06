@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Box, Popper, Typography } from "@mui/material";
+import type { Instance as PopperInstance } from "@popperjs/core";
 import { stripParentheses } from "../utils/definitionUtils";
 import ForeignText, { type CPCDRowItem, isLatinScriptLang } from "./ForeignText";
 import { FONTS } from "../theme/fonts";
@@ -35,12 +36,14 @@ interface SentenceData {
   foreignText: string;
   _segments?: string[];
   segmentMetadata?: Record<string, SegmentMeta>;
-  tense?: 'past' | 'present' | 'future';
   partOfSpeechDict?: Record<string, string>;
-  // Per-noun-token grammatical number. Unlike `tense` (one verb per sentence, so
-  // sentence-level), number is per-token because a sentence can mix singular and
-  // plural nouns. Drives plural-form selection in resolveWordForm.
+  // Per-noun-token grammatical number: a sentence can mix singular and plural nouns
+  // (`I put the book on the shelves`). Drives plural-form selection in resolveWordForm.
   numberDict?: Record<string, 'singular' | 'plural'>;
+  // Per-verb-token tense: a sentence can mix tenses (`I bought books, will return them`),
+  // so each verb's popup gloss inflects on its own tag. Drives verb-form selection in
+  // resolveWordForm. (Replaced a single sentence-level `tense`.)
+  tenseDict?: Record<string, 'past' | 'present' | 'future'>;
 }
 
 interface SegmentedSentenceDisplayProps {
@@ -69,6 +72,11 @@ interface SegmentedSentenceDisplayProps {
   // desktop. Defaults to false; example-sentence call sites pass true. See
   // CPCDRow.selectable.
   selectable?: boolean;
+  // When provided, the definition popup becomes tappable: it shows a trailing
+  // drill-in chevron and, on click, calls this with the selected segment's
+  // headword so the caller can open the eip for that word. Omit to keep the
+  // popup a passive tooltip (e.g. the expansion tab).
+  onSegmentOpen?: (segment: string) => void;
 }
 
 interface CharRenderData {
@@ -132,16 +140,29 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
   language,
   display = "block",
   selectable = false,
+  onSegmentOpen,
 }) => {
   // Latin-script languages tokenize on whitespace (one cell per word) and never
   // show a pinyin overlay or per-character segmentation.
   const isLatin = isLatinScriptLang(language);
   const rowRef = useRef<HTMLDivElement | null>(null);
+  // The popup renders through a Popper portal, so it lives outside rowRef in the
+  // DOM. We keep a ref to it so the outside-tap dismiss handler can tell a tap on
+  // the popup apart from a tap on empty space (and not close it out from under the
+  // click that opens the eip).
+  const popupRef = useRef<HTMLDivElement | null>(null);
+  // The live popper.js instance (exposed by Popper's popperRef). We call its
+  // update() to re-run placement after the popup's content reflows post-open.
+  const popperInstanceRef = useRef<PopperInstance | null>(null);
   const charRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [selectedRange, setSelectedRange] = useState<{ start: number; end: number; segment: string; definition?: string } | null>(null);
   // Viewport-space rect of the highlighted word(s); used as Popper anchor so the
   // popup escapes any ancestor scroll container's overflow clipping.
   const [popupAnchorRect, setPopupAnchorRect] = useState<DOMRect | null>(null);
+  // True while the interactive popup is being pressed, so we can grey it out as
+  // tap feedback. Driven explicitly (not via the CSS :active pseudo) because the
+  // pointerdown handler calls preventDefault(), which can suppress :active.
+  const [popupPressed, setPopupPressed] = useState(false);
   const [highlightRects, setHighlightRects] = useState<HighlightRect[]>([]);
   const [vocabUnderlineRects, setVocabUnderlineRects] = useState<HighlightRect[]>([]);
   // Pending dismiss timer. Armed when the mouse leaves the row or popup; cancelled
@@ -208,7 +229,7 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
       if (meta?.wordForms && sentence.partOfSpeechDict && !meta.particleOrClassifier) {
         const pos = sentence.partOfSpeechDict[segment];
         const number = sentence.numberDict?.[segment];
-        const form = resolveWordForm(meta.wordForms, pos, sentence.tense, number);
+        const form = resolveWordForm(meta.wordForms, pos, sentence.tenseDict?.[segment], number);
         if (form) definition = form;
       }
 
@@ -234,7 +255,7 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
         if (fallbackMeta?.wordForms && sentence.partOfSpeechDict && !fallbackMeta.particleOrClassifier) {
           const pos = sentence.partOfSpeechDict[char];
           const number = sentence.numberDict?.[char];
-          const form = resolveWordForm(fallbackMeta.wordForms, pos, sentence.tense, number);
+          const form = resolveWordForm(fallbackMeta.wordForms, pos, sentence.tenseDict?.[char], number);
           if (form) fallbackDefinition = form;
         }
         data[i] = {
@@ -330,7 +351,10 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
 
   useEffect(() => {
     const handlePointerDown = (event: PointerEvent) => {
-      if (!rowRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      // Keep the popup open when the tap is on the row or on the popup itself;
+      // the popup tap is what triggers the eip-open click.
+      if (!rowRef.current?.contains(target) && !popupRef.current?.contains(target)) {
         setSelectedRange(null);
       }
     };
@@ -410,7 +434,7 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
     setVocabUnderlineRects(
       rows.map((row) => ({
         left: Math.floor(row.left - rowRect.left) + 1,
-        top: Math.floor(row.bottom - rowRect.top - 1),
+        top: Math.floor(row.bottom - rowRect.top - 3),
         width: Math.max(Math.floor(row.right - row.left) - 2, 0),
         height: 0,
       }))
@@ -443,6 +467,25 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
   };
 
   const showPopup = !!(selectedRange && selectedRange.definition && popupAnchorRect);
+
+  // Popper measures the popup once when it opens and positions it from that width.
+  // If the content reflows afterward — most commonly the definition's web font
+  // finishing loading on the very first open — the box stays placed against the
+  // stale (fallback-font) width and looks mis-sized until it's reopened (by which
+  // point the font is cached). Observing the popup's size and re-running Popper's
+  // update() on every change keeps placement in sync with the real rendered width.
+  useEffect(() => {
+    const el = popupRef.current;
+    if (!showPopup || !el || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      popperInstanceRef.current?.update();
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [showPopup]);
+  // The popup is tappable (chevron + eip-open) only when the caller wired
+  // onSegmentOpen and we have a concrete segment headword to open.
+  const isPopupInteractive = !!onSegmentOpen && !!selectedRange?.segment;
 
   // Popper accepts a "virtual element" anchor — an object with getBoundingClientRect.
   // We rebuild it whenever popupAnchorRect changes so Popper reflows the popup.
@@ -572,6 +615,7 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
       <Popper
         open={showPopup}
         anchorEl={popperAnchorEl}
+        popperRef={popperInstanceRef}
         placement="top"
         modifiers={[
           { name: "offset", options: { offset: [0, 6] } },
@@ -581,8 +625,44 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
         sx={{ zIndex: 1300 }}
       >
         <Box
+          ref={popupRef}
+          className="segment-definition-popup"
           onMouseEnter={cancelDismiss}
           onMouseLeave={scheduleDismiss}
+          // When interactive, the popup must fully absorb the tap. We open on
+          // pointerup and, on both pointerdown and pointerup, call:
+          //   - stopPropagation() so the event doesn't bubble in the React tree to
+          //     the row Box's onPointerDown (which would clear the selection). Note
+          //     the Popper is portaled in the DOM but is still a React child of the
+          //     row, so React events DO bubble to it.
+          //   - preventDefault() on pointerdown to suppress the compatibility
+          //     mouse/click synthesis on touch. Without it, that ghost click fires
+          //     ~after the popup closes and lands on whatever is now behind it
+          //     (the "tap registers behind the popup" bug).
+          onPointerDown={
+            isPopupInteractive
+              ? (e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  setPopupPressed(true);
+                }
+              : undefined
+          }
+          onPointerUp={
+            isPopupInteractive
+              ? (e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  setPopupPressed(false);
+                  if (selectedRange?.segment) onSegmentOpen!(selectedRange.segment);
+                  setSelectedRange(null);
+                }
+              : undefined
+          }
+          // Cancel the pressed state if the finger/pointer leaves the popup or the
+          // gesture is aborted (e.g. scroll), so it doesn't stay greyed out.
+          onPointerLeave={isPopupInteractive ? () => setPopupPressed(false) : undefined}
+          onPointerCancel={isPopupInteractive ? () => setPopupPressed(false) : undefined}
           sx={{
             backgroundColor: "#FFFFFF",
             border: "1px solid",
@@ -592,9 +672,19 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
             px: 1.25,
             py: 0.75,
             maxWidth: "220px",
+            ...(isPopupInteractive && {
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 0.5,
+              // Grey the whole card while pressed so a registered tap is obvious.
+              transition: "background-color 100ms ease",
+              backgroundColor: popupPressed ? "action.selected" : "#FFFFFF",
+            }),
           }}
         >
           <Typography
+            className="segment-definition-popup__text"
             sx={{
               fontSize: SIZE.caption,
               lineHeight: 1.3,
@@ -602,10 +692,28 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
               fontFamily: FONTS.sans,
               textAlign: "center",
               wordBreak: "break-word",
+              ...(isPopupInteractive && { flex: 1, textAlign: "left" }),
             }}
           >
             {selectedRange?.definition ? stripParentheses(selectedRange.definition) : ""}
           </Typography>
+          {isPopupInteractive && (
+            // Same drill-in chevron the breakdown/used-in rows use, so "chevron =
+            // opens the eip for this word" stays a consistent gesture across the card.
+            <Box
+              className="segment-definition-popup__chevron"
+              component="span"
+              sx={{
+                flexShrink: 0,
+                fontSize: SIZE.body,
+                lineHeight: 1,
+                color: "text.secondary",
+                fontFamily: FONTS.sans,
+              }}
+            >
+              ›
+            </Box>
+          )}
         </Box>
       </Popper>
     </Box>

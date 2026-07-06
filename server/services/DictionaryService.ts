@@ -1,9 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { IDictionaryDAL } from '../dal/interfaces/IDictionaryDAL.js';
 import { DictionaryEntry, VocabEntry, AiDictionaryEntry } from '../types/index.js';
-import { ValidationError } from '../types/dal.js';
+import { ValidationError, RateLimitError } from '../types/dal.js';
 import { getAllSubstrings, buildDictMap, buildExcludeSet, segmentWithDict } from '../dal/shared/segmentString.js';
 import { isAllPinyin } from '../utils/pinyinSegment.js';
+import { DICTIONARY_AI_DAILY_LIMIT } from '../constants.js';
 
 // One shared Anthropic client for the service's AI helpers (expansion + long
 // definition). Constructed lazily so a missing ANTHROPIC_API_KEY only disables
@@ -241,12 +242,19 @@ export class DictionaryService {
    * Idempotent against the cache: a fresh cached row short-circuits the model call, so repeated
    * taps (or concurrent requests) don't re-bill.
    */
-  async generateAiEntry(term: string, language: string): Promise<AiDictionaryEntry | null> {
+  async generateAiEntry(
+    term: string,
+    language: string,
+    userId: string,
+    usageDate: string,
+  ): Promise<AiDictionaryEntry | null> {
     const trimmed = (term || '').trim();
     // Qualifies if it's valid pinyin OR Chinese characters (the segment-mode "no complete match" case).
     if (language !== 'zh' || (!isAllPinyin(trimmed) && !hasChinese(trimmed))) return null;
 
     // Re-check the cache: honor a fresh row (empty or not) without hitting the model again.
+    // NOTE: this short-circuit is BEFORE the daily-limit check, so re-viewing a cached answer
+    // is always free and never consumes a slot.
     const cached = await this.dictionaryDAL.getAiCacheEntry(trimmed, language);
     if (cached) {
       if (cached.word1) {
@@ -258,6 +266,18 @@ export class DictionaryService {
 
     const anthropic = getDictAiClient();
     if (!anthropic) return null; // feature disabled (no DICT_AI_API_KEY)
+
+    // Daily abuse limit: a cache MISS is about to bill a model call (+ up to 3 web searches).
+    // Reject once the user has spent their DICTIONARY_AI_DAILY_LIMIT completed calls for their
+    // local streak-day (migration 99). Thrown BEFORE the try/catch below so it propagates as a
+    // 429 rather than being swallowed into a null "no result". Small concurrency race is fine for
+    // an abuse limit; the debounced single-user UI won't stack requests.
+    const usedToday = await this.dictionaryDAL.getAiUsageCount(userId, usageDate);
+    if (usedToday >= DICTIONARY_AI_DAILY_LIMIT) {
+      throw new RateLimitError(
+        `You've reached your daily limit of ${DICTIONARY_AI_DAILY_LIMIT} AI lookups. Try again tomorrow.`,
+      );
+    }
 
     try {
       // Instructions are static → live in a cache_control system block so repeated calls in a
@@ -300,6 +320,10 @@ Rules:
         messages.push({ role: 'assistant', content: response.content });
       }
       if (!response) return null;
+
+      // A model call completed (regardless of whether it yields a word, an empty result, or an
+      // unparseable one below) — it was billed, so it counts against the daily limit.
+      await this.dictionaryDAL.incrementAiUsage(userId, usageDate);
 
       // Concatenate the final turn's text blocks (with web search, content also holds
       // server_tool_use / web_search_tool_result blocks we ignore) and pull out the JSON object.

@@ -3,12 +3,14 @@ import { styled } from "@mui/material/styles";
 import { useNavigate } from "react-router-dom";
 import SportsEsportsIcon from "@mui/icons-material/SportsEsports";
 import NodePage from "../components/NodePage";
-import { HubMenu, HubMenuRow, HubMenuArrayItem, HubMenuSpacer, HubMenuStatBadge } from "../components/HubMenu";
+import { FooterSpacer } from "../components/MobileFooter";
+import { HubMenu, HubMenuRow, HubMenuArrayItem, HubMenuStatBadge } from "../components/HubMenu";
 import TipBox from "../components/TipBox";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useGameWins } from "../hooks/useGameWins";
 import { GAME_REGISTRY } from "../games/registry";
 import { GAME_KEY as BUBBLE_MATCH_GAME_KEY, LEVEL_CONFIGS as BUBBLE_MATCH_LEVELS } from "../games/bubble-match/constants";
+import { MODE_CONFIGS as WORD_SEARCH_MODES, type WordSearchMode } from "../games/word-search/constants";
 import { useAuth } from "../AuthContext";
 import type { GameDef } from "../games/types";
 import { COLORS } from "../theme/colors";
@@ -37,6 +39,14 @@ const BUBBLE_MATCH_LEVEL_COLORS: Record<number, string> = {
     1: COLORS.greenAccent,
     2: COLORS.yellowAccent,
     3: COLORS.redAccent,
+};
+
+/** Persistent per-mode background colors for the Word Search sub-cards. Like
+    Bubble Match, Word Search fans out into several hub sub-cards (Pinyin /
+    No Pinyin) instead of a single row — see docs/WORD_SEARCH_GAME.md §3. */
+const WORD_SEARCH_MODE_COLORS: Record<WordSearchMode, string> = {
+    "pinyin": COLORS.purpleAccent,
+    "no-pinyin": COLORS.blueAccent,
 };
 
 const EmptyState = styled(Box)(() => ({
@@ -82,32 +92,60 @@ const GamesPage: React.FC = () => {
                 <HubMenu
                     className="games-page__menu"
                     header={<TipBox className="games-page__tip-box" />}
-                    footer={<HubMenuSpacer />}
+                    footer={<FooterSpacer />}
                 >
-                    {visibleGames.map((game: GameDef) =>
-                        game.gameId === "bubble-match" ? (
-                            <HubMenuArrayItem
-                                key={game.gameId}
-                                className="games-page__menu-item games-page__menu-item--bubble-match"
-                                items={BUBBLE_MATCH_LEVELS.map((cfg) => ({
-                                    key: `${game.gameId}-${cfg.level}`,
-                                    to: game.route,
-                                    // Bubble Match keeps a single route; the tapped
-                                    // level is passed via nav state, not a URL param.
-                                    state: { level: cfg.level },
-                                    title: game.title,
-                                    subtitle: cfg.label,
-                                    icon: resolveGameIcon(game),
-                                    bgColor: BUBBLE_MATCH_LEVEL_COLORS[cfg.level] ?? game.bgColor,
-                                    cornerBadge: (
-                                        <HubMenuStatBadge
-                                            starred={clearedLevels.has(cfg.level)}
-                                            count={lifetimeWins[cfg.level]}
-                                        />
-                                    ),
-                                }))}
-                            />
-                        ) : (
+                    {visibleGames.map((game: GameDef) => {
+                        // Bubble Match and Word Search both fan out into a
+                        // horizontal strip of sub-cards (one per level / pinyin
+                        // mode) instead of a single row — each sub-card keeps the
+                        // game's single route and passes its choice via nav state.
+                        // These are special-cased here (not a generic
+                        // `GameDef.levels` field) since they're the only fan-out
+                        // games today; see docs/HUB_MENU_SYSTEM.md.
+                        if (game.gameId === "bubble-match") {
+                            return (
+                                <HubMenuArrayItem
+                                    key={game.gameId}
+                                    className="games-page__menu-item games-page__menu-item--bubble-match"
+                                    items={BUBBLE_MATCH_LEVELS.map((cfg) => ({
+                                        key: `${game.gameId}-${cfg.level}`,
+                                        to: game.route,
+                                        state: { level: cfg.level },
+                                        title: game.title,
+                                        subtitle: cfg.label,
+                                        icon: resolveGameIcon(game),
+                                        bgColor: BUBBLE_MATCH_LEVEL_COLORS[cfg.level] ?? game.bgColor,
+                                        cornerBadge: (
+                                            <HubMenuStatBadge
+                                                starred={clearedLevels.has(cfg.level)}
+                                                count={lifetimeWins[cfg.level]}
+                                            />
+                                        ),
+                                    }))}
+                                />
+                            );
+                        }
+                        if (game.gameId === "word-search") {
+                            return (
+                                <HubMenuArrayItem
+                                    key={game.gameId}
+                                    className="games-page__menu-item games-page__menu-item--word-search"
+                                    items={WORD_SEARCH_MODES.map((cfg) => ({
+                                        key: `${game.gameId}-${cfg.mode}`,
+                                        to: game.route,
+                                        // Word Search keeps a single route; the tapped
+                                        // pinyin mode is passed via nav state, and each
+                                        // mode has its own saved board.
+                                        state: { mode: cfg.mode },
+                                        title: game.title,
+                                        subtitle: cfg.label,
+                                        icon: resolveGameIcon(game),
+                                        bgColor: WORD_SEARCH_MODE_COLORS[cfg.mode] ?? game.bgColor,
+                                    }))}
+                                />
+                            );
+                        }
+                        return (
                             <HubMenuRow
                                 key={game.gameId}
                                 to={game.route}
@@ -117,8 +155,8 @@ const GamesPage: React.FC = () => {
                                 icon={resolveGameIcon(game)}
                                 bgColor={game.bgColor}
                             />
-                        )
-                    )}
+                        );
+                    })}
                 </HubMenu>
 
                 {/* Empty state until the first game ships (or all games are gated out). */}

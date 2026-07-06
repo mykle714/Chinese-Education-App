@@ -49,7 +49,7 @@ dotenv.config({ path: path.join(__dirname, '../../../.env.docker') });
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
 import { initRunLog, cachedSystem } from '../run-log.js';
-const SCRIPT_VERSION = 11; // bump when this script's logic/prompt changes
+const SCRIPT_VERSION = 12; // bump when this script's logic/prompt changes
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -147,14 +147,35 @@ How to write it:
 - IF THE GLOSS ALREADY CAPTURES THE MEANING FULLY (a clean one-to-one concept with nothing left to
   disambiguate), instead give genuine CULTURAL CONTEXT about the concept — how it figures in daily
   life, customs, associations, or common set phrases.
+- IGNORE RARE LITERARY / FORMAL SENSES; STAY ON EVERYDAY MEANING. If the word has an everyday spoken
+  sense AND a much more literary, classical, archaic, formal, technical, or legal sense — the kind that
+  only appears in written, classical, or specialist contexts (what a register scorer would rate 1
+  "literary/classical/formal-only" or 2 "formal/written-leaning") — define ONLY the everyday sense(s) and
+  OMIT the rare one entirely: do not cite, gloss, or even allude to it. EXCEPTION: if EVERY sense of the
+  word is itself formal/literary (the word simply is a formal word), define it normally — this rule drops
+  the rare senses ONLY of a word that also has a common everyday sense. This governs WHICH senses you
+  cover; it is not license to comment on register in the text (see the register rule) — omit the rare
+  sense silently, never announce that a sense is formal or literary.
+- IF ONE CONTEXT DOMINATES THE WORD'S ACTUAL USAGE, EXPLAIN THAT CONTEXT. When the word is, in practice,
+  encountered mostly inside a single phrase, idiom/chengyu, or fixed construction rather than standing on
+  its own, do NOT merely name-drop that phrase (a circular "as seen in X"). Instead make the definition
+  ABOUT that dominant context: cite the phrase in characters and explain what the phrase means and how the
+  word functions within it. This is the one case where citing a phrase that contains the headword is not
+  self-reference — it is the most useful thing you can say, because that is where the learner will meet the
+  word. Do it in ONE simple sentence.
 - USE CHINESE CHARACTERS SPARINGLY — only to cite a term that is itself CULTURALLY SIGNIFICANT (a real
   idiom / chengyu, or a culturally loaded phrase such as 九五之尊 or 关系网) and that adds genuine cultural
   insight. Do NOT pepper the definition with constructed example sentences or trivial collocations in
   Chinese; describe ordinary usage in English instead — this applies even to grammatical/function words,
   whose constructions must be explained in English, not shown in Chinese. When you do cite a culturally
   significant term, use characters, never pinyin, and weave it into a sentence — never a bare example list.
-- BREVITY IS GOOD. The length cap is a CEILING, not a target. A short, dense definition that fully
-  conveys the nuance is better than a padded one; stop once you have said what matters.
+- BE BRIEF AND CONCISE. The length cap is a CEILING, not a target. A short, dense definition that fully
+  conveys the nuance is better than a padded one; use plain, economical wording and stop once you have
+  said what matters. Every sentence must earn its place.
+- USE ONE TO THREE SENTENCES. Write no fewer than one and no more than three sentences. Do NOT pad to
+  reach three — add a second or third sentence only when it carries a distinct, essential nuance. Never
+  tack on a sentence merely to cite a related phrase or chengyu the word appears in, or to add a filler
+  aside.
 - DO NOT LIST SYNONYMS. This is a definition, not a thesaurus.
 
 Output shape — a JSON object keyed by part of speech:
@@ -182,6 +203,8 @@ Hard constraints — all must be satisfied:
 9. NO REGISTER COMMENTARY — Do not describe how formal, colloquial, literary, slangy, or technical the word is. The learner already infers register from the word's vernacular score; spend the space on meaning and concept instead.
 10. NO REGIONAL-USAGE ELABORATION — Do not describe which regions, dialects, or countries use the word, or note regional variants. Focus on meaning, not geographic distribution.
 11. NO "APPEARS IN" FILLER — Do not append example-word lists with "appears in", "found in", "seen in", or similar tacked-on phrasing. Cite a related phrase only when it is woven into a sentence explaining a nuance, never as a list to fill space.
+12. SENTENCE COUNT — Use between 1 and 3 sentences (inclusive). Reject a definition with 4 or more sentences, or one whose extra sentence is a tacked-on citation of a related phrase/chengyu or a padding aside that adds no distinct nuance.
+13. NO RARE-SENSE COVERAGE — Do not define, cite, or allude to a sense that is markedly more literary/classical/formal/technical/legal than the word's everyday sense(s) — a sense a register scorer would rate 1 (literary/classical/formal-only) or 2 (formal/written-leaning) — WHEN the word also has a common everyday sense. Cover only the everyday sense(s). EXCEPTION: if every sense of the word is formal/literary, define it normally.
 `;
 }
 
@@ -200,6 +223,8 @@ const VIOLATION_CODE_LABELS = {
   comments_on_register: 'Comments on register / formality / colloquialness (rule 9)',
   elaborates_regional: 'Elaborates on regional, dialectal, or geographic usage (rule 10)',
   appears_in_filler: 'Uses an "appears in" / "found in" style tacked-on example listing (rule 11)',
+  extra_sentence: 'Exceeds 3 sentences, or pads with a tacked-on sentence citing a related phrase/chengyu or a filler aside (rule 12)',
+  covers_rare_sense: 'Defines, cites, or alludes to a rare literary/classical/formal-only sense (register 1–2) when the word also has an everyday sense (rule 13)',
   inaccurate: 'Definition is factually misleading or incorrect for a learner',
 };
 

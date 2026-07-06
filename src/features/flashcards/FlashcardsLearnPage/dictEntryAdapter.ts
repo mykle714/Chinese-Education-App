@@ -15,11 +15,16 @@ export function dictionaryEntryToVocabEntry(dict: DictionaryEntry): VocabEntry {
         expansionMetadata?: VocabEntry["expansionMetadata"];
         expansionLiteralTranslation?: string | null;
         usedIn?: UsedInItem[] | null;
+        iconId?: string | null;
     };
 
     return {
         id: dict.id,
         entryKey: dict.word1,
+        // Representative icons8 icon joined from det (selected by dictJoin, absent
+        // from the base client type) — lets the read-only dictionary card-detail
+        // hero render the det icon in basic (non-advanced) layout.
+        iconId: anyDict.iconId ?? null,
         // Carry the language through so language-gated UI (e.g. the zh-only
         // "Practice Writing Me" button) works on breakdown/dictionary drill-ins.
         language: dict.language,

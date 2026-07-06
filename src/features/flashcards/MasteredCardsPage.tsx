@@ -1,11 +1,15 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { Box, TextField, InputAdornment, IconButton } from "@mui/material";
+import { Search, Clear } from "@mui/icons-material";
 import NodePage from "../../components/NodePage";
+import { FooterSpacer } from "../../components/MobileFooter";
 import { useSlideNavigate } from "../../hooks/useSlideNavigate";
 import MiniVocabCardGrid from "../../components/MiniVocabCardGrid";
 import { useAuth } from "../../AuthContext";
 import { API_BASE_URL } from "../../constants";
 import type { VocabEntry } from "../../types";
+import { filterVocabEntries } from "../../utils/vocabSearch";
 import { usePageTitle } from "../../hooks/usePageTitle";
 
 // Dedicated page for the user's full Mastered deck. Linked from /flashcards/decks,
@@ -27,6 +31,10 @@ const MasteredCardsPage: React.FC = () => {
     const [entries, setEntries] = useState<VocabEntry[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    // Client-side search over the loaded deck. Supports the same query formats as
+    // the dictionary search bars (CJK / numbered pinyin / toneless pinyin / English)
+    // via filterVocabEntries — no network round trip since the deck is in memory.
+    const [searchInput, setSearchInput] = useState("");
 
     // Fetch the full mastered library deck from the OnDeck service.
     useEffect(() => {
@@ -69,6 +77,14 @@ const MasteredCardsPage: React.FC = () => {
         [slideNavigate]
     );
 
+    // Apply the search filter. Referentially stable while the query and deck are
+    // unchanged, so MiniVocabCardGrid's reveal cascade isn't restarted each render.
+    const filteredEntries = useMemo(
+        () => filterVocabEntries(entries, searchInput),
+        [entries, searchInput]
+    );
+    const isSearching = searchInput.trim().length > 0;
+
     return (
         // Back arrow slides right and returns to /decks (the previous history entry).
         <NodePage
@@ -78,15 +94,52 @@ const MasteredCardsPage: React.FC = () => {
             contentClassName="mastered-cards-page-content"
             contentSx={{ alignItems: "center" }}
         >
+            {/* Client-side search over the loaded deck. Sized to the 364px card grid
+                so the input lines up over the cards below it. */}
+            <Box className="mastered-cards-search" sx={{ width: 364, maxWidth: "100%", px: 3.5, pt: 1 }}>
+                <TextField
+                    className="mastered-cards-search__input"
+                    fullWidth
+                    size="small"
+                    placeholder="Search mastered cards..."
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
+                    InputProps={{
+                        startAdornment: (
+                            <InputAdornment position="start">
+                                <Search />
+                            </InputAdornment>
+                        ),
+                        endAdornment: searchInput && (
+                            <InputAdornment position="end">
+                                <IconButton
+                                    aria-label="clear search"
+                                    onClick={() => setSearchInput("")}
+                                    edge="end"
+                                    size="small"
+                                >
+                                    <Clear />
+                                </IconButton>
+                            </InputAdornment>
+                        ),
+                    }}
+                />
+            </Box>
+
             <MiniVocabCardGrid
                 containerClassName="mastered-cards-preview"
                 classPrefix="mastered-cards"
                 loading={loading}
                 error={error}
-                entries={entries}
-                emptyMessage="No mastered cards yet. Cards will appear here when you master them through study!"
+                entries={filteredEntries}
+                emptyMessage={
+                    isSearching
+                        ? "No mastered cards match your search."
+                        : "No mastered cards yet. Cards will appear here when you master them through study!"
+                }
                 onCardClick={handleCardClick}
             />
+            <FooterSpacer />
         </NodePage>
     );
 };

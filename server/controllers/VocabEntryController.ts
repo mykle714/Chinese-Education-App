@@ -237,6 +237,43 @@ export class VocabEntryController {
   }
 
   /**
+   * Persist (or clear) the learner's chosen definition-cluster sense for one vet row.
+   * PATCH /api/vocabEntries/:id/selected-sense
+   *   body: { selectedSense: string | null }
+   * `selectedSense` is the cluster's `sense` label; null clears it (default/starred sense).
+   * See docs/DEFINITION_CLUSTERS.md.
+   */
+  async updateSelectedSense(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
+      const entryId = parseInt(req.params.id);
+      if (isNaN(entryId)) {
+        res.status(400).json({ error: 'Invalid entry ID', code: 'ERR_INVALID_ENTRY_ID' });
+        return;
+      }
+
+      // Accept a non-empty label (the chosen cluster's `sense`) or null (reset to default).
+      const { selectedSense } = req.body ?? {};
+      if (selectedSense !== null && typeof selectedSense !== 'string') {
+        res.status(400).json({ error: 'selectedSense must be a string or null' });
+        return;
+      }
+
+      const language = await getUserLanguage(userId);
+      const updated = await this.vocabEntryService.updateSelectedSense(
+        userId, entryId, language, selectedSense
+      );
+
+      // Echo back just what the client needs to refresh the card in place.
+      res.json({ id: updated.id, selectedSense: updated.selectedSense ?? null });
+    } catch (error) {
+      handleControllerError(error, res, 'VocabEntryController.updateSelectedSense');
+    }
+  }
+
+  /**
    * Delete vocabulary entry
    * DELETE /api/vocabEntries/:id
    */

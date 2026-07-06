@@ -1,0 +1,372 @@
+import { Box, Typography, Chip, useTheme } from "@mui/material";
+import { styled } from "@mui/material/styles";
+import { stripParentheses } from "../../utils/definitionUtils";
+import type { VocabEntry } from "../../types";
+import ForeignText from "../../components/ForeignText";
+import SegmentedSentenceDisplay from "../../components/SegmentedSentenceDisplay";
+import LongDefinitionDisplay from "../../components/LongDefinitionDisplay";
+import { getBreakdownItems } from "../../utils/breakdownUtils";
+import { getCategoryColor } from "../../utils/categoryColors";
+import { SIZE, WEIGHT, LEADING, TRACKING } from "../../theme/scale";
+import InfoCardListRow from "./FlashcardsLearnPage/InfoCardListRow";
+import { SharedCharsLabel, HskPill, MetadataChipRow } from "./FlashcardsLearnPage/styled";
+import { FC_FONT } from "./FlashcardsLearnPage/constants";
+import ExampleSentenceList from "./ExampleSentenceList";
+
+// Presentational sections shared by both card-detail surfaces (see
+// docs/LEAF_NODE_PAGES.md classification): the editable saved-card page
+// (VocabCardDetailPage) and the read-only dictionary card-detail page
+// (DictionaryCardDetailPage). The hero card + edit toolbar differ per surface and
+// stay in each page; everything BELOW the hero (badges + the four info boxes) is
+// identical and lives here so a change to, say, the examples box shows on both.
+//
+// Drill-in wiring: when `onWordOpen` is provided (the dictionary surface),
+// breakdown/used-in rows and example-sentence segments become tappable links to
+// the card detail of that word — the same drill-in the eip offers, except it
+// opens the cdp instead of a nested eip tab. Omitted on the saved-card page, so
+// those rows stay passive there (unchanged behavior).
+
+// Info section card — same flashcard-palette tokens as the eip (fc.background +
+// fc.cardShadowSubtle) so these boxes read as one visual system and stay
+// theme-reactive.
+export const SectionCard = styled(Box)(({ theme }) => ({
+    backgroundColor: theme.palette.flashcard.background,
+    borderRadius: "16px",
+    boxShadow: theme.palette.flashcard.cardShadowSubtle,
+    padding: "14px 16px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "8px",
+}));
+
+export const SectionLabel = styled(Typography)(({ theme }) => ({
+    fontSize: SIZE.micro,
+    fontWeight: WEIGHT.bold,
+    color: theme.palette.flashcard.textSecondary,
+    letterSpacing: TRACKING.caps,
+    textTransform: "uppercase",
+    fontFamily: FC_FONT,
+}));
+
+// Badge pills — category (color-coded) plus a single level pill. The level pill
+// reads "HSK N" for zh (whose 1–6 difficulty integers ARE HSK levels) and
+// generically "Level N" for other languages sharing the same 1–6 scale.
+export const VocabCardBadges: React.FC<{ entry: VocabEntry }> = ({ entry }) => {
+    if (!(entry.category || entry.difficulty)) return null;
+    return (
+        <MetadataChipRow className="vocab-card-detail__badges-row" sx={{ justifyContent: "flex-start", marginBottom: 0 }}>
+            {entry.category && (
+                <Chip
+                    className="vocab-card-detail__category-chip"
+                    label={entry.category}
+                    size="small"
+                    sx={{
+                        backgroundColor: getCategoryColor(entry.category),
+                        color: "white",
+                        fontSize: SIZE.micro,
+                        fontWeight: WEIGHT.bold,
+                        fontFamily: FC_FONT,
+                        height: 22,
+                    }}
+                />
+            )}
+            {entry.difficulty != null && (
+                <HskPill className="vocab-card-detail__level-pill">
+                    {entry.language === 'zh' ? `HSK ${entry.difficulty}` : `Level ${entry.difficulty}`}
+                </HskPill>
+            )}
+        </MetadataChipRow>
+    );
+};
+
+interface VocabCardSectionsProps {
+    entry: VocabEntry;
+    showPinyin: boolean;
+    showPinyinColor: boolean;
+    // When set, breakdown/used-in rows and example segments drill into the card
+    // detail of the tapped word. Omit to keep them passive (saved-card page).
+    onWordOpen?: (word: string) => void;
+    // TTS for the example-sentence speaker buttons. Omit to hide audio (e.g.
+    // narration disabled in settings). Threaded straight to ExampleSentenceList.
+    onSpeakSentence?: (text: string, pronunciation?: string) => void;
+    speakingKey?: string | null;
+}
+
+export const VocabCardSections: React.FC<VocabCardSectionsProps> = ({
+    entry,
+    showPinyin,
+    showPinyinColor,
+    onWordOpen,
+    onSpeakSentence,
+    speakingKey,
+}) => {
+    const theme = useTheme();
+    const fc = theme.palette.flashcard;
+
+    const isSingleChar = [...entry.entryKey].length === 1;
+    // For single-char zh, the breakdown box is replaced by a "Used In" list (mirrors
+    // the eip's breakdown/used-in tab — see OnDeckVocabService.enrichWithUsedIn).
+    const hasUsedIn = isSingleChar && !!entry.usedIn && entry.usedIn.length > 0;
+    const hasBreakdown = !isSingleChar && !!entry.breakdown && Object.keys(entry.breakdown).length > 0;
+    const hasExpansion = !!entry.expansion;
+    const hasBreakdownBox = isSingleChar ? (hasUsedIn || hasExpansion) : (hasBreakdown || hasExpansion);
+    const breakdownItems = getBreakdownItems(entry);
+
+    const hasDefinitionBox = !!(entry.longDefinition || entry.longDefinitionParts?.length || (entry.partsOfSpeech?.length ?? 0) > 0 || entry.vernacularScore != null);
+    const hasExamples = entry.exampleSentences && entry.exampleSentences.length > 0;
+    const hasSynonyms = entry.synonyms && entry.synonyms.length > 0;
+    const hasRelatedWords = entry.relatedWords && entry.relatedWords.length > 0;
+    const hasSynonymsOrRelated = hasSynonyms || hasRelatedWords;
+
+    return (
+        <>
+            {/* Definition — mirrors the eip's "definition" tab: long definition +
+                parts-of-speech/vernacular meta strip. */}
+            {hasDefinitionBox && (
+                <SectionCard className="vocab-card-detail__definition">
+                    <SectionLabel>Definition</SectionLabel>
+                    {(entry.longDefinition || entry.longDefinitionParts?.length) && (
+                        <LongDefinitionDisplay
+                            className="vocab-card-detail__long-definition-text"
+                            longDefinition={entry.longDefinition}
+                            longDefinitionParts={entry.longDefinitionParts}
+                            showPinyin={showPinyin}
+                            showPinyinColor={showPinyinColor}
+                            sx={{ fontSize: SIZE.body, color: fc.onSurface, fontFamily: FC_FONT, lineHeight: 1.6 }}
+                        />
+                    )}
+                    {/* HSK/Level lives in the top pill list, so this strip covers only Type + Vernacular. */}
+                    {((entry.partsOfSpeech?.length ?? 0) > 0 || entry.vernacularScore != null) && (
+                        <Box
+                            className="vocab-card-detail__definition-meta-strip"
+                            sx={{
+                                display: "flex",
+                                gap: "18px",
+                                alignItems: "center",
+                                padding: "10px 0 0",
+                                borderTop: `1px solid ${fc.border}`,
+                            }}
+                        >
+                            {(entry.partsOfSpeech?.length ?? 0) > 0 && (
+                                <Box sx={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+                                    <SectionLabel>Type</SectionLabel>
+                                    <Typography sx={{ fontSize: SIZE.body, fontWeight: WEIGHT.semibold, color: fc.onSurface, fontFamily: FC_FONT }}>
+                                        {entry.partsOfSpeech!.join(', ')}
+                                    </Typography>
+                                </Box>
+                            )}
+                            {entry.vernacularScore != null && (
+                                <Box className="vocab-card-detail__vernacular-meta" sx={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+                                    <SectionLabel>Vernacular</SectionLabel>
+                                    <Box sx={{ display: "flex", alignItems: "center", gap: "4px", height: 19 }}>
+                                        {[1, 2, 3, 4, 5].map((level) => {
+                                            const filled = level <= entry.vernacularScore!;
+                                            return (
+                                                <Box
+                                                    key={level}
+                                                    sx={{
+                                                        width: 8,
+                                                        height: 8,
+                                                        borderRadius: "50%",
+                                                        background: filled ? fc.onSurface : "transparent",
+                                                        border: `1.5px solid ${filled ? fc.onSurface : fc.border}`,
+                                                    }}
+                                                />
+                                            );
+                                        })}
+                                    </Box>
+                                </Box>
+                            )}
+                        </Box>
+                    )}
+                </SectionCard>
+            )}
+
+            {/* Character Breakdown / Used In + Expansion — mirrors the eip's combined
+                "breakdown" tab (per-character rows for multi-char entries, or "Used In"
+                for single-char zh, plus the Expanded Form block). */}
+            {hasBreakdownBox && (
+                <SectionCard className="vocab-card-detail__breakdown">
+                    <SectionLabel className="vocab-card-detail__section-label">
+                        {isSingleChar ? "Used In" : "Character Breakdown"}
+                    </SectionLabel>
+                    {(isSingleChar ? hasUsedIn : hasBreakdown) && (
+                        <Box className="vocab-card-detail__breakdown-list">
+                            {isSingleChar
+                                ? entry.usedIn!.map((item, index) => (
+                                    <InfoCardListRow
+                                        key={`${item.vocabEntryId ?? 'det'}-${item.entryKey}`}
+                                        className="vocab-card-detail__used-in-row"
+                                        character={item.entryKey}
+                                        pinyin={item.pronunciation ?? ""}
+                                        definition={item.definition ?? ""}
+                                        size="sm"
+                                        showPinyin={showPinyin}
+                                        showPinyinColor={showPinyinColor}
+                                        isLast={index === entry.usedIn!.length - 1}
+                                        onClick={onWordOpen ? () => onWordOpen(item.entryKey) : undefined}
+                                    />
+                                ))
+                                : breakdownItems.map((item, index) => (
+                                    <InfoCardListRow
+                                        key={item.character}
+                                        className="vocab-card-detail__breakdown-row"
+                                        character={item.character}
+                                        pinyin={item.pinyin}
+                                        definition={item.definition}
+                                        size="md"
+                                        showPinyin={showPinyin}
+                                        showPinyinColor={showPinyinColor}
+                                        isLast={index === breakdownItems.length - 1}
+                                        onClick={onWordOpen ? () => onWordOpen(item.character) : undefined}
+                                    />
+                                ))}
+                        </Box>
+                    )}
+                    {hasExpansion && (
+                        <Box
+                            className="vocab-card-detail__expansion"
+                            sx={{
+                                background: fc.subtleBg,
+                                borderRadius: "10px",
+                                padding: "12px 14px",
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: "8px",
+                            }}
+                        >
+                            <SharedCharsLabel className="vocab-card-detail__expansion-label">
+                                Expanded Form
+                            </SharedCharsLabel>
+                            <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
+                                <SegmentedSentenceDisplay
+                                    sentence={{
+                                        foreignText: entry.expansion!,
+                                        _segments: entry.expansionSegments ?? [...entry.expansion!],
+                                        segmentMetadata: entry.expansionMetadata ?? undefined,
+                                    }}
+                                    size="md"
+                                    compact
+                                    flexWrap="wrap"
+                                    justifyContent="center"
+                                    className="vocab-card-detail__expansion-chars"
+                                    showPinyin={showPinyin}
+                                    showPinyinColor={showPinyinColor}
+                                />
+                                {entry.expansionLiteralTranslation && (
+                                    <Typography sx={{
+                                        fontSize: SIZE.micro,
+                                        color: fc.textSecondary,
+                                        fontFamily: FC_FONT,
+                                        fontStyle: "italic",
+                                        textAlign: "center",
+                                        lineHeight: LEADING.normal,
+                                    }}>
+                                        "{stripParentheses(entry.expansionLiteralTranslation)}"
+                                    </Typography>
+                                )}
+                            </Box>
+                        </Box>
+                    )}
+                </SectionCard>
+            )}
+
+            {/* Example Sentences — same shared est renderer as the eip's Examples tab. */}
+            {hasExamples && (
+                <SectionCard className="vocab-card-detail__examples">
+                    <SectionLabel className="vocab-card-detail__section-label">Example Sentences</SectionLabel>
+                    <ExampleSentenceList
+                        sentences={entry.exampleSentences!}
+                        vocabWord={entry.entryKey}
+                        language={entry.language}
+                        showPinyin={showPinyin}
+                        showPinyinColor={showPinyinColor}
+                        // Denser than the eip because the cdp stacks several info boxes.
+                        compact
+                        onSegmentOpen={onWordOpen}
+                        onSpeakSentence={onSpeakSentence}
+                        speakingKey={speakingKey}
+                    />
+                </SectionCard>
+            )}
+
+            {/* Synonyms & Related Words — not part of the eip's tabs, so this one box
+                holds both, kept at the very bottom. */}
+            {hasSynonymsOrRelated && (
+                <SectionCard className="vocab-card-detail__synonyms-related">
+                    {hasSynonyms && (
+                        <>
+                            <SectionLabel className="vocab-card-detail__section-label">Synonyms</SectionLabel>
+                            <Box className="vocab-card-detail__synonyms-list" sx={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                                {entry.synonyms!.map((syn) => {
+                                    const meta = entry.synonymsMetadata?.[syn];
+                                    return (
+                                        <Box
+                                            className="vocab-card-detail__synonym-item"
+                                            key={syn}
+                                            sx={{
+                                                backgroundColor: fc.subtleBg,
+                                                borderRadius: "8px",
+                                                padding: "6px 12px",
+                                                display: "flex",
+                                                flexDirection: "column",
+                                                alignItems: "center",
+                                                gap: "2px",
+                                            }}
+                                        >
+                                            <ForeignText
+                                                size="md"
+                                                compact
+                                                text={syn}
+                                                pronunciation={meta?.pronunciation}
+                                            />
+                                            {meta?.definition && (
+                                                <Typography sx={{ fontSize: SIZE.caption, color: fc.textSecondary, fontFamily: FC_FONT, fontStyle: "italic" }}>
+                                                    {stripParentheses(meta.definition)}
+                                                </Typography>
+                                            )}
+                                        </Box>
+                                    );
+                                })}
+                            </Box>
+                        </>
+                    )}
+                    {hasRelatedWords && (
+                        <>
+                            <SectionLabel className="vocab-card-detail__section-label" sx={hasSynonyms ? { mt: 1 } : undefined}>Related Words</SectionLabel>
+                            <Box className="vocab-card-detail__related-words-list" sx={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                                {entry.relatedWords!.map((rel) => (
+                                    <Box
+                                        className="vocab-card-detail__related-word-item"
+                                        key={rel.id}
+                                        sx={{
+                                            backgroundColor: fc.subtleBg,
+                                            borderRadius: "8px",
+                                            padding: "6px 12px",
+                                            display: "flex",
+                                            flexDirection: "column",
+                                            alignItems: "center",
+                                            gap: "2px",
+                                        }}
+                                    >
+                                        <ForeignText
+                                            size="md"
+                                            compact
+                                            text={rel.entryKey}
+                                            pronunciation={rel.pronunciation}
+                                        />
+                                        {rel.definition && (
+                                            <Typography sx={{ fontSize: SIZE.caption, color: fc.textSecondary, fontFamily: FC_FONT, fontStyle: "italic" }}>
+                                                {stripParentheses(rel.definition)}
+                                            </Typography>
+                                        )}
+                                    </Box>
+                                ))}
+                            </Box>
+                        </>
+                    )}
+                </SectionCard>
+            )}
+        </>
+    );
+};

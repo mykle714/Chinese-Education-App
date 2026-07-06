@@ -19,10 +19,10 @@ import { COLORS } from "../theme/colors";
 //      scroll area reserves matching bottom padding (FLOATING_FOOTER_CLEARANCE)
 //      so the last row never hides behind the pill.
 //
-// Other surfaces compose PageHeader / MobileFooter directly instead of using this
-// shell: detail / back-button screens that still show the nav (e.g. card detail,
-// mastered cards) anchor the same floating pill to the phone frame and reserve
-// their own clearance; focused drill-in screens with no footer (the drag-to-sort
+// Footer-bearing back-button screens (node pages: card detail, mastered cards,
+// dictionary + the dictionary cdp) reuse this shell THROUGH `NodePage`, so they
+// inherit the scroll-away header + floating-footer clearance here rather than
+// reserving their own. Focused drill-in screens with no footer (the drag-to-sort
 // page, in-game canvases) just render a back-button PageHeader. See
 // docs/MOBILE_TAB_SCREEN_LAYOUT.md and docs/DISCOVER_FLOW.md.
 
@@ -38,7 +38,11 @@ type ActivePage = FooterTab;
 //     out right where they pass behind the pill.
 const EDGE_FADE_TOP = 28;
 const EDGE_FADE_BOTTOM = FLOATING_FOOTER_CLEARANCE - FLOATING_FOOTER_INSET;
+// Full mask fades both edges; when a page opts out of the top fade (topFade=false)
+// the top band is dropped so the first rows stay fully opaque (only the bottom
+// fades out behind the floating footer).
 const EDGE_FADE_MASK = `linear-gradient(to bottom, transparent 0, #000 ${EDGE_FADE_TOP}px, #000 calc(100% - ${EDGE_FADE_BOTTOM}px), transparent 100%)`;
+const EDGE_FADE_MASK_NO_TOP = `linear-gradient(to bottom, #000 0, #000 calc(100% - ${EDGE_FADE_BOTTOM}px), transparent 100%)`;
 
 // Positioning context for the floating footer pill + full-height flex column.
 const ScreenRoot = styled(Box)(() => ({
@@ -56,7 +60,9 @@ const ScreenRoot = styled(Box)(() => ({
 // SHRINK to fit the viewport (an `overflow: auto` box would instead scroll, so its
 // flex children keep their intrinsic size and overflow under the floating footer).
 // Non-scrolling pages also drop the edge-fade mask (it would clip their edge rows).
-const ScrollArea = styled(Box)<{ scrollable: boolean }>(({ scrollable }) => ({
+const ScrollArea = styled(Box, {
+    shouldForwardProp: (prop) => prop !== "scrollable" && prop !== "topFade",
+})<{ scrollable: boolean; topFade: boolean }>(({ scrollable, topFade }) => ({
     flex: 1,
     minHeight: 0,
     overflowY: scrollable ? "auto" : "hidden",
@@ -70,7 +76,13 @@ const ScrollArea = styled(Box)<{ scrollable: boolean }>(({ scrollable }) => ({
     WebkitOverflowScrolling: "touch",
     paddingBottom: FLOATING_FOOTER_CLEARANCE,
     // Soft fade at the top/bottom edges (see EDGE_FADE_MASK above), scrollable pages only.
-    ...(scrollable ? { maskImage: EDGE_FADE_MASK, WebkitMaskImage: EDGE_FADE_MASK } : {}),
+    // Pages that opt out of the top fade (topFade=false) drop the top band.
+    ...(scrollable
+        ? (() => {
+              const mask = topFade ? EDGE_FADE_MASK : EDGE_FADE_MASK_NO_TOP;
+              return { maskImage: mask, WebkitMaskImage: mask };
+          })()
+        : {}),
 }));
 
 // Page content column. `flex: 1` makes it fill the viewport on short pages so the
@@ -109,6 +121,9 @@ interface MobileTabScreenProps {
     // Fixed, non-scrolling pages set this false: content is clipped (not scrolled) so
     // the inner flex column shrinks to fit, and the edge-fade mask is dropped.
     scrollable?: boolean;
+    // Drop the soft fade at the TOP edge (keeps the bottom fade). Pages whose first
+    // element shouldn't dissolve as it scrolls (e.g. the card detail cdp) set false.
+    topFade?: boolean;
     children: ReactNode;
 }
 
@@ -124,10 +139,11 @@ const MobileTabScreen: React.FC<MobileTabScreenProps> = ({
     contentClassName,
     className,
     scrollable = true,
+    topFade = true,
     children,
 }) => (
     <ScreenRoot className={className ?? "mobile-tab-screen"} sx={{ backgroundColor: surfaceColor }}>
-        <ScrollArea className="mobile-tab-screen__scroll" scrollable={scrollable}>
+        <ScrollArea className="mobile-tab-screen__scroll" scrollable={scrollable} topFade={topFade}>
             <MobileDemoHeader
                 title={title}
                 activePage={activePage}

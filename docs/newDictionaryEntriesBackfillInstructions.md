@@ -31,8 +31,8 @@ Every column in `dictionaryentries_zh` and the script responsible for populating
 | `segmentMetadata` | *Not stored — computed at runtime* | Deterministic via `DictionaryDAL.enrichExampleSentencesMetadataBatch()` | — | zh |
 | `breakdown` | `backfill/chinese/backfill-dictionary-breakdown.js` | Deterministic | **Yes** | zh (multi-char only) |
 | `classifier` | `backfill/chinese/backfill-classifier.js` | AI (Claude Sonnet) | **Yes** | zh |
-| `expansion` | Manual / AI enrichment pipeline | — | — | zh |
-| `expansionLiteralTranslation` | `backfill/chinese/backfill-expansion.js` | AI (Claude) | **Yes** | zh |
+| `expansion` | `backfill/chinese/backfill-expansion-claude.js` | AI (Claude Sonnet) | **Yes** | zh |
+| `expansionLiteralTranslation` | `backfill/chinese/backfill-expansion-claude.js` | AI (Claude Sonnet) | **Yes** | zh |
 | `createdAt` | DB auto-set | — | — | all |
 
 **Note on runtime-computed fields:** `shortDefinition`, `synonymsMetadata`, and `segmentMetadata` (per-sentence pronunciation/definition/particle data for example sentences) are **never stored in the database**. They are computed on-the-fly at the service layer for every API response.
@@ -121,6 +121,16 @@ docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-classifi
 Populates: `classifier`
 Filter: `language = 'zh' AND discoverable = TRUE AND classifier IS NULL`
 Note: Determines measure words for count nouns. Sets `[]` (not a count noun) or a non-empty array (e.g. `["辆"]`). NULL means not yet processed. Use `--spot-check` flag to preview 5 entries first.
+
+---
+
+**Step 9 — Expansion + Literal Translation**
+```bash
+docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-expansion-claude.js --words=word1,word2
+```
+Populates: `expansion`, `expansionLiteralTranslation`
+Filter: `language = 'zh' AND discoverable = TRUE AND (expansion IS NULL OR (expansion != '' AND "expansionLiteralTranslation" IS NULL))`
+Note: Runs **last** — it segments the accepted expansion and looks up each segment's `definitions`, so it benefits from neighboring words already being enriched. Multi-agent generator → deterministic checks → validator → one retry. Writes the sentinel `''` (empty string) when no valid expansion exists — this is a legitimate terminal state, not a coverage gap, so many discoverable words will have a blank `expansion`. `expansionSegments`/`expansionMetadata` are computed at runtime, not stored here.
 
 ---
 

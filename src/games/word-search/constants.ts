@@ -12,6 +12,38 @@ export const GAME_DISTRIBUTION: Record<string, number> = Object.fromEntries(
 /** Total target words in a board (sum of the distribution) = 10. */
 export const TOTAL_WORDS = Object.values(GAME_DISTRIBUTION).reduce((a, b) => a + b, 0);
 
+/**
+ * Word Search ships as two separate Games-hub entries (like Bubble Match's
+ * difficulty levels), NOT one game with an in-game pinyin toggle: a "Pinyin"
+ * board (colored pinyin always on) and a "No Pinyin" board. The chosen mode is
+ * fixed for the whole run — passed via nav `state.mode` from the hub, with no
+ * in-game switch — and each mode keeps its OWN saved board (see gameStateStorage
+ * `mode` scoping). The old shared `useFlashcardLearnSettings` pinyin/colorless
+ * toggles no longer drive this game. See docs/WORD_SEARCH_GAME.md §3.
+ */
+export type WordSearchMode = "pinyin" | "no-pinyin";
+
+export interface WordSearchModeConfig {
+    mode: WordSearchMode;
+    /** Whether the grid renders the per-cell pinyin row (always colored when on;
+     *  the colorless variant was removed). */
+    showPinyin: boolean;
+    /** Hub sub-card subtitle. */
+    label: string;
+}
+
+export const MODE_CONFIGS: WordSearchModeConfig[] = [
+    { mode: "pinyin", showPinyin: true, label: "Pinyin" },
+    { mode: "no-pinyin", showPinyin: false, label: "No Pinyin" },
+];
+
+/** Resolve a mode slug (from nav state) to its config, or null if missing/invalid
+ *  — the page redirects to /games rather than defaulting, so a mode must be
+ *  explicitly chosen from the hub. */
+export function modeConfigFor(mode: unknown): WordSearchModeConfig | null {
+    return MODE_CONFIGS.find((m) => m.mode === mode) ?? null;
+}
+
 /** `?Unfamiliar=2&Target=10&...` query built from the distribution. */
 export const GRID_QUERY = Object.entries(GAME_DISTRIBUTION)
     .map(([cat, n]) => `${encodeURIComponent(cat)}=${n}`)
@@ -102,8 +134,8 @@ export const MISS_FLASH_MS = 320;
  * lowest tier if slow. Tunable. See doc §5.
  */
 export const MEDAL_THRESHOLDS: { medal: Medal; maxSeconds: number; emoji: string }[] = [
-    { medal: "gold", maxSeconds: 90, emoji: "🥇" },
-    { medal: "silver", maxSeconds: 180, emoji: "🥈" },
+    { medal: "gold", maxSeconds: 60, emoji: "🥇" },
+    { medal: "silver", maxSeconds: 120, emoji: "🥈" },
     { medal: "bronze", maxSeconds: Infinity, emoji: "🥉" },
 ];
 

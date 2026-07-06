@@ -40,6 +40,8 @@ interface NodePageProps {
     // Fixed, non-scrolling node pages set this false so content is clipped (not
     // scrolled) — the inner flex column shrinks to fit — and the edge fade is dropped.
     scrollable?: boolean;
+    // Drop the soft fade at the TOP edge (keeps the bottom fade). See MobileTabScreen.
+    topFade?: boolean;
     children: ReactNode;
 }
 
@@ -52,6 +54,7 @@ const NodePage: React.FC<NodePageProps> = ({
     contentSx,
     contentClassName,
     scrollable,
+    topFade,
     children,
 }) => {
     const { surfaceRef, style, exit } = usePageSlide({ axis: "x" });
@@ -74,6 +77,7 @@ const NodePage: React.FC<NodePageProps> = ({
                 contentSx={contentSx}
                 contentClassName={contentClassName}
                 scrollable={scrollable}
+                topFade={topFade}
             >
                 {children}
             </MobileTabScreen>

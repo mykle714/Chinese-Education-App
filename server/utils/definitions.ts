@@ -95,6 +95,30 @@ export function longDefObjectToDisplayString(
   return segments.map(({ pos, def }) => `${pos}: ${def}`).join('\n\n');
 }
 
+/**
+ * Strip all parenthetical substrings from a definition string for display.
+ * Does not mutate the underlying database value.
+ * e.g. "to go (informal); to leave (a place)" → "to go; to leave"
+ *
+ * Server twin of `stripParentheses` in `src/utils/definitionUtils.ts` — kept in
+ * sync manually (separate client/server builds).
+ */
+export function stripParentheses(text: string): string {
+  return text.replace(/\s*\([^)]*\)/g, '').trim();
+}
+
+/**
+ * Display Definition Transformation (ddt) — the per-cluster analog of dd
+ * (`definitions[0]` stripped of parentheticals). A cluster's `glosses` are already
+ * ordered prototypical→vernacular within the sense (backfill Stage B), so the lead
+ * gloss is the cluster's own "definitions[0]". Used server-side by the example-
+ * sentence segment enrichment to render a segment's tagged sense as its dd.
+ * Server twin of `ddt` in `src/utils/definitionUtils.ts`. See docs/DEFINITION_CLUSTERS.md.
+ */
+export function ddt(cluster: { glosses: string[] }): string {
+  return stripParentheses(cluster.glosses[0] ?? '');
+}
+
 // Inline type to avoid a circular dependency with server/types/index.ts
 type ShortDefinitionPronunciationOverride = { definition?: string | null; pronunciation?: string | null };
 

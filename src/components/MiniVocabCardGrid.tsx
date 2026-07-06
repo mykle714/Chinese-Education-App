@@ -26,10 +26,17 @@ const CardsPreviewContainer = styled(Box)(() => ({
 // useIncrementalList, which keeps each render small so the page's buttons stay
 // pressable while a large deck fills in. The paced reveal also *is* the pop-in
 // cascade: each row's cards pop together (delay 0) the moment they're revealed,
-// and the timer gap makes successive rows read as a sequential waterfall. Every
-// card animates, so there is no per-index delay cap and none sits invisible
-// waiting its turn.
+// and the timer gap makes successive rows read as a sequential waterfall. Only
+// the first CASCADE_LIMIT cards take part in this waterfall; the rest appear at
+// once with no animation (see CASCADE_LIMIT below).
 const REVEAL_BATCH = 3;
+
+// Only the first N cards participate in the paced reveal / pop-in cascade; once
+// they've animated in, every remaining card is revealed in a single commit and
+// rendered with no entrance animation. This keeps the waterfall short and snappy
+// for large decks (mastered can be hundreds of cards) instead of dragging the
+// stagger out over the whole list.
+const CASCADE_LIMIT = 15;
 
 // Geometry used to reserve the grid's final height up front. Without this, each
 // revealed row would grow the container and push everything below it (the next
@@ -78,7 +85,7 @@ const MiniVocabCardGrid: React.FC<MiniVocabCardGridProps> = ({
 }) => {
     // Progressively reveal the deck so a large list never mounts in one blocking
     // render (keeps taps on surrounding buttons responsive).
-    const visibleEntries = useIncrementalList(entries, REVEAL_BATCH);
+    const visibleEntries = useIncrementalList(entries, REVEAL_BATCH, undefined, CASCADE_LIMIT);
 
     // Reserve the final height while cards are being revealed so growing rows
     // don't push sibling sections below the grid downward (see reservedGridHeight).
@@ -109,14 +116,16 @@ const MiniVocabCardGrid: React.FC<MiniVocabCardGridProps> = ({
                     </Alert>
                 </Box>
             ) : (
-                // Each card pops in on reveal (delay 0); the paced reveal between
-                // rows produces the sequential cascade.
-                visibleEntries.map((entry) => (
+                // The first CASCADE_LIMIT cards pop in on reveal (delay 0) and the
+                // paced reveal between rows produces the sequential cascade; cards
+                // past the limit are revealed all at once and render with no
+                // entrance animation (undefined animationDelayMs).
+                visibleEntries.map((entry, index) => (
                     <MiniVocabCard
                         key={entry.id}
                         entry={entry}
                         onClick={onCardClick}
-                        animationDelayMs={0}
+                        animationDelayMs={index < CASCADE_LIMIT ? 0 : undefined}
                     />
                 ))
             )}

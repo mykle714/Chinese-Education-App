@@ -22,7 +22,7 @@ import CardIconCanvas from "./CardIconCanvas";
 import { measureDefaultEnglishCenterY } from "../../../cardIcons/cardTextLayout";
 import CardEditToolbar, { CARD_EDIT_ANIM_MS, CARD_EDIT_ANIM_EASING, TOOLBAR_DROPDOWN_SELECTOR } from "./CardEditToolbar";
 import IconPickerDialog from "../../../components/IconPickerDialog";
-import { iconSearchTerm, stripParentheses } from "../../../utils/definitionUtils";
+import { iconSearchTerm, stripParentheses, resolveSelectedSenseIndex } from "../../../utils/definitionUtils";
 import SheetPanel, { type SheetPanelBodyHandle } from "./SheetPanel";
 import SettingsPanelBody from "./SettingsPanelBody";
 import {
@@ -187,6 +187,7 @@ const FlashcardsLearnPage: React.FC = () => {
         handleResizeStep,
         handleSaveLayout,
         handleResetConfirmed,
+        persistSelectedSense,
         undoAdv,
         redoAdv,
         pushAdvHistory,
@@ -211,28 +212,12 @@ const FlashcardsLearnPage: React.FC = () => {
         return () => clearWritingDraft();
     }, [currentIndex]);
 
-    // Log enrichment data for the current card whenever it changes (covers both correct and incorrect advances)
+    // Log the current card whenever it changes (covers both correct and incorrect advances).
+    // Dumps the card object verbatim as it arrived from the server (no key-picking or
+    // null→'none' coercion) so the console reflects the raw working-loop response.
     useEffect(() => {
         if (!currentEntry) return;
-        console.log('Current card:', { id: currentEntry.id, entryKey: currentEntry.entryKey });
-        console.log('Current card enrichment:', {
-            definition: currentEntry.definition ?? 'none',
-            pronunciation: currentEntry.pronunciation ?? 'none',
-            difficulty: currentEntry.difficulty ?? 'none',
-            partsOfSpeech: currentEntry.partsOfSpeech ?? 'none',
-            vernacularScore: currentEntry.vernacularScore ?? 'none',
-            category: currentEntry.category ?? 'none',
-            breakdown: currentEntry.breakdown ?? 'none',
-            longDefinition: currentEntry.longDefinition ?? 'none',
-            exampleSentences: currentEntry.exampleSentences ?? 'none',
-            expansion: currentEntry.expansion ?? 'none',
-            expansionSegments: currentEntry.expansionSegments ?? 'none',
-            expansionMetadata: currentEntry.expansionMetadata ?? 'none',
-            expansionLiteralTranslation: currentEntry.expansionLiteralTranslation ?? 'none',
-            relatedWords: currentEntry.relatedWords ?? 'none',
-            usedIn: currentEntry.usedIn ?? 'none',
-            hasAudio: currentEntry.hasAudio ?? 'none',
-        });
+        console.log('Current card (raw):', currentEntry);
         // Working loop cards grouped by category
         const categories = ['Unfamiliar', 'Target', 'Comfortable', 'Mastered'] as const;
         const byCategory = Object.fromEntries(
@@ -519,6 +504,8 @@ const FlashcardsLearnPage: React.FC = () => {
                     handlers={handlers}
                     onSpeak={tts.enabled ? tts.speak : undefined}
                     speakingKey={tts.speakingKey}
+                    // Persist the learner's definition-cluster sense pick per account (migration 99).
+                    onPersistSense={persistSelectedSense}
                     // Gesture canvas only in advanced mode; basic mode renders the draft
                     // through the static icon layer (via editingCurrentEntry above).
                     editCanvas={editMode && advMode ? (
@@ -551,7 +538,16 @@ const FlashcardsLearnPage: React.FC = () => {
                                     inlineActions
                                 />
                             ) : null}
-                            englishNode={editingCurrentEntry ? <EnglishBlock entry={editingCurrentEntry} /> : null}
+                            englishNode={editingCurrentEntry ? (
+                                // Mirror the live card's currently-shown sense in the movable-text
+                                // preview. CardFace owns the live index, but it stays in lockstep with
+                                // the entry's persisted/override `selectedSense`, so we resolve the same
+                                // display index from editingCurrentEntry (migration 99).
+                                <EnglishBlock
+                                    entry={editingCurrentEntry}
+                                    selectedSenseIndex={resolveSelectedSenseIndex(editingCurrentEntry)}
+                                />
+                            ) : null}
                         />
                     ) : undefined}
                     editMode={editMode}
@@ -607,6 +603,7 @@ const FlashcardsLearnPage: React.FC = () => {
                             onClose={closeEip}
                             onBreakdownItemClick={(item) => eip.openForEntryKey(item.character)}
                             onUsedInItemClick={(item) => eip.openForEntryKey(item.entryKey)}
+                            onExampleSegmentClick={(segment) => eip.openForEntryKey(segment)}
                             depth={0}
                             onSpeak={tts.enabled ? tts.speak : undefined}
                             onSpeakSentence={tts.enabled ? speakSentenceAtRate : undefined}

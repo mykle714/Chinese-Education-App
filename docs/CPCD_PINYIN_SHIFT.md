@@ -101,6 +101,40 @@ left-anchored spill. A fitting syllable has `halfRight == halfLeft`, so this is 
 no-op. This keeps a single wide pinyin (e.g. `shuāng` over a lone 双) centered
 rather than spilling only rightward.
 
+## Same-tone separator apostrophes
+
+Tone color is what normally signals where one syllable ends and the next begins.
+When a run of **same-tone** syllables crowds together (their pinyin texts relaxed
+to the `PINYIN_MIN_GAP_PX` minimum, or naturally near-touching), that cue
+disappears and the run reads as **one long word** — e.g. 冰箱 `bīng xiāng` (both
+tone 1) blurring into `bīngxiāng`.
+
+To restore the boundary, `positionPinyins()` draws a **text-colored apostrophe**
+(`&rsquo;` — the standard pinyin syllable divider, as in *Xi'an*) in the gap
+between any adjacent pair that is **both** (a) the same tone color
+(`getToneColor(left) === getToneColor(right)`) and (b) crowded — meaning the
+collision solver actually **pushed** that pair apart (`pushed[k]`), relaxing their
+touching texts to the bare `PINYIN_MIN_GAP_PX` minimum. Using the solver's own
+"did I push this pair?" flag (rather than an absolute pixel threshold) is what
+keeps apostrophes off pairs that merely sit a few px apart but read as clearly
+separated. Pairs of different color (already color-separated) and same-color pairs
+the solver left alone (any comfortable natural gap) get **no apostrophe**.
+
+- It is placed at the midpoint of the real, post-shift gap
+  (`rightEdge[i]`/`leftEdge[i+1]` derived from the same `centers`/`offsets`/
+  `halfLeft`/`halfRight` the solver produced), horizontally centered on that
+  midpoint via a `translateX(-50%)` on the shrink-wrapped glyph, and **top-anchored
+  to the pinyin band** so it rides near the top of the pinyin text (not inline with
+  it). It is **drawn on top** in a separate overlay above the pinyin layer, so it
+  **consumes no layout space** — the shift math is unchanged; apostrophes are purely
+  additive.
+- Apostrophes are `pointer-events: none` + `user-select: none` and `aria-hidden`,
+  so they never join a pinyin drag-copy and are skipped by assistive tech.
+- Rendered as `items.length − 1` spans indexed by the **left** syllable's item
+  index; each is hidden at the top of every `positionPinyins()` pass and re-shown
+  only if its pair qualifies. Pairs that straddle a wrapped line are never adjacent
+  within a visual row, so no apostrophe is drawn across the wrap.
+
 ## Where it runs
 
 - `positionPinyins()` in `src/components/CPCDRow.tsx` runs in a

@@ -31,6 +31,17 @@ export interface IVocabEntryDAL extends IBaseDAL<VocabEntry, VocabEntryCreateDat
     textLayout?: TextLayout | null,
     cardColor?: string | null
   ): Promise<VocabEntry | null>;
+  /**
+   * Persist (or clear) the chosen definition-cluster sense for one vet row (migration 99).
+   * `selectedSense` = the cluster's `sense` label; `null` clears it (default/starred sense).
+   * Returns the updated row, or null when no row matches. See docs/DEFINITION_CLUSTERS.md.
+   */
+  updateSelectedSense(
+    userId: string,
+    id: string | number,
+    language: string,
+    selectedSense: string | null
+  ): Promise<VocabEntry | null>;
   findByUserIdAndLanguage(userId: string, language: string, limit?: number, offset?: number): Promise<VocabEntry[]>;
   findByUserAndKey(userId: string, entryKey: string, language: string, pos?: string): Promise<VocabEntry | null>;
   countByUserIdAndLanguage(userId: string, language: string): Promise<number>;

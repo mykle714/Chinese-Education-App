@@ -56,7 +56,7 @@ across all languages**. Only the *displayed* per-language counts come from
 
 ### Client
 
-- `useMinutePoints` (hook) — local accumulating timer + reads the per-language server summary (`fetchLanguageSummary`). Scoped to `user.selectedLanguage`; re-seeds today/total/streak when the language changes. localStorage is keyed by `(userId, language)`.
+- `useMinutePoints` (hook) — local accumulating timer + reads the per-language server summary (`fetchLanguageSummary`). Scoped to `user.selectedLanguage`; re-seeds today/total/streak when the language changes. localStorage is keyed by `(userId, language)`. The timer runs only while `isActive`, which `useActivityDetection` sets on the first `click`/`keydown`/`touchstart`/`pointerdown` and holds for `ACTIVITY_TIMEOUT_MS` (15s) after the last interaction. **Auto-active on game entry:** for pages matching `MINUTE_POINTS_AUTO_ACTIVE_PAGES` (`/games/*`, see `src/constants.ts`) the hook calls `recordActivity()` on mount so accrual starts immediately, without waiting for the first tap; other eligible pages (flashcards, reader) still require an interaction.
 - `useCalendarMinutePoints` (hook) — fetches the calendar endpoint with `?language=`, derives `isToday`/`hasData` in browser tz.
 - `minutePointsSync.incrementMinutePoint` — POSTs include `{ timestamp, tz }` (no language; server uses `selectedLanguage`). `fetchLanguageSummary` GETs `/summary?language&tz&timestamp`. The tz is taken from `Intl.DateTimeFormat().resolvedOptions().timeZone`.
 - `authSync.notifyLogin` — fired from `AuthContext` after login and session restore; POSTs `{ tz }` to `/api/auth/on-login` so `users.timezone` stays fresh even for users who don't earn points.

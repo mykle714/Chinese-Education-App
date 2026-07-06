@@ -321,6 +321,39 @@ export async function importVocabFromCSV(
 }
 
 /**
+ * Persist (or clear) the learner's chosen definition-cluster sense for one vet row
+ * (migration 99). `selectedSense` is the cluster's `sense` LABEL — stable across
+ * re-clustering, unlike a positional index; pass `null` to clear back to the default/starred
+ * sense. Only meaningful for a real vet row (a user's saved card); the read-only dictionary
+ * cdp uses a det-fallback entry with no user context and never calls this. See
+ * docs/DEFINITION_CLUSTERS.md.
+ *
+ * @returns the row's persisted `selectedSense` after the write (echoed by the server).
+ */
+export async function saveSelectedSense(
+  entryId: number,
+  selectedSense: string | null,
+  token: string | null
+): Promise<{ id: number; selectedSense: string | null }> {
+  const response = await fetch(`${API_BASE_URL}/api/vocabEntries/${entryId}/selected-sense`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    credentials: 'include',
+    body: JSON.stringify({ selectedSense }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+/**
  * Estimates the number of API calls needed for a given set of tokens
  * Useful for performance monitoring and user feedback
  * @param tokens Array of tokens to analyze

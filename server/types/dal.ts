@@ -107,6 +107,17 @@ export class DatabaseConnectionError extends DALError {
   }
 }
 
+/**
+ * A per-user abuse/rate limit was exceeded (HTTP 429). `message` is user-facing
+ * (e.g. the dictionary AI-fallback daily cap). See docs/DICTIONARY_AI_FALLBACK_SEARCH.md.
+ */
+export class RateLimitError extends DALError {
+  constructor(message: string, originalError?: any) {
+    super(message, 'ERR_RATE_LIMIT', 429, originalError);
+    this.name = 'RateLimitError';
+  }
+}
+
 // Transaction wrapper interface
 export interface ITransaction {
   commit(): Promise<void>;

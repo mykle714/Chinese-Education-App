@@ -19,6 +19,7 @@ import FlashcardsDecksPage from "./features/flashcards/FlashcardsDecksPage";
 import ReaderPage from "./features/reader/ReaderPage";
 import NightMarketEnginePage from "./features/nightmarket/NightMarketEnginePage";
 import DictionaryPage from "./pages/DictionaryPage";
+import DictionaryCardDetailPage from "./pages/DictionaryCardDetailPage";
 import DiscoverPage from "./pages/DiscoverPage";
 import TesterDashboardPage from "./pages/TesterDashboardPage";
 import SortCardsPage from "./pages/SortCardsPage";
@@ -95,6 +96,11 @@ function App() {
                 <Route path="/dictionary" element={
                   <ProtectedRoute allowPublic>
                     <DictionaryPage />
+                  </ProtectedRoute>
+                } />
+                <Route path="/dictionary/card/:word" element={
+                  <ProtectedRoute allowPublic>
+                    <DictionaryCardDetailPage />
                   </ProtectedRoute>
                 } />
                 <Route path="/discover" element={

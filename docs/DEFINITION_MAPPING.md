@@ -62,6 +62,13 @@ Child docs:
 - **Then:** split into `longDefinitionParts` (`LongDefinitionPart[]`) — alternating
   English-prose and cpcd-able Chinese runs for the renderer
   (`server/types/index.ts:122`).
+- **Renderer:** `LongDefinitionDisplay` (`src/components/LongDefinitionDisplay.tsx`)
+  renders each Chinese part as an inline `SegmentedSentenceDisplay`. In the **eip**
+  (`InfoCardPanelBody.tsx` definition tab) it forwards `onSegmentOpen`
+  (= `onExampleSegmentClick` → `eip.openForEntryKey`), so the segment popup is
+  tappable and drills into the eip for that headword — the same gesture as the est
+  popups. The cdp (`VocabCardDetailPage.tsx`) omits `onSegmentOpen`, so there the
+  popup stays a passive tooltip (it has no eip).
 - **Producer:** `backfill-long-definitions.js`.
 
 ### 6. `definitionClusters` — orthogonal sense clusters
@@ -73,8 +80,13 @@ Child docs:
 - **Full detail:** [DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md).
 
 ### 7. Per-segment / contextual definitions
-- `segmentMetadata[seg].definition` — context-matched gloss for a token inside an
-  example sentence or expansion (`server/types/index.ts:170`, `:391`).
+- `segmentMetadata[seg].definition` — per-segment gloss for a token inside an example
+  sentence or expansion (`server/types/index.ts`, `buildSegmentMetadata` in
+  `server/dal/shared/segmentString.ts`). In **example sentences**, resolution is:
+  manual override → the segment's tagged sense `senseDict[seg]` → `ddt(matchingCluster)`
+  (the cluster's stripped lead gloss, form #6 → #3-style transform) → else the legacy
+  translation string-match (`pickDefinitionForTranslatedSentence`). See
+  [EXAMPLE_SENTENCES.md](./EXAMPLE_SENTENCES.md).
 - `exampleSentenceDefinitionPronunciationOverride.definition` — manual verbatim
   override shown in the segment popup (`:114`).
 - `breakdown[char].definition` — per-character breakdown gloss (`:160`).
@@ -116,5 +128,5 @@ implementation instead of duplicating prompts:
 | Discover sort cards | `definition` = `definitions[0]` (#2) |
 | Dictionary row / vocab card | `definitions` array (#1), `shortDefinition` (#4) |
 | eip / card detail expanded view | `longDefinitionParts` (#5), `synonyms`/`breakdown` (#7-segment) |
-| Example sentence popups (est) | `segmentMetadata[*].definition` (#7) |
-| (planned) clustered sense display | `definitionClusters` (#6) |
+| Example sentence popups (est) | `segmentMetadata[*].definition` (#7), resolved per segment from `senseDict` → `ddt(cluster)` (#6) with string-match fallback |
+| flp sense-picker dropdown | `ddt(cluster)` per `definitionClusters` entry (#6) |

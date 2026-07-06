@@ -12,7 +12,7 @@ import type { VocabEntry } from "../../types";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useDiscoverNavigation } from "../../hooks/useDiscoverNavigation";
 import { useCategoryCounts } from "../../hooks/useCategoryCounts";
-import { FLOATING_FOOTER_CLEARANCE } from "../../components/MobileFooter";
+import { FooterSpacer } from "../../components/MobileFooter";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
@@ -350,17 +350,7 @@ const FlashcardsDecksPage: React.FC = () => {
                         />
                     </MasteredLinkRow>
 
-                    {/* MobileTabScreen's content column doesn't grow to fit children that
-                        overflow its flex-computed height (minHeight:0 + flex:1), so the
-                        shell's own paddingBottom clearance lands after that box's reported
-                        height rather than after the true bottom of overflowing content —
-                        the Mastered Cards row ends up rendered past the padding, under the
-                        floating footer pill. This spacer reserves the clearance again as an
-                        explicit block so it can't be skipped by the overflow. */}
-                    <Box
-                        className="flashcards-decks__footer-spacer"
-                        sx={{ width: '100%', height: FLOATING_FOOTER_CLEARANCE, flexShrink: 0 }}
-                    />
+                    <FooterSpacer />
             </MobileTabScreen>
 
                 {/* Nudge toast: too few library cards to start a study session */}

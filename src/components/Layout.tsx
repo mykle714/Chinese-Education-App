@@ -1,9 +1,13 @@
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import { Box } from "@mui/material";
 import { useLocation } from "react-router-dom";
 import MobileDemoFrame from "./MobileDemoFrame";
 import { GAME_ROUTES } from "../games/registry";
 import { clearSkipNextEnter } from "../hooks/usePageSlide";
+import {
+    isDictionarySpacePath,
+    resetDictionaryBrowseState,
+} from "../pages/dictionaryBrowseState";
 
 interface LayoutProps {
     children: ReactNode;
@@ -32,6 +36,20 @@ function Layout({ children }: LayoutProps) {
         clearSkipNextEnter();
     }, [location.pathname]);
 
+    // Clear the persisted dictionary browse state (query/page/scroll) the first
+    // time the user navigates OUT of the Dictionary space. The state is meant to
+    // survive the list ⇄ card-detail drill-in only, so we reset on the transition
+    // from an in-space pathname to an out-of-space one. This covers every exit
+    // uniformly: the back arrow to Home, a footer-tab tap, and browser back.
+    const wasInDictionarySpace = useRef(isDictionarySpacePath(location.pathname));
+    useEffect(() => {
+        const nowInSpace = isDictionarySpacePath(location.pathname);
+        if (wasInDictionarySpace.current && !nowInSpace) {
+            resetDictionaryBrowseState();
+        }
+        wasInDictionarySpace.current = nowInSpace;
+    }, [location.pathname]);
+
     // Routes that live inside the shared phone-frame surface (MobileDemoFrame).
     // Adding a page here is all that's needed to opt it into the frame. Game
     // routes are derived from the registry so new games need no edits.
@@ -57,7 +75,8 @@ function Layout({ children }: LayoutProps) {
         MOBILE_DEMO_PATHS.includes(location.pathname) ||
         location.pathname.startsWith("/discover/sort/") ||
         location.pathname.startsWith("/discover/skipped/") ||
-        location.pathname.startsWith("/flashcards/card/");
+        location.pathname.startsWith("/flashcards/card/") ||
+        location.pathname.startsWith("/dictionary/card/");
 
     if (isMobileDemoPage) {
         return <MobileDemoFrame>{children}</MobileDemoFrame>;

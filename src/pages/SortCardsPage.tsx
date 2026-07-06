@@ -301,6 +301,34 @@ const DraggableCard: React.FC<{
             {...(locked ? {} : bind())}
             style={{ x, y, scale, opacity, zIndex: 1000 }}
         >
+            {/* Vernacular-register badge — top-left circular tag mirroring the utcm
+                badge on /decks (MiniVocabCard). Shows the word's vernacularScore
+                (1 = literary … 5 = natural colloquial). Hidden when the entry has no score. */}
+            {card.vernacularScore != null && (
+                <Box
+                    className="sort-cards__card-vernacular-badge"
+                    aria-label={`vernacular register ${card.vernacularScore} of 5`}
+                    sx={{
+                        position: "absolute",
+                        top: 6,
+                        left: 6,
+                        zIndex: 2,
+                        width: 18,
+                        height: 18,
+                        borderRadius: "50%",
+                        backgroundColor: COLORS.onSurface,
+                        color: "white",
+                        fontSize: SIZE.micro,
+                        fontWeight: WEIGHT.bold,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        boxShadow: "0 1px 2px rgba(0, 0, 0, 0.3)",
+                    }}
+                >
+                    {card.vernacularScore}
+                </Box>
+            )}
             <Box className="sort-cards__card-icon-slot" sx={{ width: 44, height: 44, flex: "0 0 auto" }}>
                 {card.iconId && (
                     <Box

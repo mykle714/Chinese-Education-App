@@ -2,6 +2,8 @@ import { Request, Response } from 'express';
 import { DictionaryService } from '../services/DictionaryService.js';
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import { IVocabEntryDAL } from '../dal/interfaces/IVocabEntryDAL.js';
+import { RateLimitError } from '../types/dal.js';
+import { resolveTimezone, streakDateOf } from '../utils/streakDate.js';
 
 /**
  * Dictionary Controller - Handles HTTP requests for dictionary operations
@@ -146,7 +148,7 @@ export class DictionaryController {
    */
   async aiEntry(req: Request, res: Response): Promise<void> {
     try {
-      const { term, language } = req.body;
+      const { term, language, tz } = req.body;
       const userId = (req as any).user?.userId;
 
       if (!term || typeof term !== 'string') {
@@ -165,9 +167,19 @@ export class DictionaryController {
         searchLanguage = user?.selectedLanguage || 'zh';
       }
 
-      const entry = await this.dictionaryService.generateAiEntry(term, searchLanguage);
+      // The daily AI-lookup limit resets on the caller's local streak-day (same 4 AM-bounded
+      // boundary as streaks). The client sends its IANA tz (app convention, see minutePoints);
+      // resolveTimezone defaults a missing/invalid value. See docs/DICTIONARY_AI_FALLBACK_SEARCH.md.
+      const usageDate = streakDateOf(new Date(), resolveTimezone(tz));
+
+      const entry = await this.dictionaryService.generateAiEntry(term, searchLanguage, userId, usageDate);
       res.json({ entry });
     } catch (error: any) {
+      // Daily abuse limit exceeded → 429 with the user-facing message (RateLimitError.statusCode).
+      if (error instanceof RateLimitError) {
+        res.status(error.statusCode).json({ error: error.message, code: error.code });
+        return;
+      }
       console.error('Error generating AI dictionary entry:', error);
       res.status(500).json({ error: error.message || 'Failed to generate AI entry' });
     }

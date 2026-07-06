@@ -2,6 +2,7 @@ import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useLayo
 import { Box, Popper, Typography } from "@mui/material";
 import ForeignText from "../../components/ForeignText";
 import { stripParentheses } from "../../utils/definitionUtils";
+import { getToneColor } from "../../utils/toneColors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
 import { COLORS } from "../../theme/colors";
@@ -54,6 +55,14 @@ interface WordSearchGridProps {
     onBonusFound?: (bonus: BonusWord) => void;
     /** Fired on the player's first interaction, to start the timer. */
     onFirstInteraction?: () => void;
+    /**
+     * Play a word's narration. Called to (a) replay a found target's audio when
+     * the player taps its locked cells, and (b) speak a multi-character bonus
+     * word the moment it's traced (the "blue match") — the underlying provider
+     * fetches from the server on first play and caches the decoded buffer for
+     * the rest of the game, so repeats are instant.
+     */
+    speak?: (entryKey: string, pinyin: string) => void;
 }
 
 const key = (r: number, c: number) => `${r},${c}`;
@@ -177,6 +186,7 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
     onFound,
     onBonusFound,
     onFirstInteraction,
+    speak,
 }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const innerRef = useRef<HTMLDivElement>(null);
@@ -525,9 +535,9 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
     // up/down/backwards — so the on-grid glyphs alone don't reliably show the
     // word in order.
     const activePopup = popupWord
-        ? { rect: popupAnchorRect, entryKey: popupWord.entryKey, definition: popupWord.definition }
+        ? { rect: popupAnchorRect, entryKey: popupWord.entryKey, pinyin: popupWord.pinyin, definition: popupWord.definition }
         : invalid?.bonus
-        ? { rect: bonusAnchorRect, entryKey: invalid.bonus.entryKey, definition: invalid.bonus.definition }
+        ? { rect: bonusAnchorRect, entryKey: invalid.bonus.entryKey, pinyin: invalid.bonus.pinyin, definition: invalid.bonus.definition }
         : null;
 
     // Popper takes a "virtual element" anchor (an object exposing
@@ -575,7 +585,13 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
             const bonus = bonusWordMap.get(forward) ?? bonusWordMap.get(reversed) ?? null;
             setInvalid((prev) => ({ nonce: (prev?.nonce ?? 0) + 1, bonus }));
             if (bonus) {
-                if (isMultiCharBonus(bonus)) onBonusFound?.(bonus);
+                if (isMultiCharBonus(bonus)) {
+                    onBonusFound?.(bonus);
+                    // Blue match: fetch the bonus word's audio from the server,
+                    // play it, and cache the decoded buffer for the rest of the
+                    // game (handled by the TTS provider's buffer cache).
+                    speak?.(bonus.entryKey, bonus.pinyin);
+                }
                 return; // no auto-dismiss — stays until the player taps elsewhere
             }
             invalidTimeoutRef.current = setTimeout(() => {
@@ -583,7 +599,7 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                 clearSelection();
             }, MISS_FLASH_MS);
         },
-        [tryFoundTarget, clearSelection, grid, bonusWordMap, onBonusFound]
+        [tryFoundTarget, clearSelection, grid, bonusWordMap, onBonusFound, speak]
     );
 
     const onPointerDown = useCallback(
@@ -607,6 +623,9 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
             // that word's English gloss popup and skip the drag entirely.
             const fw = foundWordByCell.get(key(cell[0], cell[1]));
             if (fw) {
+                // Replay the found word's audio on every review tap (cached from
+                // the initial find, so this is instant).
+                speak?.(fw.entryKey, fw.pinyin);
                 toggleWordPopup(fw);
                 return;
             }
@@ -618,7 +637,7 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
             setPathBoth([cell]);
             (e.target as Element).setPointerCapture?.(e.pointerId);
         },
-        [markInteracted, setPathBoth, foundWordByCell, toggleWordPopup, invalid]
+        [markInteracted, setPathBoth, foundWordByCell, toggleWordPopup, invalid, speak]
     );
 
     // Extend the in-progress path to `cell` — shared by `onPointerMove` (each
@@ -888,7 +907,12 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                     { name: "preventOverflow", options: { boundary: "viewport", padding: 8 } },
                     { name: "flip", options: { fallbackPlacements: ["bottom"] } },
                 ]}
-                sx={{ zIndex: 1300 }}
+                // The gloss popup is display-only (no buttons/links), so it must
+                // never swallow a tap: `pointerEvents: none` lets the signal fall
+                // through to the grid cell painted behind it, so tapping "through"
+                // the popup selects/reviews whatever is under it as if the popup
+                // weren't there.
+                sx={{ zIndex: 1300, pointerEvents: "none" }}
             >
                 <Box
                     className="word-search__gloss-popup"
@@ -904,6 +928,7 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                     }}
                 >
                     <Typography
+                        component="div"
                         sx={{
                             fontSize: SIZE.caption,
                             lineHeight: 1.3,
@@ -913,19 +938,41 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                             wordBreak: "break-word",
                         }}
                     >
+                        {/* First line: Chinese chars + tone-marked pinyin (bold). The
+                            entryKey is carried through in correct reading order (§4). */}
                         {activePopup?.entryKey && (
                             <Box
-                                component="span"
-                                className="word-search__gloss-popup-entry-key"
+                                component="div"
+                                className="word-search__gloss-popup-headword"
                                 sx={{ fontWeight: WEIGHT.bold }}
                             >
                                 {activePopup.entryKey}
+                                {activePopup.pinyin && (
+                                    <Box
+                                        component="span"
+                                        className="word-search__gloss-popup-pinyin"
+                                    >
                                 {/* Two non-breaking spaces — plain " " would collapse to one
                                     under normal CSS whitespace handling. */}
                                 {"  "}
+                                        {/* Per-syllable tone coloring, matching cpcd/pinyin
+                                            elsewhere. `pinyin` is space-separated tone-marked. */}
+                                        {activePopup.pinyin.split(/\s+/).filter(Boolean).map((syllable, si) => (
+                                            <React.Fragment key={si}>
+                                                {si > 0 && " "}
+                                                <Box component="span" sx={{ color: getToneColor(syllable) }}>
+                                                    {syllable}
+                                                </Box>
+                                            </React.Fragment>
+                                        ))}
+                                    </Box>
+                                )}
                             </Box>
                         )}
-                        {activePopup?.definition ? stripParentheses(activePopup.definition) : ""}
+                        {/* Second line: English gloss. */}
+                        <Box component="div" className="word-search__gloss-popup-english">
+                            {activePopup?.definition ? stripParentheses(activePopup.definition) : ""}
+                        </Box>
                     </Typography>
                 </Box>
             </Popper>

@@ -9,9 +9,8 @@ hubs: `HomePage.tsx` (`/`), `DiscoverPage.tsx` (`/discover`), `GamesPage.tsx`
 `HubMenu` is a flex column (`MenuList`, `gap: 28`, `marginTop: 16`) that renders,
 in order: an optional `header`, its card children, an optional `footer`. Header
 and footer render as direct flex children (not wrapped in their own box), so a
-multi-part header/footer — e.g. a `TipBox` immediately followed by a
-`HubMenuSpacer` — gets the same 28px gap between its own parts as between the
-cards.
+multi-part header/footer gets the same 28px gap between its own parts as between
+the cards.
 
 A menu item is one of:
 
@@ -24,7 +23,10 @@ A menu item is one of:
   sub-cards, same visual language as `HubMenuRow`. Desktop gets click-and-drag
   panning via `useDragScroll`; touch/trackpad scroll natively
   (`touchAction: pan-x`). Used when one hub entry fans out into several
-  choices — today, only Bubble Match's 3 difficulty levels.
+  choices — today, only Bubble Match's 3 difficulty levels. Because the
+  sub-cards are anchors (`RouterLink`), `useDragScroll` also cancels the
+  container's native `dragstart` — otherwise the browser would drag the
+  link's URL on desktop mouse-drag and hijack the pointer (`src/hooks/useDragScroll.ts`).
 
 Both card types accept a `state` prop, forwarded to the underlying
 `RouterLink`/`useSlideNavigate` call as React Router navigation state (used to
@@ -34,16 +36,22 @@ pass the tapped Bubble Match level without a URL param).
 
 | Hub | Header | Footer |
 |---|---|---|
-| Home (`/`) | Static welcome text | `TipBox` + `HubMenuSpacer` |
-| Games (`/games`) | `TipBox` + `HubMenuSpacer` | `HubMenuSpacer` |
-| Discover (`/discover`) | `TipBox` + `HubMenuSpacer` | `HubMenuSpacer` |
+| Home (`/`) | Static welcome text | `TipBox` + `FooterSpacer` |
+| Games (`/games`) | `TipBox` | `FooterSpacer` |
+| Discover (`/discover`) | `TipBox` | `FooterSpacer` |
 
 Header/footer render inside `ContentInner`, i.e. inside `MobileTabScreen`'s
 scroll-away `ScrollArea` — they scroll with the content, they are not sticky.
-`HubMenuSpacer` (a fixed 28px block) is additive on top of the
-`FLOATING_FOOTER_CLEARANCE` bottom padding `MobileTabScreen`'s `ScrollArea`
-already reserves for the floating footer pill — it isn't a replacement for
-that clearance, just extra breathing room around the last visible element.
+Bottom clearance above the floating footer pill comes from the shared
+**`FooterSpacer`** component (`src/components/MobileFooter.tsx`), rendered as the
+last footer element. It is the app-wide spacer used by every footer-bearing
+surface (hubs, decks, dictionary, card details, mastered cards), so a single
+height edit reflows them all. We use an explicit spacer block rather than
+`MobileTabScreen`'s `ScrollArea` `paddingBottom` because that padding is (a)
+swallowed when the flex content column overflows its computed height and (b)
+covered by the scroll area's bottom edge-fade mask. Its height is
+`FLOATING_FOOTER_CLEARANCE`; tune the breathing room via
+`FLOATING_FOOTER_EXTRA_GAP` in `MobileFooter.tsx`.
 
 ## Tip box (`src/components/TipBox.tsx`)
 
@@ -52,13 +60,24 @@ database table. Picks a random tip on mount and is tappable to re-roll,
 excluding whatever tip is currently shown so a tap never repeats it. One
 component/pool shared by all three hubs.
 
-## Bubble Match as an array item
+## Array items (fan-out games)
 
-Bubble Match's hub entry is a `HubMenuArrayItem` with one sub-card per
-`LEVEL_CONFIGS` entry (`src/games/bubble-match/constants.ts`: Chill / Hustle /
-Torture). This is special-cased directly in `GamesPage.tsx` (matched on
-`game.gameId === "bubble-match"`), not a generic `GameDef.levels` field — it's
-the only game that fans out today.
+Two games fan their hub entry out into a `HubMenuArrayItem` (a horizontal strip
+of sub-cards) instead of a single row, both special-cased directly in
+`GamesPage.tsx` (matched on `game.gameId`) rather than via a generic
+`GameDef.levels` field:
+
+- **Bubble Match** — one sub-card per `LEVEL_CONFIGS` entry
+  (`src/games/bubble-match/constants.ts`: Chill / Hustle / Torture), passing
+  `state: { level }`.
+- **Word Search** — one sub-card per `MODE_CONFIGS` entry
+  (`src/games/word-search/constants.ts`: Pinyin / No Pinyin), passing
+  `state: { mode }`. Each mode is an independent game with its own saved board
+  (see [WORD_SEARCH_GAME.md](./WORD_SEARCH_GAME.md) §3).
+
+The rest of this section describes Bubble Match; Word Search follows the same
+shape (title + sub-card subtitle, one shared route, choice via nav state,
+per-sub-card hardcoded color `WORD_SEARCH_MODE_COLORS`) but has no stat badges.
 
 - All 3 sub-cards share the game's title ("Bubble Match") with the level name
   as the subtitle, and link to the same route (`/games/bubble-match`); the
@@ -76,8 +95,9 @@ the only game that fans out today.
 `BubbleMatchPage` no longer has an in-game level picker. Its old `"start"`
 phase (description text + level buttons) is gone; the flow is now
 `loading → (blocked) → playing → (won | lost) → playing (replay)`. The level
-comes from `location.state.level` (falling back to `LEVEL_CONFIGS[0]` for any
-stray navigation with no state, e.g. a manual URL visit) and the page begins
-that run as soon as the card pool loads. The in-game "different level" floating
+comes from `location.state.level`; a stray navigation with no valid level
+(e.g. a manual URL visit) **redirects to `/games`** rather than defaulting, so
+a level must be picked from the hub (Word Search does the same for its mode).
+The page begins that run as soon as the card pool loads. The in-game "different level" floating
 menu (`BubbleMatchLevelMenu.tsx`, shown after a run ends) is unchanged — it
 remains a secondary fast-replay shortcut once already in a run.

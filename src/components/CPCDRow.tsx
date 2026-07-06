@@ -72,6 +72,16 @@ const OVERLAP_BY_SIZE: Record<CPCDSize, number> = { xs: -4, sm: -6, md: -4, lg: 
 // de-overlapping. Only applied to pairs that actually collide, so non-colliding
 // rows are never disturbed.
 const PINYIN_MIN_GAP_PX = 2;
+// A separator apostrophe is drawn between two adjacent SAME-TONE syllables only
+// when the collision solver actually had to PUSH that pair apart — i.e. their
+// pinyin texts were touching and got relaxed to the bare PINYIN_MIN_GAP_PX
+// minimum. That "was pushed" flag is the exact crowding signal: when same-colored
+// syllables sit right against each other their shared tone color stops signalling
+// the syllable boundary (the run reads as one long blob), so a text-colored
+// apostrophe — the standard pinyin syllable divider, as in Xi'an — restores the
+// break. Pairs the solver left alone (any comfortable natural gap) get none.
+// Drawn on top of the overlay near the top of the pinyin text; consumes no layout
+// space. See docs/CPCD_PINYIN_SHIFT.md.
 
 const CPCDRow: React.FC<CPCDRowProps> = ({
     items,
@@ -88,6 +98,8 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
     const charsBlockRef = useRef<HTMLDivElement | null>(null);
     const cellRefs = useRef<(HTMLDivElement | null)[]>([]);
     const pinyinRefs = useRef<(HTMLSpanElement | null)[]>([]);
+    // One separator apostrophe per gap (indexed by the LEFT syllable's item index).
+    const sepRefs = useRef<(HTMLSpanElement | null)[]>([]);
 
     const columnWidth = COLUMN_WIDTH[size];
     const pinyinReservedHeight = PINYIN_RESERVED_HEIGHT[size];
@@ -102,6 +114,12 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
     const positionPinyins = () => {
         const charsBlock = charsBlockRef.current;
         if (!charsBlock) return;
+
+        // Hide all separator apostrophes up front; the row loop below re-shows only
+        // the ones whose same-tone pair actually crowded together this pass.
+        for (const sep of sepRefs.current) {
+            if (sep) sep.style.visibility = "hidden";
+        }
 
         // Ancestors may scale this row (e.g. bubble-match shrinks long words via a
         // CSS transform). Layout offsets (offsetLeft/offsetWidth) are unscaled, but
@@ -178,6 +196,10 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
             // half the deficit until stable. Capped passes; converges quickly for
             // the short runs cpcd renders (a word, or one wrapped line).
             const offsets = new Array<number>(n).fill(0);
+            // Per-pair flag: true once the solver has pushed pair (k, k+1) apart to
+            // resolve a collision. Drives the separator apostrophe below — only
+            // pushed (i.e. crowded) pairs get one.
+            const pushed = new Array<boolean>(Math.max(0, n - 1)).fill(false);
             if (pinyinShift && n === 1) {
                 // Lone syllable: no neighbor to de-overlap against, so nothing
                 // constrains it. An overflowing pinyin would otherwise stay
@@ -199,6 +221,7 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
                         // Split the push evenly: left yields left, right yields right.
                         offsets[i] -= deficit / 2;
                         offsets[i + 1] += deficit / 2;
+                        pushed[i] = true;
                         moved = true;
                     }
                     if (!moved) break;
@@ -217,6 +240,40 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
                 // Pinyin sits at the bottom of the cell, inside the reserved padding-bottom region.
                 const y = cell.offsetTop + cell.offsetHeight - pinyinReservedHeight;
                 span.style.transform = `translate(${x}px, ${y}px)`;
+            }
+
+            // Separator apostrophes. Between each adjacent pair of SAME-TONE
+            // syllables that the solver PUSHED apart (pushed[k] — i.e. their pinyin
+            // texts had collided and were relaxed to the bare minimum gap), place a
+            // text-colored apostrophe at the midpoint of the gap. Same tone => same
+            // color, so without this the boundary between the two crowded syllables
+            // is invisible and the run reads as one long word. Uses the just-solved
+            // offsets, so the apostrophe lands in the real (post-shift) gap.
+            for (let k = 0; k < n - 1; k++) {
+                const iLeft = idxs[k];
+                const iRight = idxs[k + 1];
+                const sep = sepRefs.current[iLeft];
+                if (!sep) continue;
+                if (!pushed[k]) continue;
+                const leftItem = items[iLeft];
+                const rightItem = items[iRight];
+                const leftShown = leftItem.showPinyin !== false && !!leftItem.pinyin;
+                const rightShown = rightItem.showPinyin !== false && !!rightItem.pinyin;
+                if (!leftShown || !rightShown) continue;
+                if (getToneColor(leftItem.pinyin!) !== getToneColor(rightItem.pinyin!)) continue;
+                // Edges of the two pinyin texts after shifting (see extent model above).
+                const rightEdgeLeft = centers[k] + offsets[k] + halfRights[k];
+                const leftEdgeRight = centers[k + 1] + offsets[k + 1] - halfLefts[k + 1];
+                const midX = (rightEdgeLeft + leftEdgeRight) / 2;
+                const cell = cellRefs.current[iLeft];
+                if (!cell) continue;
+                // Anchor to the top of the reserved pinyin band so the apostrophe
+                // rides near the top of the pinyin text; translateX(-50%) centers the
+                // glyph horizontally on the gap midpoint (the span shrink-wraps its
+                // own width, so the percentage is relative to the glyph).
+                const sepY = cell.offsetTop + cell.offsetHeight - pinyinReservedHeight;
+                sep.style.transform = `translate(${midX}px, ${sepY}px) translateX(-50%)`;
+                sep.style.visibility = "visible";
             }
         }
     };
@@ -378,6 +435,51 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
                         </span>
                     );
                 })}
+            </Box>
+
+            {/* Separator-apostrophe overlay — one absolutely-positioned apostrophe
+                per gap, positioned/toggled imperatively in positionPinyins(). Sits
+                above the pinyin overlay so an apostrophe between two crowded same-tone
+                syllables reads on top, near the top of the pinyin text. Text-colored
+                (currentColor from the wrapper's text.primary), non-interactive, and
+                unselectable so it never joins a pinyin copy. */}
+            <Box
+                className="cpcd-row__pinyin-seps"
+                aria-hidden
+                sx={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    height: "100%",
+                    pointerEvents: "none",
+                    color: "text.primary",
+                }}
+            >
+                {items.slice(0, -1).map((_, i) => (
+                    <span
+                        key={i}
+                        ref={(node) => {
+                            sepRefs.current[i] = node;
+                        }}
+                        className="cpcd-row__pinyin-sep"
+                        style={{
+                            position: "absolute",
+                            top: 0,
+                            left: 0,
+                            fontSize: pinyinFontSize,
+                            fontFamily: FONTS.sans,
+                            lineHeight: 1,
+                            color: "currentColor",
+                            visibility: "hidden",
+                            pointerEvents: "none",
+                            userSelect: "none",
+                            whiteSpace: "nowrap",
+                        }}
+                    >
+                        &rsquo;
+                    </span>
+                ))}
             </Box>
         </Box>
     );

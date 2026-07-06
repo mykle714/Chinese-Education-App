@@ -19,6 +19,16 @@ export const MINUTE_POINTS_ELIGIBLE_PAGES = [
   '/games/word-search'
 ];
 
+// Subset of eligible pages that should start accruing time on entry, WITHOUT
+// waiting for the user's first interaction. Games are often studied passively
+// for a few seconds (reading a word-search board / bubble field) before the
+// first tap, so we mark the user active on mount. Non-game eligible pages
+// (flashcards, reader) still require an interaction to start, which avoids
+// farming minute points by merely opening a page and walking away.
+export const MINUTE_POINTS_AUTO_ACTIVE_PAGES = [
+  '/games'
+];
+
 export const MINUTE_POINTS_CONFIG = {
   MILLISECONDS_PER_POINT: 60000, // 60 seconds = 1 minute point
   ACTIVITY_WINDOW_MS: 15000,

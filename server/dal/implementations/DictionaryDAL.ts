@@ -16,6 +16,7 @@ const DICTIONARY_COLUMNS = `
   word1, word2, pronunciation, "numberedPinyin", tone,
   "partsOfSpeech", "difficulty",
   definitions, "longDefinition",
+  "definitionClusters",
   breakdown, synonyms,
   "exampleSentences",
   expansion, "expansionLiteralTranslation",
@@ -120,6 +121,7 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
       // Stored as a JSONB object keyed by POS (migration 70); hydrated to the canonical
       // labeled string the API/renderer expect (see longDefObjectToDisplayString).
       longDefinition: longDefObjectToDisplayString(row.longDefinition),
+      definitionClusters: row.definitionClusters ?? null,
       breakdown: row.breakdown ?? null,
       synonyms: row.synonyms ?? null,
       exampleSentences: row.exampleSentences ?? null, // Enriched on-the-fly via enrichExampleSentencesMetadataBatch
@@ -466,6 +468,37 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
   }
 
   /**
+   * Read a user's completed AI-fallback model-call count for a local streak-day (migration 99).
+   * Returns 0 when no row exists. Read before each model call to enforce the daily abuse limit.
+   */
+  async getAiUsageCount(userId: string, usageDate: string): Promise<number> {
+    const result = await this.dbManager.executeQuery<{ count: number }>(async (client) => {
+      return await client.query(`
+        SELECT count FROM dictionary_ai_usage
+        WHERE "userId" = $1 AND "usageDate" = $2
+      `, [userId, usageDate]);
+    });
+    return result.recordset[0]?.count ?? 0;
+  }
+
+  /**
+   * Atomically upsert-increment a user's completed AI-fallback call count for a local streak-day
+   * and return the new value. Called once per COMPLETED model call (never on a cache hit).
+   */
+  async incrementAiUsage(userId: string, usageDate: string): Promise<number> {
+    const result = await this.dbManager.executeQuery<{ count: number }>(async (client) => {
+      return await client.query(`
+        INSERT INTO dictionary_ai_usage ("userId", "usageDate", count)
+        VALUES ($1, $2, 1)
+        ON CONFLICT ("userId", "usageDate") DO UPDATE
+          SET count = dictionary_ai_usage.count + 1
+        RETURNING count
+      `, [userId, usageDate]);
+    });
+    return result.recordset[0].count;
+  }
+
+  /**
    * Get total count of dictionary entries
    */
   async getTotalCount(): Promise<number> {
@@ -532,34 +565,25 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
       return {
         ...entry,
         exampleSentences: entry.exampleSentences.map(sentence => {
-          // Tokens tagged as 'classifier' in this sentence's AI-generated POS dict
-          // become forced segment boundaries — guarantees they surface as standalone
-          // segments so the particle/classifier annotation block below picks them up
-          // even when they would otherwise be absorbed into a longer GSA match.
-          const classifierTokens = new Set<string>(
-            Object.entries(sentence.partOfSpeechDict ?? {})
-              .filter(([, tag]) => tag === 'classifier')
-              .map(([token]) => token)
-          );
-          // Force the entry's own headword to win segmentation when it appears in
-          // the sentence — otherwise a higher-vernacularScore overlap can swallow it
-          // and we'd end up showing the wrong segment's metadata for the vocab word.
+          // Segmentation is authored by the example-sentence tagging pass
+          // (backfill-example-sentences.js) and persisted on `segments`, so
+          // partOfSpeechDict/senseDict/numberDict keys align exactly with the segments
+          // rendered here. Trust the stored segmentation when present; fall back to a
+          // live GSA only for rows written before the pass existed (no `segments`).
           const prioritySegments = entry.word1 ? [entry.word1] : undefined;
-          const segments = segmentWithDict(
-            sentence.foreignText,
-            dictMap,
-            excludeTokens,
-            prioritySegments,
-            classifierTokens
-          );
+          const segments = Array.isArray(sentence.segments) && sentence.segments.length > 0
+            ? sentence.segments
+            : segmentWithDict(sentence.foreignText, dictMap, excludeTokens, prioritySegments);
           // Build per-segment metadata via the shared helper. Example sentences use the
-          // full feature set: particle/classifier annotation (gated by the AI POS dict),
-          // context-matched definitions (against the English translation), and wordForms.
+          // full feature set: particle/classifier annotation (gated by the segment POS dict),
+          // per-segment sense → cluster dd (senseDict), context-matched fallback definitions
+          // (against the English translation), and wordForms.
           const segmentMetadata = buildSegmentMetadata(segments, dictMap, {
             pacMap,
             partOfSpeechDict: sentence.partOfSpeechDict,
             translatedContext: sentence.english,
             includeWordForms: true,
+            senseDict: sentence.senseDict,
           });
 
           return { ...sentence, _segments: segments, segmentMetadata };

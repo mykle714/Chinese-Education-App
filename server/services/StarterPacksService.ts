@@ -133,6 +133,7 @@ export class StarterPacksService {
       word2: row.word2,
       script: row.script,
       difficulty: row.difficulty,
+      vernacularScore: row.vernacularScore ?? null,
       // Spanish POS badge fields (NULL/false for Chinese — see _fetchSupplyRows).
       pos: row.pos ?? null,
       hasMultiplePos: row.hasMultiplePos ?? false,
@@ -312,7 +313,7 @@ export class StarterPacksService {
 
       const result = await client.query(`
         SELECT de.id, de.word1, de.word2, de.pronunciation, de.tone, de.definitions,
-               de.language, de.script, de."difficulty", de.breakdown, de.synonyms,
+               de.language, de.script, de."difficulty", de."vernacularScore", de.breakdown, de.synonyms,
                de."exampleSentences", de.expansion, de."expansionLiteralTranslation",
                de."iconId"${posCols}
         FROM ${det} de
@@ -326,7 +327,7 @@ export class StarterPacksService {
           ${skipFilter}
           ${excludeFilter}
           ${exactLevelFilter}
-        ORDER BY ${recycleOrder} ABS(${levelExpr} - $3) ASC, de.id ASC
+        ORDER BY ${recycleOrder} ABS(${levelExpr} - $3) ASC, de."vernacularScore" DESC NULLS LAST, de.id ASC
         LIMIT ${limitParam}
       `, params);
       return result.rows;
@@ -699,7 +700,7 @@ export class StarterPacksService {
     try {
       const result = await client.query(`
         SELECT de.id, de.word1, de.word2, de.pronunciation, de.tone, de.definitions,
-               de.language, de.script, de."difficulty", de.breakdown, de.synonyms,
+               de.language, de.script, de."difficulty", de."vernacularScore", de.breakdown, de.synonyms,
                de."exampleSentences", de.expansion, de."expansionLiteralTranslation",
                de."iconId"${posCols},
                EXISTS (
@@ -724,6 +725,19 @@ export class StarterPacksService {
     } finally {
       client.release();
     }
+  }
+
+  /**
+   * A pack's colloquial-register rank for the within-level supply ordering: the mean
+   * vernacularScore across its cards that have one. A pack with no scored cards ranks
+   * -1 so it sinks below any pack that has a real score.
+   */
+  private _packVernacularRank(pack: SortPack): number {
+    const scores = pack.cards
+      .map((c) => c.vernacularScore)
+      .filter((s): s is number => typeof s === 'number');
+    if (scores.length === 0) return -1;
+    return scores.reduce((sum, s) => sum + s, 0) / scores.length;
   }
 
   /** Turn authored sort_packs rows into SortPack DTOs (cards hydrated; no sentence — not shown in this flow). */
@@ -836,6 +850,10 @@ export class StarterPacksService {
       const remaining1 = limit - packs.length;
       const candidates = await this.sortPacksDAL.fetchPacksAtLevel(language, lvl, excludePackIds, remaining1 * 3 + 5);
       const authored = await this._hydrateAuthoredPacks(candidates, userId, language);
+      // Within a level, surface the most colloquial packs first (docs §5): rank each
+      // pack by the mean vernacularScore of its cards (nulls sink to the bottom), a
+      // stable sort so ties keep the authored packOrder from fetchPacksAtLevel.
+      authored.sort((a, b) => this._packVernacularRank(b) - this._packVernacularRank(a));
       for (const p of authored) {
         if (packs.length >= limit) break;
         if (p.cards.some((c) => !c.sorted)) { // never serve an all-sorted pack (§4.5)
@@ -895,7 +913,7 @@ export class StarterPacksService {
     try {
       const result = await client.query(`
         SELECT de.id, de.word1, de.word2, de.pronunciation, de.tone, de.definitions,
-               de.language, de.script, de."difficulty", de.breakdown, de.synonyms,
+               de.language, de.script, de."difficulty", de."vernacularScore", de.breakdown, de.synonyms,
                de."exampleSentences", de.expansion, de."expansionLiteralTranslation",
                de."iconId"${posCols}
         FROM discover_skips ds

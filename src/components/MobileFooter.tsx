@@ -14,9 +14,28 @@ import { SIZE, WEIGHT, LEADING } from "../theme/scale";
 // can reserve matching bottom padding and never let content hide behind the bar.
 export const FLOATING_FOOTER_HEIGHT = 64;
 export const FLOATING_FOOTER_INSET = 16;
+// Extra breathing gap added on top of the pill's own footprint, so the last row
+// clears the bar with a little slack. Bump this (not HEIGHT/INSET) to give every
+// page more bottom room without resizing or repositioning the pill itself.
+export const FLOATING_FOOTER_EXTRA_GAP = 12;
 // Total vertical space the floating pill occupies plus a breathing gap above it,
 // used as the scroll area's paddingBottom so the last row clears the bar.
-export const FLOATING_FOOTER_CLEARANCE = FLOATING_FOOTER_HEIGHT + FLOATING_FOOTER_INSET * 2;
+export const FLOATING_FOOTER_CLEARANCE =
+    FLOATING_FOOTER_HEIGHT + FLOATING_FOOTER_INSET * 2 + FLOATING_FOOTER_EXTRA_GAP;
+
+// The single, app-wide bottom spacer. Render it as the LAST child of any
+// footer-bearing scroll surface (hubs, decks, dictionary, card details, mastered
+// cards) so the final row clears the floating footer pill. We rely on this
+// explicit block — NOT MobileTabScreen's ScrollArea paddingBottom — because that
+// padding is (a) eaten when the flex content column overflows its computed height
+// and (b) covered by the scroll area's bottom edge-fade mask. One shared height
+// (FLOATING_FOOTER_CLEARANCE) means a single edit reflows every page at once.
+export const FooterSpacer: React.FC = () => (
+    <Box
+        className="footer-spacer"
+        sx={{ width: "100%", height: FLOATING_FOOTER_CLEARANCE, flexShrink: 0 }}
+    />
+);
 
 // The footer is always a detached, rounded pill, anchored to the bottom of the
 // nearest positioned ancestor (MobileTabScreen's ScreenRoot, or the phone frame

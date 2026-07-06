@@ -120,18 +120,6 @@ const CornerBadgeSlot = styled(Box)(() => ({
     right: 14,
 }));
 
-const Spacer = styled(Box)(() => ({
-    height: 64,
-    flexShrink: 0,
-}));
-
-/** Fixed-height gap rendered as the last item in a hub's footer, so the last
-    real card (or the tip box) always has visible breathing room above the
-    floating footer pill's clearance zone (MobileTabScreen already reserves
-    FLOATING_FOOTER_CLEARANCE separately — this stacks on top of that, it
-    doesn't replace it). */
-export const HubMenuSpacer: React.FC = () => <Spacer className="hub-menu__spacer" />;
-
 /** Small pill for a card's top-right corner: an optional weekly ⭐ plus an
     optional "×N" count (e.g. lifetime wins). Renders nothing if both are
     empty/falsy. */
@@ -197,7 +185,8 @@ interface HubMenuProps {
         welcome banner or a TipBox). */
     header?: ReactNode;
     /** Rendered below the card list, inside the same scroll area (e.g. a
-        TipBox and/or HubMenuSpacer). */
+        TipBox and/or the shared `FooterSpacer` from MobileFooter, which every
+        hub passes here so the last card clears the floating footer pill). */
     footer?: ReactNode;
     children: ReactNode;
 }
@@ -205,9 +194,9 @@ interface HubMenuProps {
 export const HubMenu: React.FC<HubMenuProps> = ({ className, header, footer, children }) => (
     <MenuList className={className ?? "hub-menu"}>
         {/* header/footer render as direct flex children (not wrapped in their own
-            Box) so a multi-part header/footer — e.g. a TipBox followed by a
-            HubMenuSpacer — gets the same MenuList `gap` between its own parts
-            as between the cards. */}
+            Box) so a multi-part header/footer — e.g. a TipBox followed by another
+            element — gets the same MenuList `gap` between its own parts as
+            between the cards. */}
         {header}
         {children}
         {footer}

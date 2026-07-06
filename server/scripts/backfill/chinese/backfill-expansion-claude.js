@@ -21,6 +21,7 @@
  *   docker exec cow-backend-local npx tsx scripts/backfill-expansion-claude.js
  *   docker exec cow-backend-local npx tsx scripts/backfill-expansion-claude.js --dry-run
  *   docker exec cow-backend-local npx tsx scripts/backfill-expansion-claude.js --concurrency=8
+ *   docker exec cow-backend-local npx tsx scripts/backfill-expansion-claude.js --words=不知不觉,违规
  */
 
 import dotenv from 'dotenv';
@@ -44,6 +45,14 @@ const SCRIPT_VERSION = 2; // bump when this script's logic/prompt changes (v2: c
 
 const DRY_RUN = process.argv.includes('--dry-run');
 const CONCURRENCY = parseInt(process.argv.find(a => a.startsWith('--concurrency='))?.split('=')[1] || '5', 10);
+
+// --words=不知不觉,违规 scopes the run to specific headwords (used by the
+// mark-discoverable pipeline). Empty/absent → process every eligible entry.
+const wordsArg = process.argv.find(a => a.startsWith('--words='));
+const targetWords = wordsArg ? wordsArg.slice('--words='.length).split(',').map(s => s.trim()).filter(Boolean) : null;
+const wordsFilter = targetWords?.length
+  ? `AND word1 = ANY(ARRAY[${targetWords.map(w => `'${w.replace(/'/g, "''")}'`).join(', ')}])`
+  : '';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -495,6 +504,7 @@ async function run() {
           expansion IS NULL                                                -- never attempted
           OR (expansion != '' AND "expansionLiteralTranslation" IS NULL)  -- has expansion, needs literal
         )
+        ${wordsFilter}
       ORDER BY char_length(word1), word1
     `);
 

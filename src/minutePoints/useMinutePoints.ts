@@ -8,7 +8,7 @@ import {
   loadMinutePointsDataSync,
   type MinutePointsStorage
 } from './minutePointsStorage';
-import { MINUTE_POINTS_ELIGIBLE_PAGES, MINUTE_POINTS_CONFIG, STREAK_CONFIG } from '../constants';
+import { MINUTE_POINTS_ELIGIBLE_PAGES, MINUTE_POINTS_AUTO_ACTIVE_PAGES, MINUTE_POINTS_CONFIG, STREAK_CONFIG } from '../constants';
 import { useActivityDetection } from '../hooks/useActivityDetection';
 import { incrementMinutePoint, fetchLanguageSummary } from './minutePointsSync';
 import { isSameStreakDay } from './streakDay';
@@ -111,6 +111,11 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
   });
 
   const isEligiblePage: boolean = MINUTE_POINTS_ELIGIBLE_PAGES.some(
+    (prefix) => location.pathname === prefix || location.pathname.startsWith(prefix + '/')
+  );
+
+  // Pages that begin accruing on entry (no first-interaction required) — games.
+  const isAutoActivePage: boolean = MINUTE_POINTS_AUTO_ACTIVE_PAGES.some(
     (prefix) => location.pathname === prefix || location.pathname.startsWith(prefix + '/')
   );
 
@@ -351,6 +356,18 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
 
   const recordActivityRef = useRef(recordActivity);
   recordActivityRef.current = recordActivity;
+
+  // Auto-mark the user active on entering a game page, so time starts counting
+  // immediately instead of only after their first tap. Keyed on isAutoActivePage
+  // (path prefix) + user id — both stable identities — so a silent token refresh
+  // does not re-trigger it (see CLAUDE.md "Never reload on token refresh").
+  // recordActivity() itself no-ops off eligible pages and arms the usual 15s
+  // inactivity timeout, so this cannot accrue idle time beyond one window.
+  useEffect(() => {
+    if (isAutoActivePage && user?.id) {
+      recordActivityRef.current();
+    }
+  }, [isAutoActivePage, user?.id]);
 
   const resetPoints = useCallback(() => {
     if (!user?.id) return;

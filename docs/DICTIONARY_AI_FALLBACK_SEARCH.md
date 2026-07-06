@@ -1,6 +1,6 @@
 # Dictionary Search — Spaceless-Pinyin + AI Synthetic-Entry Fallback
 
-> Status: **implemented** (migrations 97–98). Extends `GET /api/dictionary/search`
+> Status: **implemented** (migrations 97–99; 99 = per-user daily AI-lookup cap). Extends `GET /api/dictionary/search`
 > (the shared search used by the dictionary page and the Community search bar — see
 > [DICTIONARY_NUMBERED_PINYIN_SEARCH.md](./DICTIONARY_NUMBERED_PINYIN_SEARCH.md) and
 > [COMMUNITY_PAGE.md](./COMMUNITY_PAGE.md)). **zh-only** — spaceless pinyin and synthetic
@@ -112,10 +112,15 @@ modes. Net: a blue results pill, optionally followed by an orange **AI** pill.
 
 ### Endpoint
 
-`POST /api/dictionary/ai-entry` (auth required) — body `{ term, language }`:
+`POST /api/dictionary/ai-entry` (auth required) — body `{ term, language, tz }`:
 
 1. Guard: `language === 'zh'` and (`isAllPinyin(term)` **or** `hasChinese(term)`), else return null.
-2. Re-check the cache (a fresh non-empty or fresh-empty row short-circuits — no model call).
+2. Re-check the cache (a fresh non-empty or fresh-empty row short-circuits — no model call). A cache
+   hit is **free** — it returns before the daily-limit check below, so it never consumes a slot.
+2b. **Daily-limit gate** (a cache MISS is about to bill a model call): read the caller's completed-call
+   count for their local streak-day from `dictionary_ai_usage` and, if it's already
+   `>= DICTIONARY_AI_DAILY_LIMIT` (`server/constants.ts`, default 10), throw `RateLimitError` — the
+   controller maps it to **HTTP 429** with a user-facing message. See [Daily limit](#daily-limit).
 3. Call Sonnet (`claude-sonnet-4-6`) with a `cache_control: ephemeral` **static system block** (the
    instructions) and a tiny volatile user message (`Query: <term>`), plus the **`web_search`** tool
    (`max_uses: 3`). Loop on `stop_reason: 'pause_turn'`, echoing the assistant content back to
@@ -129,9 +134,31 @@ modes. Net: a blue results pill, optionally followed by an orange **AI** pill.
      longer answer isn't truncated, but the prompt steers toward concise glosses.
    - Trust the query as written (no pinyin-typo reconciliation); identify real referents (searching
      when needed); return null only for a meaningless jumble.
-5. Validate (`word1` non-empty when present), **upsert into `ai_dictionary_cache`** (empty result
+5. Once a model call **completes** (before parsing, regardless of word/empty/unparseable outcome),
+   **increment `dictionary_ai_usage`** for the caller's streak-day — the call was billed, so it counts.
+   A model call that throws (network error) never reaches this and does not count.
+6. Validate (`word1` non-empty when present), **upsert into `ai_dictionary_cache`** (empty result
    stored as `word1 = NULL`, `queriedAt = now()`) and return the entry (or an empty marker). A parse
    failure returns null **without** caching (transient).
+
+<a id="daily-limit"></a>
+### Daily limit (per-user abuse cap, migration 99)
+
+Each user may make **`DICTIONARY_AI_DAILY_LIMIT` completed model calls per day** (default 10, override
+via env; `server/constants.ts`). "Per day" is the same **4 AM-bounded local streak-day** used by
+streaks/minute points (`streakDateOf` + the client-supplied `tz`), so the allowance resets at 4 AM
+local time. Only **cache misses that reach the model** count — re-viewing a cached answer or any
+auto-rendered orange card is always free.
+
+State lives in `dictionary_ai_usage` (`"userId"`, `"usageDate"`, `count`; migration 99). The service
+reads the count before the model call and increments after it completes. When the cap is hit the
+endpoint returns **HTTP 429** `{ error, code: 'ERR_RATE_LIMIT' }`; the client hook surfaces this as a
+dedicated `aiLimitReached` state (distinct from a retryable network error) and `DictionaryPage`
+renders the server's message in place of the "AI" pill.
+
+> Why this exists even though migration 97 said rate limiting "isn't needed": that reasoning assumed a
+> **finite pinyin space** the cache saturates. The fallback now also accepts **arbitrary Chinese-character
+> queries + up to 3 web searches per tap**, so a single user can drive unbounded billed calls — hence the cap.
 
 <a id="cost"></a>
 ### Cost
@@ -216,15 +243,19 @@ All logic lives in the shared **`src/hooks/useDictionarySearch.ts`** so both con
 | Layer | File | Responsibility |
 |---|---|---|
 | Migration | `database/migrations/97-create-ai-dictionary-cache.sql` | the cache table |
+| Migration | `database/migrations/100-create-dictionary-ai-usage.sql` | the per-user daily-usage counter table |
+| Constant | `server/constants.ts` | `DICTIONARY_AI_DAILY_LIMIT` (default 10, env-overridable) |
+| Error | `server/types/dal.ts` | `RateLimitError` (HTTP 429, `code: 'ERR_RATE_LIMIT'`) |
 | Util | `server/utils/pinyinSegment.ts` (**new**) | `segmentPinyin`, `isAllPinyin` (syllable inventory + max-munch) |
-| DAL | `server/dal/implementations/DictionaryDAL.ts` | stage-2 segmentation fallback in `searchByWord1`; `getAiCacheEntry`, `upsertAiCacheEntry`; return `canAskAi` |
-| DAL iface | `server/dal/interfaces/IDictionaryDAL.ts` | new method signatures |
-| Service | `server/services/DictionaryService.ts` | `generateAiEntry(term)` (dedicated Sonnet client + prompt caching + `web_search` tool w/ pause_turn loop + validation; accepts pinyin or Chinese); `resolveAiCache` + `resolveChineseAiFallback` (staleness check) |
-| Controller | `server/controllers/DictionaryController.ts` | `aiEntry` handler; thread `canAskAi`/`aiEntry` through both `search` (pinyin) and `segmentSearch` (Chinese no-complete-match) |
+| Util | `server/utils/streakDate.ts` | `resolveTimezone`, `streakDateOf` — reused to bound the daily limit to the local streak-day |
+| DAL | `server/dal/implementations/DictionaryDAL.ts` | stage-2 segmentation fallback in `searchByWord1`; `getAiCacheEntry`, `upsertAiCacheEntry`; return `canAskAi`; `getAiUsageCount`, `incrementAiUsage` (daily limit) |
+| DAL iface | `server/dal/interfaces/IDictionaryDAL.ts` | new method signatures (incl. `getAiUsageCount`/`incrementAiUsage`) |
+| Service | `server/services/DictionaryService.ts` | `generateAiEntry(term, language, userId, usageDate)` (dedicated Sonnet client + prompt caching + `web_search` tool w/ pause_turn loop + validation; accepts pinyin or Chinese; **daily-limit gate + increment**); `resolveAiCache` + `resolveChineseAiFallback` (staleness check) |
+| Controller | `server/controllers/DictionaryController.ts` | `aiEntry` handler (computes `usageDate` from `tz`; maps `RateLimitError` → 429); thread `canAskAi`/`aiEntry` through both `search` (pinyin) and `segmentSearch` (Chinese no-complete-match) |
 | Routes | `server/routes/dictionaryRoutes.ts` | `POST /api/dictionary/ai-entry` |
 | Types | `server/types/*`, client `src/types.ts` | `DictionaryEntry.source?: 'ai'`; AI-entry response types |
-| Client hook | `src/hooks/useDictionarySearch.ts` | `aiEntry`, `canAskAi`, `askAi()` |
-| Client UI | `src/pages/DictionaryPage.tsx` | orange unclickable card + inline orange "AI" pill; results-count pill → blue, segment-count prefix removed |
+| Client hook | `src/hooks/useDictionarySearch.ts` | `aiEntry`, `canAskAi`, `askAi()` (sends `tz`); `aiLimitReached` + `aiLimitMessage` (429) |
+| Client UI | `src/pages/DictionaryPage.tsx` | orange unclickable card + inline orange "AI" pill; daily-limit note; results-count pill → blue, segment-count prefix removed |
 | Theme | `src/theme/colors.ts` (`COLORS.yellowMain` `#FF8E47`) | orange for AI cards (existing token) |
 
 ## Resolved decisions
@@ -233,9 +264,11 @@ All logic lives in the shared **`src/hooks/useDictionarySearch.ts`** so both con
   and `xi`+`an` real words surface.
 - **Community bar** → **no AI** there.
 - **Empty-cache TTL** → **3 months**.
-- **Abuse / rate limiting** → **not needed.** Valid queries are restricted to pinyin-formatted
-  strings, a finite space that the cache will eventually saturate, so repeated model calls trend to
-  zero. No per-user cap.
+- **Abuse / rate limiting** → **per-user daily cap (revised).** Originally deemed unnecessary (finite
+  pinyin space saturates the cache). Superseded once the fallback began accepting arbitrary
+  Chinese-character queries + web search: now `DICTIONARY_AI_DAILY_LIMIT` completed model calls per
+  user per local streak-day (default 10), enforced via `dictionary_ai_usage` (migration 99) → HTTP
+  429. Cache hits are exempt. See [Daily limit](#daily-limit).
 
 ## Noted limitations
 

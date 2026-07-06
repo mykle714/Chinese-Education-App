@@ -54,9 +54,9 @@ clustered). Array of cluster objects:
 
 ```jsonc
 [
-  { "sense": "to be able to / know how", "reading": "hui4", "pos": "verb",
+  { "sense": "to be able to / know how", "reading": "hui4", "pos": ["verb"],
     "vernacularScore": 5, "glosses": ["can", "to know how to", "to have the skill"] },
-  { "sense": "to reckon accounts", "reading": "kuai4", "pos": "verb",
+  { "sense": "to reckon accounts", "reading": "kuai4", "pos": ["verb"],
     "vernacularScore": 1, "glosses": ["(bound form) to reckon accounts"] }
 ]
 ```
@@ -65,7 +65,7 @@ clustered). Array of cluster objects:
 |---|---|
 | `sense` | short English label for the shared meaning |
 | `reading` | numbered pinyin for **this** sense — heteronyms differ (会计 → `kuai4`), so a future per-reading row split is a pure data migration, not a schema change |
-| `pos` | part(s) of speech for this sense (`string` or `string[]`) |
+| `pos` | part(s) of speech for this sense — **always `string[] \| null`** (single-POS senses are a 1-element array). Normalized at write time by `toPosArray`; existing rows were migrated string→array. |
 | `vernacularScore` | 1–5 register, scored **independently per cluster** (`null` = scoring failed). Same rubric/scale as the word-level `vernacularScore`. |
 | `glosses` | verbatim source glosses, ordered prototypical→vernacular within the cluster |
 
@@ -135,8 +135,42 @@ docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-cluster-
 docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --no-critic   # skip the Stage B critic
 ```
 
-It is the last step of the mark-discoverable §A pipeline. Uncertainty is
-surfaced via the `⚠ CLUSTER REVIEW` stdout lines described above (no file).
+**Every entry with ≥1 definition is clustered — single-gloss words included** (they
+become a trivial one-cluster array, never left NULL). There is no `definitions > 1`
+gate: downstream consumers key on `definitionClusters IS NULL`, so leaving
+single-gloss words unclustered would wrongly read as "not processed".
+
+**Single-definition fast path (zero API calls).** A one-definition entry skips *every*
+model call (Stage A/A.5/B/C) and is built locally: the lone definition is used verbatim
+as both the cluster's `sense` label and its only gloss, with `reading` = the row's
+primary reading. `pos` and `vernacularScore` are **copied from the word-level columns**
+(`partsOfSpeech`, `vernacularScore`) rather than re-derived — for a single-sense word
+the word-level values already describe that one sense, so no API call is needed. Both
+fall back to `null` if their column isn't populated at clustering time, so in the
+mark-discoverable pipeline **`backfill-parts-of-speech` and `backfill-vernacular-score`
+must run before clustering** (the pipeline is ordered accordingly). So a bulk `--all`
+run is cheap for the single-gloss majority and only spends tokens on genuinely
+polysemous (`≥2`-definition) entries. Trade-off: the `sense` is the raw source gloss,
+not a model-cleaned label (e.g. 米饭 → `"(cooked) rice"`, not `"cooked rice"`).
+Code: the `definitions.length === 1` branch in `run()`.
+
+It runs in the mark-discoverable §A pipeline **before `backfill-example-sentences`**,
+which now reads `definitionClusters` to tag each example sentence with the exact
+`sense` it demonstrates (and skips any row that isn't clustered yet). Uncertainty
+is surfaced via the `⚠ CLUSTER REVIEW` stdout lines described above (no file) — a
+wrong cluster/reading here also propagates a wrong `sense` into the example
+sentences downstream.
+
+## Consumers
+
+`definitionClusters` is additive metadata; its downstream readers:
+
+| Consumer | Uses | Code |
+|---|---|---|
+| **Example sentences** (est) — generation | The list of `sense` labels + per-cluster `vernacularScore`, to tag each generated sentence with the target-word sense it demonstrates and to steer coverage toward every register-4/5 sense. | `server/scripts/backfill/chinese/backfill-example-sentences.js` (`buildSenseContext`) — see [EXAMPLE_SENTENCES.md](./EXAMPLE_SENTENCES.md) |
+| **Example sentences** (est) — per-segment tagging | Each segment's own cluster labels are offered to the tagging pass, which writes a `senseDict[segment]` label; at read time a matching cluster's `ddt(cluster)` becomes that segment's displayed dd. | `backfill-example-sentences.js` (`tagSentenceSegments`), `server/dal/shared/segmentString.ts` (`buildSegmentMetadata`) |
+| **flp sense-picker** (EnglishBlock) | `ddt(cluster)` renders each cluster as a display string in the dropdown; the menu is **sectioned by `reading`** (one `ListSubheader` per distinct pinyin, tone-marked via `numberedToTonedPinyin` and per-syllable tone-colored via `getToneColor`), preserving the vernacular sort within each section and the star on the global default (index 0). The clusters are ordered by the shared `sortedSenseClusters(entry)` helper (highest vernacular first) — the single source of truth both the picker and the persistence layer address. | `src/utils/definitionUtils.ts` (`ddt`, `sortedSenseClusters`), `src/features/flashcards/FlashcardsLearnPage/FlashCardSection.tsx` (`EnglishBlock` → `senseSections`), `src/utils/textUtils.ts` (`numberedToTonedPinyin`), `src/utils/toneColors.ts` (`getToneColor`) |
+| **Per-account sense selection** (`selectedSense`, migration 99) | The learner's chosen sense is persisted **per user per word** so it survives reloads/re-promotion. Stored as the cluster's `sense` LABEL (not an index) so it's stable across re-clustering/re-scoring; resolved back to a sorted index on read (falls back to the default/starred sense if the label no longer matches). Only the two user-context surfaces persist — the **read-only dictionary cdp uses a det-fallback entry with no userId and always shows the default** (its picker is local-only, never saved). | vet column `selectedSense` (`database/migrations/99-add-selected-sense-to-vocabentries.sql`); `src/utils/definitionUtils.ts` (`resolveSelectedSenseIndex`); `src/utils/vocabApi.ts` (`saveSelectedSense`); flp: `useCardIconEditor.ts` (`persistSelectedSense`) → `FlashCardSection.tsx` (`CardFace.handleSelectSense`); saved-card cdp: `VocabCardDetailPage.tsx` (`handleSelectSense`); server: `PATCH /api/vocabEntries/:id/selected-sense` (`VocabEntryController.updateSelectedSense` → `VocabEntryService.updateSelectedSense` → `VocabEntryDAL.updateSelectedSense`) |
 
 ## Human review: model self-flagging via stdout
 

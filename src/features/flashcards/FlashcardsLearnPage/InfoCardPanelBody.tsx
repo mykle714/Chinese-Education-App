@@ -7,6 +7,7 @@ import PosBadge from "../../../components/PosBadge";
 import SegmentedSentenceDisplay from "../../../components/SegmentedSentenceDisplay";
 import PracticeWritingButton from "../../../components/handwriting/PracticeWritingButton";
 import LongDefinitionDisplay from "../../../components/LongDefinitionDisplay";
+import VernacularScoreDots from "../../../components/VernacularScoreDots";
 import InfoCardListRow from "./InfoCardListRow";
 import {
     InfoSheetEntryHeader,
@@ -17,22 +18,8 @@ import {
 import { TAB_LABELS, FC_FONT } from "./constants";
 import { SIZE, WEIGHT, LEADING, TRACKING } from "../../../theme/scale";
 import { SpeakerButton } from "./FlashCardSection";
-import { buildSentencePronunciation } from "./sentencePronunciation";
+import ExampleSentenceList from "../ExampleSentenceList";
 import type { VocabEntry, BreakdownItem, UsedInItem } from "./types";
-
-// Renders the English translation with the translatedVocab word/phrase underlined.
-function renderEnglishWithVocabUnderline(english: string, translatedVocab?: string): React.ReactNode {
-    if (!translatedVocab) return english;
-    const idx = english.toLowerCase().indexOf(translatedVocab.toLowerCase());
-    if (idx === -1) return english;
-    return (
-        <>
-            {english.slice(0, idx)}
-            <span style={{ textDecoration: 'underline' }}>{english.slice(idx, idx + translatedVocab.length)}</span>
-            {english.slice(idx + translatedVocab.length)}
-        </>
-    );
-}
 
 export interface InfoCardPanelBodyProps {
     currentEntry: VocabEntry | null;
@@ -45,6 +32,10 @@ export interface InfoCardPanelBodyProps {
     isFlipped: boolean;
     onBreakdownItemClick?: (item: BreakdownItem) => void;
     onUsedInItemClick?: (item: UsedInItem) => void;
+    // When provided, tapping a segment's definition popup in the Examples tab
+    // opens the eip for that segment's headword. Omit to keep the popup a
+    // passive tooltip.
+    onExampleSegmentClick?: (segment: string) => void;
     onSpeak?: (entry: VocabEntry) => void;
     // When provided, renders a "+" button immediately after the SpeakerButton
     // in the entry header. Used only by the dictionary EIP — flashcards EIP
@@ -104,6 +95,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
     isFlipped,
     onBreakdownItemClick,
     onUsedInItemClick,
+    onExampleSegmentClick,
     onSpeak,
     onAddToLibrary,
     onSpeakSentence,
@@ -321,6 +313,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                                 longDefinitionParts={currentEntry?.longDefinitionParts}
                                 showPinyin={showPinyin}
                                 showPinyinColor={showPinyinColor}
+                                onSegmentOpen={onExampleSegmentClick}
                                 sx={{
                                     fontSize: SIZE.body,
                                     color: fc.onSurface,
@@ -368,22 +361,12 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                                         <Typography sx={{ fontSize: SIZE.micro, fontWeight: WEIGHT.bold, color: fc.textSecondary, letterSpacing: TRACKING.caps, textTransform: "uppercase", fontFamily: FC_FONT }}>
                                             Vernacular
                                         </Typography>
-                                        <Box className="mobile-demo-vernacular-dots" sx={{ display: "flex", alignItems: "center", gap: "4px", height: 19 }}>
-                                            {[1, 2, 3, 4, 5].map((level) => {
-                                                const filled = level <= currentEntry.vernacularScore!;
-                                                return (
-                                                    <Box
-                                                        key={level}
-                                                        sx={{
-                                                            width: 8,
-                                                            height: 8,
-                                                            borderRadius: "50%",
-                                                            background: filled ? fc.onSurface : "transparent",
-                                                            border: `1.5px solid ${filled ? fc.onSurface : fc.border}`,
-                                                        }}
-                                                    />
-                                                );
-                                            })}
+                                        <Box className="mobile-demo-vernacular-dots" sx={{ display: "flex", alignItems: "center", height: 19 }}>
+                                            <VernacularScoreDots
+                                                score={currentEntry.vernacularScore!}
+                                                filledColor={fc.onSurface}
+                                                emptyBorderColor={fc.border}
+                                            />
                                         </Box>
                                     </Box>
                                 )}
@@ -398,60 +381,19 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                     </Box>
                 ) : null}
 
-                {/* Tab 1: Examples */}
+                {/* Tab 1: Examples — shared est renderer (see ExampleSentenceList). */}
                 {effectiveTab === 1 && examplesTabHasContent ? (
-                    <Box className="mobile-demo-sentences-list" sx={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                        {currentEntry!.exampleSentences!.map((sentence, index) => (
-                            <Box
-                                key={index}
-                                className="mobile-demo-sentence-item"
-                                sx={{
-                                    position: "relative",
-                                    background: fc.subtleBg,
-                                    borderRadius: "10px",
-                                    padding: "12px 14px",
-                                    display: "flex",
-                                    flexDirection: "column",
-                                    gap: "8px",
-                                }}
-                            >
-                                {onSpeakSentence && (
-                                    // zIndex keeps the speaker above SegmentedSentenceDisplay's
-                                    // position:relative root, which would otherwise paint over
-                                    // (and steal clicks from) this absolutely-positioned button
-                                    // because it follows in DOM order.
-                                    <Box
-                                        className="mobile-demo-sentence-speaker"
-                                        sx={{ position: "absolute", top: 0, right: 0, zIndex: 2, padding: "4px" }}
-                                    >
-                                        <SpeakerButton
-                                            onClick={() =>
-                                                onSpeakSentence(
-                                                    sentence.foreignText,
-                                                    buildSentencePronunciation(sentence),
-                                                )
-                                            }
-                                            isLoading={speakingKey === sentence.foreignText}
-                                        />
-                                    </Box>
-                                )}
-                                <SegmentedSentenceDisplay
-                                    sentence={sentence}
-                                    size="sm"
-                                    flexWrap="wrap"
-                                    showPinyin={showPinyin}
-                                    showPinyinColor={showPinyinColor}
-                                    showSegmentSpaces={showSegmentSpaces}
-                                    vocabWord={currentEntry?.entryKey}
-                                    language={currentEntry?.language}
-                                    selectable
-                                />
-                                <Typography className="mobile-demo-sentence-english" sx={{ fontSize: SIZE.caption, color: fc.textSecondary, fontFamily: FC_FONT, lineHeight: LEADING.normal }}>
-                                    {renderEnglishWithVocabUnderline(sentence.english, sentence.translatedVocab)}
-                                </Typography>
-                            </Box>
-                        ))}
-                    </Box>
+                    <ExampleSentenceList
+                        sentences={currentEntry!.exampleSentences!}
+                        vocabWord={currentEntry?.entryKey}
+                        language={currentEntry?.language}
+                        showPinyin={showPinyin}
+                        showPinyinColor={showPinyinColor}
+                        showSegmentSpaces={showSegmentSpaces}
+                        onSegmentOpen={onExampleSegmentClick}
+                        onSpeakSentence={onSpeakSentence}
+                        speakingKey={speakingKey}
+                    />
                 ) : effectiveTab === 1 ? (
                     <Box className="mobile-demo-tab-empty" sx={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 2 }}>
                         <Typography sx={{ fontSize: SIZE.body, color: fc.textSecondary, textAlign: "center", fontFamily: FC_FONT }}>

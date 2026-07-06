@@ -75,7 +75,7 @@ Computed by `OnDeckVocabService` after the DB query, before the API response is 
 
 ## Example sentences
 
-Each example sentence is a `{ chinese, english, translatedVocab, tense, partOfSpeechDict }` row in `dictionaryentries_zh.exampleSentences` (JSONB). The Chinese is rendered through `SegmentedSentenceDisplay` — characters are grouped into dictionary-matched segments, and tapping/hovering a segment surfaces a popup with the segment's contextual English meaning.
+Each example sentence is a `{ chinese, english, translatedVocab, segments, partOfSpeechDict, numberDict, tenseDict, senseDict }` row in `dictionaryentries_zh.exampleSentences` (JSONB). The three form-selection dicts (`partOfSpeechDict`, `numberDict`, `tenseDict`) and `senseDict` are all **per-GSA-segment**; there is no sentence-level `tense` (it was moved to the per-verb `tenseDict`). The Chinese is rendered through `SegmentedSentenceDisplay` — characters are grouped into dictionary-matched segments, and tapping/hovering a segment surfaces a popup with the segment's contextual English meaning.
 
 ### Why we need a tense-aware popup, not just the dictionary definition
 
@@ -83,10 +83,10 @@ The English translation field is one fixed string for the whole sentence, so it 
 
 ### Authoring time — two AI backfills
 
-1. **`server/scripts/backfill/chinese/backfill-example-sentences.js`** — for each discoverable zh DET row missing `exampleSentences`, asks Claude Sonnet for **exactly 3** sentences using the headword in a different grammatical role each, one per tense (`past`, `present`, `future`). The prompt requires:
-   - `tense` derived from the sentence's *meaning*, not its surface aspect markers (e.g. 了 can mark a present state change, so it doesn't automatically imply past).
-   - `partOfSpeechDict` covering **every** non-punctuation token in the Chinese sentence, with multi-char tokens allowed. Tags come from `ALLOWED_POS_TAGS`.
-   - A special tagging rule: if the headword is a verb used **nominally** in this sentence (e.g. 下单 as the subject of 下单很简单 / "Ordering is simple"), tag it as `noun` in `partOfSpeechDict`, not `verb`. This is what later lets the renderer pick the gerund form.
+1. **`server/scripts/backfill/chinese/backfill-example-sentences.js`** — for each discoverable zh DET row, generates sentences (sense-coverage driven), then a **post-generation tagging pass** (`tagSentenceSegments`) runs the read-path GSA and tags **each segment**. The tagging pass produces:
+   - `tenseDict` — per **verb** segment, its tense (`past`/`present`/`future`) derived from that verb's *meaning* in context, not its surface aspect markers (e.g. 了 can mark a present state change, so it doesn't automatically imply past). Per-verb, so a sentence mixing tenses tags each verb independently.
+   - `partOfSpeechDict` covering **every** non-punctuation segment in the Chinese sentence, with multi-char segments allowed. Tags come from `ALLOWED_POS_TAGS`.
+   - A special tagging rule: if a verb is used **nominally** in this sentence (e.g. 下单 as the subject of 下单很简单 / "Ordering is simple"), tag it as `noun` in `partOfSpeechDict`, not `verb`. This is what later lets the renderer pick the gerund form.
 
 2. **`server/scripts/backfill/chinese/backfill-word-forms.js`** — for each discoverable zh DET row with `partsOfSpeech` and no `wordForms`, asks Claude Sonnet to extract the base English word from `definitions[0]` and emit a `Record<string, string>` keyed by `past`, `present`, `future`, `gerund`, `adverb`, `adjective`, `noun`. Only the keys applicable to the entry's POS are populated; entries that yield no applicable forms are written as `{}` so the backfill doesn't retry them. The prompt explicitly handles two pitfalls:
    - **Irregular verbs** — actual inflected English, not `{word}ed` templates (e.g. "run" → past `"ran"`).
@@ -98,7 +98,7 @@ When the FLP request hits `OnDeckVocabService`, `DictionaryService.enrichExample
 
 ### Render time — `resolveWordForm` in `SegmentedSentenceDisplay`
 
-`src/components/SegmentedSentenceDisplay.tsx:76` resolves the per-segment popup text from three inputs: the segment's `wordForms`, the segment's POS from `sentence.partOfSpeechDict`, and the sentence's `tense`. Selection rules:
+`resolveWordForm` in `src/components/SegmentedSentenceDisplay.tsx` resolves the per-segment popup text from three inputs: the segment's `wordForms`, the segment's POS from `sentence.partOfSpeechDict[segment]`, and the segment's tense from `sentence.tenseDict[segment]` (per-verb). Selection rules:
 
 - **Verb / auxiliary verb + tense set** → `wordForms[tense]` (e.g. `wordForms.past = "ran"`); falls back to `wordForms[pos]` if the tense key is missing.
 - **Noun** → `wordForms.noun ?? wordForms.gerund`. The gerund fallback is what makes a verb-used-as-noun (tagged `noun` by the authoring rule above) render as e.g. "running" instead of the lemma.

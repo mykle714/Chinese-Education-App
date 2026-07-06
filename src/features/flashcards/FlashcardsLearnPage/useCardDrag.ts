@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { CARD_DISMISS_THRESHOLD_VW, CARD_FLY_OUT_MS } from "./constants";
+import { CARD_DISMISS_THRESHOLD_VW, CARD_DRAG_SENSITIVITY, CARD_FLY_OUT_MS } from "./constants";
 
 interface UseCardDragReturn {
     cardRef: React.RefObject<HTMLDivElement | null>;
@@ -142,8 +142,9 @@ export function useCardDrag(
         e.preventDefault();
 
         const touch = e.touches[0];
-        const deltaX = touch.clientX - dragStart.current.x;
-        const deltaY = touch.clientY - dragStart.current.y;
+        // Amplify the raw finger delta so the card outruns the finger slightly.
+        const deltaX = (touch.clientX - dragStart.current.x) * CARD_DRAG_SENSITIVITY;
+        const deltaY = (touch.clientY - dragStart.current.y) * CARD_DRAG_SENSITIVITY;
         setDragPosition({ x: deltaX, y: deltaY });
     }, [isDragging, isAnimating]);
 
@@ -255,8 +256,9 @@ export function useCardDrag(
         lastMousePos.current = { x: e.clientX, y: e.clientY };
         if (!isDragging || isAnimating) return;
 
-        const deltaX = e.clientX - dragStart.current.x;
-        const deltaY = e.clientY - dragStart.current.y;
+        // Amplify the raw cursor delta so the card outruns the pointer slightly.
+        const deltaX = (e.clientX - dragStart.current.x) * CARD_DRAG_SENSITIVITY;
+        const deltaY = (e.clientY - dragStart.current.y) * CARD_DRAG_SENSITIVITY;
         setDragPosition({ x: deltaX, y: deltaY });
     }, [isDragging, isAnimating]);
 

@@ -1,3 +1,5 @@
+import type { DefinitionCluster, VocabEntry } from '../types';
+
 /**
  * Strip all parenthetical substrings from a definition string for display.
  * Does not mutate the underlying database value.
@@ -17,6 +19,43 @@ export function stripParentheses(text: string): string {
  */
 export function ddt(cluster: { glosses: string[] }): string {
   return stripParentheses(cluster.glosses[0] ?? '');
+}
+
+/**
+ * The entry's definition clusters sorted highest-vernacular-register first (nulls last),
+ * so index 0 is always the starred/default sense. Returns null when the entry has no real
+ * choice to offer (unclustered or a single cluster) — the caller then falls back to the flat
+ * `definitions[0]` dd, exactly as before the clustering feature.
+ *
+ * Single source of truth for the sense picker's ordering: EnglishBlock renders from this,
+ * and the persistence layer resolves `selectedSense` labels against the SAME order. See
+ * docs/DEFINITION_CLUSTERS.md.
+ */
+export function sortedSenseClusters(
+  entry: Pick<VocabEntry, 'definitionClusters'>,
+): DefinitionCluster[] | null {
+  const clusters = entry.definitionClusters;
+  if (!clusters || clusters.length < 2) return null;
+  return [...clusters].sort((a, b) => (b.vernacularScore ?? -1) - (a.vernacularScore ?? -1));
+}
+
+/**
+ * Resolve an entry's persisted `selectedSense` (a cluster `sense` LABEL, migration 99) to an
+ * index into `sortedSenseClusters`. A label is stored instead of an index because it's stable
+ * across re-clustering/re-scoring; if the label no longer matches any cluster (the entry was
+ * re-clustered), or there's no persisted choice, this falls back to the default/starred sense
+ * (index 0). det-fallback entries (dictionary cdp) carry no `selectedSense`, so they always
+ * resolve to 0 here. See docs/DEFINITION_CLUSTERS.md.
+ */
+export function resolveSelectedSenseIndex(
+  entry: Pick<VocabEntry, 'definitionClusters' | 'selectedSense'>,
+): number {
+  const sorted = sortedSenseClusters(entry);
+  if (!sorted) return 0;
+  const label = entry.selectedSense;
+  if (!label) return 0;
+  const idx = sorted.findIndex((c) => c.sense === label);
+  return idx >= 0 ? idx : 0;
 }
 
 // Ordered leading-phrase strips applied (after stripParentheses) to turn a card's

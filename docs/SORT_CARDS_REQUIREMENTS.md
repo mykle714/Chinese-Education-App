@@ -112,6 +112,13 @@ A **sort pack** is a small group of vocabulary cards shown together:
   user skipped is part of an authored pack, it is shown **draggable again** (not
   locked) — the pack's context is a fresh chance to sort it. Re-sorting it there clears
   its skip (§5.2).
+- **Each card shows a vernacular-register badge.** A small circular tag in the card's
+  **top-left corner** — mirroring the utcm badge on /decks (`MiniVocabCard`) — shows
+  the word's `vernacularScore` as a number (1 = literary … 5 = natural colloquial).
+  Rendered only when the entry has a score. This is the per-card face of the register
+  ordering the supply now uses (§6.4). (The eip renders the same score as a five-dot
+  meter via the shared `VernacularScoreDots` component; the sort card uses the compact
+  numeric tag instead to match the utcm badge form.)
 - **A pack is shown at most once.** Once the user has **finished** a pack (every card
   sorted) **or skipped** it, that pack never appears again — regardless of whether its
   cards were sorted or skipped. (This is the per-user "seen packs" record; it applies
@@ -209,9 +216,15 @@ the user **chooses** to bring it back, in one of three ways:
   operation.
 
 ### 6.4 Supply order, running out of in-level cards, and queue lag
-- **At the target level, authored packs are served first** (in their curation
-  order), then **system fallback single-card packs** for the remaining un-sorted,
-  un-skipped words at that level (§4.5).
+- **At the target level, authored packs are served first**, then **system fallback
+  single-card packs** for the remaining un-sorted, un-skipped words at that level
+  (§4.5). **Within each of those two groups, supply is ordered by colloquial
+  register — highest `vernacularScore` first** (natural/colloquial words before
+  literary ones): authored packs by the mean `vernacularScore` of their cards,
+  fallback singles by the card's own score; entries with no score sink to the end,
+  and ties keep the prior order (authored curation order / card id).
+  Implemented in `StarterPacksService.getNextPacks` (authored sort via
+  `_packVernacularRank`) and the `_fetchSupplyRows` `ORDER BY` (singles).
 - When the user has **sorted all packs at their level**, the flow **offers packs from
   adjacent levels** so the user always has something to sort (§4.4), serving them **as
   close to the target level as possible** — exhaust the nearest levels first and only

@@ -123,12 +123,14 @@ leaf page slides the page up while the footer drops away.
 footer (and which tab is active). Two match modes:
 
 - **Exact** (`FOOTER_ROUTES`): `/` (home), `/flashcards/decks`, `/discover`,
-  `/account`, `/games`, `/community`, `/flashcards/mastered`.
+  `/account`, `/games`, `/community`, `/flashcards/mastered`, `/dictionary` (→ `home`).
 - **Prefix** (`FOOTER_ROUTE_PREFIXES`, for parameterized node routes): `/discover/sort/`
-  and `/discover/skipped/` (both → `discover` tab). Because these paths carry a
-  `:language` segment, an exact-key lookup would miss them and the footer would slide
-  away — so node pages reached via a parameterized path must be registered here.
-  Keep in sync with `NODE_PREFIXES` in `utils/pageTransition.ts`.
+  and `/discover/skipped/` (both → `discover`), `/flashcards/card/` (→ `flashcards`,
+  the saved-card cdp) and `/dictionary/card/` (→ `home`, the read-only dictionary cdp).
+  Because these paths carry a `:language` / `:id` / `:word` segment, an exact-key
+  lookup would miss them and the footer would slide away — so node pages reached via a
+  parameterized path must be registered here. Keep in sync with `NODE_PREFIXES` in
+  `utils/pageTransition.ts`.
 
 Every other route (all leaf pages, login, etc.) is absent → the footer slides out.
 `MobileTabScreen` no longer renders `MobileFooter` itself (it still reserves
@@ -140,15 +142,52 @@ Every other route (all leaf pages, login, etc.) is absent → the footer slides 
 |---|---|---|
 | `/discover/sort/:language` | `SortCardsPage` | Node |
 | `/discover/skipped/:language` | `SkippedCardsPage` | Node |
-| `/dictionary` | `DictionaryPage` | Leaf |
+| `/dictionary` | `DictionaryPage` | Node (footer added; tapping a result opens the dictionary cdp) |
+| `/dictionary/card/:word` | `DictionaryCardDetailPage` | Node (read-only cdp; det-keyed by word) |
 | `/reader` | `ReaderPage` | Leaf |
 | `/tester-dashboard` | `TesterDashboardPage` | Leaf |
 | `/night-market` | `NightMarketEnginePage` | Leaf |
-| `/flashcards/card/:id` | `VocabCardDetailPage` | Leaf (footer removed) |
+| `/flashcards/card/:id` | `VocabCardDetailPage` | Node (saved-card cdp; footer added) |
 | `/games/bubble-match` | `BubbleMatchPage` | Leaf (footer removed; the info/picker screen no longer shows the footer) |
 | `/flashcards/mastered` | `MasteredCardsPage` | Node |
 | `/games` | `GamesPage` | Node |
 | `/community` | `CommunityPage` | Node |
+
+### Dictionary browse-state persistence
+
+`DictionaryPage`'s query, pagination page, and scroll position are held in an
+in-memory singleton, `dictionaryBrowseState` (`src/pages/dictionaryBrowseState.ts`),
+so the list ⇄ card-detail (cdp) drill-in restores where the user was. The state is
+seeded into `useDictionarySearch` via its `initial` argument and kept in sync by
+effects in `DictionaryPage.tsx`.
+
+It is meant to survive **only** moves inside the Dictionary space (`/dictionary`
+and `/dictionary/card/*`). The route watcher in `Layout.tsx` calls
+`resetDictionaryBrowseState()` on the first transition from an in-space pathname to
+an out-of-space one, so every exit — the back arrow to Home, a footer-tab tap, and
+browser back — clears the query; `isDictionarySpacePath()` defines the space. A full
+page reload also starts fresh (the singleton is not persisted to storage).
+
+## Card detail (cdp): two surfaces, one shared body
+
+There are two card-detail pages, both **Node** pages that share the presentational
+sections below the hero (`src/features/flashcards/VocabCardDetailBody.tsx` —
+`VocabCardBadges` + `VocabCardSections`: definition / breakdown+used-in+expansion /
+examples / synonyms+related):
+
+- **Saved-card cdp** (`/flashcards/card/:id`, `VocabCardDetailPage`) — loads a vet
+  row by id; editable (icon-editor toolbar + delete). Reached from Decks/Mastered, so
+  the **Flashcards** tab stays active. Passes no `onWordOpen`, so breakdown/example
+  rows are passive.
+- **Read-only dictionary cdp** (`/dictionary/card/:word`, `DictionaryCardDetailPage`)
+  — fetches the det row via `/api/dictionary/lookup/:word` and adapts it
+  (`dictEntryAdapter`, which now carries `iconId`). **No edits**: no toolbar/delete,
+  and the hero always renders the det's representative icon in **basic** layout
+  (`iconLayout`/`textLayout` null, advanced off). Reached from the Dictionary node, so
+  the **Home** tab stays active. Passes `onWordOpen`, so breakdown/used-in rows and
+  example-sentence segments drill into the cdp of the tapped word (the same drill-in
+  the eip offers, except it navigates to a cdp instead of opening a nested eip tab).
+  Every linked page is itself this read-only cdp, so read-only propagates recursively.
 
 ## Not yet classified
 The generic in-game shell `src/games/runtime/GamePage.tsx` (used by any future

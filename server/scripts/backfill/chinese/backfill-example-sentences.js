@@ -1,23 +1,52 @@
 /**
  * Backfill Script: AI-powered example sentences for dictionaryentries_zh
  *
- * For each discoverable zh entry with no exampleSentences, uses Claude AI to generate
- * natural, contextually appropriate example sentences using the word in different
- * grammatical roles. Each sentence includes Chinese, English translation,
- * a partOfSpeechDict keyed by sentence tokens (single or multi-character words),
- * and a segmentGloss: an ORDERED array of { index, segment, english } items giving
- * the contextual English gloss (correct tense/form) of each Chinese segment. Read
- * left to right, the english values string together into understandable (if broken)
- * English. The explicit `index` disambiguates repeated tokens (e.g. 看看, 一…一…),
- * which a token-keyed object could not.
+ * For each discoverable zh entry, uses Claude AI to generate natural, contextually
+ * appropriate example sentences. Each stored sentence includes Chinese, an English
+ * translation, a `translatedVocab` pointer, a `sense` (the target word's
+ * EXACT `definitionClusters` label), the authoritative GSA `segments`, and four
+ * segment-keyed dicts — `partOfSpeechDict`, `numberDict`, `tenseDict`, `senseDict`.
+ *
+ * TWO-PHASE PIPELINE (generation → segment-wise tagging):
+ *   Generation emits ONLY sentence text + `translatedVocab` + `sense`
+ *   (target, multi-sense) + `targetPos` (the target word's POS, used solely for
+ *   coverage steering; NOT stored). A separate post-generation pass
+ *   (tagSentenceSegments) then runs the SAME greedy segmentation the read path uses
+ *   and tags EACH segment with its contextual POS, sense (from THAT segment's own
+ *   clusters), number (nouns), and tense (verbs) — all keyed by the GSA segment
+ *   string. Segmentation is persisted (`segments`) so read-time lookups align exactly.
+ *   This replaced the old design where generation emitted an AI-token-keyed
+ *   partOfSpeechDict/numberDict that could misalign with the read-time segmentation,
+ *   and where `tense` was a single sentence-level label (wrong for a sentence with two
+ *   verbs in different tenses). See docs/EXAMPLE_SENTENCES.md.
+ *
+ * SENSE TAGGING (replaces the old `segmentGloss`):
+ *   The senses come from `definitionClusters` (migration 90; see
+ *   docs/DEFINITION_CLUSTERS.md), so **clustering MUST run before this script**
+ *   (the mark-discoverable §A pipeline is ordered accordingly). Two prompt shapes:
+ *     • Multi-sense entry → the sense list is passed in and the model must pick
+ *       one label per sentence, verbatim; the pick is validated against the list.
+ *     • Single-sense entry → a DIFFERENT prompt is used that never mentions senses
+ *       (nothing to disambiguate); the one sense label is auto-filled server-side.
+ *   Entries that are not yet clustered (`definitionClusters` IS NULL) are SKIPPED
+ *   with a warning — every generated sentence is guaranteed a validated sense.
+ *
+ * COVERAGE: the generator is asked to cover (a) every part of speech the word can
+ * take, and (b) every sense scored 4–5 (the vernacular/common senses). After the
+ * batch, any uncovered POS or high-value sense is backfilled one sentence at a time.
+ *
+ * PROMPT CACHING: the large static instruction set is hoisted into a cached
+ * `system` block (cachedSystem); only the small per-entry tail (word, senses,
+ * counts) rides in the user message, so consecutive entries reuse the cached prefix.
  *
  * Multi-agent pipeline (mirrors backfill-expansion-claude.js):
  *   1. Generator agent (Sonnet) → proposes the batch of sentences
- *   2. Shape check (isValidSentenceShape) → mechanical field/POS-dict validation
+ *   2. Shape check (isValidSentenceShape) + sense-membership check
  *   3. Validator agent (Sonnet) → flags common AI mistakes per sentence
- *      (e.g. degree-complement word order like 一些贵 instead of 贵一些)
  *   4. Repair agent (Opus) → for each flagged sentence, drafts a corrected
  *      replacement informed by the validator's critique, re-validated once
+ *   5. Tagging pass (Sonnet, tagSentenceSegments) → per-sentence: GSA-segment the
+ *      final text, then tag each segment with POS + sense + number
  *
  * Usage:
  *   npx tsx /app/scripts/backfill-example-sentences.js             # full backfill
@@ -35,7 +64,13 @@ import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
 import { ALLOWED_POS_TAGS } from '../shared/lib/posTags.js';
 import { initRunLog, cachedSystem } from '../run-log.js';
-const SCRIPT_VERSION = 3; // bump when this script's logic/prompt changes (v3: per-slot retry instead of whole-batch discard on parse failure)
+import {
+  getAllSubstrings,
+  buildDictMap,
+  buildExcludeSet,
+  segmentWithDict,
+} from '../../../dal/shared/segmentString.js';
+const SCRIPT_VERSION = 6; // bump when this script's logic/prompt changes (v6: move `tense` from a single sentence-level generation field to a per-verb segment-keyed `tenseDict` emitted by the tagging pass; generation no longer emits `tense`) (v5: pull per-token POS/number out of generation into a post-generation segment-wise tagging pass — GSA-segment-keyed partOfSpeechDict/numberDict/senseDict + persisted `segments`; generation now emits only `targetPos` for coverage)
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -67,10 +102,67 @@ const emptinessFilter = isAllDiscoverable
 const GENERATOR_MODEL = 'claude-sonnet-4-6';
 const VALIDATOR_MODEL = 'claude-sonnet-4-6';
 const REGENERATOR_MODEL = 'claude-opus-4-8';
+// Post-generation segment-wise tagger (POS + sense + number per GSA segment).
+const TAGGER_MODEL = 'claude-sonnet-4-6';
 
 const ALLOWED_TENSES = new Set(['past', 'present', 'future']);
 const ALLOWED_NUMBERS = new Set(['singular', 'plural']);
 const ALLOWED_POS_TAG_SET = new Set(ALLOWED_POS_TAGS);
+const ALLOWED_POS_LINE = ALLOWED_POS_TAGS.join(', ');
+
+// A sense qualifies as a coverage target when its per-cluster vernacularScore is
+// at least this — i.e. the common/vernacular senses a learner is most likely to meet.
+const HIGH_VALUE_SENSE_SCORE = 4;
+
+// Minimum number of senses a multi-sense word must be steered to cover — a floor
+// so diversity steering never fully switches off even for a 2-sense word whose
+// scores are both low (see selectCoverageSenses + buildSenseContext).
+const MIN_COVERAGE_SENSES = 2;
+
+// True when a cluster's POS list marks it a bound form (e.g. 节's "to save" =
+// 节约/节省 — 节 never stands alone as a verb). Bound-form senses can't form a
+// natural STANDALONE sentence, so they're ranked below equally-scored free senses
+// as coverage targets — a free sense fills the slot cleanly instead of forcing a
+// bound compound (which the single-sentence re-roll then tends to fail on).
+function isBoundFormCluster(c) {
+  return Array.isArray(c.pos) && c.pos.some(p => typeof p === 'string' && p.toLowerCase().includes('bound'));
+}
+
+// The set of POS tags the word can carry in a NATURAL STANDALONE sentence — i.e.
+// POS tags that appear in at least one NON-bound-form cluster. A POS that occurs
+// only in bound-form senses (e.g. 节's "verb", which lives solely in the bound
+// 节约/节省) can't head its own sentence, so it must be excluded from the POS
+// coverage targets — otherwise the coverage re-roll keeps firing on an impossible
+// role and fabricates a redundant, off-target sentence. Ties the POS-coverage axis
+// to the same bound-form reality selectCoverageSenses already respects.
+function coverablePosSet(clusters) {
+  const set = new Set();
+  for (const c of clusters) {
+    if (isBoundFormCluster(c) || !Array.isArray(c.pos)) continue;
+    for (const p of c.pos) if (typeof p === 'string' && p.trim()) set.add(p);
+  }
+  return set;
+}
+
+// Pick the coverage-target senses (the senses the generator is REQUIRED to
+// demonstrate) for a multi-sense entry, sized to `desired` (the sentence budget).
+// Ranking: vernacularScore desc → free forms before bound forms → original order.
+// The required set = every register-≥-HIGH_VALUE_SENSE_SCORE sense, extended down
+// the ranking until it reaches `desired` senses (capped at the senses that exist).
+// This guarantees (a) a word whose senses are all register 1–3 (e.g. 节, top score
+// 3) still gets a spread rather than none, and (b) enough distinct senses to fill
+// every sentence slot, so extra slots don't collapse into duplicates.
+function selectCoverageSenses(clusters, desired) {
+  const ranked = clusters
+    .map((c, i) => ({ sense: c.sense, score: Number(c.vernacularScore) || 0, bound: isBoundFormCluster(c), i }))
+    .sort((a, b) => b.score - a.score || Number(a.bound) - Number(b.bound) || a.i - b.i);
+
+  const highValueCount = ranked.filter(c => c.score >= HIGH_VALUE_SENSE_SCORE).length;
+  // Always include every high-value sense; then top up to the sentence budget
+  // (but never request more senses than the word actually has).
+  const n = Math.min(ranked.length, Math.max(highValueCount, desired, MIN_COVERAGE_SENSES));
+  return ranked.slice(0, n).map(c => c.sense);
+}
 
 // Shared rule text — the catalogue of common AI mistakes the validator agent
 // looks for. Single source of truth referenced by the validator prompt. The
@@ -82,8 +174,70 @@ const COMMON_MISTAKES_TEXT = `Common AI mistakes to flag (each maps to a violati
 - "forced_construction": A grammar pattern (把 / 被 / 比 / 是…的, etc.) has been forced onto a sentence where it does not fit, producing stilted Mandarin.
 - "target_word_misused": The target word is missing, or used with the wrong meaning or part of speech for this sentence.
 - "measure_word_error": A wrong, missing, or mismatched classifier / measure word.
-- "translation_mismatch": The English translation does not faithfully match the Chinese meaning or clause structure.
-- "tense_label_wrong": The "tense" label does not match the sentence's actual temporal meaning.`;
+- "translation_mismatch": The English translation does not faithfully match the Chinese meaning or clause structure.`;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Static prompt fragments (no per-entry data → safe to hoist into a cached
+//  `system` block). Everything variable (the word, its senses, the counts) is
+//  supplied in the user message so the cached prefix stays byte-identical across
+//  entries. See cachedSystem() in run-log.js for the caching contract.
+// ─────────────────────────────────────────────────────────────────────────────
+const PERSONA = `You are a Chinese language teacher creating example sentences for a vocabulary app.`;
+
+// Per-sentence field rules shared by every generation path. Refers to "the target
+// word" generically (the concrete word arrives in the user message).
+const CORE_FIELD_RULES = `Each sentence must:
+- Use the target word naturally, exactly as a native speaker would
+- Be simple enough for an intermediate learner (HSK 3–4 level vocabulary otherwise)
+- Have an accurate English translation
+- Mirror the punctuation of the Chinese sentence in the English translation — if the Chinese uses a comma to separate two clauses, use a comma in the same position in English; match question marks, exclamation points, etc.
+- Match the clause structure of the Chinese sentence — if the Chinese has two clauses separated by a conjunction or comma, the English should have two parallel clauses in the same order
+- Include a "translatedVocab" field: the English word or short phrase in your English translation that directly corresponds to the target word (e.g. if the word is 贴 and the sentence is "She stuck the photo on the wall.", translatedVocab is "stuck")
+- Include a "targetPos" field: the part of speech the TARGET word carries IN THIS sentence — one of: ${ALLOWED_POS_LINE}. If the target word is a verb but is used as a gerund or nominal subject/object here (e.g. 下单很简单 — "Ordering is simple"), tag it "noun", not "verb". (Per-segment POS for the whole sentence is derived later by a separate pass — you only report the target word's role here.)`;
+
+// Extra rule appended ONLY for multi-sense entries: the model must pick a sense
+// label per sentence. This is what the code validates against the provided list.
+const SENSE_FIELD_RULE = `- Include a "sense" field: the EXACT sense label (copied verbatim from the "Senses" list in the message below) that the target word carries IN THIS sentence. It MUST be one of the provided labels, character-for-character — never invent, translate, paraphrase, shorten, or combine labels.`;
+
+const VARIETY_RULE = `Vary the sentence structure so the set doesn't feel templated. Do NOT start most sentences with a time word followed by a verb, and avoid leaning on a single repeated mold: vary the sentence-initial element, include a question where natural, and draw on a diverse range of grammatical constructions.`;
+
+// Coverage guidance differs by prompt shape.
+const COVERAGE_MULTI = `Aim to cover BOTH dimensions listed in the message below: (a) every part of speech the target word can take, and (b) every sense marked "cover this sense". Give each its own sentence where possible — a single sentence may satisfy one POS and one sense at once.
+
+Maximize the number of DISTINCT senses shown across the set. Do NOT write two sentences that demonstrate the same sense (identical "sense" value) while any other listed sense still has no sentence — spend each remaining slot on a sense not yet shown. Only repeat a sense once every listed sense has appeared at least once, or when a sense simply cannot form a natural standalone sentence (e.g. a bound form). Near-duplicate sentences for the same meaning (e.g. two "Spring Festival is the most important holiday" variants) are the specific failure to avoid.`;
+const COVERAGE_SINGLE = `Aim to give the target word a variety of grammatical roles and contexts — ideally at least one sentence for every part of speech it can take.`;
+
+// JSON output templates. The "sense" key is present only in the multi-sense template.
+const JSON_ARRAY_TEMPLATE_MULTI = `Respond with ONLY a JSON array of the requested number of objects. Fill in every field of the template below for each sentence — do not skip, rename, or omit any key, and every string value must be immediately preceded by its key name (e.g. "english": "..."); never write a bare string value with no key name before it:
+[
+  {
+    "foreignText": "<Chinese sentence>",
+    "english": "<English translation>",
+    "translatedVocab": "<english word or phrase>",
+    "sense": "<one of the provided sense labels, verbatim>",
+    "targetPos": "<pos_tag the target word carries here>"
+  }
+]`;
+const JSON_ARRAY_TEMPLATE_SINGLE = `Respond with ONLY a JSON array of the requested number of objects. Fill in every field of the template below for each sentence — do not skip, rename, or omit any key, and every string value must be immediately preceded by its key name (e.g. "english": "..."); never write a bare string value with no key name before it:
+[
+  {
+    "foreignText": "<Chinese sentence>",
+    "english": "<English translation>",
+    "translatedVocab": "<english word or phrase>",
+    "targetPos": "<pos_tag the target word carries here>"
+  }
+]`;
+const JSON_OBJECT_TEMPLATE_MULTI = `Respond with ONLY one JSON object. Fill in every field of the template below — do not skip, rename, or omit any key, and every string value must be immediately preceded by its key name:
+{"foreignText": "...", "english": "...", "translatedVocab": "...", "sense": "<one of the provided sense labels, verbatim>", "targetPos": "<pos_tag the target word carries here>"}`;
+const JSON_OBJECT_TEMPLATE_SINGLE = `Respond with ONLY one JSON object. Fill in every field of the template below — do not skip, rename, or omit any key, and every string value must be immediately preceded by its key name:
+{"foreignText": "...", "english": "...", "translatedVocab": "...", "targetPos": "<pos_tag the target word carries here>"}`;
+
+// Assembled, cached system prompts (four shapes: batch/single-object × multi/single-sense).
+// Concatenation happens once at module load, so each constant is byte-stable → cacheable.
+const SYSTEM_BATCH_MULTI = [PERSONA, `The word below has several distinct senses; show a range of them across the sentences.`, CORE_FIELD_RULES, SENSE_FIELD_RULE, VARIETY_RULE, COVERAGE_MULTI, JSON_ARRAY_TEMPLATE_MULTI].join('\n\n');
+const SYSTEM_BATCH_SINGLE = [PERSONA, `Write several example sentences for the single-meaning word below.`, CORE_FIELD_RULES, VARIETY_RULE, COVERAGE_SINGLE, JSON_ARRAY_TEMPLATE_SINGLE].join('\n\n');
+const SYSTEM_ONE_MULTI = [PERSONA, `Write ONE example sentence for the word below (which has several distinct senses).`, CORE_FIELD_RULES, SENSE_FIELD_RULE, JSON_OBJECT_TEMPLATE_MULTI].join('\n\n');
+const SYSTEM_ONE_SINGLE = [PERSONA, `Write ONE example sentence for the single-meaning word below.`, CORE_FIELD_RULES, JSON_OBJECT_TEMPLATE_SINGLE].join('\n\n');
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Anthropic response helper — strips code fences and extracts the outermost
@@ -105,233 +259,224 @@ function formatDefinitions(definitions) {
   return Array.isArray(definitions) ? definitions.slice(0, 3).join('; ') : definitions;
 }
 
-// Mechanical shape check for the segmentGloss array: an ordered list of
-// { index, segment, english } items. Validates that it is a non-empty array,
-// each item is well-formed, segments carry no punctuation, and the indexes form
-// a contiguous 0..n-1 sequence (so order + dupe-disambiguation are intact).
-function isValidSegmentGloss(arr) {
-  if (!Array.isArray(arr) || arr.length === 0) return false;
-  const seenIndexes = new Set();
-  const ok = arr.every((item) =>
-    item &&
-    typeof item === 'object' &&
-    !Array.isArray(item) &&
-    Number.isInteger(item.index) &&
-    typeof item.segment === 'string' &&
-    item.segment.length > 0 &&
-    !/[\s，。！？；：,.!?;:]/.test(item.segment) &&
-    typeof item.english === 'string' &&
-    item.english.trim().length > 0 &&
-    (seenIndexes.add(item.index), true)
-  );
-  if (!ok || seenIndexes.size !== arr.length) return false;
-  // Indexes must be a contiguous 0..n-1 set (order is carried by the array itself).
-  for (let i = 0; i < arr.length; i++) {
-    if (!seenIndexes.has(i)) return false;
-  }
-  return true;
+// ─────────────────────────────────────────────────────────────────────────────
+//  Sense helpers — read the entry's definitionClusters (migration 90).
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Human-readable senses block for the user message. Each line shows the exact
+// label the model must copy into the "sense" field, plus pos/register/glosses
+// as disambiguating context.
+function formatSenses(clusters) {
+  return clusters.map((c) => {
+    const pos = c.pos?.join('/');  // definitionClusters.pos is always string[] | null
+    const glosses = Array.isArray(c.glosses) ? c.glosses.join('; ') : '';
+    const score = c.vernacularScore;
+    return `- "${c.sense}"${pos ? ` (${pos})` : ''}${score != null ? ` [register ${score}/5]` : ''}${glosses ? ` — ${glosses}` : ''}`;
+  }).join('\n');
 }
 
-// Validates the numberDict: a grammatical-number ('singular'/'plural') tag for each
-// noun token. It must be an object whose values are all in ALLOWED_NUMBERS, and it must
-// cover every token that partOfSpeechDict tags as a 'noun' (each noun declares its number
-// so resolveWordForm can pick the singular vs. plural English form in the popup). Tokens
-// of other parts of speech may be omitted.
-function isValidNumberDict(numberDict, partOfSpeechDict) {
-  if (!numberDict || typeof numberDict !== 'object' || Array.isArray(numberDict)) return false;
-  for (const [token, num] of Object.entries(numberDict)) {
-    if (typeof token !== 'string' || token.length === 0) return false;
-    if (typeof num !== 'string' || !ALLOWED_NUMBERS.has(num)) return false;
-  }
-  // Every noun token must have a number declared.
-  for (const [token, tag] of Object.entries(partOfSpeechDict)) {
-    if (tag === 'noun' && !numberDict[token]) return false;
-  }
-  return true;
-}
-
-// Mechanical shape check for a single sentence object (fields + POS dict + tense + numberDict).
-// Used both for generator output and for any Opus-repaired replacement sentence.
+// Mechanical shape check for a single GENERATED sentence object (core fields +
+// the target word's POS). Per-segment POS/number/sense/tense are no longer part
+// of generation — they are produced later by tagSentenceSegments — so this only
+// validates what the generator emits. Does NOT check `sense`: sense validation is
+// mode-dependent and handled by the caller (membership check for multi-sense;
+// auto-fill for single).
 function isValidSentenceShape(s) {
   return !!(
     s &&
     typeof s.foreignText === 'string' && s.foreignText.length > 0 &&
     typeof s.english === 'string' && s.english.length > 0 &&
     typeof s.translatedVocab === 'string' && s.translatedVocab.trim().length > 0 &&
-    typeof s.tense === 'string' && ALLOWED_TENSES.has(s.tense) &&
-    isValidSegmentGloss(s.segmentGloss) &&
-    s.partOfSpeechDict &&
-    typeof s.partOfSpeechDict === 'object' &&
-    !Array.isArray(s.partOfSpeechDict) &&
-    Object.keys(s.partOfSpeechDict).length > 0 &&
-    Object.entries(s.partOfSpeechDict).every(([token, tag]) =>
-      typeof token === 'string' &&
-      token.length > 0 &&
-      !/[\s，。！？；：,.!?;:]/.test(token) &&
-      typeof tag === 'string' &&
-      ALLOWED_POS_TAG_SET.has(tag)
-    ) &&
-    isValidNumberDict(s.numberDict, s.partOfSpeechDict)
+    typeof s.targetPos === 'string' && ALLOWED_POS_TAG_SET.has(s.targetPos)
   );
 }
 
 /**
- * Ask Claude to generate a batch of natural example sentences for a Chinese word.
- * Returns the raw parsed array (not shape-filtered) or null if unparseable.
+ * Finalize a parsed sentence for a given sense-mode:
+ *   • single-sense → auto-fill the one sense label (the model was never asked for it)
+ *   • multi-sense  → require the model-picked `sense` to be one of the valid labels
+ * Returns the finalized sentence, or null if it fails the shape or sense check.
  */
-async function generateSentenceBatch(word, pronunciation, definitionText, posList, sentenceCount) {
-  const allowedPosTags = ALLOWED_POS_TAGS;
-  const posCoverageClause = posList.length > 0
-
-  const prompt = `You are a Chinese language teacher creating example sentences for a vocabulary app.
-
-Word: ${word} (${pronunciation})
-Meaning: ${definitionText}${posList.length > 0 ? `\nParts of speech this word can take: ${posList.join(', ')}` : ''}
-
-Write exactly ${sentenceCount} natural example sentences using "${word}". Each sentence should:
-- Use the word naturally as a native speaker would
-- Be simple enough for an intermediate learner (HSK 3–4 level vocabulary otherwise)
-- Show a different grammatical role or context for the word for each sentence${posCoverageClause}
-- Have an accurate English translation
-- Mirror the punctuation of the Chinese sentence in the English translation — if the Chinese uses a comma to separate two clauses, use a comma in the same position in English; match question marks, exclamation points, etc.
-- Match the clause structure of the Chinese sentence — if the Chinese has two clauses separated by a conjunction or comma, the English should have two parallel clauses in the same order
-- Include a "translatedVocab" field: the English word or short phrase in your English translation that directly corresponds to "${word}" (e.g. if the word is 贴 and the sentence is "She stuck the photo on the wall.", translatedVocab is "stuck")
-- Include a "tense" field: the temporal meaning of the sentence — one of "past", "present", or "future". Reason from what the sentence *means* in context, not just which grammatical markers are present (e.g. 了 can mark a present state change, progressive aspect can appear in past or future contexts). Use "past" for completed or past actions, "present" for ongoing, habitual, or stative situations, and "future" for intended or upcoming actions.
-- Include a "partOfSpeechDict" object for each sentence
-- partOfSpeechDict keys must be word tokens that appear in the Chinese sentence (single or multi-character words are both allowed)
-- Make sure to include every word in the sentence as a key in partOfSpeechDict
-- partOfSpeechDict values must be one of:
-  ${allowedPosTags.join(', ')}
-- Do not include punctuation as keys
-- Include the target word "${word}" as one of the keys in partOfSpeechDict
-- If the target word is a verb but is used as a gerund or nominal subject/object in this sentence (e.g. 下单很简单 — "Ordering is simple", where 下单 is the sentence subject), tag it as "noun", not "verb"
-- Include a "numberDict" object for each sentence: for EVERY token you tagged as "noun" in partOfSpeechDict, give its grammatical number IN THIS SENTENCE as "singular" or "plural", based on how it is rendered in the English translation (e.g. 书 in "I read the books" → "plural"; 书 in "I read a book" → "singular"). Judge number from the meaning/English, since Chinese nouns are not overtly marked for number. Only noun tokens need an entry; omit non-noun tokens.
-- Include a "segmentGloss" array for each sentence: an ORDERED, segment-by-segment English gloss of the Chinese sentence
-  - Cover the SAME word tokens you used as keys in partOfSpeechDict, in the exact left-to-right order they appear in the Chinese sentence (do not include punctuation)
-  - Each item is an object: {"index": <0-based position in this array>, "segment": "<the Chinese token>", "english": "<its contextual English gloss>"}
-  - The "index" must start at 0 and increase by 1 for each item — this is what lets repeated tokens (e.g. 看看, 一…一…) be told apart
-  - Each "english" gloss must use the correct tense / form / number that the word takes IN THIS sentence (e.g. 贴 in a past-tense sentence → "stuck", not "stick"; 照片 as a definite object → "the photo")
-  - For grammatical function words with no direct English equivalent (把, 了, 的, 吗, measure words, etc.), give the closest functional English ("took", "(completed)", "'s", "(question)") or a brief bracketed note — choose whatever keeps the strung-together reading understandable
-  - When the "english" values are read in order, they must form understandable English to a native speaker — it does NOT need to be natural/fluent (broken English is fine), but it must be comprehensible
-
-Across the ${sentenceCount} sentences, vary the sentence structure so they don't feel templated. Do NOT start most sentences with a time word followed by a verb, and avoid leaning on a single repeated mold. Mix it up: vary the sentence-initial element, include a question where natural, and draw on a diverse range of grammatical constructions rather than reusing the same one.
-
-Respond with ONLY a JSON array of exactly ${sentenceCount} objects. Fill in every field of the template below for each sentence — do not skip, rename, or omit any key, and every string value must be immediately preceded by its key name (e.g. "english": "..."); never write a bare string value with no key name before it:
-[
-  {
-    "foreignText": "<Chinese sentence>",
-    "english": "<English translation>",
-    "translatedVocab": "<english word or phrase>",
-    "tense": "past" | "present" | "future",
-    "partOfSpeechDict": {
-      "<wordToken1>": "<pos_tag>",
-      "<wordToken2>": "<pos_tag>"
-    },
-    "numberDict": {
-      "<each noun token>": "singular" | "plural"
-    },
-    "segmentGloss": [
-      {"index": 0, "segment": "<wordToken1>", "english": "<contextual english gloss>"},
-      {"index": 1, "segment": "<wordToken2>", "english": "<contextual english gloss>"}
-    ]
+function finalizeSentence(parsed, { isSingleSense, singleSenseLabel, senseLabelSet }) {
+  if (!parsed || !isValidSentenceShape(parsed)) return null;
+  if (isSingleSense) {
+    parsed.sense = singleSenseLabel;
+    return parsed;
   }
-]
-Every segmentGloss item MUST have all three keys — "index", "segment", AND "english" — spelled exactly as shown. Never write a segmentGloss item as {"index": 0, "segment": "X", "some text"} with the "english" key name missing.`;
+  return typeof parsed.sense === 'string' && senseLabelSet.has(parsed.sense) ? parsed : null;
+}
+
+/**
+ * Render the per-slot sense assignment for the multi-sense batch prompt (SOFT
+ * assignment). Each required sense (already ranked + budget-sized by
+ * selectCoverageSenses) is SUGGESTED for one sentence slot, so the batch itself
+ * emits one sentence per distinct sense — making duplicates the exception rather
+ * than something the coverage re-roll has to patch after the fact. Assignment is
+ * advisory: the model may deviate when a sense can't form a natural sentence
+ * (e.g. a bound form), and the code-side coverage loop still backstops any gap.
+ * Extra slots (when the sentence budget exceeds the number of required senses —
+ * a word with many POS but few senses) are left free and steered toward an
+ * as-yet-uncovered sense or part of speech.
+ */
+function buildSlotAssignmentBlock(assignedSenses, sentenceCount) {
+  if (!assignedSenses.length) {
+    // No required set (shouldn't happen for multi-sense post-selection, but stay safe):
+    // fall back to the generic "show a range" nudge.
+    return 'Show a range of the senses listed above; give each its own sentence where one reads naturally.';
+  }
+  const slotLines = [];
+  for (let i = 0; i < sentenceCount; i++) {
+    slotLines.push(i < assignedSenses.length
+      ? `  Sentence ${i + 1} — demonstrate sense: "${assignedSenses[i]}"`
+      : `  Sentence ${i + 1} — free: use any sense not yet shown above, or an uncovered part of speech`);
+  }
+  return `Suggested sense for each sentence (deviate ONLY if an assigned sense cannot form a natural, native sentence — e.g. a bound form — and if so, cover a DIFFERENT not-yet-shown sense instead of repeating one):
+${slotLines.join('\n')}`;
+}
+
+/**
+ * Ask Claude to generate a batch of natural example sentences for a Chinese word.
+ * Returns the raw parsed array (not shape/sense-filtered) or null if unparseable.
+ * Static instructions ride in a cached system prompt; only per-entry data is in user.
+ */
+async function generateSentenceBatch({ word, pronunciation, senseCtx, posList, sentenceCount }) {
+  const posLine = posList.length > 0 ? posList.join(', ') : '(any)';
+  const userText = senseCtx.isSingleSense
+    ? `Target word: ${word} (${pronunciation})
+Meaning: ${senseCtx.meaningText}
+Parts of speech to cover: ${posLine}
+
+Write exactly ${sentenceCount} sentences.`
+    : `Target word: ${word} (${pronunciation})
+
+Senses (choose each sentence's "sense" value from these labels, verbatim):
+${senseCtx.sensesText}
+
+${buildSlotAssignmentBlock(senseCtx.highValueSenses, sentenceCount)}
+Parts of speech to cover: ${posLine}
+
+Write exactly ${sentenceCount} sentences.`;
 
   const response = await anthropic.messages.create({
-    // segmentGloss roughly doubles per-sentence output size, so budget ~500 tokens
-    // per sentence (was 250) to avoid truncating the JSON mid-array.
     model: GENERATOR_MODEL,
-    max_tokens: Math.max(1200, 500 * sentenceCount),
+    max_tokens: Math.max(1000, 400 * sentenceCount),
     temperature: 0.7,
-    messages: [{ role: 'user', content: prompt }],
+    system: cachedSystem(senseCtx.isSingleSense ? SYSTEM_BATCH_SINGLE : SYSTEM_BATCH_MULTI),
+    messages: [{ role: 'user', content: userText }],
   });
 
   return parseJsonFromResponse(response.content[0].text, { array: true });
 }
 
 /**
- * Ask Claude to generate exactly ONE natural example sentence — used to backfill
- * a single missing/malformed slot without re-rolling the whole batch. targetPos,
- * when given, asks specifically for that grammatical role so POS coverage isn't
- * lost when a batch item drops out.
+ * Ask Claude to generate exactly ONE natural example sentence — used to backfill a
+ * missing/malformed slot without re-rolling the whole batch. `target`, when given,
+ * pins the sentence to a specific coverage need (a POS role or a sense) so the
+ * batch's coverage gaps get filled. Returns a finalized (shape + sense valid)
+ * sentence object, or null.
  */
-async function generateSingleExampleSentence(word, pronunciation, definitionText, posList, targetPos) {
-  const roleClause = targetPos
-    ? `\nThis sentence specifically must use "${word}" as a ${targetPos}.`
-    : posList.length > 0
-      ? `\nParts of speech this word can take: ${posList.join(', ')}.`
-      : '';
+async function generateSingleExampleSentence({ word, pronunciation, senseCtx, posList, target }) {
+  let targetClause = '';
+  if (target?.kind === 'pos') {
+    targetClause = `\nThis sentence specifically must use "${word}" as a ${target.value}.`;
+  } else if (target?.kind === 'sense') {
+    targetClause = `\nThis sentence specifically must use "${word}" in this sense: "${target.value}". Set the "sense" field to exactly that label.`;
+  } else if (posList.length > 0) {
+    targetClause = `\nParts of speech this word can take: ${posList.join(', ')}.`;
+  }
 
-  const prompt = `You are a Chinese language teacher creating one example sentence for a vocabulary app.
+  const userText = senseCtx.isSingleSense
+    ? `Target word: ${word} (${pronunciation})
+Meaning: ${senseCtx.meaningText}${targetClause}
 
-Word: ${word} (${pronunciation})
-Meaning: ${definitionText}${roleClause}
+Write ONE sentence.`
+    : `Target word: ${word} (${pronunciation})
 
-Write ONE natural example sentence using "${word}". It should:
-- Use the word naturally as a native speaker would
-- Be simple enough for an intermediate learner (HSK 3–4 level vocabulary otherwise)
-- Have an accurate English translation that mirrors the Chinese punctuation and clause structure
-- Include "translatedVocab": the English word/phrase in the translation that corresponds to "${word}"
-- Include "tense": one of "past", "present", or "future" — the sentence's natural temporal meaning
-- Include "partOfSpeechDict": every word token in the Chinese sentence as a key (no punctuation keys), each value one of: ${ALLOWED_POS_TAGS.join(', ')}. Include "${word}" as a key.
-- Include "numberDict": for EVERY token tagged "noun" in partOfSpeechDict, its grammatical number in this sentence — "singular" or "plural" — judged from the English translation. Only noun tokens need an entry.
-- Include "segmentGloss": an ORDERED, segment-by-segment English gloss of the sentence covering the same tokens in left-to-right order, index starting at 0 and incrementing by 1.
+Senses (choose the "sense" value from these labels, verbatim):
+${senseCtx.sensesText}${targetClause}
 
-Respond with ONLY one JSON object. Fill in every field of the template below — do not skip, rename, or omit any key, and every string value must be immediately preceded by its key name; never write a bare string value with no key name before it:
-{
-  "foreignText": "<Chinese sentence>",
-  "english": "<English translation>",
-  "translatedVocab": "<english word or phrase>",
-  "tense": "past" | "present" | "future",
-  "partOfSpeechDict": {"<token>": "<pos_tag>"},
-  "numberDict": {"<nounToken>": "singular" | "plural"},
-  "segmentGloss": [{"index": 0, "segment": "<token>", "english": "<contextual gloss>"}]
-}
-Every segmentGloss item MUST have all three keys — "index", "segment", AND "english" — spelled exactly as shown. Never write a segmentGloss item as {"index": 0, "segment": "X", "some text"} with the "english" key name missing.`;
+Write ONE sentence.`;
 
   const response = await anthropic.messages.create({
     model: GENERATOR_MODEL,
-    max_tokens: 700,
+    max_tokens: 600,
     temperature: 0.7,
-    messages: [{ role: 'user', content: prompt }],
+    system: cachedSystem(senseCtx.isSingleSense ? SYSTEM_ONE_SINGLE : SYSTEM_ONE_MULTI),
+    messages: [{ role: 'user', content: userText }],
   });
 
   const parsed = parseJsonFromResponse(response.content[0].text);
-  return parsed && isValidSentenceShape(parsed) ? parsed : null;
+  return finalizeSentence(parsed, senseCtx);
 }
 
 /**
  * Generate the full set of example sentences for a word. A whole-batch parse
- * failure (or a malformed individual item) no longer discards everything —
- * valid sentences from the batch are kept, and only the shortfall is re-rolled
- * one sentence at a time (generateSingleExampleSentence), targeting any POS
- * role the batch failed to cover.
+ * failure (or a malformed individual item) no longer discards everything — valid
+ * sentences from the batch are kept, and the shortfall + coverage gaps are re-rolled
+ * one sentence at a time (generateSingleExampleSentence), targeting any POS role or
+ * high-value sense the batch failed to cover.
  */
-async function generateExampleSentences(word, pronunciation, definitions, partsOfSpeech) {
-  const definitionText = formatDefinitions(definitions);
-
+async function generateExampleSentences(word, pronunciation, senseCtx, partsOfSpeech) {
   // partsOfSpeech is a JSONB array of POS tags from the dictionaryentries_zh row.
-  // We enforce at least one sentence per listed POS so every grammatical role
-  // the word can take is exemplified.
-  const posList = Array.isArray(partsOfSpeech) ? partsOfSpeech.filter(Boolean) : [];
-  const sentenceCount = Math.max(3, posList.length);
+  const rawPosList = Array.isArray(partsOfSpeech) ? partsOfSpeech.filter(Boolean) : [];
 
-  const batch = await generateSentenceBatch(word, pronunciation, definitionText, posList, sentenceCount);
-  const valid = Array.isArray(batch) ? batch.filter(isValidSentenceShape) : [];
+  // Drop POS roles that the word carries ONLY in a bound form (per its clusters) —
+  // they can't head a standalone sentence, so demanding coverage for them fabricates
+  // a redundant off-target sentence (see coverablePosSet). A POS the clusters don't
+  // mention at all is kept (we don't assume it's bound on missing data).
+  const coverablePos = coverablePosSet(senseCtx.clusters);
+  const clusterPos = new Set(
+    senseCtx.clusters.flatMap(c => (Array.isArray(c.pos) ? c.pos.filter(p => typeof p === 'string') : []))
+  );
+  const posList = rawPosList.filter(p => !(clusterPos.has(p) && !coverablePos.has(p)));
 
-  const coveredPos = new Set(valid.map(s => s.partOfSpeechDict?.[word]).filter(Boolean));
-  const missingPos = posList.filter(p => !coveredPos.has(p));
+  // Sentence budget: at least 3, and enough to give every (coverable) POS role its own slot.
+  const budget = Math.max(3, posList.length);
+  // Required senses, sized to the budget: pick enough distinct senses (top-ranked)
+  // to fill every slot with a fresh sense, so extra slots can't collapse into
+  // duplicates (see selectCoverageSenses). Single-sense entries have nothing to
+  // steer. Assigned onto senseCtx so the batch prompt + coverage queue below read
+  // the same set.
+  senseCtx.highValueSenses = senseCtx.isSingleSense ? [] : selectCoverageSenses(senseCtx.clusters, budget);
+  const sentenceCount = Math.max(budget, senseCtx.highValueSenses.length);
 
+  const batch = await generateSentenceBatch({ word, pronunciation, senseCtx, posList, sentenceCount });
+  const valid = (Array.isArray(batch) ? batch : [])
+    .map(s => finalizeSentence(s, senseCtx))
+    .filter(Boolean);
+
+  // Build the queue of still-uncovered coverage targets (POS roles + high-value senses).
+  // Coverage now reads the generator's `targetPos` (the target word's role) — the full
+  // per-segment POS dict is produced later by tagSentenceSegments and isn't available here.
+  const coveredPos = new Set(valid.map(s => s.targetPos).filter(Boolean));
+  const coveredSenses = new Set(valid.map(s => s.sense).filter(Boolean));
+  const targets = [
+    ...posList.filter(p => !coveredPos.has(p)).map(value => ({ kind: 'pos', value })),
+    ...senseCtx.highValueSenses.filter(s => !coveredSenses.has(s)).map(value => ({ kind: 'sense', value })),
+  ];
+
+  // Fill to the base count AND cover every outstanding target. Each iteration
+  // consumes at most one target (or does a plain count-fill when none remain), so
+  // the loop strictly makes progress and terminates.
   const MAX_ATTEMPTS_PER_SLOT = 3;
-  while (valid.length < sentenceCount) {
-    const targetPos = missingPos.shift();
+  while (valid.length < sentenceCount || targets.length > 0) {
+    const target = targets.shift() || null; // null → plain count-fill
     let sentence = null;
     for (let attempt = 0; attempt < MAX_ATTEMPTS_PER_SLOT && !sentence; attempt++) {
-      sentence = await generateSingleExampleSentence(word, pronunciation, definitionText, posList, targetPos);
+      sentence = await generateSingleExampleSentence({ word, pronunciation, senseCtx, posList, target });
     }
-    if (!sentence) break; // give up on this slot rather than retry forever
+    if (!sentence) {
+      if (target) continue;   // this coverage target failed — move on rather than loop forever
+      break;                  // plain count-fill failed — stop (avoid an unbounded loop)
+    }
     valid.push(sentence);
+    // A count-fill sentence may incidentally cover a still-pending target; drop it if so.
+    if (!target && sentence.targetPos) {
+      const idx = targets.findIndex(t =>
+        (t.kind === 'pos' && t.value === sentence.targetPos) ||
+        (t.kind === 'sense' && t.value === sentence.sense));
+      if (idx !== -1) targets.splice(idx, 1);
+    }
   }
 
   return valid.length > 0 ? valid : null;
@@ -345,7 +490,7 @@ async function generateExampleSentences(word, pronunciation, definitions, partsO
 // ─────────────────────────────────────────────────────────────────────────────
 async function validatorAgent(word, pronunciation, definitionText, sentences) {
   const numbered = sentences
-    .map((s, i) => `${i}. ${s.foreignText}  —  ${s.english}  [tense: ${s.tense}]`)
+    .map((s, i) => `${i}. ${s.foreignText}  —  ${s.english}`)
     .join('\n');
 
   // Static reviewer instructions (persona + common-mistakes catalog + response
@@ -394,18 +539,27 @@ ${numbered}`,
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Repair agent (Opus) — drafts a single replacement for a flagged sentence,
-//  informed by the validator's violation codes + critique. Returns a shape-valid
-//  sentence object, or null if the repair was unusable.
+//  informed by the validator's violation codes + critique. Preserves the flagged
+//  sentence's sense (so coverage isn't lost). Returns a finalized sentence, or null.
 // ─────────────────────────────────────────────────────────────────────────────
-async function regenerateSentenceWithOpus(word, pronunciation, definitionText, badSentence, violatedRules, critique) {
-  const allowedPosTags = ALLOWED_POS_TAGS;
+async function regenerateSentenceWithOpus(word, pronunciation, definitionText, senseCtx, badSentence, violatedRules, critique) {
   const violationLines = violatedRules.length ? violatedRules.map(v => `  - ${v}`).join('\n') : '  (unspecified)';
+  // For multi-sense entries the replacement must REPORT the sense it actually
+  // demonstrates (validated against the list) rather than blindly inheriting the
+  // original's label — a free rewrite that drifts to a different sense must not
+  // keep a stale, now-mismatched label. Prefer the original sense when it still fits.
+  const senseClause = senseCtx.isSingleSense
+    ? ''
+    : `\n- "sense": the EXACT label (verbatim, character-for-character) from the sense list below that YOUR replacement sentence actually demonstrates. Keep the original sense — "${badSentence.sense}" — if the fix can naturally use it; otherwise pick whichever listed label truly matches. Never stamp a label the sentence does not demonstrate.
+
+Sense list (choose "sense" from these, verbatim):
+${senseCtx.sensesText}`;
 
   const response = await anthropic.messages.create({
     model: REGENERATOR_MODEL,
-    max_tokens: 1400, // raised from 700 — segmentGloss adds substantial output length
+    max_tokens: 900,
     // Note: claude-opus-4-8 deprecates the `temperature` parameter, so it is omitted here.
-    system: 'You are a native Mandarin teacher rewriting a single flawed example sentence. Respond only with valid JSON.',
+    system: cachedSystem('You are a native Mandarin teacher rewriting a single flawed example sentence. Respond only with valid JSON.'),
     messages: [{
       role: 'user',
       content: `A reviewer rejected the example sentence below for the word "${word}" (${pronunciation}; meaning: ${definitionText}). Write ONE new, natural replacement sentence that uses "${word}" in the same grammatical role and a similar context, but fully fixes the problem. Do not reproduce the error.
@@ -419,19 +573,16 @@ Reviewer critique: ${critique || '(none)'}
 The replacement must follow the same requirements as the original generation:
 - Natural, native-sounding Mandarin, intermediate (HSK 3–4) level.
 - "translatedVocab": the English word/phrase in your translation that corresponds to "${word}".
-- "tense": one of "past", "present", or "future" — the sentence's natural temporal meaning.
-- "partOfSpeechDict": every word token in the Chinese sentence as a key (no punctuation keys), each value one of: ${allowedPosTags.join(', ')}. Include "${word}" as a key.
-- "numberDict": for EVERY token tagged "noun" in partOfSpeechDict, its grammatical number in this sentence — "singular" or "plural" — judged from the English translation. Only noun tokens need an entry.
-- "segmentGloss": an ORDERED array of {"index": <0-based>, "segment": "<Chinese token>", "english": "<contextual gloss>"} covering the same tokens in left-to-right order. index starts at 0 and increments by 1. Each english gloss uses the correct tense/form for this sentence; read in order they must form understandable (broken is fine) English.
+- "targetPos": the part of speech "${word}" carries in your replacement — one of: ${ALLOWED_POS_LINE}. (A separate pass tags the other segments; only report the target word's role.)${senseClause}
 - The English translation must mirror the Chinese punctuation and clause structure.
 
 Respond with ONLY one JSON object:
-{"foreignText": "...", "english": "...", "translatedVocab": "...", "tense": "past|present|future", "partOfSpeechDict": {"token": "pos_tag"}, "numberDict": {"nounToken": "singular|plural"}, "segmentGloss": [{"index": 0, "segment": "token", "english": "gloss"}]}`,
+{"foreignText": "...", "english": "...", "translatedVocab": "...",${senseCtx.isSingleSense ? '' : ' "sense": "...",'} "targetPos": "<pos_tag>"}`,
     }],
   });
 
   const parsed = parseJsonFromResponse(response.content[0].text);
-  return parsed && isValidSentenceShape(parsed) ? parsed : null;
+  return finalizeSentence(parsed, senseCtx);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -439,7 +590,7 @@ Respond with ONLY one JSON object:
 //  and re-validate the replacement once (mirrors the single-retry policy in
 //  backfill-expansion-claude.js). Returns the repaired batch + stats.
 // ─────────────────────────────────────────────────────────────────────────────
-async function validateAndRepairSentences(word, pronunciation, definitionText, sentences) {
+async function validateAndRepairSentences(word, pronunciation, definitionText, senseCtx, sentences) {
   const verdicts = await validatorAgent(word, pronunciation, definitionText, sentences);
   const out = [...sentences];
   const repairedIndexes = new Set();
@@ -453,9 +604,9 @@ async function validateAndRepairSentences(word, pronunciation, definitionText, s
     flagged++;
 
     const fix = await regenerateSentenceWithOpus(
-      word, pronunciation, definitionText, out[i], verdict.violatedRules, verdict.critique,
+      word, pronunciation, definitionText, senseCtx, out[i], verdict.violatedRules, verdict.critique,
     );
-    if (!fix) continue; // repair unusable — keep the original rather than lose POS coverage
+    if (!fix) continue; // repair unusable — keep the original rather than lose coverage
 
     // Re-validate the single repaired sentence once. Keep the Opus version
     // regardless (it is almost always better), but track if it still trips a rule.
@@ -469,6 +620,230 @@ async function validateAndRepairSentences(word, pronunciation, definitionText, s
   }
 
   return { sentences: out, flagged, repaired, stillFlagged, repairedIndexes };
+}
+
+/**
+ * Build the per-entry sense context from definitionClusters (migration 90).
+ * Returns null when the entry is not yet clustered (caller SKIPS it — every
+ * generated sentence must carry a validated sense; see docs/DEFINITION_CLUSTERS.md).
+ */
+function buildSenseContext(definitionClusters) {
+  const clusters = Array.isArray(definitionClusters)
+    ? definitionClusters.filter(c => c && typeof c.sense === 'string' && c.sense.trim().length > 0)
+    : [];
+  if (clusters.length === 0) return null;
+
+  const senseLabels = clusters.map(c => c.sense);
+  const isSingleSense = clusters.length === 1;
+  return {
+    isSingleSense,
+    singleSenseLabel: senseLabels[0],
+    senseLabelSet: new Set(senseLabels),
+    sensesText: formatSenses(clusters),
+    // Cleaned clusters are retained so the coverage-target set can be sized to the
+    // sentence budget at generation time (selectCoverageSenses needs the budget,
+    // which depends on the entry's POS count — known only in generateExampleSentences).
+    clusters,
+    // Single-meaning prompt shows a plain gloss blurb from the one cluster's glosses.
+    meaningText: Array.isArray(clusters[0].glosses) && clusters[0].glosses.length
+      ? clusters[0].glosses.slice(0, 3).join('; ')
+      : senseLabels[0],
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Segment-wise tagging pass (runs AFTER a sentence is generated + repaired)
+//
+//  Generation no longer emits per-token POS/number. Once the sentence text is final
+//  we run the SAME greedy segmentation the read path uses (dal/shared/segmentString)
+//  and tag EACH resulting segment with:
+//    • pos    — the segment's contextual part of speech (drives form modification +
+//               the particle/classifier annotation),
+//    • sense  — the definitionClusters sense label the segment carries here, chosen
+//               from THAT segment's OWN clusters (read path resolves the segment's
+//               dd = ddt(matchingCluster)),
+//    • number — singular/plural for noun segments (plural English form selection).
+//
+//  All three dicts are keyed by the GSA segment string, and the segmentation itself
+//  is persisted (`segments`), so read-time lookups align exactly. Classifiers are NOT
+//  force-split: a classifier GSA absorbs into a longer word is simply tagged as that
+//  whole word (its own sense/definition). See docs/EXAMPLE_SENTENCES.md.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Load the dictionary rows needed to (a) segment `foreignText` and (b) know each
+// segment's clusters + dictionary POS. Returns null when the text has no candidates.
+async function loadSegmentDictData(client, foreignText) {
+  const candidates = getAllSubstrings(foreignText.trim());
+  if (candidates.length === 0) return null;
+
+  const { rows } = await client.query(
+    `SELECT word1, pronunciation, definitions, "vernacularScore", "matchException",
+            "definitionClusters", "partsOfSpeech"
+     FROM dictionaryentries_zh
+     WHERE language = 'zh' AND word1 = ANY($1::text[])`,
+    [candidates]
+  );
+
+  // Adapt rows into the DictionaryEntry-like shape buildDictMap expects (now carries
+  // definitionClusters so the read-path SegmentMeta gets them too).
+  const dictEntries = rows.map(r => ({
+    word1: r.word1,
+    pronunciation: r.pronunciation || '',
+    definitions: Array.isArray(r.definitions) ? r.definitions : [r.definitions],
+    vernacularScore: r.vernacularScore ?? null,
+    matchException: r.matchException ?? [],
+    definitionClusters: Array.isArray(r.definitionClusters) ? r.definitionClusters : null,
+  }));
+
+  // Side maps keyed by word1 for the tagger (clusters → sense candidates; partsOfSpeech
+  // → POS fallback). First row per word1 wins, mirroring buildDictMap.
+  const clustersBySeg = new Map();
+  const posBySeg = new Map();
+  for (const r of rows) {
+    if (clustersBySeg.has(r.word1)) continue;
+    clustersBySeg.set(r.word1, Array.isArray(r.definitionClusters) ? r.definitionClusters : []);
+    posBySeg.set(r.word1, Array.isArray(r.partsOfSpeech) ? r.partsOfSpeech.filter(Boolean) : []);
+  }
+
+  return { dictMap: buildDictMap(dictEntries), excludeTokens: buildExcludeSet(dictEntries), clustersBySeg, posBySeg };
+}
+
+// Static tagger instructions → cached system; only the per-sentence text + segment
+// list ride in the user message.
+const SEGMENT_TAGGER_SYSTEM = `You label the segments of a Chinese sentence with grammatical metadata for a language-learning app. You are given the sentence, its English translation, and its FIXED segmentation — use exactly the segments provided, in the given order; never re-split, merge, or add segments.
+
+For EACH segment return:
+- "pos": the segment's part of speech IN THIS sentence — one of: ${ALLOWED_POS_LINE}. If a verb segment is used nominally (gerund / subject / object), tag it "noun".
+- "sense": ONLY for segments shown with a "candidate senses" list — copy verbatim the ONE listed label that matches how the segment is used in this sentence, character-for-character. Never invent, translate, paraphrase, shorten, or combine labels. Omit "sense" for segments with no candidate list.
+- "number": ONLY for segments you tag "noun" — "singular" or "plural", judged from the English translation. Omit for non-nouns.
+- "tense": ONLY for segments you tag "verb" or "auxiliary verb" — "past", "present", or "future", judged from THAT verb's own temporal meaning in this sentence (a sentence may contain verbs in different tenses; label each on its own). Reason from meaning, not just grammatical markers (了 can mark a present state change; progressive aspect can appear in past or future contexts). Omit for non-verbs.
+
+Respond with ONLY a JSON object mapping each segment string to its metadata:
+{"<segment>": {"pos": "<pos_tag>", "sense": "<label>", "number": "singular|plural", "tense": "past|present|future"}}`;
+
+// One model call per sentence → Map<segment, { pos?, sense?, number?, tense? }>. Fails OPEN
+// (empty map) so a flaky/unparseable response never blocks storage: the caller still
+// auto-fills single-cluster + target senses and falls back to the dictionary POS.
+async function callSegmentTagger(sentence, targetWord, uniqueSegments, clustersBySeg) {
+  const result = new Map();
+  if (uniqueSegments.length === 0) return result;
+
+  const segLines = uniqueSegments.map((seg, i) => {
+    const clusters = clustersBySeg.get(seg) ?? [];
+    // Offer sense candidates only for multi-sense NON-target segments: the target
+    // segment's sense is already fixed (generation-validated), and single-sense
+    // segments are auto-filled by the caller without spending the model on them.
+    const offerCandidates = clusters.length > 1 && !(targetWord && seg === targetWord);
+    const candidates = offerCandidates
+      ? ` — candidate senses: ${clusters.map(c => `"${c.sense}"`).join('; ')}`
+      : '';
+    return `${i + 1}. "${seg}"${candidates}`;
+  }).join('\n');
+
+  const userText = `Chinese: ${sentence.foreignText}
+English: ${sentence.english}
+
+Segments (label every one, keyed by the exact segment string):
+${segLines}`;
+
+  try {
+    const response = await anthropic.messages.create({
+      model: TAGGER_MODEL,
+      max_tokens: Math.max(500, 120 * uniqueSegments.length),
+      temperature: 0.1,
+      system: cachedSystem(SEGMENT_TAGGER_SYSTEM),
+      messages: [{ role: 'user', content: userText }],
+    });
+    const parsed = parseJsonFromResponse(response.content[0].text);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      for (const [seg, meta] of Object.entries(parsed)) {
+        if (meta && typeof meta === 'object' && !Array.isArray(meta)) {
+          result.set(seg, {
+            pos: typeof meta.pos === 'string' ? meta.pos : undefined,
+            sense: typeof meta.sense === 'string' ? meta.sense : undefined,
+            number: typeof meta.number === 'string' ? meta.number : undefined,
+            tense: typeof meta.tense === 'string' ? meta.tense : undefined,
+          });
+        }
+      }
+    }
+  } catch {
+    // swallow — see fail-open note above
+  }
+  return result;
+}
+
+/**
+ * Produce the segment-keyed render data for one finished sentence:
+ *   { segments, partOfSpeechDict, senseDict, numberDict, tenseDict }.
+ * `targetWord` is forced to win segmentation (prioritySegments) so it always surfaces
+ * as its own segment, matching the read path.
+ */
+async function tagSentenceSegments(client, sentence, targetWord) {
+  const data = await loadSegmentDictData(client, sentence.foreignText);
+  const segments = data
+    ? segmentWithDict(sentence.foreignText, data.dictMap, data.excludeTokens, targetWord ? [targetWord] : undefined)
+    : [...sentence.foreignText];
+
+  const clustersBySeg = data?.clustersBySeg ?? new Map();
+  const posBySeg = data?.posBySeg ?? new Map();
+
+  // Unique, order-preserving list of Han-bearing segments (punctuation is never tagged).
+  const uniqueSegments = [];
+  const seen = new Set();
+  for (const seg of segments) {
+    if (seen.has(seg) || !/\p{Script=Han}/u.test(seg)) continue;
+    seen.add(seg);
+    uniqueSegments.push(seg);
+  }
+
+  const modelTags = await callSegmentTagger(sentence, targetWord, uniqueSegments, clustersBySeg);
+
+  const partOfSpeechDict = {};
+  const senseDict = {};
+  const numberDict = {};
+  const tenseDict = {};
+
+  for (const seg of uniqueSegments) {
+    const clusters = clustersBySeg.get(seg) ?? [];
+    const tag = modelTags.get(seg) ?? {};
+    const isTarget = !!targetWord && seg === targetWord;
+
+    // POS — the target segment reuses the generation-validated targetPos; other
+    // segments take the model's tag, falling back to the dictionary's primary POS.
+    let pos = null;
+    if (isTarget && ALLOWED_POS_TAG_SET.has(sentence.targetPos)) {
+      pos = sentence.targetPos;
+    } else if (ALLOWED_POS_TAG_SET.has(tag.pos)) {
+      pos = tag.pos;
+    } else {
+      pos = (posBySeg.get(seg) ?? []).find(p => ALLOWED_POS_TAG_SET.has(p)) ?? null;
+    }
+    if (pos) partOfSpeechDict[seg] = pos;
+
+    // Sense — target: the fixed generation sense; single-cluster: that cluster;
+    // multi-cluster: the model's pick if it is one of this segment's own labels.
+    let sense = null;
+    if (isTarget && sentence.sense) {
+      sense = sentence.sense;
+    } else if (clusters.length === 1) {
+      sense = clusters[0].sense;
+    } else if (clusters.length > 1 && typeof tag.sense === 'string') {
+      if (clusters.some(c => c.sense === tag.sense)) sense = tag.sense;
+    }
+    if (sense) senseDict[seg] = sense;
+
+    // Number — only for noun segments with a valid value.
+    if (pos === 'noun' && ALLOWED_NUMBERS.has(tag.number)) numberDict[seg] = tag.number;
+
+    // Tense — only for verb segments with a valid value. Per-verb (not per-sentence)
+    // so a sentence mixing tenses inflects each verb's popup gloss independently.
+    if ((pos === 'verb' || pos === 'auxiliary verb') && ALLOWED_TENSES.has(tag.tense)) {
+      tenseDict[seg] = tag.tense;
+    }
+  }
+
+  return { segments, partOfSpeechDict, senseDict, numberDict, tenseDict };
 }
 
 async function run() {
@@ -487,7 +862,7 @@ async function run() {
 
   try {
     const { rows: entries } = await client.query(`
-      SELECT id, word1, pronunciation, definitions, "partsOfSpeech"
+      SELECT id, word1, pronunciation, definitions, "partsOfSpeech", "definitionClusters"
       FROM dictionaryentries_zh
       WHERE language = 'zh'
         AND discoverable = TRUE
@@ -501,6 +876,7 @@ async function run() {
 
     let updated = 0;
     let failed = 0;
+    let skipped = 0;         // entries not yet clustered (definitionClusters IS NULL)
     let totalFlagged = 0;     // sentences the validator rejected
     let totalRepaired = 0;    // flagged sentences successfully replaced by Opus
     let totalStillFlagged = 0; // Opus replacements that still tripped a rule (kept anyway)
@@ -509,7 +885,17 @@ async function run() {
       try {
         process.stdout.write(`  ${row.word1} (${row.pronunciation}) ... `);
 
-        const sentences = await generateExampleSentences(row.word1, row.pronunciation, row.definitions, row.partsOfSpeech);
+        // Senses come from definitionClusters — clustering MUST run before this
+        // script. An unclustered entry is skipped so we never ship a sentence with
+        // an unvalidated sense.
+        const senseCtx = buildSenseContext(row.definitionClusters);
+        if (!senseCtx) {
+          console.log('⚠ SKIPPED — not yet clustered (run backfill-cluster-definitions first)');
+          skipped++;
+          continue;
+        }
+
+        const sentences = await generateExampleSentences(row.word1, row.pronunciation, senseCtx, row.partsOfSpeech);
 
         if (!sentences) {
           console.log('no valid sentences returned');
@@ -519,14 +905,26 @@ async function run() {
 
         // Validator agent → Opus repair for any flagged sentence.
         const { sentences: finalSentences, flagged, repaired, stillFlagged, repairedIndexes } =
-          await validateAndRepairSentences(row.word1, row.pronunciation, formatDefinitions(row.definitions), sentences);
+          await validateAndRepairSentences(row.word1, row.pronunciation, formatDefinitions(row.definitions), senseCtx, sentences);
         totalFlagged += flagged;
         totalRepaired += repaired;
         totalStillFlagged += stillFlagged;
 
+        // Segment-wise tagging pass: attach persisted `segments` + segment-keyed
+        // partOfSpeechDict/senseDict/numberDict/tenseDict. `targetPos` was a
+        // generation-time coverage signal only — drop it before storing (the pass
+        // folds it into partOfSpeechDict[targetWord]).
+        const taggedSentences = [];
+        for (const s of finalSentences) {
+          const { segments, partOfSpeechDict, senseDict, numberDict, tenseDict } =
+            await tagSentenceSegments(client, s, row.word1);
+          const { targetPos, ...rest } = s;
+          taggedSentences.push({ ...rest, segments, partOfSpeechDict, senseDict, numberDict, tenseDict });
+        }
+
         await client.query(
           `UPDATE dictionaryentries_zh SET "exampleSentences" = $1::jsonb WHERE id = $2`,
-          [JSON.stringify(finalSentences), row.id]
+          [JSON.stringify(taggedSentences), row.id]
         );
         await stampEntries(client, 'dictionaryentries_zh', row.id);
 
@@ -534,19 +932,18 @@ async function run() {
 
         if (isSpotCheck) {
           // Print full sentence details in spot-check mode
-          console.log(`✓ (${finalSentences.length} sentences${repaired ? `, ${repaired} repaired by Opus` : ''})`);
-          finalSentences.forEach((s, i) => {
+          console.log(`✓ (${taggedSentences.length} sentences${repaired ? `, ${repaired} repaired by Opus` : ''})`);
+          taggedSentences.forEach((s, i) => {
             const tag = repairedIndexes.has(i) ? '   🔧 Opus repair' : '';
             console.log(`    ${s.foreignText}${tag}`);
             console.log(`           ${s.english}`);
             console.log(`           translatedVocab: ${s.translatedVocab}`);
-            console.log(`           tense: ${s.tense}`);
+            console.log(`           sense (target): ${s.sense}`);
+            console.log(`           segments: ${JSON.stringify(s.segments)}`);
             console.log(`           POS: ${JSON.stringify(s.partOfSpeechDict)}`);
+            console.log(`           senses: ${JSON.stringify(s.senseDict)}`);
             console.log(`           number: ${JSON.stringify(s.numberDict)}`);
-            // segmentGloss: print per-segment glosses + the strung-together broken-English reading
-            const orderedGloss = [...s.segmentGloss].sort((a, b) => a.index - b.index);
-            console.log(`           segmentGloss: ${orderedGloss.map(g => `${g.segment}→${g.english}`).join('  ')}`);
-            console.log(`           strung together: ${orderedGloss.map(g => g.english).join(' ')}`);
+            console.log(`           tense: ${JSON.stringify(s.tenseDict)}`);
           });
         } else {
           console.log(`✓${repaired ? ` (${repaired} repaired)` : ''}`);
@@ -568,6 +965,7 @@ async function run() {
     console.log('='.repeat(60));
     console.log(`Total processed   : ${entries.length}`);
     console.log(`Updated           : ${updated}`);
+    console.log(`Skipped (no cluster): ${skipped}`);
     console.log(`Failed            : ${failed}`);
     console.log(`Flagged sentences : ${totalFlagged}`);
     console.log(`Repaired by Opus  : ${totalRepaired}`);

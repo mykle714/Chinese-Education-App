@@ -1,8 +1,10 @@
 import React from "react";
-import { Box, Card, CardContent, IconButton, ListItemIcon, ListItemText, Menu, MenuItem, Typography, useTheme } from "@mui/material";
+import { Box, Card, CardContent, IconButton, ListItemIcon, ListItemText, ListSubheader, Menu, MenuItem, Typography, useTheme } from "@mui/material";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import StarIcon from "@mui/icons-material/Star";
-import { ddt, stripParentheses } from "../../../utils/definitionUtils";
+import { ddt, stripParentheses, sortedSenseClusters, resolveSelectedSenseIndex } from "../../../utils/definitionUtils";
+import { numberedToTonedPinyin } from "../../../utils/textUtils";
+import { getToneColor } from "../../../utils/toneColors";
 import { DraggableCardContainer, SwipeHintLabel, FlipHintLabel } from "./styled";
 import {
     CORRECT_COLOR,
@@ -19,7 +21,7 @@ import { SIZE, WEIGHT, LEADING, TRACKING } from "../../../theme/scale";
 import type { VocabEntry, SideOneLanguage } from "./types";
 import type { IconLayoutItem, TextLayout } from "../../../types";
 import CardIconLayer from "../../../cardIcons/CardIconLayer";
-import { defaultLayoutForIcon } from "../../../cardIcons/cardIconLayout";
+import { defaultLayoutForIcon, isAdvancedLayout } from "../../../cardIcons/cardIconLayout";
 import { resolveTextLayout, textItemTransform, defaultEnglishTopAnchorTransform } from "../../../cardIcons/cardTextLayout";
 import ForeignText from "../../../components/ForeignText";
 import { SpeakerButton } from "../../../components/SpeakerButton";
@@ -77,6 +79,9 @@ interface FlashCardSectionProps {
     // The live icon-layout edit canvas, built by the page when edit mode is on. It is
     // applied only to the ACTIVE FRONT card's back face. See docs/CARD_ICON_LAYOUT.md.
     editCanvas?: React.ReactNode;
+    // Persist a card's definition-cluster sense pick per account (migration 99). Threaded to
+    // each CardFace; the page supplies the PATCH-backed handler. See docs/DEFINITION_CLUSTERS.md.
+    onPersistSense?: (entry: VocabEntry, sense: string | null) => void;
     // True while the icon-layout editor is open. Locks the card: drag/flip handlers
     // are not attached so the card can't be swiped away or flipped mid-edit.
     editMode?: boolean;
@@ -217,11 +222,28 @@ export const EnglishBlock: React.FC<{
     // entry falls back to the plain definitions[0] dd, unchanged from before this feature.
     // Sorted highest vernacular register first (nulls last) so index 0 is always the
     // starred/default sense.
-    const sortedClusters = React.useMemo(() => {
-        const clusters = entry.definitionClusters;
-        if (!clusters || clusters.length < 2) return null;
-        return [...clusters].sort((a, b) => (b.vernacularScore ?? -1) - (a.vernacularScore ?? -1));
-    }, [entry.definitionClusters]);
+    const sortedClusters = React.useMemo(() => sortedSenseClusters(entry), [entry]);
+
+    // The picker groups the vernacular-sorted clusters into reading sections so the
+    // menu reads as "these senses share this pinyin". Grouping preserves the sort:
+    // readings appear in the order their first (highest-vernacular) cluster does, and
+    // clusters stay vernacular-ordered within a section — so the starred default (the
+    // global index 0) always heads the first section. Each entry keeps its original
+    // index into `sortedClusters` so `selectedSenseIndex` addressing is unchanged.
+    const senseSections = React.useMemo(() => {
+        if (!sortedClusters) return null;
+        const sections: { reading: string; items: { cluster: typeof sortedClusters[number]; index: number }[] }[] = [];
+        sortedClusters.forEach((cluster, index) => {
+            const reading = cluster.reading ?? '';
+            let section = sections.find((s) => s.reading === reading);
+            if (!section) {
+                section = { reading, items: [] };
+                sections.push(section);
+            }
+            section.items.push({ cluster, index });
+        });
+        return sections;
+    }, [sortedClusters]);
 
     const text = sortedClusters
         ? ddt(sortedClusters[selectedSenseIndex] ?? sortedClusters[0])
@@ -302,28 +324,66 @@ export const EnglishBlock: React.FC<{
                         </Box>
                     )
                 )}
-                {sortedClusters && (
+                {senseSections && (
                     <Menu
                         className="mobile-demo-flashcard-sense-menu"
                         anchorEl={anchorEl}
                         open={Boolean(anchorEl)}
                         onClose={() => setAnchorEl(null)}
                         MenuListProps={{ sx: { py: 0.5 } }}
+                        // Backdrop/paper taps also bubble through the portal to the card's
+                        // flip handlers — swallow them at the Menu root too.
+                        onClick={stopCardHandlers}
+                        onMouseDown={stopCardHandlers}
+                        onTouchStart={stopCardHandlers}
+                        onTouchEnd={stopCardHandlers}
                     >
-                        {sortedClusters.map((cluster, i) => (
-                            <MenuItem
-                                key={`${cluster.reading}-${i}`}
-                                selected={i === selectedSenseIndex}
-                                onClick={() => { onSelectSense?.(i); setAnchorEl(null); }}
+                        {/* One pinyin-labelled section per distinct reading; MUI's Menu flattens
+                            this array of fragments, so ListSubheader + MenuItems render inline. */}
+                        {senseSections.map((section) => [
+                            <ListSubheader
+                                key={`heading-${section.reading}`}
+                                className="mobile-demo-flashcard-sense-reading"
+                                disableSticky
+                                sx={{
+                                    lineHeight: 1.6,
+                                    fontWeight: WEIGHT.semibold,
+                                    bgcolor: 'transparent',
+                                }}
                             >
-                                {i === 0 && (
-                                    <ListItemIcon sx={{ minWidth: 28 }}>
-                                        <StarIcon fontSize="small" sx={{ color: theme.palette.warning.main }} />
-                                    </ListItemIcon>
-                                )}
-                                <ListItemText inset={i !== 0} primary={ddt(cluster)} />
-                            </MenuItem>
-                        ))}
+                                {/* Per-syllable tone coloring, matching cpcd/pinyin elsewhere. An
+                                    empty reading (should not happen for a clustered zh entry) falls
+                                    back to a neutral em dash. */}
+                                {section.reading
+                                    ? numberedToTonedPinyin(section.reading).split(/\s+/).filter(Boolean).map((syllable, si) => (
+                                        <React.Fragment key={si}>
+                                            {si > 0 && ' '}
+                                            <span style={{ color: getToneColor(syllable) }}>{syllable}</span>
+                                        </React.Fragment>
+                                    ))
+                                    : <span style={{ color: theme.palette.text.secondary }}>—</span>}
+                            </ListSubheader>,
+                            ...section.items.map(({ cluster, index }) => (
+                                <MenuItem
+                                    key={`${cluster.reading}-${index}`}
+                                    selected={index === selectedSenseIndex}
+                                    // The Menu renders in a portal, but React synthetic events bubble
+                                    // through the React tree — so a tap here would otherwise reach the
+                                    // card's flip handlers. Stop every press event, same as the trigger.
+                                    onClick={(e) => { stopCardHandlers(e); onSelectSense?.(index); setAnchorEl(null); }}
+                                    onMouseDown={stopCardHandlers}
+                                    onTouchStart={stopCardHandlers}
+                                    onTouchEnd={stopCardHandlers}
+                                >
+                                    {index === 0 && (
+                                        <ListItemIcon sx={{ minWidth: 28 }}>
+                                            <StarIcon fontSize="small" sx={{ color: theme.palette.warning.main }} />
+                                        </ListItemIcon>
+                                    )}
+                                    <ListItemText inset={index !== 0} primary={ddt(cluster)} />
+                                </MenuItem>
+                            )),
+                        ])}
                     </Menu>
                 )}
             </Box>
@@ -367,6 +427,14 @@ const CategoryChip: React.FC<{ category?: string }> = ({ category }) => {
 // `contentGap` differs between the single-block front and the stacked back.
 export const CardFaceSide: React.FC<{
     rotated: boolean;
+    // Whether this face is rendering the entry's ADVANCED layout (a saved multi-icon /
+    // moved-icon arrangement OR custom text placement). It is the single gate for the
+    // advanced-only per-card background fill. The CALLER decides it per face — the back/answer
+    // face passes the entry-level verdict directly, while the flp's Chinese front deliberately
+    // passes false so the question side stays a plain basic card (see the call sites). Kept
+    // independent of `rotated` (the 180° flip transform) on purpose: the card-detail hero is an
+    // un-rotated back face and still needs the fill.
+    isUsingAdvancedLayout?: boolean;
     contentGap: number;
     contentClassName?: string;
     // Optional: the front face passes a single block here. The back face uses `textBlocks`
@@ -404,15 +472,21 @@ export const CardFaceSide: React.FC<{
     // a direct child of the face box so it can sit in a corner, outside the
     // centered content column.
     cornerBadge?: React.ReactNode;
-    // Per-card background fill (vet.cardColor, migration 94). When set, it overrides the
-    // theme's default face color on BOTH faces; null/undefined = follow the theme. Only a
-    // vetted palette hex reaches here (resolveCardColor). See docs/CARD_ICON_LAYOUT.md.
+    // Per-card background fill (vet.cardColor, migration 94). Painted only when this face is
+    // rendering the advanced layout (`isUsingAdvancedLayout`); otherwise the theme default is
+    // used. When it applies it overrides the theme's default face color; null/undefined =
+    // follow the theme. Only a vetted palette hex reaches here (resolveCardColor). See
+    // docs/CARD_ICON_LAYOUT.md.
     cardColor?: string | null;
-}> = ({ rotated, contentGap, contentClassName, children, iconId, showIcon, iconLayout, textLayout, textBlocks, editCanvas, inert, cornerBadge, cardColor }) => {
+}> = ({ rotated, isUsingAdvancedLayout, contentGap, contentClassName, children, iconId, showIcon, iconLayout, textLayout, textBlocks, editCanvas, inert, cornerBadge, cardColor }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
-    // Resolve the per-card fill to a concrete hex, or undefined to keep the theme default.
-    const faceBg = resolveCardColor(cardColor) ?? fc.flashCard;
+    // Per-card background fill is a decoration that belongs to the ADVANCED layout: it paints
+    // its custom color exactly when this face is rendering that advanced layout
+    // (`isUsingAdvancedLayout`, decided per face by the caller). A basic card, and any face the
+    // caller has gated off (the flp Chinese front), ignores cardColor and follows the theme.
+    // Resolve to a concrete hex, or undefined to keep the theme default.
+    const faceBg = (isUsingAdvancedLayout ? resolveCardColor(cardColor) : undefined) ?? fc.flashCard;
     const hasCustom = showIcon && !!iconLayout && iconLayout.length > 0;
     const editing = !!editCanvas;
     // The back face renders its two text blocks one of two ways:
@@ -614,16 +688,41 @@ const CardFace: React.FC<{
     // front card supplies one (and only while edit mode is on); it replaces the back
     // face's static icon layer. See docs/CARD_ICON_LAYOUT.md.
     editCanvas?: React.ReactNode;
-}> = ({ entry, isFlipped, isAnimating, showPinyin, showPinyinColor, showProgressCategory, sideOneLanguage, dragPosition, dismissThreshold, isProminent, onSpeak, speakingKey, editCanvas }) => {
+    // Persist the learner's sense pick for THIS card (migration 99). Given the chosen
+    // cluster's `sense` label (or null for the default/starred sense). Absent when there's no
+    // user context to save into (e.g. the read-only dictionary cdp uses local-only state).
+    onPersistSense?: (entry: VocabEntry, sense: string | null) => void;
+}> = ({ entry, isFlipped, isAnimating, showPinyin, showPinyinColor, showProgressCategory, sideOneLanguage, dragPosition, dismissThreshold, isProminent, onSpeak, speakingKey, editCanvas, onPersistSense }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
 
     // Which definitionClusters sense EnglishBlock currently displays (index into its
     // vernacular-sorted list). Lives here — not inside EnglishBlock — so Side 1 (English
-    // mode) and Side 2 stay in sync on the same pick, and resets to the top/starred sense
-    // whenever the card is promoted to a new entry.
-    const [selectedSenseIndex, setSelectedSenseIndex] = React.useState(0);
-    React.useEffect(() => { setSelectedSenseIndex(0); }, [entry.id]);
+    // mode) and Side 2 stay in sync on the same pick. On a card change it re-seeds from the
+    // entry's PERSISTED choice (`selectedSense` label → sorted index, migration 99), falling
+    // back to the top/starred sense when there's no saved pick.
+    const [selectedSenseIndex, setSelectedSenseIndex] = React.useState(() => resolveSelectedSenseIndex(entry));
+    React.useEffect(() => { setSelectedSenseIndex(resolveSelectedSenseIndex(entry)); }, [entry.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // A pick updates the in-sync display index immediately (both faces) AND persists the
+    // chosen cluster's `sense` LABEL. Index 0 is the default/starred sense, stored as null so
+    // an unchosen/default card keeps a clean NULL row (matching the migration's semantics).
+    const handleSelectSense = React.useCallback((index: number) => {
+        setSelectedSenseIndex(index);
+        if (!onPersistSense) return;
+        const sorted = sortedSenseClusters(entry);
+        const label = index === 0 ? null : sorted?.[index]?.sense ?? null;
+        onPersistSense(entry, label);
+    }, [entry, onPersistSense]);
+
+    // Whether this entry is saved (in this account) with an ADVANCED layout — a multi-icon /
+    // moved-icon arrangement OR a custom text placement. Gates the advanced-only per-card
+    // background fill. The BACK/answer side always renders the advanced layout, so it gets this
+    // verdict directly. The FRONT/question side only renders it when Side 1 is English; the
+    // Chinese question side is deliberately kept a plain basic card, so it is additionally
+    // gated by `sideOneLanguage === 'en'` (this is the flp's "stop the Chinese front" gate,
+    // matching the icon layer, which is likewise gated to English-bearing faces via showIcon).
+    const isUsingAdvancedLayout = isAdvancedLayout(entry.iconLayout, entry.textLayout);
 
     return (
         <Card
@@ -654,8 +753,9 @@ const CardFace: React.FC<{
                 iconId={entry.iconId}
                 showIcon={sideOneLanguage === 'en'}
                 iconLayout={entry.iconLayout}
-                // Per-card background fill (migration 94) — applied to BOTH faces so the
-                // whole card reads as one color. null = follow theme.
+                // Front/question side renders the advanced layout (and its background fill) ONLY
+                // when it is the English side; the Chinese question side stays a plain basic card.
+                isUsingAdvancedLayout={isUsingAdvancedLayout && sideOneLanguage === 'en'}
                 cardColor={entry.cardColor}
                 // CSS 3D backface culling does NOT reliably exclude the rotated-away
                 // face from hit-testing, so the away face must be made inert or it
@@ -665,7 +765,7 @@ const CardFace: React.FC<{
             >
                 {sideOneLanguage === 'zh'
                     ? <ChineseBlock entry={entry} showPinyin={showPinyin} showPinyinColor={showPinyinColor} onSpeak={onSpeak} speakingKey={speakingKey} showWriting={false} />
-                    : <EnglishBlock entry={entry} selectedSenseIndex={selectedSenseIndex} onSelectSense={setSelectedSenseIndex} />}
+                    : <EnglishBlock entry={entry} selectedSenseIndex={selectedSenseIndex} onSelectSense={handleSelectSense} />}
             </CardFaceSide>
 
             {/* Side 2 — always shows both Chinese and English, and the icon arrangement. */}
@@ -677,6 +777,8 @@ const CardFace: React.FC<{
                 showIcon
                 iconLayout={entry.iconLayout}
                 textLayout={entry.textLayout}
+                // Back/answer side always renders the advanced layout, so it gets the entry verdict.
+                isUsingAdvancedLayout={isUsingAdvancedLayout}
                 cardColor={entry.cardColor}
                 // Two blocks supplied separately so each is positioned absolutely by its center
                 // (migration 91) — default grid spot or saved custom placement. While editing,
@@ -695,7 +797,7 @@ const CardFace: React.FC<{
                             inlineActions
                         />
                     ),
-                    english: <EnglishBlock entry={entry} selectedSenseIndex={selectedSenseIndex} onSelectSense={setSelectedSenseIndex} inlineActions />,
+                    english: <EnglishBlock entry={entry} selectedSenseIndex={selectedSenseIndex} onSelectSense={handleSelectSense} inlineActions />,
                 }}
                 editCanvas={editCanvas}
                 // Side 2 faces away when the card is showing its front.
@@ -743,6 +845,7 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
     onSpeak,
     speakingKey,
     editCanvas,
+    onPersistSense,
     editMode,
     pushDown,
 }) => {
@@ -931,6 +1034,8 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                                 speakingKey={isFront ? speakingKey : null}
                                                 // Edit canvas applies only to the active front card's back face.
                                                 editCanvas={isFront ? editCanvas : undefined}
+                                                // Only the active front card is interactive, so only it persists picks.
+                                                onPersistSense={isFront ? onPersistSense : undefined}
                                             />
                                         )}
                                     </Box>

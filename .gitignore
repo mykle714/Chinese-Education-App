@@ -51,3 +51,6 @@ amIOnTheProdMachine.md
 
 # Claude Code git worktrees (temporary isolated checkouts; never committed)
 .claude/worktrees/
+
+# Backfill script parse caches (derived artifacts, rebuilt with --refresh)
+server/scripts/backfill/**/.cache/

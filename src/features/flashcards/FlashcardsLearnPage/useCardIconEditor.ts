@@ -26,6 +26,7 @@ import {
 } from "../../../cardIcons/cardTextLayout";
 import { saveIconLayout, fetchDefaultIconResults, type IconSearchItem } from "../../../cardIcons/cardIconApi";
 import { iconSearchTerm } from "../../../utils/definitionUtils";
+import { saveSelectedSense } from "../../../utils/vocabApi";
 import {
     ICON_LAYOUT_MAX_ITEMS,
     type IconLayoutItem,
@@ -322,6 +323,10 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
     // Same session-override pattern for the per-card movable-text placement (vet.textLayout,
     // migration 91).
     const [textLayoutOverrides, setTextLayoutOverrides] = useState<Record<number, TextLayout | null>>({});
+    // Same session-override pattern for the per-card chosen definition-cluster sense
+    // (vet.selectedSense, migration 99) — so a sense picked this session sticks when the card
+    // is re-promoted in the stack, without a refetch. See docs/DEFINITION_CLUSTERS.md.
+    const [selectedSenseOverrides, setSelectedSenseOverrides] = useState<Record<number, string | null>>({});
 
     // Merge any saved-this-session icon-layout / snap-config / text-color / text-layout
     // overrides into an entry before render (and before enterEdit seeds the drafts from it).
@@ -334,9 +339,10 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
             if (e.id in textColorsOverrides) merged = { ...merged, textColors: textColorsOverrides[e.id] };
             if (e.id in textLayoutOverrides) merged = { ...merged, textLayout: textLayoutOverrides[e.id] };
             if (e.id in cardColorOverrides) merged = { ...merged, cardColor: cardColorOverrides[e.id] };
+            if (e.id in selectedSenseOverrides) merged = { ...merged, selectedSense: selectedSenseOverrides[e.id] };
             return merged;
         },
-        [iconLayoutOverrides, snapConfigOverrides, textColorsOverrides, textLayoutOverrides, cardColorOverrides],
+        [iconLayoutOverrides, snapConfigOverrides, textColorsOverrides, textLayoutOverrides, cardColorOverrides, selectedSenseOverrides],
     );
     const displayCurrentEntry = applyIconOverride(currentEntry);
     const displayNextEntry = applyIconOverride(nextEntry);
@@ -357,18 +363,22 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
     // there is no gesture canvas, so the draft is rendered through the normal static
     // icon-layer path by feeding it onto the entry's iconLayout. The live Contrast text
     // colors are merged on too so the card previews them as the learner changes them.
-    // The live text placement merged on too (textLayoutForSave → null when both blocks are at
-    // default, so a default card renders its normal flex-column text). In ADVANCED mode the
-    // back-face static text is suppressed and the canvas renders the live text instead; this
-    // merge is what makes BASIC mode preview any text the learner moved in advanced. The canvas
-    // text nodes are built from this entry too, so they pick up the live Contrast colors.
+    //
+    // Text placement is an ADVANCED-only feature (only the gesture canvas can move a block),
+    // so it is previewed ONLY in advanced mode: `textLayout` is null in basic mode, which makes
+    // the back face render both blocks at their DEFAULT positions. In advanced mode the
+    // back-face static text is suppressed and the canvas renders the live text instead; the
+    // preview here is the merge for the moment the canvas isn't the one drawing. Save matches
+    // this display (handleSaveLayout also gates textLayout on advMode), so a basic-mode save
+    // produces a basic card — WYSIWYG. The canvas text nodes are built from this entry too, so
+    // they pick up the live Contrast colors.
     const editingCurrentEntry =
         editMode && displayCurrentEntry
             ? {
                 ...displayCurrentEntry,
                 iconLayout: draftLayout,
                 textColors: { foreign: textForeign, english: textEnglish },
-                textLayout: textLayoutForSave(textDraft),
+                textLayout: advMode ? textLayoutForSave(textDraft) : null,
                 // Live-preview the picked card fill (null = follow theme) as the learner taps swatches.
                 cardColor,
             }
@@ -771,8 +781,12 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
                     : { foreign: textForeign, english: textEnglish };
             // Persist the movable-text placement alongside the layout (folded into one Save, so
             // Cancel discards it). NULL when both blocks are at default, keeping clean rows.
-            // migration 91. Saved regardless of mode (text persists even from basic mode).
-            const textLayout: TextLayout | null = textLayoutForSave(textDraft);
+            // migration 91. Movable text is an ADVANCED-only feature, so it is written ONLY from
+            // advanced mode; a basic-mode save clears it to NULL (matching what basic mode
+            // DISPLAYS — see editingCurrentEntry). This keeps Save WYSIWYG: saving in basic
+            // layout produces a basic card (default text) instead of silently re-persisting the
+            // seeded advanced placement, which would flip the card back to advanced on re-open.
+            const textLayout: TextLayout | null = advMode ? textLayoutForSave(textDraft) : null;
             // Persist the card fill alongside the layout (already null when the default swatch
             // is picked, keeping clean rows). migration 94.
             const res = await saveIconLayout(token, currentEntry.id, draftLayout, snapConfig, textColors, textLayout, cardColor);
@@ -790,7 +804,7 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
         } finally {
             setSavingLayout(false);
         }
-    }, [currentEntry, draftLayout, textDraft, token, exitEdit, snapMove, snapRotate, snapResize, textForeign, textEnglish, cardColor]);
+    }, [currentEntry, draftLayout, advMode, textDraft, token, exitEdit, snapMove, snapRotate, snapResize, textForeign, textEnglish, cardColor]);
 
     // Reset-to-default: clear the saved layout (null), restoring the default centered
     // icon, then exit edit mode. Confirmation-gated by resetConfirmOpen.
@@ -816,6 +830,21 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
             setSavingLayout(false);
         }
     }, [currentEntry, token, exitEdit]);
+
+    // Persist a card's chosen definition-cluster sense (migration 99). Optimistic: seed the
+    // session override immediately (so the pick sticks across re-promotion / face sync) and
+    // PATCH in the background. On failure, roll the override back to the entry's server value
+    // and surface the same toast the layout saves use. This is NOT part of the edit-mode Save
+    // flow — the sense picker is live during normal review — so it writes its own column only.
+    const persistSelectedSense = useCallback((entry: VocabEntry, sense: string | null) => {
+        const prev = entry.selectedSense ?? null;
+        setSelectedSenseOverrides((o) => ({ ...o, [entry.id]: sense }));
+        saveSelectedSense(entry.id, sense, token).catch((err) => {
+            console.error("Failed to save selected sense:", err);
+            setSelectedSenseOverrides((o) => ({ ...o, [entry.id]: prev }));
+            setSaveError("Couldn't save your definition choice. Please try again.");
+        });
+    }, [token]);
 
     // Clear the fie reload breadcrumb if the page unmounts while still in edit mode
     // (e.g. an in-app navigation away). That's a clean exit, not an OS reload, so the
@@ -883,6 +912,7 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
         handleResizeStep,
         handleSaveLayout,
         handleResetConfirmed,
+        persistSelectedSense,
         undoAdv,
         redoAdv,
         pushAdvHistory,

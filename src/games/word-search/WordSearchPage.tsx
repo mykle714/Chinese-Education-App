@@ -1,12 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Box, Button, Typography, useTheme } from "@mui/material";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import { useAuth } from "../../AuthContext";
 import { API_BASE_URL } from "../../constants";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useTTS } from "../../hooks/useTTS";
-import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
 import { useBlockEdgeSwipe } from "../../hooks/useBlockEdgeSwipe";
 import { authHeader } from "../../utils/authHeader";
 import LeafPage from "../../components/LeafPage";
@@ -20,7 +19,7 @@ import WordSearchHintBar from "./WordSearchHintBar";
 import GameEndPopup from "../runtime/GameEndPopup";
 import { useWordSearchSettings } from "./useWordSearchSettings";
 import { saveGameState, loadGameState, clearGameState, type SavedWordSearchState } from "./gameStateStorage";
-import { GRID_QUERY, TOTAL_WORDS, HINT_BAR_UNITS, HINT_COST, medalForTime } from "./constants";
+import { GRID_QUERY, TOTAL_WORDS, HINT_BAR_UNITS, HINT_COST, medalForTime, modeConfigFor } from "./constants";
 import { countPinyinUnits } from "./pinyinUnits";
 import type { BonusWord, PlacedWord, WordSearchResponse } from "./types";
 
@@ -53,18 +52,34 @@ function formatTime(ms: number): string {
 const WordSearchPage: React.FC = () => {
     usePageTitle("Word Search");
     const navigate = useNavigate();
+    const location = useLocation();
     const theme = useTheme();
     const fc = theme.palette.flashcard;
     const { token, user } = useAuth();
     const userId = user?.id;
     const tts = useTTS();
-    const { settings, update } = useFlashcardLearnSettings();
-    const { showPinyin, showPinyinColor } = settings;
     const { settings: wsSettings, update: updateWsSettings } = useWordSearchSettings();
     const { showTimer } = wsSettings;
 
+    // The board mode ("pinyin" / "no-pinyin") is chosen on the Games hub (one
+    // sub-card each — see GamesPage) and passed in via nav `state.mode`; there's
+    // no in-game switch, so it's read once on mount and fixed for the whole run.
+    // A direct/stray visit with no valid mode redirects to /games (see the
+    // redirect effect below) rather than defaulting. Pinyin, when shown, is
+    // always tone-colored — the colorless variant was removed.
+    const [modeConfig] = useState(() => modeConfigFor((location.state as { mode?: string } | null)?.mode));
+    const mode = modeConfig?.mode;
+    const showPinyin = modeConfig?.showPinyin ?? false;
+    const showPinyinColor = true;
+
     // An edge swipe would navigate away mid-drag; block it while mounted.
     useBlockEdgeSwipe(true);
+
+    // No mode chosen (direct URL / stray nav) — bounce back to the Games hub,
+    // where the player picks Pinyin vs No Pinyin. Runs before any board loads.
+    useEffect(() => {
+        if (!modeConfig) navigate("/games", { replace: true });
+    }, [modeConfig, navigate]);
 
     const [phase, setPhase] = useState<Phase>("loading");
     const [blockMessage, setBlockMessage] = useState("");
@@ -193,12 +208,12 @@ const WordSearchPage: React.FC = () => {
     // startRef/pausedElapsedRef (not the `elapsedMs` state) so it's accurate
     // even mid-tick, not lagged by up to one 500ms interval step.
     const persistSnapshot = useCallback(() => {
-        if (!userId) return;
+        if (!userId || !mode) return;
         const s = latestStateRef.current;
         if (s.phase !== "playing" || !s.data || !s.data.grid) return;
         if (s.found.size >= s.data.words.length) return;
         const elapsedNow = startRef.current !== null ? Date.now() - startRef.current : pausedElapsedRef.current;
-        saveGameState(userId, {
+        saveGameState(userId, mode, {
             data: s.data,
             found: [...s.found],
             elapsedMs: elapsedNow,
@@ -209,7 +224,7 @@ const WordSearchPage: React.FC = () => {
             hintLocationRevealed: s.hintLocationRevealed,
             rewardedBonusWords: [...rewardedBonusWordsRef.current],
         });
-    }, [userId]);
+    }, [userId, mode]);
 
     // Fetch a fresh randomized grid. Returns the payload, or null after switching
     // to the blocked phase (insufficient cards / wrong language / network error).
@@ -315,6 +330,7 @@ const WordSearchPage: React.FC = () => {
     // refresh" rule in CLAUDE.md. `fetchGrid`/`startBoard`/`restoreBoard` are
     // deliberately omitted from the deps for the same reason.
     useEffect(() => {
+        if (!mode) return; // no mode → the redirect effect handles it
         if (!userId) {
             setBlockMessage("Sign in to play Word Search.");
             setPhase("blocked");
@@ -322,7 +338,7 @@ const WordSearchPage: React.FC = () => {
         }
         let cancelled = false;
         (async () => {
-            const saved = loadGameState(userId);
+            const saved = loadGameState(userId, mode);
             if (saved) {
                 if (!cancelled) restoreBoard(saved);
                 return;
@@ -411,8 +427,16 @@ const WordSearchPage: React.FC = () => {
         }).catch((err) => console.error(`[WordSearch] mark failed → card ${word.id}:`, err));
     }, [token]);
 
+    // Play a word's narration (guarded by the TTS enabled flag). Shared by the
+    // find-time play below and the grid's tap-to-replay / blue-match plays; the
+    // CloudTTSProvider caches the decoded buffer, so repeats within a game are
+    // instant and only the first play hits the server.
+    const speakWord = useCallback((entryKey: string, pinyin: string) => {
+        if (tts.enabled) tts.speakSentence(entryKey, pinyin);
+    }, [tts]);
+
     const onFound = useCallback((word: PlacedWord) => {
-        if (tts.enabled) tts.speakSentence(word.entryKey, word.pinyin);
+        speakWord(word.entryKey, word.pinyin);
         markWordFound(word);
         setFound((prev) => {
             const next = new Set(prev);
@@ -428,7 +452,7 @@ const WordSearchPage: React.FC = () => {
             setHintRevealCount(0);
             setHintLocationRevealed(false);
         }
-    }, [tts, markWordFound, hintEntryKey]);
+    }, [speakWord, markWordFound, hintEntryKey]);
 
     // The first multi-character bonus word ("blue match") found on a board
     // awards one hint unit, one time only — see WordSearchGrid's onBonusFound.
@@ -498,21 +522,21 @@ const WordSearchPage: React.FC = () => {
             setFinalMs(ms);
             setPopupMinimized(false);
             recordWin();
-            if (userId) clearGameState(userId);
+            if (userId && mode) clearGameState(userId, mode);
             setPhase("won");
         }
-    }, [found, phase, data, elapsedMs, stopTimer, recordWin, userId]);
+    }, [found, phase, data, elapsedMs, stopTimer, recordWin, userId, mode]);
 
     // Discard the current board (win-screen "Play Again", or the header
     // restart button mid-game) and load a fresh one.
     const resetBoard = useCallback(async () => {
-        if (userId) clearGameState(userId);
+        if (userId && mode) clearGameState(userId, mode);
         tts.unlockAudio();
         setPhase("loading");
         const payload = await fetchGrid();
         if (!payload) return; // fetchGrid already switched to blocked
         startBoard(payload);
-    }, [tts, fetchGrid, startBoard, userId]);
+    }, [tts, fetchGrid, startBoard, userId, mode]);
 
     const renderCentered = (children: React.ReactNode) => (
         <Box
@@ -620,6 +644,7 @@ const WordSearchPage: React.FC = () => {
                     onFound={onFound}
                     onBonusFound={onBonusFound}
                     onFirstInteraction={handleFirstInteraction}
+                    speak={speakWord}
                 />
 
                 {phase === "won" && (
@@ -668,10 +693,6 @@ const WordSearchPage: React.FC = () => {
             <WordSearchSettingsDialog
                 open={settingsOpen}
                 onClose={() => setSettingsOpen(false)}
-                showPinyin={showPinyin}
-                onToggleShowPinyin={(v) => update({ showPinyin: v })}
-                showPinyinColor={showPinyinColor}
-                onToggleShowPinyinColor={(v) => update({ showPinyinColor: v })}
                 showTimer={showTimer}
                 onToggleShowTimer={(v) => updateWsSettings({ showTimer: v })}
             />

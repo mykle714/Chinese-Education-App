@@ -16,6 +16,7 @@ interface InfoCardSectionProps {
     initialHeight?: number | null;
     onBreakdownItemClick?: (item: BreakdownItem) => void;
     onUsedInItemClick?: (item: UsedInItem) => void;
+    onExampleSegmentClick?: (segment: string) => void;
     depth?: number;
     onSpeak?: (entry: VocabEntry) => void;
     onSpeakSentence?: (text: string, pronunciation?: string) => void;
@@ -41,6 +42,7 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
     initialHeight,
     onBreakdownItemClick,
     onUsedInItemClick,
+    onExampleSegmentClick,
     depth = 0,
     onSpeak,
     onSpeakSentence,
@@ -70,6 +72,7 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
                     isFlipped={isFlipped}
                     onBreakdownItemClick={onBreakdownItemClick}
                     onUsedInItemClick={onUsedInItemClick}
+                    onExampleSegmentClick={onExampleSegmentClick}
                     onSpeak={onSpeak}
                     onSpeakSentence={onSpeakSentence}
                     speakingKey={speakingKey}

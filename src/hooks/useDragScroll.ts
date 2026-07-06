@@ -48,18 +48,25 @@ export function useDragScroll(ref: RefObject<HTMLElement | null>): void {
         dragged = false;
       }
     };
+    // The sub-cards are anchors (RouterLink), and browsers natively drag an <a>'s URL (and any
+    // text/image inside it) on mouse-drag. That native drag-and-drop hijacks the pointer — our
+    // mousemove/mouseup panning never regains control (the cursor gets "stuck" dragging a link
+    // to drop elsewhere). Cancel dragstart so only our pan logic runs.
+    const onDragStart = (e: DragEvent) => e.preventDefault();
 
     el.style.cursor = "grab";
     el.addEventListener("mousedown", onMouseDown);
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", stopDrag);
     el.addEventListener("click", onClickCapture, true);
+    el.addEventListener("dragstart", onDragStart);
 
     return () => {
       el.removeEventListener("mousedown", onMouseDown);
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", stopDrag);
       el.removeEventListener("click", onClickCapture, true);
+      el.removeEventListener("dragstart", onDragStart);
     };
   }, [ref]);
 }

@@ -11,10 +11,21 @@
  * browser (e.g. testing multiple test users) would resume the PREVIOUS
  * account's saved board, showing target words that have nothing to do with
  * the current user's library cards.
+ *
+ * It is ALSO scoped per `mode` ("pinyin" / "no-pinyin"), because the two hub
+ * entries are independent games with independent boards: starting/resuming the
+ * Pinyin board must not touch the No-Pinyin board's saved state, and vice
+ * versa. See docs/WORD_SEARCH_GAME.md §3 / §5b.
  */
 import type { WordSearchResponse } from "./types";
+import type { WordSearchMode } from "./constants";
 
 const STORAGE_KEY_PREFIX = "wordSearch.savedGame.";
+
+/** localStorage key for a given user's saved board in a given mode. */
+function storageKey(userId: string, mode: WordSearchMode): string {
+    return `${STORAGE_KEY_PREFIX}${userId}.${mode}`;
+}
 
 export interface SavedWordSearchState {
     data: WordSearchResponse;
@@ -32,18 +43,18 @@ export interface SavedWordSearchState {
 }
 
 /** Persist the in-progress board so it survives a page exit / app backgrounding. */
-export function saveGameState(userId: string, state: SavedWordSearchState): void {
+export function saveGameState(userId: string, mode: WordSearchMode, state: SavedWordSearchState): void {
     try {
-        window.localStorage.setItem(STORAGE_KEY_PREFIX + userId, JSON.stringify(state));
+        window.localStorage.setItem(storageKey(userId, mode), JSON.stringify(state));
     } catch {
         // Storage full or disabled — the session just won't resume; non-fatal.
     }
 }
 
 /** Load a previously saved board, or null if none/unparseable/already complete. */
-export function loadGameState(userId: string): SavedWordSearchState | null {
+export function loadGameState(userId: string, mode: WordSearchMode): SavedWordSearchState | null {
     try {
-        const raw = window.localStorage.getItem(STORAGE_KEY_PREFIX + userId);
+        const raw = window.localStorage.getItem(storageKey(userId, mode));
         if (!raw) return null;
         const parsed = JSON.parse(raw) as SavedWordSearchState;
         if (!parsed?.data?.grid || !Array.isArray(parsed.found)) return null;
@@ -55,9 +66,9 @@ export function loadGameState(userId: string): SavedWordSearchState | null {
 }
 
 /** Clear the saved board (on win, restart, or once it's no longer resumable). */
-export function clearGameState(userId: string): void {
+export function clearGameState(userId: string, mode: WordSearchMode): void {
     try {
-        window.localStorage.removeItem(STORAGE_KEY_PREFIX + userId);
+        window.localStorage.removeItem(storageKey(userId, mode));
     } catch {
         // ignore
     }

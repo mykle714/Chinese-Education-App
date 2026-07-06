@@ -84,6 +84,13 @@ router.patch('/api/vocabEntries/:id/icon-layout', authenticateToken, async (req,
   await vocabEntryController.updateIconLayout(req, res);
 });
 
+// Persist (or clear) the chosen definition-cluster sense for one vet row.
+// body: { selectedSense: string | null }. See docs/DEFINITION_CLUSTERS.md.
+// @ts-ignore
+router.patch('/api/vocabEntries/:id/selected-sense', authenticateToken, async (req, res) => {
+  await vocabEntryController.updateSelectedSense(req, res);
+});
+
 // Delete vocab entry
 // @ts-ignore
 router.delete('/api/vocabEntries/:id', authenticateToken, async (req, res) => {

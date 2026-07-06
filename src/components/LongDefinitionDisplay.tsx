@@ -13,6 +13,11 @@ interface LongDefinitionDisplayProps {
   // Forwarded to the inline cpcd for embedded Chinese (mirrors the expansion display).
   showPinyin?: boolean;
   showPinyinColor?: boolean;
+  // When provided, the embedded-Chinese segment popup becomes tappable: it shows a
+  // drill-in chevron and calls this with the tapped segment's headword so the host can
+  // open the eip for that word (same gesture as the example-sentence popups). Omit to
+  // keep the popup a passive tooltip (e.g. the cdp, which has no eip).
+  onSegmentOpen?: (segment: string) => void;
   // Typography styling (font/color/size) for the prose, supplied by the host surface
   // so this stays presentation-agnostic.
   sx?: SxProps<Theme>;
@@ -34,14 +39,18 @@ const LongDefinitionDisplay: React.FC<LongDefinitionDisplayProps> = ({
   className,
   showPinyin,
   showPinyinColor,
+  onSegmentOpen,
   sx,
 }) => {
   // Fallback: no parts (e.g. enrichment didn't run, or pure-English definition that the
   // server still left unsplit) → render the original plain, parenthetical-stripped text.
   if (!longDefinitionParts?.length) {
     if (!longDefinition) return null;
+    // `whiteSpace: pre-line` preserves the `\n\n` that longDefObjectToDisplayString
+    // inserts BETWEEN per-POS entries (server/utils/definitions.ts) — without it the
+    // DOM collapses the break and the POS senses run together on one line.
     return (
-      <Typography className={className} sx={sx}>
+      <Typography className={className} sx={[...(Array.isArray(sx) ? sx : [sx]), { whiteSpace: "pre-line" }]}>
         {stripParentheses(longDefinition)}
       </Typography>
     );
@@ -54,7 +63,9 @@ const LongDefinitionDisplay: React.FC<LongDefinitionDisplayProps> = ({
     <Typography
       component="div"
       className={className}
-      sx={[...(Array.isArray(sx) ? sx : [sx]), { lineHeight: 1.9 }]}
+      // pre-line preserves the per-POS `\n\n` break carried inside the text parts
+      // (same reason as the plain-text fallback above).
+      sx={[...(Array.isArray(sx) ? sx : [sx]), { lineHeight: 1.9, whiteSpace: "pre-line" }]}
     >
       {longDefinitionParts.map((part, index) => {
         if (part.type === "text") {
@@ -77,6 +88,7 @@ const LongDefinitionDisplay: React.FC<LongDefinitionDisplayProps> = ({
               flexWrap="nowrap"
               showPinyin={showPinyin}
               showPinyinColor={showPinyinColor}
+              onSegmentOpen={onSegmentOpen}
               sentence={{
                 foreignText: part.foreignText,
                 _segments: part._segments,

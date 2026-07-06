@@ -60,6 +60,19 @@ export interface IDictionaryDAL extends IBaseDAL<DictionaryEntry, DictionaryEntr
   ): Promise<void>;
 
   /**
+   * Read a user's completed AI-fallback model-call count for a local streak-day
+   * (migration 99). Returns 0 when no row exists yet. Drives the daily abuse limit
+   * (DICTIONARY_AI_DAILY_LIMIT). See docs/DICTIONARY_AI_FALLBACK_SEARCH.md.
+   */
+  getAiUsageCount(userId: string, usageDate: string): Promise<number>;
+
+  /**
+   * Atomically bump (and return) a user's completed AI-fallback call count for a
+   * local streak-day. Called once per COMPLETED model call (not on cache hits).
+   */
+  incrementAiUsage(userId: string, usageDate: string): Promise<number>;
+
+  /**
    * Enrich each example sentence in a batch of entries with:
    * - `_segments` (segment list)
    * - `segmentMetadata` (per-segment pronunciation + definition)

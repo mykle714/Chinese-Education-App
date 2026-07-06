@@ -79,15 +79,26 @@ docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-parts-of
 docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-word-forms.js --words=未来,摸脉
 docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-hsk-level.js --words=未来,摸脉
 docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-long-definitions.js --words=未来,摸脉
-docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-example-sentences.js --words=未来,摸脉
-docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-classifier.js --words=未来,摸脉
 docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-vernacular-score.js --words=未来,摸脉
 docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --words=未来,摸脉
+docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-example-sentences.js --words=未来,摸脉
+docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-classifier.js --words=未来,摸脉
+docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-expansion-claude.js --words=未来,摸脉
 ```
+
+`backfill-expansion-claude` runs last: it segments the accepted expansion and
+looks up each segment's `definitions` in `dictionaryentries_zh`, so it benefits
+from neighboring words already being enriched. Its `''` (empty-string) sentinel
+means "attempted, no valid expansion" — so many discoverable words will
+legitimately end with a blank expansion; that is expected, not a gap.
 
 **Parts of speech must run before `backfill-word-forms`, `backfill-long-definitions`, AND `backfill-example-sentences`.** All three depend on `partsOfSpeech`: word-forms and long-definitions only process rows where `partsOfSpeech IS NOT NULL` (they silently skip otherwise), and the example-sentence prompt enforces at least one sentence per listed POS. `backfill-word-forms` additionally reads `definitions[0]`, so it must also run after `backfill-process-definitions-array`. It writes an English `wordForms` map (e.g. `{"past":"ran",...}`), or `{}` when no forms apply, so re-runs skip already-processed rows.
 
-**`backfill-cluster-definitions` runs last** (it reads the finalized `definitions` and writes `definitionClusters` — orthogonal sense clusters; see `docs/DEFINITION_CLUSTERS.md`). It self-flags any sense it is even slightly unsure about by printing **`⚠ CLUSTER REVIEW <word> (id=...): <reason>`** lines to stdout (uncertain readings/heteronyms, borderline split/merge calls, low-confidence ordering, etc.). **Scan this step's output for `⚠ CLUSTER REVIEW` lines and surface every one of them to the user for human review** — these are the cases most likely to need a manual fix (e.g. a wrong heteronym reading) before `/data-deploy`.
+**`backfill-cluster-definitions` must run BEFORE `backfill-example-sentences`.** Example-sentences reads `definitionClusters` to tag each generated sentence with the exact `sense` label it demonstrates (and to steer coverage toward every register-4/5 sense); it **skips any row whose `definitionClusters` IS NULL**. Clustering reads the finalized `definitions` (so it must run after `backfill-process-definitions-array`) and writes `definitionClusters` — orthogonal sense clusters; see `docs/DEFINITION_CLUSTERS.md`.
+
+**`backfill-parts-of-speech` and `backfill-vernacular-score` must run BEFORE `backfill-cluster-definitions`.** Clustering's single-definition fast path copies the word-level `partsOfSpeech` and `vernacularScore` straight onto the lone cluster (instead of spending API calls to re-derive them), so those columns must already be populated or the fast-path cluster gets `pos`/`vernacularScore` = null. (Multi-definition entries are unaffected — they score each cluster independently in Stage C.) This is why vernacular-score was moved ahead of clustering in the sequence above.
+
+**Scan the `backfill-cluster-definitions` output for `⚠ CLUSTER REVIEW <word> (id=...): <reason>` lines and surface every one of them to the user for human review.** It self-flags any sense it is even slightly unsure about (uncertain readings/heteronyms, borderline split/merge calls, low-confidence ordering, etc.). These are the cases most likely to need a manual fix (e.g. a wrong heteronym reading) before `/data-deploy` — and a wrong cluster here now also feeds a wrong `sense` into the example sentences downstream.
 
 ### A4. Verify enrichment
 

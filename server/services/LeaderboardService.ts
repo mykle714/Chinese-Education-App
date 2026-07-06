@@ -62,22 +62,29 @@ export class LeaderboardService {
         });
       }
 
+      // Hide users with no accumulated points from the leaderboard entirely.
+      // Done before sorting/ranking so rank numbers, totalUsers, and pagination
+      // all reflect only the users actually shown.
+      const rankedEntries = leaderboardEntries.filter(
+        (entry) => entry.accumulativeMinutePoints > 0
+      );
+
       // Sort by yesterday's minutes (desc), tiebreaker = total minute points.
-      leaderboardEntries.sort((a, b) => {
+      rankedEntries.sort((a, b) => {
         if (b.yesterdaysMinutes !== a.yesterdaysMinutes) {
           return b.yesterdaysMinutes - a.yesterdaysMinutes;
         }
         return b.accumulativeMinutePoints - a.accumulativeMinutePoints;
       });
 
-      leaderboardEntries.forEach((entry, index) => {
+      rankedEntries.forEach((entry, index) => {
         entry.rank = index + 1;
       });
 
       return {
         success: true,
-        data: leaderboardEntries,
-        totalUsers: leaderboardEntries.length,
+        data: rankedEntries,
+        totalUsers: rankedEntries.length,
       };
     } catch (error) {
       console.error('Error getting leaderboard:', error);

@@ -133,11 +133,14 @@ const BubbleMatchPage: React.FC = () => {
     useBlockEdgeSwipe(true);
 
     // The level tapped on the Games hub, via nav `state` (HubMenuArrayItem /
-    // HubMenuRow's `state` prop). Falls back to the easiest level for any
-    // direct/stray navigation that arrives with no state (e.g. a manual URL
-    // visit) — there's no in-game picker to fall back to anymore.
+    // HubMenuRow's `state` prop). There's no in-game picker to fall back to, so
+    // a direct/stray visit with no valid level (e.g. a manual URL) redirects to
+    // the Games hub (see the redirect effect below) rather than silently
+    // defaulting. `initialLevel` still resolves to a safe value so the hooks
+    // below stay valid until that redirect fires.
     const requestedLevel = (location.state as { level?: number } | null)?.level;
-    const initialLevel = LEVEL_CONFIGS.find((cfg) => cfg.level === requestedLevel) ?? LEVEL_CONFIGS[0];
+    const chosenLevel = LEVEL_CONFIGS.find((cfg) => cfg.level === requestedLevel) ?? null;
+    const initialLevel = chosenLevel ?? LEVEL_CONFIGS[0];
 
     const [phase, setPhase] = useState<Phase>("loading");
     const [blockMessage, setBlockMessage] = useState<string>("");
@@ -205,7 +208,14 @@ const BubbleMatchPage: React.FC = () => {
 
     // Fetch the game pool once on mount, then start straight into the level
     // requested from the hub (no in-game picker to land on anymore).
+    // No level chosen (direct URL / stray nav) — bounce back to the Games hub,
+    // where the player picks a difficulty. Runs before any pool loads.
     useEffect(() => {
+        if (!chosenLevel) navigate("/games", { replace: true });
+    }, [chosenLevel, navigate]);
+
+    useEffect(() => {
+        if (!chosenLevel) return; // no level → the redirect effect handles it
         if (!user) {
             setBlockMessage("Sign in to play Bubble Match.");
             setPhase("blocked");

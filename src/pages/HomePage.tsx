@@ -7,7 +7,8 @@ import BookIcon from "@mui/icons-material/Book";
 import DashboardIcon from "@mui/icons-material/Dashboard";
 import GroupsIcon from "@mui/icons-material/Groups";
 import MobileTabScreen from "../components/MobileTabScreen";
-import { HubMenu, HubMenuRow, HubMenuSpacer } from "../components/HubMenu";
+import { HubMenu, HubMenuRow } from "../components/HubMenu";
+import { FooterSpacer } from "../components/MobileFooter";
 import TipBox from "../components/TipBox";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { COLORS } from "../theme/colors";
@@ -71,7 +72,7 @@ function HomePage() {
                 footer={
                     <>
                         <TipBox className="home-page__tip-box" />
-                        <HubMenuSpacer />
+                        <FooterSpacer />
                     </>
                 }
             >

@@ -230,6 +230,29 @@ export class VocabEntryService {
   }
 
   /**
+   * Persist (or clear) the learner's chosen definition-cluster sense for one vet row
+   * (migration 99). `selectedSense` is the cluster's `sense` label — a stable identity that
+   * survives re-sorting/re-scoring, unlike a positional index. `null` clears the choice back
+   * to the default/starred sense. Trimmed to a bounded length as a defensive guard against
+   * an oversized body; the client only ever sends a real cluster label. See
+   * docs/DEFINITION_CLUSTERS.md.
+   */
+  async updateSelectedSense(
+    userId: string,
+    entryId: number,
+    language: string,
+    selectedSense: string | null
+  ): Promise<VocabEntry> {
+    const clean = selectedSense === null ? null : String(selectedSense).slice(0, 500);
+    const updated = await this.vocabEntryDAL.updateSelectedSense(userId, entryId, language, clean);
+    if (!updated) {
+      // No row matched the id for this user — either it doesn't exist or isn't theirs.
+      throw new NotFoundError('Vocabulary entry not found');
+    }
+    return updated;
+  }
+
+  /**
    * Validate the per-card text-color overrides: null (both 'theme') or an object with a
    * `foreign` + `english` side, each one of 'theme' | 'dark' | 'light'. Any missing /
    * unrecognized side falls back to 'theme', so a partial/loosely-typed body is normalized.

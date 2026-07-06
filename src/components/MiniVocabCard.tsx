@@ -48,9 +48,14 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
     // colors the flashcard face uses so the thumbnail matches. Undefined = theme default.
     const characterColor = resolveTextColor(entry.textColors?.foreign);
     const definitionColor = resolveTextColor(entry.textColors?.english);
-    // Per-card background fill (migration 94): tint the thumbnail to match the flashcard face.
-    // Undefined = the default thumbnail color.
-    const faceBg = resolveCardColor(entry.cardColor) ?? COLORS.card;
+    // Per-card background fill (migration 94): tint the thumbnail to match the flashcard's BACK
+    // face (which this mini mirrors). Applied ONLY when the card is using an advanced layout —
+    // same gate the flashcard face uses, INCLUDING a custom text placement (so pass textLayout
+    // too), which is why this is a separate check from the icon-only `hasAdvancedLayout` above
+    // (that one drives whether the icon layer renders and must not fire for a text-only-advanced
+    // card that has no iconLayout). A basic card keeps the default thumbnail color.
+    const isUsingAdvancedLayout = isAdvancedLayout(entry.iconLayout, entry.textLayout);
+    const faceBg = (isUsingAdvancedLayout ? resolveCardColor(entry.cardColor) : undefined) ?? COLORS.card;
     return (
         <Box
             className="mini-vocab-card"

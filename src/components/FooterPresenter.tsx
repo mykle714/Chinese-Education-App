@@ -25,14 +25,20 @@ const FOOTER_ROUTES: Record<string, FooterTab> = {
     "/games": "home",
     "/community": "home",
     "/flashcards/mastered": "flashcards",
+    // Dictionary is a node page reached from the Home menu, so it keeps the Home tab.
+    "/dictionary": "home",
 };
 
 // Footer-bearing NODE pages reached via a parameterized path (e.g.
 // /discover/sort/:language). Matched by prefix since the exact pathname carries a
-// language segment. Keep in sync with NODE_PREFIXES in utils/pageTransition.ts.
+// language / word / id segment. Keep in sync with NODE_PREFIXES in
+// utils/pageTransition.ts. The card-detail cdps keep the tab of where they're
+// reached from: saved-card cdp → Flashcards, dictionary cdp → Home.
 const FOOTER_ROUTE_PREFIXES: Array<[string, FooterTab]> = [
     ["/discover/sort/", "discover"],
     ["/discover/skipped/", "discover"],
+    ["/flashcards/card/", "flashcards"],
+    ["/dictionary/card/", "home"],
 ];
 
 // Match the page-slide feel so the footer and pages decelerate together.

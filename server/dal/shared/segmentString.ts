@@ -1,4 +1,5 @@
-import { DictionaryEntry, ParticleClassifierEntry } from '../../types/index.js';
+import { DictionaryEntry, ParticleClassifierEntry, DefinitionCluster } from '../../types/index.js';
+import { ddt } from '../../utils/definitions.js';
 
 /**
  * Metadata entry for a dictionary-matched segment (word or character).
@@ -12,6 +13,7 @@ export interface SegmentMeta {
   overrideDefinition?: string;
   vernacularScore?: number | null;
   wordForms?: Record<string, string>;  // AI-generated English conjugation map (e.g. {past: "ran", present: "runs"})
+  definitionClusters?: DefinitionCluster[] | null;  // Orthogonal sense clusters (zh; migration 90) — used to resolve a segment's dd from its tagged sense (senseDict)
 }
 
 function normalizeText(value: string): string {
@@ -134,6 +136,7 @@ export function buildDictMap(dictEntries: DictionaryEntry[]): Map<string, Segmen
         ...(esOverride?.pronunciation != null && { overridePronunciation: esOverride.pronunciation }),
         ...(esOverride?.definition != null && { overrideDefinition: esOverride.definition }),
         ...(entry.wordForms != null && { wordForms: entry.wordForms }),
+        ...(entry.definitionClusters != null && { definitionClusters: entry.definitionClusters }),
       });
     }
   }
@@ -327,6 +330,10 @@ export interface RenderedSegmentMeta {
  * @param opts.partOfSpeechDict - Sentence's AI POS tags; gates particle/classifier display
  * @param opts.translatedContext - English translation used to context-match definitions
  * @param opts.includeWordForms - When true, attach segMeta.wordForms (example sentences only)
+ * @param opts.senseDict - Per-segment sense labels (from the example-sentence tagging pass,
+ *   backfill-example-sentences.js). When a segment's label matches one of that segment's own
+ *   definitionClusters, the segment's definition (dd) is resolved as ddt(matchedCluster) —
+ *   the cluster's stripped lead gloss — instead of the translation string-match fallback.
  */
 export function buildSegmentMetadata(
   segments: string[],
@@ -336,9 +343,10 @@ export function buildSegmentMetadata(
     partOfSpeechDict?: Record<string, string>;
     translatedContext?: string | null;
     includeWordForms?: boolean;
+    senseDict?: Record<string, string>;
   }
 ): Record<string, RenderedSegmentMeta> {
-  const { pacMap, partOfSpeechDict, translatedContext = null, includeWordForms = false } = opts ?? {};
+  const { pacMap, partOfSpeechDict, translatedContext = null, includeWordForms = false, senseDict } = opts ?? {};
   const result: Record<string, RenderedSegmentMeta> = {};
 
   for (const seg of segments) {
@@ -351,11 +359,25 @@ export function buildSegmentMetadata(
     const entry: RenderedSegmentMeta = {};
 
     if (segMeta) {
-      // Verbatim overrides win; otherwise fall back to stored pronunciation and the
-      // context-matched definition.
+      // Verbatim overrides win; otherwise fall back to stored pronunciation.
       const pronunciation = segMeta.overridePronunciation ?? segMeta.pronunciation;
       if (pronunciation) entry.pronunciation = pronunciation;
+      // Definition resolution priority:
+      //   1. manual override (verbatim),
+      //   2. the segment's TAGGED sense → ddt(matching cluster) — the cluster's own
+      //      stripped lead gloss (the sense the tagging pass says this segment carries here),
+      //   3. translation string-match against the flat definitions (legacy fallback, and the
+      //      only path for un-tagged/un-clustered segments).
+      const senseLabel = senseDict?.[seg];
+      const matchedCluster = senseLabel && segMeta.definitionClusters
+        ? segMeta.definitionClusters.find(c => c.sense === senseLabel)
+        : undefined;
+      // ddt can be "" when the cluster's lead gloss is purely parenthetical (e.g. a
+      // particle's "(grammatical particle …)"); `|| undefined` lets that empty result
+      // fall through to the string-match fallback instead of blanking the definition.
+      const clusterDd = matchedCluster ? ddt(matchedCluster) || undefined : undefined;
       const bestDefinition = segMeta.overrideDefinition
+        ?? clusterDd
         ?? pickDefinitionForTranslatedSentence(segMeta, translatedContext);
       if (bestDefinition) entry.definition = bestDefinition;
       if (includeWordForms && segMeta.wordForms) entry.wordForms = segMeta.wordForms;

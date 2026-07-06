@@ -41,6 +41,13 @@ export const CARD_FACE_JUSTIFY = 'flex-start';
 // ~15% of vw → ≈59px on a 393px iPhone frame.
 export const CARD_DISMISS_THRESHOLD_VW = 0.15;
 
+// Drag amplification factor. The card's translation is scaled by this multiplier
+// relative to the raw finger/cursor delta, so the card moves slightly faster than
+// the pointer (a value of 1 would track one-to-one). Applied uniformly to x and y
+// in useCardDrag's move handlers. Note this also makes the dismiss threshold easier
+// to reach, since the dismiss check reads the amplified dragPosition.
+export const CARD_DRAG_SENSITIVITY = 1.6;
+
 // Original card dimensions — source size used for scaling math.
 export const CARD_BASE_WIDTH = 295;
 export const CARD_BASE_HEIGHT = 426;

@@ -26,11 +26,14 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
    [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md)): **leaf pages** (down arrow, no
    footer, back-arrow-only exit, slide up/down) and **node pages** (left arrow,
    keep the footer, slide in-from-right / out-to-right via the arrow).
-   - Home-menu destinations → back to `/`: `/dictionary` (leaf), `/games` (node);
+   - Home-menu destinations → back to `/`: `/dictionary` (node), `/games` (node);
      `/night-market`, `/reader`, `/tester-dashboard` use their own headers.
    - Sort Cards (`/discover/sort/:language`) → back to `/discover` (leaf).
-   - Card Detail (`/flashcards/card/:id`) → back (leaf); Mastered Cards
-     (`/flashcards/mastered`) → back to Decks (node).
+   - Card Detail (`/flashcards/card/:id`, saved-card cdp) → back (node); Mastered
+     Cards (`/flashcards/mastered`) → back to Decks (node).
+   - Dictionary result tap → the read-only dictionary cdp (`/dictionary/card/:word`,
+     node); its breakdown/example drill-ins open more read-only cdps. See
+     [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) "Card detail (cdp): two surfaces".
    - Settings (`/settings`) → back to `/account` (leaf; opened from the Account
      header gear via `slideNavigate`, so it slides up into the phone frame).
 
@@ -48,8 +51,9 @@ The drawer's two global controls moved onto `AccountPage`:
 - Mobile-demo routes (`MOBILE_DEMO_PATHS`, which now includes `/`) → wrapped in
   `MobileDemoFrame` (full-bleed on mobile, centered phone card on desktop).
 - Everything else (auth pages, etc.) → full-height, no chrome; each owns its
-  `PageHeader`. (Reader / Dictionary / Night Market / Settings / Tester Dashboard
-  now render inside the frame as leaf pages.)
+  `PageHeader`. (Reader / Night Market / Settings / Tester Dashboard render inside
+  the frame as leaf pages; Dictionary + both card-detail cdps render inside the frame
+  as node pages.)
 
 ## Tester Dashboard
 

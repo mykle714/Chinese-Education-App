@@ -32,8 +32,10 @@ const SCRIPT_VERSION = 3; // bump when this script's logic/prompt changes (v3: c
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // run-log: track duration, version, words/mode, and token usage/cost
-const { stampEntries, accrueUsage } = initRunLog({ script: 'chinese/backfill-word-forms', version: SCRIPT_VERSION, anthropic });
-const { isSpotCheck, isBatch, targetWords } = parseBackfillArgs();
+const { stampEntries, accrueUsage, staleClause } = initRunLog({ script: 'chinese/backfill-word-forms', version: SCRIPT_VERSION, anthropic });
+const { isSpotCheck, isBatch, isStale, targetWords } = parseBackfillArgs();
+// --stale: also re-process rows stamped below the current SCRIPT_VERSION.
+const doneGate = isStale ? `("wordForms" IS NULL OR ${staleClause()})` : '"wordForms" IS NULL';
 
 const MODEL = 'claude-sonnet-4-6';
 
@@ -132,7 +134,7 @@ async function run() {
       FROM dictionaryentries_zh
       WHERE language = 'zh'
         AND discoverable = TRUE
-        AND "wordForms" IS NULL
+        AND ${doneGate}
         AND "partsOfSpeech" IS NOT NULL
         AND jsonb_array_length("partsOfSpeech") > 0
         ${wordsFilter}

@@ -10,7 +10,7 @@ interface LongDefinitionDisplayProps {
   // parts. When present, Chinese parts render as inline cpcd with the segment popup.
   longDefinitionParts?: LongDefinitionPart[] | null;
   className?: string;
-  // Forwarded to the inline cpcd for embedded Chinese (mirrors the expansion display).
+  // Forwarded to the inline cpcd for embedded Chinese (mirrors the example-sentence display).
   showPinyin?: boolean;
   showPinyinColor?: boolean;
   // When provided, the embedded-Chinese segment popup becomes tappable: it shows a

@@ -5,7 +5,12 @@
 
 export const STREAK_CONFIG = {
   RETENTION_MINUTES: parseInt(process.env.STREAK_RETENTION_MINUTES || '3'),
-  DAILY_PENALTY_MINUTES: parseInt(process.env.DAILY_PENALTY_MINUTES || '10'),
+  // Escalating inactivity penalty by consecutive full days below the threshold.
+  // Index 0 = 1st missed day (3 min), ... index 5 = 6th missed day (120 min).
+  // The 7th+ missed day wipes the remaining balance to 0 (no schedule entry).
+  // This is the single documented source of truth; the values are hard-coded in
+  // database/cron/expire-stale-streaks.sql and MUST be kept in sync with it.
+  PENALTY_SCHEDULE_MINUTES: [3, 15, 30, 60, 90, 120],
 };
 
 export const MINUTE_POINTS_CONFIG = {

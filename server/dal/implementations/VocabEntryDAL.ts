@@ -2,7 +2,7 @@ import { PoolClient, QueryResult } from 'pg';
 import { BaseDAL } from '../base/BaseDAL.js';
 import { IVocabEntryDAL } from '../interfaces/IVocabEntryDAL.js';
 import { dbManager } from '../base/DatabaseManager.js';
-import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, UsedInItem, IconLayoutItem, SnapConfig, TextColors, TextLayout } from '../../types/index.js';
+import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, UsedInItem, IconLayoutItem, SnapConfig, TextColors, TextLayout, TypedMarkHistory } from '../../types/index.js';
 import { ValidationError, NotFoundError, BulkResult, ITransaction, DALError } from '../../types/dal.js';
 import db from '../../db.js';
 import { DICT_COLS, DICT_JOIN } from '../shared/dictJoin.js';
@@ -897,17 +897,16 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
   // Callers that previously forced a category now write the corresponding markHistory.
 
   /**
-   * Update a vocab entry's mark history and related statistics
-   * Used when marking cards as "already learned" to populate with perfect history
+   * Overwrite a vocab entry's typed mark history + lifetime counts.
+   * Used when marking cards "already learned" to seed a full (Mastered) history.
+   * `category` is no longer stored — it's derived on read from typedMarkHistory +
+   * the account's goal flags (migration 101), so there's nothing else to write.
    */
-  async updateMarkHistory(
-    id: number, 
-    markHistory: any[], 
+  async updateTypedMarkHistory(
+    id: number,
+    typedMarkHistory: TypedMarkHistory,
     totalMarkCount: number,
-    totalCorrectCount: number,
-    totalSuccessRate: number,
-    last8SuccessRate: number,
-    last16SuccessRate: number
+    totalCorrectCount: number
   ): Promise<void> {
     if (!id) {
       throw new ValidationError('Entry ID is required');
@@ -921,26 +920,20 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
       for (const table of VET_PHYSICAL_TABLES) {
         await client.query(`
           UPDATE ${table}
-          SET "markHistory" = $1,
+          SET "typedMarkHistory" = $1,
               "totalMarkCount" = $2,
-              "totalCorrectCount" = $3,
-              "totalSuccessRate" = $4,
-              "last8SuccessRate" = $5,
-              "last16SuccessRate" = $6
-          WHERE id = $7
+              "totalCorrectCount" = $3
+          WHERE id = $4
         `, [
-          JSON.stringify(markHistory),
+          JSON.stringify(typedMarkHistory),
           totalMarkCount,
           totalCorrectCount,
-          totalSuccessRate,
-          last8SuccessRate,
-          last16SuccessRate,
           id
         ]);
       }
     } catch (error: any) {
-      console.error('Error updating mark history:', error);
-      throw new DALError('Failed to update vocab entry mark history', 'ERR_UPDATE_MARK_HISTORY_FAILED', error);
+      console.error('Error updating typed mark history:', error);
+      throw new DALError('Failed to update vocab entry typed mark history', 'ERR_UPDATE_MARK_HISTORY_FAILED', error);
     } finally {
       client.release();
     }

@@ -57,6 +57,7 @@ export async function fetchLanguageSummary(
  * Increment minute points by exactly 1 (server-side rate-limited).
  */
 export async function incrementMinutePoint(
+  language: string,
   token?: string | null
 ): Promise<{ success: boolean; message: string }> {
   try {
@@ -70,6 +71,9 @@ export async function incrementMinutePoint(
       body: JSON.stringify({
         timestamp: new Date().toISOString(),
         tz: getBrowserTimezone(),
+        // Attribute the minute to the language this hook accrued for — matches
+        // the badge/localStorage the client already incremented optimistically.
+        language,
       }),
     });
 

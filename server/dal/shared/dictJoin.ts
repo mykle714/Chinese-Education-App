@@ -13,11 +13,16 @@
 // `definitionClusters` is the zh-only orthogonal sense-cluster column (migration
 // 90, docs/DEFINITION_CLUSTERS.md) — NULL for Spanish and for zh entries not yet
 // backfilled. Drives the flp sense-picker dropdown (EnglishBlock).
+//
+// `characterRationale` is the zh-only per-character rationale column (migration 102,
+// docs/CHARACTER_RATIONALE.md): jsonb array of {char, reason} explaining why each
+// character is used in a multi-char word. NULL for Spanish (the es branch substitutes
+// a typed NULL) and for zh entries not yet backfilled. Replaces the old expansion cols.
 export const DICT_COLS =
   `de.script, de.pronunciation, de.tone, de."difficulty", de."partsOfSpeech", ` +
   `de."vernacularScore", ` +
   `de.breakdown, de.synonyms, de."exampleSentences", ` +
-  `de.expansion, de."expansionLiteralTranslation", de."longDefinition", ` +
+  `de."characterRationale", de."longDefinition", ` +
   `de.pos, de."hasMultiplePos", de."alternateGender", de."alternateMeaning", ` +
   `de."iconId", ` +
   `de."definitionClusters", ` +
@@ -35,7 +40,7 @@ export const DICT_COLS =
 const DICT_LATERAL_SELECT_ZH =
   `SELECT script, pronunciation, tone, "difficulty", "partsOfSpeech", "vernacularScore",` +
   `       breakdown, synonyms,` +
-  `       "exampleSentences", expansion, "expansionLiteralTranslation", "longDefinition",` +
+  `       "exampleSentences", "characterRationale", "longDefinition",` +
   `       NULL::varchar AS pos, FALSE AS "hasMultiplePos",` +
   `       NULL::varchar AS "alternateGender", NULL::text AS "alternateMeaning",` +
   `       "iconId",` +
@@ -48,7 +53,7 @@ const DICT_LATERAL_SELECT_ZH =
 const DICT_LATERAL_SELECT_ES =
   `SELECT script, pronunciation, tone, "difficulty", "partsOfSpeech", "vernacularScore",` +
   `       breakdown, synonyms,` +
-  `       "exampleSentences", expansion, "expansionLiteralTranslation", "longDefinition",` +
+  `       "exampleSentences", NULL::jsonb AS "characterRationale", "longDefinition",` +
   `       pos, "hasMultiplePos", "alternateGender", "alternateMeaning",` +
   `       "iconId",` +
   `       NULL::jsonb AS "definitionClusters",` +

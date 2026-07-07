@@ -8,6 +8,7 @@ import { ShortDefinitionPronunciationOverride, ExampleSentenceDefinitionPronunci
 import { getAllSubstrings, buildDictMap, buildExcludeSet, segmentWithDict, buildSegmentMetadata, splitHanRuns, RenderedSegmentMeta } from '../shared/segmentString.js';
 import { LongDefinitionPart } from '../../types/index.js';
 import { segmentPinyin } from '../../utils/pinyinSegment.js';
+import { dictTableForLanguage } from '../shared/dictTable.js';
 import { AiDictionaryCacheRow } from '../../types/index.js';
 
 // Standard column list for all dictionary SELECT queries
@@ -19,13 +20,24 @@ const DICTIONARY_COLUMNS = `
   "definitionClusters",
   breakdown, synonyms,
   "exampleSentences",
-  expansion, "expansionLiteralTranslation",
+  "characterRationale",
   "matchException",
   "shortDefinitionPronunciationOverride",
   "exampleSentenceDefinitionPronunciationOverride",
   "vernacularScore",
   "wordForms"
 `.trim();
+
+// Per-language variant of the SELECT list. `definitionClusters` (migration 90) is a Chinese-only
+// enrichment (its per-cluster reading is pinyin), and the Spanish det (`dictionaryentries_es`) has
+// no such column — so for es we select a typed NULL placeholder to keep the column list, row shape,
+// and mapRowToEntity uniform across languages without adding a meaningless column to the es table.
+function dictionaryColumns(language: string): string {
+  if (language === 'es') {
+    return DICTIONARY_COLUMNS.replace('"definitionClusters",', 'NULL::jsonb AS "definitionClusters",');
+  }
+  return DICTIONARY_COLUMNS;
+}
 
 /**
  * Parse a numbered-pinyin search query (e.g. "jian4 shen1") into a Postgres regex matched
@@ -125,8 +137,7 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
       breakdown: row.breakdown ?? null,
       synonyms: row.synonyms ?? null,
       exampleSentences: row.exampleSentences ?? null, // Enriched on-the-fly via enrichExampleSentencesMetadataBatch
-      expansion: row.expansion ?? null,
-      expansionLiteralTranslation: row.expansionLiteralTranslation ?? null,
+      characterRationale: row.characterRationale ?? null, // Per-character rationale (jsonb, migration 102); display-ready, no runtime enrichment
       matchException: row.matchException ?? [],
       vernacularScore: row.vernacularScore ?? null,
       wordForms: row.wordForms ?? null,
@@ -238,6 +249,12 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
     // case-insensitive ILIKE paths and leaves Chinese characters in word1 untouched.
     searchTerm = searchTerm.toLowerCase();
 
+    // Route to the per-language det table (Chinese → dictionaryentries_zh, Spanish →
+    // dictionaryentries_es). Everything pinyin/pronunciation-related below is Chinese-only: the
+    // Spanish rows have NULL pronunciation / numberedPinyin, so those clauses are skipped for es.
+    const isZh = language === 'zh';
+    const table = dictTableForLanguage(language);
+
     // Expand plain vowels to include all tone variations for accent-agnostic matching
     const expandVowels = (term: string): string => {
       return term
@@ -274,23 +291,35 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
     // English/pinyin-shaped phrase without any tone digit (ambiguous with a definitions search)
     // isn't misread as an all-any-tone pinyin query. Returns null (falls back to the existing
     // word1/pronunciation/definitions search) if any token isn't syllable-shaped.
-    const numberedPinyinPattern = buildNumberedPinyinPattern(searchTerm);
+    const numberedPinyinPattern = isZh ? buildNumberedPinyinPattern(searchTerm) : null;
 
-    const params: any[] = [language, searchPattern, regexPattern, excludePattern];
+    // $1 language and $2 word1-prefix pattern are used for every language. The pronunciation params
+    // ($3 accent-agnostic prefix regex, $4 the 'g'-exclusion) and the numbered-pinyin clause are
+    // Chinese-only — the es det has NULL pronunciation/numberedPinyin, and `NOT (NULL ~ x)` would
+    // drop every Spanish row — so es matches on word1 + first-definition only.
+    const params: any[] = [language, searchPattern];
     let paramIdx = params.length;
 
+    let pronunciationClause = '';
+    let pronunciationExclusion = '';
     let numberedPinyinClause = '';
-    if (numberedPinyinPattern) {
-      paramIdx += 1;
-      numberedPinyinClause = `\n          OR "numberedPinyin" ~* $${paramIdx}`;
-      params.push(numberedPinyinPattern);
+    if (isZh) {
+      params.push(regexPattern, excludePattern); // $3, $4
+      paramIdx = params.length;
+      pronunciationClause = `\n          OR pronunciation ~ $3`;
+      pronunciationExclusion = `\n        AND NOT (pronunciation ~ $4)`;
+      if (numberedPinyinPattern) {
+        paramIdx += 1;
+        numberedPinyinClause = `\n          OR "numberedPinyin" ~* $${paramIdx}`;
+        params.push(numberedPinyinPattern);
+      }
     }
 
     // Word/pinyin match (everything except the English-definition contains search).
     // Reused both as the WHERE word-match group and as the ORDER BY priority test so
-    // that the ranking mirrors exactly how a row qualified.
-    const wordMatchExpr = `word1 ILIKE $2
-          OR pronunciation ~ $3${numberedPinyinClause}`;
+    // that the ranking mirrors exactly how a row qualified. For es this is the word1 prefix
+    // alone (the pinyin/pronunciation pieces are empty).
+    const wordMatchExpr = `word1 ILIKE $2${pronunciationClause}${numberedPinyinClause}`;
 
     // English-definition search. We match only the text actually shown on the result
     // card (DictionaryEntryRow): the FIRST definition with all parenthetical substrings
@@ -324,11 +353,10 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
     const countResult = await this.dbManager.executeQuery<any>(async (client) => {
       return await client.query(`
         SELECT COUNT(*) as count
-        FROM ${this.tableName}
+        FROM ${table}
         WHERE language = $1 AND (
           ${wordMatchExpr}${definitionsClause}
-        )
-        AND NOT (pronunciation ~ $4)
+        )${pronunciationExclusion}
       `, countParams);
     });
 
@@ -337,12 +365,11 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
     // Exclude results where pronunciation ends in 'g' immediately after the search term
     const entriesResult = await this.dbManager.executeQuery<any>(async (client) => {
       return await client.query(`
-        SELECT ${DICTIONARY_COLUMNS}
-        FROM ${this.tableName}
+        SELECT ${dictionaryColumns(language)}
+        FROM ${table}
         WHERE language = $1 AND (
           ${wordMatchExpr}${definitionsClause}
-        )
-        AND NOT (pronunciation ~ $4)
+        )${pronunciationExclusion}
         ORDER BY
           CASE WHEN (${wordMatchExpr}) THEN 0 ELSE 1 END,
           LENGTH(word1), word1
@@ -359,8 +386,8 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
     // primary search found nothing: segment the (possibly space-free) term into pinyin syllables,
     // enumerate every valid tiling, and match each re-spaced form against numberedPinyin. This lets
     // "jianshen"/"jian4shen1" resolve even though the direct numbered-pinyin path (which needs
-    // spaces + a digit) matched nothing.
-    if (total === 0) {
+    // spaces + a digit) matched nothing. Chinese-only (es has no pinyin).
+    if (isZh && total === 0) {
       const tilings = segmentPinyin(searchTerm);
       if (tilings.length > 0) {
         // Build one pattern per tiling; tokens are already valid pinyin so digits aren't required.
@@ -702,79 +729,13 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
   }
 
   /**
-   * Enrich each entry with GSA-segmented expansion data.
-   *
-   * Mirrors enrichExampleSentencesMetadataBatch: runs the greedy segmentation algorithm
-   * on each entry's expansion string, then batch-queries dictionaryentries_zh for all candidate
-   * substrings. Computed on-the-fly; not stored in the DB.
-   *
-   * Each entry gains:
-   *   - `expansionSegments: string[]`  — GSA word tokens (e.g. ["不知", "不觉"] for 不知不觉)
-   *   - `expansionMetadata: Record<segment, { pronunciation?, definition? }>` — keyed by segment
-   *
-   * @param entries - Objects with optional `expansion` field
-   * @param language - Language filter for dictionary lookups (default: 'zh')
-   */
-  async enrichExpansionMetadataBatch<T extends {
-    expansion?: string | null;
-    expansionLiteralTranslation?: string | null;
-  }>(entries: T[], language: string = 'zh'): Promise<T[]> {
-    const withExpansion = entries.filter(e =>
-      typeof e.expansion === 'string' && e.expansion.trim().length > 0
-    );
-
-    if (withExpansion.length === 0) {
-      return entries.map(entry => ({ ...entry, expansionSegments: null, expansionMetadata: null }));
-    }
-
-    // 1. Collect all candidate substrings across all expansion strings
-    const allCandidates = new Set<string>();
-    for (const entry of withExpansion) {
-      for (const candidate of getAllSubstrings(entry.expansion!.trim())) {
-        allCandidates.add(candidate);
-      }
-    }
-
-    // 2. Single batch DB query for all candidates
-    const dictEntries = await this.findMultipleByWord1([...allCandidates], language);
-    const dictMap = buildDictMap(dictEntries);
-    const excludeTokens = buildExcludeSet(dictEntries);
-
-    // 3. Run GSA and build segment-keyed metadata for each entry
-    return entries.map(entry => {
-      const expansion = typeof entry.expansion === 'string' ? entry.expansion.trim() : '';
-      if (!expansion) {
-        return { ...entry, expansionSegments: null, expansionMetadata: null };
-      }
-
-      const expansionSegments = segmentWithDict(expansion, dictMap, excludeTokens);
-      const translatedExpansion =
-        typeof entry.expansionLiteralTranslation === 'string'
-          ? entry.expansionLiteralTranslation
-          : null;
-
-      // Expansion is pure Chinese: no particle/classifier model and no wordForms — just
-      // pronunciation + context-matched definition (against the literal translation).
-      const expansionMetadata = buildSegmentMetadata(expansionSegments, dictMap, {
-        translatedContext: translatedExpansion,
-      });
-
-      return {
-        ...entry,
-        expansionSegments,
-        expansionMetadata: Object.keys(expansionMetadata).length > 0 ? expansionMetadata : null,
-      };
-    });
-  }
-
-  /**
    * Enrich each entry's `longDefinition` into `longDefinitionParts` — an ordered list of
    * English-prose parts and embedded-Chinese parts. The Chinese parts carry the same
    * `{ foreignText, _segments, segmentMetadata }` shape as an example sentence, so the
    * client renders them as cpcd with the identical hover/tap definition popup.
    *
    * Chinese-only: `longDefinition` for non-`zh` languages (e.g. Spanish) has no Han runs,
-   * so it returns a single text part with no DB work. Mirrors enrichExpansionMetadataBatch:
+   * so it returns a single text part with no DB work. Mirrors enrichExampleSentencesMetadataBatch:
    * one batched dictionary query + one batched particle/classifier query across all entries.
    * Computed on-the-fly; not stored in the DB.
    *

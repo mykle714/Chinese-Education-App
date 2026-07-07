@@ -1,6 +1,7 @@
 import { Card, CardContent, Typography, Box } from '@mui/material';
 import { AutoAwesome } from '@mui/icons-material';
 import type { AiDictionaryEntry } from '../types';
+import { hasChinese } from '../utils/textUtils';
 import { FONTS } from '../theme/fonts';
 import { SIZE, WEIGHT } from '../theme/scale';
 import { COLORS } from '../theme/colors';
@@ -41,7 +42,9 @@ function AiDictionaryEntryCard({ entry }: AiDictionaryEntryCardProps) {
                     variant="h6"
                     component="h3"
                     gutterBottom
-                    sx={{ fontWeight: WEIGHT.bold, fontFamily: FONTS.cjk, fontSize: SIZE.title }}
+                    // The headword is CJK only for the Chinese fallback; a Spanish (Latin) headword
+                    // must use the Latin UI font, so pick the stack from the word's own script.
+                    sx={{ fontWeight: WEIGHT.bold, fontFamily: hasChinese(entry.word1) ? FONTS.cjk : FONTS.sans, fontSize: SIZE.title }}
                 >
                     {entry.word1}
                 </Typography>

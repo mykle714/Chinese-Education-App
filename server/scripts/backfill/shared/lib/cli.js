@@ -19,6 +19,9 @@
  * @returns {{
  *   isSpotCheck: boolean,     // --spot-check → process ~5 entries only
  *   isBatch: boolean,         // --batch → run via the Message Batches API (50% price)
+ *   isStale: boolean,         // --stale → ALSO revisit rows stamped below the current
+ *                             //   SCRIPT_VERSION (or never stamped) — OR the run-log
+ *                             //   `staleClause()` into the WHERE alongside `col IS NULL`
  *   targetWords: string[]|null, // --words=a,b,c → scope to specific words
  *   flags: string[],          // all raw --flags (for run-log / custom flags)
  * }}
@@ -26,12 +29,13 @@
 export function parseBackfillArgs(argv = process.argv.slice(2)) {
   const isSpotCheck = argv.includes('--spot-check');
   const isBatch = argv.includes('--batch');
+  const isStale = argv.includes('--stale');
   const wordsArg = argv.find(a => a.startsWith('--words='));
   const targetWords = wordsArg
     ? wordsArg.slice('--words='.length).split(',').map(s => s.trim()).filter(Boolean)
     : null;
   const flags = argv.filter(a => a.startsWith('--'));
-  return { isSpotCheck, isBatch, targetWords, flags };
+  return { isSpotCheck, isBatch, isStale, targetWords, flags };
 }
 
 /**

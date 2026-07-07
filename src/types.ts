@@ -41,6 +41,19 @@ export type LongDefinitionPart =
 // Flashcard Category type for spaced repetition
 export type FlashcardCategory = 'Unfamiliar' | 'Target' | 'Comfortable' | 'Mastered';
 
+// The four mastery mark types (docs/MASTERY_REWORK.md). Mirror of the server enum.
+export type MarkType = 'recognition' | 'production' | 'reading' | 'writing';
+export const MARK_TYPES: readonly MarkType[] = ['recognition', 'production', 'reading', 'writing'] as const;
+
+export interface ReviewMark {
+  timestamp: string;
+  isCorrect: boolean;
+}
+
+// Per-card typed mark streams (vet."typedMarkHistory", migration 101): each type
+// keeps its <=8 most-recent marks.
+export type TypedMarkHistory = Partial<Record<MarkType, ReviewMark[]>>;
+
 // Starter pack bucket type
 export type StarterPackBucket = 'library' | 'skip';
 
@@ -197,15 +210,13 @@ export interface VocabEntry {
   vernacularScore?: number | null;  // 1=literary … 5=natural colloquial
   definitionClusters?: DefinitionCluster[] | null;  // Orthogonal sense clusters (zh; migration 90) — see docs/DEFINITION_CLUSTERS.md
   selectedSense?: string | null;  // Per-card chosen cluster `sense` label (vet column, migration 99). NULL = default/starred sense. Absent on det-fallback entries (dictionary cdp). See docs/DEFINITION_CLUSTERS.md
-  category?: FlashcardCategory;
+  category?: FlashcardCategory;  // utcm level, derived server-side from typedMarkHistory + the account's goals (migration 101)
+  typedMarkHistory?: TypedMarkHistory;  // Per-type mark streams (migration 101); drives the cdp progress bar. See docs/MASTERY_REWORK.md
   starterPackBucket?: StarterPackBucket | null;
-  breakdown?: Record<string, { definition: string; pronunciation?: string }> | null;
+  breakdown?: Record<string, { definition: string; pronunciation?: string; sense?: string }> | null;
   synonyms?: string[];
   synonymsMetadata?: Record<string, { definition: string; pronunciation: string }> | null; // Computed at runtime by server
-  expansion?: string | null;
-  expansionSegments?: string[] | null;  // GSA word tokens for the expansion string
-  expansionMetadata?: Record<string, { pronunciation?: string; definition?: string }> | null;
-  expansionLiteralTranslation?: string | null;
+  characterRationale?: Array<{ char: string; reason: string }> | null;  // zh-only per-character rationale (migration 102, docs/CHARACTER_RATIONALE.md); why each char is used in this multi-char word. Replaces expansion.
   iconId?: string | null;  // Representative icons8 icon joined from det; rendered via <img src="/api/icons8/<iconId>/image">
   iconLayout?: IconLayoutItem[] | null;  // Custom flashcard icon arrangement (vet column, migration 82). NULL = use the default centered iconId. See docs/CARD_ICON_LAYOUT.md
   snapConfig?: SnapConfig | null;  // Per-card icon-editor snap toggles (vet column, migration 88). NULL = all off. See docs/CARD_ICON_LAYOUT.md
@@ -314,7 +325,7 @@ export interface DiscoverCard {
   // discoverable POS (→ show a "(v)"/"(n)" badge). Null/false for Chinese.
   pos?: string | null;
   hasMultiplePos?: boolean;
-  breakdown?: Record<string, { definition: string; pronunciation?: string }> | null;
+  breakdown?: Record<string, { definition: string; pronunciation?: string; sense?: string }> | null;
   synonyms?: string[] | null;
   exampleSentences?: Array<{
     foreignText: string;
@@ -328,9 +339,7 @@ export interface DiscoverCard {
     _segments?: string[];
     segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; wordForms?: Record<string, string> }>;
   }> | null;
-  expansion?: string | null;
-  expansionMetadata?: Record<string, { pronunciation?: string; definition?: string }> | null;
-  expansionLiteralTranslation?: string | null;
+  characterRationale?: Array<{ char: string; reason: string }> | null;  // zh-only per-character rationale (migration 102, docs/CHARACTER_RATIONALE.md); why each char is used in this multi-char word. Replaces expansion.
   // Optional icons8 icon assigned to this entry (icons8Id); the client renders
   // the icon via <img src="/api/icons8/<iconId>/image">. Null when no icon assigned.
   iconId?: string | null;

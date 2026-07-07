@@ -112,13 +112,27 @@ A **sort pack** is a small group of vocabulary cards shown together:
   user skipped is part of an authored pack, it is shown **draggable again** (not
   locked) — the pack's context is a fresh chance to sort it. Re-sorting it there clears
   its skip (§5.2).
-- **Each card shows a vernacular-register badge.** A small circular tag in the card's
-  **top-left corner** — mirroring the utcm badge on /decks (`MiniVocabCard`) — shows
-  the word's `vernacularScore` as a number (1 = literary … 5 = natural colloquial).
-  Rendered only when the entry has a score. This is the per-card face of the register
-  ordering the supply now uses (§6.4). (The eip renders the same score as a five-dot
-  meter via the shared `VernacularScoreDots` component; the sort card uses the compact
-  numeric tag instead to match the utcm badge form.)
+- **Each card sits on a raised platform with a Commonality header + a speaker below.**
+  The on-deck zone (`OnDeckSection`) is styled as an elevated **platform** (plain white
+  slab, rounded top, top-edge highlight, downward drop shadow) the cards rest on. Each
+  card lives in a `CardSlot` column: a **header band** on top, the draggable card in the
+  middle, and a **play-audio button** underneath.
+    - **Commonality header band** (`CardDeckHeader`). A **"Commonality"** caption
+      (`CommonalityLabel`) over a row (`CommonalityMeterRow`) of the **five-dot register
+      meter** (`VernacularScoreDots`, `score` dots filled / rest hollow — the word's
+      `vernacularScore`, 1 = literary … 5 = natural colloquial) beside an **"x/5"**
+      numeric readout (`CommonalityScoreValue`). Rendered only when the entry has a
+      score. This is the per-card face of the register ordering the supply uses (§6.4).
+      The band lives on the platform (a sibling above `CardShell`, not inside it), so it
+      stays put while the card is dragged into a bucket. *(Replaced the old top-left
+      circular numeric badge, which is gone. "Commonality" is the user-facing name for
+      `vernacularScore`; the eip + cdp meters use the same label + x/5 form.)*
+    - **Play-audio button.** A `SpeakerButton` **below the card** that narrates just that
+      card's word on tap (`handlePlayCardAudio` → `tts.speakSentence`), independent of
+      the pack-level autoplay; spins while that card is speaking
+      (`tts.speakingKey === entryKey`).
+  A resolved card leaves an invisible full-slot placeholder (header + card footprint +
+  speaker-footer height) so neighbors don't reposition.
 - **A pack is shown at most once.** Once the user has **finished** a pack (every card
   sorted) **or skipped** it, that pack never appears again — regardless of whether its
   cards were sorted or skipped. (This is the per-user "seen packs" record; it applies

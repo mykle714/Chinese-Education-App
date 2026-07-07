@@ -4,7 +4,15 @@ import db from '../db.js';
 import { VET_PHYSICAL_TABLES, vetTableForLanguage } from '../dal/shared/vetTable.js';
 import { onDeckVocabService } from '../dal/setup.js';
 import { MODE_CONFIGS, type StudyMode } from '../services/OnDeckVocabService.js';
-import { ReviewMark, FlashcardCategory } from '../types/index.js';
+import {
+  ReviewMark,
+  FlashcardCategory,
+  MarkType,
+  MARK_TYPES,
+  MARK_WINDOW_SIZE,
+  TypedMarkHistory,
+} from '../types/index.js';
+import { computeUtcm, appendTypedMark, MasteryGoals } from '../utils/masteryCompute.js';
 
 /**
  * Flashcard mark/undo routes — /api/flashcards/*
@@ -14,28 +22,32 @@ import { ReviewMark, FlashcardCategory } from '../types/index.js';
  * route handlers with embedded SQL — a future pass should push this into
  * VocabEntryService. See docs/FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md.
  *
- * NOTE: category is not computed in app code. It is a GENERATED STORED column
- * (migration 67) derived from markHistory by compute_flashcard_category();
- * the mark/undo endpoints read the freshly-derived value back via `RETURNING category`.
+ * MASTERY MODEL (migration 101, docs/MASTERY_REWORK.md): each mark carries a
+ * `type` (recognition/production/reading/writing). A card keeps the 8 most recent
+ * marks PER TYPE in `typedMarkHistory`. The utcm `category` is no longer stored —
+ * it is derived here in app code via computeUtcm(typedMarkHistory, accountGoals),
+ * because it depends on the account's reading/writing goal flags (goalCount),
+ * which a generated column can't reference.
  */
 const router = Router();
 
-function calculateSuccessRates(markHistory: ReviewMark[], totalMarkCount: number, totalCorrectCount: number): {
-  totalSuccessRate: number;
-  last8SuccessRate: number;
-  last16SuccessRate: number;
-} {
-  const totalSuccessRate = totalMarkCount > 0 ? totalCorrectCount / totalMarkCount : 0;
-  const last8Marks: ReviewMark[] = markHistory.slice(-8);
-  const last8Correct: number = last8Marks.filter(m => m.isCorrect).length;
-  const last8SuccessRate = last8Marks.length > 0 ? last8Correct / last8Marks.length : 0;
-  const last16Correct: number = markHistory.filter(m => m.isCorrect).length;
-  const last16SuccessRate = markHistory.length > 0 ? last16Correct / markHistory.length : 0;
+// Coerce an incoming mark `type` to a valid MarkType. Defensive default:
+// an absent/unknown type falls back to 'recognition' (the historical default
+// flp foreign-first face). See docs/MASTERY_REWORK.md.
+function resolveMarkType(raw: unknown): MarkType {
+  return MARK_TYPES.includes(raw as MarkType) ? (raw as MarkType) : 'recognition';
+}
 
+// Fetch the account's mastery goal flags (recognition + production are always
+// goals; reading/writing are opt-in). Defaults to false/false if the row is gone.
+async function fetchGoals(client: any, userId: string): Promise<MasteryGoals> {
+  const r = await client.query(
+    `SELECT "readingGoal", "writingGoal" FROM users WHERE id = $1`,
+    [userId]
+  );
   return {
-    totalSuccessRate,
-    last8SuccessRate,
-    last16SuccessRate
+    reading: r.rows[0]?.readingGoal === true,
+    writing: r.rows[0]?.writingGoal === true,
   };
 }
 
@@ -46,7 +58,7 @@ router.post('/api/flashcards/mark', authenticateToken, async (req, res) => {
 
   try {
     const userId = (req as any).user?.userId;
-    const { cardId, isCorrect, excludeIds: rawExcludeIds, mode: rawMode } = req.body;
+    const { cardId, isCorrect, type: rawType, excludeIds: rawExcludeIds, mode: rawMode } = req.body;
 
     // Optional difficulty mode (Easy/Hard). When set, the replacement card must
     // stay within the mode's allowed categories so a banned category never leaks
@@ -62,10 +74,12 @@ router.post('/api/flashcards/mark', authenticateToken, async (req, res) => {
     if (typeof cardId !== 'number' || typeof isCorrect !== 'boolean') {
       client.release();
       return res.status(400).json({
-        error: 'Invalid request body. Expected { cardId: number, isCorrect: boolean }',
+        error: 'Invalid request body. Expected { cardId: number, isCorrect: boolean, type?: MarkType }',
         code: 'ERR_INVALID_REQUEST'
       });
     }
+
+    const markType: MarkType = resolveMarkType(rawType);
 
     // excludeIds is the list of card ids currently in the client's working loop,
     // so the replacement picker avoids handing back a duplicate.
@@ -73,13 +87,16 @@ router.post('/api/flashcards/mark', authenticateToken, async (req, res) => {
       ? rawExcludeIds.filter((n): n is number => typeof n === 'number')
       : [];
 
-    // Fetch the current vocab entry to get its mark history, counts, rates, AND CURRENT CATEGORY
-    // vet is split per language; the client sends only a cardId, so probe each
-    // physical table (ids are globally unique) — exactly one holds the row.
+    // The account's goal flags drive the derived category (before + after).
+    const goals = await fetchGoals(client, userId);
+
+    // Fetch the current vocab entry's typed history + counts + language. vet is
+    // split per language; the client sends only a cardId, so probe each physical
+    // table (ids are globally unique) — exactly one holds the row.
     let entryResult: any = { rows: [] };
     for (const t of VET_PHYSICAL_TABLES) {
       const r = await client.query(
-        `SELECT "markHistory", "totalMarkCount", "totalCorrectCount", "totalSuccessRate", "last8SuccessRate", "last16SuccessRate", "category", "language" FROM ${t} WHERE id = $1 AND "userId" = $2`,
+        `SELECT "typedMarkHistory", "totalMarkCount", "totalCorrectCount", "language" FROM ${t} WHERE id = $1 AND "userId" = $2`,
         [cardId, userId]
       );
       if (r.rows.length > 0) { entryResult = r; break; }
@@ -93,65 +110,49 @@ router.post('/api/flashcards/mark', authenticateToken, async (req, res) => {
       });
     }
 
-    // Get existing mark history or initialize empty array
-    const existingHistory: ReviewMark[] = entryResult.rows[0].markHistory || [];
-
-    // Get current counts and rates
+    const existingHistory: TypedMarkHistory = entryResult.rows[0].typedMarkHistory || {};
     const currentTotalMarkCount: number = entryResult.rows[0].totalMarkCount || 0;
     const currentTotalCorrectCount: number = entryResult.rows[0].totalCorrectCount || 0;
-    // CAPTURE THE CATEGORY BEFORE THE MARK IS APPLIED
-    const categoryBeforeMark: string = entryResult.rows[0].category || 'Unfamiliar';
     // The replacement card must be in the same language as the card just marked.
     const cardLanguage: string = entryResult.rows[0].language || 'zh';
 
-    // Preserve the displaced oldest mark when history is already at capacity.
-    const displacedMark: ReviewMark | null = existingHistory.length >= 16 ? existingHistory[0] : null;
+    // Category BEFORE the mark drives the replacement-card category.
+    const categoryBeforeMark: string = computeUtcm(existingHistory, goals);
 
-    // Add new mark
+    // Preserve the mark displaced from THIS TYPE's window when it's already full,
+    // so undo can restore it precisely (per-type window of MARK_WINDOW_SIZE).
+    const existingTrack: ReviewMark[] = Array.isArray(existingHistory[markType]) ? existingHistory[markType]! : [];
+    const displacedMark: ReviewMark | null =
+      existingTrack.length >= MARK_WINDOW_SIZE ? existingTrack[0] : null;
+
     const newMark: ReviewMark = {
       timestamp: new Date().toISOString(),
       isCorrect
     };
 
-    // Append new mark and keep only last 16
-    const updatedHistory = [...existingHistory, newMark].slice(-16);
+    const updatedHistory: TypedMarkHistory = appendTypedMark(existingHistory, markType, newMark);
 
-    // Calculate new counts
     const newTotalMarkCount: number = currentTotalMarkCount + 1;
     const newTotalCorrectCount: number = currentTotalCorrectCount + (isCorrect ? 1 : 0);
 
-    const {
-      totalSuccessRate: newTotalSuccessRate,
-      last8SuccessRate: newLast8SuccessRate,
-      last16SuccessRate: newLast16SuccessRate
-    } = calculateSuccessRates(updatedHistory, newTotalMarkCount, newTotalCorrectCount);
-
-    // Update the database with new mark history, counts, and success rates.
-    // `category` is a GENERATED column (migration 67) derived from markHistory, so
-    // we never write it — instead RETURNING hands back the freshly-derived value.
-    // We know the row's language (read above), so route to its per-language vet table.
+    // category is derived, not stored — write only the history + lifetime counts.
     const updateQuery = `
       UPDATE ${vetTableForLanguage(cardLanguage)}
-      SET "markHistory" = $1,
+      SET "typedMarkHistory" = $1,
           "totalMarkCount" = $2,
-          "totalCorrectCount" = $3,
-          "totalSuccessRate" = $4,
-          "last8SuccessRate" = $5,
-          "last16SuccessRate" = $6
-      WHERE id = $7 AND "userId" = $8
-      RETURNING category
+          "totalCorrectCount" = $3
+      WHERE id = $4 AND "userId" = $5
     `;
-    const updateResult = await client.query(updateQuery, [
+    await client.query(updateQuery, [
       JSON.stringify(updatedHistory),
       newTotalMarkCount,
       newTotalCorrectCount,
-      newTotalSuccessRate,
-      newLast8SuccessRate,
-      newLast16SuccessRate,
       cardId,
       userId
     ]);
-    const category: FlashcardCategory = updateResult.rows[0].category;
+
+    // Category AFTER the mark, for the client's progress chip.
+    const category: FlashcardCategory = computeUtcm(updatedHistory, goals);
 
     // If correct, return a card from the same category as BEFORE the mark (with fallback priority).
     // In a mode session the replacement pool is capped to the mode's allowed categories.
@@ -169,6 +170,7 @@ router.post('/api/flashcards/mark', authenticateToken, async (req, res) => {
             success: true,
             category,
             markTimestamp: newMark.timestamp,
+            markType,
             displacedMark,
             newCard: null,
           });
@@ -190,6 +192,7 @@ router.post('/api/flashcards/mark', authenticateToken, async (req, res) => {
         success: true,
         category,
         markTimestamp: newMark.timestamp,
+        markType,
         displacedMark,
         newCard
       });
@@ -200,6 +203,7 @@ router.post('/api/flashcards/mark', authenticateToken, async (req, res) => {
         success: true,
         category,
         markTimestamp: newMark.timestamp,
+        markType,
         displacedMark
       });
     }
@@ -219,7 +223,7 @@ router.post('/api/flashcards/undo-last-mark', authenticateToken, async (req, res
   const client = await db.getClient();
   try {
     const userId = (req as any).user?.userId;
-    const { cardId, markTimestamp, displacedMark } = req.body || {};
+    const { cardId, markTimestamp, markType: rawMarkType, displacedMark } = req.body || {};
 
     if (!userId) {
       client.release();
@@ -229,12 +233,17 @@ router.post('/api/flashcards/undo-last-mark', authenticateToken, async (req, res
     if (typeof cardId !== 'number' || typeof markTimestamp !== 'string') {
       client.release();
       return res.status(400).json({
-        error: 'Invalid request body. Expected { cardId: number, markTimestamp: string }',
+        error: 'Invalid request body. Expected { cardId: number, markTimestamp: string, markType?: MarkType }',
         code: 'ERR_INVALID_REQUEST'
       });
     }
 
+    // Undo must revert the SAME typed stream the mark was appended to.
+    const markType: MarkType = resolveMarkType(rawMarkType);
+
     await client.query('BEGIN');
+
+    const goals = await fetchGoals(client, userId);
 
     // FOR UPDATE can't run against the union view, and we don't yet know the row's
     // language, so probe each per-language vet table; the one holding this id
@@ -243,7 +252,7 @@ router.post('/api/flashcards/undo-last-mark', authenticateToken, async (req, res
     let lockedVetTable: string | null = null;
     for (const t of VET_PHYSICAL_TABLES) {
       const r = await client.query(
-        `SELECT "markHistory", "totalMarkCount", "totalCorrectCount" FROM ${t} WHERE id = $1 AND "userId" = $2 FOR UPDATE`,
+        `SELECT "typedMarkHistory", "totalMarkCount", "totalCorrectCount" FROM ${t} WHERE id = $1 AND "userId" = $2 FOR UPDATE`,
         [cardId, userId]
       );
       if (r.rows.length > 0) { entryResult = r; lockedVetTable = t; break; }
@@ -258,8 +267,9 @@ router.post('/api/flashcards/undo-last-mark', authenticateToken, async (req, res
       });
     }
 
-    const existingHistory: ReviewMark[] = Array.isArray(entryResult.rows[0].markHistory) ? entryResult.rows[0].markHistory : [];
-    if (existingHistory.length === 0) {
+    const existingHistory: TypedMarkHistory = entryResult.rows[0].typedMarkHistory || {};
+    const existingTrack: ReviewMark[] = Array.isArray(existingHistory[markType]) ? existingHistory[markType]! : [];
+    if (existingTrack.length === 0) {
       await client.query('ROLLBACK');
       client.release();
       return res.status(409).json({
@@ -268,7 +278,7 @@ router.post('/api/flashcards/undo-last-mark', authenticateToken, async (req, res
       });
     }
 
-    const lastMark: ReviewMark = existingHistory[existingHistory.length - 1];
+    const lastMark: ReviewMark = existingTrack[existingTrack.length - 1];
     if (lastMark.timestamp !== markTimestamp) {
       await client.query('ROLLBACK');
       client.release();
@@ -278,51 +288,40 @@ router.post('/api/flashcards/undo-last-mark', authenticateToken, async (req, res
       });
     }
 
-    let revertedHistory: ReviewMark[] = existingHistory.slice(0, -1);
+    let revertedTrack: ReviewMark[] = existingTrack.slice(0, -1);
     const shouldRestoreDisplacedMark =
       displacedMark &&
       typeof displacedMark.timestamp === 'string' &&
       typeof displacedMark.isCorrect === 'boolean';
 
     if (shouldRestoreDisplacedMark) {
-      revertedHistory = [displacedMark as ReviewMark, ...revertedHistory].slice(0, 16);
+      revertedTrack = [displacedMark as ReviewMark, ...revertedTrack].slice(0, MARK_WINDOW_SIZE);
     }
+
+    const revertedHistory: TypedMarkHistory = { ...existingHistory, [markType]: revertedTrack };
 
     const currentTotalMarkCount: number = entryResult.rows[0].totalMarkCount || 0;
     const currentTotalCorrectCount: number = entryResult.rows[0].totalCorrectCount || 0;
     const newTotalMarkCount: number = Math.max(0, currentTotalMarkCount - 1);
     const newTotalCorrectCount: number = Math.max(0, currentTotalCorrectCount - (lastMark.isCorrect ? 1 : 0));
-    const {
-      totalSuccessRate,
-      last8SuccessRate,
-      last16SuccessRate
-    } = calculateSuccessRates(revertedHistory, newTotalMarkCount, newTotalCorrectCount);
 
-    // `category` is GENERATED from markHistory (migration 67) — never written here;
-    // RETURNING gives back the value re-derived from the reverted history.
     const updateQuery = `
       UPDATE ${lockedVetTable}
-      SET "markHistory" = $1,
+      SET "typedMarkHistory" = $1,
           "totalMarkCount" = $2,
-          "totalCorrectCount" = $3,
-          "totalSuccessRate" = $4,
-          "last8SuccessRate" = $5,
-          "last16SuccessRate" = $6
-      WHERE id = $7 AND "userId" = $8
-      RETURNING category
+          "totalCorrectCount" = $3
+      WHERE id = $4 AND "userId" = $5
     `;
 
-    const updateResult = await client.query(updateQuery, [
+    await client.query(updateQuery, [
       JSON.stringify(revertedHistory),
       newTotalMarkCount,
       newTotalCorrectCount,
-      totalSuccessRate,
-      last8SuccessRate,
-      last16SuccessRate,
       cardId,
       userId
     ]);
-    const category: FlashcardCategory = updateResult.rows[0].category;
+
+    const category: FlashcardCategory = computeUtcm(revertedHistory, goals);
 
     await client.query('COMMIT');
     client.release();

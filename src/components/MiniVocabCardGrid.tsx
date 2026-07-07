@@ -1,3 +1,4 @@
+import { type ReactNode } from "react";
 import { Box, Alert } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import MiniVocabCard from "./MiniVocabCard";
@@ -38,6 +39,11 @@ const REVEAL_BATCH = 3;
 // stagger out over the whole list.
 const CASCADE_LIMIT = 15;
 
+// Per-card delay (ms) between successive cards in `staggerReveal` mode. Applied as a
+// CSS animation-delay so the first CASCADE_LIMIT cards fan in as one smooth stagger,
+// with no paced remounting.
+const STAGGER_STEP_MS = 35;
+
 // Geometry used to reserve the grid's final height up front. Without this, each
 // revealed row would grow the container and push everything below it (the next
 // preview section, the Mastered link) downward — so lower cards would appear and
@@ -72,6 +78,23 @@ interface MiniVocabCardGridProps {
     // Prefix for the loading/error/empty element class names so each usage keeps
     // descriptive, distinct hooks (e.g. "flashcards-decks__library").
     classPrefix: string;
+    // Optional custom card renderer. When omitted the grid draws the standard
+    // MiniVocabCard; callers that need a different card (e.g. Quick Mark's 3-state
+    // triage card) pass their own. Receives the same paced-reveal index so the
+    // cascade delay stays consistent.
+    renderCard?: (entry: VocabEntry, index: number, animationDelayMs?: number) => ReactNode;
+    // Optional content rendered after the cards, inside the grid container (full-width
+    // row). Used by paginating callers for a "load more" sentinel / spinner.
+    footer?: ReactNode;
+    // Reveal strategy for the entrance animation:
+    //   - false (default): the paced batch reveal (3 cards per tick) — a row-by-row
+    //     waterfall that also keeps huge decks (mastered) responsive while filling in.
+    //   - true: render ALL entries immediately and animate only the first CASCADE_LIMIT,
+    //     each offset by STAGGER_STEP_MS, so they fan in as one smooth stagger and the
+    //     rest simply appear. For callers that already bound their list size (e.g. Quick
+    //     Mark paginates ~100/page and its cards use contentVisibility), this avoids the
+    //     paced reveal's "3, then a batch, then the rest" stepping.
+    staggerReveal?: boolean;
 }
 
 const MiniVocabCardGrid: React.FC<MiniVocabCardGridProps> = ({
@@ -82,10 +105,16 @@ const MiniVocabCardGrid: React.FC<MiniVocabCardGridProps> = ({
     onCardClick,
     containerClassName,
     classPrefix,
+    renderCard,
+    footer,
+    staggerReveal = false,
 }) => {
     // Progressively reveal the deck so a large list never mounts in one blocking
-    // render (keeps taps on surrounding buttons responsive).
-    const visibleEntries = useIncrementalList(entries, REVEAL_BATCH, undefined, CASCADE_LIMIT);
+    // render (keeps taps on surrounding buttons responsive). In staggerReveal mode the
+    // caller has bounded its own list, so we skip the paced reveal and mount everything
+    // at once (the hook is still called unconditionally, its result just unused).
+    const pacedEntries = useIncrementalList(entries, REVEAL_BATCH, undefined, CASCADE_LIMIT);
+    const visibleEntries = staggerReveal ? entries : pacedEntries;
 
     // Reserve the final height while cards are being revealed so growing rows
     // don't push sibling sections below the grid downward (see reservedGridHeight).
@@ -120,14 +149,29 @@ const MiniVocabCardGrid: React.FC<MiniVocabCardGridProps> = ({
                 // paced reveal between rows produces the sequential cascade; cards
                 // past the limit are revealed all at once and render with no
                 // entrance animation (undefined animationDelayMs).
-                visibleEntries.map((entry, index) => (
-                    <MiniVocabCard
-                        key={entry.id}
-                        entry={entry}
-                        onClick={onCardClick}
-                        animationDelayMs={index < CASCADE_LIMIT ? 0 : undefined}
-                    />
-                ))
+                <>
+                    {visibleEntries.map((entry, index) => {
+                        // Paced mode: each card animates on reveal with delay 0 (the
+                        // reveal timing itself is the waterfall). Stagger mode: all cards
+                        // mount together, so the first CASCADE_LIMIT get an increasing
+                        // per-card delay to fan in; the rest render with no animation.
+                        const animationDelayMs =
+                            index < CASCADE_LIMIT
+                                ? (staggerReveal ? index * STAGGER_STEP_MS : 0)
+                                : undefined;
+                        return renderCard ? (
+                            renderCard(entry, index, animationDelayMs)
+                        ) : (
+                            <MiniVocabCard
+                                key={entry.id}
+                                entry={entry}
+                                onClick={onCardClick}
+                                animationDelayMs={animationDelayMs}
+                            />
+                        );
+                    })}
+                    {footer}
+                </>
             )}
         </CardsPreviewContainer>
     );

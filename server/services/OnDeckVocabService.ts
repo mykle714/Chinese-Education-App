@@ -1,12 +1,12 @@
 import { PoolClient } from 'pg';
-import { ReviewMark, VocabEntry } from '../types/index.js';
+import { VocabEntry, TypedMarkHistory, MARK_TYPES } from '../types/index.js';
 import { IVocabEntryDAL } from '../dal/interfaces/IVocabEntryDAL.js';
 import { DictionaryService } from './DictionaryService.js';
 import { StarterPacksService } from './StarterPacksService.js';
 import { ValidationError } from '../types/dal.js';
 import db from '../db.js';
 import { dictTableForLanguage } from '../dal/shared/dictTable.js';
-import { vetTableForLanguage, vetReadFrom } from '../dal/shared/vetTable.js';
+import { vetTableForLanguage, vetReadFrom, UTCM_USERS_JOIN, UTCM_CATEGORY_EXPR, UTCM_CATEGORY_SELECT } from '../dal/shared/vetTable.js';
 import { DICT_COLS, DICT_JOIN } from '../dal/shared/dictJoin.js';
 import { ttsService } from './TTSService.js';
 import {
@@ -15,6 +15,7 @@ import {
   type WordSearchInput,
   type WordSearchGrid,
 } from './wordSearchGrid.js';
+import { resolveSenseGloss } from '../utils/definitions.js';
 
 // Difficulty-targeted study modes launched from the decks page (Easy/Hard
 // buttons). Each mode shapes BOTH the initial working-loop distribution and the
@@ -87,17 +88,23 @@ export class OnDeckVocabService {
     Mastered: 30 * 24 * 60 * 60 * 1000,   // 30 days
   };
 
-  private getLastCorrectMarkTimestamp(markHistory: ReviewMark[] | undefined): number | null {
-    if (!Array.isArray(markHistory) || markHistory.length === 0) {
+  // Newest correct-mark timestamp across ALL typed streams (cooldown looks at the
+  // last time the card was answered correctly, regardless of mark type).
+  private getLastCorrectMarkTimestamp(typedMarkHistory: TypedMarkHistory | undefined): number | null {
+    if (!typedMarkHistory || typeof typedMarkHistory !== 'object') {
       return null;
     }
 
     let latest: number | null = null;
-    for (const mark of markHistory) {
-      if (!mark?.isCorrect || !mark.timestamp) continue;
-      const ts = new Date(mark.timestamp).getTime();
-      if (Number.isNaN(ts)) continue;
-      if (latest === null || ts > latest) latest = ts;
+    for (const type of MARK_TYPES) {
+      const track = typedMarkHistory[type];
+      if (!Array.isArray(track)) continue;
+      for (const mark of track) {
+        if (!mark?.isCorrect || !mark.timestamp) continue;
+        const ts = new Date(mark.timestamp).getTime();
+        if (Number.isNaN(ts)) continue;
+        if (latest === null || ts > latest) latest = ts;
+      }
     }
     return latest;
   }
@@ -106,7 +113,7 @@ export class OnDeckVocabService {
     const cooldownMs = OnDeckVocabService.COOLDOWN_MS_BY_CATEGORY[card.category ?? ''];
     if (cooldownMs === undefined) return false;
 
-    const lastCorrect = this.getLastCorrectMarkTimestamp(card.markHistory);
+    const lastCorrect = this.getLastCorrectMarkTimestamp(card.typedMarkHistory);
     if (lastCorrect === null) return false;
 
     return now - lastCorrect < cooldownMs;
@@ -131,7 +138,7 @@ export class OnDeckVocabService {
     let best: VocabEntry | null = null;
     let bestLastCorrect = Infinity;
     for (const card of cards) {
-      const lastCorrect = this.getLastCorrectMarkTimestamp(card.markHistory);
+      const lastCorrect = this.getLastCorrectMarkTimestamp(card.typedMarkHistory);
       // Treat "never marked correct" as oldest possible.
       const ts = lastCorrect ?? -Infinity;
       if (ts < bestLastCorrect) {
@@ -205,13 +212,12 @@ export class OnDeckVocabService {
 
   /**
    * Run the standard three-stage enrichment pipeline on a list of vocab entries.
-   * Adds example sentence metadata, expansion metadata, and synonym metadata in sequence.
-   * All three stages must run in order since each stage's output feeds the next.
+   * Adds example sentence metadata, long-definition metadata, and synonym metadata in
+   * sequence. All three stages must run in order since each stage's output feeds the next.
    */
   private async enrichEntriesPipeline(entries: VocabEntry[], language: string): Promise<VocabEntry[]> {
     const withExampleMeta = await this.dictionaryService.enrichExampleSentencesMetadataBatch(entries, language);
-    const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(withExampleMeta, language);
-    const withLongDefMeta = await this.dictionaryService.enrichLongDefinitionMetadataBatch(withExpansionMeta, language);
+    const withLongDefMeta = await this.dictionaryService.enrichLongDefinitionMetadataBatch(withExampleMeta, language);
     return this.dictionaryService.enrichEntriesWithSynonymMetadata(withLongDefMeta, language);
   }
 
@@ -226,8 +232,8 @@ export class OnDeckVocabService {
     const client = await db.getClient();
     try {
       const result = await client.query<VocabEntry>(`
-        SELECT ve.*, ${DICT_COLS}
-        FROM ${vetReadFrom(language)} ${DICT_JOIN}
+        SELECT ve.*, ${DICT_COLS}, ${UTCM_CATEGORY_SELECT}
+        FROM ${vetReadFrom(language)} ${DICT_JOIN} ${UTCM_USERS_JOIN}
         WHERE ve."userId" = $1
         AND ve."language" = $2
         AND ve."starterPackBucket" = 'library'
@@ -251,12 +257,12 @@ export class OnDeckVocabService {
     const client = await db.getClient();
     try {
       const result = await client.query<VocabEntry>(`
-        SELECT ve.*, ${DICT_COLS}
-        FROM ${vetReadFrom(language)} ${DICT_JOIN}
+        SELECT ve.*, ${DICT_COLS}, ${UTCM_CATEGORY_SELECT}
+        FROM ${vetReadFrom(language)} ${DICT_JOIN} ${UTCM_USERS_JOIN}
         WHERE ve."userId" = $1
         AND ve."language" = $2
         AND ve."starterPackBucket" = 'library'
-        AND ve.category = 'Mastered'
+        AND ${UTCM_CATEGORY_EXPR} = 'Mastered'
         ORDER BY ve."createdAt" DESC
       `, [userId, language]);
 
@@ -277,12 +283,12 @@ export class OnDeckVocabService {
     const client = await db.getClient();
     try {
       const result = await client.query<VocabEntry>(`
-        SELECT ve.*, ${DICT_COLS}
-        FROM ${vetReadFrom(language)} ${DICT_JOIN}
+        SELECT ve.*, ${DICT_COLS}, ${UTCM_CATEGORY_SELECT}
+        FROM ${vetReadFrom(language)} ${DICT_JOIN} ${UTCM_USERS_JOIN}
         WHERE ve."userId" = $1
         AND ve."language" = $2
         AND ve."starterPackBucket" = 'library'
-        AND (ve.category IS NULL OR ve.category != 'Mastered')
+        AND ${UTCM_CATEGORY_EXPR} != 'Mastered'
         ORDER BY ve."createdAt" DESC
       `, [userId, language]);
 
@@ -314,12 +320,12 @@ export class OnDeckVocabService {
     const client = await db.getClient();
     try {
       const result = await client.query<VocabEntry>(`
-        SELECT ve.*, ${DICT_COLS}
-        FROM ${vetReadFrom(language)} ${DICT_JOIN}
+        SELECT ve.*, ${DICT_COLS}, ${UTCM_CATEGORY_SELECT}
+        FROM ${vetReadFrom(language)} ${DICT_JOIN} ${UTCM_USERS_JOIN}
         WHERE ve."userId" = $1
         AND ve."language" = $4
         AND ve."starterPackBucket" = 'library'
-        AND ve.category = $2
+        AND ${UTCM_CATEGORY_EXPR} = $2
         AND ve.id != ALL($3::int[])
         ORDER BY ve."createdAt" DESC
       `, [userId, category, excludeIds, language]);
@@ -407,12 +413,12 @@ export class OnDeckVocabService {
   ): Promise<VocabEntry[]> {
     if (limit <= 0) return [];
     const result = await client.query<VocabEntry>(`
-      SELECT ve.*, ${DICT_COLS}
-      FROM ${vetReadFrom(language)} ${DICT_JOIN}
+      SELECT ve.*, ${DICT_COLS}, ${UTCM_CATEGORY_SELECT}
+      FROM ${vetReadFrom(language)} ${DICT_JOIN} ${UTCM_USERS_JOIN}
       WHERE ve."userId" = $1
       AND ve."language" = $5
       AND ve."starterPackBucket" = 'library'
-      AND ve.category = $2
+      AND ${UTCM_CATEGORY_EXPR} = $2
       AND ve.id != ALL($3::int[])
       ORDER BY RANDOM()
       LIMIT $4
@@ -447,12 +453,12 @@ export class OnDeckVocabService {
       // If category filter is applied, just get 10 cards from that category
       if (categoryFilter) {
         const result = await client.query<VocabEntry>(`
-          SELECT ve.*, ${DICT_COLS}
-          FROM ${vetReadFrom(language)} ${DICT_JOIN}
+          SELECT ve.*, ${DICT_COLS}, ${UTCM_CATEGORY_SELECT}
+          FROM ${vetReadFrom(language)} ${DICT_JOIN} ${UTCM_USERS_JOIN}
           WHERE ve."userId" = $1
           AND ve."language" = $3
           AND ve."starterPackBucket" = 'library'
-          AND ve.category = $2
+          AND ${UTCM_CATEGORY_EXPR} = $2
           ORDER BY RANDOM()
           LIMIT 10
         `, [userId, categoryFilter, language]);
@@ -521,14 +527,18 @@ export class OnDeckVocabService {
     }
     const client = await db.getClient();
     try {
+      // category is computed per row from typedMarkHistory + the account's goal
+      // flags (migration 101), so we group by the derived expression and join users
+      // for the goal flags. `ve` alias is required by UTCM_CATEGORY_EXPR/JOIN.
       const result = await client.query<{ category: string; n: number }>(`
-        SELECT category, COUNT(*)::int AS n
-        FROM ${vetTableForLanguage(language)}
-        WHERE "userId" = $1
-        AND "language" = $3
-        AND "starterPackBucket" = 'library'
-        AND category = ANY($2::text[])
-        GROUP BY category
+        SELECT ${UTCM_CATEGORY_EXPR} AS category, COUNT(*)::int AS n
+        FROM ${vetTableForLanguage(language)} ve
+        ${UTCM_USERS_JOIN}
+        WHERE ve."userId" = $1
+        AND ve."language" = $3
+        AND ve."starterPackBucket" = 'library'
+        AND ${UTCM_CATEGORY_EXPR} = ANY($2::text[])
+        GROUP BY ${UTCM_CATEGORY_EXPR}
       `, [userId, categories, language]);
 
       const counts: Record<string, number> = {};
@@ -597,12 +607,12 @@ export class OnDeckVocabService {
         if (limit <= 0) return;
         const existingIds = cards.map((c) => c.id);
         const result = await client.query<VocabEntry>(`
-          SELECT ve.*, ${DICT_COLS}
-          FROM ${vetReadFrom(language)} ${DICT_JOIN}
+          SELECT ve.*, ${DICT_COLS}, ${UTCM_CATEGORY_SELECT}
+          FROM ${vetReadFrom(language)} ${DICT_JOIN} ${UTCM_USERS_JOIN}
           WHERE ve."userId" = $1
           AND ve."language" = $5
           AND ve."starterPackBucket" = 'library'
-          AND ve.category = $2
+          AND ${UTCM_CATEGORY_EXPR} = $2
           AND ve.id != ALL($3::int[])
           ORDER BY RANDOM()
           LIMIT $4
@@ -721,12 +731,12 @@ export class OnDeckVocabService {
       const queues: Record<string, VocabEntry[]> = {};
       for (const category of countCategories) {
         const result = await client.query<VocabEntry>(`
-          SELECT ve.*, ${DICT_COLS}
-          FROM ${vetReadFrom(language)} ${DICT_JOIN}
+          SELECT ve.*, ${DICT_COLS}, ${UTCM_CATEGORY_SELECT}
+          FROM ${vetReadFrom(language)} ${DICT_JOIN} ${UTCM_USERS_JOIN}
           WHERE ve."userId" = $1
           AND ve."language" = $4
           AND ve."starterPackBucket" = 'library'
-          AND ve.category = $2
+          AND ${UTCM_CATEGORY_EXPR} = $2
           AND LENGTH(ve."entryKey") <= 4
           ORDER BY RANDOM()
           LIMIT $3
@@ -886,12 +896,46 @@ export class OnDeckVocabService {
         return { ...emptyResult, sufficient: false, reason: 'no-filler' };
       }
 
-      const inputs: WordSearchInput[] = withAudio.map((w) => ({
-        id: w.id,
-        entryKey: w.entryKey,
-        pinyin: w.pronunciation ?? '',
-        definition: w.definition ?? '',
-      }));
+      // Per-character context-correct senses for the target words. A character's
+      // gloss inside a specific word is the ddt of THAT character's own det cluster
+      // keyed by the word's stored `breakdown[char].sense` label (backfill-breakdown-
+      // senses.js). We resolve it live from each character's definitionClusters so a
+      // tap on a placed character shows its meaning IN THIS WORD, not its generic
+      // standalone gloss. One batched clusters query over every distinct target
+      // component character; fall back to the char's stored breakdown definition when
+      // the row/label doesn't resolve.
+      const targetChars = [...new Set(withAudio.flatMap((w) => [...w.entryKey]))];
+      const charClusters = new Map<string, Array<{ sense?: string | null; glosses?: string[] | null }>>();
+      if (targetChars.length > 0) {
+        const clustersResult = await client.query<{ word1: string; definitionClusters: unknown }>(`
+          SELECT word1, "definitionClusters"
+          FROM dictionaryentries_zh
+          WHERE language = 'zh' AND word1 = ANY($1)
+        `, [targetChars]);
+        for (const row of clustersResult.rows) {
+          if (!charClusters.has(row.word1) && Array.isArray(row.definitionClusters)) {
+            charClusters.set(row.word1, row.definitionClusters as Array<{ sense?: string | null; glosses?: string[] | null }>);
+          }
+        }
+      }
+
+      const inputs: WordSearchInput[] = withAudio.map((w) => {
+        const breakdown = w.breakdown ?? null;
+        const charSenses = [...w.entryKey].map((char) => {
+          const sense = breakdown?.[char]?.sense ?? null;
+          // Live-resolve ddt from the char's own clusters keyed by sense; fall back
+          // to the (already sense-resolved) stored breakdown definition.
+          const definition = resolveSenseGloss(charClusters.get(char), sense) ?? breakdown?.[char]?.definition ?? null;
+          return { sense, definition };
+        });
+        return {
+          id: w.id,
+          entryKey: w.entryKey,
+          pinyin: w.pronunciation ?? '',
+          definition: w.definition ?? '',
+          charSenses,
+        };
+      });
       const generated = generateWordSearchGrid(inputs, fillerPool, rows, cols);
 
       // Bonus words: every det headword whose ENTIRE character sequence is

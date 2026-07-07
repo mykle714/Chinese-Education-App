@@ -16,9 +16,15 @@ export interface ReviewMark {
     isCorrect: boolean;
 }
 
+// The mastery mark type a review produces (docs/MASTERY_REWORK.md). In the flp,
+// a foreign-first prompt is a recognition review; an English-first prompt is a
+// production review.
+export type MarkType = 'recognition' | 'production' | 'reading' | 'writing';
+
 export interface MarkCardResult {
     newCard: VocabEntry | null;
     markTimestamp: string;
+    markType: MarkType;
     displacedMark: ReviewMark | null;
 }
 
@@ -29,6 +35,7 @@ export type SideOneLanguage = 'en' | 'zh';
 export interface LastMarkUndoSnapshot {
     cardId: number;
     markTimestamp: string;
+    markType: MarkType;
     displacedMark: ReviewMark | null;
     workingLoop: VocabEntry[];
     currentIndex: number;

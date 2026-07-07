@@ -169,6 +169,75 @@ export class StarterPacksController {
   };
 
   /**
+   * Quick Mark bulk-triage supply (docs/QUICK_MARK.md §5): one keyset-paginated page of
+   * not-yet-sorted discoverable words at an exact level, ordered by vernacular score.
+   * GET /api/starter-packs/:language/quick-mark?level=<1-6>&cursorScore=<n|empty>&cursorId=<n>
+   * `level` omitted → the service seeds from the user's adaptive frontier estimate.
+   * `cursorId` present → resume after that card (cursorScore empty = the NULL-score tail).
+   * Response: { cards: DiscoverCard[], level: number, hasMore: boolean }
+   */
+  getQuickMarkCards = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
+      const { language } = req.params;
+      if (!language || !VALID_LANGUAGES.includes(language as any)) {
+        res.status(400).json({ error: 'Invalid language parameter' });
+        return;
+      }
+
+      // Absent/invalid level → null, so the service seeds the user's current level.
+      const level = parseRequestedLevel(req.query.level);
+
+      // Keyset cursor: cursorId anchors the page; cursorScore may be a number OR empty
+      // (the trailing NULL-vernacularScore block). No cursorId → first page (null cursor).
+      const cursorIdRaw = typeof req.query.cursorId === 'string' ? parseInt(req.query.cursorId, 10) : NaN;
+      let cursor: { score: number | null; id: number } | null = null;
+      if (Number.isInteger(cursorIdRaw)) {
+        const scoreRaw = typeof req.query.cursorScore === 'string' ? parseInt(req.query.cursorScore, 10) : NaN;
+        cursor = { score: Number.isInteger(scoreRaw) ? scoreRaw : null, id: cursorIdRaw };
+      }
+
+      const result = await this.starterPacksService.listQuickMarkCards(language, userId, level, cursor);
+      res.json(result);
+    } catch (error: any) {
+      handleControllerError(error, res, 'StarterPacksController.getQuickMarkCards');
+    }
+  };
+
+  /**
+   * Quick Mark batch save (docs/QUICK_MARK.md §6): reconcile every marked card's vet
+   * state to its on-screen mark in one request.
+   * POST /api/starter-packs/quick-mark-batch
+   * Body: { language: string, marks: { cardId: number, state: 'empty'|'library'|'already-learned' }[] }
+   * Response: { success: true, applied: number }
+   */
+  quickMarkBatch = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
+      const { language, marks } = req.body;
+      if (!language || !VALID_LANGUAGES.includes(language as any)) {
+        res.status(400).json({ error: 'Invalid language parameter' });
+        return;
+      }
+
+      const VALID_STATES = ['empty', 'library', 'already-learned'];
+      const validatedMarks = Array.isArray(marks)
+        ? marks.filter((m: any) =>
+            m && typeof m.cardId === 'number' && Number.isInteger(m.cardId) && VALID_STATES.includes(m.state))
+        : [];
+
+      const result = await this.starterPacksService.quickMarkBatch(userId, language, validatedMarks);
+      res.json(result);
+    } catch (error: any) {
+      handleControllerError(error, res, 'StarterPacksController.quickMarkBatch');
+    }
+  };
+
+  /**
    * Get user's progress on a starter pack
    * GET /api/starter-packs/:language/progress
    */

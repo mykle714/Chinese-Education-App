@@ -69,6 +69,12 @@ interface PracticeWritingPopupProps {
   completedLevels: Set<string>;
   /** Called with the new full completed-level set when a level is freshly cleared. */
   onLevelsChange: (levels: string[]) => void;
+  /**
+   * Fired on every Verify with whether the WHOLE word was written correctly.
+   * The flashcard/eip host wires this to a Writing mastery mark (docs/MASTERY_REWORK.md);
+   * absent on the read-only dictionary cdp (no vet card to mark).
+   */
+  onWritingMark?: (isCorrect: boolean) => void;
   onClose: () => void;
 }
 
@@ -77,6 +83,7 @@ export default function PracticeWritingPopup({
   character,
   completedLevels,
   onLevelsChange,
+  onWritingMark,
   onClose,
 }: PracticeWritingPopupProps) {
   const { token } = useAuth();
@@ -325,6 +332,10 @@ export default function PracticeWritingPopup({
     setChecking(false);
     setVerifyRevealed(true); // reveal the guide on every panel for comparison
     const allCorrect = settled.every((s) => s.correct);
+
+    // Record a Writing mastery mark for this attempt (positive iff the whole word
+    // was written correctly). See docs/MASTERY_REWORK.md.
+    onWritingMark?.(allCorrect);
 
     // Diagnostics for tuning recognition (latency is browser→proxy→Google RTT).
     console.log("✍️ handwriting verify", {

@@ -57,11 +57,12 @@ import { initRunLog, cachedSystem } from '../run-log.js';
 import { createGlossOrderer } from './lib/orderGlosses.js';
 import { createVernacularScorer } from './lib/vernacularScore.js';
 
-const SCRIPT_VERSION = 2; // bump when this script's logic/prompt changes (v2: cluster single-definition entries too — dropped the `definitions > 1` gate; single-def uses a zero-API fast path, definition verbatim as the sense; cluster `pos` now always a string[] via toPosArray)
+const SCRIPT_VERSION = 4; // bump when this script's logic/prompt changes (v4: Stage A.5 merge prompt no longer fuses etymologically-related but context-distinct senses, e.g. 月 moon vs month; v2: cluster single-definition entries too — dropped the `definitions > 1` gate; single-def uses a zero-API fast path, definition verbatim as the sense; cluster `pos` now always a string[] via toPosArray)
 
 const isSpotCheck = process.argv.includes('--spot-check');
 const includeAll  = process.argv.includes('--all');
 const force       = process.argv.includes('--force');
+const stale       = process.argv.includes('--stale'); // also re-cluster rows stamped below SCRIPT_VERSION
 const skipCritic  = process.argv.includes('--no-critic');
 const mergePass   = process.argv.includes('--merge-pass'); // Stage A.5 consolidation
 
@@ -73,12 +74,18 @@ const targetWords = wordsArg ? wordsArg.slice('--words='.length).split(',').map(
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const { stampEntries } = initRunLog({ script: 'chinese/backfill-cluster-definitions', version: SCRIPT_VERSION, anthropic });
+const { stampEntries, staleClause } = initRunLog({ script: 'chinese/backfill-cluster-definitions', version: SCRIPT_VERSION, anthropic });
 
 // Stage-A model is overridable via CLUSTER_MODEL env for A/B testing (e.g. run
 // the whole pass on Opus); defaults to Sonnet. Retry escalation stays on Opus.
 const CLUSTER_MODEL = process.env.CLUSTER_MODEL || 'claude-sonnet-4-6';
 const RETRY_MODEL   = 'claude-opus-4-8';
+
+// Opus 4.8 REJECTS the `temperature` param (400 "temperature is deprecated for this
+// model"); Sonnet 4.6 still honors it. We want temperature 0 for a deterministic
+// partition/merge (see 月 moon/month), so send it only to models that accept it —
+// the Opus retry/escalation path must omit it or it errors.
+const tempParams = (model) => /opus-4-8/.test(model) ? {} : { temperature: 0 };
 
 // Stdout marker for anything needing human eyes. Kept greppable + consistent so
 // the agent driving the mark-discoverable skill can detect and surface these.
@@ -152,14 +159,13 @@ const MERGE_INSTRUCTIONS = `You are given a Chinese word and a list of CANDIDATE
 Rules:
 1. REGROUP ONLY, never edit text. You may only move whole glosses between clusters and combine clusters. Never add, rephrase, split the text of, or drop a gloss. Every input gloss must appear in exactly one output cluster, copied character-for-character. The union of all output glosses must equal the input set exactly.
 2. NEVER merge clusters with different "reading" values. Reading is a hard boundary — a merged cluster's members must all share one reading.
-3. Lean toward MERGING — the candidates are over-split, so your default is to combine. Merge two clusters whenever their meanings are the same, overlap substantially, OR are connected as near-synonyms, one image applied in a different frame, a shared function, or one sense being a natural extension of the other. You do NOT need a learner to see them as identical — a clear thread of relation is enough. When two clusters are plausibly the same broad sense, MERGE them. When genuinely torn between merging and keeping apart, MERGE.
-4. The ONLY reason to keep clusters separate: they are genuinely different senses with no real thread between them (e.g. 干 "dry" vs "cadre", 行 "to walk" vs "a row"). The single guard against over-merging is coherence — do not fuse unrelated senses into one incoherent grab-bag, and each output cluster must still name one coherent idea. Short of that, prefer the merge. Aim for noticeably fewer, broader clusters than you were given.
-5. For each output cluster provide:
+3. Merge two clusters whenever their meanings are the same, overlap substantially, OR are connected as near-synonyms, a shared function, or one sense being a natural extension of the other. You do NOT need a learner to see them as identical — a clear thread of relation is enough.
+4. For each output cluster provide:
    - "sense": a short English label (2–5 words) for the (possibly merged) meaning.
    - "reading": the shared numbered-pinyin reading.
    - "pos": the part(s) of speech — ALWAYS a JSON array of strings, even for a single POS (e.g. ["noun"]).
    - "glosses": all glosses belonging to this cluster (any order).
-6. FLAG uncertainty in "reviewNotes": any merge you were unsure about, or two clusters you left apart but might belong together. Empty array if fully confident.
+5. FLAG uncertainty in "reviewNotes": any merge you were unsure about, or two clusters you left apart but might belong together. Empty array if fully confident.
 
 Return ONLY a valid JSON object with keys "clusters" and "reviewNotes", no explanation.`;
 
@@ -253,6 +259,7 @@ async function callCluster(word, primaryReading, definitions, model) {
   const response = await anthropic.messages.create({
     model,
     max_tokens: 2048,
+    ...tempParams(model), // temperature 0 (Sonnet); omitted for Opus 4.8 which rejects it
     system: cachedSystem(`${CLUSTER_SYSTEM}\n\n${CLUSTER_INSTRUCTIONS}`),
     messages: [{ role: 'user', content: clusterUser(word, primaryReading, definitions) }],
   });
@@ -288,6 +295,7 @@ async function mergeClusters(word, definitions, clusters, model) {
   const response = await anthropic.messages.create({
     model,
     max_tokens: 2048,
+    ...tempParams(model), // temperature 0 (Sonnet); omitted for Opus 4.8 which rejects it
     system: cachedSystem(`${MERGE_SYSTEM}\n\n${MERGE_INSTRUCTIONS}`),
     messages: [{ role: 'user', content: mergeUser(word, clusters) }],
   });
@@ -352,7 +360,7 @@ async function run() {
            WHERE language = 'zh'
              ${includeAll ? '' : 'AND discoverable = TRUE'}
              AND jsonb_array_length(definitions) >= 1
-             ${force ? '' : 'AND "definitionClusters" IS NULL'}
+             ${force ? '' : stale ? `AND ("definitionClusters" IS NULL OR ${staleClause()})` : 'AND "definitionClusters" IS NULL'}
            ORDER BY id ASC
            ${isSpotCheck ? 'LIMIT 5' : ''}`,
       targetIds ? [targetIds] : targetWords?.length ? [targetWords] : []

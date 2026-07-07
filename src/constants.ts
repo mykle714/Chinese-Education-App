@@ -39,7 +39,11 @@ export const MINUTE_POINTS_CONFIG = {
 // Streak Configuration
 export const STREAK_CONFIG = {
   RETENTION_MINUTES: parseInt(import.meta.env.VITE_STREAK_RETENTION_MINUTES) || 3,
-  DAILY_PENALTY_MINUTES: parseInt(import.meta.env.VITE_DAILY_PENALTY_MINUTES) || 10,
+  // Mirror of server STREAK_CONFIG.PENALTY_SCHEDULE_MINUTES: escalating penalty
+  // (minutes) by consecutive full days below the threshold; the 7th+ missed day
+  // wipes the remaining balance. Keep in sync with server/constants.ts and
+  // database/cron/expire-stale-streaks.sql.
+  PENALTY_SCHEDULE_MINUTES: [3, 15, 30, 60, 90, 120],
 };
 
 // Vocabulary Search Configuration

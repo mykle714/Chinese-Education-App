@@ -4,7 +4,6 @@ import AddIcon from "@mui/icons-material/Add";
 import { stripParentheses } from "../../../utils/definitionUtils";
 import ForeignText, { type CPCDSize } from "../../../components/ForeignText";
 import PosBadge from "../../../components/PosBadge";
-import SegmentedSentenceDisplay from "../../../components/SegmentedSentenceDisplay";
 import PracticeWritingButton from "../../../components/handwriting/PracticeWritingButton";
 import LongDefinitionDisplay from "../../../components/LongDefinitionDisplay";
 import VernacularScoreDots from "../../../components/VernacularScoreDots";
@@ -92,7 +91,6 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
     showPinyin,
     showPinyinColor = true,
     showSegmentSpaces = false,
-    isFlipped,
     onBreakdownItemClick,
     onUsedInItemClick,
     onExampleSegmentClick,
@@ -139,9 +137,10 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
     // Single-char zh cards swap the breakdown tab for a "used in" list (see usedIn enrichment in OnDeckVocabService).
     const isSingleChar = !!currentEntry && [...currentEntry.entryKey].length === 1;
     const usedInItems: UsedInItem[] = (isSingleChar && currentEntry?.usedIn) ? currentEntry.usedIn : [];
+    const hasRationale = !!currentEntry?.characterRationale?.length;
     const breakdownTabHasContent = isSingleChar
-        ? (usedInItems.length > 0 || !!currentEntry?.expansion)
-        : (breakdownItems.length > 0 || !!currentEntry?.expansion);
+        ? (usedInItems.length > 0 || hasRationale)
+        : (breakdownItems.length > 0 || hasRationale);
     const breakdownTabLabel = isSingleChar ? "used in" : TAB_LABELS[2];
 
     const tabIsEmpty = [!definitionTabHasContent, !examplesTabHasContent, !breakdownTabHasContent];
@@ -249,6 +248,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                         <PracticeWritingButton
                             character={currentEntry.entryKey}
                             language={currentEntry.language}
+                            vocabEntryId={currentEntry.id}
                             iconOnly
                         />
                         {onSpeak && (
@@ -359,14 +359,17 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                                 {currentEntry?.vernacularScore != null && (
                                     <Box className="mobile-demo-vernacular-meta" sx={{ display: "flex", flexDirection: "column", gap: "3px" }}>
                                         <Typography sx={{ fontSize: SIZE.micro, fontWeight: WEIGHT.bold, color: fc.textSecondary, letterSpacing: TRACKING.caps, textTransform: "uppercase", fontFamily: FC_FONT }}>
-                                            Vernacular
+                                            Commonality
                                         </Typography>
-                                        <Box className="mobile-demo-vernacular-dots" sx={{ display: "flex", alignItems: "center", height: 19 }}>
+                                        <Box className="mobile-demo-vernacular-dots" sx={{ display: "flex", alignItems: "center", gap: "5px", height: 19 }}>
                                             <VernacularScoreDots
                                                 score={currentEntry.vernacularScore!}
                                                 filledColor={fc.onSurface}
                                                 emptyBorderColor={fc.border}
                                             />
+                                            <Typography sx={{ fontSize: SIZE.micro, fontWeight: WEIGHT.bold, color: fc.onSurface, fontFamily: FC_FONT, lineHeight: 1 }}>
+                                                {currentEntry.vernacularScore}/5
+                                            </Typography>
                                         </Box>
                                     </Box>
                                 )}
@@ -437,7 +440,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                                 ))}
                         </Box>
                         <Box
-                            className="mobile-demo-expansion-section"
+                            className="mobile-demo-character-rationale-section"
                             sx={{
                                 background: fc.subtleBg,
                                 borderRadius: "10px",
@@ -447,54 +450,52 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                                 gap: "8px",
                             }}
                         >
-                            <SharedCharsLabel className="mobile-demo-expansion-label">
-                                Expanded Form
+                            <SharedCharsLabel className="mobile-demo-character-rationale-label">
+                                Why These Characters
                             </SharedCharsLabel>
-                            <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
-                                {currentEntry?.expansion ? (
-                                    <>
-                                        <SegmentedSentenceDisplay
-                                            sentence={{
-                                                foreignText: currentEntry.expansion,
-                                                _segments: currentEntry.expansionSegments ?? [...currentEntry.expansion],
-                                                segmentMetadata: currentEntry.expansionMetadata ?? undefined,
-                                            }}
-                                            size="md"
-                                            compact
-                                            flexWrap="wrap"
-                                            justifyContent="center"
-                                            className="mobile-demo-expansion-chars"
-                                            showPinyin={showPinyin}
-                                            showPinyinColor={showPinyinColor}
-                                            showSegmentSpaces={showSegmentSpaces}
-                                        />
-                                        {currentEntry.expansionLiteralTranslation && isFlipped && (
-                                            <Typography sx={{
-                                                fontSize: SIZE.micro,
-                                                color: fc.textSecondary,
-                                                fontFamily: FC_FONT,
-                                                fontStyle: "italic",
-                                                textAlign: "center",
-                                                lineHeight: LEADING.normal,
-                                            }}>
-                                                "{stripParentheses(currentEntry.expansionLiteralTranslation)}"
+                            {hasRationale ? (
+                                <Box className="mobile-demo-character-rationale-list" sx={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                    {currentEntry!.characterRationale!.map((item, index) => (
+                                        <Box
+                                            key={index}
+                                            className="mobile-demo-character-rationale-row"
+                                            sx={{ display: "flex", alignItems: "baseline", gap: "10px" }}
+                                        >
+                                            <ForeignText
+                                                size="sm"
+                                                justifyContent="flex-start"
+                                                className="mobile-demo-character-rationale-char"
+                                                text={item.char}
+                                                showPinyin={false}
+                                                useToneColor={showPinyinColor}
+                                            />
+                                            <Typography
+                                                className="mobile-demo-character-rationale-reason"
+                                                sx={{
+                                                    fontSize: SIZE.body,
+                                                    color: fc.textSecondary,
+                                                    fontFamily: FC_FONT,
+                                                    lineHeight: LEADING.normal,
+                                                }}
+                                            >
+                                                {item.reason}
                                             </Typography>
-                                        )}
-                                    </>
-                                ) : (
-                                    <Typography
-                                        className="mobile-demo-expansion-empty"
-                                        sx={{
-                                            fontSize: SIZE.body,
-                                            color: fc.textSecondary,
-                                            textAlign: "center",
-                                            fontFamily: FC_FONT,
-                                        }}
-                                    >
-                                        No expansion available
-                                    </Typography>
-                                )}
-                            </Box>
+                                        </Box>
+                                    ))}
+                                </Box>
+                            ) : (
+                                <Typography
+                                    className="mobile-demo-character-rationale-empty"
+                                    sx={{
+                                        fontSize: SIZE.body,
+                                        color: fc.textSecondary,
+                                        textAlign: "center",
+                                        fontFamily: FC_FONT,
+                                    }}
+                                >
+                                    No breakdown explanation available
+                                </Typography>
+                            )}
                         </Box>
                     </Box>
                 ) : effectiveTab === 2 ? (

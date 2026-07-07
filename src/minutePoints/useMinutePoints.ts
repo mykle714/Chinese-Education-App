@@ -290,7 +290,7 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
         // Tell the server. If we just crossed the threshold, refetch the streak.
         const wasAtThreshold = oldPoints < STREAK_CONFIG.RETENTION_MINUTES && newPoints >= STREAK_CONFIG.RETENTION_MINUTES;
 
-        incrementMinutePoint(tokenRef.current).then((result) => {
+        incrementMinutePoint(languageRef.current, tokenRef.current).then((result) => {
           if (result.success && wasAtThreshold) {
             // Streak is global; refetch it via the per-language summary.
             fetchLanguageSummary(languageRef.current, tokenRef.current).then((data) => {

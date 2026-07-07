@@ -7,7 +7,14 @@ import type {
     MarkCardResult,
     LastMarkUndoSnapshot,
     SideOneLanguage,
+    MarkType,
 } from "./types";
+
+// Which mark type a flp review produces (docs/MASTERY_REWORK.md): an English-first
+// prompt asks the learner to PRODUCE the foreign word; any other (foreign-first)
+// prompt tests RECOGNITION of the meaning.
+const markTypeForSideOne = (sideOne: SideOneLanguage): MarkType =>
+    sideOne === "en" ? "production" : "recognition";
 
 // Pick a random language for a card's Side 1. Side 2 always shows both.
 const randomSideOneLanguage = (): SideOneLanguage => (Math.random() < 0.5 ? "en" : "zh");
@@ -176,6 +183,7 @@ export function useWorkingLoop({
     const markCard = useCallback(async (
         cardId: number,
         isCorrect: boolean,
+        markType: MarkType,
         excludeIds: number[],
         retryCount = 0
     ): Promise<MarkCardResult | null> => {
@@ -195,7 +203,7 @@ export function useWorkingLoop({
                 credentials: "include",
                 // `mode` lets the server cap the replacement card to the mode's
                 // allowed categories (and return newCard:null when exhausted).
-                body: JSON.stringify({ cardId, isCorrect, excludeIds, mode: mode ?? undefined }),
+                body: JSON.stringify({ cardId, isCorrect, type: markType, excludeIds, mode: mode ?? undefined }),
             });
 
             if (!response.ok) {
@@ -210,13 +218,14 @@ export function useWorkingLoop({
             return {
                 newCard: data.newCard || null,
                 markTimestamp: data.markTimestamp,
+                markType,
                 displacedMark: data.displacedMark || null,
             };
         } catch (err) {
             if (retryCount < 3) {
                 // Exponential backoff: wait 500ms, 1s, 2s
                 await new Promise(resolve => setTimeout(resolve, 500 * Math.pow(2, retryCount)));
-                return markCard(cardId, isCorrect, excludeIds, retryCount + 1);
+                return markCard(cardId, isCorrect, markType, excludeIds, retryCount + 1);
             }
             console.error("Failed to mark card after retries:", err);
             setError("Failed to save progress. Please check your connection.");
@@ -229,7 +238,9 @@ export function useWorkingLoop({
 
         const currentCard = workingLoop[currentIndex];
         const isCorrect = direction === "right";
-        const preDismissSnapshot: Omit<LastMarkUndoSnapshot, "cardId" | "markTimestamp" | "displacedMark"> = {
+        // The prompt language showing on Side 1 decides the mark type.
+        const markType = markTypeForSideOne(currentSideOneLanguage);
+        const preDismissSnapshot: Omit<LastMarkUndoSnapshot, "cardId" | "markTimestamp" | "markType" | "displacedMark"> = {
             workingLoop: [...workingLoop],
             currentIndex,
             isFlipped: cardDragRef.current?.isFlipped ?? false,
@@ -256,7 +267,7 @@ export function useWorkingLoop({
         // advancing. Send the current working loop's ids so the server doesn't
         // return a duplicate.
         const excludeIds = workingLoop.map(card => card.id);
-        markCard(currentCard.id, isCorrect, excludeIds)
+        markCard(currentCard.id, isCorrect, markType, excludeIds)
             .then(markResult => {
                 if (!markResult) return;
                 const { newCard, markTimestamp, displacedMark } = markResult;
@@ -295,6 +306,7 @@ export function useWorkingLoop({
                 setLastMarkUndoSnapshot({
                     cardId: currentCard.id,
                     markTimestamp,
+                    markType,
                     displacedMark,
                     ...preDismissSnapshot,
                 });
@@ -340,6 +352,7 @@ export function useWorkingLoop({
                 body: JSON.stringify({
                     cardId: lastMarkUndoSnapshot.cardId,
                     markTimestamp: lastMarkUndoSnapshot.markTimestamp,
+                    markType: lastMarkUndoSnapshot.markType,
                     displacedMark: lastMarkUndoSnapshot.displacedMark,
                 }),
             });

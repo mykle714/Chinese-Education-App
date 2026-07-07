@@ -5,7 +5,8 @@ import { DiscoverCard, StarterPackBucket, SortPack } from '../types/index.js';
 import { SortPackRow } from '../types/sortPacks.js';
 import db from '../db.js';
 import { dictTableForLanguage } from '../dal/shared/dictTable.js';
-import { vetTableForLanguage } from '../dal/shared/vetTable.js';
+import { vetTableForLanguage, UTCM_USERS_JOIN, UTCM_CATEGORY_EXPR } from '../dal/shared/vetTable.js';
+import { perfectTypedMarkHistory } from '../utils/masteryCompute.js';
 
 /**
  * Starter Packs Service
@@ -141,21 +142,20 @@ export class StarterPacksService {
       synonyms: row.synonyms,
       exampleSentences: row.exampleSentences,
       exampleSentencesMetadata: null, // Computed on-the-fly in _enrichDiscoverCards
-      expansion: row.expansion,
-      expansionLiteralTranslation: row.expansionLiteralTranslation ?? null,
+      characterRationale: row.characterRationale ?? null, // Display-ready jsonb (migration 102); no runtime enrichment
       // Optional icons8 icon for the card; client renders it via /api/icons8/<iconId>/image.
       iconId: row.iconId ?? null,
     }));
   }
 
   /**
-   * Compute example-sentence + expansion enrichment metadata on-the-fly, in batch.
-   * Both enrichment methods dispatch internally on language (Spanish uses
+   * Compute example-sentence enrichment metadata on-the-fly, in batch.
+   * The enrichment method dispatches internally on language (Spanish uses
    * whitespace tokenization; Chinese uses greedy segmentation).
+   * (characterRationale needs no enrichment — it is a display-ready column.)
    */
   private async _enrichDiscoverCards(cards: DiscoverCard[], language: string): Promise<DiscoverCard[]> {
-    const withExampleMeta = await this.dictionaryDAL.enrichExampleSentencesMetadataBatch(cards, language);
-    return this.dictionaryDAL.enrichExpansionMetadataBatch(withExampleMeta, language);
+    return this.dictionaryDAL.enrichExampleSentencesMetadataBatch(cards, language);
   }
 
   /**
@@ -212,13 +212,16 @@ export class StarterPacksService {
     const vet = this._vetTable(language);
     const client = await db.getClient();
     try {
+      // category is derived per row from typedMarkHistory + the account's goal flags
+      // (migration 101), so join users for the flags and use compute_utcm_category.
       const result = await client.query<{ lvl: number; mastered: string; learning: string }>(`
         SELECT ${levelExpr} AS lvl,
-               COUNT(*) FILTER (WHERE ve.category = 'Mastered')  AS mastered,
-               COUNT(*) FILTER (WHERE ve.category <> 'Mastered') AS learning
+               COUNT(*) FILTER (WHERE ${UTCM_CATEGORY_EXPR} = 'Mastered')  AS mastered,
+               COUNT(*) FILTER (WHERE ${UTCM_CATEGORY_EXPR} <> 'Mastered') AS learning
         FROM ${vet} ve
         JOIN ${det} de
           ON ve."entryKey" = de.word1 AND de.language = ve.language
+        ${UTCM_USERS_JOIN}
         WHERE ve."userId" = $1
           AND ve.language = $2
           AND ${validPredicate}
@@ -314,7 +317,7 @@ export class StarterPacksService {
       const result = await client.query(`
         SELECT de.id, de.word1, de.word2, de.pronunciation, de.tone, de.definitions,
                de.language, de.script, de."difficulty", de."vernacularScore", de.breakdown, de.synonyms,
-               de."exampleSentences", de.expansion, de."expansionLiteralTranslation",
+               de."exampleSentences", ${isEs ? 'NULL::jsonb AS "characterRationale"' : 'de."characterRationale"'},
                de."iconId"${posCols}
         FROM ${det} de
         WHERE de.language = $1
@@ -373,6 +376,135 @@ export class StarterPacksService {
     } finally {
       client.release();
     }
+  }
+
+  /**
+   * QUICK MARK (docs/QUICK_MARK.md) — bulk-triage supply. Unlike the Sort Cards pack
+   * supply, this returns a full PAGE of not-yet-sorted discoverable words at ONE EXACT
+   * level, ordered by vernacular score (most colloquial first), paginated by offset.
+   *
+   * Differences from `_fetchSupplyRows`:
+   *   - exact level only (no nearest-level ± drift);
+   *   - `discover_skips` is NOT excluded — a skipped word has no vet row, so it is
+   *     offered here for a second triage pass (docs §5, resolved decision);
+   *   - KEYSET (cursor) pagination with a `hasMore` probe (fetch limit+1).
+   *
+   * Pagination is keyset, NOT offset: the batch save creates vet rows for the cards
+   * the user marked, which drops them out of this (vet-excluding) result set. A numeric
+   * OFFSET would then skip that many still-unsorted cards on the next page. A cursor on
+   * the stable sort key — `(vernacularScore DESC NULLS LAST, id ASC)` — always resumes
+   * exactly after the last card shown, regardless of rows removed above it. The cursor
+   * is the last-seen `{ score, id }`; null (first page) means no lower bound.
+   *
+   * `level == null` seeds from the user's adaptive frontier (estimateLevel) so opening
+   * the page with no chosen level lands on their current level.
+   */
+  async listQuickMarkCards(
+    language: string,
+    userId: string,
+    level: number | null,
+    cursor: { score: number | null; id: number } | null,
+    limit = 100,
+  ): Promise<{ cards: DiscoverCard[]; level: number; hasMore: boolean }> {
+    const resolvedLevel = level ?? await this.estimateLevel(userId, language);
+
+    const det = this._dictTable(language);
+    const vetTable = this._vetTable(language);
+    const { levelExpr, validPredicate } = this._levelConfig(language);
+    // Spanish det carries pos / hasMultiplePos (POS badge) and needs per-(word1,pos)
+    // exclusion; Chinese substitutes literals and excludes per word1 (see _fetchSupplyRows).
+    const isEs = language === 'es';
+    const posCols = isEs ? `, de.pos, de."hasMultiplePos"` : `, NULL::varchar AS pos, FALSE AS "hasMultiplePos"`;
+    const excludePos = isEs ? ` AND ve.pos IS NOT DISTINCT FROM de.pos` : '';
+
+    // $1 language, $2 userId, $3 level, then optional cursor score+id, then limit.
+    const params: any[] = [language, userId, resolvedLevel];
+    let cursorFilter = '';
+    if (cursor) {
+      params.push(cursor.score); // may be null (the NULL-score tail)
+      const scoreIdx = params.length;
+      params.push(cursor.id);
+      const idIdx = params.length;
+      // Resume strictly AFTER (cursor.score, cursor.id) under DESC-NULLS-LAST / id-ASC:
+      //   - a NULL cursor score means we're already in the trailing NULL-score block,
+      //     so continue by id within it;
+      //   - otherwise take everything with a lower score, the same score with a larger
+      //     id, or any NULL score (which sorts after every non-NULL score).
+      cursorFilter = `
+        AND CASE
+              WHEN $${scoreIdx}::int IS NULL THEN (de."vernacularScore" IS NULL AND de.id > $${idIdx})
+              ELSE (
+                de."vernacularScore" < $${scoreIdx}::int
+                OR (de."vernacularScore" = $${scoreIdx}::int AND de.id > $${idIdx})
+                OR de."vernacularScore" IS NULL
+              )
+            END`;
+    }
+    params.push(limit + 1);
+    const limitIdx = params.length;
+
+    const client = await db.getClient();
+    try {
+      const result = await client.query(`
+        SELECT de.id, de.word1, de.word2, de.pronunciation, de.tone, de.definitions,
+               de.language, de.script, de."difficulty", de."vernacularScore", de.breakdown, de.synonyms,
+               de."exampleSentences", ${isEs ? 'NULL::jsonb AS "characterRationale"' : 'de."characterRationale"'},
+               de."iconId"${posCols}
+        FROM ${det} de
+        WHERE de.language = $1
+          AND de.discoverable = TRUE
+          AND ${validPredicate}
+          AND ${levelExpr} = $3
+          AND NOT EXISTS (
+            SELECT 1 FROM ${vetTable} ve
+            WHERE ve."userId" = $2 AND ve."entryKey" = de.word1 AND ve.language = de.language${excludePos}
+          )
+          ${cursorFilter}
+        ORDER BY de."vernacularScore" DESC NULLS LAST, de.id ASC
+        LIMIT $${limitIdx}
+      `, params);
+
+      const rows = result.rows;
+      const hasMore = rows.length > limit;
+      const pageRows = hasMore ? rows.slice(0, limit) : rows;
+      const cards = await this._enrichDiscoverCards(this._rowsToDiscoverCards(pageRows), language);
+      return { cards, level: resolvedLevel, hasMore };
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * QUICK MARK batch save (docs/QUICK_MARK.md §6). Reconciles each card's vet state to
+   * its on-screen mark in one request — this is NOT append-only, because Quick Mark
+   * leaves saved cards on-page and re-savable, so cycling a card back to empty must
+   * DELETE the vet row an earlier Save created.
+   *   - 'library' / 'already-learned' → `sortCard` (same bucket effects as Sort Cards).
+   *     Passing opts={packId:null} takes sortCard's lightweight pack-mode return path:
+   *     it writes the vet row and clears any skip WITHOUT computing a replacement card.
+   *   - 'empty' → `undoSort` (non-skip branch) deletes any vet row for the card; a
+   *     no-op when none exists (a card the user marked and cleared without ever saving).
+   * Failures are logged per-card and skipped so one bad id can't abort the whole save.
+   */
+  async quickMarkBatch(
+    userId: string,
+    language: string,
+    marks: Array<{ cardId: number; state: 'empty' | 'library' | 'already-learned' }>,
+  ): Promise<{ success: boolean; applied: number }> {
+    let applied = 0;
+    for (const { cardId, state } of marks) {
+      try {
+        if (state === 'empty') {
+          await this.undoSort(userId, cardId, 'library', language);
+        } else {
+          await this.sortCard(userId, cardId, state, language, [], { packId: null });
+        }
+        applied++;
+      } catch (err) {
+        console.error(`[QuickMark] Failed to apply mark for card ${cardId} (${state}):`, err);
+      }
+    }
+    return { success: true, applied };
   }
 
   /**
@@ -466,19 +598,17 @@ export class StarterPacksService {
       }
 
       if (shouldMarkMastered) {
-        // Writing a perfect 8/8 markHistory makes the GENERATED category resolve to
-        // 'Mastered' — no explicit category write needed (or possible).
+        // Fill ALL FOUR typed tracks 8/8 so compute_utcm_category resolves to
+        // 'Mastered' under ANY goal configuration (a single maxed track can't
+        // master a card on its own — the first pbh term is capped at 6). See
+        // docs/MASTERY_REWORK.md.
         const currentTimestamp: string = new Date().toISOString();
-        const perfectMarkHistory: any[] = Array(8).fill(null).map(() => ({
-          timestamp: currentTimestamp,
-          isCorrect: true
-        }));
-        await this.vocabEntryDAL.updateMarkHistory(
+        await this.vocabEntryDAL.updateTypedMarkHistory(
           vocabEntryId,
-          perfectMarkHistory,
-          8, 8, 1.0, 1.0, 1.0
+          perfectTypedMarkHistory(currentTimestamp),
+          8, 8
         );
-        console.log(`[StarterPacks] Marked VocabEntry id=${vocabEntryId} as Mastered with 8/8 history`);
+        console.log(`[StarterPacks] Marked VocabEntry id=${vocabEntryId} as Mastered with a full typed history`);
       }
     } finally {
       client.release();
@@ -701,7 +831,7 @@ export class StarterPacksService {
       const result = await client.query(`
         SELECT de.id, de.word1, de.word2, de.pronunciation, de.tone, de.definitions,
                de.language, de.script, de."difficulty", de."vernacularScore", de.breakdown, de.synonyms,
-               de."exampleSentences", de.expansion, de."expansionLiteralTranslation",
+               de."exampleSentences", ${isEs ? 'NULL::jsonb AS "characterRationale"' : 'de."characterRationale"'},
                de."iconId"${posCols},
                EXISTS (
                  SELECT 1 FROM ${vetTable} ve
@@ -914,7 +1044,7 @@ export class StarterPacksService {
       const result = await client.query(`
         SELECT de.id, de.word1, de.word2, de.pronunciation, de.tone, de.definitions,
                de.language, de.script, de."difficulty", de."vernacularScore", de.breakdown, de.synonyms,
-               de."exampleSentences", de.expansion, de."expansionLiteralTranslation",
+               de."exampleSentences", ${isEs ? 'NULL::jsonb AS "characterRationale"' : 'de."characterRationale"'},
                de."iconId"${posCols}
         FROM discover_skips ds
         JOIN ${det} de ON de.id = ds."cardId" AND de.language = ds.language

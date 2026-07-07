@@ -17,6 +17,10 @@ interface User {
     selectedLanguage?: Language;
     // icons8 id of the chosen profile avatar; null/undefined => name-initial fallback.
     avatarIconId?: string | null;
+    // Mastery goal opt-ins (docs/MASTERY_REWORK.md). Recognition + Production are
+    // always goals; these two are the account's optional extras.
+    readingGoal?: boolean;
+    writingGoal?: boolean;
 }
 
 // Define the AuthContext type
@@ -32,6 +36,7 @@ interface AuthContextType {
     deleteAccount: (password: string) => Promise<void>;
     updateLanguage: (language: Language) => Promise<void>;
     updateAvatar: (avatarIconId: string | null) => Promise<void>;
+    updateGoals: (goals: { readingGoal?: boolean; writingGoal?: boolean }) => Promise<void>;
     error: string | null;
 }
 
@@ -358,6 +363,38 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
     };
 
+    // Toggle the account's Reading / Writing mastery goals (docs/MASTERY_REWORK.md).
+    // Enabling a goal can demote some Mastered cards to Comfortable (the pbh math
+    // reweights across more goal tracks) — surfaced in the account settings copy.
+    const updateGoals = async (goals: { readingGoal?: boolean; writingGoal?: boolean }) => {
+        setError(null);
+        try {
+            if (!token || token === 'null' || token === 'undefined' || token.length <= 10) {
+                throw new Error('You must be logged in to update your goals');
+            }
+
+            const response = await fetch(`${API_BASE_URL}/api/users/goals`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`,
+                },
+                credentials: 'include',
+                body: JSON.stringify(goals)
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || 'Failed to update goals');
+            }
+
+            setUser({ ...user!, ...goals });
+        } catch (error: unknown) {
+            setError(error instanceof Error ? error.message : 'Failed to update goals');
+            throw error;
+        }
+    };
+
     const value = {
         user,
         token,
@@ -370,6 +407,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         deleteAccount,
         updateLanguage,
         updateAvatar,
+        updateGoals,
         error
     };
 

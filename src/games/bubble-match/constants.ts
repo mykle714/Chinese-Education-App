@@ -159,5 +159,15 @@ export const WORD_BUBBLE_BG = "#EAF1FF";
 export const WORD_BUBBLE_BORDER = "#B9CDF5";
 export const DEFINITION_BUBBLE_BG = "#FFF3E6";
 export const DEFINITION_BUBBLE_BORDER = "#F2D2A8";
-export const CORRECT_BUBBLE_BG = "#4CAF50";
+// Light green: a correct match pop AND the cleanup-mode "here's your partner"
+// drop hint (the `revealed` status). Deliberately soft so it reads as friendly,
+// not alarming — paired with dark text (see Bubble.tsx) for contrast.
+export const CORRECT_BUBBLE_BG = "#A5D6A7";
+export const CORRECT_BUBBLE_BORDER = "#7BB97F";
+// Strong red: a wrong drag-drop error flash (with the shake).
 export const WRONG_BUBBLE_BG = "#F44336";
+// Light red: a cleanup-mode bubble whose partner isn't on the field, so it can
+// never be matched/cleared. Distinct (softer) from the wrong-drop red — it marks
+// "unavailable", not "error".
+export const NOMATCH_BUBBLE_BG = "#EF9A9A";
+export const NOMATCH_BUBBLE_BORDER = "#E07B7B";

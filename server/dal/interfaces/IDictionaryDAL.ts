@@ -86,20 +86,6 @@ export interface IDictionaryDAL extends IBaseDAL<DictionaryEntry, DictionaryEntr
   }>(entries: T[], language?: string): Promise<T[]>;
 
   /**
-   * Enrich entries with GSA-segmented expansion data derived from dictionary lookups.
-   * Each entry gains:
-   * - `expansionSegments: string[]` — GSA word tokens for the expansion string
-   * - `expansionMetadata: Record<segment, { pronunciation?, definition? }>` — keyed by segment
-   *
-   * @param entries - Array of objects with optional `expansion` field
-   * @param language - Language filter for dictionary lookups
-   */
-  enrichExpansionMetadataBatch<T extends {
-    expansion?: string | null;
-    expansionLiteralTranslation?: string | null;
-  }>(entries: T[], language?: string): Promise<T[]>;
-
-  /**
    * Enrich entries with `longDefinitionParts` — the long definition split into ordered
    * English-prose parts and embedded-Chinese parts (each carrying segmentation metadata
    * so the client renders them as cpcd with the example-sentence popup).

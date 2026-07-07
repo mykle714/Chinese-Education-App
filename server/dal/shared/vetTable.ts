@@ -25,3 +25,14 @@ export function vetReadFrom(language: string | null | undefined): string {
 // Both physical vet tables, for id-only operations that must hit whichever holds
 // the row (exactly one matches, since ids are globally unique across the pair).
 export const VET_PHYSICAL_TABLES = ['vocabentries_zh', 'vocabentries_es'] as const;
+
+// In-query utcm category (migration 101, docs/MASTERY_REWORK.md). The `category`
+// column is no longer stored — it is derived from the card's typedMarkHistory AND
+// the account's goal flags, which live on the users row. So any query that needs a
+// card's category must JOIN users (UTCM_USERS_JOIN) and splice UTCM_CATEGORY_EXPR
+// into its SELECT (aliased `category`) and/or WHERE. Both reference `ve` (the vet
+// alias) and `u` (the joined users alias).
+export const UTCM_USERS_JOIN = `JOIN users u ON u.id = ve."userId"`;
+export const UTCM_CATEGORY_EXPR = `compute_utcm_category(ve."typedMarkHistory", u."readingGoal", u."writingGoal")`;
+// Ready-made SELECT-list fragment: the computed category under its column name.
+export const UTCM_CATEGORY_SELECT = `${UTCM_CATEGORY_EXPR} AS category`;

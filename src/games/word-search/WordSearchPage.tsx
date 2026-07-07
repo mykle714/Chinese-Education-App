@@ -421,11 +421,20 @@ const WordSearchPage: React.FC = () => {
             method: "POST",
             headers,
             credentials: "include",
+            // Board mode decides the mark type (docs/MASTERY_REWORK.md): the "Pinyin"
+            // board is a production drill; the "No Pinyin" board is a reading drill
+            // (recognizing the characters without the pinyin crutch). Word Search only
+            // ever emits POSITIVE marks — a found word is a correct answer.
             // excludeIds empty: the game doesn't use the replacement card the
             // endpoint returns, so there's nothing to dedupe against.
-            body: JSON.stringify({ cardId: word.id, isCorrect: true, excludeIds: [] }),
+            body: JSON.stringify({
+                cardId: word.id,
+                isCorrect: true,
+                type: mode === "no-pinyin" ? "reading" : "production",
+                excludeIds: [],
+            }),
         }).catch((err) => console.error(`[WordSearch] mark failed → card ${word.id}:`, err));
-    }, [token]);
+    }, [token, mode]);
 
     // Play a word's narration (guarded by the TTS enabled flag). Shared by the
     // find-time play below and the grid's tap-to-replay / blue-match plays; the

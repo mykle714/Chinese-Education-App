@@ -23,8 +23,12 @@ export interface UserMinutePointsCreateData {
 // these to a streakDate (the 4 AM-bounded local day) at request time.
 
 export interface MinutePointsIncrementRequest {
-  timestamp: string; // ISO-8601 — client-supplied "now"
-  tz: string;        // IANA timezone, e.g. "America/Los_Angeles"
+  timestamp: string;  // ISO-8601 — client-supplied "now"
+  tz: string;         // IANA timezone, e.g. "America/Los_Angeles"
+  // Language the minute was actually accrued studying. The client is the source
+  // of truth for attribution (it drove the timer and the badge). Optional so an
+  // old client mid-deploy still works; the server falls back to selectedLanguage.
+  language?: string;
 }
 
 // Calendar response

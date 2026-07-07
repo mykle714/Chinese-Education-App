@@ -304,7 +304,7 @@ export function segmentWithDict(
 /**
  * Rendered metadata for one segment, keyed by segment string in the maps returned
  * from buildSegmentMetadata. Superset of every per-segment field the client renders:
- * example sentences use all of it; expansion/long-definition use pronunciation+definition.
+ * example sentences use all of it; long-definition uses pronunciation+definition.
  */
 export interface RenderedSegmentMeta {
   pronunciation?: string;
@@ -315,7 +315,7 @@ export interface RenderedSegmentMeta {
 
 /**
  * Build the segment→metadata map shared by every Chinese enrichment path
- * (example sentences, expansion, long definition).
+ * (example sentences, long definition).
  *
  * Given an already-computed segment list and a pre-fetched dictionary map, resolve
  * each segment's pronunciation + best definition (override-aware, context-matched via

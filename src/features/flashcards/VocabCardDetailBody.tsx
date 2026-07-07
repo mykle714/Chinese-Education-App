@@ -3,7 +3,6 @@ import { styled } from "@mui/material/styles";
 import { stripParentheses } from "../../utils/definitionUtils";
 import type { VocabEntry } from "../../types";
 import ForeignText from "../../components/ForeignText";
-import SegmentedSentenceDisplay from "../../components/SegmentedSentenceDisplay";
 import LongDefinitionDisplay from "../../components/LongDefinitionDisplay";
 import { getBreakdownItems } from "../../utils/breakdownUtils";
 import { getCategoryColor } from "../../utils/categoryColors";
@@ -108,8 +107,8 @@ export const VocabCardSections: React.FC<VocabCardSectionsProps> = ({
     // the eip's breakdown/used-in tab — see OnDeckVocabService.enrichWithUsedIn).
     const hasUsedIn = isSingleChar && !!entry.usedIn && entry.usedIn.length > 0;
     const hasBreakdown = !isSingleChar && !!entry.breakdown && Object.keys(entry.breakdown).length > 0;
-    const hasExpansion = !!entry.expansion;
-    const hasBreakdownBox = isSingleChar ? (hasUsedIn || hasExpansion) : (hasBreakdown || hasExpansion);
+    const hasRationale = !!entry.characterRationale?.length;
+    const hasBreakdownBox = isSingleChar ? (hasUsedIn || hasRationale) : (hasBreakdown || hasRationale);
     const breakdownItems = getBreakdownItems(entry);
 
     const hasDefinitionBox = !!(entry.longDefinition || entry.longDefinitionParts?.length || (entry.partsOfSpeech?.length ?? 0) > 0 || entry.vernacularScore != null);
@@ -157,23 +156,28 @@ export const VocabCardSections: React.FC<VocabCardSectionsProps> = ({
                             )}
                             {entry.vernacularScore != null && (
                                 <Box className="vocab-card-detail__vernacular-meta" sx={{ display: "flex", flexDirection: "column", gap: "3px" }}>
-                                    <SectionLabel>Vernacular</SectionLabel>
-                                    <Box sx={{ display: "flex", alignItems: "center", gap: "4px", height: 19 }}>
-                                        {[1, 2, 3, 4, 5].map((level) => {
-                                            const filled = level <= entry.vernacularScore!;
-                                            return (
-                                                <Box
-                                                    key={level}
-                                                    sx={{
-                                                        width: 8,
-                                                        height: 8,
-                                                        borderRadius: "50%",
-                                                        background: filled ? fc.onSurface : "transparent",
-                                                        border: `1.5px solid ${filled ? fc.onSurface : fc.border}`,
-                                                    }}
-                                                />
-                                            );
-                                        })}
+                                    <SectionLabel>Commonality</SectionLabel>
+                                    <Box sx={{ display: "flex", alignItems: "center", gap: "5px", height: 19 }}>
+                                        <Box sx={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                                            {[1, 2, 3, 4, 5].map((level) => {
+                                                const filled = level <= entry.vernacularScore!;
+                                                return (
+                                                    <Box
+                                                        key={level}
+                                                        sx={{
+                                                            width: 8,
+                                                            height: 8,
+                                                            borderRadius: "50%",
+                                                            background: filled ? fc.onSurface : "transparent",
+                                                            border: `1.5px solid ${filled ? fc.onSurface : fc.border}`,
+                                                        }}
+                                                    />
+                                                );
+                                            })}
+                                        </Box>
+                                        <Typography sx={{ fontSize: SIZE.micro, fontWeight: WEIGHT.bold, color: fc.onSurface, lineHeight: 1 }}>
+                                            {entry.vernacularScore}/5
+                                        </Typography>
                                     </Box>
                                 </Box>
                             )}
@@ -182,9 +186,9 @@ export const VocabCardSections: React.FC<VocabCardSectionsProps> = ({
                 </SectionCard>
             )}
 
-            {/* Character Breakdown / Used In + Expansion — mirrors the eip's combined
-                "breakdown" tab (per-character rows for multi-char entries, or "Used In"
-                for single-char zh, plus the Expanded Form block). */}
+            {/* Character Breakdown / Used In + per-character rationale — mirrors the eip's
+                combined "breakdown" tab (per-character rows for multi-char entries, or "Used In"
+                for single-char zh, plus the "Why These Characters" rationale block). */}
             {hasBreakdownBox && (
                 <SectionCard className="vocab-card-detail__breakdown">
                     <SectionLabel className="vocab-card-detail__section-label">
@@ -223,9 +227,9 @@ export const VocabCardSections: React.FC<VocabCardSectionsProps> = ({
                                 ))}
                         </Box>
                     )}
-                    {hasExpansion && (
+                    {hasRationale && (
                         <Box
-                            className="vocab-card-detail__expansion"
+                            className="vocab-card-detail__character-rationale"
                             sx={{
                                 background: fc.subtleBg,
                                 borderRadius: "10px",
@@ -235,36 +239,37 @@ export const VocabCardSections: React.FC<VocabCardSectionsProps> = ({
                                 gap: "8px",
                             }}
                         >
-                            <SharedCharsLabel className="vocab-card-detail__expansion-label">
-                                Expanded Form
+                            <SharedCharsLabel className="vocab-card-detail__character-rationale-label">
+                                Why These Characters
                             </SharedCharsLabel>
-                            <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
-                                <SegmentedSentenceDisplay
-                                    sentence={{
-                                        foreignText: entry.expansion!,
-                                        _segments: entry.expansionSegments ?? [...entry.expansion!],
-                                        segmentMetadata: entry.expansionMetadata ?? undefined,
-                                    }}
-                                    size="md"
-                                    compact
-                                    flexWrap="wrap"
-                                    justifyContent="center"
-                                    className="vocab-card-detail__expansion-chars"
-                                    showPinyin={showPinyin}
-                                    showPinyinColor={showPinyinColor}
-                                />
-                                {entry.expansionLiteralTranslation && (
-                                    <Typography sx={{
-                                        fontSize: SIZE.micro,
-                                        color: fc.textSecondary,
-                                        fontFamily: FC_FONT,
-                                        fontStyle: "italic",
-                                        textAlign: "center",
-                                        lineHeight: LEADING.normal,
-                                    }}>
-                                        "{stripParentheses(entry.expansionLiteralTranslation)}"
-                                    </Typography>
-                                )}
+                            <Box className="vocab-card-detail__character-rationale-list" sx={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                {entry.characterRationale!.map((item, index) => (
+                                    <Box
+                                        key={index}
+                                        className="vocab-card-detail__character-rationale-row"
+                                        sx={{ display: "flex", alignItems: "baseline", gap: "10px" }}
+                                    >
+                                        <ForeignText
+                                            size="sm"
+                                            justifyContent="flex-start"
+                                            className="vocab-card-detail__character-rationale-char"
+                                            text={item.char}
+                                            showPinyin={false}
+                                            useToneColor={showPinyinColor}
+                                        />
+                                        <Typography
+                                            className="vocab-card-detail__character-rationale-reason"
+                                            sx={{
+                                                fontSize: SIZE.body,
+                                                color: fc.textSecondary,
+                                                fontFamily: FC_FONT,
+                                                lineHeight: LEADING.normal,
+                                            }}
+                                        >
+                                            {item.reason}
+                                        </Typography>
+                                    </Box>
+                                ))}
                             </Box>
                         </Box>
                     )}

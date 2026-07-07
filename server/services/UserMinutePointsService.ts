@@ -55,10 +55,11 @@ export class UserMinutePointsService {
     const clientTimestamp = this.parseTimestamp(request.timestamp);
     const streakDate = streakDateOf(clientTimestamp, tz);
 
-    // The minute is attributed to whatever language the user is currently
-    // studying. selectedLanguage is the single source of truth (kept fresh by
-    // PUT /api/users/language); default to 'zh' for legacy users with no value.
-    const language = user.selectedLanguage || 'zh';
+    // The minute is attributed to the language the client says it accrued for —
+    // the client drove the timer and the per-language badge, so it is the source
+    // of truth. Fall back to selectedLanguage (then 'zh') only when an old client
+    // omits it, avoiding a mismatch when selectedLanguage has raced ahead.
+    const language = request.language || user.selectedLanguage || 'zh';
 
     // Keep users.timezone fresh so the hourly streak-expiration cron can compute
     // "today" in this user's local 4 AM-bounded day. No-op when tz is unchanged.

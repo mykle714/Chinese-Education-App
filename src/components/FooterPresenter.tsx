@@ -36,6 +36,7 @@ const FOOTER_ROUTES: Record<string, FooterTab> = {
 // reached from: saved-card cdp → Flashcards, dictionary cdp → Home.
 const FOOTER_ROUTE_PREFIXES: Array<[string, FooterTab]> = [
     ["/discover/sort/", "discover"],
+    ["/discover/quick-mark/", "discover"],
     ["/discover/skipped/", "discover"],
     ["/flashcards/card/", "flashcards"],
     ["/dictionary/card/", "home"],

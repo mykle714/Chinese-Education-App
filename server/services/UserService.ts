@@ -393,6 +393,25 @@ export class UserService {
   }
 
   /**
+   * Update the account's mastery goal flags (Reading / Writing). Recognition +
+   * Production are always goals and are not stored. See docs/MASTERY_REWORK.md.
+   */
+  async updateGoals(userId: string, goals: { readingGoal?: boolean; writingGoal?: boolean }): Promise<User> {
+    if (!userId) {
+      throw new ValidationError('User ID is required');
+    }
+    const updateData: { readingGoal?: boolean; writingGoal?: boolean } = {};
+    if (typeof goals.readingGoal === 'boolean') updateData.readingGoal = goals.readingGoal;
+    if (typeof goals.writingGoal === 'boolean') updateData.writingGoal = goals.writingGoal;
+    if (Object.keys(updateData).length === 0) {
+      throw new ValidationError('At least one of readingGoal / writingGoal (boolean) is required');
+    }
+    const updatedUser = await this.userDAL.update(userId, updateData);
+    delete updatedUser.password;
+    return updatedUser;
+  }
+
+  /**
    * Get all users (admin function)
    */
   async getAllUsers(): Promise<User[]> {

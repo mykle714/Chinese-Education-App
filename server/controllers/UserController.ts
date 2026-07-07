@@ -223,6 +223,36 @@ export class UserController {
   }
 
   /**
+   * Update the account's mastery goal flags.
+   * PUT /api/users/goals — Body: { readingGoal?: boolean, writingGoal?: boolean }
+   * See docs/MASTERY_REWORK.md.
+   */
+  async updateGoals(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = (req as any).user?.userId;
+      if (!userId) {
+        res.status(401).json({ error: 'User not authenticated', code: 'ERR_NOT_AUTHENTICATED' });
+        return;
+      }
+
+      const { readingGoal, writingGoal } = req.body ?? {};
+      if (readingGoal !== undefined && typeof readingGoal !== 'boolean') {
+        res.status(400).json({ error: 'readingGoal must be a boolean', code: 'ERR_INVALID_REQUEST' });
+        return;
+      }
+      if (writingGoal !== undefined && typeof writingGoal !== 'boolean') {
+        res.status(400).json({ error: 'writingGoal must be a boolean', code: 'ERR_INVALID_REQUEST' });
+        return;
+      }
+
+      const updatedUser = await this.userService.updateGoals(userId, { readingGoal, writingGoal });
+      res.json(updatedUser);
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  /**
    * Update the user's profile avatar (the icons8 icon they picked).
    * PUT /api/users/avatar
    *

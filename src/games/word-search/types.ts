@@ -10,6 +10,16 @@
 export interface GridCell {
     char: string;
     pinyin: string;
+    /**
+     * Context-correct sense for this character, present ONLY on cells belonging to
+     * a target word (filler cells omit them). `definition` is the ddt of the
+     * character's det cluster matching `sense` (resolved server-side at grid build);
+     * `sense` is the cluster label. Tapping the cell shows `definition` so the
+     * player sees the character's meaning IN THIS WORD, not its generic gloss.
+     * See server/services/wordSearchGrid.ts and docs/WORD_SEARCH_GAME.md.
+     */
+    sense?: string;
+    definition?: string;
 }
 
 /** A target word plus the ordered cell path it snakes through. */

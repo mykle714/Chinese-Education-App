@@ -36,6 +36,12 @@ router.put('/api/users/avatar', authenticateToken, async (req, res) => {
   await userController.updateAvatar(req, res);
 });
 
+// Update the account's mastery goal flags (reading/writing). See docs/MASTERY_REWORK.md
+// @ts-ignore
+router.put('/api/users/goals', authenticateToken, async (req, res) => {
+  await userController.updateGoals(req, res);
+});
+
 // Minute Points — increment by 1
 // @ts-ignore
 router.post('/api/users/minute-points/increment', authenticateToken, async (req, res) => {

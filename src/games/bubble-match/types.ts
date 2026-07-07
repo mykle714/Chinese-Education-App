@@ -19,16 +19,18 @@ export type BubbleKind = "word" | "definition";
  * - `idle`      — settled at full size, sitting still (no autonomous drift).
  * - `held`      — picked up by the pointer (enlarged + greyed).
  * - `hovered`   — the current drop target under a held bubble (enlarged + greyed).
- * - `correct`   — a valid match just landed (green + pop, then removed).
+ * - `correct`   — a valid match just landed (light-green + pop, then removed).
  * - `wrong`     — an invalid match just landed (red flash + shake, then released).
- * - `nomatch`   — study mode: a tapped bubble whose partner isn't on screen. Same
- *                 red flash as `wrong` but WITHOUT the shake (no drag happened —
- *                 the tap was valid, there was just nothing to pair with).
- * - `revealed`  — study mode (game-over popup minimized): this bubble and its
- *                 partner are highlighted green for reference. Persistent — no
- *                 pop/removal; cleared when the selection changes or study ends.
+ * - `revealed`  — cleanup mode (post-loss, game-over popup minimized): the held
+ *                 bubble's matching partner, highlighted light-green as a drop
+ *                 hint while it's being dragged. Persistent (no pop/removal) until
+ *                 the drag ends or a different bubble is picked up.
+ * - `nomatch`   — cleanup mode: the currently-grabbed bubble has no partner on the
+ *                 field (it was still queued when the run was lost), so it can
+ *                 never be matched. Rendered light-red (instead of the grey held
+ *                 dim) for as long as it's grabbed; released back to idle on drop.
  */
-export type BubbleStatus = "growing" | "idle" | "held" | "hovered" | "correct" | "wrong" | "nomatch" | "revealed";
+export type BubbleStatus = "growing" | "idle" | "held" | "hovered" | "correct" | "wrong" | "revealed" | "nomatch";
 
 /**
  * Physics + interaction state for a single bubble. This is the mutable source of

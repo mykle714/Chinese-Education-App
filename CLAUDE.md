@@ -34,6 +34,8 @@ fie = flashcard icon editor
 dd = display definition (the definition that we display on a flashcard)
 ddt = display definition transformation
 utcm = mastery progress (unfamiliar, target, comfortable, mastered)
+mdp = mark discoverable pipeline (refers to the skill)
+pbh = progress bar height
 
 
 ## Terminology: "Learn Now" cards
@@ -142,6 +144,7 @@ An hourly Postgres cron on the prod server (a) breaks stale streaks (mirroring `
 
 ### Flashcards & Review History
 → See [docs/FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md](./docs/FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md)
+  → Mastery rework (typed marks, goals, progress bar): [docs/MASTERY_REWORK.md](./docs/MASTERY_REWORK.md) — **DESIGN/DRAFT**: four typed mark tracks (Recognition/Production/Reading/Writing, 8 each in `typedMarkHistory`), per-account reading/writing goals, the goal-weighted progress-bar-height (pbh) formula that replaces the generated `category` column with a service-layer utcm compute, and the cdp stacked progress bar.
 
 ### Vocabulary Enrichment
 → See [docs/VOCAB_ENRICHMENT_IMPLEMENTATION.md](./docs/VOCAB_ENRICHMENT_IMPLEMENTATION.md)

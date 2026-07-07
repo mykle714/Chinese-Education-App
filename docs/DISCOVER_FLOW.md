@@ -11,30 +11,40 @@ Footer "Discover" tab
 /discover            ← Discover hub (DiscoverPage): a HubMenu of activities.
         │              Has the floating footer (footer-tab surface).
         │  HubMenuRow "Sort Cards"    → sortPath
+        │  HubMenuRow "Quick Mark"    → quickMarkPath
         │  HubMenuRow "Skipped Cards" → skippedPath
-        ├───────────────────────────────┐
-        ▼                               ▼
-/discover/sort/:language          /discover/skipped/:language
-  ← Sort Cards page                  ← Skipped Cards page
-    (SortCardsPage): the drag-to-       (SkippedCardsPage): a Mastered-style
-    sort screen. Node page              list of the user's skipped words.
-    (keeps footer). Back → hub.         Node page (keeps footer). Back → hub.
-                                        Tap a card → action popup
-                                        (Cancel / Already Learned / Learn Now).
+        ├───────────────────┬───────────────────────┐
+        ▼                   ▼                       ▼
+/discover/sort/     /discover/quick-mark/     /discover/skipped/
+  :language           :language                 :language
+  ← Sort Cards        ← Quick Mark              ← Skipped Cards
+    (SortCardsPage):    (QuickMarkPage): bulk-    (SkippedCardsPage): a
+    drag-to-sort.       triage grid at one        Mastered-style list of
+    Node page (keeps    level; tap cards to        skipped words. Node page.
+    footer). Back→hub.  cycle a 3-state mark,      Tap → action popup
+                        Save commits all.          (Cancel / Already
+                        Node page. Back→hub.       Learned / Learn Now).
 ```
 
 ## Pages
 
 | Route                          | Component          | Header                                  | Footer        |
 | ------------------------------ | ------------------ | --------------------------------------- | ------------- |
-| `/discover`                    | `DiscoverPage`     | `MobileDemoHeader` (Discover badge)     | Floating pill |
-| `/discover/sort/:language`     | `SortCardsPage`    | `NodePage` (← back arrow) → `/discover`  | Floating pill |
-| `/discover/skipped/:language`  | `SkippedCardsPage` | `NodePage` (← back arrow) → `/discover` | Floating pill |
+| `/discover`                     | `DiscoverPage`     | `MobileDemoHeader` (Discover badge)     | Floating pill |
+| `/discover/sort/:language`      | `SortCardsPage`    | `NodePage` (← back arrow) → `/discover`  | Floating pill |
+| `/discover/quick-mark/:language`| `QuickMarkPage`    | `NodePage` (← back arrow) → `/discover` | Floating pill |
+| `/discover/skipped/:language`   | `SkippedCardsPage` | `NodePage` (← back arrow) → `/discover` | Floating pill |
 
 - **`/discover` (hub):** built on `MobileTabScreen` (`activePage="discover"`) +
-  the shared `HubMenu` / `HubMenuRow` (same components the Games hub uses). It has two
-  rows: **Sort Cards** (the drag-to-sort page) and **Skipped Cards** (the skipped-words
-  list), both language-keyed.
+  the shared `HubMenu` / `HubMenuRow` (same components the Games hub uses). It has three
+  rows, in order: **Sort Cards** (the drag-to-sort page), **Quick Mark** (the bulk-triage
+  grid), and **Skipped Cards** (the skipped-words list), all language-keyed.
+- **`/discover/quick-mark/:language` (quick mark):** a **node page** (`NodePage`, keeps
+  the footer, ← back → `/discover`). A level dropdown (no Auto) filters to every
+  not-yet-sorted discoverable word at that level, shown in the shared `MiniVocabCardGrid`
+  ordered by vernacular score. Each card has a vernacular badge (top-left) and a tappable
+  3-state indicator (top-right: empty / green "Add to Learn Now" / blue "Mastered");
+  Save commits all marks at once, Clear resets them. See [QUICK_MARK.md](./QUICK_MARK.md).
 - **`/discover/sort/:language` (sort):** a **node page** (see
   [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md)) — wrapped in `NodePage`, which **keeps
   the footer** (lateral nav stays available while sorting), owns the ← back arrow
@@ -58,6 +68,8 @@ Footer "Discover" tab
 | `goToDiscover()`| navigate → `/discover`         | footer Discover tab, decks nudges    |
 | `sortPath`      | `/discover/sort/{language}`    | the hub's Sort Cards row             |
 | `goToSort()`    | navigate → `sortPath`          | (available for direct sort entry)    |
+| `quickMarkPath` | `/discover/quick-mark/{language}` | the hub's Quick Mark row          |
+| `goToQuickMark()`| navigate → `quickMarkPath`    | (available for direct quick-mark entry) |
 | `skippedPath`   | `/discover/skipped/{language}` | the hub's Skipped Cards row          |
 | `goToSkipped()` | navigate → `skippedPath`       | (available for direct skipped entry) |
 

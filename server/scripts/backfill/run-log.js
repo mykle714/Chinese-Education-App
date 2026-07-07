@@ -233,7 +233,23 @@ export function initRunLog({ script, version, anthropic, argv } = {}) {
   const stampEntries = (client, table, ids) =>
     stampEntryRun(client, table, ids, state.script, state.version);
 
-  return { finalize, state, stampEntries, accrueUsage };
+  // SQL predicate selecting rows this script has NOT yet processed at its CURRENT
+  // version — i.e. rows whose `enrichmentLog` stamp for this script is below
+  // `SCRIPT_VERSION`, OR that carry no stamp for this script at all (never run, or
+  // ran before stamping existed). Drop it into a backfill's WHERE (usually OR'd with
+  // the script's own `<col> IS NULL` gate) to power a shared `--stale`/re-enrich
+  // mode that revisits out-of-date rows a plain `col IS NULL` run would skip. See
+  // docs backfill-staleness. `logCol` is the jsonb column holding the log (default
+  // the det column "enrichmentLog"); COALESCE guards a wholly-NULL log so a row with
+  // no log at all still qualifies (it has no stamp for this script).
+  const staleClause = (logCol = '"enrichmentLog"') => {
+    const safeCol = `COALESCE(${logCol}, '{}'::jsonb)`;
+    const key = state.script.replace(/'/g, "''");
+    return `((${safeCol} #>> ARRAY['${key}','version'])::int < ${Number(state.version) || 0}`
+      + ` OR NOT (${safeCol} ? '${key}'))`;
+  };
+
+  return { finalize, state, stampEntries, accrueUsage, staleClause };
 }
 
 export default initRunLog;

@@ -1,4 +1,5 @@
 import StyleIcon from "@mui/icons-material/Style";
+import PlaylistAddCheckIcon from "@mui/icons-material/PlaylistAddCheck";
 import SkipNextIcon from "@mui/icons-material/SkipNext";
 import MobileTabScreen from "../components/MobileTabScreen";
 import { HubMenu, HubMenuRow } from "../components/HubMenu";
@@ -14,11 +15,13 @@ import { COLORS } from "../theme/colors";
 // activity is Sort Cards (the drag-to-sort page, keyed by the user's language).
 // Phone-frame sizing comes from MobileDemoFrame; the scroll-away header + floating
 // footer come from MobileTabScreen; the row list comes from the shared HubMenu.
+// Activities (in order): Sort Cards (drag-to-sort), Quick Mark (bulk-triage grid,
+// docs/QUICK_MARK.md), Skipped Cards (revisit skipped words).
 
 const DiscoverPage: React.FC = () => {
     usePageTitle("Discover");
     // Rows link to the language-keyed sort + skipped pages.
-    const { sortPath, skippedPath } = useDiscoverNavigation();
+    const { sortPath, quickMarkPath, skippedPath } = useDiscoverNavigation();
 
     return (
         <MobileTabScreen title="Discover" activePage="discover" contentClassName="discover-page__content">
@@ -34,6 +37,14 @@ const DiscoverPage: React.FC = () => {
                     subtitle="Sort new cards into your decks"
                     icon={<StyleIcon sx={{ color: COLORS.textSecondary }} />}
                     bgColor={COLORS.greenAccent}
+                />
+                <HubMenuRow
+                    to={quickMarkPath}
+                    className="discover-page__menu-item discover-page__menu-item--quick-mark"
+                    title="Quick Mark"
+                    subtitle="Bulk-triage new cards by level"
+                    icon={<PlaylistAddCheckIcon sx={{ color: COLORS.textSecondary }} />}
+                    bgColor={COLORS.purpleAccent}
                 />
                 <HubMenuRow
                     to={skippedPath}

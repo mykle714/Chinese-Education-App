@@ -23,6 +23,7 @@ import DictionaryCardDetailPage from "./pages/DictionaryCardDetailPage";
 import DiscoverPage from "./pages/DiscoverPage";
 import TesterDashboardPage from "./pages/TesterDashboardPage";
 import SortCardsPage from "./pages/SortCardsPage";
+import QuickMarkPage from "./pages/QuickMarkPage";
 import SkippedCardsPage from "./pages/SkippedCardsPage";
 import VocabCardDetailPage from "./features/flashcards/VocabCardDetailPage";
 import MasteredCardsPage from "./features/flashcards/MasteredCardsPage";
@@ -116,6 +117,11 @@ function App() {
                 <Route path="/discover/sort/:language" element={
                   <ProtectedRoute allowPublic>
                     <SortCardsPage />
+                  </ProtectedRoute>
+                } />
+                <Route path="/discover/quick-mark/:language" element={
+                  <ProtectedRoute allowPublic>
+                    <QuickMarkPage />
                   </ProtectedRoute>
                 } />
                 <Route path="/discover/skipped/:language" element={

@@ -451,8 +451,7 @@ export class VocabEntryService {
     // Enrich with computed example sentences and synonym metadata.
     // The entry carries its own language, so use it for every dictionary lookup.
     const [withExampleMeta] = await this.dictionaryService.enrichExampleSentencesMetadataBatch([entry], entry.language);
-    const [withExpansionMeta] = await this.dictionaryService.enrichExpansionMetadataBatch([withExampleMeta], entry.language);
-    const [withLongDefMeta] = await this.dictionaryService.enrichLongDefinitionMetadataBatch([withExpansionMeta], entry.language);
+    const [withLongDefMeta] = await this.dictionaryService.enrichLongDefinitionMetadataBatch([withExampleMeta], entry.language);
     const [enriched] = await this.dictionaryService.enrichEntriesWithSynonymMetadata([withLongDefMeta], entry.language);
 
     // Enrich with related words (library words sharing characters, zh only)
@@ -490,8 +489,7 @@ export class VocabEntryService {
 
     // Enrich with computed example sentences and synonym metadata
     const withExampleMeta = await this.dictionaryService.enrichExampleSentencesMetadataBatch(entries, language);
-    const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(withExampleMeta, language);
-    const withLongDefMeta = await this.dictionaryService.enrichLongDefinitionMetadataBatch(withExpansionMeta, language);
+    const withLongDefMeta = await this.dictionaryService.enrichLongDefinitionMetadataBatch(withExampleMeta, language);
     const enrichedEntries = await this.dictionaryService.enrichEntriesWithSynonymMetadata(withLongDefMeta, language);
 
     return {
@@ -516,8 +514,7 @@ export class VocabEntryService {
 
     const results = await this.vocabEntryDAL.searchEntries(userId, searchTerm.trim(), language, limit);
     const withExampleMeta = await this.dictionaryService.enrichExampleSentencesMetadataBatch(results, language);
-    const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(withExampleMeta, language);
-    const withLongDefMeta = await this.dictionaryService.enrichLongDefinitionMetadataBatch(withExpansionMeta, language);
+    const withLongDefMeta = await this.dictionaryService.enrichLongDefinitionMetadataBatch(withExampleMeta, language);
     return await this.dictionaryService.enrichEntriesWithSynonymMetadata(withLongDefMeta, language);
   }
 
@@ -528,8 +525,7 @@ export class VocabEntryService {
   async getEntriesByDifficultyLevel(userId: string, difficulty: DifficultyLevel): Promise<VocabEntry[]> {
     const entries = await this.vocabEntryDAL.findByDifficultyLevel(userId, difficulty);
     const withExampleMeta = await this.dictionaryService.enrichExampleSentencesMetadataBatch(entries, 'zh');
-    const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(withExampleMeta, 'zh');
-    const withLongDefMeta = await this.dictionaryService.enrichLongDefinitionMetadataBatch(withExpansionMeta, 'zh');
+    const withLongDefMeta = await this.dictionaryService.enrichLongDefinitionMetadataBatch(withExampleMeta, 'zh');
     return await this.dictionaryService.enrichEntriesWithSynonymMetadata(withLongDefMeta, 'zh');
   }
 
@@ -676,8 +672,7 @@ export class VocabEntryService {
   async getRecentEntries(userId: string, language: Language, days: number = 7): Promise<VocabEntry[]> {
     const date = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
     const entries = await this.vocabEntryDAL.findEntriesCreatedAfter(userId, date, language);
-    const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(entries, language);
-    const withLongDefMeta = await this.dictionaryService.enrichLongDefinitionMetadataBatch(withExpansionMeta, language);
+    const withLongDefMeta = await this.dictionaryService.enrichLongDefinitionMetadataBatch(entries, language);
     return await this.dictionaryService.enrichEntriesWithSynonymMetadata(withLongDefMeta, language);
   }
 
@@ -794,9 +789,8 @@ export class VocabEntryService {
     const entries = await this.vocabEntryDAL.findByTokens(userId, uniqueTokens, language);
     const dalTime = performance.now() - dalStart;
 
-    // Enrich with computed expansion metadata + synonym metadata
-    const withExpansionMeta = await this.dictionaryService.enrichExpansionMetadataBatch(entries, language);
-    const withLongDefMeta = await this.dictionaryService.enrichLongDefinitionMetadataBatch(withExpansionMeta, language);
+    // Enrich with computed long-definition metadata + synonym metadata
+    const withLongDefMeta = await this.dictionaryService.enrichLongDefinitionMetadataBatch(entries, language);
     const enrichedEntries = await this.dictionaryService.enrichEntriesWithSynonymMetadata(withLongDefMeta, language);
     const totalServiceTime = performance.now() - serviceStart;
 

@@ -212,6 +212,14 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
     const [popupWord, setPopupWord] = useState<PlacedWord | null>(null);
     const [popupAnchorRect, setPopupAnchorRect] = useState<DOMRect | null>(null);
 
+    // A single target-word character whose context-correct definition popup is open
+    // (see `submit`). Target cells carry `definition` = the ddt of that character's
+    // det cluster for the sense it has IN THIS WORD (server-resolved at grid build),
+    // so a lone tap shows the character's meaning here rather than its generic gloss.
+    // Filler cells have no `definition`, so they never open this popup.
+    const [charPopup, setCharPopup] = useState<{ char: string; pinyin: string; definition: string; cells: Coord[] } | null>(null);
+    const [charAnchorRect, setCharAnchorRect] = useState<DOMRect | null>(null);
+
     // Lookup from a word's Chinese text to its bonus-word record, so `submit`
     // can check a traced-but-non-target path's spelled-out characters in O(1).
     const bonusWordMap = useMemo(() => new Map(bonusWords.map((w) => [w.entryKey, w])), [bonusWords]);
@@ -245,6 +253,7 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
         setPathBoth([]);
         draggingRef.current = false;
         setPopupWord(null);
+        setCharPopup(null);
         setInvalid(null);
     }, [setPathBoth]);
     useImperativeHandle(ref, () => ({ clearSelection }), [clearSelection]);
@@ -528,14 +537,23 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [invalid, scale, anchorRectForCells]);
 
-    // The single review popup shown at a time: either a tapped found word, or a
-    // just-missed bonus word — both render through the same Popper/style below.
-    // `entryKey` is carried through and prepended in the correct reading order
-    // (§4) because the grid's snaking path can visually read in any direction —
-    // up/down/backwards — so the on-grid glyphs alone don't reliably show the
-    // word in order.
+    // Anchor for the single-character definition popup — same measurement as the
+    // others, keyed off the tapped cell.
+    useLayoutEffect(() => {
+        setCharAnchorRect(charPopup ? anchorRectForCells(charPopup.cells) : null);
+    }, [charPopup, scale, anchorRectForCells]);
+
+    // The single review popup shown at a time: a tapped found word, a tapped
+    // target-word character (its context-correct sense gloss), or a just-missed
+    // bonus word — all render through the same Popper/style below. `entryKey` is
+    // carried through and prepended in the correct reading order (§4) because the
+    // grid's snaking path can visually read in any direction — up/down/backwards —
+    // so the on-grid glyphs alone don't reliably show the word in order. (A single
+    // character has no reading-order ambiguity, so it passes its own glyph.)
     const activePopup = popupWord
         ? { rect: popupAnchorRect, entryKey: popupWord.entryKey, pinyin: popupWord.pinyin, definition: popupWord.definition }
+        : charPopup
+        ? { rect: charAnchorRect, entryKey: charPopup.char, pinyin: charPopup.pinyin, definition: charPopup.definition }
         : invalid?.bonus
         ? { rect: bonusAnchorRect, entryKey: invalid.bonus.entryKey, pinyin: invalid.bonus.pinyin, definition: invalid.bonus.definition }
         : null;
@@ -580,6 +598,24 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
             if (selection.length === 0) return;
             if (tryFoundTarget(selection)) return;
             draggingRef.current = false;
+
+            // A lone tap on a character that belongs to a target word (carries a
+            // server-resolved `definition` = its sense IN THIS WORD) shows that
+            // character's definition popup, taking precedence over the generic
+            // single-character "bonus headword" popup below. This helps the player
+            // learn the word by seeing each character's contextual meaning. Filler
+            // cells have no `definition`, so they fall through to the bonus/miss path.
+            if (selection.length === 1) {
+                const [r, c] = selection[0];
+                const cell = grid[r]?.[c];
+                if (cell?.definition) {
+                    setInvalid(null);
+                    setPathBoth([]); // a definition tap leaves no highlight (like the single-char bonus)
+                    setCharPopup({ char: cell.char, pinyin: cell.pinyin, definition: cell.definition, cells: [selection[0]] });
+                    return;
+                }
+            }
+
             const forward = selection.map(([r, c]) => grid[r]?.[c]?.char ?? "").join("");
             const reversed = [...forward].reverse().join("");
             const bonus = bonusWordMap.get(forward) ?? bonusWordMap.get(reversed) ?? null;
@@ -632,6 +668,7 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
             // Any other pointer-down dismisses an open popup and begins a drag; a
             // release without movement leaves a one-cell path.
             setPopupWord(null);
+            setCharPopup(null);
             markInteracted();
             draggingRef.current = true;
             setPathBoth([cell]);
@@ -947,7 +984,10 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                                 sx={{ fontWeight: WEIGHT.bold }}
                             >
                                 {activePopup.entryKey}
-                                {activePopup.pinyin && (
+                                {/* In no-pinyin (reading) mode the whole point is to
+                                    hide pinyin — so suppress it in the review popup too,
+                                    including single-character target taps. */}
+                                {showPinyin && activePopup.pinyin && (
                                     <Box
                                         component="span"
                                         className="word-search__gloss-popup-pinyin"

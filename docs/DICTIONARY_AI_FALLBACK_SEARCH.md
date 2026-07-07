@@ -3,8 +3,17 @@
 > Status: **implemented** (migrations 97–99; 99 = per-user daily AI-lookup cap). Extends `GET /api/dictionary/search`
 > (the shared search used by the dictionary page and the Community search bar — see
 > [DICTIONARY_NUMBERED_PINYIN_SEARCH.md](./DICTIONARY_NUMBERED_PINYIN_SEARCH.md) and
-> [COMMUNITY_PAGE.md](./COMMUNITY_PAGE.md)). **zh-only** — spaceless pinyin and synthetic
-> pinyin entries are meaningless for `es`.
+> [COMMUNITY_PAGE.md](./COMMUNITY_PAGE.md)).
+>
+> **Languages.** The AI synthetic-entry fallback now serves **both `zh` and `es`**:
+> - **zh** — a query in **pinyin** (→ Chinese word), **Chinese characters** (segment "no complete
+>   match"), or **English** (→ Chinese translation).
+> - **es** — a query in **English** (→ Spanish translation) or **Spanish** (a headword missing from
+>   `dictionaryentries_es`).
+>
+> The spaceless-/synthetic-**pinyin** machinery (stage 2, `isAllPinyin`, `segmentPinyin`) is still
+> Chinese-only — it is meaningless for `es`. See [Per-language search routing](#per-language-search-routing)
+> for the `searchByWord1` table/column fix that made `es` search return real rows at all.
 
 ## Motivation
 
@@ -70,17 +79,30 @@ path (OR-ing the tilings' patterns together, deduping rows) — no new SQL shape
 ### Trigger (decided: explicit "AI" pill button)
 
 The AI call is **never** automatic. The client shows an **"AI"** button (which calls the endpoint
-on tap) whenever the cache has no usable row (miss, or stale-empty) **and** the query qualifies:
+on tap) whenever the cache has no usable row (miss, or stale-empty) **and** the query qualifies. The
+qualification is language-aware (`DictionaryService.qualifiesForAiFallback` for the `/search` path,
+`resolveChineseAiFallback` for the `/segment` path):
 
-- **Pinyin path** — stages 1–2 returned 0 rows and `isAllPinyin(term)` (the regular `/search`).
-- **Chinese path** — a CJK segment-mode query (`/segment`) whose full typed string has **no
+- **`/search` path** (non-CJK input) — stages 1–2 returned 0 rows and the trimmed query is **≥2
+  chars** in a supported language. **No** pinyin gate any more (previously `isAllPinyin`): any
+  Latin query qualifies, because the query may be English rather than pinyin. Per language:
+  - **zh** — pinyin (`jianshen`) **or** an English word/phrase (`serendipity`) → one Chinese word.
+  - **es** — an English word/phrase (`serendipity`) **or** a Spanish headword missing from the det.
+- **Chinese `/segment` path** — a CJK segment-mode query whose full typed string has **no
   complete-word match** (only breakdown / prefix matches came back). `hasCompleteMatch` = some
   segment group for the whole trimmed input has an exact entry; when false, the button is offered.
 
 Rationale for the button (vs. inline): an automatic call would add ~1–3 s latency and an API charge
 to every novel zero-result query.
 
-The prompt **trusts the query as written**: it is told to assume the pinyin is spelled correctly and
+The prompt (`DictionaryService.buildAiSystemPrompt(language)`) is **per language** but always asks
+for the **same flat JSON shape** (`{word1, pinyin, definition}`) so the cache row, client type, and
+orange card stay language-agnostic. The query may arrive in the target language **or in English**;
+the model infers which and always resolves to a single **target-language** headword + English gloss.
+For `es`, `pinyin` is returned empty (Spanish has no such field) and the orange card renders the
+Latin headword in the Latin UI font (`AiDictionaryEntryCard` picks the font from the word's script).
+
+The zh prompt **trusts the query as written**: it is told to assume the pinyin is spelled correctly and
 must NOT correct apparent typos or substitute a similar-sounding / similar-looking word — if nothing
 matches the query exactly, it returns an empty result rather than a near-miss. It accepts Chinese
 characters too, and **returns a result for anything that maps to a valid concept** — ordinary words,
@@ -114,7 +136,8 @@ modes. Net: a blue results pill, optionally followed by an orange **AI** pill.
 
 `POST /api/dictionary/ai-entry` (auth required) — body `{ term, language, tz }`:
 
-1. Guard: `language === 'zh'` and (`isAllPinyin(term)` **or** `hasChinese(term)`), else return null.
+1. Guard: `term` ≥2 chars and a supported language — `zh` (pinyin / Han / English), or `es`
+   (non-CJK English / Spanish). Else return null.
 2. Re-check the cache (a fresh non-empty or fresh-empty row short-circuits — no model call). A cache
    hit is **free** — it returns before the daily-limit check below, so it never consumes a slot.
 2b. **Daily-limit gate** (a cache MISS is about to bill a model call): read the caller's completed-call
@@ -179,13 +202,38 @@ with **no id / no metadata** — it is **display-only**:
 - rendered in the app's **orange** (`COLORS.yellowMain` = `#FF8E47`, the "Target" hue) so it's
   visually distinct from real dictionary rows.
 
+<a id="per-language-search-routing"></a>
+## Per-language search routing (`searchByWord1`) — prerequisite for the es fallback
+
+Enabling the AI fallback for `es` exposed that `GET /api/dictionary/search` **never returned real
+Spanish rows at all** — two bugs in `DictionaryDAL.searchByWord1`, both fixed here:
+
+1. **Wrong table.** The method was hard-coded to `FROM dictionaryentries_zh` and filtered
+   `WHERE language = $1`. Spanish data lives only in `dictionaryentries_es`, so an `es` search
+   matched **0 rows**. Now it routes the table via `dictTableForLanguage(language)`
+   (`server/dal/shared/dictTable.ts`), same whitelist helper the segment/starter-pack paths use.
+2. **Pronunciation filter dropped every es row.** The clause `AND NOT (pronunciation ~ $4)` (a
+   zh pinyin quirk excluding `...g` runs) evaluates to `NOT NULL` = **excluded** for Spanish rows
+   (pronunciation is NULL for all `es`). The pronunciation match (`pronunciation ~ $3`), the
+   `numberedPinyin` clause, this exclusion, and the stage-2 spaceless-pinyin fallback are now all
+   gated behind `isZh` — `es` matches on **`word1` prefix + first-definition** only.
+
+Also, the shared `DICTIONARY_COLUMNS` SELECT list references `definitionClusters`, a **Chinese-only**
+enrichment (migration 90; its per-cluster reading is pinyin) that `dictionaryentries_es` **does not
+have**. `dictionaryColumns(language)` selects a `NULL::jsonb AS "definitionClusters"` placeholder for
+`es` so the row shape / `mapRowToEntity` stay uniform without adding a dead column to the es table.
+
+> **Scope note:** only `searchByWord1` is language-routed here. Other `DictionaryDAL` methods
+> (`findByWord1`, `findMultipleByWord1`, the expansion helpers) still hard-code `this.tableName`
+> (`dictionaryentries_zh`) and remain zh-only — see [Noted limitations](#noted-limitations).
+
 ## Data model — new table `ai_dictionary_cache` (migration 97)
 
 ```sql
 CREATE TABLE ai_dictionary_cache (
   id         serial PRIMARY KEY,
   "queryKey" varchar     NOT NULL,   -- exact trimmed raw user input (see Cache key)
-  language   varchar(8)  NOT NULL,   -- 'zh' (reserved for future langs)
+  language   varchar(8)  NOT NULL,   -- 'zh' or 'es' (part of the cache identity)
   word1      varchar,                -- NULL ⇒ empty result (AI found no likely meaning)
   pinyin     varchar,                -- tone-marked
   definition text,                   -- one concise, complete gloss (no length cap; widened from varchar(100) in migration 98)
@@ -248,14 +296,15 @@ All logic lives in the shared **`src/hooks/useDictionarySearch.ts`** so both con
 | Error | `server/types/dal.ts` | `RateLimitError` (HTTP 429, `code: 'ERR_RATE_LIMIT'`) |
 | Util | `server/utils/pinyinSegment.ts` (**new**) | `segmentPinyin`, `isAllPinyin` (syllable inventory + max-munch) |
 | Util | `server/utils/streakDate.ts` | `resolveTimezone`, `streakDateOf` — reused to bound the daily limit to the local streak-day |
-| DAL | `server/dal/implementations/DictionaryDAL.ts` | stage-2 segmentation fallback in `searchByWord1`; `getAiCacheEntry`, `upsertAiCacheEntry`; return `canAskAi`; `getAiUsageCount`, `incrementAiUsage` (daily limit) |
+| DAL | `server/dal/implementations/DictionaryDAL.ts` | **per-language table/column routing in `searchByWord1`** (`dictTableForLanguage`, `dictionaryColumns`, `isZh`-gated pinyin/pronunciation clauses); stage-2 segmentation fallback (zh-only); `getAiCacheEntry`, `upsertAiCacheEntry`; return `canAskAi`; `getAiUsageCount`, `incrementAiUsage` (daily limit) |
 | DAL iface | `server/dal/interfaces/IDictionaryDAL.ts` | new method signatures (incl. `getAiUsageCount`/`incrementAiUsage`) |
-| Service | `server/services/DictionaryService.ts` | `generateAiEntry(term, language, userId, usageDate)` (dedicated Sonnet client + prompt caching + `web_search` tool w/ pause_turn loop + validation; accepts pinyin or Chinese; **daily-limit gate + increment**); `resolveAiCache` + `resolveChineseAiFallback` (staleness check) |
+| Service | `server/services/DictionaryService.ts` | `qualifiesForAiFallback(term, language)` (`/search` button gate — ≥2-char non-CJK zh/es); `buildAiSystemPrompt(language)` (per-language zh/es prompt); `generateAiEntry(term, language, userId, usageDate)` (dedicated Sonnet client + prompt caching + `web_search` tool w/ pause_turn loop + validation; accepts pinyin / Chinese / English for zh, English / Spanish for es; **daily-limit gate + increment**); `resolveAiCache` + `resolveChineseAiFallback` (staleness check) |
 | Controller | `server/controllers/DictionaryController.ts` | `aiEntry` handler (computes `usageDate` from `tz`; maps `RateLimitError` → 429); thread `canAskAi`/`aiEntry` through both `search` (pinyin) and `segmentSearch` (Chinese no-complete-match) |
 | Routes | `server/routes/dictionaryRoutes.ts` | `POST /api/dictionary/ai-entry` |
 | Types | `server/types/*`, client `src/types.ts` | `DictionaryEntry.source?: 'ai'`; AI-entry response types |
 | Client hook | `src/hooks/useDictionarySearch.ts` | `aiEntry`, `canAskAi`, `askAi()` (sends `tz`); `aiLimitReached` + `aiLimitMessage` (429) |
 | Client UI | `src/pages/DictionaryPage.tsx` | orange unclickable card + inline orange "AI" pill; daily-limit note; results-count pill → blue, segment-count prefix removed |
+| Client UI | `src/components/AiDictionaryEntryCard.tsx` | orange synthetic card; headword font chosen from its script (CJK vs Latin) so es words render in the Latin UI font |
 | Theme | `src/theme/colors.ts` (`COLORS.yellowMain` `#FF8E47`) | orange for AI cards (existing token) |
 
 ## Resolved decisions
@@ -275,6 +324,14 @@ All logic lives in the shared **`src/hooks/useDictionarySearch.ts`** so both con
 - **Cache-key spacing variants** — because the key is raw text (decided), spacing/case variants of
   the same intent don't share a row (`jian4shen1` vs `jian4 shen1`). Acceptable; the finite pinyin
   space still saturates.
+- **Only `searchByWord1` is language-routed.** The other `DictionaryDAL` read paths
+  (`findByWord1`, `findMultipleByWord1`, expansion-metadata helpers) still hard-code
+  `this.tableName = dictionaryentries_zh`, so single-term lookups and reader enrichment remain
+  **zh-only** — an `es` lookup through those paths returns nothing. Left as-is (out of scope); route
+  them through `dictTableForLanguage` if/when the Spanish reader/lookup surfaces need it.
+- **`es` unbounded AI spend.** The pinyin/Chinese query space is finite (cache saturates), but the
+  **English** query space (zh *and* es) is effectively unbounded, so the per-user daily cap
+  (`DICTIONARY_AI_DAILY_LIMIT`) — not cache saturation — is what bounds cost for the English paths.
 
 ## Dependencies / cross-references
 

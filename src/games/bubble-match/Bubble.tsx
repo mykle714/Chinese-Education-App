@@ -11,7 +11,10 @@ import {
     DEFINITION_BUBBLE_BG,
     DEFINITION_BUBBLE_BORDER,
     CORRECT_BUBBLE_BG,
+    CORRECT_BUBBLE_BORDER,
     WRONG_BUBBLE_BG,
+    NOMATCH_BUBBLE_BG,
+    NOMATCH_BUBBLE_BORDER,
     POP_DURATION_MS,
     WRONG_FEEDBACK_MS,
 } from "./constants";
@@ -27,11 +30,6 @@ interface BubbleProps {
     /** Registers the outer node so the rAF loop can write its transform. */
     registerNode: (id: string, el: HTMLDivElement | null) => void;
     onPointerDown: (id: string, e: React.PointerEvent) => void;
-    /** Study-mode (game-over, popup minimized) hover highlight on desktop. */
-    onPointerEnter: (id: string, e: React.PointerEvent) => void;
-    onPointerLeave: (id: string, e: React.PointerEvent) => void;
-    /** True while study mode is active — switches the cursor to a tap pointer. */
-    studyMode: boolean;
 }
 
 // Length-based font scale for the definition text, similar in spirit to the
@@ -65,9 +63,6 @@ const Bubble: React.FC<BubbleProps> = ({
     showPinyinColor,
     registerNode,
     onPointerDown,
-    onPointerEnter,
-    onPointerLeave,
-    studyMode,
 }) => {
     const { id, kind, entry, radius, targetRadius } = body;
     const isWord = kind === "word";
@@ -78,16 +73,19 @@ const Bubble: React.FC<BubbleProps> = ({
     // alive at once, which thrashes the mobile compositor and shows up as input
     // lag (taps/drags register a beat late). Idle bubbles don't animate, so they
     // get `auto` and stay off their own layer.
-    const animating = status === "held" || status === "hovered" || status === "growing";
+    const animating = status === "held" || status === "hovered" || status === "growing" || status === "nomatch";
 
     let bg: string;
     let border: string;
     if (status === "correct" || status === "revealed") {
-        // Study-mode highlight reuses the match-green, minus the pop animation.
+        // Light green: a match pop, or the cleanup-mode partner drop hint.
         bg = CORRECT_BUBBLE_BG;
-        border = CORRECT_BUBBLE_BG;
-    } else if (status === "wrong" || status === "nomatch") {
-        // Both render red; only "wrong" (a bad drag-drop) adds the shake below.
+        border = CORRECT_BUBBLE_BORDER;
+    } else if (status === "nomatch") {
+        // Light red: a cleanup-mode bubble with no partner on the field.
+        bg = NOMATCH_BUBBLE_BG;
+        border = NOMATCH_BUBBLE_BORDER;
+    } else if (status === "wrong") {
         bg = WRONG_BUBBLE_BG;
         border = WRONG_BUBBLE_BG;
     } else if (isWord) {
@@ -113,8 +111,6 @@ const Bubble: React.FC<BubbleProps> = ({
             ref={(el: HTMLDivElement | null) => registerNode(id, el)}
             className={`bubble bubble--${kind} bubble--${status}`}
             onPointerDown={(e) => onPointerDown(id, e)}
-            onPointerEnter={(e) => onPointerEnter(id, e)}
-            onPointerLeave={(e) => onPointerLeave(id, e)}
             sx={{
                 position: "absolute",
                 top: 0,
@@ -127,8 +123,8 @@ const Bubble: React.FC<BubbleProps> = ({
                 transform: `translate(${body.x - targetRadius}px, ${body.y - targetRadius}px) scale(${(targetRadius > 0 ? radius / targetRadius : 1) * body.scale})`,
                 willChange: animating ? "transform" : "auto",
                 touchAction: "none", // pointer events drive dragging, not scrolling
-                cursor: studyMode ? "pointer" : "grab",
-                zIndex: status === "held" ? 30 : status === "hovered" ? 20 : status === "revealed" ? 15 : 10,
+                cursor: "grab",
+                zIndex: status === "held" || status === "nomatch" ? 30 : status === "hovered" ? 20 : status === "revealed" ? 15 : 10,
             }}
         >
             <Box
@@ -222,7 +218,9 @@ const Bubble: React.FC<BubbleProps> = ({
                                 lineHeight: 1.3,
                                 fontWeight: 500,
                                 fontFamily: FONTS.cjk,
-                                color: status === "wrong" || status === "nomatch" || status === "correct" || status === "revealed" ? "#fff" : "#3a3a3a",
+                                // Only the strong-red wrong flash gets white text; the
+                                // light green/red states read better with dark text.
+                                color: status === "wrong" ? "#fff" : "#3a3a3a",
                                 textAlign: "center",
                                 // Clamp very long definitions so they never overflow the
                                 // circle. One line fewer when the icon is taking up room.
@@ -262,7 +260,6 @@ export default React.memo(Bubble, (prev, next) => {
     return (
         prev.body.id === next.body.id &&
         prev.status === next.status &&
-        prev.studyMode === next.studyMode &&
         prev.showPinyin === next.showPinyin &&
         prev.showPinyinColor === next.showPinyinColor
     );

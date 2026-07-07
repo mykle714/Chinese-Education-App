@@ -28,6 +28,8 @@ export interface User {
   selectedLanguage?: Language;
   isPublic?: boolean; // Whether user appears on the public leaderboard
   avatarIconId?: string | null; // FK to icons8("icons8Id") — the icon chosen as profile avatar (migration 77)
+  readingGoal?: boolean; // Account opts into the Reading mastery goal (migration 101, docs/MASTERY_REWORK.md)
+  writingGoal?: boolean; // Account opts into the Writing mastery goal (migration 101, docs/MASTERY_REWORK.md)
   lastMinutePointIncrement?: Date; // Last successful minute-point increment (for rate limiting)
   createdAt?: Date;
 }
@@ -54,6 +56,8 @@ export interface UserUpdateData {
   selectedLanguage?: Language;
   isPublic?: boolean;
   avatarIconId?: string | null; // Set when the user picks/clears their profile avatar (migration 77)
+  readingGoal?: boolean; // Toggled in account settings (migration 101)
+  writingGoal?: boolean; // Toggled in account settings (migration 101)
 }
 
 // Auth response type
@@ -158,7 +162,11 @@ export interface DictionaryEntry {
   longDefinitionParts?: LongDefinitionPart[] | null;  // Computed at runtime: longDefinition split into English + cpcd-able Chinese runs
 
   // AI-enriched content
-  breakdown?: Record<string, { definition: string; pronunciation?: string }> | null;
+  // `sense` = the component character's definitionClusters sense LABEL for how it is
+  // used in THIS word (stable across re-clustering, like vet.selectedSense); populated
+  // by backfill-breakdown-senses.js. `definition` is then the tagged cluster's lead
+  // gloss (the correct-sense gloss), not the global definitions[0]. See docs/BREAKDOWN_FEATURE_IMPLEMENTATION.md.
+  breakdown?: Record<string, { definition: string; pronunciation?: string; sense?: string }> | null;
   synonyms?: string[] | null;
   exampleSentences?: Array<{
     foreignText: string;
@@ -173,10 +181,7 @@ export interface DictionaryEntry {
     _segments?: string[];
     segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo; wordForms?: Record<string, string> }>;
   }> | null;
-  expansion?: string | null;
-  expansionSegments?: string[] | null;  // GSA word tokens for the expansion string (e.g. ["不知", "不觉"])
-  expansionMetadata?: Record<string, { pronunciation?: string; definition?: string }> | null;  // Keyed by segment
-  expansionLiteralTranslation?: string | null;
+  characterRationale?: Array<{ char: string; reason: string }> | null;  // zh-only per-character rationale (migration 102, docs/CHARACTER_RATIONALE.md); display-ready jsonb, replaces expansion
   matchException?: string[] | null;  // Multi-char tokens to suppress during GSA segmentation
   vernacularScore?: number | null;   // Higher = more colloquially common; used by GSA to prefer common words
   wordForms?: Record<string, string> | null;  // AI-generated English conjugation map (e.g. {past: "ran", present: "runs"})
@@ -237,7 +242,7 @@ export interface DiscoverCard {
   // discoverable POS (→ client shows a "(v)"/"(n)" badge). Null/false for Chinese.
   pos?: string | null;
   hasMultiplePos?: boolean;
-  breakdown?: Record<string, { definition: string }> | null;
+  breakdown?: Record<string, { definition: string; sense?: string }> | null;
   synonyms?: string[] | null;
   exampleSentences?: Array<{
     foreignText: string;
@@ -252,10 +257,7 @@ export interface DiscoverCard {
     _segments?: string[];
     segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo; wordForms?: Record<string, string> }>;
   }> | null;
-  expansion?: string | null;
-  expansionSegments?: string[] | null;  // GSA word tokens for the expansion string (e.g. ["不知", "不觉"])
-  expansionMetadata?: Record<string, { pronunciation?: string; definition?: string }> | null;  // Keyed by segment
-  expansionLiteralTranslation?: string | null;
+  characterRationale?: Array<{ char: string; reason: string }> | null;  // zh-only per-character rationale (migration 102, docs/CHARACTER_RATIONALE.md); display-ready jsonb, replaces expansion
   matchException?: string[] | null;  // Multi-char tokens to suppress during GSA segmentation
   // Optional icons8 icon id (FK → icons8."icons8Id"). When set, the client renders
   // the icon via <img src="/api/icons8/<iconId>/image">. Null when no icon assigned.
@@ -298,6 +300,24 @@ export interface ReviewMark {
   timestamp: string;  // ISO-8601 date string
   isCorrect: boolean;
 }
+
+// The four mastery mark types. A mark's type is decided by the surface that
+// produced it (see docs/MASTERY_REWORK.md §1):
+//   recognition — flp foreign-first review + Bubble Match
+//   production  — flp English-first review + Word Search "Pinyin" mode
+//   reading     — Word Search "No Pinyin" mode
+//   writing     — Practice Writing drill
+export type MarkType = 'recognition' | 'production' | 'reading' | 'writing';
+
+export const MARK_TYPES: readonly MarkType[] = ['recognition', 'production', 'reading', 'writing'] as const;
+
+// Per-card typed mark streams: each type keeps its own <=8 most-recent marks.
+// Stored in vet."typedMarkHistory" (migration 101). An absent/empty track means
+// no marks of that type yet (which the pbh math treats as all-negative).
+export type TypedMarkHistory = Partial<Record<MarkType, ReviewMark[]>>;
+
+// How many most-recent marks each type retains (the sliding-window size).
+export const MARK_WINDOW_SIZE = 8;
 
 // FlashcardCategory enum for categorizing cards based on last 8 performance
 export enum FlashcardCategory {
@@ -427,21 +447,15 @@ export interface VocabEntry {
   vernacularScore?: number | null;  // 1–5 register score from dictionaryentries_zh (1=literary, 5=natural colloquial)
   definitionClusters?: DefinitionCluster[] | null;  // Orthogonal sense clusters (zh; migration 90), joined from det via DICT_JOIN — see docs/DEFINITION_CLUSTERS.md
   selectedSense?: string | null;  // Per-card chosen cluster `sense` label (vet column, migration 99). NULL = default/starred sense. See docs/DEFINITION_CLUSTERS.md
-  markHistory?: ReviewMark[];  // Last 16 flashcard mark results
+  typedMarkHistory?: TypedMarkHistory;  // Per-type mark streams (migration 101); see docs/MASTERY_REWORK.md
   totalMarkCount?: number;  // Total cumulative count of all marks
   totalCorrectCount?: number;  // Lifetime count of correct marks
-  totalSuccessRate?: number;  // Lifetime success rate (0.0 to 1.0)
-  last8SuccessRate?: number;  // Success rate for last 8 marks (0.0 to 1.0)
-  last16SuccessRate?: number;  // Success rate for last 16 marks (0.0 to 1.0)
-  category?: FlashcardCategory;  // Category based on last 8 performance
+  category?: FlashcardCategory;  // utcm level, computed from typedMarkHistory + the account's goal flags (compute_utcm_category)
   starterPackBucket: StarterPackBucket;  // Starter pack sorting bucket (required)
-  breakdown?: Record<string, { definition: string; pronunciation?: string }> | null;  // Character breakdown for Chinese vocab
+  breakdown?: Record<string, { definition: string; pronunciation?: string; sense?: string }> | null;  // Character breakdown for Chinese vocab (`sense` = component char's definitionClusters label for this word)
   synonyms?: string[];  // Array of Chinese synonym words
   synonymsMetadata?: Record<string, { definition: string; pronunciation: string }> | null;  // Computed at runtime by batch-reading from dictionaryentries_zh
-  expansion?: string | null;  // Expanded/fuller form of word (e.g., 不知不觉 → 不知道不觉得)
-  expansionSegments?: string[] | null;  // GSA word tokens for the expansion string — computed at runtime
-  expansionMetadata?: Record<string, { pronunciation?: string; definition?: string }> | null;  // Computed at runtime, keyed by segment
-  expansionLiteralTranslation?: string | null;  // Literal phrase translation derived from expansion components
+  characterRationale?: Array<{ char: string; reason: string }> | null;  // zh-only per-character rationale (migration 102, docs/CHARACTER_RATIONALE.md): why each char is used in this multi-char word; display-ready jsonb, replaces expansion
   longDefinition?: string | null;  // AI-generated extended definition (25–150 chars) from dictionaryentries_zh
   longDefinitionParts?: LongDefinitionPart[] | null;  // Computed at runtime: longDefinition split into English + cpcd-able Chinese runs
   iconId?: string | null;  // Representative icons8 icon (FK to icons8.icons8Id) joined from det; client renders via <img src="/api/icons8/<iconId>/image">

@@ -312,6 +312,25 @@ activePage="home"`), not `GamePage`.
   elastic collisions (`physics.ts`). Drag a bubble onto its partner to match
   (bidirectional). Correct → green pop + removal; wrong → red shake + release.
   Picking up / dropping **onto** a Chinese word triggers autoplay TTS.
+- **Post-loss cleanup** (`cleanupMode`, `BubbleStage.tsx`): after a loss, when the
+  player minimizes the game-over popup to its corner puck (`phase === "lost" &&
+  popupMinimized` in `BubbleMatchPage.tsx`), the packed field becomes a no-stakes
+  playground. Bubbles stay **draggable and matchable** so the player can clear the
+  board for satisfaction, but matches emit **no review marks** (`onMark` is
+  suppressed while `cleanupMode` is on). While a bubble is held, its correct
+  partner (if still on screen) lights up **light green** as a drop hint (the
+  `revealed` status; replaces the old tap-to-reveal study interaction). If the
+  grabbed bubble has **no** partner on the field (it was still queued when the run
+  was lost, so it can never be cleared), the bubble itself is tinted **light red**
+  (the `nomatch` status) for as long as it's held, instead of the usual grey held
+  dim — a grab-time "no match" cue, not a persistent marker. Colors:
+  `CORRECT_BUBBLE_BG` (light green) and `NOMATCH_BUBBLE_BG` (light red) in
+  `constants.ts`; the vivid `WRONG_BUBBLE_BG` red stays reserved for the wrong-drop
+  shake. The rAF loop, which
+  self-stops on settle behind the full end popup, is **kept alive throughout
+  cleanup** so bubbles keep separating/settling as they're dragged and cleared.
+  Clearing the whole field triggers no win (the run is already decided). Autoplay
+  TTS still fires on pickup / drop-onto a Chinese word.
 - **Restart (header):** during active play the header's right slot shows a
   restart icon (`BubbleMatchHeaderControls.onRestart`, wired only while
   `phase === "playing"`) that re-runs the **same level with the same words**
@@ -331,8 +350,9 @@ activePage="home"`), not `GamePage`.
 ### Files
 
 - `src/games/bubble-match/` — `BubbleMatchPage.tsx` (flow: loading → blocked |
-  picker → playing → won | lost), `BubbleStage.tsx` (rAF loop, launcher,
-  descending ceiling, drag/hover/match, HUD, red glow), `Bubble.tsx` (one bubble; outer
+  picker → playing → won | lost), `BubbleStage.tsx` (restartable rAF loop, launcher,
+  descending ceiling, drag/hover/match, post-loss cleanup mode, HUD, red glow),
+  `Bubble.tsx` (one bubble; outer
   node carries the loop's transform, inner node carries CSS pop/shake),
   `physics.ts`, `BubbleMatchHeader.tsx` (right-slot controls: restart button +
   pinyin/autoplay toggles + fire badge), `BubbleMatchEndPopup.tsx` (won/lost card

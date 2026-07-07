@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback, memo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Box, Typography, IconButton, Button, Chip, Menu, MenuItem } from "@mui/material";
 import DelayedCircularProgress from "../components/DelayedCircularProgress";
@@ -9,8 +9,11 @@ import { useDrag } from "@use-gesture/react";
 import { useSpring, animated } from "@react-spring/web";
 import NodePage from "../components/NodePage";
 import MinutePointsFireBadge from "../minutePoints/MinutePointsFireBadge";
+import { FLOATING_FOOTER_CLEARANCE } from "../components/MobileFooter";
 import ForeignText from "../components/ForeignText";
 import PosBadge from "../components/PosBadge";
+import VernacularScoreDots from "../components/VernacularScoreDots";
+import SpeakerButton from "../components/SpeakerButton";
 import { API_BASE_URL } from "../constants";
 import { stripParentheses } from "../utils/definitionUtils";
 import type { Language, DiscoverCard, SortPack, DiscoverFetchResponse, DiscoverNextPackResponse } from "../types";
@@ -137,15 +140,33 @@ const Bucket = styled(Box)<{ mainColor: string; accentColor: string; highlight?:
     })
 );
 
-// The up-to-3 draggable cards. Shrinks to fit its contents (does NOT flex-fill the
-// remaining space); it sits at the bottom because BucketsContainer above it flex-fills.
-// Extra bottom padding lifts the card row clear of the floating footer pill.
+// The up-to-3 draggable cards, presented on a raised "platform". Shrinks to fit its
+// contents (does NOT flex-fill the remaining space); it sits at the bottom because
+// BucketsContainer above it flex-fills. Extra bottom padding lifts the card row clear
+// of the floating footer pill. The platform look (rounded top, top-edge highlight, and
+// a soft drop shadow beneath) reads as a surface the cards physically rest on — the
+// per-card vernacular meter + speaker button live in a header band along its top.
 const OnDeckSection = styled(Box)({
     width: "100%",
     flex: "0 0 auto",
-    paddingTop: "8px",
-    paddingBottom: "20px",
-    borderTop: `2px dashed ${COLORS.border}`,
+    paddingTop: "12px",
+    // Extend the white platform down through the footer-clearance zone the
+    // MobileTabScreen ScrollArea reserves (paddingBottom: FLOATING_FOOTER_CLEARANCE),
+    // so the floating footer hovers over the on-deck white rather than a seam of
+    // page background. The negative margin cancels the padding in layout, keeping
+    // the platform's vertical footprint unchanged — it only paints the spacer.
+    paddingBottom: FLOATING_FOOTER_CLEARANCE,
+    marginBottom: -FLOATING_FOOTER_CLEARANCE,
+    // Rounded top corners on a plain white slab.
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    background: "#FFFFFF",
+    // A hairline highlight along the very top edge + a broad shadow cast downward sell
+    // the "platform floating above the page" depth cue.
+    boxShadow: [
+        "inset 0 2px 0 rgba(255, 255, 255, 0.7)",
+        "0 -6px 16px rgba(0, 0, 0, 0.14)",
+    ].join(", "),
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
@@ -164,6 +185,71 @@ const CardsRow = styled(Box)({
     paddingInline: 8,
 });
 
+// One on-deck slot: a vertical column holding the card's "commonality" header band
+// stacked above the draggable card, with the play-audio button below it. The slot — not
+// the card — owns the width budget so three fit across; the card sizes itself off its
+// aspect ratio inside it.
+const CardSlot = styled(Box)({
+    flex: "0 0 auto",
+    maxWidth: "31%",
+    minWidth: 0,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 6,
+});
+
+// Header band above each card: the "Commonality" caption over the 5-dot register meter
+// (vernacularScore) with an "x/5" readout beside it. Fixed minHeight so cards with no
+// score keep their card faces aligned with neighbors that do. Sits on the platform
+// surface, not on the draggable card, so it stays put while the card is dragged away.
+const CardDeckHeader = styled(Box)({
+    position: "relative",
+    minHeight: 40,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 2,
+});
+
+// The "Commonality" caption. Absolutely positioned across the top of the header
+// band so it floats *above* the score display group rather than participating in
+// the flex flow — this keeps every card's meter at the same height instead of
+// pushing the labelled (middle) card's meter down. Rendered only once, over the
+// middle card, but spans the header so it reads as a caption for the whole row.
+const CommonalityLabel = styled(Typography)({
+    position: "absolute",
+    top: 0,
+    left: "50%",
+    transform: "translateX(-50%)",
+    fontSize: SIZE.micro,
+    fontWeight: WEIGHT.semibold,
+    letterSpacing: TRACKING.caps,
+    textTransform: "uppercase",
+    color: COLORS.textSecondary,
+    lineHeight: 1,
+    whiteSpace: "nowrap",
+});
+
+// One card's score display: the 5-dot register meter + "x/5" readout on a row.
+// Each card wraps its own so all three align on a shared baseline (bottom of the
+// header band), independent of whether the floating label is present above them.
+const CommonalityMeterRow = styled(Box)({
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+});
+
+// The "x/5" numeric readout beside the dots.
+const CommonalityScoreValue = styled(Typography)({
+    fontSize: SIZE.micro,
+    fontWeight: WEIGHT.bold,
+    color: COLORS.onSurface,
+    lineHeight: 1,
+});
+
 const AnimatedBox = animated(Box);
 
 const CardShell = styled(AnimatedBox)<{ locked?: boolean }>(({ locked }) => ({
@@ -171,7 +257,7 @@ const CardShell = styled(AnimatedBox)<{ locked?: boolean }>(({ locked }) => ({
     aspectRatio: "136 / 200",
     height: 150,
     maxHeight: "100%",
-    maxWidth: "31%",
+    maxWidth: "100%",
     // A flex item's default min-width is "auto" (its max-content size), which can
     // override the aspect-ratio width and stop the definition text below from
     // wrapping at all. minWidth: 0 lets the card actually hold to its fixed size
@@ -199,15 +285,19 @@ const CardShell = styled(AnimatedBox)<{ locked?: boolean }>(({ locked }) => ({
     "&:active": { cursor: locked ? "not-allowed" : "grabbing" },
 }));
 
-// Occupies the exact footprint of a card that has been sorted away this session, so
-// the remaining on-deck cards keep their positions instead of the flex row
-// re-centering (docs/SORT_CARDS_REQUIREMENTS.md §4.5). Invisible + non-interactive.
+// Occupies the exact footprint of a full slot (header band + card) that has been sorted
+// away this session, so the remaining on-deck cards keep their positions instead of the
+// flex row re-centering (docs/SORT_CARDS_REQUIREMENTS.md §4.5). Invisible +
+// non-interactive; the inner boxes mirror CardDeckHeader's minHeight + the card's fixed
+// height so the placeholder is exactly as tall as a live slot.
 const CardSlotPlaceholder = styled(Box)({
-    aspectRatio: "136 / 200",
-    height: 150,
-    maxHeight: "100%",
-    maxWidth: "31%",
     flex: "0 0 auto",
+    maxWidth: "31%",
+    minWidth: 0,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 6,
     visibility: "hidden",
     pointerEvents: "none",
 });
@@ -240,14 +330,23 @@ const SortedWatermark = styled(Box)({
  * `onSort`; locked cards (already in the library) show a "sorted!" watermark and don't
  * drag.
  */
-const DraggableCard: React.FC<{
+// memo is load-bearing, not just a perf tweak: while a card is being dragged, the
+// parent SortCardsPage re-renders on unrelated state — most notably `tts.speakingKey`
+// flipping on every autoplay narration start/stop (read for the speaker button's
+// isLoading), and `highlightedBucket` on every drag-move. Re-rendering a card mid-drag
+// interrupts its live use-gesture gesture: the handler fires the release path with the
+// pointer not over a bucket, so the card snaps back to its tray origin WHILE the finger
+// is still down (the "snaps back a second or two into audio" bug). All props below are
+// referentially stable across those re-renders, so memo lets the dragged card skip them
+// entirely and keeps its gesture intact.
+const DraggableCard = memo(function DraggableCard({ card, locked, onCheckCollision, onHighlight, onSort, onFirstDrag }: {
     card: DiscoverCard;
     locked: boolean;
     onCheckCollision: (clientX: number, clientY: number) => string | null;
     onHighlight: (bucketId: string | null) => void;
     onSort: (cardId: number, bucketId: string) => void;
     onFirstDrag: () => void;
-}> = ({ card, locked, onCheckCollision, onHighlight, onSort, onFirstDrag }) => {
+}) {
     const [{ x, y, scale, opacity }, api] = useSpring(() => ({ x: 0, y: 0, scale: 1, opacity: 1 }));
 
     // Entrance: slide up + fade in when the card first mounts (new pack / brought back).
@@ -278,17 +377,28 @@ const DraggableCard: React.FC<{
         ({ first, down, movement: [mx, my], xy: [px, py] }) => {
             if (locked) return;
             if (first) onFirstDrag();
-            api.start({ x: down ? mx : 0, y: down ? my : 0, scale: down ? 1.1 : 1, immediate: down });
-            const bucketId = onCheckCollision(px, py);
             if (down) {
-                onHighlight(bucketId);
+                // Held: track the finger/cursor 1:1 and highlight the hovered bucket.
+                api.start({ x: mx, y: my, scale: 1.1, immediate: true });
+                onHighlight(onCheckCollision(px, py));
+                return;
+            }
+            // Released.
+            onHighlight(null);
+            const bucketId = onCheckCollision(px, py);
+            if (bucketId) {
+                // Successful drop: animate OUT from where it was released (fade + shrink
+                // in place). Deliberately do NOT also spring x/y back to the tray origin
+                // — doing so made the card visibly fly back to its starting slot as it
+                // committed (the "snap-back" bug), a race that was only ever hidden by
+                // how fast the card then unmounts into its placeholder. When the last
+                // card of a pack is sorted, advancePack's queue churn can delay that
+                // unmount enough for the snap to become visible.
+                api.start({ scale: 0.8, opacity: 0, config: { tension: 150, friction: 35 } });
+                onSort(card.id, bucketId);
             } else {
-                onHighlight(null);
-                if (bucketId) {
-                    // Animate the card out, then commit the sort.
-                    api.start({ opacity: 0, scale: 0.8, config: { tension: 150, friction: 35 } });
-                    onSort(card.id, bucketId);
-                }
+                // Missed the buckets: spring back to the resting tray slot.
+                api.start({ x: 0, y: 0, scale: 1 });
             }
         },
         { filterTaps: true }
@@ -301,34 +411,6 @@ const DraggableCard: React.FC<{
             {...(locked ? {} : bind())}
             style={{ x, y, scale, opacity, zIndex: 1000 }}
         >
-            {/* Vernacular-register badge — top-left circular tag mirroring the utcm
-                badge on /decks (MiniVocabCard). Shows the word's vernacularScore
-                (1 = literary … 5 = natural colloquial). Hidden when the entry has no score. */}
-            {card.vernacularScore != null && (
-                <Box
-                    className="sort-cards__card-vernacular-badge"
-                    aria-label={`vernacular register ${card.vernacularScore} of 5`}
-                    sx={{
-                        position: "absolute",
-                        top: 6,
-                        left: 6,
-                        zIndex: 2,
-                        width: 18,
-                        height: 18,
-                        borderRadius: "50%",
-                        backgroundColor: COLORS.onSurface,
-                        color: "white",
-                        fontSize: SIZE.micro,
-                        fontWeight: WEIGHT.bold,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        boxShadow: "0 1px 2px rgba(0, 0, 0, 0.3)",
-                    }}
-                >
-                    {card.vernacularScore}
-                </Box>
-            )}
             <Box className="sort-cards__card-icon-slot" sx={{ width: 44, height: 44, flex: "0 0 auto" }}>
                 {card.iconId && (
                     <Box
@@ -384,7 +466,7 @@ const DraggableCard: React.FC<{
             )}
         </CardShell>
     );
-};
+});
 
 const SortCardsPage: React.FC = () => {
     usePageTitle("Discover");
@@ -394,6 +476,16 @@ const SortCardsPage: React.FC = () => {
     const tts = useTTS();
     const { settings: discoverSettings, update: updateDiscoverSettings } = useDiscoverSettings();
     const audioUnlockedRef = useRef(false);
+    // `useTTS` returns a NEW object identity every time its internal `speakingKey` state
+    // flips — which happens on every autoplay narration start/stop. Depending on `tts`
+    // directly in the callbacks below would therefore re-create them on each narration
+    // event, changing the props handed to (memoized) DraggableCards and forcing them to
+    // re-render mid-drag — which cancels the live drag gesture and snaps the held card
+    // back to its tray origin (the "snaps back a second into audio" bug). Reading tts
+    // through a ref keeps these callbacks referentially stable so the dragged card stays
+    // inert while audio plays.
+    const ttsRef = useRef(tts);
+    ttsRef.current = tts;
 
     // FIFO queue of PACKS. queue[0] is the on-deck pack; the rest is the buffer.
     const [queue, setQueue] = useState<SortPack[]>([]);
@@ -430,6 +522,12 @@ const SortCardsPage: React.FC = () => {
     const packBucketsRef = useRef<Record<string, Record<number, string>>>({});
 
     const bucketRefs = useRef<Map<string, HTMLElement>>(new Map());
+    // Bucket geometry snapshotted at drag START — before any bucket is highlighted.
+    // The highlight and drop hit-tests both read from THIS (not live
+    // getBoundingClientRect), so they share one identical threshold. A highlighted
+    // bucket scales to 1.05 (see the `Bucket` styled component), which would otherwise
+    // inflate its live rect and make the drop zone ~5% larger than the highlight zone.
+    const bucketRectsRef = useRef<Map<string, DOMRect>>(new Map());
 
     const buckets = useMemo<BucketZone[]>(() => [
         { id: "library", label: "Add to\nLearn Now", mainColor: COLORS.redMain, accentColor: COLORS.redAccent },
@@ -522,11 +620,22 @@ const SortCardsPage: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentPack?.packKey]);
 
-    // DOM collision test: is the pointer over a bucket?
-    const checkBucketCollision = useCallback((clientX: number, clientY: number): string | null => {
+    // Snapshot every bucket's rect at drag start, while all buckets are still at their
+    // resting (unscaled) size. Both the highlight and the drop test read these frozen
+    // rects, so the highlighted bucket's 1.05 scale can never make one threshold differ
+    // from the other.
+    const snapshotBucketRects = useCallback(() => {
+        const rects = new Map<string, DOMRect>();
         for (const [id, el] of bucketRefs.current) {
-            if (!el) continue;
-            const r = el.getBoundingClientRect();
+            if (el) rects.set(id, el.getBoundingClientRect());
+        }
+        bucketRectsRef.current = rects;
+    }, []);
+
+    // Collision test: is the pointer over a bucket? Uses the drag-start snapshot (above)
+    // so highlight and drop hit-test against the exact same, scale-independent geometry.
+    const checkBucketCollision = useCallback((clientX: number, clientY: number): string | null => {
+        for (const [id, r] of bucketRectsRef.current) {
             if (clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom) return id;
         }
         return null;
@@ -535,16 +644,29 @@ const SortCardsPage: React.FC = () => {
     const unlockAudioOnce = useCallback(() => {
         if (!audioUnlockedRef.current) {
             audioUnlockedRef.current = true;
-            tts.unlockAudio();
+            ttsRef.current.unlockAudio();
         }
-    }, [tts]);
+    }, []);
 
-    // Fires when a card is first picked up (drag start). Just unlocks audio
-    // (mobile requires a user gesture) — narration itself is handled by the
-    // pack-level autoplay effect below, not per-pickup.
+    // Fires when a card is first picked up (drag start). Unlocks audio (mobile requires
+    // a user gesture) and freezes the current bucket geometry so the highlight and drop
+    // hit-tests share one threshold. Narration itself is handled by the pack-level
+    // autoplay effect below, not per-pickup.
     const handleCardPickup = useCallback(() => {
         unlockAudioOnce();
-    }, [unlockAudioOnce]);
+        snapshotBucketRects();
+    }, [unlockAudioOnce, snapshotBucketRects]);
+
+    // Tap-to-play for a single card's header speaker button. Unlocks audio on the
+    // gesture (mobile) then narrates just that card's word. Independent of the
+    // pack-level autoplay effect — this is an on-demand replay.
+    const handlePlayCardAudio = useCallback(
+        (card: DiscoverCard) => {
+            unlockAudioOnce();
+            void ttsRef.current.speakSentence(card.entryKey, card.pronunciation ?? undefined);
+        },
+        [unlockAudioOnce]
+    );
 
     // Autoplay: narrate every card in the on-deck pack, left to right, once per
     // pack (keyed on packKey so it fires exactly once when a pack lands on-deck,
@@ -908,28 +1030,74 @@ const SortCardsPage: React.FC = () => {
                     slot so the other cards don't reposition. */}
                 <OnDeckSection className="sort-cards__on-deck">
                     <CardsRow className="sort-cards__cards-row">
-                        {currentPack.cards.map((card) => {
+                        {currentPack.cards.map((card, cardIndex) => {
+                            // The "Commonality" caption renders only above the middle
+                            // on-deck card (each card still shows its own meter).
+                            const isMiddleCard =
+                                cardIndex === Math.floor(currentPack.cards.length / 2);
                             // Resolved this session (sorted/skipped) but not pre-sorted:
-                            // hold the slot with a placeholder instead of a live card.
+                            // hold the whole slot (header band + card) with a placeholder
+                            // instead of a live card so neighbors don't reposition.
                             if (!card.sorted && doneForCurrent?.has(card.id)) {
                                 return (
                                     <CardSlotPlaceholder
                                         key={`${currentPack.packKey}:${card.id}`}
                                         className="sort-cards__card-placeholder"
                                         aria-hidden
-                                    />
+                                    >
+                                        <CardDeckHeader />
+                                        <Box sx={{ aspectRatio: "136 / 200", height: 150 }} />
+                                        {/* Mirrors the live slot's speaker-button footer height. */}
+                                        <Box sx={{ height: 32 }} />
+                                    </CardSlotPlaceholder>
                                 );
                             }
                             return (
-                                <DraggableCard
+                                <CardSlot
                                     key={`${currentPack.packKey}:${card.id}`}
-                                    card={card}
-                                    locked={!!card.sorted}
-                                    onCheckCollision={checkBucketCollision}
-                                    onHighlight={setHighlightedBucket}
-                                    onSort={handleSortCard}
-                                    onFirstDrag={handleCardPickup}
-                                />
+                                    className="sort-cards__card-slot"
+                                >
+                                    {/* Header band: "Commonality" caption over the 5-dot
+                                        register meter (vernacularScore, 1 = literary … 5 =
+                                        natural colloquial) + an x/5 readout. Lives on the
+                                        platform, not the card, so it stays put while the
+                                        card is dragged into a bucket. */}
+                                    <CardDeckHeader className="sort-cards__card-deck-header">
+                                        {card.vernacularScore != null && (
+                                            <>
+                                                {isMiddleCard && (
+                                                    <CommonalityLabel className="sort-cards__commonality-label">
+                                                        Commonality
+                                                    </CommonalityLabel>
+                                                )}
+                                                <CommonalityMeterRow className="sort-cards__commonality-meter">
+                                                    <VernacularScoreDots
+                                                        className="sort-cards__card-vernacular-dots"
+                                                        score={card.vernacularScore}
+                                                        dotSize={7}
+                                                        gap={3}
+                                                    />
+                                                    <CommonalityScoreValue className="sort-cards__commonality-value">
+                                                        {card.vernacularScore}/5
+                                                    </CommonalityScoreValue>
+                                                </CommonalityMeterRow>
+                                            </>
+                                        )}
+                                    </CardDeckHeader>
+                                    <DraggableCard
+                                        card={card}
+                                        locked={!!card.sorted}
+                                        onCheckCollision={checkBucketCollision}
+                                        onHighlight={setHighlightedBucket}
+                                        onSort={handleSortCard}
+                                        onFirstDrag={handleCardPickup}
+                                    />
+                                    {/* Play-audio button below the card (docs §4.5). */}
+                                    <SpeakerButton
+                                        onClick={() => handlePlayCardAudio(card)}
+                                        isLoading={tts.speakingKey === card.entryKey}
+                                    />
+                                </CardSlot>
                             );
                         })}
                     </CardsRow>

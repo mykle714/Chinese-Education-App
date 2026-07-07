@@ -55,7 +55,7 @@ export const CARD_BASE_HEIGHT = 426;
 // Tab config — order matches: definition, examples, breakdown
 // "definition" shows the long definition + HSK level + parts of speech (default tab).
 // "examples" shows example sentences.
-// "breakdown" shows per-character rows + expansion / literal-translation block.
+// "breakdown" shows per-character rows + the per-character rationale block.
 export const TAB_COLORS = [TAB_BLUE, TAB_ORANGE, TAB_PINK];
 export const TAB_LABELS = ["definition", "examples", "breakdown"];
 

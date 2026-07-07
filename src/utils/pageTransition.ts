@@ -22,7 +22,7 @@ const NODE_ROUTES = new Set<string>(["/games", "/flashcards/mastered", "/diction
 // Node pages reached via a parameterized path (matched by prefix). The two
 // card-detail routes are footer-bearing node pages: the saved-card cdp
 // (/flashcards/card/:id) and the read-only dictionary cdp (/dictionary/card/:word).
-const NODE_PREFIXES = ["/discover/skipped/", "/discover/sort/", "/flashcards/card/", "/dictionary/card/"];
+const NODE_PREFIXES = ["/discover/skipped/", "/discover/sort/", "/discover/quick-mark/", "/flashcards/card/", "/dictionary/card/"];
 const LEAF_EXACT = new Set<string>([
     "/reader",
     "/tester-dashboard",

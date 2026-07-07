@@ -36,8 +36,10 @@ const SCRIPT_VERSION = 2; // bump when this script's logic/prompt changes (v2: c
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // run-log: track duration, version, words/mode, and token usage/cost
-const { stampEntries, accrueUsage } = initRunLog({ script: 'chinese/backfill-hsk-level', version: SCRIPT_VERSION, anthropic });
-const { isSpotCheck, isBatch, targetWords } = parseBackfillArgs();
+const { stampEntries, accrueUsage, staleClause } = initRunLog({ script: 'chinese/backfill-hsk-level', version: SCRIPT_VERSION, anthropic });
+const { isSpotCheck, isBatch, isStale, targetWords } = parseBackfillArgs();
+// --stale: also re-process rows stamped below the current SCRIPT_VERSION.
+const doneGate = isStale ? `("difficulty" IS NULL OR ${staleClause()})` : '"difficulty" IS NULL';
 
 const MODEL = 'claude-sonnet-4-6';
 
@@ -99,7 +101,7 @@ async function run() {
       FROM dictionaryentries_zh
       WHERE language = 'zh'
         AND discoverable = TRUE
-        AND "difficulty" IS NULL
+        AND ${doneGate}
         ${wordsFilter}
       ORDER BY id ASC
       ${isSpotCheck ? 'LIMIT 5' : ''}

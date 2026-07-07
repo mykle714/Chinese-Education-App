@@ -81,7 +81,7 @@ Child docs:
 
 ### 7. Per-segment / contextual definitions
 - `segmentMetadata[seg].definition` — per-segment gloss for a token inside an example
-  sentence or expansion (`server/types/index.ts`, `buildSegmentMetadata` in
+  sentence or long definition (`server/types/index.ts`, `buildSegmentMetadata` in
   `server/dal/shared/segmentString.ts`). In **example sentences**, resolution is:
   manual override → the segment's tagged sense `senseDict[seg]` → `ddt(matchingCluster)`
   (the cluster's stripped lead gloss, form #6 → #3-style transform) → else the legacy
@@ -89,7 +89,11 @@ Child docs:
   [EXAMPLE_SENTENCES.md](./EXAMPLE_SENTENCES.md).
 - `exampleSentenceDefinitionPronunciationOverride.definition` — manual verbatim
   override shown in the segment popup (`:114`).
-- `breakdown[char].definition` — per-character breakdown gloss (`:160`).
+- `breakdown[char]` — per-component-character breakdown (`:160`). `.definition` is
+  the character's gloss; `.sense` (added by `backfill-breakdown-senses.js`) is the
+  `definitionClusters` **sense label** the character carries **in this word** — a
+  stable pointer (like `vet.selectedSense`) resolving form #6 → the correct-sense
+  gloss, replacing the naïve `definitions[0]` that `generateBreakdown` first writes.
 - `synonymsMetadata[syn].definition` — computed at read time from
   `dictionaryentries_zh` (`:371`).
 

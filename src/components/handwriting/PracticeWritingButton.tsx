@@ -16,11 +16,18 @@ import EditIcon from "@mui/icons-material/Edit";
 import PracticeWritingPopup from "./PracticeWritingPopup";
 import { useAuth } from "../../AuthContext";
 import { fetchCompletedLevels } from "./completions";
+import { API_BASE_URL } from "../../constants";
 
 interface PracticeWritingButtonProps {
   character: string;
   /** Recognition is zh-only; the button renders null for any other/absent language. */
   language: string | undefined;
+  /**
+   * The learner's vet card id for this word, when opened from a flashcard/eip.
+   * When set, a Verify attempt records a Writing mastery mark (docs/MASTERY_REWORK.md);
+   * omit on the read-only dictionary cdp (no card to mark).
+   */
+  vocabEntryId?: number;
   /** Override the default outlined look. */
   variant?: "text" | "outlined" | "contained";
   size?: "small" | "medium" | "large";
@@ -33,6 +40,7 @@ interface PracticeWritingButtonProps {
 export default function PracticeWritingButton({
   character,
   language,
+  vocabEntryId,
   variant = "outlined",
   size = "small",
   iconOnly = false,
@@ -75,6 +83,23 @@ export default function PracticeWritingButton({
   const handleLevelsChange = useCallback((levels: string[]) => {
     setCompletedLevels(new Set(levels));
   }, []);
+
+  // Record a Writing mastery mark on each Verify attempt (positive iff the whole
+  // word was written correctly). Fire-and-forget, only when we know the vet card.
+  // See docs/MASTERY_REWORK.md.
+  const handleWritingMark = useCallback((isCorrect: boolean) => {
+    if (vocabEntryId == null || !token || token === "null" || token === "undefined") return;
+    fetch(`${API_BASE_URL}/api/flashcards/mark`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      credentials: "include",
+      // excludeIds empty: the drill doesn't use the endpoint's replacement card.
+      body: JSON.stringify({ cardId: vocabEntryId, isCorrect, type: "writing", excludeIds: [] }),
+    }).catch((err) => console.error(`[PracticeWriting] writing mark failed → card ${vocabEntryId}:`, err));
+  }, [vocabEntryId, token]);
 
   if (!eligible) return null;
 
@@ -147,6 +172,7 @@ export default function PracticeWritingButton({
         character={character}
         completedLevels={completedLevels}
         onLevelsChange={handleLevelsChange}
+        onWritingMark={handleWritingMark}
         onClose={() => setOpen(false)}
       />
     </>

@@ -29,6 +29,7 @@ export function useDiscoverNavigation() {
   const language = user?.selectedLanguage || DEFAULT_DISCOVER_LANGUAGE;
   const discoverPath = "/discover";
   const sortPath = `/discover/sort/${language}`;
+  const quickMarkPath = `/discover/quick-mark/${language}`;
   const skippedPath = `/discover/skipped/${language}`;
 
   const goToDiscover = useCallback(() => {
@@ -39,9 +40,13 @@ export function useDiscoverNavigation() {
     navigate(sortPath);
   }, [navigate, sortPath]);
 
+  const goToQuickMark = useCallback(() => {
+    navigate(quickMarkPath);
+  }, [navigate, quickMarkPath]);
+
   const goToSkipped = useCallback(() => {
     navigate(skippedPath);
   }, [navigate, skippedPath]);
 
-  return { goToDiscover, discoverPath, goToSort, sortPath, goToSkipped, skippedPath };
+  return { goToDiscover, discoverPath, goToSort, sortPath, goToQuickMark, quickMarkPath, goToSkipped, skippedPath };
 }

@@ -14,15 +14,8 @@ export interface IUserMinutePointsDAL {
     delta: number
   ): Promise<{ previousMinutes: number; newMinutes: number }>;
 
-  // Stamp penaltyMinutes on a specific (streakDate, language) — the day the
-  // user missed, attributed to whichever language they had selected. Inserts
-  // the row with zero earned minutes if missing.
-  addPenaltyMinutesForDate(
-    userId: string,
-    streakDate: string,
-    language: string,
-    penaltyMinutes: number
-  ): Promise<void>;
+  // NOTE: penaltyMinutes is written exclusively by the SQL cron
+  // (database/cron/expire-stale-streaks.sql), never from application code.
 
   // Calendar rows for one language over a date range, plus the per-language
   // first-activity lookup that bounds "hasData" on the calendar.

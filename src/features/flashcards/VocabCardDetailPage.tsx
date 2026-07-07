@@ -28,6 +28,7 @@ import { useCardIconEditor } from "./FlashcardsLearnPage/useCardIconEditor";
 import CardIconCanvas from "./FlashcardsLearnPage/CardIconCanvas";
 import CardEditToolbar, { CARD_EDIT_ANIM_MS, CARD_EDIT_ANIM_EASING, TOOLBAR_DROPDOWN_SELECTOR } from "./FlashcardsLearnPage/CardEditToolbar";
 import { VocabCardBadges, VocabCardSections } from "./VocabCardDetailBody";
+import MasteryProgressBar from "./MasteryProgressBar";
 
 // Padded content column. The outer NodePage/MobileTabScreen scroll area owns the
 // scroll + floating-footer clearance, so this box does NOT scroll itself — it just
@@ -328,6 +329,12 @@ const VocabCardDetailPage: React.FC = () => {
                             </Slide>
 
                             <VocabCardBadges entry={entry} />
+
+                            {/* Mastery progress bar (docs/MASTERY_REWORK.md): the pbh
+                                stacked bar + per-type composition for this saved card. */}
+                            <Box sx={{ display: "flex", justifyContent: "center", my: 1.5 }}>
+                                <MasteryProgressBar entry={entry} />
+                            </Box>
 
                             {/* Hero card — the same size/style as the flp (learn page)
                                 card, showing the Side 2 (answer) face: cpcd + writing/audio

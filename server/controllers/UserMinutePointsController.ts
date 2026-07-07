@@ -13,6 +13,16 @@ function resolveLanguage(raw: unknown): Language {
 }
 
 /**
+ * Coerce an increment-request language to a supported one, or `undefined` when
+ * absent/unrecognized. Unlike resolveLanguage, this does NOT default to 'zh' —
+ * a missing language should fall through to the user's selectedLanguage in the
+ * service, not silently credit Chinese.
+ */
+function resolveIncrementLanguage(raw: unknown): Language | undefined {
+  return SUPPORTED_LANGUAGES.includes(raw as Language) ? (raw as Language) : undefined;
+}
+
+/**
  * UserMinutePoints Controller — HTTP handlers for minute-point operations.
  */
 export class UserMinutePointsController {
@@ -20,21 +30,26 @@ export class UserMinutePointsController {
 
   /**
    * POST /api/users/minute-points/increment
-   * Body: { timestamp: ISO-8601, tz: IANA }
-   * The earned minute is attributed to the user's selectedLanguage server-side.
+   * Body: { timestamp: ISO-8601, tz: IANA, language?: <supported> }
+   * The earned minute is attributed to the client-supplied language (what the
+   * user was actually studying); falls back to selectedLanguage if omitted.
    */
   async incrementMinutePoints(req: Request, res: Response): Promise<void> {
     try {
       const userId = requireUserId(req, res);
       if (!userId) return;
 
-      const { timestamp, tz } = req.body || {};
+      const { timestamp, tz, language } = req.body || {};
       if (!timestamp) {
         res.status(400).json({ error: 'timestamp is required', code: 'ERR_MISSING_TIMESTAMP' });
         return;
       }
 
-      await this.userMinutePointsService.incrementMinutePoints(userId, { timestamp, tz });
+      await this.userMinutePointsService.incrementMinutePoints(userId, {
+        timestamp,
+        tz,
+        language: resolveIncrementLanguage(language),
+      });
       res.status(204).end();
     } catch (error) {
       handleControllerError(error, res, 'UserMinutePointsController.incrementMinutePoints');

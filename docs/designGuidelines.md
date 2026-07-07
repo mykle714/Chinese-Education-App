@@ -183,7 +183,7 @@ The VocabEntries table includes a tag system with the following design principle
 ##### Minute Points System
 - Each row represents a single 4 AM-bounded local day for a user, summed across devices.
 - Minute points accrue at 60s = 1 point in the client and are committed to the server one at a time.
-- A streak break stamps `penaltyMinutes` on the first missed day (`lastStreakDate + 1`), resets `currentStreak` to 0, and deducts `DAILY_PENALTY_MINUTES` from `users.totalMinutePoints`.
+- Each consecutive missed day (below the threshold) stamps `penaltyMinutes` on that missed day (`today − 1`), resets `currentStreak` to 0, and debits an **escalating** amount (`STREAK_CONFIG.PENALTY_SCHEDULE_MINUTES` = `3, 15, 30, 60, 90, 120`, then wipe on day 7+) from `users.totalMinutePoints`. Applied only by the cron — see [STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md).
 - Streak retention requires `STREAK_CONFIG.RETENTION_MINUTES` (default 3) per day.
 
 **Calendar Integration:**

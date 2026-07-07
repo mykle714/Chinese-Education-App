@@ -176,11 +176,32 @@ The grid endpoint returns, roughly:
     pinyin: string;
     definition: string;
   }>,
-  grid: Array<Array<{ char: string; pinyin: string }>>,  // grid[row][col], 8 rows × 8 cols
+  grid: Array<Array<{
+    char: string;
+    pinyin: string;
+    sense?: string;        // present ONLY on target-word cells: the char's definitionClusters
+    definition?: string;   //   sense label + its ddt (the char's meaning IN THIS WORD). Tap → popup.
+  }>>,  // grid[row][col], 8 rows × 8 cols
   rows: number;
   cols: number;
 }
 ```
+
+**Per-character sense definition (`sense`/`definition` on target cells).** Every
+cell belonging to one of the 10 target words carries the character's
+*context-correct* gloss — the meaning it has **inside that word**, not its generic
+standalone gloss (上 in 上班 is "to go up", not "upper"). The server resolves this
+at grid-build time (`OnDeckVocabService.getWordSearchGrid`): it reads the word's
+`breakdown[char].sense` label (the stable pointer written by
+`backfill-breakdown-senses.js`, see docs/BREAKDOWN_FEATURE_IMPLEMENTATION.md §5b)
+and calls `resolveSenseGloss(charClusters, sense)` (`server/utils/definitions.ts`)
+— i.e. it looks up the character's own det `definitionClusters`, finds the cluster
+whose `sense` matches, and returns its `ddt` (stripped lead gloss). Falls back to
+the stored `breakdown[char].definition` when a word isn't sense-tagged yet, and
+omits both fields entirely on **filler** cells. This is the **same dd** the
+flashcard breakdown tab shows (both trace to the char's cluster keyed by that
+sense label). A batched query fetches every distinct target character's clusters
+once per grid.
 
 The `cells` paths are needed client-side to validate a selection and to
 highlight found words. (⚠️ OPEN: shipping the answer paths to the client makes
@@ -424,6 +445,28 @@ Implemented in `WordSearchGrid.tsx`:
   tapping an unfound cell or the background dismisses it (`clearSelection` also
   clears `popupWord`). The reviewed word's cells get a darker-green
   `word-search__cell--reviewing` fill.
+
+### Tapping a single target character (context-correct sense popup)
+
+A **lone tap** (a one-cell "selection", no drag) on a cell that belongs to a
+target word opens a small popup showing **that character's meaning inside this
+word** — the `definition` the server attached to the cell (see § Output payload:
+the char's `definitionClusters` gloss keyed by `breakdown[char].sense`). This
+helps the player *learn* the word by seeing each character's contextual sense
+(上 in 上班 shows "to go up", not "upper").
+
+- Handled in `submit` (`WordSearchGrid.tsx`): a length-1 selection that doesn't
+  complete a target and whose cell carries a `definition` sets `charPopup` and
+  returns, **before** the single-character "bonus headword" branch — so for a
+  target character the contextual sense wins over its generic standalone gloss.
+- Renders through the **same** `Popper`/`activePopup` path as the found-word and
+  bonus popups (`charPopup` → `{ entryKey: char, pinyin, definition }`), anchored
+  over the single cell via `anchorRectForCells`. It leaves no highlight and has no
+  auto-dismiss; any new `onPointerDown`/`clearSelection` closes it.
+- **Filler** cells carry no `definition`, so they fall through to the existing
+  single-character bonus/miss behavior. **Found** words are intercepted earlier in
+  `onPointerDown` (whole-word review popup), so the per-character popup applies to
+  *unfound* target characters.
 
 **Win:** all 10 words found. There is **no lose state** — see §5.
 

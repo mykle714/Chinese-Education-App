@@ -261,8 +261,8 @@ const BubbleMatchPage: React.FC = () => {
     // Record a flashcard review mark for a matched/mismatched bubble's vocab
     // entry, reusing the same endpoint flp's working loop calls. Fire-and-forget:
     // the game never blocks on it, and a failure only logs (no run interruption).
-    // Only invoked from in-game drag matches — not from study-mode taps after the
-    // game ends (BubbleStage gates those out of the match-resolution path).
+    // Only invoked from in-game drag matches — not from post-loss cleanup drags
+    // after the game ends (BubbleStage suppresses onMark while cleanupMode is on).
     const markBubbleMatch = useCallback((entry: VocabEntry, isCorrect: boolean) => {
         const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
         const headers: HeadersInit = {
@@ -277,9 +277,11 @@ const BubbleMatchPage: React.FC = () => {
             method: "POST",
             headers,
             credentials: "include",
+            // Bubble Match is a recognition drill (foreign → meaning); see
+            // docs/MASTERY_REWORK.md.
             // excludeIds empty: the game doesn't use the replacement card the
             // endpoint returns, so there's nothing to dedupe against.
-            body: JSON.stringify({ cardId: entry.id, isCorrect, excludeIds: [] }),
+            body: JSON.stringify({ cardId: entry.id, isCorrect, type: "recognition", excludeIds: [] }),
         })
             .then((res) => console.log(`[BubbleMatch] mark response → card ${entry.id}: HTTP ${res.status}`))
             .catch((err) => console.error(`[BubbleMatch] mark failed → card ${entry.id}:`, err));
@@ -472,10 +474,11 @@ const BubbleMatchPage: React.FC = () => {
                             onLevelWin={onLevelWin}
                             onLevelLose={onLevelLose}
                             onMark={markBubbleMatch}
-                            // Game-over popup minimized → bubbles become tappable/
-                            // hoverable for studying the pairs. (A win clears the
-                            // field, so only the lost phase has anything to study.)
-                            studyMode={phase === "lost" && popupMinimized}
+                            // Game-over popup minimized → the packed field becomes a
+                            // no-stakes cleanup playground (draggable/matchable, no
+                            // marks). A win clears the field, so only the lost phase
+                            // has anything left to clean up.
+                            cleanupMode={phase === "lost" && popupMinimized}
                         />
                         {popup}
                         {/* "Different Level / Same Cards" floating menu — layered

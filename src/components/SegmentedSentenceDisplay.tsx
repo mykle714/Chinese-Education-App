@@ -75,7 +75,7 @@ interface SegmentedSentenceDisplayProps {
   // When provided, the definition popup becomes tappable: it shows a trailing
   // drill-in chevron and, on click, calls this with the selected segment's
   // headword so the caller can open the eip for that word. Omit to keep the
-  // popup a passive tooltip (e.g. the expansion tab).
+  // popup a passive tooltip (e.g. the long-definition display).
   onSegmentOpen?: (segment: string) => void;
 }
 

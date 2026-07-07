@@ -76,7 +76,9 @@ export class CommunityLayoutDAL implements ICommunityLayoutDAL {
             SELECT lib."entryKey" FROM ${libTable} lib
             WHERE lib."userId" = $1 AND lib.language = $2
               AND lib."starterPackBucket" = 'library'
-              AND (lib.category IS NULL OR lib.category <> 'Mastered')
+              -- category is derived (migration 101). lib."userId" = $1 = u.id (the
+              -- viewer, already joined), so reuse the viewer's goal flags.
+              AND compute_utcm_category(lib."typedMarkHistory", u."readingGoal", u."writingGoal") <> 'Mastered'
           )
           ${this.excludeClause}
         ORDER BY random()              -- "randomly selected set" per page

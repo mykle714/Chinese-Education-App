@@ -88,7 +88,7 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
     }
 
     const result = await this.dbManager.executeQuery<User>(async (client) => {
-      return await client.query('SELECT id, email, name, "isPublic", "avatarIconId", "selectedLanguage", "lastMinutePointIncrement", "createdAt" FROM Users WHERE id = $1', [id]);
+      return await client.query('SELECT id, email, name, "isPublic", "avatarIconId", "selectedLanguage", "readingGoal", "writingGoal", "lastMinutePointIncrement", "createdAt" FROM Users WHERE id = $1', [id]);
     });
 
     return result.recordset[0] || null;
@@ -408,26 +408,4 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
     return result.rowsAffected > 0;
   }
 
-  /**
-   * Reset currentStreak to 0, deduct penaltyPoints from totalMinutePoints (floor 0),
-   * and stamp lastStreakDate to mark the penalty as applied for this break.
-   */
-  async applyStreakPenalty(userId: string, penaltyPoints: number, lastStreakDate: string): Promise<boolean> {
-    if (!userId) {
-      throw new ValidationError('User ID is required');
-    }
-
-    const result = await this.dbManager.executeQuery(async (client) => {
-      return await client.query(
-        `UPDATE Users
-            SET "currentStreak"     = 0,
-                "totalMinutePoints" = GREATEST(0, "totalMinutePoints" - $1),
-                "lastStreakDate"    = $2
-          WHERE id = $3`,
-        [penaltyPoints, lastStreakDate, userId]
-      );
-    });
-
-    return result.rowsAffected > 0;
-  }
 }

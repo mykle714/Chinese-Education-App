@@ -7,7 +7,7 @@ export interface DictionaryEntry {
     pronunciation?: string | null;
     definition?: string | null;
     difficultyTag?: string | null;
-    expansion?: unknown;
+    characterRationale?: unknown;
     [key: string]: unknown;
 }
 
@@ -28,7 +28,7 @@ export interface UseDictionaryEntriesResult {
 /**
  * Read-only hook over `/api/dictionary/lookup/:term` (det). Issues one request
  * per term in parallel and returns the successful matches. Games use this to
- * enrich vocab cards with definitions / hsk level / expansion data without
+ * enrich vocab cards with definitions / hsk level / rationale data without
  * reimplementing fetch plumbing.
  */
 export function useDictionaryEntries(options: UseDictionaryEntriesOptions = {}): UseDictionaryEntriesResult {

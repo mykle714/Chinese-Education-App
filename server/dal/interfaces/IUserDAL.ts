@@ -34,7 +34,8 @@ export interface IUserDAL extends IBaseDAL<User, UserCreateData, UserUpdateData>
   // Streak operations
   getUserStreakInfo(userId: string): Promise<{ currentStreak: number; lastStreakDate: string | null }>;
   setStreak(userId: string, currentStreak: number, lastStreakDate: string): Promise<boolean>;
-  applyStreakPenalty(userId: string, penaltyPoints: number, lastStreakDate: string): Promise<boolean>;
+  // NOTE: streak-break / inactivity penalties are applied exclusively by the SQL
+  // cron (database/cron/expire-stale-streaks.sql), not from application code.
 
   // Leaderboard operations (returns isPublic so callers can mask streak from non-public users)
   getAllUsersWithTotalPoints(): Promise<Array<{ userId: string; email: string; name: string; totalMinutePoints: number }>>;

@@ -3,11 +3,10 @@ import { IDictionaryDAL } from '../dal/interfaces/IDictionaryDAL.js';
 import { DictionaryEntry, VocabEntry, AiDictionaryEntry } from '../types/index.js';
 import { ValidationError, RateLimitError } from '../types/dal.js';
 import { getAllSubstrings, buildDictMap, buildExcludeSet, segmentWithDict } from '../dal/shared/segmentString.js';
-import { isAllPinyin } from '../utils/pinyinSegment.js';
 import { DICTIONARY_AI_DAILY_LIMIT } from '../constants.js';
 
-// One shared Anthropic client for the service's AI helpers (expansion + long
-// definition). Constructed lazily so a missing ANTHROPIC_API_KEY only disables
+// One shared Anthropic client for the service's AI helpers (long definition,
+// AI fallback). Constructed lazily so a missing ANTHROPIC_API_KEY only disables
 // the AI paths (callers already null-check) instead of throwing at import time.
 let anthropicClient: Anthropic | null = null;
 function getAnthropicClient(): Anthropic | null {
@@ -73,8 +72,8 @@ export class DictionaryService {
     const entry = await this.dictionaryDAL.findByWord1(trimmedTerm, language);
     if (!entry) return null;
 
-    const [withExpansionMeta] = await this.enrichExpansionMetadataBatch([entry], language);
-    return withExpansionMeta;
+    // characterRationale is a display-ready column — no runtime enrichment step needed.
+    return entry;
   }
 
   /**
@@ -121,18 +120,17 @@ export class DictionaryService {
     }
 
     const entries = await this.dictionaryDAL.findMultipleByWord1(uniqueTerms, language);
-    const withExpansionMeta = await this.enrichExpansionMetadataBatch(entries, language);
-    
+
     const totalTime = performance.now() - startTime;
     console.log(`[DICTIONARY-SERVICE] ✅ Lookup complete:`, {
       language: language,
       termsQueried: uniqueTerms.length,
-      entriesFound: withExpansionMeta.length,
-      matchRate: `${(withExpansionMeta.length / uniqueTerms.length * 100).toFixed(1)}%`,
+      entriesFound: entries.length,
+      matchRate: `${(entries.length / uniqueTerms.length * 100).toFixed(1)}%`,
       totalTime: `${totalTime.toFixed(2)}ms`
     });
 
-    return withExpansionMeta;
+    return entries;
   }
 
   /**
@@ -164,25 +162,40 @@ export class DictionaryService {
     const trimmedTerm = searchTerm.trim();
 
     const result = await this.dictionaryDAL.searchByWord1(trimmedTerm, language, limit, offset);
-    const withExpansionMeta = await this.enrichExpansionMetadataBatch(result.entries, language);
 
     // AI synthetic-entry fallback (docs/DICTIONARY_AI_FALLBACK_SEARCH.md): only when stages 1–2
     // found nothing. Surface either a cached AI answer (auto-shown orange card) or the flag that
-    // tells the client to offer the "AI" button. Non-zh / non-pinyin queries never qualify.
+    // tells the client to offer the "AI" button. Qualification is language-aware (pinyin/English →
+    // Chinese, English/Spanish → Spanish) — see qualifiesForAiFallback.
     let canAskAi = false;
     let aiEntry: AiDictionaryEntry | null = null;
     let aiNoMatch = false;
-    if (result.total === 0 && language === 'zh' && isAllPinyin(trimmedTerm)) {
+    if (result.total === 0 && this.qualifiesForAiFallback(trimmedTerm, language)) {
       ({ canAskAi, aiEntry, aiNoMatch } = await this.resolveAiCache(trimmedTerm, language));
     }
 
     return {
-      entries: withExpansionMeta,
+      entries: result.entries,
       total: result.total,
       canAskAi,
       aiEntry,
       aiNoMatch,
     };
+  }
+
+  /**
+   * Does a zero-result `/search` query qualify for the AI synthetic-entry fallback button?
+   * (docs/DICTIONARY_AI_FALLBACK_SEARCH.md). The `/search` path only ever receives NON-CJK input
+   * (CJK routes to `/segment`, gated separately by resolveChineseAiFallback), so a qualifying query
+   * is any Latin text ≥2 chars in a supported language:
+   *   • zh — pinyin (pinyin→Chinese) OR an English word/phrase (English→Chinese translation)
+   *   • es — an English or Spanish word/phrase (English→Spanish translation, or a missing headword)
+   * The single-character floor keeps trivial one-letter searches from ever offering a paid lookup.
+   */
+  private qualifiesForAiFallback(term: string, language: string): boolean {
+    const trimmed = (term || '').trim();
+    if (trimmed.length < 2 || hasChinese(trimmed)) return false;
+    return language === 'zh' || language === 'es';
   }
 
   /**
@@ -249,8 +262,13 @@ export class DictionaryService {
     usageDate: string,
   ): Promise<AiDictionaryEntry | null> {
     const trimmed = (term || '').trim();
-    // Qualifies if it's valid pinyin OR Chinese characters (the segment-mode "no complete match" case).
-    if (language !== 'zh' || (!isAllPinyin(trimmed) && !hasChinese(trimmed))) return null;
+    if (trimmed.length < 2) return null;
+    // Supported inputs (docs/DICTIONARY_AI_FALLBACK_SEARCH.md):
+    //   • zh — pinyin, Chinese characters (segment "no complete match"), OR an English query.
+    //   • es — an English or Spanish query (non-CJK).
+    // The per-language prompt (buildAiSystemPrompt) decides how to interpret it.
+    const supported = language === 'zh' || (language === 'es' && !hasChinese(trimmed));
+    if (!supported) return null;
 
     // Re-check the cache: honor a fresh row (empty or not) without hitting the model again.
     // NOTE: this short-circuit is BEFORE the daily-limit check, so re-viewing a cached answer
@@ -280,25 +298,9 @@ export class DictionaryService {
     }
 
     try {
-      // Instructions are static → live in a cache_control system block so repeated calls in a
-      // 5-min window share the cached prefix; only the query varies per call.
-      const systemText = `You are a Mandarin Chinese dictionary. You are given a query that is EITHER Hanyu Pinyin (tone digits may be present: 1–4 = tones, 0/5 = neutral; or absent = any tone) OR Chinese characters. Return the single Chinese word/expression the query denotes.
-
-You have a web_search tool. Use it to identify real people, places, brands, works, or any current/recent information you are not certain about — SEARCH before falling back to a generic description. Never fabricate facts; if you're unsure who or what a proper noun refers to, search for it first.
-
-Your FINAL message must be ONLY a JSON object, no other prose and no citations, in exactly this format:
-{"word1": "汉字", "pinyin": "tone-marked pinyin", "definition": "one concise English gloss"}
-
-Rules:
-- Treat the query as CORRECT exactly as written. Assume the pinyin is spelled correctly — do NOT correct, "fix", or reinterpret it as an apparent typo, and do NOT substitute a similar-sounding or similar-looking word. Match the query exactly.
-- Return a result for ANY query that maps to a valid concept. This includes ordinary words and expressions AND proper nouns — real people, place names, brand/company names, titles of works.
-- When a query names a real, identifiable entity, identify THAT entity — say who or what it is (e.g. "Taiwanese singer, member of ...", "city in Jiangsu, China", "smartphone brand"). This is what the user wants: the referent, not a character breakdown. If you don't already know it, use web_search to find out before answering.
-- Only fall back to describing a name generically (its being a personal name + the literal meanings of its characters, e.g. "Chinese given name; 翊 'assist' + 恩 'grace/kindness'") when even a web search cannot identify a specific real-world referent. Do NOT fabricate biographical facts (roles, groups, dates).
-- For a pinyin query: the answer's pronunciation must match the given pinyin exactly (including any specified tones). If no word, name, or concept has exactly this pinyin, respond with {"word1": null}.
-- For a Chinese-character query: interpret exactly those characters. Respond with {"word1": null} ONLY if the characters map to no coherent concept at all (e.g. a random, meaningless jumble of unrelated characters).
-- "word1": the Chinese characters (simplified).
-- "pinyin": tone-marked Hanyu Pinyin with diacritics (e.g. "jiàn shēn"), matching word1.
-- "definition": ONE short, COMPLETE English gloss — a single phrase or clause of at most ~12 words (and never more than 100 characters). Identify the core meaning and stop; do NOT write a multi-clause sentence stacking "founded in…", "known for…", examples, or dates. It must read as finished, not trailing off. E.g. 喜茶 → "Heytea, a popular Chinese premium tea drink chain" (good), NOT "Heytea; popular Chinese tea chain founded in 2012, known for cheese tea and fruit tea…" (too long).`;
+      // Instructions are static per language → live in a cache_control system block so repeated
+      // calls in a 5-min window share the cached prefix; only the query varies per call.
+      const systemText = this.buildAiSystemPrompt(language);
 
       // Give the model a web_search tool so it can identify current/obscure referents (recent
       // singers, places, brands) beyond its training cutoff (docs/DICTIONARY_AI_FALLBACK_SEARCH.md).
@@ -362,6 +364,56 @@ Rules:
   }
 
   /**
+   * The static system prompt for the AI synthetic-entry fallback, per language
+   * (docs/DICTIONARY_AI_FALLBACK_SEARCH.md). Both variants ask for the SAME flat JSON shape
+   * ({word1, pinyin, definition}) so the cache row, client type, and orange card are language-
+   * agnostic. The query may arrive in the target language OR in English; the model infers which and
+   * always resolves to a single TARGET-language headword with an English gloss.
+   *   • zh — pinyin / Han / English → one Chinese word (tone-marked pinyin in `pinyin`).
+   *   • es — English / Spanish → one Spanish word (`pinyin` left empty; Spanish has no such field).
+   */
+  private buildAiSystemPrompt(language: string): string {
+    if (language === 'es') {
+      return `You are a Spanish dictionary. You are given a query that is EITHER an English word/phrase OR a Spanish word/phrase. Return the single Spanish word/expression the query denotes.
+
+You have a web_search tool. Use it to identify real people, places, brands, works, or any current/recent information you are not certain about — SEARCH before falling back to a generic description. Never fabricate facts; if you're unsure who or what a proper noun refers to, search for it first.
+
+Your FINAL message must be ONLY a JSON object, no other prose and no citations, in exactly this format:
+{"word1": "palabra", "pinyin": "", "definition": "one concise English gloss"}
+
+Rules:
+- Treat the query as CORRECT exactly as written. Do NOT correct, "fix", or reinterpret it as an apparent typo, and do NOT substitute a similar-looking word. Match the query exactly.
+- For an English query: return the most common everyday Spanish translation (the lemma/dictionary form; for a noun, prefer the bare lemma without an article unless the article is idiomatic).
+- For a Spanish query: return that Spanish word itself (e.g. a rare, regional, or new word simply missing from the dictionary), identified by an English gloss. If it names a real, identifiable entity (person/place/brand/work), identify THAT entity — say who or what it is — using web_search when unsure.
+- Respond with {"word1": null} ONLY if the query maps to no coherent Spanish concept at all (e.g. a meaningless jumble).
+- "word1": the Spanish word/expression (dictionary/lemma form, simplified accents preserved).
+- "pinyin": always the empty string "" (Spanish has no separate pronunciation field).
+- "definition": ONE short, COMPLETE English gloss — a single phrase or clause of at most ~12 words (never more than 100 characters). Identify the core meaning and stop; it must read as finished, not trailing off. E.g. "serendipity" → "casualidad, a fortunate accidental discovery" is too much; just "casualidad — a happy accident/lucky find" (concise). Prefer noting a noun's gender briefly, e.g. "la casualidad (f), a happy accident".`;
+    }
+
+    // Default: Mandarin Chinese (zh). Accepts pinyin, Han, or an English query.
+    return `You are a Mandarin Chinese dictionary. You are given a query that is EITHER Hanyu Pinyin (tone digits may be present: 1–4 = tones, 0/5 = neutral; or absent = any tone), OR Chinese characters, OR an English word/phrase. Return the single Chinese word/expression the query denotes.
+
+You have a web_search tool. Use it to identify real people, places, brands, works, or any current/recent information you are not certain about — SEARCH before falling back to a generic description. Never fabricate facts; if you're unsure who or what a proper noun refers to, search for it first.
+
+Your FINAL message must be ONLY a JSON object, no other prose and no citations, in exactly this format:
+{"word1": "汉字", "pinyin": "tone-marked pinyin", "definition": "one concise English gloss"}
+
+Rules:
+- A Latin-letter query is EITHER Hanyu Pinyin OR English — infer which from whether it reads as valid pinyin syllables; when a query is a recognizable English word/phrase, treat it as English.
+- Treat the query as CORRECT exactly as written. Assume pinyin is spelled correctly — do NOT correct, "fix", or reinterpret it as an apparent typo, and do NOT substitute a similar-sounding or similar-looking word. Match the query exactly.
+- Return a result for ANY query that maps to a valid concept. This includes ordinary words and expressions AND proper nouns — real people, place names, brand/company names, titles of works.
+- When a query names a real, identifiable entity, identify THAT entity — say who or what it is (e.g. "Taiwanese singer, member of ...", "city in Jiangsu, China", "smartphone brand"). This is what the user wants: the referent, not a character breakdown. If you don't already know it, use web_search to find out before answering.
+- Only fall back to describing a name generically (its being a personal name + the literal meanings of its characters, e.g. "Chinese given name; 翊 'assist' + 恩 'grace/kindness'") when even a web search cannot identify a specific real-world referent. Do NOT fabricate biographical facts (roles, groups, dates).
+- For a pinyin query: the answer's pronunciation must match the given pinyin exactly (including any specified tones). If no word, name, or concept has exactly this pinyin, respond with {"word1": null}.
+- For a Chinese-character query: interpret exactly those characters. Respond with {"word1": null} ONLY if the characters map to no coherent concept at all (e.g. a random, meaningless jumble of unrelated characters).
+- For an English query: return the single Chinese word/expression that best translates it (the most common everyday equivalent). Respond with {"word1": null} only if the English is meaningless or has no reasonable Chinese equivalent.
+- "word1": the Chinese characters (simplified).
+- "pinyin": tone-marked Hanyu Pinyin with diacritics (e.g. "jiàn shēn"), matching word1.
+- "definition": ONE short, COMPLETE English gloss — a single phrase or clause of at most ~12 words (and never more than 100 characters). Identify the core meaning and stop; do NOT write a multi-clause sentence stacking "founded in…", "known for…", examples, or dates. It must read as finished, not trailing off. E.g. 喜茶 → "Heytea, a popular Chinese premium tea drink chain" (good), NOT "Heytea; popular Chinese tea chain founded in 2012, known for cheese tea and fruit tea…" (too long).`;
+  }
+
+  /**
    * Segment input text using the GSA, then for each segment fetch all dictionary entries
    * whose word1 starts with that segment (prefix search).
    *
@@ -422,20 +474,17 @@ Rules:
     // match (word1 === trimmed) and the starts-with matches (word1 !== trimmed).
     const { entries: fullInputEntries } = await this.dictionaryDAL.searchByWord1(trimmed, language, 50, 0);
     if (fullInputEntries.length > 0) {
-      const enrichedFull = await this.enrichExpansionMetadataBatch(fullInputEntries, language);
       groups.push({
         segment: trimmed,
-        exactEntries: enrichedFull.filter(e => e.word1 === trimmed),
-        prefixEntries: enrichedFull.filter(e => e.word1 !== trimmed),
+        exactEntries: fullInputEntries.filter(e => e.word1 === trimmed),
+        prefixEntries: fullInputEntries.filter(e => e.word1 !== trimmed),
       });
     }
 
     // 6b. Exact-only group per GSA segment. Reuse the exact entries already fetched in
     // Step 1 (findMultipleByWord1 over all candidate substrings) — no extra DB round-trips.
-    // Enrich once, then bucket by word1.
-    const enrichedExact = await this.enrichExpansionMetadataBatch(exactEntries, language);
     const exactByWord1 = new Map<string, DictionaryEntry[]>();
-    for (const entry of enrichedExact) {
+    for (const entry of exactEntries) {
       const bucket = exactByWord1.get(entry.word1);
       if (bucket) bucket.push(entry);
       else exactByWord1.set(entry.word1, [entry]);
@@ -653,134 +702,6 @@ Rules:
   }
 
   /**
-   * Generate an expansion for a Chinese word that reveals why the word is constructed the way it is,
-   * by expanding morphemes into more vernacular/colloquial component forms.
-   * Returns null if the word is already maximally vernacular, or if no illuminating expansion exists.
-   */
-  async generateExpansion(word: string, language: string): Promise<string | null> {
-    if (!language || language !== 'zh') {
-      return null;
-    }
-
-    if (!word || word.trim().length === 0) {
-      return null;
-    }
-
-    const anthropic = getAnthropicClient();
-    if (!anthropic) {
-      return null;
-    }
-
-    try {
-      const trimmedWord = word.trim();
-
-      // Static instructions live in a cache_control system block; only the word
-      // varies per call, so repeated calls in a 5-min window share the prefix.
-      // (Below the model's minimum cacheable prefix this is a silent no-op —
-      // the structure still keeps the volatile tail out of the static prefix.)
-      const systemText = `You are a Chinese language expert. Your task is to expand a Chinese word into a more vernacular phrase that reveals *why the word is constructed the way it is* — i.e., what each morpheme means in everyday speech.
-
-Rules:
-- Every character from the original word must appear in the expansion, in their original order
-- You may add characters anywhere — before, between, or after the originals — but never replace or omit any original character
-- The expansion must use natural, everyday Mandarin that a native speaker would actually say
-- The expansion must make the word's internal structure more transparent by showing what each morpheme means via its more common vernacular form
-- Be strict: a valid expansion must pass ALL of the following checks:
-  1. Each added chunk meaningfully expands a morpheme into a more common everyday word (e.g. 规 → 规矩, 知 → 知道, 早 → 早上)
-  2. The result sounds like something a native speaker would naturally say — not a dictionary gloss or a sentence
-  3. The expansion reveals insight a learner could not get from seeing the original alone
-
-- Return null if ANY of the following apply:
-  - The word is already maximally vernacular (e.g. 吃饭, 喝水, 走路, 睡觉)
-  - The expansion would be circular or tautological (e.g. 学生 → 学习的学生)
-  - The expansion only appends a weak suffix or classifier (e.g. 太极拳 → 太极拳法, 母亲节 → 母亲节日)
-  - The expansion only reduplicates characters (e.g. 干净 → 干干净净)
-  - The expansion only adds grammatical particles or aspect markers without illuminating a morpheme (e.g. 游泳 → 游着泳)
-  - The expansion just appends a synonym of the whole word rather than unpacking the morphemes (e.g. 重要 → 重要紧要)
-  - No natural-sounding expansion exists that meaningfully explains the structure
-
-Good examples (each morpheme expanded into its everyday form):
-  * 违规 → 违反规矩 (违 → 违反 "to violate", 规 → 规矩 "rules/norms")
-  * 不知不觉 → 不知道不觉得 (知 → 知道, 觉 → 觉得)
-  * 早晚 → 早上晚上 (早 → 早上, 晚 → 晚上)
-  * 规则 → 规矩法则 (规 → 规矩, 则 → 法则)
-  * 客厅 → 客人厅堂 (客 → 客人, 厅 → 厅堂)
-
-Null examples:
-  * 吃饭 → null (maximally vernacular)
-  * 学生 → null (学习的学生 is circular)
-  * 干净 → null (干干净净 is just reduplication)
-  * 重要 → null (no morpheme-level expansion possible)
-  * 今天 → null (今日天天 fails — 今日 is more literary, not more vernacular)
-  * 母亲节 → null (母亲节日 is a weak append of 日 with no morpheme insight)
-  * 网络 → null (网络网络 is circular nonsense)
-  * 感冒 → null (感觉冒出来 changes the meaning)
-
-Respond with ONLY a JSON object in this exact format, no extra text:
-{"expansion": "expanded form"} or {"expansion": null}`;
-
-      const response = await anthropic.messages.create({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 256,
-        temperature: 0.3,
-        system: [{ type: 'text', text: systemText, cache_control: { type: 'ephemeral' } }],
-        messages: [{ role: 'user', content: `Word: ${trimmedWord}` }]
-      });
-
-      const content = (response.content[0] as { type: string; text: string }).text.trim();
-      const stripped = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
-      const objMatch = stripped.match(/\{[\s\S]*?\}/);
-      if (!objMatch) return null;
-      const parsed = JSON.parse(objMatch[0]);
-
-      const raw: string | null = parsed.expansion || null;
-      return raw ? this.validateExpansion(trimmedWord, raw) : null;
-    } catch (error: any) {
-      console.error(`Failed to generate expansion for "${word}":`, error.message);
-      return null;
-    }
-  }
-
-  /**
-   * Post-processing validation for AI-generated expansions.
-   * Catches common failure modes the prompt alone doesn't reliably prevent.
-   * Returns null if the expansion is invalid.
-   */
-  private validateExpansion(original: string, expansion: string): string | null {
-    // Must add characters — expansion must be strictly longer
-    if (expansion.length <= original.length) return null;
-
-    // Must not be identical to the original
-    if (expansion === original) return null;
-
-    // Must not contain the original as a contiguous substring (circular)
-    if (expansion.includes(original)) return null;
-
-    // Must not double any original character consecutively (AABB/reduplication pattern)
-    for (const char of original) {
-      if (expansion.includes(char + char)) return null;
-    }
-
-    // No original character may appear MORE times in the expansion than it does in the original.
-    // (Prevents expansions where a morpheme is accidentally echoed, e.g. 加油站 → 加油的油站)
-    for (const char of new Set(original)) {
-      const origCount = [...original].filter(c => c === char).length;
-      const expCount  = [...expansion].filter(c => c === char).length;
-      if (expCount > origCount) return null;
-    }
-
-    // All original characters must appear in the expansion in their original order
-    let pos = 0;
-    for (const char of original) {
-      const idx = expansion.indexOf(char, pos);
-      if (idx === -1) return null;
-      pos = idx + 1;
-    }
-
-    return expansion;
-  }
-
-  /**
    * Generate a long definition (25–150 chars) for a Chinese word using Claude Haiku AI.
    * When partsOfSpeech is provided, the prompt instructs the model to address each
    * grammatical role the word can take so the definition is accurate across all its uses.
@@ -876,18 +797,6 @@ Respond with only the definition text — no quotes, no extra text.`;
     exampleSentences?: Array<{ foreignText: string; english: string; [key: string]: any }> | null;
   }>(entries: T[], language: string = 'zh'): Promise<T[]> {
     return this.dictionaryDAL.enrichExampleSentencesMetadataBatch(entries, language);
-  }
-
-  /**
-   * Enrich entries with per-character metadata for `expansion`.
-   *
-   * @param entries - Objects with optional `expansion` field
-   * @param language - Language filter (default: 'zh')
-   */
-  async enrichExpansionMetadataBatch<T extends {
-    expansion?: string | null;
-  }>(entries: T[], language: string = 'zh'): Promise<T[]> {
-    return this.dictionaryDAL.enrichExpansionMetadataBatch(entries, language);
   }
 
   /**

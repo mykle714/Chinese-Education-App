@@ -119,6 +119,27 @@ export function ddt(cluster: { glosses: string[] }): string {
   return stripParentheses(cluster.glosses[0] ?? '');
 }
 
+/**
+ * Resolve a component character's context-correct display gloss: find the
+ * character's `definitionClusters` entry whose `sense` label equals `senseLabel`
+ * and return its `ddt`. This is the single "gloss array from the char's det entry
+ * keyed on the sense string, then ddt" operation — the same mapping the
+ * breakdown-sense backfill materializes into `breakdown[char].definition`, exposed
+ * for read-time callers (word-search grid build). Returns null when there are no
+ * clusters, no sense label, or no cluster matches that label — the caller decides
+ * the fallback (e.g. the stored breakdown definition). See docs/DEFINITION_CLUSTERS.md.
+ */
+export function resolveSenseGloss(
+  clusters: Array<{ sense?: string | null; glosses?: string[] | null }> | null | undefined,
+  senseLabel: string | null | undefined
+): string | null {
+  if (!Array.isArray(clusters) || !senseLabel) return null;
+  const match = clusters.find((c) => c && c.sense === senseLabel && Array.isArray(c.glosses));
+  if (!match) return null;
+  const gloss = ddt({ glosses: match.glosses as string[] });
+  return gloss || null;
+}
+
 // Inline type to avoid a circular dependency with server/types/index.ts
 type ShortDefinitionPronunciationOverride = { definition?: string | null; pronunciation?: string | null };
 

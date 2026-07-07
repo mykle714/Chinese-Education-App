@@ -7,7 +7,7 @@ This feature adds rich contextual information to vocabulary flashcards, includin
 
 ### 1. Database Schema (✅ Complete)
 
-Enrichment columns (breakdown, synonyms, exampleSentences, expansion, expansionLiteralTranslation, longDefinition, pronunciation, tone, script, hskLevel) live in `dictionaryentries_zh`, not `vocabentries`. They are fetched via LEFT JOIN on `entryKey = word1 AND language`.
+Enrichment columns (breakdown, synonyms, exampleSentences, characterRationale, longDefinition, pronunciation, tone, script, hskLevel) live in `dictionaryentries_zh`, not `vocabentries`. They are fetched via LEFT JOIN on `entryKey = word1 AND language`.
 
 Runtime-computed fields (never stored in the DB):
 - `shortDefinition` — deterministic, via `generateShortDefinition()` in `server/utils/definitions.ts`
@@ -260,7 +260,7 @@ bash server/scripts/run-discoverable-enrichment.sh [production|local]
 | 3 | `backfill/chinese/backfill-hsk-level.js` | `hskLevel` | AI assigns one level token per entry (`HSK1`..`HSK6`). |
 | 4 | `backfill/chinese/backfill-long-definitions.js` | `longDefinition` | AI generates 25–75 char elaboration. Depends on sorted definitions from step 2. |
 | 5 | `backfill/chinese/backfill-example-sentences.js` | `exampleSentences` | AI generates 3 example sentences. Segment metadata (`_segments`, `segmentMetadata`) is computed at runtime — not stored. |
-| 6 | `backfill/chinese/backfill-expansion-claude.js` | `expansion`, `expansionLiteralTranslation` | AI generates expanded word form. |
+| 6 | `backfill/chinese/backfill-character-rationale.js` | `characterRationale` | Per-character rationale for multi-char words (why each char is used). Replaces the retired expansion backfill. See docs/CHARACTER_RATIONALE.md. |
 | 7 | `backfill/chinese/backfill-classifier.js` | `classifier` | AI assigns measure word(s). |
 | 8 | `backfill/chinese/backfill-dictionary-breakdown.js` | `breakdown` | AI generates per-character breakdown (multi-char words only). |
 | 9 | `backfill/chinese/backfill-vernacular-score.js` | `vernacularScore` | AI scores vernacular vs. literary register (1–5). |
@@ -320,28 +320,35 @@ Only processes `discoverable = TRUE` zh entries where either column is NULL.
 
 ---
 
-## Expansion Field
+## Character Rationale Field
+
+The old `expansion` / `expansionLiteralTranslation` columns (a single blended
+vernacular phrase per word) were **replaced by `characterRationale`** in migration
+102. Full details live in **[docs/CHARACTER_RATIONALE.md](./CHARACTER_RATIONALE.md)**;
+in brief:
 
 ### Purpose
-The `expansion` column stores an expanded or fuller form of Chinese words, used to better understand word composition and usage.
+`characterRationale` (jsonb, `dictionaryentries_zh` only) explains, character by
+character, **why each character is used** in a multi-char word — a short English
+learner-facing reason that folds in an implied longer word when illuminating.
 
 **Examples**:
-- 不知不觉 → 不知道不觉得 (More complete form showing individual character usage)
-- 违规 → 违反规矩 (Expansion showing more meaningful form)
-- NULL for words that cannot be meaningfully expanded
+- 违规 → `[{"char":"违","reason":"to violate — short for 违反"},{"char":"规","reason":"rules/norms — short for 规矩"}]`
+- 咖啡 → `[]` (transliteration — no worthwhile per-character breakdown)
 
 ### Implementation
-- **Column Type**: TEXT (NULL-able)
-- **Storage**: Direct text value, not JSON
-- **Index**: Sparse index on non-NULL values for performance
-- **Use Case**: Educational insights into word construction and meaning
+- **Column Type**: `jsonb` (NULL-able), array of `{char, reason}` aligned to the word's characters
+- **Sentinel**: `NULL` = never attempted; `'[]'` = attempted, nothing worthwhile
+- **Display-ready**: unlike expansion (which was GSA-segmented at runtime), the column
+  renders directly — no runtime enrichment step
+- **Eligibility**: multi-char words only (`char_length(word1) > 1`)
 
 ### Field Definition
 ```typescript
 // From server/types/index.ts
 export interface VocabEntry {
   // ... other fields
-  expansion?: string;  // Fuller/expanded form of the word
+  characterRationale?: Array<{ char: string; reason: string }> | null;
 }
 ```
 

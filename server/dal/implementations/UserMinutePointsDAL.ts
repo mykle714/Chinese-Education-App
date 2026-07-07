@@ -66,24 +66,6 @@ export class UserMinutePointsDAL implements IUserMinutePointsDAL {
     };
   }
 
-  async addPenaltyMinutesForDate(userId: string, streakDate: string, language: string, penaltyMinutes: number): Promise<void> {
-    if (!userId) throw new ValidationError('User ID is required');
-    if (!streakDate) throw new ValidationError('Streak date is required');
-    if (!language) throw new ValidationError('Language is required');
-    if (penaltyMinutes < 0) throw new ValidationError('Penalty cannot be negative');
-
-    await dbManager.executeQuery(async (client) => {
-      return await client.query(`
-        INSERT INTO userminutepoints ("userId", "streakDate", "language", "minutesEarned", "penaltyMinutes")
-        VALUES ($1, $2, $3, 0, $4)
-        ON CONFLICT ("userId", "streakDate", "language")
-        DO UPDATE SET
-          "penaltyMinutes" = userminutepoints."penaltyMinutes" + EXCLUDED."penaltyMinutes",
-          "updatedAt"      = NOW()
-      `, [userId, streakDate, language, penaltyMinutes]);
-    });
-  }
-
   async findInRange(userId: string, language: string, startDate: string, endDate: string): Promise<UserMinutePoints[]> {
     if (!userId) throw new ValidationError('User ID is required');
     if (!language) throw new ValidationError('Language is required');

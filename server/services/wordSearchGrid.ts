@@ -19,12 +19,29 @@ export interface WordSearchInput {
   entryKey: string; // Chinese text, e.g. "学生"
   pinyin: string; // space-separated tone-marked syllables, one per character
   definition: string; // English gloss shown in the top word list
+  /**
+   * Per-component-character context-correct sense, one entry per entryKey
+   * character (aligned by position). Resolved from each character's own det
+   * `definitionClusters` keyed by the word's `breakdown[char].sense` label
+   * (see OnDeckVocabService.getWordSearchGrid). Written onto the placed cells so
+   * a tap on a target character shows THAT character's sense IN THIS WORD, not
+   * its generic standalone gloss. Absent → cells carry no per-char definition.
+   */
+  charSenses?: Array<{ sense: string | null; definition: string | null }>;
 }
 
 /** A single grid cell: one Chinese character + its pinyin syllable. */
 export interface GridCell {
   char: string;
   pinyin: string;
+  /**
+   * Context-correct sense for this character, present ONLY on cells that belong
+   * to a target word (filler cells omit them). `definition` is the ddt of the
+   * character's det cluster matching `sense`; `sense` is the cluster label. A tap
+   * on the cell shows `definition`. See WordSearchInput.charSenses.
+   */
+  sense?: string;
+  definition?: string;
 }
 
 /** A placed target: the input word plus the ordered cell path it occupies. */
@@ -248,8 +265,24 @@ export function generateWordSearchGrid(
   const prepared = words.map((word) => {
     const chars = [...word.entryKey];
     const syllables = word.pinyin ? word.pinyin.trim().split(/\s+/) : [];
-    return { word, chars, syllables };
+    return { word, chars, syllables, charSenses: word.charSenses };
   });
+
+  // Build one target-word cell, attaching its context-correct sense/definition
+  // (position-aligned) when the caller supplied charSenses. Only non-empty values
+  // are written so filler cells and un-tagged positions stay lean.
+  const buildCell = (
+    chars: string[],
+    syllables: string[],
+    charSenses: WordSearchInput['charSenses'],
+    idx: number
+  ): GridCell => {
+    const cell: GridCell = { char: chars[idx], pinyin: syllables[idx] ?? '' };
+    const cs = charSenses?.[idx];
+    if (cs?.definition) cell.definition = cs.definition;
+    if (cs?.sense) cell.sense = cs.sense;
+    return cell;
+  };
 
   // Longest-first placement order minimizes dead-end restarts on a sparsely-
   // filled board.
@@ -281,7 +314,7 @@ export function generateWordSearchGrid(
       const template = WORD_SEARCH_TEMPLATES[templateIndex];
       const shuffled = shuffle(prepared, rng);
 
-      shuffled.forEach(({ word, chars, syllables }, i) => {
+      shuffled.forEach(({ word, chars, syllables, charSenses }, i) => {
         const slot = template.slots[i];
         const len = chars.length;
         const maxOffset = slot.length - len;
@@ -290,12 +323,12 @@ export function generateWordSearchGrid(
 
         path.forEach(([r, c], idx) => {
           occupied[r][c] = true;
-          cells[r][c] = { char: chars[idx], pinyin: syllables[idx] ?? '' };
+          cells[r][c] = buildCell(chars, syllables, charSenses, idx);
         });
         placed.push({ ...word, cells: path });
       });
     } else {
-      for (const { word, chars, syllables } of ordered) {
+      for (const { word, chars, syllables, charSenses } of ordered) {
         let path: [number, number][] | null = null;
         for (let attempt = 0; attempt < MAX_WORD_ATTEMPTS; attempt++) {
           path = tryPlaceWord(chars.length, occupied, rows, cols, rng);
@@ -309,7 +342,7 @@ export function generateWordSearchGrid(
         // Commit the word's characters into the board.
         path.forEach(([r, c], i) => {
           occupied[r][c] = true;
-          cells[r][c] = { char: chars[i], pinyin: syllables[i] ?? '' };
+          cells[r][c] = buildCell(chars, syllables, charSenses, i);
         });
         placed.push({ ...word, cells: path });
       }

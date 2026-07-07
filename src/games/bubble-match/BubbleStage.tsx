@@ -53,11 +53,13 @@ interface BubbleStageProps {
     onLevelLose: () => void;
     /** Record a flashcard mark for a matched/mismatched bubble's vocab entry.
         Mirrors the flp mark endpoint: correct match → success, wrong match →
-        incorrect. Not called for study-mode taps after the game ends. */
+        incorrect. NOT called during post-loss cleanup drags (see cleanupMode). */
     onMark?: (entry: VocabEntry, isCorrect: boolean) => void;
-    /** Study mode: the game is over and its popup is minimized, so the player can
-        tap (mobile) / hover (desktop) a bubble to highlight it and its match. */
-    studyMode: boolean;
+    /** Cleanup mode: the game is over (loss) and its popup is minimized. The
+        packed field stays draggable/matchable so the player can clear it for
+        satisfaction — matches pop/remove pairs but emit NO marks, and dragging a
+        bubble reveals its correct partner (green) as a drop hint. */
+    cleanupMode: boolean;
 }
 
 let bodySeq = 0;
@@ -155,9 +157,13 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
     onLevelWin,
     onLevelLose,
     onMark,
-    studyMode,
+    cleanupMode,
 }) => {
     const stageRef = useRef<HTMLDivElement>(null);
+    // Latest config/level in a ref so the (stable) rAF frame callback can read
+    // the current shrink speed without being re-created per level.
+    const configRef = useRef(config);
+    configRef.current = config;
     // The visible descending "lid". Its height is written directly each frame (in
     // the rAF loop, like the bubbles) to match boundsRef.top without re-rendering.
     const ceilingNodeRef = useRef<HTMLDivElement>(null);
@@ -181,17 +187,11 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
     // Interaction refs.
     const heldIdRef = useRef<string | null>(null);
     const hoveredIdRef = useRef<string | null>(null);
-    // Study mode (mirrors the prop) and the pair currently highlighted green.
-    // Kept in refs so the pointer handlers can stay stable (memoized once).
-    const studyModeRef = useRef(studyMode);
-    const revealedPairRef = useRef<string | null>(null);
-    // Desktop hover-select guard. When the game-over popup collapses, the element
-    // under a *stationary* cursor changes from the card/× to the bubble behind it,
-    // and the browser fires a synthetic pointerenter on that bubble with no
-    // accompanying pointermove. Honoring it would auto-select a pair the instant
-    // the player hits ×. So we "arm" hover only after a genuine pointermove in
-    // study mode, and ignore enters until then.
-    const hoverArmedRef = useRef(false);
+    // Cleanup mode (mirrors the prop) and the bubble currently green-revealed as
+    // the held bubble's partner (the drop hint). Kept in refs so the pointer
+    // handlers can stay stable (memoized once).
+    const cleanupModeRef = useRef(cleanupMode);
+    const revealedPartnerIdRef = useRef<string | null>(null);
     const grabOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
     const stageRectRef = useRef<DOMRect | null>(null);
 
@@ -199,6 +199,14 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
     const phaseRef = useRef<"playing" | "done">("playing");
     const matchedRef = useRef(0);
     const pendingTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+    // rAF loop control. The loop self-stops when the field goes static after the
+    // run ends (see stepFrame); startLoop re-kicks it for post-loss cleanup drags.
+    const rafRef = useRef(0);
+    const loopRunningRef = useRef(false);
+    const lastFrameRef = useRef(0);
+    // perf.now() when the run ended (phase → done); 0 while playing or between
+    // cleanup restarts. Drives the post-run settle/grace shutdown.
+    const doneSinceRef = useRef(0);
     // Timestamp (perf.now) when residual overlap first crossed the overfill
     // threshold; null while it's under. Drives the sustained-residual loss path.
     const overfillSinceRef = useRef<number | null>(null);
@@ -277,6 +285,102 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
         },
         [onLevelWin, onLevelLose, forceRender]
     );
+
+    // ---- rAF physics + transform-write loop ---------------------------------
+    // One frame: advance the ceiling, step the physics, write every bubble's
+    // transform, and check the overfill loss. Hoisted out of the setup effect
+    // (and stable) so the loop can be *re-started* on demand — after a loss the
+    // loop self-stops when the field settles, then startLoop() resumes it for a
+    // cleanup drag. All inputs come from refs, so this callback never changes.
+    const stepFrame = useCallback(
+        (now: number) => {
+            const dt = Math.min((now - lastFrameRef.current) / 1000, MAX_DT);
+            lastFrameRef.current = now;
+            const bodies = bodiesRef.current;
+            const bounds = boundsRef.current;
+
+            // Lower the ceiling once the whole pool has launched (playing only —
+            // a finished run freezes the ceiling wherever it was).
+            if (shrinkingRef.current && phaseRef.current === "playing") {
+                const maxTop = bounds.height - MIN_PLAY_HEIGHT;
+                bounds.top = Math.min(bounds.top + configRef.current.shrinkSpeedPxPerSec * dt, maxTop);
+            }
+
+            const residual = stepPhysics(bodies, dt, bounds);
+
+            // Drop the visible lid to the ceiling line (its height === bounds.top).
+            const ceiling = ceilingNodeRef.current;
+            if (ceiling) ceiling.style.height = `${bounds.top}px`;
+
+            // Smoothly approach each bubble's target scale and write transforms.
+            // Track whether anything is still mid-animation for the shutdown check.
+            let anyAnimating = false;
+            for (const b of bodies) {
+                b.scale += (b.targetScale - b.scale) * SCALE_LERP;
+                if (Math.abs(b.targetScale - b.scale) < 0.001) b.scale = b.targetScale;
+                else anyAnimating = true;
+                if (b.status === "growing") anyAnimating = true;
+                writeTransform(b);
+            }
+
+            // Overfill detection — only while playing. A finished run (loss) never
+            // re-triggers, so cleanup drags on the packed field are safe.
+            const ratio = fillRatio(bodies, bounds);
+            if (phaseRef.current === "playing") {
+                if (residual >= OVERFILL_RESIDUAL_PX) {
+                    if (overfillSinceRef.current === null) overfillSinceRef.current = now;
+                } else {
+                    overfillSinceRef.current = null; // recovered — reset the sustain clock
+                }
+                const stuckTooLong =
+                    overfillSinceRef.current !== null &&
+                    now - overfillSinceRef.current >= OVERFILL_SUSTAIN_MS;
+                if (ratio >= LOSE_FILL_RATIO || stuckTooLong) {
+                    finishLevel("lose");
+                }
+            }
+
+            // Danger glow when the field is getting full (warning, below the loss line).
+            const isDanger = ratio >= DANGER_FILL_RATIO;
+            setDanger((prev) => (prev === isDanger ? prev : isDanger));
+
+            // Post-run shutdown: once the run is over the stage stays mounted
+            // behind the (full) end popup, so stop the per-frame pass as soon as
+            // the field goes static — a live loop over ~40 nodes would compete with
+            // the popup's buttons for the main thread. The over-packed loss never
+            // fully settles, so a grace cap freezes it anyway. Two exceptions keep
+            // the loop alive: while playing (always), and during cleanup (popup
+            // minimized to a puck), where bubbles must keep separating/settling as
+            // the player drags and clears them.
+            if (phaseRef.current === "done" && !cleanupModeRef.current) {
+                if (doneSinceRef.current === 0) doneSinceRef.current = now;
+                const settled = !anyAnimating;
+                const graceElapsed = now - doneSinceRef.current >= POST_DONE_SETTLE_MS;
+                if (settled || graceElapsed) {
+                    loopRunningRef.current = false;
+                    return; // leave the loop stopped
+                }
+            } else {
+                // Playing or cleaning up — reset the settle clock so a later
+                // shutdown (e.g. cleanup ends) gets a fresh grace window.
+                doneSinceRef.current = 0;
+            }
+
+            rafRef.current = requestAnimationFrame(stepFrame);
+        },
+        [writeTransform, finishLevel]
+    );
+
+    // Start (or resume) the rAF loop if it isn't already running. Idempotent — a
+    // no-op while the loop is live (e.g. during play). Resets the frame clock and
+    // the post-run settle timer so a resumed loop gets a fresh grace window.
+    const startLoop = useCallback(() => {
+        if (loopRunningRef.current) return;
+        loopRunningRef.current = true;
+        lastFrameRef.current = performance.now();
+        doneSinceRef.current = 0;
+        rafRef.current = requestAnimationFrame(stepFrame);
+    }, [stepFrame]);
 
     // ---- Main setup: build queue, start loops. Re-runs per level. -----------
     useEffect(() => {
@@ -358,95 +462,16 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
             spawnOne();
         }, config.launchIntervalMs);
 
-        // rAF physics + transform-write loop.
-        let raf = 0;
-        let last = performance.now();
-        // perf.now() when the run ended (phase → done); 0 while still playing.
-        // Drives the post-run loop shutdown (see the bottom of frame()).
-        let doneSince = 0;
-        const frame = (now: number) => {
-            const dt = Math.min((now - last) / 1000, MAX_DT);
-            last = now;
-            const bodies = bodiesRef.current;
-            const bounds = boundsRef.current;
-
-            // Lower the ceiling once the whole pool has launched. It presses the
-            // field down (via the top wall clamp in stepPhysics) and shrinks the
-            // play area, driving the fill ratio up toward the overfill loss. With
-            // MIN_PLAY_HEIGHT === 0 the ceiling closes the area completely, so any
-            // bubbles still on the field force a loss (fillRatio returns 1 once the
-            // play area hits 0 height). The visible lid tracks bounds.top below
-            // (written like a bubble transform, no re-render).
-            if (shrinkingRef.current && phaseRef.current === "playing") {
-                const maxTop = bounds.height - MIN_PLAY_HEIGHT;
-                bounds.top = Math.min(bounds.top + config.shrinkSpeedPxPerSec * dt, maxTop);
-            }
-
-            const residual = stepPhysics(bodies, dt, bounds);
-
-            // Drop the visible lid to the ceiling line (its height === bounds.top).
-            const ceiling = ceilingNodeRef.current;
-            if (ceiling) ceiling.style.height = `${bounds.top}px`;
-
-            // Smoothly approach each bubble's target scale and write transforms.
-            // Track whether anything is still mid-animation so the loop can stop
-            // itself once the field goes static (see the shutdown check below).
-            let anyAnimating = false;
-            for (const b of bodies) {
-                b.scale += (b.targetScale - b.scale) * SCALE_LERP;
-                // Snap to target once within epsilon so the asymptotic lerp
-                // actually reaches "settled" instead of crawling forever.
-                if (Math.abs(b.targetScale - b.scale) < 0.001) b.scale = b.targetScale;
-                else anyAnimating = true;
-                if (b.status === "growing") anyAnimating = true;
-                writeTransform(b);
-            }
-
-            // Overfill detection — two independent signals, checked every frame:
-            //   (A) Area packing: coverage past LOSE_FILL_RATIO is unwinnable.
-            //   (B) Sustained residual: the separation solver can't pull pairs
-            //       apart (residual stays high) for OVERFILL_SUSTAIN_MS straight.
-            const ratio = fillRatio(bodies, bounds);
-            if (phaseRef.current === "playing") {
-                if (residual >= OVERFILL_RESIDUAL_PX) {
-                    if (overfillSinceRef.current === null) overfillSinceRef.current = now;
-                } else {
-                    overfillSinceRef.current = null; // recovered — reset the sustain clock
-                }
-                const stuckTooLong =
-                    overfillSinceRef.current !== null &&
-                    now - overfillSinceRef.current >= OVERFILL_SUSTAIN_MS;
-                if (ratio >= LOSE_FILL_RATIO || stuckTooLong) {
-                    finishLevel("lose");
-                }
-            }
-
-            // Danger glow when the field is getting full (warning, below the loss line).
-            const isDanger = ratio >= DANGER_FILL_RATIO;
-            setDanger((prev) => (prev === isDanger ? prev : isDanger));
-
-            // Post-run shutdown: once the run is over the stage stays mounted
-            // behind the popup, but a still-running per-frame transform-write
-            // loop over ~40 nodes competes with the popup's buttons for the main
-            // thread. Stop rescheduling as soon as the field stops moving (no
-            // scale animation / growth). The over-packed loss never fully settles
-            // (the solver stays stuck), so a hard grace cap freezes it anyway —
-            // the run is already decided. While playing we always continue.
-            if (phaseRef.current === "done") {
-                if (doneSince === 0) doneSince = now;
-                const settled = !anyAnimating;
-                const graceElapsed = now - doneSince >= POST_DONE_SETTLE_MS;
-                if (settled || graceElapsed) return; // leave the loop stopped
-            }
-
-            raf = requestAnimationFrame(frame);
-        };
-        raf = requestAnimationFrame(frame);
+        // Kick the rAF physics loop (defined above as a stable, restartable
+        // callback). While playing it runs every frame; once the run ends it
+        // self-stops when the field settles and is re-kicked by cleanup drags.
+        startLoop();
 
         return () => {
             window.removeEventListener("resize", measure);
             clearInterval(launchTimer);
-            cancelAnimationFrame(raf);
+            cancelAnimationFrame(rafRef.current);
+            loopRunningRef.current = false;
             pendingTimeoutsRef.current.forEach(clearTimeout);
             pendingTimeoutsRef.current = [];
         };
@@ -485,103 +510,65 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
         []
     );
 
-    // ---- Study mode (game over + popup minimized) --------------------------
-    // Highlight a single pair green for reference. Clearing first and re-applying
-    // keeps "only one pair lit at a time" without tracking individual bubble ids.
-    const setRevealedPair = useCallback(
-        (pairId: string | null) => {
-            if (revealedPairRef.current === pairId) return;
-            // Drop the previously-lit pair back to floating.
-            if (revealedPairRef.current) {
-                for (const b of bodiesRef.current) {
-                    if (b.pairId === revealedPairRef.current && b.status === "revealed") {
-                        setStatus(b, "idle", SCALE_IDLE);
-                    }
-                }
-            }
-            revealedPairRef.current = pairId;
-            // Light up both halves of the newly-selected pair.
-            if (pairId) {
-                for (const b of bodiesRef.current) {
-                    if (b.pairId === pairId) setStatus(b, "revealed", SCALE_IDLE);
-                }
-            }
-            forceRender();
-        },
-        [setStatus, forceRender]
-    );
 
-    // Keep the ref in sync and tear the highlight down when study mode ends
-    // (popup re-expanded or a new run started).
-    useEffect(() => {
-        studyModeRef.current = studyMode;
-        // Re-arming each time study mode toggles ensures the synthetic enter that
-        // fires as the popup collapses (no real move) is never honored.
-        hoverArmedRef.current = false;
-        // Entering study mode permanently dismisses the danger glow for this run.
-        if (studyMode) setDangerDismissed(true);
-        if (!studyMode) setRevealedPair(null);
-    }, [studyMode, setRevealedPair]);
+    // ---- Cleanup mode (post-loss, game-over popup minimized) ---------------
+    // After a loss the packed field becomes a no-stakes playground: bubbles stay
+    // draggable and matchable so the player can clear the board for satisfaction,
+    // but matches emit NO review marks. While a bubble is held, its correct
+    // partner (if still on screen) lights up green as a drop hint. This replaces
+    // the former tap-to-reveal study interaction.
 
-    // Selected bubble has no partner on screen — clear any green highlight and
-    // give it the same red + shake "wrong" feedback used for a mismatched drop,
-    // then settle it back to idle.
-    const flashNoMatch = useCallback(
-        (body: BubbleBody) => {
-            setRevealedPair(null); // selecting a new bubble drops the previous pair
-            // Red flash WITHOUT the shake — the tap was valid, there was just no
-            // partner on screen (see the "nomatch" status). The shake is reserved
-            // for an actual wrong drag-drop.
-            setStatus(body, "nomatch", SCALE_IDLE);
-            forceRender();
-            // Still narrate the Chinese — a no-match word bubble is just as worth
-            // hearing as a matched one (parity with the green-reveal path).
-            if (body.kind === "word" && onSpeak) onSpeak(body.entry);
-            const to = setTimeout(() => {
-                // Only revert if it's still this same flash (not re-selected/removed).
-                if (bodiesRef.current.includes(body) && body.status === "nomatch") {
-                    setStatus(body, "idle", SCALE_IDLE);
-                    forceRender();
-                }
-            }, WRONG_FEEDBACK_MS);
-            pendingTimeoutsRef.current.push(to);
-        },
-        [setRevealedPair, setStatus, forceRender, onSpeak]
-    );
+    // Drop the current green partner hint back to idle. Guarded on the "revealed"
+    // status so it never clobbers a partner that has since transitioned to
+    // correct/wrong via a match resolution.
+    const clearRevealedPartner = useCallback(() => {
+        const pid = revealedPartnerIdRef.current;
+        revealedPartnerIdRef.current = null;
+        if (!pid) return;
+        const p = bodiesRef.current.find((b) => b.id === pid);
+        if (p && p.status === "revealed") setStatus(p, "idle", SCALE_IDLE);
+    }, [setStatus]);
 
-    // Reveal a pair from a tap (mobile) or hover-enter (desktop).
-    const onStudySelect = useCallback(
-        (id: string) => {
-            const body = bodiesRef.current.find((b) => b.id === id);
-            if (!body) return;
-            // The partner bubble (same pair) must currently be on screen to form a
-            // green match. If it was never launched (still queued when the game
-            // ended), there's nothing to pair with — flash red + shake instead.
-            const partnerOnScreen = bodiesRef.current.some(
-                (b) => b.id !== id && b.pairId === body.pairId
+    // Light the held bubble's matching partner green (drop hint). Only one partner
+    // is ever lit at a time (the previous is cleared first). Returns true if a
+    // partner was found on the field, false if this bubble has none (it was still
+    // queued when the run was lost) — the caller uses that to red-flag the grab.
+    const revealPartner = useCallback(
+        (held: BubbleBody): boolean => {
+            clearRevealedPartner();
+            const partner = bodiesRef.current.find(
+                (b) => b.id !== held.id && b.pairId === held.pairId && b.status === "idle"
             );
-            if (!partnerOnScreen) {
-                flashNoMatch(body);
-                return;
-            }
-            setRevealedPair(body.pairId);
-            // Narrate the Chinese so study mode doubles as listening practice.
-            if (body.kind === "word" && onSpeak) onSpeak(body.entry);
+            if (!partner) return false;
+            setStatus(partner, "revealed", SCALE_IDLE);
+            revealedPartnerIdRef.current = partner.id;
+            forceRender();
+            return true;
         },
-        [setRevealedPair, onSpeak, flashNoMatch]
+        [clearRevealedPartner, setStatus, forceRender]
     );
+
+    // Keep the ref in sync. Entering cleanup permanently dismisses the danger glow
+    // and resumes the (self-stopped) physics loop so the frozen field goes live for
+    // dragging; leaving it (popup re-expanded / new run) tears down any lingering
+    // partner hint and lets the loop settle-and-stop again.
+    useEffect(() => {
+        cleanupModeRef.current = cleanupMode;
+        if (cleanupMode) {
+            setDangerDismissed(true);
+            startLoop();
+        } else {
+            clearRevealedPartner();
+        }
+    }, [cleanupMode, startLoop, clearRevealedPartner]);
 
     const onPointerDown = useCallback(
         (id: string, e: React.PointerEvent) => {
-            // Study mode: a tap selects this bubble's pair instead of dragging.
-            // Stop propagation so the stage-background handler doesn't immediately
-            // clear the selection we just made.
-            if (studyModeRef.current) {
-                e.stopPropagation();
-                onStudySelect(id);
-                return;
-            }
-            if (phaseRef.current !== "playing") return;
+            // Draggable while playing, OR during post-loss cleanup (game over,
+            // popup minimized). Cleanup drags match & clear pairs but emit no marks.
+            const cleanup = cleanupModeRef.current;
+            if (phaseRef.current !== "playing" && !cleanup) return;
+
             const body = bodiesRef.current.find((b) => b.id === id);
             // Can't grab a bubble mid-match, but a still-growing bubble IS grabbable:
             // grabbing it finishes its grow-in instantly (handled below).
@@ -601,47 +588,22 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
             grabOffsetRef.current = { x: px - body.x, y: py - body.y };
 
             setStatus(body, "held", SCALE_HELD);
+
+            // Cleanup: light the held bubble's correct partner green as a drop hint.
+            // If it has no partner on the field (it can never be matched), flag the
+            // grabbed bubble itself light-red instead of the usual grey held dim —
+            // this highlight lasts only while it's grabbed. (The physics loop is
+            // already kept alive throughout cleanup, so no restart is needed here.)
+            if (cleanup && !revealPartner(body)) {
+                setStatus(body, "nomatch", SCALE_HELD);
+            }
             forceRender();
 
             // Autoplay: narrate the Chinese the moment a word bubble is picked up.
             if (body.kind === "word" && onSpeak) onSpeak(body.entry);
         },
-        [forceRender, onSpeak, setStatus, onStudySelect]
+        [forceRender, onSpeak, setStatus, revealPartner]
     );
-
-    // Desktop hover: highlight a pair on mouse-enter, clear it on mouse-leave.
-    // Mouse-only so touch taps (which also emit enter/leave) stay tap-driven.
-    const onBubbleEnter = useCallback(
-        (id: string, e: React.PointerEvent) => {
-            if (!studyModeRef.current || e.pointerType !== "mouse") return;
-            // Ignore the synthetic re-target enter that fires when the popup
-            // collapses under a stationary cursor — only a real hover (preceded by
-            // a pointermove that armed it) should select.
-            if (!hoverArmedRef.current) return;
-            onStudySelect(id);
-        },
-        [onStudySelect]
-    );
-    const onBubbleLeave = useCallback(
-        (_id: string, e: React.PointerEvent) => {
-            if (!studyModeRef.current || e.pointerType !== "mouse") return;
-            setRevealedPair(null);
-        },
-        [setRevealedPair]
-    );
-
-    // Tap/click on empty stage (not on a bubble — those stopPropagation) clears
-    // the current highlight in study mode.
-    const onStageBackgroundPointerDown = useCallback(() => {
-        if (studyModeRef.current) setRevealedPair(null);
-    }, [setRevealedPair]);
-
-    // Arm desktop hover-select on the first genuine mouse movement in study mode.
-    // The synthetic enter that fires when the popup collapses carries no move, so
-    // it stays disarmed (see hoverArmedRef) until the player actually moves.
-    const onStagePointerMove = useCallback((e: React.PointerEvent) => {
-        if (studyModeRef.current && e.pointerType === "mouse") hoverArmedRef.current = true;
-    }, []);
 
     // Window-level move/up so dragging continues outside the bubble's bounds.
     useEffect(() => {
@@ -675,7 +637,9 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
             held.scale += (held.targetScale - held.scale) * SCALE_LERP;
             writeTransform(held);
 
-            // Update hover target highlight.
+            // Update hover target highlight. Skip re-tinting the green-revealed
+            // partner (cleanup drop hint) so it stays green while still acting as
+            // the drop target — hoveredIdRef still points at it so the drop resolves.
             const target = findHoverTarget(held);
             const prevHoverId = hoveredIdRef.current;
             if (target?.id !== prevHoverId) {
@@ -683,7 +647,9 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
                     const prev = bodiesRef.current.find((b) => b.id === prevHoverId);
                     if (prev && prev.status === "hovered") setStatus(prev, "idle", SCALE_IDLE);
                 }
-                if (target) setStatus(target, "hovered", SCALE_HOVER);
+                if (target && target.id !== revealedPartnerIdRef.current) {
+                    setStatus(target, "hovered", SCALE_HOVER);
+                }
                 hoveredIdRef.current = target?.id ?? null;
                 forceRender();
             }
@@ -697,11 +663,15 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
             const held = bodiesRef.current.find((b) => b.id === heldId);
             if (!held) return;
 
-            // Run already ended (e.g. time ran out mid-drag): drop the bubble with
-            // NO match resolution — no mark, no removal, no win. finishLevel already
-            // clears heldIdRef when it fires, so this mainly guards the race where a
-            // release lands in the same tick the buzzer does.
-            if (phaseRef.current !== "playing") {
+            // Cleanup mode (post-loss, popup minimized) resolves matches just like
+            // play — pop/remove on correct, shake on wrong — but banks NO marks.
+            const cleanup = cleanupModeRef.current;
+
+            // Run ended and we're NOT in cleanup (e.g. the buzzer fired mid-drag):
+            // drop the bubble with NO match resolution — no mark, no removal, no
+            // win. finishLevel already clears heldIdRef when it fires, so this
+            // mainly guards the race where a release lands in the same tick.
+            if (phaseRef.current !== "playing" && !cleanup) {
                 setStatus(held, "idle", SCALE_IDLE);
                 const lateTargetId = hoveredIdRef.current;
                 hoveredIdRef.current = null;
@@ -712,6 +682,11 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
                 forceRender();
                 return;
             }
+
+            // The drag is ending — retire the green partner hint. Guarded on the
+            // "revealed" status, so if the hint bubble IS the drop target it's left
+            // alone here and picks up its correct/wrong status below.
+            clearRevealedPartner();
 
             const targetId = hoveredIdRef.current;
             hoveredIdRef.current = null;
@@ -733,7 +708,8 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
                     // Record a successful review for the matched pair's card,
                     // mirroring an flp "got it right" mark (both bubbles in a pair
                     // carry the same vocab entry, so either one identifies the card).
-                    onMark?.(held.entry, true);
+                    // Cleanup matches are for satisfaction only — no mark.
+                    if (!cleanup) onMark?.(held.entry, true);
                     setStatus(held, "correct", SCALE_IDLE);
                     setStatus(target, "correct", SCALE_IDLE);
                     forceRender();
@@ -761,7 +737,7 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
                     // different pairs here, so we mark whichever side is the Chinese
                     // word regardless of which bubble the player dragged.
                     const chineseBubble = held.kind === "word" ? held : target;
-                    onMark?.(chineseBubble.entry, false);
+                    if (!cleanup) onMark?.(chineseBubble.entry, false);
                     setStatus(held, "wrong", held.targetScale);
                     setStatus(target, "wrong", target.targetScale);
                     forceRender();
@@ -776,7 +752,8 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
             } else {
                 // No target, or a wrong match dropped in the cancel strip — just
                 // settle back to idle (no mark). The physics wall clamp then lifts
-                // the held bubble back out of the strip on the next frame.
+                // the held bubble back out of the strip on the next frame. (A
+                // partnerless grab was tinted light-red; this clears it too.)
                 setStatus(held, "idle", SCALE_IDLE);
                 // A wrong-in-zone drop still has a hovered target lit from onMove —
                 // drop it back to idle too so it doesn't stay enlarged.
@@ -793,14 +770,12 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
             window.removeEventListener("pointerup", onUp);
             window.removeEventListener("pointercancel", onUp);
         };
-    }, [findHoverTarget, forceRender, onSpeak, setStatus, finishLevel, writeTransform, onMark]);
+    }, [findHoverTarget, forceRender, onSpeak, setStatus, finishLevel, writeTransform, onMark, clearRevealedPartner]);
 
     return (
         <Box
             ref={stageRef}
             className="bubble-stage"
-            onPointerDown={onStageBackgroundPointerDown}
-            onPointerMove={onStagePointerMove}
             sx={{
                 position: "relative",
                 flex: 1,
@@ -903,9 +878,6 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
                     showPinyinColor={showPinyinColor}
                     registerNode={registerNode}
                     onPointerDown={onPointerDown}
-                    onPointerEnter={onBubbleEnter}
-                    onPointerLeave={onBubbleLeave}
-                    studyMode={studyMode}
                 />
             ))}
 

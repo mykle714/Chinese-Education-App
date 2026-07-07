@@ -126,6 +126,7 @@ export const ChineseBlock: React.FC<{
                 <PracticeWritingButton
                     character={entry.entryKey}
                     language={entry.language}
+                    vocabEntryId={entry.id}
                     iconOnly
                     hideStarBadge
                 />

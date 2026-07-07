@@ -47,6 +47,18 @@ router.get('/api/starter-packs/:language/progress', authenticateToken, async (re
   await starterPacksController.getProgress(req, res);
 });
 
+// Quick Mark: one paginated page of not-yet-sorted words at an exact level
+// @ts-ignore
+router.get('/api/starter-packs/:language/quick-mark', authenticateToken, async (req, res) => {
+  await starterPacksController.getQuickMarkCards(req, res);
+});
+
+// Quick Mark: batch-reconcile marked cards into their buckets
+// @ts-ignore
+router.post('/api/starter-packs/quick-mark-batch', authenticateToken, async (req, res) => {
+  await starterPacksController.quickMarkBatch(req, res);
+});
+
 // List the user's currently-skipped words for a language (Skipped page)
 // @ts-ignore
 router.get('/api/starter-packs/:language/skipped', authenticateToken, async (req, res) => {

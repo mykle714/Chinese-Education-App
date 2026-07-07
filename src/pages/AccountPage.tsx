@@ -15,6 +15,9 @@ import {
     DialogContentText,
     DialogActions,
     Snackbar,
+    Checkbox,
+    FormControlLabel,
+    FormGroup,
 } from "@mui/material";
 import { Visibility, VisibilityOff, Warning, ContentCopy } from "@mui/icons-material";
 import SettingsIcon from "@mui/icons-material/Settings";
@@ -85,7 +88,23 @@ function AccountPage() {
     // Settings is a leaf page: slideNavigate plays the slide-up enter transition.
     const slideNavigate = useSlideNavigate();
     const { confirm } = useConfirmation();
-    const { user, isLoading, changePassword, deleteAccount, logout, updateAvatar } = useAuth();
+    const { user, isLoading, changePassword, deleteAccount, logout, updateAvatar, updateGoals } = useAuth();
+
+    // Goal toggles (docs/MASTERY_REWORK.md). Optimistic local state; a failed PUT
+    // reverts. Reading/Writing are only meaningful where those marks can be earned
+    // (zh games), so the section is hidden for Spanish accounts.
+    const [goalSaving, setGoalSaving] = useState<null | "reading" | "writing">(null);
+    const showGoals = user?.selectedLanguage !== "es";
+    const handleToggleGoal = async (which: "reading" | "writing", next: boolean) => {
+        setGoalSaving(which);
+        try {
+            await updateGoals(which === "reading" ? { readingGoal: next } : { writingGoal: next });
+        } catch {
+            /* AuthContext surfaces the error; local switch reverts via user state */
+        } finally {
+            setGoalSaving(null);
+        }
+    };
 
     // Avatar picker (modal) open state.
     const [avatarPickerOpen, setAvatarPickerOpen] = useState(false);
@@ -344,6 +363,65 @@ function AccountPage() {
                         <Box className="account-page__deck-stats" sx={{ minHeight: 150 }}>
                             {countsLoaded && <DeckBuckets counts={categoryCounts} variant="display" />}
                         </Box>
+
+                        {/* Goals Section — opt into the Reading / Writing mastery goals
+                            (docs/MASTERY_REWORK.md). Recognition + Production are always
+                            pursued and aren't shown here. Hidden for Spanish accounts. */}
+                        {showGoals && (
+                            <FormSection className="account-page__goals-section">
+                                <Typography
+                                    className="account-page__section-title"
+                                    sx={{
+                                        fontSize: SIZE.body,
+                                        fontWeight: WEIGHT.medium,
+                                        color: COLORS.onSurface,
+                                        fontFamily: FONTS.sans,
+                                    }}
+                                >
+                                    Goals
+                                </Typography>
+                                <Typography
+                                    className="account-page__goals-description"
+                                    sx={{
+                                        fontSize: SIZE.caption,
+                                        color: COLORS.textSecondary,
+                                        fontFamily: FONTS.sans,
+                                        mt: 0.5,
+                                        mb: 1,
+                                    }}
+                                >
+                                    Turning a goal on may demote some mastered cards back to
+                                    comfortable — you&apos;ll need to train reading and writing
+                                    to promote them back to mastered.
+                                </Typography>
+                                <FormGroup className="account-page__goals-group">
+                                    <FormControlLabel
+                                        className="account-page__goal-reading"
+                                        control={
+                                            <Checkbox
+                                                checked={user?.readingGoal === true}
+                                                disabled={goalSaving !== null}
+                                                onChange={(e) => handleToggleGoal("reading", e.target.checked)}
+                                            />
+                                        }
+                                        label="I want to learn reading"
+                                        sx={{ "& .MuiFormControlLabel-label": { fontSize: SIZE.body, fontFamily: FONTS.sans, color: COLORS.onSurface } }}
+                                    />
+                                    <FormControlLabel
+                                        className="account-page__goal-writing"
+                                        control={
+                                            <Checkbox
+                                                checked={user?.writingGoal === true}
+                                                disabled={goalSaving !== null}
+                                                onChange={(e) => handleToggleGoal("writing", e.target.checked)}
+                                            />
+                                        }
+                                        label="I want to learn writing"
+                                        sx={{ "& .MuiFormControlLabel-label": { fontSize: SIZE.body, fontFamily: FONTS.sans, color: COLORS.onSurface } }}
+                                    />
+                                </FormGroup>
+                            </FormSection>
+                        )}
 
                         {/* Password Change Section */}
                         <FormSection className="account-page__password-section">

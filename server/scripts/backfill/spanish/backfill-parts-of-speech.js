@@ -459,10 +459,20 @@ async function run() {
     // Target word1 set: every word1 that has at least one discoverable row
     // (so we process the word holistically), optionally narrowed by --words.
     const wordsFilter = targetWords?.length ? `AND word1 = ANY($1::text[])` : '';
+    // Skip any word1 whose definitions bundle a validator has approved/flagged on
+    // ANY of its rows — this script rewrites definitions/partsOfSpeech and re-NULLs
+    // enrichment for the whole word, so we protect the word holistically. Review
+    // records live in the `validations` table (migration 104,
+    // docs/DATA_VALIDATION_SYSTEM.md), keyed by det row id + language.
+    const validatedWordFilter = `AND word1 NOT IN (
+      SELECT d2.word1 FROM dictionaryentries_es d2
+        JOIN validations val ON val."entryId" = d2.id AND val.language = 'es'
+       WHERE d2.language = 'es'
+         AND val.field = 'definitions' AND val.action IN ('approve','flag'))`;
     const params = targetWords?.length ? [targetWords] : [];
     const { rows: wordRows } = await client.query(
       `SELECT DISTINCT word1 FROM dictionaryentries_es
-        WHERE language = 'es' AND discoverable = TRUE ${wordsFilter}
+        WHERE language = 'es' AND discoverable = TRUE ${wordsFilter} ${validatedWordFilter}
         ORDER BY word1 ${isSpotCheck ? 'LIMIT 5' : ''}`,
       params
     );

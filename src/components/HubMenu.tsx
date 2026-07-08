@@ -4,6 +4,7 @@ import { styled } from "@mui/material/styles";
 import { Link as RouterLink } from "react-router-dom";
 import { useSlideNavigate } from "../hooks/useSlideNavigate";
 import { useDragScroll } from "../hooks/useDragScroll";
+import { cardBaseSx } from "./hubMenuCardBase";
 import { COLORS } from "../theme/colors";
 import { FONTS } from "../theme/fonts";
 import { SIZE, WEIGHT, LEADING } from "../theme/scale";
@@ -37,26 +38,6 @@ const MenuList = styled(Box)(() => ({
     padding: 0,
     marginTop: 16,
 }));
-
-const cardBaseSx = {
-    position: "relative" as const,
-    display: "flex",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: 12,
-    aspectRatio: "2 / 1",
-    padding: "20px",
-    borderRadius: "28px",
-    textDecoration: "none",
-    color: "inherit",
-    transition: "transform 120ms ease, filter 120ms ease",
-    "&:hover": {
-        filter: "brightness(0.97)",
-    },
-    "&:active": {
-        transform: "scale(0.98)",
-    },
-};
 
 const MenuCard = styled(RouterLink, {
     shouldForwardProp: (prop) => prop !== "bgcolor",
@@ -178,6 +159,15 @@ const CardTitle: React.FC<{ title: string; subtitle?: string }> = ({ title, subt
         )}
     </RowBody>
 );
+
+/** Large rounded icon tile (right side of a hub card). Exported for feature
+    strips that build their own cards but want the identical icon treatment. */
+export const HubMenuRowIconTile = RowIconTile;
+
+/** Title-over-subtitle block (left side of a hub card). Exported alongside
+    {@link cardBaseSx} / {@link HubMenuRowIconTile} for custom hub strips
+    (e.g. Word Search's hub item). */
+export const HubMenuCardTitle: React.FC<{ title: string; subtitle?: string }> = CardTitle;
 
 interface HubMenuProps {
     className?: string;

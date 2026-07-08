@@ -69,15 +69,34 @@ of sub-cards) instead of a single row, both special-cased directly in
 
 - **Bubble Match** — one sub-card per `LEVEL_CONFIGS` entry
   (`src/games/bubble-match/constants.ts`: Chill / Hustle / Torture), passing
-  `state: { level }`.
-- **Word Search** — one sub-card per `MODE_CONFIGS` entry
-  (`src/games/word-search/constants.ts`: Pinyin / No Pinyin), passing
-  `state: { mode }`. Each mode is an independent game with its own saved board
-  (see [WORD_SEARCH_GAME.md](./WORD_SEARCH_GAME.md) §3).
+  `state: { level }`. Rendered as a plain `HubMenuArrayItem` in `GamesPage.tsx`.
+- **Word Search** — one sub-card per `MODE_CONFIGS` entry (Pinyin / No Pinyin).
+  **Not** a plain `HubMenuArrayItem`: it renders a dedicated strip component,
+  `src/games/word-search/WordSearchHubItem.tsx`, because its buttons need custom
+  click handling (both always start a fresh game, confirming first if a save
+  exists) and it prepends a **1:1 resume card** when a saved board exists. That
+  component reuses the shared card look via the exported primitives (below).
+  See [WORD_SEARCH_GAME.md](./WORD_SEARCH_GAME.md) §3.
 
-The rest of this section describes Bubble Match; Word Search follows the same
-shape (title + sub-card subtitle, one shared route, choice via nav state,
-per-sub-card hardcoded color `WORD_SEARCH_MODE_COLORS`) but has no stat badges.
+### Shared card primitives (for custom strips)
+
+So a feature strip can look identical to the built-in cards without
+re-deriving them, three pieces are exported:
+
+- **`cardBaseSx`** (`src/components/hubMenuCardBase.ts`) — the rounded-card base
+  style (radius, padding, 2:1 aspect, hover/active transitions). Kept in its own
+  module, not `HubMenu.tsx`, so exporting this non-component value doesn't
+  disable React Fast Refresh for the component file.
+- **`HubMenuCardTitle`** and **`HubMenuRowIconTile`** (`HubMenu.tsx`) — the
+  title/subtitle block and the large rounded icon tile.
+
+`WordSearchHubItem` composes these into its own `RouterLink` mode cards + a
+1:1 resume card, and manages its own horizontal scroll (`useDragScroll`).
+
+The rest of this section describes Bubble Match; Word Search's mode buttons
+follow the same shape (title + sub-card subtitle, one shared route, choice via
+nav state, per-sub-card hardcoded color `WORD_SEARCH_MODE_COLORS` — now living
+in `WordSearchHubItem.tsx`) but have no stat badges.
 
 - All 3 sub-cards share the game's title ("Bubble Match") with the level name
   as the subtitle, and link to the same route (`/games/bubble-match`); the

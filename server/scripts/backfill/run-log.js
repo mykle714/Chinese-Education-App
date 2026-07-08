@@ -249,7 +249,31 @@ export function initRunLog({ script, version, anthropic, argv } = {}) {
       + ` OR NOT (${safeCol} ? '${key}'))`;
   };
 
-  return { finalize, state, stampEntries, accrueUsage, staleClause };
+  // SQL predicate selecting det rows whose given validation field(s) have NOT been
+  // human-approved/flagged — i.e. rows a backfill is still allowed to overwrite.
+  // AND this into a script's WHERE (its `doneGate`) so the data-validation system
+  // (migration 104, docs/DATA_VALIDATION_SYSTEM.md) protects reviewed fields from
+  // being clobbered by regeneration.
+  //
+  // Review records live in the dedicated `validations` table (NOT a det column —
+  // det is TRUNCATE+restored on every data deploy), keyed by the det row id +
+  // language. This clause correlates that table against the det row via the
+  // (unaliased) table name, so pass the exact table the backfill selects from:
+  //   - definitions-bundle writers (partsOfSpeech / definitions / longDefinition):
+  //       validatedClause(['definitions'], 'dictionaryentries_zh')
+  //   - the whole-array example-sentence writer:
+  //       validatedClause(['exampleSentence0','exampleSentence1','exampleSentence2'], 'dictionaryentries_es')
+  // `fields` are code constants (the script→field mapping), safe to inline.
+  const validatedClause = (fields, table = 'dictionaryentries_zh') => {
+    const list = (Array.isArray(fields) ? fields : [fields])
+      .map((f) => `'${String(f).replace(/'/g, "''")}'`)
+      .join(', ');
+    return `NOT EXISTS (SELECT 1 FROM validations val`
+      + ` WHERE val."entryId" = ${table}.id AND val.language = ${table}.language`
+      + ` AND val.field IN (${list}) AND val.action IN ('approve','flag'))`;
+  };
+
+  return { finalize, state, stampEntries, accrueUsage, staleClause, validatedClause };
 }
 
 export default initRunLog;

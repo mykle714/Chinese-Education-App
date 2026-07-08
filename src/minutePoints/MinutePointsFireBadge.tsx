@@ -54,7 +54,15 @@ const MinutePointsFireBadge: React.FC = () => {
                         sx={{
                             color: activeColor,
                             fontSize: SIZE.title,
-                            filter: (!paused && minutePoints.isActive) ? "drop-shadow(0 0 4px rgba(230, 81, 0, 0.6))" : "none",
+                            // Fade the glow out (rather than snapping to `none`) so removing the
+                            // drop-shadow triggers a real repaint each frame. A bare
+                            // `filter: none` swap leaves a ghost drop-shadow painted in Chromium
+                            // — the glow "sticks around" after the flame greys out. Animating to a
+                            // zero-size transparent shadow via a transition avoids that.
+                            filter: (!paused && minutePoints.isActive)
+                                ? "drop-shadow(0 0 4px rgba(230, 81, 0, 0.6))"
+                                : "drop-shadow(0 0 0 rgba(230, 81, 0, 0))",
+                            transition: "filter 0.3s ease-out, color 0.3s ease-out",
                             animation: (!paused && minutePoints.isAnimating) ? "minutePointsFirePulse 0.6s ease-out" : "none",
                             "@keyframes minutePointsFirePulse": {
                                 "0%, 100%": { transform: "scale(1)" },

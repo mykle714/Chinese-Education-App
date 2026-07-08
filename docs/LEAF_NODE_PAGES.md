@@ -39,7 +39,7 @@ header, floating footer, and edge fade.
 ```
 PageHeader (base bar; arrowDirection: "down" | "left")
  ├─ LeafPageHeader   = PageHeader, arrowDirection="down", showBack   (used by LeafPage)
- ├─ NodePageHeader   = PageHeader, arrowDirection="left", showBack   (parity / direct use)
+ ├─ NodePageHeader   = PageHeader, arrowDirection="left", showBack   (direct use: ReaderDocumentSurface)
  └─ MobileDemoHeader = PageHeader (+ activePage badge, arrowDirection pass-through)
         └─ MobileTabScreen threads arrowDirection → used by NodePage with "left"
 ```
@@ -144,7 +144,8 @@ Every other route (all leaf pages, login, etc.) is absent → the footer slides 
 | `/discover/skipped/:language` | `SkippedCardsPage` | Node |
 | `/dictionary` | `DictionaryPage` | Node (footer added; tapping a result opens the dictionary cdp) |
 | `/dictionary/card/:word` | `DictionaryCardDetailPage` | Node (read-only cdp; det-keyed by word) |
-| `/reader` | `ReaderPage` | Leaf |
+| `/reader` | `ReaderPage` | Node (document list; footer kept, Home tab) — opening a document routes to `/reader/:id`, a footerless node-style surface, see § below |
+| `/reader/:id` | `ReaderDocumentPage` | Node-style (footerless) — the open-document cdp-style page, see § below |
 | `/tester-dashboard` | `TesterDashboardPage` | Leaf |
 | `/night-market` | `NightMarketEnginePage` | Leaf |
 | `/flashcards/card/:id` | `VocabCardDetailPage` | Node (saved-card cdp; footer added) |
@@ -188,6 +189,53 @@ examples / synonyms+related):
   example-sentence segments drill into the cdp of the tapped word (the same drill-in
   the eip offers, except it navigates to a cdp instead of opening a nested eip tab).
   Every linked page is itself this read-only cdp, so read-only propagates recursively.
+
+## Reader: node list + node-style document page (cdp-style)
+
+The Reader is TWO routed pages, following the same fetch-by-id cdp pattern as
+`VocabCardDetailPage` (`/flashcards/card/:id`):
+
+- **Document list** (`/reader`, `ReaderPage.tsx`) — a NODE page reached from the
+  Home menu (`NodePage`, `activePage="home"`, LEFT arrow → Home, footer kept —
+  same shape as `GamesPage`/`DictionaryPage`). Registered in `NODE_ROUTES`
+  (`src/utils/pageTransition.ts`) and `FOOTER_ROUTES` (`FooterPresenter.tsx`).
+  Fixed non-scrolling shell (`scrollable={false}`) — `TextSidebar` owns its own
+  internal scroll region for the document list, matching the fixed-layout
+  `NodePage` pattern used by `SortCardsPage`; `MobileTabScreen`'s scroll area
+  reserves `FLOATING_FOOTER_CLEARANCE` regardless of `scrollable`, so no manual
+  footer spacer is needed. `TextSidebar`'s `onTextSelect` calls
+  `useSlideNavigate()` to `/reader/${text.id}`.
+- **Open document** (`/reader/:id`, `ReaderDocumentPage.tsx`) — fetches its own
+  `Text` by id (`GET /api/texts/:id`), so it is deep-linkable and survives a hard
+  refresh, and supports the browser back button like every other routed page.
+  Rendered inside `src/features/reader/ReaderDocumentSurface.tsx`, a **footerless
+  node-style drill-in**: LEFT arrow, horizontal slide, but no footer. Its header
+  right slot (`docHeaderRightContent`) carries Edit/Delete icon buttons ahead of
+  the validator-download button + streak badge, so `TextHeader.tsx` itself only
+  renders title/description/meta + validation actions — no back/edit/delete
+  buttons of its own. `ReaderDocumentSurface` is deliberately NOT the shared
+  `NodePage`: `MobileTabScreen` would reserve `FLOATING_FOOTER_CLEARANCE` for a
+  footer pill `/reader/:id` never shows (it isn't in `FooterPresenter`'s route
+  maps) and add a scroll-away header to a fixed layout. Instead it composes
+  `NodePageHeader` + `usePageSlide({ axis: "x" })` directly, per the header
+  hierarchy above. The back arrow calls `navigate("/reader")` — an ordinary route
+  change, so `Layout`'s pathname effect clears the skip-enter latch normally, same
+  as every other routed leaf/node page.
+
+`/reader/:id` is registered in `NODE_PREFIXES` (`src/utils/pageTransition.ts`) so
+`useSlideNavigate` slides it in from the right — it is the one FOOTERLESS
+exception to that list (every other `NODE_PREFIXES` entry is also footer-bearing).
+This is likewise the one exception to the "no footer ⇒ leaf" rule of thumb: the
+document page uses node **motion and arrow** (lateral: you're moving within the
+Reader, not stacking a terminal sheet) while remaining footerless like its parent
+leaf.
+
+Shared logic between the two pages (list-refresh-after-CRUD via the dialogs, the
+validator-download call) is factored into `src/features/reader/validationApi.ts`
+(`downloadValidationDoc`) rather than duplicated. `src/hooks/useLockBodyScroll.ts`
+(the html/body scroll-lock effect) is used only by `ReaderDocumentPage` now — its
+fixed `ReaderDocumentSurface` layout sits outside the standard `NodePage`/
+`MobileTabScreen` shell, unlike the list page.
 
 ## Not yet classified
 The generic in-game shell `src/games/runtime/GamePage.tsx` (used by any future

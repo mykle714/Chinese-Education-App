@@ -51,7 +51,10 @@ const VocabCardDetailPage: React.FC = () => {
     const fc = theme.palette.flashcard;
     const { token } = useAuth();
     const { settings } = useFlashcardLearnSettings();
-    const { showPinyin, showPinyinColor, slowExampleSentences } = settings;
+    const { showPinyinColor, slowExampleSentences } = settings;
+    // cdp always shows pinyin regardless of the flp pinyin toggle — pinyin is
+    // core reference info on the detail page, so we ignore settings.showPinyin here.
+    const showPinyin = true;
     // Manual word narration — same speaker button flp shows on the back face's
     // ChineseBlock. Hidden when narration is disabled in settings (onSpeak undefined).
     const tts = useTTS();

@@ -2,6 +2,8 @@ import { Box, Typography, type SxProps, type Theme } from "@mui/material";
 import { stripParentheses } from "../utils/definitionUtils";
 import type { LongDefinitionPart } from "../types";
 import SegmentedSentenceDisplay from "./SegmentedSentenceDisplay";
+import { aiGeneratedSurfaceSx } from "../theme/aiGeneratedStyling";
+import { AiGeneratedBadge } from "./AiGeneratedBadge";
 
 interface LongDefinitionDisplayProps {
   // Raw long-definition string — used for the plain-text fallback when parts are absent.
@@ -21,6 +23,11 @@ interface LongDefinitionDisplayProps {
   // Typography styling (font/color/size) for the prose, supplied by the host surface
   // so this stays presentation-agnostic.
   sx?: SxProps<Theme>;
+  // TRUE when the caller's entry.definitionsApproved is falsy — renders the shared
+  // AI-generated treatment (orange border/tint + "AI GENERATED" badge, matching the
+  // est's unapproved-sentence styling) around the definition text. See
+  // docs/DATA_VALIDATION_SYSTEM.md.
+  aiGenerated?: boolean;
 }
 
 /**
@@ -41,6 +48,7 @@ const LongDefinitionDisplay: React.FC<LongDefinitionDisplayProps> = ({
   showPinyinColor,
   onSegmentOpen,
   sx,
+  aiGenerated = false,
 }) => {
   // Fallback: no parts (e.g. enrichment didn't run, or pure-English definition that the
   // server still left unsplit) → render the original plain, parenthetical-stripped text.
@@ -49,17 +57,18 @@ const LongDefinitionDisplay: React.FC<LongDefinitionDisplayProps> = ({
     // `whiteSpace: pre-line` preserves the `\n\n` that longDefObjectToDisplayString
     // inserts BETWEEN per-POS entries (server/utils/definitions.ts) — without it the
     // DOM collapses the break and the POS senses run together on one line.
-    return (
+    const text = (
       <Typography className={className} sx={[...(Array.isArray(sx) ? sx : [sx]), { whiteSpace: "pre-line" }]}>
         {stripParentheses(longDefinition)}
       </Typography>
     );
+    return aiGenerated ? wrapAiGenerated(text) : text;
   }
 
   // Parts path: a block paragraph whose inline children flow together. Chinese runs are
   // inline-flex cpcd; text runs are inline spans. A generous lineHeight keeps the
   // pinyin-below row from colliding with the following wrapped line of prose.
-  return (
+  const parts = (
     <Typography
       component="div"
       className={className}
@@ -100,6 +109,22 @@ const LongDefinitionDisplay: React.FC<LongDefinitionDisplayProps> = ({
       })}
     </Typography>
   );
+  return aiGenerated ? wrapAiGenerated(parts) : parts;
 };
+
+// Wraps the rendered definition in the shared AI-generated surface (orange
+// border/tint) plus badge. A dedicated helper (rather than inlining twice) so the
+// two render branches above stay visually identical when unapproved.
+function wrapAiGenerated(content: React.ReactNode): React.ReactElement {
+  return (
+    <Box
+      className="long-definition-display--ai-generated"
+      sx={{ ...aiGeneratedSurfaceSx, borderRadius: "10px", padding: "10px 12px", display: "flex", flexDirection: "column", gap: "6px" }}
+    >
+      <AiGeneratedBadge className="long-definition-ai-badge" label="AI GENERATED" />
+      {content}
+    </Box>
+  );
+}
 
 export default LongDefinitionDisplay;

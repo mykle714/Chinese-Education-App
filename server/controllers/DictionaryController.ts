@@ -53,7 +53,10 @@ export class DictionaryController {
       const [withExampleMeta] = await this.dictionaryService.enrichExampleSentencesMetadataBatch([entry], language);
       // Split the long definition into English prose + embedded-Chinese runs so the EIP
       // Definition tab can render inline cpcd (with the segment popup) for any Chinese it contains.
-      const [enrichedEntry] = await this.dictionaryService.enrichLongDefinitionMetadataBatch([withExampleMeta], language);
+      const [withLongDefMeta] = await this.dictionaryService.enrichLongDefinitionMetadataBatch([withExampleMeta], language);
+      // Attaches definitionsApproved (validated 'definitions' field) so the client
+      // knows whether to render the longDefinition/partsOfSpeech AI-generated styling.
+      const [enrichedEntry] = await this.dictionaryService.enrichDefinitionsApprovalBatch([withLongDefMeta], language);
 
       // For single-character zh entries, also attach the per-user "used in"
       // list (up to 4 multi-char words containing this character, capped at
@@ -182,6 +185,53 @@ export class DictionaryController {
       }
       console.error('Error generating AI dictionary entry:', error);
       res.status(500).json({ error: error.message || 'Failed to generate AI entry' });
+    }
+  }
+
+  /**
+   * Generate (or return cached) a comparison paragraph for two words — the eip Compare tab's
+   * target (docs/WORD_COMPARE_FEATURE.md). Returns `{ comparison }`, or `{ comparison: null }` for
+   * an invalid pair / disabled feature / transient model failure.
+   * POST /api/dictionary/compare  { wordA, wordB, language?, tz }
+   */
+  async compare(req: Request, res: Response): Promise<void> {
+    try {
+      const { wordA, wordB, language, tz } = req.body;
+      const userId = (req as any).user?.userId;
+
+      if (!wordA || typeof wordA !== 'string' || !wordB || typeof wordB !== 'string') {
+        res.status(400).json({ error: 'wordA and wordB are required' });
+        return;
+      }
+
+      if (!userId) {
+        res.status(401).json({ error: 'User not authenticated' });
+        return;
+      }
+
+      let compareLanguage = language as string;
+      if (!compareLanguage) {
+        const user = await this.userDAL.findById(userId);
+        compareLanguage = user?.selectedLanguage || 'zh';
+      }
+
+      // Same 4 AM-bounded local streak-day boundary as the dictionary AI fallback's daily limit,
+      // which this feature shares (docs/WORD_COMPARE_FEATURE.md).
+      const usageDate = streakDateOf(new Date(), resolveTimezone(tz));
+
+      const result = await this.dictionaryService.compareWords(wordA, wordB, compareLanguage, userId, usageDate);
+      // comparisonParts: embedded-Chinese runs GSA-segmented + pinyin-annotated, same treatment
+      // as longDefinition (docs/WORD_COMPARE_FEATURE.md) — the client renders it via the shared
+      // LongDefinitionDisplay component.
+      res.json({ comparison: result?.comparison ?? null, comparisonParts: result?.comparisonParts ?? null });
+    } catch (error: any) {
+      // Shared daily abuse limit exceeded → 429 with the user-facing message.
+      if (error instanceof RateLimitError) {
+        res.status(error.statusCode).json({ error: error.message, code: error.code });
+        return;
+      }
+      console.error('Error generating word comparison:', error);
+      res.status(500).json({ error: error.message || 'Failed to generate comparison' });
     }
   }
 

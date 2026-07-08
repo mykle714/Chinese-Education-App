@@ -328,16 +328,18 @@ vernacular phrase per word) were **replaced by `characterRationale`** in migrati
 in brief:
 
 ### Purpose
-`characterRationale` (jsonb, `dictionaryentries_zh` only) explains, character by
-character, **why each character is used** in a multi-char word — a short English
-learner-facing reason that folds in an implied longer word when illuminating.
+`characterRationale` (jsonb, `dictionaryentries_zh` only) maps, character by
+character, **the fuller everyday Chinese word each character abbreviates** in a
+multi-char word (`impliedWord`, Chinese only — no English gloss), or `""` when the
+character abbreviates nothing illuminating. See [CHARACTER_RATIONALE.md](./CHARACTER_RATIONALE.md).
 
 **Examples**:
-- 违规 → `[{"char":"违","reason":"to violate — short for 违反"},{"char":"规","reason":"rules/norms — short for 规矩"}]`
+- 违规 → `[{"char":"违","impliedWord":"违反"},{"char":"规","impliedWord":"规矩"}]`
+- 不知不觉 → `[{"char":"不","impliedWord":""},{"char":"知","impliedWord":"知道"},{"char":"不","impliedWord":""},{"char":"觉","impliedWord":"觉得"}]`
 - 咖啡 → `[]` (transliteration — no worthwhile per-character breakdown)
 
 ### Implementation
-- **Column Type**: `jsonb` (NULL-able), array of `{char, reason}` aligned to the word's characters
+- **Column Type**: `jsonb` (NULL-able), array of `{char, impliedWord}` aligned to the word's characters
 - **Sentinel**: `NULL` = never attempted; `'[]'` = attempted, nothing worthwhile
 - **Display-ready**: unlike expansion (which was GSA-segmented at runtime), the column
   renders directly — no runtime enrichment step
@@ -348,7 +350,7 @@ learner-facing reason that folds in an implied longer word when illuminating.
 // From server/types/index.ts
 export interface VocabEntry {
   // ... other fields
-  characterRationale?: Array<{ char: string; reason: string }> | null;
+  characterRationale?: Array<{ char: string; impliedWord: string }> | null;
 }
 ```
 

@@ -65,7 +65,10 @@ const targetWords = wordsArg ? wordsArg.slice('--words='.length).split(',').map(
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // run-log: track duration, version, words/mode, and token usage/cost
-const { stampEntries } = initRunLog({ script: 'chinese/backfill-process-definitions-array', version: SCRIPT_VERSION, anthropic: anthropic });
+const { stampEntries, validatedClause } = initRunLog({ script: 'chinese/backfill-process-definitions-array', version: SCRIPT_VERSION, anthropic: anthropic });
+// Never rewrite the definitions array on an entry whose definitions bundle a
+// validator has approved/flagged (migration 104, docs/DATA_VALIDATION_SYSTEM.md).
+const validatedFilter = `AND ${validatedClause(['definitions'], 'dictionaryentries_zh')}`;
 
 const PASS1_MODEL = 'claude-sonnet-4-6';
 const PASS2_MODEL = 'claude-sonnet-4-6';
@@ -142,6 +145,7 @@ async function run() {
            FROM dictionaryentries_zh
            WHERE language = 'zh'
              ${includeAll ? '' : 'AND discoverable = TRUE'}
+             ${validatedFilter}
              AND jsonb_array_length(definitions) > 1
            ORDER BY id ASC
            ${isSpotCheck ? 'LIMIT 5' : ''}`,

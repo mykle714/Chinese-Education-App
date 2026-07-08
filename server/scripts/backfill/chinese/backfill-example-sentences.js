@@ -75,7 +75,11 @@ const SCRIPT_VERSION = 6; // bump when this script's logic/prompt changes (v6: m
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // run-log: track duration, version, words/mode, and token usage/cost
-const { stampEntries } = initRunLog({ script: 'chinese/backfill-example-sentences', version: SCRIPT_VERSION, anthropic: anthropic });
+const { stampEntries, validatedClause } = initRunLog({ script: 'chinese/backfill-example-sentences', version: SCRIPT_VERSION, anthropic: anthropic });
+// This script regenerates the WHOLE exampleSentences array, so skip any entry
+// whose example sentences a validator has approved/flagged (migration 104,
+// docs/DATA_VALIDATION_SYSTEM.md).
+const validatedFilter = `AND ${validatedClause(['exampleSentence0', 'exampleSentence1', 'exampleSentence2'], 'dictionaryentries_zh')}`;
 
 // When --spot-check is passed, process only 3 entries and print full sentence output
 const isSpotCheck = process.argv.includes('--spot-check');
@@ -866,6 +870,7 @@ async function run() {
       FROM dictionaryentries_zh
       WHERE language = 'zh'
         AND discoverable = TRUE
+        ${validatedFilter}
         ${emptinessFilter}
         ${wordsFilter}
       ORDER BY id ASC

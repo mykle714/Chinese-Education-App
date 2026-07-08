@@ -19,7 +19,7 @@ import WordSearchHintBar from "./WordSearchHintBar";
 import GameEndPopup from "../runtime/GameEndPopup";
 import { useWordSearchSettings } from "./useWordSearchSettings";
 import { saveGameState, loadGameState, clearGameState, type SavedWordSearchState } from "./gameStateStorage";
-import { GRID_QUERY, TOTAL_WORDS, HINT_BAR_UNITS, HINT_COST, medalForTime, modeConfigFor } from "./constants";
+import { GRID_QUERY, TOTAL_WORDS, HINT_BAR_UNITS, HINT_COST, medalForTime, modeConfigFor, formatTimeMs } from "./constants";
 import { countPinyinUnits } from "./pinyinUnits";
 import type { BonusWord, PlacedWord, WordSearchResponse } from "./types";
 
@@ -27,14 +27,6 @@ type Phase = "loading" | "blocked" | "playing" | "won";
 
 /** Win-log key for Word Search completions (shared `wins` table). */
 const GAME_KEY = "wordSearch";
-
-/** mm:ss from a millisecond duration. */
-function formatTime(ms: number): string {
-    const total = Math.floor(ms / 1000);
-    const m = Math.floor(total / 60);
-    const s = total % 60;
-    return `${m}:${s.toString().padStart(2, "0")}`;
-}
 
 /**
  * Word Search — page shell + game-flow state machine.
@@ -71,6 +63,13 @@ const WordSearchPage: React.FC = () => {
     const mode = modeConfig?.mode;
     const showPinyin = modeConfig?.showPinyin ?? false;
     const showPinyinColor = true;
+
+    // Whether this mount was launched from the hub's RESUME card (restore the
+    // saved board) vs a mode button (always start a fresh board). Captured once
+    // on mount — both modes share a single saved slot now, so a mode button must
+    // never silently resume; only the resume card does. See GamesPage /
+    // WordSearchHubItem and docs/WORD_SEARCH_GAME.md §5b.
+    const [resumeIntent] = useState(() => (location.state as { resume?: boolean } | null)?.resume === true);
 
     // An edge swipe would navigate away mid-drag; block it while mounted.
     useBlockEdgeSwipe(true);
@@ -213,7 +212,8 @@ const WordSearchPage: React.FC = () => {
         if (s.phase !== "playing" || !s.data || !s.data.grid) return;
         if (s.found.size >= s.data.words.length) return;
         const elapsedNow = startRef.current !== null ? Date.now() - startRef.current : pausedElapsedRef.current;
-        saveGameState(userId, mode, {
+        saveGameState(userId, {
+            mode,
             data: s.data,
             found: [...s.found],
             elapsedMs: elapsedNow,
@@ -338,10 +338,17 @@ const WordSearchPage: React.FC = () => {
         }
         let cancelled = false;
         (async () => {
-            const saved = loadGameState(userId, mode);
-            if (saved) {
-                if (!cancelled) restoreBoard(saved);
-                return;
+            // Resume card → restore the single saved board (in its saved mode).
+            // Mode button → always a fresh board; any existing save is discarded
+            // by the hub's confirm flow before we get here, and starting fresh
+            // (then re-saving on exit) overwrites the slot anyway.
+            if (resumeIntent) {
+                const saved = loadGameState(userId);
+                if (saved) {
+                    if (!cancelled) restoreBoard(saved);
+                    return;
+                }
+                // Save vanished between hub and here — fall through to fresh.
             }
             const payload = await fetchGrid();
             if (cancelled || !payload) return;
@@ -369,6 +376,19 @@ const WordSearchPage: React.FC = () => {
         document.addEventListener("visibilitychange", handleVisibility);
         return () => document.removeEventListener("visibilitychange", handleVisibility);
     }, [phase, persistSnapshot, pauseTimer, resumeTimer]);
+
+    // Keep the single saved slot continuously in sync while playing — not just
+    // on exit/background. Two reasons: (1) a hard crash keeps progress, and
+    // (2) the Games hub reads the save during ITS OWN render when you navigate
+    // back, which — for the same back-transition — happens BEFORE this page's
+    // unmount save would run; without an already-written save the resume card
+    // wouldn't appear until the next hub visit. Keyed on `found` (a new Set each
+    // find), NOT the 500ms `elapsedMs` tick, to avoid a write every half-second;
+    // persistSnapshot reads the live elapsed off startRef, so the saved time is
+    // still current at each write. No-ops once the board is complete (its guard).
+    useEffect(() => {
+        if (phase === "playing") persistSnapshot();
+    }, [phase, found, persistSnapshot]);
 
     // Safety net for a hard close/refresh (visibilitychange won't fire for these).
     useEffect(() => {
@@ -531,21 +551,21 @@ const WordSearchPage: React.FC = () => {
             setFinalMs(ms);
             setPopupMinimized(false);
             recordWin();
-            if (userId && mode) clearGameState(userId, mode);
+            if (userId) clearGameState(userId);
             setPhase("won");
         }
-    }, [found, phase, data, elapsedMs, stopTimer, recordWin, userId, mode]);
+    }, [found, phase, data, elapsedMs, stopTimer, recordWin, userId]);
 
     // Discard the current board (win-screen "Play Again", or the header
     // restart button mid-game) and load a fresh one.
     const resetBoard = useCallback(async () => {
-        if (userId && mode) clearGameState(userId, mode);
+        if (userId) clearGameState(userId);
         tts.unlockAudio();
         setPhase("loading");
         const payload = await fetchGrid();
         if (!payload) return; // fetchGrid already switched to blocked
         startBoard(payload);
-    }, [tts, fetchGrid, startBoard, userId, mode]);
+    }, [tts, fetchGrid, startBoard, userId]);
 
     const renderCentered = (children: React.ReactNode) => (
         <Box
@@ -610,7 +630,7 @@ const WordSearchPage: React.FC = () => {
                         className="word-search__hud-timer"
                         sx={{ fontSize: SIZE.body, fontWeight: WEIGHT.bold, color: "#6b6b6b", lineHeight: 1.25 }}
                     >
-                        {showTimer ? `⏱ ${formatTime(phase === "won" ? finalMs : elapsedMs)}` : ""}
+                        {showTimer ? `⏱ ${formatTimeMs(phase === "won" ? finalMs : elapsedMs)}` : ""}
                     </Typography>
                     {/* Hint meter: fills on finds, arms at HINT_COST. Positioned
                         absolutely (not a flex sibling) so toggling the timer's
@@ -667,7 +687,7 @@ const WordSearchPage: React.FC = () => {
                             {medal.emoji} All {TOTAL_WORDS} found!
                         </Typography>
                         <Typography className="word-search__win-time" sx={{ fontSize: SIZE.bodyLg, color: fc.textSecondary }}>
-                            Time {formatTime(finalMs)} — {medal.medal} medal
+                            Time {formatTimeMs(finalMs)} — {medal.medal} medal
                         </Typography>
                         <Box className="word-search__win-actions" sx={{ display: "flex", flexDirection: "column", gap: 1.5, width: "100%", maxWidth: 260 }}>
                             <Button className="word-search__play-again" variant="contained" onClick={resetBoard} sx={{ borderRadius: "12px", textTransform: "none", fontWeight: WEIGHT.bold }}>

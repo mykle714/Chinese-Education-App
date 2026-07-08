@@ -1,10 +1,10 @@
-import { Card, CardContent, Typography, Box } from '@mui/material';
-import { AutoAwesome } from '@mui/icons-material';
+import { Card, CardContent, Typography } from '@mui/material';
 import type { AiDictionaryEntry } from '../types';
 import { hasChinese } from '../utils/textUtils';
 import { FONTS } from '../theme/fonts';
 import { SIZE, WEIGHT } from '../theme/scale';
-import { COLORS } from '../theme/colors';
+import { aiGeneratedSurfaceSx } from '../theme/aiGeneratedStyling';
+import { AiGeneratedBadge } from './AiGeneratedBadge';
 
 interface AiDictionaryEntryCardProps {
     entry: AiDictionaryEntry;
@@ -12,30 +12,22 @@ interface AiDictionaryEntryCardProps {
 
 /**
  * Display-only AI-synthesized dictionary entry (docs/DICTIONARY_AI_FALLBACK_SEARCH.md). Rendered in
- * the app's orange (COLORS.yellowMain) to distinguish it from real dictionary rows, and
- * intentionally NOT clickable — it carries no id/metadata, so there is no detail view to open.
+ * the shared AI-generated treatment (aiGeneratedStyling — orange border/tint + sparkle badge) to
+ * distinguish it from real dictionary rows, and intentionally NOT clickable — it carries no
+ * id/metadata, so there is no detail view to open.
  */
 function AiDictionaryEntryCard({ entry }: AiDictionaryEntryCardProps) {
     return (
         <Card
             className="ai-dictionary-entry-card"
-            sx={{
-                border: '1px solid',
-                borderColor: COLORS.yellowMain,
-                backgroundColor: `${COLORS.yellowMain}14`, // ~8% orange tint
-                height: '100%',
-            }}
+            sx={{ ...aiGeneratedSurfaceSx, height: '100%' }}
         >
             <CardContent className="ai-dictionary-entry-card__content">
-                <Box
+                <AiGeneratedBadge
                     className="ai-dictionary-entry-card__badge"
-                    sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1, color: COLORS.yellowMain }}
-                >
-                    <AutoAwesome sx={{ fontSize: SIZE.body }} />
-                    <Typography sx={{ fontSize: SIZE.caption, fontWeight: WEIGHT.bold, letterSpacing: 0.5 }}>
-                        AI SUGGESTION
-                    </Typography>
-                </Box>
+                    label="AI SUGGESTION"
+                    sx={{ mb: 1 }}
+                />
 
                 <Typography
                     className="ai-dictionary-entry-card__word"

@@ -41,7 +41,10 @@ const DictionaryCardDetailPage: React.FC = () => {
     const slideNavigate = useSlideNavigate();
     const { token, user } = useAuth();
     const { settings } = useFlashcardLearnSettings();
-    const { showPinyin, showPinyinColor, slowExampleSentences } = settings;
+    const { showPinyinColor, slowExampleSentences } = settings;
+    // cdp always shows pinyin regardless of the flp pinyin toggle — pinyin is
+    // core reference info on the detail page, so we ignore settings.showPinyin here.
+    const showPinyin = true;
     const tts = useTTS();
 
     const [entry, setEntry] = useState<VocabEntry | null>(null);

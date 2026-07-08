@@ -2,6 +2,7 @@ import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import { Text, TextCreateData, TextUpdateData } from '../types/index.js';
 import { ValidationError, NotFoundError } from '../types/dal.js';
 import { dbManager } from '../dal/base/DatabaseManager.js';
+import { sanitizeDocumentContent } from '../utils/sanitizeContent.js';
 
 /**
  * Text Service - Contains all business logic for text/document operations
@@ -31,13 +32,26 @@ export class TextService {
     // Use user's selected language or default to Chinese
     const language = textData.language || user.selectedLanguage || 'zh';
 
+    // Defense-in-depth: neutralize control chars / HTML in the stored body + description.
+    const safeContent = sanitizeDocumentContent(textData.content);
+    const safeDescription = sanitizeDocumentContent(textData.description || '').trim();
+
     // id and createdAt are filled by Postgres defaults (uuid_generate_v4, now()).
+    // The validation* columns are set only when ValidationService composes a
+    // validation document; ordinary creation passes null for all four.
     const result = await dbManager.executeQuery<Text>(async (client) => {
       return await client.query(
-        `INSERT INTO texts ("userId", title, description, content, language, "characterCount", "isUserCreated")
-         VALUES ($1, $2, $3, $4, $5, $6, true)
+        `INSERT INTO texts ("userId", title, description, content, language, "characterCount", "isUserCreated",
+                            "validationEntryId", "validationLanguage", "validationField", "validationOriginalContent")
+         VALUES ($1, $2, $3, $4, $5, $6, true, $7, $8, $9, $10)
          RETURNING *`,
-        [userId, textData.title.trim(), textData.description?.trim() || '', textData.content, language, characterCount]
+        [
+          userId, textData.title.trim(), safeDescription, safeContent, language, characterCount,
+          textData.validationEntryId ?? null,
+          textData.validationLanguage ?? null,
+          textData.validationField ?? null,
+          textData.validationOriginalContent ?? null,
+        ]
       );
     });
 
@@ -96,12 +110,13 @@ export class TextService {
     
     if (updateData.description !== undefined) {
       updates.push(`description = $${paramIndex++}`);
-      values.push(updateData.description.trim());
+      values.push(sanitizeDocumentContent(updateData.description).trim());
     }
-    
+
     if (updateData.content !== undefined) {
+      // Defense-in-depth: neutralize control chars / HTML before storing.
       updates.push(`content = $${paramIndex++}`);
-      values.push(updateData.content);
+      values.push(sanitizeDocumentContent(updateData.content));
       updates.push(`"characterCount" = $${paramIndex++}`);
       values.push(characterCount);
     }

@@ -5,6 +5,8 @@ import { buildSentencePronunciation } from "./FlashcardsLearnPage/sentencePronun
 import { renderEnglishWithVocabUnderline } from "./exampleSentenceText";
 import { FC_FONT } from "./FlashcardsLearnPage/constants";
 import { SIZE, LEADING } from "../../theme/scale";
+import { aiGeneratedSurfaceSx } from "../../theme/aiGeneratedStyling";
+import { AiGeneratedBadge } from "../../components/AiGeneratedBadge";
 import type { VocabEntry, Language } from "../../types";
 
 // One example sentence, as stored on a vet/det row.
@@ -57,13 +59,28 @@ const ExampleSentenceList: React.FC<ExampleSentenceListProps> = ({
       className="example-sentence-list"
       sx={{ display: "flex", flexDirection: "column", gap: "12px" }}
     >
-      {sentences.map((sentence, index) => (
+      {sentences.map((sentence, index) => {
+        // A sentence counts as human-reviewed only when the server attached a valid
+        // approval (validations row with the approve stamp whose stored content still
+        // matches the det data — computed in enrichExampleSentencesMetadataBatch,
+        // docs/DATA_VALIDATION_SYSTEM.md). Anything else renders the shared
+        // AI-generated treatment (orange border/tint + sparkle badge), matching the
+        // dictionary AI-fallback result card.
+        const isHumanApproved = sentence.humanApproved === true;
+        return (
         <Box
           key={index}
-          className="example-sentence-item"
+          className={
+            isHumanApproved
+              ? "example-sentence-item"
+              : "example-sentence-item example-sentence-item--ai-generated"
+          }
           sx={{
             position: "relative",
-            background: fc.subtleBg,
+            // Approved sentences keep the quiet flashcard background; unapproved ones
+            // take the shared AI surface (its translucent orange tint replaces subtleBg
+            // so the tone matches the dictionary AI card exactly).
+            ...(isHumanApproved ? { background: fc.subtleBg } : aiGeneratedSurfaceSx),
             borderRadius: "10px",
             padding: "12px 14px",
             display: "flex",
@@ -71,6 +88,12 @@ const ExampleSentenceList: React.FC<ExampleSentenceListProps> = ({
             gap: "8px",
           }}
         >
+          {!isHumanApproved && (
+            <AiGeneratedBadge
+              className="example-sentence-ai-badge"
+              label="AI GENERATED"
+            />
+          )}
           {onSpeakSentence && (
             // zIndex keeps the speaker above SegmentedSentenceDisplay's
             // position:relative root, which would otherwise paint over (and
@@ -114,7 +137,8 @@ const ExampleSentenceList: React.FC<ExampleSentenceListProps> = ({
             {renderEnglishWithVocabUnderline(sentence.english, sentence.translatedVocab)}
           </Typography>
         </Box>
-      ))}
+        );
+      })}
     </Box>
   );
 };

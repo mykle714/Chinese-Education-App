@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { IDictionaryDAL } from '../dal/interfaces/IDictionaryDAL.js';
-import { DictionaryEntry, VocabEntry, AiDictionaryEntry } from '../types/index.js';
+import { DictionaryEntry, VocabEntry, AiDictionaryEntry, WordComparisonResult, LongDefinitionPart } from '../types/index.js';
 import { ValidationError, RateLimitError } from '../types/dal.js';
 import { getAllSubstrings, buildDictMap, buildExcludeSet, segmentWithDict } from '../dal/shared/segmentString.js';
 import { DICTIONARY_AI_DAILY_LIMIT } from '../constants.js';
@@ -414,6 +414,117 @@ Rules:
   }
 
   /**
+   * Generate (or return cached) a free-text paragraph comparing two det words — the eip Compare
+   * tab (docs/WORD_COMPARE_FEATURE.md). wordA/wordB need not arrive in any order: this method
+   * canonically sorts them (codepoint order) before both the cache read and write, so comparing
+   * A-vs-B and B-vs-A share one cached row and one model call (the prompt is symmetric).
+   *
+   * Shares the dictionary AI fallback's daily budget (`dictionary_ai_usage`) and `DICT_AI_API_KEY`
+   * — no separate rate limit or API key for this feature. Unlike `generateAiEntry` there is no
+   * "empty result" outcome to cache: a comparison is always produced for two non-empty words, and
+   * no web_search tool is needed (both words are already known), so this is a single model call.
+   */
+  async compareWords(
+    wordA: string,
+    wordB: string,
+    language: string,
+    userId: string,
+    usageDate: string,
+  ): Promise<WordComparisonResult | null> {
+    const a = (wordA || '').trim();
+    const b = (wordB || '').trim();
+    if (!a || !b || a === b) return null;
+    if (language !== 'zh' && language !== 'es') return null;
+
+    // Canonical (unordered-pair) ordering — see docs/WORD_COMPARE_FEATURE.md.
+    const [sortedA, sortedB] = a < b ? [a, b] : [b, a];
+
+    const cached = await this.dictionaryDAL.getComparison(sortedA, sortedB, language);
+    if (cached) return this.withComparisonParts(cached.comparison, language);
+
+    const anthropic = getDictAiClient();
+    if (!anthropic) return null; // feature disabled (no DICT_AI_API_KEY)
+
+    // Shared daily abuse limit with the dictionary AI fallback (docs/DICTIONARY_AI_FALLBACK_SEARCH.md).
+    const usedToday = await this.dictionaryDAL.getAiUsageCount(userId, usageDate);
+    if (usedToday >= DICTIONARY_AI_DAILY_LIMIT) {
+      throw new RateLimitError(
+        `You've reached your daily limit of ${DICTIONARY_AI_DAILY_LIMIT} AI lookups. Try again tomorrow.`,
+      );
+    }
+
+    // Ground the model in each word's actual det definitions so it explains THESE senses rather
+    // than free-associating. A missing det row (e.g. an undiscoverable or synthetic word) degrades
+    // gracefully — the model is told to rely on its own knowledge for that word instead.
+    const [entryA, entryB] = await Promise.all([
+      this.dictionaryDAL.findByWord1(sortedA, language),
+      this.dictionaryDAL.findByWord1(sortedB, language),
+    ]);
+    const groundingLine = (word: string, entry: DictionaryEntry | null): string => {
+      const defs = entry?.definitions?.length ? entry.definitions.join('; ') : null;
+      return defs ? `${word}: ${defs}` : `${word}: (no dictionary definition on file — use your own knowledge)`;
+    };
+
+    const systemText = this.buildCompareSystemPrompt(language);
+    const userText = `Word 1 — ${groundingLine(sortedA, entryA)}\nWord 2 — ${groundingLine(sortedB, entryB)}`;
+
+    let comparison: string;
+    try {
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 400,
+        temperature: 0.3,
+        system: [{ type: 'text', text: systemText, cache_control: { type: 'ephemeral' } }],
+        messages: [{ role: 'user', content: userText }],
+      });
+
+      // A model call completed — it was billed, so it counts against the shared daily limit,
+      // regardless of what text comes back (mirrors generateAiEntry's counting rule).
+      await this.dictionaryDAL.incrementAiUsage(userId, usageDate);
+
+      comparison = response.content
+        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+        .map(b => b.text)
+        .join('\n')
+        .trim();
+      if (!comparison) return null; // transient — don't cache
+    } catch (error: any) {
+      console.error(`Failed to generate word comparison for "${sortedA}" vs "${sortedB}":`, error.message);
+      return null;
+    }
+
+    await this.dictionaryDAL.upsertComparison(sortedA, sortedB, language, comparison, 'claude-sonnet-4-6');
+    return this.withComparisonParts(comparison, language);
+  }
+
+  /**
+   * Split a comparison paragraph's embedded Chinese into GSA-segmented, pinyin-annotated parts —
+   * the same treatment `longDefinition` gets (docs/WORD_COMPARE_FEATURE.md, mirrors
+   * `enrichLongDefinitionMetadataBatch`). Computed at READ TIME on every serve (cached or fresh);
+   * only the raw paragraph is persisted in `word_comparison_cache`. Reuses the DAL method as-is by
+   * passing the paragraph through the same `{ longDefinition }` shape it enriches for det rows.
+   */
+  private async withComparisonParts(comparison: string, language: string): Promise<WordComparisonResult> {
+    const [enriched] = await this.dictionaryDAL.enrichLongDefinitionMetadataBatch<{
+      longDefinition: string;
+      longDefinitionParts?: LongDefinitionPart[] | null;
+    }>([{ longDefinition: comparison }], language);
+    return { comparison, comparisonParts: enriched.longDefinitionParts ?? null };
+  }
+
+  /**
+   * Static system prompt for the Compare tab's comparison paragraph (docs/WORD_COMPARE_FEATURE.md).
+   * Always asks for ONE free-text paragraph (decided) — no markdown/JSON — so the cache column and
+   * client rendering stay a plain string.
+   */
+  private buildCompareSystemPrompt(language: string): string {
+    const languageName = language === 'es' ? 'Spanish' : 'Mandarin Chinese';
+    return `You are a ${languageName} tutor. You are given two ${languageName} words, each with its dictionary definition(s) (or a note that none is on file). Explain the difference between them for a learner.
+
+Write ONE concise paragraph (3-5 sentences), plain text, no markdown, no headers, no bullet points. Cover: what the two words share in meaning, how they differ (register, connotation, typical grammatical role, or typical context of use), and include one short example use for each word so the contrast is concrete. Do not just repeat the raw dictionary definitions verbatim — synthesize the distinction in your own words. If the words are near-total synonyms with no meaningful difference, say so plainly rather than inventing one.`;
+  }
+
+  /**
    * Segment input text using the GSA, then for each segment fetch all dictionary entries
    * whose word1 starts with that segment (prefix search).
    *
@@ -810,6 +921,20 @@ Respond with only the definition text — no quotes, no extra text.`;
     longDefinition?: string | null;
   }>(entries: T[], language: string = 'zh'): Promise<T[]> {
     return this.dictionaryDAL.enrichLongDefinitionMetadataBatch(entries, language);
+  }
+
+  /**
+   * Attach `definitionsApproved: boolean` to each entry (validated 'definitions'
+   * field, docs/DATA_VALIDATION_SYSTEM.md). Delegates to the DAL batch method.
+   *
+   * @param entries - Objects carrying word1 and/or entryKey (the headword)
+   * @param language - Language filter (default: 'zh')
+   */
+  async enrichDefinitionsApprovalBatch<T extends {
+    word1?: string;
+    entryKey?: string;
+  }>(entries: T[], language: string = 'zh'): Promise<Array<T & { definitionsApproved: boolean }>> {
+    return this.dictionaryDAL.enrichDefinitionsApprovalBatch(entries, language);
   }
 
   async enrichEntriesWithSynonymMetadata(entries: VocabEntry[], language: string = 'zh'): Promise<VocabEntry[]> {

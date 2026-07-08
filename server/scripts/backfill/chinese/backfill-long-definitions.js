@@ -54,7 +54,10 @@ const SCRIPT_VERSION = 12; // bump when this script's logic/prompt changes
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // run-log: track duration, version, words/mode, and token usage/cost
-const { stampEntries } = initRunLog({ script: 'chinese/backfill-long-definitions', version: SCRIPT_VERSION, anthropic: anthropic });
+const { stampEntries, validatedClause } = initRunLog({ script: 'chinese/backfill-long-definitions', version: SCRIPT_VERSION, anthropic: anthropic });
+// Never regenerate a longDefinition that a validator has approved/flagged as part
+// of the definitions bundle (migration 104, docs/DATA_VALIDATION_SYSTEM.md).
+const validatedFilter = `AND ${validatedClause(['definitions'], 'dictionaryentries_zh')}`;
 const isSpotCheck = process.argv.includes('--spot-check');
 
 const wordsArg = process.argv.find(a => a.startsWith('--words='));
@@ -590,6 +593,7 @@ async function run() {
       FROM dictionaryentries_zh
       WHERE language = 'zh'
         AND discoverable = TRUE
+        ${validatedFilter}
         AND "longDefinition" IS NULL
         AND "partsOfSpeech" IS NOT NULL
         AND jsonb_array_length("partsOfSpeech") > 0

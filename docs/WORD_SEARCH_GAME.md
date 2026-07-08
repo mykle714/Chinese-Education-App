@@ -229,15 +229,26 @@ against it (§4), so an untraceable entry is simply never matched, not a bug.
 
 ### Two hub entries (pinyin mode), no in-game toggle
 
-Word Search ships as **two separate Games-hub sub-cards** (like Bubble Match's
-difficulty levels — a `HubMenuArrayItem` fan-out, see
-[HUB_MENU_SYSTEM.md](./HUB_MENU_SYSTEM.md) and `GamesPage.tsx`):
+Word Search ships as **two Games-hub sub-cards** in a horizontal strip. Unlike
+Bubble Match (a plain `HubMenuArrayItem`), the whole strip is a **dedicated
+component**, `src/games/word-search/WordSearchHubItem.tsx`, because its buttons
+need custom click handling and it prepends a resume card. `GamesPage.tsx`
+renders it in the `game.gameId === "word-search"` branch. It reuses the shared
+hub card look via the exported `cardBaseSx`
+(`src/components/hubMenuCardBase.ts`) + `HubMenuCardTitle` / `HubMenuRowIconTile`
+(`src/components/HubMenu.tsx`). See [HUB_MENU_SYSTEM.md](./HUB_MENU_SYSTEM.md).
 
 | Sub-card | `mode` | Pinyin |
 |---|---|---|
 | **Pinyin** | `"pinyin"` | grid pinyin on, **always tone-colored** |
 | **No Pinyin** | `"no-pinyin"` | grid pinyin off |
 
+- **Both mode buttons ALWAYS start a fresh game.** Tapping one navigates with
+  nav `state = { mode, resume: false }`. Because both modes now share ONE saved
+  slot (see §5b), starting fresh would clobber any parked board, so if a save
+  exists the button first opens a **confirm dialog** ("Starting a new game will
+  erase your saved Word Search game …"); only on confirm is the save cleared and
+  the new game started.
 - The chosen mode is passed via React-Router nav `state.mode` (both sub-cards
   share the single `/games/word-search` route) and is **fixed for the whole
   run** — there is no in-game pinyin toggle. `WordSearchPage` reads it once on
@@ -247,10 +258,33 @@ difficulty levels — a `HubMenuArrayItem` fan-out, see
   does the same for a missing level.)
 - The **colorless pinyin option was removed**: when pinyin is shown it is always
   tone-colored (`showPinyinColor` is a fixed `true`).
-- Each mode keeps its **own saved board** — the resume snapshot key is scoped by
-  mode as well as user (see §5b).
 - Word Search no longer reads the shared `useFlashcardLearnSettings`
   pinyin/colorless toggles; that hook is gone from `WordSearchPage`.
+
+#### Resume card (leading 1:1 square)
+
+When a saved board exists, `WordSearchHubItem` **prepends a 1:1 square card**
+before the two mode buttons. Its **normal face** is styled like a real hub card:
+a **"Resume"** title (matches `HubMenuCardTitle` — bodyLg / medium / onSurface),
+then the parked board's **timer** (frozen `elapsedMs`) and **X/10 found** inlined
+on one row, then the **mode** (Pinyin / No Pinyin), with an **✕** inset in the
+top-right corner.
+
+- **Tapping the card resumes** — navigates with `state = { mode: saved.mode,
+  resume: true }`; `WordSearchPage` restores the saved board instead of fetching
+  a fresh one. No warning (nothing is lost).
+- **✕ arms an in-place delete confirmation** (`confirmingErase` state): the
+  square flips to a **"Delete saved game?" face** with **Cancel** / **Delete**
+  buttons — it does NOT erase on the first tap. Cancel returns to the normal
+  face; only **Delete** clears the save (`clearGameState`) and animates the
+  square's width to zero (react-spring `useTransition` `leave`), so the mode
+  buttons slide left to fill the gap. While the confirm face is showing, a tap on
+  the card body does not resume.
+- To let the width collapse fully to 0 the card uses `minWidth/minHeight: 0`,
+  `boxSizing: border-box`, and an **absolutely-inset content layer** (in-flow
+  text would otherwise floor the width at its min-content size).
+- Word Search has **no difficulty** concept, so the card intentionally shows the
+  **mode** as its only categorical line (no separate difficulty row).
 
 Vertical stack inside the standard leaf-page content area:
 
@@ -584,26 +618,38 @@ is generated on demand; an optional best-time could reuse the existing
 
 Client-only, no server/DB involvement (same design posture as §5a's hint
 meter) — the full board payload is already on the client, so a single
-localStorage blob (`gameStateStorage.ts`, key
-`wordSearch.savedGame.<userId>.<mode>`) is enough to survive an exit or the app
-being backgrounded. The key is scoped by **both** `userId` and `mode`
-("pinyin"/"no-pinyin"), so the two hub entries (§3) resume independently —
-`saveGameState`/`loadGameState`/`clearGameState` each take the `mode` as a
-parameter.
+localStorage blob (`gameStateStorage.ts`, key `wordSearch.savedGame.<userId>`)
+is enough to survive an exit or the app being backgrounded.
 
-- **What's saved** (`SavedWordSearchState`): the grid payload (`data`),
-  `found` entryKeys, elapsed timer ms, whether the timer had ever been
-  started, and the full hint-meter state (§5a) + rewarded-bonus-word set —
-  everything needed to resume as if nothing happened.
+**One shared slot for both modes.** The key is scoped by `userId` only; the
+`mode` ("pinyin"/"no-pinyin") lives *inside* the payload
+(`SavedWordSearchState.mode`), not the key. So there is exactly one parked board
+per user, and it's resumed **only** from the hub's resume card (§3), which
+restores it in whichever mode it was saved under. `saveGameState` /
+`loadGameState` / `clearGameState` take just `userId` (no `mode` parameter).
+This replaced the old per-mode keying — the two mode buttons now always start
+fresh rather than silently resuming their own board.
+
+- **What's saved** (`SavedWordSearchState`): the `mode`, the grid payload
+  (`data`), `found` entryKeys, elapsed timer ms, whether the timer had ever
+  been started, and the full hint-meter state (§5a) + rewarded-bonus-word set —
+  everything needed to resume as if nothing happened, in the right mode.
 - **When it saves** (`WordSearchPage.tsx`):
+  - **Continuously while playing** — an effect keyed on `[phase, found]` calls
+    `persistSnapshot` on entering play and after every find. This keeps the slot
+    current so returning to the Games hub always shows the resume card: the hub
+    reads the save during *its own* render, which — on the same back-transition
+    — happens **before** this page's unmount save would run, so a save must
+    already exist. (Keyed on `found`, not the 500ms `elapsedMs` tick, to avoid
+    churn; elapsed is read live off `startRef` at each write.)
   - `visibilitychange` → `document.hidden` (tab backgrounded / app switched
     away) — saves, then pauses the timer.
   - `beforeunload` (hard close/refresh) — a safety net; `visibilitychange`
     already covers tab-hide, but not every close path fires it.
   - Component **unmount** (covers the leaf-page down-arrow back, and any
     other exit) — a `useEffect` cleanup with an empty dep array saves once on
-    the way out, same as the other two triggers.
-  - All three no-op unless `phase === "playing"` and the board isn't already
+    the way out.
+  - All no-op unless `phase === "playing"` and the board isn't already
     complete (`found.size < data.words.length`) — nothing to save while
     loading/blocked/won.
 - **Timer pause/resume invariant:** `startRef.current` is non-null **only**
@@ -616,12 +662,15 @@ parameter.
   invariant; `persistSnapshot` reads elapsed directly off
   `startRef`/`pausedElapsedRef` (not the `elapsedMs` React state) so a save
   triggered mid-tick isn't lagged by up to one 500ms interval step.
-- **On mount:** `loadGameState()` is checked before `fetchGrid()` — a valid,
-  unfinished saved board is restored via `restoreBoard` (which auto-resumes
-  the timer if `timerStarted`) instead of fetching a new one from the server.
-- **Cleared** on win, and by the restart button / "Play Again" (`resetBoard`
-  in `WordSearchPage.tsx`) — both funnel through the same reset path, so
-  there's exactly one way a board's save gets discarded on purpose.
+- **On mount:** behavior is gated by the nav `resume` flag (captured once as
+  `resumeIntent`). **Resume card** (`resume: true`) → `loadGameState()` is
+  checked and a valid, unfinished board is restored via `restoreBoard` (which
+  auto-resumes the timer). **Mode button** (`resume: false`/absent) → always
+  `fetchGrid()` + `startBoard`, never a silent resume. (If a resume intent finds
+  no save — erased between hub and page — it falls through to a fresh board.)
+- **Cleared** on win, by the restart button / "Play Again" (`resetBoard`), by
+  the resume card's ✕, and when the hub's confirm dialog approves starting a new
+  game over an existing save.
 
 ---
 
@@ -663,9 +712,15 @@ Frontend (`src/games/word-search/`):
   removed — pinyin is set by the launched hub mode, not a toggle. See §3.
 - `useWordSearchSettings.ts` — localStorage-backed hook for Word-Search-only
   prefs (currently just `showTimer`), mirrors `useFlashcardLearnSettings`.
+- `WordSearchHubItem.tsx` — the Games-hub strip (rendered by `GamesPage.tsx`):
+  the two mode buttons (start-fresh, with a confirm dialog when a save exists)
+  plus the prepended 1:1 resume card (timer / X·10 / mode + ✕ erase, with the
+  react-spring collapse animation). Owns the saved-board read + confirm state.
+  See §3.
 - `gameStateStorage.ts` — `saveGameState`/`loadGameState`/`clearGameState`
-  (each takes `(userId, mode, …)`), the mode-scoped localStorage save/resume
-  layer for an in-progress board. See §5b.
+  (each takes just `(userId, …)`), the **single-slot** (mode-agnostic key,
+  `mode` stored in the payload) localStorage save/resume layer for the one
+  in-progress board. See §5b.
 - `constants.ts` — grid query, `CELL_SIZE`, medal thresholds, hint tunables
   (`HINT_BAR_UNITS`, `HINT_COST`, `LETTER_HINT_BLANK_WIDTH`, `HINT_ACCENT_COLOR`),
   and the pinyin-mode config (`WordSearchMode`, `MODE_CONFIGS`, `modeConfigFor`;

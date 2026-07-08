@@ -10,7 +10,7 @@ import { usePageTitle } from "../hooks/usePageTitle";
 import { useGameWins } from "../hooks/useGameWins";
 import { GAME_REGISTRY } from "../games/registry";
 import { GAME_KEY as BUBBLE_MATCH_GAME_KEY, LEVEL_CONFIGS as BUBBLE_MATCH_LEVELS } from "../games/bubble-match/constants";
-import { MODE_CONFIGS as WORD_SEARCH_MODES, type WordSearchMode } from "../games/word-search/constants";
+import WordSearchHubItem from "../games/word-search/WordSearchHubItem";
 import { useAuth } from "../AuthContext";
 import type { GameDef } from "../games/types";
 import { COLORS } from "../theme/colors";
@@ -41,13 +41,11 @@ const BUBBLE_MATCH_LEVEL_COLORS: Record<number, string> = {
     3: COLORS.redAccent,
 };
 
-/** Persistent per-mode background colors for the Word Search sub-cards. Like
-    Bubble Match, Word Search fans out into several hub sub-cards (Pinyin /
-    No Pinyin) instead of a single row — see docs/WORD_SEARCH_GAME.md §3. */
-const WORD_SEARCH_MODE_COLORS: Record<WordSearchMode, string> = {
-    "pinyin": COLORS.purpleAccent,
-    "no-pinyin": COLORS.blueAccent,
-};
+// Word Search also fans out into a strip of hub sub-cards (Pinyin / No Pinyin),
+// plus a leading resume card when a saved board exists — but its mode buttons
+// need custom click handling (confirm-before-clobber) and its own saved-state
+// read, so the whole strip is owned by WordSearchHubItem rather than a generic
+// HubMenuArrayItem. See docs/WORD_SEARCH_GAME.md §3.
 
 const EmptyState = styled(Box)(() => ({
     flex: 1,
@@ -127,21 +125,11 @@ const GamesPage: React.FC = () => {
                         }
                         if (game.gameId === "word-search") {
                             return (
-                                <HubMenuArrayItem
+                                <WordSearchHubItem
                                     key={game.gameId}
                                     className="games-page__menu-item games-page__menu-item--word-search"
-                                    items={WORD_SEARCH_MODES.map((cfg) => ({
-                                        key: `${game.gameId}-${cfg.mode}`,
-                                        to: game.route,
-                                        // Word Search keeps a single route; the tapped
-                                        // pinyin mode is passed via nav state, and each
-                                        // mode has its own saved board.
-                                        state: { mode: cfg.mode },
-                                        title: game.title,
-                                        subtitle: cfg.label,
-                                        icon: resolveGameIcon(game),
-                                        bgColor: WORD_SEARCH_MODE_COLORS[cfg.mode] ?? game.bgColor,
-                                    }))}
+                                    game={game}
+                                    icon={resolveGameIcon(game)}
                                 />
                             );
                         }

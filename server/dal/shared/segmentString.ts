@@ -172,6 +172,11 @@ export function buildExcludeSet(dictEntries: DictionaryEntry[]): Set<string> {
  * The winner is extracted, then left/right remainders are recursively segmented.
  * Falls back to individual characters when no dictionary match exists at any length.
  *
+ * ⚠️ CLIENT PORT: the Reader runs a client-side port of this core
+ * (src/features/reader/documentSegmentation.ts, docs/READER_SEGMENTATION.md —
+ * without the priority/classifier passes). If you change the scoring or
+ * tie-break rules here, mirror them there.
+ *
  * @param str - The Chinese string to segment
  * @param dictMap - Pre-built lookup map (from buildDictMap)
  * @param excludeTokens - Optional set of multi-char tokens to skip (from buildExcludeSet).

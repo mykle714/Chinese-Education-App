@@ -29,6 +29,7 @@ export function dictionaryEntryToVocabEntry(dict: DictionaryEntry): VocabEntry {
         definition: dict.definitions?.[0] ?? null,
         longDefinition: dict.longDefinition ?? null,
         longDefinitionParts: dict.longDefinitionParts ?? null,
+        definitionsApproved: dict.definitionsApproved ?? false,
         partsOfSpeech: dict.partsOfSpeech ?? null,
         vernacularScore: dict.vernacularScore ?? null,
         difficulty: (anyDict.difficulty as DifficultyLevel | null | undefined) ?? null,

@@ -4,6 +4,8 @@ import { stripParentheses } from "../../utils/definitionUtils";
 import type { VocabEntry } from "../../types";
 import ForeignText from "../../components/ForeignText";
 import LongDefinitionDisplay from "../../components/LongDefinitionDisplay";
+import { aiGeneratedSurfaceSx, aiGeneratedTextColor } from "../../theme/aiGeneratedStyling";
+import { AiGeneratedBadge } from "../../components/AiGeneratedBadge";
 import { getBreakdownItems } from "../../utils/breakdownUtils";
 import { getCategoryColor } from "../../utils/categoryColors";
 import { SIZE, WEIGHT, LEADING, TRACKING } from "../../theme/scale";
@@ -70,7 +72,13 @@ export const VocabCardBadges: React.FC<{ entry: VocabEntry }> = ({ entry }) => {
                 />
             )}
             {entry.difficulty != null && (
-                <HskPill className="vocab-card-detail__level-pill">
+                // HSK/difficulty is AI-classified (backfill-hsk-level.js) with no validation
+                // field to ever approve it, so it always carries the AI-generated treatment —
+                // override the pill's default solid fill with the shared orange outline.
+                <HskPill
+                    className="vocab-card-detail__level-pill vocab-card-detail__level-pill--ai-generated"
+                    sx={{ ...aiGeneratedSurfaceSx, color: aiGeneratedTextColor }}
+                >
                     {entry.language === 'zh' ? `HSK ${entry.difficulty}` : `Level ${entry.difficulty}`}
                 </HskPill>
             )}
@@ -107,7 +115,13 @@ export const VocabCardSections: React.FC<VocabCardSectionsProps> = ({
     // the eip's breakdown/used-in tab — see OnDeckVocabService.enrichWithUsedIn).
     const hasUsedIn = isSingleChar && !!entry.usedIn && entry.usedIn.length > 0;
     const hasBreakdown = !isSingleChar && !!entry.breakdown && Object.keys(entry.breakdown).length > 0;
-    const hasRationale = !!entry.characterRationale?.length;
+    // Only characters that actually abbreviate a fuller word are shown — chars with an
+    // empty impliedWord ("") are omitted entirely (char-by-char basis).
+    // Guard `impliedWord` — legacy v1 rows use a `reason` key (no `impliedWord`),
+    // so item.impliedWord can be undefined; `?? ''` keeps those from crashing (they
+    // filter out) until re-enriched to the v2 shape.
+    const rationaleItems = (entry.characterRationale ?? []).filter((item) => (item.impliedWord ?? '').trim().length > 0);
+    const hasRationale = rationaleItems.length > 0;
     const hasBreakdownBox = isSingleChar ? (hasUsedIn || hasRationale) : (hasBreakdown || hasRationale);
     const breakdownItems = getBreakdownItems(entry);
 
@@ -131,6 +145,7 @@ export const VocabCardSections: React.FC<VocabCardSectionsProps> = ({
                             longDefinitionParts={entry.longDefinitionParts}
                             showPinyin={showPinyin}
                             showPinyinColor={showPinyinColor}
+                            aiGenerated={!entry.definitionsApproved}
                             sx={{ fontSize: SIZE.body, color: fc.onSurface, fontFamily: FC_FONT, lineHeight: 1.6 }}
                         />
                     )}
@@ -147,7 +162,18 @@ export const VocabCardSections: React.FC<VocabCardSectionsProps> = ({
                             }}
                         >
                             {(entry.partsOfSpeech?.length ?? 0) > 0 && (
-                                <Box sx={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+                                <Box
+                                    className={entry.definitionsApproved ? undefined : "vocab-card-detail__pos-chip--ai-generated"}
+                                    sx={{
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        gap: "3px",
+                                        // "Type" chip carries the shared AI-generated box (no badge —
+                                        // just the orange border/tint) when the definitions bundle
+                                        // hasn't been human-approved (docs/DATA_VALIDATION_SYSTEM.md).
+                                        ...(entry.definitionsApproved ? {} : { ...aiGeneratedSurfaceSx, borderRadius: "8px", padding: "4px 8px" }),
+                                    }}
+                                >
                                     <SectionLabel>Type</SectionLabel>
                                     <Typography sx={{ fontSize: SIZE.body, fontWeight: WEIGHT.semibold, color: fc.onSurface, fontFamily: FC_FONT }}>
                                         {entry.partsOfSpeech!.join(', ')}
@@ -155,7 +181,20 @@ export const VocabCardSections: React.FC<VocabCardSectionsProps> = ({
                                 </Box>
                             )}
                             {entry.vernacularScore != null && (
-                                <Box className="vocab-card-detail__vernacular-meta" sx={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+                                <Box
+                                    className="vocab-card-detail__vernacular-meta vocab-card-detail__vernacular-meta--ai-generated"
+                                    sx={{
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        gap: "3px",
+                                        // vernacularScore is AI-scored (backfill-vernacular-score.js) with
+                                        // no validation field, so it always carries the AI-generated box
+                                        // (no badge — a small value chip, like the Type chip above).
+                                        ...aiGeneratedSurfaceSx,
+                                        borderRadius: "8px",
+                                        padding: "4px 8px",
+                                    }}
+                                >
                                     <SectionLabel>Commonality</SectionLabel>
                                     <Box sx={{ display: "flex", alignItems: "center", gap: "5px", height: 19 }}>
                                         <Box sx={{ display: "flex", alignItems: "center", gap: "4px" }}>
@@ -228,10 +267,13 @@ export const VocabCardSections: React.FC<VocabCardSectionsProps> = ({
                         </Box>
                     )}
                     {hasRationale && (
+                        // Character rationale has no validation field yet (docs/DATA_VALIDATION_SYSTEM.md
+                        // only covers 'definitions' and exampleSentenceN), so there is no way for it to
+                        // ever be human-approved — it always renders the AI-generated treatment.
                         <Box
-                            className="vocab-card-detail__character-rationale"
+                            className="vocab-card-detail__character-rationale vocab-card-detail__character-rationale--ai-generated"
                             sx={{
-                                background: fc.subtleBg,
+                                ...aiGeneratedSurfaceSx,
                                 borderRadius: "10px",
                                 padding: "12px 14px",
                                 display: "flex",
@@ -239,11 +281,12 @@ export const VocabCardSections: React.FC<VocabCardSectionsProps> = ({
                                 gap: "8px",
                             }}
                         >
+                            <AiGeneratedBadge className="vocab-card-detail__character-rationale-ai-badge" label="AI GENERATED" />
                             <SharedCharsLabel className="vocab-card-detail__character-rationale-label">
                                 Why These Characters
                             </SharedCharsLabel>
                             <Box className="vocab-card-detail__character-rationale-list" sx={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                                {entry.characterRationale!.map((item, index) => (
+                                {rationaleItems.map((item, index) => (
                                     <Box
                                         key={index}
                                         className="vocab-card-detail__character-rationale-row"
@@ -258,16 +301,19 @@ export const VocabCardSections: React.FC<VocabCardSectionsProps> = ({
                                             useToneColor={showPinyinColor}
                                         />
                                         <Typography
-                                            className="vocab-card-detail__character-rationale-reason"
-                                            sx={{
-                                                fontSize: SIZE.body,
-                                                color: fc.textSecondary,
-                                                fontFamily: FC_FONT,
-                                                lineHeight: LEADING.normal,
-                                            }}
+                                            className="vocab-card-detail__character-rationale-arrow"
+                                            sx={{ fontSize: SIZE.body, color: fc.textSecondary, lineHeight: LEADING.normal }}
                                         >
-                                            {item.reason}
+                                            →
                                         </Typography>
+                                        <ForeignText
+                                            size="sm"
+                                            justifyContent="flex-start"
+                                            className="vocab-card-detail__character-rationale-implied-word"
+                                            text={item.impliedWord}
+                                            showPinyin={false}
+                                            useToneColor={showPinyinColor}
+                                        />
                                     </Box>
                                 ))}
                             </Box>
@@ -301,16 +347,22 @@ export const VocabCardSections: React.FC<VocabCardSectionsProps> = ({
                 <SectionCard className="vocab-card-detail__synonyms-related">
                     {hasSynonyms && (
                         <>
-                            <SectionLabel className="vocab-card-detail__section-label">Synonyms</SectionLabel>
+                            {/* Synonyms are AI-enriched with no validation field, so the whole
+                                list always carries the AI-generated treatment: one badge for the
+                                section, and each chip gets the shared orange box. */}
+                            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                                <SectionLabel className="vocab-card-detail__section-label">Synonyms</SectionLabel>
+                                <AiGeneratedBadge className="vocab-card-detail__synonyms-ai-badge" label="AI GENERATED" />
+                            </Box>
                             <Box className="vocab-card-detail__synonyms-list" sx={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
                                 {entry.synonyms!.map((syn) => {
                                     const meta = entry.synonymsMetadata?.[syn];
                                     return (
                                         <Box
-                                            className="vocab-card-detail__synonym-item"
+                                            className="vocab-card-detail__synonym-item vocab-card-detail__synonym-item--ai-generated"
                                             key={syn}
                                             sx={{
-                                                backgroundColor: fc.subtleBg,
+                                                ...aiGeneratedSurfaceSx,
                                                 borderRadius: "8px",
                                                 padding: "6px 12px",
                                                 display: "flex",

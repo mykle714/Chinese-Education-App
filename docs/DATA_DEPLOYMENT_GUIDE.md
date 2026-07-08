@@ -8,7 +8,12 @@ The transfer uses **Git LFS** — the binary dump is committed to the repo, push
 
 ## Allowable Tables
 
-Only these tables may be data-deployed. All others contain live user data and must never be touched:
+Only these tables may be data-deployed. All others contain live user data and must never be touched.
+
+> ⚠️ In particular, **never** truncate/restore `validations` (the data-validation
+> review records, migration 104 — see [DATA_VALIDATION_SYSTEM.md](./DATA_VALIDATION_SYSTEM.md)).
+> It is deliberately kept off this list and keyed by det `id` precisely so that
+> `dictionaryentries_{zh,es}` deploys leave human review data intact.
 
 | Table | Dump file | Description | Restore mode |
 |---|---|---|---|

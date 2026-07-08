@@ -15,8 +15,8 @@
 // backfilled. Drives the flp sense-picker dropdown (EnglishBlock).
 //
 // `characterRationale` is the zh-only per-character rationale column (migration 102,
-// docs/CHARACTER_RATIONALE.md): jsonb array of {char, reason} explaining why each
-// character is used in a multi-char word. NULL for Spanish (the es branch substitutes
+// docs/CHARACTER_RATIONALE.md): jsonb array of {char, impliedWord} mapping each
+// character to the fuller word it abbreviates (or "") in a multi-char word. NULL for Spanish (the es branch substitutes
 // a typed NULL) and for zh entries not yet backfilled. Replaces the old expansion cols.
 export const DICT_COLS =
   `de.script, de.pronunciation, de.tone, de."difficulty", de."partsOfSpeech", ` +

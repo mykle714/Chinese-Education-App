@@ -75,7 +75,7 @@ function ReaderTapOverlay({ inputRef }: ReaderTapOverlayProps) {
     const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
         // Keep the textarea focused so useTextSelection's blur handler doesn't
         // race in and snap the caret back to lastSelectionRef before our
-        // pointerup runs selectNextWord/selectPreviousWord.
+        // pointerup runs selectRelativeSpan (via the synthetic arrow keydown).
         e.preventDefault();
         gestureRef.current = {
             startX: e.clientX,

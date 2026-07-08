@@ -144,3 +144,19 @@ export function medalForTime(seconds: number): { medal: Medal; emoji: string } {
     const tier = MEDAL_THRESHOLDS.find((t) => seconds <= t.maxSeconds) ?? MEDAL_THRESHOLDS[MEDAL_THRESHOLDS.length - 1];
     return { medal: tier.medal, emoji: tier.emoji };
 }
+
+/** `m:ss` from a millisecond duration. Shared by the in-game HUD timer
+ *  (WordSearchPage) and the Games-hub resume card (WordSearchHubItem) so both
+ *  render the count-up clock identically. */
+export function formatTimeMs(ms: number): string {
+    const total = Math.floor(ms / 1000);
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+/** Human-readable subtitle for a mode slug (e.g. "Pinyin"), or the raw slug if
+ *  unknown. Used by the resume card to name the saved board's mode. */
+export function modeLabel(mode: WordSearchMode): string {
+    return MODE_CONFIGS.find((m) => m.mode === mode)?.label ?? mode;
+}

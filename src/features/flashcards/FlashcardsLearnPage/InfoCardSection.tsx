@@ -1,7 +1,10 @@
 import { useRef, forwardRef } from "react";
 import SheetPanel, { type SheetPanelHandle } from "./SheetPanel";
 import InfoCardPanelBody, { type InfoCardPanelBodyHandle } from "./InfoCardPanelBody";
+import CompareTabBody from "./CompareTabBody";
 import type { VocabEntry, BreakdownItem, UsedInItem } from "./types";
+import type { CompareEipTab } from "./useEipTabs";
+import type { LongDefinitionPart } from "../../../types";
 
 interface InfoCardSectionProps {
     currentEntry: VocabEntry | null;
@@ -21,6 +24,14 @@ interface InfoCardSectionProps {
     onSpeak?: (entry: VocabEntry) => void;
     onSpeakSentence?: (text: string, pronunciation?: string) => void;
     speakingKey?: string | null;
+    // Compare tab (docs/WORD_COMPARE_FEATURE.md). `onOpenCompare` renders the header's Compare
+    // button (undefined hides it). `compareTab` set ⇒ the panel renders CompareTabBody instead of
+    // InfoCardPanelBody's normal definition/examples/breakdown content — the Compare tab has no
+    // entry/breakdown/sub-tab of its own.
+    onOpenCompare?: (entry: VocabEntry) => void;
+    compareTab?: CompareEipTab | null;
+    onSetCompareSlot?: (slot: "A" | "B", entry: VocabEntry | null) => void;
+    onCompareResult?: (comparison: string | null, comparisonParts?: LongDefinitionPart[] | null) => void;
     // Optional content slot rendered above the grabber. Used by the entry-tabs
     // feature (see EipTabStrip + useEipTabs) — undefined renders nothing extra.
     tabStrip?: React.ReactNode;
@@ -47,6 +58,10 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
     onSpeak,
     onSpeakSentence,
     speakingKey,
+    onOpenCompare,
+    compareTab,
+    onSetCompareSlot,
+    onCompareResult,
     tabStrip,
 }, ref) => {
     const panelRef = useRef<InfoCardPanelBodyHandle | null>(null);
@@ -60,25 +75,38 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
             tabStrip={tabStrip}
         >
             {({ bindHeaderDrag }) => (
-                <InfoCardPanelBody
-                    ref={panelRef}
-                    currentEntry={currentEntry}
-                    selectedTab={selectedTab}
-                    onTabChange={onTabChange}
-                    breakdownItems={breakdownItems}
-                    showPinyin={showPinyin}
-                    showPinyinColor={showPinyinColor}
-                    showSegmentSpaces={showSegmentSpaces}
-                    isFlipped={isFlipped}
-                    onBreakdownItemClick={onBreakdownItemClick}
-                    onUsedInItemClick={onUsedInItemClick}
-                    onExampleSegmentClick={onExampleSegmentClick}
-                    onSpeak={onSpeak}
-                    onSpeakSentence={onSpeakSentence}
-                    speakingKey={speakingKey}
-                    scrollTouchAction="none"
-                    headerDragBind={bindHeaderDrag}
-                />
+                compareTab ? (
+                    <CompareTabBody
+                        ref={panelRef}
+                        tab={compareTab}
+                        onSetSlot={onSetCompareSlot ?? (() => {})}
+                        onResult={onCompareResult ?? (() => {})}
+                        showPinyin={showPinyin}
+                        showPinyinColor={showPinyinColor}
+                        onSegmentOpen={onExampleSegmentClick}
+                    />
+                ) : (
+                    <InfoCardPanelBody
+                        ref={panelRef}
+                        currentEntry={currentEntry}
+                        selectedTab={selectedTab}
+                        onTabChange={onTabChange}
+                        breakdownItems={breakdownItems}
+                        showPinyin={showPinyin}
+                        showPinyinColor={showPinyinColor}
+                        showSegmentSpaces={showSegmentSpaces}
+                        isFlipped={isFlipped}
+                        onBreakdownItemClick={onBreakdownItemClick}
+                        onUsedInItemClick={onUsedInItemClick}
+                        onExampleSegmentClick={onExampleSegmentClick}
+                        onSpeak={onSpeak}
+                        onSpeakSentence={onSpeakSentence}
+                        speakingKey={speakingKey}
+                        onOpenCompare={onOpenCompare}
+                        scrollTouchAction="none"
+                        headerDragBind={bindHeaderDrag}
+                    />
+                )
             )}
         </SheetPanel>
     );

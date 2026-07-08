@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from "react";
 import { findExactMatch, findDictionaryMatch, getSelectedText } from "./textSelection";
-import { isWordBoundary } from "./textSelectionUtils";
+import { spanContaining, type SegmentSpan } from "./documentSegmentation";
 import type { VocabEntry, DictionaryEntry } from "../../types";
 
 interface UseTextSelectionReturn {
@@ -21,7 +21,10 @@ interface UseTextSelectionReturn {
 export function useTextSelection(
     loadedPersonalCards: VocabEntry[],
     loadedDictionaryCards: DictionaryEntry[],
-    autoSelectEnabled: boolean
+    autoSelectEnabled: boolean,
+    // GSA word spans for the current document (docs/READER_SEGMENTATION.md) —
+    // drives auto word selection so a tapped caret expands to a dictionary word.
+    segmentSpans: SegmentSpan[]
 ): UseTextSelectionReturn {
     // Text selection card state
     const [selectedPersonalCard, setSelectedPersonalCard] = useState<VocabEntry | null>(null);
@@ -65,7 +68,10 @@ export function useTextSelection(
         setSelectedDictionaryCard(matchingDictionaryCard);
     }, [loadedPersonalCards, loadedDictionaryCards]);
 
-    // Handle text selection changes for auto word selection using native browser APIs
+    // Auto word selection: expand a tapped/placed caret to the gsa word span
+    // containing it (docs/READER_SEGMENTATION.md). Replaces the old pairwise
+    // isWordBoundary character scan — spans are precomputed per document, so a
+    // caret in whitespace/punctuation (no span) simply selects nothing.
     const handleAutoWordSelect = useCallback(() => {
         if (!autoSelectEnabled) return;
 
@@ -73,99 +79,16 @@ export function useTextSelection(
         const textarea = inputRef.current;
         if (!textarea) return;
 
-        // Get current selection positions
+        // Only auto-select if no text is currently selected (just cursor placement);
+        // a real drag-selection must not be clobbered.
         const cursorStart = textarea.selectionStart;
-        const cursorEnd = textarea.selectionEnd;
+        if (cursorStart !== textarea.selectionEnd) return;
 
-        // Only auto-select if no text is currently selected (just cursor placement)
-        if (cursorStart !== cursorEnd) return;
-
-        const cursorPosition = cursorStart;
-
-        try {
-            // Focus the textarea to ensure selection works properly
-            textarea.focus();
-
-            // Set cursor position first
-            textarea.setSelectionRange(cursorPosition, cursorPosition);
-
-            // Use native browser Selection API for word detection
-            const selection = window.getSelection();
-            if (!selection) return;
-
-            // Clear any existing selections
-            selection.removeAllRanges();
-
-            // For textarea, we need to work with the text content
-            // Create a temporary text node to work with Selection API
-            const textContent = textarea.value;
-            if (!textContent || cursorPosition >= textContent.length) return;
-
-            // Alternative approach: Use the Selection.modify() method
-            // This mimics exactly what Ctrl+Right/Ctrl+Shift+Left does
-
-            // First, we need to create a selection at the cursor position
-            // Since textarea doesn't work directly with Selection API,
-            // we'll use a different approach with textarea's built-in methods
-
-            // Simulate word boundary detection by using the browser's native behavior
-            // We'll use the fact that double-clicking selects a word
-            const originalStart = textarea.selectionStart;
-            const originalEnd = textarea.selectionEnd;
-
-            // Try to find word boundaries by testing character by character
-            // But use a smarter approach that leverages browser behavior
-
-            // Move cursor to find word start
-            let wordStart = cursorPosition;
-            let wordEnd = cursorPosition;
-
-            // Use a more sophisticated approach: simulate Ctrl+Left and Ctrl+Right
-            // by checking if we're at word boundaries
-
-            // Find word start by moving left until we hit a word boundary
-            for (let i = cursorPosition - 1; i >= 0; i--) {
-                textarea.setSelectionRange(i, i);
-                // Simulate Ctrl+Right to see if we jump to our original position
-                // This is a simplified approach - we'll use character classification
-                const char = textContent[i];
-                const nextChar = textContent[i + 1];
-
-                // Check if this is a word boundary using Unicode-aware logic
-                if (isWordBoundary(char, nextChar)) {
-                    wordStart = i + 1;
-                    break;
-                }
-                if (i === 0) {
-                    wordStart = 0;
-                }
-            }
-
-            // Find word end by moving right until we hit a word boundary
-            for (let i = cursorPosition; i < textContent.length; i++) {
-                const char = textContent[i];
-                const nextChar = textContent[i + 1];
-
-                if (isWordBoundary(char, nextChar) || i === textContent.length - 1) {
-                    wordEnd = i + 1;
-                    break;
-                }
-            }
-
-            // Select the word if we found valid boundaries
-            if (wordStart < wordEnd && wordStart !== wordEnd) {
-                textarea.setSelectionRange(wordStart, wordEnd);
-            } else {
-                // Restore original cursor position if no word found
-                textarea.setSelectionRange(originalStart, originalEnd);
-            }
-
-        } catch (error) {
-            console.error('Native word selection failed:', error);
-            // Restore original cursor position on error
-            textarea.setSelectionRange(cursorPosition, cursorPosition);
+        const span = spanContaining(segmentSpans, cursorStart);
+        if (span) {
+            textarea.setSelectionRange(span.start, span.end);
         }
-    }, [autoSelectEnabled]);
+    }, [autoSelectEnabled, segmentSpans]);
 
     // Focus the reading box. By default we restore the last saved selection;
     // pass restoreSelection=false on a fresh document to park the caret at the top.

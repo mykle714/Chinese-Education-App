@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS users (
     "totalMinutePoints"        INTEGER DEFAULT 0,
     "lastMinutePointIncrement" TIMESTAMP,
     "isPublic"                 BOOLEAN DEFAULT TRUE,
+    "isValidator"              BOOLEAN NOT NULL DEFAULT FALSE,
     "currentStreak"            INTEGER NOT NULL DEFAULT 0,
     "lastStreakDate"           DATE,
     "createdAt"                TIMESTAMP DEFAULT NOW()
@@ -70,10 +71,39 @@ CREATE TABLE IF NOT EXISTS texts (
     language         VARCHAR(10) DEFAULT 'zh',
     "characterCount" INTEGER DEFAULT 0,
     "isUserCreated"  BOOLEAN DEFAULT TRUE,
+    -- Validation-doc linkage (migration 104). NULL ⇒ ordinary user document.
+    -- validationEntryId is the SERIAL integer id of the reviewed det row.
+    "validationEntryId"          INTEGER,
+    "validationLanguage"         VARCHAR(10),
+    "validationField"            VARCHAR(50),
+    "validationOriginalContent"  TEXT,
     "createdAt"      TIMESTAMP DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_texts_userid ON texts("userId");
+
+-- ─────────────────────────────────────────────────────────────
+-- validations
+-- Human review records (approve/flag) for AI-enriched dictionary fields
+-- (migration 104; docs/DATA_VALIDATION_SYSTEM.md). Deliberately a standalone
+-- table, NOT a column on dictionaryentries_* — those are TRUNCATE+restored on
+-- every prod data deploy, which would wipe review data. Keyed by the det row's
+-- surrogate id (stable across data deploys) + language.
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS validations (
+    id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    "entryId"         INTEGER      NOT NULL,   -- dictionaryentries_<language>.id
+    language          VARCHAR(10)  NOT NULL,
+    field             VARCHAR(50)  NOT NULL,   -- definitions | exampleSentence0..2
+    "validatorUserId" UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    "validatorName"   TEXT         NOT NULL,
+    action            VARCHAR(20)  NOT NULL CHECK (action IN ('approve','flag')),
+    content           TEXT         NOT NULL,   -- approved data version, or suggested edit
+    "createdAt"       TIMESTAMP    DEFAULT NOW(),
+    CONSTRAINT validations_unique_per_user UNIQUE ("entryId", language, field, "validatorUserId")
+);
+CREATE INDEX IF NOT EXISTS idx_validations_entry ON validations ("entryId", language);
+CREATE INDEX IF NOT EXISTS idx_validations_user  ON validations ("validatorUserId");
 
 -- ─────────────────────────────────────────────────────────────
 -- userminutepoints

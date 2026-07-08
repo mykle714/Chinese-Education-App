@@ -2,18 +2,19 @@
  * Backfill Script: AI-powered per-character rationale for dictionaryentries_zh.
  *
  * Replaces the old expansion backfill (backfill-expansion-claude.js). Instead of a
- * single blended phrase per word, this produces a CHARACTER-level explanation: for
- * every character of a multi-char word, a short English learner-facing reason for why
- * that character is there — folding in an implied longer word when it is genuinely
- * illuminating (e.g. 违 → "to violate — short for 违反").
+ * single blended phrase per word, this produces a CHARACTER-level mapping: for every
+ * character of a multi-char word, ONLY the fuller everyday Chinese word that the
+ * character is a terse stand-in for (its "expansion"), or an empty string when the
+ * character does not abbreviate any illuminating longer word (e.g. 违 → "违反").
  *
  * Output column: dictionaryentries_zh."characterRationale" (jsonb), migration 102.
- * Shape: array aligned to the word's characters, one object per character:
- *   [ {"char":"违","reason":"to violate — short for 违反"},
- *     {"char":"规","reason":"rules/norms — short for 规矩"} ]
+ * Shape: array aligned to the word's characters, one object per character. `impliedWord`
+ * holds the implied longer word (Chinese only, no gloss/pinyin) or "" when none:
+ *   [ {"char":"违","impliedWord":"违反"},
+ *     {"char":"规","impliedWord":"规矩"} ]
  *
  * Multi-agent pipeline (mirrors the retired expansion script):
- *   1. Generator agent → proposes [{char, reason}] (or [] if the word is opaque)
+ *   1. Generator agent → proposes [{char, impliedWord}] (or [] if the word is opaque)
  *   2. Deterministic check → one entry per character, in the word's exact order
  *   3. Validator agent (only if det. checks pass) → semantic critique
  *   4. On rejection: one retry — regenerator agent informed by violations + critique
@@ -41,7 +42,7 @@ import db from '../../../db.js';
 import { initRunLog, cachedSystem } from '../run-log.js';
 import { parseModelJson } from '../shared/lib/json.js';
 
-const SCRIPT_VERSION = 1; // bump when this script's logic/prompt changes
+const SCRIPT_VERSION = 2; // bump when this script's logic/prompt changes (v2: reason = implied word only, no English gloss)
 
 const DRY_RUN = process.argv.includes('--dry-run');
 const STALE = process.argv.includes('--stale'); // also re-process rows stamped below SCRIPT_VERSION
@@ -68,29 +69,27 @@ const MODEL = 'claude-sonnet-4-6';
 //  Shared rule text — single source of truth referenced by every prompt
 // ─────────────────────────────────────────────────────────────────────────────
 
-const RATIONALE_RULES_TEXT = `You are explaining, character by character, WHY each character is used in a given multi-character Chinese word — what that character contributes to the word's overall meaning.
+const RATIONALE_RULES_TEXT = `For each character of a given multi-character Chinese word, identify ONLY the fuller everyday Chinese word that the character is a terse stand-in for — the longer word it abbreviates within this word. Do NOT write an English gloss or any explanation.
 
 Hard rules for a valid result (must all hold):
 1. Output exactly one entry per character of the word, in the word's original order. Every character (including repeated ones) gets its own entry.
-2. Each "reason" is a SHORT English learner-facing gloss (a phrase, not a sentence) of what that character means or does in THIS word — not a general dictionary dump of every meaning the character can have.
-3. When a single character is a terse stand-in for a fuller everyday word, cite that longer word to make the structure transparent — append it as "— short for 规矩" (Chinese word only, no pinyin). Only do this when the longer word genuinely illuminates the character's role; do NOT invent or force one.
+2. Each "impliedWord" is EITHER the fuller everyday word this character stands in for — written as Chinese characters only, with no pinyin, no English, and no "short for" prefix (just the word, e.g. "违反") — OR an empty string "" when the character does not abbreviate any illuminating longer word.
+3. Only cite a longer word when it genuinely illuminates why the character is here AND the character actually appears in that longer word. Do NOT invent or force one; when in doubt, use "".
 
-Goal (preferred but not strictly required): the reasons together should reveal why the word is built the way it is — insight a learner couldn't get from the whole-word definition alone. Prefer results that achieve this, but modest insight is acceptable.
-
-Return an empty array [] (meaning "no worthwhile breakdown") when:
+Return an empty array [] (meaning "no worthwhile breakdown at all") ONLY when:
   - The word is a phonetic transliteration whose characters carry no meaning (e.g. 咖啡, 沙发, 巧克力)
-  - A proper noun / brand where per-character meaning is not illuminating
-  - The characters cannot be meaningfully separated (a lexicalized whole where per-character glosses would mislead)
+  - A proper noun / brand where per-character breakdown is not illuminating
+  - The characters cannot be meaningfully separated (a lexicalized whole where a per-character mapping would mislead)
 
-Do NOT return [] merely because the word is common — 吃饭, 喝水 still have a clean per-character breakdown (吃 "to eat", 饭 "rice/meal — short for 米饭").
+Do NOT return [] merely because SOME (or even most) characters lack an expansion — individual characters with no illuminating longer word simply get "". Return [] only when the WHOLE word is opaque.
 
 Good examples:
-  * 违规 → [{"char":"违","reason":"to violate — short for 违反"},{"char":"规","reason":"rules/norms — short for 规矩"}]
-  * 不知不觉 → [{"char":"不","reason":"not"},{"char":"知","reason":"to know — short for 知道"},{"char":"不","reason":"not"},{"char":"觉","reason":"to sense/feel — short for 觉得"}]
-  * 早晚 → [{"char":"早","reason":"morning — short for 早上"},{"char":"晚","reason":"evening — short for 晚上"}]
-  * 客厅 → [{"char":"客","reason":"guest — short for 客人"},{"char":"厅","reason":"hall — short for 厅堂"}]
+  * 违规 → [{"char":"违","impliedWord":"违反"},{"char":"规","impliedWord":"规矩"}]
+  * 不知不觉 → [{"char":"不","impliedWord":""},{"char":"知","impliedWord":"知道"},{"char":"不","impliedWord":""},{"char":"觉","impliedWord":"觉得"}]
+  * 早晚 → [{"char":"早","impliedWord":"早上"},{"char":"晚","impliedWord":"晚上"}]
+  * 客厅 → [{"char":"客","impliedWord":"客人"},{"char":"厅","impliedWord":"厅堂"}]
 
-Empty examples: 咖啡, 沙发, 巧克力 → []`;
+Empty-array examples (whole word opaque): 咖啡, 沙发, 巧克力 → []`;
 
 // Maps deterministic check failures to validator-style violation codes,
 // so the regenerator gets a uniform vocabulary regardless of which layer rejected.
@@ -98,7 +97,7 @@ const DETERMINISTIC_RULE_LABELS = {
   not_array: 'Result was not a JSON array.',
   wrong_length: 'The array did not have exactly one entry per character of the word.',
   char_mismatch: "The entries' `char` values did not match the word's characters in order.",
-  missing_reason: 'At least one entry had an empty or non-string `reason`.',
+  bad_implied_type: 'At least one entry had a non-string `impliedWord` (it must be the implied Chinese word or "").',
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -122,21 +121,23 @@ function deterministicCheck(word, rationale) {
   // Compare char-by-char up to the shorter length; a length mismatch already flagged above
   const n = Math.min(rationale.length, chars.length);
   let charOk = true;
-  let reasonOk = true;
+  let impliedOk = true;
   for (let i = 0; i < n; i++) {
     const entry = rationale[i];
     if (!entry || entry.char !== chars[i]) charOk = false;
-    if (!entry || typeof entry.reason !== 'string' || entry.reason.trim().length === 0) reasonOk = false;
+    // An empty impliedWord ("") is legal — it means "this character has no illuminating
+    // expansion." Only a non-string impliedWord is a structural failure.
+    if (!entry || typeof entry.impliedWord !== 'string') impliedOk = false;
   }
   if (!charOk) violations.push('char_mismatch');
-  if (!reasonOk) violations.push('missing_reason');
+  if (!impliedOk) violations.push('bad_implied_type');
 
   return { ok: violations.length === 0, violations };
 }
 
-/** Normalize an accepted rationale to just {char, reason} with trimmed reasons. */
+/** Normalize an accepted rationale to just {char, impliedWord} with trimmed words. */
 function normalizeRationale(rationale) {
-  return rationale.map(e => ({ char: e.char, reason: String(e.reason).trim() }));
+  return rationale.map(e => ({ char: e.char, impliedWord: String(e.impliedWord).trim() }));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -150,7 +151,7 @@ const GENERATOR_SYSTEM = `You are a Chinese language expert. Respond only with v
 ${RATIONALE_RULES_TEXT}
 
 Respond with ONLY a JSON object whose "rationale" is the array:
-{"rationale": [{"char": "…", "reason": "…"}, …]}
+{"rationale": [{"char": "…", "impliedWord": "…"}, …]}
 or, for no worthwhile breakdown:
 {"rationale": []}`;
 
@@ -176,16 +177,16 @@ async function generateRationale(word) {
 // Static reviewer scaffold → cached system block; per-entry word/rationale → user message.
 const VALIDATOR_SYSTEM = `You are a strict reviewer of per-character rationales for Chinese words. You enforce semantic accuracy. Respond only with valid JSON.
 
-A per-character rationale has been proposed for a Chinese word. Judge whether each character's reason is ACCURATE for its role in this specific word and whether any cited "short for" longer word is correct and genuinely illuminating. The "insight" goal is preferred but not required — do not reject solely because the insight is modest.
+A per-character mapping has been proposed for a Chinese word: each character is mapped to the fuller everyday word it abbreviates, or to "" when it abbreviates nothing illuminating. Judge whether each non-empty word is correct — it must genuinely be the word that character stands in for in THIS word and must actually contain that character — and whether the "" / non-"" choices are right.
 
 ${RATIONALE_RULES_TEXT}
 
-Use these violation codes when the rationale fails:
-  - "inaccurate_reason": at least one character's reason is wrong for its role in this word
-  - "wrong_implied_word": a cited "short for" longer word is incorrect or does not contain that character
-  - "over_glossed": a reason dumps unrelated dictionary senses instead of the meaning used in this word
+Use these violation codes when the mapping fails:
+  - "wrong_implied_word": a cited longer word is incorrect, misleading, or does not contain that character
+  - "unnecessary_word": a longer word was cited where the character is NOT really a stand-in for it (it should have been "")
+  - "missing_word": a character IS a clear terse stand-in for a fuller word but was left ""
   - "should_be_empty": the word is a transliteration / opaque whole and should have returned []
-  - "should_not_be_empty": the word has a clean per-character breakdown but [] was returned
+  - "should_not_be_empty": the word has a clean per-character mapping but [] was returned
 
 Respond with ONLY:
 {"accept": true}
@@ -231,7 +232,7 @@ ${RATIONALE_RULES_TEXT}
 Take the feedback seriously. If the word genuinely has no worthwhile per-character breakdown, return {"rationale": []} rather than forcing meanings.
 
 Respond with ONLY:
-{"rationale": [{"char": "…", "reason": "…"}, …]}
+{"rationale": [{"char": "…", "impliedWord": "…"}, …]}
 or
 {"rationale": []}`;
 
@@ -300,6 +301,12 @@ async function runRationalePipeline(word) {
       continue;
     }
 
+    // Every character mapped to "" → the mapping conveys nothing worthwhile.
+    // Collapse to the [] sentinel so it isn't stored as a section of blank rows.
+    if (candidate.every(e => String(e.impliedWord).trim() === '')) {
+      return { rationale: [], attempts, finalViolations: [] };
+    }
+
     // Det passed — run semantic validator
     const verdict = await validatorAgent(word, candidate);
     if (verdict.accept) {
@@ -326,7 +333,7 @@ async function processEntry(row, client, stats) {
       process.stdout.write(`— [] after ${attempts} attempt(s) [${finalViolations.join(',') || 'no_breakdown'}]\n`);
       stats.emptySentinel++;
     } else {
-      const display = rationale.map(e => `${e.char}=${e.reason}`).join(' | ');
+      const display = rationale.map(e => `${e.char}=${e.impliedWord || '∅'}`).join(' | ');
       const acceptedTag = attempts === 1 ? 'accepted-1st' : 'accepted-retry';
       if (attempts === 1) stats.firstAttemptAccepted++;
       else stats.retryAccepted++;

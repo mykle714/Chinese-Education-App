@@ -27,6 +27,7 @@ export interface User {
   password?: string; // Not returned to client
   selectedLanguage?: Language;
   isPublic?: boolean; // Whether user appears on the public leaderboard
+  isValidator?: boolean; // Whether user may download/validate dictionary entries (migration 104, docs/DATA_VALIDATION_SYSTEM.md)
   avatarIconId?: string | null; // FK to icons8("icons8Id") — the icon chosen as profile avatar (migration 77)
   readingGoal?: boolean; // Account opts into the Reading mastery goal (migration 101, docs/MASTERY_REWORK.md)
   writingGoal?: boolean; // Account opts into the Writing mastery goal (migration 101, docs/MASTERY_REWORK.md)
@@ -160,6 +161,13 @@ export interface DictionaryEntry {
   exampleSentenceDefinitionPronunciationOverride?: ExampleSentenceDefinitionPronunciationOverride | null; // Raw override object from DB; applied verbatim in segment popups
   longDefinition?: string | null;
   longDefinitionParts?: LongDefinitionPart[] | null;  // Computed at runtime: longDefinition split into English + cpcd-able Chinese runs
+  // Computed at read time (DictionaryDAL.enrichDefinitionsApprovalBatch): TRUE iff a
+  // validations row (field='definitions', action='approve') matches the entry's
+  // CURRENT raw partsOfSpeech + definitions + longDefinition columns (all three,
+  // since composeBody bundles them as one validation unit — docs/DATA_VALIDATION_SYSTEM.md).
+  // Falsy ⇒ client renders the longDefinition block + partsOfSpeech chip with the
+  // AI-generated styling.
+  definitionsApproved?: boolean;
 
   // AI-enriched content
   // `sense` = the component character's definitionClusters sense LABEL for how it is
@@ -180,12 +188,40 @@ export interface DictionaryEntry {
     senseDict?: Record<string, string>;        // definitionClusters sense label per segment (from the tagging pass); resolves each segment's dd = ddt(matching cluster)
     _segments?: string[];
     segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo; wordForms?: Record<string, string> }>;
+    humanApproved?: boolean;   // Computed at read time (enrichExampleSentencesMetadataBatch): TRUE iff a validations row with action='approve' matches this sentence's current foreignText+english (docs/DATA_VALIDATION_SYSTEM.md). Falsy ⇒ client renders the AI-generated styling
   }> | null;
-  characterRationale?: Array<{ char: string; reason: string }> | null;  // zh-only per-character rationale (migration 102, docs/CHARACTER_RATIONALE.md); display-ready jsonb, replaces expansion
+  characterRationale?: Array<{ char: string; impliedWord: string }> | null;  // zh-only per-character mapping: each char → fuller word it abbreviates, or "" (migration 102, docs/CHARACTER_RATIONALE.md); display-ready jsonb, replaces expansion
   matchException?: string[] | null;  // Multi-char tokens to suppress during GSA segmentation
   vernacularScore?: number | null;   // Higher = more colloquially common; used by GSA to prefer common words
   wordForms?: Record<string, string> | null;  // AI-generated English conjugation map (e.g. {past: "ran", present: "runs"})
 };
+
+// Which field of a dictionary entry a validation document targets.
+// 'definitions' = the partsOfSpeech + definitions[] + longDefinition bundle;
+// 'exampleSentenceN' = exampleSentences[N] (foreignText + english).
+export type ValidationField =
+  | 'definitions'
+  | 'exampleSentence0'
+  | 'exampleSentence1'
+  | 'exampleSentence2';
+
+// One row of the `validations` table (migration 104) — a human review record for a
+// single (entry, field). Kept OFF the det tables so prod data deploys (which
+// TRUNCATE+restore dictionaryentries_*) never wipe review data. `content` holds the
+// reviewed body for BOTH actions: the exact data version approved, or the suggested
+// edit when flagged. `entryId` is dictionaryentries_<language>.id. See
+// docs/DATA_VALIDATION_SYSTEM.md.
+export interface ValidationRecord {
+  id?: string;
+  entryId: number;
+  language: Language;
+  field: ValidationField;
+  validatorUserId: string;
+  validatorName: string;
+  action: 'approve' | 'flag';
+  content: string;
+  createdAt?: string;
+}
 
 // A row of `ai_dictionary_cache` (migration 97) — a cached AI-synthesized dictionary answer for a
 // pinyin query with no real det match. `word1` NULL ⇒ cached empty result (no likely meaning).
@@ -207,6 +243,29 @@ export interface AiDictionaryEntry {
   pronunciation: string;  // tone-marked pinyin
   definition: string;     // one concise, complete gloss (no length cap; migration 98)
   source: 'ai';
+}
+
+// A row of `word_comparison_cache` (migration 105) — a cached AI-generated paragraph comparing
+// two det words. wordA/wordB are stored in canonical (codepoint-sorted) order so both comparison
+// directions share one row. See docs/WORD_COMPARE_FEATURE.md.
+export interface WordComparisonRow {
+  id: number;
+  wordA: string;
+  wordB: string;
+  language: string;
+  comparison: string;
+  model: string | null;
+  queriedAt: string;
+}
+
+// The eip Compare tab's response shape (docs/WORD_COMPARE_FEATURE.md): the raw AI paragraph plus
+// its GSA segmentation (embedded Chinese runs → cpcd-able parts with per-segment pinyin +
+// definition), computed at READ TIME the same way `longDefinition` is — see
+// `enrichLongDefinitionMetadataBatch` — and NOT persisted in `word_comparison_cache` (only the
+// raw `comparison` text is cached; parts are recomputed on every serve, cached or fresh).
+export interface WordComparisonResult {
+  comparison: string;
+  comparisonParts: LongDefinitionPart[] | null;
 }
 
 // One orthogonal sense cluster within a Chinese dictionary entry's
@@ -256,8 +315,9 @@ export interface DiscoverCard {
     senseDict?: Record<string, string>;        // definitionClusters sense label per segment (from the tagging pass); resolves each segment's dd = ddt(matching cluster)
     _segments?: string[];
     segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo; wordForms?: Record<string, string> }>;
+    humanApproved?: boolean;   // Computed at read time (enrichExampleSentencesMetadataBatch): TRUE iff a validations row with action='approve' matches this sentence's current foreignText+english (docs/DATA_VALIDATION_SYSTEM.md). Falsy ⇒ client renders the AI-generated styling
   }> | null;
-  characterRationale?: Array<{ char: string; reason: string }> | null;  // zh-only per-character rationale (migration 102, docs/CHARACTER_RATIONALE.md); display-ready jsonb, replaces expansion
+  characterRationale?: Array<{ char: string; impliedWord: string }> | null;  // zh-only per-character mapping: each char → fuller word it abbreviates, or "" (migration 102, docs/CHARACTER_RATIONALE.md); display-ready jsonb, replaces expansion
   matchException?: string[] | null;  // Multi-char tokens to suppress during GSA segmentation
   // Optional icons8 icon id (FK → icons8."icons8Id"). When set, the client renders
   // the icon via <img src="/api/icons8/<iconId>/image">. Null when no icon assigned.
@@ -444,6 +504,10 @@ export interface VocabEntry {
   tone?: string | null;   // Tone digits derived from pronunciation (e.g. "12" for fēng kuáng)
   difficulty?: DifficultyLevel | null;
   partsOfSpeech?: string[] | null;  // POS tags from dictionaryentries_zh (e.g. ["noun", "verb"])
+  // Computed at read time (DictionaryDAL.enrichDefinitionsApprovalBatch): TRUE iff a
+  // validations row (field='definitions', action='approve') matches the entry's
+  // CURRENT raw partsOfSpeech + definitions + longDefinition columns (docs/DATA_VALIDATION_SYSTEM.md).
+  definitionsApproved?: boolean;
   vernacularScore?: number | null;  // 1–5 register score from dictionaryentries_zh (1=literary, 5=natural colloquial)
   definitionClusters?: DefinitionCluster[] | null;  // Orthogonal sense clusters (zh; migration 90), joined from det via DICT_JOIN — see docs/DEFINITION_CLUSTERS.md
   selectedSense?: string | null;  // Per-card chosen cluster `sense` label (vet column, migration 99). NULL = default/starred sense. See docs/DEFINITION_CLUSTERS.md
@@ -455,7 +519,7 @@ export interface VocabEntry {
   breakdown?: Record<string, { definition: string; pronunciation?: string; sense?: string }> | null;  // Character breakdown for Chinese vocab (`sense` = component char's definitionClusters label for this word)
   synonyms?: string[];  // Array of Chinese synonym words
   synonymsMetadata?: Record<string, { definition: string; pronunciation: string }> | null;  // Computed at runtime by batch-reading from dictionaryentries_zh
-  characterRationale?: Array<{ char: string; reason: string }> | null;  // zh-only per-character rationale (migration 102, docs/CHARACTER_RATIONALE.md): why each char is used in this multi-char word; display-ready jsonb, replaces expansion
+  characterRationale?: Array<{ char: string; impliedWord: string }> | null;  // zh-only per-character mapping: each char → fuller word it abbreviates, or "" (migration 102, docs/CHARACTER_RATIONALE.md); display-ready jsonb, replaces expansion
   longDefinition?: string | null;  // AI-generated extended definition (25–150 chars) from dictionaryentries_zh
   longDefinitionParts?: LongDefinitionPart[] | null;  // Computed at runtime: longDefinition split into English + cpcd-able Chinese runs
   iconId?: string | null;  // Representative icons8 icon (FK to icons8.icons8Id) joined from det; client renders via <img src="/api/icons8/<iconId>/image">
@@ -476,6 +540,7 @@ export interface VocabEntry {
     senseDict?: Record<string, string>;        // definitionClusters sense label per segment (from the tagging pass); resolves each segment's dd = ddt(matching cluster)
     _segments?: string[];
     segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo; wordForms?: Record<string, string> }>;
+    humanApproved?: boolean;   // Computed at read time (enrichExampleSentencesMetadataBatch): TRUE iff a validations row with action='approve' matches this sentence's current foreignText+english (docs/DATA_VALIDATION_SYSTEM.md). Falsy ⇒ client renders the AI-generated styling
   }>;  // Example sentences enriched at runtime with greedy segmentation and per-segment metadata
   relatedWords?: Array<{ id: number; entryKey: string; pronunciation: string | null; definition: string | null }>;  // Related library words (computed dynamically)
   usedIn?: UsedInItem[] | null;  // Single-char zh only: multi-char words that contain this character (vet-first, det-fallback). Computed at runtime.
@@ -513,16 +578,28 @@ export interface Text {
   language: Language;
   characterCount: number;
   isUserCreated: boolean; // Flag to distinguish user-created from system texts
+  // Validation-doc linkage (migration 104). NULL/undefined ⇒ ordinary user document.
+  // When set, this text reviews dictionaryentries_<validationLanguage>.id = validationEntryId
+  // (det id is a SERIAL integer).
+  validationEntryId?: number | null;
+  validationLanguage?: Language | null;
+  validationField?: ValidationField | null;
+  validationOriginalContent?: string | null; // Server-composed original body (change-detection + revert)
   createdAt: string;
 }
 
-// Text creation data type
+// Text creation data type. The validation* fields are set only by ValidationService
+// when it composes a validation document; ordinary document creation omits them.
 export interface TextCreateData {
   userId: string;
   title: string;
   description?: string;
   content: string;
   language?: Language;
+  validationEntryId?: number | null;
+  validationLanguage?: Language | null;
+  validationField?: ValidationField | null;
+  validationOriginalContent?: string | null;
 }
 
 // Text update data type

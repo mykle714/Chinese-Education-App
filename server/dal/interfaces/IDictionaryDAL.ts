@@ -1,4 +1,4 @@
-import { DictionaryEntry, DictionaryEntryCreateData, AiDictionaryCacheRow } from '../../types/index.js';
+import { DictionaryEntry, DictionaryEntryCreateData, AiDictionaryCacheRow, WordComparisonRow } from '../../types/index.js';
 import { IBaseDAL } from './IBaseDAL.js';
 
 /**
@@ -73,6 +73,25 @@ export interface IDictionaryDAL extends IBaseDAL<DictionaryEntry, DictionaryEntr
   incrementAiUsage(userId: string, usageDate: string): Promise<number>;
 
   /**
+   * Read a cached word-comparison paragraph for a canonically-ordered pair (migration 105).
+   * Caller must pass wordA/wordB already sorted — this method does not sort. Returns null on a
+   * miss. See docs/WORD_COMPARE_FEATURE.md.
+   */
+  getComparison(wordA: string, wordB: string, language: string): Promise<WordComparisonRow | null>;
+
+  /**
+   * Insert or refresh a cached comparison for a canonically-ordered pair. Caller must pass
+   * wordA/wordB already sorted.
+   */
+  upsertComparison(
+    wordA: string,
+    wordB: string,
+    language: string,
+    comparison: string,
+    model: string
+  ): Promise<void>;
+
+  /**
    * Enrich each example sentence in a batch of entries with:
    * - `_segments` (segment list)
    * - `segmentMetadata` (per-segment pronunciation + definition)
@@ -96,4 +115,18 @@ export interface IDictionaryDAL extends IBaseDAL<DictionaryEntry, DictionaryEntr
   enrichLongDefinitionMetadataBatch<T extends {
     longDefinition?: string | null;
   }>(entries: T[], language?: string): Promise<T[]>;
+
+  /**
+   * Attach `definitionsApproved: boolean` to each entry — TRUE iff a validator
+   * approved the 'definitions' field (partsOfSpeech + definitions[] + longDefinition,
+   * bundled as one unit) and it still matches the entry's current raw det data.
+   * See docs/DATA_VALIDATION_SYSTEM.md.
+   *
+   * @param entries - Array of objects carrying word1 and/or entryKey (the headword)
+   * @param language - Language filter for dictionary lookups
+   */
+  enrichDefinitionsApprovalBatch<T extends {
+    word1?: string;
+    entryKey?: string;
+  }>(entries: T[], language?: string): Promise<Array<T & { definitionsApproved: boolean }>>;
 }

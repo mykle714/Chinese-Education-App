@@ -14,6 +14,7 @@ interface User {
     email: string;
     name: string;
     isPublic?: boolean;
+    isValidator?: boolean; // Gates the Reader "Validate" button + validation endpoints (migration 104)
     selectedLanguage?: Language;
     // icons8 id of the chosen profile avatar; null/undefined => name-initial fallback.
     avatarIconId?: string | null;

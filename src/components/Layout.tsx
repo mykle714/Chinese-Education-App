@@ -77,7 +77,8 @@ function Layout({ children }: LayoutProps) {
         location.pathname.startsWith("/discover/quick-mark/") ||
         location.pathname.startsWith("/discover/skipped/") ||
         location.pathname.startsWith("/flashcards/card/") ||
-        location.pathname.startsWith("/dictionary/card/");
+        location.pathname.startsWith("/dictionary/card/") ||
+        location.pathname.startsWith("/reader/");
 
     if (isMobileDemoPage) {
         return <MobileDemoFrame>{children}</MobileDemoFrame>;

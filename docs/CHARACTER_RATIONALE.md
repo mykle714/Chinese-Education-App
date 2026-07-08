@@ -3,21 +3,26 @@
 **Status:** active. Introduced migration 102 (2026-07-07), replacing the retired
 *expansion* feature.
 
-Character Rationale explains, **character by character, why each character is used**
-in a multi-char Chinese word. It is the successor to the old `expansion` feature
-(which produced one blended vernacular phrase per word plus an English gloss of that
-phrase). The display unit is now the **character**, not the whole phrase.
+Character Rationale maps, **character by character, the fuller everyday word each
+character abbreviates** within a multi-char Chinese word. It is the successor to the old
+`expansion` feature (which produced one blended vernacular phrase per word plus an
+English gloss of that phrase). The display unit is now the **character**, not the whole
+phrase, and — as of the v2 backfill (2026-07-07) — each character maps to **only the
+implied Chinese word** (no English gloss).
 
 For 违规 the rationale is:
 
-| char | reason |
-|------|--------|
-| 违 | to violate — short for 违反 |
-| 规 | rules/norms — short for 规矩 |
+| char | impliedWord |
+|------|-------------|
+| 违 | 违反 |
+| 规 | 规矩 |
 
-When a lone character is a terse stand-in for a fuller everyday word, the reason cites
-that longer word inline (`— short for 违反`) — the same "知 → 知道" insight the old
-expansion prompt encoded, but attached per-character instead of fused into one string.
+Each character maps to the fuller everyday word it is a terse stand-in for — the same
+"知 → 知道" insight the old expansion prompt encoded, but attached per-character. A
+character that abbreviates **no** illuminating longer word maps to the empty string `""`
+(e.g. both 不 in 不知不觉). The display works **char by char**: rows are shown only for
+characters that have a non-empty `impliedWord` — `""` characters are omitted entirely,
+and the whole section is hidden when no character qualifies.
 
 ---
 
@@ -28,10 +33,13 @@ expansion prompt encoded, but attached per-character instead of fused into one s
   column; the `dictJoin` es UNION branch substitutes `NULL::jsonb`.
 - **Shape:** array aligned to `word1`'s characters, one object per character:
   ```json
-  [ {"char": "违", "reason": "to violate — short for 违反"},
-    {"char": "规", "reason": "rules/norms — short for 规矩"} ]
+  [ {"char": "违", "impliedWord": "违反"},
+    {"char": "规", "impliedWord": "规矩"} ]
   ```
-  `reason` is a **short English learner-facing** gloss (a phrase, not a sentence).
+  `impliedWord` is **the fuller Chinese word** the character abbreviates (Chinese
+  characters only — no pinyin, no English gloss, no `short for` prefix), or `""` when
+  the character abbreviates nothing illuminating. A result whose characters are **all**
+  `""` collapses to the `[]` sentinel (nothing worthwhile to show).
 - **Sentinel convention** (mirrors expansion's old `''`):
   - `NULL` = never attempted
   - `'[]'::jsonb` = attempted, no worthwhile breakdown (transliterations like 咖啡,
@@ -62,13 +70,17 @@ Unlike expansion — whose raw phrase had to be GSA-segmented + dictionary-looke
   `StarterPacksService` selects the column per-language (NULL for es);
   `VocabEntryService` / `OnDeckVocabService` dropped the expansion pipeline stage.
 - **Types:** `server/types/index.ts` and `src/types.ts` —
-  `characterRationale?: Array<{ char: string; reason: string }> | null`.
+  `characterRationale?: Array<{ char: string; impliedWord: string }> | null`.
 - **Client (render):**
   - `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx` — the eip
     breakdown tab renders a **"Why These Characters"** list under the per-character
-    breakdown rows.
+    breakdown rows: one row per character **with a non-empty `impliedWord`**, drawn as
+    `char → impliedWord` (both `ForeignText`, tone-colored). Characters with `""` are
+    filtered out (`rationaleItems`), and the whole section renders only when at least
+    one character qualifies (`hasRationale`).
   - `src/features/flashcards/VocabCardDetailBody.tsx` — the cdp renders the same list.
-  - Empty/absent → **"No breakdown explanation available"**.
+  - No qualifying characters (null, `[]`, or all-`""`) → the section is **not rendered**
+    at all (no placeholder).
   - `src/features/flashcards/FlashcardsLearnPage/dictEntryAdapter.ts` carries the field
     from a det-fallback entry onto the client `VocabEntry`.
 
@@ -80,18 +92,23 @@ Unlike expansion — whose raw phrase had to be GSA-segmented + dictionary-looke
 structure (cached system blocks via `run-log.js`, `parseModelJson` from
 `shared/lib/json.js`, `--dry-run` / `--concurrency` / `--words=` flags):
 
-1. **Generator agent** → proposes `[{char, reason}]` (or `[]` if the word is opaque).
+1. **Generator agent** → proposes `[{char, impliedWord}]` (or `[]` if the word is opaque).
 2. **Deterministic check** → exactly one entry per character, in `word1`'s order, each
-   `char` matching and each `reason` a non-empty string. An empty array is a legal
-   sentinel and always passes.
-3. **Validator agent** (only if the deterministic check passes) → judges accuracy of
-   each reason and any cited "short for" word; can flag `should_be_empty` /
-   `should_not_be_empty`.
+   `char` matching and each `impliedWord` a string (`""` allowed). An empty array is a
+   legal sentinel and always passes; a result whose `impliedWord`s are **all** `""`
+   collapses to the `[]` sentinel.
+3. **Validator agent** (only if the deterministic check passes) → judges each cited
+   word (`wrong_implied_word`, `unnecessary_word`, `missing_word`) and the empty-vs-not
+   choice (`should_be_empty` / `should_not_be_empty`).
 4. **One retry** — a regenerator agent informed by the violations + critique.
 5. Accept → write the array; two rejections or a deliberate `[]` → write `'[]'`.
 
+The script carries a `SCRIPT_VERSION` (currently **2** — v2 dropped the English gloss,
+storing `impliedWord` only). Re-run with `--stale` to re-process rows stamped below the
+current version.
+
 Selection query: discoverable zh rows with `char_length(word1) > 1` and
-`characterRationale IS NULL`, oldest/shortest first.
+`characterRationale IS NULL` (plus below-version rows under `--stale`), oldest/shortest first.
 
 ```bash
 docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-character-rationale.js

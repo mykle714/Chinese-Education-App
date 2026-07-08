@@ -218,7 +218,8 @@ export class OnDeckVocabService {
   private async enrichEntriesPipeline(entries: VocabEntry[], language: string): Promise<VocabEntry[]> {
     const withExampleMeta = await this.dictionaryService.enrichExampleSentencesMetadataBatch(entries, language);
     const withLongDefMeta = await this.dictionaryService.enrichLongDefinitionMetadataBatch(withExampleMeta, language);
-    return this.dictionaryService.enrichEntriesWithSynonymMetadata(withLongDefMeta, language);
+    const withDefsApproval = await this.dictionaryService.enrichDefinitionsApprovalBatch(withLongDefMeta, language);
+    return this.dictionaryService.enrichEntriesWithSynonymMetadata(withDefsApproval, language);
   }
 
   /**

@@ -200,7 +200,11 @@ with **no id / no metadata** — it is **display-only**:
 - not clickable (no cdp navigation),
 - not add-to-library-able,
 - rendered in the app's **orange** (`COLORS.yellowMain` = `#FF8E47`, the "Target" hue) so it's
-  visually distinct from real dictionary rows.
+  visually distinct from real dictionary rows. The border/tint + sparkle-badge treatment lives in
+  the shared `src/theme/aiGeneratedStyling.ts` (`aiGeneratedSurfaceSx`) +
+  `src/components/AiGeneratedBadge.tsx` (`AiGeneratedBadge`),
+  which the est's unapproved-sentence styling reuses (docs/DATA_VALIDATION_SYSTEM.md), so the two
+  AI-content surfaces cannot drift apart.
 
 <a id="per-language-search-routing"></a>
 ## Per-language search routing (`searchByWord1`) — prerequisite for the es fallback

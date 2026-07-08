@@ -8,7 +8,6 @@ import {
     TextField,
     InputAdornment,
     IconButton,
-    Button,
     Alert,
     Pagination,
     Chip,
@@ -23,24 +22,12 @@ import { COLORS } from '../theme/colors';
 import { useAuth } from '../AuthContext';
 import type { DictionaryEntry, Language } from '../types';
 import DictionaryEntryRow from '../components/DictionaryEntryRow';
+import PinyinKeypad from '../components/PinyinKeypad';
 import { FooterSpacer } from '../components/MobileFooter';
 import { usePageTitle } from '../hooks/usePageTitle';
 import { useDictionarySearch } from '../hooks/useDictionarySearch';
 import { useSlideNavigate } from '../hooks/useSlideNavigate';
 import { dictionaryBrowseState } from './dictionaryBrowseState';
-
-// Special characters for each language
-const SPECIAL_CHARACTERS: Record<Language, string[]> = {
-    zh: [
-        'ā', 'á', 'ǎ', 'à',
-        'ē', 'é', 'ě', 'è',
-        'ī', 'í', 'ǐ', 'ì',
-        'ō', 'ó', 'ǒ', 'ò',
-        'ū', 'ú', 'ǔ', 'ù',
-        'ǖ', 'ǘ', 'ǚ', 'ǜ'
-    ],
-    es: ['á', 'é', 'í', 'ó', 'ú', 'ñ', 'ü', '¿', '¡'],
-};
 
 // dictionaryBrowseState (the persisted query/page/scroll singleton) now lives in
 // ./dictionaryBrowseState so the Layout route watcher can reset it on exit from
@@ -63,7 +50,6 @@ function DictionaryPage() {
     } = useDictionarySearch(50, { search: dictionaryBrowseState.search, page: dictionaryBrowseState.page });
 
     const userLanguage = (user?.selectedLanguage || 'zh') as Language;
-    const specialChars = SPECIAL_CHARACTERS[userLanguage] || [];
 
     // Ref for search input to maintain focus
     const searchInputRef = useRef<HTMLInputElement>(null);
@@ -109,66 +95,12 @@ function DictionaryPage() {
         requestAnimationFrame(attempt);
     }, [loading, entries.length, segmentGroups.length]);
 
-    // Helper function to get background color for each vowel group
-    const getVowelColor = (char: string): string => {
-        const vowelColors: Record<string, string> = {
-            'ā': '#ffebee', 'á': '#ffebee', 'ǎ': '#ffebee', 'à': '#ffebee',  // a - light red
-            'ē': '#fff3e0', 'é': '#fff3e0', 'ě': '#fff3e0', 'è': '#fff3e0',  // e - light orange
-            'ī': '#fffde7', 'í': '#fffde7', 'ǐ': '#fffde7', 'ì': '#fffde7',  // i - light yellow
-            'ō': '#e8f5e9', 'ó': '#e8f5e9', 'ǒ': '#e8f5e9', 'ò': '#e8f5e9',  // o - light green
-            'ū': '#e3f2fd', 'ú': '#e3f2fd', 'ǔ': '#e3f2fd', 'ù': '#e3f2fd',  // u - light blue
-            'ǖ': '#f3e5f5', 'ǘ': '#f3e5f5', 'ǚ': '#f3e5f5', 'ǜ': '#f3e5f5',  // ü - light purple
-        };
-        return vowelColors[char] || 'transparent';
-    };
-
-    // Shared style for the tone-marked pinyin vowel buttons. Square footprint:
-    // the height matches a MUI small contained button (~30px); width is locked to
-    // the same value and the default horizontal padding is removed so the single
-    // glyph stays centered.
-    const specialCharButtonSx = (char: string) => ({
-        width: '30px',
-        minWidth: '30px',
-        height: '30px',
-        p: 0,
-        fontFamily: 'inherit',
-        textTransform: 'lowercase' as const,
-        backgroundColor: getVowelColor(char),
-        color: '#000000',
-        '&:hover': {
-            backgroundColor: getVowelColor(char),
-            filter: 'brightness(0.9)',
-        },
-    });
-
     const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         setSearchInput(event.target.value);
     };
 
     const handleClearSearch = () => {
         clearSearch();
-    };
-
-    const handleSpecialCharClick = (char: string) => {
-        const input = searchInputRef.current;
-        if (!input) {
-            setSearchInput(searchInput + char);
-            return;
-        }
-
-        const start = input.selectionStart ?? searchInput.length;
-        const end = input.selectionEnd ?? searchInput.length;
-
-        // Insert character at cursor position
-        const newValue = searchInput.substring(0, start) + char + searchInput.substring(end);
-        setSearchInput(newValue);
-
-        // Restore cursor position after the inserted character
-        setTimeout(() => {
-            const newPosition = start + char.length;
-            input.setSelectionRange(newPosition, newPosition);
-            input.focus();
-        }, 0);
     };
 
     // Tapping a result-card opens the read-only dictionary card-detail page (cdp)
@@ -225,57 +157,13 @@ function DictionaryPage() {
                     className="dictionary-page__search-bar--mobile"
                     sx={{ mb: 2 }}
                 >
-                    {/* Row 1: a, e (8 chars) */}
-                    <Box className="dictionary-page__special-chars-row" sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 0.5, justifyContent: 'center' }}>
-                        {specialChars.slice(0, 8).map((char, idx) => (
-                            <Button
-                                key={char}
-                                className="dictionary-page__special-char-btn"
-                                variant="contained"
-                                size="small"
-                                onClick={() => handleSpecialCharClick(char)}
-                                // Extra left margin on the 5th button splits the row's
-                                // two vowel groups (4 + 4) with a gap down the middle.
-                                sx={{ ...specialCharButtonSx(char), ...(idx === 4 ? { ml: 2 } : {}) }}
-                            >
-                                {char}
-                            </Button>
-                        ))}
-                    </Box>
-                    {/* Row 2: i, o (8 chars) */}
-                    <Box className="dictionary-page__special-chars-row" sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 0.5, justifyContent: 'center' }}>
-                        {specialChars.slice(8, 16).map((char, idx) => (
-                            <Button
-                                key={char}
-                                className="dictionary-page__special-char-btn"
-                                variant="contained"
-                                size="small"
-                                onClick={() => handleSpecialCharClick(char)}
-                                // Extra left margin on the 5th button splits the row's
-                                // two vowel groups (4 + 4) with a gap down the middle.
-                                sx={{ ...specialCharButtonSx(char), ...(idx === 4 ? { ml: 2 } : {}) }}
-                            >
-                                {char}
-                            </Button>
-                        ))}
-                    </Box>
-                    {/* Row 3: u, ü (8 chars) */}
-                    <Box className="dictionary-page__special-chars-row" sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 1, justifyContent: 'center' }}>
-                        {specialChars.slice(16).map((char, idx) => (
-                            <Button
-                                key={char}
-                                className="dictionary-page__special-char-btn"
-                                variant="contained"
-                                size="small"
-                                onClick={() => handleSpecialCharClick(char)}
-                                // Extra left margin on the 5th button splits the row's
-                                // two vowel groups (4 + 4) with a gap down the middle.
-                                sx={{ ...specialCharButtonSx(char), ...(idx === 4 ? { ml: 2 } : {}) }}
-                            >
-                                {char}
-                            </Button>
-                        ))}
-                    </Box>
+                    <PinyinKeypad
+                        className="dictionary-page__special-chars"
+                        language={userLanguage}
+                        inputRef={searchInputRef}
+                        value={searchInput}
+                        onChange={setSearchInput}
+                    />
                     <TextField
                         className="dictionary-page__search-input"
                         fullWidth
@@ -304,72 +192,6 @@ function DictionaryPage() {
                         }}
                         sx={{ mt: 2 }}
                     />
-                </Box>
-            )}
-
-            {/* Search Bar and Special Characters - Desktop */}
-            {!isMobile && (
-                <Box className="dictionary-page__search-bar--desktop" sx={{ mb: 3, display: 'flex', gap: 2, alignItems: 'flex-start' }}>
-                    <TextField
-                        className="dictionary-page__search-input"
-                        fullWidth
-                        placeholder={`Search ${userLanguage.toUpperCase()} dictionary...`}
-                        value={searchInput}
-                        onChange={handleSearchChange}
-                        inputRef={searchInputRef}
-                        InputProps={{
-                            startAdornment: (
-                                <InputAdornment position="start">
-                                    <Search />
-                                </InputAdornment>
-                            ),
-                            endAdornment: searchInput && (
-                                <InputAdornment position="end">
-                                    <IconButton
-                                        aria-label="clear search"
-                                        onClick={handleClearSearch}
-                                        edge="end"
-                                        size="small"
-                                    >
-                                        <Clear />
-                                    </IconButton>
-                                </InputAdornment>
-                            ),
-                        }}
-                        sx={{ flex: 1, mt: 2 }}
-                    />
-                    <Box className="dictionary-page__special-chars--desktop" sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                        {/* Row 1: a, e, i */}
-                        <Box className="dictionary-page__special-chars-row" sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                            {specialChars.slice(0, 12).map((char) => (
-                                <Button
-                                    key={char}
-                                    className="dictionary-page__special-char-btn"
-                                    variant="contained"
-                                    size="small"
-                                    onClick={() => handleSpecialCharClick(char)}
-                                    sx={specialCharButtonSx(char)}
-                                >
-                                    {char}
-                                </Button>
-                            ))}
-                        </Box>
-                        {/* Row 2: o, u, ü */}
-                        <Box className="dictionary-page__special-chars-row" sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                            {specialChars.slice(12).map((char) => (
-                                <Button
-                                    key={char}
-                                    className="dictionary-page__special-char-btn"
-                                    variant="contained"
-                                    size="small"
-                                    onClick={() => handleSpecialCharClick(char)}
-                                    sx={specialCharButtonSx(char)}
-                                >
-                                    {char}
-                                </Button>
-                            ))}
-                        </Box>
-                    </Box>
                 </Box>
             )}
 

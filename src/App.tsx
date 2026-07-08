@@ -17,6 +17,7 @@ import FlashcardsPage from "./features/flashcards/FlashcardsPage";
 import FlashcardsLearnPage from "./features/flashcards/FlashcardsLearnPage";
 import FlashcardsDecksPage from "./features/flashcards/FlashcardsDecksPage";
 import ReaderPage from "./features/reader/ReaderPage";
+import ReaderDocumentPage from "./features/reader/ReaderDocumentPage";
 import NightMarketEnginePage from "./features/nightmarket/NightMarketEnginePage";
 import DictionaryPage from "./pages/DictionaryPage";
 import DictionaryCardDetailPage from "./pages/DictionaryCardDetailPage";
@@ -92,6 +93,11 @@ function App() {
                 <Route path="/reader" element={
                   <ProtectedRoute allowPublic>
                     <ReaderPage />
+                  </ProtectedRoute>
+                } />
+                <Route path="/reader/:id" element={
+                  <ProtectedRoute allowPublic>
+                    <ReaderDocumentPage />
                   </ProtectedRoute>
                 } />
                 <Route path="/dictionary" element={

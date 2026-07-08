@@ -4,7 +4,7 @@
 // learn-page chip all draw from one source instead of duplicating the map.
 export const CATEGORY_COLORS = {
     Unfamiliar: "#EF476F",
-    Target: "#FF8E47",
+    Target: "#FF9E5A",
     Comfortable: "#05C793",
     Mastered: "#779BE7",
     // Fallback for unknown/undefined category.

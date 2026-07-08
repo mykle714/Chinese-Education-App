@@ -79,15 +79,16 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     // reads this to know it should call handleClose after the shrink finishes.
     const pendingDismissRef = useRef(false);
 
-    // Measure the sheet's natural height on first render, then play an open
-    // animation from 0 → measured height. Mirrors the previous InfoCardSection
-    // open behavior verbatim.
+    // Play an open animation from 0 → target height on first render. The
+    // panel's own open height is a fixed 50% of the parent (screen) height
+    // rather than content-measured, so it's consistent across all eip tabs
+    // regardless of how much content a given tab renders. Child panels that
+    // pass initialHeight still match the parent panel's live height instead.
     useLayoutEffect(() => {
         if (!sheetContainerRef.current) return;
-        const measured = sheetContainerRef.current.offsetHeight;
         const parentH = sheetContainerRef.current.parentElement?.clientHeight ?? window.innerHeight;
         parentHeightRef.current = parentH;
-        const targetHeight = initialHeight != null ? Math.min(initialHeight, parentH * 0.92) : measured;
+        const targetHeight = initialHeight != null ? Math.min(initialHeight, parentH * 0.92) : parentH * 0.5;
         defaultHeightRef.current = targetHeight;
         sheetHeightRef.current = 0;
         setSheetHeight(0);

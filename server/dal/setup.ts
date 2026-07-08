@@ -10,6 +10,7 @@ import { OnDeckVocabService } from '../services/OnDeckVocabService.js';
 import { UserMinutePointsService } from '../services/UserMinutePointsService.js';
 import { DictionaryService } from '../services/DictionaryService.js';
 import { TextService } from '../services/TextService.js';
+import { ValidationService } from '../services/ValidationService.js';
 import { StarterPacksService } from '../services/StarterPacksService.js';
 import { SortPacksDAL } from './implementations/SortPacksDAL.js';
 import { UserController } from '../controllers/UserController.js';
@@ -18,6 +19,7 @@ import { OnDeckVocabController } from '../controllers/OnDeckVocabController.js';
 import { UserMinutePointsController } from '../controllers/UserMinutePointsController.js';
 import { DictionaryController } from '../controllers/DictionaryController.js';
 import { TextController } from '../controllers/TextController.js';
+import { ValidationController } from '../controllers/ValidationController.js';
 import { StarterPacksController } from '../controllers/StarterPacksController.js';
 import { NightMarketDAL } from './implementations/NightMarketDAL.js';
 import { NightMarketService } from '../services/NightMarketService.js';
@@ -58,6 +60,8 @@ const starterPacksService = new StarterPacksService(vocabEntryDAL, dictionaryDAL
 const onDeckVocabService = new OnDeckVocabService(vocabEntryDAL, dictionaryService, starterPacksService);
 const userMinutePointsService = new UserMinutePointsService(userMinutePointsDAL, userDAL);
 const textService = new TextService(userDAL);
+// Validation reuses TextService to persist composed documents (with validation* columns).
+const validationService = new ValidationService(userDAL, textService);
 const nightMarketService = new NightMarketService(nightMarketDAL, userDAL);
 const gameAssetService = new GameAssetService(gameAssetDAL);
 const gameProgressService = new GameProgressService(gameProgressDAL);
@@ -71,6 +75,7 @@ const onDeckVocabController = new OnDeckVocabController(onDeckVocabService);
 const userMinutePointsController = new UserMinutePointsController(userMinutePointsService);
 const dictionaryController = new DictionaryController(dictionaryService, userDAL, vocabEntryDAL);
 const textController = new TextController(textService);
+const validationController = new ValidationController(validationService);
 const starterPacksController = new StarterPacksController(starterPacksService);
 const nightMarketController = new NightMarketController(nightMarketService);
 const gamesController = new GamesController(gameAssetService, gameProgressService);
@@ -93,6 +98,7 @@ export {
   userMinutePointsService,
   dictionaryService,
   textService,
+  validationService,
   starterPacksService,
   userController,
   vocabEntryController,
@@ -100,6 +106,7 @@ export {
   userMinutePointsController,
   dictionaryController,
   textController,
+  validationController,
   starterPacksController,
   nightMarketDAL,
   nightMarketService,

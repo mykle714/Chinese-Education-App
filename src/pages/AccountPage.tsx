@@ -3,23 +3,14 @@ import {
     Box,
     Typography,
     Avatar,
-    CircularProgress,
-    TextField,
     Button,
-    Alert,
     IconButton,
-    InputAdornment,
-    Dialog,
-    DialogTitle,
-    DialogContent,
-    DialogContentText,
-    DialogActions,
     Snackbar,
     Checkbox,
     FormControlLabel,
     FormGroup,
 } from "@mui/material";
-import { Visibility, VisibilityOff, Warning, ContentCopy } from "@mui/icons-material";
+import { ContentCopy } from "@mui/icons-material";
 import SettingsIcon from "@mui/icons-material/Settings";
 import LogoutIcon from "@mui/icons-material/Logout";
 import { useNavigate } from "react-router-dom";
@@ -74,21 +65,13 @@ const FormSection = styled(Box)(() => ({
     gap: 12,
 }));
 
-const FormField = styled(TextField)(() => ({
-    width: "100%",
-}));
-
-const DeleteButton = styled(Button)(() => ({
-    marginTop: 8,
-}));
-
 function AccountPage() {
     usePageTitle("Account");
     const navigate = useNavigate();
     // Settings is a leaf page: slideNavigate plays the slide-up enter transition.
     const slideNavigate = useSlideNavigate();
     const { confirm } = useConfirmation();
-    const { user, isLoading, changePassword, deleteAccount, logout, updateAvatar, updateGoals } = useAuth();
+    const { user, isLoading, logout, updateAvatar, updateGoals } = useAuth();
 
     // Goal toggles (docs/MASTERY_REWORK.md). Optimistic local state; a failed PUT
     // reverts. Reading/Writing are only meaningful where those marks can be earned
@@ -133,27 +116,6 @@ function AccountPage() {
     );
     // Per-category library card counts, shown as a display-only stat block.
     const { counts: categoryCounts, loaded: countsLoaded } = useCategoryCounts();
-    // Password form state
-    const [currentPassword, setCurrentPassword] = useState("");
-    const [newPassword, setNewPassword] = useState("");
-    const [confirmPassword, setConfirmPassword] = useState("");
-
-    // Form submission state
-    const [isSubmitting, setIsSubmitting] = useState(false);
-    const [success, setSuccess] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-
-    // Delete account state
-    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-    const [deletePassword, setDeletePassword] = useState("");
-    const [deleteError, setDeleteError] = useState<string | null>(null);
-    const [isDeleting, setIsDeleting] = useState(false);
-    const [showDeletePassword, setShowDeletePassword] = useState(false);
-
-    // Password visibility state
-    const [showCurrentPassword, setShowCurrentPassword] = useState(false);
-    const [showNewPassword, setShowNewPassword] = useState(false);
-    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
     // "Copied to clipboard" toast for the user-ID copy button
     const [copiedToastOpen, setCopiedToastOpen] = useState(false);
@@ -166,88 +128,6 @@ function AccountPage() {
             setCopiedToastOpen(true);
         } catch {
             // Clipboard unavailable (non-HTTPS / unsupported) — no-op rather than crash.
-        }
-    };
-
-    // Form validation
-    const validateForm = () => {
-        if (!currentPassword) {
-            setError("Current password is required");
-            return false;
-        }
-
-        if (!newPassword) {
-            setError("New password is required");
-            return false;
-        }
-
-        if (newPassword !== confirmPassword) {
-            setError("New passwords do not match");
-            return false;
-        }
-
-        return true;
-    };
-
-    // Handle delete account dialog
-    const handleOpenDeleteDialog = () => {
-        setDeleteDialogOpen(true);
-        setDeletePassword("");
-        setDeleteError(null);
-    };
-
-    const handleCloseDeleteDialog = () => {
-        setDeleteDialogOpen(false);
-        setDeletePassword("");
-        setDeleteError(null);
-    };
-
-    const handleDeleteAccount = async () => {
-        setDeleteError(null);
-
-        if (!deletePassword) {
-            setDeleteError("Password is required to delete your account");
-            return;
-        }
-
-        setIsDeleting(true);
-
-        try {
-            await deleteAccount(deletePassword);
-            // Navigation to login is handled in the deleteAccount function
-        } catch (err: unknown) {
-            setDeleteError(err instanceof Error ? err.message : "Failed to delete account");
-            setIsDeleting(false);
-        }
-    };
-
-    // Handle form submission
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-
-        // Reset states
-        setError(null);
-        setSuccess(false);
-
-        // Validate form
-        if (!validateForm()) {
-            return;
-        }
-
-        setIsSubmitting(true);
-
-        try {
-            await changePassword(currentPassword, newPassword);
-            setSuccess(true);
-
-            // Reset form
-            setCurrentPassword("");
-            setNewPassword("");
-            setConfirmPassword("");
-        } catch (err: unknown) {
-            setError(err instanceof Error ? err.message : "Failed to change password");
-        } finally {
-            setIsSubmitting(false);
         }
     };
 
@@ -423,131 +303,6 @@ function AccountPage() {
                             </FormSection>
                         )}
 
-                        {/* Password Change Section */}
-                        <FormSection className="account-page__password-section">
-                            <Typography
-                                className="account-page__section-title"
-                                sx={{
-                                    fontSize: SIZE.body,
-                                    fontWeight: WEIGHT.medium,
-                                    color: COLORS.onSurface,
-                                    fontFamily: FONTS.sans,
-                                }}
-                            >
-                                Change Password
-                            </Typography>
-
-                            {success && (
-                                <Alert className="account-page__success-alert" severity="success" sx={{ mb: 2 }}>
-                                    Password changed successfully!
-                                </Alert>
-                            )}
-
-                            {error && (
-                                <Alert className="account-page__error-alert" severity="error" sx={{ mb: 2 }}>
-                                    {error}
-                                </Alert>
-                            )}
-
-                            <Box className="account-page__password-form" component="form" onSubmit={handleSubmit} noValidate sx={{ mt: 1 }}>
-                                <FormField
-                                    margin="normal"
-                                    required
-                                    fullWidth
-                                    name="currentPassword"
-                                    label="Current Password"
-                                    type={showCurrentPassword ? "text" : "password"}
-                                    id="currentPassword"
-                                    autoComplete="current-password"
-                                    value={currentPassword}
-                                    onChange={(e) => setCurrentPassword(e.target.value)}
-                                    size="small"
-                                    InputProps={{
-                                        endAdornment: (
-                                            <InputAdornment position="end">
-                                                <IconButton
-                                                    aria-label="toggle password visibility"
-                                                    onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                                                    edge="end"
-                                                    size="small"
-                                                >
-                                                    {showCurrentPassword ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
-                                                </IconButton>
-                                            </InputAdornment>
-                                        )
-                                    }}
-                                />
-
-                                <FormField
-                                    margin="normal"
-                                    required
-                                    fullWidth
-                                    name="newPassword"
-                                    label="New Password"
-                                    type={showNewPassword ? "text" : "password"}
-                                    id="newPassword"
-                                    autoComplete="new-password"
-                                    value={newPassword}
-                                    onChange={(e) => setNewPassword(e.target.value)}
-                                    size="small"
-                                    InputProps={{
-                                        endAdornment: (
-                                            <InputAdornment position="end">
-                                                <IconButton
-                                                    aria-label="toggle password visibility"
-                                                    onClick={() => setShowNewPassword(!showNewPassword)}
-                                                    edge="end"
-                                                    size="small"
-                                                >
-                                                    {showNewPassword ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
-                                                </IconButton>
-                                            </InputAdornment>
-                                        )
-                                    }}
-                                />
-
-                                <FormField
-                                    margin="normal"
-                                    required
-                                    fullWidth
-                                    name="confirmPassword"
-                                    label="Confirm New Password"
-                                    type={showConfirmPassword ? "text" : "password"}
-                                    id="confirmPassword"
-                                    autoComplete="new-password"
-                                    value={confirmPassword}
-                                    onChange={(e) => setConfirmPassword(e.target.value)}
-                                    size="small"
-                                    InputProps={{
-                                        endAdornment: (
-                                            <InputAdornment position="end">
-                                                <IconButton
-                                                    aria-label="toggle password visibility"
-                                                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                                                    edge="end"
-                                                    size="small"
-                                                >
-                                                    {showConfirmPassword ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
-                                                </IconButton>
-                                            </InputAdornment>
-                                        )
-                                    }}
-                                />
-
-                                <Button
-                                    className="account-page__submit-button"
-                                    type="submit"
-                                    fullWidth
-                                    variant="contained"
-                                    sx={{ mt: 2 }}
-                                    disabled={isSubmitting}
-                                    size="small"
-                                >
-                                    {isSubmitting ? "Changing..." : "Change Password"}
-                                </Button>
-                            </Box>
-                        </FormSection>
-
                         {/* Logout Section — moved here from the removed hamburger drawer. */}
                         <FormSection className="account-page__logout-section">
                             <Button
@@ -562,107 +317,8 @@ function AccountPage() {
                                 Log Out
                             </Button>
                         </FormSection>
-
-                        {/* Delete Account Section */}
-                        <FormSection className="account-page__delete-section">
-                            <Typography
-                                className="account-page__delete-section-title"
-                                sx={{
-                                    fontSize: SIZE.body,
-                                    fontWeight: WEIGHT.medium,
-                                    color: "#EF476F",
-                                    fontFamily: FONTS.sans,
-                                }}
-                            >
-                                Delete Account
-                            </Typography>
-
-                            <Alert className="account-page__warning-alert" severity="warning" icon={<Warning fontSize="small" />} sx={{ fontSize: SIZE.caption }}>
-                                This action is permanent and cannot be undone.
-                            </Alert>
-
-                            <DeleteButton
-                                className="account-page__delete-button"
-                                fullWidth
-                                variant="outlined"
-                                color="error"
-                                startIcon={<Warning fontSize="small" />}
-                                onClick={handleOpenDeleteDialog}
-                                size="small"
-                            >
-                                Delete My Account
-                            </DeleteButton>
-                        </FormSection>
                     </AccountSection>
             </MobileTabScreen>
-
-            {/* Delete Account Confirmation Dialog */}
-            <Dialog
-                className="account-page__delete-dialog"
-                open={deleteDialogOpen}
-                onClose={handleCloseDeleteDialog}
-                maxWidth="sm"
-                fullWidth
-            >
-                <DialogTitle className="account-page__dialog-title" sx={{ color: 'error.main', display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Warning className="account-page__dialog-warning-icon" /> Delete Account
-                </DialogTitle>
-                <DialogContent className="account-page__dialog-content">
-                    <DialogContentText className="account-page__dialog-content-text" sx={{ mb: 3, fontSize: SIZE.body }}>
-                        Are you sure you want to delete your account? This action is permanent and cannot be undone.
-                    </DialogContentText>
-
-                    {deleteError && (
-                        <Alert className="account-page__dialog-error-alert" severity="error" sx={{ mb: 2 }}>
-                            {deleteError}
-                        </Alert>
-                    )}
-
-                    <TextField
-                        className="account-page__dialog-password-field"
-                        autoFocus
-                        margin="dense"
-                        label="Enter your password to confirm"
-                        type={showDeletePassword ? "text" : "password"}
-                        autoComplete="current-password"
-                        fullWidth
-                        variant="outlined"
-                        value={deletePassword}
-                        onChange={(e) => setDeletePassword(e.target.value)}
-                        size="small"
-                        InputProps={{
-                            endAdornment: (
-                                <InputAdornment position="end">
-                                    <IconButton
-                                        aria-label="toggle password visibility"
-                                        onClick={() => setShowDeletePassword(!showDeletePassword)}
-                                        edge="end"
-                                        size="small"
-                                    >
-                                        {showDeletePassword ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
-                                    </IconButton>
-                                </InputAdornment>
-                            )
-                        }}
-                    />
-                </DialogContent>
-                <DialogActions className="account-page__dialog-actions" sx={{ px: 3, pb: 2 }}>
-                    <Button className="account-page__dialog-cancel-button" onClick={handleCloseDeleteDialog} disabled={isDeleting} size="small">
-                        Cancel
-                    </Button>
-                    <Button
-                        className="account-page__dialog-delete-button"
-                        onClick={handleDeleteAccount}
-                        color="error"
-                        variant="contained"
-                        disabled={isDeleting}
-                        startIcon={isDeleting ? <CircularProgress size={16} /> : <Warning fontSize="small" />}
-                        size="small"
-                    >
-                        {isDeleting ? "Deleting..." : "Delete"}
-                    </Button>
-                </DialogActions>
-            </Dialog>
 
             {/* Avatar icon picker — shared icon search/browser. Empty query browses all
                 downloaded icons; typing searches icons8 (download-on-select). */}

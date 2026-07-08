@@ -586,10 +586,14 @@ const FlashcardsLearnPage: React.FC = () => {
                     // The active tab owns the panel's entry/breakdown/sub-tab. openEicSheet
                     // always seeds a root tab before this renders, so activeTab is present;
                     // the currentEntry/breakdownItems fallbacks are a paint-safety net only.
+                    // The Compare tab (docs/WORD_COMPARE_FEATURE.md) is a different kind — it
+                    // has no entry/breakdown/sub-tab of its own, so it renders CompareTabBody
+                    // instead (InfoCardSection branches on `compareTab`).
                     const active = eip.activeTab;
-                    const panelEntry = active?.entry ?? currentEntry;
-                    const panelBreakdown = active?.breakdownItems ?? breakdownItems;
-                    const panelSubTab = active ? active.selectedSubTab : 0;
+                    const compareTab = active?.kind === "compare" ? active : null;
+                    const panelEntry = (active?.kind === "entry" ? active.entry : null) ?? currentEntry;
+                    const panelBreakdown = (active?.kind === "entry" ? active.breakdownItems : null) ?? breakdownItems;
+                    const panelSubTab = active?.kind === "entry" ? active.selectedSubTab : 0;
                     return (
                         <InfoCardSection
                             currentEntry={panelEntry}
@@ -608,6 +612,10 @@ const FlashcardsLearnPage: React.FC = () => {
                             onSpeak={tts.enabled ? tts.speak : undefined}
                             onSpeakSentence={tts.enabled ? speakSentenceAtRate : undefined}
                             speakingKey={tts.speakingKey}
+                            onOpenCompare={eip.openCompareTab}
+                            compareTab={compareTab}
+                            onSetCompareSlot={eip.setCompareSlot}
+                            onCompareResult={eip.setCompareResult}
                             tabStrip={
                                 <EipTabStrip
                                     tabs={eip.tabs}

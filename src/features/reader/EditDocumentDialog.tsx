@@ -12,6 +12,7 @@ import {
 import type { Text } from '../../types';
 import { useAuth } from '../../AuthContext';
 import { API_BASE_URL } from '../../constants';
+import { canonicalizeValidationBody, isValidationShapePreserved, VALIDATION_FORMAT_MESSAGE } from './validationFormat';
 
 interface EditDocumentDialogProps {
     open: boolean;
@@ -52,6 +53,27 @@ function EditDocumentDialog({ open, text, onClose, onSuccess }: EditDocumentDial
             return;
         }
 
+        // Validation documents (docs/DATA_VALIDATION_SYSTEM.md) have a fixed
+        // `<fieldName>:\n<JSON>` body; the validator may edit only the JSON values.
+        // Canonicalize the body: a null result means the format was broken (block the
+        // save), otherwise every non-value character (headers, separators, whitespace)
+        // is reset so a whitespace-only edit round-trips to the original and never
+        // triggers a spurious flag. Ordinary reader docs have no `validationField`.
+        let contentToSave = content;
+        if (text.validationField) {
+            const canonical = canonicalizeValidationBody(content, text.validationField);
+            // Block a broken format AND any JSON key-name change (a renamed key stays
+            // valid JSON but the server would no longer recognize the field).
+            if (
+                canonical === null ||
+                !isValidationShapePreserved(content, text.validationOriginalContent ?? '', text.validationField)
+            ) {
+                setError(VALIDATION_FORMAT_MESSAGE);
+                return;
+            }
+            contentToSave = canonical;
+        }
+
         setLoading(true);
         setError(null);
 
@@ -66,7 +88,7 @@ function EditDocumentDialog({ open, text, onClose, onSuccess }: EditDocumentDial
                 body: JSON.stringify({
                     title: title.trim(),
                     description: description.trim(),
-                    content
+                    content: contentToSave
                 })
             });
 

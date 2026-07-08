@@ -1,11 +1,6 @@
 import { useMemo } from "react";
 import { Box, TextField } from "@mui/material";
-import {
-    selectPreviousWord,
-    selectNextWord,
-    moveCursorLeftFromPosition,
-    moveCursorRightFromPosition
-} from "./textSelectionUtils";
+import { selectRelativeSpan, type SegmentSpan } from "./documentSegmentation";
 import ReaderTapOverlay from "./ReaderTapOverlay";
 import { FONTS } from "../../theme/fonts";
 import { SIZE } from "../../theme/scale";
@@ -23,6 +18,9 @@ interface Text {
 interface TextAreaProps {
     selectedText: Text | null;
     autoSelectEnabled: boolean;
+    // GSA word spans for the current document (docs/READER_SEGMENTATION.md) —
+    // arrow keys (and ReaderTapOverlay's synthetic arrows) step through these.
+    segmentSpans: SegmentSpan[];
     selectionColors: {
         backgroundColor: string;
     };
@@ -33,17 +31,27 @@ interface TextAreaProps {
     inputRef: React.RefObject<HTMLTextAreaElement | null>;
     // Re-asserts focus when the reading box is blurred.
     onBlur: React.FocusEventHandler<HTMLInputElement | HTMLTextAreaElement>;
+    // Edit mode (see ReaderEditToolbar / useReaderContentEditor): swaps the reading
+    // box (tap-to-navigate, auto-select, no typing) for a plain editable textarea
+    // bound to the in-progress draft rather than the saved document content.
+    editMode?: boolean;
+    draftContent?: string;
+    onDraftChange?: (value: string) => void;
 }
 
 function TextArea({
     selectedText,
     autoSelectEnabled,
+    segmentSpans,
     selectionColors,
     onTextChange,
     onAutoWordSelect,
     onTextSelectionChange,
     inputRef,
-    onBlur
+    onBlur,
+    editMode = false,
+    draftContent = '',
+    onDraftChange,
 }: TextAreaProps) {
     // Memoized Text Area Component - isolated from vocab card updates
     const MemoizedTextArea = useMemo(() => {
@@ -61,17 +69,23 @@ function TextArea({
                     className="reader-page-text-field"
                     multiline
                     fullWidth
-                    value={selectedText.content}
+                    value={editMode ? draftContent : selectedText.content}
                     inputRef={inputRef}
-                    onBlur={onBlur}
-                    onChange={onTextChange}
-                    onSelect={(e) => {
+                    onBlur={editMode ? undefined : onBlur}
+                    onChange={editMode
+                        ? (e) => onDraftChange?.(e.target.value)
+                        : onTextChange}
+                    onSelect={editMode ? undefined : (e) => {
                         // Handle both auto word selection and vocabulary card lookup
                         onAutoWordSelect(e);
                         onTextSelectionChange(e);
                     }}
-                    onKeyDown={(e) => {
-                        // Handle directional word selection when auto-select is enabled
+                    onKeyDown={editMode ? undefined : (e) => {
+                        // Directional word navigation when auto-select is enabled:
+                        // step the selection through the document's gsa word spans.
+                        // ReaderTapOverlay's forward/back taps dispatch synthetic
+                        // ArrowLeft/ArrowRight keydowns into this same handler, so
+                        // keyboard and tap navigation share one code path.
                         if (autoSelectEnabled && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
                             // Use e.target directly as it should be the textarea element
                             const textarea = e.target as HTMLTextAreaElement;
@@ -79,32 +93,9 @@ function TextArea({
                                 return;
                             }
 
-                            // Only handle if no text is currently selected
-                            if (textarea.selectionStart === textarea.selectionEnd) {
-                                e.preventDefault(); // Prevent default arrow behavior
-
-                                if (e.key === 'ArrowLeft') {
-                                    selectPreviousWord(textarea);
-                                } else if (e.key === 'ArrowRight') {
-                                    selectNextWord(textarea);
-                                }
-                                return;
-                            } else {
-                                // Handle arrow keys when text is selected
-                                if (e.key === 'ArrowLeft') {
-                                    e.preventDefault();
-                                    const startPosition = Math.max(0, textarea.selectionStart - 1);
-                                    moveCursorLeftFromPosition(textarea, startPosition);
-                                    return;
-                                } else if (e.key === 'ArrowRight') {
-                                    e.preventDefault();
-                                    const startPosition = textarea.selectionEnd;
-                                    moveCursorRightFromPosition(textarea, startPosition);
-                                    return;
-                                }
-
-                                return;
-                            }
+                            e.preventDefault(); // Arrows navigate whole words; never move the raw caret
+                            selectRelativeSpan(textarea, segmentSpans, e.key === 'ArrowRight' ? 'next' : 'prev');
+                            return;
                         }
 
                         // Allow navigation keys but prevent text modification
@@ -129,7 +120,9 @@ function TextArea({
                     // arrow-key navigation), so mobile browsers would normally raise the
                     // soft keyboard. This box is not for typing, so inputMode="none"
                     // suppresses the virtual keyboard while keeping focus/selection intact.
-                    inputProps={{ inputMode: 'none' }}
+                    // In edit mode this is a normal editable textarea, so the keyboard is
+                    // allowed to appear (no inputMode override).
+                    inputProps={editMode ? undefined : { inputMode: 'none' }}
                     InputProps={{
                         sx: {
                             lineHeight: 2,
@@ -186,12 +179,14 @@ function TextArea({
                         },
                     }}
                     minRows={2}
-                    placeholder="Select a text to begin reading..."
+                    placeholder={editMode ? "Edit your text content here..." : "Select a text to begin reading..."}
                 />
-                <ReaderTapOverlay inputRef={inputRef} />
+                {/* Tap-to-navigate is a reading-mode affordance; edit mode is a plain
+                editable textarea, so no overlay. */}
+                {!editMode && <ReaderTapOverlay inputRef={inputRef} />}
             </Box>
         );
-    }, [selectedText, onTextChange, onAutoWordSelect, onTextSelectionChange, autoSelectEnabled, selectionColors, inputRef, onBlur]);
+    }, [selectedText, onTextChange, onAutoWordSelect, onTextSelectionChange, autoSelectEnabled, segmentSpans, selectionColors, inputRef, onBlur, editMode, draftContent, onDraftChange]);
 
     return MemoizedTextArea;
 }

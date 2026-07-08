@@ -27,6 +27,12 @@ router.post('/api/dictionary/ai-entry', authenticateToken, async (req, res) => {
   await dictionaryController.aiEntry(req, res);
 });
 
+// Generate (or return cached) a comparison paragraph for two words (eip Compare tab)
+// @ts-ignore
+router.post('/api/dictionary/compare', authenticateToken, async (req, res) => {
+  await dictionaryController.compare(req, res);
+});
+
 // Lookup dictionary term by exact match
 // @ts-ignore
 router.get('/api/dictionary/lookup/:term', authenticateToken, async (req, res) => {

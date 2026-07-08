@@ -42,7 +42,7 @@ function EipTabStrip({ tabs, activeIndex, onSelect, onCloseActiveTab, isTabbedMo
                                 onClick={() => onSelect(i)}
                                 className={`eip-entry-tab eip-entry-tab--${i === activeIndex ? "active" : "inactive"}`}
                             >
-                                {tab.entry.entryKey}
+                                {tab.kind === "compare" ? "Compare" : tab.entry.entryKey}
                             </EipEntryTab>
                         ))}
                     </Box>

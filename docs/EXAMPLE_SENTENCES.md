@@ -127,6 +127,20 @@ rendered through `renderEnglishWithVocabUnderline` (`exampleSentenceText.tsx`, s
 which underlines the `translatedVocab` substring. The only surface difference is the
 `compact` prop (cdp passes it for denser stacking); every functional feature is shared.
 
+### AI-generated vs human-approved styling
+
+Every sentence arrives with a server-computed `humanApproved` flag (attached in
+`enrichExampleSentencesMetadataBatch`, both zh + es branches): TRUE iff a
+`validations` row with the approval stamp (`action = 'approve'`) matches the
+sentence's **current** raw det object (docs/DATA_VALIDATION_SYSTEM.md).
+Sentences without a valid approval render in the shared AI-generated treatment —
+orange `COLORS.yellowMain` border, ~8% tint, and an `AutoAwesome` "AI GENERATED"
+badge (`src/theme/aiGeneratedStyling.ts` + `src/components/AiGeneratedBadge.tsx`,
+same treatment as the dictionary
+AI-fallback card). Approved sentences keep the quiet `flashcard.subtleBg`
+background. Because the flag is computed at read time, a data deploy or backfill
+that changes a sentence's text automatically demotes it back to AI-generated.
+
 ## Segment popup → eip drill-in
 
 The per-segment definition popup (`SegmentedSentenceDisplay.tsx`, the `Popper` at the

@@ -4,7 +4,7 @@ import { getToneColor } from "../utils/toneColors";
 import { FONTS } from "../theme/fonts";
 import { WEIGHT } from "../theme/scale";
 
-export type CPCDSize = "xs" | "sm" | "md" | "lg";
+export type CPCDSize = "xs" | "sm" | "md" | "lg" | "xl";
 
 export interface CPCDRowItem {
     character: string;
@@ -57,17 +57,17 @@ interface CPCDRowProps {
 // CharacterPinyinColorDisplay; kept here because CPCDRow now owns the layout.
 // "xs" is sized to sit inline within 14px body prose (e.g. Chinese embedded in a long
 // definition): glyph just above body size, with a compact pinyin row beneath.
-const COLUMN_WIDTH: Record<CPCDSize, number> = { xs: 22, sm: 32, md: 50, lg: 54 };
+const COLUMN_WIDTH: Record<CPCDSize, number> = { xs: 22, sm: 32, md: 50, lg: 54, xl: 72 };
 // Vertical space reserved above each char cell's glyph for the pinyin row.
 // Sized to fit the pinyin font's line-box at each size (font-size × 1.21).
-const PINYIN_RESERVED_HEIGHT: Record<CPCDSize, number> = { xs: 13, sm: 18, md: 22, lg: 24 };
-const CHAR_FONT_SIZE: Record<CPCDSize, string> = { xs: "18px", sm: "26px", md: "2.25rem", lg: "2.4rem" };
-const PINYIN_FONT_SIZE: Record<CPCDSize, string> = { xs: "10px", sm: "13px", md: "1rem", lg: "1.05rem" };
-const COMPACT_CHAR_FONT: Record<CPCDSize, string> = { xs: "16px", sm: "22px", md: "1.875rem", lg: "2.25rem" };
-const COMPACT_PINYIN_FONT: Record<CPCDSize, string> = { xs: "9px", sm: "11px", md: "0.875rem", lg: "1rem" };
-const VERTICAL_PADDING: Record<CPCDSize, string> = { xs: "2px", sm: "4px", md: "8px", lg: "8px" };
+const PINYIN_RESERVED_HEIGHT: Record<CPCDSize, number> = { xs: 13, sm: 18, md: 22, lg: 24, xl: 30 };
+const CHAR_FONT_SIZE: Record<CPCDSize, string> = { xs: "18px", sm: "26px", md: "2.25rem", lg: "2.4rem", xl: "3.2rem" };
+const PINYIN_FONT_SIZE: Record<CPCDSize, string> = { xs: "10px", sm: "13px", md: "1rem", lg: "1.05rem", xl: "1.3rem" };
+const COMPACT_CHAR_FONT: Record<CPCDSize, string> = { xs: "16px", sm: "22px", md: "1.875rem", lg: "2.25rem", xl: "2.8rem" };
+const COMPACT_PINYIN_FONT: Record<CPCDSize, string> = { xs: "9px", sm: "11px", md: "0.875rem", lg: "1rem", xl: "1.15rem" };
+const VERTICAL_PADDING: Record<CPCDSize, string> = { xs: "2px", sm: "4px", md: "8px", lg: "8px", xl: "10px" };
 // Negative left-margin per child to overlap cells, preserving the prior visual density.
-const OVERLAP_BY_SIZE: Record<CPCDSize, number> = { xs: -4, sm: -6, md: -4, lg: -2 };
+const OVERLAP_BY_SIZE: Record<CPCDSize, number> = { xs: -4, sm: -6, md: -4, lg: -2, xl: -2 };
 // Minimum breathing space (unscaled px) kept between adjacent pinyin texts when
 // de-overlapping. Only applied to pairs that actually collide, so non-colliding
 // rows are never disturbed.

@@ -1,12 +1,15 @@
 import React, { forwardRef, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
 import { Box, IconButton, Typography, useTheme } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
+import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
 import { stripParentheses } from "../../../utils/definitionUtils";
 import ForeignText, { type CPCDSize } from "../../../components/ForeignText";
 import PosBadge from "../../../components/PosBadge";
 import PracticeWritingButton from "../../../components/handwriting/PracticeWritingButton";
 import LongDefinitionDisplay from "../../../components/LongDefinitionDisplay";
 import VernacularScoreDots from "../../../components/VernacularScoreDots";
+import { aiGeneratedSurfaceSx } from "../../../theme/aiGeneratedStyling";
+import { AiGeneratedBadge } from "../../../components/AiGeneratedBadge";
 import InfoCardListRow from "./InfoCardListRow";
 import {
     InfoSheetEntryHeader,
@@ -40,6 +43,10 @@ export interface InfoCardPanelBodyProps {
     // in the entry header. Used only by the dictionary EIP — flashcards EIP
     // omits it because those cards are already in the library by definition.
     onAddToLibrary?: (entry: VocabEntry) => void;
+    // Opens (or focuses/refills) the singleton Compare tab for the current entry
+    // (docs/WORD_COMPARE_FEATURE.md). Renders the Compare icon button in the header
+    // actions column; undefined hides it.
+    onOpenCompare?: (entry: VocabEntry) => void;
     // Speaker callback for an example sentence. When provided, each sentence
     // block in the Examples tab renders a SpeakerButton in its top-right
     // corner. Undefined hides the buttons (TTS disabled in settings).
@@ -96,6 +103,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
     onExampleSegmentClick,
     onSpeak,
     onAddToLibrary,
+    onOpenCompare,
     onSpeakSentence,
     speakingKey,
     headerCpcdSize = "md",
@@ -137,7 +145,14 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
     // Single-char zh cards swap the breakdown tab for a "used in" list (see usedIn enrichment in OnDeckVocabService).
     const isSingleChar = !!currentEntry && [...currentEntry.entryKey].length === 1;
     const usedInItems: UsedInItem[] = (isSingleChar && currentEntry?.usedIn) ? currentEntry.usedIn : [];
-    const hasRationale = !!currentEntry?.characterRationale?.length;
+    // Only characters that actually abbreviate a fuller word are shown — chars with an
+    // empty impliedWord ("") are omitted entirely (char-by-char basis). The section
+    // renders only when at least one character qualifies.
+    // Guard `impliedWord` — legacy v1 rows use a `reason` key (no `impliedWord`),
+    // so item.impliedWord can be undefined; `?? ''` keeps those from crashing (they
+    // filter out) until re-enriched to the v2 shape.
+    const rationaleItems = (currentEntry?.characterRationale ?? []).filter((item) => (item.impliedWord ?? '').trim().length > 0);
+    const hasRationale = rationaleItems.length > 0;
     const breakdownTabHasContent = isSingleChar
         ? (usedInItems.length > 0 || hasRationale)
         : (breakdownItems.length > 0 || hasRationale);
@@ -237,10 +252,10 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                         <AddIcon fontSize="small" />
                     </IconButton>
                 )}
-                {/* Writing-practice + audio icons stacked vertically (writing on
-                    top, speaker below). Either may be absent (non-zh / no onSpeak),
-                    in which case the column simply holds the one that renders. */}
-                {currentEntry && (onSpeak || currentEntry.language === "zh") && (
+                {/* Writing-practice + audio + compare icons stacked vertically. Any may be
+                    absent (non-zh / no onSpeak / no onOpenCompare), in which case the column
+                    simply holds whichever render. */}
+                {currentEntry && (onSpeak || currentEntry.language === "zh" || onOpenCompare) && (
                     <Box
                         className="mobile-demo-eic-actions"
                         sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.25 }}
@@ -256,6 +271,28 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                                 onClick={() => onSpeak(currentEntry)}
                                 isLoading={speakingKey === currentEntry.entryKey}
                             />
+                        )}
+                        {onOpenCompare && (
+                            <IconButton
+                                className="mobile-demo-eic-compare"
+                                size="small"
+                                aria-label="Compare with another word"
+                                onClick={(e) => {
+                                    // Match SpeakerButton's stop-propagation pattern so taps
+                                    // don't bubble to flip/drag handlers in any wrapping card.
+                                    e.stopPropagation();
+                                    onOpenCompare(currentEntry);
+                                }}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onTouchStart={(e) => e.stopPropagation()}
+                                onTouchEnd={(e) => e.stopPropagation()}
+                                sx={{
+                                    color: fc.textSecondary,
+                                    '&:hover': { color: fc.onSurface },
+                                }}
+                            >
+                                <CompareArrowsIcon fontSize="small" />
+                            </IconButton>
                         )}
                     </Box>
                 )}
@@ -314,6 +351,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                                 showPinyin={showPinyin}
                                 showPinyinColor={showPinyinColor}
                                 onSegmentOpen={onExampleSegmentClick}
+                                aiGenerated={!currentEntry?.definitionsApproved}
                                 sx={{
                                     fontSize: SIZE.body,
                                     color: fc.onSurface,
@@ -337,7 +375,13 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                                 {/* HSK meta: only for zh, whose 1–6 difficulty integers ARE HSK
                                     levels; es uses the same scale but it is not an HSK label. */}
                                 {currentEntry?.language === 'zh' && currentEntry.difficulty && (
-                                    <Box sx={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+                                    // HSK/difficulty is AI-classified (backfill-hsk-level.js) with no
+                                    // validation field, so it always carries the AI-generated box (no
+                                    // badge — a small value chip, like the Type chip below).
+                                    <Box
+                                        className="mobile-demo-hsk-chip--ai-generated"
+                                        sx={{ display: "flex", flexDirection: "column", gap: "3px", ...aiGeneratedSurfaceSx, borderRadius: "8px", padding: "4px 8px" }}
+                                    >
                                         <Typography sx={{ fontSize: SIZE.micro, fontWeight: WEIGHT.bold, color: fc.textSecondary, letterSpacing: TRACKING.caps, textTransform: "uppercase", fontFamily: FC_FONT }}>
                                             HSK
                                         </Typography>
@@ -347,7 +391,17 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                                     </Box>
                                 )}
                                 {(currentEntry?.partsOfSpeech?.length ?? 0) > 0 && (
-                                    <Box sx={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+                                    <Box
+                                        className={currentEntry?.definitionsApproved ? undefined : "mobile-demo-pos-chip--ai-generated"}
+                                        sx={{
+                                            display: "flex",
+                                            flexDirection: "column",
+                                            gap: "3px",
+                                            // Orange border/tint only (no badge) when the definitions
+                                            // bundle hasn't been human-approved (docs/DATA_VALIDATION_SYSTEM.md).
+                                            ...(currentEntry?.definitionsApproved ? {} : { ...aiGeneratedSurfaceSx, borderRadius: "8px", padding: "4px 8px" }),
+                                        }}
+                                    >
                                         <Typography sx={{ fontSize: SIZE.micro, fontWeight: WEIGHT.bold, color: fc.textSecondary, letterSpacing: TRACKING.caps, textTransform: "uppercase", fontFamily: FC_FONT }}>
                                             Type
                                         </Typography>
@@ -357,7 +411,13 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                                     </Box>
                                 )}
                                 {currentEntry?.vernacularScore != null && (
-                                    <Box className="mobile-demo-vernacular-meta" sx={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+                                    // vernacularScore is AI-scored (backfill-vernacular-score.js) with no
+                                    // validation field, so it always carries the AI-generated box (no
+                                    // badge — a small value chip, like the Type chip above).
+                                    <Box
+                                        className="mobile-demo-vernacular-meta mobile-demo-vernacular-meta--ai-generated"
+                                        sx={{ display: "flex", flexDirection: "column", gap: "3px", ...aiGeneratedSurfaceSx, borderRadius: "8px", padding: "4px 8px" }}
+                                    >
                                         <Typography sx={{ fontSize: SIZE.micro, fontWeight: WEIGHT.bold, color: fc.textSecondary, letterSpacing: TRACKING.caps, textTransform: "uppercase", fontFamily: FC_FONT }}>
                                             Commonality
                                         </Typography>
@@ -439,23 +499,28 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                                     />
                                 ))}
                         </Box>
-                        <Box
-                            className="mobile-demo-character-rationale-section"
-                            sx={{
-                                background: fc.subtleBg,
-                                borderRadius: "10px",
-                                padding: "12px 14px",
-                                display: "flex",
-                                flexDirection: "column",
-                                gap: "8px",
-                            }}
-                        >
-                            <SharedCharsLabel className="mobile-demo-character-rationale-label">
-                                Why These Characters
-                            </SharedCharsLabel>
-                            {hasRationale ? (
+                        {/* "Why These Characters": one row per character that abbreviates a
+                            fuller word. Renders only when at least one such character exists. */}
+                        {hasRationale && (
+                            // No validation field covers characterRationale yet (docs/DATA_VALIDATION_SYSTEM.md),
+                            // so it can never be human-approved — always renders the AI-generated treatment.
+                            <Box
+                                className="mobile-demo-character-rationale-section mobile-demo-character-rationale-section--ai-generated"
+                                sx={{
+                                    ...aiGeneratedSurfaceSx,
+                                    borderRadius: "10px",
+                                    padding: "12px 14px",
+                                    display: "flex",
+                                    flexDirection: "column",
+                                    gap: "8px",
+                                }}
+                            >
+                                <AiGeneratedBadge className="mobile-demo-character-rationale-ai-badge" label="AI GENERATED" />
+                                <SharedCharsLabel className="mobile-demo-character-rationale-label">
+                                    Why These Characters
+                                </SharedCharsLabel>
                                 <Box className="mobile-demo-character-rationale-list" sx={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                                    {currentEntry!.characterRationale!.map((item, index) => (
+                                    {rationaleItems.map((item, index) => (
                                         <Box
                                             key={index}
                                             className="mobile-demo-character-rationale-row"
@@ -470,33 +535,24 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                                                 useToneColor={showPinyinColor}
                                             />
                                             <Typography
-                                                className="mobile-demo-character-rationale-reason"
-                                                sx={{
-                                                    fontSize: SIZE.body,
-                                                    color: fc.textSecondary,
-                                                    fontFamily: FC_FONT,
-                                                    lineHeight: LEADING.normal,
-                                                }}
+                                                className="mobile-demo-character-rationale-arrow"
+                                                sx={{ fontSize: SIZE.body, color: fc.textSecondary, lineHeight: LEADING.normal }}
                                             >
-                                                {item.reason}
+                                                →
                                             </Typography>
+                                            <ForeignText
+                                                size="sm"
+                                                justifyContent="flex-start"
+                                                className="mobile-demo-character-rationale-implied-word"
+                                                text={item.impliedWord}
+                                                showPinyin={false}
+                                                useToneColor={showPinyinColor}
+                                            />
                                         </Box>
                                     ))}
                                 </Box>
-                            ) : (
-                                <Typography
-                                    className="mobile-demo-character-rationale-empty"
-                                    sx={{
-                                        fontSize: SIZE.body,
-                                        color: fc.textSecondary,
-                                        textAlign: "center",
-                                        fontFamily: FC_FONT,
-                                    }}
-                                >
-                                    No breakdown explanation available
-                                </Typography>
-                            )}
-                        </Box>
+                            </Box>
+                        )}
                     </Box>
                 ) : effectiveTab === 2 ? (
                     <Box className="mobile-demo-tab-empty" sx={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 2 }}>

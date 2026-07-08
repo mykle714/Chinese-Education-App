@@ -89,8 +89,8 @@ natural identity/keying differs. Do not try to force them into one table.
 
 | Concept | Table | Identity / key | Notes |
 |---|---|---|---|
-| **Chinese det** (cdet) | `dictionaryentries_zh` | surrogate `id`; looked up by `word1` (+ `language`) | The original rich table, **renamed from `dictionaryentries` (migration 57)** and now Chinese-only. Holds Chinese (`zh`) data plus all CJK-style enrichment columns (`numberedPinyin`, `tone`, `hskLevel`, `breakdown`, `classifier`, etc.). A `gender` column exists (migration 55) but is NULL for Chinese. |
-| **Spanish det** (sdet) | `dictionaryentries_es` | logical key **(`word1`, `pos`, `gender`)**, enforced by a `UNIQUE NULLS NOT DISTINCT` constraint (surrogate `id` PK) | Schema = clone of `dictionaryentries_zh` + scalar `pos` + `etymology` (Wiktionary etymology text, migration 59) + `raw` (jsonb source blocks). `longDefinition` is reserved for the AI definition-elaboration backfill, NOT etymology. Gender-homographs are **separate rows** (e.g. `cura`/n/f = "cure" vs `cura`/n/m = "priest"), because gender carries distinct meaning in Spanish. `gender` holds a cleaned primary token (`m`, `f`, `mf`, `mfbysense`, `m-p`, …); `?`/unknown is NULL. |
+| **Chinese det** (cdet) | `dictionaryentries_zh` | surrogate `id`; looked up by `word1` (+ `language`) | The original rich table, **renamed from `dictionaryentries` (migration 57)** and now Chinese-only. Holds Chinese (`zh`) data plus all CJK-style enrichment columns (`numberedPinyin`, `tone`, `hskLevel`, `breakdown`, `classifier`, etc.). A `gender` column used to exist (added by migration 55 back when this table was the unified `dictionaryentries`) but was always NULL for Chinese and was **dropped by migration 103**; grammatical gender is a Spanish-only concept living on `dictionaryentries_es`. |
+| **Spanish det** (sdet) | `dictionaryentries_es` | logical key **(`word1`, `pos`, `gender`)**, enforced by a `UNIQUE NULLS NOT DISTINCT` constraint (surrogate `id` PK) | Schema = clone of `dictionaryentries_zh` + scalar `pos` + `gender` (retained here as part of the identity key; dropped from zh by migration 103) + `etymology` (Wiktionary etymology text, migration 59) + `raw` (jsonb source blocks). `longDefinition` is reserved for the AI definition-elaboration backfill, NOT etymology. Gender-homographs are **separate rows** (e.g. `cura`/n/f = "cure" vs `cura`/n/m = "priest"), because gender carries distinct meaning in Spanish. `gender` holds a cleaned primary token (`m`, `f`, `mf`, `mfbysense`, `m-p`, …); `?`/unknown is NULL. |
 | **Affixes** | `affixes` | (`language`, `affix`, `type`) | Bound morphemes for ALL languages. Kept out of the det tables because they are not standalone headwords. `type` ∈ {`prefix`,`suffix`,`interfix`,`infix`} (migration 61 added interfix/infix for Spanish `-i-`/`-x-`). `gender` ∈ {`m`,`f`,NULL} and `number` ∈ {`s`,`p`,NULL} (migration 61) carry the singular/plural + gender caveats for inflected affix forms (e.g. `-eada` = feminine singular of `-eado`). |
 
 Why the split: Chinese identity is essentially `word1`; Spanish identity needs
@@ -107,7 +107,7 @@ import scripts (`import-jmdict.ts`, `import-edict2.ts`, `import-kedict.ts`,
 (they throw on startup and reference not-yet-existing `dictionaryentries_ja/_ko/_vi`).
 Those languages are **not user-selectable** for now; build the per-language
 tables before re-enabling them. Relevant migrations: 55 (gender), 57 (rename →
-`dictionaryentries_zh`), 58 (create `dictionaryentries_es`), 59 (es etymology), 60 (affixes), 61 (affix gender/number + interfix/infix).
+`dictionaryentries_zh`), 58 (create `dictionaryentries_es`), 59 (es etymology), 60 (affixes), 61 (affix gender/number + interfix/infix), 103 (drop vestigial `gender` from `dictionaryentries_zh`).
 
 ### Marking Words Discoverable
 
@@ -156,8 +156,14 @@ An hourly Postgres cron on the prod server (a) breaks stale streaks (mirroring `
 ### Character Breakdown Feature
 → See [docs/BREAKDOWN_FEATURE_IMPLEMENTATION.md](./docs/BREAKDOWN_FEATURE_IMPLEMENTATION.md)
 
+### Word Compare (eip Compare tab)
+→ See [docs/WORD_COMPARE_FEATURE.md](./docs/WORD_COMPARE_FEATURE.md) — **DESIGN**: a singleton entry tab in the eip tab strip (not attached to a card) with two xl-cpcd slots; slot B fills via a mini dictionary search, then `POST /api/dictionary/compare` returns an AI paragraph on the pair's difference, cached in `word_comparison_cache` (migration 105) under the shared `dictionary_ai_usage` daily cap.
+
 ### User Document Feature
 → See [docs/USER_DOCUMENT_FEATURE_SUMMARY.md](./docs/USER_DOCUMENT_FEATURE_SUMMARY.md)
+
+### Data Validation System
+→ See [docs/DATA_VALIDATION_SYSTEM.md](./docs/DATA_VALIDATION_SYSTEM.md) — validator accounts (`users.isValidator`, migration 104) download an auto-composed Reader doc for one field of one discoverable det entry (`Validate - <word1>`) and Approve or Flag-with-suggestion; outcomes go to the dedicated `validations` table (per entry+field, keyed by det id — survives det data deploys) with the reviewed `content` stored for both actions, a shared content sanitizer guards document bodies, and backfills skip human-reviewed fields via `validatedClause`.
 
 ### Night Market
 → See [docs/NIGHT_MARKET_FEATURE.md](./docs/NIGHT_MARKET_FEATURE.md)

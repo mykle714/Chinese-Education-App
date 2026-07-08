@@ -9,7 +9,8 @@ import { getAllSubstrings, buildDictMap, buildExcludeSet, segmentWithDict, build
 import { LongDefinitionPart } from '../../types/index.js';
 import { segmentPinyin } from '../../utils/pinyinSegment.js';
 import { dictTableForLanguage } from '../shared/dictTable.js';
-import { AiDictionaryCacheRow } from '../../types/index.js';
+import { AiDictionaryCacheRow, WordComparisonRow } from '../../types/index.js';
+import { sanitizeDocumentContent } from '../../utils/sanitizeContent.js';
 
 // Standard column list for all dictionary SELECT queries
 const DICTIONARY_COLUMNS = `
@@ -526,6 +527,45 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
   }
 
   /**
+   * Read a cached word-comparison paragraph for a canonically-ordered pair (migration 105).
+   * Caller (DictionaryService.compareWords) sorts wordA/wordB before calling — this method
+   * does not sort. See docs/WORD_COMPARE_FEATURE.md.
+   */
+  async getComparison(wordA: string, wordB: string, language: string): Promise<WordComparisonRow | null> {
+    const result = await this.dbManager.executeQuery<WordComparisonRow>(async (client) => {
+      return await client.query(`
+        SELECT id, "wordA", "wordB", language, comparison, model, "queriedAt"
+        FROM word_comparison_cache
+        WHERE "wordA" = $1 AND "wordB" = $2 AND language = $3
+      `, [wordA, wordB, language]);
+    });
+    return result.recordset[0] || null;
+  }
+
+  /**
+   * Insert or refresh a cached comparison for a canonically-ordered pair. `queriedAt` is reset
+   * to now() so it reflects the most recent (re-)generation.
+   */
+  async upsertComparison(
+    wordA: string,
+    wordB: string,
+    language: string,
+    comparison: string,
+    model: string
+  ): Promise<void> {
+    await this.dbManager.executeQuery(async (client) => {
+      return await client.query(`
+        INSERT INTO word_comparison_cache ("wordA", "wordB", language, comparison, model, "queriedAt")
+        VALUES ($1, $2, $3, $4, $5, now())
+        ON CONFLICT ("wordA", "wordB", language) DO UPDATE
+          SET comparison = EXCLUDED.comparison,
+              model = EXCLUDED.model,
+              "queriedAt" = now()
+      `, [wordA, wordB, language, comparison, model]);
+    });
+  }
+
+  /**
    * Get total count of dictionary entries
    */
   async getTotalCount(): Promise<number> {
@@ -550,6 +590,7 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
    */
   async enrichExampleSentencesMetadataBatch<T extends {
     word1?: string;
+    entryKey?: string;
     exampleSentences?: Array<{ foreignText: string; english: string; partOfSpeechDict?: Record<string, string>; [key: string]: any }> | null;
   }>(entries: T[], language: string = 'zh'): Promise<T[]> {
     const withSentences = entries.filter(e => e.exampleSentences?.length);
@@ -559,7 +600,7 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
     // Chinese greedy character segmentation or pinyin/particle lookups. Split on
     // whitespace and attach a per-word definition from dictionaryentries_es.
     if (language === 'es') {
-      return this.enrichSpanishExampleSentencesMetadataBatch(entries, withSentences);
+      return this.enrichSpanishExampleSentencesMetadataBatch(entries, withSentences, language);
     }
 
     // 1. Collect all candidate substrings across all sentences — one combined set
@@ -585,9 +626,15 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
     );
     const pacMap = await this.fetchParticlesAndClassifiers(singleCharCandidates, language);
 
-    // 4. Enrich each sentence object with _segments and segmentMetadata
+    // 3b. Batch-fetch human approvals (validations table) so each sentence can carry
+    //     `humanApproved` — sentences without a valid approval render with the
+    //     AI-generated styling on the client (docs/DATA_VALIDATION_SYSTEM.md).
+    const approvedByWord = await this.fetchApprovedSentenceContents(withSentences, language);
+
+    // 4. Enrich each sentence object with _segments, segmentMetadata, and humanApproved
     return entries.map(entry => {
       if (!entry.exampleSentences?.length) return entry;
+      const approvedContents = approvedByWord.get(entry.word1 ?? entry.entryKey ?? '');
 
       return {
         ...entry,
@@ -613,10 +660,209 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
             senseDict: sentence.senseDict,
           });
 
-          return { ...sentence, _segments: segments, segmentMetadata };
+          return {
+            ...sentence,
+            _segments: segments,
+            segmentMetadata,
+            humanApproved: this.isSentenceHumanApproved(approvedContents, sentence),
+          };
         }),
       };
     });
+  }
+
+  /**
+   * Batch-fetch the human-APPROVED example-sentence bodies for a set of entries,
+   * keyed by headword (`word1`). One query regardless of batch size.
+   *
+   * A validation row counts here only with the approval stamp (`action = 'approve'`);
+   * flags are suggestions, not endorsements. The rows are joined back to the det
+   * table by `entryId` (validations are keyed by the det surrogate id, which is
+   * stable across data deploys — docs/DATA_VALIDATION_SYSTEM.md) so we can key the
+   * result by word1, the identity the enrichment batch actually carries (vet-joined
+   * entries expose `entryKey` = det `word1`, not the det id).
+   *
+   * Whether the approved content still matches the CURRENT det data is decided
+   * per-sentence in isSentenceHumanApproved — an approval of since-regenerated text
+   * must not keep blessing the new text.
+   */
+  private async fetchApprovedSentenceContents(
+    entries: Array<{ word1?: string; entryKey?: string }>,
+    language: string
+  ): Promise<Map<string, Set<string>>> {
+    const words = [...new Set(
+      entries.map(e => e.word1 ?? e.entryKey).filter((w): w is string => !!w)
+    )];
+    const approvedByWord = new Map<string, Set<string>>();
+    if (words.length === 0) return approvedByWord;
+
+    const table = dictTableForLanguage(language);
+    const result = await this.dbManager.executeQuery<{ word1: string; content: string }>(
+      async (client) =>
+        client.query(
+          `SELECT d.word1, val.content
+             FROM validations val
+             JOIN ${table} d ON d.id = val."entryId" AND d.language = val.language
+            WHERE val.language = $1
+              AND val.action = 'approve'
+              AND val.field IN ('exampleSentence0', 'exampleSentence1', 'exampleSentence2')
+              AND d.word1 = ANY($2)`,
+          [language, words]
+        )
+    );
+
+    for (const row of result.recordset) {
+      let contents = approvedByWord.get(row.word1);
+      if (!contents) {
+        contents = new Set<string>();
+        approvedByWord.set(row.word1, contents);
+      }
+      // The stored body is `exampleSentenceN:\n<pretty-printed JSON>` (ValidationService
+      // composeBody/rawField). Strip the label line here so the per-sentence match is
+      // index-agnostic — a reorder of exampleSentences doesn't orphan an exact approval.
+      contents.add(row.content.slice(row.content.indexOf('\n') + 1));
+    }
+    return approvedByWord;
+  }
+
+  /**
+   * An approval is valid for THIS sentence only if the approved content matches the
+   * current det data — an approval recorded before the sentence was regenerated,
+   * re-tagged, or edited must not carry over to data no human reviewed.
+   *
+   * The comparison mirrors ValidationService.composeBody/rawField for
+   * exampleSentenceN: the composed body is the label line (stripped at fetch time)
+   * plus `JSON.stringify(<raw det sentence object>, null, 2)`. Both sides read the
+   * same jsonb value from the same det row, so Postgres's canonical jsonb key order
+   * makes the serialization deterministic. The sentence passed in must be the
+   * UN-enriched object (before `_segments`/`segmentMetadata`/`humanApproved` are
+   * spread on), exactly as stored in the det column.
+   *
+   * The current body is run through sanitizeDocumentContent (idempotent — it only
+   * strips control chars and normalizes line endings) to match how the approved
+   * content was stored, since validations.content passed through the same sanitizer
+   * on its way into the table.
+   */
+  private isSentenceHumanApproved(
+    approvedContents: Set<string> | undefined,
+    sentence: Record<string, unknown>
+  ): boolean {
+    if (!approvedContents || approvedContents.size === 0) return false;
+    // Defensively drop the runtime-only enrichment keys. They are appended by
+    // spread AFTER the stored keys, so removing them restores the det column's
+    // exact serialization even if a sentence arrives already enriched.
+    const { _segments, segmentMetadata, humanApproved, ...rawSentence } =
+      sentence ?? {};
+    void _segments; void segmentMetadata; void humanApproved;
+    const body = JSON.stringify(rawSentence, null, 2);
+    return approvedContents.has(sanitizeDocumentContent(body));
+  }
+
+  /**
+   * Attach `definitionsApproved: boolean` to each entry: TRUE iff a validator
+   * approved the 'definitions' field (docs/DATA_VALIDATION_SYSTEM.md) and it still
+   * matches the entry's CURRENT raw det data. Unlike the example-sentence flag, this
+   * is bundled as ONE unit across three columns (`partsOfSpeech` + `definitions` +
+   * `longDefinition` — mirroring `ValidationService.composeBody`'s 'definitions'
+   * branch): editing or regenerating ANY of the three invalidates the whole approval.
+   *
+   * Independent of enrichExampleSentencesMetadataBatch (no exampleSentences
+   * precondition) — callers chain it alongside enrichLongDefinitionMetadataBatch.
+   * Reads the RAW det columns fresh (not the caller's already-transformed
+   * `longDefinition` display string) so the comparison matches composeBody exactly.
+   */
+  async enrichDefinitionsApprovalBatch<T extends {
+    word1?: string;
+    entryKey?: string;
+  }>(entries: T[], language: string = 'zh'): Promise<Array<T & { definitionsApproved: boolean }>> {
+    const words = [...new Set(
+      entries.map(e => e.word1 ?? e.entryKey).filter((w): w is string => !!w)
+    )];
+    if (words.length === 0) return entries.map(e => ({ ...e, definitionsApproved: false }));
+
+    const table = dictTableForLanguage(language);
+    const rawResult = await this.dbManager.executeQuery<{
+      word1: string;
+      partsOfSpeech: string[] | null;
+      definitions: unknown;
+      longDefinition: unknown;
+    }>(
+      async (client) =>
+        client.query(
+          `SELECT word1, "partsOfSpeech", definitions, "longDefinition"
+             FROM ${table} WHERE word1 = ANY($1) AND language = $2`,
+          [words, language]
+        )
+    );
+    const rawByWord = new Map(rawResult.recordset.map(r => [r.word1, r]));
+    const approvedByWord = await this.fetchApprovedDefinitionsContents(words, language);
+
+    return entries.map(entry => {
+      const word = entry.word1 ?? entry.entryKey;
+      const raw = word ? rawByWord.get(word) : undefined;
+      const definitionsApproved = raw
+        ? this.isDefinitionsHumanApproved(approvedByWord.get(word!), raw)
+        : false;
+      return { ...entry, definitionsApproved };
+    });
+  }
+
+  /**
+   * Batch-fetch human-APPROVED 'definitions' bodies, keyed by headword. Mirrors
+   * fetchApprovedSentenceContents but for the single `field = 'definitions'`
+   * (no per-index stripping — the whole composed body is compared as one unit).
+   */
+  private async fetchApprovedDefinitionsContents(
+    words: string[],
+    language: string
+  ): Promise<Map<string, Set<string>>> {
+    const approvedByWord = new Map<string, Set<string>>();
+    if (words.length === 0) return approvedByWord;
+
+    const table = dictTableForLanguage(language);
+    const result = await this.dbManager.executeQuery<{ word1: string; content: string }>(
+      async (client) =>
+        client.query(
+          `SELECT d.word1, val.content
+             FROM validations val
+             JOIN ${table} d ON d.id = val."entryId" AND d.language = val.language
+            WHERE val.language = $1
+              AND val.action = 'approve'
+              AND val.field = 'definitions'
+              AND d.word1 = ANY($2)`,
+          [language, words]
+        )
+    );
+
+    for (const row of result.recordset) {
+      let contents = approvedByWord.get(row.word1);
+      if (!contents) {
+        contents = new Set<string>();
+        approvedByWord.set(row.word1, contents);
+      }
+      contents.add(row.content);
+    }
+    return approvedByWord;
+  }
+
+  /**
+   * Rebuilds the exact 'definitions' composeBody output (ValidationService.composeBody
+   * + rawField, three blocks joined by blank lines) from the CURRENT raw det columns
+   * and compares against the stored approval content, run through the same
+   * (idempotent) sanitizeDocumentContent used on the write path.
+   */
+  private isDefinitionsHumanApproved(
+    approvedContents: Set<string> | undefined,
+    raw: { partsOfSpeech: string[] | null; definitions: unknown; longDefinition: unknown }
+  ): boolean {
+    if (!approvedContents || approvedContents.size === 0) return false;
+    const rawField = (name: string, value: unknown) => `${name}:\n${JSON.stringify(value ?? null, null, 2)}`;
+    const body = [
+      rawField('partsOfSpeech', raw.partsOfSpeech),
+      rawField('definitions', raw.definitions),
+      rawField('longDefinition', raw.longDefinition),
+    ].join('\n\n');
+    return approvedContents.has(sanitizeDocumentContent(body));
   }
 
   /**
@@ -632,8 +878,9 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
    */
   private async enrichSpanishExampleSentencesMetadataBatch<T extends {
     word1?: string;
+    entryKey?: string;
     exampleSentences?: Array<{ foreignText: string; english: string; partOfSpeechDict?: Record<string, string>; [key: string]: any }> | null;
-  }>(entries: T[], withSentences: T[]): Promise<T[]> {
+  }>(entries: T[], withSentences: T[], language: string = 'es'): Promise<T[]> {
     // Strip leading/trailing punctuation (incl. Spanish ¿ ¡ « » and ASCII) from a
     // token, leaving letters/numbers/inner hyphens/apostrophes for dictionary lookup.
     const cleanToken = (token: string): string =>
@@ -670,9 +917,14 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
       }
     }
 
-    // 3. Attach _segments (whitespace tokens) + per-token definitions.
+    // 2b. Batch-fetch human approvals so each sentence carries `humanApproved`,
+    //     mirroring the Chinese path (docs/DATA_VALIDATION_SYSTEM.md).
+    const approvedByWord = await this.fetchApprovedSentenceContents(withSentences, language);
+
+    // 3. Attach _segments (whitespace tokens) + per-token definitions + humanApproved.
     return entries.map(entry => {
       if (!entry.exampleSentences?.length) return entry;
+      const approvedContents = approvedByWord.get(entry.word1 ?? entry.entryKey ?? '');
       return {
         ...entry,
         exampleSentences: entry.exampleSentences.map(sentence => {
@@ -682,7 +934,12 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
             const def = defByForm.get(cleanToken(token).toLowerCase());
             if (def) segmentMetadata[token] = { definition: def };
           }
-          return { ...sentence, _segments: segments, segmentMetadata };
+          return {
+            ...sentence,
+            _segments: segments,
+            segmentMetadata,
+            humanApproved: this.isSentenceHumanApproved(approvedContents, sentence),
+          };
         }),
       };
     });

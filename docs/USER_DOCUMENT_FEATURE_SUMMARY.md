@@ -3,6 +3,10 @@
 ## Overview
 Successfully implemented a complete user-specific blank document creation feature for the Reader page, allowing users to create, edit, and delete their own documents while maintaining access to system texts.
 
+> **Word segmentation & tap navigation**: how the Reader splits an open document
+> into tappable dictionary words (client-side gsa) and steps the selection
+> through them → [READER_SEGMENTATION.md](./READER_SEGMENTATION.md).
+
 ## Database Changes
 
 ### Migration File: `database/migrations/08-add-userid-to-texts.sql`
@@ -133,9 +137,20 @@ texts (
     language VARCHAR(10) NOT NULL DEFAULT 'zh',
     characterCount INTEGER NOT NULL,
     isUserCreated BOOLEAN NOT NULL DEFAULT false,
+    -- Validation-doc linkage (migration 104; NULL ⇒ ordinary user document).
+    -- See docs/DATA_VALIDATION_SYSTEM.md.
+    validationEntryId UUID,
+    validationLanguage VARCHAR(10),
+    validationField VARCHAR(50),
+    validationOriginalContent TEXT,
     createdAt TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
 )
 ```
+
+> **Validation documents** reuse this table: `ValidationService` composes a
+> "Validate - <word1>" document with the four `validation*` columns set, and the
+> Reader shows Approve/Flag/Revert actions for it. See
+> [DATA_VALIDATION_SYSTEM.md](./DATA_VALIDATION_SYSTEM.md).
 
 ## Next Steps
 

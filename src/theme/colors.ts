@@ -31,7 +31,7 @@ export const COLORS = {
     // ── Bucket / progress-category colors ─────────────────────────
     redMain: CATEGORY_COLORS.Unfamiliar,    // #EF476F — Unfamiliar
     redAccent: "#F2BAC9",
-    yellowMain: CATEGORY_COLORS.Target,     // #FF8E47 — Target
+    yellowMain: CATEGORY_COLORS.Target,     // #FF9E5A — Target
     yellowAccent: "#F2E2BA",
     greenMain: CATEGORY_COLORS.Comfortable, // #05C793 — Comfortable
     greenAccent: "#BAF2D8",

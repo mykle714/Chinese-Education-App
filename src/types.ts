@@ -194,6 +194,13 @@ export interface VocabEntry {
   definition?: string | null;  // det.definitions[0] — joined from dictionaryentries at read time
   longDefinition?: string | null;
   longDefinitionParts?: LongDefinitionPart[] | null;  // Computed at runtime: longDefinition split into English + cpcd-able Chinese runs
+  // Server-computed (enrichDefinitionsApprovalBatch): TRUE iff a validator approved
+  // the 'definitions' field (partsOfSpeech + definitions[] + longDefinition, bundled
+  // as one validation unit) and it still matches the det data (docs/DATA_VALIDATION_SYSTEM.md).
+  // Falsy ⇒ the longDefinition block and the partsOfSpeech ("Type") chip render the
+  // AI-generated treatment. Absent on det-fallback (dictionary lookup) VocabEntry
+  // adapters that don't carry it through — treat as falsy there too.
+  definitionsApproved?: boolean;
   language?: Language;         // absent on det-fallback entries
   script?: string;
   pronunciation?: string | null;
@@ -216,7 +223,7 @@ export interface VocabEntry {
   breakdown?: Record<string, { definition: string; pronunciation?: string; sense?: string }> | null;
   synonyms?: string[];
   synonymsMetadata?: Record<string, { definition: string; pronunciation: string }> | null; // Computed at runtime by server
-  characterRationale?: Array<{ char: string; reason: string }> | null;  // zh-only per-character rationale (migration 102, docs/CHARACTER_RATIONALE.md); why each char is used in this multi-char word. Replaces expansion.
+  characterRationale?: Array<{ char: string; impliedWord: string }> | null;  // zh-only per-character mapping: each char → the fuller everyday word it abbreviates, or "" (migration 102, docs/CHARACTER_RATIONALE.md). Replaces expansion.
   iconId?: string | null;  // Representative icons8 icon joined from det; rendered via <img src="/api/icons8/<iconId>/image">
   iconLayout?: IconLayoutItem[] | null;  // Custom flashcard icon arrangement (vet column, migration 82). NULL = use the default centered iconId. See docs/CARD_ICON_LAYOUT.md
   snapConfig?: SnapConfig | null;  // Per-card icon-editor snap toggles (vet column, migration 88). NULL = all off. See docs/CARD_ICON_LAYOUT.md
@@ -235,6 +242,7 @@ export interface VocabEntry {
     translatedVocab?: string;  // English word/phrase in the translation corresponding to the vocab word
     _segments?: string[];
     segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo; wordForms?: Record<string, string> }>;
+    humanApproved?: boolean;   // Server-computed: TRUE iff a validator approved this exact sentence content (validations row, action='approve') and it still matches the det data (docs/DATA_VALIDATION_SYSTEM.md). Falsy ⇒ est renders the AI-generated styling
   }>;
   relatedWords?: Array<{ id: number; entryKey: string; pronunciation: string | null; definition: string | null }>;
   // Single-char zh only: up to 5 multi-char words containing this character (vet-first, det-fallback).
@@ -274,12 +282,16 @@ export interface DictionaryEntry {
   tone?: string | null;
   partsOfSpeech?: string[] | null;
   vernacularScore?: number | null;  // 1=literary … 5=natural colloquial
+  matchException?: string[] | null; // Multi-char tokens this entry suppresses during gsa segmentation (zh det column, already sent by /by-tokens; consumed by src/features/reader/documentSegmentation.ts)
   definitions: string[]; // Array of definition strings (flat cache)
   definitionClusters?: DefinitionCluster[] | null;  // Orthogonal sense clusters (zh; migration 90) — see docs/DEFINITION_CLUSTERS.md
   shortDefinitionPronunciationOverride?: ShortDefinitionPronunciationOverride | null; // Raw override object from DB
   shortDefinition?: string | null;
   longDefinition?: string | null;
   longDefinitionParts?: LongDefinitionPart[] | null;  // Computed at runtime: longDefinition split into English + cpcd-able Chinese runs
+  // Server-computed (enrichDefinitionsApprovalBatch): TRUE iff a validator approved
+  // the 'definitions' field and it still matches the det data (docs/DATA_VALIDATION_SYSTEM.md).
+  definitionsApproved?: boolean;
   discoverable?: boolean;  // Whether the entry appears in vocab discovery (set during data import). Undiscoverable entries are lookup-only.
   createdAt: string;
 }
@@ -338,8 +350,9 @@ export interface DiscoverCard {
     senseDict?: Record<string, string>;        // definitionClusters sense label per segment; resolves each segment's dd = ddt(matching cluster)
     _segments?: string[];
     segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; wordForms?: Record<string, string> }>;
+    humanApproved?: boolean;   // Server-computed: TRUE iff a validator approved this exact sentence content (validations row, action='approve') and it still matches the det data (docs/DATA_VALIDATION_SYSTEM.md). Falsy ⇒ est renders the AI-generated styling
   }> | null;
-  characterRationale?: Array<{ char: string; reason: string }> | null;  // zh-only per-character rationale (migration 102, docs/CHARACTER_RATIONALE.md); why each char is used in this multi-char word. Replaces expansion.
+  characterRationale?: Array<{ char: string; impliedWord: string }> | null;  // zh-only per-character mapping: each char → the fuller everyday word it abbreviates, or "" (migration 102, docs/CHARACTER_RATIONALE.md). Replaces expansion.
   // Optional icons8 icon assigned to this entry (icons8Id); the client renders
   // the icon via <img src="/api/icons8/<iconId>/image">. Null when no icon assigned.
   iconId?: string | null;
@@ -401,9 +414,17 @@ export interface User {
   name: string;
   password?: string; // Not returned to client
   isPublic?: boolean;
+  isValidator?: boolean; // Whether user may download/validate dictionary entries (migration 104)
   selectedLanguage?: Language;
   createdAt?: Date;
 }
+
+// Which field of a dictionary entry a validation document targets (migration 104).
+export type ValidationField =
+  | 'definitions'
+  | 'exampleSentence0'
+  | 'exampleSentence1'
+  | 'exampleSentence2';
 
 // Text model type for reader feature
 export interface Text {
@@ -415,6 +436,12 @@ export interface Text {
   language: Language;
   characterCount: number;
   isUserCreated: boolean; // Flag to distinguish user-created from system texts
+  // Validation-doc linkage (migration 104). NULL/undefined ⇒ ordinary user document.
+  // validationEntryId is the SERIAL integer id of the reviewed det row.
+  validationEntryId?: number | null;
+  validationLanguage?: Language | null;
+  validationField?: ValidationField | null;
+  validationOriginalContent?: string | null; // Server-composed original; used for change-detection + Revert
   createdAt: string;
 }
 

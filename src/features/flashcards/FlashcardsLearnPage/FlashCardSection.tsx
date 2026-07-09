@@ -11,8 +11,8 @@ import {
     INCORRECT_COLOR,
     CARD_FACE_JUSTIFY,
     CARD_DISMISS_THRESHOLD_VW,
-    CARD_FLY_OUT_MS,
     CARD_FLY_OUT_TRANSITION,
+    CARD_FLIP_MS,
     CARD_FLIP_TRANSITION,
     FC_FONT,
     FC_FONT_CJK,
@@ -525,7 +525,7 @@ export const CardFaceSide: React.FC<{
             // vanishes at zero projected width with no mirror flash. The incoming face
             // is revealed immediately (no delay) on the way in.
             visibility: inert ? "hidden" : "visible",
-            transition: `visibility 0s ${inert ? CARD_FLY_OUT_MS / 2 : 0}ms`,
+            transition: `visibility 0s ${inert ? CARD_FLIP_MS / 2 : 0}ms`,
             ...(inert && { pointerEvents: "none" }),
         }}>
             {/* Edit canvas lives in the OUTER (overflow:visible) box so its selection

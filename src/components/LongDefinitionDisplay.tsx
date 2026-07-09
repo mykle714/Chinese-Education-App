@@ -1,5 +1,23 @@
 import { Box, Typography, type SxProps, type Theme } from "@mui/material";
 import { stripParentheses } from "../utils/definitionUtils";
+
+/**
+ * Collapse any run of two-or-more newlines (a full blank line) down to a single
+ * newline, so paragraph breaks render as a plain line break rather than an empty
+ * gap. Both the anchor/culture split WITHIN a POS value and the per-POS join in
+ * longDefObjectToDisplayString store their separators as `\n\n`; with the hosts'
+ * `whiteSpace: pre-line` those would otherwise paint a blank line. Single newlines
+ * are left untouched. Intervening spaces/tabs between the newlines are also eaten.
+ */
+function collapseBlankLines(text: string): string {
+  return text.replace(/\s*\n\s*\n\s*/g, "\n");
+}
+
+// Presentation-layer text prep shared by both render paths: collapse blank lines,
+// then strip parenthetical asides (mirrors the flp gloss treatment).
+function prepareText(text: string): string {
+  return stripParentheses(collapseBlankLines(text));
+}
 import type { LongDefinitionPart } from "../types";
 import SegmentedSentenceDisplay from "./SegmentedSentenceDisplay";
 import { aiGeneratedSurfaceSx } from "../theme/aiGeneratedStyling";
@@ -54,33 +72,46 @@ const LongDefinitionDisplay: React.FC<LongDefinitionDisplayProps> = ({
   // server still left unsplit) → render the original plain, parenthetical-stripped text.
   if (!longDefinitionParts?.length) {
     if (!longDefinition) return null;
-    // `whiteSpace: pre-line` preserves the `\n\n` that longDefObjectToDisplayString
-    // inserts BETWEEN per-POS entries (server/utils/definitions.ts) — without it the
-    // DOM collapses the break and the POS senses run together on one line.
+    // prepareText has already collapsed each `\n\n` (per-POS join from
+    // longDefObjectToDisplayString, and the anchor/culture split within a value) down to
+    // a single `\n`; `whiteSpace: pre-line` then preserves that lone newline as a line
+    // break — without it the DOM would collapse it and the lines would run together.
     const text = (
       <Typography className={className} sx={[...(Array.isArray(sx) ? sx : [sx]), { whiteSpace: "pre-line" }]}>
-        {stripParentheses(longDefinition)}
+        {prepareText(longDefinition)}
       </Typography>
     );
     return aiGenerated ? wrapAiGenerated(text) : text;
   }
 
   // Parts path: a block paragraph whose inline children flow together. Chinese runs are
-  // inline-flex cpcd; text runs are inline spans. A generous lineHeight keeps the
-  // pinyin-below row from colliding with the following wrapped line of prose.
+  // inline-flex cpcd; text runs are inline spans.
+  //
+  // Line rhythm: an xs cpcd contributes ~31px to its line box (39px intrinsic height
+  // minus the wrapper's -4px vertical margins below), taller than a plain prose line at
+  // the hosts' 14px/1.6 (~22px). Rather than letting cpcd-bearing lines stand out taller,
+  // we pin EVERY line to the cpcd height with a px lineHeight so the whole paragraph has
+  // one uniform rhythm. Only applied when a cpcd run is actually present — an all-text
+  // parts array keeps the host's own lineHeight.
+  const hasForeignPart = longDefinitionParts.some((part) => part.type !== "text");
   const parts = (
     <Typography
       component="div"
       className={className}
-      // pre-line preserves the per-POS `\n\n` break carried inside the text parts
-      // (same reason as the plain-text fallback above).
-      sx={[...(Array.isArray(sx) ? sx : [sx]), { lineHeight: 1.9, whiteSpace: "pre-line" }]}
+      // pre-line preserves the single `\n` break (prepareText has collapsed the
+      // original `\n\n`) carried inside the text parts — same reason as the plain-text
+      // fallback above.
+      sx={[
+        ...(Array.isArray(sx) ? sx : [sx]),
+        { whiteSpace: "pre-line", ...(hasForeignPart && { lineHeight: "31px" }) },
+      ]}
     >
       {longDefinitionParts.map((part, index) => {
         if (part.type === "text") {
-          // stripParentheses is applied per text part; whitespace around embedded Chinese
-          // is preserved so words don't run together across part boundaries.
-          return <span key={index}>{stripParentheses(part.value)}</span>;
+          // prepareText (blank-line collapse + stripParentheses) is applied per text part;
+          // whitespace around embedded Chinese is preserved so words don't run together
+          // across part boundaries.
+          return <span key={index}>{prepareText(part.value)}</span>;
         }
         return (
           <Box
@@ -89,7 +120,12 @@ const LongDefinitionDisplay: React.FC<LongDefinitionDisplayProps> = ({
             className="mobile-demo-long-definition-foreign"
             // inline-block wrapper keeps the cpcd run as a single inline unit within the
             // prose; verticalAlign middle centers it on the surrounding text line.
-            sx={{ display: "inline-block", verticalAlign: "middle", mx: "1px" }}
+            // The symmetric NEGATIVE vertical margins shrink the cpcd's line-box
+            // footprint (it's ~15px taller than a prose line at xs: char + pinyin row +
+            // padding) so the char/pinyin overhang into the surrounding half-leading
+            // instead of pushing the line open. -4px per side eats the cpcd's 2px
+            // internal padding plus ~2px of slack; the glyphs still paint (no clipping).
+            sx={{ display: "inline-block", verticalAlign: "middle", mx: "1px", my: "-4px" }}
           >
             <SegmentedSentenceDisplay
               display="inline"

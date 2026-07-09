@@ -21,6 +21,14 @@ const SEGMENT_GAP_BY_SIZE: Record<Size, string> = {
   md: "6px",
 };
 
+// Vertical offset (px, subtracted from the char glyph's bottom edge) for the
+// vocab-word underline. sm sits 1px lower than xs/md to match its glyph metrics.
+const VOCAB_UNDERLINE_OFFSET_BY_SIZE: Record<Size, number> = {
+  xs: 3,
+  sm: 3,
+  md: 4,
+};
+
 // Latin-script languages render one cell per whitespace-delimited WORD (not per
 // character) and have no pinyin overlay. `isLatinScriptLang` is imported from
 // ForeignText so the language set lives in exactly one place.
@@ -434,12 +442,12 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
     setVocabUnderlineRects(
       rows.map((row) => ({
         left: Math.floor(row.left - rowRect.left) + 1,
-        top: Math.floor(row.bottom - rowRect.top - 3),
+        top: Math.floor(row.bottom - rowRect.top - VOCAB_UNDERLINE_OFFSET_BY_SIZE[size]),
         width: Math.max(Math.floor(row.right - row.left) - 2, 0),
         height: 0,
       }))
     );
-  }, [vocabWord, charData, chars, showSegmentSpaces]);
+  }, [vocabWord, charData, chars, showSegmentSpaces, size]);
 
   const selectFromIndex = (charIndex: number) => {
     const info = charData[charIndex];

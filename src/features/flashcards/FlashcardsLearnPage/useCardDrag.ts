@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { CARD_DISMISS_THRESHOLD_VW, CARD_DRAG_SENSITIVITY, CARD_FLY_OUT_MS } from "./constants";
+import { CARD_DISMISS_THRESHOLD_VW, CARD_DRAG_SENSITIVITY, CARD_FLIP_MS } from "./constants";
 
 interface UseCardDragReturn {
     cardRef: React.RefObject<HTMLDivElement | null>;
@@ -54,7 +54,7 @@ export function useCardDrag(
     // intentionally don't translate the card before it's been flipped).
     const lastMousePos = useRef({ x: 0, y: 0 });
 
-    // Flip-animation lockout. The one-way flip plays a CARD_FLY_OUT_MS linear
+    // Flip-animation lockout. The one-way flip plays a CARD_FLIP_MS linear
     // transition; a second tap during that window would otherwise be treated as a
     // tap on an already-flipped card and bump shakeNonce, which remounts the front
     // card (key=`front-${shakeNonce}`) and cuts the flip short into a shake. We hold
@@ -84,7 +84,7 @@ export function useCardDrag(
         if (flipLockTimer.current) clearTimeout(flipLockTimer.current);
         flipLockTimer.current = setTimeout(() => {
             flipLockRef.current = false;
-        }, CARD_FLY_OUT_MS);
+        }, CARD_FLIP_MS);
     };
 
     // Clear any pending lockout timer on unmount to avoid a stray callback.

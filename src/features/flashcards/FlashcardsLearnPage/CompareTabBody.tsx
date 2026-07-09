@@ -139,9 +139,15 @@ const CompareTabBody = forwardRef<InfoCardPanelBodyHandle, CompareTabBodyProps>(
         wordComparison.compare(tab.slotA.entryKey, tab.slotB.entryKey, language);
     };
 
-    const resultEntries: DictionaryEntry[] = search.isSegmentMode
-        ? search.segmentGroups.flatMap(g => [...g.exactEntries, ...g.prefixEntries])
-        : search.entries;
+    // Compare slots render as a CPCDBlock (up to 4 chars); longer words aren't
+    // selectable here rather than silently falling back to a row layout mid-search.
+    // Note the search results are det records (DictionaryEntry), whose headword
+    // field is `word1` — `entryKey` only exists after dictionaryEntryToVocabEntry.
+    const resultEntries: DictionaryEntry[] = (
+        search.isSegmentMode
+            ? search.segmentGroups.flatMap(g => [...g.exactEntries, ...g.prefixEntries])
+            : search.entries
+    ).filter(entry => [...(entry.word1 ?? "")].length <= 4);
 
     const bothFilled = !!tab.slotA && !!tab.slotB;
 
@@ -165,6 +171,7 @@ const CompareTabBody = forwardRef<InfoCardPanelBodyHandle, CompareTabBodyProps>(
             {entry ? (
                 <ForeignText
                     size="xl"
+                    layout="block"
                     justifyContent="center"
                     language={entry.language}
                     text={entry.entryKey}

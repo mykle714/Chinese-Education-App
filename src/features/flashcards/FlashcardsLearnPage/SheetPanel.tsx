@@ -31,6 +31,13 @@ interface SheetPanelProps {
     // Ref attached to the body content; exposes the gesture root + scroll
     // element so SheetPanel can wire its resize/scroll coupling.
     bodyRef: React.RefObject<SheetPanelBodyHandle | null>;
+    // Identity for whatever component is currently mounted inside `children`
+    // (e.g. "info" vs "compare"). SheetPanel is a single persistent instance
+    // that can host different body components across its lifetime without
+    // remounting itself, so a plain empty-deps effect can't tell the root/scroll
+    // DOM nodes behind bodyRef changed. Bump this whenever the mounted body
+    // swaps so the scroll-coupling effect below re-binds to the new nodes.
+    bodyKey?: string | number;
     // Children can be a plain node or a render function that receives the
     // header-drag binder so an inner element (e.g. the EIP entry header) can
     // share the grabber's drag-to-resize gesture. useDrag's filterTaps option
@@ -48,6 +55,15 @@ interface SheetPanelProps {
 // default height — the default height is the floor.
 const SNAP_DURATION_MS = 220;
 
+// Shared 3-stop snap rule used by every release path (grabber drag, touch
+// release, momentum decay): below default → dismiss (0); at or above it →
+// whichever of {default, max} is nearer.
+function computeSnapTarget(h: number, defaultH: number, maxH: number): number {
+    if (h < defaultH) return 0;
+    const stops = [defaultH, maxH];
+    return stops.reduce((best, s) => (Math.abs(s - h) < Math.abs(best - h) ? s : best));
+}
+
 // Module-level set of currently mounted panel depths. The window-level wheel
 // listener installed by each panel checks this set so only the top-most depth
 // reacts to a given gesture (touch is already top-only via DOM hit-testing).
@@ -58,6 +74,7 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     initialHeight,
     depth = 0,
     bodyRef,
+    bodyKey,
     children,
     tabStrip,
 }, ref) => {
@@ -80,7 +97,7 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     const pendingDismissRef = useRef(false);
 
     // Play an open animation from 0 → target height on first render. The
-    // panel's own open height is a fixed 50% of the parent (screen) height
+    // panel's own open height is a fixed 60% of the parent (screen) height
     // rather than content-measured, so it's consistent across all eip tabs
     // regardless of how much content a given tab renders. Child panels that
     // pass initialHeight still match the parent panel's live height instead.
@@ -88,7 +105,7 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
         if (!sheetContainerRef.current) return;
         const parentH = sheetContainerRef.current.parentElement?.clientHeight ?? window.innerHeight;
         parentHeightRef.current = parentH;
-        const targetHeight = initialHeight != null ? Math.min(initialHeight, parentH * 0.92) : parentH * 0.5;
+        const targetHeight = initialHeight != null ? Math.min(initialHeight, parentH * 0.92) : parentH * 0.6;
         defaultHeightRef.current = targetHeight;
         sheetHeightRef.current = 0;
         setSheetHeight(0);
@@ -127,18 +144,7 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
                 setSheetHeight(clampedH);
                 return;
             }
-            // Below the default (open) height → commit to dismiss. Otherwise
-            // snap to the nearer of {default, max}; 0 is only reachable via the
-            // below-default cutoff, never by being closer to 0 than to default.
-            let target: number;
-            if (clampedH < defaultHeightRef.current) {
-                target = 0;
-            } else {
-                const stops = [defaultHeightRef.current, maxH];
-                target = stops.reduce((best, s) =>
-                    Math.abs(s - clampedH) < Math.abs(best - clampedH) ? s : best
-                );
-            }
+            const target = computeSnapTarget(clampedH, defaultHeightRef.current, maxH);
             if (target === 0) pendingDismissRef.current = true;
             setIsSnapping(true);
             sheetHeightRef.current = target;
@@ -173,6 +179,9 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
 
     // Couple content scroll to sheet resize. See InfoCardSection's prior
     // implementation comments — behavior is preserved exactly here.
+    // Depends on bodyKey so that swapping the mounted body (e.g. info ↔
+    // compare tab) re-binds these listeners to the new root/scroll nodes
+    // instead of staying attached to the unmounted previous body.
     useEffect(() => {
         const root = bodyRef.current?.root ?? null;
         const scrollEl = bodyRef.current?.scroll ?? null;
@@ -285,7 +294,9 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
         const onTouchEnd = () => {
             lastTouchY = null;
             const hOnRelease = sheetHeightRef.current ?? 0;
-            if (touchConsumedAny && hOnRelease < defaultHeightRef.current) {
+            const wasResizing = touchConsumedAny;
+            touchConsumedAny = false;
+            if (wasResizing && hOnRelease < defaultHeightRef.current) {
                 // Below the default (open) height on release → animate to 0 and
                 // dismiss, mirroring the grabber-drag snap rule.
                 sheetHeightRef.current = 0;
@@ -293,12 +304,21 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
                 pendingDismissRef.current = true;
                 setIsSnapping(true);
                 velocity = 0;
-                touchConsumedAny = false;
                 return;
             }
-            touchConsumedAny = false;
             if (Math.abs(velocity) < 0.05) {
                 velocity = 0;
+                // No momentum to carry the release into a fling — snap the
+                // resting height to whichever of {default, max} is nearer,
+                // mirroring the grabber-drag snap rule.
+                if (wasResizing) {
+                    const target = computeSnapTarget(hOnRelease, defaultHeightRef.current, parentHeightRef.current * 0.92);
+                    if (target !== hOnRelease) {
+                        sheetHeightRef.current = target;
+                        setIsSnapping(true);
+                        setSheetHeight(target);
+                    }
+                }
                 return;
             }
             let v = velocity;
@@ -358,6 +378,19 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
                 v *= Math.pow(0.95, dt / 16);
                 if (Math.abs(v) < 0.02) {
                     momentumRaf = null;
+                    // Momentum petered out mid-flight — snap the resting height
+                    // to whichever of {default, max} is nearer, mirroring the
+                    // grabber-drag snap rule (below-default dismiss is already
+                    // handled above, each frame, while shrinking).
+                    if (momentumMode === "resize") {
+                        const h = sheetHeightRef.current ?? 0;
+                        const target = computeSnapTarget(h, defaultHeightRef.current, maxH);
+                        if (target !== h) {
+                            sheetHeightRef.current = target;
+                            setIsSnapping(true);
+                            setSheetHeight(target);
+                        }
+                    }
                     return;
                 }
                 momentumRaf = requestAnimationFrame(step);
@@ -380,7 +413,7 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
             root.removeEventListener("touchcancel", onTouchEnd);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [bodyKey]);
 
     const stackZ = depth * 2;
     const scrimStyle: React.CSSProperties = depth > 0 ? { zIndex: 10 + stackZ } : {};

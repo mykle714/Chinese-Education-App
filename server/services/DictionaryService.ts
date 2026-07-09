@@ -440,7 +440,9 @@ Rules:
     const [sortedA, sortedB] = a < b ? [a, b] : [b, a];
 
     const cached = await this.dictionaryDAL.getComparison(sortedA, sortedB, language);
-    if (cached) return this.withComparisonParts(cached.comparison, language);
+    // Normalize on read too, so rows cached before the newline-collapsing fix (below)
+    // don't keep rendering with stray paragraph gaps until they're regenerated.
+    if (cached) return this.withComparisonParts(cached.comparison.replace(/\s*\n+\s*/g, ' '), language);
 
     const anthropic = getDictAiClient();
     if (!anthropic) return null; // feature disabled (no DICT_AI_API_KEY)
@@ -486,7 +488,12 @@ Rules:
         .filter((b): b is Anthropic.TextBlock => b.type === 'text')
         .map(b => b.text)
         .join('\n')
-        .trim();
+        .trim()
+        // The prompt asks for ONE paragraph, but the model sometimes still puts blank
+        // lines between sentences. `LongDefinitionDisplay` renders this with
+        // whiteSpace: pre-line (needed for real per-POS \n\n breaks in longDefinition),
+        // so any stray newline here would render as a visible paragraph gap.
+        .replace(/\s*\n+\s*/g, ' ');
       if (!comparison) return null; // transient — don't cache
     } catch (error: any) {
       console.error(`Failed to generate word comparison for "${sortedA}" vs "${sortedB}":`, error.message);

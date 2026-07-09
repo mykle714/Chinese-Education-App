@@ -29,16 +29,25 @@ const DICTIONARY_COLUMNS = `
   "wordForms"
 `.trim();
 
-// Per-language variant of the SELECT list. `definitionClusters` (migration 90) is a Chinese-only
-// enrichment (its per-cluster reading is pinyin), and the Spanish det (`dictionaryentries_es`) has
-// no such column — so for es we select a typed NULL placeholder to keep the column list, row shape,
-// and mapRowToEntity uniform across languages without adding a meaningless column to the es table.
-function dictionaryColumns(language: string): string {
+// Per-language variant of the SELECT list. `definitionClusters` (migration 90) and
+// `characterRationale` are Chinese-only enrichments (per-cluster pinyin reading; character
+// breakdown rationale — Spanish words aren't made of characters), and neither column exists on
+// the Spanish det (`dictionaryentries_es`) — so for es we select typed NULL placeholders to keep
+// the column list, row shape, and mapRowToEntity uniform across languages without adding
+// meaningless columns to the es table.
+function dictionaryColumns(language: string | null | undefined): string {
   if (language === 'es') {
-    return DICTIONARY_COLUMNS.replace('"definitionClusters",', 'NULL::jsonb AS "definitionClusters",');
+    return DICTIONARY_COLUMNS
+      .replace('"definitionClusters",', 'NULL::jsonb AS "definitionClusters",')
+      .replace('"characterRationale",', 'NULL::jsonb AS "characterRationale",');
   }
   return DICTIONARY_COLUMNS;
 }
+
+// Shared relevance tiebreak for every "list of det rows" query: shortest word1 first, then
+// highest vernacular register, then alphabetical. Kept as one constant so the three query sites
+// below (searchByWord1, its numbered-pinyin fallback, findMultipleByWord1) can't drift apart.
+const RELEVANCE_ORDER_BY = `LENGTH(word1), "vernacularScore" DESC NULLS LAST, word1`;
 
 /**
  * Parse a numbered-pinyin search query (e.g. "jian4 shen1") into a Postgres regex matched
@@ -151,19 +160,27 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
    * @param language Optional language filter
    */
   async findByWord1(word1: string, language?: string): Promise<DictionaryEntry | null> {
+    const table = dictTableForLanguage(language);
+    const columns = dictionaryColumns(language);
+    // Homographs (e.g. es entries distinguished by pos/gender) can share word1, so an
+    // ORDER BY is needed even with LIMIT 1 — otherwise the "winning" row is whatever
+    // Postgres happens to scan first, which can change between queries. Tiebreak on the
+    // same relevance order as the list queries so the pick is deterministic.
     const result = await this.dbManager.executeQuery<any>(async (client) => {
       if (language) {
         return await client.query(`
-          SELECT ${DICTIONARY_COLUMNS}
-          FROM ${this.tableName}
+          SELECT ${columns}
+          FROM ${table}
           WHERE word1 = $1 AND language = $2
+          ORDER BY ${RELEVANCE_ORDER_BY}
           LIMIT 1
         `, [word1, language]);
       } else {
         return await client.query(`
-          SELECT ${DICTIONARY_COLUMNS}
-          FROM ${this.tableName}
+          SELECT ${columns}
+          FROM ${table}
           WHERE word1 = $1
+          ORDER BY ${RELEVANCE_ORDER_BY}
           LIMIT 1
         `, [word1]);
       }
@@ -197,18 +214,22 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
     console.log(`[DICTIONARY-DAL] 🔍 Looking up ${words.length} terms${language ? ` (${language})` : ''}`);
     const startTime = performance.now();
 
+    const table = dictTableForLanguage(language);
+    const columns = dictionaryColumns(language);
     const result = await this.dbManager.executeQuery<any>(async (client) => {
       if (language) {
         return await client.query(`
-          SELECT ${DICTIONARY_COLUMNS}
-          FROM ${this.tableName}
+          SELECT ${columns}
+          FROM ${table}
           WHERE word1 = ANY($1) AND language = $2
+          ORDER BY ${RELEVANCE_ORDER_BY}
         `, [words, language]);
       } else {
         return await client.query(`
-          SELECT ${DICTIONARY_COLUMNS}
-          FROM ${this.tableName}
+          SELECT ${columns}
+          FROM ${table}
           WHERE word1 = ANY($1)
+          ORDER BY ${RELEVANCE_ORDER_BY}
         `, [words]);
       }
     });
@@ -373,7 +394,7 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
         )${pronunciationExclusion}
         ORDER BY
           CASE WHEN (${wordMatchExpr}) THEN 0 ELSE 1 END,
-          LENGTH(word1), word1
+          ${RELEVANCE_ORDER_BY}
         LIMIT ${limitPlaceholder} OFFSET ${offsetPlaceholder}
       `, entriesParams);
     });
@@ -443,7 +464,7 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
         WHERE language = $1 AND (
           ${orClause}
         )
-        ORDER BY LENGTH(word1), word1
+        ORDER BY ${RELEVANCE_ORDER_BY}
         LIMIT ${limitPlaceholder} OFFSET ${offsetPlaceholder}
       `, [...baseParams, limit, offset]);
     });

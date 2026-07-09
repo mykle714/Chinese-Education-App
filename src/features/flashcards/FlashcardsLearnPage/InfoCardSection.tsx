@@ -72,6 +72,7 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
             depth={depth}
             initialHeight={initialHeight}
             bodyRef={panelRef}
+            bodyKey={compareTab ? "compare" : "info"}
             tabStrip={tabStrip}
         >
             {({ bindHeaderDrag }) => (

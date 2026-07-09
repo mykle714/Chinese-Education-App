@@ -10,16 +10,23 @@
  * Only processes entries where partsOfSpeech is already populated so definitions
  * accurately reflect every grammatical role. Run backfill-parts-of-speech.js first.
  *
- * The longDefinition is an ENRICHMENT, not a gloss: every agent is shown the
- * "displayed gloss" the learner already sees on the flp flashcard (definitions[0]
- * with parentheticals stripped — see deriveDisplayDefinition / the frontend's
- * stripParentheses) as context, and is instructed to add ONLY nuance beyond it
- * (which senses/contexts the word covers, scope; cultural context when the gloss
- * already captures the meaning fully). It must never restate the gloss, list
- * synonyms, reference the English language (unless the word's own meaning is about
- * English), comment on register/formality (the learner gets that from
- * vernacularScore), or elaborate on regional usage. Chinese characters ARE allowed
- * for citing words/phrases (pinyin is not — use the characters); output stays
+ * PHILOSOPHY — ANCHOR FIRST, THEN ENRICH (v13). Every agent is shown the "displayed
+ * gloss" the learner already sees on the flp flashcard (definitions[0] with
+ * parentheticals stripped — see deriveDisplayDefinition / the frontend's
+ * stripParentheses). Each POS value is written in one of two modes:
+ *   MODE A (clean match) — when the gloss word already captures the everyday sense
+ *     (INCLUDING the English word's own breadth: 水 = "water" and English "water"
+ *     already spans rivers/floods, so 水 is a clean match), the value MUST open with
+ *     the verbatim anchor sentence "Matches the common English definition for <gloss>."
+ *     followed — only when there is something worth adding — by a SECOND paragraph
+ *     (literal \n\n) of plain cultural context and/or an extended sense the English
+ *     word lacks (e.g. 马's xiangqi piece).
+ *   MODE B (disambiguate) — when the POS carries a sense the gloss word does NOT cover
+ *     (e.g. 大's noun "eldest/senior"), no anchor: pin down the sense(s) plainly.
+ * Wording must be SIMPLE (beginner-level). The anchor is the ONE sanctioned place to
+ * restate the gloss and reference English; elsewhere those remain forbidden. Still no
+ * synonym lists, register commentary, or regional-usage elaboration. Chinese characters
+ * ARE allowed for citing culturally significant idioms (pinyin is not); output stays
  * primarily English.
  *
  * OUTPUT SHAPE: a JSON OBJECT keyed by part of speech — one definition per POS,
@@ -49,7 +56,7 @@ dotenv.config({ path: path.join(__dirname, '../../../.env.docker') });
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
 import { initRunLog, cachedSystem } from '../run-log.js';
-const SCRIPT_VERSION = 12; // bump when this script's logic/prompt changes
+const SCRIPT_VERSION = 13; // bump when this script's logic/prompt changes
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -65,6 +72,15 @@ const targetWords = wordsArg ? wordsArg.slice('--words='.length).split(',').map(
 const wordsFilter = targetWords?.length
   ? `AND word1 = ANY(ARRAY[${targetWords.map(w => `'${w.replace(/'/g, "''")}'`).join(', ')}])`
   : '';
+// An explicit --words= run is a targeted REGENERATION of exactly those headwords (for
+// spot-checking / previewing prompt changes), so it bypasses the two "needs backfill"
+// guards a full run applies: the discoverable gate and the longDefinition-IS-NULL gate.
+// Without this, a --words run silently matches nothing once the words already have a
+// definition (or aren't discoverable yet). The validated-field guard still applies —
+// we never overwrite a human-reviewed definition.
+const isTargeted = !!targetWords?.length;
+const discoverableFilter = isTargeted ? '' : 'AND discoverable = TRUE';
+const needsBackfillFilter = isTargeted ? '' : 'AND "longDefinition" IS NULL';
 
 const GEN_MODEL = 'claude-sonnet-4-6';
 const VALIDATOR_MODEL = 'claude-sonnet-4-6';
@@ -79,7 +95,11 @@ const RETRY_MODEL = 'claude-opus-4-8';
 // its own budget — total length is no longer split across senses. A 1-POS word and
 // each sense of a 3-POS word are all bounded by the same [MIN_LEN, MAX_LEN_PER_POS].
 const MIN_LEN = 25;
-const MAX_LEN_PER_POS = 125;
+// Raised from 125 to fit the anchor-first, two-paragraph Mode-A shape: a ~48-char
+// anchor sentence ("Matches the common English definition for horse.") plus a blank
+// line plus one or two plain culture sentences. Still a CEILING, not a target — an
+// anchor-only value (no culture to add) is perfectly valid and far shorter.
+const MAX_LEN_PER_POS = 250;
 
 // ── Object-shape helpers ─────────────────────────────────────────────────────
 // A definition is a plain object keyed by POS: { "<pos>": "<text>", ... }.
@@ -138,96 +158,101 @@ function defToLogString(def) {
 
 function definitionRulesText() {
   return `
-A "long definition" is an enrichment shown in the extra-info panel. The learner ALREADY sees a short
-gloss (provided below as the "displayed gloss"); your job is to deepen understanding BEYOND it.
+A "long definition" is a plain-language enrichment shown in the extra-info panel. Its job is to ANCHOR
+the learner in the word's ordinary meaning first, then add cultural or extended nuance. The learner also
+sees a short gloss (provided below as the "displayed gloss").
 
-How to write it:
-- ADD ONLY WHAT THE GLOSS DOES NOT ALREADY CONVEY. Omit anything a reader could infer just from the
-  displayed gloss. Never restate, paraphrase, or summarize it.
-- PIN DOWN WHICH CONTEXTS THE WORD COVERS AND DOES NOT COVER. This matters most when the gloss word
-  itself spans several meanings or contexts: specify which of those senses this word actually applies
-  to, and any connotation or scope limit on its meaning.
-- IF THE GLOSS ALREADY CAPTURES THE MEANING FULLY (a clean one-to-one concept with nothing left to
-  disambiguate), instead give genuine CULTURAL CONTEXT about the concept — how it figures in daily
-  life, customs, associations, or common set phrases.
-- IGNORE RARE LITERARY / FORMAL SENSES; STAY ON EVERYDAY MEANING. If the word has an everyday spoken
-  sense AND a much more literary, classical, archaic, formal, technical, or legal sense — the kind that
-  only appears in written, classical, or specialist contexts (what a register scorer would rate 1
-  "literary/classical/formal-only" or 2 "formal/written-leaning") — define ONLY the everyday sense(s) and
-  OMIT the rare one entirely: do not cite, gloss, or even allude to it. EXCEPTION: if EVERY sense of the
-  word is itself formal/literary (the word simply is a formal word), define it normally — this rule drops
-  the rare senses ONLY of a word that also has a common everyday sense. This governs WHICH senses you
-  cover; it is not license to comment on register in the text (see the register rule) — omit the rare
-  sense silently, never announce that a sense is formal or literary.
-- IF ONE CONTEXT DOMINATES THE WORD'S ACTUAL USAGE, EXPLAIN THAT CONTEXT. When the word is, in practice,
-  encountered mostly inside a single phrase, idiom/chengyu, or fixed construction rather than standing on
-  its own, do NOT merely name-drop that phrase (a circular "as seen in X"). Instead make the definition
-  ABOUT that dominant context: cite the phrase in characters and explain what the phrase means and how the
-  word functions within it. This is the one case where citing a phrase that contains the headword is not
-  self-reference — it is the most useful thing you can say, because that is where the learner will meet the
-  word. Do it in ONE simple sentence.
+WRITE EACH POS VALUE IN ONE OF TWO MODES — decide per part of speech:
+
+MODE A — CLEAN MATCH. Use this whenever the word's everyday meaning for this POS is fully captured by the
+displayed gloss word. IMPORTANT: the English gloss word's OWN breadth counts as a match — if English
+speakers already use the gloss word for the same range of things, it is still a clean match. Example:
+水 means "water", and English "water" already covers rivers, floods, and liquids in general, so 水 is a
+CLEAN MATCH, not a word to disambiguate. Test: told only that this word means "<gloss>", would a native
+English speaker already understand its core everyday use correctly? If yes → Mode A. Format:
+  1. FIRST SENTENCE, VERBATIM: "Matches the common English definition for <gloss>." — swap in the gloss
+     word as given, but normalized to its bare dictionary form: drop a leading article ("a"/"an"/"the")
+     and, for a verb gloss written as an infinitive, drop the leading "to" (gloss "horse" → "...for
+     horse."; gloss "to eat" → "...for eat."; gloss "a knife" → "...for knife."). Keep the noun singular.
+     This required opening sentence is the ONE place you state the gloss and reference English; both are
+     mandatory here.
+  2. THEN, ONLY IF there is something genuinely worth adding, a SECOND PARAGRAPH separated by a blank line
+     — write a literal \\n\\n between the two paragraphs in the string value. The second paragraph gives
+     CULTURAL CONTEXT (how the concept figures in daily life, customs, associations, or a common set
+     phrase) and/or a notable EXTENDED sense the English word lacks (e.g. 马 also names the horse piece in
+     xiangqi). Keep it to ONE or TWO plain sentences, and never repeat the anchor. If there is nothing
+     genuinely useful to add, STOP after the first sentence — do NOT pad.
+
+MODE B — DISAMBIGUATE. Use this when this POS carries a meaning the displayed gloss word does NOT cover —
+a genuinely different concept (e.g. 大's noun sense "the eldest / a senior", which "big" never means). Do
+NOT use the anchor sentence in Mode B. Instead, in plain language, pin down which sense(s) the word
+actually covers and any scope limit or connotation. One to three sentences, no anchor.
+
+How to write it (BOTH modes):
+- WRITE SIMPLY. Use short, common words and short sentences, as if explaining to a beginner. Avoid
+  academic, abstract, or flowery wording. Plain and clear always beats clever.
+- BE BRIEF. The length cap is a CEILING, not a target. Say only what matters and stop.
+- IGNORE RARE LITERARY / FORMAL SENSES; STAY ON EVERYDAY MEANING. If the word has an everyday sense AND a
+  much more literary, classical, archaic, formal, technical, or legal sense (what a register scorer would
+  rate 1 "literary/classical/formal-only" or 2 "formal/written-leaning"), cover ONLY the everyday sense(s)
+  and OMIT the rare one entirely — do not cite, gloss, or allude to it. EXCEPTION: if EVERY sense of the
+  word is itself formal/literary, define it normally. Omit the rare sense silently; never announce that a
+  sense is formal or literary.
 - USE CHINESE CHARACTERS SPARINGLY — only to cite a term that is itself CULTURALLY SIGNIFICANT (a real
-  idiom / chengyu, or a culturally loaded phrase such as 九五之尊 or 关系网) and that adds genuine cultural
-  insight. Do NOT pepper the definition with constructed example sentences or trivial collocations in
-  Chinese; describe ordinary usage in English instead — this applies even to grammatical/function words,
-  whose constructions must be explained in English, not shown in Chinese. When you do cite a culturally
-  significant term, use characters, never pinyin, and weave it into a sentence — never a bare example list.
-- BE BRIEF AND CONCISE. The length cap is a CEILING, not a target. A short, dense definition that fully
-  conveys the nuance is better than a padded one; use plain, economical wording and stop once you have
-  said what matters. Every sentence must earn its place.
-- USE ONE TO THREE SENTENCES. Write no fewer than one and no more than three sentences. Do NOT pad to
-  reach three — add a second or third sentence only when it carries a distinct, essential nuance. Never
-  tack on a sentence merely to cite a related phrase or chengyu the word appears in, or to add a filler
-  aside.
+  idiom / chengyu, or a culturally loaded phrase such as 九五之尊 or 关系网). Do NOT use Chinese for
+  constructed example sentences or trivial collocations; describe ordinary usage in English. When you do
+  cite a culturally significant term, use characters (never pinyin) woven into a sentence — never a bare
+  list.
 - DO NOT LIST SYNONYMS. This is a definition, not a thesaurus.
 
 Output shape — a JSON object keyed by part of speech:
-- Write ONE definition per part of speech, as a JSON object whose KEYS are the parts of speech (exactly
-  as given) and whose VALUES are that POS's definition string, ordered from the MOST common/primary POS
-  to the least, e.g.:
-      {"noun": "<nuance for the noun sense>", "verb": "<nuance for the verb sense>"}
+- Write ONE value per part of speech, as a JSON object whose KEYS are the parts of speech (exactly as
+  given) and whose VALUES are that POS's definition string, ordered from the MOST common/primary POS to
+  the least, e.g.:
+      {"noun": "<mode A or B text for the noun sense>", "verb": "<mode A or B text for the verb sense>"}
 - If the word has only ONE part of speech, still emit a one-key object, e.g. {"noun": "..."}.
 - Each VALUE is an independent definition for that single sense — do NOT label it with the POS inside the
   string, and do NOT cram other senses into it.
 
 Hard constraints — all must be satisfied:
 
-1. LENGTH — EACH value must be between ${MIN_LEN} and ${MAX_LEN_PER_POS} characters. This budget is PER
-   POS value, not a shared total. The upper bound is a hard CEILING, never a target — do not pad to
-   approach it; a much shorter definition is perfectly fine. Count each value precisely and never exceed
-   ${MAX_LEN_PER_POS} for any one value.
-2. PRIMARILY ENGLISH — CHINESE ONLY WHEN CULTURALLY SIGNIFICANT, NO PINYIN — Write in English. Include Chinese characters ONLY to cite a term that is itself culturally significant (an established idiom, chengyu, or culturally loaded set phrase, e.g. 九五之尊, 关系网). Do NOT use Chinese for ad-hoc example sentences, trivial collocations, contrast words, or to illustrate ordinary grammar (e.g. 你能来吗, 现在几点, 外面刮风了, 红薯) — describe such usage in English. This holds even for grammatical/function words (particles, pronouns, conjunctions, measure words): explain their senses and constructions in plain English; do NOT show them with Chinese example phrases. Also do NOT cite the headword (the target word) itself in Chinese, and do NOT cite ordinary compounds or derived words that merely contain it (e.g. 能量, 能力, 工作单位) — reserve Chinese for STANDALONE, culturally significant idioms or set phrases. NEVER romanize Chinese into pinyin (with or without tone marks). Other non-ASCII letters (e.g. accented Latin letters) are forbidden.
-3. NO CONTRAST AGAINST THE GLOSS — Do not frame the meaning as a contrast with the displayed gloss or its English wording (e.g. "rather than [the gloss]", "instead of X", "not X but Y", "as opposed to" the English sense). Contrast is allowed ONLY when it describes the word's OWN semantics — distinguishing two of its senses, or an earlier vs. later state.
-4. NO BARE SELF-REFERENCE — Do not define the word by merely restating it or quoting a literal gloss of it. (Citing the target inside a genuine example phrase, in characters, is fine.)
+1. LENGTH — EACH value must be between ${MIN_LEN} and ${MAX_LEN_PER_POS} characters (the \\n\\n break
+   counts). This budget is PER POS value, not a shared total. The upper bound is a hard CEILING, never a
+   target — a much shorter, anchor-only value is perfectly fine. Never exceed ${MAX_LEN_PER_POS} for any
+   one value.
+2. ANCHOR FORMAT (MODE A) — When the POS is a clean match, the value MUST begin with the exact sentence
+   "Matches the common English definition for <gloss>." using the displayed gloss word verbatim (singular,
+   no article). Anything after it must be a distinct SECOND paragraph separated by a literal \\n\\n, and
+   must not repeat the anchor. A clean-match value that omits or mangles this opening sentence is invalid.
+3. PRIMARILY ENGLISH — CHINESE ONLY WHEN CULTURALLY SIGNIFICANT, NO PINYIN — Write in English. Include Chinese characters ONLY to cite a term that is itself culturally significant (an established idiom, chengyu, or culturally loaded set phrase, e.g. 九五之尊, 关系网). Do NOT use Chinese for ad-hoc example sentences, trivial collocations, or to illustrate ordinary grammar (e.g. 你能来吗, 现在几点) — describe such usage in English. This holds even for grammatical/function words. Do NOT cite the headword itself in Chinese, nor ordinary compounds/derived words that merely contain it (e.g. 能量, 能力) — reserve Chinese for STANDALONE, culturally significant idioms or set phrases. NEVER romanize Chinese into pinyin (with or without tone marks). Other non-ASCII letters (e.g. accented Latin letters) are forbidden.
+4. NO SYNONYM LIST — Do not present the meaning as a string of synonymous words.
 5. POS COVERAGE & FORMAT — The object must contain exactly one key per part of speech given (cover every POS), keyed and ordered as specified above. Do not omit a POS, invent extra POS, or merge senses.
-6. NO SYNONYM LIST — Do not present the meaning as a string of synonymous words.
-7. NO GLOSS RESTATEMENT — Add only nuance the displayed gloss does not convey; never quote, paraphrase, or restate it, and never state what a reader could already infer from it.
-8. DO NOT REFERENCE ENGLISH — Never mention "English", "the English word", "its English equivalent/translation", or compare the word to its English rendering. Describe the word on its own terms. The ONLY exception is when the word's own meaning is about the English language itself.
-9. NO REGISTER COMMENTARY — Do not describe how formal, colloquial, literary, slangy, or technical the word is. The learner already infers register from the word's vernacular score; spend the space on meaning and concept instead.
-10. NO REGIONAL-USAGE ELABORATION — Do not describe which regions, dialects, or countries use the word, or note regional variants. Focus on meaning, not geographic distribution.
-11. NO "APPEARS IN" FILLER — Do not append example-word lists with "appears in", "found in", "seen in", or similar tacked-on phrasing. Cite a related phrase only when it is woven into a sentence explaining a nuance, never as a list to fill space.
-12. SENTENCE COUNT — Use between 1 and 3 sentences (inclusive). Reject a definition with 4 or more sentences, or one whose extra sentence is a tacked-on citation of a related phrase/chengyu or a padding aside that adds no distinct nuance.
-13. NO RARE-SENSE COVERAGE — Do not define, cite, or allude to a sense that is markedly more literary/classical/formal/technical/legal than the word's everyday sense(s) — a sense a register scorer would rate 1 (literary/classical/formal-only) or 2 (formal/written-leaning) — WHEN the word also has a common everyday sense. Cover only the everyday sense(s). EXCEPTION: if every sense of the word is formal/literary, define it normally.
+6. REFERENCE ENGLISH ONLY IN THE ANCHOR — Do not mention "English", "the English word", or compare the word to its English rendering ANYWHERE except the required Mode-A anchor sentence. Outside that one sentence, describe the word on its own terms.
+7. NO REGISTER COMMENTARY — Do not describe how formal, colloquial, literary, slangy, or technical the word is. The learner already infers register from the word's vernacular score; spend the space on meaning and concept instead.
+8. NO REGIONAL-USAGE ELABORATION — Do not describe which regions, dialects, or countries use the word, or note regional variants. Focus on meaning, not geographic distribution.
+9. NO "APPEARS IN" FILLER — Do not append example-word lists with "appears in", "found in", "seen in", or similar tacked-on phrasing. Cite a related phrase only when it is woven into a sentence explaining a nuance, never as a list to fill space.
+10. SENTENCE COUNT — Use between 1 and 3 sentences total (inclusive). In Mode A that is the anchor sentence plus at most two culture sentences. Reject a value with 4 or more sentences, or one whose extra sentence is a tacked-on citation or a padding aside that adds no distinct nuance.
+11. NO RARE-SENSE COVERAGE — Do not define, cite, or allude to a sense that is markedly more literary/classical/formal/technical/legal than the word's everyday sense(s) — a sense a register scorer would rate 1 or 2 — WHEN the word also has a common everyday sense. Cover only the everyday sense(s). EXCEPTION: if every sense of the word is formal/literary, define it normally.
 `;
 }
 
 const VIOLATION_CODE_LABELS = {
   too_short: `One or more POS values is under ${MIN_LEN} characters (rule 1)`,
   too_long: `One or more POS values exceeds the ${MAX_LEN_PER_POS}-character per-POS budget (rule 1)`,
-  uses_pinyin: 'Romanizes a Chinese word into pinyin instead of using Chinese characters (rule 2)',
-  gratuitous_chinese: 'Uses Chinese for an ad-hoc example, the headword itself, or an ordinary compound/derived word rather than a standalone culturally significant term (rule 2)',
-  contains_non_english: 'Contains non-ASCII letters other than Chinese characters (e.g. accented Latin letters / pinyin diacritics) (rule 2)',
-  contrastive_construction: 'Frames the meaning as a contrast against the displayed gloss / its English wording (rule 3)',
-  self_reference: 'Defines the word by merely restating it or quoting a literal gloss (rule 4)',
+  missing_anchor: 'A clean-match (Mode A) POS value omits the required opening "Matches the common English definition for <gloss>." sentence, or does not put it first (rule 2)',
+  malformed_anchor: 'The anchor sentence is not verbatim — wrong gloss word, altered wording, added article/plural, or not separated from the culture paragraph by a blank line (rule 2)',
+  wrong_mode: 'Anchors (Mode A) a POS that carries a sense the gloss word does not cover, or disambiguates (Mode B) a POS that is a clean match and should be anchored (rule 2)',
+  uses_pinyin: 'Romanizes a Chinese word into pinyin instead of using Chinese characters (rule 3)',
+  gratuitous_chinese: 'Uses Chinese for an ad-hoc example, the headword itself, or an ordinary compound/derived word rather than a standalone culturally significant term (rule 3)',
+  contains_non_english: 'Contains non-ASCII letters other than Chinese characters (e.g. accented Latin letters / pinyin diacritics) (rule 3)',
+  lists_synonyms: 'Presents the meaning as a list/string of synonymous words (rule 4)',
   poor_pos_coverage: 'Object does not contain exactly one key per part of speech (missing/extra POS, or wrong object shape) (rule 5)',
-  lists_synonyms: 'Presents the meaning as a list/string of synonymous words (rule 6)',
-  restates_display_definition: 'Restates, paraphrases, or only echoes inferences from the displayed gloss (rule 7)',
-  references_english: 'Mentions English or compares the word to its English rendering (rule 8)',
-  comments_on_register: 'Comments on register / formality / colloquialness (rule 9)',
-  elaborates_regional: 'Elaborates on regional, dialectal, or geographic usage (rule 10)',
-  appears_in_filler: 'Uses an "appears in" / "found in" style tacked-on example listing (rule 11)',
-  extra_sentence: 'Exceeds 3 sentences, or pads with a tacked-on sentence citing a related phrase/chengyu or a filler aside (rule 12)',
-  covers_rare_sense: 'Defines, cites, or alludes to a rare literary/classical/formal-only sense (register 1–2) when the word also has an everyday sense (rule 13)',
+  references_english: 'Mentions English or compares the word to its English rendering OUTSIDE the allowed Mode-A anchor sentence (rule 6)',
+  comments_on_register: 'Comments on register / formality / colloquialness (rule 7)',
+  elaborates_regional: 'Elaborates on regional, dialectal, or geographic usage (rule 8)',
+  appears_in_filler: 'Uses an "appears in" / "found in" style tacked-on example listing (rule 9)',
+  extra_sentence: 'Exceeds 3 sentences, or pads with a tacked-on sentence citing a related phrase/chengyu or a filler aside (rule 10)',
+  covers_rare_sense: 'Defines, cites, or alludes to a rare literary/classical/formal-only sense (register 1–2) when the word also has an everyday sense (rule 11)',
   inaccurate: 'Definition is factually misleading or incorrect for a learner',
 };
 
@@ -592,9 +617,9 @@ async function run() {
       SELECT id, word1, "partsOfSpeech", definitions
       FROM dictionaryentries_zh
       WHERE language = 'zh'
-        AND discoverable = TRUE
+        ${discoverableFilter}
         ${validatedFilter}
-        AND "longDefinition" IS NULL
+        ${needsBackfillFilter}
         AND "partsOfSpeech" IS NOT NULL
         AND jsonb_array_length("partsOfSpeech") > 0
         ${wordsFilter}

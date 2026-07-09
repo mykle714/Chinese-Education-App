@@ -1,14 +1,17 @@
 import React from "react";
 import { Box } from "@mui/material";
 import CPCDRow, { type CPCDRowItem, type CPCDSize } from "./CPCDRow";
+import CPCDBlock, { type CPCDBlockItem } from "./CPCDBlock";
 import { useAuth } from "../AuthContext";
+import { useFirstTwoAreSegment } from "../hooks/useFirstTwoAreSegment";
 import type { Language } from "../types";
 import { FONTS } from "../theme/fonts";
 import { WEIGHT } from "../theme/scale";
 
-// Re-export so call sites can build items without importing CPCDRow directly.
-// ForeignText is the public container; CPCDRow is its Chinese-script implementation.
-export type { CPCDRowItem, CPCDSize };
+// Re-export so call sites can build items without importing CPCDRow/CPCDBlock
+// directly. ForeignText is the public container; CPCDRow/CPCDBlock are its
+// Chinese-script implementations.
+export type { CPCDRowItem, CPCDBlockItem, CPCDSize };
 
 interface ForeignTextBaseProps {
     // Language of the text being rendered. When omitted, falls back to the
@@ -35,6 +38,17 @@ interface ForeignTextBaseProps {
     // Latin-script plain text; the pinyin overlay is never affected. Undefined = theme
     // default.
     characterColor?: string;
+    // "row" (default): CPCDRow — characters in a line, per-column pinyin. "block":
+    // CPCDBlock — up to 4 characters arranged as a square (2x2 grid, or a 3-char
+    // triangle) with one plain pinyin line underneath. Ignored for Latin-script
+    // languages, which always render plain text regardless of layout.
+    layout?: "row" | "block";
+    // Block layout only, and only consulted for a 3-character word: whether the
+    // first two characters are one segment (see CPCDBlock's triangle-orientation
+    // comment). Leave undefined to let ForeignText auto-detect it (a cached det
+    // lookup of the 2-char prefix via useFirstTwoAreSegment); pass an explicit
+    // boolean only to override that.
+    firstTwoAreSegment?: boolean;
 }
 
 interface ForeignTextProps extends ForeignTextBaseProps {
@@ -121,10 +135,24 @@ const ForeignText: React.FC<ForeignTextProps> = ({
     pinyinShift = true,
     selectable = false,
     characterColor,
+    layout = "row",
+    firstTwoAreSegment,
 }) => {
     // Resolve language: explicit prop wins, otherwise the user's selection.
     const { user } = useAuth();
     const resolvedLanguage = language ?? (user?.selectedLanguage ?? "zh");
+
+    // For a 3-char block, auto-detect whether the first two chars form a word
+    // (drives the triangle orientation) unless the caller passed an explicit
+    // firstTwoAreSegment. Gated to layout="block" (pass null otherwise) so this
+    // fires no lookup for the common row layout. The word comes from `text`, or
+    // is reconstructed from `items` for the advanced API.
+    const blockWord = text ?? (items ? items.map((it) => it.character).join("") : "");
+    const autoFirstTwoAreSegment = useFirstTwoAreSegment(
+        layout === "block" ? blockWord : null,
+        resolvedLanguage,
+    );
+    const effectiveFirstTwoAreSegment = firstTwoAreSegment ?? autoFirstTwoAreSegment;
 
     if (isLatinScriptLang(resolvedLanguage)) {
         // Spanish (and other Latin-script languages): plain text. Prefer the raw
@@ -151,9 +179,25 @@ const ForeignText: React.FC<ForeignTextProps> = ({
         );
     }
 
-    // Character-based languages: defer to the cpcd row implementation. Build
-    // items from text/pronunciation unless the caller supplied them directly.
+    // Character-based languages: defer to the cpcd implementation. Build items
+    // from text/pronunciation unless the caller supplied them directly.
     const resolvedItems = items ?? buildCharItems(text ?? "", pronunciation, showPinyin, useToneColor);
+
+    // CPCDBlock only lays out up to 4 characters; a longer word (idioms, etc.)
+    // falls back to the row layout rather than being silently truncated.
+    if (layout === "block" && resolvedItems.length <= 4) {
+        return (
+            <CPCDBlock
+                items={resolvedItems as CPCDBlockItem[]}
+                size={size}
+                firstTwoAreSegment={effectiveFirstTwoAreSegment}
+                bold={bold}
+                className={className}
+                characterColor={characterColor}
+            />
+        );
+    }
+
     return (
         <CPCDRow
             items={resolvedItems}

@@ -170,29 +170,47 @@ icon buttons render directly on the est (example sentences) and long-definition
 surfaces, wherever a validator is already looking at an entry — flashcard eip tabs,
 the cdp, the dictionary card detail. Hidden entirely for non-validators.
 
-- **`src/components/ValidateFlagButtons.tsx`** — the shared button pair (styled
-  like `SpeakerButton`: small `IconButton`s, `stopPropagation` so a tap doesn't
-  bubble into an enclosing flip/drag/segment handler). Props: `word1`, `language`,
-  `field` (a `ValidationField`). Renders `null` when `!user?.isValidator`. On click,
-  POSTs `{ word1, language, field, action }` to `/api/validation/entry-submit`
-  (`apiPost`, `src/api/http.ts` — cookie auth, no manual token plumbing) and locks
-  itself (checkmark/flag color, disabled) on success **or** on a 400 (almost always
-  "already validated" — e.g. a double-tap, or already recorded via the Reader
-  queue). This lock is local UI state only, reset on remount/reload — there is no
-  "have I already validated this?" precheck; a stale button just 400s harmlessly on
-  retry, which the component treats the same as success.
+- **`src/components/ValidateFlagButtons.tsx`** — the shared control. Props:
+  `word1`, `language`, `field` (a `ValidationField`), `alreadyApproved` (the
+  caller's `sentence.humanApproved` / `entry.definitionsApproved` — see below).
+  Three states:
+  1. `!user?.isValidator`, or `alreadyApproved` with no local action taken yet →
+     renders `null`. **The buttons only ever show for a field that isn't already
+     approved** — `alreadyApproved` does NOT track "already flagged" (not surfaced
+     to the client), so a flagged-but-unapproved field still shows buttons.
+  2. Untouched → two small **outline** `IconButton`s (`FlagOutlined`,
+     `CheckCircleOutline`; styled like `SpeakerButton` — `stopPropagation` so a tap
+     doesn't bubble into an enclosing flip/drag/segment handler). On click, POSTs
+     `{ word1, language, field, action }` to `/api/validation/entry-submit`
+     (`apiPost`, `src/api/http.ts` — cookie auth, no manual token plumbing).
+  3. After a submit (success, or a 400 — almost always "already validated", e.g. a
+     double-tap or already recorded via the Reader queue; treated the same as
+     success) → the two buttons are replaced by a single **filled** icon (`Flag` or
+     `CheckCircle`, MUI's default/solid style) matching the action taken, colored
+     warning/success. This is a plain status icon now, **not a button** — no
+     `IconButton`, no click handler, no hover state. This local `done` state is
+     session-only (reset on remount/reload); on reload, `alreadyApproved` is
+     re-derived from fresh server data — true after a real approve (so the buttons
+     disappear for good, same as any other already-approved field), but a flag
+     never flips `alreadyApproved`, so the buttons reappear after a flag + reload;
+     clicking again just 400s and re-locks to the filled flag icon.
 - **est**: `ExampleSentenceList.tsx` renders one `ValidateFlagButtons` per sentence
   (top-left corner, mirroring the speaker button's top-right), `field` =
   `exampleSentence${index}` for `index < 3` (the field model's only 3 slots) —
-  `EXAMPLE_SENTENCE_FIELDS` lookup array. Needs `vocabWord` (word1) + `language`,
-  both already-existing props of this component; sentences past index 2, or a list
+  `EXAMPLE_SENTENCE_FIELDS` lookup array, `alreadyApproved={sentence.humanApproved}`
+  (the same flag that also drives the AI-generated badge/tint on this sentence, so
+  the two disappear together). Needs `vocabWord` (word1) + `language`, both
+  already-existing props of this component; sentences past index 2, or a list
   rendered without those props, get no buttons.
 - **Long definition**: `LongDefinitionDisplay.tsx` takes new optional `word1`/
   `language` props (`field` is always `'definitions'`) and renders one
   `ValidateFlagButtons` top-right, inside whichever wrapper the content ends up in
   (`finalize`/`wrapAiGenerated` — adds `position: relative` only when needed, so
-  existing callers that pass neither prop render byte-identical to before). Wired
-  from `VocabCardDetailBody.tsx` and `InfoCardPanelBody.tsx` (both pass
+  existing callers that pass neither prop render byte-identical to before), with
+  `alreadyApproved={!aiGenerated}` (the `aiGenerated` prop IS the caller's
+  `!entry.definitionsApproved`, so its inverse is exactly "already approved" — same
+  signal that drives the AI-generated border/tint/badge). Wired from
+  `VocabCardDetailBody.tsx` and `InfoCardPanelBody.tsx` (both pass
   `entry.entryKey`/`entry.language`). **Not** wired from `CompareTabBody.tsx` — its
   `LongDefinitionDisplay` renders the AI word-comparison paragraph
   (docs/WORD_COMPARE_FEATURE.md), which has no backing det field at all.

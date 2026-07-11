@@ -78,13 +78,15 @@ const LongDefinitionDisplay: React.FC<LongDefinitionDisplayProps> = ({
   language,
 }) => {
   // Absolutely-positioned inline validator buttons (renders nothing for
-  // non-validators) — laid out by `finalize` below inside whichever wrapper the
-  // content ends up in, top-right corner (mirrors the est speaker button's corner
-  // placement, opposite side of ExampleSentenceList's validate buttons since this
-  // is a single block rather than a per-sentence list).
+  // non-validators, or once definitionsApproved is already true) — laid out by
+  // `finalize` below inside whichever wrapper the content ends up in, top-right
+  // corner (mirrors the est speaker button's corner placement, opposite side of
+  // ExampleSentenceList's validate buttons since this is a single block rather
+  // than a per-sentence list). `aiGenerated` is the caller's `!definitionsApproved`
+  // (see prop doc above), so its inverse is exactly "already approved".
   const validateButtonsNode = word1 && language ? (
     <Box sx={{ position: "absolute", top: 0, right: 0, zIndex: 2, padding: "4px" }}>
-      <ValidateFlagButtons word1={word1} language={language} field="definitions" />
+      <ValidateFlagButtons word1={word1} language={language} field="definitions" alreadyApproved={!aiGenerated} />
     </Box>
   ) : null;
 

@@ -114,6 +114,7 @@ const ExampleSentenceList: React.FC<ExampleSentenceListProps> = ({
                 word1={vocabWord}
                 language={language}
                 field={EXAMPLE_SENTENCE_FIELDS[index]}
+                alreadyApproved={isHumanApproved}
               />
             </Box>
           )}

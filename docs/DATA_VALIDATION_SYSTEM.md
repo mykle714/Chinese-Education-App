@@ -1,12 +1,16 @@
 # Data Validation System
 
 Human-in-the-loop review of AI-enriched dictionary fields. Trusted "validator"
-users download an auto-composed Reader document for **one field of one
-discoverable entry**, then **Approve** it (unchanged) or **Flag it with a
-suggestion** (edited body). Outcomes are recorded in a dedicated `validations`
-table so future backfills never clobber human-reviewed fields.
+users download an auto-composed, **read-only** Reader document for **one field of
+one discoverable entry**, then **Approve** it or **Flag** it. There is no editing:
+Approve copies the document's displayed content verbatim; Flag records only the
+flag itself, no content. Outcomes go to a dedicated `validations` table so future
+backfills never clobber human-reviewed fields.
 
-Introduced by **migration 104** (`database/migrations/104-add-validation-system.sql`).
+Introduced by **migration 104** (`database/migrations/104-add-validation-system.sql`),
+simplified by **migration 106** (`database/migrations/106-simplify-validator-content.sql`
+— dropped the edit/suggest/revert flow, `validations.content` nullable, dropped
+`texts.validationOriginalContent`).
 
 > **Why a separate table (not a det column):** `dictionaryentries_{zh,es}` are
 > `TRUNCATE`+restored wholesale on every prod data deploy
@@ -37,7 +41,7 @@ recorded at most once.
 
 ---
 
-## Schema (migration 104)
+## Schema (migration 104, updated by 106)
 
 - `users."isValidator" BOOLEAN NOT NULL DEFAULT false` — gates the validator UI +
   endpoints. Surfaced to the client through the `user` object (login + `/api/auth/me`);
@@ -47,18 +51,19 @@ recorded at most once.
   ```
   id UUID PK · entryId INTEGER · language VARCHAR(10) · field VARCHAR(50)
   validatorUserId UUID (FK users ON DELETE CASCADE) · validatorName TEXT
-  action VARCHAR(20) CHECK IN ('approve','flag') · content TEXT · createdAt
+  action VARCHAR(20) CHECK IN ('approve','flag') · content TEXT NULLABLE · createdAt
   UNIQUE (entryId, language, field, validatorUserId)   -- one record per user/field
   ```
-  `content` holds the reviewed body for **both** actions: for `approve` it is the
-  exact data version approved; for `flag` it is the suggested edit. The unique
-  constraint enforces the "can never re-validate" rule (`ON CONFLICT DO NOTHING`).
-  `(entryId, language)` is indexed for the compose check + backfill guard.
+  `content` is the data version approved, copied verbatim from the document the
+  validator read — `NULL` for a flag (flag is just a signal; it carries no
+  suggested edit). The unique constraint enforces the "can never re-validate" rule
+  (`ON CONFLICT DO NOTHING`). `(entryId, language)` is indexed for the compose
+  check + backfill guard.
 - `texts` validation-linkage columns (nullable; NULL ⇒ ordinary user document):
   `validationEntryId INTEGER` (det id — SERIAL, **not** uuid),
-  `validationLanguage VARCHAR(10)`, `validationField VARCHAR(50)`,
-  `validationOriginalContent TEXT`. The last is the server's originally-composed
-  body, used for client-side change detection (Approve vs Flag) and Revert.
+  `validationLanguage VARCHAR(10)`, `validationField VARCHAR(50)`. (Migration 104
+  also added `validationOriginalContent`, used for client-side edit-diffing and
+  Revert; migration 106 dropped it once editing was removed.)
 
 The consolidated schema files (`database/init/01-init-schema.sql`,
 `database/deploy/01-schema.sql`) mirror the `users` + `texts` + `validations`
@@ -77,23 +82,25 @@ additions. `validations` is intentionally **absent** from the data-deploy allowl
    field populated, and NOT already validated by this user for that field — ordering
    by fewest existing validations of that field (random tiebreak). A `CROSS JOIN
    LATERAL (VALUES …)` expands each entry into its four candidate fields.
-3. Compose an editable body (`composeBody`), `title = "Validate - <word1> - <pronunciation>"` (pinyin appended when present),
-   `description = <field label>`.
-4. Create the doc via `TextService.createText`, which persists the four
+3. Compose a **pretty-printed, read-only** body (`composeBody`), `title = "Validate - <word1> - <pronunciation>"`
+   (pinyin appended when present), `description = <field label>`.
+4. Create the doc via `TextService.createText`, which persists the three
    `validation*` columns. Returns the `Text`.
 
-Body format (also the exact `validationOriginalContent`, so Revert/diff compare
-byte-for-byte) — **raw stored values, not prose**. Each underlying det field is
-written as `<fieldName>:\n<raw JSON value>` (pretty-printed), blank line between fields:
-- **definitions** — three blocks: `partsOfSpeech:`, `definitions:`, `longDefinition:`,
-  each followed by that column's raw JSON.
-- **exampleSentenceN** — `exampleSentenceN:` followed by the JSON of **only** the
-  two reviewable fields of `exampleSentences[N]`: `{ foreignText, english }`. The
-  rest of the stored sentence object (tense, numberDict, segmentGloss, …) is machine
-  metadata and is intentionally omitted from the validation body.
+Body format — plain human-readable prose, **not** JSON — built by the shared
+formatters in `server/utils/validationBodyFormat.ts`:
+- **`composeDefinitionsBody`** — `Parts of Speech: <comma list>`, then
+  `Definitions:` as a numbered list, then `Long Definition:` followed by the prose.
+- **`composeExampleSentenceBody`** — `Sentence:` followed by `foreignText`, then
+  `Translation:` followed by `english`. Only these two reviewable fields are shown
+  — the rest of the stored sentence object (`tense`, `numberDict`, `segments`,
+  `partOfSpeechDict`, `senseDict`, …) is machine metadata the validator never sees.
+
+These formatters are shared with `DictionaryDAL`'s approval-freshness check (see
+below) so the two always agree on what a given det row's text looks like.
 
 ### Approve / Flag
-`POST /api/validation/:textId/submit` `{ action, content }` →
+`POST /api/validation/:textId/submit` `{ action }` →
 `ValidationService.submitValidation`:
 1. Assert validator + ownership + that the text is a validation doc.
    **Validator status is authoritative here**: `userId` comes from the verified JWT
@@ -102,41 +109,20 @@ written as `<fieldName>:\n<raw JSON value>` (pretty-printed), blank line between
    forged, and it fails closed if the column is absent. Ownership (`text.userId ===
    userId`) is also enforced, so an attacker can neither submit as a validator they
    aren't nor act on another user's doc.
-2. **Format + shape guard** (`assertOnlyJsonValuesEdited(content, original, field)`):
-   two layers, both throwing `ValidationFormatError` (code
-   `ERR_VALIDATION_FORMAT_CHANGED`, HTTP 400):
-   - **Format** — the body must still split (via `parseValidationBlocks`) into exactly
-     the composed `<fieldName>:\n<JSON>` blocks (same headers, order, no stray text)
-     with each block valid JSON. The split is unambiguous because a header line
-     trimmed is exactly `<fieldName>:` while pretty-printed JSON lines are always
-     quoted/bracketed.
-   - **Shape** — each block's JSON **key shape** must match the server-composed
-     `original` (`text.validationOriginalContent`), compared by `sameJsonShape`:
-     object key names/sets identical at every level, container types matching; only
-     primitive leaf **values** may differ and array **lengths** may differ. This
-     blocks a renamed/added/removed key — which stays valid JSON but the server would
-     no longer recognize. Runs for **both** actions (an approval's unedited body
-     always passes). The block field-names are the single source of truth in
-     `expectedBlockFields`, shared with `composeBody`.
-3. `INSERT` a `validations` row with `content = sanitizeDocumentContent(content)`
-   for **both** actions (the approved data version, or the suggested edit; stored
-   verbatim, **never reparsed** into columns). `ON CONFLICT ON CONSTRAINT
+2. `content = action === 'approve' ? text.content : null` — Approve copies the
+   document's content **verbatim, server-side**; nothing is taken from the request
+   body, so there is nothing to re-parse or format-guard (the doc was never
+   editable, so `text.content` is always exactly what `composeValidationDoc` wrote).
+   Flag stores `null`.
+3. `INSERT` a `validations` row. `ON CONFLICT ON CONSTRAINT
    validations_unique_per_user DO NOTHING` — a zero-row result means this
    (user, entry, field) was already recorded, and the request is rejected. This is
    the "after receiving, can never re-approve/flag" rule and is race-safe.
 4. **On any accepted submit (both `approve` and `flag`)**, the throwaway validation
    document is auto-deleted from the validator's account
    (`TextService.deleteText(userId, textId)`): the review is done, the (entry, field)
-   can never be re-handed to this user, so the doc has no further purpose. The
-   persisted `validations` row is unaffected — its `content` (the approved version
-   or the suggested edit) is stored verbatim and is not FK-linked to `texts`.
-
-The client sends `content = selectedText.content` for both actions (for an approval
-that equals the original body; for a flag it is the edit).
-
-### Revert
-No endpoint — the client PUTs `validationOriginalContent` back through the ordinary
-`PUT /api/texts/:id`.
+   can never be handed to this user again, so the doc has no further purpose. The
+   persisted `validations` row is unaffected — it is not FK-linked to `texts`.
 
 ---
 
@@ -151,60 +137,25 @@ No endpoint — the client PUTs `validationOriginalContent` back through the ord
   picks it from the list when ready (a snackbar confirms it was added). The
   open-document page (`ReaderDocumentPage.tsx`) deliberately does **not** carry this
   button — you download from the list, then open a doc to act on it.
-- **Approve / Flag / Revert**: icon buttons in the **document page header**
-  (`ReaderDocumentPage.tsx` `docHeaderRightContent`, alongside Edit/Delete — see
+- **Approve / Flag**: two icon buttons in the **document page header**
+  (`ReaderDocumentPage.tsx` `docHeaderRightContent`, alongside Delete — see
   docs/LEAF_NODE_PAGES.md § Reader), rendered only when the open doc's
-  `validationEntryId` is set. The action is a green **check** (`CheckCircle`,
-  `reader-page-text-header-approve-button`) when the body equals
-  `validationOriginalContent`, flipping to a yellow **flag** (`Flag`,
-  `reader-page-text-header-flag-button`) once edited (`isValidationChanged`).
-  **Revert** (`Undo`, `reader-page-text-header-revert-button`) restores the original
-  (disabled when unchanged). Handlers `handleApproveOrFlag` / `handleRevertValidation`
-  live in `ReaderDocumentPage`; feedback shows in `reader-page-validation-snackbar`.
-  When the server rejects a submit with `ERR_VALIDATION_FORMAT_CHANGED` (the body's
-  format was altered), `handleApproveOrFlag` shows an explicit error-severity
-  snackbar telling the validator it's a format issue and to Revert and start over
-  (all other failures show `data.error`). After any accepted submit (Approve **or**
-  Flag), the server auto-deletes the doc and the client navigates back to `/reader`
-  (the entry can't be re-validated). `TextHeader.tsx` no longer renders
-  any validation actions — it is purely the title/description/meta block.
-- Editing the body uses the existing **Edit** modal (`EditDocumentDialog`) — the
-  reader body viewer (`TextArea`) is read-only. After an edit saves, the diff flips
-  the header action to the yellow flag automatically. Validation docs are
-  `isUserCreated = true`, so Edit/Delete/PUT all work; the user may delete a
-  validation doc freely (and any accepted Approve/Flag deletes it automatically —
-  see the Approve/Flag step above).
-- **Client-side format guard + whitespace lock (canonicalize-on-save):** the guard
-  runs on **both** edit surfaces, but **only when the doc is a validation doc**
-  (`text.validationField` set) — ordinary reader documents have no `validationField`
-  and always save their draft verbatim:
-  - the doc page's inline editor save (`ReaderDocumentPage.handleSaveEdit`, the
-    primary editing surface — `ReaderEditToolbar` Save), and
-  - the list-row **Edit** modal (`EditDocumentDialog.handleSave`).
-
-  Both run two checks (`src/features/reader/validationFormat.ts`) **before** the PUT,
-  blocking the save with `VALIDATION_FORMAT_MESSAGE` on failure:
-  - `canonicalizeValidationBody(content, field)` — a `null` result means the format
-    was broken (wrong/renamed/reordered headers, stray text, or invalid JSON);
-    otherwise the **canonical** re-serialization is what gets saved. Canonicalizing
-    parses each block and re-emits `<fieldName>:\n<JSON.stringify(value,null,2)>`,
-    which **resets every character outside the JSON values** — headers, block
-    separators, indentation, stray/trailing whitespace. This is the fix for
-    whitespace-only edits: they parse fine as JSON but used to differ byte-wise from
-    the composed original and so falsely tripped the Approve→Flag diff. After
-    canonicalization a whitespace-only edit round-trips to `validationOriginalContent`
-    exactly, so the doc stays **Approve** (green); only a real JSON-value change
-    produces a **Flag**.
-  - `isValidationShapePreserved(content, validationOriginalContent, field)` — compares
-    each block's JSON **key shape** against the composed original via `sameJsonShape`
-    (object key names/sets identical at every level; only leaf values / array lengths
-    may differ). This blocks a **renamed/added/removed key** — which canonicalizes
-    fine (still valid JSON) but the server would no longer recognize.
-
-  `isValidationFormatIntact` is a thin `!== null` wrapper over
-  `canonicalizeValidationBody`. The server re-runs the equivalent format **and** shape
-  checks in `assertOnlyJsonValuesEdited(content, original, field)` on submit as the
-  source of truth (same `expectedBlockFields`, `parseValidationBlocks`, `sameJsonShape`).
+  `validationEntryId` is set: a green **check** (`CheckCircle`,
+  `reader-page-text-header-approve-button`) and a yellow **flag** (`Flag`,
+  `reader-page-text-header-flag-button`), always both shown side by side — there is
+  no diffing, so which one is "active" is never ambiguous. `handleApprove`/
+  `handleFlag` (thin wrappers over `submitValidation`) POST `{ action }` with no
+  body content. Feedback shows in `reader-page-validation-snackbar`. After either
+  action, the server auto-deletes the doc and the client navigates back to
+  `/reader` (the entry can't be re-validated).
+- **Read-only, no Edit**: validation docs have **no Edit affordance** anywhere —
+  not the doc page header (`isValidationDoc` hides the Edit icon; only Delete stays,
+  to abandon a downloaded entry without acting on it) and not the list row
+  (`TextSidebar.tsx` hides its Edit icon when `text.validationField` is set, keeps
+  Delete). `EditDocumentDialog.tsx` has no validation-specific logic anymore — it's
+  purely the generic reader-document editor and is never opened for a validation
+  doc. `TextHeader.tsx` renders no validation actions — it is purely the
+  title/description/meta block.
 
 ---
 
@@ -222,31 +173,30 @@ two validation field groups (Field model table above):
 Both share the same shape: a batched query joins `validations` back to the det
 table by `entryId` (keyed by `word1` — vet-joined entries carry `entryKey` = det
 `word1`, not the det id), keeping only rows with the **approval stamp**
-(`action = 'approve'`), then a per-entry/per-sentence comparison decides whether
-that specific approval still matches the **current** det data — an approval
-recorded before the field was regenerated, re-tagged, or edited does **not** count.
+(`action = 'approve'`, `content IS NOT NULL`), then a per-entry/per-sentence
+comparison decides whether that specific approval still matches the **current**
+det data — an approval recorded before the field was regenerated, re-tagged, or
+edited does **not** count. Both sides of the comparison go through the same
+`composeDefinitionsBody`/`composeExampleSentenceBody` formatters `ValidationService`
+uses to compose the doc, so they always agree byte-for-byte.
 
 - **`humanApproved`** (`server/dal/implementations/DictionaryDAL.ts`, helpers
-  `fetchApprovedSentenceContents` + `isSentenceHumanApproved`): the comparison
-  mirrors `composeBody`/`rawField` for `exampleSentenceN` — the stored content's
-  label line is stripped at fetch time, and the remainder is compared against
-  `JSON.stringify(<raw det sentence object>, null, 2)` (both sides read the same
-  jsonb, so Postgres's canonical key order makes this deterministic). Matching is
-  index-agnostic (label stripped) so reordering `exampleSentences` doesn't orphan an
-  exact approval. Declared on the `exampleSentences` element type in
-  `server/types/index.ts` and `src/types.ts`.
+  `fetchApprovedSentenceContents` + `isSentenceHumanApproved`): rebuilds
+  `composeExampleSentenceBody({ foreignText, english })` from the sentence's
+  CURRENT raw det values and compares against the stored approval content.
+  Index-agnostic (no label/index in the body) so reordering `exampleSentences`
+  doesn't orphan an exact approval. Declared on the `exampleSentences` element type
+  in `server/types/index.ts` and `src/types.ts`.
 - **`definitionsApproved`** (helpers `fetchApprovedDefinitionsContents` +
-  `isDefinitionsHumanApproved`): rebuilds the exact `composeBody` output for
-  `definitions` (three `rawField` blocks — `partsOfSpeech`, `definitions`,
-  `longDefinition` — joined by blank lines) from the entry's **raw** det columns
-  (fetched fresh, not the caller's already-transformed `longDefinition` display
-  string) and compares the whole thing as one unit — editing or regenerating ANY of
-  the three columns invalidates the approval for all of them. Independent of
-  `enrichExampleSentencesMetadataBatch` (no `exampleSentences` precondition);
-  callers chain it alongside `enrichLongDefinitionMetadataBatch`. Declared as a
-  top-level field on `DictionaryEntry`/`VocabEntry` in `server/types/index.ts` and
-  `src/types.ts` (and threaded through `dictEntryAdapter.ts` for the flp det-fallback
-  path).
+  `isDefinitionsHumanApproved`): rebuilds `composeDefinitionsBody` from the entry's
+  **raw** det columns (fetched fresh, not the caller's already-transformed
+  `longDefinition` display string) and compares the whole thing as one unit —
+  editing or regenerating ANY of the three columns invalidates the approval for all
+  of them. Independent of `enrichExampleSentencesMetadataBatch` (no
+  `exampleSentences` precondition); callers chain it alongside
+  `enrichLongDefinitionMetadataBatch`. Declared as a top-level field on
+  `DictionaryEntry`/`VocabEntry` in `server/types/index.ts` and `src/types.ts` (and
+  threaded through `dictEntryAdapter.ts` for the flp det-fallback path).
 - Both comparisons run the current body through `sanitizeDocumentContent`
   (idempotent — strips control chars, normalizes line endings) to match how the
   approved content was stored.
@@ -279,8 +229,10 @@ card-detail pages.
 chars (keeps `\n`/`\t`) and normalizes line endings. It deliberately does **not**
 HTML-escape — the content is only rendered as React text nodes (escaped at render),
 so escaping at rest would double-encode (e.g. `&` → `&amp;` shown literally). Wired
-into `TextService.createText`/`updateText` (all document saves) and into every
-validation submission's `content` before it is persisted.
+into `TextService.createText`/`updateText` (all document saves — this is what
+sanitizes a validation doc's composed body before it's stored as `text.content`;
+`ValidationService.submitValidation` does not sanitize again, since Approve copies
+`text.content` verbatim).
 
 ---
 
@@ -293,7 +245,8 @@ AND val.action IN ('approve','flag'))`. It correlates the `validations` table ag
 the det row via the **unaliased** table name, so pass the exact table the backfill
 selects from. Each affected script builds `const validatedFilter = 'AND ' +
 validatedClause([...], 'dictionaryentries_zh')` and interpolates it into its main
-`SELECT … WHERE` (next to `discoverable = TRUE`).
+`SELECT … WHERE` (next to `discoverable = TRUE`). This check is on `action`, not
+`content`, so it is unaffected by flag rows carrying no content.
 
 Applied to the recurring AI writers:
 
@@ -318,16 +271,20 @@ re-run over discoverable rows.
 
 ## Key files
 
-- Migration: `database/migrations/104-add-validation-system.sql`
+- Migrations: `database/migrations/104-add-validation-system.sql`,
+  `database/migrations/106-simplify-validator-content.sql`
 - Service/controller/routes: `server/services/ValidationService.ts`,
   `server/controllers/ValidationController.ts`, `server/routes/validationRoutes.ts`
   (mounted in `server/server.ts`; wired in `server/dal/setup.ts`)
+- Shared body formatter: `server/utils/validationBodyFormat.ts`
+  (`composeDefinitionsBody`, `composeExampleSentenceBody`)
 - Sanitizer: `server/utils/sanitizeContent.ts`
 - Types: `server/types/index.ts` (`ValidationField`, `ValidationRecord`,
   `Text.validation*`, `User.isValidator`) + `src/types.ts` (`ValidationField`,
   `Text.validation*`, `User.isValidator`), `src/AuthContext.tsx`
 - Reader UI: `src/features/reader/ReaderPage.tsx`, `src/features/reader/ReaderDocumentPage.tsx`,
-  `src/features/reader/TextHeader.tsx`, `src/features/reader/validationApi.ts`
+  `src/features/reader/TextHeader.tsx`, `src/features/reader/TextSidebar.tsx`,
+  `src/features/reader/validationApi.ts`
 - Backfill guard: `server/scripts/backfill/run-log.js` (`validatedClause`)
 - Read-path surfacing: `server/dal/implementations/DictionaryDAL.ts`
   (`fetchApprovedSentenceContents`/`isSentenceHumanApproved` for `humanApproved`;
@@ -337,8 +294,3 @@ re-run over discoverable rows.
   `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx`,
   `src/theme/aiGeneratedStyling.ts` + `src/components/AiGeneratedBadge.tsx` (shared
   with `AiDictionaryEntryCard.tsx`)
-- Read-path surfacing: `server/dal/implementations/DictionaryDAL.ts`
-  (`fetchApprovedSentenceContents`, `isSentenceHumanApproved`, `humanApproved` on both
-  enrichment branches), `src/features/flashcards/ExampleSentenceList.tsx`,
-  `src/theme/aiGeneratedStyling.ts` + `src/components/AiGeneratedBadge.tsx`
-  (shared with `AiDictionaryEntryCard.tsx`)

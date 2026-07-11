@@ -103,23 +103,28 @@ function TextSidebar({
                             secondaryAction={
                                 text.isUserCreated && (
                                     <Box sx={{ display: 'flex', gap: 0.5 }}>
-                                        <Tooltip title="Edit">
-                                            <IconButton
-                                                size="small"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    onEdit(text);
-                                                }}
-                                                sx={{
-                                                    color: selectedText?.id === text.id ? 'white' : 'text.secondary',
-                                                    '&:hover': {
-                                                        backgroundColor: selectedText?.id === text.id ? 'rgba(255,255,255,0.2)' : undefined
-                                                    }
-                                                }}
-                                            >
-                                                <EditIcon fontSize="small" />
-                                            </IconButton>
-                                        </Tooltip>
+                                        {/* Validation docs (docs/DATA_VALIDATION_SYSTEM.md) are read-only —
+                                        no Edit, only the doc page's Approve/Flag + this row's Delete
+                                        (to abandon a downloaded entry without acting on it). */}
+                                        {!text.validationField && (
+                                            <Tooltip title="Edit">
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        onEdit(text);
+                                                    }}
+                                                    sx={{
+                                                        color: selectedText?.id === text.id ? 'white' : 'text.secondary',
+                                                        '&:hover': {
+                                                            backgroundColor: selectedText?.id === text.id ? 'rgba(255,255,255,0.2)' : undefined
+                                                        }
+                                                    }}
+                                                >
+                                                    <EditIcon fontSize="small" />
+                                                </IconButton>
+                                            </Tooltip>
+                                        )}
                                         <Tooltip title="Delete">
                                             <IconButton
                                                 size="small"

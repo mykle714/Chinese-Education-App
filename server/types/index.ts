@@ -205,12 +205,12 @@ export type ValidationField =
   | 'exampleSentence1'
   | 'exampleSentence2';
 
-// One row of the `validations` table (migration 104) — a human review record for a
-// single (entry, field). Kept OFF the det tables so prod data deploys (which
-// TRUNCATE+restore dictionaryentries_*) never wipe review data. `content` holds the
-// reviewed body for BOTH actions: the exact data version approved, or the suggested
-// edit when flagged. `entryId` is dictionaryentries_<language>.id. See
-// docs/DATA_VALIDATION_SYSTEM.md.
+// One row of the `validations` table (migration 104/106) — a human review record
+// for a single (entry, field). Kept OFF the det tables so prod data deploys (which
+// TRUNCATE+restore dictionaryentries_*) never wipe review data. `content` is the
+// data version approved, copied verbatim from the doc the validator read; NULL for
+// a flag (no suggested edit anymore — flag is just a signal). `entryId` is
+// dictionaryentries_<language>.id. See docs/DATA_VALIDATION_SYSTEM.md.
 export interface ValidationRecord {
   id?: string;
   entryId: number;
@@ -219,7 +219,7 @@ export interface ValidationRecord {
   validatorUserId: string;
   validatorName: string;
   action: 'approve' | 'flag';
-  content: string;
+  content: string | null;
   createdAt?: string;
 }
 
@@ -584,7 +584,6 @@ export interface Text {
   validationEntryId?: number | null;
   validationLanguage?: Language | null;
   validationField?: ValidationField | null;
-  validationOriginalContent?: string | null; // Server-composed original body (change-detection + revert)
   createdAt: string;
 }
 
@@ -599,7 +598,6 @@ export interface TextCreateData {
   validationEntryId?: number | null;
   validationLanguage?: Language | null;
   validationField?: ValidationField | null;
-  validationOriginalContent?: string | null;
 }
 
 // Text update data type

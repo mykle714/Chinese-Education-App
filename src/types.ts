@@ -441,7 +441,6 @@ export interface Text {
   validationEntryId?: number | null;
   validationLanguage?: Language | null;
   validationField?: ValidationField | null;
-  validationOriginalContent?: string | null; // Server-composed original; used for change-detection + Revert
   createdAt: string;
 }
 

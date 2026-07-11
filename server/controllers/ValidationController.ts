@@ -39,7 +39,9 @@ export class ValidationController {
 
   /**
    * Submit an approval or flag for a validation document.
-   * POST /api/validation/:textId/submit  { action: 'approve' | 'flag', content?: string }
+   * POST /api/validation/:textId/submit  { action: 'approve' | 'flag' }
+   * Approve copies the document's content verbatim server-side; flag stores no
+   * content. Neither action takes content from the request body.
    */
   async submitValidation(req: Request, res: Response): Promise<void> {
     try {
@@ -50,20 +52,14 @@ export class ValidationController {
       }
 
       const { textId } = req.params;
-      const { action, content } = req.body ?? {};
+      const { action } = req.body ?? {};
 
       if (action !== 'approve' && action !== 'flag') {
         res.status(400).json({ error: "action must be 'approve' or 'flag'", code: 'ERR_INVALID_ACTION' });
         return;
       }
-      // Both actions store the reviewed body: the approved data version, or the
-      // suggested edit. So content is required regardless of action.
-      if (typeof content !== 'string' || content.trim().length === 0) {
-        res.status(400).json({ error: 'A validation requires a non-empty body', code: 'ERR_MISSING_CONTENT' });
-        return;
-      }
 
-      const record = await this.validationService.submitValidation(userId, textId, action, content);
+      const record = await this.validationService.submitValidation(userId, textId, action);
       res.json({ success: true, record });
     } catch (error: any) {
       this.handleError(res, error, 'Failed to submit validation', 'ERR_SUBMIT_VALIDATION_FAILED');
@@ -74,8 +70,6 @@ export class ValidationController {
   private handleError(res: Response, error: any, fallbackMsg: string, fallbackCode: string): void {
     console.error(`[VALIDATION-CONTROLLER] ❌ ${fallbackMsg}:`, error);
     if (error instanceof ValidationError) {
-      // Pass the concrete code through (e.g. ERR_VALIDATION_FORMAT_CHANGED) so the
-      // client can special-case the "format changed → Revert" flow.
       res.status(400).json({ error: error.message, code: error.code });
     } else if (error instanceof NotFoundError) {
       res.status(404).json({ error: error.message, code: 'ERR_NOT_FOUND' });

@@ -93,21 +93,6 @@ export class NotFoundError extends DALError {
   }
 }
 
-/**
- * A data-validation submission whose edits broke the document's fixed
- * `<fieldName>:\n<JSON>` format (renamed/removed/reordered a field header, added
- * stray text, or produced invalid JSON) — only the JSON *values* may be edited.
- * Distinct code so the Reader can tell the validator to Revert and start over.
- * See docs/DATA_VALIDATION_SYSTEM.md.
- */
-export class ValidationFormatError extends ValidationError {
-  constructor(message: string, originalError?: any) {
-    super(message, originalError);
-    this.code = 'ERR_VALIDATION_FORMAT_CHANGED';
-    this.name = 'ValidationFormatError';
-  }
-}
-
 export class DuplicateError extends DALError {
   constructor(message: string, originalError?: any) {
     super(message, 'ERR_DUPLICATE', 409, originalError);

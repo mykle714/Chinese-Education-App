@@ -7,7 +7,6 @@ import {
     Delete as DeleteIcon,
     CheckCircle as CheckCircleIcon,
     Flag as FlagIcon,
-    Undo as UndoIcon,
 } from "@mui/icons-material";
 import ReaderDocumentSurface from "./ReaderDocumentSurface";
 import MinutePointsFireBadge from "../../minutePoints/MinutePointsFireBadge";
@@ -24,7 +23,6 @@ import TextHeader from "./TextHeader";
 import TextArea from "./TextArea";
 import ReaderEditToolbar from "./ReaderEditToolbar";
 import DeleteDocumentDialog from "./DeleteDocumentDialog";
-import { canonicalizeValidationBody, isValidationShapePreserved, VALIDATION_FORMAT_MESSAGE } from "./validationFormat";
 
 import { useVocabularyProcessing } from "../../hooks/useVocabularyProcessing";
 import { useReaderContentEditor } from "./useReaderContentEditor";
@@ -63,8 +61,8 @@ function ReaderDocumentPage() {
 
     const [tapHintOpen, setTapHintOpen] = useState(false);
     const [validationMsg, setValidationMsg] = useState<string | null>(null);
-    // Snackbar severity for validation feedback — failures (e.g. a changed format)
-    // must show as an error, not green success.
+    // Snackbar severity for validation feedback — a failed submit must show as an
+    // error, not green success.
     const [validationSeverity, setValidationSeverity] = useState<'success' | 'error'>('success');
     const notifyValidation = useCallback((msg: string, severity: 'success' | 'error' = 'success') => {
         setValidationMsg(msg);
@@ -254,6 +252,8 @@ function ReaderDocumentPage() {
     // off, plain editable textarea, drop-down ReaderEditToolbar) seeded with the
     // current content. Title/description editing has been dropped from this page
     // for now (still available from the list row's Edit dialog in ReaderPage.tsx).
+    // Not offered for validation docs at all (docs/DATA_VALIDATION_SYSTEM.md) — they
+    // are read-only, reviewed via Approve/Flag only.
     const handleEdit = useCallback(() => {
         if (!text) return;
         setEditSaveError(null);
@@ -268,29 +268,6 @@ function ReaderDocumentPage() {
     const handleSaveEdit = useCallback(async () => {
         if (!text) return;
 
-        // Format guard + whitespace lock — ONLY for validation documents
-        // (docs/DATA_VALIDATION_SYSTEM.md). A validation doc's body is a fixed
-        // `<fieldName>:\n<JSON>` structure; the validator may edit only the JSON
-        // values. Canonicalize the draft: this both rejects a broken format (null
-        // result) and resets every non-value character (headers, separators,
-        // indentation, stray whitespace) so a whitespace-only edit round-trips to the
-        // original and never triggers a spurious flag. Ordinary reader documents have
-        // no `validationField` and save their draft verbatim.
-        let contentToSave = contentEditor.draft;
-        if (text.validationField) {
-            const canonical = canonicalizeValidationBody(contentEditor.draft, text.validationField);
-            // Block a broken format AND any JSON key-name change (a renamed key stays
-            // valid JSON but the server would no longer recognize the field).
-            if (
-                canonical === null ||
-                !isValidationShapePreserved(contentEditor.draft, text.validationOriginalContent ?? '', text.validationField)
-            ) {
-                setEditSaveError(VALIDATION_FORMAT_MESSAGE);
-                return;
-            }
-            contentToSave = canonical;
-        }
-
         setSavingEdit(true);
         setEditSaveError(null);
         try {
@@ -298,7 +275,7 @@ function ReaderDocumentPage() {
                 method: 'PUT',
                 headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
                 credentials: 'include',
-                body: JSON.stringify({ content: contentToSave }),
+                body: JSON.stringify({ content: contentEditor.draft }),
             });
             if (!response.ok) {
                 const data = await response.json().catch(() => null);
@@ -321,58 +298,31 @@ function ReaderDocumentPage() {
         setDeleteDialogOpen(true);
     }, []);
 
-    // After Edit saves (or a validation Approve/Flag/Revert PUTs new content),
-    // refetch this document and incrementally reprocess only the newly added
-    // tokens — the same incremental path the old in-page ReaderPage used.
-    const refreshText = useCallback(async () => {
-        if (!text) return;
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/texts/${text.id}`, {
-                headers: { 'Authorization': `Bearer ${token}` },
-                credentials: 'include',
-            });
-            if (!response.ok) return;
-            const updated = await response.json();
-            await vocabularyProcessing.processDocumentVocabularyIncremental(text, updated);
-            setText(updated);
-        } catch (err) {
-            console.error('Error refreshing document:', err);
-        }
-    }, [text, token, vocabularyProcessing]);
-
     const handleDeleteSuccess = useCallback(() => {
         navigate("/reader");
     }, [navigate]);
 
     // ── Data-validation actions (validators only; docs/DATA_VALIDATION_SYSTEM.md) ──
     // Note: the "download a new entry to validate" action lives ONLY on the reader
-    // list page (ReaderPage.tsx) — not here. This page only Approves/Flags/Reverts
-    // the already-open validation document.
-    const handleApproveOrFlag = useCallback(async () => {
+    // list page (ReaderPage.tsx) — not here. This page only Approves/Flags the
+    // already-open validation document. Validation docs are read-only (no Edit), so
+    // Approve always copies exactly what's displayed — the server does the copying,
+    // no content is sent from the client — and Flag sends no content at all.
+    const submitValidation = useCallback(async (action: 'approve' | 'flag') => {
         if (!text?.validationEntryId) return;
-        const changed = (text.content || '').trim() !== (text.validationOriginalContent || '').trim();
-        const action = changed ? 'flag' : 'approve';
         try {
             const response = await fetch(`${API_BASE_URL}/api/validation/${text.id}/submit`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
                 credentials: 'include',
-                body: JSON.stringify({ action, content: text.content }),
+                body: JSON.stringify({ action }),
             });
             const data = await response.json();
             if (!response.ok) {
-                // The server rejects a submission whose edits broke the fixed
-                // `<field>:\n<JSON>` format (code ERR_VALIDATION_FORMAT_CHANGED). Give
-                // the validator an explicit, format-specific instruction to Revert and
-                // start over rather than a generic failure message.
-                if (data?.code === 'ERR_VALIDATION_FORMAT_CHANGED') {
-                    notifyValidation(VALIDATION_FORMAT_MESSAGE, 'error');
-                } else {
-                    notifyValidation(data?.error || 'Failed to submit validation', 'error');
-                }
+                notifyValidation(data?.error || 'Failed to submit validation', 'error');
                 return;
             }
-            notifyValidation(changed ? 'Flagged with your suggestion — thank you!' : 'Approved — thank you!', 'success');
+            notifyValidation(action === 'flag' ? 'Flagged — thank you!' : 'Approved — thank you!', 'success');
             navigate("/reader"); // the entry can't be re-validated; return to the list
         } catch (err) {
             console.error('Error submitting validation:', err);
@@ -380,26 +330,8 @@ function ReaderDocumentPage() {
         }
     }, [text, token, navigate, notifyValidation]);
 
-    const handleRevertValidation = useCallback(async () => {
-        if (!text || text.validationOriginalContent == null) return;
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/texts/${text.id}`, {
-                method: 'PUT',
-                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({ content: text.validationOriginalContent }),
-            });
-            if (!response.ok) {
-                notifyValidation('Failed to revert', 'error');
-                return;
-            }
-            await refreshText();
-            notifyValidation('Reverted to the original', 'success');
-        } catch (err) {
-            console.error('Error reverting validation doc:', err);
-            notifyValidation('Failed to revert', 'error');
-        }
-    }, [text, token, refreshText, notifyValidation]);
+    const handleApprove = useCallback(() => submitValidation('approve'), [submitValidation]);
+    const handleFlag = useCallback(() => submitValidation('flag'), [submitValidation]);
 
     const headerRightContent = isAuthenticated ? (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
@@ -407,15 +339,10 @@ function ReaderDocumentPage() {
         </Box>
     ) : undefined;
 
-    // Validation-doc header actions. A validation document links to a dictionary
-    // entry (migration 104); when its body has been edited away from the server's
-    // original, Approve becomes "Flag with suggestion" (the edit is the suggestion),
-    // and Revert restores the original. These live in the page header alongside
-    // Edit/Delete — NOT in TextHeader's in-content toolbar — rendered as icon
-    // buttons to match the header's existing action affordances.
+    // Validation docs (migration 104) are read-only — no Edit/Delete-by-editing, just
+    // Approve/Flag in the page header alongside the generic Delete (to abandon a
+    // downloaded entry without acting on it).
     const isValidationDoc = !!text?.validationEntryId;
-    const isValidationChanged =
-        (text?.content || '').trim() !== (text?.validationOriginalContent || '').trim();
 
     // Edit/Delete icon buttons live in the header's right slot (next to the back
     // arrow) rather than in TextHeader's toolbar, like every other node page's
@@ -428,62 +355,49 @@ function ReaderDocumentPage() {
             {!contentEditor.editMode && isValidationDoc && (
                 <>
                     <IconButton
-                        className="reader-page-text-header-revert-button"
-                        onClick={handleRevertValidation}
+                        className="reader-page-text-header-flag-button"
+                        onClick={handleFlag}
                         size="small"
-                        disabled={!isValidationChanged}
-                        aria-label="Revert to the original"
-                        title="Revert to the original"
+                        color="warning"
+                        aria-label="Flag"
+                        title="Flag"
                     >
-                        <UndoIcon fontSize="small" />
+                        <FlagIcon fontSize="small" />
                     </IconButton>
-                    {isValidationChanged ? (
-                        <IconButton
-                            className="reader-page-text-header-flag-button"
-                            onClick={handleApproveOrFlag}
-                            size="small"
-                            color="warning"
-                            aria-label="Flag with suggestion"
-                            title="Flag with suggestion"
-                        >
-                            <FlagIcon fontSize="small" />
-                        </IconButton>
-                    ) : (
-                        <IconButton
-                            className="reader-page-text-header-approve-button"
-                            onClick={handleApproveOrFlag}
-                            size="small"
-                            color="success"
-                            aria-label="Approve"
-                            title="Approve"
-                        >
-                            <CheckCircleIcon fontSize="small" />
-                        </IconButton>
-                    )}
+                    <IconButton
+                        className="reader-page-text-header-approve-button"
+                        onClick={handleApprove}
+                        size="small"
+                        color="success"
+                        aria-label="Approve"
+                        title="Approve"
+                    >
+                        <CheckCircleIcon fontSize="small" />
+                    </IconButton>
                 </>
             )}
+            {!contentEditor.editMode && !isValidationDoc && (
+                <IconButton
+                    className="reader-page-text-header-edit-button"
+                    onClick={handleEdit}
+                    size="small"
+                    aria-label="Edit document"
+                    title="Edit document"
+                >
+                    <EditIcon fontSize="small" />
+                </IconButton>
+            )}
             {!contentEditor.editMode && (
-                <>
-                    <IconButton
-                        className="reader-page-text-header-edit-button"
-                        onClick={handleEdit}
-                        size="small"
-                        aria-label="Edit document"
-                        title="Edit document"
-                    >
-                        <EditIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton
-                        className="reader-page-text-header-delete-button"
-                        onClick={handleDelete}
-                        size="small"
-                        color="error"
-                        aria-label="Delete document"
-                        title="Delete document"
-                    >
-                        <DeleteIcon fontSize="small" />
-                    </IconButton>
-                </>
+                <IconButton
+                    className="reader-page-text-header-delete-button"
+                    onClick={handleDelete}
+                    size="small"
+                    color="error"
+                    aria-label="Delete document"
+                    title="Delete document"
+                >
+                    <DeleteIcon fontSize="small" />
+                </IconButton>
             )}
             {headerRightContent}
         </Box>

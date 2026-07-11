@@ -38,19 +38,18 @@ export class TextService {
 
     // id and createdAt are filled by Postgres defaults (uuid_generate_v4, now()).
     // The validation* columns are set only when ValidationService composes a
-    // validation document; ordinary creation passes null for all four.
+    // validation document; ordinary creation passes null for all three.
     const result = await dbManager.executeQuery<Text>(async (client) => {
       return await client.query(
         `INSERT INTO texts ("userId", title, description, content, language, "characterCount", "isUserCreated",
-                            "validationEntryId", "validationLanguage", "validationField", "validationOriginalContent")
-         VALUES ($1, $2, $3, $4, $5, $6, true, $7, $8, $9, $10)
+                            "validationEntryId", "validationLanguage", "validationField")
+         VALUES ($1, $2, $3, $4, $5, $6, true, $7, $8, $9)
          RETURNING *`,
         [
           userId, textData.title.trim(), safeDescription, safeContent, language, characterCount,
           textData.validationEntryId ?? null,
           textData.validationLanguage ?? null,
           textData.validationField ?? null,
-          textData.validationOriginalContent ?? null,
         ]
       );
     });

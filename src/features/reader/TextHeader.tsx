@@ -8,7 +8,7 @@ interface TextHeaderProps {
     vocabError: string | null;
     formatDate: (dateString: string) => string;
     // No back/edit/delete handlers here: back lives in the ReaderDocumentSurface
-    // header's left arrow, and Edit/Delete — plus the validation Approve/Flag/Revert
+    // header's left arrow, and Edit/Delete — plus the validation Approve/Flag
     // actions — are icon buttons in that same header's right slot
     // (docs/LEAF_NODE_PAGES.md) — see ReaderDocumentPage's docHeaderRightContent.
 }

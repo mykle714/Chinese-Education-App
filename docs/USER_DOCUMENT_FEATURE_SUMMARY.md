@@ -137,19 +137,18 @@ texts (
     language VARCHAR(10) NOT NULL DEFAULT 'zh',
     characterCount INTEGER NOT NULL,
     isUserCreated BOOLEAN NOT NULL DEFAULT false,
-    -- Validation-doc linkage (migration 104; NULL ⇒ ordinary user document).
+    -- Validation-doc linkage (migration 104/106; NULL ⇒ ordinary user document).
     -- See docs/DATA_VALIDATION_SYSTEM.md.
     validationEntryId UUID,
     validationLanguage VARCHAR(10),
     validationField VARCHAR(50),
-    validationOriginalContent TEXT,
     createdAt TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
 )
 ```
 
 > **Validation documents** reuse this table: `ValidationService` composes a
-> "Validate - <word1>" document with the four `validation*` columns set, and the
-> Reader shows Approve/Flag/Revert actions for it. See
+> read-only "Validate - <word1>" document with the three `validation*` columns
+> set, and the Reader shows Approve/Flag actions for it. See
 > [DATA_VALIDATION_SYSTEM.md](./DATA_VALIDATION_SYSTEM.md).
 
 ## Next Steps

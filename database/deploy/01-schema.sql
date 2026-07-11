@@ -78,7 +78,6 @@ CREATE TABLE IF NOT EXISTS texts (
     "validationEntryId"         INTEGER,
     "validationLanguage"        VARCHAR(10),
     "validationField"           VARCHAR(50),
-    "validationOriginalContent" TEXT,
     "createdAt"     TIMESTAMP DEFAULT NOW()
 );
 
@@ -99,7 +98,7 @@ CREATE TABLE IF NOT EXISTS validations (
     "validatorUserId" UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     "validatorName"   TEXT         NOT NULL,
     action            VARCHAR(20)  NOT NULL CHECK (action IN ('approve','flag')),
-    content           TEXT         NOT NULL,
+    content           TEXT,        -- approved data version (copied verbatim); NULL for flag
     "createdAt"       TIMESTAMP    DEFAULT NOW(),
     CONSTRAINT validations_unique_per_user UNIQUE ("entryId", language, field, "validatorUserId")
 );

@@ -11,6 +11,7 @@ import { segmentPinyin } from '../../utils/pinyinSegment.js';
 import { dictTableForLanguage } from '../shared/dictTable.js';
 import { AiDictionaryCacheRow, WordComparisonRow } from '../../types/index.js';
 import { sanitizeDocumentContent } from '../../utils/sanitizeContent.js';
+import { composeDefinitionsBody, composeExampleSentenceBody } from '../../utils/validationBodyFormat.js';
 
 // Standard column list for all dictionary SELECT queries
 const DICTIONARY_COLUMNS = `
@@ -718,7 +719,7 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
     if (words.length === 0) return approvedByWord;
 
     const table = dictTableForLanguage(language);
-    const result = await this.dbManager.executeQuery<{ word1: string; content: string }>(
+    const result = await this.dbManager.executeQuery<{ word1: string; content: string | null }>(
       async (client) =>
         client.query(
           `SELECT d.word1, val.content
@@ -733,15 +734,16 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
     );
 
     for (const row of result.recordset) {
+      if (row.content == null) continue; // flags carry no content
       let contents = approvedByWord.get(row.word1);
       if (!contents) {
         contents = new Set<string>();
         approvedByWord.set(row.word1, contents);
       }
-      // The stored body is `exampleSentenceN:\n<pretty-printed JSON>` (ValidationService
-      // composeBody/rawField). Strip the label line here so the per-sentence match is
-      // index-agnostic — a reorder of exampleSentences doesn't orphan an exact approval.
-      contents.add(row.content.slice(row.content.indexOf('\n') + 1));
+      // No label/index in the pretty body (composeExampleSentenceBody), so the
+      // per-sentence match is naturally index-agnostic — a reorder of
+      // exampleSentences doesn't orphan an exact approval.
+      contents.add(row.content);
     }
     return approvedByWord;
   }
@@ -751,31 +753,22 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
    * current det data — an approval recorded before the sentence was regenerated,
    * re-tagged, or edited must not carry over to data no human reviewed.
    *
-   * The comparison mirrors ValidationService.composeBody/rawField for
-   * exampleSentenceN: the composed body is the label line (stripped at fetch time)
-   * plus `JSON.stringify(<raw det sentence object>, null, 2)`. Both sides read the
-   * same jsonb value from the same det row, so Postgres's canonical jsonb key order
-   * makes the serialization deterministic. The sentence passed in must be the
-   * UN-enriched object (before `_segments`/`segmentMetadata`/`humanApproved` are
-   * spread on), exactly as stored in the det column.
-   *
-   * The current body is run through sanitizeDocumentContent (idempotent — it only
-   * strips control chars and normalizes line endings) to match how the approved
-   * content was stored, since validations.content passed through the same sanitizer
-   * on its way into the table.
+   * The comparison rebuilds `composeExampleSentenceBody` (the same formatter
+   * ValidationService uses to compose the doc a validator reads) from the
+   * sentence's CURRENT `foreignText`/`english` — the only two fields the validator
+   * ever sees or approves. The sentence passed in must be the UN-enriched object
+   * (before `_segments`/`segmentMetadata`/`humanApproved` are spread on), exactly
+   * as stored in the det column.
    */
   private isSentenceHumanApproved(
     approvedContents: Set<string> | undefined,
     sentence: Record<string, unknown>
   ): boolean {
     if (!approvedContents || approvedContents.size === 0) return false;
-    // Defensively drop the runtime-only enrichment keys. They are appended by
-    // spread AFTER the stored keys, so removing them restores the det column's
-    // exact serialization even if a sentence arrives already enriched.
-    const { _segments, segmentMetadata, humanApproved, ...rawSentence } =
-      sentence ?? {};
-    void _segments; void segmentMetadata; void humanApproved;
-    const body = JSON.stringify(rawSentence, null, 2);
+    const body = composeExampleSentenceBody({
+      foreignText: sentence?.foreignText,
+      english: sentence?.english,
+    });
     return approvedContents.has(sanitizeDocumentContent(body));
   }
 
@@ -805,8 +798,8 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
     const rawResult = await this.dbManager.executeQuery<{
       word1: string;
       partsOfSpeech: string[] | null;
-      definitions: unknown;
-      longDefinition: unknown;
+      definitions: string[] | null;
+      longDefinition: string | null;
     }>(
       async (client) =>
         client.query(
@@ -841,7 +834,7 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
     if (words.length === 0) return approvedByWord;
 
     const table = dictTableForLanguage(language);
-    const result = await this.dbManager.executeQuery<{ word1: string; content: string }>(
+    const result = await this.dbManager.executeQuery<{ word1: string; content: string | null }>(
       async (client) =>
         client.query(
           `SELECT d.word1, val.content
@@ -856,6 +849,7 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
     );
 
     for (const row of result.recordset) {
+      if (row.content == null) continue; // flags carry no content
       let contents = approvedByWord.get(row.word1);
       if (!contents) {
         contents = new Set<string>();
@@ -867,22 +861,17 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
   }
 
   /**
-   * Rebuilds the exact 'definitions' composeBody output (ValidationService.composeBody
-   * + rawField, three blocks joined by blank lines) from the CURRENT raw det columns
-   * and compares against the stored approval content, run through the same
-   * (idempotent) sanitizeDocumentContent used on the write path.
+   * Rebuilds the exact 'definitions' pretty body (composeDefinitionsBody — the same
+   * formatter ValidationService uses to compose the doc a validator reads) from the
+   * CURRENT raw det columns and compares against the stored approval content, run
+   * through the same (idempotent) sanitizeDocumentContent used on the write path.
    */
   private isDefinitionsHumanApproved(
     approvedContents: Set<string> | undefined,
-    raw: { partsOfSpeech: string[] | null; definitions: unknown; longDefinition: unknown }
+    raw: { partsOfSpeech: string[] | null; definitions: string[] | null; longDefinition: string | null }
   ): boolean {
     if (!approvedContents || approvedContents.size === 0) return false;
-    const rawField = (name: string, value: unknown) => `${name}:\n${JSON.stringify(value ?? null, null, 2)}`;
-    const body = [
-      rawField('partsOfSpeech', raw.partsOfSpeech),
-      rawField('definitions', raw.definitions),
-      rawField('longDefinition', raw.longDefinition),
-    ].join('\n\n');
+    const body = composeDefinitionsBody(raw);
     return approvedContents.has(sanitizeDocumentContent(body));
   }
 

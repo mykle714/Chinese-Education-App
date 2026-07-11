@@ -1,11 +1,15 @@
 # Data Validation System
 
 Human-in-the-loop review of AI-enriched dictionary fields. Trusted "validator"
-users download an auto-composed, **read-only** Reader document for **one field of
-one discoverable entry**, then **Approve** it or **Flag** it. There is no editing:
-Approve copies the document's displayed content verbatim; Flag records only the
-flag itself, no content. Outcomes go to a dedicated `validations` table so future
-backfills never clobber human-reviewed fields.
+users review **one field of one discoverable entry** and **Approve** or **Flag**
+it, via either of two paths: a **read-only Reader document** downloaded from a
+queue (`ValidationService.composeValidationDoc`/`submitValidation`), or **inline
+Approve/Flag buttons** rendered directly on the est/definition UI wherever the
+entry is already displayed (`ValidationService.submitEntryValidation`) — see
+"Inline Approve/Flag" below. Neither path supports editing: Approve always
+composes/copies the CURRENT data server-side (never trusts client content); Flag
+records only the flag itself, no content. Outcomes go to a dedicated `validations`
+table so future backfills never clobber human-reviewed fields.
 
 Introduced by **migration 104** (`database/migrations/104-add-validation-system.sql`),
 simplified by **migration 106** (`database/migrations/106-simplify-validator-content.sql`
@@ -126,7 +130,7 @@ below) so the two always agree on what a given det row's text looks like.
 
 ---
 
-## Frontend (Reader)
+## Frontend (Reader document queue)
 
 - **Download button**: a `FactCheck` `IconButton`
   (`reader-page-validate-download-button`) in the header `rightContent` of the
@@ -156,6 +160,50 @@ below) so the two always agree on what a given det row's text looks like.
   purely the generic reader-document editor and is never opened for a validation
   doc. `TextHeader.tsx` renders no validation actions — it is purely the
   title/description/meta block.
+
+---
+
+## Inline Approve/Flag (no document)
+
+A validator doesn't have to go through the Reader queue at all: small Approve/Flag
+icon buttons render directly on the est (example sentences) and long-definition
+surfaces, wherever a validator is already looking at an entry — flashcard eip tabs,
+the cdp, the dictionary card detail. Hidden entirely for non-validators.
+
+- **`src/components/ValidateFlagButtons.tsx`** — the shared button pair (styled
+  like `SpeakerButton`: small `IconButton`s, `stopPropagation` so a tap doesn't
+  bubble into an enclosing flip/drag/segment handler). Props: `word1`, `language`,
+  `field` (a `ValidationField`). Renders `null` when `!user?.isValidator`. On click,
+  POSTs `{ word1, language, field, action }` to `/api/validation/entry-submit`
+  (`apiPost`, `src/api/http.ts` — cookie auth, no manual token plumbing) and locks
+  itself (checkmark/flag color, disabled) on success **or** on a 400 (almost always
+  "already validated" — e.g. a double-tap, or already recorded via the Reader
+  queue). This lock is local UI state only, reset on remount/reload — there is no
+  "have I already validated this?" precheck; a stale button just 400s harmlessly on
+  retry, which the component treats the same as success.
+- **est**: `ExampleSentenceList.tsx` renders one `ValidateFlagButtons` per sentence
+  (top-left corner, mirroring the speaker button's top-right), `field` =
+  `exampleSentence${index}` for `index < 3` (the field model's only 3 slots) —
+  `EXAMPLE_SENTENCE_FIELDS` lookup array. Needs `vocabWord` (word1) + `language`,
+  both already-existing props of this component; sentences past index 2, or a list
+  rendered without those props, get no buttons.
+- **Long definition**: `LongDefinitionDisplay.tsx` takes new optional `word1`/
+  `language` props (`field` is always `'definitions'`) and renders one
+  `ValidateFlagButtons` top-right, inside whichever wrapper the content ends up in
+  (`finalize`/`wrapAiGenerated` — adds `position: relative` only when needed, so
+  existing callers that pass neither prop render byte-identical to before). Wired
+  from `VocabCardDetailBody.tsx` and `InfoCardPanelBody.tsx` (both pass
+  `entry.entryKey`/`entry.language`). **Not** wired from `CompareTabBody.tsx` — its
+  `LongDefinitionDisplay` renders the AI word-comparison paragraph
+  (docs/WORD_COMPARE_FEATURE.md), which has no backing det field at all.
+- **`ValidationService.submitEntryValidation`** (server) — the method behind
+  `/api/validation/entry-submit`: looks up the det row fresh by `(word1, language,
+  discoverable=TRUE)` (the client never knows/sends the det surrogate id), checks
+  the field is populated (`isFieldPopulated`, mirrors `composeValidationDoc`'s SQL
+  eligibility check), then inserts into `validations` exactly like
+  `submitValidation` does — same unique constraint, same `content = approve ?
+  composeBody(...) : null`. No `texts` row is created or touched by this path at
+  all.
 
 ---
 
@@ -285,6 +333,10 @@ re-run over discoverable rows.
 - Reader UI: `src/features/reader/ReaderPage.tsx`, `src/features/reader/ReaderDocumentPage.tsx`,
   `src/features/reader/TextHeader.tsx`, `src/features/reader/TextSidebar.tsx`,
   `src/features/reader/validationApi.ts`
+- Inline Approve/Flag UI: `src/components/ValidateFlagButtons.tsx`,
+  `src/api/http.ts` (`apiPost`), wired from `src/features/flashcards/ExampleSentenceList.tsx`
+  and `src/components/LongDefinitionDisplay.tsx` (via `src/features/flashcards/VocabCardDetailBody.tsx` +
+  `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx`)
 - Backfill guard: `server/scripts/backfill/run-log.js` (`validatedClause`)
 - Read-path surfacing: `server/dal/implementations/DictionaryDAL.ts`
   (`fetchApprovedSentenceContents`/`isSentenceHumanApproved` for `humanApproved`;

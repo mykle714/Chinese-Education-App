@@ -18,10 +18,11 @@ function collapseBlankLines(text: string): string {
 function prepareText(text: string): string {
   return stripParentheses(collapseBlankLines(text));
 }
-import type { LongDefinitionPart } from "../types";
+import type { LongDefinitionPart, Language } from "../types";
 import SegmentedSentenceDisplay from "./SegmentedSentenceDisplay";
 import { aiGeneratedSurfaceSx } from "../theme/aiGeneratedStyling";
 import { AiGeneratedBadge } from "./AiGeneratedBadge";
+import ValidateFlagButtons from "./ValidateFlagButtons";
 
 interface LongDefinitionDisplayProps {
   // Raw long-definition string — used for the plain-text fallback when parts are absent.
@@ -46,6 +47,12 @@ interface LongDefinitionDisplayProps {
   // est's unapproved-sentence styling) around the definition text. See
   // docs/DATA_VALIDATION_SYSTEM.md.
   aiGenerated?: boolean;
+  // Entry identity for the inline validator Approve/Flag buttons (field is always
+  // 'definitions' here — see docs/DATA_VALIDATION_SYSTEM.md). Both must be provided
+  // to show the buttons; omit for surfaces with no single backing det entry (e.g.
+  // CompareTabBody's AI comparison paragraph, which has no validation field at all).
+  word1?: string;
+  language?: Language;
 }
 
 /**
@@ -67,7 +74,37 @@ const LongDefinitionDisplay: React.FC<LongDefinitionDisplayProps> = ({
   onSegmentOpen,
   sx,
   aiGenerated = false,
+  word1,
+  language,
 }) => {
+  // Absolutely-positioned inline validator buttons (renders nothing for
+  // non-validators) — laid out by `finalize` below inside whichever wrapper the
+  // content ends up in, top-right corner (mirrors the est speaker button's corner
+  // placement, opposite side of ExampleSentenceList's validate buttons since this
+  // is a single block rather than a per-sentence list).
+  const validateButtonsNode = word1 && language ? (
+    <Box sx={{ position: "absolute", top: 0, right: 0, zIndex: 2, padding: "4px" }}>
+      <ValidateFlagButtons word1={word1} language={language} field="definitions" />
+    </Box>
+  ) : null;
+
+  // Wraps rendered content in whatever's needed to host the validate buttons +/or
+  // the AI-generated treatment, without adding an extra DOM wrapper when neither
+  // applies (i.e. existing callers that pass neither aiGenerated nor word1/language
+  // keep rendering exactly as before).
+  const finalize = (content: React.ReactNode): React.ReactElement => {
+    if (aiGenerated) return wrapAiGenerated(content, validateButtonsNode);
+    if (validateButtonsNode) {
+      return (
+        <Box className="long-definition-display--validatable" sx={{ position: "relative" }}>
+          {validateButtonsNode}
+          {content}
+        </Box>
+      );
+    }
+    return <>{content}</>;
+  };
+
   // Fallback: no parts (e.g. enrichment didn't run, or pure-English definition that the
   // server still left unsplit) → render the original plain, parenthetical-stripped text.
   if (!longDefinitionParts?.length) {
@@ -81,7 +118,7 @@ const LongDefinitionDisplay: React.FC<LongDefinitionDisplayProps> = ({
         {prepareText(longDefinition)}
       </Typography>
     );
-    return aiGenerated ? wrapAiGenerated(text) : text;
+    return finalize(text);
   }
 
   // Parts path: a block paragraph whose inline children flow together. Chinese runs are
@@ -145,19 +182,22 @@ const LongDefinitionDisplay: React.FC<LongDefinitionDisplayProps> = ({
       })}
     </Typography>
   );
-  return aiGenerated ? wrapAiGenerated(parts) : parts;
+  return finalize(parts);
 };
 
 // Wraps the rendered definition in the shared AI-generated surface (orange
-// border/tint) plus badge. A dedicated helper (rather than inlining twice) so the
-// two render branches above stay visually identical when unapproved.
-function wrapAiGenerated(content: React.ReactNode): React.ReactElement {
+// border/tint) plus badge, and (when given) the absolutely-positioned inline
+// validator buttons — needs position:relative to host those. A dedicated helper
+// (rather than inlining twice) so the two render branches above stay visually
+// identical when unapproved.
+function wrapAiGenerated(content: React.ReactNode, validateButtonsNode?: React.ReactNode): React.ReactElement {
   return (
     <Box
       className="long-definition-display--ai-generated"
-      sx={{ ...aiGeneratedSurfaceSx, borderRadius: "10px", padding: "10px 12px", display: "flex", flexDirection: "column", gap: "6px" }}
+      sx={{ ...aiGeneratedSurfaceSx, borderRadius: "10px", padding: "10px 12px", display: "flex", flexDirection: "column", gap: "6px", position: "relative" }}
     >
       <AiGeneratedBadge className="long-definition-ai-badge" label="AI GENERATED" />
+      {validateButtonsNode}
       {content}
     </Box>
   );

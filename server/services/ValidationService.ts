@@ -14,17 +14,21 @@ import { composeDefinitionsBody, composeExampleSentenceBody } from '../utils/val
  * Validation Service — business logic for the human-in-the-loop data-validation
  * feature (docs/DATA_VALIDATION_SYSTEM.md).
  *
- * LAYER: service layer. A "validator" user (users.isValidator) downloads an
- * auto-composed Reader document for ONE field of ONE discoverable entry, reads its
- * pretty-printed body, then Approves or Flags it. There is no editing: Approve
- * copies the doc's content verbatim (the exact text the validator was shown) into
- * `validations`, and Flag records only the flag with no content. Records are
- * written to the dedicated `validations` table — NOT to the det tables — because
- * dictionaryentries_{zh,es} are TRUNCATE+restored on every prod data deploy, which
- * would wipe a review column. `validations` is keyed by the det row id (stable
- * across data deploys) + language, so it survives deploys and drives the backfill
- * guard. Each (user, entry, field) may be recorded at most once (enforced by the
- * `validations_unique_per_user` constraint).
+ * LAYER: service layer. A "validator" user (users.isValidator) reviews ONE field of
+ * ONE discoverable entry and Approves or Flags it, via either of two paths:
+ *   - the Reader document queue (composeValidationDoc + submitValidation) — download
+ *     a doc, read its pretty-printed body, act on it later; or
+ *   - the inline path (submitEntryValidation) — Approve/Flag buttons rendered right
+ *     next to the entry's example sentence / long definition wherever a validator is
+ *     already looking at it, no document involved.
+ * There is no editing in either path: Approve always composes/copies the CURRENT
+ * data server-side (never trusts client content), and Flag records only the flag
+ * with no content. Records are written to the dedicated `validations` table — NOT to
+ * the det tables — because dictionaryentries_{zh,es} are TRUNCATE+restored on every
+ * prod data deploy, which would wipe a review column. `validations` is keyed by the
+ * det row id (stable across data deploys) + language, so it survives deploys and
+ * drives the backfill guard. Each (user, entry, field) may be recorded at most once
+ * (enforced by the `validations_unique_per_user` constraint) — shared by both paths.
  *
  * Depends on: TextService.createText (persists the text's validation* linkage),
  * validationBodyFormat (shared pretty-text composer, also used by DictionaryDAL's
@@ -212,6 +216,73 @@ export class ValidationService {
     return result.recordset[0];
   }
 
+  /**
+   * Record an approval or flag directly against a dictionary entry's field, with no
+   * downloaded Reader document involved — the inline Approve/Flag buttons rendered
+   * next to an example sentence / long definition wherever a validator is already
+   * looking at the entry (est, definition display). Looks up the det row fresh by
+   * (word1, language) so the client never needs to know the det surrogate id, then
+   * approves with a freshly-composed body (never the client's) or flags with none.
+   *
+   * @throws ValidationError if not a validator, the field isn't populated, or already recorded.
+   * @throws NotFoundError   if no discoverable entry matches (word1, language).
+   */
+  async submitEntryValidation(
+    userId: string,
+    word1: string,
+    language: Language,
+    field: ValidationField,
+    action: 'approve' | 'flag'
+  ): Promise<ValidationRecord> {
+    const user = await this.userDAL.findById(userId);
+    if (!user) throw new NotFoundError('User not found');
+    if (!user.isValidator) {
+      throw new ValidationError('Only validators can submit validations');
+    }
+
+    const table = this.tableFor(language);
+    const result = await dbManager.executeQuery<DetFieldRow>(async (client) =>
+      client.query(
+        `SELECT id, word1, pronunciation, "partsOfSpeech", definitions, "longDefinition", "exampleSentences"
+           FROM ${table} WHERE word1 = $1 AND language = $2 AND discoverable = TRUE`,
+        [word1, language]
+      )
+    );
+    const entry = result.recordset[0];
+    if (!entry) throw new NotFoundError('Entry not found');
+    if (!this.isFieldPopulated(entry, field)) {
+      throw new ValidationError('This field has no data to validate');
+    }
+
+    // Approve composes fresh from the CURRENT det row (never trusts client content);
+    // flag stores nothing.
+    const content = action === 'approve' ? this.composeBody(entry, field) : null;
+
+    const insertResult = await dbManager.executeQuery<ValidationRecord>(async (client) =>
+      client.query(
+        `INSERT INTO validations
+           ("entryId", language, field, "validatorUserId", "validatorName", action, content)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT ON CONSTRAINT validations_unique_per_user DO NOTHING
+         RETURNING id, "entryId", language, field, "validatorUserId", "validatorName", action, content, "createdAt"`,
+        [entry.id, language, field, userId, user.name, action, content]
+      )
+    );
+
+    if (insertResult.recordset.length === 0) {
+      throw new ValidationError('You have already validated this field for this entry');
+    }
+
+    console.log(`[VALIDATION-SERVICE] ✅ Recorded inline ${action}:`, {
+      userId: `${userId.substring(0, 8)}...`,
+      entryId: entry.id,
+      language,
+      field,
+    });
+
+    return insertResult.recordset[0];
+  }
+
   // ── helpers ────────────────────────────────────────────────────────────────
 
   private tableFor(language: Language): string {
@@ -252,5 +323,14 @@ export class ValidationService {
     return composeExampleSentenceBody(
       sentence ? { foreignText: sentence.foreignText, english: sentence.english } : null
     );
+  }
+
+  /** Mirrors composeValidationDoc's SQL eligibility check, applied to an already-loaded row. */
+  private isFieldPopulated(entry: DetFieldRow, field: ValidationField): boolean {
+    if (field === 'definitions') {
+      return !!entry.partsOfSpeech?.length && !!entry.definitions?.length && !!entry.longDefinition;
+    }
+    const index = Number(field.slice('exampleSentence'.length));
+    return (entry.exampleSentences?.length ?? 0) > index;
   }
 }

@@ -396,6 +396,8 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                             showPinyinColor={showPinyinColor}
                             onSegmentOpen={onExampleSegmentClick}
                             aiGenerated={!currentEntry?.definitionsApproved}
+                            word1={currentEntry?.entryKey}
+                            language={currentEntry?.language}
                             sx={{
                                 fontSize: SIZE.body,
                                 color: fc.onSurface,

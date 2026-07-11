@@ -22,4 +22,11 @@ router.post('/api/validation/:textId/submit', authenticateToken, async (req, res
   await validationController.submitValidation(req, res);
 });
 
+// Submit an approval or flag directly against a dictionary entry's field — the
+// inline Approve/Flag buttons on the est/definition UI, no document involved.
+// @ts-ignore
+router.post('/api/validation/entry-submit', authenticateToken, async (req, res) => {
+  await validationController.submitEntryValidation(req, res);
+});
+
 export default router;

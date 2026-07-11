@@ -1,16 +1,24 @@
 import { Box, Typography, useTheme } from "@mui/material";
 import SegmentedSentenceDisplay from "../../components/SegmentedSentenceDisplay";
 import { SpeakerButton } from "./FlashcardsLearnPage/FlashCardSection";
+import ValidateFlagButtons from "../../components/ValidateFlagButtons";
 import { buildSentencePronunciation } from "./FlashcardsLearnPage/sentencePronunciation";
 import { renderEnglishWithVocabUnderline } from "./exampleSentenceText";
 import { FC_FONT } from "./FlashcardsLearnPage/constants";
 import { SIZE, LEADING } from "../../theme/scale";
 import { aiGeneratedSurfaceSx } from "../../theme/aiGeneratedStyling";
 import { AiGeneratedBadge } from "../../components/AiGeneratedBadge";
-import type { VocabEntry, Language } from "../../types";
+import type { VocabEntry, Language, ValidationField } from "../../types";
 
 // One example sentence, as stored on a vet/det row.
 export type ExampleSentence = NonNullable<VocabEntry["exampleSentences"]>[number];
+
+// The validation system only covers the first 3 example sentences per entry
+// (docs/DATA_VALIDATION_SYSTEM.md field model) — index-to-field lookup for the
+// inline validator buttons; sentences beyond index 2 get no buttons.
+const EXAMPLE_SENTENCE_FIELDS: ValidationField[] = [
+  "exampleSentence0", "exampleSentence1", "exampleSentence2",
+];
 
 // THE single source of truth for the est (example-sentence tab) UI. Both
 // card-detail surfaces render this so they can never drift again:
@@ -93,6 +101,21 @@ const ExampleSentenceList: React.FC<ExampleSentenceListProps> = ({
               className="example-sentence-ai-badge"
               label="AI GENERATED"
             />
+          )}
+          {vocabWord && language && index < EXAMPLE_SENTENCE_FIELDS.length && (
+            // Mirrors the speaker button's absolute corner placement, opposite side.
+            // Validator-only (docs/DATA_VALIDATION_SYSTEM.md) — renders nothing for
+            // everyone else.
+            <Box
+              className="example-sentence-validate"
+              sx={{ position: "absolute", top: 0, left: 0, zIndex: 2, padding: "4px" }}
+            >
+              <ValidateFlagButtons
+                word1={vocabWord}
+                language={language}
+                field={EXAMPLE_SENTENCE_FIELDS[index]}
+              />
+            </Box>
           )}
           {onSpeakSentence && (
             // zIndex keeps the speaker above SegmentedSentenceDisplay's

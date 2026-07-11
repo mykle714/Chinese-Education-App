@@ -146,6 +146,8 @@ export const VocabCardSections: React.FC<VocabCardSectionsProps> = ({
                             showPinyin={showPinyin}
                             showPinyinColor={showPinyinColor}
                             aiGenerated={!entry.definitionsApproved}
+                            word1={entry.entryKey}
+                            language={entry.language}
                             sx={{ fontSize: SIZE.body, color: fc.onSurface, fontFamily: FC_FONT, lineHeight: 1.6 }}
                         />
                     )}

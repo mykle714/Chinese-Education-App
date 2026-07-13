@@ -1,4 +1,4 @@
-import React, { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
+import React, { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef } from "react";
 import { Box, IconButton, Typography, useTheme } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
@@ -28,6 +28,11 @@ import { SIZE, WEIGHT, LEADING, TRACKING } from "../../../theme/scale";
 import { SpeakerButton } from "./FlashCardSection";
 import ExampleSentenceList from "../ExampleSentenceList";
 import type { VocabEntry, BreakdownItem, UsedInItem } from "./types";
+
+// Resting track offset for a tab: the track is (N·100%) wide with N equal
+// panes, so showing tab k means shifting the track left by exactly k panes,
+// i.e. k·(100/N)% of the track's own width.
+const restingTransform = (tab: number) => `translateX(${(-tab * 100) / TAB_LABELS.length}%)`;
 
 export interface InfoCardPanelBodyProps {
     currentEntry: VocabEntry | null;
@@ -75,10 +80,11 @@ export interface InfoCardPanelBodyProps {
 }
 
 // Imperative handle exposing the two elements the bottom-sheet wrapper needs:
-// `root` is the gesture target (covers header + tabs + scroll body so swipes
+// `root` is the gesture target (covers header + tabs + tab body so swipes
 // anywhere on the panel feed the resize/scroll coupling), and `scroll` is the
-// inner overflow:auto container whose `scrollTop` decides between resize and
-// content scroll.
+// ACTIVE tab's pane — each tab pane is its own overflow:auto scroller — whose
+// `scrollTop` decides between resize and content scroll. Wrappers that cache
+// `scroll` must re-read it when the tab changes (see InfoCardSection bodyKey).
 export interface InfoCardPanelBodyHandle {
     root: HTMLDivElement | null;
     scroll: HTMLDivElement | null;
@@ -117,26 +123,23 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
     headerDragBind,
 }, ref) {
     const rootRef = useRef<HTMLDivElement | null>(null);
-    const scrollRef = useRef<HTMLDivElement | null>(null);
+    // Clipping viewport around the sliding tab track. NOT itself scrollable —
+    // each tab pane inside the track is its own vertical scroller.
+    const clipRef = useRef<HTMLDivElement | null>(null);
+    const trackRef = useRef<HTMLDivElement | null>(null);
+    // One scroll container per tab pane, indexed by tab. Every pane is always
+    // mounted (see the track JSX), so these are stable for the panel's life.
+    const paneRefs = useRef<(HTMLDivElement | null)[]>([]);
+    // Mirror of selectedTab readable from the mount-once gesture listeners and
+    // the imperative handle getter (both live outside the render cycle).
+    const selectedTabRef = useRef(selectedTab);
     useImperativeHandle(ref, () => ({
         get root() { return rootRef.current; },
-        get scroll() { return scrollRef.current; },
+        // The scrollable element is the ACTIVE tab's pane. SheetPanel captures
+        // this once per bodyKey, so InfoCardSection folds selectedTab into its
+        // bodyKey to re-bind the scroll/resize coupling on every tab change.
+        get scroll() { return paneRefs.current[selectedTabRef.current] ?? null; },
     }), []);
-
-    // First-frame measurement override: SheetPanel measures our offsetHeight in
-    // its own useLayoutEffect on mount and uses that as the open-animation
-    // target. To make the panel always open to the Definitions tab's natural
-    // height — regardless of which tab the user last left selected — we render
-    // the Definitions tab on the very first paint, then flip to the user's
-    // actual selectedTab on the next animation frame. SheetPanel pins the
-    // panel to the measured height via an inline style after that, so swapping
-    // tab content after measurement does not resize the panel.
-    const [hasMeasured, setHasMeasured] = useState(false);
-    useLayoutEffect(() => {
-        const raf = requestAnimationFrame(() => setHasMeasured(true));
-        return () => cancelAnimationFrame(raf);
-    }, []);
-    const effectiveTab = hasMeasured ? selectedTab : 0;
 
     const theme = useTheme();
     const fc = theme.palette.flashcard;
@@ -166,95 +169,81 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
 
     const tabIsEmpty = [!definitionTabHasContent, !examplesTabHasContent, !breakdownTabHasContent];
 
-    // --- Swipe-to-change-tab + tap-animation -------------------------------
-    // While `slide` is set, the scroll body renders TWO adjacent panes
-    // side-by-side (from/to) inside one flex track and animates the track
-    // between their resting positions — used both for a live finger-driven
-    // swipe and for a duration-based slide when a tab is tapped. When null,
-    // the fast path (single mounted pane) renders, matching prior behavior.
+    // --- Swipe-to-change-tab ------------------------------------------------
+    // All three tab panes are ALWAYS mounted side by side on a permanent
+    // (N·100%)-wide track (see the JSX below); changing tabs — by tap or by
+    // swipe — never mounts, unmounts, restyles, or resizes anything. It only
+    // moves the track's transform:
     //
-    // The track's LAYOUT is purely relative (width 200%, two 50% panes) so it
-    // can never disagree with the scroll box's true content width — earlier
-    // versions sized panes from a measured pixel width, and any moment that
-    // measurement was stale (scrollbar toggling when both panes mount,
-    // sub-pixel rounding, measuring mid-open-animation) the panes laid out a
-    // few px off and visibly snapped when the track unmounted. The position
-    // is expressed as `basePercent` (0 = showing the left pane, -50 = showing
-    // the right pane — a percentage of the 200%-wide track, i.e. one pane
-    // width) plus a live `offsetPx` finger delta, combined via CSS calc().
-    const [slide, setSlide] = useState<{ from: number; to: number; basePercent: number; offsetPx: number; animated: boolean } | null>(null);
-    // Measured content width of the scroll box, in px. Used ONLY for gesture
-    // math (commit threshold + drag clamp) — never for layout — so small
-    // measurement error is harmless.
+    //   · Tap: purely declarative. selectedTab changes → the sx transform
+    //     changes → the track's persistent CSS transition animates it. No JS
+    //     animation lifecycle at all.
+    //   · Finger drag: the raw listeners below override transform/transition
+    //     via INLINE styles only (no React state per touchmove), then hand
+    //     control back to the declarative value on release.
+    //
+    // This is deliberately NOT a state machine. Earlier designs mounted a
+    // temporary two-pane track per slide and tore it down on transitionend;
+    // a dropped touch sequence (native-scroll intervention) or a missed
+    // transitionend left the panel visibly frozen mid-slide, and the mount/
+    // unmount cycles caused settling reflows. Inline overrides that are
+    // cleared on release, on the next tab render, AND on the next touchstart
+    // (see the self-heal notes below) cannot wedge that way — the resting
+    // position always belongs to plain CSS.
+    //
+    // Because every pane is its own scroller, tabs also stop sharing scroll
+    // state: switching tabs can't clamp/jump scrollTop when a tall tab's
+    // content leaves, and each tab remembers its own scroll position.
+    // Pane width in px (= clip-box width; pane padding lives inside the
+    // pane). Feeds only the gesture threshold/clamp math — layout is purely
+    // percentage-based, so this never has to be pixel-perfect.
     const paneWidthRef = useRef(0);
     const touchStartRef = useRef<{ x: number; y: number } | null>(null);
     // null = undecided (within the axis-lock slop), "x" = swipe owns the
     // gesture, "y" = handed off untouched to SheetPanel's vertical listener.
     const swipeAxisRef = useRef<"x" | "y" | null>(null);
-    // Set right before a committed swipe calls onTabChange, so the
-    // selectedTab-watching effect below knows that change was already
-    // animated by the gesture and shouldn't start a second, duplicate slide.
-    const justCommittedSwipeToRef = useRef<number | null>(null);
+    // Live finger delta of an in-flight horizontal drag; null = no drag.
+    // Doubles as the "drag in flight" flag for the self-heal paths.
+    const dragDxRef = useRef<number | null>(null);
+    const onTabChangeRef = useRef(onTabChange);
+    onTabChangeRef.current = onTabChange;
 
     useLayoutEffect(() => {
-        const el = scrollRef.current;
+        const el = clipRef.current;
         if (!el) return;
-        const update = () => {
-            // Content width available to a pane: clientWidth minus this box's
-            // own horizontal padding (panes render inside that padding). This
-            // now feeds ONLY the gesture threshold/clamp math — layout uses a
-            // relative 50%/200% track — so it never has to be pixel-perfect.
-            const style = getComputedStyle(el);
-            const horizontalPadding = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
-            paneWidthRef.current = el.clientWidth - horizontalPadding;
-        };
+        const update = () => { paneWidthRef.current = el.clientWidth; };
         update();
         const ro = new ResizeObserver(update);
         ro.observe(el);
         return () => ro.disconnect();
     }, []);
 
-    // Animate a tap-driven tab change (any index → any index, not just
-    // adjacent — the two tapped tabs simply slide past each other). Skips
-    // the change already visually completed by a swipe gesture, and skips
-    // the initial measurement-frame jump (see hasMeasured above).
-    const prevSelectedTabRef = useRef(selectedTab);
+    // Keep selectedTabRef in sync, and clear any inline transform/transition
+    // a drag left behind once the declarative resting transform owns the
+    // position again. On a committed swipe the inline transform was already
+    // set to this tab's resting value, so removing it here is visually a
+    // no-op and the in-flight CSS transition continues undisturbed. This is
+    // also a self-heal: even if a drag's release was swallowed entirely, the
+    // next tab change re-normalizes the track.
     useEffect(() => {
-        const prev = prevSelectedTabRef.current;
-        prevSelectedTabRef.current = selectedTab;
-        if (prev === selectedTab) return;
-        if (justCommittedSwipeToRef.current === selectedTab) {
-            justCommittedSwipeToRef.current = null;
-            return;
+        selectedTabRef.current = selectedTab;
+        const track = trackRef.current;
+        if (track && dragDxRef.current === null) {
+            track.style.transition = "";
+            track.style.transform = "";
         }
-        if (!hasMeasured) return;
-        // basePercent: 0 shows the left (lower-index) pane, -50 shows the right
-        // pane — a percentage of the 200%-wide track, i.e. exactly one pane.
-        const leftPane = Math.min(prev, selectedTab);
-        const fromBase = prev === leftPane ? 0 : -50;
-        const toBase = selectedTab === leftPane ? 0 : -50;
-        setSlide({ from: prev, to: selectedTab, basePercent: fromBase, offsetPx: 0, animated: false });
-        requestAnimationFrame(() => {
-            setSlide((s) => (s && s.from === prev && s.to === selectedTab) ? { ...s, basePercent: toBase, animated: true } : s);
-        });
-    }, [selectedTab, hasMeasured]);
+    }, [selectedTab]);
 
-    // Kept in sync every render so the gesture listener below (registered
-    // once, via a mount-only effect — see why below) always reads the
-    // latest value instead of a stale closure.
-    const effectiveTabRef = useRef(effectiveTab);
-    effectiveTabRef.current = effectiveTab;
-    const onTabChangeRef = useRef(onTabChange);
-    onTabChangeRef.current = onTabChange;
-    // Source of truth for the in-flight gesture, read/written only inside
-    // the listener below — deliberately NOT the `slide` state itself, so a
-    // fast finger generating several touchmoves before React gets a chance
-    // to flush a render never reads a stale value (`slide` is written from
-    // here purely to drive the visual track; see liveSlideRef reads).
-    const liveSlideRef = useRef<{ from: number; to: number; basePercent: number; offsetPx: number } | null>(null);
+    // New entry in the same panel (entry-tab switch / breakdown drill-in):
+    // start every pane back at its top — scroll positions are per-pane now.
+    useEffect(() => {
+        for (const pane of paneRefs.current) {
+            if (pane) pane.scrollTop = 0;
+        }
+    }, [currentEntry?.entryKey]);
 
     // Gesture listeners are raw `addEventListener`s (not React onTouch* JSX
-    // props) attached directly to the scroll box, mirroring SheetPanel's own
+    // props) attached directly to the clip box, mirroring SheetPanel's own
     // pattern (SheetPanel.tsx's touchstart/touchmove/touchend effect). This
     // is required, not stylistic: SheetPanel's resize/scroll listener is
     // itself a raw addEventListener on an ANCESTOR (rootRef). Native touch
@@ -265,14 +254,49 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
     // dispatch once the real bubble reaches THAT point). So a React
     // onTouchMove handler's stopPropagation() is always too late to stop
     // SheetPanel's listener — it has already run. Registering our own raw
-    // listener on the scroll box (a descendant of rootRef) puts us earlier
+    // listener on the clip box (a descendant of rootRef) puts us earlier
     // in the real bubble order, so our stopPropagation() actually works.
     useEffect(() => {
-        const el = scrollRef.current;
+        const el = clipRef.current;
         if (!el) return;
+
+        // Settle an in-flight drag to a resting position: commit the tab
+        // change when the finger traveled past the commit threshold, else
+        // snap back. Restores the persistent CSS transition first so the
+        // remaining travel animates. Called from touchend/touchcancel, and
+        // from touchstart if a previous drag's release was swallowed by the
+        // browser (native-scroll intervention) — so a dropped gesture can
+        // freeze the track only until the next touch or tab change.
+        const settleDrag = () => {
+            const dx = dragDxRef.current;
+            dragDxRef.current = null;
+            const track = trackRef.current;
+            if (track === null || dx === null) return;
+            const tab = selectedTabRef.current;
+            const target = dx < 0 ? tab + 1 : tab - 1;
+            const committed =
+                target >= 0 &&
+                target <= TAB_LABELS.length - 1 &&
+                Math.abs(dx) > paneWidthRef.current * TAB_SWIPE_COMMIT_RATIO;
+            track.style.transition = ""; // back to the sx transition
+            if (committed) {
+                // Aim the inline transform at the target immediately so the
+                // snap animation starts this frame; the declarative transform
+                // catches up to the SAME value when onTabChange re-renders,
+                // and the selectedTab effect above then clears the (now
+                // redundant) inline override without disturbing the motion.
+                track.style.transform = restingTransform(target);
+                onTabChangeRef.current(target);
+            } else {
+                // Not committed: drop the override — the computed style falls
+                // back to the current tab's resting transform and animates back.
+                track.style.transform = "";
+            }
+        };
 
         const onTouchStart = (e: TouchEvent) => {
             if (e.touches.length !== 1) return;
+            if (dragDxRef.current !== null) settleDrag(); // self-heal a swallowed release
             touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
             swipeAxisRef.current = null;
         };
@@ -329,42 +353,25 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
             // browser's own scroll/edge-swipe from firing.
             e.stopPropagation();
             e.preventDefault();
-            const tab = effectiveTabRef.current;
-            const targetTab = dx < 0 ? tab + 1 : tab - 1;
-            if (targetTab < 0 || targetTab > TAB_LABELS.length - 1) return; // no neighbor that direction — ignore
-            const leftPane = Math.min(tab, targetTab);
-            const fromBase = tab === leftPane ? 0 : -50;
-            // Clamp the finger delta so the track can't be dragged past either
-            // resting edge (revealing blank space beyond a pane).
-            const clampedDx = tab === leftPane
-                ? Math.max(-paneWidthRef.current, Math.min(0, dx))
-                : Math.max(0, Math.min(paneWidthRef.current, dx));
-            const next = { from: tab, to: targetTab, basePercent: fromBase, offsetPx: clampedDx };
-            liveSlideRef.current = next;
-            setSlide({ ...next, animated: false });
+            const track = trackRef.current;
+            if (!track) return;
+            const tab = selectedTabRef.current;
+            // Clamp the finger delta to at most one pane in either direction,
+            // and to zero toward a direction with no neighboring tab — the
+            // track can never be dragged past a resting edge.
+            const min = tab >= TAB_LABELS.length - 1 ? 0 : -paneWidthRef.current;
+            const max = tab <= 0 ? 0 : paneWidthRef.current;
+            const clampedDx = Math.max(min, Math.min(max, dx));
+            dragDxRef.current = clampedDx;
+            // Drive the drag with inline styles only — no React work per move.
+            track.style.transition = "none";
+            track.style.transform = `translateX(calc(${(-tab * 100) / TAB_LABELS.length}% + ${clampedDx}px))`;
         };
 
         const onTouchEnd = () => {
             touchStartRef.current = null;
-            const axis = swipeAxisRef.current;
             swipeAxisRef.current = null;
-            const current = liveSlideRef.current;
-            liveSlideRef.current = null;
-            if (axis !== "x" || !current) return;
-            const leftPane = Math.min(current.from, current.to);
-            const fromBase = current.from === leftPane ? 0 : -50;
-            const toBase = current.to === leftPane ? 0 : -50;
-            // offsetPx is the px traveled from the resting position, so its
-            // magnitude is exactly the swipe distance to test against the
-            // commit threshold.
-            const committed = Math.abs(current.offsetPx) > paneWidthRef.current * TAB_SWIPE_COMMIT_RATIO;
-            if (committed) {
-                justCommittedSwipeToRef.current = current.to;
-                onTabChangeRef.current(current.to);
-            }
-            // Animate to the committed tab's resting position (or snap back to
-            // the origin), dropping the live px offset entirely.
-            setSlide({ from: current.from, to: current.to, basePercent: committed ? toBase : fromBase, offsetPx: 0, animated: true });
+            if (dragDxRef.current !== null) settleDrag();
         };
 
         el.addEventListener("touchstart", onTouchStart, { passive: false });
@@ -381,8 +388,8 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
     }, []);
 
     // Definition / examples / breakdown-or-used-in content for one tab
-    // index, factored out so both the resting (single-pane) render and the
-    // sliding two-pane track can render either tab on demand.
+    // index — rendered once per tab into that tab's permanently-mounted pane
+    // on the slide track.
     const renderTabContent = (tabIndex: number): React.ReactNode => {
         if (tabIndex === 0) {
             return definitionTabHasContent ? (
@@ -779,94 +786,64 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                 })}
             </InfoSheetTabStrip>
 
-            {/* Scrollable tab body. Swipe-to-change-tab gesture listeners are
-                attached imperatively (see the useEffect above) rather than
-                as JSX onTouch* props — see that effect's comment for why. */}
+            {/* Tab body: a clipping viewport over a permanent 3-pane track.
+                Every pane is always mounted and is its own vertical scroller,
+                so a tab change moves ONLY the track's transform — nothing
+                mounts, resizes, or shares scroll state (see the swipe section
+                comment above). Gesture listeners are attached imperatively
+                (see the useEffect above) rather than as JSX onTouch* props —
+                see that effect's comment for why. */}
             <Box
-                ref={scrollRef}
-                className="mobile-demo-eic-scroll"
+                ref={clipRef}
+                className="mobile-demo-eic-clip"
                 sx={{
                     flex: 1,
                     minHeight: 0,
-                    // Split from a single `overflow: "auto"`: the sliding
-                    // track below is deliberately 200% wide (two panes) and
-                    // overflows this box horizontally by design — overflowX
-                    // must stay hidden so that never shows a scrollbar or
-                    // becomes natively scrollable, while overflowY stays auto
-                    // for normal vertical content scroll within whichever pane
-                    // is showing.
-                    // Permanently reserve the vertical-scrollbar gutter. Without
-                    // this, on platforms with classic (space-consuming)
-                    // scrollbars — Windows/WSL browsers — the scrollbar that
-                    // appears mid-slide (two panes mounted ⇒ taller track ⇒
-                    // vertical overflow) steals ~15px of content width. Because
-                    // the track/panes are sized in percentages (200%/50%) of
-                    // that content box, every pane and its CPCD/example children
-                    // re-layout narrower while the scrollbar is present, then
-                    // snap back wider when it disappears at settle — the visible
-                    // "grow then shrink." Reserving the gutter keeps the content
-                    // width constant across the 1-pane⇄2-pane transition, so the
-                    // percentages resolve to the same px the whole time.
-                    // (Overlay-scrollbar platforms never had the bug; this is a
-                    // no-op there.)
-                    scrollbarGutter: "stable",
-                    overflowX: "hidden",
-                    overflowY: "auto",
-                    padding: "16px 18px 8px",
-                    overscrollBehavior: "contain",
+                    overflow: "hidden",
                     touchAction: scrollTouchAction,
                 }}
             >
-                {(() => {
-                    // The track is rendered ALWAYS (idle and mid-slide) with a
-                    // STABLE structure — this is the crux of the no-reflow fix.
-                    // Earlier the idle state rendered the tab content as a bare
-                    // child of the scroll box and only wrapped it in track/pane
-                    // Boxes during a slide; that structural swap made React
-                    // unmount + remount the visible subtree at both the start
-                    // AND the end of every slide, and each fresh mount re-ran
-                    // the layout effects inside its CPCD / definition / example
-                    // children, which settle their size on mount — the visible
-                    // "grow then shrink." Keeping the track permanent, and
-                    // KEYING each pane by its tab index, lets React preserve the
-                    // currently-visible pane's DOM instance across the
-                    // rest↔slide transitions: only the incoming pane mounts
-                    // (off-screen, while sliding in), never the one you're
-                    // looking at.
-                    //
-                    // Idle: one pane (the current tab) filling the box (100%
-                    // track, 100% pane). Mid-slide: two panes ordered [min,max]
-                    // on a 200% track, each 50%; basePercent (% of the track,
-                    // one pane = 50%) + the live offsetPx finger delta position
-                    // it via calc(). All widths are relative, so a pane can
-                    // never disagree with the resting width either.
-                    const twoPane = !!slide;
-                    const paneIndices = slide
-                        ? [Math.min(slide.from, slide.to), Math.max(slide.from, slide.to)]
-                        : [effectiveTab];
-                    return (
+                <Box
+                    ref={trackRef}
+                    className="mobile-demo-tab-slide-track"
+                    sx={{
+                        display: "flex",
+                        width: `${TAB_LABELS.length * 100}%`,
+                        height: "100%",
+                        transform: restingTransform(selectedTab),
+                        // Persistent transition: a tapped tab change animates
+                        // purely through this declarative transform changing.
+                        // Finger drags override transform/transition inline
+                        // and clear the overrides on release (gesture effect).
+                        transition: TAB_SWIPE_TRANSITION,
+                    }}
+                >
+                    {TAB_LABELS.map((_, index) => (
                         <Box
-                            className="mobile-demo-tab-slide-track"
-                            onTransitionEnd={(e) => {
-                                if (e.propertyName === "transform") setSlide(null);
-                            }}
+                            key={index}
+                            ref={(node: HTMLDivElement | null) => { paneRefs.current[index] = node; }}
+                            className="mobile-demo-eic-scroll mobile-demo-tab-pane"
                             sx={{
-                                display: "flex",
-                                width: twoPane ? "200%" : "100%",
-                                transform: slide
-                                    ? `translateX(calc(${slide.basePercent}% + ${slide.offsetPx}px))`
-                                    : "none",
-                                transition: slide?.animated ? TAB_SWIPE_TRANSITION : "none",
+                                flex: `0 0 ${100 / TAB_LABELS.length}%`,
+                                minWidth: 0,
+                                height: "100%",
+                                overflowX: "hidden",
+                                overflowY: "auto",
+                                // Reserve the scrollbar gutter permanently so a
+                                // pane's content width never depends on whether
+                                // it currently overflows (classic-scrollbar
+                                // platforms would otherwise reflow content when
+                                // the scrollbar toggles).
+                                scrollbarGutter: "stable",
+                                padding: "16px 18px 8px",
+                                overscrollBehavior: "contain",
+                                touchAction: scrollTouchAction,
                             }}
                         >
-                            {paneIndices.map((idx) => (
-                                <Box key={idx} sx={{ flex: twoPane ? "0 0 50%" : "0 0 100%", minWidth: 0 }}>
-                                    {renderTabContent(idx)}
-                                </Box>
-                            ))}
+                            {renderTabContent(index)}
                         </Box>
-                    );
-                })()}
+                    ))}
+                </Box>
             </Box>
         </Box>
     );

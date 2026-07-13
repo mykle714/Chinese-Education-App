@@ -72,7 +72,11 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
             depth={depth}
             initialHeight={initialHeight}
             bodyRef={panelRef}
-            bodyKey={compareTab ? "compare" : "info"}
+            // Fold selectedTab into the key: InfoCardPanelBody's scrollable
+            // element is the ACTIVE tab's pane (each pane scrolls on its own),
+            // and SheetPanel captures the scroll element once per bodyKey — so
+            // every tab change must re-bind the scroll/resize coupling.
+            bodyKey={compareTab ? "compare" : `info-${selectedTab}`}
             tabStrip={tabStrip}
         >
             {({ bindHeaderDrag }) => (

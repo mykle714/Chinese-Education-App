@@ -24,6 +24,8 @@ import { StarterPacksController } from '../controllers/StarterPacksController.js
 import { NightMarketDAL } from './implementations/NightMarketDAL.js';
 import { NightMarketService } from '../services/NightMarketService.js';
 import { NightMarketController } from '../controllers/NightMarketController.js';
+import { NightMarketTemplateService } from '../services/NightMarketTemplateService.js';
+import { NightMarketTemplateController } from '../controllers/NightMarketTemplateController.js';
 import { GameAssetDAL } from './implementations/GameAssetDAL.js';
 import { GameProgressDAL } from './implementations/GameProgressDAL.js';
 import { Icons8DAL } from './implementations/Icons8DAL.js';
@@ -63,6 +65,8 @@ const textService = new TextService(userDAL);
 // Validation reuses TextService to persist composed documents (with validation* columns).
 const validationService = new ValidationService(userDAL, textService);
 const nightMarketService = new NightMarketService(nightMarketDAL, userDAL);
+// Validator-authored template CATALOG (definitions), separate from the unlock economy.
+const nightMarketTemplateService = new NightMarketTemplateService(userDAL);
 const gameAssetService = new GameAssetService(gameAssetDAL);
 const gameProgressService = new GameProgressService(gameProgressDAL);
 // Community shared-layout feeds + votes; reuses vocabEntryService for the apply-to-card flow.
@@ -78,6 +82,7 @@ const textController = new TextController(textService);
 const validationController = new ValidationController(validationService);
 const starterPacksController = new StarterPacksController(starterPacksService);
 const nightMarketController = new NightMarketController(nightMarketService);
+const nightMarketTemplateController = new NightMarketTemplateController(nightMarketTemplateService);
 const gamesController = new GamesController(gameAssetService, gameProgressService);
 // icons8 image serving is a thin DB read → no service layer; the controller takes the DAL directly.
 const icons8Controller = new Icons8Controller(icons8DAL);
@@ -111,6 +116,8 @@ export {
   nightMarketDAL,
   nightMarketService,
   nightMarketController,
+  nightMarketTemplateService,
+  nightMarketTemplateController,
   gameAssetDAL,
   gameProgressDAL,
   gameAssetService,

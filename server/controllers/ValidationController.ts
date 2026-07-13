@@ -111,6 +111,79 @@ export class ValidationController {
     }
   }
 
+  /**
+   * Undo the calling validator's own inline vote on a field — the "press the
+   * filled icon again" affordance, leaving no signal in the DB.
+   * DELETE /api/validation/entry-submit?word1=&language=&field=
+   */
+  async clearEntryValidation(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = (req as any).user?.userId;
+      if (!userId) {
+        res.status(401).json({ error: 'User not authenticated', code: 'ERR_NOT_AUTHENTICATED' });
+        return;
+      }
+
+      const { word1, language, field } = req.query as Record<string, string | undefined>;
+
+      if (typeof word1 !== 'string' || word1.trim().length === 0) {
+        res.status(400).json({ error: 'word1 is required', code: 'ERR_MISSING_WORD1' });
+        return;
+      }
+      if (!VALID_LANGUAGES.has(language as Language)) {
+        res.status(400).json({ error: "language must be 'zh' or 'es'", code: 'ERR_INVALID_LANGUAGE' });
+        return;
+      }
+      if (!VALID_FIELDS.has(field as ValidationField)) {
+        res.status(400).json({ error: 'Invalid validation field', code: 'ERR_INVALID_FIELD' });
+        return;
+      }
+
+      await this.validationService.clearEntryValidation(userId, word1, language as Language, field as ValidationField);
+      res.json({ success: true });
+    } catch (error: any) {
+      this.handleError(res, error, 'Failed to clear validation', 'ERR_CLEAR_VALIDATION_FAILED');
+    }
+  }
+
+  /**
+   * The calling validator's own current vote on a field ('approve' | 'flag' | null)
+   * — lets the inline Approve/Flag buttons show the right icon filled on mount,
+   * instead of only after a same-session action.
+   * GET /api/validation/entry-status?word1=&language=&field=
+   */
+  async getEntryValidationStatus(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = (req as any).user?.userId;
+      if (!userId) {
+        res.status(401).json({ error: 'User not authenticated', code: 'ERR_NOT_AUTHENTICATED' });
+        return;
+      }
+
+      const { word1, language, field } = req.query as Record<string, string | undefined>;
+
+      if (typeof word1 !== 'string' || word1.trim().length === 0) {
+        res.status(400).json({ error: 'word1 is required', code: 'ERR_MISSING_WORD1' });
+        return;
+      }
+      if (!VALID_LANGUAGES.has(language as Language)) {
+        res.status(400).json({ error: "language must be 'zh' or 'es'", code: 'ERR_INVALID_LANGUAGE' });
+        return;
+      }
+      if (!VALID_FIELDS.has(field as ValidationField)) {
+        res.status(400).json({ error: 'Invalid validation field', code: 'ERR_INVALID_FIELD' });
+        return;
+      }
+
+      const action = await this.validationService.getEntryValidationStatus(
+        userId, word1, language as Language, field as ValidationField
+      );
+      res.json({ action });
+    } catch (error: any) {
+      this.handleError(res, error, 'Failed to load validation status', 'ERR_VALIDATION_STATUS_FAILED');
+    }
+  }
+
   /** Map service errors to HTTP responses (shared by both handlers). */
   private handleError(res: Response, error: any, fallbackMsg: string, fallbackCode: string): void {
     console.error(`[VALIDATION-CONTROLLER] ❌ ${fallbackMsg}:`, error);

@@ -224,7 +224,13 @@ export class ValidationService {
    * (word1, language) so the client never needs to know the det surrogate id, then
    * approves with a freshly-composed body (never the client's) or flags with none.
    *
-   * @throws ValidationError if not a validator, the field isn't populated, or already recorded.
+   * Unlike the Reader-document path (`submitValidation`), this is a live control:
+   * a validator may change their mind, so a second call for the same (entry, field)
+   * from the SAME validator overwrites their prior action/content in place rather
+   * than being rejected (`ON CONFLICT ... DO UPDATE`). There is intentionally no
+   * history of the earlier vote — see `clearEntryValidation` for un-voting entirely.
+   *
+   * @throws ValidationError if not a validator, or the field isn't populated.
    * @throws NotFoundError   if no discoverable entry matches (word1, language).
    */
   async submitEntryValidation(
@@ -240,15 +246,7 @@ export class ValidationService {
       throw new ValidationError('Only validators can submit validations');
     }
 
-    const table = this.tableFor(language);
-    const result = await dbManager.executeQuery<DetFieldRow>(async (client) =>
-      client.query(
-        `SELECT id, word1, pronunciation, "partsOfSpeech", definitions, "longDefinition", "exampleSentences"
-           FROM ${table} WHERE word1 = $1 AND language = $2 AND discoverable = TRUE`,
-        [word1, language]
-      )
-    );
-    const entry = result.recordset[0];
+    const entry = await this.getDetFieldRowByWord1(language, word1);
     if (!entry) throw new NotFoundError('Entry not found');
     if (!this.isFieldPopulated(entry, field)) {
       throw new ValidationError('This field has no data to validate');
@@ -258,20 +256,18 @@ export class ValidationService {
     // flag stores nothing.
     const content = action === 'approve' ? this.composeBody(entry, field) : null;
 
-    const insertResult = await dbManager.executeQuery<ValidationRecord>(async (client) =>
+    const upsertResult = await dbManager.executeQuery<ValidationRecord>(async (client) =>
       client.query(
         `INSERT INTO validations
            ("entryId", language, field, "validatorUserId", "validatorName", action, content)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
-         ON CONFLICT ON CONSTRAINT validations_unique_per_user DO NOTHING
+         ON CONFLICT ON CONSTRAINT validations_unique_per_user
+           DO UPDATE SET action = EXCLUDED.action, content = EXCLUDED.content,
+                         "validatorName" = EXCLUDED."validatorName"
          RETURNING id, "entryId", language, field, "validatorUserId", "validatorName", action, content, "createdAt"`,
         [entry.id, language, field, userId, user.name, action, content]
       )
     );
-
-    if (insertResult.recordset.length === 0) {
-      throw new ValidationError('You have already validated this field for this entry');
-    }
 
     console.log(`[VALIDATION-SERVICE] ✅ Recorded inline ${action}:`, {
       userId: `${userId.substring(0, 8)}...`,
@@ -280,7 +276,82 @@ export class ValidationService {
       field,
     });
 
-    return insertResult.recordset[0];
+    return upsertResult.recordset[0];
+  }
+
+  /**
+   * Undo a validator's own inline vote on a field, leaving no signal in the DB —
+   * the "press the filled icon again" affordance. Deletes only the calling
+   * validator's row for (entry, field); other validators' votes are untouched.
+   * A no-op (not an error) if this validator never voted.
+   *
+   * @throws ValidationError if not a validator.
+   * @throws NotFoundError   if no discoverable entry matches (word1, language).
+   */
+  async clearEntryValidation(
+    userId: string,
+    word1: string,
+    language: Language,
+    field: ValidationField
+  ): Promise<void> {
+    const user = await this.userDAL.findById(userId);
+    if (!user) throw new NotFoundError('User not found');
+    if (!user.isValidator) {
+      throw new ValidationError('Only validators can submit validations');
+    }
+
+    const entry = await this.getDetFieldRowByWord1(language, word1);
+    if (!entry) throw new NotFoundError('Entry not found');
+
+    await dbManager.executeQuery(async (client) =>
+      client.query(
+        `DELETE FROM validations
+           WHERE "entryId" = $1 AND language = $2 AND field = $3 AND "validatorUserId" = $4`,
+        [entry.id, language, field, userId]
+      )
+    );
+
+    console.log(`[VALIDATION-SERVICE] ✅ Cleared inline vote:`, {
+      userId: `${userId.substring(0, 8)}...`,
+      entryId: entry.id,
+      language,
+      field,
+    });
+  }
+
+  /**
+   * The current validator's own vote ('approve' | 'flag' | null) on a field —
+   * drives which of the two inline icons (if either) renders filled on mount,
+   * so the choice survives a reload instead of only living in local component
+   * state. Looks up by (word1, language) same as the submit/clear paths.
+   *
+   * @throws ValidationError if not a validator.
+   * @throws NotFoundError   if no discoverable entry matches (word1, language).
+   */
+  async getEntryValidationStatus(
+    userId: string,
+    word1: string,
+    language: Language,
+    field: ValidationField
+  ): Promise<'approve' | 'flag' | null> {
+    const user = await this.userDAL.findById(userId);
+    if (!user) throw new NotFoundError('User not found');
+    if (!user.isValidator) {
+      throw new ValidationError('Only validators can view validation status');
+    }
+
+    const entry = await this.getDetFieldRowByWord1(language, word1);
+    if (!entry) throw new NotFoundError('Entry not found');
+
+    const result = await dbManager.executeQuery<{ action: 'approve' | 'flag' }>(async (client) =>
+      client.query(
+        `SELECT action FROM validations
+           WHERE "entryId" = $1 AND language = $2 AND field = $3 AND "validatorUserId" = $4`,
+        [entry.id, language, field, userId]
+      )
+    );
+
+    return result.recordset[0]?.action ?? null;
   }
 
   // ── helpers ────────────────────────────────────────────────────────────────
@@ -297,6 +368,19 @@ export class ValidationService {
         `SELECT id, word1, pronunciation, "partsOfSpeech", definitions, "longDefinition", "exampleSentences"
            FROM ${table} WHERE id = $1`,
         [entryId]
+      )
+    );
+    return result.recordset[0] || null;
+  }
+
+  /** Shared by the inline (word1, language) paths: submit/clear/status. */
+  private async getDetFieldRowByWord1(language: Language, word1: string): Promise<DetFieldRow | null> {
+    const table = this.tableFor(language);
+    const result = await dbManager.executeQuery<DetFieldRow>(async (client) =>
+      client.query(
+        `SELECT id, word1, pronunciation, "partsOfSpeech", definitions, "longDefinition", "exampleSentences"
+           FROM ${table} WHERE word1 = $1 AND language = $2 AND discoverable = TRUE`,
+        [word1, language]
       )
     );
     return result.recordset[0] || null;

@@ -1,22 +1,13 @@
 import { Box, Typography, type SxProps, type Theme } from "@mui/material";
 import { stripParentheses } from "../utils/definitionUtils";
 
-/**
- * Collapse any run of two-or-more newlines (a full blank line) down to a single
- * newline, so paragraph breaks render as a plain line break rather than an empty
- * gap. Both the anchor/culture split WITHIN a POS value and the per-POS join in
- * longDefObjectToDisplayString store their separators as `\n\n`; with the hosts'
- * `whiteSpace: pre-line` those would otherwise paint a blank line. Single newlines
- * are left untouched. Intervening spaces/tabs between the newlines are also eaten.
- */
-function collapseBlankLines(text: string): string {
-  return text.replace(/\s*\n\s*\n\s*/g, "\n");
-}
-
-// Presentation-layer text prep shared by both render paths: collapse blank lines,
-// then strip parenthetical asides (mirrors the flp gloss treatment).
+// Presentation-layer text prep shared by both render paths: strip parenthetical
+// asides (mirrors the flp gloss treatment). Blank lines are intentionally left
+// intact — the per-POS join in longDefObjectToDisplayString separates each POS
+// block with `\n\n`, and with the hosts' `whiteSpace: pre-line` that paints as a
+// real blank line between blocks, which is what we want for multi-POS entries.
 function prepareText(text: string): string {
-  return stripParentheses(collapseBlankLines(text));
+  return stripParentheses(text);
 }
 import type { LongDefinitionPart, Language } from "../types";
 import SegmentedSentenceDisplay from "./SegmentedSentenceDisplay";
@@ -111,10 +102,10 @@ const LongDefinitionDisplay: React.FC<LongDefinitionDisplayProps> = ({
   // server still left unsplit) → render the original plain, parenthetical-stripped text.
   if (!longDefinitionParts?.length) {
     if (!longDefinition) return null;
-    // prepareText has already collapsed each `\n\n` (per-POS join from
-    // longDefObjectToDisplayString, and the anchor/culture split within a value) down to
-    // a single `\n`; `whiteSpace: pre-line` then preserves that lone newline as a line
-    // break — without it the DOM would collapse it and the lines would run together.
+    // `whiteSpace: pre-line` preserves the newlines carried in the text — the per-POS
+    // `\n\n` from longDefObjectToDisplayString renders as a blank line between POS
+    // blocks, and single `\n`s as line breaks — without it the DOM would collapse them
+    // and the lines/blocks would run together.
     const text = (
       <Typography className={className} sx={[...(Array.isArray(sx) ? sx : [sx]), { whiteSpace: "pre-line" }]}>
         {prepareText(longDefinition)}
@@ -137,9 +128,9 @@ const LongDefinitionDisplay: React.FC<LongDefinitionDisplayProps> = ({
     <Typography
       component="div"
       className={className}
-      // pre-line preserves the single `\n` break (prepareText has collapsed the
-      // original `\n\n`) carried inside the text parts — same reason as the plain-text
-      // fallback above.
+      // pre-line preserves the newlines carried inside the text parts — the per-POS
+      // `\n\n` renders as a blank line between POS blocks — same reason as the
+      // plain-text fallback above.
       sx={[
         ...(Array.isArray(sx) ? sx : [sx]),
         { whiteSpace: "pre-line", ...(hasForeignPart && { lineHeight: "31px" }) },
@@ -147,8 +138,8 @@ const LongDefinitionDisplay: React.FC<LongDefinitionDisplayProps> = ({
     >
       {longDefinitionParts.map((part, index) => {
         if (part.type === "text") {
-          // prepareText (blank-line collapse + stripParentheses) is applied per text part;
-          // whitespace around embedded Chinese is preserved so words don't run together
+          // prepareText (stripParentheses) is applied per text part; whitespace and
+          // newlines around embedded Chinese are preserved so words don't run together
           // across part boundaries.
           return <span key={index}>{prepareText(part.value)}</span>;
         }

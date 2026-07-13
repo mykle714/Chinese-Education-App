@@ -40,8 +40,12 @@ The `ValidationField` union is declared in both `server/types/index.ts` and
 `src/types.ts`.
 
 Granularity is **per (entry, field)**: a user may validate an entry's example
-sentence and, separately, its definitions bundle. Each (user, entry, field) can be
-recorded at most once.
+sentence and, separately, its definitions bundle. Each (user, entry, field) has at
+most one CURRENT record — but on the **inline path only** (see "Inline
+Approve/Flag" below), a validator may switch it (approve ↔ flag) or clear it
+entirely; the Reader-document path (`submitValidation`) still rejects a repeat
+submit for the same (user, entry, field), since the underlying document is
+auto-deleted after the first action.
 
 ---
 
@@ -51,7 +55,7 @@ recorded at most once.
   endpoints. Surfaced to the client through the `user` object (login + `/api/auth/me`);
   **not** on the JWT. It must be listed in `UserDAL.findById`'s SELECT
   (`server/dal/implementations/UserDAL.ts`) or it vanishes after a token refresh.
-- **`validations`** table — one row per (entry, field) reviewed by a validator:
+- **`validations`** table — one CURRENT row per (entry, field) reviewed by a validator:
   ```
   id UUID PK · entryId INTEGER · language VARCHAR(10) · field VARCHAR(50)
   validatorUserId UUID (FK users ON DELETE CASCADE) · validatorName TEXT
@@ -60,9 +64,12 @@ recorded at most once.
   ```
   `content` is the data version approved, copied verbatim from the document the
   validator read — `NULL` for a flag (flag is just a signal; it carries no
-  suggested edit). The unique constraint enforces the "can never re-validate" rule
-  (`ON CONFLICT DO NOTHING`). `(entryId, language)` is indexed for the compose
-  check + backfill guard.
+  suggested edit). The unique constraint keys the Reader-document path's
+  "can never re-validate" rule (`ON CONFLICT DO NOTHING`) AND the inline path's
+  switch/clear (`ON CONFLICT DO UPDATE` / `DELETE`) — see "Inline Approve/Flag"
+  below. There is no history of a superseded vote: switching or clearing
+  overwrites/deletes the row in place. `(entryId, language)` is indexed for the
+  compose check + backfill guard.
 - `texts` validation-linkage columns (nullable; NULL ⇒ ordinary user document):
   `validationEntryId INTEGER` (det id — SERIAL, **not** uuid),
   `validationLanguage VARCHAR(10)`, `validationField VARCHAR(50)`. (Migration 104
@@ -172,28 +179,41 @@ the cdp, the dictionary card detail. Hidden entirely for non-validators.
 
 - **`src/components/ValidateFlagButtons.tsx`** — the shared control. Props:
   `word1`, `language`, `field` (a `ValidationField`), `alreadyApproved` (the
-  caller's `sentence.humanApproved` / `entry.definitionsApproved` — see below).
-  Three states:
-  1. `!user?.isValidator`, or `alreadyApproved` with no local action taken yet →
-     renders `null`. **The buttons only ever show for a field that isn't already
-     approved** — `alreadyApproved` does NOT track "already flagged" (not surfaced
-     to the client), so a flagged-but-unapproved field still shows buttons.
-  2. Untouched → two small **outline** `IconButton`s (`FlagOutlined`,
-     `CheckCircleOutline`; styled like `SpeakerButton` — `stopPropagation` so a tap
-     doesn't bubble into an enclosing flip/drag/segment handler). On click, POSTs
-     `{ word1, language, field, action }` to `/api/validation/entry-submit`
-     (`apiPost`, `src/api/http.ts` — cookie auth, no manual token plumbing).
-  3. After a submit (success, or a 400 — almost always "already validated", e.g. a
-     double-tap or already recorded via the Reader queue; treated the same as
-     success) → the two buttons are replaced by a single **filled** icon (`Flag` or
-     `CheckCircle`, MUI's default/solid style) matching the action taken, colored
-     warning/success. This is a plain status icon now, **not a button** — no
-     `IconButton`, no click handler, no hover state. This local `done` state is
-     session-only (reset on remount/reload); on reload, `alreadyApproved` is
-     re-derived from fresh server data — true after a real approve (so the buttons
-     disappear for good, same as any other already-approved field), but a flag
-     never flips `alreadyApproved`, so the buttons reappear after a flag + reload;
-     clicking again just 400s and re-locks to the filled flag icon.
+  caller's `sentence.humanApproved` / `entry.definitionsApproved` — used only as
+  a pre-fetch fallback, see below).
+  **Both icons always render together, Approve on the LEFT and Flag on the
+  RIGHT** (`CheckCircleOutline`/`CheckCircle`, `FlagOutlined`/`Flag`; styled like
+  `SpeakerButton` — small, `stopPropagation` so a tap doesn't bubble into an
+  enclosing flip/drag/segment handler) — whichever matches this validator's own
+  current vote (if any) is swapped to its **filled** variant, colored with the
+  project design tokens (approve → `COLORS.greenMain` #05C793 green, flag →
+  `COLORS.yellowMain` #FF9E5A orange) and sat on a faint same-color disc so a
+  "shaded in" button reads as selected at a glance; the other stays a plain
+  outline button. The color only appears once the server has recorded the vote
+  (it's driven by `myVote`, which is set on the request's success), so green =
+  "approval sent" and orange = "flag sent". All three interactions hit
+  `ValidationService.submitEntryValidation`/`clearEntryValidation`/
+  `getEntryValidationStatus` via `/api/validation/entry-submit` (POST/DELETE) and
+  `/api/validation/entry-status` (GET), all through `src/api/http.ts`
+  (`apiPost`/`apiDelete`/`apiGet` — cookie auth, no manual token plumbing):
+  1. **Mount**: `!user?.isValidator` → renders `null`. Otherwise GETs
+     `/api/validation/entry-status` for this validator's own vote (`myVote`) on
+     this (word1, language, field) — this is what makes the filled icon survive a
+     reload, unlike the old session-only `done` flag. While that fetch is in
+     flight, `alreadyApproved` is used as a fallback to avoid a flash of empty
+     outline buttons on an already-approved field; once the fetch resolves
+     (including to `null`), `myVote` is the only source of truth.
+  2. **Tap the icon that ISN'T the current vote** (or neither vote is set) →
+     POSTs `{ word1, language, field, action }`; the server `UPSERT`s the
+     validator's row (`ON CONFLICT ... DO UPDATE`), so this both records a fresh
+     vote and **switches** an existing one (approve ↔ flag) in one call. `myVote`
+     updates optimistically-after-success to the new action.
+  3. **Tap the icon that IS the current vote** → sends `DELETE
+     /api/validation/entry-submit` (query params `word1`/`language`/`field`),
+     which removes just this validator's row — **un-voting**, leaving no signal in
+     the DB. `myVote` resets to `null` and both icons return to outline.
+  A per-icon `CircularProgress` shows while its own request is in flight;
+  the other icon stays interactive.
 - **est**: `ExampleSentenceList.tsx` renders one `ValidateFlagButtons` per sentence
   (top-left corner, mirroring the speaker button's top-right), `field` =
   `exampleSentence${index}` for `index < 3` (the field model's only 3 slots) —
@@ -215,13 +235,24 @@ the cdp, the dictionary card detail. Hidden entirely for non-validators.
   `LongDefinitionDisplay` renders the AI word-comparison paragraph
   (docs/WORD_COMPARE_FEATURE.md), which has no backing det field at all.
 - **`ValidationService.submitEntryValidation`** (server) — the method behind
-  `/api/validation/entry-submit`: looks up the det row fresh by `(word1, language,
-  discoverable=TRUE)` (the client never knows/sends the det surrogate id), checks
-  the field is populated (`isFieldPopulated`, mirrors `composeValidationDoc`'s SQL
-  eligibility check), then inserts into `validations` exactly like
-  `submitValidation` does — same unique constraint, same `content = approve ?
-  composeBody(...) : null`. No `texts` row is created or touched by this path at
-  all.
+  `POST /api/validation/entry-submit`: looks up the det row fresh by `(word1,
+  language, discoverable=TRUE)` (the client never knows/sends the det surrogate
+  id; shared helper `getDetFieldRowByWord1`), checks the field is populated
+  (`isFieldPopulated`, mirrors `composeValidationDoc`'s SQL eligibility check),
+  then `UPSERT`s into `validations` (`ON CONFLICT ... DO UPDATE SET action,
+  content, validatorName`) — same `content = approve ? composeBody(...) : null`
+  as `submitValidation`, but a repeat call from the same validator overwrites
+  their prior vote instead of being rejected. No `texts` row is created or
+  touched by this path at all.
+- **`ValidationService.clearEntryValidation`** — the method behind `DELETE
+  /api/validation/entry-submit`: resolves the det row the same way, then deletes
+  only the calling validator's `validations` row for (entry, field). A no-op
+  (not an error) if they never voted.
+- **`ValidationService.getEntryValidationStatus`** — the method behind `GET
+  /api/validation/entry-status`: resolves the det row the same way, then returns
+  this validator's own current `action` (`'approve' | 'flag' | null`) for
+  (entry, field). Used on `ValidateFlagButtons` mount so the filled icon survives
+  a page reload.
 
 ---
 
@@ -352,7 +383,7 @@ re-run over discoverable rows.
   `src/features/reader/TextHeader.tsx`, `src/features/reader/TextSidebar.tsx`,
   `src/features/reader/validationApi.ts`
 - Inline Approve/Flag UI: `src/components/ValidateFlagButtons.tsx`,
-  `src/api/http.ts` (`apiPost`), wired from `src/features/flashcards/ExampleSentenceList.tsx`
+  `src/api/http.ts` (`apiPost`/`apiDelete`/`apiGet`), wired from `src/features/flashcards/ExampleSentenceList.tsx`
   and `src/components/LongDefinitionDisplay.tsx` (via `src/features/flashcards/VocabCardDetailBody.tsx` +
   `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx`)
 - Backfill guard: `server/scripts/backfill/run-log.js` (`validatedClause`)

@@ -1,7 +1,18 @@
 /**
  * Pedestrian finite state machine — lane-free axial walking.
  *
- *   Idle ──pop agenda──▶ Planning ──path found──▶ Traveling ──reached goal──▶ Interacting ──dwell──▶ Idle
+ *   VisitStand:  Idle ─▶ Planning ─path found─▶ Traveling ─reached goal─▶ Interacting ─dwell─▶ Idle
+ *   Wander:      Idle ─▶ Wandering ─burst done / wall─▶ Interacting ─pause─▶ Idle
+ *
+ * `VisitStand` goals route across the street graph via `planPath` and walk it
+ * with the axial `Traveling` primitive described below. `Wander` goals ignore
+ * the street graph entirely: the `Wandering` state does a free tile-level
+ * random walk — pick a random walkable cardinal direction, stroll 1–4 tiles
+ * (stopping early at a non-walkable tile), then pause and repeat. Both states
+ * share the same smooth-lerp movement, destination-ownership occupancy, and
+ * sidestep/forward-jump collision avoidance. (Currently only `Wander` goals are
+ * seeded — see `ensureAmbientAgenda` — so `Traveling` is dormant until
+ * `VisitStand` goals are introduced.)
  *
  * State transitions are pure functions of (prev state, dtMs, ctx). Pedestrians
  * walk tile-by-tile along the primary axis of each leg's edge. The
@@ -81,6 +92,18 @@ const SIDESTEP_COOLDOWN_MS = 1000;
  * blocker. Re-attempted every tick once the threshold is crossed.
  */
 const STUCK_FORWARD_JUMP_DELAY_MS = 3000;
+
+/** Inclusive bounds on how many tiles a single random-walk burst travels. */
+const WANDER_MIN_STEPS = 1;
+const WANDER_MAX_STEPS = 4;
+
+/** The four cardinal step directions in iso units, used by the random walk. */
+const CARDINAL_DIRS: ReadonlyArray<[number, number]> = [
+  [TILE_SIZE, 0],
+  [-TILE_SIZE, 0],
+  [0, TILE_SIZE],
+  [0, -TILE_SIZE],
+];
 
 export interface PedestrianTickContext {
   graph: TileGraph;
@@ -237,11 +260,30 @@ function sidestepCandidates(
 type SidestepFailReason = 'off-graph' | 'not-neighbor' | 'occupied' | 'off-edge';
 type SidestepValidity = { ok: true } | { ok: false; reason: SidestepFailReason };
 
+/**
+ * Predicate deciding whether a candidate tile is a legal destination for the
+ * current activity. `Traveling` passes a leg-membership test (stay on the
+ * edge/endpoint nodes); `Wandering` passes `() => true` (any walkable tile is
+ * fair game). Keeps the sidestep/forward-jump machinery shared between states.
+ */
+type OnTrackPredicate = (candidateKey: string) => boolean;
+
+/** Build the on-track predicate for an axial `Traveling` leg. */
+function legOnTrack(leg: NavLeg): OnTrackPredicate {
+  return (key) =>
+    leg.edge.bodyTileSet.has(key) ||
+    leg.edge.nodeA.tileKeys.has(key) ||
+    leg.edge.nodeB.tileKeys.has(key);
+}
+
+/** During a wander burst, any existing walkable tile is on-track. */
+const wanderOnTrack: OnTrackPredicate = () => true;
+
 function checkSidestepTile(
   candidate: TileCoord,
   currentKey: string,
   ctx: PedestrianTickContext,
-  leg: NavLeg,
+  onTrack: OnTrackPredicate,
 ): SidestepValidity {
   const candKey = tileKey(candidate.isoX, candidate.isoY);
   const tile = ctx.graph.tiles.get(candKey);
@@ -251,12 +293,9 @@ function checkSidestepTile(
     return { ok: false, reason: 'not-neighbor' };
   }
   if (tile.isOccupied) return { ok: false, reason: 'occupied' };
-  // Sidestep must stay on the current leg's edge or its endpoint nodes.
-  if (
-    !leg.edge.bodyTileSet.has(candKey) &&
-    !leg.edge.nodeA.tileKeys.has(candKey) &&
-    !leg.edge.nodeB.tileKeys.has(candKey)
-  ) {
+  // Sidestep must stay on-track (leg edge/nodes for Traveling; anywhere walkable
+  // for Wandering).
+  if (!onTrack(candKey)) {
     return { ok: false, reason: 'off-edge' };
   }
   return { ok: true };
@@ -270,13 +309,13 @@ function pickSidestepTile(
   current: TileCoord,
   forward: [number, number],
   ctx: PedestrianTickContext,
-  leg: NavLeg,
+  onTrack: OnTrackPredicate,
 ): SidestepDecision {
   const { right, left } = sidestepCandidates(current, forward);
   const currentKey = tileKey(current.isoX, current.isoY);
-  const rightCheck = checkSidestepTile(right, currentKey, ctx, leg);
+  const rightCheck = checkSidestepTile(right, currentKey, ctx, onTrack);
   if (rightCheck.ok) return { ok: true, tile: right, side: 'right' };
-  const leftCheck = checkSidestepTile(left, currentKey, ctx, leg);
+  const leftCheck = checkSidestepTile(left, currentKey, ctx, onTrack);
   if (leftCheck.ok) return { ok: true, tile: left, side: 'left' };
   return { ok: false, rightReason: rightCheck.reason, leftReason: leftCheck.reason };
 }
@@ -285,25 +324,19 @@ function pickSidestepTile(
  * Is `candidate` a legal forward-jump destination for a ped stuck on `leg`?
  * Unlike `checkSidestepTile`, we don't require tile-graph adjacency to the
  * ped's current tile — the jump is two steps away. We still require the
- * tile exists, is unoccupied, and stays on the current leg's edge or its
- * endpoint nodes.
+ * tile exists, is unoccupied, and is on-track (leg edge/nodes for Traveling;
+ * anywhere walkable for Wandering).
  */
 function isForwardJumpTileValid(
   candidate: TileCoord,
   ctx: PedestrianTickContext,
-  leg: NavLeg,
+  onTrack: OnTrackPredicate,
 ): boolean {
   const candKey = tileKey(candidate.isoX, candidate.isoY);
   const tile = ctx.graph.tiles.get(candKey);
   if (!tile) return false;
   if (tile.isOccupied) return false;
-  if (
-    !leg.edge.bodyTileSet.has(candKey) &&
-    !leg.edge.nodeA.tileKeys.has(candKey) &&
-    !leg.edge.nodeB.tileKeys.has(candKey)
-  ) {
-    return false;
-  }
+  if (!onTrack(candKey)) return false;
   return true;
 }
 
@@ -318,7 +351,7 @@ function tryForwardJump(
   next: TileCoord,
   currentTileDef: import('./nightMarketRegistry').TileDef | undefined,
   ctx: PedestrianTickContext,
-  leg: NavLeg,
+  onTrack: OnTrackPredicate,
 ): boolean {
   if (
     p.waitingSinceMs === undefined ||
@@ -331,7 +364,7 @@ function tryForwardJump(
     isoX: next.isoX + forward[0] * TILE_SIZE,
     isoY: next.isoY + forward[1] * TILE_SIZE,
   };
-  if (!isForwardJumpTileValid(jumpTile, ctx, leg)) return false;
+  if (!isForwardJumpTileValid(jumpTile, ctx, onTrack)) return false;
 
   if (currentTileDef) currentTileDef.isOccupied = false;
   const jumpKey = tileKey(jumpTile.isoX, jumpTile.isoY);
@@ -387,8 +420,14 @@ export function computeDrawable(
   } else {
     isoX = p.currentTile.isoX;
     isoY = p.currentTile.isoY;
-    const next = nextForwardTile(p.currentTile, p.pendingLegs[0]);
-    if (next) heading = headingBetweenTiles(p.currentTile, next);
+    // Between steps: face the pending direction. Wander bursts carry their own
+    // direction vector; Traveling derives it from the next forward tile.
+    if (p.fsmState === 'Wandering' && p.wanderDir) {
+      heading = p.wanderDir;
+    } else {
+      const next = nextForwardTile(p.currentTile, p.pendingLegs[0]);
+      if (next) heading = headingBetweenTiles(p.currentTile, next);
+    }
   }
 
   let imagePath = p.sprite.imagePath;
@@ -397,7 +436,9 @@ export function computeDrawable(
     const dir = headingToIsoDir(heading);
     const frames = walk[DIR_KEY[dir]];
     if (frames && frames.length > 0) {
-      const moving = p.fsmState === 'Traveling' && !p.isWaiting;
+      const moving =
+        (p.fsmState === 'Traveling' || p.fsmState === 'Wandering') &&
+        !p.isWaiting;
       const idx = moving
         ? Math.floor((tMs * walk.fps) / 1000) % frames.length
         : 0;
@@ -423,31 +464,34 @@ export function computeDrawable(
 }
 
 // ---------------------------------------------------------------------------
-// Wander goal resolution
+// Random-walk burst planning (Wander)
 // ---------------------------------------------------------------------------
 
 /**
- * Resolve a Wander goal. Prefers stand-access tiles not in
- * `recentlyVisitedAssetIds`; falls back to any walkable tile.
+ * Start a new random-walk burst from the ped's current tile. Considers only
+ * cardinal directions whose immediate neighbor is walkable (i.e. "directions
+ * not touching a non-walkable cell"), picks one uniformly at random, and
+ * samples a stroll length in `[WANDER_MIN_STEPS, WANDER_MAX_STEPS]`. Returns
+ * null when the ped is fully boxed in (no walkable neighbor) — the caller then
+ * pauses and retries.
+ *
+ * "Walkable" = the tile exists in `ctx.graph.tiles` (that map holds only
+ * street/communal tiles; any absent tile is non-walkable).
  */
-function resolveWanderGoal(
+function startWanderBurst(
   p: PedestrianState,
   ctx: PedestrianTickContext,
-): { goalKey: string; assetId?: string } | null {
-  const recent = new Set(p.recentlyVisitedAssetIds);
-  const candidates: Array<{ key: string; assetId: string }> = [];
-  for (const [assetId, tileKeys] of ctx.graph.standAccessTiles) {
-    if (recent.has(assetId)) continue;
-    for (const key of tileKeys) candidates.push({ key, assetId });
+): { dir: [number, number]; steps: number } | null {
+  const eligible: Array<[number, number]> = [];
+  for (const [dx, dy] of CARDINAL_DIRS) {
+    const neighborKey = tileKey(p.currentTile.isoX + dx, p.currentTile.isoY + dy);
+    if (ctx.graph.tiles.has(neighborKey)) eligible.push([dx, dy]);
   }
-  if (candidates.length > 0) {
-    const pick = candidates[Math.floor(Math.random() * candidates.length)];
-    return { goalKey: pick.key, assetId: pick.assetId };
-  }
-  const allTiles = Array.from(ctx.graph.tiles.keys());
-  if (allTiles.length === 0) return null;
-  const pick = allTiles[Math.floor(Math.random() * allTiles.length)];
-  return { goalKey: pick };
+  if (eligible.length === 0) return null;
+  const dir = eligible[Math.floor(Math.random() * eligible.length)];
+  const span = WANDER_MAX_STEPS - WANDER_MIN_STEPS + 1;
+  const steps = WANDER_MIN_STEPS + Math.floor(Math.random() * span);
+  return { dir, steps };
 }
 
 // ---------------------------------------------------------------------------
@@ -458,8 +502,11 @@ function resolveWanderGoal(
  * Plan a route from the ped's current tile to the active agenda goal as a
  * sequence of `(edge, target)` legs.
  *
+ * Only `VisitStand` goals reach here (Wander goals use the `Wandering` state's
+ * free random walk, not the street graph).
+ *
  * Algorithm:
- *   1. Resolve goalTile (stand access or wander pick).
+ *   1. Resolve goalTile from the stand's access tile.
  *   2. Classify start and goal as on-edge or in-node.
  *   3. Short-circuit when start and goal share an edge / node / adjacency.
  *   4. Otherwise BFS the street graph between candidate anchor nodes (the
@@ -480,20 +527,12 @@ function planPath(
 
   const fromKey = tileKey(p.currentTile.isoX, p.currentTile.isoY);
 
-  // Resolve goal tile + bookkeeping.
-  let goalTileKey: string;
-  let targetAssetId: string | undefined;
-  if (goal.kind === 'VisitStand') {
-    const access = ctx.graph.standAccessTiles.get(goal.assetId);
-    if (!access || access.length === 0) return null;
-    goalTileKey = access[0];
-    targetAssetId = goal.assetId;
-  } else {
-    const wander = resolveWanderGoal(p, ctx);
-    if (!wander) return null;
-    goalTileKey = wander.goalKey;
-    targetAssetId = wander.assetId;
-  }
+  // Resolve goal tile + bookkeeping. Only VisitStand goals are planned here.
+  if (goal.kind !== 'VisitStand') return null;
+  const access = ctx.graph.standAccessTiles.get(goal.assetId);
+  if (!access || access.length === 0) return null;
+  const goalTileKey: string = access[0];
+  const targetAssetId: string | undefined = goal.assetId;
 
   if (fromKey === goalTileKey) {
     return { legs: [], targetAssetId };
@@ -599,6 +638,61 @@ function planPath(
 }
 
 // ---------------------------------------------------------------------------
+// Shared movement primitives (Traveling + Wandering)
+// ---------------------------------------------------------------------------
+
+/**
+ * Handle a blocked forward step (the `next` tile is occupied by another ped):
+ * attempt a sidestep (subject to cooldown), then the stuck-recovery forward
+ * jump, else enter the waiting state. Mutates `p` and tile occupancy. Shared
+ * by the Traveling and Wandering states — `onTrack` scopes which tiles are
+ * legal teleport destinations (leg edge/nodes vs. anywhere walkable).
+ */
+function handleForwardBlocked(
+  p: PedestrianState,
+  next: TileCoord,
+  currentTileDef: import('./nightMarketRegistry').TileDef | undefined,
+  ctx: PedestrianTickContext,
+  onTrack: OnTrackPredicate,
+): void {
+  const enterWaiting = () => {
+    p.isWaiting = true;
+    if (p.waitingSinceMs === undefined) p.waitingSinceMs = ctx.tMs;
+  };
+
+  if (
+    p.sidestepCooldownUntilMs !== undefined &&
+    ctx.tMs < p.sidestepCooldownUntilMs
+  ) {
+    // Sidestep on cooldown — try forward-jump recovery first.
+    if (tryForwardJump(p, next, currentTileDef, ctx, onTrack)) return;
+    enterWaiting();
+    return;
+  }
+
+  const forward = headingBetweenTiles(p.currentTile, next);
+  const decision = pickSidestepTile(p.currentTile, forward, ctx, onTrack);
+  if (!decision.ok) {
+    // No sidestep available — try forward-jump recovery.
+    if (tryForwardJump(p, next, currentTileDef, ctx, onTrack)) return;
+    enterWaiting();
+    return;
+  }
+
+  // Instant teleport: release current, claim side.
+  if (currentTileDef) currentTileDef.isOccupied = false;
+  const sideKey = tileKey(decision.tile.isoX, decision.tile.isoY);
+  const sideTileDef = ctx.graph.tiles.get(sideKey);
+  if (sideTileDef) sideTileDef.isOccupied = true;
+
+  p.isWaiting = false;
+  p.waitingSinceMs = undefined;
+  p.sidestepCooldownUntilMs = ctx.tMs + SIDESTEP_COOLDOWN_MS;
+  p.committedFromTile = undefined;
+  p.currentTile = { ...decision.tile };
+}
+
+// ---------------------------------------------------------------------------
 // FSM tick
 // ---------------------------------------------------------------------------
 
@@ -621,7 +715,9 @@ export function tickPedestrian(
   switch (p.fsmState) {
     case 'Idle': {
       if (p.agenda.length === 0) return p;
-      p.fsmState = 'Planning';
+      // Wander goals do a free random walk; everything else routes the street
+      // graph via Planning.
+      p.fsmState = p.agenda[0].kind === 'Wander' ? 'Wandering' : 'Planning';
       return p;
     }
 
@@ -706,44 +802,10 @@ export function tickPedestrian(
       const currentTileDef = ctx.graph.tiles.get(currentKey);
       const nextTileDef = ctx.graph.tiles.get(nextKey);
 
-      // Forward blocked: try sidestep (subject to cooldown), then fall back
-      // to the stuck-recovery forward jump after STUCK_FORWARD_JUMP_DELAY_MS.
+      // Forward blocked: sidestep (subject to cooldown) then stuck-recovery
+      // forward jump, scoped to the current leg's edge/endpoint nodes.
       if (nextTileDef?.isOccupied) {
-        const enterWaiting = () => {
-          p.isWaiting = true;
-          if (p.waitingSinceMs === undefined) p.waitingSinceMs = ctx.tMs;
-        };
-
-        if (
-          p.sidestepCooldownUntilMs !== undefined &&
-          ctx.tMs < p.sidestepCooldownUntilMs
-        ) {
-          // Sidestep on cooldown — try forward-jump recovery first.
-          if (tryForwardJump(p, next, currentTileDef, ctx, currentLeg)) return p;
-          enterWaiting();
-          return p;
-        }
-
-        const forward = headingBetweenTiles(p.currentTile, next);
-        const decision = pickSidestepTile(p.currentTile, forward, ctx, currentLeg);
-        if (!decision.ok) {
-          // No sidestep available — try forward-jump recovery.
-          if (tryForwardJump(p, next, currentTileDef, ctx, currentLeg)) return p;
-          enterWaiting();
-          return p;
-        }
-
-        // Instant teleport: release current, claim side.
-        if (currentTileDef) currentTileDef.isOccupied = false;
-        const sideKey = tileKey(decision.tile.isoX, decision.tile.isoY);
-        const sideTileDef = ctx.graph.tiles.get(sideKey);
-        if (sideTileDef) sideTileDef.isOccupied = true;
-
-        p.isWaiting = false;
-        p.waitingSinceMs = undefined;
-        p.sidestepCooldownUntilMs = ctx.tMs + SIDESTEP_COOLDOWN_MS;
-        p.committedFromTile = undefined;
-        p.currentTile = { ...decision.tile };
+        handleForwardBlocked(p, next, currentTileDef, ctx, legOnTrack(currentLeg));
         return p;
       }
 
@@ -755,6 +817,72 @@ export function tickPedestrian(
       p.waitingSinceMs = undefined;
       p.committedFromTile = { ...p.currentTile };
       p.currentTile = { ...next };
+
+      const step = advanceLocalProgress(0, dtMs, p.speedIsoPerSec);
+      p.localProgress = step.progress;
+      if (step.completed) {
+        p.localProgress = 0;
+        p.committedFromTile = undefined;
+      }
+      return p;
+    }
+
+    case 'Wandering': {
+      // Mid-step: advance the lerp (shared with Traveling).
+      if (p.localProgress > 0) {
+        const step = advanceLocalProgress(p.localProgress, dtMs, p.speedIsoPerSec);
+        p.localProgress = step.progress;
+        if (step.completed) {
+          p.localProgress = 0;
+          p.committedFromTile = undefined;
+        }
+        return p;
+      }
+
+      // Between steps: start a fresh burst when the previous one is exhausted
+      // (0 or undefined steps left). A boxed-in ped (no walkable neighbor)
+      // pauses and retries next burst.
+      if (!p.wanderDir || !p.wanderStepsLeft) {
+        const burst = startWanderBurst(p, ctx);
+        if (!burst) {
+          endWanderBurst(p, ctx);
+          return p;
+        }
+        p.wanderDir = burst.dir;
+        p.wanderStepsLeft = burst.steps;
+      }
+      const dir = p.wanderDir!; // guaranteed set by the block above
+
+      const next: TileCoord = {
+        isoX: p.currentTile.isoX + dir[0],
+        isoY: p.currentTile.isoY + dir[1],
+      };
+      const currentKey = tileKey(p.currentTile.isoX, p.currentTile.isoY);
+      const nextKey = tileKey(next.isoX, next.isoY);
+      const currentTileDef = ctx.graph.tiles.get(currentKey);
+      const nextTileDef = ctx.graph.tiles.get(nextKey);
+
+      // Hit a non-walkable tile — stop the burst early and pause.
+      if (!nextTileDef) {
+        endWanderBurst(p, ctx);
+        return p;
+      }
+
+      // Forward blocked by another ped: reuse the shared sidestep / forward-jump
+      // handler. Any walkable tile is on-track while wandering.
+      if (nextTileDef.isOccupied) {
+        handleForwardBlocked(p, next, currentTileDef, ctx, wanderOnTrack);
+        return p;
+      }
+
+      // Forward clear: commit one step and consume it from the burst.
+      if (currentTileDef) currentTileDef.isOccupied = false;
+      nextTileDef.isOccupied = true;
+      p.isWaiting = false;
+      p.waitingSinceMs = undefined;
+      p.committedFromTile = { ...p.currentTile };
+      p.currentTile = { ...next };
+      p.wanderStepsLeft -= 1;
 
       const step = advanceLocalProgress(0, dtMs, p.speedIsoPerSec);
       p.localProgress = step.progress;
@@ -790,6 +918,21 @@ function goalDwell(goal: AgendaGoal | undefined): number {
   if (!goal) return 0;
   if (goal.kind === 'VisitStand' || goal.kind === 'Wander') return goal.dwellMs;
   return 0;
+}
+
+/**
+ * End the current random-walk burst: clear the burst direction/count and
+ * transition to Interacting for the Wander goal's `dwellMs` pause. When the
+ * pause elapses the ped returns to Idle, where `ensureAmbientAgenda` re-arms a
+ * Wander goal → a new burst in a freshly-chosen direction.
+ */
+function endWanderBurst(p: PedestrianState, ctx: PedestrianTickContext): void {
+  p.fsmState = 'Interacting';
+  p.interactUntilMs = ctx.tMs + goalDwell(p.agenda[0]);
+  p.wanderDir = undefined;
+  p.wanderStepsLeft = undefined;
+  p.isWaiting = false;
+  p.waitingSinceMs = undefined;
 }
 
 /** Refill a pedestrian's agenda with a Wander goal so it never stalls. */

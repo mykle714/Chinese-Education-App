@@ -1,0 +1,44 @@
+import { Router } from 'express';
+import { authenticateToken } from '../authMiddleware.js';
+import { nightMarketTemplateController } from '../dal/setup.js';
+
+/**
+ * Night Market Template routes — /api/nightmarket-templates/*
+ *
+ * LAYER: HTTP route layer (registration only). Validator-status is enforced in
+ * NightMarketTemplateService, not here. See docs/NIGHT_MARKET_TEMPLATE_EDITOR.md.
+ */
+const router = Router();
+
+// List all templates (name-ordered summaries) for the editor Load dropdown.
+// @ts-ignore
+router.get('/api/nightmarket-templates', authenticateToken, async (req, res) => {
+  await nightMarketTemplateController.listTemplates(req, res);
+});
+
+// Is a template name free? Backs the editor Properties-popup rename gate.
+// NOTE: must be registered BEFORE the `/:id` route so it is not captured as an id.
+// @ts-ignore
+router.get('/api/nightmarket-templates/name-available', authenticateToken, async (req, res) => {
+  await nightMarketTemplateController.checkNameAvailable(req, res);
+});
+
+// Load one template version (full definition + availableVersions) by name+version.
+// @ts-ignore
+router.get('/api/nightmarket-templates/load', authenticateToken, async (req, res) => {
+  await nightMarketTemplateController.getTemplate(req, res);
+});
+
+// Save a template version — upsert by (name, version) (create OR overwrite).
+// @ts-ignore
+router.post('/api/nightmarket-templates', authenticateToken, async (req, res) => {
+  await nightMarketTemplateController.saveTemplate(req, res);
+});
+
+// Delete a whole template (all versions of the name) — the editor's Delete button.
+// @ts-ignore
+router.delete('/api/nightmarket-templates', authenticateToken, async (req, res) => {
+  await nightMarketTemplateController.deleteTemplate(req, res);
+});
+
+export default router;

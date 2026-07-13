@@ -19,6 +19,7 @@ import FlashcardsDecksPage from "./features/flashcards/FlashcardsDecksPage";
 import ReaderPage from "./features/reader/ReaderPage";
 import ReaderDocumentPage from "./features/reader/ReaderDocumentPage";
 import NightMarketEnginePage from "./features/nightmarket/NightMarketEnginePage";
+import TemplateEditorPage from "./features/nightmarket/TemplateEditorPage";
 import DictionaryPage from "./pages/DictionaryPage";
 import DictionaryCardDetailPage from "./pages/DictionaryCardDetailPage";
 import DiscoverPage from "./pages/DiscoverPage";
@@ -170,6 +171,15 @@ function App() {
                 <Route path="/night-market" element={
                   <ProtectedRoute allowPublic>
                     <NightMarketEnginePage />
+                  </ProtectedRoute>
+                } />
+                {/* Validator-only template editor. Gated by isValidator alone (the
+                    page bounces non-validators; the backend enforces it too), so
+                    allowPublic — a validator may be a public account, and the
+                    generic isPublic redirect must not pre-empt the validator gate. */}
+                <Route path="/night-market/template-editor" element={
+                  <ProtectedRoute allowPublic>
+                    <TemplateEditorPage />
                   </ProtectedRoute>
                 } />
                 <Route path="/profile" element={

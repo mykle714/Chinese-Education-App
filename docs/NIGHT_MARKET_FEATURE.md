@@ -19,8 +19,131 @@ grid units (isoX, isoY)**. See `src/engine/market/isometric.ts` for the full def
 - **isoY** — distance along the isometric Y axis (toward top-left on screen / north)
 - **Origin (0, 0)** — maps to the center of the viewport
 
+The projection is **2:1 dimetric** ("pixel-art isometric"): `TILE_WIDTH = 32`,
+`TILE_HEIGHT = TILE_WIDTH / 2 = 16`. This replaced the earlier √3:1 true-iso grid
+when the market adopted the free-farm tileset (see *Terrain rendering* below).
+
 All night market assets live at `/home/cow/src/assets/` (NOT `public/assets/` — Vite
 imports these directly as modules).
+
+---
+
+## Terrain rendering (free-farm rebuild)
+
+The night market was rebuilt on the **free-farm-assets** 2:1 tileset. The former demo
+layout — `floor.png`, hand-authored streets, 8×8 stalls, and walking pedestrians — was
+**removed**, along with its three demo-layout tests
+(`__tests__/{tileRegistry,graphAssumptions,streetGraph}.test.ts`). The visible ground is
+now a raised **dirt** plateau carrying two stacked, contiguous, irregular grass patches: a
+**light-grass** patch in the middle and a smaller **dark-grass** patch grown *entirely
+inside* the light one, so dark grass always sits over light grass (never over bare dirt).
+
+**Pipeline (layers):**
+- `engine/market/freeFarmTileset.ts` (lookup) — resolves sprite URLs. Two autotile ops:
+  - `pickLandmassEdge()` maps 4-cardinal in-field occupancy → a `LandmassEdge` variant
+    (center / N/E edges / four convex `*Round` corners) for the tallDirt plateau **rim**.
+    Only the far N (+isoY) and E (+isoX) faces are authored; near S/W faces are never visible.
+  - `pickGrassBorderOverlays(kind, neighbours)` — the **grass-boundary** op: given a dirt
+    tile's 8-neighbour grass occupancy, returns the overlay sprite URLs to STACK on it so
+    grass from adjacent patch cells spills onto the tile. Scheme = **edge-centric + convex
+    dots**: one full-edge overlay per grass cardinal (`nw,n,ne` / `ne,e,se` / `sw,s,se` /
+    `nw,w,sw`); two adjacent grass cardinals overlap at their shared vertex, filling a
+    concave corner seamlessly; plus a single-corner dot (`ne`/`nw`/`se`/`sw`) for an
+    isolated diagonal touch (both flanks dirt). Interior dirt → empty.
+- `engine/market/farmTerrain.ts` (data) — `buildFarmField(w, h, seed)` enumerates a w×h dirt
+  field and grows the two patches with the shared seeded-mulberry32 frontier grower
+  (`growGrassBlob`, gated by an `allowed(x,y)` predicate + notch-close):
+  - `buildGrassPatch` — the **light** patch, gated to stay `PATCH_MARGIN` tiles inside the
+    rim, ~`GRASS_COVERAGE` fill (0.3), seed `DEFAULT_SEED`. After growth it runs a directional
+    dilation (`dilateNorthWest`, `NORTHWEST_DILATION` passes) that fattens only the **north
+    (+isoY)** and **west (−isoX)** faces a little, leaving the south/east shape put.
+  - `buildDarkGrassPatch` — the **dark** patch, gated to *light-patch membership* (so
+    dark ⊆ light), ~`DARK_GRASS_COVERAGE` fill (0.12), distinct seed `DARK_SEED`.
+  Per tile it resolves `kind` (light grass/dirt), `darkGrass` (bool), `fieldEdge` (rim),
+  and `grassNeighbours` + `darkGrassNeighbours` (8-dir occupancy of each patch). Currently 20×20.
+- `features/nightmarket/FarmTerrainLayer.tsx` (view) — paints each tile as up to several **native**
+  (scale 1) sprites, emitted **flat** (no per-tile container) so the scene's
+  `sortableChildren` z-sorts every sprite globally by `zIndex`:
+  - a **tallDirt slab** (`fieldEdge`) at `screenY + TILE_HEIGHT`, `z = layerZ − 0.5`
+  - **light surface** — grass tile → a `lightGrass_center` **cap** at `z = layerZ`; dirt tile
+    bordering light grass → the stacked light **grass-boundary overlays** at `z = layerZ`
+    (interior dirt draws nothing on the surface — its own dirt top face shows)
+  - **dark surface**, stacked just above the light layer at `z = layerZ + 0.05` (dark over
+    light) — dark tile → a `darkGrass_center` cap; light/dirt tile bordering the dark patch →
+    the stacked dark grass-boundary overlays (`resolveTileDarkSurfaceUrls`)
+  - an optional **scatter decor** sprite at `screenY`, `z = layerZ + 0.1` (still in the
+    background slot, below any entity), chosen by `resolveTileDecorUrl` — see *Decor scatter* below
+
+**Elevation offset:** the pack's grass surface sits in the lower half of its 32×32 cell
+(rows y[16..31]) while the tallDirt top face sits in the upper half (rows y[0..15]) — the
+dirt surface is exactly one `TILE_HEIGHT` higher. Drawing the dirt one `TILE_HEIGHT` lower
+makes its top face coincide with the surface and drops its 16px wall below to form the
+visible slab rim. **Single elevation:** grass sits FLUSH on the dirt surface (no height
+step), so the grass↔dirt transition is drawn purely by the flat boundary overlays.
+
+**Pixel-art rendering:** terrain textures use nearest-neighbour filtering; the camera
+zoom is clamped to **integers** (`MarketEngineViewer`, default 3), so upscaling stays
+crisp with no fractional resampling. The Pixi `<Application>` sets `antialias={false}`.
+
+**Debug overlays (nmp):** the page's right-edge toggle column (`NightMarketEnginePage.tsx`)
+drives per-overlay `DebugFlags` on `MarketEngineViewer`, all rendered inside the scene
+container so they pan/zoom with the terrain:
+- **origin** — cyan iso-axis crosshair at grid (0,0).
+- **grass** — semi-transparent diamond tint over every grass tile (`GrassOverlay`): a light
+  green pass over `kind === 'grass'` tiles, then a darker green pass over `darkGrass` tiles on
+  top (mirroring the terrain's dark-over-light stacking). Rebuilds the same field via
+  `buildFarmField` so the tinted diamonds line up with the grass caps.
+- **overlayLabels** — tiny per-cell text naming the SURFACE sprite stem(s) each tile was
+  painted with across BOTH layers (`OverlayLabels`), resolved from the shared
+  `resolveTileSurfaceUrls` + `resolveTileDarkSurfaceUrls` (farmTerrain.ts) and reverse-mapped
+  url→stem via `freeFarmTileset.stemOf`. Light caps show `grass`, dark caps show `dark`;
+  boundary overlays show their compass-set (e.g. `n,nw,ne`), dark ones prefixed `d:`; interior
+  dirt is unlabeled. `showGrid` (gridlines) is separate page state, not a DebugFlag.
+
+The surface-sprite selection (grass cap vs. stacked grass-boundary overlays) lives once per
+layer in `resolveTileSurfaceUrls` / `resolveTileDarkSurfaceUrls` (farmTerrain.ts), each
+consumed by both `FarmTerrainLayer` (paints) and `OverlayLabels` (labels) so they never diverge.
+
+**Decor scatter:** after each tile's surface is resolved, `FarmTerrainLayer.buildDraws`
+runs a seeded decor pass (`resolveTileDecorUrl` in farmTerrain.ts, walking the field with a
+single `createDecorRng()` so the layout is stable across reloads). Per tile:
+- Tiles that carry **grass-boundary overlays** on *either* layer are **skipped** (their diamond
+  is already visually busy — a dirt tile bordering light grass, or a light/dirt tile bordering
+  the dark patch); tiles with only a flush base cap (light or dark `_center`) stay eligible.
+- Each eligible tile makes **two mutually-exclusive rolls, own-family first**: it rolls for
+  **own-family** decor at `FAMILY_DECOR_PROBABILITY` (0.15) and, only if that misses, rolls for
+  the shared **common** set at `COMMON_DECOR_PROBABILITY` (0.05). At most one decor per tile
+  (~15% family, ~4% common).
+- Own-family = dark grass → `darkGrassDecor_*` (dark wins on its tiles), light grass →
+  `lightGrassDecor_*`, interior dirt → `dirtDecor_*`; common = `decor_*` (Objects/). Families
+  are indexed in `freeFarmTileset` (`getDecorUrls(family)`).
+
+Decor is drawn on top of the surface at `z = layerZ + 0.1` (a background-slot floor detail,
+below the entity slot at +0.25).
+
+**Walkways (plank paths):** a straight run of wooden **plank** tiles laid on the terrain plane.
+- `engine/market/freeFarmTileset.ts` — indexes the `plank_{dir}_{1..3}_{center|eastEdge|northEdge}`
+  slabs (32×32, a top-face diamond + a wooden side, same footprint as a tallDirt slab). Resolved
+  via the typed `getPlank(direction, variation, cap)`. `direction` ∈ {`ew`,`ns`}; the pack authors
+  3 board-pattern variations per direction and an end cap only on each direction's **far** iso face
+  (`eastEdge` for `ew`/+isoX, `northEdge` for `ns`/+isoY) — mirroring the landmass far-face rule.
+- `engine/market/walkway.ts` (data) — `buildWalkway({origin, direction, variations?})` lays tiles
+  from the near-end `origin` toward the far face: `ew` runs along +isoX at constant isoY, `ns` along
+  +isoY at constant isoX. Successive tiles take the successive `variations` board patterns (default
+  `PLANK_VARIATIONS` = 1,2,3, one of each in order); the **far-end** tile takes the direction's edge
+  cap, every other tile the flat `center` plank.
+- `features/nightmarket/WalkwayLayer.tsx` (view) — paints each plank flush on the shared terrain
+  plane (offset `+TILE_HEIGHT`, exactly like a dirt slab, so its surface lands on the plane). The
+  whole walkway is lifted above the terrain layer by `WALKWAY_Z_LIFT = FIELD_WIDTH + FIELD_HEIGHT`
+  (the max iso-sum) so the back-most plank still clears the front-most terrain tile's slab, while
+  `computeLayerZ` keeps planks ordered among themselves. Currently renders a hard-coded
+  `SAMPLE_WALKWAYS` list (one `ew` + one `ns`); replace with an authored/data-driven layout later.
+
+**Dormant modules:** the pedestrian/street-graph engine
+(`streetGraph.ts`, `tileGraph.ts`, `pedestrianAgent.ts`, `tileTraversal.ts`,
+`hooks/usePixiPedestrians.ts`) remains in the tree but is unused — `tileRegistry.ts`
+exposes empty `STREETS`/`TILES`/`DEMO_STALLS`, so both graphs are empty. It is the seam
+where a future authored layout re-attaches.
 
 ---
 
@@ -158,10 +281,20 @@ On the first call to `GET /api/night-market/unlocks`, if the user has no unlock 
 | `server/services/NightMarketService.ts` | Business logic (unlock verification, random selection, base set seeding) |
 | `server/controllers/NightMarketController.ts` | HTTP request/response handling |
 | `src/features/nightmarket/useNightMarket.ts` | Frontend hook for fetching unlocks and triggering new unlocks |
-| `src/pages/MarketViewerPage.tsx` | Page component — builds layers from unlocks + registry |
-| `src/components/MarketViewer.tsx` | Canvas renderer with pan/zoom and tap interaction |
+| `src/features/nightmarket/NightMarketEnginePage.tsx` | Page component — builds layers from unlocks + registry, hosts debug toggles |
+| `src/features/nightmarket/MarketEngineViewer.tsx` | Pixi (`@pixi/react`) canvas renderer with pan/zoom and tap interaction |
 
 ## Known Bugs
+
+### Pan/tap dead after StrictMode + async Pixi init (FIXED)
+
+**Where:** `src/features/nightmarket/MarketEngineViewer.tsx` `NightMarketScene`, the stage-pointer `useEffect`.
+
+**Symptom:** Drag-to-pan and tap-to-select produced *no response* — the canvas rendered fine but the live `app.stage` stayed at default `eventMode: 'passive'` with no `hitArea` and zero pointer listeners, so every pointer event died before dispatch.
+
+**Cause:** `useApplication()` returns a **stable `app` object**, but Pixi v8's `app.init()` (which creates `app.renderer`) is **async**. The pointer effect guards on `!app.renderer` and bailed on the first pass; keyed only on `[app]`, it never re-ran once init completed (the `app` identity never changes), so the stage was left inert.
+
+**Fix:** Depend on `isInitialised` from `useApplication()` — `useEffect(..., [app, isInitialised])` — so the effect re-runs and attaches the handlers once the renderer exists. Any future effect that touches `app.renderer`/`app.stage` must gate on `isInitialised`, not just `app`.
 
 ### Ped z-sort against stands at extreme zoom-out (zoom-aware fallback)
 

@@ -1,12 +1,14 @@
 import { Box, Typography } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import NightsStayIcon from "@mui/icons-material/NightsStay";
+import GridViewIcon from "@mui/icons-material/GridView";
 import SportsEsportsIcon from "@mui/icons-material/SportsEsports";
 import ArticleIcon from "@mui/icons-material/Article";
 import BookIcon from "@mui/icons-material/Book";
 import DashboardIcon from "@mui/icons-material/Dashboard";
 import GroupsIcon from "@mui/icons-material/Groups";
 import MobileTabScreen from "../components/MobileTabScreen";
+import { useAuth } from "../AuthContext";
 import { HubMenu, HubMenuRow } from "../components/HubMenu";
 import { FooterSpacer } from "../components/MobileFooter";
 import TipBox from "../components/TipBox";
@@ -39,6 +41,7 @@ const WelcomeHeader = styled(Box)(() => ({
 
 function HomePage() {
     usePageTitle();
+    const { user } = useAuth();
 
     const items: HomeMenuItem[] = [
         { key: "night-market", to: "/night-market", title: "Night Market", subtitle: "Explore the vocabulary night market", icon: <NightsStayIcon sx={iconSx} />, bgColor: COLORS.purpleAccent },
@@ -47,6 +50,10 @@ function HomePage() {
         { key: "reader", to: "/reader", title: "Reader", subtitle: "Read texts and mine new words", icon: <ArticleIcon sx={iconSx} />, bgColor: COLORS.yellowAccent },
         { key: "dictionary", to: "/dictionary", title: "Dictionary", subtitle: "Look up words and add them to your decks", icon: <BookIcon sx={iconSx} />, bgColor: COLORS.redAccent },
         { key: "tester-dashboard", to: "/tester-dashboard", title: "Tester Dashboard", subtitle: "Study time, streak, and activity", icon: <DashboardIcon sx={iconSx} />, bgColor: COLORS.blueAccent },
+        // Validator-only: the Night Market template authoring editor (desktop-only).
+        ...(user?.isValidator
+            ? [{ key: "template-editor", to: "/night-market/template-editor", title: "Template Editor", subtitle: "Author Night Market templates (validators)", icon: <GridViewIcon sx={iconSx} />, bgColor: COLORS.purpleAccent } as HomeMenuItem]
+            : []),
     ];
 
     return (

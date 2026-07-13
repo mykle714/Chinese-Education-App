@@ -206,11 +206,22 @@ export interface SpriteDef {
 export type AgendaGoal =
   /** Walk to a tile that has the given assetId in its `connections`, then dwell. */
   | { kind: 'VisitStand'; assetId: string; dwellMs: number }
-  /** Pick a random walkable tile (preferring connection tiles) and visit it. Refilled endlessly. */
+  /**
+   * Free tile-level random walk (ignores the street graph): pick a random
+   * walkable cardinal direction, stroll 1–4 tiles that way (stopping early at
+   * a non-walkable tile), then pause `dwellMs` before picking again. Refilled
+   * endlessly. See the `Wandering` state in pedestrianAgent + the "Random-walk
+   * Wander" section of docs/PEDESTRIAN_WALKING_ALGORITHM.md.
+   */
   | { kind: 'Wander'; dwellMs: number };
 
 /** Pedestrian FSM states. */
-export type PedestrianFsmState = 'Idle' | 'Planning' | 'Traveling' | 'Interacting';
+export type PedestrianFsmState =
+  | 'Idle'
+  | 'Planning'
+  | 'Traveling'
+  | 'Wandering'
+  | 'Interacting';
 
 /** Tile coordinate pair. Always integer iso units. */
 export interface TileCoord {
@@ -252,6 +263,18 @@ export interface PedestrianState {
    * specific tile). Empty when idle/interacting. See NavLeg in streetGraph.ts.
    */
   pendingLegs: NavLeg[];
+  /**
+   * Random-walk burst direction while in the `Wandering` state — a cardinal
+   * unit vector `[±1, 0]` or `[0, ±1]` in iso units. Undefined outside a
+   * wander burst. Set by `startWanderBurst`, cleared when the burst ends.
+   */
+  wanderDir?: [number, number];
+  /**
+   * Tiles left to step in the current wander burst (initial value sampled in
+   * `[WANDER_MIN_STEPS, WANDER_MAX_STEPS]`). Decremented at each forward
+   * commit; when it hits 0 the burst ends and the ped pauses (Interacting).
+   */
+  wanderStepsLeft?: number;
   /** Goals queued; current goal is agenda[0]. */
   agenda: AgendaGoal[];
   fsmState: PedestrianFsmState;

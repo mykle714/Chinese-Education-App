@@ -1,0 +1,91 @@
+import { useCallback, useEffect, useState } from 'react';
+import { Assets, Graphics, Texture } from 'pixi.js';
+import { isoToScreen, computeLayerZ } from '../../engine/market/isometric';
+import { HOUSE_ANCHOR } from '../../engine/market/house';
+// House.png lives in the pack's `Originals/` bucket, which freeFarmTileset
+// deliberately excludes (un-adopted source art), so it is imported directly
+// rather than resolved through the tileset registry.
+import houseUrl from '../../assets/free-assets/free-farm-assets/Environment/Originals/House.png';
+
+/**
+ * HouseLayer — renders a single house prop on the free-farm ground field.
+ *
+ * LAYER: view. Painted EXACTLY like a scatter decor (see the decor pass in
+ * {@link FarmTerrainLayer}): a single foot-anchored sprite z-sorted per-tile
+ * within the terrain's `background` slot (`computeLayerZ(...,'background') + 0.1`).
+ * Unlike a decor (which is small enough to anchor at the frame's bottom-center),
+ * the house uses a measured {@link HOUSE_ANCHOR} so its base-diamond FRONT CORNER
+ * — not the frame's bottom-center — lands on the foot tile's front vertex.
+ * No whole-plane z-lift — being foot-anchored, tiles BEHIND it draw underneath and
+ * tiles IN FRONT draw over it, so it nestles into the ground plane the same way a
+ * decor sprite does.
+ *
+ * NOTE: like a decor it sorts in the background slot (below the entity slot), so a
+ * future pedestrian would always render in front of it. If the house needs to
+ * occlude/ be occluded by walkers, move it to the `entity` slot.
+ *
+ * NOTE: the foot tile is a hard-coded SAMPLE — replace with an authored/
+ * data-driven placement once buildings become part of the market layout.
+ */
+
+/** Foot tile the house stands on (iso grid units). On the near side of the grass
+ * patch, in view at the default zoom (which centers on the iso origin). */
+const HOUSE_FOOT: { isoX: number; isoY: number } = { isoX: 5, isoY: 5 };
+
+// The house-specific {@link HOUSE_ANCHOR} (base-diamond front corner, not the frame's
+// bottom-center) is shared with the template editor via engine/market/house.ts.
+
+// ── Anchor-point debug marker ────────────────────────────────────────────────
+// Magenta crosshair + dot drawn at the sprite's anchor point (its bottom-center /
+// foot vertex) so the exact placement point is visible on the field. Floated well
+// above the house so it always reads.
+const ANCHOR_MARKER_ARM = 4;   // crosshair arm length, pre-zoom screen px
+const ANCHOR_MARKER_COLOR = 0xff00ff;
+const ANCHOR_MARKER_Z = 10_500; // above the house; just over the origin crosshair (10_000)
+
+export default function HouseLayer() {
+  const [texture, setTexture] = useState<Texture | null>(null);
+
+  const { screenX: anchorX, screenY: anchorY } = isoToScreen(HOUSE_FOOT.isoX, HOUSE_FOOT.isoY);
+  const drawAnchor = useCallback((g: Graphics) => {
+    g.clear();
+    // Crosshair.
+    g.moveTo(anchorX - ANCHOR_MARKER_ARM, anchorY);
+    g.lineTo(anchorX + ANCHOR_MARKER_ARM, anchorY);
+    g.moveTo(anchorX, anchorY - ANCHOR_MARKER_ARM);
+    g.lineTo(anchorX, anchorY + ANCHOR_MARKER_ARM);
+    g.stroke({ color: ANCHOR_MARKER_COLOR, width: 0.75, alpha: 1 });
+    // Centre dot on the exact anchor pixel.
+    g.circle(anchorX, anchorY, 0.9);
+    g.fill({ color: ANCHOR_MARKER_COLOR, alpha: 1 });
+  }, [anchorX, anchorY]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const tex = await Assets.load<Texture>(houseUrl);
+      tex.source.scaleMode = 'nearest'; // crisp pixel-art upscaling
+      if (!cancelled) setTexture(tex);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  if (!texture) return null;
+
+  return (
+    <>
+      <pixiSprite
+        texture={texture}
+        x={anchorX}
+        y={anchorY}
+        anchor={HOUSE_ANCHOR}
+        // Same z as a scatter decor: just above the foot tile's surface, still within
+        // the background slot (< entity's +0.25).
+        zIndex={computeLayerZ(HOUSE_FOOT.isoX, HOUSE_FOOT.isoY, 'background') + 0.1}
+        eventMode="none"
+      />
+      {/* Debug: the sprite's anchor / foot point. */}
+      <pixiGraphics draw={drawAnchor} zIndex={ANCHOR_MARKER_Z} />
+    </>
+  );
+}

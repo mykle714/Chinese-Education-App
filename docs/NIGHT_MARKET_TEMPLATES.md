@@ -1,10 +1,32 @@
 # Night Market Templates
 
-> **Status: DESIGN / not yet implemented.** This doc specifies the template system
-> that will become the *authoring source* for a user's Night Market layout. The
-> placement algorithm (which template goes where, and when) is deliberately left
-> as a TBD — see [Tiling & Placement](#tiling--placement). Cross-references to code
-> are forward-looking until the system is built.
+> **Status: DESIGN — authoring built, runtime not yet built.** This doc specifies the
+> template system that is the *authoring source* for a user's Night Market layout.
+> **Authoring exists**: validators paint templates in the desktop editor
+> ([NIGHT_MARKET_TEMPLATE_EDITOR.md](./NIGHT_MARKET_TEMPLATE_EDITOR.md)), persisted to
+> the DB catalog `nightmarkettemplatedefinitions` (migrations 107–109). The **runtime
+> that consumes the catalog** (placement → street recovery → graph feeding → render) is
+> not yet built; cross-references to that code are forward-looking.
+>
+> **Two design decisions are locked (this settles the earlier "code registry" and
+> per-cell-trigger TBDs):**
+>
+> 1. **Catalog is read DB-direct.** The runtime reads `nightmarkettemplatedefinitions`
+>    live; there is **no promote-to-code registry**. Derived structures (edge
+>    signatures, `anchorIndex`) are computed **at load**, not at build.
+> 2. **Versions are full walkability snapshots.** A template name has numbered
+>    versions; each version is a *complete* cell grid (its own walkability). The
+>    per-cell OR-trigger model (`cellClassConditions`) is **dropped** — runtime picks
+>    *which whole version to show* via a pluggable **version selector** (see
+>    [Template versions](#template-versions--full-snapshots)). The selector is a
+>    **random stub for now**; the real rule (keyed on template placement + which
+>    placeholders are filled) is future work.
+>
+> Remaining TBDs: the version-selection rule, and the tileset scheme (see
+> [Open questions](#open-questions)).
+>
+> **Build tracker:** the runtime implementation plan (modules, slices, status) lives in
+> [NIGHT_MARKET_TEMPLATE_RUNTIME_PLAN.md](./NIGHT_MARKET_TEMPLATE_RUNTIME_PLAN.md).
 
 ## Why templates
 
@@ -108,30 +130,57 @@ terminates cleanly.
   global grid — so streets that continue into an abutting template render as
   continuous road, not as two capped stubs. (This is exactly what the edge-signature
   matching rule in [Edge signatures](#edge-signatures) guarantees.)
-- Because a cell's class can flip at runtime (see
-  [Conditional cell classes](#conditional-cell-classes--template-versions)), the
-  autotile sprite of a cell **and its neighbors** must be recomputed whenever any
-  trigger changes (placeholder occupancy *or* a neighbor template appearing —
-  templates are append-only, so they only ever appear, never leave),
-  not just at template placement.
+- Because a cell's class can differ between versions (see
+  [Template versions](#template-versions--full-snapshots)), the autotile sprite of a
+  cell **and its neighbors** must be recomputed whenever a placed template's **active
+  version changes** or a neighbor template appears (templates are append-only, so they
+  only ever appear, never leave), not just at template placement.
 
 > **TBD:** the exact tileset scheme (4-bit edge-only vs 8-bit blob/47-tile, which
 > classes participate, and the sprite atlas) is not yet specified.
+
+**Implemented (landmass autotiling).** The first concrete autotiler ships in
+`src/engine/market/freeFarmTileset.ts`:
+- `pickLandmassEdge(neighbours)` — 4-cardinal edge-only scheme over the free-farm
+  `LandmassEdge` vocabulary (`center`, `northEdge`, `eastEdge`, `northEdge_eastEdge`,
+  and four convex `*Round` corners). Only the far **N (+isoY)** and **E (+isoX)** faces
+  are authored/visible; a missing near S/W neighbour names a round but draws no rim.
+- `pickGrassBorderOverlays(kind, neighbours)` — the **grass↔dirt boundary** autotiler:
+  given a dirt tile's 8-neighbour grass occupancy, returns the overlay URLs to STACK so grass
+  from adjacent patch cells spills onto the tile. **Edge-centric + convex dots**: one
+  full-edge overlay per grass cardinal (`nw,n,ne`/`ne,e,se`/`sw,s,se`/`nw,w,sw`); two adjacent
+  grass cardinals overlap at their shared vertex → concave corner filled seamlessly; a single
+  isolated diagonal (both flanks dirt) → a corner dot (`ne`/`nw`/`se`/`sw`). Validated against
+  the pack art on an irregular blob before wiring.
+- `pickGrassOverlay(neighbours)` — lower-level exact compass-set lookup that the above builds on.
+- `src/engine/market/farmTerrain.ts` (`buildFarmField` + `buildGrassPatch`) marks each tile
+  grass/dirt (one contiguous wobbly patch), the tallDirt `fieldEdge` for the plateau rim, and
+  the 8-dir `grassNeighbours`; rendered by `features/nightmarket/FarmTerrainLayer.tsx`.
+  See *Terrain rendering* in [NIGHT_MARKET_FEATURE.md](./NIGHT_MARKET_FEATURE.md).
 
 ---
 
 ## Placeholder areas
 
-Separate from the per-cell asset map, a template defines a **list of placeholder
-areas**. Each area is a **rectangle** in local `(col,row)` space:
+Placeholder areas are **not authored as rectangles** — they are **derived from the
+islands of the placeholder mask.** The editor paints a placeholder mask (a `Set` of
+`"col,row"` cells, single-sourced on **version 0** and shared by every version — see
+[NIGHT_MARKET_TEMPLATE_EDITOR.md](./NIGHT_MARKET_TEMPLATE_EDITOR.md)); at load the
+runtime runs **connected-component labeling** (4-connectivity on the local grid) over
+those cells. **Each connected island is one placeholder area** (one occupant slot):
 
 ```
-placeholderAreas: Array<{ id, col, row, width, height }>  // axis-aligned rectangle
+placeholderAreas = connectedComponents(placeholder)   // computed at load, not authored
+// each area → { id: <stable, derived from island cells>, cells: Set<"col,row">, bbox }
 ```
 
-The **occupant asset's footprint always equals the area size** (`width × height`),
-so an occupant exactly fills its placeholder — there is no sub-area anchoring or
-partial fill to reason about.
+- The area's **size** is its island's cell count / bounding box; the **occupant
+  asset's footprint equals the area** (an occupant exactly fills its island), so
+  there is no sub-area anchoring or partial fill to reason about.
+- Because the placeholder mask lives on version 0 and is shared, **occupant slots are
+  fixed per template name** — a version can only re-skin the streets/communal/decor
+  *around* the slots; it cannot add or remove a slot. (Islands are stable across
+  versions, so occupant identity survives a version change.)
 
 Semantics:
 
@@ -151,83 +200,55 @@ cell's walkability class and asset-map entry describe the *default* template; th
 placeholder layer decides, at render time, whether the default or an occupant is
 shown for a given area.
 
-### Conditional cell classes — template "versions"
+### Template versions — full snapshots
 
-A template is not a single fixed grid: cells can **switch walkability class** based
-on runtime state, so a template has **multiple versions**. The switch can happen
-**both inside and outside a placeholder's own rectangle** — most importantly it can
-**flip cells between `communal-walkable` and `street-walkable`** (e.g. a short
-connecting street "opens" only once a stand exists, or only once a neighbor template
-is there to connect to).
+A template name is not a single fixed grid: it has **numbered versions**, and **each
+version is a complete, independent walkability snapshot** (its own street / communal /
+decor layers). Versions exist so a template can re-skin itself in response to runtime
+state — most importantly to **flip cells between `communal-walkable` and
+`street-walkable`** (e.g. a short connecting street that is only "open" in some
+versions). Version 0 owns the shared placeholder mask; higher versions inherit it (see
+[Placeholder areas](#placeholder-areas)), so **the occupant slots are identical across
+versions — only the surrounding walkability differs.**
 
-**Each cell can carry multiple conditions, combined with OR — *any* satisfied
-condition triggers the switch.** Two kinds of trigger:
-
-1. **Placeholder occupancy** — a specific placeholder in *this* template is occupied
-   (e.g. dropping a stand opens its access street).
-2. **Template adjacency** — another template is placed adjacent on a given edge
-   (e.g. a boundary street cell becomes `street-walkable` only when there is a
-   neighbor to connect to, instead of dead-ending as a stub).
-
-A single cell may depend on **multiple placeholders and multiple adjacent
-templates** at once; if *any* of its conditions holds, it takes the switched class.
-Because these effects reach beyond the placeholder rectangle, the conditions must be
-**authored explicitly in the template object**, not inferred from occupant
-footprints. Conceptually:
+There is **no per-cell trigger model.** Instead the runtime, at load, chooses **one
+active version per placed template** through a pluggable **version selector**:
 
 ```
-// per template, in the code registry
-cellClassConditions: Array<{
-  cells: Array<"col,row">,         // cells that switch together
-  class: "street-walkable" | "communal-walkable" | "unwalkable",  // class when ANY trigger holds
-  anyOf: Array<                    // OR — any satisfied trigger applies `class`
-    | { type: "placeholderOccupied", placeholderId: string }
-    | { type: "templateAdjacent",   edge: "north" | "south" | "east" | "west" }
-  >,
-}>
+selectVersion(placed, worldState): number   // returns one of the name's availableVersions
 ```
 
-A cell's **effective walkability** = its template default, with the switched `class`
-applied if any of its conditions holds, then overridden by any occupant footprint
-covering it.
+- **Current implementation — random stub.** `selectVersion` returns a version chosen
+  at random (persisted with the placement so it is stable, not re-rolled each render).
+  This makes the *plumbing* for version changing exist end-to-end now; only the policy
+  is a stub.
+- **Future rule (not yet designed).** The real selector will key on **template
+  placement + which placeholders are filled** — e.g. pick the version whose connecting
+  streets match the neighbors that are actually present and the occupants that are
+  actually placed. When this lands it replaces only the body of `selectVersion`; the
+  seam and the "one active version per placed template" model do not change.
+
+A cell's **effective walkability** = the *active version's* value for that cell, then
+overridden by any occupant footprint covering it.
 
 Consequences:
 
-- The **tile graph, street graph, and autotile sprites must be recomputed** whenever
-  any input to these conditions changes — a placeholder's occupancy *or* a neighbor
-  template being placed (templates are append-only — never removed) — not just when
-  a template is first placed.
-- **No speculative edge-signature matching.** A new template is only placed when the
-  existing template is **full** (all placeholders occupied — see
-  [Tiling & Placement](#tiling--placement)). At that moment every *occupancy-driven*
-  conditional street is already manifested, so the edge the neighbor attaches to is a
-  **real, present street** — signatures are matched against the live, manifested edge,
-  not a hypothetical "connected" state.
+- The **tile graph, street graph, and autotile sprites are recomputed** whenever a
+  placed template's **active version changes** or a neighbor template appears
+  (templates are append-only — never removed) — not just at first placement.
+- **The condition mask has no runtime consumer yet.** The editor still lets authors
+  paint a per-version condition mask (an annotation of "cells that matter to version
+  selection"); until the real `selectVersion` rule exists, nothing reads it. It is a
+  harmless author aid, retained so the future selector has the annotation to key on.
 
-### Why streets carry an adjacency dependency (decay safety)
-
-Once a neighbor template is attached through a conditional street, that **neighbor's
-adjacency becomes a second trigger** on the same street. The street then lives on:
-
-> `(its placeholder occupant is present)` **OR** `(the neighbor template is present)`
-
-The point is **decay safety**. If the original placeholder occupant is later removed
-by minute decay ([Unlock economy](#unlock-economy-minutes--unlocks)), the street must
-**not** suddenly vanish — the neighbor template may still exist (it has its own
-occupants), and a vanished street would orphan it from the graph. The adjacency
-trigger forces the street to persist as long as the neighbor is there.
-
-**Authoring invariant (must be tested).** Template authors configure these triggers
-by hand, so a test must enforce the rule that makes decay safety hold:
-
-- **Every conditional street cell that runs off a template edge must include a
-  `templateAdjacent` trigger for that edge** (in addition to whatever
-  `placeholderOccupied` trigger originally opened it). Without it, attaching a
-  neighbor through that edge would create a street whose only lifeline is the
-  occupant — and decay could disconnect a live neighbor.
-
-Tests for these authoring rules live alongside the registry/graph tests (see
-[NIGHT_MARKET_GRAPH_ASSUMPTIONS.md](./NIGHT_MARKET_GRAPH_ASSUMPTIONS.md)).
+> **Decay safety is now a property of the version selector, not per-cell triggers.**
+> Under the old model a street cell carried an explicit `templateAdjacent` OR-trigger
+> so it would survive its occupant decaying while a neighbor still leaned on it. With
+> full snapshots, the equivalent guarantee must come from the (future) selection rule:
+> **it must never pick a version that removes a street a live neighbor depends on.**
+> This is an open constraint on the version-selection design (see
+> [Open questions](#open-questions)), and will be covered by a graph-invariant test
+> once the rule is specified.
 
 ---
 
@@ -280,31 +301,99 @@ triggers:
    unoccupied placeholder area.
 2. **Grant an unlock of that size.** The unlock chosen is sized to the selected
    placeholder (occupant footprint = placeholder area, by construction), then placed
-   into that spot, flipping the template to its occupied version (see
-   [Conditional cell classes](#conditional-cell-classes--template-versions)).
+   into that spot, occupying that slot; the placed template may then re-select its
+   active version (see [Template versions](#template-versions--full-snapshots)).
 3. **No free placeholder? Spawn a new template.** If no unoccupied placeholder
    exists (of the size needed), append a **new template** adjacent to an existing
    one, then place the unlock into one of the new template's fresh placeholders.
 
 ### How a new template attaches
 
-- A new template attaches onto an existing template **via its street shape** — the
-  candidate's facing-edge signature must **match** the open edge it attaches to
-  ([Edge signatures](#edge-signatures)), so streets stay continuous across the seam.
-- Spawning only happens when the existing template is **full** (no free
-  placeholder), so all of its occupancy-driven conditional streets are already
-  manifested. Edge signatures are therefore matched against the **live, manifested
-  edge** — no speculation needed (see
-  [Conditional cell classes](#conditional-cell-classes--template-versions)).
-- Templates are **never rotated**, so candidate selection is purely signature
-  equality on the target edge.
-- Start state: one **starter ("hub") template at the origin** — this is the
-  default origin template every user has at 0 minutes (see
-  [Unlock economy](#unlock-economy-minutes--unlocks)).
+New templates are stitched onto the existing **contiguous continent** along a shared
+**anchor**. The whole policy is deterministic except a final random tiebreak; because
+the result is **persisted** to `nightmarkettemplates`, the algorithm runs **once,
+server-side, at spawn time** and is never recomputed on the client.
 
-> **Still pending — algorithm not yet designed.** The selection/placement policy is
-> deferred: which free placeholder to fill (random vs. weighted), which template to
-> spawn and against which open edge, and overlap/gap/multi-edge handling.
+- Start state: one **starter ("hub") template at the origin** — the default origin
+  template every user has at 0 minutes (see
+  [Unlock economy](#unlock-economy-minutes--unlocks)).
+- Spawning only happens when the existing continent is **full** (no free
+  placeholder), so every placed template has settled on an active version and anchors
+  are matched against the **live, currently-rendered** edges — no speculation (see
+  [Template versions](#template-versions--full-snapshots)).
+- Templates are **never rotated**, so an edge only ever mates with its opposite
+  cardinal (`east↔west`, `north↔south`); candidate lookup is complement-direction +
+  equal width.
+
+#### Anchors and the anchor index
+
+An **anchor** is a **maximal contiguous run of `street-walkable` boundary cells on a
+single edge** of a template, described by `(direction, width)` (width = cells in the
+run). One edge can hold several anchors (separated by non-street gaps); one template
+can carry anchors on all four edges. Anchors are **derived from the cell grid at load**
+(never hand-entered — same anti-drift rationale as edge signatures) and indexed for
+fast lookup:
+
+```
+anchorIndex: Map<Direction, Map<width, TemplateAnchor[]>>
+TemplateAnchor = { templateId, edge, runStart /* first run cell's offset along the edge */, width }
+```
+
+so "every template with a width-`W` west-facing anchor" is a direct
+`anchorIndex[west][W]` lookup.
+
+#### Placement algorithm
+
+1. **Enumerate exposed continent anchors.** Across all placed templates, find every
+   maximal contiguous run of `street-walkable` boundary cells whose cells are
+   **exposed** (not abutting an already-placed template). Each yields a concrete cell
+   run + `(direction, width)`.
+2. **Pick the closest anchor.** Rank exposed anchors by distance from the map origin
+   (run-centroid Manhattan distance, cell units); take the nearest.
+3. **Gather candidate placements.** Look up `anchorIndex[complement(direction)][width]`.
+   Each `(candidate template, matching run)` mates to the anchor in exactly **one**
+   alignment — the two runs' cells must coincide, pinning both the parallel and
+   perpendicular offsets — so each pair is one fully-determined placement.
+4. **Discard illegal placements** with [`isPlacementLegal`](#isplacementlegalplaceda-placedb--cell-level-seam-check),
+   evaluated against **every** already-placed template the candidate would touch
+   (nestling into a concavity can create several seams at once).
+5. **Rank by matched street runs (maximize).** Score = number of **distinct
+   contiguous street runs** the placement joins across all its seams, where a matched
+   run is a maximal contiguous set of seam cell-pairs that are `street-walkable` on
+   both sides. The anchor itself is one; extra seams may add more. A width-4 join and
+   a width-1 join each count as **one** run — this rewards the *number* of road
+   connections, not their width.
+6. **Tiebreak — maximin spread (maximize).** For each **exposed** edge cell of the
+   newly placed template, fan out along that cell's outward normal to the first other
+   placed template (void ⇒ ∞). Take the **minimum** such gap over the placement's
+   exposed edge cells; prefer the placement whose minimum gap is **largest**. This
+   spreads templates apart and avoids pinch points. (Anchor-touching cells are gap 0
+   and are excluded, or the metric collapses to 0 for every candidate.)
+7. **Tiebreak — random.** Pick uniformly among survivors. Safe to be truly random
+   because the choice is persisted, not recomputed.
+
+**Anchor fallback + logging.** If **no candidate at the closest anchor is legal**,
+advance to the **next-closest** anchor and repeat, emitting a
+`template-match-not-found` log (account, current template layout, the attempted
+anchor) for each anchor that fails. If **every** exposed anchor fails, emit a final
+`template-match-not-found` log (account, template layout, flag: *all anchors
+exhausted*) and abort the spawn.
+
+#### `isPlacementLegal(placedA, placedB)` — cell-level seam check
+
+Given two placed templates (each `{ templateId, offsetCol, offsetRow }`):
+
+- **No overlap.** Their cell footprints must be disjoint (any overlap ⇒ illegal).
+- **Seam compatibility.** For every pair of cells adjacent **across the shared seam**
+  (one cell in A, the orthogonally-adjacent cell in B), both must be `street-walkable`
+  or both must be non-street. A single disagreeing pair ⇒ illegal.
+
+This **cell-level** rule generalizes the whole-edge "equal facing-edge signatures"
+statement in [Edge signatures](#edge-signatures): equal signatures is only the special
+case of two equal-dimension templates butting flush. Partial or multi-template
+abutment on a continent needs the per-cell form. Walkability is read from each
+template's **active version** (see
+[Template versions](#template-versions--full-snapshots)) in its post-placement state.
 
 ---
 
@@ -376,10 +465,11 @@ Consequences:
   placement picks among **all** placed templates' free placeholders (see
   [Tiling & Placement](#tiling--placement)), a later re-granted unlock backfills
   these empties before any new template is spawned.
-- **Adjacency-triggered streets become permanent.** A conditional street kept alive
-  by a `templateAdjacent` trigger ([Why streets carry an adjacency
-  dependency](#why-streets-carry-an-adjacency-dependency-decay-safety)) can never be
-  orphaned, since the neighbor template it depends on is itself never removed.
+- **Streets a live neighbor leans on must not vanish.** Because templates are
+  append-only, a street a neighbor connects through must stay present even if this
+  template's own occupants decay. Under the version model this is a constraint the
+  future **version selector** must honor — never pick a version that drops a street a
+  live neighbor depends on (see [Template versions](#template-versions--full-snapshots)).
 
 > **No new `minutesLost` table.** The minute deduction is already recorded as
 > `userminutepoints.penaltyMinutes` (keyed `userId, streakDate, language`) by the
@@ -392,16 +482,29 @@ Consequences:
 Two layers, mirroring the existing Night Market split between code-defined assets
 and DB-persisted user state:
 
-### Template definitions — **code registry** (static content)
+### Template definitions — **DB catalog** (authored content)
 
-Template grids, walkability classes, asset maps, placeholder areas, **conditional
-cell-class rules** (occupancy + adjacency triggers — see
-[Conditional cell classes](#conditional-cell-classes--template-versions)), and edge
-signatures are authored in code alongside `src/engine/market/nightMarketRegistry.ts`
-(and its server twin `server/config/nightMarketRegistry.ts`). Signatures can be
-**derived** from the cell grid at build time rather than hand-entered, to avoid
-drift. The static **minutes→unlocks schedule** (see
-[Unlock economy](#unlock-economy-minutes--unlocks)) is also a code constant, here.
+Templates are authored by validators in the **desktop template editor**
+([NIGHT_MARKET_TEMPLATE_EDITOR.md](./NIGHT_MARKET_TEMPLATE_EDITOR.md)) and persisted to
+the DB table **`nightmarkettemplatedefinitions`** (migrations 107–109), one row per
+`(name, version)`. Each row stores the version's cell grid — walkability layers
+(street / communal), the shared placeholder mask (single-sourced on version 0), the
+condition mask, decor stems, house anchors — plus `width`/`height` and the shared
+`description`.
+
+**The runtime reads this catalog DB-direct** (decision #1 in the status block): there
+is **no promote-to-code registry**. Derived structures are computed **at load, not at
+build**:
+
+- **Placeholder areas** — connected-component labeling of the placeholder mask (see
+  [Placeholder areas](#placeholder-areas)).
+- **Edge signatures + `anchorIndex`** — derived from each version's street cells (see
+  [Edge signatures](#edge-signatures) and
+  [Anchors and the anchor index](#anchors-and-the-anchor-index)).
+
+The static **minutes→unlocks schedule** (see
+[Unlock economy](#unlock-economy-minutes--unlocks)) remains a **code constant** (it is
+policy, not authored content), living alongside the placement module.
 
 ### Per-user placement — **one new table + existing unlocks** (persisted)
 
@@ -419,12 +522,15 @@ slot that an *unlock* fills — so occupancy is recorded on the existing
 |---|---|---|
 | `id` | UUID PK | |
 | `userId` | UUID FK → users(id) ON DELETE CASCADE | owner |
-| `templateId` | VARCHAR | key into the code registry |
+| `templateName` | VARCHAR | the catalog key — `nightmarkettemplatedefinitions.name` (a **name**, not a specific version) |
+| `activeVersion` | INTEGER | the version currently rendered, chosen by `selectVersion` (random stub) and **persisted so it is stable across renders** |
 | `offsetCol` | INTEGER | NW corner's column offset in **template-cell units** |
 | `offsetRow` | INTEGER | NW corner's row offset in **template-cell units** |
 | `placeOrder` | INTEGER | 0 = starter template at origin, 1+ = unlocked placements |
 | `createdAt` | TIMESTAMPTZ | |
 
+A placement references a template **by name**; `activeVersion` records which snapshot
+is currently shown (see [Template versions](#template-versions--full-snapshots)).
 Offset is stored in **local `col/row` cell units** (not global isoX/isoY); the
 `(col,row) → (isoX, isoY)` conversion happens at render via `src/engine/market/isometric.ts`.
 
@@ -450,36 +556,87 @@ the migration can add them as NOT NULL without a backfill.
 Templates **replace hand-authored tile registration** as the source for the graphs:
 
 1. Place templates per the user's persisted layout → a global set of cells with
-   walkability classes (after applying each template's conditional cell-class rules:
-   placeholder occupancy + neighbor-template adjacency).
+   walkability classes (using each placed template's **active version**, selected by
+   `selectVersion` — see [Template versions](#template-versions--full-snapshots) — then
+   applying occupant footprints).
 2. **Tile graph:** all `street-walkable` + `communal-walkable` cells become
    walkable tiles, 4-connected by adjacency (today's construction in
    `src/engine/market/tileGraph.ts`).
-3. **Street graph:** built from `street-walkable` cells **only**;
-   `communal-walkable` cells are excluded from edge/node computation
-   (`src/engine/market/streetGraph.ts`).
-4. The stitched result must still satisfy every invariant in
+3. **Street recovery:** decompose the `street-walkable` cells **only** (communal
+   cells excluded) into `Street` rectangles + per-cell `intersectingStreets` — see
+   [Street recovery](#street-recovery-mask--street) below.
+4. **Street graph:** feed the recovered `Street[]` + stamped tiles into the
+   **existing** `buildStreetGraph` (`src/engine/market/streetGraph.ts`) unchanged —
+   it builds nodes (with projection), dead-ends, and lane edge bodies.
+5. The stitched result must still satisfy every invariant in
    [NIGHT_MARKET_GRAPH_ASSUMPTIONS.md](./NIGHT_MARKET_GRAPH_ASSUMPTIONS.md)
    (rectangular nodes, uniform edge widths, etc.). The edge-signature matching
    rule is what makes cross-seam streets contiguous enough to satisfy them.
 
-> **Still pending — algorithm not yet written.** Step 3 glosses over the hard part:
-> today's street graph is built from authored `Street { isNorthSouth, start, end,
-> offset, width }` objects, but templates only give us a *grid of street-walkable
-> cells*. The algorithm to **recover `Street` objects (runs, widths, offsets) from
-> the stitched cell map** — so the existing `buildStreetGraph` machinery and the
-> graph invariants still apply — is a TBD design pass.
+### Street recovery (mask → `Street[]`)
+
+The street mask is the **authored source of truth**; recovery turns the *stitched*
+mask into the `Street` rectangles the existing `buildStreetGraph` already consumes.
+Recovery is a **pure function of the stitched mask** — it runs in the graph-build
+path (client + server) on load, replacing today's hand-authored `Street[]`; **nothing
+is persisted** (only the template *placements* are — see [Storage](#storage)).
+
+**Do not build nodes/edges here.** Recovery only produces `Street[]` +
+`intersectingStreets`; `buildStreetGraph` does nodes/edges. Reimplementing that from
+the mask would drop projection (breaking [N2](./NIGHT_MARKET_GRAPH_ASSUMPTIONS.md))
+and dead-end handling (dropping stub edges + `bodyTileSet`).
+
+**Algorithm — greedy maximal-rectangle cover.** A run-length heuristic (fan out, take
+the shorter axis as width) is **not** used: at a crossing the perpendicular fan
+measures the *crossing* street, not the width, and short crossings (both arms ≤ 8)
+read as bogus-but-legal widths that no `width ≤ 8` gate can catch. Instead:
+
+1. **Sample** an uncovered street cell; **grow its maximal axis-aligned rectangle**
+   (extend N/S/E/W until a non-street cell) and emit it as a `Street`
+   (`isNorthSouth = height > width`, with `start/end/offset/width` from its extent;
+   synthesize a stable `name`).
+2. **Stamp ownership** — add the emitted street to `intersectingStreets` for every
+   cell it covers.
+3. **Skip** any cell already covered by a **same-orientation** rectangle (dedup). A
+   cell that ends up under rectangles of **both** orientations is an **intersection**
+   — detected by ownership, needing no width test.
+4. **Repeat** until every street cell is covered.
+5. **Assert `width ∈ [1, 8]`** on every emitted street (the authoring bound — see
+   [NIGHT_MARKET_GRAPH_ASSUMPTIONS.md](./NIGHT_MARKET_GRAPH_ASSUMPTIONS.md) S3). A
+   `width > 8` means a malformed mask or a sampling bug — **fail loudly**.
+
+Because every emitted street is a genuine filled rectangle, S1/S2/E2 hold by
+construction; projection inside `buildStreetGraph` covers T-junctions (N2).
+
+> **Authoring invariant (tested, not enforced in recovery).** Three streets mutually
+> overlapping can yield an **L-shaped node** (violates
+> [N1](./NIGHT_MARKET_GRAPH_ASSUMPTIONS.md)). Rather than complicate recovery, a test
+> asserts every `buildStreetGraph` node comes out rectangular; a pathological authored
+> mask fails the test and the author fixes the mask
+> (`src/engine/market/__tests__/graphAssumptions.test.ts`).
 
 ---
 
 ## Open questions
 
-1. **Placement algorithm:** selection/ordering policy, gap/overlap handling,
-   multi-edge constraints (see [Tiling & Placement](#tiling--placement)).
-2. **Street-recovery algorithm:** how to derive `Street` objects from a stitched
-   cell grid (see [Feeding TILE_GRAPH / STREET_GRAPH](#feeding-tile_graph--street_graph)).
-3. **Tileset scheme:** the autotiling bitmask/atlas
+1. **Version-selection rule.** `selectVersion` is a **random stub** today. The real
+   rule keys on **template placement + which placeholders are filled** (see
+   [Template versions](#template-versions--full-snapshots)). It must also satisfy a
+   **decay-safety constraint**: never select a version that removes a street a live
+   neighbor template depends on. Until designed, the per-version **condition mask** has
+   no consumer.
+2. **Tileset scheme:** the autotiling bitmask/atlas
    (see [Tile rendering](#tile-rendering-autotiling)).
+
+> **Resolved — street-recovery algorithm.** Greedy maximal-rectangle cover of the
+> stitched street mask → `Street[]` + `intersectingStreets`, fed to the existing
+> `buildStreetGraph`; `width ∈ [1,8]` assertion; L-shaped-node authoring invariant
+> under test (see [Street recovery](#street-recovery-mask--street)).
+
+> **Resolved — placement algorithm.** Anchor-driven, run-off-the-origin selection with
+> cell-level legality, distinct-street-run ranking, maximin spread tiebreak, random
+> final tiebreak, and nearest-first anchor fallback with `template-match-not-found`
+> logging (see [How a new template attaches](#how-a-new-template-attaches)).
 
 > **Resolved — communal-walkable routing.** Communal cells are for parks/plazas
 > (relax/play), never for traffic or servicing — and a stand's access tile never
@@ -499,12 +656,27 @@ Templates **replace hand-authored tile registration** as the source for the grap
 
 Code this doc will depend on / drive once implemented:
 
-- `src/engine/market/nightMarketRegistry.ts` / `server/config/nightMarketRegistry.ts` —
-  will gain template definitions.
+- **DB catalog `nightmarkettemplatedefinitions`** (migrations 107–109) read DB-direct
+  via `NightMarketTemplateService` — the authored source; **no code registry.**
+- **New catalog-load module** — reads the catalog and computes, at load, the
+  **`selectVersion` seam** (random stub), the **placeholder areas** (connected-component
+  labeling), and the **`anchorIndex`** keyed by `(direction, width)` (see
+  [Anchors and the anchor index](#anchors-and-the-anchor-index),
+  [Placeholder areas](#placeholder-areas),
+  [Template versions](#template-versions--full-snapshots)).
+- **New placement module** (server-side, runs at spawn time) — the anchor-driven
+  algorithm + `isPlacementLegal` cell-level seam check + `template-match-not-found`
+  logging (see [How a new template attaches](#how-a-new-template-attaches)).
 - `src/engine/market/tileGraph.ts` — tile graph built from placed-template cells.
-- `src/engine/market/streetGraph.ts` — street graph built from `street-walkable` cells.
+- **New street-recovery module** — greedy maximal-rectangle cover of the stitched
+  street mask → `Street[]` + `intersectingStreets` (see
+  [Street recovery](#street-recovery-mask--street)); its output feeds
+  `buildStreetGraph`.
+- `src/engine/market/streetGraph.ts` — street graph built from the recovered
+  `Street[]` (unchanged; still does nodes/projection/dead-ends/edge bodies).
 - `src/engine/market/isometric.ts` — local `(col,row)` → global `(isoX, isoY)` mapping.
-- New DB table `nightmarkettemplates` (placements) + new `placedTemplateId` /
+- New DB table `nightmarkettemplates` (placements — references the catalog by
+  `templateName` + persisted `activeVersion`) + new `placedTemplateId` /
   `placeholderAreaId` columns on `nightmarketunlocks` (occupants).
 - `users.totalMinutePoints` — the minute accumulator the unlock schedule reads
   (see [MINUTE_POINTS_SYSTEM.md](./MINUTE_POINTS_SYSTEM.md)).

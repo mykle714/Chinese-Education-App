@@ -5,7 +5,9 @@ import { RENDER_SLOT_Z } from './nightMarketRegistry';
  * Isometric coordinate system utilities for the Night Market.
  *
  * Converts isometric grid coordinates (isoX, isoY) into screen-space
- * coordinates (screenX, screenY) using true isometric projection (30° angle, equal axes).
+ * coordinates (screenX, screenY) using a 2:1 dimetric ("pixel-art isometric")
+ * projection — the tile diamond is twice as wide as it is tall. This matches
+ * the free-farm-assets tilepack, whose surface diamonds are authored 32×16.
  *
  * Axis orientation (compass directions match the screen layout):
  *   - Increasing isoX → top-right on screen (east)
@@ -32,11 +34,18 @@ import { RENDER_SLOT_Z } from './nightMarketRegistry';
  *   anything across asset depths.
  */
 
-/** Width of one isometric tile in pixels (horizontal span of the diamond) */
-export const TILE_WIDTH = 128;
+/**
+ * Width of one isometric tile in pixels (horizontal span of the diamond).
+ * 32 == the free-farm surface-diamond width at native (1:1) resolution; the
+ * camera does integer zoom for crisp upscaling, so no per-tile scaling.
+ */
+export const TILE_WIDTH = 32;
 
-/** Height of one isometric tile in pixels (vertical span of the diamond, width ÷ √3 for 30° angle) */
-export const TILE_HEIGHT = TILE_WIDTH / Math.sqrt(3); // ~73.86px
+/**
+ * Height of one isometric tile in pixels (vertical span of the diamond).
+ * 2:1 dimetric → exactly half the width (16px), matching the pack's 32×16 art.
+ */
+export const TILE_HEIGHT = TILE_WIDTH / 2; // 16px
 
 export interface ScreenPosition {
   screenX: number;

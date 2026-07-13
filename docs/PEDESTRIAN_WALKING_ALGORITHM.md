@@ -1,6 +1,15 @@
 # Pedestrian Walking Algorithm
 
-Defines how a pedestrian translates a high-level street-graph route (`[node₀, edge₀₁, node₁, edge₁₂, …, nodeₙ]`) into concrete tile-by-tile movement. The model deliberately *abstracts away the concept of a fixed "lane"* — pedestrians do axial walks irrespective of which perpendicular row/column they are currently in, and lane changes happen freely both inside nodes and mid-edge.
+A pedestrian's behavior is driven by its **agenda** (`AgendaGoal[]`, `nightMarketRegistry.ts`). There are two movement modes, one per goal kind:
+
+| Goal | Movement mode | State | Uses street graph? |
+|---|---|---|---|
+| `VisitStand` | Street-graph axial walk (the bulk of this doc) | `Traveling` | **Yes** |
+| `Wander` | Free tile-level **random walk** (see [Random-walk Wander](#random-walk-wander-free-mode)) | `Wandering` | **No** |
+
+> **Current runtime note:** only `Wander` goals are seeded (`ensureAmbientAgenda`, `usePixiPedestrians.ts`). No code creates `VisitStand` goals yet, so `Traveling` / `planPath` / the entire street-graph walk below are **dormant** — retained for when stand-visiting is (re-)introduced. Ambient peds currently just random-walk.
+
+The rest of this document describes the **`VisitStand` street-graph walk**. It translates a high-level street-graph route (`[node₀, edge₀₁, node₁, edge₁₂, …, nodeₙ]`) into concrete tile-by-tile movement. The model deliberately *abstracts away the concept of a fixed "lane"* — pedestrians do axial walks irrespective of which perpendicular row/column they are currently in, and lane changes happen freely both inside nodes and mid-edge.
 
 This document describes the intended behavior. The graph guarantees that make it sound are listed in [NIGHT_MARKET_GRAPH_ASSUMPTIONS.md](./NIGHT_MARKET_GRAPH_ASSUMPTIONS.md) — the algorithm assumes those invariants hold.
 
@@ -93,6 +102,24 @@ Two pedestrians nose-to-nose on a 1-wide leg can't sidestep (both sides are off-
 - Once `ctx.tMs - waitingSinceMs >= STUCK_FORWARD_JUMP_DELAY_MS` (3 s), on every tick the ped additionally attempts a **forward jump**: an instant teleport to the tile two steps ahead — i.e. directly in front of the blocker.
 - The jump is allowed only if that tile exists in the tile graph, is unoccupied, and lies on the current leg's edge body or one of its endpoint nodes' tile sets (same on-leg predicate as sidestep). Tile-graph adjacency is *not* required (it's a 2-step teleport).
 - The jump runs both when sidestep is on cooldown and when sidestep failed outright — both produce the waiting state the recovery is designed to escape. There is no separate cooldown on the jump itself.
+
+## Random-walk Wander (free mode)
+
+`Wander` goals do **not** use the street graph at all. They implement a simple free random walk over walkable tiles, driven by the `Wandering` FSM state (`pedestrianAgent.ts`, `case 'Wandering'`). "Walkable" means *the tile exists in `TileGraph.tiles`* — that map holds only street/communal tiles, so any absent tile is non-walkable (a non-street, non-communal cell).
+
+**Burst cycle** (`Idle → Wandering → Interacting → Idle`, repeated endlessly):
+
+1. **Start a burst** (`startWanderBurst`): from the current tile, collect the cardinal directions whose immediate neighbor is walkable ("directions not touching a non-walkable cell"), pick one uniformly at random, and sample a stroll length in `[WANDER_MIN_STEPS, WANDER_MAX_STEPS]` = **1–4** tiles. Stored on the ped as `wanderDir` + `wanderStepsLeft`.
+2. **Walk the burst**: step one tile per commit in `wanderDir`, reusing the same smooth-lerp movement + destination-ownership occupancy as `Traveling`. `wanderStepsLeft` decrements per commit.
+3. **Stop conditions** → end the burst (`endWanderBurst`) and enter `Interacting` for a `dwellMs` pause (~2 s, `WANDER_DWELL_MS` / the seed goal's `dwellMs`):
+   - the burst's step count reaches 0, **or**
+   - the next tile is non-walkable (walked into a wall), **or**
+   - the ped is fully boxed in at burst-start (no walkable neighbor).
+4. **Pause, then repeat**: `Interacting` elapses → `Idle` → `ensureAmbientAgenda` re-arms a `Wander` goal → a fresh burst in a newly-chosen random direction.
+
+**Collision avoidance is shared with `Traveling`.** When the next tile is walkable but occupied by another ped, `Wandering` calls the same `handleForwardBlocked` helper (sidestep with 1 s cooldown → stuck-recovery forward jump → wait). The only difference is the *on-track* predicate: `Traveling` restricts teleports to the current leg's edge/endpoint nodes (`legOnTrack`); `Wandering` allows any walkable tile (`wanderOnTrack`).
+
+**State fields** (`PedestrianState`): `wanderDir?: [number, number]` (cardinal unit vector for the active burst) and `wanderStepsLeft?: number` (tiles remaining). Both are cleared between bursts.
 
 ## What this design intentionally does *not* do
 

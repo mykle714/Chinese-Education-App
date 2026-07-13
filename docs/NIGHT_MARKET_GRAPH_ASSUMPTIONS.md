@@ -16,6 +16,9 @@ A `Street` is either north–south (`isNorthSouth: true`) or east–west (`isNor
 ### S2. Every street's body is a contiguous straight strip
 The tiles a street owns along its primary axis form an unbroken run between its `start` and `end`. No gaps, no branches.
 
+### S3. Every street's width is in `[1, 8]`
+A `Street.width` (perpendicular extent, in tiles) is at least 1 and at most 8. This is an authoring bound the lane logic and N2 assume. It doubles as a recovery guard: [street recovery](./NIGHT_MARKET_TEMPLATES.md#street-recovery-mask--street) **fails loudly** if it emits a street with `width > 8`, since that means it sampled across an intersection or the authored mask is malformed.
+
 ---
 
 ## Nodes (intersections)

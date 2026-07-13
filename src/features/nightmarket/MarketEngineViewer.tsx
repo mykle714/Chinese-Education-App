@@ -1,106 +1,45 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Application, extend, useTick, useApplication } from '@pixi/react';
-import { Container, Sprite, Graphics, Text, Assets, Texture, Rectangle } from 'pixi.js';
+import { Container, Sprite, Graphics, Text } from 'pixi.js';
 import type { FederatedPointerEvent } from 'pixi.js';
-import { Box, Alert } from '@mui/material';
-import DelayedCircularProgress from '../../components/DelayedCircularProgress';
-import { TILE_SIZE, type FrameAnimation, type MotionSpec } from '../../engine/market/nightMarketRegistry';
-import { evaluateMotion } from './nightMarketMotion';
-import {
-  isoToScreen,
-  computeLayerZ,
-  computePedestrianZ,
-  computeStripPlacements,
-  type StripPlacement,
-} from '../../engine/market/isometric';
-import { TILES, DEMO_STALLS, STREETS, STREET_GRAPH, FLOOR_TILE_IMAGE_PATH, FLOOR_TILE_SCALE } from '../../engine/market/tileRegistry';
-import type { UsePixiPedestriansHandle } from '../../hooks/usePixiPedestrians';
+import { Box } from '@mui/material';
+import { TILE_SIZE } from '../../engine/market/nightMarketRegistry';
+import { isoToScreen, TILE_WIDTH, TILE_HEIGHT } from '../../engine/market/isometric';
+import { buildFarmField, resolveTileSurfaceUrls, resolveTileDarkSurfaceUrls, FIELD_WIDTH, FIELD_HEIGHT } from '../../engine/market/farmTerrain';
+import { freeFarmTileset } from '../../engine/market/freeFarmTileset';
+import FarmTerrainLayer from './FarmTerrainLayer';
+import WalkwayLayer from './WalkwayLayer';
+import HouseLayer from './HouseLayer';
 
 // Register Pixi.js classes as pixiContainer / pixiSprite / pixiGraphics / pixiText JSX elements.
 extend({ Container, Sprite, Graphics, Text });
 
-export interface EngineLayer {
-  imagePath: string;
-  x: number;        // screen-space X relative to viewport center
-  y: number;        // screen-space Y relative to viewport center
-  zIndex: number;
-  scale: number;
-  groupId: string;
-  motions?: MotionSpec[];
-  frameAnimation?: FrameAnimation;
-  /**
-   * Iso foot anchor (SW corner) for the stand this layer belongs to. When
-   * paired with `footprintSize`, the renderer slices the sprite into 2F
-   * vertical strips so each strip carries its own foot for painter z-sort.
-   * Omitting either field falls back to a single un-sliced sprite.
-   */
-  swX?: number;
-  swY?: number;
-  /** Square footprint edge length (iso units). Triggers strip-slicing when ≥ 1. */
-  footprintSize?: number;
-}
-
 /**
- * Sub-texture cache for sprite-strip slicing. Keyed by
- * `${imagePath}:${footprintSize}:${stripIndex}`. Sub-textures share the base
- * texture's GPU source, so memory cost is metadata only. Lives at module
- * scope — cleared only on full reload, which is acceptable since
- * asset/strip combinations are bounded.
+ * MarketEngineViewer — Pixi.js host for the night market.
+ *
+ * The market was rebuilt on the free-farm 2:1 tileset: this component now renders
+ * a static {@link FarmTerrainLayer} plateau plus a pan/zoom camera. The former
+ * demo layout (floor.png, authored streets/stalls, walking pedestrians, strip
+ * slicing, tap dialogs, and the per-stand debug label overlays) was removed — see
+ * docs/NIGHT_MARKET_FEATURE.md. The dormant pedestrian/streetGraph engine remains
+ * in engine/market for a future re-layout.
  */
-const stripTextureCache = new Map<string, Texture>();
 
-function getStripTexture(
-  baseTexture: Texture,
-  imagePath: string,
-  footprintSize: number,
-  frame: { x: number; w: number; h: number },
-  stripIndex: number,
-): Texture {
-  const cacheKey = `${imagePath}:${footprintSize}:${stripIndex}`;
-  const cached = stripTextureCache.get(cacheKey);
-  if (cached) return cached;
-  // Clamp to integer-pixel bounds to avoid sub-pixel sampling artifacts.
-  // Width gets a +1 px overhang on non-rightmost strips to defeat AA seams.
-  const fx = Math.max(0, Math.floor(frame.x));
-  const fwBase = Math.max(1, Math.floor(frame.w));
-  const isRightmost = stripIndex === 2 * footprintSize - 1;
-  const fw = Math.min(baseTexture.width - fx, fwBase + (isRightmost ? 0 : 1));
-  const fh = Math.max(1, Math.floor(frame.h));
-  const tex = new Texture({
-    source: baseTexture.source,
-    frame: new Rectangle(fx, 0, fw, fh),
-  });
-  stripTextureCache.set(cacheKey, tex);
-  return tex;
-}
-
-/** Per-overlay debug flags. Each toggles a single debug label/outline layer. */
+/** Per-overlay debug flags. Slimmed to the terrain-era overlays. */
 export interface DebugFlags {
-  footprints: boolean;
-  standLabels: boolean;
-  streetLabels: boolean;
-  pedestrianStates: boolean;
+  /** Iso (0,0) origin crosshair. */
   origin: boolean;
-  coordinates: boolean;
-  tileInfo: boolean;
-  frozen: boolean;
-  fast: boolean;
+  /** Tint every tile the terrain model designated as grass. */
+  grass: boolean;
+  /** Label each tile with the surface sprite (overlay tile) stem it was painted with. */
+  overlayLabels: boolean;
 }
 
-export const DEBUG_FLAG_KEYS: Array<keyof DebugFlags> = [
-  'footprints', 'standLabels', 'streetLabels', 'pedestrianStates', 'origin', 'coordinates', 'tileInfo', 'frozen', 'fast',
-];
+export const DEBUG_FLAG_KEYS: Array<keyof DebugFlags> = ['origin', 'grass', 'overlayLabels'];
 
-export const ALL_DEBUG_OFF: DebugFlags = {
-  footprints: false, standLabels: false, streetLabels: false, pedestrianStates: false, origin: false, coordinates: false, tileInfo: false, frozen: false, fast: false,
-};
+export const ALL_DEBUG_OFF: DebugFlags = { origin: false, grass: false, overlayLabels: false };
 
 export interface MarketEngineViewerProps {
-  layers: EngineLayer[];
-  onLayerTap?: (id: string | number) => void;
-  /** Pixi-native pedestrian handle. When provided, pedestrians are ticked via
-   *  Pixi's useTick and rendered z-sorted alongside static layers. */
-  pedestrians?: UsePixiPedestriansHandle;
   /** Render the isometric debug grid (fine green + major red lines). Default false. */
   showGrid?: boolean;
   /** Per-overlay debug toggles. Omitted flags default to off. */
@@ -108,48 +47,40 @@ export interface MarketEngineViewerProps {
 }
 
 interface SceneProps {
-  layers: EngineLayer[];
-  textures: Map<string, Texture>;
   pan: { x: number; y: number };
   zoom: number;
   onPanChange: (pan: { x: number; y: number }) => void;
-  onLayerTap?: (id: string | number) => void;
-  pedestrians?: UsePixiPedestriansHandle;
   showGrid?: boolean;
   debug: DebugFlags;
   /** Ref set to true by the outer component during a pinch gesture — suppresses Pixi drag. */
   isPinchingRef?: React.RefObject<boolean>;
 }
 
-const TAP_MAX_DIST = 5;
-const MIN_ZOOM = 0.1;
-const MAX_ZOOM = 5.0;
+// Integer zoom range — the free-farm art is pixel-art, so only whole-number
+// scale factors keep it crisp (nearest-neighbour, no fractional resampling).
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 8;
+const DEFAULT_ZOOM = 3;
 
 // ─── Grid overlay ────────────────────────────────────────────────────────────
-// Static isometric debug grid. Fine lines mark every 5 tiles (green);
-// major lines mark every 25 tiles (red, every 5 green lines).
-// Drawn once since the grid never changes.
+// Static isometric debug grid. Fine green lines mark every single tile (1 iso
+// unit); major red lines mark every 5 tiles. Drawn once since it never changes.
 
-const GRID_MIN = -500;
-const GRID_MAX = 500;
-
-// Sits above the tile floor (which uses background z - 1000) but below any
-// entity (entity z = -(isoX+isoY) + slotFraction, typically >> -999).
-const GRID_Z = -999;
+const GRID_MIN = -100;
+const GRID_MAX = 100;
+// Render ABOVE the terrain sprites (whose z ≈ -(isoX+isoY), roughly [-200, 150])
+// so the grid reads over the ground; kept just below the origin crosshair (10_000).
+const GRID_Z = 9_000;
 
 function GridOverlay() {
   const draw = useCallback((g: Graphics) => {
     g.clear();
-
-    // Batch all lines per style, then stroke once — avoids redundant draw calls.
     const drawGridLines = (step: number, color: number, alpha: number, lineWidth: number) => {
       for (let v = GRID_MIN; v <= GRID_MAX; v += step) {
-        // Constant-isoX lines (vary isoY)
         const a = isoToScreen(v, GRID_MIN);
         const b = isoToScreen(v, GRID_MAX);
         g.moveTo(a.screenX, a.screenY);
         g.lineTo(b.screenX, b.screenY);
-        // Constant-isoY lines (vary isoX)
         const c = isoToScreen(GRID_MIN, v);
         const d = isoToScreen(GRID_MAX, v);
         g.moveTo(c.screenX, c.screenY);
@@ -157,525 +88,183 @@ function GridOverlay() {
       }
       g.stroke({ color, width: lineWidth, alpha });
     };
-
-    drawGridLines(TILE_SIZE * 5, 0x00C800, 0.5, 1);      // fine: every 5 tiles (green)
-    drawGridLines(TILE_SIZE * 25, 0xFF0000, 0.9, 1.5);   // major: every 25 tiles / 5 green (red)
+    drawGridLines(TILE_SIZE, 0x00c800, 0.5, 0.5);      // fine: every 1 tile (green)
+    drawGridLines(TILE_SIZE * 5, 0xff0000, 0.9, 0.75); // major: every 5 tiles (red)
   }, []);
 
   return <pixiGraphics draw={draw} zIndex={GRID_Z} />;
 }
 
-// ─── Footprint outline overlay ───────────────────────────────────────────────
-// Strokes the outer perimeter of each stand's footprint as an isometric rhombus
-// so the authored tile geometry can be visually inspected against floor tiles
-// and adjacent stalls. Gated behind showDebug.
-//
-// Footprints are rectangular blocks of tiles; the screen-space outline is the
-// rhombus whose vertices are the iso corners of that block. Per-tile sprites
-// anchor at (0.5, 1) — bottom vertex of the diamond at the tile's iso position —
-// so the outer perimeter corners in iso space are (+isoY = north on screen,
-// so the smallest-iso corner sits at the bottom of the diamond):
-//   south  = (minIsoX,     minIsoY)
-//   east   = (maxIsoX + 1, minIsoY)
-//   north  = (maxIsoX + 1, maxIsoY + 1)
-//   west   = (minIsoX,     maxIsoY + 1)
+// ─── Origin overlay ──────────────────────────────────────────────────────────
+// Cyan iso-axis crosshair at grid (0,0). Floated above everything.
 
-// Sits just above GridOverlay so outlines render over the grid but still
-// below stand sprites (entity z = -(isoX+isoY)+slot, typically >> -998).
-const FOOTPRINT_OUTLINE_Z = -998;
-
-// Labels must always float above every sprite. Sprite z-indices are bounded
-// by -(isoX+isoY)+slot_fraction, with isoX+isoY ranging ~-150..210, so the
-// max sprite z is ~150.5. Use a large constant to guarantee labels are on top.
-const LABEL_Z = 10_000;
-const FOOTPRINT_OUTLINE_COLOR = 0xffd24a;
-
-function FootprintOutlineOverlay() {
-  const rhombi = useMemo(() => {
-    return DEMO_STALLS.map(stand => {
-      const fp = stand.footprint;
-      if (!fp || fp.length === 0) return null;
-      let minIsoX = Infinity, maxIsoX = -Infinity, minIsoY = Infinity, maxIsoY = -Infinity;
-      for (const t of fp) {
-        if (t.isoX < minIsoX) minIsoX = t.isoX;
-        if (t.isoX > maxIsoX) maxIsoX = t.isoX;
-        if (t.isoY < minIsoY) minIsoY = t.isoY;
-        if (t.isoY > maxIsoY) maxIsoY = t.isoY;
-      }
-      const south = isoToScreen(minIsoX,     minIsoY);
-      const east  = isoToScreen(maxIsoX + 1, minIsoY);
-      const north = isoToScreen(maxIsoX + 1, maxIsoY + 1);
-      const west  = isoToScreen(minIsoX,     maxIsoY + 1);
-      return { south, east, north, west };
-    }).filter((r): r is NonNullable<typeof r> => r !== null);
-  }, []);
-
-  const draw = useCallback((g: Graphics) => {
-    g.clear();
-    for (const r of rhombi) {
-      g.moveTo(r.south.screenX, r.south.screenY);
-      g.lineTo(r.east.screenX,  r.east.screenY);
-      g.lineTo(r.north.screenX, r.north.screenY);
-      g.lineTo(r.west.screenX,  r.west.screenY);
-      g.closePath();
-    }
-    g.stroke({ color: FOOTPRINT_OUTLINE_COLOR, width: 2, alpha: 0.9 });
-  }, [rhombi]);
-
-  return <pixiGraphics draw={draw} zIndex={FOOTPRINT_OUTLINE_Z} />;
-}
-
-// ─── Tile floor overlay ──────────────────────────────────────────────────────
-// Renders one floor.png sprite per walkable tile, z-ordered as background so
-// it sits behind every stand / pedestrian. Computed once since the tile
-// registry is static.
-
-interface TileFloorOverlayProps {
-  texture: Texture;
-}
-
-function TileFloorOverlay({ texture }: TileFloorOverlayProps) {
-  const positions = useMemo(
-    () =>
-      TILES.map(t => {
-        const { screenX, screenY } = isoToScreen(t.isoX, t.isoY);
-        return {
-          key: tileKey(t.isoX, t.isoY),
-          x: screenX,
-          y: screenY,
-          // Slightly behind every entity but in front of the page background.
-          zIndex: computeLayerZ(t.isoX, t.isoY, 'background') - 1000,
-          hasConnection: !!t.connections?.length,
-        };
-      }),
-    [],
-  );
-
-  // No wrapping container — sprites are returned as a fragment so they become
-  // direct children of the scene container and sort against stands / peds via
-  // the scene's `sortableChildren`.
-  return (
-    <>
-      {positions.map(p => (
-        <pixiSprite
-          key={p.key}
-          texture={texture}
-          x={p.x}
-          y={p.y}
-          scale={FLOOR_TILE_SCALE}
-          anchor={{ x: 0.5, y: 1 }}
-          zIndex={p.zIndex}
-          tint={p.hasConnection ? 0xffe6a0 : 0xffffff}
-          eventMode="none"
-        />
-      ))}
-    </>
-  );
-}
-
-// Shared tileKey helper to avoid pulling in the util file just for this.
-const tileKey = (x: number, y: number) => `${x},${y}`;
-
-// ─── Pedestrian debug labels ──────────────────────────────────────────────────
-// Renders one text label per pedestrian showing FSM state + target POI name (if
-// Traveling). Floated above the sprite anchor (screenY) so labels don't z-sort
-// against scene geometry. Gated behind showDebug.
-
-const PED_LABEL_STATE_STYLE = {
-  fontSize: 150,
-  fill: 0x000000,
-  fontFamily: 'monospace',
-  stroke: { color: 0xffffff, width: 14 },
-  align: 'center' as const,
-  fontWeight: 'bold' as const,
-};
-
-const PED_LABEL_POI_STYLE = {
-  fontSize: 135,
-  fill: 0xffe066,
-  fontFamily: 'monospace',
-  stroke: { color: 0x000000, width: 12 },
-  align: 'center' as const,
-};
-
-// Offset moves the label container high enough so:
-// - State text (150px, anchor y=1) sits above y=0
-// - POI text (135px, anchor y=0) hangs below y=0
-// Container must be at least 300px above the sprite foot anchor to avoid overlap.
-const PED_LABEL_OFFSET_Y = -300;
-
-interface PedestrianDebugLabelsProps {
-  pedestrians: UsePixiPedestriansHandle;
-}
-
-function PedestrianDebugLabels({ pedestrians }: PedestrianDebugLabelsProps) {
-  const drawables = pedestrians.getDrawables();
-
-  return (
-    <pixiContainer zIndex={LABEL_Z}>
-      {drawables.map(d => {
-        const { screenX, screenY } = isoToScreen(d.isoX, d.isoY);
-        const labelY = screenY + PED_LABEL_OFFSET_Y;
-        return (
-          <pixiContainer key={d.id} x={screenX} y={labelY}>
-            {/* FSM state name */}
-            <pixiText
-              text={d.fsmState}
-              x={0}
-              y={0}
-              anchor={{ x: 0.5, y: 1 }}
-              style={PED_LABEL_STATE_STYLE}
-            />
-            {/* Target POI name — only shown while Traveling */}
-            {d.fsmState === 'Traveling' && d.targetPoiDisplayName && (
-              <pixiText
-                text={`→ ${d.targetPoiDisplayName}`}
-                x={0}
-                y={2}
-                anchor={{ x: 0.5, y: 0 }}
-                style={PED_LABEL_POI_STYLE}
-              />
-            )}
-          </pixiContainer>
-        );
-      })}
-    </pixiContainer>
-  );
-}
-
-// ─── Origin marker overlay ──────────────────────────────────────────────────
-// Iso-axis crosshair at iso (0, 0) so the coordinate system is visually grounded
-// while debugging. Arms run along the iso X (east↔west) and iso Y (north↔south)
-// axes so they trace two of the major grid lines exactly. Gated behind debug.origin.
-
-// Half-arm length in ISO TILE UNITS. Each arm spans this many tiles outward
-// from the origin (so a value of 5 means the crosshair covers a 10×10-tile area).
 const ORIGIN_MARKER_ARM_ISO = 5;
-const ORIGIN_MARKER_WIDTH = 5;       // stroke thickness in pre-zoom screen px
+const ORIGIN_MARKER_WIDTH = 1; // stroke thickness in pre-zoom screen px
+const ORIGIN_Z = 10_000;
 
 function OriginOverlay() {
   const drawMarker = useCallback((g: Graphics) => {
     g.clear();
-    // Iso-axis arms: east↔west along +/-isoX, north↔south along +/-isoY.
-    const east  = isoToScreen( ORIGIN_MARKER_ARM_ISO, 0);
-    const west  = isoToScreen(-ORIGIN_MARKER_ARM_ISO, 0);
-    const north = isoToScreen(0,  ORIGIN_MARKER_ARM_ISO);
+    const east = isoToScreen(ORIGIN_MARKER_ARM_ISO, 0);
+    const west = isoToScreen(-ORIGIN_MARKER_ARM_ISO, 0);
+    const north = isoToScreen(0, ORIGIN_MARKER_ARM_ISO);
     const south = isoToScreen(0, -ORIGIN_MARKER_ARM_ISO);
-    g.moveTo(west.screenX,  west.screenY);
-    g.lineTo(east.screenX,  east.screenY);
+    g.moveTo(west.screenX, west.screenY);
+    g.lineTo(east.screenX, east.screenY);
     g.moveTo(south.screenX, south.screenY);
     g.lineTo(north.screenX, north.screenY);
     g.stroke({ color: 0x00ffff, width: ORIGIN_MARKER_WIDTH, alpha: 1 });
   }, []);
 
   return (
-    <pixiContainer zIndex={LABEL_Z}>
+    <pixiContainer zIndex={ORIGIN_Z}>
       <pixiGraphics draw={drawMarker} />
     </pixiContainer>
   );
 }
 
-// ─── Stand label overlay ─────────────────────────────────────────────────────
-// One text label per stand, placed at the stand's anchor (SW corner of the 2×2
-// footprint) and lifted vertically so it floats above the stall sprite. Gated
-// behind showDebug.
+// ─── Grass overlay ───────────────────────────────────────────────────────────
+// Debug tint over every tile the terrain model ({@link buildFarmField}) marked as
+// grass. Rebuilds the SAME field the FarmTerrainLayer paints (same dimensions +
+// default seed) so the tinted diamonds line up exactly with the grass caps. Light
+// and dark patches get distinct tints (dark drawn in a second pass on top, matching
+// how the terrain stacks the dark layer over the light one).
 
-const STAND_LABEL_STYLE = {
-  fontSize: 120,
-  fill: 0xffffff,
-  fontFamily: 'monospace',
-  stroke: { color: 0x000000, width: 12 },
-  align: 'center' as const,
-  fontWeight: 'bold' as const,
-};
+// Just below the origin crosshair (10_000) but above the grid (9_000) so it reads
+// over both the terrain and the gridlines.
+const GRASS_OVERLAY_Z = 9_500;
+const LIGHT_GRASS_OVERLAY_COLOR = 0x33ff66;
+const DARK_GRASS_OVERLAY_COLOR = 0x0b6b2f;
+const GRASS_OVERLAY_ALPHA = 0.45;
 
-const STAND_LABEL_OFFSET_Y = -200;
+function GrassOverlay() {
+  // Deterministic field → memoize once; split into the light and dark tile sets.
+  const { lightTiles, darkTiles } = useMemo(() => {
+    const field = buildFarmField(FIELD_WIDTH, FIELD_HEIGHT);
+    return {
+      lightTiles: field.filter((t) => t.kind === 'grass'),
+      darkTiles: field.filter((t) => t.darkGrass),
+    };
+  }, []);
 
-function StandLabelOverlay() {
-  const positions = useMemo(
-    () =>
-      DEMO_STALLS.map(s => {
-        const { screenX, screenY } = isoToScreen(s.isoX, s.isoY);
-        return { id: s.assetId, name: s.displayName, x: screenX, y: screenY + STAND_LABEL_OFFSET_Y };
-      }),
-    [],
-  );
-  return (
-    <pixiContainer zIndex={LABEL_Z}>
-      {positions.map(p => (
-        <pixiText
-          key={p.id}
-          text={p.name}
-          x={p.x}
-          y={p.y}
-          anchor={{ x: 0.5, y: 1 }}
-          style={STAND_LABEL_STYLE}
-        />
-      ))}
-    </pixiContainer>
-  );
-}
-
-// ─── Pedestrian name overlay ────────────────────────────────────────────────
-// Renders one text label per pedestrian showing its id. Floated above the
-// sprite anchor so it doesn't z-sort against scene geometry. Gated behind
-// debug.standLabels (the "display names" toggle covers both stands and peds).
-
-const PED_NAME_STYLE = {
-  fontSize: 50,
-  fill: 0xffffff,
-  fontFamily: 'monospace',
-  stroke: { color: 0x000000, width: 6 },
-  align: 'center' as const,
-  fontWeight: 'bold' as const,
-};
-
-// Lifted higher than the FSM state label so the two don't collide when both
-// toggles are active.
-const PED_NAME_OFFSET_Y = -460;
-
-interface PedestrianNameLabelsProps {
-  pedestrians: UsePixiPedestriansHandle;
-}
-
-function PedestrianNameLabels({ pedestrians }: PedestrianNameLabelsProps) {
-  const drawables = pedestrians.getDrawables();
-  return (
-    <pixiContainer zIndex={LABEL_Z}>
-      {drawables.map(d => {
-        const { screenX, screenY } = isoToScreen(d.isoX, d.isoY);
-        return (
-          <pixiText
-            key={d.id}
-            text={d.id}
-            x={screenX}
-            y={screenY + PED_NAME_OFFSET_Y}
-            anchor={{ x: 0.5, y: 1 }}
-            style={PED_NAME_STYLE}
-          />
-        );
-      })}
-    </pixiContainer>
-  );
-}
-
-// ─── Street label overlay ───────────────────────────────────────────────────
-// One text label per Street, placed at the street's iso midpoint and lifted
-// slightly so it floats above the walkway floor. Gated behind showDebug.
-
-const STREET_LABEL_STYLE = {
-  fontSize: 180,
-  fill: 0xff0000,
-  fontFamily: 'monospace',
-  align: 'center' as const,
-  fontStyle: 'italic' as const,
-};
-
-const STREET_LABEL_OFFSET_Y = -40;
-
-function StreetLabelOverlay() {
-  const positions = useMemo(
-    () =>
-      STREETS.map(s => {
-        // Midpoint along the primary axis; centered across the street's width.
-        const mid = (s.start + s.end) / 2;
-        const perpMid = s.offset + (s.width - 1) / 2;
-        const isoX = s.isNorthSouth ? perpMid : mid;
-        const isoY = s.isNorthSouth ? mid : perpMid;
-        const { screenX, screenY } = isoToScreen(isoX, isoY);
-        return { name: s.name, x: screenX, y: screenY + STREET_LABEL_OFFSET_Y };
-      }),
-    [],
-  );
-  return (
-    <pixiContainer zIndex={LABEL_Z}>
-      {positions.map(p => (
-        <pixiText
-          key={p.name}
-          text={p.name}
-          x={p.x}
-          y={p.y}
-          anchor={{ x: 0.5, y: 0.5 }}
-          style={STREET_LABEL_STYLE}
-        />
-      ))}
-    </pixiContainer>
-  );
-}
-
-// ─── Coordinate label overlay ────────────────────────────────────────────────
-// (isoX, isoY) labels for every demo stand (cyan, static) and every pedestrian
-// (green, ticked). Lets you visually verify authored stall placement and watch
-// pedestrian movement in iso space without console logging.
-
-const STAND_COORD_STYLE = {
-  fontSize: 90,
-  fill: 0x66e0ff,
-  fontFamily: 'monospace',
-  stroke: { color: 0x000000, width: 10 },
-  align: 'center' as const,
-  fontWeight: 'bold' as const,
-};
-
-const PED_COORD_STYLE = {
-  fontSize: 90,
-  fill: 0xaaffaa,
-  fontFamily: 'monospace',
-  stroke: { color: 0x000000, width: 10 },
-  align: 'center' as const,
-  fontWeight: 'bold' as const,
-};
-
-// Lifts the stand coord label slightly higher than the name label so the two
-// don't sit on top of each other when both overlays are on.
-const STAND_COORD_OFFSET_Y = -340;
-// Ped coord sits just below the sprite foot so it doesn't fight the FSM-state
-// label that sits well above the head (PED_LABEL_OFFSET_Y = -300).
-const PED_COORD_OFFSET_Y = 30;
-
-interface CoordinateLabelOverlayProps {
-  pedestrians?: UsePixiPedestriansHandle;
-}
-
-function CoordinateLabelOverlay({ pedestrians }: CoordinateLabelOverlayProps) {
-  const standPositions = useMemo(
-    () =>
-      DEMO_STALLS.map(s => {
-        const { screenX, screenY } = isoToScreen(s.isoX, s.isoY);
-        // Stand z shown as the base depth from computeLayerZ at the `background`
-        // slot (which contributes 0). Per-layer slot offsets aren't surfaced
-        // here since a stand is not a single z value.
-        const baseZ = computeLayerZ(s.isoX, s.isoY, 'background');
-        return {
-          id: s.assetId,
-          text: `(${s.isoX}, ${s.isoY}, z=${baseZ.toFixed(2)})`,
-          x: screenX,
-          y: screenY + STAND_COORD_OFFSET_Y,
-        };
-      }),
-    [],
-  );
-
-  const pedDrawables = pedestrians?.getDrawables() ?? [];
-
-  return (
-    <pixiContainer zIndex={LABEL_Z}>
-      {standPositions.map(p => (
-        <pixiText
-          key={`stand-${p.id}`}
-          text={p.text}
-          x={p.x}
-          y={p.y}
-          anchor={{ x: 0.5, y: 1 }}
-          style={STAND_COORD_STYLE}
-        />
-      ))}
-      {pedDrawables.map(d => {
-        const { screenX, screenY } = isoToScreen(d.isoX, d.isoY);
-        const pedZ = computePedestrianZ(d.isoX, d.isoY);
-        return (
-          <pixiText
-            key={`ped-${d.id}`}
-            text={`(${d.isoX.toFixed(1)}, ${d.isoY.toFixed(1)}, z=${pedZ.toFixed(1)})`}
-            x={screenX}
-            y={screenY + PED_COORD_OFFSET_Y}
-            anchor={{ x: 0.5, y: 0 }}
-            style={PED_COORD_STYLE}
-          />
-        );
-      })}
-    </pixiContainer>
-  );
-}
-
-// ─── Tile info overlay ──────────────────────────────────────────────────────
-// Per-tile small-font annotation showing which street graph entity owns the
-// tile: node id, edge id, or just street name(s) for tiles that don't sit on
-// the macro graph. Designed to be readable only when the user zooms in.
-
-const TILE_INFO_STYLE = {
-  fontSize: 12,
-  fill: 0xffffaa,
-  fontFamily: 'monospace',
-  stroke: { color: 0x000000, width: 2 },
-  align: 'center' as const,
-};
-
-/** Strip the long `node:Streets@x,y` prefix down to its `x,y` part. */
-function shortNodeId(id: string): string {
-  const at = id.lastIndexOf('@');
-  return at >= 0 ? `N@${id.slice(at + 1)}` : id;
-}
-
-function TileInfoOverlay() {
-  const labels = useMemo(
-    () =>
-      TILES.map(t => {
-        const k = tileKey(t.isoX, t.isoY);
-        const node = STREET_GRAPH.tileToNode.get(k);
-        const edge = STREET_GRAPH.tileToEdge.get(k);
-        let text: string;
-        if (node) {
-          text = shortNodeId(node.id);
-        } else if (edge) {
-          text = `E:${edge.street.name}`;
-        } else {
-          text = t.intersectingStreets?.map(s => s.name).join('|') || '-';
-        }
+  const draw = useCallback((g: Graphics) => {
+    g.clear();
+    // Trace each tile's surface diamond (32×16) into the current path.
+    const tracePatch = (tiles: typeof lightTiles) => {
+      for (const t of tiles) {
+        // The diamond sits in the lower half of the tile cell: its bottom vertex is
+        // at screenY, so the diamond center is TILE_HEIGHT/2 up.
         const { screenX, screenY } = isoToScreen(t.isoX, t.isoY);
-        return { key: k, x: screenX, y: screenY, text };
-      }),
-    [],
-  );
+        const cx = screenX;
+        const cy = screenY - TILE_HEIGHT / 2;
+        g.moveTo(cx, cy - TILE_HEIGHT / 2);   // top vertex
+        g.lineTo(cx + TILE_WIDTH / 2, cy);    // right vertex
+        g.lineTo(cx, cy + TILE_HEIGHT / 2);   // bottom vertex
+        g.lineTo(cx - TILE_WIDTH / 2, cy);    // left vertex
+        g.closePath();
+      }
+    };
+    // Light pass, then the dark pass on top (dark over light).
+    tracePatch(lightTiles);
+    g.fill({ color: LIGHT_GRASS_OVERLAY_COLOR, alpha: GRASS_OVERLAY_ALPHA });
+    tracePatch(darkTiles);
+    g.fill({ color: DARK_GRASS_OVERLAY_COLOR, alpha: GRASS_OVERLAY_ALPHA });
+  }, [lightTiles, darkTiles]);
+
+  return <pixiGraphics draw={draw} zIndex={GRASS_OVERLAY_Z} />;
+}
+
+// ─── Overlay-tile labels ───────────────────────────────────────────────────────
+// Debug text over each tile naming the SURFACE sprites (overlay tiles) it was painted
+// with — the grass cap for a grass tile, the stacked grass-boundary overlays for a
+// tile bordering grass, across BOTH the light and dark layers (dark stems prefixed
+// `d:`). Resolves the exact same sprites the FarmTerrainLayer paints (via
+// resolveTileSurfaceUrls + resolveTileDarkSurfaceUrls) and reverse-maps each url to
+// its filename stem.
+
+// Above the grass tint so labels stay readable when both overlays are on.
+const OVERLAY_LABEL_Z = 9_600;
+
+/** Trim the verbose pack prefixes so the label is just the meaningful part. */
+function shortenStem(stem: string): string {
+  if (stem === 'lightGrass_center') return 'grass';
+  if (stem === 'darkGrass_center') return 'dark';
+  // Dark overlays get a `d:` prefix so they read distinctly from the light ones.
+  if (stem.startsWith('darkGrassOverlay_')) return `d:${stem.replace('darkGrassOverlay_', '')}`;
+  return stem.replace(/^lightGrassOverlay_/, '');
+}
+
+function OverlayLabels() {
+  // Deterministic field → resolve every tile's surface stems once.
+  const labels = useMemo(() => {
+    return buildFarmField(FIELD_WIDTH, FIELD_HEIGHT)
+      .map((t) => {
+        // Both layers' surface sprites, light first then dark (paint order).
+        const stems = [...resolveTileSurfaceUrls(t), ...resolveTileDarkSurfaceUrls(t)]
+          .map((u) => freeFarmTileset.stemOf(u))
+          .filter((s): s is string => !!s)
+          .map(shortenStem);
+        if (stems.length === 0) return null; // interior dirt — nothing painted
+        const { screenX, screenY } = isoToScreen(t.isoX, t.isoY);
+        return {
+          key: `${t.isoX},${t.isoY}`,
+          x: screenX,
+          y: screenY - TILE_HEIGHT / 2, // diamond center (surface top face)
+          text: stems.join('\n'),
+        };
+      })
+      .filter((l): l is NonNullable<typeof l> => l !== null);
+  }, []);
+
   return (
-    <pixiContainer zIndex={LABEL_Z}>
-      {labels.map(l => (
+    <pixiContainer zIndex={OVERLAY_LABEL_Z}>
+      {labels.map((l) => (
         <pixiText
           key={l.key}
           text={l.text}
           x={l.x}
           y={l.y}
-          anchor={{ x: 0.5, y: 1 }}
-          style={TILE_INFO_STYLE}
+          anchor={{ x: 0.5, y: 0.5 }}
+          // Tiny font — tiles are 32px wide; the integer camera zoom scales it up
+          // legibly. White fill + dark stroke reads over both grass and dirt.
+          style={{
+            fontFamily: 'monospace',
+            fontSize: 5,
+            lineHeight: 5,
+            align: 'center',
+            fill: 0xffffff,
+            stroke: { color: 0x000000, width: 1 },
+          }}
+          resolution={4}
         />
       ))}
     </pixiContainer>
   );
 }
 
-// ─── NightMarketScene ────────────────────────────────────────────────────────
-// Runs inside <Application>. Handles the animation tick, pan/tap events,
-// walkway rendering, static layer sprites, and pedestrian sprites.
+// ─── Scene ─────────────────────────────────────────────────────────────────
+// Runs inside <Application>. Handles drag-to-pan and renders the terrain.
 
-function NightMarketScene({ layers, textures, pan, zoom, onPanChange, onLayerTap, pedestrians, showGrid, debug, isPinchingRef }: SceneProps) {
-  const { app } = useApplication();
-  const [t, setT] = useState(0);
-  const floorTexture = textures.get(FLOOR_TILE_IMAGE_PATH);
+function NightMarketScene({ pan, zoom, onPanChange, showGrid, debug, isPinchingRef }: SceneProps) {
+  // `isInitialised` flips true once Pixi's async init() (which creates the
+  // renderer) resolves; `app`'s identity is stable across init, so an effect
+  // keyed only on `app` would bail before the renderer exists and never re-run.
+  const { app, isInitialised } = useApplication();
 
   // Drag tracking in refs — avoids extra re-renders during pan.
-  const drag = useRef({ active: false, startX: 0, startY: 0, origPanX: 0, origPanY: 0, totalDist: 0 });
-
-  // Stable callback refs so stage useEffect only runs once on mount.
+  const drag = useRef({ active: false, startX: 0, startY: 0, origPanX: 0, origPanY: 0 });
   const panRef = useRef(pan);
   panRef.current = pan;
   const onPanChangeRef = useRef(onPanChange);
   onPanChangeRef.current = onPanChange;
-  const onLayerTapRef = useRef(onLayerTap);
-  onLayerTapRef.current = onLayerTap;
 
-  // Pixi ticker drives both scene animation AND pedestrian simulation.
-  // One RAF loop handles everything — no parallel requestAnimationFrame.
-  useTick((ticker) => {
-    const dtMs = ticker.deltaMS;
-    setT(prev => prev + dtMs);
-    if (pedestrians) {
-      pedestrians.tick(dtMs, performance.now());
-    }
-  });
+  // Keep Pixi's ticker running (drives any future animation); no per-frame state.
+  useTick(() => {});
 
-  // Stage pointer events: drag-to-pan + tap detection.
+  // Stage pointer events: drag-to-pan. Keyed on `isInitialised` so it reattaches
+  // once the renderer exists.
   useEffect(() => {
-    if (!app?.stage || !app.renderer) return;
+    if (!isInitialised || !app?.stage || !app.renderer) return;
     const stage = app.stage;
     stage.eventMode = 'static';
     stage.hitArea = app.screen;
@@ -687,38 +276,21 @@ function NightMarketScene({ layers, textures, pan, zoom, onPanChange, onLayerTap
         startY: e.global.y,
         origPanX: panRef.current.x,
         origPanY: panRef.current.y,
-        totalDist: 0,
       };
     };
-
     const onMove = (e: FederatedPointerEvent) => {
-      if (isPinchingRef?.current) return; // suppress drag during pinch gesture
+      if (isPinchingRef?.current) return; // suppress drag during pinch
       if (!drag.current.active) return;
       const dx = e.global.x - drag.current.startX;
       const dy = e.global.y - drag.current.startY;
-      drag.current.totalDist = Math.sqrt(dx * dx + dy * dy);
       onPanChangeRef.current({ x: drag.current.origPanX + dx, y: drag.current.origPanY + dy });
     };
-
-    const onUp = (e: FederatedPointerEvent) => {
-      if (drag.current.active && drag.current.totalDist < TAP_MAX_DIST) {
-        const target = e.target;
-        if (target && target !== stage) {
-          const label = (target as Container).label;
-          if (label) {
-            const numVal = Number(label);
-            onLayerTapRef.current?.(isNaN(numVal) ? label : numVal);
-          }
-        }
-      }
-      drag.current.active = false;
-    };
+    const onUp = () => { drag.current.active = false; };
 
     stage.on('pointerdown', onDown);
     stage.on('pointermove', onMove);
     stage.on('pointerup', onUp);
     stage.on('pointerupoutside', onUp);
-
     return () => {
       stage.off('pointerdown', onDown);
       stage.off('pointermove', onMove);
@@ -726,136 +298,9 @@ function NightMarketScene({ layers, textures, pan, zoom, onPanChange, onLayerTap
       stage.off('pointerupoutside', onUp);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [app]);
+  }, [app, isInitialised]);
 
-  // ── Static layers with motion + frame animation applied ──────────────────
-  const computedLayers = useMemo(() => {
-    return layers.map((layer, index) => {
-      let dX = 0;
-      let dY = 0;
-      if (layer.motions?.length) {
-        for (const spec of layer.motions) {
-          const { dIsoX, dIsoY } = evaluateMotion(spec, t);
-          // isoToScreen is linear through origin so deltas compose directly.
-          const { screenX, screenY } = isoToScreen(dIsoX, dIsoY);
-          dX += screenX;
-          dY += screenY;
-        }
-      }
-      let texKey = layer.imagePath;
-      if (layer.frameAnimation) {
-        const paths = layer.frameAnimation.imagePaths;
-        const rawIdx = Math.floor((t * layer.frameAnimation.fps) / 1000);
-        const loop = layer.frameAnimation.loop ?? true;
-        texKey = paths[loop ? rawIdx % paths.length : Math.min(rawIdx, paths.length - 1)];
-      }
-      return { layer, index, finalX: layer.x + dX, finalY: layer.y + dY, texKey };
-    });
-  }, [layers, t]);
-
-  // ── Unified render list: static layers + pedestrians, sorted back-to-front ─
-  // Stand layers with `footprintSize` are expanded into 2F vertical strips.
-  // Each strip occupies its NATURAL pixel column in the source sprite
-  // (pixel-faithful) but z-sorts as if its bottom sits on the SW/SE diamond
-  // edge at that screen-X. Stripless layers (and pedestrians) emit one entry.
-  const allSprites = useMemo(() => {
-    type SpriteEntry = {
-      key: string;
-      x: number;
-      y: number;
-      zIndex: number;
-      texKey: string;
-      scale: number;
-      label: string;
-      tappable: boolean;
-      anchorX: number;
-      /** When set, renderer carves a sub-texture from texKey's base texture. */
-      strip?: {
-        stripIndex: number;
-        footprintSize: number;
-        frame: { x: number; w: number; h: number };
-      };
-    };
-
-    const items: SpriteEntry[] = [];
-
-    for (const { layer, index, finalX, finalY, texKey } of computedLayers) {
-      const layerLabel = layer.groupId ?? String(index);
-      const F = layer.footprintSize;
-      const baseTexture = textures.get(texKey);
-      if (!F || F < 1 || layer.swX === undefined || layer.swY === undefined || !baseTexture) {
-        // No footprint info (or texture not loaded yet) — render the single sprite.
-        items.push({
-          key: `layer-${index}`,
-          x: finalX,
-          y: finalY,
-          zIndex: layer.zIndex,
-          texKey,
-          scale: layer.scale,
-          label: layerLabel,
-          tappable: true,
-          anchorX: 0.5,
-        });
-        continue;
-      }
-
-      // Recover the slot fractional offset from the layer's z (which was
-      // computed as -(swX+swY) + slotZ at registry-build time).
-      const slotZ = layer.zIndex + (layer.swX + layer.swY);
-      const placements: StripPlacement[] = computeStripPlacements(
-        layer.swX,
-        layer.swY,
-        F,
-        baseTexture.width,
-        baseTexture.height,
-        layer.scale,
-      );
-      for (const p of placements) {
-        // Strip's left-edge screen position = finalX (original anchor center) + offsetX.
-        // Y matches the original anchor (no vertical shift — preserves the
-        // sprite's authored silhouette top-to-bottom).
-        const stripZ = -(p.footIsoX + p.footIsoY) + slotZ;
-        items.push({
-          key: `layer-${index}-${p.stripIndex}`,
-          x: finalX + p.offsetX,
-          y: finalY,
-          zIndex: stripZ,
-          texKey,
-          scale: layer.scale,
-          label: layerLabel,
-          tappable: true,
-          anchorX: 0,    // bottom-LEFT for every strip — left edge at x
-          strip: { stripIndex: p.stripIndex, footprintSize: F, frame: p.frame },
-        });
-      }
-    }
-
-    if (pedestrians) {
-      for (const d of pedestrians.getDrawables()) {
-        // Peds anchor at the southern (bottom) vertex of their current tile —
-        // same model as stands. d.isoX/d.isoY name the tile's SW corner.
-        const { screenX, screenY } = isoToScreen(d.isoX, d.isoY);
-        items.push({
-          key: `ped-${d.id}`,
-          x: screenX,
-          y: screenY,
-          zIndex: computePedestrianZ(d.isoX, d.isoY),
-          texKey: d.imagePath,
-          scale: d.scale,
-          label: d.id,   // ped IDs don't match any asset — taps won't open a dialog
-          tappable: false,
-          anchorX: 0.5,
-        });
-      }
-    }
-
-    // No manual sort — the parent <pixiContainer sortableChildren> handles z-order.
-    return items;
-  }, [computedLayers, pedestrians]);
-
-  // app.screen is a getter that reads app.renderer.screen — accessing it
-  // before Pixi's async init() resolves throws because renderer is undefined.
-  // Gate on renderer, not screen.
+  // app.screen reads app.renderer.screen — gate on renderer, not screen.
   if (!app?.renderer) return null;
 
   const cx = app.screen.width / 2 + pan.x;
@@ -864,113 +309,46 @@ function NightMarketScene({ layers, textures, pan, zoom, onPanChange, onLayerTap
   return (
     <pixiContainer x={cx} y={cy} scale={zoom} sortableChildren>
       {showGrid && <GridOverlay />}
-      {floorTexture && <TileFloorOverlay texture={floorTexture} />}
-      {allSprites.map(({ key, x, y, zIndex, texKey, scale, label, tappable, anchorX, strip }) => {
-        const baseTexture = textures.get(texKey);
-        if (!baseTexture) return null;
-        const texture = strip
-          ? getStripTexture(baseTexture, texKey, strip.footprintSize, strip.frame, strip.stripIndex)
-          : baseTexture;
-        return (
-          <pixiSprite
-            key={key}
-            texture={texture}
-            x={x}
-            y={y}
-            scale={scale}
-            anchor={{ x: anchorX, y: 1 }}
-            zIndex={zIndex}
-            eventMode={tappable ? 'static' : 'none'}
-            label={label}
-          />
-        );
-      })}
-      {debug.footprints && <FootprintOutlineOverlay />}
+      <FarmTerrainLayer />
+      <WalkwayLayer />
+      <HouseLayer />
+      {debug.grass && <GrassOverlay />}
+      {debug.overlayLabels && <OverlayLabels />}
       {debug.origin && <OriginOverlay />}
-      {debug.standLabels && <StandLabelOverlay />}
-      {debug.standLabels && pedestrians && <PedestrianNameLabels pedestrians={pedestrians} />}
-      {debug.streetLabels && <StreetLabelOverlay />}
-      {debug.pedestrianStates && pedestrians && <PedestrianDebugLabels pedestrians={pedestrians} />}
-      {debug.coordinates && <CoordinateLabelOverlay pedestrians={pedestrians} />}
-      {debug.tileInfo && <TileInfoOverlay />}
     </pixiContainer>
   );
 }
 
 // ─── MarketEngineViewer ───────────────────────────────────────────────────────
-// Outer component: texture loading, pan/zoom state, Application mount.
+// Outer component: pan/zoom state, gesture handlers, Application mount.
 
-function MarketEngineViewer({ layers, onLayerTap, pedestrians, showGrid, debug = ALL_DEBUG_OFF }: MarketEngineViewerProps) {
+function MarketEngineViewer({ showGrid, debug = ALL_DEBUG_OFF }: MarketEngineViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(0.25);
-  const [textures, setTextures] = useState<Map<string, Texture> | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const [ready, setReady] = useState(false);
 
-  // Refs kept in sync with state so event handlers always read the latest values
-  // without needing to be recreated on every render.
+  // Refs kept in sync so gesture handlers read the latest values without
+  // recreating on every render.
   const panRef = useRef(pan);
   panRef.current = pan;
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
 
-  // Set to true while a 2-finger pinch is active — suppresses Pixi drag handler.
+  // True while a 2-finger pinch is active — suppresses the Pixi drag handler.
   const isPinchingRef = useRef(false);
-
-  // Tracks pinch gesture start state so zoom/pan are computed relative to initial contact.
   const pinchRef = useRef({ active: false, startDist: 0, startZoom: 1, startPanX: 0, startPanY: 0, midX: 0, midY: 0 });
 
   useEffect(() => {
     if (containerRef.current) setReady(true);
   }, []);
 
-  // All unique image paths: static layer images + pedestrian sprite images
-  // + the floor-tile sprite used by every walkable tile.
-  const allImagePaths = useMemo(() => {
-    const paths = new Set<string>();
-    paths.add(FLOOR_TILE_IMAGE_PATH);
-    for (const layer of layers) {
-      if (layer.frameAnimation) {
-        for (const p of layer.frameAnimation.imagePaths) paths.add(p);
-      } else {
-        paths.add(layer.imagePath);
-      }
-    }
-    if (pedestrians) {
-      for (const p of pedestrians.spriteImagePaths) paths.add(p);
-    }
-    return Array.from(paths);
-  }, [layers, pedestrians]);
-
-  useEffect(() => {
-    if (allImagePaths.length === 0) {
-      setTextures(new Map());
-      return;
-    }
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const entries = await Promise.all(
-          allImagePaths.map(async (path) => {
-            const tex = await Assets.load<Texture>(path);
-            return [path, tex] as const;
-          })
-        );
-        if (!cancelled) setTextures(new Map(entries));
-      } catch (err) {
-        if (!cancelled) setLoadError(`Failed to load textures: ${err}`);
-      }
-    };
-    load();
-    return () => { cancelled = true; };
-  }, [allImagePaths]);
-
-  // Compute new zoom and adjust pan so the focal point (cursor / pinch midpoint)
-  // stays fixed in screen space: pan' = focalOffset * (1 - ratio) + pan * ratio.
-  const applyZoomAtPoint = useCallback((focalX: number, focalY: number, newZoom: number) => {
+  // Set an integer zoom, adjusting pan so the focal point stays fixed on screen.
+  const applyZoomAtPoint = useCallback((focalX: number, focalY: number, rawZoom: number) => {
     const el = containerRef.current;
     if (!el) return;
+    const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.round(rawZoom)));
+    if (newZoom === zoomRef.current) return; // integer steps — ignore sub-step deltas
     const ratio = newZoom / zoomRef.current;
     const w = el.clientWidth;
     const h = el.clientHeight;
@@ -978,23 +356,20 @@ function MarketEngineViewer({ layers, onLayerTap, pedestrians, showGrid, debug =
       x: (focalX - w / 2) * (1 - ratio) + panRef.current.x * ratio,
       y: (focalY - h / 2) * (1 - ratio) + panRef.current.y * ratio,
     };
-    // Sync refs immediately so rapid events read the updated values before re-render.
     zoomRef.current = newZoom;
     panRef.current = newPan;
     setZoom(newZoom);
     setPan(newPan);
   }, []);
 
-  // Wheel zoom centered on the cursor position.
+  // Wheel zoom centered on the cursor. One integer step per notch.
   const handleWheel = useCallback((e: WheelEvent) => {
     e.preventDefault();
     const el = containerRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-    const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoomRef.current * (1 - e.deltaY * 0.001)));
-    applyZoomAtPoint(mouseX, mouseY, newZoom);
+    const step = e.deltaY < 0 ? 1 : -1;
+    applyZoomAtPoint(e.clientX - rect.left, e.clientY - rect.top, zoomRef.current + step);
   }, [applyZoomAtPoint]);
 
   // Pinch-to-zoom: capture phase so we can preventDefault before Pixi sees the touches.
@@ -1029,22 +404,9 @@ function MarketEngineViewer({ layers, onLayerTap, pedestrians, showGrid, debug =
     const dy = t1.clientY - t0.clientY;
     const newDist = Math.sqrt(dx * dx + dy * dy);
     const scale = newDist / pinchRef.current.startDist;
-    const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, pinchRef.current.startZoom * scale));
-    const ratio = newZoom / pinchRef.current.startZoom;
-    const { midX, midY, startPanX, startPanY } = pinchRef.current;
-    const el = containerRef.current!;
-    const w = el.clientWidth;
-    const h = el.clientHeight;
-    // Compute pan relative to pinch start (not current), so zoom feels stable.
-    zoomRef.current = newZoom;
-    const newPan = {
-      x: (midX - w / 2) * (1 - ratio) + startPanX * ratio,
-      y: (midY - h / 2) * (1 - ratio) + startPanY * ratio,
-    };
-    panRef.current = newPan;
-    setZoom(newZoom);
-    setPan(newPan);
-  }, []);
+    // Snap to an integer zoom around the pinch midpoint.
+    applyZoomAtPoint(pinchRef.current.midX, pinchRef.current.midY, pinchRef.current.startZoom * scale);
+  }, [applyZoomAtPoint]);
 
   const handleTouchEnd = useCallback(() => {
     pinchRef.current.active = false;
@@ -1068,36 +430,18 @@ function MarketEngineViewer({ layers, onLayerTap, pedestrians, showGrid, debug =
     };
   }, [handleWheel, handleTouchStart, handleTouchMove, handleTouchEnd, ready]);
 
-  if (loadError) {
-    return (
-      <Box sx={{ p: 3 }}>
-        <Alert severity="error">{loadError}</Alert>
-      </Box>
-    );
-  }
-
   return (
     <Box
       className="market-engine-viewer"
       ref={containerRef}
       sx={{ width: '100%', height: '100%', position: 'relative' }}
     >
-      {!textures && (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-          <DelayedCircularProgress className="market-engine-loading-spinner" />
-        </Box>
-      )}
-
-      {textures && ready && (
-        <Application resizeTo={containerRef} backgroundAlpha={0} antialias={true}>
+      {ready && (
+        <Application resizeTo={containerRef} backgroundAlpha={0} antialias={false}>
           <NightMarketScene
-            layers={layers}
-            textures={textures}
             pan={pan}
             zoom={zoom}
             onPanChange={setPan}
-            onLayerTap={onLayerTap}
-            pedestrians={pedestrians}
             showGrid={showGrid}
             debug={debug}
             isPinchingRef={isPinchingRef}

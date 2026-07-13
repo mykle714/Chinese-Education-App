@@ -27,8 +27,8 @@ import {
 /** Per-tick dt cap — prevents large jumps if the tab was backgrounded. */
 const MAX_DT_MS = 100;
 
-/** How long an ambient pedestrian dwells at a destination before wandering again. */
-const WANDER_DWELL_MS = 1500;
+/** How long an ambient pedestrian pauses between random-walk bursts. */
+const WANDER_DWELL_MS = 2000;
 
 const STAND_MAP = new Map(DEMO_STALLS.map(s => [s.assetId, s]));
 

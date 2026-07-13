@@ -1,42 +1,31 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { WEIGHT } from '../../theme/scale';
 import {
-  Box, Typography, Button, Alert,
-  Dialog, DialogTitle, DialogContent, DialogActions, Snackbar,
-  Tooltip,
+  Box, Typography, Button, Alert, Snackbar, Tooltip,
 } from '@mui/material';
 import LeafPage from '../../components/LeafPage';
 import DelayedCircularProgress from '../../components/DelayedCircularProgress';
-import CropFreeIcon from '@mui/icons-material/CropFree';
-import StorefrontIcon from '@mui/icons-material/Storefront';
-import AltRouteIcon from '@mui/icons-material/AltRoute';
-import DirectionsWalkIcon from '@mui/icons-material/DirectionsWalk';
 import GpsFixedIcon from '@mui/icons-material/GpsFixed';
-import PinDropIcon from '@mui/icons-material/PinDrop';
-import GridOnIcon from '@mui/icons-material/GridOn';
-import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutline';
-import FastForwardIcon from '@mui/icons-material/FastForward';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
-import MarketEngineViewer, {
-  ALL_DEBUG_OFF,
-} from './MarketEngineViewer';
-import type { EngineLayer, DebugFlags } from './MarketEngineViewer';
+import GridOnIcon from '@mui/icons-material/GridOn';
+import GrassIcon from '@mui/icons-material/Grass';
+import LabelIcon from '@mui/icons-material/Label';
+import MarketEngineViewer, { ALL_DEBUG_OFF } from './MarketEngineViewer';
+import type { DebugFlags } from './MarketEngineViewer';
 import { useNightMarket } from './useNightMarket';
 import { useMinutePoints } from '../../minutePoints/useMinutePoints';
 import { usePageTitle } from '../../hooks/usePageTitle';
-import { usePixiPedestrians } from '../../hooks/usePixiPedestrians';
 import { NIGHT_MARKET_ASSET_MAP } from '../../engine/market/nightMarketRegistry';
-import type { NightMarketAssetDef, MotionSpec } from '../../engine/market/nightMarketRegistry';
-import { DEMO_STALLS } from '../../engine/market/tileRegistry';
-import { isoToScreen, computeLayerZ } from '../../engine/market/isometric';
 
 /**
  * Night Market Engine Page
  *
- * Rebuilds the night market scene on top of Pixi.js (WebGL scene graph) instead
- * of the hand-rolled Canvas2D pipeline in MarketViewerPage. Shares all data sources:
- * the same unlock hook, asset registry, isometric math, and motion utilities.
+ * Hosts the Pixi.js night market. The market was rebuilt on the free-farm 2:1
+ * tileset: the page renders a static grass-plateau terrain (see
+ * {@link MarketEngineViewer} / FarmTerrainLayer) with a pan/zoom camera. The
+ * former demo stalls + walking pedestrians were removed; the unlock economy
+ * (minute-points → unlocks) still runs, ready to drive an authored layout later.
  */
 function NightMarketEnginePage() {
   usePageTitle('Night Market Engine');
@@ -50,7 +39,6 @@ function NightMarketEnginePage() {
   }, []);
 
   const {
-    unlocks,
     isLoading,
     error,
     nextThreshold,
@@ -58,87 +46,23 @@ function NightMarketEnginePage() {
     canUnlock,
     newUnlock,
     clearNewUnlock,
+    unlocks,
   } = useNightMarket();
 
   const { accumulativeMinutePoints } = useMinutePoints();
 
-  const [selectedAsset, setSelectedAsset] = useState<NightMarketAssetDef | null>(null);
   const [debug, setDebug] = useState<DebugFlags>(ALL_DEBUG_OFF);
-
   const toggleDebugFlag = (key: keyof DebugFlags) =>
     setDebug(prev => ({ ...prev, [key]: !prev[key] }));
 
-  // Pedestrian simulation driven by Pixi's useTick — no separate RAF loop.
-  const pedestrians = usePixiPedestrians(100);
-
-  // Mirror the `frozen` / `fast` debug flags into the pedestrian sim's speed
-  // multiplier. `frozen` wins over `fast` when both are on.
-  useEffect(() => {
-    const multiplier = debug.frozen ? 0 : debug.fast ? 2 : 1;
-    pedestrians.setSpeedMultiplier(multiplier);
-  }, [debug.frozen, debug.fast, pedestrians]);
-
-  // Build EngineLayer list from user unlocks + demo stalls — same logic as MarketViewerPage.
-  const layers = useMemo(() => {
-    const result: EngineLayer[] = [];
-
-    const pushAsset = (assetDef: NightMarketAssetDef, isoX: number, isoY: number, groupIdSuffix = '') => {
-      const { screenX, screenY } = isoToScreen(isoX, isoY);
-      // Square footprint edge length, derived from the asset's footprint tile
-      // count (tests in `__tests__/nmp/tileRegistry.test.ts` enforce square 8×8
-      // for all demo stalls). Missing footprint → no strip slicing.
-      const footprintSize = assetDef.footprint
-        ? Math.round(Math.sqrt(assetDef.footprint.length))
-        : undefined;
-      for (const sl of assetDef.layers) {
-        const motions: MotionSpec[] = [];
-        if (assetDef.motion) motions.push(assetDef.motion);
-        if (sl.motion) motions.push(sl.motion);
-        result.push({
-          imagePath: sl.imagePath,
-          x: screenX + (sl.offsetX ?? 0),
-          y: screenY + (sl.offsetY ?? 0),
-          zIndex: computeLayerZ(isoX, isoY, sl.slot),
-          scale: sl.scale ?? assetDef.scale,
-          groupId: (sl.groupId ?? assetDef.assetId) + groupIdSuffix,
-          motions: motions.length > 0 ? motions : undefined,
-          frameAnimation: sl.frameAnimation,
-          swX: isoX,
-          swY: isoY,
-          footprintSize,
-        });
-      }
-    };
-
-    for (const unlock of unlocks) {
-      const assetDef = NIGHT_MARKET_ASSET_MAP.get(unlock.assetId);
-      if (!assetDef) {
-        console.warn(`[NM Engine] Unknown assetId: ${unlock.assetId}`);
-        continue;
-      }
-      pushAsset(assetDef, assetDef.isoX, assetDef.isoY);
-    }
-
-    for (const stall of DEMO_STALLS) {
-      pushAsset(stall, stall.isoX, stall.isoY, '-demo');
-    }
-
-    return result;
-  }, [unlocks]);
-
-  const handleLayerTap = (id: string | number) => {
-    if (typeof id === 'string') {
-      const assetDef = NIGHT_MARKET_ASSET_MAP.get(id);
-      if (assetDef) setSelectedAsset(assetDef);
-    }
-  };
+  // Gridlines are off by default; toggled on via the debug overlay column.
+  const [showGrid, setShowGrid] = useState(false);
 
   const earnedCount = unlocks.filter(u => u.unlockOrder > 0).length;
 
   // Night Market is a LEAF PAGE (see docs/LEAF_NODE_PAGES.md): no footer, DOWN back
-  // arrow (→ Home), slides up on enter / down on exit. All three states
-  // (loading / error / engine) render through one LeafPage so it stays a single
-  // instance and the enter slide plays only once.
+  // arrow (→ Home), slides up on enter / down on exit. All three states render
+  // through one LeafPage so it stays a single instance and the enter slide plays once.
   if (isLoading) {
     return (
       <LeafPage title="Night Market" onBack={() => navigate("/")}>
@@ -245,15 +169,10 @@ function NightMarketEnginePage() {
       >
         {([
           { key: 'all-off', label: 'Turn all debug overlays off', icon: <VisibilityOffIcon fontSize="small" />, active: false, onClick: () => setDebug(ALL_DEBUG_OFF) },
-          { key: 'footprints', label: 'Toggle stand footprint outlines', icon: <CropFreeIcon fontSize="small" />, active: debug.footprints, onClick: () => toggleDebugFlag('footprints') },
-          { key: 'standLabels', label: 'Toggle stand and pedestrian name labels', icon: <StorefrontIcon fontSize="small" />, active: debug.standLabels, onClick: () => toggleDebugFlag('standLabels') },
-          { key: 'streetLabels', label: 'Toggle street name labels', icon: <AltRouteIcon fontSize="small" />, active: debug.streetLabels, onClick: () => toggleDebugFlag('streetLabels') },
-          { key: 'pedestrianStates', label: 'Toggle pedestrian FSM state labels', icon: <DirectionsWalkIcon fontSize="small" />, active: debug.pedestrianStates, onClick: () => toggleDebugFlag('pedestrianStates') },
           { key: 'origin', label: 'Toggle iso (0, 0) origin crosshair', icon: <GpsFixedIcon fontSize="small" />, active: debug.origin, onClick: () => toggleDebugFlag('origin') },
-          { key: 'coordinates', label: 'Toggle (isoX, isoY) coordinates on stands and pedestrians', icon: <PinDropIcon fontSize="small" />, active: debug.coordinates, onClick: () => toggleDebugFlag('coordinates') },
-          { key: 'tileInfo', label: 'Toggle per-tile street/edge/node info (small font — zoom in to read)', icon: <GridOnIcon fontSize="small" />, active: debug.tileInfo, onClick: () => toggleDebugFlag('tileInfo') },
-          { key: 'frozen', label: 'Freeze all pedestrians', icon: <PauseCircleOutlineIcon fontSize="small" />, active: debug.frozen, onClick: () => toggleDebugFlag('frozen') },
-          { key: 'fast', label: 'Run pedestrians at 2× speed', icon: <FastForwardIcon fontSize="small" />, active: debug.fast, onClick: () => toggleDebugFlag('fast') },
+          { key: 'grass', label: 'Toggle grass-tile overlay', icon: <GrassIcon fontSize="small" />, active: debug.grass, onClick: () => toggleDebugFlag('grass') },
+          { key: 'overlay-labels', label: 'Toggle overlay-tile labels (which sprite each cell used)', icon: <LabelIcon fontSize="small" />, active: debug.overlayLabels, onClick: () => toggleDebugFlag('overlayLabels') },
+          { key: 'grid', label: 'Toggle gridlines', icon: <GridOnIcon fontSize="small" />, active: showGrid, onClick: () => setShowGrid(prev => !prev) },
         ] as const).map(({ key, label, icon, active, onClick }) => (
           <Tooltip key={key} title={label} placement="left">
             <Button
@@ -283,41 +202,8 @@ function NightMarketEnginePage() {
         className="night-market-engine-canvas-container"
         sx={{ flexGrow: 1, width: '100%', height: '100%', position: 'relative' }}
       >
-        <MarketEngineViewer layers={layers} onLayerTap={handleLayerTap} pedestrians={pedestrians} showGrid debug={debug} />
+        <MarketEngineViewer showGrid={showGrid} debug={debug} />
       </Box>
-
-      {/* Item info dialog */}
-      <Dialog
-        className="night-market-engine-item-dialog"
-        open={!!selectedAsset}
-        onClose={() => setSelectedAsset(null)}
-        maxWidth="xs"
-        fullWidth
-      >
-        {selectedAsset && (
-          <>
-            <DialogTitle className="night-market-engine-item-dialog-title">{selectedAsset.displayName}</DialogTitle>
-            <DialogContent className="night-market-engine-item-dialog-content">
-              <Typography className="night-market-engine-item-description" variant="body1">
-                {selectedAsset.description}
-              </Typography>
-              <Typography
-                className="night-market-engine-item-type"
-                variant="caption"
-                color="text.secondary"
-                sx={{ mt: 1, display: 'block' }}
-              >
-                Type: {selectedAsset.unlockType}
-              </Typography>
-            </DialogContent>
-            <DialogActions className="night-market-engine-item-dialog-actions">
-              <Button className="night-market-engine-item-dialog-close" onClick={() => setSelectedAsset(null)}>
-                Close
-              </Button>
-            </DialogActions>
-          </>
-        )}
-      </Dialog>
 
       {/* New unlock snackbar */}
       <Snackbar

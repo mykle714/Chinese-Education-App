@@ -31,6 +31,24 @@ export class NightMarketTemplateController {
   }
 
   /**
+   * GET /api/nightmarket-templates/suggest-name → { name: string }
+   * A free default name ("template{index}") to pre-fill a fresh template.
+   */
+  async suggestName(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = (req as any).user?.userId;
+      if (!userId) {
+        res.status(401).json({ error: 'User not authenticated', code: 'ERR_NOT_AUTHENTICATED' });
+        return;
+      }
+      const name = await this.service.suggestDefaultName(userId);
+      res.json({ name });
+    } catch (error: any) {
+      this.handleError(res, error, 'Failed to suggest template name', 'ERR_TEMPLATE_NAME_SUGGEST_FAILED');
+    }
+  }
+
+  /**
    * GET /api/nightmarket-templates → { templates: TemplateSummary[] }
    * Name-ordered summaries for the editor's Load dropdown.
    */

@@ -43,11 +43,11 @@ export const MAX_TEMPLATE_DESCRIPTION_LENGTH = 500;
 
 /** The painted-mask content authored today; grows to the full template later. */
 export interface TemplateDefinition {
-  /** Light-grass mask cells, each "col,row". */
-  lightGrass: string[];
-  /** Dark-grass mask cells, each "col,row" — an independent mask (renders only where it overlaps lightGrass). */
-  darkGrass: string[];
-  /** Street-mask cells (the street-walkable set), each "col,row". */
+  /** Terrain-1 mask cells, each "col,row" (currently rendered as light grass). */
+  terrain1: string[];
+  /** Terrain-2 mask cells, each "col,row" — an independent mask (renders only where it overlaps terrain1; currently dark grass). */
+  terrain2: string[];
+  /** Street-mask cells (the street-walkable set), each "col,row" — a spriteless walkability tint. */
   street: string[];
   /** Communal-walkable cells (parks/plazas), each "col,row" — disjoint from street. */
   communal: string[];
@@ -65,9 +65,16 @@ export interface TemplateDefinition {
    * version 0 (the base carries no conditional cells).
    */
   condition: string[];
-  /** Placed houses: FRONT-corner anchor cells "col,row" (each a 4×5 footprint). */
-  houses: string[];
-  /** Per-cell decor: cell "col,row" → decor sprite STEM (never on a street cell). */
+  /**
+   * Placed houses: front-corner anchor cell "col,row" (each a 4×5 footprint) + horizontal
+   * FLIP (mirror) orientation. Legacy rows stored bare "col,row" strings → read as flip:false.
+   */
+  houses: Array<{ cell: string; flip: boolean }>;
+  /**
+   * Per-cell decor: cell "col,row" → decor sprite STEM. Never under a house (houses
+   * overwrite decor); flush surface-family decor MAY coexist with a street, but BLOCKING
+   * decor (common/tree) may not (it clears the street walkability class in the editor).
+   */
   decor: Record<string, string>;
 }
 
@@ -93,11 +100,25 @@ function isBlockingDecorStem(stem: string): boolean {
   return /^decor_\d+$/.test(stem) || /^(tree|largeTree)_\d+$/.test(stem);
 }
 
-/** The cells a house anchored at (col,row) covers, as "col,row" keys. */
-function houseFootprintCells(col: number, row: number): string[] {
+/**
+ * Footprint spans for a house's mirror orientation. Mirrors the client geometry
+ * (src/engine/market/house.ts `houseFootprintSpans`) — a flipped house's ground block is
+ * the TRANSPOSE of the default (5 along isoX × 4 along isoY), because the horizontal sprite
+ * mirror swaps the +isoX/+isoY screen directions. Kept in sync BY HAND (the server can't
+ * import the client Vite module — same reason the footprint dims are duplicated here).
+ */
+function houseFootprintSpans(flip: boolean): { spanX: number; spanY: number } {
+  return flip
+    ? { spanX: HOUSE_FOOTPRINT_Y, spanY: HOUSE_FOOTPRINT_X }
+    : { spanX: HOUSE_FOOTPRINT_X, spanY: HOUSE_FOOTPRINT_Y };
+}
+
+/** The cells a house anchored at (col,row) with the given `flip` covers, as "col,row" keys. */
+function houseFootprintCells(col: number, row: number, flip: boolean): string[] {
+  const { spanX, spanY } = houseFootprintSpans(flip);
   const cells: string[] = [];
-  for (let dx = 0; dx < HOUSE_FOOTPRINT_X; dx++) {
-    for (let dy = 0; dy < HOUSE_FOOTPRINT_Y; dy++) {
+  for (let dx = 0; dx < spanX; dx++) {
+    for (let dy = 0; dy < spanY; dy++) {
       cells.push(`${col + dx},${row + dy}`);
     }
   }
@@ -202,6 +223,33 @@ export class NightMarketTemplateService {
       ),
     );
     return res.recordset.length === 0;
+  }
+
+  /**
+   * Suggest a free default template name of the form `template{index}` (validator-gated),
+   * where `index` is the smallest POSITIVE integer (starting at 1) for which no template
+   * of that exact name exists. Backs the editor's Properties popup, which pre-fills the
+   * name field for a fresh (unnamed) template. Only canonical `template<n>` names (no
+   * leading zeros) participate in the gap search — any other name is ignored, and the
+   * returned name is still subject to the UNIQUE(name,version) index at Save (a
+   * concurrent create between suggest and save would surface there).
+   */
+  async suggestDefaultName(userId: string): Promise<string> {
+    await this.assertValidator(userId);
+    const res = await dbManager.executeQuery<{ name: string }>(async (client) =>
+      client.query(
+        // Canonical decimal only: `template1`, `template2`, … (rejects `template01`).
+        `SELECT DISTINCT name FROM nightmarkettemplatedefinitions WHERE name ~ '^template[1-9][0-9]*$'`,
+      ),
+    );
+    const used = new Set<number>();
+    for (const r of res.recordset) {
+      const n = Number(r.name.slice('template'.length));
+      if (Number.isInteger(n)) used.add(n);
+    }
+    let idx = 1;
+    while (used.has(idx)) idx++;
+    return `template${idx}`;
   }
 
   /**
@@ -389,14 +437,14 @@ export class NightMarketTemplateService {
   /**
    * Validate the painted masks: every cell is an in-bounds "col,row"; street and
    * communal are mutually exclusive (a cell is street-walkable OR communal-walkable);
-   * communal is ALSO mutually exclusive with blocking objects (a house or common/tree
-   * decor — see {@link isBlockingDecorStem}); houses fit / don't overlap streets or
-   * each other; decor never hides under a street or house. Light/dark grass are
-   * INDEPENDENT masks (dark renders only over light at render time — see farmTerrain),
-   * and placeholder + condition are override overlays that may overlap anything. These
-   * coincidence rules mirror the editor's paint-time guards and are re-checked here so
-   * a client bug can't persist an illegal overlap. Returns a de-duplicated,
-   * canonicalized copy.
+   * BOTH walkability classes are ALSO mutually exclusive with blocking objects (a house
+   * or common/tree decor — see {@link isBlockingDecorStem}); houses fit / don't overlap
+   * streets or each other; decor never hides under a house (flush family decor MAY sit on
+   * a street). Terrain 1 / terrain 2 are INDEPENDENT masks (terrain 2 renders only over
+   * terrain 1 at render time — see farmTerrain), and placeholder + condition are override
+   * overlays that may overlap anything. These coincidence rules mirror the editor's
+   * paint-time guards and are re-checked here so a client bug can't persist an illegal
+   * overlap. Returns a de-duplicated, canonicalized copy.
    */
   private cleanDefinition(def: unknown, width: number, height: number): TemplateDefinition {
     const d = (def ?? {}) as Partial<TemplateDefinition>;
@@ -415,8 +463,8 @@ export class NightMarketTemplateService {
       }
       return [...out];
     };
-    const lightGrass = clean(d.lightGrass, 'lightGrass');
-    const darkGrass = clean(d.darkGrass, 'darkGrass');
+    const terrain1 = clean(d.terrain1, 'terrain1');
+    const terrain2 = clean(d.terrain2, 'terrain2');
     const street = clean(d.street, 'street');
     const communal = clean(d.communal, 'communal');
     // Placeholder + condition are override overlays, not walkability classes, so they
@@ -432,52 +480,90 @@ export class NightMarketTemplateService {
         throw new ValidationError(`Cell ${c} cannot be both street and communal-walkable`);
       }
     }
-    // Houses: each anchor's full 4×5 footprint must be in-bounds, houses may not
-    // overlap each other, and no footprint cell may be a street (house placement
-    // overwrites decor but never a street — mirrors the editor's placement rule).
-    const houses = clean(d.houses, 'houses');
+    // Houses: each anchor's full footprint must be in-bounds, houses may not overlap each
+    // other, and no footprint cell may be a street (house placement overwrites decor but
+    // never a street — mirrors the editor's placement rule). The footprint is flip-aware
+    // (4×5 default, transposed to 5×4 when mirrored), matching the client geometry.
+    const houses = this.cleanHouses(d.houses, inBounds);
     const houseOccupied = new Set<string>();
-    for (const anchor of houses) {
+    for (const { cell: anchor, flip } of houses) {
       const [col, row] = anchor.split(',').map(Number);
-      if (col + HOUSE_FOOTPRINT_X > width || row + HOUSE_FOOTPRINT_Y > height) {
+      const { spanX, spanY } = houseFootprintSpans(flip);
+      if (col + spanX > width || row + spanY > height) {
         throw new ValidationError(`House at ${anchor} extends outside the ${width}×${height} board`);
       }
-      for (const c of houseFootprintCells(col, row)) {
+      for (const c of houseFootprintCells(col, row, flip)) {
         if (houseOccupied.has(c)) throw new ValidationError(`Houses overlap at cell ${c}`);
         houseOccupied.add(c);
         if (streetSet.has(c)) throw new ValidationError(`House cell ${c} overlaps a street`);
       }
     }
-    // Decor may not sit under a street plank OR a house (both overwrite decor).
-    const decor = this.cleanDecor(d.decor, inBounds, streetSet, houseOccupied);
-    // Communal-walkable is mutually exclusive with BLOCKING objects — a house or
-    // common/tree decor overwrite it in the editor, so a payload with a communal cell
-    // also under one is malformed (a bug slipped past the editor's guards). Flush
-    // surface-family decor may coexist, so it is NOT checked here. This is the
-    // "check the coincidence rules at save" backstop.
-    for (const c of communal) {
+    // Decor may not sit under a house (houses overwrite decor). Flush surface-family
+    // decor MAY now coexist with a street (street is a spriteless tint, no longer a
+    // plank), so street is not a blanket decor exclusion here — blocking decor over a
+    // street is caught by the street-blocking loop below.
+    const decor = this.cleanDecor(d.decor, inBounds, houseOccupied);
+    // Street and communal are both walkability classes, mutually exclusive with BLOCKING
+    // objects — a house or common/tree decor overwrite them in the editor, so a payload
+    // with a walkability cell also under one is malformed (a bug slipped past the editor's
+    // guards). Flush surface-family decor may coexist, so it is NOT checked. This is the
+    // "check the coincidence rules at save" backstop. (Street⊥house is also caught in the
+    // house loop above; re-checking here keeps the two walkability classes symmetric.)
+    for (const [c, label] of [
+      ...communal.map((c) => [c, 'communal-walkable'] as const),
+      ...street.map((c) => [c, 'street-walkable'] as const),
+    ]) {
       if (houseOccupied.has(c)) {
-        throw new ValidationError(`Cell ${c} is communal-walkable but sits under a house`);
+        throw new ValidationError(`Cell ${c} is ${label} but sits under a house`);
       }
       const stem = decor[c];
       if (stem && isBlockingDecorStem(stem)) {
-        throw new ValidationError(`Cell ${c} is communal-walkable but carries blocking decor (${stem})`);
+        throw new ValidationError(`Cell ${c} is ${label} but carries blocking decor (${stem})`);
       }
     }
-    return { lightGrass, darkGrass, street, communal, placeholder, condition, houses, decor };
+    return { terrain1, terrain2, street, communal, placeholder, condition, houses, decor };
+  }
+
+  /**
+   * Normalize the houses payload to `{cell, flip}[]`. Accepts either legacy bare "col,row"
+   * strings (→ flip:false, from before mirror support) or `{cell, flip}` objects. Each anchor
+   * must be an in-bounds cell; duplicate anchors collapse to one. The footprint / overlap /
+   * street coincidence checks live in the caller (they need width/height + the street set).
+   */
+  private cleanHouses(raw: unknown, inBounds: Set<string>): Array<{ cell: string; flip: boolean }> {
+    if (raw == null) return [];
+    if (!Array.isArray(raw)) {
+      throw new ValidationError('Template houses must be an array');
+    }
+    const seen = new Set<string>();
+    const out: Array<{ cell: string; flip: boolean }> = [];
+    for (const h of raw) {
+      const cell = typeof h === 'string'
+        ? h
+        : (h && typeof h === 'object' ? (h as { cell?: unknown }).cell : undefined);
+      const flip = typeof h === 'object' && h != null ? !!(h as { flip?: unknown }).flip : false;
+      if (typeof cell !== 'string' || !inBounds.has(cell)) {
+        throw new ValidationError(`Template houses contains an out-of-bounds or malformed anchor: ${JSON.stringify(h)}`);
+      }
+      if (seen.has(cell)) continue; // de-dupe by anchor
+      seen.add(cell);
+      out.push({ cell, flip });
+    }
+    return out;
   }
 
   /**
    * Validate the decor map: a `cell → sprite-stem` object whose keys are in-bounds
-   * cells and whose values are non-empty stems. A decor cell may NOT also be a street
-   * cell OR under a house (both overwrite decor — the editor enforces this, and we
-   * mirror it here so a malformed payload can't hide decor under a plank/house). Stems
-   * are accepted as opaque strings — the server has no tileset to validate them against.
+   * cells and whose values are non-empty stems. A decor cell may NOT sit under a house
+   * (houses overwrite ALL decor — the editor enforces this, and we mirror it here). A
+   * street cell is allowed to carry FLUSH surface-family decor (street is now a spriteless
+   * tint); BLOCKING decor over a street is rejected separately by the caller's
+   * street-blocking check. Stems are accepted as opaque strings — the server has no
+   * tileset to validate them against.
    */
   private cleanDecor(
     raw: unknown,
     inBounds: Set<string>,
-    streetSet: Set<string>,
     houseOccupied: Set<string>,
   ): Record<string, string> {
     if (raw == null) return {};
@@ -491,9 +577,6 @@ export class NightMarketTemplateService {
       }
       if (typeof stem !== 'string' || stem.trim().length === 0) {
         throw new ValidationError(`Template decor cell ${cell} has an invalid sprite`);
-      }
-      if (streetSet.has(cell)) {
-        throw new ValidationError(`Template decor cell ${cell} is a street cell (streets overwrite decor)`);
       }
       if (houseOccupied.has(cell)) {
         throw new ValidationError(`Template decor cell ${cell} is under a house (houses overwrite decor)`);

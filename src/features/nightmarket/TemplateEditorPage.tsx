@@ -19,26 +19,28 @@ import BackspaceIcon from '@mui/icons-material/Backspace';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
 import GridOnIcon from '@mui/icons-material/GridOn';
-import VisibilityIcon from '@mui/icons-material/Visibility';
-import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
-import FilterHdrIcon from '@mui/icons-material/FilterHdr';
 import AddIcon from '@mui/icons-material/Add';
 import TuneIcon from '@mui/icons-material/Tune';
 import SaveIcon from '@mui/icons-material/Save';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import ContentPasteIcon from '@mui/icons-material/ContentPaste';
+import UndoIcon from '@mui/icons-material/Undo';
+import RedoIcon from '@mui/icons-material/Redo';
+import MenuBookIcon from '@mui/icons-material/MenuBook';
 import LeafPage from '../../components/LeafPage';
 import { WEIGHT } from '../../theme/scale';
 import { usePageTitle } from '../../hooks/usePageTitle';
 import { useAuth } from '../../AuthContext';
 import { useConfirmation } from '../../contexts/ConfirmationContext';
 import type { EditorMasks, DecorCategory } from '../../engine/market/farmTerrain';
-import { editorSurfaceAt, editorDecorRotation, isBlockingDecorUrl } from '../../engine/market/farmTerrain';
+import { editorSurfaceAt, editorDecorRotation, isBlockingDecorUrl, editorDecorCategory } from '../../engine/market/farmTerrain';
 import {
-  houseFootprintCells, houseFits, houseOccupiedCells, houseAnchorCovering,
+  houseFootprintCells, houseFits, houseOccupiedCells, houseAnchorCovering, houseFootprintSpans,
 } from '../../engine/market/house';
 import TemplateEditorViewer, { type EditorTool } from './TemplateEditorViewer';
 import {
-  checkTemplateNameAvailable, submitTemplate,
+  checkTemplateNameAvailable, suggestTemplateName, submitTemplate,
   listTemplates, loadTemplate, definitionToMasks, deleteTemplate,
   type TemplateSummary,
 } from './templateEditorApi';
@@ -47,11 +49,11 @@ import {
  * TemplateEditorPage — validator-only Night Market template authoring surface
  * (docs/NIGHT_MARKET_TEMPLATE_EDITOR.md). Desktop-only.
  *
- * Owns the painted mask layers (light/dark grass, street, communal, placeholder,
+ * Owns the painted mask layers (terrain 1 / terrain 2, street, communal, placeholder,
  * condition, houses, decor) + board size + name + the active VERSION. The header
  * carries Load / Clear / Delete / Properties / Save; a left tool palette selects the
- * active painter (+ grid/communal/placeholder/condition view toggles). The Properties
- * popup sets W×H + name and hosts the version dropdown + "New version" button.
+ * active painter (+ grid/street/communal/placeholder/condition view toggles). The
+ * Properties popup sets W×H + name and hosts the version dropdown + "New version" button.
  *
  * VERSIONS: one name owns numbered versions sharing a board size + a single
  * placeholder layout (owned by version 0; its tool/eraser are locked on higher
@@ -65,16 +67,83 @@ const MIN_DIM = 2;
 const MAX_DIM = 60;
 const DEFAULT_DIM = 12;
 
+// Selectable board dimensions (Properties width/length dropdowns): the small even sizes
+// 2–12, then every +8 up to 44. Both dropdowns share this list. MIN_DIM/MAX_DIM still
+// bound the handleOk validation (all options fall safely inside them), so a future free
+// entry stays in range.
+const DIM_OPTIONS = [2, 4, 6, 8, 10, 12, 20, 28, 36, 44];
+
 const emptyMasks = (): EditorMasks => ({
-  lightGrass: new Set<string>(),
-  darkGrass: new Set<string>(),
+  terrain1: new Set<string>(),
+  terrain2: new Set<string>(),
   street: new Set<string>(),
   communal: new Set<string>(),
   placeholder: new Set<string>(),
   condition: new Set<string>(),
-  houses: new Set<string>(),
+  houses: new Map<string, boolean>(),
   decor: new Map<string, string>(),
 });
+
+/**
+ * A copied board region held by the clipboard tools (see `copyRegion` / `pasteAt`). Every
+ * layer is stored as OFFSETS relative to the selection's min corner ("dx,dy"), so the region
+ * can be re-stamped anywhere. Copy captures each per-cell mask + decor for the W×H rectangle,
+ * plus every house whose ENTIRE 4×5 footprint fits inside the rectangle (partly-overhanging
+ * houses are skipped — their cells still copy their non-house layers). Paste overwrites the
+ * target region to match this exactly (subject to the placeholder/condition version gates).
+ */
+interface Clipboard {
+  w: number;
+  h: number;
+  terrain1: Set<string>;
+  terrain2: Set<string>;
+  street: Set<string>;
+  communal: Set<string>;
+  placeholder: Set<string>;
+  condition: Set<string>;
+  decor: Map<string, string>;
+  /** Fully-contained houses: relative front-corner anchor ("dx,dy") + h-flip orientation. */
+  houses: Array<{ rel: string; flip: boolean }>;
+}
+
+/** The clipboard group's accent (pink) — panel tint + button highlight, like the other groups. */
+const CLIPBOARD_ACCENT = '244,143,177';
+/** The undo/redo group's accent (steel blue) — reads as a utility group, apart from the paints. */
+const HISTORY_ACCENT = '120,164,214';
+
+/** Cap on retained undo snapshots (board is ≤60×60, so a snapshot is cheap; this just bounds memory). */
+const HISTORY_LIMIT = 60;
+
+/** Deep-clone a masks object so a history snapshot is fully detached from live edits. */
+const cloneMasks = (m: EditorMasks): EditorMasks => ({
+  terrain1: new Set(m.terrain1),
+  terrain2: new Set(m.terrain2),
+  street: new Set(m.street),
+  communal: new Set(m.communal),
+  placeholder: new Set(m.placeholder),
+  condition: new Set(m.condition),
+  houses: new Map(m.houses),
+  decor: new Map(m.decor),
+});
+
+/**
+ * Border-street auto-condition (versions > 0 only). At save time every STREET cell lying
+ * on the board's outer edge (col 0 / col width−1 / row 0 / row height−1) is marked as a
+ * condition-mask cell: those are exactly the cells where a NEIGHBOURING template's street
+ * can lean on this one, so they "matter to version selection"
+ * (docs/NIGHT_MARKET_TEMPLATES.md). This is the ONLY path that lands a condition on a
+ * STREET cell — the manual condition tool paints placeholder cells only. Idempotent
+ * (re-running adds the same border streets). Returns a fresh masks object with `condition`
+ * augmented; all other layers are shared by reference (callers replace the state wholesale).
+ */
+const withBorderStreetConditions = (masks: EditorMasks, width: number, height: number): EditorMasks => {
+  const condition = new Set(masks.condition);
+  for (const cell of masks.street) {
+    const [col, row] = cell.split(',').map(Number);
+    if (col === 0 || col === width - 1 || row === 0 || row === height - 1) condition.add(cell);
+  }
+  return { ...masks, condition };
+};
 
 /** `hotkey` is the single keyboard character that activates this tool (shown as a corner
  *  badge on the button and appended to its tooltip). See HOTKEY_TO_TOOL + the keydown
@@ -86,58 +155,76 @@ interface ToolGroup { key: string; accent: string; tools: ToolDef[]; }
 
 /**
  * The paint palette, split into color-coded groups (docs/NIGHT_MARKET_TEMPLATE_EDITOR.md):
- *   - terrain — light/dark grass + street (green),
- *   - masks   — communal + placeholder annotation layers (violet),
- *   - decor   — surface / common / tree decor + the house stamp (amber),
- *   - erase   — a standalone one-button group (red).
+ *   - terrain — terrain 1 / terrain 2 surface masks (green),
+ *   - masks   — street + communal walkability + placeholder + condition annotation
+ *               layers, all spriteless tints (violet),
+ *   - decor   — surface / common / tree decor + the house stamp (amber).
  * Each group's `accent` tints its panel background/border (so buttons read as grouped
  * even when idle) and colors the active-tool highlight (so a lit button still reads as
- * belonging to its group).
+ * belonging to its group). The terrain tools are named generically ("terrain 1/2") so
+ * their art can be hot-swapped later (they currently paint light/dark grass).
+ *
+ * The ERASER is NOT a tool here — it is a separate MODIFIER toggle (`eraseMode`, rendered
+ * inline before the terrain group) layered on TOP of the selected tool: while it is on, painting removes
+ * only the selected tool's OWN layer at the cell (see `paintCell`). It is scoped to the
+ * tool it was enabled on — switching tools auto-clears it (the activeTool effect) — and is
+ * disabled outright for the copy/paste tools, which don't route through paintCell's erase
+ * branch (see `toolSupportsEraser`).
  */
 const TOOL_GROUPS: ToolGroup[] = [
   {
     key: 'terrain', accent: '132,204,120',
     tools: [
-      { tool: 'lightGrass', label: 'Light grass', icon: <GrassIcon fontSize="small" />, hotkey: 'Q' },
-      { tool: 'darkGrass', label: 'Dark grass (renders over light)', icon: <ParkIcon fontSize="small" />, hotkey: 'W' },
-      { tool: 'street', label: 'Street (plank mask)', icon: <RouteIcon fontSize="small" />, hotkey: 'E' },
+      { tool: 'terrain1', label: 'Terrain 1', icon: <GrassIcon fontSize="small" />, hotkey: 'A' },
+      { tool: 'terrain2', label: 'Terrain 2 (renders over terrain 1)', icon: <ParkIcon fontSize="small" />, hotkey: 'S' },
     ],
   },
   {
     key: 'masks', accent: '168,132,255',
     tools: [
-      { tool: 'communal', label: 'Communal', icon: <GroupsIcon fontSize="small" />, hotkey: 'A' },
-      { tool: 'placeholder', label: 'Placeholder (version 0 only)', icon: <HighlightAltIcon fontSize="small" />, hotkey: 'S' },
-      { tool: 'condition', label: 'Condition mask (per version)', icon: <RuleIcon fontSize="small" />, hotkey: 'D' },
+      { tool: 'street', label: 'Street (walkability mask)', icon: <RouteIcon fontSize="small" />, hotkey: 'Q' },
+      { tool: 'communal', label: 'Communal', icon: <GroupsIcon fontSize="small" />, hotkey: 'W' },
+      { tool: 'placeholder', label: 'Placeholder (version 0 only)', icon: <HighlightAltIcon fontSize="small" />, hotkey: 'E' },
+      { tool: 'condition', label: 'Condition mask (per version)', icon: <RuleIcon fontSize="small" />, hotkey: 'R' },
     ],
   },
   {
     key: 'decor', accent: '255,183,77',
     tools: [
-      { tool: 'house', label: 'House (4×5 footprint)', icon: <HouseIcon fontSize="small" />, hotkey: 'Z' },
-      { tool: 'familyDecor', label: 'Surface decor (tap to cycle)', icon: <LocalFloristIcon fontSize="small" />, hotkey: 'X' },
-      { tool: 'commonDecor', label: 'Common decor (tap to cycle)', icon: <ScatterPlotIcon fontSize="small" />, hotkey: 'C' },
-      { tool: 'treeDecor', label: 'Trees (tap to cycle)', icon: <ForestIcon fontSize="small" />, hotkey: 'V' },
-    ],
-  },
-  {
-    key: 'erase', accent: '255,140,140',
-    tools: [
-      { tool: 'erase', label: 'Erase (top layer)', icon: <BackspaceIcon fontSize="small" />, hotkey: 'Space' },
+      { tool: 'house', label: 'House (4×5 footprint · Space flips L↔R)', icon: <HouseIcon fontSize="small" />, hotkey: 'D' },
+      { tool: 'familyDecor', label: 'Surface decor (tap to cycle)', icon: <LocalFloristIcon fontSize="small" />, hotkey: 'F' },
+      { tool: 'commonDecor', label: 'Common decor (tap to cycle)', icon: <ScatterPlotIcon fontSize="small" />, hotkey: 'G' },
+      { tool: 'treeDecor', label: 'Trees (tap to cycle)', icon: <ForestIcon fontSize="small" />, hotkey: 'H' },
     ],
   },
 ];
 
+// Which decor category each decor tool places/erases. Used by the per-tool eraser to
+// remove a cell's single decor sprite only when it belongs to the selected decor tool.
+const DECOR_TOOL_CATEGORY: Partial<Record<EditorTool, DecorCategory>> = {
+  familyDecor: 'family', commonDecor: 'common', treeDecor: 'tree',
+};
+
+// Tools the ERASER modifier does NOT apply to. The eraser inverts a PAINT tool (removing
+// its own layer at a cell via paintCell's erase branch); `copy`/`paste` are region tools
+// that never route through that branch, so the eraser is meaningless — and thus disabled —
+// while either is active. Every other tool paints a layer and supports erasing.
+const ERASER_UNSUPPORTED_TOOLS: ReadonlySet<EditorTool> = new Set<EditorTool>(['copy', 'paste']);
+const toolSupportsEraser = (tool: EditorTool): boolean => !ERASER_UNSUPPORTED_TOOLS.has(tool);
+
 // Keyboard → tool dispatch. The authoritative source is this map; the per-tool `hotkey`
-// badges above are the display mirror and must match. Keys are compared lower-case;
-// Space (erase) is matched by the literal ' ' event.key. The two version-gated tools are
-// gated in the keydown handler (mirroring their disabled tool buttons): placeholder ('s')
-// is version-0-only, condition ('d') is versions-above-0-only.
+// badges above are the display mirror and must match. Keys are compared lower-case. Layout
+// mirrors the physical keyboard, one palette row per keyboard row: Q/W/E/R masks (top letter
+// row), A/S terrain + D/F/G/H decor (home row), C/V copy/paste (bottom row). NON-tool actions
+// live on the bottom row too and are handled separately in the keydown effect (not via this
+// map): Z undo, X redo, B eraser modifier. The two version-gated tools are gated in the keydown
+// handler (mirroring their disabled tool buttons): placeholder ('e') is version-0-only,
+// condition ('r') is versions-above-0-only; paste ('v') is gated when the clipboard is empty.
 const HOTKEY_TO_TOOL: Record<string, EditorTool> = {
-  q: 'lightGrass', w: 'darkGrass', e: 'street',
-  a: 'communal', s: 'placeholder', d: 'condition',
-  z: 'house', x: 'familyDecor', c: 'commonDecor', v: 'treeDecor',
-  ' ': 'erase',
+  q: 'street', w: 'communal', e: 'placeholder', r: 'condition',
+  a: 'terrain1', s: 'terrain2',
+  d: 'house', f: 'familyDecor', g: 'commonDecor', h: 'treeDecor',
+  c: 'copy', v: 'paste',
 };
 
 function TemplateEditorPage() {
@@ -160,7 +247,16 @@ function TemplateEditorPage() {
   // higher versions). Kept as '' when absent; sent to the server as null when blank.
   const [description, setDescription] = useState('');
   const [masks, setMasks] = useState<EditorMasks>(emptyMasks);
-  const [activeTool, setActiveTool] = useState<EditorTool>('lightGrass');
+  const [activeTool, setActiveTool] = useState<EditorTool>('terrain1');
+  // The eraser MODIFIER. Not a tool — a toggle layered on top of the selected tool: while
+  // on, painting removes only that tool's OWN layer at the cell (see paintCell). It is
+  // scoped to the tool it was enabled on: switching to a different tool auto-clears it (the
+  // activeTool effect below), so the eraser never silently carries into the next tool.
+  const [eraseMode, setEraseMode] = useState(false);
+  // The house-placement orientation: false = default facing, true = horizontally MIRRORED.
+  // Toggled by Space while the house tool is active; each placed house stores this flip
+  // (masks.houses value). Only the sprite mirrors — the 4×5 footprint is unchanged.
+  const [houseFlip, setHouseFlip] = useState(false);
   const [showGrid, setShowGrid] = useState(true);
 
   // ── Versions ──────────────────────────────────────────────────────────────────
@@ -174,17 +270,25 @@ function TemplateEditorPage() {
   const [isNewVersion, setIsNewVersion] = useState(false);
   // Unsaved edits since the last load/save — gates the switch-version and Load warns.
   const [dirty, setDirty] = useState(false);
+  // Persistent toggle for the street-walkable highlight — same forced-on-while-active
+  // semantics as showCommunal below (street is now a spriteless tint, not a plank).
+  const [showStreet, setShowStreet] = useState(true);
   // Persistent toggle for the communal-walkable highlight. The overlay is forced on
   // while the communal TOOL is active (auto-reveal what you're painting); otherwise it
   // honors this setting. The toggle button reflects this persisted value, not the
   // forced-on state.
-  const [showCommunal, setShowCommunal] = useState(false);
+  const [showCommunal, setShowCommunal] = useState(true);
   // Persistent toggle for the placeholder-area highlight — same forced-on-while-active
   // semantics as showCommunal above.
-  const [showPlaceholder, setShowPlaceholder] = useState(false);
+  const [showPlaceholder, setShowPlaceholder] = useState(true);
   // Persistent toggle for the condition-mask highlight — same forced-on-while-active
   // semantics as showCommunal above.
-  const [showCondition, setShowCondition] = useState(false);
+  const [showCondition, setShowCondition] = useState(true);
+
+  // The clipboard buffer for the copy/paste tools (null = empty). Set by `copyRegion`,
+  // consumed by `pasteAt`; paste does NOT clear it, so one copy can be stamped many times.
+  // Persists across tool switches / loads until the next copy replaces it.
+  const [clipboard, setClipboard] = useState<Clipboard | null>(null);
 
   // The template currently loaded / last saved. `loadedName` is the ONE existing name
   // the Properties rename gate permits (so Save can only overwrite a deliberately loaded
@@ -193,6 +297,9 @@ function TemplateEditorPage() {
   const [loadedName, setLoadedName] = useState<string | null>(null);
 
   const [propsOpen, setPropsOpen] = useState(false);
+  // The read-only authoring-guidelines popup (rules we do NOT programmatically enforce —
+  // the author must follow them by hand). See GuidelinesDialog below.
+  const [guidelinesOpen, setGuidelinesOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   // Load dropdown: anchor element + the fetched template summaries.
   const [loadAnchor, setLoadAnchor] = useState<null | HTMLElement>(null);
@@ -221,33 +328,96 @@ function TemplateEditorPage() {
   // version 0 (placeholder is shared, owned by v0), so paintCell needs the live value.
   const versionRef = useRef(version);
   versionRef.current = version;
-  // Latest highlight-toggle values for the erase branch. The eraser must NOT clear a
-  // spriteless mask (communal / condition / placeholder) whose tint is toggled off — you
-  // can't erase what you can't see. During erase activeTool is 'erase' (never the mask's
-  // own tool), so these raw toggle values equal the tint's actual on-screen visibility.
-  const showCommunalRef = useRef(showCommunal);
-  showCommunalRef.current = showCommunal;
-  const showPlaceholderRef = useRef(showPlaceholder);
-  showPlaceholderRef.current = showPlaceholder;
-  const showConditionRef = useRef(showCondition);
-  showConditionRef.current = showCondition;
+  // Latest eraser-modifier state for the paint callback (kept in a ref, like activeTool,
+  // so paintCell stays identity-stable). When on, paintCell erases the active tool's own
+  // layer instead of painting it.
+  const eraseModeRef = useRef(eraseMode);
+  eraseModeRef.current = eraseMode;
 
-  // Paint the active tool onto a cell. Functional update → never stale. Light and dark
-  // grass are independent masks (dark renders over light only at render time). Erase
-  // removes only the TOP-MOST layer present
-  // at the cell — visual stacking order decor > street > dark grass > light grass —
-  // so clearing a fully-stacked cell takes several erase passes (one per layer).
+  // The eraser is scoped to the tool it was turned on for: any change of the active tool
+  // (via a palette button, a hotkey, or a programmatic fallback) auto-deactivates it, so it
+  // never silently carries into the next tool. Toggling the eraser itself doesn't change
+  // activeTool, so this fires only on genuine tool switches.
+  useEffect(() => {
+    setEraseMode(false);
+  }, [activeTool]);
+  // Latest house-flip orientation for the paint callback (kept in a ref, like activeTool, so
+  // paintCell stays identity-stable). Read when the house tool stamps a house.
+  const houseFlipRef = useRef(houseFlip);
+  houseFlipRef.current = houseFlip;
+  // Latest masks for the copy tool, which READS the current board (paintCell mutates via a
+  // functional update and needs no ref, but copyRegion needs a live snapshot to capture).
+  const masksRef = useRef(masks);
+  masksRef.current = masks;
+  // Latest clipboard for the paste callback + the paste hotkey gate (kept identity-stable).
+  const clipboardRef = useRef(clipboard);
+  clipboardRef.current = clipboard;
+
+  // ── Undo / redo history ─────────────────────────────────────────────────────────
+  // Snapshot-based history over the whole masks object. The two STACKS are refs (mutated
+  // imperatively so the handlers stay identity-stable and StrictMode-safe — no side effects
+  // inside a state updater); `canUndo`/`canRedo` mirror their non-emptiness to drive the
+  // button disabled state. A snapshot of the PRE-edit board is pushed at the start of each
+  // logical edit — a drag stroke (viewer `onEditBegin`), a rectangle fill, a paste, or Clear —
+  // so one gesture is one undo step. Undo/redo swap the live board with the top of a stack,
+  // pushing the current board onto the opposite stack. History is reset on load/version-switch
+  // /dimension-change (a fresh board context).
+  const undoStackRef = useRef<EditorMasks[]>([]);
+  const redoStackRef = useRef<EditorMasks[]>([]);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+  const syncHistoryFlags = useCallback(() => {
+    setCanUndo(undoStackRef.current.length > 0);
+    setCanRedo(redoStackRef.current.length > 0);
+  }, []);
+  // Snapshot the current board as a new undo step (and drop the redo future). Called BEFORE a
+  // mutating edit is applied, so it captures the pre-edit state.
+  const pushHistory = useCallback(() => {
+    undoStackRef.current = [...undoStackRef.current, cloneMasks(masksRef.current)].slice(-HISTORY_LIMIT);
+    redoStackRef.current = [];
+    syncHistoryFlags();
+  }, [syncHistoryFlags]);
+  // Forget all history (used when the board is replaced wholesale — load/switch/reset/resize).
+  const resetHistory = useCallback(() => {
+    undoStackRef.current = [];
+    redoStackRef.current = [];
+    syncHistoryFlags();
+  }, [syncHistoryFlags]);
+  const handleUndo = useCallback(() => {
+    if (undoStackRef.current.length === 0) return;
+    const restored = undoStackRef.current[undoStackRef.current.length - 1];
+    undoStackRef.current = undoStackRef.current.slice(0, -1);
+    redoStackRef.current = [...redoStackRef.current, cloneMasks(masksRef.current)];
+    setMasks(restored);
+    setDirty(true);
+    syncHistoryFlags();
+  }, [syncHistoryFlags]);
+  const handleRedo = useCallback(() => {
+    if (redoStackRef.current.length === 0) return;
+    const restored = redoStackRef.current[redoStackRef.current.length - 1];
+    redoStackRef.current = redoStackRef.current.slice(0, -1);
+    undoStackRef.current = [...undoStackRef.current, cloneMasks(masksRef.current)];
+    setMasks(restored);
+    setDirty(true);
+    syncHistoryFlags();
+  }, [syncHistoryFlags]);
+
+  // Paint the active tool onto a cell. Functional update → never stale. Terrain 1 and
+  // terrain 2 are fully independent masks (their only relationship is z-order — terrain 2
+  // draws on top of terrain 1). When the eraser MODIFIER is on (eraseModeRef), the tool's paint is inverted:
+  // it REMOVES only that tool's OWN layer at the cell (never the top-most layer, never
+  // another tool's) — see the erase branch below.
   const paintCell = useCallback((col: number, row: number) => {
     const k = `${col},${row}`;
     setDirty(true); // any paint stroke makes the board unsaved (harmless on a no-op)
     setMasks(prev => {
-      const light = new Set(prev.lightGrass);
-      const dark = new Set(prev.darkGrass);
+      const terrain1 = new Set(prev.terrain1);
+      const terrain2 = new Set(prev.terrain2);
       const street = new Set(prev.street);
       const communal = new Set(prev.communal);
       const placeholder = new Set(prev.placeholder);
       const condition = new Set(prev.condition);
-      const houses = new Set(prev.houses);
+      const houses = new Map(prev.houses);
       const decor = new Map(prev.decor);
       const tool = activeToolRef.current;
       // Cells covered by an already-placed house. Street/decor may NOT overwrite these,
@@ -259,35 +429,85 @@ function TemplateEditorPage() {
       // (a different category / stale surface) → indexOf −1 → restarts at rotation[0],
       // so switching decor tools swaps the sprite to that tool's first entry.
       const cycleDecor = (category: DecorCategory) => {
-        if (street.has(k)) return; // no decor slot on a street cell (plank covers it)
         if (occupied.has(k)) return; // decor cannot overwrite a placed house
-        const surface = editorSurfaceAt({ lightGrass: light, darkGrass: dark }, col, row);
+        const surface = editorSurfaceAt({ terrain1, terrain2 }, col, row);
         const rotation = editorDecorRotation(category, surface);
         if (rotation.length === 0) return;
         const current = decor.get(k);
         const nextIdx = (current ? rotation.indexOf(current) : -1) + 1;
         decor.set(k, rotation[nextIdx % rotation.length]);
-        // Common decor and trees are BLOCKING objects — they overwrite the communal
-        // class (a park/plaza tile can't hold a tree/prop). Surface (family) decor is
-        // flush and may coexist with communal, so it is exempt.
-        if (category === 'common' || category === 'tree') communal.delete(k);
+        // Common decor and trees are BLOCKING objects — they overwrite BOTH walkability
+        // classes (street + communal): a road/park tile can't hold a tree/prop. Surface
+        // (family) decor is flush and may coexist with them, so it is exempt. Removing
+        // the street substrate cascade-clears any condition on the cell (a condition may
+        // live only on a street/placeholder cell).
+        if (category === 'common' || category === 'tree') {
+          communal.delete(k);
+          if (street.delete(k) && !placeholder.has(k)) condition.delete(k);
+        }
       };
 
+      // ── Eraser modifier ────────────────────────────────────────────────────────
+      // When the eraser is toggled on, painting REMOVES only the ACTIVE tool's own layer
+      // at the cell. Each tool erases exactly what it paints; the cascade rules mirror the
+      // paint cases (a condition may live only on a street/placeholder cell, so removing
+      // its last substrate clears it). The active tool force-shows its own tint (see the
+      // viewer's show* props), so you always see the layer you are erasing.
+      if (eraseModeRef.current) {
+        switch (tool) {
+          case 'terrain1': terrain1.delete(k); break;
+          case 'terrain2': terrain2.delete(k); break;
+          case 'street':
+            if (street.delete(k) && !placeholder.has(k)) condition.delete(k);
+            break;
+          case 'communal': communal.delete(k); break;
+          case 'placeholder':
+            // Placeholder is shared/owned by v0 (inherited read-only above), so it is
+            // erasable ONLY on version 0 — mirrors the paint guard. Cascade-clear an
+            // orphaned condition (always empty on v0 → safety no-op).
+            if (versionRef.current !== 0) break;
+            if (placeholder.delete(k) && !street.has(k)) condition.delete(k);
+            break;
+          case 'condition': condition.delete(k); break;
+          case 'house': {
+            // Erasing ANY footprint cell removes the whole house (keyed by front corner).
+            const houseAnchor = houseAnchorCovering(houses, col, row);
+            if (houseAnchor) houses.delete(houseAnchor);
+            break;
+          }
+          // A cell holds ONE decor sprite shared by the three decor tools, so a decor
+          // eraser removes it only when it belongs to THIS tool's category ("only erase
+          // the selected tool") — e.g. the surface-decor eraser leaves a tree untouched.
+          case 'familyDecor':
+          case 'commonDecor':
+          case 'treeDecor': {
+            const current = decor.get(k);
+            if (current && editorDecorCategory(current) === DECOR_TOOL_CATEGORY[tool]) decor.delete(k);
+            break;
+          }
+        }
+        return { terrain1, terrain2, street, communal, placeholder, condition, houses, decor };
+      }
+
       switch (tool) {
-        case 'lightGrass': light.add(k); break;
-        // Dark grass is an INDEPENDENT mask — it does NOT add light underneath. The
-        // "dark renders only over light" rule is applied at render time (buildEditorField
-        // intersects dark∩light), so a dark cell with no light simply doesn't render.
-        case 'darkGrass': dark.add(k); break;
-        case 'street':
-          // A street may not overwrite a placed house (house wins once dropped).
-          if (occupied.has(k)) break;
-          // Streets overwrite decor — a plank fully covers the cell. Street and
-          // communal are mutually-exclusive walkability classes, so clear communal.
+        case 'terrain1': terrain1.add(k); break;
+        // Terrain 2 is a fully INDEPENDENT mask — it does NOT add terrain 1 underneath and
+        // does not require it. Terrain 2 renders on its own cells regardless of terrain 1;
+        // their only relationship is z-order (terrain 2 draws on top of terrain 1).
+        case 'terrain2': terrain2.add(k); break;
+        case 'street': {
+          // Street is now a spriteless walkability tint that MIRRORS communal: it can't
+          // sit under a BLOCKING object — a placed house, common decor, or a tree — so
+          // painting it there is silently REFUSED (no-op). Flush surface-family decor and
+          // the grass terrain coexist with it (the tint draws over them).
+          const blockingDecor = decor.has(k) && isBlockingDecorUrl(decor.get(k)!);
+          if (occupied.has(k) || blockingDecor) break;
+          // Street and communal are mutually-exclusive walkability classes, so painting
+          // street clears communal.
           street.add(k);
-          decor.delete(k);
           communal.delete(k);
           break;
+        }
         case 'communal': {
           // Communal-walkable is a walkability annotation (parks/plazas) with no sprite.
           // It can't sit under a BLOCKING object — a placed house, common decor, or a
@@ -315,71 +535,179 @@ function TemplateEditorPage() {
           // The condition mask is a PER-VERSION override overlay (differs between
           // versions). It is the INVERSE of placeholder's version rule: paintable ONLY on
           // versions > 0 (on version 0 the tool button is disabled and this guard is the
-          // backstop). It annotates ONLY a STREET or PLACEHOLDER cell — the two cell kinds
-          // whose walkability class can switch between versions — so painting it anywhere
-          // else is a silent no-op. (Removing that street/placeholder substrate cascades
-          // the condition away; see the communal + erase cases.)
+          // backstop). MANUAL painting annotates ONLY a PLACEHOLDER cell — painting it
+          // anywhere else is a silent no-op. (Border STREET cells also carry a condition,
+          // but that is placed AUTOMATICALLY at save time, not by this tool — see
+          // handleSubmit's withBorderStreetConditions.) A condition may therefore live on a
+          // placeholder cell (manual) or a border-street cell (auto); removing either
+          // substrate cascades the condition away (see the communal + erase cases).
           if (versionRef.current === 0) break;
-          if (!street.has(k) && !placeholder.has(k)) break;
+          if (!placeholder.has(k)) break;
           condition.add(k);
           break;
         case 'house': {
-          // The hovered cell is the house's FRONT (near) corner; its 4×5 footprint
-          // extends +isoX/+isoY. Refuse the whole placement unless every footprint cell
-          // is in-bounds and free of a street or another house (streets/houses are not
-          // overwritten). On success, the house overwrites decor under its footprint.
-          if (!houseFits(col, row, widthRef.current, heightRef.current)) break;
-          const footprint = houseFootprintCells(col, row);
-          const blocked = footprint.some((c) => street.has(c) || occupied.has(c));
+          // The hovered cell is the house's FRONT (near) corner; its footprint extends
+          // +isoX/+isoY (4×5 by default, transposed to 5×4 when mirrored). Refuse the whole
+          // placement unless every footprint cell is in-bounds and free of another house
+          // (houses are not overwritten). On success, the house overwrites decor + the
+          // walkability tints under its footprint. Both checks use the PENDING flip so the
+          // reserved cells match the ghost/sprite the author sees.
+          const flip = houseFlipRef.current;
+          if (!houseFits(col, row, widthRef.current, heightRef.current, flip)) break;
+          const footprint = houseFootprintCells(col, row, flip);
+          const blocked = footprint.some((c) => occupied.has(c));
           if (blocked) break;
-          houses.add(k);
-          // A house overwrites decor AND the communal class under its whole footprint
-          // (a park tile can't hold a house).
-          for (const c of footprint) { decor.delete(c); communal.delete(c); }
+          houses.set(k, flip); // stamp with the current mirror orientation
+          // A house is a blocking object — it overwrites decor AND both walkability
+          // classes (street + communal) under its whole footprint (a road/park tile can't
+          // hold a house). Clearing a street cascade-clears any condition on it (a
+          // condition may live only on a street/placeholder cell).
+          for (const c of footprint) {
+            decor.delete(c);
+            communal.delete(c);
+            if (street.delete(c) && !placeholder.has(c)) condition.delete(c);
+          }
           break;
         }
         case 'familyDecor': cycleDecor('family'); break;
         case 'commonDecor': cycleDecor('common'); break;
         case 'treeDecor': cycleDecor('tree'); break;
-        case 'erase': {
-          // A house is the top-most object, so erasing ANY of its footprint cells removes
-          // the WHOLE house (one pass) before peeling that cell's terrain layers below.
-          const houseAnchor = houseAnchorCovering(houses, col, row);
-          if (houseAnchor) { houses.delete(houseAnchor); break; }
-          // Peel the highest visible layer only; lower layers need another pass. The
-          // spriteless annotations (communal, condition, placeholder) are peeled LAST —
-          // only once the cell is visually bare — to avoid silently clearing an (often
-          // hidden) class. Two extra rules apply here:
-          //   • A toggled-OFF spriteless mask is NOT an erase target — you can't erase a
-          //     tint you can't see, so the eraser skips a hidden communal/condition/
-          //     placeholder and falls through to the next visible layer.
-          //   • Erasing a street or placeholder cell cascade-clears any condition on it:
-          //     a condition may live only on a street/placeholder cell, so removing its
-          //     last substrate must remove the condition too (invariant upkeep).
-          // Placeholder is shared/owned by v0, so the eraser NEVER clears it on higher
-          // versions (it is inherited, read-only there).
-          if (decor.has(k)) decor.delete(k);
-          else if (street.has(k)) { street.delete(k); if (!placeholder.has(k)) condition.delete(k); }
-          else if (dark.has(k)) dark.delete(k);
-          else if (light.has(k)) light.delete(k);
-          else if (communal.has(k) && showCommunalRef.current) communal.delete(k);
-          else if (condition.has(k) && showConditionRef.current) condition.delete(k);
-          else if (versionRef.current === 0 && showPlaceholderRef.current && placeholder.has(k)) {
-            placeholder.delete(k);
-            condition.delete(k); // cascade (condition is always empty on v0 → safety no-op)
-          }
-          break;
-        }
       }
-      return { lightGrass: light, darkGrass: dark, street, communal, placeholder, condition, houses, decor };
+      return { terrain1, terrain2, street, communal, placeholder, condition, houses, decor };
     });
   }, []);
 
+  // ── Clipboard: copy / paste ─────────────────────────────────────────────────────
+  // COPY captures the selected rectangle into the clipboard as offsets relative to its min
+  // corner: every per-cell mask + decor for the W×H region, plus every house whose ENTIRE
+  // footprint fits inside the rectangle (a house poking out is skipped — its in-region cells
+  // still copy their non-house layers). Reads the live board via masksRef; does not mutate.
+  const copyRegion = useCallback((a: { col: number; row: number }, b: { col: number; row: number }) => {
+    const c0 = Math.min(a.col, b.col), c1 = Math.max(a.col, b.col);
+    const r0 = Math.min(a.row, b.row), r1 = Math.max(a.row, b.row);
+    const w = c1 - c0 + 1, h = r1 - r0 + 1;
+    const m = masksRef.current;
+    // Cells of a boolean mask that lie in the rectangle, re-keyed to "dx,dy" offsets.
+    const pick = (set: Set<string>): Set<string> => {
+      const out = new Set<string>();
+      for (const key of set) {
+        const [col, row] = key.split(',').map(Number);
+        if (col >= c0 && col <= c1 && row >= r0 && row <= r1) out.add(`${col - c0},${row - r0}`);
+      }
+      return out;
+    };
+    const decor = new Map<string, string>();
+    for (const [key, url] of m.decor) {
+      const [col, row] = key.split(',').map(Number);
+      if (col >= c0 && col <= c1 && row >= r0 && row <= r1) decor.set(`${col - c0},${row - r0}`, url);
+    }
+    // Houses fully contained in the rectangle → relative front-corner anchor + its flip.
+    // Containment uses each house's flip-aware spans (a mirrored house is 5×4, not 4×5).
+    const houses: Array<{ rel: string; flip: boolean }> = [];
+    for (const [anchor, flip] of m.houses) {
+      const [ac, ar] = anchor.split(',').map(Number);
+      const { spanX, spanY } = houseFootprintSpans(flip);
+      if (ac >= c0 && ac + spanX - 1 <= c1 && ar >= r0 && ar + spanY - 1 <= r1) {
+        houses.push({ rel: `${ac - c0},${ar - r0}`, flip });
+      }
+    }
+    setClipboard({
+      w, h,
+      terrain1: pick(m.terrain1), terrain2: pick(m.terrain2),
+      street: pick(m.street), communal: pick(m.communal),
+      placeholder: pick(m.placeholder), condition: pick(m.condition),
+      decor, houses,
+    });
+  }, []);
+
+  // PASTE stamps the clipboard with its min corner at (col,row), OVERWRITING the target
+  // region to match the clipboard exactly. Refused if the footprint would overhang the board
+  // (guaranteed 1:1 with the copy). Any house even partially inside the target region is
+  // removed WHOLE first; then each cell's layers are set to match the clipboard and the
+  // captured houses are placed. Placeholder is written only on v0 (it is shared/owned by v0
+  // and inherited read-only above) and condition only on v>0 (forbidden on v0) — mirroring
+  // the tool version gates, so paste never breaks those invariants.
+  const pasteAt = useCallback((col: number, row: number) => {
+    const clip = clipboardRef.current;
+    if (!clip) return;
+    const { w, h } = clip;
+    if (col < 0 || row < 0 || col + w > widthRef.current || row + h > heightRef.current) return;
+    const v = versionRef.current;
+    const writePlaceholder = v === 0;
+    const writeCondition = v > 0;
+    pushHistory(); // one undo step for the whole paste
+    setMasks(prev => {
+      const terrain1 = new Set(prev.terrain1);
+      const terrain2 = new Set(prev.terrain2);
+      const street = new Set(prev.street);
+      const communal = new Set(prev.communal);
+      const placeholder = new Set(prev.placeholder);
+      const condition = new Set(prev.condition);
+      const houses = new Map(prev.houses);
+      const decor = new Map(prev.decor);
+      const c1 = col + w - 1, r1 = row + h - 1;
+      // 1. Remove any existing house whose (flip-aware) footprint intersects the paste
+      //    region (whole). A mirrored house spans 5×4 rather than 4×5, so read its flip.
+      for (const [anchor, flip] of [...houses]) {
+        const [ac, ar] = anchor.split(',').map(Number);
+        const { spanX, spanY } = houseFootprintSpans(flip);
+        const intersects =
+          ac <= c1 && ac + spanX - 1 >= col &&
+          ar <= r1 && ar + spanY - 1 >= row;
+        if (intersects) houses.delete(anchor);
+      }
+      // 2. Overwrite every region cell to exactly match the clipboard.
+      const setMembership = (set: Set<string>, key: string, present: boolean) => {
+        if (present) set.add(key); else set.delete(key);
+      };
+      for (let dy = 0; dy < h; dy++) {
+        for (let dx = 0; dx < w; dx++) {
+          const off = `${dx},${dy}`;
+          const key = `${col + dx},${row + dy}`;
+          setMembership(terrain1, key, clip.terrain1.has(off));
+          setMembership(terrain2, key, clip.terrain2.has(off));
+          setMembership(street, key, clip.street.has(off));
+          setMembership(communal, key, clip.communal.has(off));
+          if (writePlaceholder) setMembership(placeholder, key, clip.placeholder.has(off));
+          if (writeCondition) setMembership(condition, key, clip.condition.has(off));
+          const url = clip.decor.get(off);
+          if (url) decor.set(key, url); else decor.delete(key);
+        }
+      }
+      // 3. Place the captured houses at their translated anchors (in-bounds by construction),
+      //    preserving each one's mirror orientation.
+      for (const { rel, flip } of clip.houses) {
+        const [dx, dy] = rel.split(',').map(Number);
+        houses.set(`${col + dx},${row + dy}`, flip);
+      }
+      return { terrain1, terrain2, street, communal, placeholder, condition, houses, decor };
+    });
+    setDirty(true);
+  }, [pushHistory]);
+
+  // The rectangle-drag release. Copy captures the region (no board change → no history); the
+  // mask tools snapshot once then fill it cell-by-cell through the shared paintCell (so every
+  // invariant/cascade applies, all under a single undo step).
+  const handleRectComplete = useCallback((a: { col: number; row: number }, b: { col: number; row: number }) => {
+    if (activeToolRef.current === 'copy') { copyRegion(a, b); return; }
+    pushHistory();
+    const c0 = Math.min(a.col, b.col), c1 = Math.max(a.col, b.col);
+    const r0 = Math.min(a.row, b.row), r1 = Math.max(a.row, b.row);
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) paintCell(c, r);
+  }, [copyRegion, paintCell, pushHistory]);
+
   // ── Keyboard hotkeys ────────────────────────────────────────────────────────────
-  // Tool select: Q/W/E terrain, A/S/D masks, Z/X/C/V decor, Space erase (HOTKEY_TO_TOOL).
-  // View toggles: 1 grid, 2 communal, 3 placeholder, 4 condition. Suppressed while the
-  // Properties dialog is open or focus is in a text field, so typing a name never paints.
-  // Keyed on [version] so the placeholder gate (v0-only) reads the current version.
+  // Palette hotkeys mirror the keyboard's physical layout, one palette row per keyboard row
+  // (first button = the row's left key, later buttons step right):
+  //   `  grid · 1/2/3/4 view toggles        (number row — top palette row)
+  //   Q/W/E/R masks                         (top letter row)
+  //   A/S terrain · D/F/G/H decor           (home row)
+  //   Z undo · X redo · C/V copy/paste · B eraser  (bottom row)
+  // Masks/terrain/decor/copy/paste select via HOTKEY_TO_TOOL; grid + the four view toggles +
+  // Z undo / X redo / the B eraser MODIFIER are handled directly below (not tools). SPACE flips
+  // the house-placement orientation (mirror) while the house tool is active. Suppressed while
+  // the Properties dialog is open or focus is in a text field, so typing never paints. Keyed on
+  // [version] so the placeholder gate (v0-only) reads the current version.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       // Let native/browser shortcuts through; only bare keypresses are hotkeys.
@@ -389,12 +717,26 @@ function TemplateEditorPage() {
       if (propsOpen || (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)))) return;
 
       const key = e.key.toLowerCase();
-      // View toggles (utility panel). Mirror the button gating: a toggle whose tool is
-      // active is auto-forced-on and its button disabled, so ignore its key then too.
-      if (key === '1') { setShowGrid(v => !v); e.preventDefault(); return; }
-      if (key === '2') { if (activeTool !== 'communal') setShowCommunal(v => !v); e.preventDefault(); return; }
-      if (key === '3') { if (activeTool !== 'placeholder') setShowPlaceholder(v => !v); e.preventDefault(); return; }
-      if (key === '4') { if (activeTool !== 'condition') setShowCondition(v => !v); e.preventDefault(); return; }
+      // View toggles (top palette row). Each toggle is independent of the paint tools: while
+      // a tool is active its tint is force-shown for display, but the toggle itself stays
+      // freely settable (mirrors the always-clickable buttons), so the key flips it regardless.
+      if (key === '`') { setShowGrid(v => !v); e.preventDefault(); return; }
+      if (key === '1') { setShowStreet(v => !v); e.preventDefault(); return; }
+      if (key === '2') { setShowCommunal(v => !v); e.preventDefault(); return; }
+      if (key === '3') { setShowPlaceholder(v => !v); e.preventDefault(); return; }
+      if (key === '4') { setShowCondition(v => !v); e.preventDefault(); return; }
+
+      // Undo / redo (bottom-row Z / X). No-ops at the ends of their stacks (handlers guard).
+      if (key === 'z') { handleUndo(); e.preventDefault(); return; }
+      if (key === 'x') { handleRedo(); e.preventDefault(); return; }
+
+      // B toggles the eraser modifier (layered on top of whatever tool is selected). Ignored
+      // for tools that don't support erasing (copy/paste) — mirrors the disabled toggle button.
+      if (key === 'b') { if (toolSupportsEraser(activeTool)) setEraseMode(v => !v); e.preventDefault(); return; }
+
+      // Space flips the house-placement orientation (mirror), but only while the house tool
+      // is active; elsewhere it is swallowed so it never scrolls the page or re-taps a button.
+      if (key === ' ') { if (activeTool === 'house') setHouseFlip(f => !f); e.preventDefault(); return; }
 
       const tool = HOTKEY_TO_TOOL[key];
       if (!tool) return;
@@ -402,16 +744,19 @@ function TemplateEditorPage() {
       // condition is versions-above-0-only (the two are inverses of each other).
       if (tool === 'placeholder' && version !== 0) return;
       if (tool === 'condition' && version === 0) return;
+      // Paste mirrors its disabled button — no-op until something has been copied.
+      if (tool === 'paste' && !clipboardRef.current) return;
       setActiveTool(tool);
-      e.preventDefault(); // stop Space from re-triggering a focused button
+      e.preventDefault(); // stop the key from re-triggering a focused button
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [propsOpen, version, activeTool]);
+  }, [propsOpen, version, activeTool, handleUndo, handleRedo]);
 
   // Clear the board. On version 0 this wipes everything (incl. the placeholder it
   // owns); on higher versions the placeholder is inherited/read-only, so it is kept.
   const handleClear = () => {
+    pushHistory(); // Clear is undoable
     setMasks(prev => (version === 0
       ? emptyMasks()
       : { ...emptyMasks(), placeholder: new Set(prev.placeholder) }));
@@ -427,6 +772,7 @@ function TemplateEditorPage() {
     setIsNewVersion(false);
     setLoadedName(null);
     setDirty(false);
+    resetHistory(); // the board is gone — its edit history no longer applies
   };
 
   // Load a specific (name, version) row into the editor, replacing the board. Used by
@@ -444,8 +790,9 @@ function TemplateEditorPage() {
     setLoadedName(tpl.name);
     setIsNewVersion(false);
     setDirty(false);
-    if (tpl.version !== 0 && activeTool === 'placeholder') setActiveTool('lightGrass');
-    if (tpl.version === 0 && activeTool === 'condition') setActiveTool('lightGrass');
+    resetHistory(); // fresh board context — prior undo history no longer applies
+    if (tpl.version !== 0 && activeTool === 'placeholder') setActiveTool('terrain1');
+    if (tpl.version === 0 && activeTool === 'condition') setActiveTool('terrain1');
   };
 
   // Open the Load dropdown, fetching the template list fresh each time it opens.
@@ -525,7 +872,8 @@ function TemplateEditorPage() {
     setVersion(next);
     setIsNewVersion(true);
     setDirty(true);
-    if (activeTool === 'placeholder') setActiveTool('lightGrass');
+    resetHistory(); // new version context — start its undo history fresh
+    if (activeTool === 'placeholder') setActiveTool('terrain1');
     setSnack({ open: true, msg: `New version ${next} (copied) — Save to keep it`, severity: 'success' });
   };
 
@@ -534,10 +882,16 @@ function TemplateEditorPage() {
       setSnack({ open: true, msg: 'Set a template name in Properties first', severity: 'error' });
       return;
     }
+    // Auto-place border-street conditions before saving (versions > 0 only — version 0
+    // carries no condition mask). Merge them into the live board so the author SEES the
+    // orange cells appear, and submit the SAME augmented object: setMasks is async, so we
+    // must not depend on the state update landing before the POST reads `masks`.
+    const outgoing = version > 0 ? withBorderStreetConditions(masks, width, height) : masks;
+    if (outgoing !== masks) setMasks(outgoing);
     setSubmitting(true);
     try {
       const { overwritten } = await submitTemplate({
-        name: name.trim(), version, width, height, description: description.trim() || null, masks,
+        name: name.trim(), version, width, height, description: description.trim() || null, masks: outgoing,
       });
       // A successful save makes this the loaded template — subsequent saves overwrite it,
       // the rename gate now permits its name, and Delete now targets it.
@@ -577,6 +931,168 @@ function TemplateEditorPage() {
     }
   };
 
+  // The three paint groups, pulled out by key so the palette can place them individually
+  // (eraser inline before terrain; masks directly above the mask-view toggles) instead of
+  // mapping TOOL_GROUPS in a fixed vertical order.
+  const terrainGroup = TOOL_GROUPS.find(g => g.key === 'terrain')!;
+  const decorGroup = TOOL_GROUPS.find(g => g.key === 'decor')!;
+  const masksGroup = TOOL_GROUPS.find(g => g.key === 'masks')!;
+
+  // Render one color-coded tool group as a horizontal row of paint-tool buttons. The two
+  // version-gated tools (placeholder = v0-only, condition = versions-above-0-only) disable
+  // their button off the wrong version, mirroring the keydown gate + the server guards.
+  const renderToolGroup = ({ key, accent, tools }: ToolGroup) => (
+    <Box
+      key={key}
+      className={`template-editor-tool-group template-editor-tool-group-${key}`}
+      sx={{
+        display: 'flex', flexDirection: 'row', gap: 0.75, p: 0.75, borderRadius: 1.5,
+        backgroundColor: `rgba(${accent},0.14)`,
+        border: `1px solid rgba(${accent},0.4)`,
+      }}
+    >
+      {tools.map(({ tool, label, icon, hotkey }) => {
+        const disabled =
+          (tool === 'placeholder' && version !== 0) ||
+          (tool === 'condition' && version === 0);
+        const disabledReason =
+          tool === 'placeholder'
+            ? 'Placeholder is editable only on version 0'
+            : 'The condition mask is only available on versions above 0';
+        return (
+          <Tooltip
+            key={tool}
+            // The house button also reports its current mirror orientation (Space toggles it).
+            title={disabled
+              ? disabledReason
+              : `${label} (${hotkey})${tool === 'house' ? (houseFlip ? ' · mirrored' : ' · default facing') : ''}`}
+            placement="top"
+          >
+            <span>
+              <Button
+                className={`template-editor-tool template-editor-tool-${tool}`}
+                variant={activeTool === tool ? 'contained' : 'outlined'}
+                size="small"
+                disabled={disabled}
+                onClick={() => setActiveTool(tool)}
+                sx={paletteBtnSx(activeTool === tool, accent)}
+              >
+                {/* House icon mirrors to preview the current placement flip (Space). */}
+                {tool === 'house'
+                  ? <Box component="span" sx={{ display: 'inline-flex', transform: houseFlip ? 'scaleX(-1)' : 'none' }}>{icon}</Box>
+                  : icon}
+                <HotkeyBadge label={hotkey} />
+              </Button>
+            </span>
+          </Tooltip>
+        );
+      })}
+    </Box>
+  );
+
+  // The clipboard group (Copy · Paste) — rendered on its own (not via renderToolGroup) so
+  // Copy can show a persistent "loaded" ring once something is captured and Paste can be
+  // disabled until then. Both use the shared pink CLIPBOARD_ACCENT.
+  const renderClipboardGroup = () => (
+    <Box
+      className="template-editor-tool-group template-editor-tool-group-clipboard"
+      sx={{
+        display: 'flex', flexDirection: 'row', gap: 0.75, p: 0.75, borderRadius: 1.5,
+        backgroundColor: `rgba(${CLIPBOARD_ACCENT},0.14)`,
+        border: `1px solid rgba(${CLIPBOARD_ACCENT},0.4)`,
+      }}
+    >
+      {/* Copy — rectangle-select a region into the clipboard. A pink ring marks a loaded
+          clipboard (distinct from the contained fill that marks the active tool). */}
+      <Tooltip
+        title={clipboard
+          ? `Copy region (C) · clipboard holds ${clipboard.w}×${clipboard.h}`
+          : 'Copy region — drag a rectangle to capture it (C)'}
+        placement="top"
+      >
+        <span>
+          <Button
+            className="template-editor-tool template-editor-tool-copy"
+            variant={activeTool === 'copy' ? 'contained' : 'outlined'}
+            size="small"
+            onClick={() => setActiveTool('copy')}
+            sx={{
+              ...paletteBtnSx(activeTool === 'copy', CLIPBOARD_ACCENT),
+              ...(clipboard ? { boxShadow: `0 0 0 2px rgba(${CLIPBOARD_ACCENT},0.9)` } : {}),
+            }}
+          >
+            <ContentCopyIcon fontSize="small" />
+            <HotkeyBadge label="C" />
+          </Button>
+        </span>
+      </Tooltip>
+      {/* Paste — stamp the clipboard as a footprint (like the house tool). Disabled until
+          something has been copied. */}
+      <Tooltip
+        title={clipboard ? `Paste clipboard (V) — ${clipboard.w}×${clipboard.h} stamp` : 'Copy a region first to paste'}
+        placement="top"
+      >
+        <span>
+          <Button
+            className="template-editor-tool template-editor-tool-paste"
+            variant={activeTool === 'paste' ? 'contained' : 'outlined'}
+            size="small"
+            disabled={!clipboard}
+            onClick={() => setActiveTool('paste')}
+            sx={paletteBtnSx(activeTool === 'paste', CLIPBOARD_ACCENT)}
+          >
+            <ContentPasteIcon fontSize="small" />
+            <HotkeyBadge label="V" />
+          </Button>
+        </span>
+      </Tooltip>
+    </Box>
+  );
+
+  // The history group (Undo · Redo) — its own group at the start of the bottom row. Each
+  // button disables at the end of its stack; both are pure board-state actions, not tools.
+  const renderHistoryGroup = () => (
+    <Box
+      className="template-editor-tool-group template-editor-tool-group-history"
+      sx={{
+        display: 'flex', flexDirection: 'row', gap: 0.75, p: 0.75, borderRadius: 1.5,
+        backgroundColor: `rgba(${HISTORY_ACCENT},0.14)`,
+        border: `1px solid rgba(${HISTORY_ACCENT},0.4)`,
+      }}
+    >
+      <Tooltip title={canUndo ? 'Undo (Z)' : 'Nothing to undo'} placement="top">
+        <span>
+          <Button
+            className="template-editor-tool template-editor-tool-undo"
+            variant="outlined"
+            size="small"
+            disabled={!canUndo}
+            onClick={handleUndo}
+            sx={paletteBtnSx(false, HISTORY_ACCENT)}
+          >
+            <UndoIcon fontSize="small" />
+            <HotkeyBadge label="Z" />
+          </Button>
+        </span>
+      </Tooltip>
+      <Tooltip title={canRedo ? 'Redo (X)' : 'Nothing to redo'} placement="top">
+        <span>
+          <Button
+            className="template-editor-tool template-editor-tool-redo"
+            variant="outlined"
+            size="small"
+            disabled={!canRedo}
+            onClick={handleRedo}
+            sx={paletteBtnSx(false, HISTORY_ACCENT)}
+          >
+            <RedoIcon fontSize="small" />
+            <HotkeyBadge label="X" />
+          </Button>
+        </span>
+      </Tooltip>
+    </Box>
+  );
+
   return (
     <LeafPage title="Template Editor" onBack={() => navigate('/')} className="template-editor-root">
       <Box
@@ -603,11 +1119,20 @@ function TemplateEditorPage() {
               className="template-editor-name-line" variant="body2"
               sx={{ color: 'rgba(255,255,255,0.85)', textShadow: '1px 1px 2px rgba(0,0,0,0.8)', mt: 0.5 }}
             >
-              {name.trim() ? `${name.trim()} — ${width}×${height}` : `Untitled — ${width}×${height}`}
+              {`${name.trim() || 'Untitled'} — ${width}×${height} · v${version}`}
             </Typography>
           </Box>
 
           <Box className="template-editor-header-actions" sx={{ display: 'flex', gap: 1 }}>
+            <Tooltip title="Authoring guidelines (rules the editor does not enforce)">
+              <Button
+                className="template-editor-guidelines-btn" variant="outlined" size="small"
+                startIcon={<MenuBookIcon />} onClick={() => setGuidelinesOpen(true)}
+                sx={headerBtnSx}
+              >
+                Guidelines
+              </Button>
+            </Tooltip>
             <Button
               className="template-editor-load-btn" variant="outlined" size="small"
               startIcon={<FolderOpenIcon />} onClick={(e) => handleOpenLoad(e.currentTarget)}
@@ -700,153 +1225,179 @@ function TemplateEditorPage() {
         {/* Left tool palette + grid toggle */}
         <Box
           className="template-editor-tool-palette"
-          sx={{ position: 'absolute', top: 96, left: 16, zIndex: 10, display: 'flex', flexDirection: 'column', gap: 1 }}
+          // alignItems:flex-start so each group/row box shrinks to fit its own buttons
+          // rather than stretching to the width of the widest group.
+          sx={{ position: 'absolute', top: 96, left: 16, zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1 }}
         >
-          {/* Color-coded tool groups: each panel's accent tints its background/border
-              and the active-tool highlight of its buttons (see TOOL_GROUPS). */}
-          {TOOL_GROUPS.map(({ key, accent, tools }) => (
+          {/* Row 1 (top) — view controls: gridlines toggle (own group) beside the mask-view
+              toggles (own group). Hotkeys read left-to-right along the number row: ` grid,
+              then 1/2/3/4 in the same order as the mask paint tools below (street, communal,
+              placeholder, condition) and REUSING their icons. Each mask-view toggle stays
+              clickable and reflects its OWN independent show* state; while its paint tool is
+              active the layer is force-shown (see the show* || activeTool props on the viewer
+              below), which overrides — but does not mutate — the toggle. */}
+          <Box className="template-editor-tool-row" sx={{ display: 'flex', gap: 1 }}>
             <Box
-              key={key}
-              className={`template-editor-tool-group template-editor-tool-group-${key}`}
+              className="template-editor-tool-group template-editor-tool-group-grid"
               sx={{
-                display: 'flex', flexDirection: 'column', gap: 0.75, p: 0.75, borderRadius: 1.5,
-                backgroundColor: `rgba(${accent},0.14)`,
-                border: `1px solid rgba(${accent},0.4)`,
+                display: 'flex', flexDirection: 'row', gap: 0.75, p: 0.75, borderRadius: 1.5,
+                backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.2)',
               }}
             >
-              {tools.map(({ tool, label, icon, hotkey }) => {
-                // Version-gated tools (inverse of each other): placeholder is shared/owned
-                // by version 0, so it's disabled on higher versions (inherited, read-only);
-                // condition is a per-version overlay, so it's disabled on version 0 (the
-                // base carries none). See handleNewVersion + the server-side guards.
-                const disabled =
-                  (tool === 'placeholder' && version !== 0) ||
-                  (tool === 'condition' && version === 0);
-                const disabledReason =
-                  tool === 'placeholder'
-                    ? 'Placeholder is editable only on version 0'
-                    : 'The condition mask is only available on versions above 0';
-                return (
-                  <Tooltip
-                    key={tool}
-                    title={disabled ? disabledReason : `${label} (${hotkey})`}
-                    placement="right"
-                  >
-                    <span>
-                      <Button
-                        className={`template-editor-tool template-editor-tool-${tool}`}
-                        variant={activeTool === tool ? 'contained' : 'outlined'}
-                        size="small"
-                        disabled={disabled}
-                        onClick={() => setActiveTool(tool)}
-                        sx={paletteBtnSx(activeTool === tool, accent)}
-                      >
-                        {icon}
-                        <HotkeyBadge label={hotkey} />
-                      </Button>
-                    </span>
-                  </Tooltip>
-                );
-              })}
+              <Tooltip title="Toggle gridlines (`)" placement="top">
+                <Button
+                  className="template-editor-grid-toggle"
+                  variant={showGrid ? 'contained' : 'outlined'}
+                  size="small"
+                  onClick={() => setShowGrid(v => !v)}
+                  sx={paletteBtnSx(showGrid)}
+                >
+                  <GridOnIcon fontSize="small" />
+                  <HotkeyBadge label="`" />
+                </Button>
+              </Tooltip>
             </Box>
-          ))}
-          {/* Utility panel (neutral tint): gridlines + the communal/placeholder view
-              toggles — these are visibility controls, not paint tools, so they sit
-              apart from the color-coded tool groups above. */}
-          <Box
-            className="template-editor-tool-group template-editor-tool-group-view"
-            sx={{
-              display: 'flex', flexDirection: 'column', gap: 0.75, p: 0.75, borderRadius: 1.5,
-              backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.2)',
-            }}
-          >
-          <Tooltip title="Toggle gridlines (1)" placement="right">
-            <Button
-              className="template-editor-grid-toggle"
-              variant={showGrid ? 'contained' : 'outlined'}
-              size="small"
-              onClick={() => setShowGrid(v => !v)}
-              sx={paletteBtnSx(showGrid)}
+            <Box
+              className="template-editor-tool-group template-editor-tool-group-mask-view"
+              sx={{
+                display: 'flex', flexDirection: 'row', gap: 0.75, p: 0.75, borderRadius: 1.5,
+                backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.2)',
+              }}
             >
-              <GridOnIcon fontSize="small" />
-              <HotkeyBadge label="1" />
-            </Button>
-          </Tooltip>
-          <Tooltip
-            title={
-              activeTool === 'communal'
-                ? 'Communal highlight (auto-shown while the communal tool is active)'
-                : 'Toggle communal-walkable highlight (2)'
-            }
-            placement="right"
-          >
-            {/* Persistent view toggle for the communal tint. Forced on (and disabled)
-                while the communal tool is active, so the button always reflects what is
-                actually shown. */}
-            <span>
-              <Button
-                className="template-editor-communal-toggle"
-                variant={showCommunal || activeTool === 'communal' ? 'contained' : 'outlined'}
-                size="small"
-                disabled={activeTool === 'communal'}
-                onClick={() => setShowCommunal(v => !v)}
-                sx={paletteBtnSx(showCommunal || activeTool === 'communal')}
+              <Tooltip
+                title={
+                  activeTool === 'street'
+                    ? 'Toggle street-walkable highlight (1) — layer auto-shown while the street tool is active'
+                    : 'Toggle street-walkable highlight (1)'
+                }
+                placement="top"
               >
-                <VisibilityIcon fontSize="small" />
-                <HotkeyBadge label="2" />
-              </Button>
-            </span>
-          </Tooltip>
-          <Tooltip
-            title={
-              activeTool === 'placeholder'
-                ? 'Placeholder highlight (auto-shown while the placeholder tool is active)'
-                : 'Toggle placeholder-area highlight (3)'
-            }
-            placement="right"
-          >
-            {/* Persistent view toggle for the placeholder tint. Forced on (and disabled)
-                while the placeholder tool is active, so the button always reflects what
-                is actually shown. */}
-            <span>
-              <Button
-                className="template-editor-placeholder-toggle"
-                variant={showPlaceholder || activeTool === 'placeholder' ? 'contained' : 'outlined'}
-                size="small"
-                disabled={activeTool === 'placeholder'}
-                onClick={() => setShowPlaceholder(v => !v)}
-                sx={paletteBtnSx(showPlaceholder || activeTool === 'placeholder')}
+                <span>
+                  <Button
+                    className="template-editor-street-toggle"
+                    variant={showStreet ? 'contained' : 'outlined'}
+                    size="small"
+                    onClick={() => setShowStreet(v => !v)}
+                    sx={paletteBtnSx(showStreet)}
+                  >
+                    <RouteIcon fontSize="small" />
+                    <HotkeyBadge label="1" />
+                  </Button>
+                </span>
+              </Tooltip>
+              <Tooltip
+                title={
+                  activeTool === 'communal'
+                    ? 'Toggle communal-walkable highlight (2) — layer auto-shown while the communal tool is active'
+                    : 'Toggle communal-walkable highlight (2)'
+                }
+                placement="top"
               >
-                <VisibilityOutlinedIcon fontSize="small" />
-                <HotkeyBadge label="3" />
-              </Button>
-            </span>
-          </Tooltip>
-          <Tooltip
-            title={
-              activeTool === 'condition'
-                ? 'Condition highlight (auto-shown while the condition tool is active)'
-                : 'Toggle condition-mask highlight (4)'
-            }
-            placement="right"
-          >
-            {/* Persistent view toggle for the condition tint. Forced on (and disabled)
-                while the condition tool is active, so the button always reflects what
-                is actually shown. */}
-            <span>
-              <Button
-                className="template-editor-condition-toggle"
-                variant={showCondition || activeTool === 'condition' ? 'contained' : 'outlined'}
-                size="small"
-                disabled={activeTool === 'condition'}
-                onClick={() => setShowCondition(v => !v)}
-                sx={paletteBtnSx(showCondition || activeTool === 'condition')}
+                <span>
+                  <Button
+                    className="template-editor-communal-toggle"
+                    variant={showCommunal ? 'contained' : 'outlined'}
+                    size="small"
+                    onClick={() => setShowCommunal(v => !v)}
+                    sx={paletteBtnSx(showCommunal)}
+                  >
+                    <GroupsIcon fontSize="small" />
+                    <HotkeyBadge label="2" />
+                  </Button>
+                </span>
+              </Tooltip>
+              <Tooltip
+                title={
+                  activeTool === 'placeholder'
+                    ? 'Toggle placeholder-area highlight (3) — layer auto-shown while the placeholder tool is active'
+                    : 'Toggle placeholder-area highlight (3)'
+                }
+                placement="top"
               >
-                <FilterHdrIcon fontSize="small" />
-                <HotkeyBadge label="4" />
-              </Button>
-            </span>
-          </Tooltip>
+                <span>
+                  <Button
+                    className="template-editor-placeholder-toggle"
+                    variant={showPlaceholder ? 'contained' : 'outlined'}
+                    size="small"
+                    onClick={() => setShowPlaceholder(v => !v)}
+                    sx={paletteBtnSx(showPlaceholder)}
+                  >
+                    <HighlightAltIcon fontSize="small" />
+                    <HotkeyBadge label="3" />
+                  </Button>
+                </span>
+              </Tooltip>
+              <Tooltip
+                title={
+                  activeTool === 'condition'
+                    ? 'Toggle condition-mask highlight (4) — layer auto-shown while the condition tool is active'
+                    : 'Toggle condition-mask highlight (4)'
+                }
+                placement="top"
+              >
+                <span>
+                  <Button
+                    className="template-editor-condition-toggle"
+                    variant={showCondition ? 'contained' : 'outlined'}
+                    size="small"
+                    onClick={() => setShowCondition(v => !v)}
+                    sx={paletteBtnSx(showCondition)}
+                  >
+                    <RuleIcon fontSize="small" />
+                    <HotkeyBadge label="4" />
+                  </Button>
+                </span>
+              </Tooltip>
+            </Box>
+          </Box>
+
+          {/* Row 2 — mask paint tools (Q/W/E/R), directly below the mask-view toggles that reveal them. */}
+          {renderToolGroup(masksGroup)}
+
+          {/* Row 3 (home row) — terrain (A/S) with the decor tools (D/F/G/H · house stamp)
+              continuing the same row to their right. */}
+          <Box className="template-editor-tool-row" sx={{ display: 'flex', gap: 1 }}>
+            {renderToolGroup(terrainGroup)}
+            {renderToolGroup(decorGroup)}
+          </Box>
+
+          {/* Row 4 (bottom keyboard row Z X C V B) — history (Undo Z · Redo X) at the start,
+              then the clipboard tools (Copy C · Paste V), then the ERASER modifier (B). The
+              eraser is a persistent toggle layered on top of the selected tool (while on,
+              painting erases only that tool's own layer), so it keeps its own red group. */}
+          <Box className="template-editor-tool-row" sx={{ display: 'flex', gap: 1 }}>
+            {renderHistoryGroup()}
+            {renderClipboardGroup()}
+            <Box
+              className="template-editor-tool-group template-editor-tool-group-erase"
+              sx={{
+                display: 'flex', flexDirection: 'row', gap: 0.75, p: 0.75, borderRadius: 1.5,
+                backgroundColor: 'rgba(255,140,140,0.14)', border: '1px solid rgba(255,140,140,0.4)',
+              }}
+            >
+              <Tooltip
+                // Disabled for tools that can't be erased (copy/paste); its own layer-removal
+                // has no meaning there. A <span> wrapper lets the tooltip show while disabled.
+                title={toolSupportsEraser(activeTool)
+                  ? `Eraser — removes only the selected tool's layer (B)${eraseMode ? ' · ON' : ''}`
+                  : 'The eraser does not apply to the copy/paste tools'}
+                placement="top"
+              >
+                <span>
+                  <Button
+                    className="template-editor-erase-toggle"
+                    variant={eraseMode ? 'contained' : 'outlined'}
+                    size="small"
+                    disabled={!toolSupportsEraser(activeTool)}
+                    onClick={() => setEraseMode(v => !v)}
+                    sx={paletteBtnSx(eraseMode, '255,140,140')}
+                  >
+                    <BackspaceIcon fontSize="small" />
+                    <HotkeyBadge label="B" />
+                  </Button>
+                </span>
+              </Tooltip>
+            </Box>
           </Box>
         </Box>
 
@@ -858,11 +1409,25 @@ function TemplateEditorPage() {
             masks={masks}
             showGrid={showGrid}
             // Force each highlight on while painting its layer; otherwise honor the toggle.
+            showStreet={showStreet || activeTool === 'street'}
             showCommunal={showCommunal || activeTool === 'communal'}
             showPlaceholder={showPlaceholder || activeTool === 'placeholder'}
             showCondition={showCondition || activeTool === 'condition'}
             activeTool={activeTool}
+            // Drives the house placement ghost's mirror so the flip is visible before dropping.
+            houseFlip={houseFlip}
+            // The annotation-mask tools AND the copy tool select by press-drag-release
+            // rectangle; the parent decides what the finished rectangle means.
+            rectangleMode={activeTool === 'street' || activeTool === 'communal' || activeTool === 'placeholder' || activeTool === 'copy'}
+            onRectComplete={handleRectComplete}
+            // Paste stamps the clipboard as a footprint (like the house tool).
+            pasteMode={activeTool === 'paste' && !!clipboard}
+            pasteFootprint={clipboard ? { w: clipboard.w, h: clipboard.h } : null}
+            onPasteAt={pasteAt}
+            eraseMode={eraseMode}
             onPaintCell={paintCell}
+            // Snapshot the pre-stroke board so a whole drag-paint is one undo step.
+            onEditBegin={pushHistory}
           />
         </Box>
 
@@ -888,11 +1453,13 @@ function TemplateEditorPage() {
             setDescription(desc);
             // Only a dimension change regenerates the board; a name-only edit keeps
             // the painting (the dialog has already confirmed the reset with the user).
-            if (resetBoard) setMasks(emptyMasks());
+            if (resetBoard) { setMasks(emptyMasks()); resetHistory(); } // new board → drop history
             setDirty(true);
             setPropsOpen(false);
           }}
         />
+
+        <GuidelinesDialog open={guidelinesOpen} onClose={() => setGuidelinesOpen(false)} />
 
         <Snackbar
           className="template-editor-snackbar"
@@ -946,6 +1513,55 @@ const paletteBtnSx = (active: boolean, accent = '255,224,102') => ({
   '&:hover': { borderColor: active ? `rgba(${accent},1)` : 'white', backgroundColor: active ? `rgba(${accent},1)` : 'rgba(0,0,0,0.55)' },
 });
 
+// ─── Guidelines dialog ───────────────────────────────────────────────────────────
+// A read-only reference popup listing the template AUTHORING rules that the editor does
+// NOT programmatically enforce — the author must honor them by hand. Purely informational
+// (no state, no side effects); opened from the header's Guidelines button. Keep this copy
+// in sync with docs/NIGHT_MARKET_TEMPLATE_EDITOR.md when the rules change.
+const AUTHORING_GUIDELINES: string[] = [
+  'Only streets of width 3 or 6 may touch the edge of the template. Streets of other widths can still be placed within the interior.',
+  'The maximum street width is 6.',
+  'Outwards-facing streets go at prescribed spots along the template edge. Measuring from either bottom edge, the first street’s bottom edge sits 2 cells from the edge; subsequent spots repeat every 8 cells from there.',
+];
+
+function GuidelinesDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  return (
+    <Dialog className="template-editor-guidelines-dialog" open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>Template Authoring Guidelines</DialogTitle>
+      <DialogContent>
+        <Typography
+          className="template-editor-guidelines-intro" variant="body2"
+          sx={{ color: 'text.secondary', mb: 1.5 }}
+        >
+          These rules are not enforced by the editor — follow them by hand while authoring.
+        </Typography>
+        <Box
+          component="ol"
+          className="template-editor-guidelines-list"
+          sx={{ m: 0, pl: 3, display: 'flex', flexDirection: 'column', gap: 1.25 }}
+        >
+          {AUTHORING_GUIDELINES.map((rule, i) => (
+            <Typography
+              key={i}
+              component="li"
+              className="template-editor-guideline-item"
+              variant="body2"
+              sx={{ lineHeight: 1.5 }}
+            >
+              {rule}
+            </Typography>
+          ))}
+        </Box>
+      </DialogContent>
+      <DialogActions>
+        <Button className="template-editor-guidelines-close" onClick={onClose} variant="contained">
+          Got it
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
 // ─── Properties dialog ───────────────────────────────────────────────────────────
 // Sets width/height/name + the active VERSION. OK validates dims, checks name
 // availability (server), and on success applies + regenerates the board. A taken name
@@ -997,6 +1613,15 @@ function PropertiesDialog({
   const dimsLocked = currentVersion !== 0;
   const descLocked = currentVersion !== 0;
 
+  // The dropdown option lists. A template saved with a legacy size not in DIM_OPTIONS
+  // (older free-entry board) must still show its value rather than render a blank Select
+  // (which also triggers an out-of-range MUI warning), so fold the current draft value in
+  // and re-sort. New picks are always from DIM_OPTIONS.
+  const withCurrent = (n: number): number[] =>
+    (DIM_OPTIONS.includes(n) ? DIM_OPTIONS : [...DIM_OPTIONS, n].sort((a, b) => a - b));
+  const widthOptions = withCurrent(Number(w));
+  const heightOptions = withCurrent(Number(h));
+
   // Re-seed the draft fields each time the dialog opens.
   useEffect(() => {
     if (open) {
@@ -1007,6 +1632,21 @@ function PropertiesDialog({
       setError(null);
     }
   }, [open, initialWidth, initialHeight, initialName, initialDescription]);
+
+  // When the dialog opens for a FRESH (unnamed) template, pre-fill the name field with a
+  // server-suggested free default ("template{index}"). Skipped when the template already
+  // has a name (e.g. a loaded one) so we never clobber it. Only fills if the field is
+  // still empty when the request resolves (the author may have typed meanwhile); a failed
+  // suggest is non-fatal — the field just stays blank. `cancelled` guards a late resolve
+  // after the dialog closes.
+  useEffect(() => {
+    if (!open || initialName.trim()) return;
+    let cancelled = false;
+    suggestTemplateName()
+      .then((suggested) => { if (!cancelled) setNm((cur) => (cur.trim() ? cur : suggested)); })
+      .catch(() => { /* leave the field blank; the author can type a name */ });
+    return () => { cancelled = true; };
+  }, [open, initialName]);
 
   const handleOk = async () => {
     const wi = Number(w);
@@ -1104,16 +1744,30 @@ function PropertiesDialog({
               : 'Shown in the Load menu. Shared across all versions of this template.'}
           />
           <Box sx={{ display: 'flex', gap: 2 }}>
-            <TextField
-              className="template-editor-width-field" label="Width (cols)" type="number" value={w}
-              onChange={(e) => setW(e.target.value)} inputProps={{ min: MIN_DIM, max: MAX_DIM }} fullWidth
-              disabled={dimsLocked}
-            />
-            <TextField
-              className="template-editor-height-field" label="Length (rows)" type="number" value={h}
-              onChange={(e) => setH(e.target.value)} inputProps={{ min: MIN_DIM, max: MAX_DIM }} fullWidth
-              disabled={dimsLocked}
-            />
+            <FormControl size="small" fullWidth disabled={dimsLocked}>
+              <InputLabel id="template-editor-width-label">Width (cols)</InputLabel>
+              <Select
+                labelId="template-editor-width-label"
+                className="template-editor-width-field" label="Width (cols)" value={w}
+                onChange={(e) => setW(String(e.target.value))}
+              >
+                {widthOptions.map((d) => (
+                  <MenuItem key={d} value={String(d)} className="template-editor-width-option">{d}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControl size="small" fullWidth disabled={dimsLocked}>
+              <InputLabel id="template-editor-height-label">Length (rows)</InputLabel>
+              <Select
+                labelId="template-editor-height-label"
+                className="template-editor-height-field" label="Length (rows)" value={h}
+                onChange={(e) => setH(String(e.target.value))}
+              >
+                {heightOptions.map((d) => (
+                  <MenuItem key={d} value={String(d)} className="template-editor-height-option">{d}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
           </Box>
           <Typography variant="caption" sx={{ color: 'text.secondary' }}>
             {dimsLocked

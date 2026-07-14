@@ -23,6 +23,13 @@ router.get('/api/nightmarket-templates/name-available', authenticateToken, async
   await nightMarketTemplateController.checkNameAvailable(req, res);
 });
 
+// Suggest a free default name ("template{index}") — pre-fills the Properties popup for a
+// fresh (unnamed) template.
+// @ts-ignore
+router.get('/api/nightmarket-templates/suggest-name', authenticateToken, async (req, res) => {
+  await nightMarketTemplateController.suggestName(req, res);
+});
+
 // Load one template version (full definition + availableVersions) by name+version.
 // @ts-ignore
 router.get('/api/nightmarket-templates/load', authenticateToken, async (req, res) => {

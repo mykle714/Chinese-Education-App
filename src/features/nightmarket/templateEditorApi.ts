@@ -10,8 +10,11 @@ import { freeFarmTileset } from '../../engine/market/freeFarmTileset';
 
 /** The serialized `definition` shape stored on a template row (stems for decor). */
 export interface TemplateDefinitionPayload {
-  lightGrass: string[];
-  darkGrass: string[];
+  /** Terrain-1 mask cells (currently rendered as light grass). */
+  terrain1: string[];
+  /** Terrain-2 mask cells (currently rendered as dark grass, over terrain 1). */
+  terrain2: string[];
+  /** Street-walkable cells — a walkability class, rendered as a spriteless tint. */
   street: string[];
   /** Communal-walkable cells (parks/plazas) — a walkability class, no sprite. */
   communal: string[];
@@ -19,8 +22,12 @@ export interface TemplateDefinitionPayload {
   placeholder: string[];
   /** Condition-mask cells — a per-version override overlay, no sprite. */
   condition: string[];
-  /** Placed-house FRONT-corner anchor cells "col,row" (4×5 footprint each). */
-  houses: string[];
+  /**
+   * Placed houses: front-corner anchor cell "col,row" (4×5 footprint each) + horizontal
+   * FLIP (mirror) orientation. Legacy rows stored bare "col,row" strings (no flip); those
+   * are read back as `flip: false` (see definitionToMasks).
+   */
+  houses: Array<{ cell: string; flip: boolean }>;
   decor: Record<string, string>;
 }
 
@@ -51,7 +58,7 @@ export interface LoadedTemplate {
 }
 
 /**
- * Serialize the painted layers into the `definition` payload. The grass/street Sets
+ * Serialize the painted layers into the `definition` payload. The terrain/street Sets
  * become sorted cell arrays; the decor map becomes a `cell → sprite STEM` object
  * (fingerprinted URLs are resolved back to their stable filename stem via the
  * tileset, so a definition survives asset re-fingerprinting across builds).
@@ -63,21 +70,26 @@ export function masksToDefinition(masks: EditorMasks): TemplateDefinitionPayload
     if (stem) decor[cell] = stem; // skip any unresolved url defensively
   }
   return {
-    lightGrass: [...masks.lightGrass],
-    darkGrass: [...masks.darkGrass],
+    terrain1: [...masks.terrain1],
+    terrain2: [...masks.terrain2],
     street: [...masks.street],
     communal: [...masks.communal],
     placeholder: [...masks.placeholder],
     condition: [...masks.condition],
-    houses: [...masks.houses],
+    // Houses → sorted {cell, flip} objects (sorted for stable definition diffs).
+    houses: [...masks.houses]
+      .sort(([a], [b]) => (a < b ? -1 : 1))
+      .map(([cell, flip]) => ({ cell, flip })),
     decor,
   };
 }
 
 /**
- * Rebuild the editor's mask layers from a stored `definition`. The grass/street
+ * Rebuild the editor's mask layers from a stored `definition`. The terrain/street
  * arrays become Sets; the decor `cell → stem` object becomes a `cell → URL` Map by
- * resolving each stem through the tileset (a stem with no live asset is dropped).
+ * resolving each stem through the tileset (a stem with no live asset is dropped). Note:
+ * the legacy `lightGrass`/`darkGrass` keys are NOT read — templates saved before the
+ * terrain1/terrain2 rename load with empty terrain (they must be re-saved).
  */
 export function definitionToMasks(def: TemplateDefinitionPayload): EditorMasks {
   const decor = new Map<string, string>();
@@ -86,13 +98,19 @@ export function definitionToMasks(def: TemplateDefinitionPayload): EditorMasks {
     if (url) decor.set(cell, url);
   }
   return {
-    lightGrass: new Set(def.lightGrass ?? []),
-    darkGrass: new Set(def.darkGrass ?? []),
+    terrain1: new Set(def.terrain1 ?? []),
+    terrain2: new Set(def.terrain2 ?? []),
     street: new Set(def.street ?? []),
     communal: new Set(def.communal ?? []),
     placeholder: new Set(def.placeholder ?? []),
     condition: new Set(def.condition ?? []),
-    houses: new Set(def.houses ?? []),
+    // Houses → Map(cell → flip). Back-compat: a legacy bare "col,row" string reads as flip:false
+    // (older definitions stored houses as string[]), hence the widened element type here.
+    houses: new Map(
+      ((def.houses ?? []) as Array<string | { cell: string; flip: boolean }>).map((h) =>
+        typeof h === 'string' ? [h, false] as const : [h.cell, !!h.flip] as const,
+      ),
+    ),
     decor,
   };
 }
@@ -117,6 +135,20 @@ export async function loadTemplate(name: string, version = 0): Promise<LoadedTem
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.error || 'Failed to load template');
   return data.template;
+}
+
+/**
+ * Ask the server for a free default name ("template{index}", index = first free positive
+ * integer) to pre-fill a fresh template in the Properties popup. Validator-gated server-side.
+ */
+export async function suggestTemplateName(): Promise<string> {
+  const res = await fetch(`${API_BASE_URL}/api/nightmarket-templates/suggest-name`, {
+    headers: { ...authHeader() },
+    credentials: 'include',
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || 'Failed to suggest template name');
+  return data.name;
 }
 
 /** Whether `name` is free. Backs the Properties-popup rename gate. */

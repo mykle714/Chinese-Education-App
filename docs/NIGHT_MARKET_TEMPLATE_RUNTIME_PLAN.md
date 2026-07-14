@@ -74,7 +74,7 @@ interface PlacedPlaceholder { templateName: string; area: PlaceholderArea; }  //
 interface StitchedWorld {             // global cell sets, keyed "isoX,isoY"
   street: Set<string>;
   communal: Set<string>;
-  lightGrass: Set<string>; darkGrass: Set<string>;
+  terrain1: Set<string>; terrain2: Set<string>;  // generic terrain masks (currently light/dark grass)
   houses: Set<string>;
   decor: Map<string, string>;         // cell → sprite stem
   placeholders: PlacedPlaceholder[];

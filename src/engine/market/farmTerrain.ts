@@ -410,26 +410,53 @@ export function resolveTileDecorUrl(tile: FarmTile, rng: () => number): string |
 // ── Editor field (mask-driven) ───────────────────────────────────────────────
 // The template editor (docs/NIGHT_MARKET_TEMPLATE_EDITOR.md) drives terrain from
 // PAINTED masks instead of the procedural blob growth above. buildEditorField takes
-// explicit light-grass / dark-grass / street cell sets and a rectangular W×H board,
-// and produces tiles the editor view renders WITHOUT decor. It reuses the exact same
-// per-tile neighbour → overlay-cap resolution as buildFarmField (via the shared
-// resolveTile* helpers), so "recompute the overlay caps on each paint" is just a
-// rebuild: repaint a mask, rebuild the field, re-derive every tile's neighbours.
+// explicit terrain-1 / terrain-2 cell sets and a rectangular W×H board, and produces
+// tiles the editor view renders. It reuses the exact same per-tile neighbour →
+// overlay-cap resolution as buildFarmField (via the shared resolveTile* helpers), so
+// "recompute the overlay caps on each paint" is just a rebuild: repaint a mask, rebuild
+// the field, re-derive every tile's neighbours. The street/communal walkability masks
+// render as spriteless tints (drawn straight from the mask by the viewer), so they do
+// NOT flow through the field.
 
 /**
- * The painted layers, cells keyed "col,row" (= isoX,isoY). The three grass/street
- * layers are boolean membership Sets; `decor` is a per-cell CHOICE (cell → decor
- * sprite URL) because a cell carries at most one decoration picked from a rotation.
+ * The painted layers, cells keyed "col,row" (= isoX,isoY). The terrain + walkability
+ * layers (terrain1/terrain2/street/communal/…) are boolean membership Sets; `decor` is
+ * a per-cell CHOICE (cell → decor sprite URL) because a cell carries at most one
+ * decoration picked from a rotation.
  */
 export interface EditorMasks {
-  lightGrass: Set<string>;
-  darkGrass: Set<string>;
+  /**
+   * Terrain-1 mask cells, each "col,row". Currently rendered with the LIGHT-grass
+   * tileset, but named generically ("terrain 1") so the surface art can be hot-swapped
+   * later without renaming the mask. The tileset mapping lives at the render seam
+   * (`editorDecorRotation` + {@link buildEditorField} → {@link resolveTileSurfaceUrls}).
+   */
+  terrain1: Set<string>;
+  /**
+   * Terrain-2 mask cells, each "col,row" — a fully INDEPENDENT mask currently rendered
+   * with the DARK-grass tileset. Terrain 2 is unconstrained by terrain 1: a terrain-2
+   * cell renders whether or not terrain 1 is underneath it. Its only relationship to
+   * terrain 1 is z-order — terrain 2 always renders ON TOP of terrain 1 (the view stacks
+   * the dark surface above the light one in {@link ../../features/nightmarket/EditorTerrainLayer}).
+   */
+  terrain2: Set<string>;
+  /**
+   * Street-walkable annotation cells (the street-walkable class — see the walkability
+   * classes in docs/NIGHT_MARKET_TEMPLATES.md). Like {@link communal} this is a
+   * WALKABILITY class rendered as a spriteless HIGHLIGHT TINT only (the editor draws no
+   * sprite for it), so it never feeds the surface/decor rendering and is intentionally
+   * absent from {@link EditorTile}/{@link buildEditorField}. Mutually exclusive with
+   * {@link communal} (a cell is street-walkable OR communal-walkable, not both) AND with
+   * BLOCKING objects — a house ({@link houses}) or common/tree {@link decor} (see
+   * {@link isBlockingDecorUrl}): those overwrite it when painted, and it is refused where
+   * one already sits. Grass terrain and flush surface-family decor may coexist with it.
+   */
   street: Set<string>;
   /**
    * Communal-walkable annotation cells (parks / plazas — see the walkability
    * classes in docs/NIGHT_MARKET_TEMPLATES.md). This is a WALKABILITY class only:
    * it renders NO sprite of its own — the editor merely highlights these cells —
-   * and never feeds the surface/plank/decor rendering, so it is intentionally
+   * and never feeds the surface/decor rendering, so it is intentionally
    * absent from {@link EditorTile}/{@link buildEditorField}. Mutually exclusive
    * with {@link street} (a cell is street-walkable OR communal-walkable, not both)
    * AND with BLOCKING objects — a house ({@link houses}) or common/tree {@link decor}
@@ -459,20 +486,26 @@ export interface EditorMasks {
    */
   condition: Set<string>;
   /**
-   * Placed houses, each keyed by its FRONT (near) corner cell "col,row" (min
-   * isoX/isoY). A house occupies a 4×5 footprint extending +isoX/+isoY from that
-   * corner (see {@link ./house}). It renders as a single sprite (in
-   * {@link ../../features/nightmarket/EditorTerrainLayer}), and its footprint blocks
-   * the street + decor tools (house placement overwrites decor but never a street;
-   * once placed, street/decor cannot overwrite the house).
+   * Placed houses: a map from each house's FRONT (near) corner cell "col,row" (min
+   * isoX/isoY) → its horizontal-FLIP (mirror) orientation (`true` = mirrored left↔right).
+   * A house occupies a 4×5 footprint extending +isoX/+isoY from that corner (see
+   * {@link ./house}); the flip does NOT change the footprint (it only mirrors the sprite,
+   * seated on the same anchor). It renders as a single sprite (in
+   * {@link ../../features/nightmarket/EditorTerrainLayer}, h-flipped when the value is
+   * true), and its footprint blocks the street + decor tools (house placement overwrites
+   * decor but never a street; once placed, street/decor cannot overwrite the house).
    */
-  houses: Set<string>;
+  houses: Map<string, boolean>;
   /** cell "col,row" → the chosen decor sprite URL for that cell. */
   decor: Map<string, string>;
 }
 
-/** The paintable surface a cell resolves to, which selects its family-decor rotation. */
-export type EditorSurface = 'dirt' | 'lightGrass' | 'darkGrass';
+/**
+ * The paintable surface a cell resolves to, which selects its family-decor rotation.
+ * `terrain1`/`terrain2` are the generic (hot-swappable) names for what currently render
+ * as light/dark grass; `dirt` is the bare board.
+ */
+export type EditorSurface = 'dirt' | 'terrain1' | 'terrain2';
 
 /**
  * The three decor tools, each its own rotation (see {@link editorDecorRotation}):
@@ -485,19 +518,21 @@ export type EditorSurface = 'dirt' | 'lightGrass' | 'darkGrass';
 export type DecorCategory = 'family' | 'common' | 'tree';
 
 /**
- * The surface a cell resolves to from the painted masks: dark-grass if in both dark
- * and light, light-grass if only light, else dirt (dark renders only over light).
- * Takes just the two grass masks it reads, so callers needn't build a full
- * {@link EditorMasks} to query a cell's surface.
+ * The surface a cell resolves to from the painted masks: `terrain2` if in the terrain-2
+ * mask (it renders on top, so it wins the surface identity), else `terrain1` if in the
+ * terrain-1 mask, else `dirt`. The two terrain masks are INDEPENDENT — terrain 2 does not
+ * require terrain 1 beneath it. Takes just the two terrain masks it reads, so callers
+ * needn't build a full {@link EditorMasks} to query a cell's surface.
  */
 export function editorSurfaceAt(
-  masks: Pick<EditorMasks, 'lightGrass' | 'darkGrass'>,
+  masks: Pick<EditorMasks, 'terrain1' | 'terrain2'>,
   col: number,
   row: number,
 ): EditorSurface {
   const k = key(col, row);
-  if (!masks.lightGrass.has(k)) return 'dirt';
-  return masks.darkGrass.has(k) ? 'darkGrass' : 'lightGrass';
+  if (masks.terrain2.has(k)) return 'terrain2';
+  if (masks.terrain1.has(k)) return 'terrain1';
+  return 'dirt';
 }
 
 /**
@@ -509,7 +544,14 @@ export function editorSurfaceAt(
  */
 export function editorDecorRotation(category: DecorCategory, surface: EditorSurface): string[] {
   switch (category) {
-    case 'family': return freeFarmTileset.getDecorUrls(surface);
+    // Map the generic terrain surface → its current tileset decor bucket. This is the
+    // render seam: a future terrain art hot-swap changes only this mapping, not the mask.
+    case 'family': {
+      const bucket = surface === 'terrain1' ? 'lightGrass'
+        : surface === 'terrain2' ? 'darkGrass'
+        : 'dirt';
+      return freeFarmTileset.getDecorUrls(bucket);
+    }
     case 'common': return freeFarmTileset.getDecorUrls('common');
     case 'tree': return freeFarmTileset.getTreeUrls();
   }
@@ -529,46 +571,54 @@ export function isBlockingDecorUrl(url: string): boolean {
     || freeFarmTileset.getTreeUrls().includes(url);
 }
 
-/** 4-cardinal street occupancy (n=+isoY, e=+isoX) — drives plank orientation/caps. */
-export type StreetNeighbours = Record<'n' | 'e' | 's' | 'w', boolean>;
+/**
+ * Classify a decor sprite URL into the {@link DecorCategory} of the tool that PLACES it,
+ * so the editor's per-tool eraser (docs/NIGHT_MARKET_TEMPLATE_EDITOR.md) removes a cell's
+ * single decor sprite only when it belongs to the currently-selected decor tool: `common`
+ * (`decor_*`) or `tree` (`tree_*`/`largeTree_*`) fall to their own tools, and everything
+ * else — the surface-specific `lightGrass`/`darkGrass`/`dirt` decor — is `family`
+ * (matching the Surface-decor tool, whose rotation is surface-dependent). Single-sourced
+ * with {@link isBlockingDecorUrl} against the tileset's own buckets.
+ */
+export function editorDecorCategory(url: string): DecorCategory {
+  if (freeFarmTileset.getDecorUrls('common').includes(url)) return 'common';
+  if (freeFarmTileset.getTreeUrls().includes(url)) return 'tree';
+  return 'family';
+}
 
-/** A {@link FarmTile} plus the editor's street-mask membership + neighbours. */
+/** A {@link FarmTile} plus the editor's per-cell painted decor choice. */
 export interface EditorTile extends FarmTile {
-  /** Whether this cell is in the street mask (rendered as a plank, not grass). */
-  street: boolean;
-  streetNeighbours: StreetNeighbours;
   /**
-   * The chosen decor sprite URL for this cell, or null for none. Suppressed on
-   * street cells (streets overwrite decor), so a street cell is always null here.
+   * The chosen decor sprite URL for this cell, or null for none. Suppressed only under
+   * a placed house (houses overwrite decor); the street mask is now a spriteless tint
+   * and no longer suppresses decor (family decor coexists with a street).
    */
   decorUrl: string | null;
 }
 
 /**
- * Build a rectangular `width`×`height` editor field from painted masks. The dark
- * mask is intersected with the light mask (dark grass never sits on bare dirt — the
- * same invariant buildFarmField enforces structurally). `fieldEdge` uses the
- * rectangular in-bounds occupancy so the plateau rim autotiles cleanly.
+ * Build a rectangular `width`×`height` editor field from painted masks. Terrain 1 and
+ * terrain 2 are FULLY INDEPENDENT masks: each renders from its own painted cells, and
+ * terrain 2 does not require terrain 1 beneath it — their only relationship is z-order
+ * (the view stacks the terrain-2/dark surface above the terrain-1/light one). This differs
+ * from buildFarmField, whose procedural dark patch is grown inside the light patch.
+ * `fieldEdge` uses the rectangular in-bounds occupancy so the plateau rim autotiles
+ * cleanly. The street/communal masks are spriteless tints and do not flow through here.
  */
 export function buildEditorField(
   width: number,
   height: number,
   masks: EditorMasks,
 ): EditorTile[] {
-  const isLight = (x: number, y: number) => masks.lightGrass.has(key(x, y));
-  // Light and dark are INDEPENDENT painted masks; the "dark renders only over light"
-  // rule is applied HERE, at render time, by intersecting dark with light — so a dark
-  // cell painted outside the light patch is kept as data but simply doesn't render.
-  const isDark = (x: number, y: number) => masks.darkGrass.has(key(x, y)) && isLight(x, y);
-  const isStreet = (x: number, y: number) => masks.street.has(key(x, y));
+  const isTerrain1 = (x: number, y: number) => masks.terrain1.has(key(x, y));
+  const isTerrain2 = (x: number, y: number) => masks.terrain2.has(key(x, y));
   const inField = (x: number, y: number) => x >= 0 && x < width && y >= 0 && y < height;
-  // Cells covered by a placed house — decor never shows under a house (house
-  // placement overwrites decor), same as under a street plank.
+  // Cells covered by a placed house — decor never shows under a house (house placement
+  // overwrites decor). The street mask no longer suppresses decor (it is a spriteless
+  // tint; family decor coexists with a street).
   const houseOccupied = houseOccupiedCells(masks.houses);
-  // Street cells (and house-covered cells) overwrite decor, so decor never shows
-  // under a plank or a house.
   const decorAt = (x: number, y: number) =>
-    isStreet(x, y) || houseOccupied.has(key(x, y)) ? null : masks.decor.get(key(x, y)) ?? null;
+    houseOccupied.has(key(x, y)) ? null : masks.decor.get(key(x, y)) ?? null;
 
   const tiles: EditorTile[] = [];
   for (let isoX = 0; isoX < width; isoX++) {
@@ -582,46 +632,16 @@ export function buildEditorField(
       tiles.push({
         isoX,
         isoY,
-        kind: isLight(isoX, isoY) ? 'grass' : 'dirt',
-        darkGrass: isDark(isoX, isoY),
+        kind: isTerrain1(isoX, isoY) ? 'grass' : 'dirt',
+        darkGrass: isTerrain2(isoX, isoY),
         fieldEdge,
-        grassNeighbours: neighbourOccupancy(isoX, isoY, isLight),
-        darkGrassNeighbours: neighbourOccupancy(isoX, isoY, isDark),
-        street: isStreet(isoX, isoY),
-        streetNeighbours: {
-          n: isStreet(isoX, isoY + 1),
-          e: isStreet(isoX + 1, isoY),
-          s: isStreet(isoX, isoY - 1),
-          w: isStreet(isoX - 1, isoY),
-        },
+        grassNeighbours: neighbourOccupancy(isoX, isoY, isTerrain1),
+        darkGrassNeighbours: neighbourOccupancy(isoX, isoY, isTerrain2),
         decorUrl: decorAt(isoX, isoY),
       });
     }
   }
   return tiles;
-}
-
-/**
- * Resolve the plank sprite for a street cell, or `null` for a non-street tile. A
- * simple street autotiler over the pack's plank vocabulary (only the far N/E faces
- * carry an end-cap, mirroring the landmass scheme):
- *   - orientation: N–S if the cell only connects north/south, else E–W (the default
- *     for isolated cells and 4-way crossings — the full crossing tileset is a
- *     deferred concern, see the tileset open question in NIGHT_MARKET_TEMPLATES.md),
- *   - cap: the run's far end (no street to the +isoY north → `northEdge` for N–S; no
- *     street to the +isoX east → `eastEdge` for E–W), else the flat `center`.
- * Variation is fixed at 1 in the editor.
- */
-export function resolveTileStreetPlankUrl(tile: EditorTile): string | null {
-  if (!tile.street) return null;
-  const { n, e, s, w } = tile.streetNeighbours;
-  const verticalOnly = (n || s) && !(e || w);
-  if (verticalOnly) {
-    const cap = n ? 'center' : 'northEdge';
-    return freeFarmTileset.getPlank('ns', 1, cap) ?? null;
-  }
-  const cap = e ? 'center' : 'eastEdge';
-  return freeFarmTileset.getPlank('ew', 1, cap) ?? null;
 }
 
 /** 8-neighbour occupancy of `(isoX, isoY)` against a blob (n=+isoY, e=+isoX). */

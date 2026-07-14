@@ -5,7 +5,6 @@ import { freeFarmTileset } from '../../engine/market/freeFarmTileset';
 import {
   resolveTileSurfaceUrls,
   resolveTileDarkSurfaceUrls,
-  resolveTileStreetPlankUrl,
   type EditorTile,
 } from '../../engine/market/farmTerrain';
 import { HOUSE_ANCHOR } from '../../engine/market/house';
@@ -19,11 +18,10 @@ import houseUrl from '../../assets/free-assets/free-farm-assets/Environment/Orig
  *
  * LAYER: view. A trimmed sibling of {@link FarmTerrainLayer}: same tallDirt slab +
  * light/dark grass-boundary overlay stack, but (a) it is driven by an explicit
- * `tiles` prop (the painted field) instead of the procedural farm field, (b) it
- * paints NO scatter decor (authoring surface must show exactly what was painted),
- * and (c) it renders a **plank** on every street-mask cell (via
- * {@link resolveTileStreetPlankUrl}) in place of that cell's grass surface — the
- * street layer visually overrides the grass layer.
+ * `tiles` prop (the painted field) instead of the procedural farm field, and (b) it
+ * paints NO scatter decor (authoring surface must show exactly what was painted). The
+ * street mask is NOT drawn here — it is a spriteless walkability tint the viewer draws
+ * straight from the mask (like communal/placeholder/condition).
  *
  * Sprites are emitted FLAT (direct children of the sortableChildren scene container)
  * for correct global z-sort, exactly as FarmTerrainLayer does.
@@ -35,14 +33,11 @@ interface TileDraw {
   y: number;
   dirtUrl: string;
   dirtZ: number;
-  /** Light/dark grass surface sprites (empty for a street cell). */
+  /** Light/dark grass surface sprites. */
   surfaceUrls: string[];
   darkSurfaceUrls: string[];
   surfaceZ: number;
   darkSurfaceZ: number;
-  /** Street plank sprite (null for a non-street cell), drawn above the surface. */
-  plankUrl: string | null;
-  plankZ: number;
   /** Painted decor sprite (null for none), drawn on top of the finished tile. */
   decorUrl: string | null;
   decorZ: number;
@@ -54,11 +49,13 @@ interface HouseDraw {
   x: number;
   y: number;
   z: number;
+  /** Horizontally mirror the sprite (negated scale.x around the base-corner anchor). */
+  flip: boolean;
 }
 
 function buildDraws(
   tiles: EditorTile[],
-  houseCells: string[],
+  houses: Array<{ cell: string; flip: boolean }>,
 ): { draws: TileDraw[]; houseDraws: HouseDraw[]; urls: Set<string> } {
   const urls = new Set<string>();
   const draws: TileDraw[] = [];
@@ -67,15 +64,12 @@ function buildDraws(
     if (!dirtUrl) continue;
     urls.add(dirtUrl);
 
-    // Street cells suppress the grass surface entirely and draw a plank instead.
-    const plankUrl = resolveTileStreetPlankUrl(t);
-    const surfaceUrls = plankUrl ? [] : resolveTileSurfaceUrls(t);
-    const darkSurfaceUrls = plankUrl ? [] : resolveTileDarkSurfaceUrls(t);
+    const surfaceUrls = resolveTileSurfaceUrls(t);
+    const darkSurfaceUrls = resolveTileDarkSurfaceUrls(t);
     for (const u of surfaceUrls) urls.add(u);
     for (const u of darkSurfaceUrls) urls.add(u);
-    if (plankUrl) urls.add(plankUrl);
 
-    // Painted decor (already null on street cells — see buildEditorField.decorAt).
+    // Painted decor (suppressed only under a placed house — see buildEditorField.decorAt).
     const decorUrl = t.decorUrl;
     if (decorUrl) urls.add(decorUrl);
 
@@ -91,10 +85,8 @@ function buildDraws(
       darkSurfaceUrls,
       surfaceZ: z,
       darkSurfaceZ: z + 0.05,
-      plankUrl,
-      plankZ: z + 0.1,
       decorUrl,
-      // Above the plank/surface, matching FarmTerrainLayer's decor slot.
+      // Above the surface, matching FarmTerrainLayer's decor slot.
       decorZ: z + 0.15,
     });
   }
@@ -103,7 +95,7 @@ function buildDraws(
   // cell (like a large decor). Above the cell's decor slot but still in the
   // background band, so terrain in FRONT (lower iso → higher z) still occludes it.
   const houseDraws: HouseDraw[] = [];
-  for (const anchor of houseCells) {
+  for (const { cell: anchor, flip } of houses) {
     const [col, row] = anchor.split(',').map(Number);
     const { screenX, screenY } = isoToScreen(col, row);
     houseDraws.push({
@@ -111,6 +103,7 @@ function buildDraws(
       x: screenX,
       y: screenY,
       z: computeLayerZ(col, row, 'background') + 0.2,
+      flip,
     });
   }
   if (houseDraws.length > 0) urls.add(houseUrl);
@@ -120,15 +113,15 @@ function buildDraws(
 
 export default function EditorTerrainLayer({
   tiles,
-  houseCells = [],
+  houses = [],
 }: {
   tiles: EditorTile[];
-  /** Front-corner anchor cells "col,row" of placed houses (each a 4×5 footprint). */
-  houseCells?: string[];
+  /** Placed houses: front-corner anchor "col,row" (4×5 footprint) + h-flip orientation. */
+  houses?: Array<{ cell: string; flip: boolean }>;
 }) {
   const { draws, houseDraws, urls } = useMemo(
-    () => buildDraws(tiles, houseCells),
-    [tiles, houseCells],
+    () => buildDraws(tiles, houses),
+    [tiles, houses],
   );
   const [textures, setTextures] = useState<Map<string, Texture> | null>(null);
 
@@ -203,16 +196,6 @@ export default function EditorTerrainLayer({
                 />
               );
             })}
-            {d.plankUrl && textures.get(d.plankUrl) && (
-              <pixiSprite
-                texture={textures.get(d.plankUrl)!}
-                x={d.x}
-                y={d.y}
-                anchor={{ x: 0.5, y: 1 }}
-                zIndex={d.plankZ}
-                eventMode="none"
-              />
-            )}
             {d.decorUrl && textures.get(d.decorUrl) && (
               <pixiSprite
                 texture={textures.get(d.decorUrl)!}
@@ -235,6 +218,9 @@ export default function EditorTerrainLayer({
           x={h.x}
           y={h.y}
           anchor={HOUSE_ANCHOR}
+          // Mirror by negating scale.x; Pixi flips around the anchor (the base-diamond front
+          // corner), so the house stays seated on the same foot cell, just facing the other way.
+          scale={{ x: h.flip ? -1 : 1, y: 1 }}
           zIndex={h.z}
           eventMode="none"
         />

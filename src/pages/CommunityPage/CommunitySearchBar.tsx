@@ -18,8 +18,9 @@ const EntryDesignsSection: React.FC<{
   token: string | null;
   language: Language;
   votedKeys: Set<string>;
+  voteDeltas: Map<string, number>;
   onVoteChange: (design: CommunityDesign, voted: boolean) => void;
-}> = ({ entry, token, language, votedKeys, onVoteChange }) => (
+}> = ({ entry, token, language, votedKeys, voteDeltas, onVoteChange }) => (
   <Box className="community-search-bar__entry-section" sx={{ mb: 2 }}>
     <Box sx={{ px: 2, mb: 0.5 }}>
       <Typography sx={{ fontSize: SIZE.body, fontWeight: WEIGHT.bold, color: COLORS.onSurface }}>
@@ -36,6 +37,7 @@ const EntryDesignsSection: React.FC<{
       title=""
       fetchPage={(owners, keys, limit) => fetchEntryFeed(token, language, entry.word1, owners, keys, limit)}
       votedKeys={votedKeys}
+      voteDeltas={voteDeltas}
       onVoteChange={onVoteChange}
       token={token}
       language={language}
@@ -56,9 +58,10 @@ const CommunitySearchBar: React.FC<{
   token: string | null;
   language: Language;
   votedKeys: Set<string>;
+  voteDeltas: Map<string, number>;
   onVoteChange: (design: CommunityDesign, voted: boolean) => void;
   onActiveChange: (active: boolean) => void;
-}> = ({ token, language, votedKeys, onVoteChange, onActiveChange }) => {
+}> = ({ token, language, votedKeys, voteDeltas, onVoteChange, onActiveChange }) => {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const {
     searchInput, setSearchInput, debouncedSearchTerm, entries, segmentGroups,
@@ -114,6 +117,7 @@ const CommunitySearchBar: React.FC<{
                   token={token}
                   language={language}
                   votedKeys={votedKeys}
+                  voteDeltas={voteDeltas}
                   onVoteChange={onVoteChange}
                 />
               ))}
@@ -133,6 +137,7 @@ const CommunitySearchBar: React.FC<{
                   token={token}
                   language={language}
                   votedKeys={votedKeys}
+                  voteDeltas={voteDeltas}
                   onVoteChange={onVoteChange}
                 />
               ))}
@@ -150,6 +155,7 @@ const CommunitySearchBar: React.FC<{
               token={token}
               language={language}
               votedKeys={votedKeys}
+              voteDeltas={voteDeltas}
               onVoteChange={onVoteChange}
             />
           ))}

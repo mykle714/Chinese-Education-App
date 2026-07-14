@@ -16,11 +16,12 @@ import { SIZE, WEIGHT } from "../../theme/scale";
 const CommunityDesignCard: React.FC<{
   design: CommunityDesign;
   voted: boolean;
+  voteDeltas: Map<string, number>;
   token: string | null;
   language: Language;
   onVoteChange: (design: CommunityDesign, voted: boolean) => void;
   onOpen: (design: CommunityDesign) => void;
-}> = ({ design, voted, token, language, onVoteChange, onOpen }) => {
+}> = ({ design, voted, voteDeltas, token, language, onVoteChange, onOpen }) => {
   // Adapt the design into the VocabEntry shape MiniVocabCard expects. Stable per design so the
   // memoized card doesn't re-render on unrelated parent updates.
   const entry = useMemo(
@@ -57,7 +58,7 @@ const CommunityDesignCard: React.FC<{
         </Typography>
       </Box>
 
-      <VoteButton design={design} voted={voted} token={token} language={language} onVoteChange={onVoteChange} size="small" />
+      <VoteButton design={design} voted={voted} voteDeltas={voteDeltas} token={token} language={language} onVoteChange={onVoteChange} size="small" />
     </Box>
   );
 };

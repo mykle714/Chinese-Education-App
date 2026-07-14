@@ -17,12 +17,13 @@ import { SIZE, WEIGHT } from "../../theme/scale";
 const CommunityDesignZoom: React.FC<{
   design: CommunityDesign;
   voted: boolean;
+  voteDeltas: Map<string, number>;
   token: string | null;
   language: Language;
   onClose: () => void;
   /** Reflects a vote toggle so the parent keeps its votedKeys set in sync across surfaces. */
   onVoteChange: (design: CommunityDesign, voted: boolean) => void;
-}> = ({ design, voted, token, language, onClose, onVoteChange }) => {
+}> = ({ design, voted, voteDeltas, token, language, onClose, onVoteChange }) => {
   return (
     <Dialog
       className="community-design-zoom"
@@ -90,7 +91,7 @@ const CommunityDesignZoom: React.FC<{
             boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
           }}
         >
-          <VoteButton design={design} voted={voted} token={token} language={language} onVoteChange={onVoteChange} size="large" />
+          <VoteButton design={design} voted={voted} voteDeltas={voteDeltas} token={token} language={language} onVoteChange={onVoteChange} size="large" />
           <ApplyDesignButton design={design} token={token} language={language} />
         </Box>
       </Box>

@@ -20,11 +20,12 @@ const CommunityFeedRow: React.FC<{
   title: string;
   fetchPage: (excludeOwners: string[], excludeKeys: string[], limit: number) => Promise<CommunityDesign[]>;
   votedKeys: Set<string>;
+  voteDeltas: Map<string, number>;
   onVoteChange: (design: CommunityDesign, voted: boolean) => void;
   token: string | null;
   language: Language;
   emptyHint: string;
-}> = ({ title, fetchPage, votedKeys, onVoteChange, token, language, emptyHint }) => {
+}> = ({ title, fetchPage, votedKeys, voteDeltas, onVoteChange, token, language, emptyHint }) => {
   const [designs, setDesigns] = useState<CommunityDesign[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -128,6 +129,7 @@ const CommunityFeedRow: React.FC<{
               key={designKey(d)}
               design={d}
               voted={votedKeys.has(designKey(d))}
+              voteDeltas={voteDeltas}
               token={token}
               language={language}
               onVoteChange={onVoteChange}
@@ -150,6 +152,7 @@ const CommunityFeedRow: React.FC<{
         <CommunityDesignZoom
           design={zoomed}
           voted={votedKeys.has(designKey(zoomed))}
+          voteDeltas={voteDeltas}
           token={token}
           language={language}
           onClose={() => setZoomed(null)}

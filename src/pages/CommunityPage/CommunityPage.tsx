@@ -28,6 +28,13 @@ function CommunityPage() {
   // Design keys (ownerUserId|entryKey) the viewer has voted on this week → greyed everywhere.
   const [votedKeys, setVotedKeys] = useState<Set<string>>(new Set());
 
+  // Shared per-design vote-count delta (designKey → net ±1 the viewer applied this session).
+  // Lifted here so the SAME design shown in multiple rows/the zoom keeps a single, consistent
+  // count. Previously each VoteButton owned a private `count`, so voting on one instance left the
+  // duplicate in another horizontal feed stale (coloured-but-unchanged). Each VoteButton renders
+  // `design.voteCountThisWeek + (delta ?? 0)`.
+  const [voteDeltas, setVoteDeltas] = useState<Map<string, number>>(new Map());
+
   // While the search bar has a non-empty term, its per-entry design rows replace the two
   // default feeds below (see docs/COMMUNITY_PAGE.md).
   const [searchActive, setSearchActive] = useState(false);
@@ -45,12 +52,19 @@ function CommunityPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
 
-  // Toggle a design's voted state in the shared set so both feeds + the zoom stay in sync.
+  // Toggle a design's voted state + count delta in the shared stores so every surface it appears
+  // in (both feeds, search rows, and the zoom) stays in sync.
   const setVote = useCallback((design: CommunityDesign, voted: boolean) => {
+    const key = designKey(design);
     setVotedKeys((prev) => {
       const next = new Set(prev);
-      if (voted) next.add(designKey(design));
-      else next.delete(designKey(design));
+      if (voted) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+    setVoteDeltas((prev) => {
+      const next = new Map(prev);
+      next.set(key, (next.get(key) ?? 0) + (voted ? 1 : -1));
       return next;
     });
   }, []);
@@ -61,6 +75,7 @@ function CommunityPage() {
         token={token}
         language={language}
         votedKeys={votedKeys}
+        voteDeltas={voteDeltas}
         onVoteChange={setVote}
         onActiveChange={setSearchActive}
       />
@@ -70,6 +85,7 @@ function CommunityPage() {
             title="For words you're learning"
             fetchPage={(owners, keys, limit) => fetchLearningFeed(token, language, owners, keys, limit)}
             votedKeys={votedKeys}
+            voteDeltas={voteDeltas}
             onVoteChange={setVote}
             token={token}
             language={language}
@@ -79,6 +95,7 @@ function CommunityPage() {
             title="Top designs this week"
             fetchPage={(owners, keys, limit) => fetchTopFeed(token, language, owners, keys, limit)}
             votedKeys={votedKeys}
+            voteDeltas={voteDeltas}
             onVoteChange={setVote}
             token={token}
             language={language}

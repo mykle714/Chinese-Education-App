@@ -77,6 +77,15 @@ the whole page.
   previews always render in full color (the vote state lives on the button, not by dimming the
   card). The client learns its voted set from `GET /api/community/my-votes` on load; `votedKeys`
   is lifted to `CommunityPage` so a toggle in either feed reflects on the button in both.
+  **Both the voted state and the count are parent-owned shared stores** (a design can appear in
+  more than one row simultaneously — e.g. both feeds, or a search row): alongside `votedKeys`,
+  `CommunityPage` holds `voteDeltas` (a `designKey → net ±1` map) threaded through the same
+  channels. `VoteButton` is fully controlled — `voted` from `votedKeys`, count from
+  `design.voteCountThisWeek + voteDeltas[key]` — and `toggle` updates both stores optimistically
+  via `onVoteChange(design, next)` (reverting with the inverse call on failure), so voting on one
+  instance updates every duplicate at once. Only a transient `pending` double-tap guard stays local.
+  (Before `voteDeltas`, the count lived in each `VoteButton`'s local state, so a vote left duplicate
+  cards in other rows coloured-but-stale.)
 - **Apply toast** — a successful apply shows a top-center "Added!" / "Added card & design!"
   success `Snackbar` (mirrors the dictionary add-to-library flow).
 - **Apply** (`ApplyDesignButton.tsx`, the **single shared component** used by both feeds) — copies

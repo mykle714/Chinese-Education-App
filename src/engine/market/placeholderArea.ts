@@ -7,6 +7,11 @@
  * {@link ./farmTerrain} can depend on it for the {@link PlaceholderArea} type without
  * dragging in a view.
  *
+ * This is the SOURCE OF TRUTH for the area shape + drop sizes. The server can't import this
+ * module (it lives outside the `server/` Docker build context), so `PlaceholderArea` and
+ * {@link PLACEHOLDER_SIZES} are mirrored in server/dal/shared/placeholderArea.ts; the guard
+ * test src/__tests__/placeholderAreaSync.test.ts fails the build if the two ever drift.
+ *
  * A placeholder area is an occupant slot authored by DROPPING one of a fixed set of
  * rectangle sizes ({@link PLACEHOLDER_SIZES}) at a corner, instead of free-painting a
  * per-cell mask. Storing each drop as its own `{col,row,w,h}` record (rather than a flat

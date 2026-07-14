@@ -1,6 +1,17 @@
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import { DALError, NotFoundError, ValidationError } from '../types/dal.js';
 import { dbManager } from '../dal/base/DatabaseManager.js';
+import {
+  PlaceholderArea,
+  PLACEHOLDER_SIZES,
+  placeholderAreasOverlap,
+} from '../dal/shared/placeholderArea.js';
+
+// Re-export so existing importers of the placeholder type via this service keep working;
+// the source of truth for the shape/sizes is server/dal/shared/placeholderArea.ts (mirror of
+// the client's src/engine/market/placeholderArea.ts, kept in sync by the guard test
+// src/__tests__/placeholderAreaSync.test.ts).
+export type { PlaceholderArea };
 
 /**
  * Night Market Template Service — business logic for validator-authored template
@@ -89,33 +100,10 @@ export const HOUSE_FOOTPRINT_X = 4;
 export const HOUSE_FOOTPRINT_Y = 5;
 
 /**
- * A dropped placeholder area: near-corner anchor (col,row) + span (w along isoX, h along
- * isoY). Mirrors src/engine/market/placeholderArea.ts (kept in sync by hand — the server
- * can't import the client module). Storing each drop as its own record (not a flat cell mask)
- * is what keeps two *adjacent* occupant slots distinct.
+ * Placeholder-area primitives (`PlaceholderArea`, `PLACEHOLDER_SIZES`, `placeholderAreasOverlap`)
+ * are the SERVER mirror of the client's pure geometry module and live in
+ * server/dal/shared/placeholderArea.ts — imported above. See that file for the sync contract.
  */
-export interface PlaceholderArea {
-  col: number;
-  row: number;
-  w: number;
-  h: number;
-}
-
-/**
- * The ONLY placeholder drop sizes (mirrors PLACEHOLDER_SIZES on the client): 5×5, 5×10, and
- * the rotated 10×5. The save validator rejects any off-menu size so a definition can never
- * carry one.
- */
-const PLACEHOLDER_SIZES: ReadonlyArray<{ w: number; h: number }> = [
-  { w: 5, h: 5 },
-  { w: 5, h: 10 },
-  { w: 10, h: 5 },
-];
-
-/** Whether two placeholder areas share any cell (axis-aligned rectangle overlap). */
-function placeholderAreasOverlap(a: PlaceholderArea, b: PlaceholderArea): boolean {
-  return a.col < b.col + b.w && b.col < a.col + a.w && a.row < b.row + b.h && b.row < a.row + a.h;
-}
 
 /**
  * Whether a decor STEM is a BLOCKING object — `common` decor (`decor_N`) or a standing

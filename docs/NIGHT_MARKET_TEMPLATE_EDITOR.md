@@ -122,7 +122,11 @@ systems in [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md) will consume
   whole area** under the cursor. Version-0-only (like before). Implemented in
   `TemplateEditorViewer` (`placeholderSize` prop, `PlaceholderPreviewOverlay`,
   `PlaceholderAreaOverlay` for the per-area outline) + `TemplateEditorPage`'s `paintCell`
-  placeholder branch; geometry lives in `src/engine/market/placeholderArea.ts`.
+  placeholder branch; geometry lives in `src/engine/market/placeholderArea.ts` (the source of
+  truth for the area shape + `PLACEHOLDER_SIZES`). The server can't import that module (it's
+  outside the `server/` Docker build context), so it mirrors the shape + sizes in
+  `server/dal/shared/placeholderArea.ts`; the guard test
+  `src/__tests__/placeholderAreaSync.test.ts` fails the build if the two drift.
 
 ### Authoring guidelines (not enforced)
 

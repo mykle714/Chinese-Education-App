@@ -8,11 +8,11 @@
 > masks are named generically** (terrain 1 / terrain 2) so their art can be hot-swapped
 > later; they currently render as light / dark grass. **Street is a spriteless
 > walkability tint** (a warm-tan highlight), not a plank sprite — it behaves like the
-> other tint masks (communal / placeholder / condition). Placeholders
-> are authored today only as a **per-cell mask** (the rectangle-with-id
-> `placeholderAreas` structure, asset map, conditional cell-class rules and edge
-> signatures — see [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md)) are **not
-> yet authorable** and will extend the same `definition` JSONB.
+> other tint masks (communal / condition). Placeholders are authored as **fixed-size
+> dropped areas** (5×5 / 5×10 / 10×5 `{col,row,w,h}` records — see the placeholder tool
+> below and [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md)); the asset map,
+> conditional cell-class rules and edge signatures are **not yet authorable** and will
+> extend the same `definition` JSONB.
 >
 > **Versions.** One template *name* owns several numbered **versions** (migration 108,
 > one DB row per `(name, version)`). All versions of a name share one board size and one
@@ -65,9 +65,10 @@ systems in [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md) will consume
   top→bottom: **(1)** a view-control row — the **grid toggle** (own group) beside the
   mask-view toggles (own group, in mask-tool order: **street-**, **communal-**,
   **placeholder-**, **condition-highlight**, and **reusing the mask-tool icons**); **(2)** the
-  masks group (Street · Communal · Placeholder · Condition — all spriteless tints); **(3)** the
-  **Eraser** toggle (red) inline **before** the terrain group (Terrain 1 · Terrain 2); **(4)**
-  the decor group (House · Surface decor · Common decor · Trees). The **Placeholder** tool is
+  masks group (Street · Communal · Placeholder · Condition — all spriteless tints) sharing the
+  row with the **terrain group** (Terrain 1 · Terrain 2) to its right; **(3)** the decor group
+  (House · Surface decor · Common decor · Trees · **Wood panel**); **(4)** the bottom row — history (Undo · Redo),
+  the clipboard group (Copy · Paste), and the **Eraser** toggle (red). The **Placeholder** tool is
   disabled unless the active version is 0. The **Eraser is a MODIFIER, not a tool**: it toggles
   on top of the currently-selected tool and, while on, inverts that tool's paint into an erase
   of **only that tool's own layer** (see the Erase row below). It is **scoped to the tool it
@@ -79,24 +80,31 @@ systems in [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md) will consume
   `HOTKEY_TO_TOOL` + the keydown effect in `TemplateEditorPage.tsx` are authoritative). Keys
   mirror the physical keyboard, one palette row per keyboard row: number row **`** grid, then
   view toggles **1** street / **2** communal / **3** placeholder / **4** condition; top letter
-  row masks **Q** street / **W** communal / **E** placeholder / **R** condition; home row **Tab**
-  eraser modifier · **A** terrain 1 / **S** terrain 2; bottom row decor **Z** house / **X** surface /
-  **C** common / **V** trees. **Tab** toggles the **eraser modifier** (not a tool — handled
-  directly in the keydown effect, not via `HOTKEY_TO_TOOL`). **Space** flips the house
-  placement's horizontal mirror while the **house** tool is active (a no-op / swallowed
-  otherwise, so it never scrolls the page). Hotkeys are suppressed while the
+  row masks **Q** street / **W** communal / **E** placeholder / **R** condition followed by
+  terrain **T** terrain 1 / **Y** terrain 2; home row decor **A** house / **S** surface /
+  **D** common / **F** trees / **G** wood panel; bottom row **Z** undo / **X** redo / **C** copy / **V** paste /
+  **B** eraser modifier. **B** toggles the **eraser modifier** (not a tool — handled
+  directly in the keydown effect, not via `HOTKEY_TO_TOOL`). **Space** is a per-tool
+  modifier: it flips the **house** placement's horizontal mirror while the house tool is
+  active, **cycles the placeholder DROP size** (5×5 → 5×10 → 10×5 → 5×5) while the
+  placeholder tool is active, or **cycles the selected variant** of any **decor** tool
+  (surface / common / trees / wood panel — the ghost previews it); a no-op / swallowed
+  otherwise, so it never scrolls the page.
+  Hotkeys are suppressed while the
   Properties dialog is open or a text field is focused (so typing a name never paints), and
   respect the same gating as the buttons (E ignored above version 0). A view-toggle key (or
   its button) flips its **independent** show-state even while that tool is active — the tool
   force-shows its tint for display, but that override never mutates the toggle.
 - **Mouse:** hover highlights the cell under the cursor; **left-drag paints** the
   active tool; **middle/right-drag pans**; **wheel zooms** (integer steps).
-- **Rectangle selection (street / communal / placeholder tools):** these three
-  annotation-mask tools do **not** drag-paint. Instead they use a **press-drag-release**
+- **Rectangle selection (street / communal tools + terrain 1 / terrain 2 + Wood panel):**
+  these tools do **not** drag-paint. Instead they use a **press-drag-release**
   selection: **pointer-down anchors one corner**, and **releasing the button fills the whole
   rectangle** between the anchor and the cell under the pointer at release (a plain click,
   down + up on one cell, fills a 1×1 selection). While dragging, the cursor **rubber-bands
-  the pending rectangle** live in the mask's own tint colour (**red** while the eraser
+  the pending rectangle** live in the layer's own tint colour — the mask's tint for the
+  annotation tools, the terrain group's green for terrain, a wood brown for the plank
+  (Wood panel) tool (**red** while the eraser
   modifier is on). Releasing just off the canvas falls back to the last on-board cell;
   releasing fully off-board abandons the selection. **Escape** cancels a pending drag;
   switching tools also abandons it. Each filled cell is routed through the same paint path as a single click,
@@ -104,6 +112,17 @@ systems in [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md) will consume
   upkeep) still apply — including under the eraser modifier, where the rectangle erases.
   Implemented in `TemplateEditorViewer` (`rectangleMode` prop, `RectPreviewOverlay`,
   `rectCells`); the parent turns it on for those tools and reuses `paintCell` per cell.
+- **Placeholder DROP (placeholder tool):** the placeholder tool is **not** a rectangle
+  tool and **not** a drag-paint — it **drops a fixed-size area** (like the house tool). The
+  cursor is a footprint of the current drop size (**5×5 / 5×10 / 10×5**, cycled with
+  **Space**), anchored at the hovered near corner and extending +isoX/+isoY, tinted
+  **green** (droppable) or **red** (refused). **One click drops the whole area**; the drop
+  is **refused** unless the whole footprint is in-bounds and overlaps **no existing area**
+  (occupant slots stay distinct). Under the **eraser** modifier, one click **removes the
+  whole area** under the cursor. Version-0-only (like before). Implemented in
+  `TemplateEditorViewer` (`placeholderSize` prop, `PlaceholderPreviewOverlay`,
+  `PlaceholderAreaOverlay` for the per-area outline) + `TemplateEditorPage`'s `paintCell`
+  placeholder branch; geometry lives in `src/engine/market/placeholderArea.ts`.
 
 ### Authoring guidelines (not enforced)
 
@@ -124,11 +143,11 @@ author must honor them by hand. Keep this list and `AUTHORING_GUIDELINES` in the
 | Terrain 2 | Terrain 2 tool | `darkGrass_*` caps/overlays (drawn on top of terrain 1; art is hot-swappable) | **Fully independent mask** — terrain 1 and terrain 2 are completely separate; painting terrain 2 does **not** add terrain 1, and terrain 2 renders on its own cells **whether or not terrain 1 is underneath**. Their only relationship is **z-order**: terrain 2 always draws on top of terrain 1 (the view stacks the dark surface above the light one). There is **no** longer any terrain2 ∩ terrain1 intersection at render time |
 | Street | Street tool | **no sprite** — a translucent warm-**tan** **highlight tint** only (like communal) | The **street-walkable** class that street recovery will consume. Now a **spriteless walkability tint** (the plank sprite was removed), so it does **not** feed surface/decor rendering. **Mirrors communal exactly:** **clears any communal** flag (mutually-exclusive walkability class); **coexists with terrain and flush surface (family) decor** (the tint draws over them); but is **mutually exclusive with BLOCKING objects** — a **house** or **common/tree decor**: painting one of those clears street on the cell (cascade-clearing any condition), and painting street onto a cell that already holds one is **silently refused** (no-op). |
 | Communal | Communal tool | **no sprite** — a translucent violet **highlight tint** only (like the nmp grass overlay) | The **communal-walkable** class (parks/plazas). A pure walkability annotation, so it does **not** feed surface/plank/decor rendering; **clears any street** flag (mutually-exclusive). Coexists with grass **and flush surface (family) decor** (a park is grass + flowers + communal), but is **mutually exclusive with BLOCKING objects** — a **house** or **common/tree decor**: painting one of those clears communal on the cell, and painting communal onto a cell that already holds one is **silently refused** (no-op). |
-| Placeholder | Placeholder tool (**version 0 only**) | **no sprite** — a translucent cyan **highlight tint** only | Marks **placeholder-area** cells (slots a future unlock occupant fills — see [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md)). An **override overlay**, not a walkability class, so it has **no** mutual-exclusion and may overlap any layer freely. **Shared across all versions** of a name (owned by version 0): the tool + eraser are disabled above version 0, which inherit it read-only. This per-cell mask is the first-slice shape; the rectangle-with-id `placeholderAreas` structure is a later evolution. |
+| Placeholder | Placeholder tool (**version 0 only**) | **no sprite** — translucent cyan **highlight tint** + a per-area **outline** | **Fixed-size DROPPED areas** — each a **5×5 / 5×10 / 10×5** `{col,row,w,h}` rectangle (occupant slots a future unlock fills — see [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md)). **Space cycles the drop size**; one click drops one area (refused if it would overhang the board or overlap another area), the eraser removes a whole area. Stored as **discrete records** (not a cell mask) so **adjacent slots stay distinct**. An **override overlay**, not a walkability class, so an area may overlap any *other* layer freely, but **areas may not overlap each other**. **Shared across all versions** of a name (owned by version 0): the tool + eraser are disabled above version 0, which inherit it read-only. Each area is drawn with a bright outline (`PlaceholderAreaOverlay`) so touching slots read apart. |
 | Condition | Condition tool (**versions above 0 only**) | **no sprite** — a translucent orange **highlight tint** only | Marks **condition-mask** cells — a **per-version** override overlay (the conditional cell-class annotation that differs between versions). The **manual tool paints only PLACEHOLDER cells** (painting elsewhere is a silent no-op). Border **STREET** cells get a condition **automatically at save** (see below), so at rest a condition may live on a **placeholder** cell (manual) OR a **border-street** cell (auto). Removing that substrate **cascades the condition away** — painting communal over the street, or erasing the street/placeholder, clears the condition on that cell (unless the cell still carries the other substrate). It is the **inverse of placeholder's version rule**: the tool + hotkey are disabled on **version 0** (the base carries no conditional cells), and the server rejects a version-0 save that carries any. **Auto border-street conditions (save time, versions > 0 only):** `handleSubmit` runs `withBorderStreetConditions` before POSTing — every **street cell on the board's outer edge** (col 0 / col W−1 / row 0 / row H−1) is added to the condition mask (those are the cells a neighbouring template's street can lean on, so they "matter to version selection" — see [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md)). They are merged into the live board so the author sees them appear, and persist into the saved definition (idempotent — a re-save re-derives the same set). Version 0 sends none. |
 | House | House tool | one **`House.png`** sprite seated on its footprint (rendered by `EditorTerrainLayer` from the `houses` **map**; **h-flipped** when the house's flip flag is set) | A rectangular object keyed by its FRONT (near, min-iso) corner and extending +isoX/+isoY — **4×5** (4 cells along isoX/E–W × 5 along isoY/N–S) by default. **One click drops the whole house**; the cursor becomes a footprint preview tinted **green** (placeable) or **red** (blocked), with a **translucent `House.png` ghost** (`HouseGhostOverlay`) drawn over it that **reflects the pending mirror** (`houseFlip`), so the facing is visible before the drop. Placement is **refused whole** unless every footprint cell is in-bounds and free of a street or another house. It **overwrites decor and any communal flag** under its footprint but **never a street**; once placed, **street and decor cannot overwrite it**. **`Space` toggles the placement's horizontal MIRROR** (a 2-facing flip). Mirroring is **not sprite-only** — a horizontal mirror about the front corner swaps the +isoX/+isoY screen directions, so a flipped house's footprint is the **TRANSPOSE** of the default (**5×4**, not 4×5). The green/red preview, the placement/occupancy math, and the ghost all honour the flip via `houseFootprintSpans(flip)`, so a mirrored house reserves exactly the cells it visually covers. Each placed house stores its own flip; the House button's icon + tooltip reflect the pending orientation. The `houseFlip` state lives in `TemplateEditorPage`, is stamped into the `houses` map value on placement, and rides through copy/paste. |
-| Decor (×3) | Surface / Common / Trees tools | one decor sprite on top of the finished tile | Per-cell CHOICE, not a boolean. Each tap **cycles** the cell through THAT tool's rotation (see below); **does nothing under a house** (family decor now MAY sit on a street cell — the plank is gone). **Common decor and Trees are BLOCKING objects** — placing them **clears any street AND communal flag** on the cell (cascade-clearing any condition on a cleared street); **Surface (family) decor is flush and exempt** (it may coexist with street + communal). |
-| — | Eraser **modifier** (Space) — layered on the active tool | — | A boolean toggle (`eraseMode`), **not a tool**: while on, painting with any tool **removes only THAT tool's own layer** at the cell (never the top-most layer, never another tool's) — terrain 1/2, street, communal, placeholder, condition each delete their own mask; **House** removes the whole house covering the cell (via `houseAnchorCovering`); a **decor** tool removes the cell's single decor sprite **only when it belongs to that tool's category** (`editorDecorCategory` vs `DECOR_TOOL_CATEGORY` — e.g. the Surface-decor eraser leaves a tree/common sprite untouched). Cascade rules mirror the paint cases: erasing a **street/placeholder** cell cascade-clears any condition orphaned by it. The active tool **force-shows its own tint**, so you always see the layer you are erasing (no "hidden-tint" guard is needed). **Placeholder is erasable only on version 0** (inherited read-only above). **Scoped to its tool** — switching tools auto-clears it (an `activeTool` effect) — and **disabled for the copy/paste tools** (`toolSupportsEraser`, which never route through the erase branch); the hover diamond is tinted **red** while on. |
+| Decor (×4) | Surface / Common / Trees / Wood panel tools | one decor sprite on the finished tile — **`dirtDecor_*` renders BELOW the grass surfaces** (`isDirtDecorUrl` → `z = layerZ − 0.1`) so grass painted over the cell covers it; every other family renders **on top** (`z = layerZ + 0.15`) | Per-cell CHOICE, not a boolean. Each tool places its **currently-selected variant** (chosen with **Space**, previewed as a **ghost** — `DecorGhostOverlay`); a click **OVERRIDES** whatever decor/plank was on the cell (decor freely overwrites decor). **Does nothing under a house** (a separate layer). **Common decor and Trees are BLOCKING objects** — placing them **clears any street AND communal flag** on the cell (cascade-clearing any condition on a cleared street); **Surface (family) decor and Wood panels are flush and exempt** (they coexist with street + communal). The **Wood panel** tool tiles by **rectangle** (see the rectangle-selection bullet), the others **drag-paint**. |
+| — | Eraser **modifier** (B) — layered on the active tool | — | A boolean toggle (`eraseMode`), **not a tool**: while on, painting with any tool **removes only THAT tool's own layer** at the cell (never the top-most layer, never another tool's) — terrain 1/2, street, communal, condition each delete their own mask; **Placeholder** removes the whole AREA under the cursor (areas are dropped/erased atomically); **House** removes the whole house covering the cell (via `houseAnchorCovering`); a **decor** tool removes the cell's single decor sprite **only when it belongs to that tool's category** (`editorDecorCategory` vs `DECOR_TOOL_CATEGORY` — e.g. the Surface-decor eraser leaves a tree/common sprite untouched). Cascade rules mirror the paint cases: erasing a **street** cell (or a **placeholder area's** cell) cascade-clears any condition orphaned by it. The active tool **force-shows its own tint**, so you always see the layer you are erasing (no "hidden-tint" guard is needed). **Placeholder is erasable only on version 0** (inherited read-only above). **Scoped to its tool** — switching tools auto-clears it (an `activeTool` effect) — and **disabled for the copy/paste tools** (`toolSupportsEraser`, which never route through the erase branch); the hover diamond is tinted **red** while on. |
 
 **Highlight view toggles.** The street, communal, placeholder, and condition tints each
 have their own persisted palette toggle. While a tool is active its own tint layer is
@@ -140,19 +159,28 @@ visible.
 
 ### Decor tools & rotations
 
-Decor is split into **three separate tools**, each its own `editorDecorRotation(category, surface)`
-rotation. A decor tool is a **cycler**, not a stamp: tapping a cell with no decor
-places that tool's first sprite; each further tap advances (wrapping). Because a cell
-holds only ONE decor sprite, switching decor tools (or a cell whose surface changed)
-finds the current sprite absent from the new rotation (`indexOf → −1`) and restarts at
-that rotation's first entry — so the three tools swap the single decor slot between
-categories rather than stacking.
+Decor is split into **four separate tools**, each its own `editorDecorRotation(category, surface)`
+rotation. A decor tool places its **currently-selected variant**: **Space** advances the shared
+`decorVariantIdx` (read modulo the active rotation's length, so it simply wraps), and the
+**ghost** (`DecorGhostOverlay`) previews `rotation[idx % len]` for the hovered cell's surface
+before the click. A click **OVERRIDES** any decor/plank already on the cell (a cell still holds
+only ONE decor sprite; the tools no longer *cycle* a cell's existing sprite — that moved to the
+Space selector). Placement **does nothing under a house** (a separate layer).
 
-| Tool (`category`) | Depends on surface? | Rotation |
+| Tool (`category`) | Depends on surface? | Selection (Space cycles) |
 |---|---|---|
 | **Surface decor** (`family`) | yes | terrain-1 cell → `lightGrassDecor_1..7`; terrain-2 → `darkGrassDecor_1..5`; dirt → `dirtDecor_1..4` (the terrain→tileset-bucket mapping is the render seam in `editorDecorRotation`) |
 | **Common decor** (`common`) | no | `decor_1..4` |
 | **Trees** (`tree`) | no | `tree_1..2`, `largeTree_1..4` (**stumps excluded**) |
+| **Wood panel** (`plank`) | no | the **center** tiles `plank_{ns,ew}_{1..3}_center` (`editorPlankCenters`) — the flat mid-run panel in each iso orientation × board variation |
+
+**Wood-panel autotiling.** A placed plank **stores its center tile**; the render layer
+(`plankRenderUrl`, applied in `buildEditorField`'s `decorAt`) swaps that center for its far-end
+**edge cap** — `eastEdge` for an `ew` panel (+isoX face), `northEdge` for an `ns` panel (+isoY
+face), the only two faces the pack caps (mirrors `buildWalkway`) — wherever that far neighbour is
+**not itself a plank**. So an author only ever picks the flat tile and the exposed run-ends cap
+themselves. Planks are **flush / walkable** (not blocking, like family decor). Unlike the other
+decor tools, Wood panel tiles by **rectangle** (`rectangleMode`), not drag-paint.
 
 **No PROCEDURAL decor** is generated (unlike the live nmp terrain) — only decor the
 validator explicitly paints shows. Changing the **width or height** in Properties
@@ -187,15 +215,20 @@ validator explicitly paints shows. Changing the **width or height** in Propertie
 - `editorSurfaceAt(masks, col, row)` → `'dirt' | 'terrain1' | 'terrain2'` (takes just
   `Pick<EditorMasks,'terrain1'|'terrain2'>`, the two masks it reads) and
   `editorDecorRotation(category, surface)` (`category: DecorCategory` = `'family' |
-  'common' | 'tree'`) → the ordered decor-URL list for one of the three decor tools
+  'common' | 'tree' | 'plank'`) → the ordered decor-URL list for one of the four decor tools
   (`family` maps the terrain surface → its tileset decor bucket — `terrain1`→`lightGrass`,
   `terrain2`→`darkGrass` — the render seam; `common` the shared `decor_*`; `tree` the
-  tileset's `getTreeUrls()`). These back the decor tools' cycle.
+  tileset's `getTreeUrls()`; `plank` the wood-panel centers, `editorPlankCenters()`). These
+  back the decor tools' Space-cycled variant selection + ghost.
+- `editorPlankCenters()` → the flat `plank_{ns,ew}_{1..3}_center` URLs (what the Wood-panel
+  tool cycles + stores); `isPlankUrl(url)` tests the `plank_*` stem; `plankRenderUrl(centerUrl,
+  isPlankAt, x, y)` autotiles a stored center → its far-end `eastEdge`/`northEdge` cap where
+  the +isoX/+isoY face abuts a non-plank cell (applied in `buildEditorField`'s `decorAt`).
 - `editorDecorCategory(url)` → `DecorCategory` — the inverse of `editorDecorRotation`'s
-  bucketing: classifies a placed decor URL back to its tool's category (`common` / `tree`,
-  else `family`). Backs the eraser modifier's per-category decor erase (a decor tool erases
-  only its own category), single-sourced with `isBlockingDecorUrl` against the tileset
-  buckets.
+  bucketing: classifies a placed decor URL back to its tool's category (`plank` / `common` /
+  `tree`, else `family`). Backs the eraser modifier's per-category decor erase (a decor tool
+  erases only its own category), single-sourced with `isBlockingDecorUrl`/`isPlankUrl` against
+  the tileset buckets. **Planks are flush/non-blocking** (absent from `isBlockingDecorUrl`).
 - `buildEditorField(width, height, masks)` → `EditorTile[]` — the **mask-driven**
   twin of the procedural `buildFarmField`. Reuses the exact same neighbour →
   overlay-cap resolution (`resolveTileSurfaceUrls` / `resolveTileDarkSurfaceUrls`),
@@ -317,7 +350,7 @@ re-fingerprinting). Uses `authHeader()` + `API_BASE_URL`.
 | `version` | INTEGER | **migration 108**, default 0. 0-based; version 0 is the base + single source of truth for the shared placeholder |
 | `width` / `height` | INTEGER | board dims (cols / rows) — shared across a name's versions |
 | `description` | TEXT (nullable) | **migration 109**. Optional author-written blurb shown in the Load menu. **Shared per name**, single-sourced on version 0 (NULL on higher versions, merged from v0 on read) — same rule as the placeholder. Authored via the Properties popup (locked above version 0). |
-| `definition` | JSONB | `{ terrain1, terrain2, street, communal, placeholder, condition }` cell lists + `houses` (`{cell, flip}[]` — front-corner anchor + horizontal-mirror flag) + `decor` (`cell → sprite-stem` object) now; grows to the full template. `placeholder` is populated only on version 0 (empty on higher versions as stored; merged from v0 on read). Schemaless JSONB, so `communal`/`placeholder`/`condition`/`houses` were added without a migration (older rows read them as `[]`). ⚠️ Two **no-back-compat-read** shape changes: the terrain keys were **renamed `lightGrass`/`darkGrass` → `terrain1`/`terrain2`** (pre-rename templates load with **empty terrain**); `houses` gained the **`{cell, flip}` object shape** — but that one IS back-compat: a legacy bare `"col,row"` string reads as `flip: false` (`definitionToMasks` + the server's `cleanHouses`). |
+| `definition` | JSONB | `{ terrain1, terrain2, street, communal, condition }` cell lists + `placeholder` (`{col,row,w,h}[]` — dropped occupant-slot areas) + `houses` (`{cell, flip}[]` — front-corner anchor + horizontal-mirror flag) + `decor` (`cell → sprite-stem` object) now; grows to the full template. `placeholder` is populated only on version 0 (empty on higher versions as stored; merged from v0 on read). Schemaless JSONB, so `communal`/`placeholder`/`condition`/`houses` were added without a migration (older rows read them as `[]`). ⚠️ **No-back-compat-read** shape changes: the terrain keys were **renamed `lightGrass`/`darkGrass` → `terrain1`/`terrain2`** (pre-rename templates load with **empty terrain**); `placeholder` changed from a **flat `string[]` cell mask → `{col,row,w,h}[]` area records** (pre-change templates load with **no placeholder areas** — re-drop them). `houses` gained the **`{cell, flip}` object shape** — that one IS back-compat: a legacy bare `"col,row"` string reads as `flip: false` (`definitionToMasks` + the server's `cleanHouses`). |
 | `createdBy` | UUID FK → users(id) | authoring validator |
 | `createdAt` / `updatedAt` | TIMESTAMPTZ | |
 
@@ -333,10 +366,10 @@ promote-to-code step) is a downstream decision.
 
 ## Deferred / not yet built
 
-- **Rest of the template:** placeholder areas are authored today only as a **flat
-  per-cell mask** — the rectangle-with-id `placeholderAreas` grouping (each area's
-  `id` + `col,row,width,height`, which the placement/occupancy systems need) is not
-  yet built. Asset map, conditional cell-class rules, and edge signatures are also
+- **Rest of the template:** placeholder areas ARE now authored as explicit
+  `{col,row,w,h}` drop records (fixed 5×5 / 5×10 / 10×5 sizes) — distinct occupant slots.
+  A stable per-area **`id`** (for the placement/occupancy systems to key an occupant on)
+  is not yet added. Asset map, conditional cell-class rules, and edge signatures are also
   unbuilt — all extend the same `definition` JSONB.
 - **Versioning / history:** multiple numbered **versions** per name ARE supported
   (migration 108), but Save overwrites a version in place (no revision history within a
@@ -352,8 +385,10 @@ promote-to-code step) is a downstream decision.
 ## Dependency references
 
 - Data: `src/engine/market/farmTerrain.ts` (`EditorMasks`, `buildEditorField`,
-  `editorSurfaceAt`, `editorDecorRotation`),
-  `src/engine/market/freeFarmTileset.ts` (`getDecorUrls`, `getTreeUrls`),
+  `editorSurfaceAt`, `editorDecorRotation`, `editorPlankCenters`, `plankRenderUrl`,
+  `isPlankUrl`, `editorDecorCategory`),
+  `src/engine/market/freeFarmTileset.ts` (`getDecorUrls`, `getTreeUrls`, `getPlank`),
+  `src/engine/market/walkway.ts` (`PLANK_VARIATIONS`),
   `src/engine/market/house.ts` (footprint dims + `HOUSE_ANCHOR` + `houseFootprintCells` /
   `houseFits` / `houseOccupiedCells` / `houseAnchorCovering`; also consumed by the live
   nmp `src/features/nightmarket/HouseLayer.tsx`).

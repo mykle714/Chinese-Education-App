@@ -162,25 +162,41 @@ terminates cleanly.
 
 ## Placeholder areas
 
-Placeholder areas are **not authored as rectangles** — they are **derived from the
-islands of the placeholder mask.** The editor paints a placeholder mask (a `Set` of
-`"col,row"` cells, single-sourced on **version 0** and shared by every version — see
-[NIGHT_MARKET_TEMPLATE_EDITOR.md](./NIGHT_MARKET_TEMPLATE_EDITOR.md)); at load the
-runtime runs **connected-component labeling** (4-connectivity on the local grid) over
-those cells. **Each connected island is one placeholder area** (one occupant slot):
+Placeholder areas are **authored explicitly, one dropped rectangle per area.** The
+editor's placeholder tool **drops a fixed-size area** at the hovered near corner (it is a
+footprint DROP like the house tool, *not* a free-painted mask or a two-click rectangle —
+see [NIGHT_MARKET_TEMPLATE_EDITOR.md](./NIGHT_MARKET_TEMPLATE_EDITOR.md)). Each drop is
+stored as its **own `{col,row,w,h}` record** (near-corner anchor + span, extending
++isoX/+isoY), single-sourced on **version 0** and shared by every version:
 
 ```
-placeholderAreas = connectedComponents(placeholder)   // computed at load, not authored
-// each area → { id: <stable, derived from island cells>, cells: Set<"col,row">, bbox }
+placeholder: Array<{ col, row, w, h }>   // authored directly — each element is one area
 ```
 
-- The area's **size** is its island's cell count / bounding box; the **occupant
-  asset's footprint equals the area** (an occupant exactly fills its island), so
-  there is no sub-area anchoring or partial fill to reason about.
-- Because the placeholder mask lives on version 0 and is shared, **occupant slots are
+- **Why records, not a cell mask.** The old model stored a flat `Set<"col,row">` and
+  derived areas via connected-component labeling at load. That could not tell **two
+  adjacent slots** apart — touching islands merged into one area. Storing each drop as a
+  discrete record keeps adjacent occupant slots **distinct**, which is what the placement /
+  occupant system needs.
+- **Fixed sizes only.** A dropped area is one of exactly three sizes — **5×5**, **5×10**,
+  or **10×5** (the rotated 5×10). The editor's placeholder tool cycles between them with
+  **Space**; the server rejects any off-menu size on save. (`w` is the isoX/col span, `h`
+  the isoY/row span.)
+- **No overlap.** Areas may overlap any *other* layer freely (they are an override
+  overlay, not a walkability class) but **not each other** — a drop onto a cell already
+  covered by another area is refused, and the server re-checks this on save. The
+  **occupant asset's footprint equals the area**, so there is no sub-area anchoring or
+  partial fill to reason about.
+- **Refuse out-of-bounds.** A drop whose whole `w×h` footprint would not fit inside the
+  board is refused (no clipping) — mirroring house placement.
+- Because the placeholder list lives on version 0 and is shared, **occupant slots are
   fixed per template name** — a version can only re-skin the streets/communal/decor
-  *around* the slots; it cannot add or remove a slot. (Islands are stable across
+  *around* the slots; it cannot add or remove a slot. (The records are identical across
   versions, so occupant identity survives a version change.)
+
+> **Legacy note.** Templates saved under the old flat-cell-mask model load with **no
+> placeholder areas** (a cell mask has no `{col,row,w,h}` shape to recover), so their slots
+> must be **re-dropped** — the same "must re-save" stance as the terrain1/terrain2 rename.
 
 Semantics:
 
@@ -488,15 +504,16 @@ Templates are authored by validators in the **desktop template editor**
 ([NIGHT_MARKET_TEMPLATE_EDITOR.md](./NIGHT_MARKET_TEMPLATE_EDITOR.md)) and persisted to
 the DB table **`nightmarkettemplatedefinitions`** (migrations 107–109), one row per
 `(name, version)`. Each row stores the version's cell grid — walkability layers
-(street / communal), the shared placeholder mask (single-sourced on version 0), the
-condition mask, decor stems, house anchors — plus `width`/`height` and the shared
-`description`.
+(street / communal), the shared placeholder **areas** (`{col,row,w,h}` records,
+single-sourced on version 0), the condition mask, decor stems, house anchors — plus
+`width`/`height` and the shared `description`.
 
 **The runtime reads this catalog DB-direct** (decision #1 in the status block): there
 is **no promote-to-code registry**. Derived structures are computed **at load, not at
 build**:
 
-- **Placeholder areas** — connected-component labeling of the placeholder mask (see
+- **Placeholder areas** — read directly from the stored `{col,row,w,h}` records; no
+  derivation step (they are authored explicitly — see
   [Placeholder areas](#placeholder-areas)).
 - **Edge signatures + `anchorIndex`** — derived from each version's street cells (see
   [Edge signatures](#edge-signatures) and
@@ -659,8 +676,9 @@ Code this doc will depend on / drive once implemented:
 - **DB catalog `nightmarkettemplatedefinitions`** (migrations 107–109) read DB-direct
   via `NightMarketTemplateService` — the authored source; **no code registry.**
 - **New catalog-load module** — reads the catalog and computes, at load, the
-  **`selectVersion` seam** (random stub), the **placeholder areas** (connected-component
-  labeling), and the **`anchorIndex`** keyed by `(direction, width)` (see
+  **`selectVersion` seam** (random stub) and the **`anchorIndex`** keyed by
+  `(direction, width)`; the **placeholder areas** are read directly (authored as
+  `{col,row,w,h}` records, no derivation) (see
   [Anchors and the anchor index](#anchors-and-the-anchor-index),
   [Placeholder areas](#placeholder-areas),
   [Template versions](#template-versions--full-snapshots)).

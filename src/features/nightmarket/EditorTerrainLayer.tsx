@@ -5,6 +5,7 @@ import { freeFarmTileset } from '../../engine/market/freeFarmTileset';
 import {
   resolveTileSurfaceUrls,
   resolveTileDarkSurfaceUrls,
+  isDirtDecorUrl,
   type EditorTile,
 } from '../../engine/market/farmTerrain';
 import { HOUSE_ANCHOR } from '../../engine/market/house';
@@ -86,8 +87,10 @@ function buildDraws(
       surfaceZ: z,
       darkSurfaceZ: z + 0.05,
       decorUrl,
-      // Above the surface, matching FarmTerrainLayer's decor slot.
-      decorZ: z + 0.15,
+      // Dirt-family decor sits BELOW the grass surfaces (above the dirt slab at z − 0.5, below
+      // the light cap at z) so grass painted over the cell covers it; every other decor family
+      // stays ABOVE the surface. Matches FarmTerrainLayer's decor slots.
+      decorZ: decorUrl && isDirtDecorUrl(decorUrl) ? z - 0.1 : z + 0.15,
     });
   }
 

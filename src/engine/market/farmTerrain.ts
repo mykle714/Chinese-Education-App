@@ -33,8 +33,11 @@ import {
   freeFarmTileset,
   type Compass,
   type LandmassEdge,
+  type WalkwayDirection,
 } from './freeFarmTileset';
+import { PLANK_VARIATIONS } from './walkway';
 import { houseOccupiedCells } from './house';
+import type { PlaceholderArea } from './placeholderArea';
 
 /**
  * Field dimensions in tiles. Shared by the terrain view ({@link FarmTerrainLayer})
@@ -465,17 +468,17 @@ export interface EditorMasks {
    */
   communal: Set<string>;
   /**
-   * Placeholder-area cells (see the placeholder areas in
-   * docs/NIGHT_MARKET_TEMPLATES.md) — regions an unlocked occupant asset can later
-   * fill. Like {@link communal} this is an ANNOTATION: it renders no sprite (the
-   * editor highlights it), does not feed surface/plank/decor rendering, and is
-   * absent from {@link EditorTile}/{@link buildEditorField}. Unlike the walkability
-   * classes it is an OVERRIDE overlay, so it may overlap any surface (grass /
-   * street / communal) freely — no mutual exclusion. (This per-cell mask is the
-   * first-slice shape; the rectangle-with-id `placeholderAreas` structure is a
-   * later evolution — see the doc.)
+   * Placeholder areas (see the placeholder areas in docs/NIGHT_MARKET_TEMPLATES.md) —
+   * occupant slots a future unlock asset can later fill. Each is a fixed-size rectangle
+   * DROPPED by the placeholder tool (5×5 / 5×10 / 10×5 — see {@link PlaceholderArea} /
+   * {@link ./placeholderArea}), stored as its own `{col,row,w,h}` record so two *adjacent*
+   * slots stay DISTINCT (a flat cell mask could not tell them apart). Like {@link communal}
+   * these are ANNOTATIONS: they render no sprite (the editor highlights them), do not feed
+   * surface/plank/decor rendering, and are absent from {@link EditorTile}/{@link buildEditorField}.
+   * Unlike the walkability classes they are an OVERRIDE overlay, so an area may overlap any
+   * surface (grass / street / communal) freely — but areas may not overlap EACH OTHER.
    */
-  placeholder: Set<string>;
+  placeholder: PlaceholderArea[];
   /**
    * Condition-mask cells — a PER-VERSION annotation (the conditional cell-class rules
    * that differ between template versions; see docs/NIGHT_MARKET_TEMPLATE_EDITOR.md).
@@ -508,14 +511,71 @@ export interface EditorMasks {
 export type EditorSurface = 'dirt' | 'terrain1' | 'terrain2';
 
 /**
- * The three decor tools, each its own rotation (see {@link editorDecorRotation}):
+ * The four decor tools, each its own rotation (see {@link editorDecorRotation}):
  *   - `family` — the cell's SURFACE-SPECIFIC set (lightGrass/darkGrass/dirt decor),
  *   - `common` — the surface-agnostic `decor_*` scatter set,
- *   - `tree`   — the standing trees (`tree_*`, `largeTree_*`).
+ *   - `tree`   — the standing trees (`tree_*`, `largeTree_*`),
+ *   - `plank`  — the wooden-slab "wood panel" tiles (see {@link editorPlankCenters}).
  * Each is a separate palette button so authors pick a category deliberately rather
- * than cycling blindly through one merged list.
+ * than cycling blindly through one merged list. The active tool's variant is chosen
+ * with SPACE in the editor (cycles the rotation) and previewed as a ghost sprite.
  */
-export type DecorCategory = 'family' | 'common' | 'tree';
+export type DecorCategory = 'family' | 'common' | 'tree' | 'plank';
+
+/**
+ * The plank ("wood panel") variant cycle: the flat CENTER tile in each iso
+ * orientation (`ns`/`ew`) × board-pattern variation ({@link PLANK_VARIATIONS}). These
+ * are what SPACE cycles through and what a placed plank stores; the render layer then
+ * swaps a center for its far-end EDGE cap wherever that face abuts a non-plank cell
+ * (see {@link plankRenderUrl}), so authors only ever pick the flat tile. Missing pack
+ * stems are skipped. Surface-agnostic (a plank looks the same on any terrain).
+ */
+export function editorPlankCenters(): string[] {
+  const urls: string[] = [];
+  for (const dir of ['ns', 'ew'] as WalkwayDirection[]) {
+    for (const variation of PLANK_VARIATIONS) {
+      const url = freeFarmTileset.getPlank(dir, variation, 'center');
+      if (url) urls.push(url);
+    }
+  }
+  return urls;
+}
+
+/** Whether a resolved decor url is a plank tile (`plank_{dir}_{var}_{cap}` stem). */
+export function isPlankUrl(url: string): boolean {
+  const stem = freeFarmTileset.stemOf(url);
+  return !!stem && stem.startsWith('plank_');
+}
+
+/** Parse a plank stem into its iso direction + board-pattern variation (null if not a plank). */
+function parsePlankStem(stem: string | undefined): { dir: WalkwayDirection; variation: number } | null {
+  if (!stem) return null;
+  const m = /^plank_(ew|ns)_(\d+)_/.exec(stem);
+  return m ? { dir: m[1] as WalkwayDirection, variation: Number(m[2]) } : null;
+}
+
+/**
+ * Autotile a placed plank CENTER into its rendered sprite: a plank shows its far-end
+ * EDGE cap (`eastEdge` for `ew` / +isoX, `northEdge` for `ns` / +isoY — the only two
+ * faces the pack caps, mirroring {@link buildWalkway}) whenever that far neighbour is
+ * NOT itself a plank; otherwise it stays the flat `center`. `isPlankAt` reports whether
+ * a given cell currently holds any plank decor. Non-plank urls pass through unchanged.
+ */
+export function plankRenderUrl(
+  centerUrl: string,
+  isPlankAt: (x: number, y: number) => boolean,
+  x: number,
+  y: number,
+): string {
+  const parsed = parsePlankStem(freeFarmTileset.stemOf(centerUrl));
+  if (!parsed) return centerUrl;
+  const { dir, variation } = parsed;
+  // The capped face: east neighbour for ew (+isoX), north neighbour for ns (+isoY).
+  const [fx, fy] = dir === 'ew' ? [x + 1, y] : [x, y + 1];
+  if (isPlankAt(fx, fy)) return centerUrl; // abuts another plank → flat mid-run tile
+  const cap = dir === 'ew' ? 'eastEdge' : 'northEdge';
+  return freeFarmTileset.getPlank(dir, variation, cap) ?? centerUrl;
+}
 
 /**
  * The surface a cell resolves to from the painted masks: `terrain2` if in the terrain-2
@@ -554,6 +614,7 @@ export function editorDecorRotation(category: DecorCategory, surface: EditorSurf
     }
     case 'common': return freeFarmTileset.getDecorUrls('common');
     case 'tree': return freeFarmTileset.getTreeUrls();
+    case 'plank': return editorPlankCenters();
   }
 }
 
@@ -564,11 +625,26 @@ export function editorDecorRotation(category: DecorCategory, surface: EditorSurf
  * the template editor: a park/plaza tile may carry flush surface flora but not a tree,
  * prop, or house (houses are handled separately via their footprint). Delegates to the
  * tileset's own URL buckets so it stays single-sourced with the decor indexing (the
- * `family` sets — lightGrass/darkGrass/dirt — are intentionally NOT blocking).
+ * `family` sets — lightGrass/darkGrass/dirt — and the `plank` wood panels are
+ * intentionally NOT blocking: they lie flush and stay walkable).
  */
 export function isBlockingDecorUrl(url: string): boolean {
   return freeFarmTileset.getDecorUrls('common').includes(url)
     || freeFarmTileset.getTreeUrls().includes(url);
+}
+
+/**
+ * Whether a decor sprite URL is a **dirt-family** decoration (`dirtDecor_*`) — the flush
+ * ground details that belong on bare dirt. These render BELOW the grass surface sprites (a
+ * lower z than the light/dark grass caps + boundary overlays) so that grass painted over — or
+ * spilling onto — the cell covers them, reading as a ground detail the grass grows over. Every
+ * other decor family (lightGrass/darkGrass family, common, tree) stays ABOVE the surface.
+ * Single-sourced against the tileset's own `dirt` bucket, mirroring {@link isBlockingDecorUrl}.
+ * Consumed by the view layers ({@link ../../features/nightmarket/FarmTerrainLayer},
+ * {@link ../../features/nightmarket/EditorTerrainLayer}) to pick the decor z-slot.
+ */
+export function isDirtDecorUrl(url: string): boolean {
+  return freeFarmTileset.getDecorUrls('dirt').includes(url);
 }
 
 /**
@@ -581,6 +657,7 @@ export function isBlockingDecorUrl(url: string): boolean {
  * with {@link isBlockingDecorUrl} against the tileset's own buckets.
  */
 export function editorDecorCategory(url: string): DecorCategory {
+  if (isPlankUrl(url)) return 'plank';
   if (freeFarmTileset.getDecorUrls('common').includes(url)) return 'common';
   if (freeFarmTileset.getTreeUrls().includes(url)) return 'tree';
   return 'family';
@@ -617,8 +694,21 @@ export function buildEditorField(
   // overwrites decor). The street mask no longer suppresses decor (it is a spriteless
   // tint; family decor coexists with a street).
   const houseOccupied = houseOccupiedCells(masks.houses);
-  const decorAt = (x: number, y: number) =>
+  // The stored decor url for a cell (suppressed under a house), before plank autotiling.
+  const rawDecorAt = (x: number, y: number) =>
     houseOccupied.has(key(x, y)) ? null : masks.decor.get(key(x, y)) ?? null;
+  // Whether a cell currently holds any plank — drives the plank far-face cap resolution.
+  const isPlankAt = (x: number, y: number) => {
+    const u = rawDecorAt(x, y);
+    return !!u && isPlankUrl(u);
+  };
+  // A cell's rendered decor: planks resolve their stored CENTER to the far-end edge cap
+  // where that face abuts a non-plank cell ({@link plankRenderUrl}); other decor is verbatim.
+  const decorAt = (x: number, y: number) => {
+    const u = rawDecorAt(x, y);
+    if (u && isPlankUrl(u)) return plankRenderUrl(u, isPlankAt, x, y);
+    return u;
+  };
 
   const tiles: EditorTile[] = [];
   for (let isoX = 0; isoX < width; isoX++) {

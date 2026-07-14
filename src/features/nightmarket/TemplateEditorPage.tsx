@@ -15,6 +15,7 @@ import HouseIcon from '@mui/icons-material/House';
 import LocalFloristIcon from '@mui/icons-material/LocalFlorist';
 import ScatterPlotIcon from '@mui/icons-material/ScatterPlot';
 import ForestIcon from '@mui/icons-material/Forest';
+import ViewWeekIcon from '@mui/icons-material/ViewWeek';
 import BackspaceIcon from '@mui/icons-material/Backspace';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
@@ -38,6 +39,11 @@ import { editorSurfaceAt, editorDecorRotation, isBlockingDecorUrl, editorDecorCa
 import {
   houseFootprintCells, houseFits, houseOccupiedCells, houseAnchorCovering, houseFootprintSpans,
 } from '../../engine/market/house';
+import {
+  PLACEHOLDER_SIZES, placeholderCoveredCells, placeholderAreaAt, placeholderAreaFits,
+  placeholderAreaOverlapsAny, placeholderAreasOverlap, placeholderAreaCells,
+  type PlaceholderArea,
+} from '../../engine/market/placeholderArea';
 import TemplateEditorViewer, { type EditorTool } from './TemplateEditorViewer';
 import {
   checkTemplateNameAvailable, suggestTemplateName, submitTemplate,
@@ -78,7 +84,7 @@ const emptyMasks = (): EditorMasks => ({
   terrain2: new Set<string>(),
   street: new Set<string>(),
   communal: new Set<string>(),
-  placeholder: new Set<string>(),
+  placeholder: [],
   condition: new Set<string>(),
   houses: new Map<string, boolean>(),
   decor: new Map<string, string>(),
@@ -88,9 +94,10 @@ const emptyMasks = (): EditorMasks => ({
  * A copied board region held by the clipboard tools (see `copyRegion` / `pasteAt`). Every
  * layer is stored as OFFSETS relative to the selection's min corner ("dx,dy"), so the region
  * can be re-stamped anywhere. Copy captures each per-cell mask + decor for the W×H rectangle,
- * plus every house whose ENTIRE 4×5 footprint fits inside the rectangle (partly-overhanging
- * houses are skipped — their cells still copy their non-house layers). Paste overwrites the
- * target region to match this exactly (subject to the placeholder/condition version gates).
+ * plus every house whose ENTIRE 4×5 footprint fits inside the rectangle AND every placeholder
+ * area whose whole footprint fits (partly-overhanging houses/areas are skipped — a house's
+ * cells still copy their non-house layers). Paste overwrites the target region to match this
+ * exactly (subject to the placeholder/condition version gates).
  */
 interface Clipboard {
   w: number;
@@ -99,7 +106,8 @@ interface Clipboard {
   terrain2: Set<string>;
   street: Set<string>;
   communal: Set<string>;
-  placeholder: Set<string>;
+  /** Fully-contained placeholder areas, re-anchored relative to the selection's min corner. */
+  placeholder: PlaceholderArea[];
   condition: Set<string>;
   decor: Map<string, string>;
   /** Fully-contained houses: relative front-corner anchor ("dx,dy") + h-flip orientation. */
@@ -120,7 +128,9 @@ const cloneMasks = (m: EditorMasks): EditorMasks => ({
   terrain2: new Set(m.terrain2),
   street: new Set(m.street),
   communal: new Set(m.communal),
-  placeholder: new Set(m.placeholder),
+  // Placeholder area records are treated as immutable, so a shallow array copy fully
+  // detaches the snapshot (drop/erase replace the array, never mutate an element).
+  placeholder: [...m.placeholder],
   condition: new Set(m.condition),
   houses: new Map(m.houses),
   decor: new Map(m.decor),
@@ -155,30 +165,24 @@ interface ToolGroup { key: string; accent: string; tools: ToolDef[]; }
 
 /**
  * The paint palette, split into color-coded groups (docs/NIGHT_MARKET_TEMPLATE_EDITOR.md):
- *   - terrain — terrain 1 / terrain 2 surface masks (green),
  *   - masks   — street + communal walkability + placeholder + condition annotation
  *               layers, all spriteless tints (violet),
+ *   - terrain — terrain 1 / terrain 2 surface masks (green); shares the top letter row with
+ *               the masks group (Q/W/E/R masks · T/Y terrain),
  *   - decor   — surface / common / tree decor + the house stamp (amber).
  * Each group's `accent` tints its panel background/border (so buttons read as grouped
  * even when idle) and colors the active-tool highlight (so a lit button still reads as
  * belonging to its group). The terrain tools are named generically ("terrain 1/2") so
  * their art can be hot-swapped later (they currently paint light/dark grass).
  *
- * The ERASER is NOT a tool here — it is a separate MODIFIER toggle (`eraseMode`, rendered
- * inline before the terrain group) layered on TOP of the selected tool: while it is on, painting removes
+ * The ERASER is NOT a tool here — it is a separate MODIFIER toggle (`eraseMode`, rendered on
+ * the bottom row) layered on TOP of the selected tool: while it is on, painting removes
  * only the selected tool's OWN layer at the cell (see `paintCell`). It is scoped to the
  * tool it was enabled on — switching tools auto-clears it (the activeTool effect) — and is
  * disabled outright for the copy/paste tools, which don't route through paintCell's erase
  * branch (see `toolSupportsEraser`).
  */
 const TOOL_GROUPS: ToolGroup[] = [
-  {
-    key: 'terrain', accent: '132,204,120',
-    tools: [
-      { tool: 'terrain1', label: 'Terrain 1', icon: <GrassIcon fontSize="small" />, hotkey: 'A' },
-      { tool: 'terrain2', label: 'Terrain 2 (renders over terrain 1)', icon: <ParkIcon fontSize="small" />, hotkey: 'S' },
-    ],
-  },
   {
     key: 'masks', accent: '168,132,255',
     tools: [
@@ -188,13 +192,27 @@ const TOOL_GROUPS: ToolGroup[] = [
       { tool: 'condition', label: 'Condition mask (per version)', icon: <RuleIcon fontSize="small" />, hotkey: 'R' },
     ],
   },
+  // Terrain sits at the END of the top letter row (after the masks Q/W/E/R), continuing the
+  // same keyboard row with T/Y. Like the masks tools, terrain paints via a two-click
+  // RECTANGLE selection (see the rectangleMode prop on the viewer), not a free drag-paint.
+  {
+    key: 'terrain', accent: '132,204,120',
+    tools: [
+      { tool: 'terrain1', label: 'Terrain 1', icon: <GrassIcon fontSize="small" />, hotkey: 'T' },
+      { tool: 'terrain2', label: 'Terrain 2 (renders over terrain 1)', icon: <ParkIcon fontSize="small" />, hotkey: 'Y' },
+    ],
+  },
+  // Decor tools: the house STAMP plus the four sprite-decor categories. Each decor category
+  // places its currently-selected variant (previewed as a ghost); SPACE cycles the variant.
+  // Placing OVERRIDES any decor/plank already on the cell (but never a placed house).
   {
     key: 'decor', accent: '255,183,77',
     tools: [
-      { tool: 'house', label: 'House (4×5 footprint · Space flips L↔R)', icon: <HouseIcon fontSize="small" />, hotkey: 'D' },
-      { tool: 'familyDecor', label: 'Surface decor (tap to cycle)', icon: <LocalFloristIcon fontSize="small" />, hotkey: 'F' },
-      { tool: 'commonDecor', label: 'Common decor (tap to cycle)', icon: <ScatterPlotIcon fontSize="small" />, hotkey: 'G' },
-      { tool: 'treeDecor', label: 'Trees (tap to cycle)', icon: <ForestIcon fontSize="small" />, hotkey: 'H' },
+      { tool: 'house', label: 'House (4×5 footprint · Space flips L↔R)', icon: <HouseIcon fontSize="small" />, hotkey: 'A' },
+      { tool: 'familyDecor', label: 'Surface decor (Space cycles variant)', icon: <LocalFloristIcon fontSize="small" />, hotkey: 'S' },
+      { tool: 'commonDecor', label: 'Common decor (Space cycles variant)', icon: <ScatterPlotIcon fontSize="small" />, hotkey: 'D' },
+      { tool: 'treeDecor', label: 'Trees (Space cycles variant)', icon: <ForestIcon fontSize="small" />, hotkey: 'F' },
+      { tool: 'plankDecor', label: 'Wood panel (Space cycles variant · autotiles edges)', icon: <ViewWeekIcon fontSize="small" />, hotkey: 'G' },
     ],
   },
 ];
@@ -202,7 +220,7 @@ const TOOL_GROUPS: ToolGroup[] = [
 // Which decor category each decor tool places/erases. Used by the per-tool eraser to
 // remove a cell's single decor sprite only when it belongs to the selected decor tool.
 const DECOR_TOOL_CATEGORY: Partial<Record<EditorTool, DecorCategory>> = {
-  familyDecor: 'family', commonDecor: 'common', treeDecor: 'tree',
+  familyDecor: 'family', commonDecor: 'common', treeDecor: 'tree', plankDecor: 'plank',
 };
 
 // Tools the ERASER modifier does NOT apply to. The eraser inverts a PAINT tool (removing
@@ -214,16 +232,16 @@ const toolSupportsEraser = (tool: EditorTool): boolean => !ERASER_UNSUPPORTED_TO
 
 // Keyboard → tool dispatch. The authoritative source is this map; the per-tool `hotkey`
 // badges above are the display mirror and must match. Keys are compared lower-case. Layout
-// mirrors the physical keyboard, one palette row per keyboard row: Q/W/E/R masks (top letter
-// row), A/S terrain + D/F/G/H decor (home row), C/V copy/paste (bottom row). NON-tool actions
+// mirrors the physical keyboard, one palette row per keyboard row: Q/W/E/R masks + T/Y terrain
+// (top letter row), A/S/D/F/G decor (home row), C/V copy/paste (bottom row). NON-tool actions
 // live on the bottom row too and are handled separately in the keydown effect (not via this
 // map): Z undo, X redo, B eraser modifier. The two version-gated tools are gated in the keydown
 // handler (mirroring their disabled tool buttons): placeholder ('e') is version-0-only,
 // condition ('r') is versions-above-0-only; paste ('v') is gated when the clipboard is empty.
 const HOTKEY_TO_TOOL: Record<string, EditorTool> = {
   q: 'street', w: 'communal', e: 'placeholder', r: 'condition',
-  a: 'terrain1', s: 'terrain2',
-  d: 'house', f: 'familyDecor', g: 'commonDecor', h: 'treeDecor',
+  t: 'terrain1', y: 'terrain2',
+  a: 'house', s: 'familyDecor', d: 'commonDecor', f: 'treeDecor', g: 'plankDecor',
   c: 'copy', v: 'paste',
 };
 
@@ -257,6 +275,16 @@ function TemplateEditorPage() {
   // Toggled by Space while the house tool is active; each placed house stores this flip
   // (masks.houses value). Only the sprite mirrors — the 4×5 footprint is unchanged.
   const [houseFlip, setHouseFlip] = useState(false);
+  // The placeholder DROP size, as an index into PLACEHOLDER_SIZES (0 = 5×5, 1 = 5×10,
+  // 2 = 10×5 rotated). Space cycles it while the placeholder tool is active; each drop
+  // stamps an area of this size. (Placeholder areas are fixed-size drops now, not a
+  // free-painted mask — so adjacent slots stay distinct — see the placeholder tool.)
+  const [placeholderSizeIdx, setPlaceholderSizeIdx] = useState(0);
+  // The selected DECOR variant, as an index into the active decor tool's rotation. Space cycles
+  // it while any decor tool is active; a click places `rotation[idx % len]` (the ghost previews
+  // it). One shared index across the decor tools — each rotation length differs, so it is always
+  // read modulo the active rotation, and it simply advances unbounded (the modulo keeps it valid).
+  const [decorVariantIdx, setDecorVariantIdx] = useState(0);
   const [showGrid, setShowGrid] = useState(true);
 
   // ── Versions ──────────────────────────────────────────────────────────────────
@@ -345,6 +373,14 @@ function TemplateEditorPage() {
   // paintCell stays identity-stable). Read when the house tool stamps a house.
   const houseFlipRef = useRef(houseFlip);
   houseFlipRef.current = houseFlip;
+  // Latest placeholder drop size for the paint callback (kept in a ref, like houseFlip, so
+  // paintCell stays identity-stable). Read when the placeholder tool drops an area.
+  const placeholderSizeRef = useRef(PLACEHOLDER_SIZES[placeholderSizeIdx]);
+  placeholderSizeRef.current = PLACEHOLDER_SIZES[placeholderSizeIdx];
+  // Latest decor variant index for the paint callback (kept in a ref so paintCell stays
+  // identity-stable). Read when a decor tool places its selected sprite.
+  const decorVariantIdxRef = useRef(decorVariantIdx);
+  decorVariantIdxRef.current = decorVariantIdx;
   // Latest masks for the copy tool, which READS the current board (paintCell mutates via a
   // functional update and needs no ref, but copyRegion needs a live snapshot to capture).
   const masksRef = useRef(masks);
@@ -415,35 +451,39 @@ function TemplateEditorPage() {
       const terrain2 = new Set(prev.terrain2);
       const street = new Set(prev.street);
       const communal = new Set(prev.communal);
-      const placeholder = new Set(prev.placeholder);
+      let placeholder = prev.placeholder; // areas are immutable; replaced (not mutated) on drop/erase
       const condition = new Set(prev.condition);
       const houses = new Map(prev.houses);
       const decor = new Map(prev.decor);
       const tool = activeToolRef.current;
+      // Which cells any placeholder area currently covers — the coverage set the condition
+      // cascades key on ("a condition may live only on a street/placeholder cell"). The
+      // street/communal/house/decor branches never touch `placeholder`, so this stays valid
+      // for them; the placeholder branch recomputes coverage after it drops/erases an area.
+      const placeholderCells = placeholderCoveredCells(placeholder);
       // Cells covered by an already-placed house. Street/decor may NOT overwrite these,
       // and house placement may not overlap them (nor a street).
       const occupied = houseOccupiedCells(houses);
 
-      // Cycle a cell through one decor tool's rotation: first tap places rotation[0],
-      // each subsequent tap advances (wrapping). A current decor not in this rotation
-      // (a different category / stale surface) → indexOf −1 → restarts at rotation[0],
-      // so switching decor tools swaps the sprite to that tool's first entry.
-      const cycleDecor = (category: DecorCategory) => {
+      // Place a decor tool's currently-selected variant on the cell. The variant is chosen
+      // with Space (decorVariantIdx) and previewed as a ghost; a click stamps it, OVERRIDING
+      // any decor/plank already there (decor freely overwrites decor). It still cannot sit on a
+      // placed house (a separate layer). For family/plank the index resolves against the cell's
+      // surface rotation; common/tree/plank rotations are surface-agnostic.
+      const placeDecor = (category: DecorCategory) => {
         if (occupied.has(k)) return; // decor cannot overwrite a placed house
         const surface = editorSurfaceAt({ terrain1, terrain2 }, col, row);
         const rotation = editorDecorRotation(category, surface);
         if (rotation.length === 0) return;
-        const current = decor.get(k);
-        const nextIdx = (current ? rotation.indexOf(current) : -1) + 1;
-        decor.set(k, rotation[nextIdx % rotation.length]);
+        decor.set(k, rotation[decorVariantIdxRef.current % rotation.length]);
         // Common decor and trees are BLOCKING objects — they overwrite BOTH walkability
         // classes (street + communal): a road/park tile can't hold a tree/prop. Surface
-        // (family) decor is flush and may coexist with them, so it is exempt. Removing
-        // the street substrate cascade-clears any condition on the cell (a condition may
-        // live only on a street/placeholder cell).
+        // (family) decor and plank wood panels are flush and may coexist with them, so they
+        // are exempt. Removing the street substrate cascade-clears any condition on the cell
+        // (a condition may live only on a street/placeholder cell).
         if (category === 'common' || category === 'tree') {
           communal.delete(k);
-          if (street.delete(k) && !placeholder.has(k)) condition.delete(k);
+          if (street.delete(k) && !placeholderCells.has(k)) condition.delete(k);
         }
       };
 
@@ -458,16 +498,26 @@ function TemplateEditorPage() {
           case 'terrain1': terrain1.delete(k); break;
           case 'terrain2': terrain2.delete(k); break;
           case 'street':
-            if (street.delete(k) && !placeholder.has(k)) condition.delete(k);
+            if (street.delete(k) && !placeholderCells.has(k)) condition.delete(k);
             break;
           case 'communal': communal.delete(k); break;
-          case 'placeholder':
+          case 'placeholder': {
             // Placeholder is shared/owned by v0 (inherited read-only above), so it is
-            // erasable ONLY on version 0 — mirrors the paint guard. Cascade-clear an
-            // orphaned condition (always empty on v0 → safety no-op).
+            // erasable ONLY on version 0 — mirrors the paint guard. A click removes the WHOLE
+            // area under the cursor (areas are dropped/erased atomically, never per-cell).
             if (versionRef.current !== 0) break;
-            if (placeholder.delete(k) && !street.has(k)) condition.delete(k);
+            const hit = placeholderAreaAt(placeholder, col, row);
+            if (!hit) break;
+            placeholder = placeholder.filter((a) => a !== hit);
+            // Cascade-clear any condition orphaned by the removed area (a condition may live
+            // only on a street/placeholder cell). Always empty on v0 → safety no-op, but kept
+            // to hold the invariant regardless of how conditions ever land on v0.
+            const stillCovered = placeholderCoveredCells(placeholder);
+            for (const c of placeholderAreaCells(hit)) {
+              if (!street.has(c) && !stillCovered.has(c)) condition.delete(c);
+            }
             break;
+          }
           case 'condition': condition.delete(k); break;
           case 'house': {
             // Erasing ANY footprint cell removes the whole house (keyed by front corner).
@@ -480,7 +530,8 @@ function TemplateEditorPage() {
           // the selected tool") — e.g. the surface-decor eraser leaves a tree untouched.
           case 'familyDecor':
           case 'commonDecor':
-          case 'treeDecor': {
+          case 'treeDecor':
+          case 'plankDecor': {
             const current = decor.get(k);
             if (current && editorDecorCategory(current) === DECOR_TOOL_CATEGORY[tool]) decor.delete(k);
             break;
@@ -520,17 +571,25 @@ function TemplateEditorPage() {
           // removes the street substrate and the cell isn't also a placeholder, the
           // condition would be orphaned — cascade-clear it too (invariant upkeep).
           communal.add(k);
-          if (street.delete(k) && !placeholder.has(k)) condition.delete(k);
+          if (street.delete(k) && !placeholderCells.has(k)) condition.delete(k);
           break;
         }
-        case 'placeholder':
-          // Placeholder areas are an OVERRIDE overlay, not a walkability class, so they
-          // may overlap any surface freely — no mutual exclusion. SHARED across versions
-          // (owned by version 0), so it is paintable ONLY on version 0; on higher
-          // versions the tool button is disabled and this guard is the backstop.
+        case 'placeholder': {
+          // Placeholder areas are FIXED-SIZE DROPS (5×5 / 5×10 / 10×5 — Space cycles the
+          // size), anchored at the hovered near corner and extending +isoX/+isoY. They are an
+          // OVERRIDE overlay, not a walkability class, so an area may overlap any surface
+          // freely — but NOT another area (each is a distinct occupant slot). SHARED across
+          // versions (owned by version 0), so paintable ONLY on version 0; on higher versions
+          // the tool button is disabled and this guard is the backstop. The drop is refused
+          // (no-op) unless the whole footprint is in-bounds and hits no existing area.
           if (versionRef.current !== 0) break;
-          placeholder.add(k);
+          const { w, h } = placeholderSizeRef.current;
+          const area: PlaceholderArea = { col, row, w, h };
+          if (!placeholderAreaFits(area, widthRef.current, heightRef.current)) break;
+          if (placeholderAreaOverlapsAny(area, placeholder)) break;
+          placeholder = [...placeholder, area];
           break;
+        }
         case 'condition':
           // The condition mask is a PER-VERSION override overlay (differs between
           // versions). It is the INVERSE of placeholder's version rule: paintable ONLY on
@@ -542,7 +601,7 @@ function TemplateEditorPage() {
           // placeholder cell (manual) or a border-street cell (auto); removing either
           // substrate cascades the condition away (see the communal + erase cases).
           if (versionRef.current === 0) break;
-          if (!placeholder.has(k)) break;
+          if (!placeholderCells.has(k)) break;
           condition.add(k);
           break;
         case 'house': {
@@ -565,13 +624,14 @@ function TemplateEditorPage() {
           for (const c of footprint) {
             decor.delete(c);
             communal.delete(c);
-            if (street.delete(c) && !placeholder.has(c)) condition.delete(c);
+            if (street.delete(c) && !placeholderCells.has(c)) condition.delete(c);
           }
           break;
         }
-        case 'familyDecor': cycleDecor('family'); break;
-        case 'commonDecor': cycleDecor('common'); break;
-        case 'treeDecor': cycleDecor('tree'); break;
+        case 'familyDecor': placeDecor('family'); break;
+        case 'commonDecor': placeDecor('common'); break;
+        case 'treeDecor': placeDecor('tree'); break;
+        case 'plankDecor': placeDecor('plank'); break;
       }
       return { terrain1, terrain2, street, communal, placeholder, condition, houses, decor };
     });
@@ -611,11 +671,20 @@ function TemplateEditorPage() {
         houses.push({ rel: `${ac - c0},${ar - r0}`, flip });
       }
     }
+    // Placeholder areas whose WHOLE footprint fits the rectangle → re-anchored to its min
+    // corner (a partly-overhanging area is skipped — an occupant slot is captured whole or
+    // not at all). Kept as {col,row,w,h} records so pasted slots stay distinct.
+    const placeholder: PlaceholderArea[] = [];
+    for (const area of m.placeholder) {
+      if (area.col >= c0 && area.col + area.w - 1 <= c1 && area.row >= r0 && area.row + area.h - 1 <= r1) {
+        placeholder.push({ col: area.col - c0, row: area.row - r0, w: area.w, h: area.h });
+      }
+    }
     setClipboard({
       w, h,
       terrain1: pick(m.terrain1), terrain2: pick(m.terrain2),
       street: pick(m.street), communal: pick(m.communal),
-      placeholder: pick(m.placeholder), condition: pick(m.condition),
+      placeholder, condition: pick(m.condition),
       decor, houses,
     });
   }, []);
@@ -641,7 +710,7 @@ function TemplateEditorPage() {
       const terrain2 = new Set(prev.terrain2);
       const street = new Set(prev.street);
       const communal = new Set(prev.communal);
-      const placeholder = new Set(prev.placeholder);
+      let placeholder = prev.placeholder; // areas replaced (not mutated) below, only on v0
       const condition = new Set(prev.condition);
       const houses = new Map(prev.houses);
       const decor = new Map(prev.decor);
@@ -668,10 +737,20 @@ function TemplateEditorPage() {
           setMembership(terrain2, key, clip.terrain2.has(off));
           setMembership(street, key, clip.street.has(off));
           setMembership(communal, key, clip.communal.has(off));
-          if (writePlaceholder) setMembership(placeholder, key, clip.placeholder.has(off));
           if (writeCondition) setMembership(condition, key, clip.condition.has(off));
           const url = clip.decor.get(off);
           if (url) decor.set(key, url); else decor.delete(key);
+        }
+      }
+      // Placeholder areas paste WHOLE (not per-cell, to keep each slot distinct), and only on
+      // v0. Drop any existing area that intersects the target region, then stamp the captured
+      // areas at their translated anchors (in-bounds by construction — the paste footprint fits
+      // and each captured area was fully inside the clip).
+      if (writePlaceholder) {
+        const region: PlaceholderArea = { col, row, w, h };
+        placeholder = placeholder.filter((a) => !placeholderAreasOverlap(a, region));
+        for (const a of clip.placeholder) {
+          placeholder = [...placeholder, { col: col + a.col, row: row + a.row, w: a.w, h: a.h }];
         }
       }
       // 3. Place the captured houses at their translated anchors (in-bounds by construction),
@@ -734,9 +813,17 @@ function TemplateEditorPage() {
       // for tools that don't support erasing (copy/paste) — mirrors the disabled toggle button.
       if (key === 'b') { if (toolSupportsEraser(activeTool)) setEraseMode(v => !v); e.preventDefault(); return; }
 
-      // Space flips the house-placement orientation (mirror), but only while the house tool
-      // is active; elsewhere it is swallowed so it never scrolls the page or re-taps a button.
-      if (key === ' ') { if (activeTool === 'house') setHouseFlip(f => !f); e.preventDefault(); return; }
+      // Space is a per-tool modifier: it flips the house-placement mirror (house tool),
+      // cycles the placeholder DROP size 5×5 → 5×10 → 10×5 → 5×5 (placeholder tool), OR advances
+      // the selected decor variant (any decor tool — the ghost previews it). Elsewhere it is
+      // swallowed so it never scrolls the page or re-taps a focused button.
+      if (key === ' ') {
+        if (activeTool === 'house') setHouseFlip(f => !f);
+        else if (activeTool === 'placeholder') setPlaceholderSizeIdx(i => (i + 1) % PLACEHOLDER_SIZES.length);
+        else if (DECOR_TOOL_CATEGORY[activeTool]) setDecorVariantIdx(i => i + 1);
+        e.preventDefault();
+        return;
+      }
 
       const tool = HOTKEY_TO_TOOL[key];
       if (!tool) return;
@@ -759,7 +846,7 @@ function TemplateEditorPage() {
     pushHistory(); // Clear is undoable
     setMasks(prev => (version === 0
       ? emptyMasks()
-      : { ...emptyMasks(), placeholder: new Set(prev.placeholder) }));
+      : { ...emptyMasks(), placeholder: [...prev.placeholder] }));
     setDirty(true);
   };
 
@@ -962,10 +1049,16 @@ function TemplateEditorPage() {
         return (
           <Tooltip
             key={tool}
-            // The house button also reports its current mirror orientation (Space toggles it).
+            // The house button reports its current mirror orientation, and the placeholder
+            // button its current DROP size — both cycled by Space while the tool is active.
             title={disabled
               ? disabledReason
-              : `${label} (${hotkey})${tool === 'house' ? (houseFlip ? ' · mirrored' : ' · default facing') : ''}`}
+              : `${label} (${hotkey})${
+                  tool === 'house' ? (houseFlip ? ' · mirrored' : ' · default facing')
+                    : tool === 'placeholder'
+                      ? ` · ${PLACEHOLDER_SIZES[placeholderSizeIdx].w}×${PLACEHOLDER_SIZES[placeholderSizeIdx].h} (Space to resize)`
+                      : ''
+                }`}
             placement="top"
           >
             <span>
@@ -1351,15 +1444,16 @@ function TemplateEditorPage() {
             </Box>
           </Box>
 
-          {/* Row 2 — mask paint tools (Q/W/E/R), directly below the mask-view toggles that reveal them. */}
-          {renderToolGroup(masksGroup)}
-
-          {/* Row 3 (home row) — terrain (A/S) with the decor tools (D/F/G/H · house stamp)
-              continuing the same row to their right. */}
+          {/* Row 2 (top letter row) — mask paint tools (Q/W/E/R), directly below the mask-view
+              toggles that reveal them, with the terrain tools (T/Y) continuing the same row to
+              their right. Both groups paint via the two-click rectangle selection. */}
           <Box className="template-editor-tool-row" sx={{ display: 'flex', gap: 1 }}>
+            {renderToolGroup(masksGroup)}
             {renderToolGroup(terrainGroup)}
-            {renderToolGroup(decorGroup)}
           </Box>
+
+          {/* Row 3 (home row) — decor tools (A/S/D/F · house stamp). */}
+          {renderToolGroup(decorGroup)}
 
           {/* Row 4 (bottom keyboard row Z X C V B) — history (Undo Z · Redo X) at the start,
               then the clipboard tools (Copy C · Paste V), then the ERASER modifier (B). The
@@ -1416,9 +1510,23 @@ function TemplateEditorPage() {
             activeTool={activeTool}
             // Drives the house placement ghost's mirror so the flip is visible before dropping.
             houseFlip={houseFlip}
-            // The annotation-mask tools AND the copy tool select by press-drag-release
-            // rectangle; the parent decides what the finished rectangle means.
-            rectangleMode={activeTool === 'street' || activeTool === 'communal' || activeTool === 'placeholder' || activeTool === 'copy'}
+            // Drives the placeholder DROP ghost's size (5×5 / 5×10 / 10×5 — Space cycles it).
+            placeholderSize={PLACEHOLDER_SIZES[placeholderSizeIdx]}
+            // Drive the decor GHOST: the active decor tool's category (null for non-decor tools)
+            // + the selected variant index (Space cycles it). The viewer resolves the sprite for
+            // the hovered cell's surface and previews it before the click.
+            decorCategory={DECOR_TOOL_CATEGORY[activeTool] ?? null}
+            decorVariantIdx={decorVariantIdx}
+            // The street/communal walkability tools, the terrain tools, the wood-panel (plank)
+            // decor tool, AND the copy tool select by press-drag-release rectangle; the parent
+            // decides what the finished rectangle means (fill the mask, fill terrain, tile planks,
+            // or capture the region for copy). The OTHER decor tools drag-paint instead, and
+            // placeholder is a fixed-size footprint DROP (like the house tool), not a rectangle.
+            rectangleMode={
+              activeTool === 'street' || activeTool === 'communal' ||
+              activeTool === 'terrain1' || activeTool === 'terrain2' ||
+              activeTool === 'plankDecor' || activeTool === 'copy'
+            }
             onRectComplete={handleRectComplete}
             // Paste stamps the clipboard as a footprint (like the house tool).
             pasteMode={activeTool === 'paste' && !!clipboard}

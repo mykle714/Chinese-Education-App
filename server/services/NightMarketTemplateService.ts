@@ -52,11 +52,13 @@ export interface TemplateDefinition {
   /** Communal-walkable cells (parks/plazas), each "col,row" — disjoint from street. */
   communal: string[];
   /**
-   * Placeholder-area cells (occupant slots), each "col,row" — may overlap any layer.
-   * SHARED across all versions of a name: authoritative only on version 0; empty on
-   * other versions as stored, populated from version 0 on read.
+   * Placeholder AREAS (occupant slots) — fixed-size dropped rectangles ({col,row,w,h}, near
+   * corner + span). Each is a distinct slot (adjacent areas do NOT merge) and may overlap any
+   * OTHER layer but not another area. Sizes are restricted to 5×5 / 5×10 / 10×5. SHARED across
+   * all versions of a name: authoritative only on version 0; empty on other versions as stored,
+   * populated from version 0 on read. (Legacy rows stored a flat string[] cell mask.)
    */
-  placeholder: string[];
+  placeholder: PlaceholderArea[];
   /**
    * Condition-mask cells (per-version conditional cell-class annotation), each
    * "col,row" — an override overlay like placeholder, may overlap any layer. Unlike
@@ -85,6 +87,35 @@ export interface TemplateDefinition {
  */
 export const HOUSE_FOOTPRINT_X = 4;
 export const HOUSE_FOOTPRINT_Y = 5;
+
+/**
+ * A dropped placeholder area: near-corner anchor (col,row) + span (w along isoX, h along
+ * isoY). Mirrors src/engine/market/placeholderArea.ts (kept in sync by hand — the server
+ * can't import the client module). Storing each drop as its own record (not a flat cell mask)
+ * is what keeps two *adjacent* occupant slots distinct.
+ */
+export interface PlaceholderArea {
+  col: number;
+  row: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * The ONLY placeholder drop sizes (mirrors PLACEHOLDER_SIZES on the client): 5×5, 5×10, and
+ * the rotated 10×5. The save validator rejects any off-menu size so a definition can never
+ * carry one.
+ */
+const PLACEHOLDER_SIZES: ReadonlyArray<{ w: number; h: number }> = [
+  { w: 5, h: 5 },
+  { w: 5, h: 10 },
+  { w: 10, h: 5 },
+];
+
+/** Whether two placeholder areas share any cell (axis-aligned rectangle overlap). */
+function placeholderAreasOverlap(a: PlaceholderArea, b: PlaceholderArea): boolean {
+  return a.col < b.col + b.w && b.col < a.col + a.w && a.row < b.row + b.h && b.row < a.row + a.h;
+}
 
 /**
  * Whether a decor STEM is a BLOCKING object — `common` decor (`decor_N`) or a standing
@@ -301,7 +332,7 @@ export class NightMarketTemplateService {
 
     // All versions of this name (for the dropdown) + version 0's placeholder AND
     // description (both shared, single-sourced on v0) in one pass.
-    const meta = await dbManager.executeQuery<{ version: number; placeholder: string[] | null; description: string | null }>(
+    const meta = await dbManager.executeQuery<{ version: number; placeholder: PlaceholderArea[] | null; description: string | null }>(
       async (client) =>
         client.query(
           `SELECT version, definition->'placeholder' AS placeholder, description
@@ -372,10 +403,10 @@ export class NightMarketTemplateService {
 
     // Non-base versions inherit the base's placeholder + size + description; they may
     // not diverge. Description (like placeholder) is single-sourced on version 0.
-    let sharedPlaceholder: string[] | null = null;
+    let sharedPlaceholder: PlaceholderArea[] | null = null;
     let sharedDescription: string | null = null;
     if (version > 0) {
-      const base = await dbManager.executeQuery<{ width: number; height: number; placeholder: string[] | null; description: string | null }>(
+      const base = await dbManager.executeQuery<{ width: number; height: number; placeholder: PlaceholderArea[] | null; description: string | null }>(
         async (client) =>
           client.query(
             `SELECT width, height, definition->'placeholder' AS placeholder, description
@@ -467,9 +498,12 @@ export class NightMarketTemplateService {
     const terrain2 = clean(d.terrain2, 'terrain2');
     const street = clean(d.street, 'street');
     const communal = clean(d.communal, 'communal');
-    // Placeholder + condition are override overlays, not walkability classes, so they
-    // carry no mutual-exclusion constraint — they may overlap any other layer.
-    const placeholder = clean(d.placeholder, 'placeholder');
+    // Placeholder AREAS: fixed-size dropped rectangles ({col,row,w,h}), an override overlay so
+    // they may overlap any OTHER layer — but each is a distinct occupant slot, so areas may not
+    // overlap EACH OTHER, their whole footprint must be in-bounds, and their size must be one of
+    // the allowed drops (5×5 / 5×10 / 10×5). Mirrors the editor's drop guards.
+    const placeholder = this.cleanPlaceholderAreas(d.placeholder, width, height);
+    // Condition is a per-cell override overlay (no mutual-exclusion), like the old placeholder.
     const condition = clean(d.condition, 'condition');
     // Street and communal are mutually-exclusive walkability classes (exactly one
     // per cell — see docs/NIGHT_MARKET_TEMPLATES.md); the editor enforces this, and
@@ -548,6 +582,41 @@ export class NightMarketTemplateService {
       if (seen.has(cell)) continue; // de-dupe by anchor
       seen.add(cell);
       out.push({ cell, flip });
+    }
+    return out;
+  }
+
+  /**
+   * Validate + normalize the placeholder AREAS payload to `{col,row,w,h}[]`. Each must be a
+   * fixed-size drop (5×5 / 5×10 / 10×5 — {@link PLACEHOLDER_SIZES}), have its whole footprint
+   * in-bounds, and NOT overlap another area (each is a distinct occupant slot). Mirrors the
+   * editor's drop guards so a malformed/overlapping payload can't be persisted. A legacy flat
+   * `string[]` cell mask has no area shape to recover, so it is rejected (the author must
+   * re-drop after loading — matching the client's back-compat stance).
+   */
+  private cleanPlaceholderAreas(raw: unknown, width: number, height: number): PlaceholderArea[] {
+    if (raw == null) return [];
+    if (!Array.isArray(raw)) throw new ValidationError('Template placeholder must be an array of areas');
+    const out: PlaceholderArea[] = [];
+    for (const a of raw) {
+      if (!a || typeof a !== 'object') {
+        throw new ValidationError(`Template placeholder area is malformed: ${JSON.stringify(a)}`);
+      }
+      const { col, row, w, h } = a as Record<string, unknown>;
+      if (![col, row, w, h].every((n) => typeof n === 'number' && Number.isInteger(n))) {
+        throw new ValidationError(`Template placeholder area needs integer col,row,w,h: ${JSON.stringify(a)}`);
+      }
+      const area: PlaceholderArea = { col: col as number, row: row as number, w: w as number, h: h as number };
+      if (!PLACEHOLDER_SIZES.some((s) => s.w === area.w && s.h === area.h)) {
+        throw new ValidationError(`Template placeholder area has an unsupported size ${area.w}×${area.h} (allowed: 5×5, 5×10, 10×5)`);
+      }
+      if (area.col < 0 || area.row < 0 || area.col + area.w > width || area.row + area.h > height) {
+        throw new ValidationError(`Placeholder area at (${area.col},${area.row}) size ${area.w}×${area.h} extends outside the ${width}×${height} board`);
+      }
+      if (out.some((existing) => placeholderAreasOverlap(existing, area))) {
+        throw new ValidationError(`Placeholder areas overlap at (${area.col},${area.row})`);
+      }
+      out.push(area);
     }
     return out;
   }

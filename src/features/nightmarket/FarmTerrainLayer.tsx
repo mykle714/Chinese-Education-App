@@ -7,6 +7,7 @@ import {
   resolveTileSurfaceUrls,
   resolveTileDarkSurfaceUrls,
   resolveTileDecorUrl,
+  isDirtDecorUrl,
   createDecorRng,
   FIELD_WIDTH,
   FIELD_HEIGHT,
@@ -102,9 +103,12 @@ function buildDraws(): { draws: TileDraw[]; urls: Set<string> } {
       // Just above the light surface (dark over light), below decor at z + 0.1.
       darkSurfaceZ: z + 0.05,
       decorUrl,
-      // Just above this tile's surface sprites, still within the background slot
-      // (< entity's +0.25), so decor reads as a floor detail below any entity.
-      decorZ: z + 0.1,
+      // Dirt-family decor sits BELOW the grass surfaces (above the dirt slab at z − 0.5, below
+      // the light cap at z) so a bordering grass overlay spilling onto the tile reads as grass
+      // growing over the ground detail. Every other decor family sits just above this tile's
+      // surface sprites, still within the background slot (< entity's +0.25), so decor reads as
+      // a floor detail below any entity.
+      decorZ: decorUrl && isDirtDecorUrl(decorUrl) ? z - 0.1 : z + 0.1,
     });
   }
   return { draws, urls };

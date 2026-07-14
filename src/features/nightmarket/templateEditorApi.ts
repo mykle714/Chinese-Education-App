@@ -2,6 +2,7 @@ import { API_BASE_URL } from '../../constants';
 import { authHeader } from '../../utils/authHeader';
 import type { EditorMasks } from '../../engine/market/farmTerrain';
 import { freeFarmTileset } from '../../engine/market/freeFarmTileset';
+import { isValidPlaceholderSize, type PlaceholderArea } from '../../engine/market/placeholderArea';
 
 /**
  * Client API for the Night Market template editor
@@ -18,8 +19,13 @@ export interface TemplateDefinitionPayload {
   street: string[];
   /** Communal-walkable cells (parks/plazas) — a walkability class, no sprite. */
   communal: string[];
-  /** Placeholder-area cells (occupant slots) — an override overlay, no sprite. Shared across versions (owned by version 0). */
-  placeholder: string[];
+  /**
+   * Placeholder AREAS (occupant slots) — fixed-size dropped rectangles ({col,row,w,h}), an
+   * override overlay with no sprite. Shared across versions (owned by version 0). Legacy rows
+   * stored a flat `string[]` cell mask; those load as NO areas (must be re-dropped — see
+   * definitionToMasks).
+   */
+  placeholder: PlaceholderArea[];
   /** Condition-mask cells — a per-version override overlay, no sprite. */
   condition: string[];
   /**
@@ -74,7 +80,8 @@ export function masksToDefinition(masks: EditorMasks): TemplateDefinitionPayload
     terrain2: [...masks.terrain2],
     street: [...masks.street],
     communal: [...masks.communal],
-    placeholder: [...masks.placeholder],
+    // Placeholder areas → sorted {col,row,w,h} records (sorted by anchor for stable diffs).
+    placeholder: [...masks.placeholder].sort((a, b) => a.col - b.col || a.row - b.row),
     condition: [...masks.condition],
     // Houses → sorted {cell, flip} objects (sorted for stable definition diffs).
     houses: [...masks.houses]
@@ -102,7 +109,14 @@ export function definitionToMasks(def: TemplateDefinitionPayload): EditorMasks {
     terrain2: new Set(def.terrain2 ?? []),
     street: new Set(def.street ?? []),
     communal: new Set(def.communal ?? []),
-    placeholder: new Set(def.placeholder ?? []),
+    // Placeholder areas. Back-compat: a legacy flat cell mask (string[]) has no area shape to
+    // recover, so it is DROPPED (the author re-drops) — same "must re-save" stance as terrain.
+    placeholder: (Array.isArray(def.placeholder) ? def.placeholder : []).filter(
+      (a): a is PlaceholderArea =>
+        !!a && typeof a === 'object' && typeof (a as PlaceholderArea).col === 'number' &&
+        typeof (a as PlaceholderArea).row === 'number' &&
+        isValidPlaceholderSize((a as PlaceholderArea).w, (a as PlaceholderArea).h),
+    ),
     condition: new Set(def.condition ?? []),
     // Houses → Map(cell → flip). Back-compat: a legacy bare "col,row" string reads as flip:false
     // (older definitions stored houses as string[]), hence the widened element type here.

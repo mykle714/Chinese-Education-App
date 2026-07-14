@@ -71,8 +71,12 @@ inside* the light one, so dark grass always sits over light grass (never over ba
   - **dark surface**, stacked just above the light layer at `z = layerZ + 0.05` (dark over
     light) — dark tile → a `darkGrass_center` cap; light/dirt tile bordering the dark patch →
     the stacked dark grass-boundary overlays (`resolveTileDarkSurfaceUrls`)
-  - an optional **scatter decor** sprite at `screenY`, `z = layerZ + 0.1` (still in the
-    background slot, below any entity), chosen by `resolveTileDecorUrl` — see *Decor scatter* below
+  - an optional **scatter decor** sprite at `screenY`, chosen by `resolveTileDecorUrl` — see
+    *Decor scatter* below. Its z depends on family: **dirt-family decor** (`dirtDecor_*`,
+    `isDirtDecorUrl`) sits BELOW the grass surfaces at `z = layerZ − 0.1` (above the dirt slab,
+    below the light cap) so a grass-boundary overlay spilling onto the tile reads as grass
+    growing over the ground detail; every other family sits at `z = layerZ + 0.1` (still in the
+    background slot, below any entity)
 
 **Elevation offset:** the pack's grass surface sits in the lower half of its 32×32 cell
 (rows y[16..31]) while the tallDirt top face sits in the upper half (rows y[0..15]) — the

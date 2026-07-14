@@ -4,10 +4,16 @@ import { Container, Sprite, Graphics, Text, Assets, Texture } from 'pixi.js';
 import type { FederatedPointerEvent } from 'pixi.js';
 import { Box } from '@mui/material';
 import { isoToScreen, TILE_WIDTH, TILE_HEIGHT } from '../../engine/market/isometric';
-import { buildEditorField, type EditorMasks } from '../../engine/market/farmTerrain';
+import {
+  buildEditorField, editorSurfaceAt, editorDecorRotation,
+  type EditorMasks, type DecorCategory,
+} from '../../engine/market/farmTerrain';
 import {
   houseFootprintCells, houseFits, houseOccupiedCells, houseFootprintSpans, HOUSE_ANCHOR,
 } from '../../engine/market/house';
+import {
+  placeholderAreaFits, placeholderAreaOverlapsAny, type PlaceholderArea,
+} from '../../engine/market/placeholderArea';
 // The house sprite for the placement ghost — imported directly like EditorTerrainLayer
 // (House.png lives in the pack's excluded Originals/ bucket).
 import houseUrl from '../../assets/free-assets/free-farm-assets/Environment/Originals/House.png';
@@ -41,6 +47,7 @@ export type EditorTool =
   | 'familyDecor'
   | 'commonDecor'
   | 'treeDecor'
+  | 'plankDecor'
   | 'copy'
   | 'paste';
 
@@ -77,9 +84,28 @@ export interface TemplateEditorViewerProps {
    */
   houseFlip?: boolean;
   /**
+   * The current placeholder DROP size in cells (Space cycles it on the parent — 5×5 / 5×10 /
+   * 10×5). Drives the placeholder tool's footprint GHOST so the author sees the area before
+   * dropping. (The placeholder tool is a fixed-size DROP, like the house tool, not a rectangle.)
+   */
+  placeholderSize?: { w: number; h: number };
+  /**
+   * The active DECOR tool's category (`family` / `common` / `tree` / `plank`), or null when
+   * no decor tool is active. Drives the decor GHOST — a translucent preview of the sprite the
+   * next click will place — so the author sees the selected variant before committing.
+   */
+  decorCategory?: DecorCategory | null;
+  /**
+   * The current decor VARIANT index (Space cycles it on the parent). Resolved against the
+   * active category's rotation for the hovered cell's surface (`family` is surface-dependent)
+   * via a modulo, so an out-of-range index simply wraps.
+   */
+  decorVariantIdx?: number;
+  /**
    * Whether the active tool uses a two-click RECTANGLE selection instead of the default
    * free drag-paint. The parent turns this on for the annotation-mask tools (street /
-   * communal / placeholder) AND the clipboard COPY tool: a press-drag-release selection —
+   * communal / placeholder), the terrain tools (terrain 1 / terrain 2), AND the clipboard
+   * COPY tool: a press-drag-release selection —
    * pointer-down anchors one corner, the pointer release reports the finished rectangle via
    * {@link onRectComplete} (the parent then paints each cell, or captures the region for
    * copy), and the in-progress selection rubber-bands live under the cursor while dragging.
@@ -243,6 +269,46 @@ function HousePreviewOverlay({
   return <pixiGraphics draw={draw} zIndex={HOVER_Z} />;
 }
 
+// ─── Placeholder drop preview ────────────────────────────────────────────────────
+// While the placeholder tool is active, the cursor becomes the drop footprint (the current
+// 5×5 / 5×10 / 10×5 size, anchored at the hovered near corner, extending +isoX/+isoY) tinted
+// by whether an area can drop there: GREEN if the whole footprint is in-bounds AND overlaps no
+// existing area, RED otherwise (the drop is refused). Mirrors the house placement preview.
+const PLACEHOLDER_PREVIEW_VALID_COLOR = 0x33ff66;
+const PLACEHOLDER_PREVIEW_INVALID_COLOR = 0xff4d4d;
+
+function PlaceholderPreviewOverlay({
+  cell, size, width, height, areas,
+}: {
+  cell: Cell | null;
+  size: { w: number; h: number };
+  width: number;
+  height: number;
+  /** Already-placed areas — a drop is refused where its footprint overlaps any of them. */
+  areas: readonly PlaceholderArea[];
+}) {
+  const draw = useCallback((g: Graphics) => {
+    g.clear();
+    if (!cell) return;
+    const area: PlaceholderArea = { col: cell.col, row: cell.row, w: size.w, h: size.h };
+    const valid = placeholderAreaFits(area, width, height) && !placeholderAreaOverlapsAny(area, areas);
+    const color = valid ? PLACEHOLDER_PREVIEW_VALID_COLOR : PLACEHOLDER_PREVIEW_INVALID_COLOR;
+    // Trace each footprint cell that is on the board (an off-board overhang isn't drawn; the
+    // red tint already flags it refused).
+    for (let dx = 0; dx < size.w; dx++) {
+      for (let dy = 0; dy < size.h; dy++) {
+        const col = cell.col + dx;
+        const row = cell.row + dy;
+        if (col < 0 || col >= width || row < 0 || row >= height) continue;
+        traceCellDiamond(g, col, row);
+      }
+    }
+    g.fill({ color, alpha: 0.35 });
+    g.stroke({ color, width: 1, alpha: 0.9 });
+  }, [cell, size, width, height, areas]);
+  return <pixiGraphics draw={draw} zIndex={HOVER_Z} />;
+}
+
 // ─── House placement ghost sprite ────────────────────────────────────────────────
 // A translucent House.png preview drawn ON TOP of the footprint tint while the house tool
 // hovers, so the author sees the actual sprite — and, crucially, its MIRROR orientation —
@@ -274,6 +340,61 @@ function HouseGhostOverlay({ cell, flip }: { cell: Cell | null; flip: boolean })
       scale={{ x: flip ? -1 : 1, y: 1 }}
       alpha={HOUSE_GHOST_ALPHA}
       zIndex={HOUSE_GHOST_Z}
+      eventMode="none"
+    />
+  );
+}
+
+// ─── Decor placement ghost sprite ────────────────────────────────────────────────
+// While a decor tool is active, the cursor shows a translucent preview of the sprite the
+// next click will place — the currently-selected variant (Space cycles it) resolved for the
+// hovered cell's surface (family decor is surface-dependent). Seated like a real decor sprite
+// (anchor {0.5,1} at the cell foot, matching EditorTerrainLayer) so the ghost lands where the
+// sprite will. Planks preview their flat CENTER tile; the far-end cap is derived only at
+// render (see plankRenderUrl), so the ghost intentionally shows the mid-run tile.
+const DECOR_GHOST_Z = HOVER_Z + 1;
+const DECOR_GHOST_ALPHA = 0.55;
+
+function DecorGhostOverlay({
+  cell, masks, category, variantIdx,
+}: {
+  cell: Cell | null;
+  masks: EditorMasks;
+  category: DecorCategory;
+  variantIdx: number;
+}) {
+  // Resolve the selected variant to a concrete sprite url for the hovered cell's surface.
+  const url = useMemo(() => {
+    if (!cell) return null;
+    const surface = editorSurfaceAt(masks, cell.col, cell.row);
+    const rotation = editorDecorRotation(category, surface);
+    if (rotation.length === 0) return null;
+    return rotation[variantIdx % rotation.length];
+  }, [cell, masks, category, variantIdx]);
+
+  const [texture, setTexture] = useState<Texture | null>(null);
+  // Load the ghost sprite whenever the resolved url changes (Assets caches, so re-hovering a
+  // seen sprite is a no-op). Cleared to null between loads so no stale texture flashes.
+  useEffect(() => {
+    if (!url) { setTexture(null); return; }
+    let cancelled = false;
+    Assets.load<Texture>(url).then((tex) => {
+      tex.source.scaleMode = 'nearest';
+      if (!cancelled) setTexture(tex);
+    });
+    return () => { cancelled = true; };
+  }, [url]);
+
+  if (!cell || !texture) return null;
+  const { screenX, screenY } = isoToScreen(cell.col, cell.row);
+  return (
+    <pixiSprite
+      texture={texture}
+      x={screenX}
+      y={screenY}
+      anchor={{ x: 0.5, y: 1 }}
+      alpha={DECOR_GHOST_ALPHA}
+      zIndex={DECOR_GHOST_Z}
       eventMode="none"
     />
   );
@@ -311,17 +432,69 @@ function MaskTintOverlay({ cells, color }: { cells: Set<string>; color: number }
   return <pixiGraphics draw={draw} zIndex={MASK_TINT_Z} />;
 }
 
+// ─── Placeholder-area highlight ──────────────────────────────────────────────────
+// Placeholder areas are fixed-size DROPPED rectangles (occupant slots), not a per-cell mask,
+// so each is drawn as its filled cell diamonds PLUS a bright outline around the whole block.
+// The per-area border is what makes two ADJACENT slots read as distinct (a merged cyan tint
+// could not tell them apart). Same z as the other mask tints. The block outline connects the
+// four extreme cell vertices of the axis-aligned area (apex = far cell's top vertex, etc.),
+// matching the 2:1 iso projection.
+function PlaceholderAreaOverlay({ areas }: { areas: readonly PlaceholderArea[] }) {
+  const draw = useCallback((g: Graphics) => {
+    g.clear();
+    // Fill every covered cell diamond (translucent), so the whole slot reads as filled.
+    for (const area of areas) {
+      for (let dx = 0; dx < area.w; dx++) {
+        for (let dy = 0; dy < area.h; dy++) traceCellDiamond(g, area.col + dx, area.row + dy);
+      }
+    }
+    g.fill({ color: PLACEHOLDER_OVERLAY_COLOR, alpha: MASK_TINT_ALPHA });
+    // Then stroke each area's block outline so adjacent areas are visibly separated.
+    for (const area of areas) {
+      const vertex = (c: number, r: number) => {
+        const { screenX, screenY } = isoToScreen(c, r);
+        return { x: screenX, y: screenY - TILE_HEIGHT / 2 }; // diamond centre
+      };
+      const c0 = area.col, c1 = area.col + area.w - 1;
+      const r0 = area.row, r1 = area.row + area.h - 1;
+      const apex = vertex(c1, r1); // far cell — top of the block on screen
+      const right = vertex(c1, r0);
+      const bottom = vertex(c0, r0); // near cell — bottom of the block
+      const left = vertex(c0, r1);
+      g.moveTo(apex.x, apex.y - TILE_HEIGHT / 2); // far cell's TOP vertex
+      g.lineTo(right.x + TILE_WIDTH / 2, right.y); // its RIGHT vertex
+      g.lineTo(bottom.x, bottom.y + TILE_HEIGHT / 2); // near cell's BOTTOM vertex
+      g.lineTo(left.x - TILE_WIDTH / 2, left.y); // its LEFT vertex
+      g.closePath();
+    }
+    g.stroke({ color: PLACEHOLDER_OVERLAY_COLOR, width: 1.5, alpha: 0.95 });
+  }, [areas]);
+  return <pixiGraphics draw={draw} zIndex={MASK_TINT_Z} />;
+}
+
 // ─── Rectangle selection preview ─────────────────────────────────────────────────
-// The two-click rectangle tool (street / communal / placeholder). Once the first corner
-// is anchored, this tints every cell of the anchor→cursor rectangle so the author sees
-// exactly where the mask will land before committing with the second click. Painted in the
-// target mask's own colour (red under the eraser modifier), sitting at the hover z so it
+// The two-click rectangle tools (street / communal / placeholder / terrain 1 / terrain 2 /
+// copy). Once the first corner is anchored, this tints every cell of the anchor→cursor
+// rectangle so the author sees exactly where the fill will land before committing with the
+// second click. Painted in the target layer's own colour (red under the eraser modifier),
+// sitting at the hover z so it
 // reads over the mask tints and grid, mirroring the single-cell HoverOverlay it replaces.
 const COPY_SELECT_COLOR = 0xf48fb1; // pink — the clipboard group's accent
+// Terrain has no persistent tint overlay (it paints real grass sprites), so its rectangle
+// preview uses the terrain group's green accent — light for terrain 1, darker for terrain 2.
+const TERRAIN1_SELECT_COLOR = 0x84cc78;
+const TERRAIN2_SELECT_COLOR = 0x4a9e3f;
+// The wood-panel (plank) decor tool tiles by rectangle (unlike the other decor tools, which
+// drag-paint), so it needs a selection tint: a warm wood brown, distinct from the street tan.
+const PLANK_SELECT_COLOR = 0xb5651d;
 const RECT_TOOL_COLOR: Partial<Record<EditorTool, number>> = {
   street: STREET_OVERLAY_COLOR,
   communal: COMMUNAL_OVERLAY_COLOR,
-  placeholder: PLACEHOLDER_OVERLAY_COLOR,
+  // Placeholder is NOT a rectangle tool (it is a fixed-size footprint DROP), so it has no
+  // rectangle-preview colour — see PlaceholderAreaOverlay / PlaceholderPreviewOverlay.
+  terrain1: TERRAIN1_SELECT_COLOR,
+  terrain2: TERRAIN2_SELECT_COLOR,
+  plankDecor: PLANK_SELECT_COLOR,
   copy: COPY_SELECT_COLOR,
 };
 
@@ -416,6 +589,12 @@ interface SceneProps {
   activeTool?: EditorTool;
   /** Current house-placement mirror orientation — drives the placement ghost's flip. */
   houseFlip?: boolean;
+  /** Current placeholder drop size — drives the placeholder tool's footprint ghost. */
+  placeholderSize?: { w: number; h: number };
+  /** Active decor tool's category (null when not a decor tool) — drives the decor ghost. */
+  decorCategory?: DecorCategory | null;
+  /** Current decor variant index (Space cycles it) — resolved per the hovered surface. */
+  decorVariantIdx?: number;
   rectangleMode?: boolean;
   onRectComplete?: (a: { col: number; row: number }, b: { col: number; row: number }) => void;
   pasteMode?: boolean;
@@ -429,7 +608,7 @@ interface SceneProps {
   onPanChange: (pan: { x: number; y: number }) => void;
 }
 
-function EditorScene({ width, height, masks, showGrid, showStreet, showCommunal, showPlaceholder, showCondition, activeTool, houseFlip, rectangleMode, onRectComplete, pasteMode, pasteFootprint, onPasteAt, eraseMode, onPaintCell, onEditBegin, pan, zoom, onPanChange }: SceneProps) {
+function EditorScene({ width, height, masks, showGrid, showStreet, showCommunal, showPlaceholder, showCondition, activeTool, houseFlip, placeholderSize, decorCategory, decorVariantIdx, rectangleMode, onRectComplete, pasteMode, pasteFootprint, onPasteAt, eraseMode, onPaintCell, onEditBegin, pan, zoom, onPanChange }: SceneProps) {
   const { app, isInitialised } = useApplication();
   const [hover, setHover] = useState<Cell | null>(null);
   // Latest hovered cell for the stable pointer handlers — lets the rectangle-drag release
@@ -595,7 +774,14 @@ function EditorScene({ width, height, masks, showGrid, showStreet, showCommunal,
   // painting. While erasing, drop back to the single-cell hover (you erase one house per
   // cell), which the red tint marks as the eraser modifier being on.
   const houseTool = activeTool === 'house' && !eraseMode;
+  // The placeholder drop footprint is likewise a PLACEMENT aid — shown only while dropping
+  // (not erasing, where you remove one whole area per click via the single-cell hover).
+  const placeholderTool = activeTool === 'placeholder' && !eraseMode && !!placeholderSize;
   const pasteTool = activeTool === 'paste' && !!pasteFootprint;
+  // A decor tool shows a ghost of the sprite the next click will place (over the normal
+  // single-cell hover). Suppressed while erasing — there you remove the cell's existing
+  // decor, so previewing a to-be-placed sprite would mislead (the red hover marks erase).
+  const decorTool = !!decorCategory && !eraseMode;
   // Colour of the rectangle-selection preview: the target mask's own tint (white fallback).
   const rectColor = (activeTool && RECT_TOOL_COLOR[activeTool]) ?? 0xffffff;
   // Copy just reads the region — the eraser modifier is a no-op for it, so don't tint its
@@ -607,13 +793,14 @@ function EditorScene({ width, height, masks, showGrid, showStreet, showCommunal,
       <EditorTerrainLayer tiles={tiles} houses={[...masks.houses].map(([cell, flip]) => ({ cell, flip }))} />
       {showStreet && <MaskTintOverlay cells={masks.street} color={STREET_OVERLAY_COLOR} />}
       {showCommunal && <MaskTintOverlay cells={masks.communal} color={COMMUNAL_OVERLAY_COLOR} />}
-      {showPlaceholder && <MaskTintOverlay cells={masks.placeholder} color={PLACEHOLDER_OVERLAY_COLOR} />}
+      {showPlaceholder && <PlaceholderAreaOverlay areas={masks.placeholder} />}
       {showCondition && <MaskTintOverlay cells={masks.condition} color={CONDITION_OVERLAY_COLOR} />}
       {showGrid && <GridOverlay width={width} height={height} />}
       {/* Preview priority: an anchored rectangle selection → its live preview; the paste
-          tool → a clipboard-sized footprint stamp; the house tool → its 4×5 footprint; every
-          other tool (and any erase) → single-cell hover, tinted red under the eraser modifier.
-          A rectangle/paste tool BEFORE it has anything to preview falls through to the hover. */}
+          tool → a clipboard-sized footprint stamp; the house tool → its 4×5 footprint; the
+          placeholder tool → its current drop footprint; every other tool (and any erase) →
+          single-cell hover, tinted red under the eraser modifier. A rectangle/paste tool
+          BEFORE it has anything to preview falls through to the hover. */}
       {rectangleMode && rectAnchor
         ? <RectPreviewOverlay anchor={rectAnchor} cursor={hover} color={rectColor} erase={rectErase} />
         : pasteTool
@@ -624,13 +811,19 @@ function EditorScene({ width, height, masks, showGrid, showStreet, showCommunal,
                 {/* Ghost sprite over the footprint so the mirror orientation is visible pre-drop. */}
                 <HouseGhostOverlay cell={hover} flip={!!houseFlip} />
               </>
-            : <HoverOverlay cell={hover} erase={eraseMode} />}
+            : placeholderTool
+              ? <PlaceholderPreviewOverlay cell={hover} size={placeholderSize!} width={width} height={height} areas={masks.placeholder} />
+              : <>
+                  <HoverOverlay cell={hover} erase={eraseMode} />
+                  {/* Decor tools add a ghost of the selected sprite over the hover diamond. */}
+                  {decorTool && <DecorGhostOverlay cell={hover} masks={masks} category={decorCategory!} variantIdx={decorVariantIdx ?? 0} />}
+                </>}
     </pixiContainer>
   );
 }
 
 // ─── Outer component: pan/zoom state + wheel zoom + Application mount ─────────────
-function TemplateEditorViewer({ width, height, masks, showGrid, showStreet, showCommunal, showPlaceholder, showCondition, activeTool, houseFlip, rectangleMode, onRectComplete, pasteMode, pasteFootprint, onPasteAt, eraseMode, onPaintCell, onEditBegin }: TemplateEditorViewerProps) {
+function TemplateEditorViewer({ width, height, masks, showGrid, showStreet, showCommunal, showPlaceholder, showCondition, activeTool, houseFlip, placeholderSize, decorCategory, decorVariantIdx, rectangleMode, onRectComplete, pasteMode, pasteFootprint, onPasteAt, eraseMode, onPaintCell, onEditBegin }: TemplateEditorViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
@@ -717,6 +910,9 @@ function TemplateEditorViewer({ width, height, masks, showGrid, showStreet, show
             showCondition={showCondition}
             activeTool={activeTool}
             houseFlip={houseFlip}
+            placeholderSize={placeholderSize}
+            decorCategory={decorCategory}
+            decorVariantIdx={decorVariantIdx}
             rectangleMode={rectangleMode}
             onRectComplete={onRectComplete}
             pasteMode={pasteMode}

@@ -171,25 +171,47 @@ function localToCell(lx: number, ly: number, width: number, height: number): Cel
   return { col, row };
 }
 
-// ─── Grid overlay (fine per-cell + major every 5) ───────────────────────────────
+// ─── Grid overlay (fine per-cell + major every 4, from the SW corner) ───────────
 const GRID_Z = 9_000;
+const GRID_MAJOR_INTERVAL = 4;
 function GridOverlay({ width, height }: { width: number; height: number }) {
   const draw = useCallback((g: Graphics) => {
     g.clear();
     // Board-bounded lines: iso rows/cols from 0..width and 0..height.
+    // Major lines are counted from the SW corner — col 0 (west) and row `height` (south) —
+    // so col lines land on multiples of the interval, row lines on multiples of distance
+    // from the south edge. Fine (non-major) lines draw green first; major lines draw red on top.
     for (let c = 0; c <= width; c++) {
+      if (c % GRID_MAJOR_INTERVAL === 0) continue;
       const a = isoToScreen(c, 0);
       const b = isoToScreen(c, height);
       g.moveTo(a.screenX, a.screenY);
       g.lineTo(b.screenX, b.screenY);
     }
     for (let r = 0; r <= height; r++) {
+      if ((height - r) % GRID_MAJOR_INTERVAL === 0) continue;
       const a = isoToScreen(0, r);
       const b = isoToScreen(width, r);
       g.moveTo(a.screenX, a.screenY);
       g.lineTo(b.screenX, b.screenY);
     }
     g.stroke({ color: 0x00c800, width: 0.5, alpha: 0.5 });
+
+    for (let c = 0; c <= width; c++) {
+      if (c % GRID_MAJOR_INTERVAL !== 0) continue;
+      const a = isoToScreen(c, 0);
+      const b = isoToScreen(c, height);
+      g.moveTo(a.screenX, a.screenY);
+      g.lineTo(b.screenX, b.screenY);
+    }
+    for (let r = 0; r <= height; r++) {
+      if ((height - r) % GRID_MAJOR_INTERVAL !== 0) continue;
+      const a = isoToScreen(0, r);
+      const b = isoToScreen(width, r);
+      g.moveTo(a.screenX, a.screenY);
+      g.lineTo(b.screenX, b.screenY);
+    }
+    g.stroke({ color: 0xff2020, width: 1, alpha: 0.8 });
   }, [width, height]);
   return <pixiGraphics draw={draw} zIndex={GRID_Z} />;
 }

@@ -222,3 +222,18 @@ export async function deleteTemplate(name: string): Promise<void> {
     throw new Error(data?.error || 'Failed to delete template');
   }
 }
+
+/**
+ * Hard-delete a SINGLE version of a template. The server rejects version 0 (it is the
+ * base — delete the whole template instead). Throws with the server message on failure.
+ */
+export async function deleteTemplateVersion(name: string, version: number): Promise<void> {
+  const res = await fetch(
+    `${API_BASE_URL}/api/nightmarket-templates/version?name=${encodeURIComponent(name)}&version=${version}`,
+    { method: 'DELETE', headers: { ...authHeader() }, credentials: 'include' },
+  );
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.error || 'Failed to delete template version');
+  }
+}

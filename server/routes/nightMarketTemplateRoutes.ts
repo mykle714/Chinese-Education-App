@@ -42,7 +42,14 @@ router.post('/api/nightmarket-templates', authenticateToken, async (req, res) =>
   await nightMarketTemplateController.saveTemplate(req, res);
 });
 
-// Delete a whole template (all versions of the name) — the editor's Delete button.
+// Delete a SINGLE version of a template — the editor's "Delete Version" button.
+// Version 0 is rejected (it is the base); use the name-level delete for that.
+// @ts-ignore
+router.delete('/api/nightmarket-templates/version', authenticateToken, async (req, res) => {
+  await nightMarketTemplateController.deleteTemplateVersion(req, res);
+});
+
+// Delete a whole template (all versions of the name) — the editor's "Delete Template" button.
 // @ts-ignore
 router.delete('/api/nightmarket-templates', authenticateToken, async (req, res) => {
   await nightMarketTemplateController.deleteTemplate(req, res);

@@ -29,10 +29,34 @@ export class WebSpeechProvider implements TTSProvider {
         const voice = pickVoice(req.lang);
         if (voice) utter.voice = voice;
 
+        const rate = req.rate ?? 1.0;
+
         return new Promise<void>((resolve) => {
-            utter.onend = () => resolve();
+            let settled = false;
+            let watchdog: ReturnType<typeof setTimeout> | null = null;
+            const finish = () => {
+                if (settled) return;
+                settled = true;
+                if (watchdog !== null) {
+                    clearTimeout(watchdog);
+                    watchdog = null;
+                }
+                resolve();
+            };
+            utter.onend = () => finish();
             // onerror also resolves (not rejects) — TTS failure shouldn't break the UI
-            utter.onerror = () => resolve();
+            utter.onerror = () => finish();
+
+            // Safety watchdog: Chrome's speechSynthesis has a long-standing bug
+            // where onend never fires (backgrounded tabs, some utterances),
+            // hanging this promise forever and leaving the caller's "playing"
+            // indicator stuck on. Resolve after a generous length-based estimate
+            // so the promise always settles. We only resolve (never cancel) so a
+            // still-speaking utterance under an over-short estimate isn't cut off.
+            // ~3 chars/sec is deliberately slow; min 4s floor for short words.
+            const estSeconds = Math.max(4, req.text.length / 3) / rate;
+            watchdog = setTimeout(finish, Math.ceil(estSeconds * 1000) + 750);
+
             window.speechSynthesis.speak(utter);
         });
     }

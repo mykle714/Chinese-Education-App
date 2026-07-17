@@ -22,8 +22,10 @@
 >    **random stub for now**; the real rule (keyed on template placement + which
 >    placeholders are filled) is future work.
 >
-> Remaining TBDs: the version-selection rule, and the tileset scheme (see
-> [Open questions](#open-questions)).
+> The **version-selection rule is now designed** (condition-mask island scoring; see
+> [Version selection rule](#version-selection-rule)) — only its `selectVersion` code is
+> still a random stub. Remaining TBDs: the hard decay-safety guarantee and the tileset
+> scheme (see [Open questions](#open-questions)).
 >
 > **Build tracker:** the runtime implementation plan (modules, slices, status) lives in
 > [NIGHT_MARKET_TEMPLATE_RUNTIME_PLAN.md](./NIGHT_MARKET_TEMPLATE_RUNTIME_PLAN.md).
@@ -238,11 +240,61 @@ selectVersion(placed, worldState): number   // returns one of the name's availab
   at random (persisted with the placement so it is stable, not re-rolled each render).
   This makes the *plumbing* for version changing exist end-to-end now; only the policy
   is a stub.
-- **Future rule (not yet designed).** The real selector will key on **template
-  placement + which placeholders are filled** — e.g. pick the version whose connecting
-  streets match the neighbors that are actually present and the occupants that are
-  actually placed. When this lands it replaces only the body of `selectVersion`; the
-  seam and the "one active version per placed template" model do not change.
+- **Selection rule — designed (selector still a random stub in code).** The real
+  selector keys on **template placement + which placeholders are filled**, scored over
+  the per-version condition mask (see
+  [Version selection rule](#version-selection-rule) below). When it lands it replaces
+  only the body of `selectVersion`; the seam and the "one active version per placed
+  template" model do not change.
+
+#### Version selection rule
+
+Each version carries a **condition mask** (the per-version orange annotation authored
+in the editor). The rule scores every version by **how much of its condition mask is
+currently satisfied** and renders the best-scoring one.
+
+**A single condition = one island.** A *condition* is **one connected component
+(4-connected island) of condition-mask cells** within a version's mask — not a single
+cell. The number of islands is the version's **total condition count**, persisted as
+the `conditionCount` column so versions are searchable by it (see
+[Storage](#storage)); it is computed once, at save time in the editor, right after the
+border-street conditions are auto-added (see
+[NIGHT_MARKET_TEMPLATE_EDITOR.md](./NIGHT_MARKET_TEMPLATE_EDITOR.md)).
+
+**Two kinds of condition, by the substrate the island sits on:**
+
+| Island substrate | How authored | Satisfied when… |
+|---|---|---|
+| **Placeholder cells** | manually painted (the condition tool paints only placeholder cells) | the placeholder area under the island is **filled** (occupied by an unlock) |
+| **Border-street cells** | auto-added at save by `withBorderStreetConditions` (every street cell on the board's outer edge) | that outer edge is **adjacent to a separate placed template** (a neighbor abuts across that seam) |
+
+> **Islands never mix substrates (authoring invariant).** Authors keep placeholder
+> condition cells and border-street condition cells **non-adjacent**, so every island
+> is purely one kind. If a mixed island is nonetheless encountered at load, it is
+> **treated as a placeholder condition and an error is logged** (fallback, not a
+> supported authoring state).
+
+**Score and pick.** For each version, `score = satisfiedConditions / conditionCount`.
+The selector renders the version with the **highest score** across the name's
+`availableVersions`.
+
+- **Tiebreak.** On an equal ratio, prefer the version with the **highest absolute
+  satisfied count**; if still tied, the **lowest version number**.
+- **Version 0 is the default floor.** Version 0 carries no condition cells
+  (`conditionCount = 0`), so its `0/0` score is defined as **0**. Because the final
+  tiebreak favors the **lowest** version number, version 0 **wins every all-zero tie** —
+  when nothing is satisfied (no occupants placed, no neighbors abutting), the base
+  version renders. A higher version only supersedes it by actually satisfying
+  conditions (score `> 0`), or by tying at a positive ratio with an equal-or-greater
+  absolute satisfied count.
+
+**Decay safety falls out of street conditions.** A version that keeps a border street
+as `street-walkable` can *score* that street's condition when a neighbor abuts; a
+version that flips the same edge to communal has no condition cell there (the condition
+cascades away with its street substrate) and cannot score it. So the ratio rule
+**naturally biases toward keeping streets a live neighbor leans on**. This is a soft
+bias, not yet a hard guarantee — the graph-invariant test that a selection never drops
+a depended-on street is still future work (see [Open questions](#open-questions)).
 
 A cell's **effective walkability** = the *active version's* value for that cell, then
 overridden by any occupant footprint covering it.
@@ -252,19 +304,22 @@ Consequences:
 - The **tile graph, street graph, and autotile sprites are recomputed** whenever a
   placed template's **active version changes** or a neighbor template appears
   (templates are append-only — never removed) — not just at first placement.
-- **The condition mask has no runtime consumer yet.** The editor still lets authors
-  paint a per-version condition mask (an annotation of "cells that matter to version
-  selection"); until the real `selectVersion` rule exists, nothing reads it. It is a
-  harmless author aid, retained so the future selector has the annotation to key on.
+- **The condition mask has no runtime consumer yet** (design done, code pending). The
+  editor lets authors paint a per-version condition mask and auto-adds border-street
+  conditions at save (persisting the island `conditionCount`); the
+  [Version selection rule](#version-selection-rule) specifies how the runtime *will*
+  score it, but until `selectVersion` is de-stubbed nothing reads it at render.
 
 > **Decay safety is now a property of the version selector, not per-cell triggers.**
 > Under the old model a street cell carried an explicit `templateAdjacent` OR-trigger
 > so it would survive its occupant decaying while a neighbor still leaned on it. With
-> full snapshots, the equivalent guarantee must come from the (future) selection rule:
-> **it must never pick a version that removes a street a live neighbor depends on.**
-> This is an open constraint on the version-selection design (see
-> [Open questions](#open-questions)), and will be covered by a graph-invariant test
-> once the rule is specified.
+> full snapshots, the equivalent guarantee comes from the selection rule: it must never
+> pick a version that removes a street a live neighbor depends on. The
+> [Version selection rule](#version-selection-rule) **softly** delivers this via
+> border-street conditions (a kept street scores when a neighbor abuts; a flipped-to-
+> communal edge cannot), but the **hard** guarantee — a graph-invariant test that no
+> selection ever drops a depended-on street — is still open (see
+> [Open questions](#open-questions)).
 
 ---
 
@@ -508,6 +563,22 @@ the DB table **`nightmarkettemplatedefinitions`** (migrations 107–109), one ro
 single-sourced on version 0), the condition mask, decor stems, house anchors — plus
 `width`/`height` and the shared `description`.
 
+**Scalar `conditionCount` (proposed column).** The version's **total condition count**
+— the number of 4-connected islands in its condition mask (see
+[Version selection rule](#version-selection-rule)) — is lifted out of the `definition`
+JSONB into its own scalar column so versions are **searchable by it** (mirroring why
+`width`/`height`/`description` are scalar columns). Unlike `description`/placeholder
+(shared per name, owned by version 0), `conditionCount` is **per-version** (each
+version has its own condition mask). It is computed **at save**, in the editor's
+`withBorderStreetConditions` step, so it always reflects the auto-added border-street
+conditions. Version 0 carries no conditions → `conditionCount = 0`.
+
+> **Column confirmed; migration not yet written.**
+>
+> | Column | Type | Notes |
+> |---|---|---|
+> | `conditionCount` | INTEGER NOT NULL DEFAULT 0 | per-`(name,version)` island count of the condition mask; computed at save. |
+
 **The runtime reads this catalog DB-direct** (decision #1 in the status block): there
 is **no promote-to-code registry**. Derived structures are computed **at load, not at
 build**:
@@ -636,14 +707,23 @@ construction; projection inside `buildStreetGraph` covers T-junctions (N2).
 
 ## Open questions
 
-1. **Version-selection rule.** `selectVersion` is a **random stub** today. The real
-   rule keys on **template placement + which placeholders are filled** (see
-   [Template versions](#template-versions--full-snapshots)). It must also satisfy a
-   **decay-safety constraint**: never select a version that removes a street a live
-   neighbor template depends on. Until designed, the per-version **condition mask** has
-   no consumer.
+1. **Hard decay-safety guarantee.** The [Version selection rule](#version-selection-rule)
+   is designed and `conditionCount` gives it its denominator, but `selectVersion` is
+   still a **random stub** in code. The condition-mask scoring *softly* protects streets
+   a live neighbor leans on (border-street conditions); the remaining open piece is the
+   **hard** guarantee — a graph-invariant test that a selection **never** removes a
+   street a live neighbor depends on.
 2. **Tileset scheme:** the autotiling bitmask/atlas
    (see [Tile rendering](#tile-rendering-autotiling)).
+
+> **Resolved — version-selection rule.** A condition is one 4-connected island of
+> condition-mask cells; placeholder-cell islands satisfy when their area is filled,
+> border-street-cell islands when a separate template abuts the edge. The runtime
+> renders the version maximizing `satisfiedConditions / conditionCount` (tiebreak:
+> highest absolute satisfied count, then lowest version number; version 0's `0/0` is
+> the default floor, so it wins every all-zero tie). `conditionCount` is a new per-version scalar column computed at save (see
+> [Version selection rule](#version-selection-rule)). Only de-stubbing `selectVersion`
+> and the hard decay-safety test remain.
 
 > **Resolved — street-recovery algorithm.** Greedy maximal-rectangle cover of the
 > stitched street mask → `Street[]` + `intersectingStreets`, fed to the existing
@@ -674,9 +754,14 @@ construction; projection inside `buildStreetGraph` covers T-junctions (N2).
 Code this doc will depend on / drive once implemented:
 
 - **DB catalog `nightmarkettemplatedefinitions`** (migrations 107–109) read DB-direct
-  via `NightMarketTemplateService` — the authored source; **no code registry.**
+  via `NightMarketTemplateService` — the authored source; **no code registry.** Gains a
+  new per-version scalar **`conditionCount`** column (island count of the condition
+  mask, written at save) that the version selector divides into (see
+  [Version selection rule](#version-selection-rule)).
 - **New catalog-load module** — reads the catalog and computes, at load, the
-  **`selectVersion` seam** (random stub) and the **`anchorIndex`** keyed by
+  **`selectVersion` seam** (random stub; the real body scores versions by
+  `satisfiedConditions / conditionCount` — see
+  [Version selection rule](#version-selection-rule)) and the **`anchorIndex`** keyed by
   `(direction, width)`; the **placeholder areas** are read directly (authored as
   `{col,row,w,h}` records, no derivation) (see
   [Anchors and the anchor index](#anchors-and-the-anchor-index),

@@ -19,6 +19,7 @@ import ViewWeekIcon from '@mui/icons-material/ViewWeek';
 import BackspaceIcon from '@mui/icons-material/Backspace';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
+import LayersClearIcon from '@mui/icons-material/LayersClear';
 import GridOnIcon from '@mui/icons-material/GridOn';
 import AddIcon from '@mui/icons-material/Add';
 import TuneIcon from '@mui/icons-material/Tune';
@@ -47,7 +48,7 @@ import {
 import TemplateEditorViewer, { type EditorTool } from './TemplateEditorViewer';
 import {
   checkTemplateNameAvailable, suggestTemplateName, submitTemplate,
-  listTemplates, loadTemplate, definitionToMasks, deleteTemplate,
+  listTemplates, loadTemplate, definitionToMasks, deleteTemplate, deleteTemplateVersion,
   type TemplateSummary,
 } from './templateEditorApi';
 
@@ -57,16 +58,19 @@ import {
  *
  * Owns the painted mask layers (terrain 1 / terrain 2, street, communal, placeholder,
  * condition, houses, decor) + board size + name + the active VERSION. The header
- * carries Load / Clear / Delete / Properties / Save; a left tool palette selects the
- * active painter (+ grid/street/communal/placeholder/condition view toggles). The
- * Properties popup sets W×H + name and hosts the version dropdown + "New version" button.
+ * carries the version switcher + Load / Clear / Delete Version / Delete Template /
+ * Properties / Save; a left tool
+ * palette selects the active painter (+ grid/street/communal/placeholder/condition view
+ * toggles). The Properties popup sets W×H + name and hosts the "New version" button.
  *
  * VERSIONS: one name owns numbered versions sharing a board size + a single
  * placeholder layout (owned by version 0; its tool/eraser are locked on higher
  * versions) but differing in terrain / streets / decor / the condition mask. Switching
  * versions RELOADS the target from the last saved state (unsaved edits are discarded
  * after a warn); "New version" copies the current board into the next version number.
- * Save upserts the active (name, version); Delete removes the whole name (all versions).
+ * Save upserts the active (name, version). "Delete Version" removes only the current
+ * version (disabled on version 0 — the base); "Delete Template" removes the whole name
+ * (all versions).
  */
 
 const MIN_DIM = 2;
@@ -1018,6 +1022,50 @@ function TemplateEditorPage() {
     }
   };
 
+  // Delete ONLY the current version (never version 0 — that is the base/placeholder
+  // source of truth, so the button is disabled there and the server rejects it). Two
+  // paths: a never-saved new version has no DB row, so we just drop it from the dropdown
+  // locally; a saved version > 0 is hard-deleted (confirmed) via the version endpoint.
+  // Either way we then reload version 0 as the surviving board.
+  const handleDeleteVersion = async () => {
+    if (!loadedName || version === 0) return;
+    const gone = version;
+
+    // Never-saved new version: nothing to delete server-side — discard it locally.
+    if (isNewVersion) {
+      const ok = await confirm(
+        `Discard the unsaved version ${gone}? It has not been saved, so this only drops it.`,
+        { title: 'Discard version?', confirmText: 'Discard', cancelText: 'Cancel' },
+      );
+      if (!ok) return;
+      setAvailableVersions(vs => vs.filter(v => v !== gone));
+      try {
+        const tpl = await loadTemplate(loadedName, 0);
+        applyLoadedVersion(tpl);
+        setSnack({ open: true, msg: `Discarded version ${gone}`, severity: 'success' });
+      } catch (err) {
+        setSnack({ open: true, msg: err instanceof Error ? err.message : 'Failed to reload base version', severity: 'error' });
+      }
+      return;
+    }
+
+    const ok = await confirm(
+      `Permanently delete version ${gone} of "${loadedName}"? This cannot be undone.`,
+      { title: 'Delete version?', confirmText: 'Delete', cancelText: 'Cancel' },
+    );
+    if (!ok) return;
+    try {
+      await deleteTemplateVersion(loadedName, gone);
+      // Reload version 0 (the surviving base); applyLoadedVersion refreshes
+      // availableVersions from the server, dropping the deleted one.
+      const tpl = await loadTemplate(loadedName, 0);
+      applyLoadedVersion(tpl);
+      setSnack({ open: true, msg: `Deleted version ${gone}`, severity: 'success' });
+    } catch (err) {
+      setSnack({ open: true, msg: err instanceof Error ? err.message : 'Failed to delete version', severity: 'error' });
+    }
+  };
+
   // The three paint groups, pulled out by key so the palette can place them individually
   // (eraser inline before terrain; masks directly above the mask-view toggles) instead of
   // mapping TOOL_GROUPS in a fixed vertical order.
@@ -1216,7 +1264,41 @@ function TemplateEditorPage() {
             </Typography>
           </Box>
 
-          <Box className="template-editor-header-actions" sx={{ display: 'flex', gap: 1 }}>
+          <Box className="template-editor-header-actions" sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+            {/* Version switcher — switches the active (name, version), reloading the target
+                from its last saved state (unsaved edits discarded after a warn). Lives here
+                (not in Properties) so switching versions is a one-click header action. The
+                "New version" button still lives in Properties beside the shared name/size. */}
+            <FormControl
+              size="small"
+              className="template-editor-header-version"
+            >
+              <Select
+                className="template-editor-header-version-select"
+                value={version}
+                onChange={(e) => handleSwitchVersion(Number(e.target.value))}
+                // Rendered to read like the outlined header buttons (headerBtnSx): no
+                // floating label, small-button metrics, same border/background/hover.
+                renderValue={(v) => `Version ${v}${v === 0 ? ' (base)' : ''}${isNewVersion ? ' • unsaved' : ''}`}
+                sx={{
+                  color: 'rgba(255,255,255,0.9)',
+                  backgroundColor: 'rgba(0,0,0,0.3)',
+                  fontSize: '0.8125rem',
+                  '.MuiSelect-select': { py: '4px', pl: '10px' },
+                  '.MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.5)' },
+                  '&:hover': { backgroundColor: 'rgba(0,0,0,0.5)' },
+                  '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'white' },
+                  '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: 'white' },
+                  '.MuiSvgIcon-root': { color: 'rgba(255,255,255,0.9)' },
+                }}
+              >
+                {availableVersions.map((v) => (
+                  <MenuItem key={v} value={v} className="template-editor-header-version-option">
+                    {`Version ${v}${v === 0 ? ' (base)' : ''}${isNewVersion && v === version ? ' • unsaved' : ''}`}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
             <Tooltip title="Authoring guidelines (rules the editor does not enforce)">
               <Button
                 className="template-editor-guidelines-btn" variant="outlined" size="small"
@@ -1240,6 +1322,28 @@ function TemplateEditorPage() {
             >
               Clear
             </Button>
+            <Tooltip
+              title={
+                !loadedName
+                  ? 'Load a template to delete a version'
+                  : version === 0
+                    ? 'Version 0 is the base — use Delete Template to remove it'
+                    : isNewVersion
+                      ? `Discard the unsaved version ${version}`
+                      : `Delete only version ${version} of this template`
+              }
+            >
+              <span>
+                <Button
+                  className="template-editor-delete-version-btn" variant="outlined" size="small"
+                  startIcon={<LayersClearIcon />} onClick={handleDeleteVersion}
+                  disabled={!loadedName || version === 0}
+                  sx={{ ...headerBtnSx, color: 'rgba(255,140,140,0.95)', borderColor: 'rgba(255,140,140,0.5)', '&:hover': { borderColor: 'rgb(255,140,140)', backgroundColor: 'rgba(80,0,0,0.4)' } }}
+                >
+                  Delete Version
+                </Button>
+              </span>
+            </Tooltip>
             <Tooltip title={loadedName ? 'Delete the loaded template (all versions) from the database' : 'Load a template to delete it'}>
               <span>
                 <Button
@@ -1247,7 +1351,7 @@ function TemplateEditorPage() {
                   startIcon={<DeleteForeverIcon />} onClick={handleDelete} disabled={!loadedName}
                   sx={{ ...headerBtnSx, color: 'rgba(255,140,140,0.95)', borderColor: 'rgba(255,140,140,0.5)', '&:hover': { borderColor: 'rgb(255,140,140)', backgroundColor: 'rgba(80,0,0,0.4)' } }}
                 >
-                  Delete
+                  Delete Template
                 </Button>
               </span>
             </Tooltip>
@@ -1548,10 +1652,8 @@ function TemplateEditorPage() {
           loadedName={loadedName}
           currentVersion={version}
           availableVersions={availableVersions}
-          isNewVersion={isNewVersion}
           // New versions require a saved template (v0 on the server) and no pending edits.
           canAddVersion={loadedName === name.trim() && !!name.trim() && !dirty}
-          onSwitchVersion={handleSwitchVersion}
           onNewVersion={() => { setPropsOpen(false); handleNewVersion(); }}
           onCancel={() => setPropsOpen(false)}
           onApply={(w, h, nm, desc, resetBoard) => {
@@ -1673,14 +1775,14 @@ function GuidelinesDialog({ open, onClose }: { open: boolean; onClose: () => voi
 // ─── Properties dialog ───────────────────────────────────────────────────────────
 // Sets width/height/name + the active VERSION. OK validates dims, checks name
 // availability (server), and on success applies + regenerates the board. A taken name
-// blocks with an inline error. The version dropdown + "New version" button switch/add
-// versions immediately (not gated behind OK). Name is locked once a template has more
+// blocks with an inline error. The "New version" button adds a version immediately (not
+// gated behind OK); version SWITCHING lives in the header. Name is locked once a template has more
 // than one version (renaming would orphan the others); dimensions are locked on any
 // version above 0 (all versions of a name share the base board size).
 function PropertiesDialog({
   open, initialWidth, initialHeight, initialName, initialDescription, loadedName,
-  currentVersion, availableVersions, isNewVersion, canAddVersion,
-  onSwitchVersion, onNewVersion, onApply, onCancel,
+  currentVersion, availableVersions, canAddVersion,
+  onNewVersion, onApply, onCancel,
 }: {
   open: boolean;
   initialWidth: number;
@@ -1693,14 +1795,10 @@ function PropertiesDialog({
   loadedName: string | null;
   /** The active version number (0 = base). */
   currentVersion: number;
-  /** All version numbers for this name (dropdown options). */
+  /** All version numbers for this name — drives the name/dims/description locks. */
   availableVersions: number[];
-  /** Whether the active version is a not-yet-saved new version. */
-  isNewVersion: boolean;
   /** Whether "New version" is allowed right now (template saved + no pending edits). */
   canAddVersion: boolean;
-  /** Switch to another (already-saved) version — reloads it, discarding unsaved edits. */
-  onSwitchVersion: (version: number) => void;
   /** Create a new version copying the current board. */
   onNewVersion: () => void;
   onApply: (width: number, height: number, name: string, description: string, resetBoard: boolean) => void;
@@ -1804,26 +1902,10 @@ function PropertiesDialog({
       <DialogTitle>Template Properties</DialogTitle>
       <DialogContent>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
-          {/* Version switcher + New version. Placeholder is shared across a name's
-              versions (owned by version 0); the terrain / streets / decor / condition
-              mask differ per version. */}
+          {/* "New version" copies the current board into the next version number. The
+              version SWITCHER now lives in the header (one-click); this button stays here
+              beside the shared per-name name/size it depends on. */}
           <Box className="template-editor-version-row" sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-            <FormControl size="small" sx={{ minWidth: 150 }}>
-              <InputLabel id="template-editor-version-label">Version</InputLabel>
-              <Select
-                labelId="template-editor-version-label"
-                className="template-editor-version-select"
-                label="Version"
-                value={currentVersion}
-                onChange={(e) => onSwitchVersion(Number(e.target.value))}
-              >
-                {availableVersions.map((v) => (
-                  <MenuItem key={v} value={v} className="template-editor-version-option">
-                    {`Version ${v}${v === 0 ? ' (base)' : ''}${isNewVersion && v === currentVersion ? ' • unsaved' : ''}`}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
             <Tooltip title={canAddVersion ? 'Create a new version copying this board' : 'Save this version first to add another'}>
               <span>
                 <Button

@@ -354,6 +354,32 @@ export class NightMarketTemplateService {
   }
 
   /**
+   * Hard-delete a SINGLE version of a template (validator-gated); 404 if that
+   * (name, version) row does not exist. Version 0 is REJECTED here (400): it is the
+   * base and the single source of truth for the shared placeholder layout + description,
+   * so removing it would orphan any higher version. To remove version 0, delete the
+   * whole template via {@link deleteTemplate}. The client also disables its "Delete
+   * Version" button on version 0 — this is the server-side backstop.
+   */
+  async deleteTemplateVersion(userId: string, name: string, version: number): Promise<void> {
+    await this.assertValidator(userId);
+    const clean = this.cleanName(name);
+    const ver = this.cleanVersion(version);
+    if (ver === 0) {
+      throw new ValidationError(
+        'Version 0 is the base — delete the whole template instead of just its base version.',
+      );
+    }
+    const res = await dbManager.executeQuery<{ id: string }>(async (client) =>
+      client.query(
+        'DELETE FROM nightmarkettemplatedefinitions WHERE name = $1 AND version = $2 RETURNING id',
+        [clean, ver],
+      ),
+    );
+    if (res.recordset.length === 0) throw new NotFoundError('Template version not found');
+  }
+
+  /**
    * Save a template version (validator-gated) — an **upsert by (name, version)**:
    * creates a new row, or OVERWRITES the existing (name, version) row (its dims +
    * definition; original `createdBy`/`createdAt` preserved, `updatedAt` bumped).

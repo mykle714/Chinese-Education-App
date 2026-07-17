@@ -125,6 +125,27 @@ export class NightMarketTemplateController {
     }
   }
 
+  /**
+   * DELETE /api/nightmarket-templates/version?name=...&version=... → { deleted: true } | 404
+   * Hard-deletes a SINGLE version. Version 0 is rejected (400) — use the name-level
+   * delete for the base (see NightMarketTemplateService.deleteTemplateVersion).
+   */
+  async deleteTemplateVersion(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = (req as any).user?.userId;
+      if (!userId) {
+        res.status(401).json({ error: 'User not authenticated', code: 'ERR_NOT_AUTHENTICATED' });
+        return;
+      }
+      const name = (req.query?.name as string) ?? '';
+      const version = req.query?.version != null ? Number(req.query.version) : NaN;
+      await this.service.deleteTemplateVersion(userId, name, version);
+      res.status(200).json({ deleted: true });
+    } catch (error: any) {
+      this.handleError(res, error, 'Failed to delete template version', 'ERR_TEMPLATE_VERSION_DELETE_FAILED');
+    }
+  }
+
   /** Map a DALError to its own statusCode/code; otherwise a 500 fallback. */
   private handleError(res: Response, error: any, fallbackMsg: string, fallbackCode: string): void {
     console.error(`[NM-TEMPLATE-CONTROLLER] ❌ ${fallbackMsg}:`, error);

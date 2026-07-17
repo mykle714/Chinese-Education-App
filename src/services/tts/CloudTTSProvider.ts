@@ -216,9 +216,19 @@ export class CloudTTSProvider implements TTSProvider {
         source.connect(ctx.destination);
         this.currentSource = source;
 
+        // Playback length of the buffer we're about to start (already time-
+        // stretched for `rate`, so this is the real wall-clock duration).
+        const playbackSeconds = source.buffer?.duration ?? 0;
+
         return new Promise<void>((resolve) => {
+            // Watchdog handle so we can clear it once onended fires normally.
+            let watchdog: ReturnType<typeof setTimeout> | null = null;
             const cleanup = () => {
                 source.onended = null;
+                if (watchdog !== null) {
+                    clearTimeout(watchdog);
+                    watchdog = null;
+                }
                 if (this.currentSource === source) this.currentSource = null;
             };
             // Fires both on natural end and when cancel() calls source.stop().
@@ -234,6 +244,25 @@ export class CloudTTSProvider implements TTSProvider {
                 cleanup();
                 resolve();
             }
+            // Safety watchdog: onended is NOT guaranteed to fire — if the
+            // AudioContext is suspended mid-playback (mobile backgrounding, an
+            // incoming call, the iOS ring/silent switch, or the tab losing audio
+            // focus) the source stops without ever firing onended, hanging this
+            // promise forever and leaving the caller's "playing" indicator stuck
+            // on. Resolve shortly after the clip's own duration so the promise
+            // always settles. Margin covers scheduling/decoding slop.
+            const watchdogMs = Math.ceil(playbackSeconds * 1000) + 750;
+            watchdog = setTimeout(() => {
+                // Stop the (possibly still-scheduled) source so a resumed context
+                // can't replay it after we've resolved.
+                try {
+                    if (this.currentSource === source) source.stop();
+                } catch {
+                    // already stopped / ended
+                }
+                cleanup();
+                resolve();
+            }, watchdogMs);
         });
     }
 

@@ -2,12 +2,34 @@
 
 Deploy the current branch to the production server at 174.127.171.180.
 
+## ⚠️ FIRST: Which machine are you on?
+
+Before doing anything else, read [amIOnTheProdMachine.md](../../amIOnTheProdMachine.md)
+(gitignored, present on every machine) to determine dev vs prod. Your entire role
+depends on the answer:
+
+- **If this is the PROD machine** — you have direct Docker + repo access to prod, so
+  **run the deploy commands yourself** (`git pull`, `docker-compose ... down`,
+  `up --build -d`, migrations, verification). Do not hand them off as a copy-paste
+  block; execute them. The only exceptions are commands that need an interactive
+  `sudo` password (e.g. `database/cron/install-cron.sh`) — you cannot supply the
+  password non-interactively, so ask the user to run just those. Since rebuilding
+  prod containers briefly takes the live site down for real users, confirm with the
+  user before running the `down`/`up --build` step unless they've already told you to
+  proceed.
+
+- **If this is the DEV machine** — do **NOT** deploy from here. You cannot reach the
+  prod containers. Your job is only to prepare the code: run `npm run build`, run the
+  tests, then commit and push to `origin main`. The actual deploy happens later on the
+  prod machine (by you or the user running this skill there). Stop after the push and
+  tell the user the code is ready to deploy from prod.
+
 ## Environment
 
 - **Server**: 174.127.171.180 — this is the **same machine as dev**. Both dev and prod containers run side by side.
 - **App directory**: `~/vocabulary-app`
 - **Domain**: `mren.me` — Cloudflare Flexible SSL (Cloudflare terminates HTTPS; server only needs to serve HTTP on port 80)
-- **SSH**: User SSHs in manually. You do not have SSH access — give the user the commands to run.
+- **Access**: When you are invoked *on the prod machine* you have direct Docker + repo access — run the deploy yourself (see "Which machine are you on?" above). When invoked on dev you cannot reach prod at all; only build/test/commit/push. Fall back to handing the user a copy-paste block only for prod commands you genuinely cannot run (e.g. interactive `sudo`).
 - **Deployment type**: "Future Updates" only (no initial setup needed)
 
 ## Port Layout

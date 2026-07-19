@@ -24,6 +24,11 @@ interface InfoCardSectionProps {
     onSpeak?: (entry: VocabEntry) => void;
     onSpeakSentence?: (text: string, pronunciation?: string) => void;
     speakingKey?: string | null;
+    // Renders the header's "Add to Learn Now" (+) button in the 2×2 action grid,
+    // gated on `currentEntry.discoverable`. Wired by the flp so drilled-in words
+    // (breakdown chars / example segments) that aren't yet in the library can be
+    // added; undefined hides the button (see InfoCardPanelBody).
+    onAddToLibrary?: (entry: VocabEntry) => void;
     // Compare tab (docs/WORD_COMPARE_FEATURE.md). `onOpenCompare` renders the header's Compare
     // button (undefined hides it). `compareTab` set ⇒ the panel renders CompareTabBody instead of
     // InfoCardPanelBody's normal definition/examples/breakdown content — the Compare tab has no
@@ -58,6 +63,7 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
     onSpeak,
     onSpeakSentence,
     speakingKey,
+    onAddToLibrary,
     onOpenCompare,
     compareTab,
     onSetCompareSlot,
@@ -107,6 +113,7 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
                         onSpeak={onSpeak}
                         onSpeakSentence={onSpeakSentence}
                         speakingKey={speakingKey}
+                        onAddToLibrary={onAddToLibrary}
                         onOpenCompare={onOpenCompare}
                         scrollTouchAction="none"
                         headerDragBind={bindHeaderDrag}

@@ -52,7 +52,10 @@ auto-deleted after the first action.
 ## Schema (migration 104, updated by 106)
 
 - `users."isValidator" BOOLEAN NOT NULL DEFAULT false` — gates the validator UI +
-  endpoints. Surfaced to the client through the `user` object (login + `/api/auth/me`);
+  endpoints (dictionary data approval ONLY). It used to ALSO gate the Night Market
+  template editor; migration 115 split that onto its own `users."isTemplateAuthor"`
+  flag, so the two responsibilities are now independent grants. Surfaced to the client
+  through the `user` object (login + `/api/auth/me`);
   **not** on the JWT. It must be listed in `UserDAL.findById`'s SELECT
   (`server/dal/implementations/UserDAL.ts`) or it vanishes after a token refresh.
 - **`validations`** table — one CURRENT row per (entry, field) reviewed by a validator:
@@ -102,6 +105,11 @@ Body format — plain human-readable prose, **not** JSON — built by the shared
 formatters in `server/utils/validationBodyFormat.ts`:
 - **`composeDefinitionsBody`** — `Parts of Speech: <comma list>`, then
   `Definitions:` as a numbered list, then `Long Definition:` followed by the prose.
+  `longDefinition` is read straight from the raw det column, which for zh is a
+  per-POS JSONB **object** (migration 70), so the formatter normalizes it through
+  `longDefObjectToDisplayString` (the same helper the API uses to hydrate the
+  client string) before rendering — passing the raw object to `.trim()` directly
+  threw a 500 on every definitions Approve.
 - **`composeExampleSentenceBody`** — `Sentence:` followed by `foreignText`, then
   `Translation:` followed by `english`. Only these two reviewable fields are shown
   — the rest of the stored sentence object (`tense`, `numberDict`, `segments`,

@@ -1,5 +1,5 @@
 import { PoolClient } from 'pg';
-import { VocabEntry, TypedMarkHistory, MARK_TYPES } from '../types/index.js';
+import { VocabEntry, TypedMarkHistory, MarkType } from '../types/index.js';
 import { IVocabEntryDAL } from '../dal/interfaces/IVocabEntryDAL.js';
 import { DictionaryService } from './DictionaryService.js';
 import { StarterPacksService } from './StarterPacksService.js';
@@ -65,6 +65,12 @@ const DEFAULT_LOOP_CONFIG: Omit<ModeLoopConfig, 'allowed'> = {
 // Total cards in a working loop, regardless of distribution.
 const WORKING_LOOP_SIZE = 10;
 
+// Per-category candidate overfetch cap for the cooldown-aware initial loop: we
+// pull a random pool this large per category and keep the first N flp-eligible
+// cards. Bounds memory for very large libraries while almost always finding
+// enough eligible cards to fill a quota.
+const LOOP_CANDIDATE_CAP = 100;
+
 /**
  * OnDeck Vocabulary Service
  * Handles business logic for retrieving cards based on starterPackBucket.
@@ -81,6 +87,11 @@ export class OnDeckVocabService {
   // Per-category cooldown after a correct mark: a card that was recently marked
   // correct should not reappear in the working loop until its cooldown elapses.
   // Shorter windows for weaker categories so the user gets more repetition.
+  //
+  // The window DURATION is keyed on the card's overall utcm category, but the
+  // timer is applied PER MARK TYPE (see isTypeOnCooldown): recognition and
+  // production cool down on independent clocks. See docs/MASTERY_REWORK.md
+  // (§ Per-type cooldown).
   private static readonly COOLDOWN_MS_BY_CATEGORY: Record<string, number> = {
     Unfamiliar: 5 * 60 * 1000,            // 5 minutes
     Target: 24 * 60 * 60 * 1000,          // 24 hours
@@ -88,65 +99,163 @@ export class OnDeckVocabService {
     Mastered: 30 * 24 * 60 * 60 * 1000,   // 30 days
   };
 
-  // Newest correct-mark timestamp across ALL typed streams (cooldown looks at the
-  // last time the card was answered correctly, regardless of mark type).
-  private getLastCorrectMarkTimestamp(typedMarkHistory: TypedMarkHistory | undefined): number | null {
-    if (!typedMarkHistory || typeof typedMarkHistory !== 'object') {
-      return null;
-    }
+  // The mark types the flp can actually present (docs/MASTERY_REWORK.md § 1): a
+  // foreign-first prompt is a RECOGNITION review, an English-first prompt is a
+  // PRODUCTION review. Reading/Writing marks come from other games (Word Search /
+  // Practice Writing) and are never shown in the working loop, so flp cooldown
+  // eligibility consults only these two tracks — a correct mark earned in another
+  // game no longer suppresses a card from the flp.
+  private static readonly FLP_MARK_TYPES: readonly MarkType[] = ['recognition', 'production'];
+
+  // Newest correct-mark timestamp within ONE type's track (null if that track has
+  // no valid correct mark). Per-type so each mark type cools down on its own clock.
+  private getLastCorrectMarkTimestampForType(
+    typedMarkHistory: TypedMarkHistory | undefined,
+    type: MarkType
+  ): number | null {
+    const track = typedMarkHistory?.[type];
+    if (!Array.isArray(track)) return null;
 
     let latest: number | null = null;
-    for (const type of MARK_TYPES) {
-      const track = typedMarkHistory[type];
-      if (!Array.isArray(track)) continue;
-      for (const mark of track) {
-        if (!mark?.isCorrect || !mark.timestamp) continue;
-        const ts = new Date(mark.timestamp).getTime();
-        if (Number.isNaN(ts)) continue;
-        if (latest === null || ts > latest) latest = ts;
-      }
+    for (const mark of track) {
+      if (!mark?.isCorrect || !mark.timestamp) continue;
+      const ts = new Date(mark.timestamp).getTime();
+      if (Number.isNaN(ts)) continue;
+      if (latest === null || ts > latest) latest = ts;
     }
     return latest;
   }
 
-  private isCardOnCooldown(card: VocabEntry, now: number): boolean {
+  // Whether ONE mark type of a card is still cooling down. The window duration is
+  // chosen by the card's overall utcm category; the elapsed time is measured from
+  // that type's own last correct mark.
+  private isTypeOnCooldown(card: VocabEntry, type: MarkType, now: number): boolean {
     const cooldownMs = OnDeckVocabService.COOLDOWN_MS_BY_CATEGORY[card.category ?? ''];
     if (cooldownMs === undefined) return false;
 
-    const lastCorrect = this.getLastCorrectMarkTimestamp(card.typedMarkHistory);
+    const lastCorrect = this.getLastCorrectMarkTimestampForType(card.typedMarkHistory, type);
     if (lastCorrect === null) return false;
 
     return now - lastCorrect < cooldownMs;
   }
 
-  // Returns the newest eligible card (not on cooldown), or null if every card
-  // in the list is still cooling down. Callers use null to trigger fallback.
-  private pickNewestCardNotOnCooldown(cards: VocabEntry[]): VocabEntry | null {
-    if (cards.length === 0) {
-      return null;
-    }
-
-    const now = Date.now();
-    return cards.find(card => !this.isCardOnCooldown(card, now)) ?? null;
+  // The flp-reviewable mark types whose per-type cooldown has elapsed. Empty ⇒ the
+  // card is fully on cooldown for the flp and should be skipped. Stamped onto the
+  // returned card as `readyMarkTypes` so the client can steer which face it shows.
+  private flpReadyMarkTypes(card: VocabEntry, now: number): MarkType[] {
+    return OnDeckVocabService.FLP_MARK_TYPES.filter(type => !this.isTypeOnCooldown(card, type, now));
   }
 
-  // Among cooled-down cards, prefer the one whose cooldown is closest to expiring
-  // (smallest remaining cooldown = largest elapsed time since last correct mark).
-  private pickLeastRecentlyCorrect(cards: VocabEntry[]): VocabEntry | null {
-    if (cards.length === 0) return null;
-
-    let best: VocabEntry | null = null;
-    let bestLastCorrect = Infinity;
-    for (const card of cards) {
-      const lastCorrect = this.getLastCorrectMarkTimestamp(card.typedMarkHistory);
-      // Treat "never marked correct" as oldest possible.
-      const ts = lastCorrect ?? -Infinity;
-      if (ts < bestLastCorrect) {
-        bestLastCorrect = ts;
-        best = card;
+  // The single flp mark type whose cooldown is CLOSEST TO EXPIRING (oldest last
+  // correct mark). Used for last-resort presentation when every flp type of a card
+  // is still cooling down, so the client always has a face to show.
+  private closestToExpiringFlpType(card: VocabEntry): MarkType {
+    let bestType: MarkType = OnDeckVocabService.FLP_MARK_TYPES[0];
+    let oldest = Infinity;
+    for (const type of OnDeckVocabService.FLP_MARK_TYPES) {
+      // "Never correct in this track" = oldest possible.
+      const ts = this.getLastCorrectMarkTimestampForType(card.typedMarkHistory, type) ?? -Infinity;
+      if (ts < oldest) {
+        oldest = ts;
+        bestType = type;
       }
     }
-    return best;
+    return bestType;
+  }
+
+  // Returns the newest flp-eligible card (≥1 mark type off cooldown), stamped with
+  // its ready mark types, or null if every card in the list is fully cooling down.
+  // Callers pass cards ordered `createdAt DESC`, so "first eligible" = "newest".
+  private pickNewestFlpEligibleCard(cards: VocabEntry[]): VocabEntry | null {
+    const now = Date.now();
+    for (const card of cards) {
+      const ready = this.flpReadyMarkTypes(card, now);
+      if (ready.length > 0) return { ...card, readyMarkTypes: ready };
+    }
+    return null;
+  }
+
+  // Last-resort pick when EVERY candidate is fully on cooldown: choose the card
+  // whose flp cooldown is closest to expiring (smallest remaining = oldest last
+  // correct mark), stamped with the single type we'll present. Keeps the loop from
+  // stalling on an all-cooled library.
+  private pickLeastRecentlyCorrectFlp(cards: VocabEntry[]): VocabEntry | null {
+    let best: VocabEntry | null = null;
+    let bestType: MarkType = OnDeckVocabService.FLP_MARK_TYPES[0];
+    let bestLastCorrect = Infinity;
+    for (const card of cards) {
+      for (const type of OnDeckVocabService.FLP_MARK_TYPES) {
+        const ts = this.getLastCorrectMarkTimestampForType(card.typedMarkHistory, type) ?? -Infinity;
+        if (ts < bestLastCorrect) {
+          bestLastCorrect = ts;
+          best = card;
+          bestType = type;
+        }
+      }
+    }
+    return best ? { ...best, readyMarkTypes: [bestType] } : null;
+  }
+
+  // A card is playable in a game when ≥1 of that game's mark types is off its
+  // per-type cooldown. Single-type games reduce to "that one type is off
+  // cooldown" (bubble-match = recognition; word-search = reading in No-Pinyin
+  // mode, production in Pinyin mode). See docs/MASTERY_REWORK.md § Per-type
+  // cooldown ("Games").
+  private isCardGameEligible(card: VocabEntry, markTypes: readonly MarkType[], now: number): boolean {
+    return markTypes.some(type => !this.isTypeOnCooldown(card, type, now));
+  }
+
+  /**
+   * Fetch per-category library candidates for a game, split into `eligible`
+   * (≥1 of the game's mark types off cooldown = fresh) vs `cooled` (all of the
+   * game's mark types still cooling). Each partition preserves the SQL RANDOM()
+   * order. Games fill their pool from `eligible` first — requested categories,
+   * then fallback categories — and only dip into `cooled` as a last resort to
+   * reach the required count, so the per-type cooldown is honored without ever
+   * blocking entry more than an un-cooled library would.
+   *
+   * `maxEntryKeyLen` (Word Search) restricts candidates to short words the grid
+   * can place; omit for no length cap.
+   */
+  private async fetchGameCandidates(
+    client: PoolClient,
+    userId: string,
+    language: string,
+    categories: string[],
+    markTypes: readonly MarkType[],
+    now: number,
+    cap: number,
+    maxEntryKeyLen?: number
+  ): Promise<{ eligible: Record<string, VocabEntry[]>; cooled: Record<string, VocabEntry[]> }> {
+    const eligible: Record<string, VocabEntry[]> = {};
+    const cooled: Record<string, VocabEntry[]> = {};
+    // maxEntryKeyLen is a caller-supplied constant (never user input); coerce to a
+    // safe integer before inlining, since it isn't a bind param.
+    const lenClause = maxEntryKeyLen != null
+      ? `AND LENGTH(ve."entryKey") <= ${Math.max(0, Math.floor(maxEntryKeyLen))}`
+      : '';
+    for (const category of categories) {
+      const result = await client.query<VocabEntry>(`
+        SELECT ve.*, ${DICT_COLS}, ${UTCM_CATEGORY_SELECT}
+        FROM ${vetReadFrom(language)} ${DICT_JOIN} ${UTCM_USERS_JOIN}
+        WHERE ve."userId" = $1
+        AND ve."language" = $4
+        AND ve."starterPackBucket" = 'library'
+        AND ${UTCM_CATEGORY_EXPR} = $2
+        ${lenClause}
+        ORDER BY RANDOM()
+        LIMIT $3
+      `, [userId, category, cap, language]);
+
+      const fresh: VocabEntry[] = [];
+      const stale: VocabEntry[] = [];
+      for (const row of result.rows) {
+        (this.isCardGameEligible(row, markTypes, now) ? fresh : stale).push(row);
+      }
+      eligible[category] = fresh;
+      cooled[category] = stale;
+    }
+    return { eligible, cooled };
   }
 
   /**
@@ -300,55 +409,53 @@ export class OnDeckVocabService {
   }
 
   /**
-   * Get library cards filtered by a specific category.
-   * Optionally excludes cards whose ids appear in `excludeIds` — used by the
-   * mark endpoint to avoid handing back cards already present in the client's
-   * working loop.
+   * Fetch library candidate rows of one category (DICT-joined, category-stamped,
+   * UN-enriched), newest first. Shared by the flp refill picker and the initial
+   * loop's cooled last-resort fallback — both do their eligibility filtering /
+   * ranking in app code, so enrichment is deferred to only the chosen cards.
+   * `excludeIds` keeps already-chosen cards out; `limitRows` caps the scan (omit
+   * for a full scan, which the refill needs to reach the newest eligible card).
    */
-  async getLibraryCardsByCategory(
+  private async fetchLibraryCandidatesByCategory(
+    client: PoolClient,
     userId: string,
     category: string,
     language: string,
-    excludeIds: number[] = []
+    excludeIds: number[],
+    limitRows?: number
   ): Promise<VocabEntry[]> {
-    if (!userId) {
-      throw new ValidationError('User ID is required');
-    }
-    if (!category) {
-      throw new ValidationError('Category is required');
-    }
-
-    const client = await db.getClient();
-    try {
-      const result = await client.query<VocabEntry>(`
-        SELECT ve.*, ${DICT_COLS}, ${UTCM_CATEGORY_SELECT}
-        FROM ${vetReadFrom(language)} ${DICT_JOIN} ${UTCM_USERS_JOIN}
-        WHERE ve."userId" = $1
-        AND ve."language" = $4
-        AND ve."starterPackBucket" = 'library'
-        AND ${UTCM_CATEGORY_EXPR} = $2
-        AND ve.id != ALL($3::int[])
-        ORDER BY ve."createdAt" DESC
-      `, [userId, category, excludeIds, language]);
-
-      // Run the three-stage enrichment pipeline, then add related words + single-char usedIn
-      const enriched = await this.enrichEntriesPipeline(result.rows, language);
-      const withRelated = await this.enrichMultipleWithRelatedWords(userId, enriched);
-      return await this.enrichMultipleWithUsedIn(userId, withRelated);
-    } finally {
-      client.release();
-    }
+    // limitRows is coerced to a non-negative integer and inlined (it can be
+    // omitted, so it isn't a bind param); never interpolate untrusted input here.
+    const limitClause = limitRows != null ? `LIMIT ${Math.max(0, Math.floor(limitRows))}` : '';
+    const result = await client.query<VocabEntry>(`
+      SELECT ve.*, ${DICT_COLS}, ${UTCM_CATEGORY_SELECT}
+      FROM ${vetReadFrom(language)} ${DICT_JOIN} ${UTCM_USERS_JOIN}
+      WHERE ve."userId" = $1
+      AND ve."language" = $4
+      AND ve."starterPackBucket" = 'library'
+      AND ${UTCM_CATEGORY_EXPR} = $2
+      AND ve.id != ALL($3::int[])
+      ORDER BY ve."createdAt" DESC
+      ${limitClause}
+    `, [userId, category, excludeIds, language]);
+    return result.rows;
   }
 
   /**
-   * Get next library card with fallback priority.
-   * Default priority when preferred category has no cards: Target -> Unfamiliar -> Comfortable -> Mastered.
-   * Skips cards still on per-category cooldown (see COOLDOWN_MS_BY_CATEGORY).
+   * Get the next library card for a correct-mark refill, honoring PER-TYPE
+   * cooldowns (docs/MASTERY_REWORK.md § Per-type cooldown).
    *
-   * `allowedCategories` (Easy/Hard modes) restricts the replacement pool to the
-   * given categories only — a banned category is never served, even as a last
-   * resort. When every allowed category is exhausted, returns null so the caller
-   * can wind the working loop down ("no more easy/hard cards remaining").
+   * Priority: the preferred category first, then Target -> Unfamiliar ->
+   * Comfortable -> Mastered. At each step we take the newest card with ≥1 flp mark
+   * type off cooldown (recognition/production), stamping `readyMarkTypes` so the
+   * client shows a face for a ready type. Only if EVERY candidate everywhere is
+   * fully cooling down do we emit the least-recently-correct cooled card (so the
+   * loop never stalls). `excludeIds` keeps cards already in the loop out.
+   *
+   * `allowedCategories` (Easy/Hard modes) restricts the pool to the given
+   * categories only — a banned category is never served, even as a last resort.
+   * When the allowed pool is empty, returns null so the caller can wind the loop
+   * down ("no more easy/hard cards remaining"). Enriches only the chosen card.
    */
   async getNextLibraryCardWithFallback(
     userId: string,
@@ -364,15 +471,9 @@ export class OnDeckVocabService {
       throw new ValidationError('Preferred category is required');
     }
 
-    // Try the preferred category first, then fall back. At each step we prefer
-    // an eligible (non-cooldown) card. Only if EVERY category's cards are on
-    // cooldown do we emit a cooled-down card, picking the one whose last correct
-    // mark is furthest in the past. `excludeIds` keeps cards already in the
-    // client's working loop out of the replacement pool.
-    //
-    // In a mode session, `allowedCategories` caps the pool: the preferred
-    // category is honored only if it's allowed, and the fallback list is the
-    // remaining allowed categories.
+    // In a mode session, `allowedCategories` caps the pool: the preferred category
+    // is honored only if it's allowed, and the fallback list is the remaining
+    // allowed categories.
     const fallbackBase = allowedCategories ?? ['Target', 'Unfamiliar', 'Comfortable', 'Mastered'];
     const preferredFirst = !allowedCategories || allowedCategories.includes(preferredCategory)
       ? [preferredCategory]
@@ -382,35 +483,53 @@ export class OnDeckVocabService {
       ...fallbackBase.filter(cat => cat !== preferredCategory),
     ];
 
-    const cooledDownPool: VocabEntry[] = [];
+    const client = await db.getClient();
+    try {
+      const cooledDownPool: VocabEntry[] = [];
+      let winner: VocabEntry | null = null;
 
-    for (const category of categoryOrder) {
-      const cards = await this.getLibraryCardsByCategory(userId, category, language, excludeIds);
-      if (cards.length === 0) continue;
+      for (const category of categoryOrder) {
+        const cards = await this.fetchLibraryCandidatesByCategory(client, userId, category, language, excludeIds);
+        if (cards.length === 0) continue;
 
-      const eligible = this.pickNewestCardNotOnCooldown(cards);
-      if (eligible) return eligible;
+        const eligible = this.pickNewestFlpEligibleCard(cards);
+        if (eligible) { winner = eligible; break; }
 
-      // Every card in this category is on cooldown; remember them for last-resort.
-      cooledDownPool.push(...cards);
+        // Every card in this category is on cooldown; remember for last-resort.
+        cooledDownPool.push(...cards);
+      }
+
+      if (!winner) winner = this.pickLeastRecentlyCorrectFlp(cooledDownPool);
+      if (!winner) return null;
+
+      // Enrich only the chosen card (candidates were fetched un-enriched), then
+      // re-apply the readyMarkTypes stamp defensively so face-steering survives
+      // any enrichment step that rebuilds the object.
+      const readyMarkTypes = winner.readyMarkTypes;
+      const enriched = await this.enrichEntriesPipeline([winner], language);
+      const withRelated = await this.enrichMultipleWithRelatedWords(userId, enriched);
+      const withUsedIn = await this.enrichMultipleWithUsedIn(userId, withRelated);
+      return { ...withUsedIn[0], readyMarkTypes };
+    } finally {
+      client.release();
     }
-
-    // No eligible card anywhere — return the least-recently-correct cooled-down
-    // card so the loop never stalls on an empty response.
-    return this.pickLeastRecentlyCorrect(cooledDownPool);
   }
 
   /**
-   * Fetch up to `limit` random library cards of one category, excluding ids
-   * already chosen. Shared building block for the working-loop distribution.
+   * Fetch up to `limit` flp-eligible library cards of one category for the initial
+   * working loop: overfetch a shuffled candidate pool (bounded by
+   * LOOP_CANDIDATE_CAP), then keep only cards with ≥1 flp mark type off cooldown
+   * (per-type cooldown; docs/MASTERY_REWORK.md), stamping `readyMarkTypes` for
+   * client face-steering. `excludeIds` keeps already-picked cards out.
    */
-  private async fetchCategoryCards(
+  private async fetchEligibleCategoryCards(
     client: PoolClient,
     userId: string,
     language: string,
     category: string,
     limit: number,
-    excludeIds: number[]
+    excludeIds: number[],
+    now: number
   ): Promise<VocabEntry[]> {
     if (limit <= 0) return [];
     const result = await client.query<VocabEntry>(`
@@ -423,8 +542,58 @@ export class OnDeckVocabService {
       AND ve.id != ALL($3::int[])
       ORDER BY RANDOM()
       LIMIT $4
-    `, [userId, category, excludeIds, limit, language]);
-    return result.rows;
+    `, [userId, category, excludeIds, LOOP_CANDIDATE_CAP, language]);
+
+    const eligible: VocabEntry[] = [];
+    for (const card of result.rows) {
+      const ready = this.flpReadyMarkTypes(card, now);
+      if (ready.length === 0) continue;
+      eligible.push({ ...card, readyMarkTypes: ready });
+      if (eligible.length >= limit) break;
+    }
+    return eligible;
+  }
+
+  /**
+   * Last-resort initial-loop fill when NO flp-eligible card exists (the whole
+   * allowed pool is cooling down): pull candidates from `categoryOrder`, keep the
+   * `limit` whose flp cooldown is closest to expiring, each stamped with the
+   * single type to present. Mirrors the refill's never-stall guarantee.
+   */
+  private async fetchCooledFallbackCards(
+    client: PoolClient,
+    userId: string,
+    language: string,
+    categoryOrder: string[],
+    limit: number,
+    excludeIds: number[]
+  ): Promise<VocabEntry[]> {
+    if (limit <= 0) return [];
+    const pool: VocabEntry[] = [];
+    const seen = new Set<number>(excludeIds);
+    for (const category of categoryOrder) {
+      const rows = await this.fetchLibraryCandidatesByCategory(
+        client, userId, category, language, [...seen], LOOP_CANDIDATE_CAP
+      );
+      for (const row of rows) {
+        if (seen.has(row.id)) continue;
+        seen.add(row.id);
+        pool.push(row);
+      }
+    }
+    // Rank by oldest last-correct across flp types (closest to expiring first).
+    return pool
+      .map(card => ({
+        card,
+        oldest: Math.min(
+          ...OnDeckVocabService.FLP_MARK_TYPES.map(
+            t => this.getLastCorrectMarkTimestampForType(card.typedMarkHistory, t) ?? -Infinity
+          )
+        ),
+      }))
+      .sort((a, b) => a.oldest - b.oldest)
+      .slice(0, limit)
+      .map(({ card }) => ({ ...card, readyMarkTypes: [this.closestToExpiringFlpType(card)] }));
   }
 
   /**
@@ -435,6 +604,13 @@ export class OnDeckVocabService {
    *   topping up only from its allowed categories.
    * - `categoryFilter`: returns up to 10 cards from that single category (legacy
    *   deck-tap path), ignoring distribution.
+   *
+   * PER-TYPE COOLDOWN (docs/MASTERY_REWORK.md § Per-type cooldown): every fetch is
+   * eligibility-filtered — a card is only offered if ≥1 flp mark type
+   * (recognition/production) is off cooldown, and it's stamped with
+   * `readyMarkTypes` so the client steers the shown face. Only if the whole
+   * (allowed) pool is cooling down do we fall back to least-recently-correct
+   * cooled cards, so the loop never comes back empty for a user who has cards.
    * Enriches cards with related words that share characters.
    */
   async getDistributedWorkingLoop(
@@ -447,36 +623,35 @@ export class OnDeckVocabService {
       throw new ValidationError('User ID is required');
     }
 
+    const now = Date.now();
     const client = await db.getClient();
     try {
       let workingLoop: VocabEntry[];
 
-      // If category filter is applied, just get 10 cards from that category
-      if (categoryFilter) {
-        const result = await client.query<VocabEntry>(`
-          SELECT ve.*, ${DICT_COLS}, ${UTCM_CATEGORY_SELECT}
-          FROM ${vetReadFrom(language)} ${DICT_JOIN} ${UTCM_USERS_JOIN}
-          WHERE ve."userId" = $1
-          AND ve."language" = $3
-          AND ve."starterPackBucket" = 'library'
-          AND ${UTCM_CATEGORY_EXPR} = $2
-          ORDER BY RANDOM()
-          LIMIT 10
-        `, [userId, categoryFilter, language]);
+      // The categories this loop may draw from, in fallback priority — also the
+      // pool for the cooled last-resort fill below.
+      let loopCategories: string[];
 
-        workingLoop = result.rows;
+      if (categoryFilter) {
+        // Legacy deck-tap path: up to WORKING_LOOP_SIZE eligible cards from the
+        // single tapped category.
+        loopCategories = [categoryFilter];
+        workingLoop = await this.fetchEligibleCategoryCards(
+          client, userId, language, categoryFilter, WORKING_LOOP_SIZE, [], now
+        );
       } else {
         // Data-driven distribution: pick the per-mode config (or the Mix default),
         // fetch each quota in order, then top up to WORKING_LOOP_SIZE using the
         // mode's fill order. Mode loops only ever draw from their config's
         // categories; Mix may draw from all four.
         const config = mode ? MODE_CONFIGS[mode] : DEFAULT_LOOP_CONFIG;
+        loopCategories = mode ? MODE_CONFIGS[mode].allowed : ['Target', 'Unfamiliar', 'Comfortable', 'Mastered'];
         workingLoop = [];
 
-        // Initial quota fetches.
+        // Initial quota fetches (eligibility-filtered).
         for (const { category, count } of config.quotas) {
-          const rows = await this.fetchCategoryCards(
-            client, userId, language, category, count, workingLoop.map(c => c.id)
+          const rows = await this.fetchEligibleCategoryCards(
+            client, userId, language, category, count, workingLoop.map(c => c.id), now
           );
           workingLoop.push(...rows);
         }
@@ -485,9 +660,9 @@ export class OnDeckVocabService {
         if (workingLoop.length < WORKING_LOOP_SIZE) {
           for (const category of config.fillOrder) {
             if (workingLoop.length >= WORKING_LOOP_SIZE) break;
-            const rows = await this.fetchCategoryCards(
+            const rows = await this.fetchEligibleCategoryCards(
               client, userId, language, category,
-              WORKING_LOOP_SIZE - workingLoop.length, workingLoop.map(c => c.id)
+              WORKING_LOOP_SIZE - workingLoop.length, workingLoop.map(c => c.id), now
             );
             workingLoop.push(...rows);
           }
@@ -495,6 +670,24 @@ export class OnDeckVocabService {
 
         // Shuffle the working loop to randomize card order
         workingLoop.sort(() => Math.random() - 0.5);
+      }
+
+      // If everything eligible is on cooldown, don't strand the user with an empty
+      // loop — fall back to least-recently-correct cooled cards (mirrors the
+      // refill's never-stall guarantee). Only triggers when NO eligible card
+      // exists in the loop's categories.
+      if (workingLoop.length === 0) {
+        workingLoop = await this.fetchCooledFallbackCards(
+          client, userId, language, loopCategories, WORKING_LOOP_SIZE, []
+        );
+      }
+
+      // Preserve each card's readyMarkTypes stamp across enrichment (enrichment
+      // steps spread the entry, but we re-apply defensively so face-steering is
+      // never dropped by a rebuild).
+      const readyByCardId = new Map<number, MarkType[]>();
+      for (const card of workingLoop) {
+        if (card.readyMarkTypes) readyByCardId.set(card.id, card.readyMarkTypes);
       }
 
       // Run the three-stage enrichment pipeline, then add related words + single-char usedIn
@@ -508,7 +701,14 @@ export class OnDeckVocabService {
       // and auto-play feel instant. Per-entry failures degrade gracefully:
       // hasAudio=false signals the client to fall back to Web Speech for that
       // card. We don't fail the whole loop if Google has a hiccup on one entry.
-      return await this.prewarmAudio(withUsedIn);
+      const withAudio = await this.prewarmAudio(withUsedIn);
+
+      // Re-apply the readyMarkTypes stamp (see readyByCardId above) as the final
+      // step, so client face-steering data is guaranteed present on the response.
+      return withAudio.map(card => {
+        const ready = readyByCardId.get(card.id);
+        return ready ? { ...card, readyMarkTypes: ready } : card;
+      });
     } finally {
       client.release();
     }
@@ -557,6 +757,12 @@ export class OnDeckVocabService {
   // and finally Mastered.
   private static readonly GAME_FALLBACK_ORDER = ['Target', 'Comfortable', 'Unfamiliar', 'Mastered'];
 
+  // Per-category candidate overfetch cap for the cooldown-aware game pool: we
+  // pull a shuffled pool this large per category, partition it into fresh/cooled
+  // (fetchGameCandidates), and fill fresh-first. Bounds memory for large
+  // libraries while comfortably covering a 20–25 card game.
+  private static readonly GAME_CANDIDATE_CAP = 200;
+
   /**
    * Build the bubble-match game pool. The game needs `total` (= sum of the
    * requested distribution) cards to function, so this is a best-effort fill
@@ -574,11 +780,19 @@ export class OnDeckVocabService {
    * "every requested quota was met exactly". Cards are enriched and have their
    * TTS pre-warmed so in-game autoplay is instant, mirroring the
    * distributed-working-loop endpoint.
+   *
+   * PER-TYPE COOLDOWN (docs/MASTERY_REWORK.md § Per-type cooldown, "Games"):
+   * `gameMarkTypes` is the mark type(s) this game emits (bubble-match =
+   * ['recognition']). The pool is filled FRESH-FIRST — cards whose game mark type
+   * is off cooldown, drawn from the requested categories then the fallback
+   * categories — and only tops up with COOLED cards (same category order) as a
+   * last resort, so a recently-played library still yields a full board.
    */
   async getGameVocabPool(
     userId: string,
     language: string,
-    distribution: Record<string, number>
+    distribution: Record<string, number>,
+    gameMarkTypes: readonly MarkType[]
   ): Promise<{
     cards: VocabEntry[];
     requested: Record<string, number>;
@@ -590,6 +804,7 @@ export class OnDeckVocabService {
       throw new ValidationError('User ID is required');
     }
 
+    const now = Date.now();
     const total = Object.values(distribution).reduce((sum, n) => sum + n, 0);
     // Count availability across both the requested buckets and the fallback
     // buckets so the client can show accurate "you have N" hints.
@@ -600,37 +815,40 @@ export class OnDeckVocabService {
 
     const client = await db.getClient();
     try {
-      const cards: VocabEntry[] = [];
+      // Per-category candidates split fresh (game type off cooldown) vs cooled.
+      const { eligible, cooled } = await this.fetchGameCandidates(
+        client, userId, language, countCategories, gameMarkTypes, now,
+        OnDeckVocabService.GAME_CANDIDATE_CAP
+      );
 
-      // Pulls up to `limit` library cards from one bucket, excluding ids already
-      // in the pool so fallback passes never re-add the same card.
-      const pullFromCategory = async (category: string, limit: number): Promise<void> => {
-        if (limit <= 0) return;
-        const existingIds = cards.map((c) => c.id);
-        const result = await client.query<VocabEntry>(`
-          SELECT ve.*, ${DICT_COLS}, ${UTCM_CATEGORY_SELECT}
-          FROM ${vetReadFrom(language)} ${DICT_JOIN} ${UTCM_USERS_JOIN}
-          WHERE ve."userId" = $1
-          AND ve."language" = $5
-          AND ve."starterPackBucket" = 'library'
-          AND ${UTCM_CATEGORY_EXPR} = $2
-          AND ve.id != ALL($3::int[])
-          ORDER BY RANDOM()
-          LIMIT $4
-        `, [userId, category, existingIds, limit, language]);
-        cards.push(...result.rows);
+      const selectedIds = new Set<number>();
+      const cards: VocabEntry[] = [];
+      // Pop up to `limit` not-yet-selected cards off one category queue.
+      const drain = (queue: VocabEntry[], limit: number): void => {
+        while (limit > 0 && queue.length > 0) {
+          const card = queue.shift()!;
+          if (selectedIds.has(card.id)) continue;
+          selectedIds.add(card.id);
+          cards.push(card);
+          limit--;
+        }
       };
 
-      // 1. Fill each requested bucket up to its quota.
+      // 1. Fill each requested bucket up to its quota from FRESH cards.
       for (const [category, count] of Object.entries(distribution)) {
-        await pullFromCategory(category, count);
+        drain(eligible[category] ?? [], count);
       }
-
-      // 2. Top up to `total` from the fallback buckets
-      //    (Target → Comfortable → Unfamiliar → Mastered).
+      // 2. Still short → top up to `total` with FRESH cards from the fallback
+      //    buckets (Target → Comfortable → Unfamiliar → Mastered).
       for (const category of OnDeckVocabService.GAME_FALLBACK_ORDER) {
         if (cards.length >= total) break;
-        await pullFromCategory(category, total - cards.length);
+        drain(eligible[category] ?? [], total - cards.length);
+      }
+      // 3. Last resort → COOLED cards (requested buckets first, then fallback),
+      //    so a just-played library still assembles a full board.
+      for (const category of [...Object.keys(distribution), ...OnDeckVocabService.GAME_FALLBACK_ORDER]) {
+        if (cards.length >= total) break;
+        drain(cooled[category] ?? [], total - cards.length);
       }
 
       const sufficient = cards.length >= total;
@@ -687,11 +905,19 @@ export class OnDeckVocabService {
    *
    * Word Search is Chinese-only for now (the grid is a cpcd character lattice);
    * non-`zh` languages return `sufficient: false` with a language note.
+   *
+   * PER-TYPE COOLDOWN (docs/MASTERY_REWORK.md § Per-type cooldown, "Games"):
+   * `gameMarkTypes` is the mode's mark type — ['reading'] for No-Pinyin,
+   * ['production'] for Pinyin. Both the initial selection and the substring-dedup
+   * replacements prefer FRESH cards (that type off cooldown) across the requested
+   * then fallback categories, dipping into COOLED cards only as a last resort so
+   * the game never blocks a just-played library.
    */
   async getWordSearchGrid(
     userId: string,
     language: string,
-    distribution: Record<string, number>
+    distribution: Record<string, number>,
+    gameMarkTypes: readonly MarkType[]
   ): Promise<{
     grid: GridCell[][] | null;
     words: WordSearchGrid['words'];
@@ -726,31 +952,21 @@ export class OnDeckVocabService {
 
     const client = await db.getClient();
     try {
-      // Per-category shuffled candidate queues. We pop from these both for the
-      // initial selection and for substring replacements, so a card is never
-      // reused across passes.
-      const queues: Record<string, VocabEntry[]> = {};
-      for (const category of countCategories) {
-        const result = await client.query<VocabEntry>(`
-          SELECT ve.*, ${DICT_COLS}, ${UTCM_CATEGORY_SELECT}
-          FROM ${vetReadFrom(language)} ${DICT_JOIN} ${UTCM_USERS_JOIN}
-          WHERE ve."userId" = $1
-          AND ve."language" = $4
-          AND ve."starterPackBucket" = 'library'
-          AND ${UTCM_CATEGORY_EXPR} = $2
-          AND LENGTH(ve."entryKey") <= 4
-          ORDER BY RANDOM()
-          LIMIT $3
-        `, [userId, category, OnDeckVocabService.WORD_SEARCH_CANDIDATE_CAP, language]);
-        queues[category] = result.rows;
-      }
+      const now = Date.now();
+      // Per-category candidates split fresh (mode's mark type off cooldown) vs
+      // cooled, capped to short (<= 4 char) words the grid can place. We pop from
+      // these both for the initial selection and for substring replacements, so a
+      // card is never reused across passes.
+      const { eligible, cooled } = await this.fetchGameCandidates(
+        client, userId, language, countCategories, gameMarkTypes, now,
+        OnDeckVocabService.WORD_SEARCH_CANDIDATE_CAP, 4
+      );
 
       const selectedIds = new Set<number>();
       const selected: VocabEntry[] = [];
 
-      // Pop up to `limit` unused cards from one category queue into `selected`.
-      const pull = (category: string, limit: number): void => {
-        const queue = queues[category] ?? [];
+      // Pop up to `limit` unused cards from one queue into `selected`.
+      const drain = (queue: VocabEntry[], limit: number): void => {
         while (limit > 0 && queue.length > 0) {
           const card = queue.shift()!;
           if (selectedIds.has(card.id)) continue;
@@ -760,24 +976,33 @@ export class OnDeckVocabService {
         }
       };
 
-      // Pull ONE replacement for a dropped word, preferring `preferredCategory`
-      // then the fallback order. Returns the added card, or null if the whole
-      // library is exhausted.
+      // Pull ONE replacement for a dropped word, preferring FRESH cards
+      // (preferred category → fallback order), then COOLED cards (same order)
+      // only if no fresh card is left. Returns the added card, or null if the
+      // whole library is exhausted.
       const pullReplacement = (preferredCategory: string): VocabEntry | null => {
         const order = [preferredCategory, ...OnDeckVocabService.GAME_FALLBACK_ORDER];
-        for (const category of order) {
-          const before = selected.length;
-          pull(category, 1);
-          if (selected.length > before) return selected[selected.length - 1];
+        for (const source of [eligible, cooled]) {
+          for (const category of order) {
+            const before = selected.length;
+            drain(source[category] ?? [], 1);
+            if (selected.length > before) return selected[selected.length - 1];
+          }
         }
         return null;
       };
 
-      // 1. Fill each requested bucket, then 2. top up to `total` from fallbacks.
-      for (const [category, count] of Object.entries(distribution)) pull(category, count);
+      // 1. Fill each requested bucket up to its quota from FRESH cards, then
+      //    2. top up to `total` with FRESH fallback cards, then 3. backfill any
+      //    remaining shortfall with COOLED cards (requested buckets → fallback).
+      for (const [category, count] of Object.entries(distribution)) drain(eligible[category] ?? [], count);
       for (const category of OnDeckVocabService.GAME_FALLBACK_ORDER) {
         if (selected.length >= total) break;
-        pull(category, total - selected.length);
+        drain(eligible[category] ?? [], total - selected.length);
+      }
+      for (const category of [...Object.keys(distribution), ...OnDeckVocabService.GAME_FALLBACK_ORDER]) {
+        if (selected.length >= total) break;
+        drain(cooled[category] ?? [], total - selected.length);
       }
 
       // 3. Substring de-dup. Find any pair where one entryKey is contained in the

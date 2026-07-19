@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticateToken } from '../authMiddleware.js';
-import { gamesController, nightMarketController, communityLayoutController } from '../dal/setup.js';
+import { gamesController, nightMarketController, nightMarketWorldController, communityLayoutController, userMinutePointsController } from '../dal/setup.js';
 import { leaderboardController } from '../controllers/LeaderboardController.js';
 
 /**
@@ -43,6 +43,20 @@ router.get('/api/night-market/unlocks', authenticateToken, async (req, res) => {
 // @ts-ignore
 router.post('/api/night-market/unlock', authenticateToken, async (req, res) => {
   await nightMarketController.unlockNext(req, res);
+});
+
+// Get the authenticated user's rendered template LAYOUT (placements → world). Seeds the
+// origin hub on first load if the user has none. (Migrations 112/113; runtime plan slice 3.)
+// @ts-ignore
+router.get('/api/night-market/layout', authenticateToken, async (req, res) => {
+  await nightMarketWorldController.getLayout(req, res);
+});
+
+// Template-author-only DEV tool: emit an artificial ±N minute signal (the nmp buttons) and
+// reconcile the market to the new balance. Gated on isTemplateAuthor inside the service (403).
+// @ts-ignore
+router.post('/api/night-market/dev/adjust-minutes', authenticateToken, async (req, res) => {
+  await userMinutePointsController.adjustMinutesForAuthor(req, res);
 });
 
 // ── Community — shareable advanced card-icon layouts (docs/COMMUNITY_PAGE.md) ──

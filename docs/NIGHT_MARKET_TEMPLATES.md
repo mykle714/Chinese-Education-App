@@ -135,8 +135,10 @@ terminates cleanly.
 - Because a cell's class can differ between versions (see
   [Template versions](#template-versions--full-snapshots)), the autotile sprite of a
   cell **and its neighbors** must be recomputed whenever a placed template's **active
-  version changes** or a neighbor template appears (templates are append-only, so they
-  only ever appear, never leave), not just at template placement.
+  version changes** or a neighbor template appears **or is pruned on decay** (empty
+  dangling templates can now be removed — see
+  [Losing minutes removes templates](#losing-minutes-removes-templates)), not just at
+  template placement.
 
 > **TBD:** the exact tileset scheme (4-bit edge-only vs 8-bit blob/47-tile, which
 > classes participate, and the sprite atlas) is not yet specified.
@@ -166,7 +168,7 @@ terminates cleanly.
 
 Placeholder areas are **authored explicitly, one dropped rectangle per area.** The
 editor's placeholder tool **drops a fixed-size area** at the hovered near corner (it is a
-footprint DROP like the house tool, *not* a free-painted mask or a two-click rectangle —
+footprint DROP, *not* a free-painted mask or a two-click rectangle —
 see [NIGHT_MARKET_TEMPLATE_EDITOR.md](./NIGHT_MARKET_TEMPLATE_EDITOR.md)). Each drop is
 stored as its **own `{col,row,w,h}` record** (near-corner anchor + span, extending
 +isoX/+isoY), single-sourced on **version 0** and shared by every version:
@@ -180,17 +182,17 @@ placeholder: Array<{ col, row, w, h }>   // authored directly — each element i
   adjacent slots** apart — touching islands merged into one area. Storing each drop as a
   discrete record keeps adjacent occupant slots **distinct**, which is what the placement /
   occupant system needs.
-- **Fixed sizes only.** A dropped area is one of exactly three sizes — **5×5**, **5×10**,
-  or **10×5** (the rotated 5×10). The editor's placeholder tool cycles between them with
-  **Space**; the server rejects any off-menu size on save. (`w` is the isoX/col span, `h`
-  the isoY/row span.)
+- **Fixed sizes only.** A dropped area is one of exactly four sizes — **4×5**, **5×4**
+  (the rotated 4×5), **4×10**, or **10×4** (the rotated 4×10). The editor's placeholder tool
+  cycles between them with **Space**; the server rejects any off-menu size on save. (`w` is
+  the isoX/col span, `h` the isoY/row span.)
 - **No overlap.** Areas may overlap any *other* layer freely (they are an override
   overlay, not a walkability class) but **not each other** — a drop onto a cell already
   covered by another area is refused, and the server re-checks this on save. The
   **occupant asset's footprint equals the area**, so there is no sub-area anchoring or
   partial fill to reason about.
 - **Refuse out-of-bounds.** A drop whose whole `w×h` footprint would not fit inside the
-  board is refused (no clipping) — mirroring house placement.
+  board is refused (no clipping).
 - Because the placeholder list lives on version 0 and is shared, **occupant slots are
   fixed per template name** — a version can only re-skin the streets/communal/decor
   *around* the slots; it cannot add or remove a slot. (The records are identical across
@@ -255,10 +257,11 @@ currently satisfied** and renders the best-scoring one.
 
 **A single condition = one island.** A *condition* is **one connected component
 (4-connected island) of condition-mask cells** within a version's mask — not a single
-cell. The number of islands is the version's **total condition count**, persisted as
-the `conditionCount` column so versions are searchable by it (see
-[Storage](#storage)); it is computed once, at save time in the editor, right after the
-border-street conditions are auto-added (see
+cell. The number of islands is the version's **total condition count** — the scoring
+denominator. It is **not persisted** (decision 2026-07-17: no `conditionCount` column —
+see [Storage](#storage)); the runtime re-derives it at load from the stored masks
+(`analyzeConditions().conditionCount`), and the editor computes it live at save for the
+author's information only (see
 [NIGHT_MARKET_TEMPLATE_EDITOR.md](./NIGHT_MARKET_TEMPLATE_EDITOR.md)).
 
 **Two kinds of condition, by the substrate the island sits on:**
@@ -274,19 +277,23 @@ border-street conditions are auto-added (see
 > **treated as a placeholder condition and an error is logged** (fallback, not a
 > supported authoring state).
 
-**Score and pick.** For each version, `score = satisfiedConditions / conditionCount`.
-The selector renders the version with the **highest score** across the name's
-`availableVersions`.
+**Score and pick.** For each version, count its **`satisfiedConditions`** (islands
+currently met) and its ratio `satisfiedConditions / conditionCount`. The selector
+renders the version with the **highest absolute `satisfiedConditions` count** across the
+name's `availableVersions` — a version that realizes *more* concrete conditions wins even
+if it carries more unmet ones (a lower ratio).
 
-- **Tiebreak.** On an equal ratio, prefer the version with the **highest absolute
-  satisfied count**; if still tied, the **lowest version number**.
+- **Tiebreak.** On an equal absolute satisfied count, prefer the version with the
+  **higher `satisfiedConditions / conditionCount` ratio**; if still tied, the **lowest
+  version number**. (Reversed 2026-07-18 from the earlier ratio-primary rule so that
+  satisfying more conditions always outranks a cleaner but smaller version.)
 - **Version 0 is the default floor.** Version 0 carries no condition cells
-  (`conditionCount = 0`), so its `0/0` score is defined as **0**. Because the final
-  tiebreak favors the **lowest** version number, version 0 **wins every all-zero tie** —
+  (`conditionCount = 0`, `satisfiedConditions = 0`), so its `0/0` ratio is defined as
+  **0**. Because the final tiebreak favors the **lowest** version number, version 0
+  **wins every all-zero tie** —
   when nothing is satisfied (no occupants placed, no neighbors abutting), the base
-  version renders. A higher version only supersedes it by actually satisfying
-  conditions (score `> 0`), or by tying at a positive ratio with an equal-or-greater
-  absolute satisfied count.
+  version renders. A higher version only supersedes it by **actually satisfying at least
+  one condition** (`satisfiedConditions ≥ 1`, which outranks v0's `0`).
 
 **Decay safety falls out of street conditions.** A version that keeps a border street
 as `street-walkable` can *score* that street's condition when a neighbor abuts; a
@@ -302,13 +309,17 @@ overridden by any occupant footprint covering it.
 Consequences:
 
 - The **tile graph, street graph, and autotile sprites are recomputed** whenever a
-  placed template's **active version changes** or a neighbor template appears
-  (templates are append-only — never removed) — not just at first placement.
-- **The condition mask has no runtime consumer yet** (design done, code pending). The
-  editor lets authors paint a per-version condition mask and auto-adds border-street
-  conditions at save (persisting the island `conditionCount`); the
-  [Version selection rule](#version-selection-rule) specifies how the runtime *will*
-  score it, but until `selectVersion` is de-stubbed nothing reads it at render.
+  placed template's **active version changes** or a neighbor template appears **or is
+  pruned** (empty dangling templates are removed on decay — see
+  [Losing minutes removes templates](#losing-minutes-removes-templates)) — not just at
+  first placement.
+- **The scoring engine exists; render-time wiring is pending.** The pure version-selection
+  engine is built (`conditionAnalysis` + `seamAdjacency` + `conditionScoreSelector`, Phase A)
+  and the editor auto-adds border-street conditions at save + shows the live island count
+  (Phase B, display-only — no persisted `conditionCount`). What remains is feeding the
+  selector **real** inputs at render — filled placeholder ids + neighbor occupancy — which
+  lands with the placement schema in slice 3. Until then `useMarketWorld` still selects via
+  the random stub.
 
 > **Decay safety is now a property of the version selector, not per-cell triggers.**
 > Under the old model a street cell carried an explicit `templateAdjacent` OR-trigger
@@ -343,6 +354,17 @@ in a consistent direction:
 
 Each bit is `1` if that boundary cell is `street-walkable`, else `0`.
 
+> ⚠️ **Compass-label inconsistency (documentation only — does not affect correctness).**
+> This table labels **row 0 = North**, but the **runtime coordinate system** (§ Local coordinate
+> system, and `versionSelection.outerEdgesOf`) labels **row 0 = South** (min-iso = SW/near corner,
+> +row = north). The implementation (`server/dal/shared/templatePlacement.ts`) follows the
+> **runtime** convention. This is safe because the placement algorithm never relies on the compass
+> label: anchors match by **complement pairing** (n↔s, e↔w) + **cell coincidence** read in a
+> consistent along-edge direction, and the hard constraint is the cell-level `isPlacementLegal`
+> check — not the whole-edge signature. The signature/bit-order is only an *indexing convenience*.
+> The two edges of any seam vary along the same axis (n/s edges by col, e/w edges by row), so a
+> single along-edge min coordinate aligns both regardless of which end is called "north".
+
 ### Matching rule (load-bearing)
 
 **Abutting templates must have equal facing-edge signatures** — this is a hard
@@ -361,6 +383,19 @@ the shared dimension (height for E/W seams, width for N/S seams) matches.
 ---
 
 ## Tiling & Placement
+
+> **Implementation.** The pure geometry lives in `server/dal/shared/templatePlacement.ts`
+> (`deriveAnchors`, `exposedAnchors`, `buildAnchorIndex`, `isPlacementLegal`, `matchedStreetRuns`,
+> `maximinSpread`, `planSpawn`); the write orchestration is `NightMarketPlacementService`
+> (`placeUnlock` / `spawnTemplate` / `grantUnlocks`). Spawn runs **server-side, once, persisted** —
+> never recomputed on the client. **Candidate version rule:** a candidate's walkability is matched
+> against its **most-conditioned version** — the version with the largest `condition` mask, NOT the
+> base v0. Base versions are empty (no streets → no anchors → untileable), so matching on v0 makes
+> almost nothing fit; the condition-rich versions carry a template's road connectivity, i.e. every
+> edge it could tile against, so they represent its full attachment potential. Picking the template
+> and picking its render version are **two separate steps**: candidacy uses the max-condition version;
+> the placed template's real active version is then settled by recompute-on-read on the next layout
+> read (§ Version selection). See `NightMarketPlacementService.spawnTemplate`.
 
 **Templates themselves are not unlocks.** Unlocks are *placeholder occupants*;
 templates are the canvas those occupants land in. The two grow on different
@@ -382,12 +417,18 @@ triggers:
 
 New templates are stitched onto the existing **contiguous continent** along a shared
 **anchor**. The whole policy is deterministic except a final random tiebreak; because
-the result is **persisted** to `nightmarkettemplates`, the algorithm runs **once,
+the result is **persisted** to `nightmarkettemplatelocations`, the algorithm runs **once,
 server-side, at spawn time** and is never recomputed on the client.
 
 - Start state: one **starter ("hub") template at the origin** — the default origin
   template every user has at 0 minutes (see
   [Unlock economy](#unlock-economy-minutes--unlocks)).
+- **The hub is SEED-ONLY.** Exactly one hub exists per user, planted at `(0,0)` by
+  `NightMarketWorldService.seedHubPlacement`, and it is **never a spawn candidate**:
+  `NightMarketPlacementService.spawnTemplate` filters `night-market-hub` out of the
+  growth catalog, so the anchor algorithm can never stitch a second hub onto the
+  continent. (Before this guard the growth path could re-pick the hub, producing
+  duplicate-hub layouts.)
 - Spawning only happens when the existing continent is **full** (no free
   placeholder), so every placed template has settled on an active version and anchors
   are matched against the **live, currently-rendered** edges — no speculation (see
@@ -500,8 +541,14 @@ study). Earning minutes grants unlocks; losing minutes takes them back.
 | 60 + 60·k | 17 + k | **steady state: +1 unlock per hour** beyond minute 60 |
 
 For `m ≥ 60`: `unlocks(m) = 17 + floor((m − 60) / 60)`. Below 60 the thresholds are
-the explicit list above. The threshold list lives as a **static constant in code**
-(alongside the night-market registry), not in the DB.
+the explicit list above. The threshold list lives as a **static constant in code**:
+`server/dal/shared/unlockSchedule.ts` (`UNLOCK_BREAKPOINTS` + `unlocksForMinutes`) is the
+**source of truth**. The hourly decay cron (`database/cron/expire-stale-streaks.sql`) hard-codes
+the same breakpoints as a SQL `CASE` (SQL can't import TS) — keep the two in sync. The grant flow
+(`NightMarketPlacementService.grantUnlocks`) is invoked best-effort from
+`UserMinutePointsService.incrementMinutePoints` after each earned minute; it is **idempotent**
+(fills up to `unlocks(m)`, no-op when already there). Occupants currently carry a **generic
+`assetId`** — the real stand-asset catalog (and occupant→stand rendering) is a later visual slice.
 
 Each granted unlock triggers the placement flow in
 [Tiling & Placement](#tiling--placement) (fill a free placeholder, or spawn a new
@@ -520,27 +567,46 @@ it runs in the **same transaction** that debits the minutes:
 2. While the user has **more** unlocks than `target`, **delete unlocks at random**
    from `nightmarketunlocks` until the count matches.
 
-**Templates are append-only — they are never removed.** Decay only ever deletes
-*unlocks* (placeholder occupants); the placed templates themselves persist for the
-life of the account, even if they decay to **zero occupied placeholders**. An
-emptied-out template simply renders its default (unoccupied) version and keeps its
-cells/streets in the graph.
+Decay's SQL step deletes only *unlocks* (placeholder occupants); freed placeholders
+return to the pool and a later re-granted unlock backfills them (placement picks among
+**all** placed templates' free slots) before any new template is spawned.
 
-Consequences:
+### Losing minutes removes templates
 
-- **No empty-template cleanup, ever.** There is no "remove now-empty templates"
-  step and no hub-exception to special-case — *everything* persists, including the
-  hub.
-- **Freed placeholders return to the pool.** A deleted unlock reverts its
-  placeholder to empty, and that slot is reusable by a future unlock. Because
-  placement picks among **all** placed templates' free placeholders (see
-  [Tiling & Placement](#tiling--placement)), a later re-granted unlock backfills
-  these empties before any new template is spawned.
-- **Streets a live neighbor leans on must not vanish.** Because templates are
-  append-only, a street a neighbor connects through must stay present even if this
-  template's own occupants decay. Under the version model this is a constraint the
-  future **version selector** must honor — never pick a version that drops a street a
-  live neighbor depends on (see [Template versions](#template-versions--full-snapshots)).
+Decay's occupant deletion is followed by a **template prune** — see
+[Losing minutes removes unlocks](#losing-minutes-removes-unlocks) for the occupant
+step it builds on. This **reverses the former "templates are append-only" rule**: a
+template that decay leaves both **empty and weakly attached** is now removed, iterated
+to a fixpoint.
+
+A placement is removed when **all** hold:
+
+- **Empty** — it holds **0 occupants** (all placeholder slots vacated). Nothing visible
+  is lost.
+- **Not the starter hub** (`night-market-hub`) — the hub is always kept.
+- **Touched on {0, 1, or 2 *adjacent*} sides** — encoded as `!(hasEast && hasWest) &&
+  !(hasHigh && hasLow)` (at most one neighbour per axis). This keeps well-anchored
+  interior pieces (3–4 sides) and **never removes a 2-*opposite*-side corridor/bridge**,
+  so a single prune can't sever the continent.
+
+Because removing one placement only ever *reduces* a neighbour's touched-side set, the
+predicate is monotonic and the fixpoint is order-independent — every currently-removable
+placement is peeled each pass until a pass removes nothing.
+
+- **Layer.** Pure geometry in `server/dal/shared/templatePrune.ts`
+  (`prunableDanglingPlacements`); the service wrapper
+  `NightMarketPlacementService.pruneDanglingTemplates` loads placements/dims/occupants and
+  deletes via `INightMarketPlacementDAL.deletePlacements` (occupants cascade — zero here by
+  the empty rule).
+- **Triggers (both decay paths).** The live author minute-loss tool via
+  `reconcileUnlocks`; the inactivity cron via the compiled companion script
+  `dist/scripts/night-market/prune-dangling-templates.js` (`:02`, see
+  [STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md)).
+- **Known edge (geometric spec).** An *empty L-connector* (2 **adjacent** sides) that is
+  the sole link to an **occupied** template **is** removable, orphaning that occupied
+  template into a floating island. The opposite-bridge guard only protects corridors, not
+  L-connectors. This is the accepted trade-off of the "no opposing pair" rule (vs. a full
+  hub-connectivity guard).
 
 > **No new `minutesLost` table.** The minute deduction is already recorded as
 > `userminutepoints.penaltyMinutes` (keyed `userId, streakDate, language`) by the
@@ -563,21 +629,27 @@ the DB table **`nightmarkettemplatedefinitions`** (migrations 107–109), one ro
 single-sourced on version 0), the condition mask, decor stems, house anchors — plus
 `width`/`height` and the shared `description`.
 
-**Scalar `conditionCount` (proposed column).** The version's **total condition count**
-— the number of 4-connected islands in its condition mask (see
-[Version selection rule](#version-selection-rule)) — is lifted out of the `definition`
-JSONB into its own scalar column so versions are **searchable by it** (mirroring why
-`width`/`height`/`description` are scalar columns). Unlike `description`/placeholder
-(shared per name, owned by version 0), `conditionCount` is **per-version** (each
-version has its own condition mask). It is computed **at save**, in the editor's
-`withBorderStreetConditions` step, so it always reflects the auto-added border-street
-conditions. Version 0 carries no conditions → `conditionCount = 0`.
+**Condition count — NOT a persisted column (decision 2026-07-17).** The version's total
+condition count (the number of 4-connected islands in its condition mask, see
+[Version selection rule](#version-selection-rule)) is **not** stored. An earlier draft
+proposed a scalar `conditionCount` column "for searchability", but tracing consumers found
+**no query filters by it**: the version selector loads all of a placement's versions and
+scores them **in-memory**, re-deriving the count at load (`analyzeConditions().conditionCount`
+in the version-selection engine); placement/spawn keys on **anchor width**, not condition
+count. A stored column would be a denormalized cache with **no reader** — and load
+re-derivation makes it authoritative-elsewhere, so it could only drift.
 
-> **Column confirmed; migration not yet written.**
->
-> | Column | Type | Notes |
-> |---|---|---|
-> | `conditionCount` | INTEGER NOT NULL DEFAULT 0 | per-`(name,version)` island count of the condition mask; computed at save. |
+Instead:
+- **At save**, the editor computes the count **live** from the masks (running the same
+  `analyzeConditions` the runtime uses) and shows the author the breakdown
+  ("N conditions — P placeholder, B border-street") in the Save toast + the condition-tool
+  tooltip. This is the "generated on save for the author's information" goal — **display
+  only, nothing persisted**. `withBorderStreetConditions` still folds the auto-added
+  border-street cells into the saved condition mask so the author sees the orange cells
+  appear on the board.
+- **At load**, the runtime re-derives border-street conditions + island analysis from the
+  stored masks (`street ∩ outer-edge`), so scoring can **never go stale** and there is
+  **nothing to backfill**. Version 0 carries no conditions → count 0.
 
 **The runtime reads this catalog DB-direct** (decision #1 in the status block): there
 is **no promote-to-code registry**. Derived structures are computed **at load, not at
@@ -604,7 +676,8 @@ slot that an *unlock* fills — so occupancy is recorded on the existing
 > ⚠️ **PROPOSED schema — pending confirmation before any migration is written.**
 > Per project rules, new tables/columns must be confirmed with the user first.
 
-**Proposed new table `nightmarkettemplates`** (placed templates):
+**Proposed new table `nightmarkettemplatelocations`** (placed templates — where each
+user has dropped a copy of a catalog template):
 
 | Column | Type | Notes |
 |---|---|---|
@@ -612,13 +685,21 @@ slot that an *unlock* fills — so occupancy is recorded on the existing
 | `userId` | UUID FK → users(id) ON DELETE CASCADE | owner |
 | `templateName` | VARCHAR | the catalog key — `nightmarkettemplatedefinitions.name` (a **name**, not a specific version) |
 | `activeVersion` | INTEGER | the version currently rendered, chosen by `selectVersion` (random stub) and **persisted so it is stable across renders** |
-| `offsetCol` | INTEGER | NW corner's column offset in **template-cell units** |
-| `offsetRow` | INTEGER | NW corner's row offset in **template-cell units** |
-| `placeOrder` | INTEGER | 0 = starter template at origin, 1+ = unlocked placements |
-| `createdAt` | TIMESTAMPTZ | |
+| `offsetCol` | INTEGER | SW (min-iso / near) corner's column offset in **template-cell units** |
+| `offsetRow` | INTEGER | SW (min-iso / near) corner's row offset in **template-cell units** |
+| `createdAt` | TIMESTAMPTZ | insertion time — doubles as chronological placement order |
 
 A placement references a template **by name**; `activeVersion` records which snapshot
 is currently shown (see [Template versions](#template-versions--full-snapshots)).
+
+> **No `placeOrder` ordinal.** An earlier draft carried a `placeOrder` column
+> (`0` = starter hub, `1+` = unlocks). It was dropped as redundant: the **starter hub**
+> is identified by the name constant `NIGHT_MARKET_HUB_TEMPLATE_NAME` and sits at
+> origin (`offsetCol/offsetRow = 0`), and **chronological order** is already `createdAt`.
+> Nothing in the placement or decay algorithms consumes a gap-free ordinal — spawning
+> ranks anchors by distance from origin, and decay removes `nightmarketunlocks` rows,
+> never templates — so a separate sequence column would be redundant state at risk of
+> drifting out of sync.
 Offset is stored in **local `col/row` cell units** (not global isoX/isoY); the
 `(col,row) → (isoX, isoY)` conversion happens at render via `src/engine/market/isometric.ts`.
 
@@ -629,7 +710,7 @@ state:
 
 | Column | Type | Notes |
 |---|---|---|
-| `placedTemplateId` | UUID FK → nightmarkettemplates(id), NOT NULL | which placed template the occupant sits in |
+| `placedTemplateId` | UUID FK → nightmarkettemplatelocations(id), NOT NULL | which placed template the occupant sits in |
 | `placeholderAreaId` | VARCHAR, NOT NULL | which placeholder area within that template |
 
 This keeps occupants and unlocks as one concept: a placeholder *placeholds for an
@@ -713,17 +794,24 @@ construction; projection inside `buildStreetGraph` covers T-junctions (N2).
    a live neighbor leans on (border-street conditions); the remaining open piece is the
    **hard** guarantee — a graph-invariant test that a selection **never** removes a
    street a live neighbor depends on.
+   > **Decision 2026-07-17: the scored selector is the accepted final form.** The
+   > soft-bias scoring rule ships as version-selection's final form; the hard
+   > graph-invariant guarantee is **explicitly deferred** as a separate future item, not
+   > a blocker for de-stubbing `selectVersion`.
 2. **Tileset scheme:** the autotiling bitmask/atlas
    (see [Tile rendering](#tile-rendering-autotiling)).
 
 > **Resolved — version-selection rule.** A condition is one 4-connected island of
 > condition-mask cells; placeholder-cell islands satisfy when their area is filled,
 > border-street-cell islands when a separate template abuts the edge. The runtime
-> renders the version maximizing `satisfiedConditions / conditionCount` (tiebreak:
-> highest absolute satisfied count, then lowest version number; version 0's `0/0` is
-> the default floor, so it wins every all-zero tie). `conditionCount` is a new per-version scalar column computed at save (see
-> [Version selection rule](#version-selection-rule)). Only de-stubbing `selectVersion`
-> and the hard decay-safety test remain.
+> renders the version with the highest absolute `satisfiedConditions` count (tiebreak:
+> higher `satisfiedConditions / conditionCount` ratio, then lowest version number;
+> version 0's `0` satisfied is the default floor, so it wins every all-zero tie).
+> `conditionCount` is the version's
+> island count, re-derived at load (NOT persisted — decision 2026-07-17). **Built (Phase A):**
+> the pure selector (`conditionAnalysis` + `seamAdjacency` + `conditionScoreSelector`) and
+> the editor's live count (Phase B). **Remaining:** feeding real inputs at render (slice 3
+> wiring) and the deferred hard decay-safety test.
 
 > **Resolved — street-recovery algorithm.** Greedy maximal-rectangle cover of the
 > stitched street mask → `Street[]` + `intersectingStreets`, fed to the existing
@@ -741,11 +829,13 @@ construction; projection inside `buildStreetGraph` covers T-junctions (N2).
 > pedestrian must reach lives there, so the street-graph-only movement model needs
 > no changes; future ped behaviors may opt in to communal space additively.
 
-> **Resolved — empty-template removal.** Templates are **append-only**: once placed
-> they are never removed, even when they decay to zero occupants (see
-> [Losing minutes removes unlocks](#losing-minutes-removes-unlocks)). This removes
-> the orphaning risk entirely, so the former "empty-template removal vs. structural
-> dependency" question no longer applies.
+> **Resolved — empty-template removal (was: append-only).** Templates are **no longer
+> append-only**. On any decay, a placement that is empty (0 occupants) AND weakly
+> attached ({0,1,2-adjacent} sides, never the hub, never a 2-opposite bridge) is pruned,
+> iterated to a fixpoint (see
+> [Losing minutes removes templates](#losing-minutes-removes-templates)). The 2-opposite
+> guard prevents severing the continent; the one residual orphaning case (an empty
+> L-connector to an occupied piece) is the accepted trade-off documented there.
 
 ---
 
@@ -754,9 +844,9 @@ construction; projection inside `buildStreetGraph` covers T-junctions (N2).
 Code this doc will depend on / drive once implemented:
 
 - **DB catalog `nightmarkettemplatedefinitions`** (migrations 107–109) read DB-direct
-  via `NightMarketTemplateService` — the authored source; **no code registry.** Gains a
-  new per-version scalar **`conditionCount`** column (island count of the condition
-  mask, written at save) that the version selector divides into (see
+  via `NightMarketTemplateService` — the authored source; **no code registry.** The
+  version selector's `conditionCount` denominator is **re-derived at load** from the
+  stored masks (no `conditionCount` column — decision 2026-07-17; see
   [Version selection rule](#version-selection-rule)).
 - **New catalog-load module** — reads the catalog and computes, at load, the
   **`selectVersion` seam** (random stub; the real body scores versions by
@@ -778,16 +868,21 @@ Code this doc will depend on / drive once implemented:
 - `src/engine/market/streetGraph.ts` — street graph built from the recovered
   `Street[]` (unchanged; still does nodes/projection/dead-ends/edge bodies).
 - `src/engine/market/isometric.ts` — local `(col,row)` → global `(isoX, isoY)` mapping.
-- New DB table `nightmarkettemplates` (placements — references the catalog by
+- New DB table `nightmarkettemplatelocations` (placements — references the catalog by
   `templateName` + persisted `activeVersion`) + new `placedTemplateId` /
   `placeholderAreaId` columns on `nightmarketunlocks` (occupants).
 - `users.totalMinutePoints` — the minute accumulator the unlock schedule reads
   (see [MINUTE_POINTS_SYSTEM.md](./MINUTE_POINTS_SYSTEM.md)).
-- `database/cron/expire-stale-streaks.sql` — the hourly maintenance cron gains an
-  **unlock-removal** branch (templates are append-only, so there is no
-  template-cleanup step; see
-  [STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md)). Reuses
+- `database/cron/expire-stale-streaks.sql` — the hourly maintenance cron has an
+  **unlock-removal** branch (SQL); a **companion compiled-JS job** one minute later
+  (`dist/scripts/night-market/prune-dangling-templates.js`) then prunes empty dangling
+  templates (see [STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md)). Reuses
   `userminutepoints.penaltyMinutes` as the loss audit trail (no new table).
+- `server/dal/shared/templatePrune.ts` — pure decay-time template-prune geometry
+  (`prunableDanglingPlacements`); wrapped by
+  `NightMarketPlacementService.pruneDanglingTemplates` +
+  `INightMarketPlacementDAL.deletePlacements` (see
+  [Losing minutes removes templates](#losing-minutes-removes-templates)).
 
 Related docs: [NIGHT_MARKET_FEATURE.md](./NIGHT_MARKET_FEATURE.md),
 [NIGHT_MARKET_GRAPH_ASSUMPTIONS.md](./NIGHT_MARKET_GRAPH_ASSUMPTIONS.md),

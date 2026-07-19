@@ -3,19 +3,17 @@ import { Application, extend, useTick, useApplication } from '@pixi/react';
 import { Container, Sprite, Graphics, Text, Assets, Texture } from 'pixi.js';
 import type { FederatedPointerEvent } from 'pixi.js';
 import { Box } from '@mui/material';
-import { isoToScreen, TILE_WIDTH, TILE_HEIGHT } from '../../engine/market/isometric';
+import { isoToScreen, computeLayerZ, TILE_WIDTH, TILE_HEIGHT } from '../../engine/market/isometric';
 import {
   buildEditorField, editorSurfaceAt, editorDecorRotation,
   type EditorMasks, type DecorCategory,
 } from '../../engine/market/farmTerrain';
+import { HOUSE_ANCHOR, occupantHousesForArea } from '../../engine/market/house';
 import {
-  houseFootprintCells, houseFits, houseOccupiedCells, houseFootprintSpans, HOUSE_ANCHOR,
-} from '../../engine/market/house';
-import {
-  placeholderAreaFits, placeholderAreaOverlapsAny, type PlaceholderArea,
+  placeholderAreaFits, placeholderAreaOverlapsAny, placeholderAreaCells, type PlaceholderArea,
 } from '../../engine/market/placeholderArea';
-// The house sprite for the placement ghost — imported directly like EditorTerrainLayer
-// (House.png lives in the pack's excluded Originals/ bucket).
+// The house sprite for the filled-placeholder occupant preview — imported directly like
+// EditorTerrainLayer (House.png lives in the pack's excluded Originals/ bucket).
 import houseUrl from '../../assets/free-assets/free-farm-assets/Environment/Originals/House.png';
 import EditorTerrainLayer from './EditorTerrainLayer';
 
@@ -43,7 +41,6 @@ export type EditorTool =
   | 'communal'
   | 'placeholder'
   | 'condition'
-  | 'house'
   | 'familyDecor'
   | 'commonDecor'
   | 'treeDecor'
@@ -74,19 +71,14 @@ export interface TemplateEditorViewerProps {
   showCondition?: boolean;
   /**
    * The active tool. The viewer stays tool-agnostic for PAINTING (the parent bakes the
-   * tool into {@link onPaintCell}); it needs the tool only to preview the HOUSE tool's
-   * 4×5 footprint under the cursor (a normal single-cell hover for every other tool).
+   * tool into {@link onPaintCell}); it needs the tool only to preview the placeholder DROP
+   * footprint under the cursor (a normal single-cell hover for every other tool).
    */
   activeTool?: EditorTool;
   /**
-   * The current house-placement mirror orientation (Space toggles it on the parent). Drives
-   * the placement GHOST's horizontal flip so the author sees the facing before dropping.
-   */
-  houseFlip?: boolean;
-  /**
-   * The current placeholder DROP size in cells (Space cycles it on the parent — 5×5 / 5×10 /
-   * 10×5). Drives the placeholder tool's footprint GHOST so the author sees the area before
-   * dropping. (The placeholder tool is a fixed-size DROP, like the house tool, not a rectangle.)
+   * The current placeholder DROP size in cells (Space cycles it on the parent — 4×5 / 5×4 /
+   * 4×10 / 10×4). Drives the placeholder tool's footprint GHOST so the author sees the area before
+   * dropping. (The placeholder tool is a fixed-size DROP, not a rectangle.)
    */
   placeholderSize?: { w: number; h: number };
   /**
@@ -119,7 +111,7 @@ export interface TemplateEditorViewerProps {
    */
   onRectComplete?: (a: { col: number; row: number }, b: { col: number; row: number }) => void;
   /**
-   * Whether the PASTE tool is active (with a non-empty clipboard). Like the house tool it
+   * Whether the PASTE tool is active (with a non-empty clipboard). Like the placeholder drop it
    * previews a footprint under the cursor — sized by {@link pasteFootprint} — and a single
    * left click stamps the clipboard there via {@link onPasteAt} (refused if the footprint
    * would fall off the board).
@@ -133,8 +125,8 @@ export interface TemplateEditorViewerProps {
    * Whether the eraser modifier is toggled on (docs/NIGHT_MARKET_TEMPLATE_EDITOR.md).
    * Erase is a modifier layered on the active tool — it removes that tool's own layer at
    * the cell — so the viewer only needs it to (a) tint the hover diamond RED as a mode
-   * cue and (b) fall back to the single-cell hover even under the house tool (you erase
-   * one house per cell, so the 4×5 placement preview would be misleading).
+   * cue and (b) fall back to the single-cell hover even under the placeholder tool (you erase
+   * one whole area per cell, so the drop footprint preview would be misleading).
    */
   eraseMode?: boolean;
   /**
@@ -237,65 +229,11 @@ function HoverOverlay({ cell, erase }: { cell: Cell | null; erase?: boolean }) {
   return <pixiGraphics draw={draw} zIndex={HOVER_Z} />;
 }
 
-// ─── House footprint preview ─────────────────────────────────────────────────────
-// While the house tool is active, the cursor becomes the house footprint (anchored at the
-// hovered FRONT corner, extending +isoX/+isoY) tinted by whether a house can drop
-// there: GREEN if the whole footprint is in-bounds and free of other houses, RED
-// otherwise. A house overwrites the street/communal walkability tint under its
-// footprint (mirroring communal), so a street cell does NOT block placement. The footprint
-// is flip-aware — 4×5 by default, transposed to 5×4 when the pending placement is mirrored —
-// so the green/red cells always match the ghost sprite drawn over them.
-const HOUSE_PREVIEW_VALID_COLOR = 0x33ff66;
-const HOUSE_PREVIEW_INVALID_COLOR = 0xff4d4d;
-
-function HousePreviewOverlay({
-  cell, width, height, houses, flip,
-}: {
-  cell: Cell | null;
-  width: number;
-  height: number;
-  /** Placed houses (anchor → flip); flip drives each house's footprint span (occupancy check). */
-  houses: ReadonlyMap<string, boolean>;
-  /** The PENDING placement's mirror orientation — transposes this preview's footprint. */
-  flip: boolean;
-}) {
-  const draw = useCallback((g: Graphics) => {
-    g.clear();
-    if (!cell) return;
-    const fits = houseFits(cell.col, cell.row, width, height, flip);
-    const footprint = houseFootprintCells(cell.col, cell.row, flip);
-    const occupied = houseOccupiedCells(houses);
-    // Valid only if fully in-bounds and no footprint cell hits another house.
-    const valid = fits && footprint.every((c) => !occupied.has(c));
-    const color = valid ? HOUSE_PREVIEW_VALID_COLOR : HOUSE_PREVIEW_INVALID_COLOR;
-    // Trace each footprint cell's surface diamond that is actually on the board (an
-    // off-board overhang near the edge simply isn't drawn; `fits` already flags it red).
-    const { spanX, spanY } = houseFootprintSpans(flip);
-    for (let dx = 0; dx < spanX; dx++) {
-      for (let dy = 0; dy < spanY; dy++) {
-        const col = cell.col + dx;
-        const row = cell.row + dy;
-        if (col < 0 || col >= width || row < 0 || row >= height) continue;
-        const { screenX, screenY } = isoToScreen(col, row);
-        const cy = screenY - TILE_HEIGHT / 2; // diamond centre
-        g.moveTo(screenX, cy - TILE_HEIGHT / 2);
-        g.lineTo(screenX + TILE_WIDTH / 2, cy);
-        g.lineTo(screenX, cy + TILE_HEIGHT / 2);
-        g.lineTo(screenX - TILE_WIDTH / 2, cy);
-        g.closePath();
-      }
-    }
-    g.fill({ color, alpha: 0.35 });
-    g.stroke({ color, width: 1, alpha: 0.9 });
-  }, [cell, width, height, houses, flip]);
-  return <pixiGraphics draw={draw} zIndex={HOVER_Z} />;
-}
-
 // ─── Placeholder drop preview ────────────────────────────────────────────────────
 // While the placeholder tool is active, the cursor becomes the drop footprint (the current
-// 5×5 / 5×10 / 10×5 size, anchored at the hovered near corner, extending +isoX/+isoY) tinted
+// 4×5 / 5×4 / 4×10 / 10×4 size, anchored at the hovered near corner, extending +isoX/+isoY) tinted
 // by whether an area can drop there: GREEN if the whole footprint is in-bounds AND overlaps no
-// existing area, RED otherwise (the drop is refused). Mirrors the house placement preview.
+// existing area, RED otherwise (the drop is refused).
 const PLACEHOLDER_PREVIEW_VALID_COLOR = 0x33ff66;
 const PLACEHOLDER_PREVIEW_INVALID_COLOR = 0xff4d4d;
 
@@ -329,42 +267,6 @@ function PlaceholderPreviewOverlay({
     g.stroke({ color, width: 1, alpha: 0.9 });
   }, [cell, size, width, height, areas]);
   return <pixiGraphics draw={draw} zIndex={HOVER_Z} />;
-}
-
-// ─── House placement ghost sprite ────────────────────────────────────────────────
-// A translucent House.png preview drawn ON TOP of the footprint tint while the house tool
-// hovers, so the author sees the actual sprite — and, crucially, its MIRROR orientation —
-// before committing. Seated exactly like a placed house (HOUSE_ANCHOR on the front-corner
-// foot cell, mirrored by negating scale.x around that anchor), so the ghost lands where the
-// real house will. Sits just above the footprint diamonds (HOVER_Z) so both read together.
-const HOUSE_GHOST_Z = HOVER_Z + 1;
-const HOUSE_GHOST_ALPHA = 0.55;
-
-function HouseGhostOverlay({ cell, flip }: { cell: Cell | null; flip: boolean }) {
-  const [texture, setTexture] = useState<Texture | null>(null);
-  // Load House.png once; Assets caches it, so this is a no-op after the first mount.
-  useEffect(() => {
-    let cancelled = false;
-    Assets.load<Texture>(houseUrl).then((tex) => {
-      tex.source.scaleMode = 'nearest';
-      if (!cancelled) setTexture(tex);
-    });
-    return () => { cancelled = true; };
-  }, []);
-  if (!cell || !texture) return null;
-  const { screenX, screenY } = isoToScreen(cell.col, cell.row);
-  return (
-    <pixiSprite
-      texture={texture}
-      x={screenX}
-      y={screenY}
-      anchor={HOUSE_ANCHOR}
-      scale={{ x: flip ? -1 : 1, y: 1 }}
-      alpha={HOUSE_GHOST_ALPHA}
-      zIndex={HOUSE_GHOST_Z}
-      eventMode="none"
-    />
-  );
 }
 
 // ─── Decor placement ghost sprite ────────────────────────────────────────────────
@@ -494,6 +396,115 @@ function PlaceholderAreaOverlay({ areas }: { areas: readonly PlaceholderArea[] }
   return <pixiGraphics draw={draw} zIndex={MASK_TINT_Z} />;
 }
 
+// ─── Filled-placeholder occupant houses ──────────────────────────────────────────
+// A placeholder area whose footprint contains any CONDITION-mask cell reads as an OCCUPIED
+// slot for this version, so the editor previews its occupant the same way the runtime does —
+// a house (or two adjacent houses for a 4×10/10×4 slot; see {@link occupantHousesForArea}) —
+// INSTEAD of the placeholder/condition tint. Seated exactly like a placed house (HOUSE_ANCHOR
+// on each front-corner foot cell, mirrored by negating scale.x). Lifted above the mask tints
+// (MASK_TINT_Z) and z-ordered per foot cell so a 4×10's two houses stack correctly.
+const OCCUPANT_HOUSE_Z_BASE = MASK_TINT_Z + 100;
+
+function PlaceholderOccupantHouses({ areas }: { areas: readonly PlaceholderArea[] }) {
+  const [texture, setTexture] = useState<Texture | null>(null);
+  // Load House.png once; Assets caches it, so this is a no-op after the first mount.
+  useEffect(() => {
+    let cancelled = false;
+    Assets.load<Texture>(houseUrl).then((tex) => {
+      tex.source.scaleMode = 'nearest';
+      if (!cancelled) setTexture(tex);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const houses = useMemo(
+    () => areas.flatMap((area) => occupantHousesForArea(area)),
+    [areas],
+  );
+  if (!texture) return null;
+
+  return (
+    <>
+      {houses.map((h) => {
+        const { screenX, screenY } = isoToScreen(h.col, h.row);
+        return (
+          <pixiSprite
+            key={`occupant:${h.col},${h.row}`}
+            texture={texture}
+            x={screenX}
+            y={screenY}
+            anchor={HOUSE_ANCHOR}
+            scale={{ x: h.flip ? -1 : 1, y: 1 }}
+            // Lift above the tints, preserving per-foot-cell iso ordering (nearer = on top).
+            zIndex={OCCUPANT_HOUSE_Z_BASE + computeLayerZ(h.col, h.row, 'entity')}
+            eventMode="none"
+          />
+        );
+      })}
+    </>
+  );
+}
+
+/**
+ * The full spriteless mask-tint stack (street / communal / placeholder / condition) for a
+ * board, each layer independently toggleable. Extracted so BOTH the editor scene (per-toggle
+ * control) and the read-only Load gallery (all layers on) render the exact same tints — the
+ * gallery would otherwise duplicate these four overlays. Defaults every layer ON (the
+ * gallery's case); the editor passes its four show* toggles. Renders nothing on its own
+ * container — the caller nests it inside the board's `sortableChildren` container so the
+ * MASK_TINT_Z ordering lands the tints above the terrain sprites.
+ */
+export function TemplateMaskOverlays({
+  masks, showStreet = true, showCommunal = true, showPlaceholder = true, showCondition = true,
+}: {
+  masks: EditorMasks;
+  showStreet?: boolean;
+  showCommunal?: boolean;
+  showPlaceholder?: boolean;
+  showCondition?: boolean;
+}) {
+  // A placeholder area with any condition-mask cell inside its footprint reads as an OCCUPIED
+  // slot for this version, so it previews as an occupant HOUSE instead of the placeholder /
+  // condition tint (see PlaceholderOccupantHouses). Split the areas into filled vs empty, and
+  // strip the condition cells that fall inside a filled area from the orange tint (border-street
+  // condition cells — outside any placeholder — still tint, so version authoring stays visible).
+  const { filledAreas, emptyAreas, tintCondition } = useMemo(() => {
+    const filled: PlaceholderArea[] = [];
+    const empty: PlaceholderArea[] = [];
+    const occupantCells = new Set<string>();
+    for (const area of masks.placeholder) {
+      const cells = placeholderAreaCells(area);
+      if (cells.some((c) => masks.condition.has(c))) {
+        filled.push(area);
+        for (const c of cells) occupantCells.add(c);
+      } else {
+        empty.push(area);
+      }
+    }
+    const cond = occupantCells.size === 0
+      ? masks.condition
+      : new Set([...masks.condition].filter((c) => !occupantCells.has(c)));
+    return { filledAreas: filled, emptyAreas: empty, tintCondition: cond };
+  }, [masks.placeholder, masks.condition]);
+
+  // The occupant houses are tied to the CONDITION view toggle (a filled slot IS a condition):
+  // when condition view is OFF the houses hide, and their slots fall back to the normal cyan
+  // placeholder tint (so a filled area doesn't vanish) — i.e. show ALL areas, not just empty.
+  const placeholderAreas = showCondition ? emptyAreas : masks.placeholder;
+
+  return (
+    <>
+      {showStreet && <MaskTintOverlay cells={masks.street} color={STREET_OVERLAY_COLOR} />}
+      {showCommunal && <MaskTintOverlay cells={masks.communal} color={COMMUNAL_OVERLAY_COLOR} />}
+      {showPlaceholder && <PlaceholderAreaOverlay areas={placeholderAreas} />}
+      {showCondition && <MaskTintOverlay cells={tintCondition} color={CONDITION_OVERLAY_COLOR} />}
+      {/* Filled slots preview their occupant house(s) in place of the tint — gated on the
+          condition toggle (a filled slot is a condition), so hiding conditions hides them. */}
+      {showCondition && <PlaceholderOccupantHouses areas={filledAreas} />}
+    </>
+  );
+}
+
 // ─── Rectangle selection preview ─────────────────────────────────────────────────
 // The two-click rectangle tools (street / communal / placeholder / terrain 1 / terrain 2 /
 // copy). Once the first corner is anchored, this tints every cell of the anchor→cursor
@@ -561,7 +572,7 @@ function RectPreviewOverlay({
 }
 
 // ─── Paste footprint preview ──────────────────────────────────────────────────────
-// The paste tool stamps the clipboard as a whole, so (like the house tool) its cursor is a
+// The paste tool stamps the clipboard as a whole, so (like the placeholder drop) its cursor is a
 // footprint the size of the clipboard, anchored at the hovered min-iso corner and extending
 // +isoX/+isoY. Tinted GREEN when the whole footprint is in-bounds (a valid stamp) and RED
 // when it overhangs the board (paste is refused — the pasted area must match the copy 1:1).
@@ -609,8 +620,6 @@ interface SceneProps {
   showPlaceholder?: boolean;
   showCondition?: boolean;
   activeTool?: EditorTool;
-  /** Current house-placement mirror orientation — drives the placement ghost's flip. */
-  houseFlip?: boolean;
   /** Current placeholder drop size — drives the placeholder tool's footprint ghost. */
   placeholderSize?: { w: number; h: number };
   /** Active decor tool's category (null when not a decor tool) — drives the decor ghost. */
@@ -630,7 +639,7 @@ interface SceneProps {
   onPanChange: (pan: { x: number; y: number }) => void;
 }
 
-function EditorScene({ width, height, masks, showGrid, showStreet, showCommunal, showPlaceholder, showCondition, activeTool, houseFlip, placeholderSize, decorCategory, decorVariantIdx, rectangleMode, onRectComplete, pasteMode, pasteFootprint, onPasteAt, eraseMode, onPaintCell, onEditBegin, pan, zoom, onPanChange }: SceneProps) {
+function EditorScene({ width, height, masks, showGrid, showStreet, showCommunal, showPlaceholder, showCondition, activeTool, placeholderSize, decorCategory, decorVariantIdx, rectangleMode, onRectComplete, pasteMode, pasteFootprint, onPasteAt, eraseMode, onPaintCell, onEditBegin, pan, zoom, onPanChange }: SceneProps) {
   const { app, isInitialised } = useApplication();
   const [hover, setHover] = useState<Cell | null>(null);
   // Latest hovered cell for the stable pointer handlers — lets the rectangle-drag release
@@ -792,11 +801,7 @@ function EditorScene({ width, height, masks, showGrid, showStreet, showCommunal,
   const cx = app.screen.width / 2 + pan.x;
   const cy = app.screen.height / 2 + pan.y;
 
-  // The 4×5 footprint preview is a PLACEMENT aid, so it shows only when the house tool is
-  // painting. While erasing, drop back to the single-cell hover (you erase one house per
-  // cell), which the red tint marks as the eraser modifier being on.
-  const houseTool = activeTool === 'house' && !eraseMode;
-  // The placeholder drop footprint is likewise a PLACEMENT aid — shown only while dropping
+  // The placeholder drop footprint is a PLACEMENT aid — shown only while dropping
   // (not erasing, where you remove one whole area per click via the single-cell hover).
   const placeholderTool = activeTool === 'placeholder' && !eraseMode && !!placeholderSize;
   const pasteTool = activeTool === 'paste' && !!pasteFootprint;
@@ -812,40 +817,40 @@ function EditorScene({ width, height, masks, showGrid, showStreet, showCommunal,
 
   return (
     <pixiContainer x={cx} y={cy} scale={zoom} sortableChildren>
-      <EditorTerrainLayer tiles={tiles} houses={[...masks.houses].map(([cell, flip]) => ({ cell, flip }))} />
-      {showStreet && <MaskTintOverlay cells={masks.street} color={STREET_OVERLAY_COLOR} />}
-      {showCommunal && <MaskTintOverlay cells={masks.communal} color={COMMUNAL_OVERLAY_COLOR} />}
-      {showPlaceholder && <PlaceholderAreaOverlay areas={masks.placeholder} />}
-      {showCondition && <MaskTintOverlay cells={masks.condition} color={CONDITION_OVERLAY_COLOR} />}
+      <EditorTerrainLayer tiles={tiles} />
+      {/* Spriteless mask tints (street/communal/placeholder/condition) + filled-slot occupant
+          houses — the shared overlay stack the Load gallery also renders; here each layer is
+          per-toggle. */}
+      <TemplateMaskOverlays
+        masks={masks}
+        showStreet={showStreet}
+        showCommunal={showCommunal}
+        showPlaceholder={showPlaceholder}
+        showCondition={showCondition}
+      />
       {showGrid && <GridOverlay width={width} height={height} />}
       {/* Preview priority: an anchored rectangle selection → its live preview; the paste
-          tool → a clipboard-sized footprint stamp; the house tool → its 4×5 footprint; the
-          placeholder tool → its current drop footprint; every other tool (and any erase) →
-          single-cell hover, tinted red under the eraser modifier. A rectangle/paste tool
-          BEFORE it has anything to preview falls through to the hover. */}
+          tool → a clipboard-sized footprint stamp; the placeholder tool → its current drop
+          footprint; every other tool (and any erase) → single-cell hover, tinted red under the
+          eraser modifier. A rectangle/paste tool BEFORE it has anything to preview falls
+          through to the hover. */}
       {rectangleMode && rectAnchor
         ? <RectPreviewOverlay anchor={rectAnchor} cursor={hover} color={rectColor} erase={rectErase} />
         : pasteTool
           ? <PastePreviewOverlay cell={hover} w={pasteFootprint!.w} h={pasteFootprint!.h} width={width} height={height} />
-          : houseTool
-            ? <>
-                <HousePreviewOverlay cell={hover} width={width} height={height} houses={masks.houses} flip={!!houseFlip} />
-                {/* Ghost sprite over the footprint so the mirror orientation is visible pre-drop. */}
-                <HouseGhostOverlay cell={hover} flip={!!houseFlip} />
-              </>
-            : placeholderTool
-              ? <PlaceholderPreviewOverlay cell={hover} size={placeholderSize!} width={width} height={height} areas={masks.placeholder} />
-              : <>
-                  <HoverOverlay cell={hover} erase={eraseMode} />
-                  {/* Decor tools add a ghost of the selected sprite over the hover diamond. */}
-                  {decorTool && <DecorGhostOverlay cell={hover} masks={masks} category={decorCategory!} variantIdx={decorVariantIdx ?? 0} />}
-                </>}
+          : placeholderTool
+            ? <PlaceholderPreviewOverlay cell={hover} size={placeholderSize!} width={width} height={height} areas={masks.placeholder} />
+            : <>
+                <HoverOverlay cell={hover} erase={eraseMode} />
+                {/* Decor tools add a ghost of the selected sprite over the hover diamond. */}
+                {decorTool && <DecorGhostOverlay cell={hover} masks={masks} category={decorCategory!} variantIdx={decorVariantIdx ?? 0} />}
+              </>}
     </pixiContainer>
   );
 }
 
 // ─── Outer component: pan/zoom state + wheel zoom + Application mount ─────────────
-function TemplateEditorViewer({ width, height, masks, showGrid, showStreet, showCommunal, showPlaceholder, showCondition, activeTool, houseFlip, placeholderSize, decorCategory, decorVariantIdx, rectangleMode, onRectComplete, pasteMode, pasteFootprint, onPasteAt, eraseMode, onPaintCell, onEditBegin }: TemplateEditorViewerProps) {
+function TemplateEditorViewer({ width, height, masks, showGrid, showStreet, showCommunal, showPlaceholder, showCondition, activeTool, placeholderSize, decorCategory, decorVariantIdx, rectangleMode, onRectComplete, pasteMode, pasteFootprint, onPasteAt, eraseMode, onPaintCell, onEditBegin }: TemplateEditorViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
@@ -931,7 +936,6 @@ function TemplateEditorViewer({ width, height, masks, showGrid, showStreet, show
             showPlaceholder={showPlaceholder}
             showCondition={showCondition}
             activeTool={activeTool}
-            houseFlip={houseFlip}
             placeholderSize={placeholderSize}
             decorCategory={decorCategory}
             decorVariantIdx={decorVariantIdx}

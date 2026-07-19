@@ -1,6 +1,8 @@
 # Discover Flow
 
 > ↑ Part of [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md).
+> → Card supply / lazy enrichment: [DISCOVER_LAZY_ENRICHMENT.md](./DISCOVER_LAZY_ENRICHMENT.md)
+> (the `sortable` gate that decides which det entries appear, and on-first-sort enrichment).
 
 The Discover feature is a **two-level** surface, mirroring the Games hub.
 

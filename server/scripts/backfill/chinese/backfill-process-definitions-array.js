@@ -139,6 +139,7 @@ async function run() {
            FROM dictionaryentries_zh
            WHERE language = 'zh'
              AND word1 = ANY($1)
+             ${validatedFilter}
              AND jsonb_array_length(definitions) > 1
            ORDER BY id ASC`
         : `SELECT id, word1, pronunciation, definitions

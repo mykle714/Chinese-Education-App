@@ -10,8 +10,8 @@ export class NightMarketController {
 
   /**
    * Get all unlocked items for the authenticated user.
-   * Seeds the base set on the user's first visit.
-   * GET /api/night-market/unlocks
+   * ⚠️ Legacy asset-unlock economy is retired (see NightMarketService); this now returns a
+   * stable empty response. GET /api/night-market/unlocks
    */
   async getUnlocks(req: Request, res: Response): Promise<void> {
     try {

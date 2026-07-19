@@ -3,11 +3,14 @@ import { WEIGHT } from '../theme/scale';
 import { convertMinutesToTimeFormat, formatTimeBreakdown } from "../utils/timeUtils";
 
 interface TimeDisplayProps {
-    totalMinutes: number;
+    /** NET balance (penalty-debited, users.totalMinutePoints) — the BIG converted-time number. Can drop when penalized. */
+    netMinutes: number;
+    /** GROSS lifetime minutes earned (Σ minutesEarned, ignoring penalties) — the small caption. Only grows; ≥ netMinutes. */
+    grossMinutes: number;
 }
 
-function TimeDisplay({ totalMinutes }: TimeDisplayProps) {
-    const timeBreakdown = convertMinutesToTimeFormat(totalMinutes);
+function TimeDisplay({ netMinutes, grossMinutes }: TimeDisplayProps) {
+    const timeBreakdown = convertMinutesToTimeFormat(netMinutes);
     const formattedTime = formatTimeBreakdown(timeBreakdown);
 
     return (
@@ -23,10 +26,10 @@ function TimeDisplay({ totalMinutes }: TimeDisplayProps) {
                     </Typography>
                     <Box>
                         <Typography variant="h6" component="div" sx={{ fontWeight: WEIGHT.bold, mb: 0.5 }}>
-                            Total Study Time
+                            Current Balance
                         </Typography>
                         <Typography variant="body2" sx={{ opacity: 0.9 }}>
-                            All-time accumulated learning
+                            Minutes available now (after any penalties)
                         </Typography>
                     </Box>
                 </Box>
@@ -44,7 +47,7 @@ function TimeDisplay({ totalMinutes }: TimeDisplayProps) {
                     textAlign: 'center',
                     opacity: 0.8
                 }}>
-                    {totalMinutes} total minutes earned
+                    {grossMinutes} total minutes earned
                 </Typography>
             </CardContent>
         </Card>

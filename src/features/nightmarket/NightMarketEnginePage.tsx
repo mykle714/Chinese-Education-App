@@ -11,12 +11,17 @@ import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import GridOnIcon from '@mui/icons-material/GridOn';
 import GrassIcon from '@mui/icons-material/Grass';
 import LabelIcon from '@mui/icons-material/Label';
+import CropFreeIcon from '@mui/icons-material/CropFree';
+import WidgetsIcon from '@mui/icons-material/Widgets';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import MarketEngineViewer, { ALL_DEBUG_OFF } from './MarketEngineViewer';
 import type { DebugFlags } from './MarketEngineViewer';
 import { useNightMarket } from './useNightMarket';
 import { useMinutePoints } from '../../minutePoints/useMinutePoints';
 import { usePageTitle } from '../../hooks/usePageTitle';
 import { NIGHT_MARKET_ASSET_MAP } from '../../engine/market/nightMarketRegistry';
+import { useAuth } from '../../AuthContext';
+import { adjustAuthorMinutes } from './nightMarketLayoutApi';
 
 /**
  * Night Market Engine Page
@@ -50,6 +55,36 @@ function NightMarketEnginePage() {
   } = useNightMarket();
 
   const { accumulativeMinutePoints } = useMinutePoints();
+  const { user } = useAuth();
+  const isTemplateAuthor = !!user?.isTemplateAuthor;
+
+  // Author minute-adjust tool state. `pendingDelta` accumulates the ±N button presses; Submit
+  // fires one request. `displayNet` overrides the badge with the server's fresh net after a
+  // submit (useMinutePoints doesn't re-fetch on its own). `reloadToken` bump forces the market
+  // canvas to re-read the layout so granted/decayed occupants (houses) redraw.
+  const [pendingDelta, setPendingDelta] = useState(0);
+  const [displayNet, setDisplayNet] = useState<number | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
+  const [adjustError, setAdjustError] = useState<string | null>(null);
+
+  const shownMinutes = displayNet ?? accumulativeMinutePoints;
+
+  const submitPendingDelta = async () => {
+    if (pendingDelta === 0 || submitting) return;
+    setSubmitting(true);
+    setAdjustError(null);
+    try {
+      const { totalMinutePoints } = await adjustAuthorMinutes(pendingDelta);
+      setDisplayNet(totalMinutePoints);
+      setPendingDelta(0);
+      setReloadToken((t) => t + 1); // redraw the market with the new occupant set
+    } catch (err) {
+      setAdjustError(err instanceof Error ? err.message : 'Failed to adjust minutes');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const [debug, setDebug] = useState<DebugFlags>(ALL_DEBUG_OFF);
   const toggleDebugFlag = (key: keyof DebugFlags) =>
@@ -172,6 +207,8 @@ function NightMarketEnginePage() {
           { key: 'origin', label: 'Toggle iso (0, 0) origin crosshair', icon: <GpsFixedIcon fontSize="small" />, active: debug.origin, onClick: () => toggleDebugFlag('origin') },
           { key: 'grass', label: 'Toggle grass-tile overlay', icon: <GrassIcon fontSize="small" />, active: debug.grass, onClick: () => toggleDebugFlag('grass') },
           { key: 'overlay-labels', label: 'Toggle overlay-tile labels (which sprite each cell used)', icon: <LabelIcon fontSize="small" />, active: debug.overlayLabels, onClick: () => toggleDebugFlag('overlayLabels') },
+          { key: 'template-bounds', label: 'Toggle template boundaries + names', icon: <CropFreeIcon fontSize="small" />, active: debug.templateBounds, onClick: () => toggleDebugFlag('templateBounds') },
+          { key: 'placeholder-bounds', label: 'Toggle placeholder boundaries + labels', icon: <WidgetsIcon fontSize="small" />, active: debug.placeholderBounds, onClick: () => toggleDebugFlag('placeholderBounds') },
           { key: 'grid', label: 'Toggle gridlines', icon: <GridOnIcon fontSize="small" />, active: showGrid, onClick: () => setShowGrid(prev => !prev) },
         ] as const).map(({ key, label, icon, active, onClick }) => (
           <Tooltip key={key} title={label} placement="left">
@@ -197,12 +234,117 @@ function NightMarketEnginePage() {
         ))}
       </Box>
 
+      {/* Account minute-points balance — bottom-left pill (the account's current
+          minutes, i.e. the server's totalMinutePoints, surfaced by useMinutePoints as
+          accumulativeMinutePoints). Kept clear of the title (top-left), debug column
+          (top-right) and unlock snackbar (bottom-center). */}
+      <Box
+        className="night-market-engine-minutes-badge"
+        sx={{
+          position: 'absolute',
+          bottom: 16,
+          left: 16,
+          zIndex: 10,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 0.75,
+          px: 1.5,
+          py: 0.75,
+          borderRadius: 999,
+          backgroundColor: 'rgba(0,0,0,0.45)',
+          border: '1px solid rgba(255,255,255,0.25)',
+          pointerEvents: 'none',
+        }}
+      >
+        <AccessTimeIcon
+          className="night-market-engine-minutes-badge-icon"
+          sx={{ fontSize: 18, color: 'rgba(255,224,102,0.95)' }}
+        />
+        <Typography
+          className="night-market-engine-minutes-badge-value"
+          variant="body2"
+          sx={{ color: 'white', fontWeight: WEIGHT.bold, textShadow: '1px 1px 2px rgba(0,0,0,0.8)' }}
+        >
+          {shownMinutes} min
+        </Typography>
+      </Box>
+
+      {/* Author minute-adjust tool — a row of ±N signal buttons + Submit next to the minutes
+          badge, visible only to template authors (isTemplateAuthor). Presses accumulate into
+          pendingDelta on the client; Submit fires ONE request that writes an earn (+) or loss (−)
+          signal and reconciles the market. See docs/NIGHT_MARKET_TEMPLATE_RUNTIME_PLAN.md. */}
+      {isTemplateAuthor && (
+        <Box
+          className="night-market-engine-author-tool"
+          sx={{
+            position: 'absolute',
+            bottom: 16,
+            left: 140,
+            right: 16,
+            zIndex: 10,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 0.5,
+            flexWrap: 'wrap',
+          }}
+        >
+          {([-30, -5, -1, 1, 5, 30] as const).map((amt) => (
+            <Button
+              key={amt}
+              className={`night-market-engine-author-tool-btn night-market-engine-author-tool-btn-${amt > 0 ? 'plus' : 'minus'}${Math.abs(amt)}`}
+              variant="contained"
+              size="small"
+              onClick={() => setPendingDelta((d) => d + amt)}
+              sx={{
+                minWidth: 44,
+                height: 32,
+                p: 0,
+                fontWeight: WEIGHT.bold,
+                color: 'white',
+                backgroundColor: amt > 0 ? 'rgba(76,175,80,0.85)' : 'rgba(211,47,47,0.85)',
+                '&:hover': { backgroundColor: amt > 0 ? 'rgba(76,175,80,1)' : 'rgba(211,47,47,1)' },
+              }}
+            >
+              {amt > 0 ? `+${amt}` : amt}
+            </Button>
+          ))}
+          <Box
+            className="night-market-engine-author-tool-pending"
+            sx={{
+              px: 1.25,
+              height: 32,
+              display: 'flex',
+              alignItems: 'center',
+              borderRadius: 1,
+              backgroundColor: 'rgba(0,0,0,0.45)',
+              border: '1px solid rgba(255,255,255,0.25)',
+              color: 'white',
+              fontWeight: WEIGHT.bold,
+              minWidth: 56,
+              justifyContent: 'center',
+            }}
+          >
+            {pendingDelta > 0 ? `+${pendingDelta}` : pendingDelta}
+          </Box>
+          <Button
+            className="night-market-engine-author-tool-submit"
+            variant="contained"
+            size="small"
+            disabled={pendingDelta === 0 || submitting}
+            onClick={submitPendingDelta}
+            sx={{ height: 32, fontWeight: WEIGHT.bold, backgroundColor: 'rgba(255,224,102,0.95)', color: 'black', '&:hover': { backgroundColor: 'rgba(255,224,102,1)' } }}
+          >
+            Submit
+          </Button>
+        </Box>
+      )}
+
       {/* Pixi.js canvas viewer */}
       <Box
         className="night-market-engine-canvas-container"
         sx={{ flexGrow: 1, width: '100%', height: '100%', position: 'relative' }}
       >
-        <MarketEngineViewer showGrid={showGrid} debug={debug} />
+        <MarketEngineViewer showGrid={showGrid} debug={debug} reloadToken={reloadToken} />
       </Box>
 
       {/* New unlock snackbar */}
@@ -218,6 +360,17 @@ function NightMarketEnginePage() {
             : ''
         }
       />
+
+      {/* Author minute-adjust error (403 for non-authors, network, etc.) */}
+      <Snackbar
+        className="night-market-engine-author-tool-error"
+        open={!!adjustError}
+        autoHideDuration={5000}
+        onClose={() => setAdjustError(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert severity="error" onClose={() => setAdjustError(null)}>{adjustError}</Alert>
+      </Snackbar>
     </Box>
     </LeafPage>
   );

@@ -10,7 +10,6 @@ export function dictionaryEntryToVocabEntry(dict: DictionaryEntry): VocabEntry {
         difficulty?: string | null;
         breakdown?: Record<string, { definition: string; pronunciation?: string }> | null;
         exampleSentences?: VocabEntry["exampleSentences"];
-        characterRationale?: VocabEntry["characterRationale"];
         usedIn?: UsedInItem[] | null;
         iconId?: string | null;
     };
@@ -39,7 +38,6 @@ export function dictionaryEntryToVocabEntry(dict: DictionaryEntry): VocabEntry {
             )
             : null,
         exampleSentences: anyDict.exampleSentences ?? undefined,
-        characterRationale: anyDict.characterRationale ?? null,
         usedIn: anyDict.usedIn ?? null,
         // Carry discoverability so the dictionary EIP can hide the "+ to Learn
         // Now" button for lookup-only (undiscoverable) entries.

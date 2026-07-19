@@ -28,6 +28,7 @@ export interface User {
   selectedLanguage?: Language;
   isPublic?: boolean; // Whether user appears on the public leaderboard
   isValidator?: boolean; // Whether user may download/validate dictionary entries (migration 104, docs/DATA_VALIDATION_SYSTEM.md)
+  isTemplateAuthor?: boolean; // Whether user may author Night Market templates (the template editor + save endpoints) (migration 115). Distinct from isValidator.
   avatarIconId?: string | null; // FK to icons8("icons8Id") — the icon chosen as profile avatar (migration 77)
   readingGoal?: boolean; // Account opts into the Reading mastery goal (migration 101, docs/MASTERY_REWORK.md)
   writingGoal?: boolean; // Account opts into the Writing mastery goal (migration 101, docs/MASTERY_REWORK.md)
@@ -190,7 +191,6 @@ export interface DictionaryEntry {
     segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo; wordForms?: Record<string, string> }>;
     humanApproved?: boolean;   // Computed at read time (enrichExampleSentencesMetadataBatch): TRUE iff a validations row with action='approve' matches this sentence's current foreignText+english (docs/DATA_VALIDATION_SYSTEM.md). Falsy ⇒ client renders the AI-generated styling
   }> | null;
-  characterRationale?: Array<{ char: string; impliedWord: string }> | null;  // zh-only per-character mapping: each char → fuller word it abbreviates, or "" (migration 102, docs/CHARACTER_RATIONALE.md); display-ready jsonb, replaces expansion
   matchException?: string[] | null;  // Multi-char tokens to suppress during GSA segmentation
   vernacularScore?: number | null;   // Higher = more colloquially common; used by GSA to prefer common words
   wordForms?: Record<string, string> | null;  // AI-generated English conjugation map (e.g. {past: "ran", present: "runs"})
@@ -317,7 +317,6 @@ export interface DiscoverCard {
     segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo; wordForms?: Record<string, string> }>;
     humanApproved?: boolean;   // Computed at read time (enrichExampleSentencesMetadataBatch): TRUE iff a validations row with action='approve' matches this sentence's current foreignText+english (docs/DATA_VALIDATION_SYSTEM.md). Falsy ⇒ client renders the AI-generated styling
   }> | null;
-  characterRationale?: Array<{ char: string; impliedWord: string }> | null;  // zh-only per-character mapping: each char → fuller word it abbreviates, or "" (migration 102, docs/CHARACTER_RATIONALE.md); display-ready jsonb, replaces expansion
   matchException?: string[] | null;  // Multi-char tokens to suppress during GSA segmentation
   // Optional icons8 icon id (FK → icons8."icons8Id"). When set, the client renders
   // the icon via <img src="/api/icons8/<iconId>/image">. Null when no icon assigned.
@@ -515,11 +514,17 @@ export interface VocabEntry {
   totalMarkCount?: number;  // Total cumulative count of all marks
   totalCorrectCount?: number;  // Lifetime count of correct marks
   category?: FlashcardCategory;  // utcm level, computed from typedMarkHistory + the account's goal flags (compute_utcm_category)
+  // flp face-steering (docs/MASTERY_REWORK.md § Per-type cooldown): the subset of
+  // flp-reviewable mark types ('recognition'/'production') whose PER-TYPE cooldown
+  // has elapsed, stamped by OnDeckVocabService when a card is selected for the
+  // working loop. The client shows the matching face (production→English-first,
+  // recognition→foreign-first); both present ⇒ random. Absent on cards not routed
+  // through flp selection (games, dictionary lookups).
+  readyMarkTypes?: MarkType[];
   starterPackBucket: StarterPackBucket;  // Starter pack sorting bucket (required)
   breakdown?: Record<string, { definition: string; pronunciation?: string; sense?: string }> | null;  // Character breakdown for Chinese vocab (`sense` = component char's definitionClusters label for this word)
   synonyms?: string[];  // Array of Chinese synonym words
   synonymsMetadata?: Record<string, { definition: string; pronunciation: string }> | null;  // Computed at runtime by batch-reading from dictionaryentries_zh
-  characterRationale?: Array<{ char: string; impliedWord: string }> | null;  // zh-only per-character mapping: each char → fuller word it abbreviates, or "" (migration 102, docs/CHARACTER_RATIONALE.md); display-ready jsonb, replaces expansion
   longDefinition?: string | null;  // AI-generated extended definition (25–150 chars) from dictionaryentries_zh
   longDefinitionParts?: LongDefinitionPart[] | null;  // Computed at runtime: longDefinition split into English + cpcd-able Chinese runs
   iconId?: string | null;  // Representative icons8 icon (FK to icons8.icons8Id) joined from det; client renders via <img src="/api/icons8/<iconId>/image">

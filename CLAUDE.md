@@ -283,6 +283,7 @@ For design guidelines:
 - When a terminal command should be run on this machine, do not tell the user to run it, you should try to run it yourself first.
 - In all locations where the code doesn't quite seem to make sense or have a clear goal, flag it and bring it to my attention. Tell me what your guess is for what the code does and tell me how you would clarify/improve it.
 - Make sure to confirm all new tables and columns with me in a question form.
+- Don't automatically validate with puppeteer. I will let you know if I want you to use puppeteer.
 
 ## Code Quality Standards
 When reviewing or writing code, actively look for and address:

@@ -66,6 +66,33 @@ export class UserMinutePointsDAL implements IUserMinutePointsDAL {
     };
   }
 
+  async addPenaltyMinutesForDate(
+    userId: string,
+    streakDate: string,
+    language: string,
+    amount: number
+  ): Promise<void> {
+    if (!userId) throw new ValidationError('User ID is required');
+    if (!streakDate) throw new ValidationError('Streak date is required');
+    if (!language) throw new ValidationError('Language is required');
+    if (amount < 0) throw new ValidationError('Penalty amount cannot be negative');
+
+    // Upsert the day row, adding `amount` to penaltyMinutes (mirrors addMinutesForDate but for the
+    // penalty column, leaving minutesEarned untouched so GROSS study time is preserved). This is
+    // the same shape the hourly penalty cron writes; it is re-introduced here for the author
+    // minute-adjust tool's −N "lose minutes" path.
+    await dbManager.executeQuery(async (client) => {
+      return await client.query(`
+        INSERT INTO userminutepoints ("userId", "streakDate", "language", "penaltyMinutes")
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT ("userId", "streakDate", "language")
+        DO UPDATE SET
+          "penaltyMinutes"    = userminutepoints."penaltyMinutes" + EXCLUDED."penaltyMinutes",
+          "updatedAt"         = NOW()
+      `, [userId, streakDate, language, amount]);
+    });
+  }
+
   async findInRange(userId: string, language: string, startDate: string, endDate: string): Promise<UserMinutePoints[]> {
     if (!userId) throw new ValidationError('User ID is required');
     if (!language) throw new ValidationError('Language is required');
@@ -135,6 +162,28 @@ export class UserMinutePointsDAL implements IUserMinutePointsDAL {
         FROM userminutepoints
         WHERE "userId" = $1 AND "language" = $2
       `, [userId, language]);
+    });
+
+    return Number(result.recordset[0]?.minutes ?? 0);
+  }
+
+  /**
+   * GLOBAL gross minutes earned across ALL languages — `Σ minutesEarned` for the user,
+   * ignoring penalties. This is the "lifetime earned" figure that only ever grows; it
+   * pairs with the penalty-debited users.totalMinutePoints (the net balance) — the two
+   * DIVERGE exactly for users who have been penalized. Backed by the PK's leading
+   * `userId` column (index range scan over just this user's rows), so it is cheap enough
+   * to compute on read (it feeds an infrequently-shown display number, not a hot path).
+   */
+  async getGrossMinutesEarned(userId: string): Promise<number> {
+    if (!userId) throw new ValidationError('User ID is required');
+
+    const result = await dbManager.executeQuery<{ minutes: number }>(async (client) => {
+      return await client.query(`
+        SELECT COALESCE(SUM("minutesEarned"), 0) AS minutes
+        FROM userminutepoints
+        WHERE "userId" = $1
+      `, [userId]);
     });
 
     return Number(result.recordset[0]?.minutes ?? 0);

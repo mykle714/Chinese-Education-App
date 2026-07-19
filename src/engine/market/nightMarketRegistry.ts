@@ -310,6 +310,14 @@ export interface PedestrianState {
    * logic in `pedestrianAgent.ts` (see `STUCK_FORWARD_JUMP_DELAY_MS`).
    */
   waitingSinceMs?: number;
+  /**
+   * The last cardinal heading the pedestrian actually moved along, as an iso
+   * unit vector (`[±1, 0]` / `[0, ±1]`). Persisted at every forward commit so
+   * that idle/interacting peds keep facing where they last walked instead of
+   * snapping back to a default. Undefined until the ped takes its first step;
+   * `computeDrawable` falls back to east (`[1, 0]`) only in that initial case.
+   */
+  lastHeading?: [number, number];
 }
 
 /** Max length of `PedestrianState.recentlyVisitedAssetIds`. */

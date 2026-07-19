@@ -103,6 +103,19 @@ container so they pan/zoom with the terrain:
   url→stem via `freeFarmTileset.stemOf`. Light caps show `grass`, dark caps show `dark`;
   boundary overlays show their compass-set (e.g. `n,nw,ne`), dark ones prefixed `d:`; interior
   dirt is unlabeled. `showGrid` (gridlines) is separate page state, not a DebugFlag.
+- **templateBounds** — amber iso-diamond outline of every PLACED template's board rectangle
+  (`offset..offset+size`, in cells) with `name\nvN` floated over the center (`TemplateBoundsOverlay`).
+  Reads the placement bounds surfaced by `useMarketWorld` as `placements: TemplateBounds[]` (a slim
+  name/version/offset/size projection of the layout), so it tracks the real stitched render — unlike
+  the grass/overlayLabels overlays which still visualize the stale procedural `buildFarmField`.
+- **placeholderBounds** — iso-diamond outline of every PLACEHOLDER occupant slot
+  (`world.placeholderAreas`, global cells) with a `templateName\ncol_row ●/○` label
+  (`PlaceholderBoundsOverlay`). Filled slots outline cyan, empty slots magenta (two stroke passes);
+  `●`/`○` and the slot id (`placeholderAreaId`) echo the same `filled` flag the `PlaceholderHouseLayer`
+  draws occupants from.
+
+Both bounds overlays share `traceIsoRect` (diamond outline of a cell rectangle) and `isoRectCenter`
+(screen center for the label) in `MarketEngineViewer.tsx`.
 
 The surface-sprite selection (grass cap vs. stacked grass-boundary overlays) lives once per
 layer in `resolveTileSurfaceUrls` / `resolveTileDarkSurfaceUrls` (farmTerrain.ts), each

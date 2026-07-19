@@ -75,11 +75,12 @@ const SCRIPT_VERSION = 6; // bump when this script's logic/prompt changes (v6: m
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // run-log: track duration, version, words/mode, and token usage/cost
-const { stampEntries, validatedClause } = initRunLog({ script: 'chinese/backfill-example-sentences', version: SCRIPT_VERSION, anthropic: anthropic });
+const { stampEntries, validatedClause, staleClause } = initRunLog({ script: 'chinese/backfill-example-sentences', version: SCRIPT_VERSION, anthropic: anthropic });
 // This script regenerates the WHOLE exampleSentences array, so skip any entry
 // whose example sentences a validator has approved/flagged (migration 104,
 // docs/DATA_VALIDATION_SYSTEM.md).
 const validatedFilter = `AND ${validatedClause(['exampleSentence0', 'exampleSentence1', 'exampleSentence2'], 'dictionaryentries_zh')}`;
+const isStale = process.argv.includes('--stale');
 
 // When --spot-check is passed, process only 3 entries and print full sentence output
 const isSpotCheck = process.argv.includes('--spot-check');
@@ -94,10 +95,16 @@ const targetWords = wordsArg ? wordsArg.slice('--words='.length).split(',').map(
 const wordsFilter = targetWords?.length
   ? `AND word1 = ANY(ARRAY[${targetWords.map(w => `'${w.replace(/'/g, "''")}'`).join(', ')}])`
   : '';
+// Targeted runs enrich the named words regardless of discoverable (worker candidates
+// are not-yet-discoverable); untargeted full runs keep the discoverable gate.
+const discoverableGate = targetWords?.length ? '' : 'AND discoverable = TRUE';
 
 const emptinessFilter = isAllDiscoverable
   ? ''
-  : `AND ("exampleSentences" IS NULL OR "exampleSentences" = '[]'::jsonb)`;
+  : (isStale
+      // --stale: also regenerate rows stamped below SCRIPT_VERSION (bumps invalidate old sentences).
+      ? `AND ("exampleSentences" IS NULL OR "exampleSentences" = '[]'::jsonb OR ${staleClause()})`
+      : `AND ("exampleSentences" IS NULL OR "exampleSentences" = '[]'::jsonb)`);
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Models — generation + validation run on Sonnet; the repair step escalates to
@@ -869,7 +876,7 @@ async function run() {
       SELECT id, word1, pronunciation, definitions, "partsOfSpeech", "definitionClusters"
       FROM dictionaryentries_zh
       WHERE language = 'zh'
-        AND discoverable = TRUE
+        ${discoverableGate}
         ${validatedFilter}
         ${emptinessFilter}
         ${wordsFilter}

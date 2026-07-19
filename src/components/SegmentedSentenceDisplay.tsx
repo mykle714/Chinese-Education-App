@@ -24,9 +24,9 @@ const SEGMENT_GAP_BY_SIZE: Record<Size, string> = {
 // Vertical offset (px, subtracted from the char glyph's bottom edge) for the
 // vocab-word underline. sm sits 1px lower than xs/md to match its glyph metrics.
 const VOCAB_UNDERLINE_OFFSET_BY_SIZE: Record<Size, number> = {
-  xs: 3,
-  sm: 3,
-  md: 4,
+  xs: 4,
+  sm: 4,
+  md: 5,
 };
 
 // Latin-script languages render one cell per whitespace-delimited WORD (not per

@@ -57,6 +57,34 @@ export class UserMinutePointsController {
   }
 
   /**
+   * POST /api/night-market/dev/adjust-minutes  (template-author only)
+   * Body: { delta: integer, timestamp: ISO-8601, tz: IANA }
+   * Emits an artificial earn (+) or loss (−) minute signal and reconciles the night market.
+   * Returns { totalMinutePoints (net), grossMinutesEarned }.
+   */
+  async adjustMinutesForAuthor(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
+      const { delta, timestamp, tz } = req.body || {};
+      if (!timestamp) {
+        res.status(400).json({ error: 'timestamp is required', code: 'ERR_MISSING_TIMESTAMP' });
+        return;
+      }
+      if (typeof delta !== 'number' || !Number.isInteger(delta)) {
+        res.status(400).json({ error: 'delta must be an integer', code: 'ERR_INVALID_DELTA' });
+        return;
+      }
+
+      const result = await this.userMinutePointsService.adjustMinutesForAuthor(userId, delta, timestamp, tz);
+      res.json(result);
+    } catch (error) {
+      handleControllerError(error, res, 'UserMinutePointsController.adjustMinutesForAuthor');
+    }
+  }
+
+  /**
    * GET /api/users/minute-points/calendar/:yearMonth?language=<lang>
    * Calendar is scoped to one language (defaults to 'zh').
    */

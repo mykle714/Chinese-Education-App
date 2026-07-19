@@ -8,9 +8,10 @@ import { aiGeneratedSurfaceSx, aiGeneratedTextColor } from "../../theme/aiGenera
 import { AiGeneratedBadge } from "../../components/AiGeneratedBadge";
 import { getBreakdownItems } from "../../utils/breakdownUtils";
 import { getCategoryColor } from "../../utils/categoryColors";
-import { SIZE, WEIGHT, LEADING, TRACKING } from "../../theme/scale";
-import InfoCardListRow from "./FlashcardsLearnPage/InfoCardListRow";
-import { SharedCharsLabel, HskPill, MetadataChipRow } from "./FlashcardsLearnPage/styled";
+import { SIZE, WEIGHT, TRACKING } from "../../theme/scale";
+import InfoCardBlockButton from "./FlashcardsLearnPage/InfoCardBlockButton";
+import UsedInPaginatedList from "./UsedInPaginatedList";
+import { HskPill, MetadataChipRow } from "./FlashcardsLearnPage/styled";
 import { FC_FONT } from "./FlashcardsLearnPage/constants";
 import ExampleSentenceList from "./ExampleSentenceList";
 
@@ -115,14 +116,7 @@ export const VocabCardSections: React.FC<VocabCardSectionsProps> = ({
     // the eip's breakdown/used-in tab — see OnDeckVocabService.enrichWithUsedIn).
     const hasUsedIn = isSingleChar && !!entry.usedIn && entry.usedIn.length > 0;
     const hasBreakdown = !isSingleChar && !!entry.breakdown && Object.keys(entry.breakdown).length > 0;
-    // Only characters that actually abbreviate a fuller word are shown — chars with an
-    // empty impliedWord ("") are omitted entirely (char-by-char basis).
-    // Guard `impliedWord` — legacy v1 rows use a `reason` key (no `impliedWord`),
-    // so item.impliedWord can be undefined; `?? ''` keeps those from crashing (they
-    // filter out) until re-enriched to the v2 shape.
-    const rationaleItems = (entry.characterRationale ?? []).filter((item) => (item.impliedWord ?? '').trim().length > 0);
-    const hasRationale = rationaleItems.length > 0;
-    const hasBreakdownBox = isSingleChar ? (hasUsedIn || hasRationale) : (hasBreakdown || hasRationale);
+    const hasBreakdownBox = isSingleChar ? hasUsedIn : hasBreakdown;
     const breakdownItems = getBreakdownItems(entry);
 
     const hasDefinitionBox = !!(entry.longDefinition || entry.longDefinitionParts?.length || (entry.partsOfSpeech?.length ?? 0) > 0 || entry.vernacularScore != null);
@@ -227,99 +221,47 @@ export const VocabCardSections: React.FC<VocabCardSectionsProps> = ({
                 </SectionCard>
             )}
 
-            {/* Character Breakdown / Used In + per-character rationale — mirrors the eip's
-                combined "breakdown" tab (per-character rows for multi-char entries, or "Used In"
-                for single-char zh, plus the "Why These Characters" rationale block). */}
+            {/* Character Breakdown / Used In — mirrors the eip's "breakdown" tab
+                (per-character rows for multi-char entries, or "Used In" for single-char zh). */}
             {hasBreakdownBox && (
                 <SectionCard className="vocab-card-detail__breakdown">
                     <SectionLabel className="vocab-card-detail__section-label">
                         {isSingleChar ? "Used In" : "Character Breakdown"}
                     </SectionLabel>
                     {(isSingleChar ? hasUsedIn : hasBreakdown) && (
-                        <Box className="vocab-card-detail__breakdown-list">
-                            {isSingleChar
-                                ? entry.usedIn!.map((item, index) => (
-                                    <InfoCardListRow
-                                        key={`${item.vocabEntryId ?? 'det'}-${item.entryKey}`}
-                                        className="vocab-card-detail__used-in-row"
-                                        character={item.entryKey}
-                                        pinyin={item.pronunciation ?? ""}
-                                        definition={item.definition ?? ""}
-                                        size="sm"
-                                        showPinyin={showPinyin}
-                                        showPinyinColor={showPinyinColor}
-                                        isLast={index === entry.usedIn!.length - 1}
-                                        onClick={onWordOpen ? () => onWordOpen(item.entryKey) : undefined}
-                                    />
-                                ))
-                                : breakdownItems.map((item, index) => (
-                                    <InfoCardListRow
+                        isSingleChar ? (
+                            <Box className="vocab-card-detail__breakdown-list">
+                                {/* Infinite-scroll list: seeds from the card's ≤4 preview,
+                                    pages the rest via /api/dictionary/used-in. */}
+                                <UsedInPaginatedList
+                                    character={entry.entryKey}
+                                    language={entry.language ?? 'zh'}
+                                    initialItems={entry.usedIn ?? []}
+                                    showPinyin={showPinyin}
+                                    showPinyinColor={showPinyinColor}
+                                    onItemClick={onWordOpen ? (item) => onWordOpen(item.entryKey) : undefined}
+                                    rowClassName="vocab-card-detail__used-in-row"
+                                />
+                            </Box>
+                        ) : (
+                            <Box
+                                className="vocab-card-detail__breakdown-list"
+                                sx={{ display: "flex", flexWrap: "wrap", gap: "10px" }}
+                            >
+                                {breakdownItems.map((item) => (
+                                    <InfoCardBlockButton
                                         key={item.character}
                                         className="vocab-card-detail__breakdown-row"
                                         character={item.character}
                                         pinyin={item.pinyin}
                                         definition={item.definition}
-                                        size="md"
                                         showPinyin={showPinyin}
                                         showPinyinColor={showPinyinColor}
-                                        isLast={index === breakdownItems.length - 1}
                                         onClick={onWordOpen ? () => onWordOpen(item.character) : undefined}
                                     />
                                 ))}
-                        </Box>
-                    )}
-                    {hasRationale && (
-                        // Character rationale has no validation field yet (docs/DATA_VALIDATION_SYSTEM.md
-                        // only covers 'definitions' and exampleSentenceN), so there is no way for it to
-                        // ever be human-approved — it always renders the AI-generated treatment.
-                        <Box
-                            className="vocab-card-detail__character-rationale vocab-card-detail__character-rationale--ai-generated"
-                            sx={{
-                                ...aiGeneratedSurfaceSx,
-                                borderRadius: "10px",
-                                padding: "12px 14px",
-                                display: "flex",
-                                flexDirection: "column",
-                                gap: "8px",
-                            }}
-                        >
-                            <AiGeneratedBadge className="vocab-card-detail__character-rationale-ai-badge" label="AI GENERATED" />
-                            <SharedCharsLabel className="vocab-card-detail__character-rationale-label">
-                                Why These Characters
-                            </SharedCharsLabel>
-                            <Box className="vocab-card-detail__character-rationale-list" sx={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                                {rationaleItems.map((item, index) => (
-                                    <Box
-                                        key={index}
-                                        className="vocab-card-detail__character-rationale-row"
-                                        sx={{ display: "flex", alignItems: "baseline", gap: "10px" }}
-                                    >
-                                        <ForeignText
-                                            size="sm"
-                                            justifyContent="flex-start"
-                                            className="vocab-card-detail__character-rationale-char"
-                                            text={item.char}
-                                            showPinyin={false}
-                                            useToneColor={showPinyinColor}
-                                        />
-                                        <Typography
-                                            className="vocab-card-detail__character-rationale-arrow"
-                                            sx={{ fontSize: SIZE.body, color: fc.textSecondary, lineHeight: LEADING.normal }}
-                                        >
-                                            →
-                                        </Typography>
-                                        <ForeignText
-                                            size="sm"
-                                            justifyContent="flex-start"
-                                            className="vocab-card-detail__character-rationale-implied-word"
-                                            text={item.impliedWord}
-                                            showPinyin={false}
-                                            useToneColor={showPinyinColor}
-                                        />
-                                    </Box>
-                                ))}
                             </Box>
-                        </Box>
+                        )
                     )}
                 </SectionCard>
             )}

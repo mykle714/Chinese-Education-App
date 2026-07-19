@@ -19,9 +19,10 @@ export function getBrowserTimezone(): string {
 
 /** Per-language snapshot powering the home screen + fire badge. */
 export interface LanguageMinuteSummary {
-  totalMinutePoints: number; // lifetime minutes for this language
-  todayMinutes: number;      // minutes earned today (4 AM-local day) for this language
-  currentStreak: number;     // GLOBAL streak (not language-scoped)
+  totalMinutePoints: number;   // GLOBAL penalty-debited NET balance (users.totalMinutePoints); drives unlocks + the prominent number. Decays on loss.
+  grossMinutesEarned: number;  // GLOBAL lifetime minutes earned (Σ minutesEarned, all languages), ignoring penalties; only grows. gross ≥ net.
+  todayMinutes: number;        // minutes earned today (4 AM-local day) for this language (fire badge)
+  currentStreak: number;       // GLOBAL streak (not language-scoped)
 }
 
 /**

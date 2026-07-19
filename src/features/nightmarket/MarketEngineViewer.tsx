@@ -4,12 +4,17 @@ import { Container, Sprite, Graphics, Text } from 'pixi.js';
 import type { FederatedPointerEvent } from 'pixi.js';
 import { Box } from '@mui/material';
 import { TILE_SIZE } from '../../engine/market/nightMarketRegistry';
-import { isoToScreen, TILE_WIDTH, TILE_HEIGHT } from '../../engine/market/isometric';
+import { isoToScreen, TILE_WIDTH, TILE_HEIGHT, type ScreenPosition } from '../../engine/market/isometric';
 import { buildFarmField, resolveTileSurfaceUrls, resolveTileDarkSurfaceUrls, FIELD_WIDTH, FIELD_HEIGHT } from '../../engine/market/farmTerrain';
 import { freeFarmTileset } from '../../engine/market/freeFarmTileset';
-import FarmTerrainLayer from './FarmTerrainLayer';
-import WalkwayLayer from './WalkwayLayer';
-import HouseLayer from './HouseLayer';
+import TemplateTerrainLayer from './TemplateTerrainLayer';
+import PlaceholderHouseLayer from './PlaceholderHouseLayer';
+import PedestrianLayer from './PedestrianLayer';
+import { useMarketWorld } from './useMarketWorld';
+import { usePixiPedestrians } from '../../hooks/usePixiPedestrians';
+import type { PlacedPlaceholder } from '../../engine/market/templateStitch';
+import { placeholderAreaId } from '../../engine/market/placeholderArea';
+import type { TemplateBounds } from './useMarketWorld';
 
 // Register Pixi.js classes as pixiContainer / pixiSprite / pixiGraphics / pixiText JSX elements.
 extend({ Container, Sprite, Graphics, Text });
@@ -33,17 +38,27 @@ export interface DebugFlags {
   grass: boolean;
   /** Label each tile with the surface sprite (overlay tile) stem it was painted with. */
   overlayLabels: boolean;
+  /** Outline each PLACED template's board rectangle + float its "name vN" over the center. */
+  templateBounds: boolean;
+  /** Outline each PLACEHOLDER occupant slot + label it (owning template + slot id, filled/empty tint). */
+  placeholderBounds: boolean;
 }
 
-export const DEBUG_FLAG_KEYS: Array<keyof DebugFlags> = ['origin', 'grass', 'overlayLabels'];
+export const DEBUG_FLAG_KEYS: Array<keyof DebugFlags> = [
+  'origin', 'grass', 'overlayLabels', 'templateBounds', 'placeholderBounds',
+];
 
-export const ALL_DEBUG_OFF: DebugFlags = { origin: false, grass: false, overlayLabels: false };
+export const ALL_DEBUG_OFF: DebugFlags = {
+  origin: false, grass: false, overlayLabels: false, templateBounds: false, placeholderBounds: false,
+};
 
 export interface MarketEngineViewerProps {
   /** Render the isometric debug grid (fine green + major red lines). Default false. */
   showGrid?: boolean;
   /** Per-overlay debug toggles. Omitted flags default to off. */
   debug?: DebugFlags;
+  /** Bump to force the world to re-fetch its layout (e.g. after the author minute-adjust tool). */
+  reloadToken?: number;
 }
 
 interface SceneProps {
@@ -54,13 +69,18 @@ interface SceneProps {
   debug: DebugFlags;
   /** Ref set to true by the outer component during a pinch gesture — suppresses Pixi drag. */
   isPinchingRef?: React.RefObject<boolean>;
+  /** Bump to force the world to re-fetch its layout. */
+  reloadToken?: number;
 }
 
-// Integer zoom range — the free-farm art is pixel-art, so only whole-number
+// Half-integer zoom range — the free-farm art is pixel-art, so whole-number
 // scale factors keep it crisp (nearest-neighbour, no fractional resampling).
-const MIN_ZOOM = 1;
+// MIN_ZOOM is the one exception: 0.5 lets the camera pull back further than
+// the crisp floor of 1, trading a blurrier (resampled) view for more visible map.
+const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 8;
-const DEFAULT_ZOOM = 3;
+const DEFAULT_ZOOM = 1;
+const ZOOM_STEP = 0.5;
 
 // ─── Grid overlay ────────────────────────────────────────────────────────────
 // Static isometric debug grid. Fine green lines mark every single tile (1 iso
@@ -242,10 +262,148 @@ function OverlayLabels() {
   );
 }
 
+// ─── Iso-rectangle outline helper ──────────────────────────────────────────────
+// Trace the diamond outline of a cell rectangle [col, col+w) × [row, row+h) into the
+// current Graphics path. isoToScreen maps iso-CORNER coordinates (the same integer grid
+// the GridOverlay draws through), so the four rectangle corners are the four diamond
+// vertices: south = (col,row), east = (col+w,row), north = (col+w,row+h), west = (col,row+h).
+function traceIsoRect(g: Graphics, col: number, row: number, w: number, h: number) {
+  const s = isoToScreen(col, row);
+  const e = isoToScreen(col + w, row);
+  const n = isoToScreen(col + w, row + h);
+  const wv = isoToScreen(col, row + h);
+  g.moveTo(s.screenX, s.screenY);
+  g.lineTo(e.screenX, e.screenY);
+  g.lineTo(n.screenX, n.screenY);
+  g.lineTo(wv.screenX, wv.screenY);
+  g.closePath();
+}
+
+/** Screen center of a cell rectangle — isoToScreen of its iso midpoint (affine ⇒ true centroid). */
+function isoRectCenter(col: number, row: number, w: number, h: number): ScreenPosition {
+  return isoToScreen(col + w / 2, row + h / 2);
+}
+
+// Shared tiny-label text style for the bounds overlays — monospace, upscaled by the integer
+// camera zoom, white fill + dark stroke so it reads over grass, dirt, and the outline colors.
+const BOUNDS_LABEL_STYLE = {
+  fontFamily: 'monospace',
+  fontSize: 6,
+  lineHeight: 6,
+  align: 'center' as const,
+  fill: 0xffffff,
+  stroke: { color: 0x000000, width: 1 },
+};
+
+// ─── Template bounds overlay ────────────────────────────────────────────────────
+// Debug outline + name label for each PLACED template. Draws the template's board
+// rectangle (offset..offset+size, in cells) as an amber iso-diamond outline and floats
+// "name vN" over its center — so an author can see which template tiles which region and
+// which version is live. Unlike the grass/overlayLabels overlays, this reads the STITCHED
+// template layout (the placements), so it stays correct against the real render.
+const TEMPLATE_BOUNDS_Z = 9_700;
+const TEMPLATE_BOUNDS_COLOR = 0xffb300; // amber
+
+function TemplateBoundsOverlay({ templates }: { templates: TemplateBounds[] }) {
+  const draw = useCallback((g: Graphics) => {
+    g.clear();
+    for (const t of templates) traceIsoRect(g, t.offsetCol, t.offsetRow, t.width, t.height);
+    g.stroke({ color: TEMPLATE_BOUNDS_COLOR, width: 1, alpha: 0.95 });
+  }, [templates]);
+
+  const labels = useMemo(
+    () =>
+      templates.map((t) => {
+        const { screenX, screenY } = isoRectCenter(t.offsetCol, t.offsetRow, t.width, t.height);
+        return {
+          key: `${t.name}@${t.offsetCol},${t.offsetRow}`,
+          x: screenX,
+          y: screenY,
+          text: `${t.name}\nv${t.activeVersion}`,
+        };
+      }),
+    [templates],
+  );
+
+  return (
+    <pixiContainer zIndex={TEMPLATE_BOUNDS_Z}>
+      <pixiGraphics draw={draw} />
+      {labels.map((l) => (
+        <pixiText
+          key={l.key}
+          text={l.text}
+          x={l.x}
+          y={l.y}
+          anchor={{ x: 0.5, y: 0.5 }}
+          style={BOUNDS_LABEL_STYLE}
+          resolution={4}
+        />
+      ))}
+    </pixiContainer>
+  );
+}
+
+// ─── Placeholder bounds overlay ─────────────────────────────────────────────────
+// Debug outline + label for each PLACEHOLDER occupant slot (world.placeholderAreas, in
+// GLOBAL cells). Filled slots outline cyan, empty slots magenta (two stroke passes, like the
+// grass light/dark passes); each is labeled with its owning template + its "col_row" slot id.
+const PLACEHOLDER_BOUNDS_Z = 9_720;
+const PLACEHOLDER_FILLED_COLOR = 0x00e5ff; // cyan — an occupant is standing here
+const PLACEHOLDER_EMPTY_COLOR = 0xff5cf0; // magenta — vacant slot
+
+function PlaceholderBoundsOverlay({ placeholders }: { placeholders: PlacedPlaceholder[] }) {
+  const draw = useCallback((g: Graphics) => {
+    g.clear();
+    const tracePass = (filled: boolean, color: number) => {
+      let any = false;
+      for (const ph of placeholders) {
+        if (ph.filled !== filled) continue;
+        traceIsoRect(g, ph.area.col, ph.area.row, ph.area.w, ph.area.h);
+        any = true;
+      }
+      if (any) g.stroke({ color, width: 1, alpha: 0.95 });
+    };
+    tracePass(true, PLACEHOLDER_FILLED_COLOR);
+    tracePass(false, PLACEHOLDER_EMPTY_COLOR);
+  }, [placeholders]);
+
+  const labels = useMemo(
+    () =>
+      placeholders.map((ph) => {
+        const { screenX, screenY } = isoRectCenter(ph.area.col, ph.area.row, ph.area.w, ph.area.h);
+        return {
+          key: `${ph.templateName}@${ph.area.col},${ph.area.row}`,
+          x: screenX,
+          y: screenY,
+          // Owning template + slot anchor id (global col_row) + a filled/empty glyph.
+          text: `${ph.templateName}\n${placeholderAreaId(ph.area)} ${ph.filled ? '●' : '○'}`,
+        };
+      }),
+    [placeholders],
+  );
+
+  return (
+    <pixiContainer zIndex={PLACEHOLDER_BOUNDS_Z}>
+      <pixiGraphics draw={draw} />
+      {labels.map((l) => (
+        <pixiText
+          key={l.key}
+          text={l.text}
+          x={l.x}
+          y={l.y}
+          anchor={{ x: 0.5, y: 0.5 }}
+          style={BOUNDS_LABEL_STYLE}
+          resolution={4}
+        />
+      ))}
+    </pixiContainer>
+  );
+}
+
 // ─── Scene ─────────────────────────────────────────────────────────────────
 // Runs inside <Application>. Handles drag-to-pan and renders the terrain.
 
-function NightMarketScene({ pan, zoom, onPanChange, showGrid, debug, isPinchingRef }: SceneProps) {
+function NightMarketScene({ pan, zoom, onPanChange, showGrid, debug, isPinchingRef, reloadToken }: SceneProps) {
   // `isInitialised` flips true once Pixi's async init() (which creates the
   // renderer) resolves; `app`'s identity is stable across init, so an effect
   // keyed only on `app` would bail before the renderer exists and never re-run.
@@ -258,8 +416,26 @@ function NightMarketScene({ pan, zoom, onPanChange, showGrid, debug, isPinchingR
   const onPanChangeRef = useRef(onPanChange);
   onPanChangeRef.current = onPanChange;
 
-  // Keep Pixi's ticker running (drives any future animation); no per-frame state.
-  useTick(() => {});
+  // Template runtime: load the authored hub template → assembled MarketWorld (stitched
+  // terrain + recovered tile/street graphs). Replaces the former static procedural farm
+  // plateau (FarmTerrainLayer/WalkwayLayer/HouseLayer).
+  const { world, width, height, field, placements } = useMarketWorld(reloadToken);
+
+  // Slice-2 pedestrians: ambient walkers seeded on the recovered graph. The hook re-seeds
+  // when the graph identity changes (first load / version switch) and no-ops while null.
+  const pedestrians = usePixiPedestrians({
+    tileGraph: world?.tileGraph ?? null,
+    streetGraph: world?.streetGraph ?? null,
+  });
+
+  // Frame counter: bumping state each tick forces a re-render so the pedestrian sprites read
+  // their fresh positions from `getDrawables()` below. The ped FSM is advanced in the same
+  // tick (one RAF loop drives both simulation and render).
+  const [, setFrame] = useState(0);
+  useTick((ticker) => {
+    pedestrians.tick(ticker.deltaMS, performance.now());
+    setFrame((f) => (f + 1) % 1_000_000);
+  });
 
   // Stage pointer events: drag-to-pan. Keyed on `isInitialised` so it reattaches
   // once the renderer exists.
@@ -309,9 +485,22 @@ function NightMarketScene({ pan, zoom, onPanChange, showGrid, debug, isPinchingR
   return (
     <pixiContainer x={cx} y={cy} scale={zoom} sortableChildren>
       {showGrid && <GridOverlay />}
-      <FarmTerrainLayer />
-      <WalkwayLayer />
-      <HouseLayer />
+      {world && <TemplateTerrainLayer world={world.terrain} width={width} height={height} field={field} />}
+      {/* Occupant markers: a house (or two adjacent houses) in each FILLED placeholder slot
+          (temporary stand-in until the real stand-asset catalog exists). Cosmetic only — not in
+          the graph. */}
+      {world && <PlaceholderHouseLayer placeholders={world.placeholderAreas} />}
+      {world && <PedestrianLayer drawables={pedestrians.getDrawables()} />}
+      {/* Template/placeholder bounds read the STITCHED layout (placements + world.placeholderAreas),
+          so unlike the two overlays below they stay correct against the real template render. */}
+      {debug.templateBounds && <TemplateBoundsOverlay templates={placements} />}
+      {debug.placeholderBounds && world && (
+        <PlaceholderBoundsOverlay placeholders={world.placeholderAreas} />
+      )}
+      {/* NOTE: the GrassOverlay/OverlayLabels debug tints below still visualize the OLD
+          procedural buildFarmField, not the stitched template terrain — they are stale
+          against the template render and want re-targeting when a debug pass is
+          needed (both default off). */}
       {debug.grass && <GrassOverlay />}
       {debug.overlayLabels && <OverlayLabels />}
       {debug.origin && <OriginOverlay />}
@@ -322,9 +511,9 @@ function NightMarketScene({ pan, zoom, onPanChange, showGrid, debug, isPinchingR
 // ─── MarketEngineViewer ───────────────────────────────────────────────────────
 // Outer component: pan/zoom state, gesture handlers, Application mount.
 
-function MarketEngineViewer({ showGrid, debug = ALL_DEBUG_OFF }: MarketEngineViewerProps) {
+function MarketEngineViewer({ showGrid, debug = ALL_DEBUG_OFF, reloadToken }: MarketEngineViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [pan, setPan] = useState({ x: 0, y: 250 });
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const [ready, setReady] = useState(false);
 
@@ -343,12 +532,13 @@ function MarketEngineViewer({ showGrid, debug = ALL_DEBUG_OFF }: MarketEngineVie
     if (containerRef.current) setReady(true);
   }, []);
 
-  // Set an integer zoom, adjusting pan so the focal point stays fixed on screen.
+  // Set a zoom snapped to the nearest ZOOM_STEP, adjusting pan so the focal point stays fixed on screen.
   const applyZoomAtPoint = useCallback((focalX: number, focalY: number, rawZoom: number) => {
     const el = containerRef.current;
     if (!el) return;
-    const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.round(rawZoom)));
-    if (newZoom === zoomRef.current) return; // integer steps — ignore sub-step deltas
+    const snapped = Math.round(rawZoom / ZOOM_STEP) * ZOOM_STEP;
+    const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, snapped));
+    if (newZoom === zoomRef.current) return; // fixed steps — ignore sub-step deltas
     const ratio = newZoom / zoomRef.current;
     const w = el.clientWidth;
     const h = el.clientHeight;
@@ -362,13 +552,13 @@ function MarketEngineViewer({ showGrid, debug = ALL_DEBUG_OFF }: MarketEngineVie
     setPan(newPan);
   }, []);
 
-  // Wheel zoom centered on the cursor. One integer step per notch.
+  // Wheel zoom centered on the cursor. One ZOOM_STEP per notch.
   const handleWheel = useCallback((e: WheelEvent) => {
     e.preventDefault();
     const el = containerRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    const step = e.deltaY < 0 ? 1 : -1;
+    const step = e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP;
     applyZoomAtPoint(e.clientX - rect.left, e.clientY - rect.top, zoomRef.current + step);
   }, [applyZoomAtPoint]);
 
@@ -404,7 +594,7 @@ function MarketEngineViewer({ showGrid, debug = ALL_DEBUG_OFF }: MarketEngineVie
     const dy = t1.clientY - t0.clientY;
     const newDist = Math.sqrt(dx * dx + dy * dy);
     const scale = newDist / pinchRef.current.startDist;
-    // Snap to an integer zoom around the pinch midpoint.
+    // Snap to the nearest ZOOM_STEP around the pinch midpoint.
     applyZoomAtPoint(pinchRef.current.midX, pinchRef.current.midY, pinchRef.current.startZoom * scale);
   }, [applyZoomAtPoint]);
 
@@ -445,6 +635,7 @@ function MarketEngineViewer({ showGrid, debug = ALL_DEBUG_OFF }: MarketEngineVie
             showGrid={showGrid}
             debug={debug}
             isPinchingRef={isPinchingRef}
+            reloadToken={reloadToken}
           />
         </Application>
       )}

@@ -8,10 +8,6 @@ import {
   isDirtDecorUrl,
   type EditorTile,
 } from '../../engine/market/farmTerrain';
-import { HOUSE_ANCHOR } from '../../engine/market/house';
-// House.png lives in the pack's excluded `Originals/` bucket, so it is imported
-// directly (see HouseLayer for the same rationale).
-import houseUrl from '../../assets/free-assets/free-farm-assets/Environment/Originals/House.png';
 
 /**
  * EditorTerrainLayer — renders a mask-driven {@link EditorTile} field for the
@@ -44,20 +40,7 @@ interface TileDraw {
   decorZ: number;
 }
 
-/** A placed house sprite, positioned/z-sorted by its front-corner foot cell. */
-interface HouseDraw {
-  key: string;
-  x: number;
-  y: number;
-  z: number;
-  /** Horizontally mirror the sprite (negated scale.x around the base-corner anchor). */
-  flip: boolean;
-}
-
-function buildDraws(
-  tiles: EditorTile[],
-  houses: Array<{ cell: string; flip: boolean }>,
-): { draws: TileDraw[]; houseDraws: HouseDraw[]; urls: Set<string> } {
+function buildDraws(tiles: EditorTile[]): { draws: TileDraw[]; urls: Set<string> } {
   const urls = new Set<string>();
   const draws: TileDraw[] = [];
   for (const t of tiles) {
@@ -70,7 +53,6 @@ function buildDraws(
     for (const u of surfaceUrls) urls.add(u);
     for (const u of darkSurfaceUrls) urls.add(u);
 
-    // Painted decor (suppressed only under a placed house — see buildEditorField.decorAt).
     const decorUrl = t.decorUrl;
     if (decorUrl) urls.add(decorUrl);
 
@@ -94,38 +76,11 @@ function buildDraws(
     });
   }
 
-  // Placed houses — one sprite each, positioned/z-sorted by the front-corner foot
-  // cell (like a large decor). Above the cell's decor slot but still in the
-  // background band, so terrain in FRONT (lower iso → higher z) still occludes it.
-  const houseDraws: HouseDraw[] = [];
-  for (const { cell: anchor, flip } of houses) {
-    const [col, row] = anchor.split(',').map(Number);
-    const { screenX, screenY } = isoToScreen(col, row);
-    houseDraws.push({
-      key: anchor,
-      x: screenX,
-      y: screenY,
-      z: computeLayerZ(col, row, 'background') + 0.2,
-      flip,
-    });
-  }
-  if (houseDraws.length > 0) urls.add(houseUrl);
-
-  return { draws, houseDraws, urls };
+  return { draws, urls };
 }
 
-export default function EditorTerrainLayer({
-  tiles,
-  houses = [],
-}: {
-  tiles: EditorTile[];
-  /** Placed houses: front-corner anchor "col,row" (4×5 footprint) + h-flip orientation. */
-  houses?: Array<{ cell: string; flip: boolean }>;
-}) {
-  const { draws, houseDraws, urls } = useMemo(
-    () => buildDraws(tiles, houses),
-    [tiles, houses],
-  );
+export default function EditorTerrainLayer({ tiles }: { tiles: EditorTile[] }) {
+  const { draws, urls } = useMemo(() => buildDraws(tiles), [tiles]);
   const [textures, setTextures] = useState<Map<string, Texture> | null>(null);
 
   // `buildDraws` returns a fresh `urls` Set on every rebuild (i.e. every paint), but
@@ -212,22 +167,6 @@ export default function EditorTerrainLayer({
           </Fragment>
         );
       })}
-      {/* Placed houses — anchored on the base-diamond front corner (HOUSE_ANCHOR),
-          seated on the front-corner foot cell, matching the live nmp HouseLayer. */}
-      {textures.get(houseUrl) && houseDraws.map((h) => (
-        <pixiSprite
-          key={`house:${h.key}`}
-          texture={textures.get(houseUrl)!}
-          x={h.x}
-          y={h.y}
-          anchor={HOUSE_ANCHOR}
-          // Mirror by negating scale.x; Pixi flips around the anchor (the base-diamond front
-          // corner), so the house stays seated on the same foot cell, just facing the other way.
-          scale={{ x: h.flip ? -1 : 1, y: 1 }}
-          zIndex={h.z}
-          eventMode="none"
-        />
-      ))}
     </>
   );
 }

@@ -9,13 +9,12 @@ import PracticeWritingButton from "../../../components/handwriting/PracticeWriti
 import LongDefinitionDisplay from "../../../components/LongDefinitionDisplay";
 import VernacularScoreDots from "../../../components/VernacularScoreDots";
 import { aiGeneratedSurfaceSx } from "../../../theme/aiGeneratedStyling";
-import { AiGeneratedBadge } from "../../../components/AiGeneratedBadge";
-import InfoCardListRow from "./InfoCardListRow";
+import InfoCardBlockButton from "./InfoCardBlockButton";
+import UsedInPaginatedList from "../UsedInPaginatedList";
 import {
     InfoSheetEntryHeader,
     InfoSheetTabStrip,
     InfoSheetTab,
-    SharedCharsLabel,
 } from "./styled";
 import {
     TAB_LABELS,
@@ -24,7 +23,7 @@ import {
     TAB_SWIPE_COMMIT_RATIO,
     TAB_SWIPE_TRANSITION,
 } from "./constants";
-import { SIZE, WEIGHT, LEADING, TRACKING } from "../../../theme/scale";
+import { SIZE, WEIGHT, TRACKING } from "../../../theme/scale";
 import { SpeakerButton } from "./FlashCardSection";
 import ExampleSentenceList from "../ExampleSentenceList";
 import type { VocabEntry, BreakdownItem, UsedInItem } from "./types";
@@ -154,17 +153,9 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
     // Single-char zh cards swap the breakdown tab for a "used in" list (see usedIn enrichment in OnDeckVocabService).
     const isSingleChar = !!currentEntry && [...currentEntry.entryKey].length === 1;
     const usedInItems: UsedInItem[] = (isSingleChar && currentEntry?.usedIn) ? currentEntry.usedIn : [];
-    // Only characters that actually abbreviate a fuller word are shown — chars with an
-    // empty impliedWord ("") are omitted entirely (char-by-char basis). The section
-    // renders only when at least one character qualifies.
-    // Guard `impliedWord` — legacy v1 rows use a `reason` key (no `impliedWord`),
-    // so item.impliedWord can be undefined; `?? ''` keeps those from crashing (they
-    // filter out) until re-enriched to the v2 shape.
-    const rationaleItems = (currentEntry?.characterRationale ?? []).filter((item) => (item.impliedWord ?? '').trim().length > 0);
-    const hasRationale = rationaleItems.length > 0;
     const breakdownTabHasContent = isSingleChar
-        ? (usedInItems.length > 0 || hasRationale)
-        : (breakdownItems.length > 0 || hasRationale);
+        ? usedInItems.length > 0
+        : breakdownItems.length > 0;
     const breakdownTabLabel = isSingleChar ? "used in" : TAB_LABELS[2];
 
     const tabIsEmpty = [!definitionTabHasContent, !examplesTabHasContent, !breakdownTabHasContent];
@@ -524,89 +515,32 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
         // tabIndex === 2: Breakdown (multi-char) or Used In (single-char)
         return breakdownTabHasContent ? (
             <Box className="mobile-demo-breakdown-wrapper" sx={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-                <Box sx={{ display: "flex", flexDirection: "column" }}>
-                    {isSingleChar
-                        ? usedInItems.map((item, index) => (
-                            <InfoCardListRow
-                                key={index}
-                                className="mobile-demo-used-in-row-button"
-                                character={item.entryKey}
-                                pinyin={item.pronunciation ?? ""}
-                                definition={item.definition ?? ""}
-                                size="sm"
-                                showPinyin={showPinyin}
-                                showPinyinColor={showPinyinColor}
-                                isLast={index === usedInItems.length - 1}
-                                onClick={onUsedInItemClick ? () => onUsedInItemClick(item) : undefined}
-                            />
-                        ))
-                        : breakdownItems.map((item, index) => (
-                            <InfoCardListRow
+                {isSingleChar ? (
+                    // Infinite-scroll list: seeds from the card's ≤4 preview (usedInItems),
+                    // pages the rest via /api/dictionary/used-in.
+                    <UsedInPaginatedList
+                        character={currentEntry!.entryKey}
+                        language={currentEntry!.language ?? 'zh'}
+                        initialItems={usedInItems}
+                        showPinyin={showPinyin}
+                        showPinyinColor={showPinyinColor}
+                        onItemClick={onUsedInItemClick}
+                        rowClassName="mobile-demo-used-in-row-button"
+                    />
+                ) : (
+                    <Box sx={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
+                        {breakdownItems.map((item, index) => (
+                            <InfoCardBlockButton
                                 key={index}
                                 className="mobile-demo-breakdown-row-button"
                                 character={item.character}
                                 pinyin={item.pinyin}
                                 definition={item.definition}
-                                size="md"
                                 showPinyin={showPinyin}
                                 showPinyinColor={showPinyinColor}
-                                isLast={index === breakdownItems.length - 1}
                                 onClick={onBreakdownItemClick ? () => onBreakdownItemClick(item) : undefined}
                             />
                         ))}
-                </Box>
-                {/* "Why These Characters": one row per character that abbreviates a
-                    fuller word. Renders only when at least one such character exists. */}
-                {hasRationale && (
-                    // No validation field covers characterRationale yet (docs/DATA_VALIDATION_SYSTEM.md),
-                    // so it can never be human-approved — always renders the AI-generated treatment.
-                    <Box
-                        className="mobile-demo-character-rationale-section mobile-demo-character-rationale-section--ai-generated"
-                        sx={{
-                            ...aiGeneratedSurfaceSx,
-                            borderRadius: "10px",
-                            padding: "12px 14px",
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: "8px",
-                        }}
-                    >
-                        <AiGeneratedBadge className="mobile-demo-character-rationale-ai-badge" label="AI GENERATED" />
-                        <SharedCharsLabel className="mobile-demo-character-rationale-label">
-                            Why These Characters
-                        </SharedCharsLabel>
-                        <Box className="mobile-demo-character-rationale-list" sx={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                            {rationaleItems.map((item, index) => (
-                                <Box
-                                    key={index}
-                                    className="mobile-demo-character-rationale-row"
-                                    sx={{ display: "flex", alignItems: "baseline", gap: "10px" }}
-                                >
-                                    <ForeignText
-                                        size="sm"
-                                        justifyContent="flex-start"
-                                        className="mobile-demo-character-rationale-char"
-                                        text={item.char}
-                                        showPinyin={false}
-                                        useToneColor={showPinyinColor}
-                                    />
-                                    <Typography
-                                        className="mobile-demo-character-rationale-arrow"
-                                        sx={{ fontSize: SIZE.body, color: fc.textSecondary, lineHeight: LEADING.normal }}
-                                    >
-                                        →
-                                    </Typography>
-                                    <ForeignText
-                                        size="sm"
-                                        justifyContent="flex-start"
-                                        className="mobile-demo-character-rationale-implied-word"
-                                        text={item.impliedWord}
-                                        showPinyin={false}
-                                        useToneColor={showPinyinColor}
-                                    />
-                                </Box>
-                            ))}
-                        </Box>
                     </Box>
                 )}
             </Box>
@@ -686,38 +620,29 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                         {stripParentheses(currentEntry.definition ?? '')}
                     </Typography>
                 )}
-                {/* Only discoverable entries can be added to Learn Now —
-                    lookup-only (undiscoverable) dictionary words hide the button. */}
-                {onAddToLibrary && currentEntry && currentEntry.discoverable && (
-                    <IconButton
-                        className="mobile-demo-eic-add-to-library"
-                        size="small"
-                        aria-label="Add to Learn Now"
-                        onClick={(e) => {
-                            // Match SpeakerButton's stop-propagation pattern so
-                            // taps don't bubble to flip/drag handlers in any
-                            // wrapping card.
-                            e.stopPropagation();
-                            onAddToLibrary(currentEntry);
-                        }}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onTouchStart={(e) => e.stopPropagation()}
-                        onTouchEnd={(e) => e.stopPropagation()}
-                        sx={{
-                            color: fc.textSecondary,
-                            '&:hover': { color: fc.onSurface },
-                        }}
-                    >
-                        <AddIcon fontSize="small" />
-                    </IconButton>
-                )}
-                {/* Writing-practice + audio + compare icons stacked vertically. Any may be
-                    absent (non-zh / no onSpeak / no onOpenCompare), in which case the column
-                    simply holds whichever render. */}
-                {currentEntry && (onSpeak || currentEntry.language === "zh" || onOpenCompare) && (
+                {/* Header action buttons laid out as a 2×2 grid (reading order:
+                    Practice / Speaker · Compare / Add-to-library). Any cell may be
+                    absent — Practice self-hides for non-zh, Speaker needs onSpeak,
+                    Compare needs onOpenCompare, and Add needs onAddToLibrary on a
+                    discoverable entry — so the grid auto-packs whatever renders.
+                    Add-to-library was previously an inline "+" after the English
+                    text; it now joins this button set. */}
+                {currentEntry && (
+                    onSpeak ||
+                    currentEntry.language === "zh" ||
+                    onOpenCompare ||
+                    (onAddToLibrary && currentEntry.discoverable)
+                ) && (
                     <Box
                         className="mobile-demo-eic-actions"
-                        sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.25 }}
+                        sx={{
+                            display: "grid",
+                            gridTemplateColumns: "repeat(2, auto)",
+                            alignItems: "center",
+                            justifyItems: "center",
+                            columnGap: 0.25,
+                            rowGap: 0.25,
+                        }}
                     >
                         <PracticeWritingButton
                             character={currentEntry.entryKey}
@@ -753,12 +678,45 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                                 <CompareArrowsIcon fontSize="small" />
                             </IconButton>
                         )}
+                        {/* Only discoverable entries can be added to Learn Now —
+                            lookup-only (undiscoverable) dictionary words hide the button. */}
+                        {onAddToLibrary && currentEntry.discoverable && (
+                            <IconButton
+                                className="mobile-demo-eic-add-to-library"
+                                size="small"
+                                aria-label="Add to Learn Now"
+                                onClick={(e) => {
+                                    // Match SpeakerButton's stop-propagation pattern so
+                                    // taps don't bubble to flip/drag handlers in any
+                                    // wrapping card.
+                                    e.stopPropagation();
+                                    onAddToLibrary(currentEntry);
+                                }}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onTouchStart={(e) => e.stopPropagation()}
+                                onTouchEnd={(e) => e.stopPropagation()}
+                                sx={{
+                                    color: fc.textSecondary,
+                                    '&:hover': { color: fc.onSurface },
+                                }}
+                            >
+                                <AddIcon fontSize="small" />
+                            </IconButton>
+                        )}
                     </Box>
                 )}
             </InfoSheetEntryHeader>
 
-            {/* Underline tab strip */}
-            <InfoSheetTabStrip className="mobile-demo-tabs">
+            {/* Underline tab strip. Also acts as a drag-to-resize handle
+                (same bindHeaderDrag as the header) so a vertical drag started
+                on the tabs resizes the sheet on desktop too — on touch the
+                root's raw resize listeners already cover it. useDrag's
+                filterTaps keeps tab-selection taps working. */}
+            <InfoSheetTabStrip
+                className="mobile-demo-tabs"
+                {...(headerDragBind ? headerDragBind() : {})}
+                sx={headerDragBind ? { touchAction: "none", cursor: "grab" } : undefined}
+            >
                 {TAB_LABELS.map((label, index) => {
                     // Tab index 2 is the breakdown slot — relabeled to "Used In" for single-char zh.
                     const displayLabel = index === 2 ? breakdownTabLabel : label;

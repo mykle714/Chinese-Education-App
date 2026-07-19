@@ -17,9 +17,10 @@ export interface InfoCardListRowProps {
 }
 
 /**
- * Shared row used by the breakdown tab for both the multi-char breakdown list
- * and the single-char "used in" list. Identical visuals; `size` controls the
- * ForeignText sizing (sm for used-in, md for breakdown).
+ * Full-width list row used by the breakdown tab's single-char "used in" list:
+ * the word (as a cpcd row) on the left, its English gloss filling the rest, a
+ * hairline divider between rows and a chevron when tappable. (The multi-char
+ * breakdown list uses the square InfoCardBlockButton instead.)
  */
 function InfoCardListRow({
     character,

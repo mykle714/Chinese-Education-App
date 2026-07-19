@@ -43,8 +43,12 @@ interface SheetPanelProps {
     // share the grabber's drag-to-resize gesture. useDrag's filterTaps option
     // keeps proper taps on header icons working.
     children: React.ReactNode | ((api: { bindHeaderDrag: ReturnType<typeof useDrag> }) => React.ReactNode);
-    // Optional row rendered above the grabber (e.g. entry-tabs strip). Kept
-    // outside the drag zone so taps on tabs aren't captured by useDrag.
+    // Optional row rendered above the grabber (e.g. entry-tabs strip). Rendered
+    // inside a drag-to-resize zone bound to bindHeaderDrag so a vertical drag
+    // started on the entry tabs resizes the sheet just like the grabber/header
+    // (this strip sits outside `root`, so the raw touch listeners don't reach
+    // it — useDrag is the only path). useDrag's filterTaps keeps tab-selection
+    // and the close-tab taps working.
     tabStrip?: React.ReactNode;
 }
 
@@ -253,7 +257,13 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
         let lastTouchY: number | null = null;
         let lastTouchTime = 0;
         let velocity = 0;
-        let touchConsumedAny = false;
+        // The mode this touch gesture is locked into on its first committed
+        // move. Once set, the gesture cannot cross over between resizing the
+        // panel and scrolling the content — a resize that reaches the max
+        // height is a hard stop; the user must lift and start a fresh gesture
+        // to begin scrolling the content. The release-momentum mode inherits
+        // this lock too (see onTouchEnd).
+        let gestureMode: "resize" | "scroll" | null = null;
         let momentumRaf: number | null = null;
 
         const stopMomentum = () => {
@@ -269,7 +279,7 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
             lastTouchY = e.touches[0].clientY;
             lastTouchTime = e.timeStamp;
             velocity = 0;
-            touchConsumedAny = false;
+            gestureMode = null;
         };
         const onTouchMove = (e: TouchEvent) => {
             if (lastTouchY === null || e.touches.length !== 1) return;
@@ -283,19 +293,38 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
             }
             lastTouchY = y;
             lastTouchTime = t;
-            if (applyDelta(dy)) {
-                touchConsumedAny = true;
-                e.preventDefault();
-            } else {
+            // Lock the gesture to a single mode on its first committed move so
+            // it can't cross over between resizing and content-scrolling. A
+            // resize that later hits the max/min boundary swallows the delta
+            // rather than spilling into a content scroll — mirrors the
+            // momentum mode-lock in onTouchEnd. Mode is chosen the same way
+            // momentum picks its mode: grow only resizes while there's room to
+            // grow; an upward pull only resizes once the content is at its top.
+            if (gestureMode === null && dy !== 0) {
+                const maxH = parentHeightRef.current * 0.92;
+                const h = sheetHeightRef.current ?? 0;
+                const st = scrollEl.scrollTop;
+                if (dy > 0) gestureMode = h < maxH ? "resize" : "scroll";
+                else gestureMode = st > 0 ? "scroll" : (h > 0 ? "resize" : "scroll");
+            }
+            if (gestureMode === "scroll") {
                 scrollEl.scrollTop += dy;
                 e.preventDefault();
+                return;
             }
+            // resize mode: grow/shrink the panel. If applyDelta rejects (panel
+            // sitting at the max or min boundary) swallow the delta — the
+            // boundary is a hard stop for this gesture, never a handoff to
+            // content scroll.
+            applyDelta(dy);
+            e.preventDefault();
         };
         const onTouchEnd = () => {
             lastTouchY = null;
             const hOnRelease = sheetHeightRef.current ?? 0;
-            const wasResizing = touchConsumedAny;
-            touchConsumedAny = false;
+            const releaseMode = gestureMode;
+            const wasResizing = releaseMode === "resize";
+            gestureMode = null;
             if (wasResizing && hOnRelease < defaultHeightRef.current) {
                 // Below the default (open) height on release → animate to 0 and
                 // dismiss, mirroring the grabber-drag snap rule.
@@ -323,22 +352,18 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
             }
             let v = velocity;
             let lastFrame = performance.now();
-            // Lock momentum to whichever mode the gesture is currently in:
+            // Momentum inherits the live gesture's locked mode so a fling can
+            // never cross over between resize and scroll:
             // - "resize": panel is growing/shrinking. Stop momentum if applyDelta
             //   stops consuming (panel hit max or top of content), instead of
-            //   transferring inertia into native scroll.
+            //   transferring inertia into native scroll. This is what makes a
+            //   grow-fling stop dead at the maxed screen instead of running on
+            //   into the content.
             // - "scroll": content is scrolling. Stop momentum if scrollTop hits
             //   the top boundary, instead of transferring inertia into a panel
             //   shrink. The user must initiate a fresh gesture to cross over.
             const maxH = parentHeightRef.current * 0.92;
-            const h0 = sheetHeightRef.current ?? 0;
-            const st0 = scrollEl.scrollTop;
-            let momentumMode: "resize" | "scroll" | null = null;
-            if (v > 0) {
-                momentumMode = h0 < maxH ? "resize" : "scroll";
-            } else if (v < 0) {
-                momentumMode = st0 > 0 ? "scroll" : (h0 > 0 ? "resize" : null);
-            }
+            const momentumMode = releaseMode;
             if (momentumMode === null) {
                 velocity = 0;
                 return;
@@ -447,8 +472,18 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
                     <InfoSheetGrabber className="mobile-demo-drag-handle" />
                 </Box>
                 {/* Entry-tabs strip (optional) sits between the grabber and the
-                    entry header so it reads as part of the panel chrome. */}
-                {tabStrip}
+                    entry header so it reads as part of the panel chrome. Wrapped
+                    in a drag zone so vertical drags started on the entry tabs
+                    resize the sheet; filterTaps keeps tab taps working. */}
+                {tabStrip && (
+                    <Box
+                        className="mobile-demo-eic-tabstrip-drag-zone"
+                        {...bindHeaderDrag()}
+                        sx={{ touchAction: "none" }}
+                    >
+                        {tabStrip}
+                    </Box>
+                )}
                 {typeof children === "function" ? children({ bindHeaderDrag }) : children}
             </InfoSheetContainer>
         </>

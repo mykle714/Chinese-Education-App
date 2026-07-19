@@ -36,7 +36,6 @@ import {
   type WalkwayDirection,
 } from './freeFarmTileset';
 import { PLANK_VARIATIONS } from './walkway';
-import { houseOccupiedCells } from './house';
 import type { PlaceholderArea } from './placeholderArea';
 
 /**
@@ -450,9 +449,9 @@ export interface EditorMasks {
    * sprite for it), so it never feeds the surface/decor rendering and is intentionally
    * absent from {@link EditorTile}/{@link buildEditorField}. Mutually exclusive with
    * {@link communal} (a cell is street-walkable OR communal-walkable, not both) AND with
-   * BLOCKING objects — a house ({@link houses}) or common/tree {@link decor} (see
-   * {@link isBlockingDecorUrl}): those overwrite it when painted, and it is refused where
-   * one already sits. Grass terrain and flush surface-family decor may coexist with it.
+   * BLOCKING common/tree {@link decor} (see {@link isBlockingDecorUrl}): those overwrite it
+   * when painted, and it is refused where one already sits. Grass terrain and flush
+   * surface-family decor may coexist with it.
    */
   street: Set<string>;
   /**
@@ -462,15 +461,15 @@ export interface EditorMasks {
    * and never feeds the surface/decor rendering, so it is intentionally
    * absent from {@link EditorTile}/{@link buildEditorField}. Mutually exclusive
    * with {@link street} (a cell is street-walkable OR communal-walkable, not both)
-   * AND with BLOCKING objects — a house ({@link houses}) or common/tree {@link decor}
-   * (see {@link isBlockingDecorUrl}): those overwrite it when painted, and it is
-   * refused where one already sits. Flush surface-family decor may coexist with it.
+   * AND with BLOCKING common/tree {@link decor} (see {@link isBlockingDecorUrl}): those
+   * overwrite it when painted, and it is refused where one already sits. Flush
+   * surface-family decor may coexist with it.
    */
   communal: Set<string>;
   /**
    * Placeholder areas (see the placeholder areas in docs/NIGHT_MARKET_TEMPLATES.md) —
    * occupant slots a future unlock asset can later fill. Each is a fixed-size rectangle
-   * DROPPED by the placeholder tool (5×5 / 5×10 / 10×5 — see {@link PlaceholderArea} /
+   * DROPPED by the placeholder tool (4×5 / 5×4 / 4×10 / 10×4 — see {@link PlaceholderArea} /
    * {@link ./placeholderArea}), stored as its own `{col,row,w,h}` record so two *adjacent*
    * slots stay DISTINCT (a flat cell mask could not tell them apart). Like {@link communal}
    * these are ANNOTATIONS: they render no sprite (the editor highlights them), do not feed
@@ -488,17 +487,6 @@ export interface EditorMasks {
    * overlap any surface freely — no mutual exclusion.
    */
   condition: Set<string>;
-  /**
-   * Placed houses: a map from each house's FRONT (near) corner cell "col,row" (min
-   * isoX/isoY) → its horizontal-FLIP (mirror) orientation (`true` = mirrored left↔right).
-   * A house occupies a 4×5 footprint extending +isoX/+isoY from that corner (see
-   * {@link ./house}); the flip does NOT change the footprint (it only mirrors the sprite,
-   * seated on the same anchor). It renders as a single sprite (in
-   * {@link ../../features/nightmarket/EditorTerrainLayer}, h-flipped when the value is
-   * true), and its footprint blocks the street + decor tools (house placement overwrites
-   * decor but never a street; once placed, street/decor cannot overwrite the house).
-   */
-  houses: Map<string, boolean>;
   /** cell "col,row" → the chosen decor sprite URL for that cell. */
   decor: Map<string, string>;
 }
@@ -622,8 +610,8 @@ export function editorDecorRotation(category: DecorCategory, surface: EditorSurf
  * Whether a decor sprite URL is a BLOCKING object — `common` decor (`decor_*`) or a
  * standing `tree` (`tree_*`/`largeTree_*`) — as opposed to a flush surface-`family`
  * decor. Blocking objects are mutually exclusive with the communal-walkable class in
- * the template editor: a park/plaza tile may carry flush surface flora but not a tree,
- * prop, or house (houses are handled separately via their footprint). Delegates to the
+ * the template editor: a park/plaza tile may carry flush surface flora but not a tree
+ * or prop. Delegates to the
  * tileset's own URL buckets so it stays single-sourced with the decor indexing (the
  * `family` sets — lightGrass/darkGrass/dirt — and the `plank` wood panels are
  * intentionally NOT blocking: they lie flush and stay walkable).
@@ -666,9 +654,8 @@ export function editorDecorCategory(url: string): DecorCategory {
 /** A {@link FarmTile} plus the editor's per-cell painted decor choice. */
 export interface EditorTile extends FarmTile {
   /**
-   * The chosen decor sprite URL for this cell, or null for none. Suppressed only under
-   * a placed house (houses overwrite decor); the street mask is now a spriteless tint
-   * and no longer suppresses decor (family decor coexists with a street).
+   * The chosen decor sprite URL for this cell, or null for none. The street mask is a
+   * spriteless tint and does not suppress decor (family decor coexists with a street).
    */
   decorUrl: string | null;
 }
@@ -679,24 +666,47 @@ export interface EditorTile extends FarmTile {
  * terrain 2 does not require terrain 1 beneath it — their only relationship is z-order
  * (the view stacks the terrain-2/dark surface above the terrain-1/light one). This differs
  * from buildFarmField, whose procedural dark patch is grown inside the light patch.
- * `fieldEdge` uses the rectangular in-bounds occupancy so the plateau rim autotiles
- * cleanly. The street/communal masks are spriteless tints and do not flow through here.
+ * `fieldEdge` uses the field-membership occupancy so the plateau rim autotiles cleanly —
+ * for a single board that is the rectangle; for a multi-template continent (see
+ * {@link TerrainField}) it is the union of placement footprints, so the rim hugs the real
+ * silhouette. The street/communal masks are spriteless tints and do not flow through here.
  */
+
+/**
+ * A GLOBAL iteration window + field-membership test for {@link buildEditorField}. The RUNTIME
+ * uses this to paint a MULTI-template continent whose silhouette is the union of placement
+ * footprints (non-rectangular when templates tile into an L/T) and whose cells live at global —
+ * possibly negative — coordinates. `contains` drives BOTH which cells get a ground tile (only
+ * in-field cells) and the `fieldEdge` plateau rim (a cell's 4-neighbour in-field occupancy).
+ *
+ * OMITTED ⇒ the editor's single-board default: origin (0,0) and the full [0,width)×[0,height)
+ * rectangle is in-field, matching the pre-multi-template behavior exactly.
+ */
+export interface TerrainField {
+  /** Global min-corner the iteration starts from (inclusive). */
+  originCol: number;
+  originRow: number;
+  /** Whether a GLOBAL cell belongs to the field (runtime: union of placement footprints). */
+  contains: (col: number, row: number) => boolean;
+}
+
 export function buildEditorField(
   width: number,
   height: number,
   masks: EditorMasks,
+  field?: TerrainField,
 ): EditorTile[] {
+  const originCol = field?.originCol ?? 0;
+  const originRow = field?.originRow ?? 0;
   const isTerrain1 = (x: number, y: number) => masks.terrain1.has(key(x, y));
   const isTerrain2 = (x: number, y: number) => masks.terrain2.has(key(x, y));
-  const inField = (x: number, y: number) => x >= 0 && x < width && y >= 0 && y < height;
-  // Cells covered by a placed house — decor never shows under a house (house placement
-  // overwrites decor). The street mask no longer suppresses decor (it is a spriteless
-  // tint; family decor coexists with a street).
-  const houseOccupied = houseOccupiedCells(masks.houses);
-  // The stored decor url for a cell (suppressed under a house), before plank autotiling.
-  const rawDecorAt = (x: number, y: number) =>
-    houseOccupied.has(key(x, y)) ? null : masks.decor.get(key(x, y)) ?? null;
+  // Field membership: the editor's single board is the whole rectangle; the runtime passes a
+  // footprint-union test so ground paints only inside the real continent shape (and rims it).
+  const inField =
+    field?.contains ?? ((x: number, y: number) => x >= 0 && x < width && y >= 0 && y < height);
+  // The stored decor url for a cell, before plank autotiling. The street mask does not
+  // suppress decor (it is a spriteless tint; family decor coexists with a street).
+  const rawDecorAt = (x: number, y: number) => masks.decor.get(key(x, y)) ?? null;
   // Whether a cell currently holds any plank — drives the plank far-face cap resolution.
   const isPlankAt = (x: number, y: number) => {
     const u = rawDecorAt(x, y);
@@ -711,8 +721,11 @@ export function buildEditorField(
   };
 
   const tiles: EditorTile[] = [];
-  for (let isoX = 0; isoX < width; isoX++) {
-    for (let isoY = 0; isoY < height; isoY++) {
+  // Iterate the GLOBAL window [origin, origin+span); skip cells outside the field silhouette so a
+  // non-rectangular continent (or the empty corner of an L-shaped layout) gets no phantom ground.
+  for (let isoX = originCol; isoX < originCol + width; isoX++) {
+    for (let isoY = originRow; isoY < originRow + height; isoY++) {
+      if (!inField(isoX, isoY)) continue;
       const fieldEdge = freeFarmTileset.pickLandmassEdge({
         n: inField(isoX, isoY + 1),
         e: inField(isoX + 1, isoY),

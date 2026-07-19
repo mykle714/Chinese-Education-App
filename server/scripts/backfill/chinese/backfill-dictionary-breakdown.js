@@ -4,7 +4,7 @@ import { DictionaryDAL } from '../../../dal/implementations/DictionaryDAL.js';
 import { initRunLog } from '../run-log.js';
 const SCRIPT_VERSION = 1; // bump when this script's logic/prompt changes
 // run-log: track duration, version, and words/mode
-const { stampEntries } = initRunLog({ script: 'chinese/backfill-dictionary-breakdown', version: SCRIPT_VERSION });
+const { stampEntries, staleClause } = initRunLog({ script: 'chinese/backfill-dictionary-breakdown', version: SCRIPT_VERSION });
 
 // --words=未来,摸脉 → scope to specific entries only; omit to target all discoverable entries with breakdown IS NULL
 const wordsArg = process.argv.find(a => a.startsWith('--words='));
@@ -12,6 +12,16 @@ const targetWords = wordsArg ? wordsArg.slice('--words='.length).split(',').map(
 const wordsFilter = targetWords?.length
   ? `AND word1 = ANY(ARRAY[${targetWords.map(w => `'${w.replace(/'/g, "''")}'`).join(', ')}])`
   : '';
+
+// A targeted (--words) run enriches the named words regardless of discoverable — the
+// on-first-sort worker enriches not-yet-discoverable candidates. Only the untargeted
+// full-table run keeps the discoverable gate. (Mirrors backfill-long-definitions.)
+const discoverableGate = targetWords?.length ? '' : 'AND discoverable = TRUE';
+// --stale: also (re)process rows stamped below SCRIPT_VERSION or never stamped.
+const isStale = process.argv.includes('--stale');
+const breakdownGate = isStale
+  ? `(breakdown IS NULL OR breakdown = 'null'::jsonb OR ${staleClause()})`
+  : `(breakdown IS NULL OR breakdown = 'null'::jsonb)`;
 
 async function backfillDictionaryBreakdown() {
   console.log('Starting dictionary breakdown backfill...\n');
@@ -26,9 +36,9 @@ async function backfillDictionaryBreakdown() {
       SELECT id, word1, language
       FROM dictionaryentries_zh
       WHERE language = 'zh'
-        AND discoverable = TRUE
+        ${discoverableGate}
         AND char_length(word1) > 1
-        AND (breakdown IS NULL OR breakdown = 'null'::jsonb)
+        AND ${breakdownGate}
         ${wordsFilter}
       ORDER BY id
     `);

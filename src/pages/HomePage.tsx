@@ -50,9 +50,9 @@ function HomePage() {
         { key: "reader", to: "/reader", title: "Reader", subtitle: "Read texts and mine new words", icon: <ArticleIcon sx={iconSx} />, bgColor: COLORS.yellowAccent },
         { key: "dictionary", to: "/dictionary", title: "Dictionary", subtitle: "Look up words and add them to your decks", icon: <BookIcon sx={iconSx} />, bgColor: COLORS.redAccent },
         { key: "tester-dashboard", to: "/tester-dashboard", title: "Tester Dashboard", subtitle: "Study time, streak, and activity", icon: <DashboardIcon sx={iconSx} />, bgColor: COLORS.blueAccent },
-        // Validator-only: the Night Market template authoring editor (desktop-only).
-        ...(user?.isValidator
-            ? [{ key: "template-editor", to: "/night-market/template-editor", title: "Template Editor", subtitle: "Author Night Market templates (validators)", icon: <GridViewIcon sx={iconSx} />, bgColor: COLORS.purpleAccent } as HomeMenuItem]
+        // Template-author-only: the Night Market template authoring editor (desktop-only).
+        ...(user?.isTemplateAuthor
+            ? [{ key: "template-editor", to: "/night-market/template-editor", title: "Template Editor", subtitle: "Author Night Market templates", icon: <GridViewIcon sx={iconSx} />, bgColor: COLORS.purpleAccent } as HomeMenuItem]
             : []),
     ];
 

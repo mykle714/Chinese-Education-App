@@ -1,0 +1,314 @@
+import { INightMarketPlacementDAL } from '../dal/interfaces/INightMarketPlacementDAL.js';
+import {
+  NightMarketTemplateService,
+  VersionScoringInputs,
+  NIGHT_MARKET_HUB_TEMPLATE_NAME,
+} from './NightMarketTemplateService.js';
+import { placeholderAreaId } from '../dal/shared/versionSelection.js';
+import { unlocksForMinutes } from '../dal/shared/unlockSchedule.js';
+import { prunableDanglingPlacements, type PruneRect } from '../dal/shared/templatePrune.js';
+import {
+  planSpawn,
+  deriveAnchors,
+  type PlacedTemplate,
+  type CatalogVersion,
+} from '../dal/shared/templatePlacement.js';
+import { TemplatePlacementRow } from '../types/nightMarket.js';
+
+/**
+ * The asset an unlock places into a placeholder slot. The legacy asset-unlock pool is retired and
+ * the real stand-asset catalog + occupant→stand rendering are a later visual slice
+ * (docs/NIGHT_MARKET_TEMPLATE_RUNTIME_PLAN.md), so every occupant is tagged with this generic id
+ * for now — the economy (fill/decay slots) is fully functional; only the sprite is a placeholder.
+ */
+const GENERIC_OCCUPANT_ASSET_ID = 'occupant-generic';
+
+/** Summary of one grant pass — how the entitlement gap was closed (for logging/telemetry). */
+export interface GrantResult {
+  /** The entitlement the schedule maps `totalMinutePoints` to. */
+  target: number;
+  /** New occupants placed into slots this pass. */
+  granted: number;
+  /** New templates spawned onto the continent this pass (to make room for occupants). */
+  spawned: number;
+  /** The user's occupant count after the pass. */
+  total: number;
+}
+
+/** A slot an occupant landed in (or would). */
+export interface PlacedSlot {
+  placementId: string;
+  placeholderAreaId: string;
+}
+
+/**
+ * Night Market PLACEMENT Service — the WRITE side of the template runtime (Slices 3–4,
+ * docs/NIGHT_MARKET_TEMPLATE_RUNTIME_PLAN.md; algorithm spec: NIGHT_MARKET_TEMPLATES.md
+ * § "Tiling & Placement" + § "Unlock economy").
+ *
+ * LAYER: service. Turns earned minutes into placed occupants and, when the continent is full,
+ * grows it with a new template. Reads/writes placements + occupants via {@link INightMarketPlacementDAL}
+ * and resolves template geometry via {@link NightMarketTemplateService}; the spawn geometry itself
+ * is the pure {@link ../dal/shared/templatePlacement} engine.
+ *
+ * Three entry points:
+ *   • {@link grantUnlocks} — idempotent reconcile: fill slots (spawning as needed) up to the
+ *     schedule's entitlement for the user's current minutes. Safe to call on every minute tick.
+ *   • {@link placeUnlock} — fill exactly one free slot across all placements (null when full).
+ *   • {@link spawnTemplate} — run the anchor algorithm once and persist the new placement.
+ *
+ * Version selection is NOT this service's job: it inserts/omits occupant rows and appends
+ * placements at activeVersion 0; the next layout read (NightMarketWorldService, recompute-on-read)
+ * settles each placement's active version from the live occupant/neighbor state.
+ */
+export class NightMarketPlacementService {
+  constructor(
+    private placementDAL: INightMarketPlacementDAL,
+    private templateService: NightMarketTemplateService,
+  ) {}
+
+  /**
+   * Two-way reconcile of a user's occupants to their entitlement `unlocks(netMinutePoints)`:
+   * GRANT (fill/spawn) when under, DECAY (remove newest occupants) when over. This is the single
+   * "make the world match the balance" entry point — used by the author minute-adjust tool and any
+   * future live balance change. `grantUnlocks` is the grant-only half (still called every study
+   * tick, where the balance only rises). Returns the resulting occupant count.
+   */
+  async reconcileUnlocks(userId: string, netMinutePoints: number): Promise<{ target: number; total: number }> {
+    const target = unlocksForMinutes(netMinutePoints);
+    const current = await this.placementDAL.countOccupantsByUser(userId);
+
+    if (current > target) {
+      // Over entitlement (points were lost) → trim the surplus occupants, then prune any template
+      // that decay left empty AND weakly attached (see pruneDanglingTemplates). Emptying a stall can
+      // strand its whole template on the fringe; we shrink the continent to match the lost content.
+      await this.placementDAL.deleteSurplusOccupants(userId, target);
+      await this.pruneDanglingTemplates(userId);
+      return { target, total: target };
+    }
+
+    // At/under entitlement → the grant path fills/spawns up to target (no-op when already there).
+    const result = await this.grantUnlocks(userId, netMinutePoints);
+    return { target, total: result.total };
+  }
+
+  /**
+   * Decay-time cleanup: iteratively remove PLACEMENTS that decay has left both EMPTY and only
+   * weakly attached to the rest of the continent, until no more qualify (a fixpoint).
+   *
+   * A placement is removable when ALL hold:
+   *   • it holds **0 occupants** (every placeholder slot is empty — nothing is lost visually);
+   *   • it is **not the starter hub** ({@link NIGHT_MARKET_HUB_TEMPLATE_NAME}, always kept);
+   *   • its touched sides are **{0, 1, or 2 ADJACENT}** — never an opposing pair. Concretely
+   *     `!(hasEast && hasWest) && !(hasHigh && hasLow)`: at most one neighbour per axis. This
+   *     both (a) leaves well-anchored interior pieces (3–4 sides) alone and (b) never removes a
+   *     corridor/bridge (two OPPOSITE sides), so pruning can't sever the continent in two.
+   *
+   * A "touched side" is a same-owner neighbouring placement whose rectangle sits flush against
+   * that edge with the perpendicular span overlapping. Removing one placement only ever REDUCES a
+   * neighbour's touched-side set, so the predicate is monotonic and the fixpoint is order-
+   * independent — we can peel every currently-removable placement each pass and re-evaluate until a
+   * pass removes nothing. Placement counts per user are tiny (tens), so the O(n²)/pass scan is cheap.
+   *
+   * Runs on every DECAY (see {@link reconcileUnlocks}) — the author minute-loss tool today, plus the
+   * inactivity cron via its companion prune script. Occupants cascade with the placement (they are
+   * zero here by the empty rule). Returns the ids removed. NOTE: this deliberately REVERSES the old
+   * "placements are append-only, never removed" invariant (migration 112 / streak-cron docs).
+   */
+  async pruneDanglingTemplates(userId: string): Promise<{ removedIds: string[] }> {
+    const placements = await this.placementDAL.findPlacementsByUser(userId);
+    if (placements.length === 0) return { removedIds: [] };
+
+    // Per-placement occupant count (empty test) — group the user's occupants by placement.
+    const occupants = await this.placementDAL.findOccupantsByUser(userId);
+    const occCount = new Map<string, number>();
+    for (const o of occupants) {
+      occCount.set(o.placedTemplateId, (occCount.get(o.placedTemplateId) ?? 0) + 1);
+    }
+
+    // Each placement's rectangle in continent-cell units: [colMin,colMax) × [rowMin,rowMax).
+    // Dims come from the template definition (v0 board size), cached across repeated names.
+    const scoringCache = new Map<string, VersionScoringInputs>();
+    const rects: PruneRect[] = [];
+    for (const p of placements) {
+      const scoring = await this.scoringFor(p.templateName, scoringCache);
+      rects.push({
+        id: p.id,
+        templateName: p.templateName,
+        colMin: p.offsetCol,
+        colMax: p.offsetCol + scoring.width,
+        rowMin: p.offsetRow,
+        rowMax: p.offsetRow + scoring.height,
+      });
+    }
+
+    // Pure adjacency fixpoint (unit-tested in templatePrune.ts) decides what to cull.
+    const removedIds = prunableDanglingPlacements(rects, occCount, NIGHT_MARKET_HUB_TEMPLATE_NAME);
+    if (removedIds.length > 0) {
+      await this.placementDAL.deletePlacements(userId, removedIds);
+    }
+    return { removedIds };
+  }
+
+  /**
+   * Reconcile a user's occupant count up to their entitlement `unlocks(totalMinutePoints)`. Fills
+   * free placeholder slots first; when none remain, spawns a new template and fills into it. Each
+   * loop iteration makes guaranteed progress (a fill, or a spawn+fill, or a break), so it always
+   * terminates — a spawn that can't grow the continent, or a spawned template with no free slot,
+   * stops the pass. Idempotent: when already at/above target it does nothing. GRANT-ONLY — use
+   * {@link reconcileUnlocks} when the balance may have DROPPED (it also decays).
+   */
+  async grantUnlocks(userId: string, totalMinutePoints: number): Promise<GrantResult> {
+    const target = unlocksForMinutes(totalMinutePoints);
+    let current = await this.placementDAL.countOccupantsByUser(userId);
+
+    let granted = 0;
+    let spawned = 0;
+
+    while (current < target) {
+      // Prefer backfilling an existing free slot before growing the continent.
+      const filled = await this.placeUnlock(userId);
+      if (filled) {
+        current++;
+        granted++;
+        continue;
+      }
+
+      // Continent is full → grow it, then fill the fresh template's first slot.
+      const row = await this.spawnTemplate(userId);
+      if (!row) break; // no legal spawn (logged in spawnTemplate) — can't grant further
+
+      spawned++;
+      const filledAfter = await this.placeUnlock(userId);
+      if (!filledAfter) break; // spawned template exposed no free slot — avoid an infinite loop
+      current++;
+      granted++;
+    }
+
+    return { target, granted, spawned, total: current };
+  }
+
+  /**
+   * Fill the FIRST free placeholder slot across the user's placements (placement creation order,
+   * then the template's stored area order — deterministic). Inserts the occupant and returns the
+   * slot, or `null` when every slot is occupied (the caller then spawns).
+   */
+  async placeUnlock(userId: string): Promise<PlacedSlot | null> {
+    const placements = await this.placementDAL.findPlacementsByUser(userId);
+    const filled = await this.filledByPlacement(userId);
+    const scoringCache = new Map<string, VersionScoringInputs>();
+
+    for (const p of placements) {
+      const scoring = await this.scoringFor(p.templateName, scoringCache);
+      const occupied = filled.get(p.id) ?? new Set<string>();
+      for (const area of scoring.placeholderAreas) {
+        const areaId = placeholderAreaId(area);
+        if (!occupied.has(areaId)) {
+          await this.placementDAL.insertOccupant(userId, p.id, areaId, GENERIC_OCCUPANT_ASSET_ID);
+          return { placementId: p.id, placeholderAreaId: areaId };
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Grow the continent by one template: run the pure anchor algorithm ({@link planSpawn}) against
+   * the user's current placements + the v0 catalog, and persist the chosen placement (at
+   * activeVersion 0 — recompute-on-read settles its real version). Emits a `template-match-not-found`
+   * log for each failed anchor. Returns the new placement row, or `null` when no legal spawn exists.
+   */
+  async spawnTemplate(userId: string): Promise<TemplatePlacementRow | null> {
+    const placements = await this.placementDAL.findPlacementsByUser(userId);
+    const scoringCache = new Map<string, VersionScoringInputs>();
+
+    // Existing continent: each placement rendered at its persisted active version's street mask.
+    const placed: PlacedTemplate[] = [];
+    for (const p of placements) {
+      const scoring = await this.scoringFor(p.templateName, scoringCache);
+      const ver = scoring.versions.find((v) => v.version === p.activeVersion) ?? scoring.versions[0];
+      placed.push({
+        id: p.id,
+        templateName: p.templateName,
+        activeVersion: p.activeVersion,
+        offsetCol: p.offsetCol,
+        offsetRow: p.offsetRow,
+        width: scoring.width,
+        height: scoring.height,
+        street: ver?.street ?? new Set<string>(),
+      });
+    }
+
+    // Candidate catalog: one entry per authored template, matched at its MOST-CONDITIONED version —
+    // NOT the base v0. The base is a template's EMPTY state (no streets → no anchors), so matching on
+    // it makes almost everything untileable; a template's full road connectivity — hence every edge it
+    // could tile against — lives in its condition-rich versions. We pick the version with the largest
+    // `condition` mask to reflect the template's maximum attachment potential. The actual render
+    // version is chosen AFTER the template is placed, by the version selector (recompute-on-read), so
+    // this choice governs CANDIDACY only, not what finally renders.
+    //
+    // The starter hub is SEED-ONLY: exactly one hub exists per user, planted at the origin (0,0) by
+    // seedHubPlacement, and must never be spawned again by the growth algorithm (that produced the
+    // duplicate-hub layouts). So it is filtered out of the spawn candidates here.
+    const names = (await this.templateService.getCatalogNames()).filter(
+      (name) => name !== NIGHT_MARKET_HUB_TEMPLATE_NAME,
+    );
+    const catalog: CatalogVersion[] = [];
+    for (const name of names) {
+      const scoring = await this.scoringFor(name, scoringCache);
+      if (scoring.versions.length === 0) continue;
+      // Richest = max condition-cell count; ties keep the earliest (lowest version) for determinism.
+      const richest = scoring.versions.reduce((best, v) =>
+        v.condition.size > best.condition.size ? v : best,
+      );
+      catalog.push({
+        templateName: name,
+        version: richest.version,
+        width: scoring.width,
+        height: scoring.height,
+        street: richest.street,
+        anchors: deriveAnchors(richest.street, scoring.width, scoring.height),
+      });
+    }
+
+    const { plan, failures } = planSpawn(placed, catalog);
+
+    // Structured diagnostics — one line per anchor that yielded no legal candidate (spec logging).
+    for (const failure of failures) {
+      console.warn(
+        `[NightMarket] template-match-not-found user=${userId.substring(0, 8)}… ` +
+          `reason=${failure.reason}` +
+          (failure.edge ? ` anchor=${failure.edge}/${failure.width}@dist${failure.originDistance}` : '') +
+          ` layout=[${placed.map((p) => `${p.templateName}@(${p.offsetCol},${p.offsetRow})`).join(', ')}]`,
+      );
+    }
+
+    if (!plan) return null;
+    return this.placementDAL.insertPlacement(userId, plan.templateName, plan.version, plan.offsetCol, plan.offsetRow);
+  }
+
+  // ── internals ───────────────────────────────────────────────────────────────────────────
+
+  /** Group a user's occupants into `placementId → Set<placeholderAreaId>` (the filled slots). */
+  private async filledByPlacement(userId: string): Promise<Map<string, Set<string>>> {
+    const occupants = await this.placementDAL.findOccupantsByUser(userId);
+    const filled = new Map<string, Set<string>>();
+    for (const o of occupants) {
+      const set = filled.get(o.placedTemplateId) ?? new Set<string>();
+      set.add(o.placeholderAreaId);
+      filled.set(o.placedTemplateId, set);
+    }
+    return filled;
+  }
+
+  /** Cache-backed scoring-inputs load (placements/catalog often reuse a name within one call). */
+  private async scoringFor(name: string, cache: Map<string, VersionScoringInputs>): Promise<VersionScoringInputs> {
+    let scoring = cache.get(name);
+    if (!scoring) {
+      scoring = await this.templateService.getVersionScoringInputs(name);
+      cache.set(name, scoring);
+    }
+    return scoring;
+  }
+}

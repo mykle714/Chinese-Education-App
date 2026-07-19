@@ -63,3 +63,33 @@ export interface NightMarketNewUnlockResponse {
   unlock: NightMarketUnlock;
   nextThreshold: number;   // work points needed for the unlock after this one
 }
+
+// ─── Template PLACEMENT model (migrations 112/113) ──────────────────────────────
+// The per-user layout the runtime renders: which catalog template (by name) sits where.
+// Distinct from the legacy asset-unlock economy above (now retired — see NightMarketService).
+
+/**
+ * One row of `nightmarkettemplatelocations` — a placed copy of a catalog template in a
+ * user's market. `offsetCol`/`offsetRow` locate the template's SW (min-iso) corner in
+ * template-cell units; `activeVersion` is the persisted, currently-rendered version.
+ */
+export interface TemplatePlacementRow {
+  id: string;              // UUID primary key
+  userId: string;          // FK to users
+  templateName: string;    // catalog key: nightmarkettemplatedefinitions.name (name, not a version)
+  activeVersion: number;   // persisted rendered version (chosen by the version selector)
+  offsetCol: number;       // SW-corner isoX offset (col → +isoX = east)
+  offsetRow: number;       // SW-corner isoY offset (row → +isoY = north)
+  createdAt: Date;
+}
+
+/**
+ * One occupant of a placement's placeholder slot — a `nightmarketunlocks` row joined to its
+ * placement. `placeholderAreaId` is the slot's SW-corner anchor id ("col_row"). Written by the
+ * Slice-4 grant flow; read here so the layout can mark which slots are filled.
+ */
+export interface PlacementOccupant {
+  placedTemplateId: string;   // FK → nightmarkettemplatelocations.id (the placement)
+  placeholderAreaId: string;  // slot anchor id "col_row" within that placement
+  assetId: string;            // which stand asset occupies the slot
+}

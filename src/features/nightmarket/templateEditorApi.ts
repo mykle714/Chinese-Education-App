@@ -9,6 +9,15 @@ import { isValidPlaceholderSize, type PlaceholderArea } from '../../engine/marke
  * (docs/NIGHT_MARKET_TEMPLATE_EDITOR.md). Validator-gated server-side.
  */
 
+/**
+ * The name of the STARTER hub template — the block every user's market renders at origin
+ * before any unlocks (docs/NIGHT_MARKET_TEMPLATE_RUNTIME_PLAN.md § "Slice-1 build
+ * decisions"). Identified by this exact name rather than an `isHub` column; the template
+ * must be authored in the editor under this name (it exists: 28×28). The runtime
+ * (`useMarketWorld`) loads it by name.
+ */
+export const NIGHT_MARKET_HUB_TEMPLATE_NAME = 'night-market-hub';
+
 /** The serialized `definition` shape stored on a template row (stems for decor). */
 export interface TemplateDefinitionPayload {
   /** Terrain-1 mask cells (currently rendered as light grass). */
@@ -28,12 +37,6 @@ export interface TemplateDefinitionPayload {
   placeholder: PlaceholderArea[];
   /** Condition-mask cells — a per-version override overlay, no sprite. */
   condition: string[];
-  /**
-   * Placed houses: front-corner anchor cell "col,row" (4×5 footprint each) + horizontal
-   * FLIP (mirror) orientation. Legacy rows stored bare "col,row" strings (no flip); those
-   * are read back as `flip: false` (see definitionToMasks).
-   */
-  houses: Array<{ cell: string; flip: boolean }>;
   decor: Record<string, string>;
 }
 
@@ -48,6 +51,22 @@ export interface TemplateSummary {
   author: string | null;
   /** The shared per-name description (from version 0), or null if none. */
   description: string | null;
+}
+
+/**
+ * One entry for the visual Load GALLERY — a Load-dropdown summary PLUS the full definition
+ * of the version chosen for its thumbnail: the version with the MOST condition cells (the
+ * richest layout), tie-broken by the highest version number (a single-version template
+ * previews version 0, which has no conditions). The shared placeholder + description are
+ * merged from version 0 server-side, so the thumbnail matches every other view.
+ */
+export interface TemplateGalleryEntry extends TemplateSummary {
+  /** The version rendered in the thumbnail (the one with the most condition cells). */
+  chosenVersion: number;
+  /** Condition-cell count of the chosen version (the selection metric; shown in the caption). */
+  conditionCount: number;
+  /** The chosen version's full painted definition (placeholder merged from v0). */
+  definition: TemplateDefinitionPayload;
 }
 
 /** A full template version, as returned when loading one by (name, version). */
@@ -83,10 +102,6 @@ export function masksToDefinition(masks: EditorMasks): TemplateDefinitionPayload
     // Placeholder areas → sorted {col,row,w,h} records (sorted by anchor for stable diffs).
     placeholder: [...masks.placeholder].sort((a, b) => a.col - b.col || a.row - b.row),
     condition: [...masks.condition],
-    // Houses → sorted {cell, flip} objects (sorted for stable definition diffs).
-    houses: [...masks.houses]
-      .sort(([a], [b]) => (a < b ? -1 : 1))
-      .map(([cell, flip]) => ({ cell, flip })),
     decor,
   };
 }
@@ -118,13 +133,6 @@ export function definitionToMasks(def: TemplateDefinitionPayload): EditorMasks {
         isValidPlaceholderSize((a as PlaceholderArea).w, (a as PlaceholderArea).h),
     ),
     condition: new Set(def.condition ?? []),
-    // Houses → Map(cell → flip). Back-compat: a legacy bare "col,row" string reads as flip:false
-    // (older definitions stored houses as string[]), hence the widened element type here.
-    houses: new Map(
-      ((def.houses ?? []) as Array<string | { cell: string; flip: boolean }>).map((h) =>
-        typeof h === 'string' ? [h, false] as const : [h.cell, !!h.flip] as const,
-      ),
-    ),
     decor,
   };
 }
@@ -137,6 +145,21 @@ export async function listTemplates(): Promise<TemplateSummary[]> {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.error || 'Failed to list templates');
+  return data.templates ?? [];
+}
+
+/**
+ * List all templates for the visual Load gallery — one entry per name, each with the full
+ * definition of its most-conditions version (for the thumbnail). Heavier than
+ * {@link listTemplates} (it carries definitions), so it backs the gallery, not the dropdown.
+ */
+export async function listTemplateGallery(): Promise<TemplateGalleryEntry[]> {
+  const res = await fetch(`${API_BASE_URL}/api/nightmarket-templates/gallery`, {
+    headers: { ...authHeader() },
+    credentials: 'include',
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || 'Failed to list template gallery');
   return data.templates ?? [];
 }
 

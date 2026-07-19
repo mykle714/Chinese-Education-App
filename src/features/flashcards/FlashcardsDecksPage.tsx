@@ -1,14 +1,16 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useSlideNavigate } from "../../hooks/useSlideNavigate";
-import { Box, Typography, Alert, Button, Snackbar } from "@mui/material";
+import { Box, Typography, Alert, Button, Snackbar, TextField, InputAdornment, IconButton } from "@mui/material";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
+import { Search, Clear } from "@mui/icons-material";
 import { styled } from "@mui/material/styles";
 import MobileTabScreen from "../../components/MobileTabScreen";
 import MiniVocabCardGrid from "../../components/MiniVocabCardGrid";
 import { useAuth } from "../../AuthContext";
 import { API_BASE_URL } from "../../constants";
 import type { VocabEntry } from "../../types";
+import { filterVocabEntries } from "../../utils/vocabSearch";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useDiscoverNavigation } from "../../hooks/useDiscoverNavigation";
 import { useCategoryCounts } from "../../hooks/useCategoryCounts";
@@ -131,6 +133,11 @@ const FlashcardsDecksPage: React.FC = () => {
     const [vocabEntries, setVocabEntries] = useState<VocabEntry[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    // Client-side search over the loaded Learn Now deck. Supports the same query
+    // formats as the dictionary search bars (CJK / numbered pinyin / toneless
+    // pinyin / English) via filterVocabEntries — no network round trip since the
+    // deck is already in memory.
+    const [searchInput, setSearchInput] = useState("");
     // Mastered cards now live on their own page (/flashcards/mastered); this page
     // only needs the count for the link row, which comes from categoryCounts.
     // Per-category library card counts, used to gate study navigation. We only
@@ -186,6 +193,14 @@ const FlashcardsDecksPage: React.FC = () => {
 
     // The Learn Now preview gates its staggered pop-in cascade behind this flag.
     const allCardsLoaded = !loading;
+
+    // Apply the search filter. Referentially stable while the query and deck are
+    // unchanged, so MiniVocabCardGrid's reveal cascade isn't restarted each render.
+    const filteredEntries = useMemo(
+        () => filterVocabEntries(vocabEntries, searchInput),
+        [vocabEntries, searchInput]
+    );
+    const isSearching = searchInput.trim().length > 0;
 
     // Total cards the user has sorted into their library, across every bucket.
     const totalLibraryCards = Object.values(categoryCounts).reduce((sum, n) => sum + n, 0);
@@ -306,14 +321,50 @@ const FlashcardsDecksPage: React.FC = () => {
                         </Typography>
                     </Box>
 
+                    {/* Client-side search over the loaded Learn Now deck. Sized to
+                        the 364px card grid so the input lines up over the cards. */}
+                    <Box className="flashcards-decks__library-search" sx={{ width: 364, maxWidth: "100%", px: 3.5, pb: 1 }}>
+                        <TextField
+                            className="flashcards-decks__library-search-input"
+                            fullWidth
+                            size="small"
+                            placeholder="Search Learn Now cards..."
+                            value={searchInput}
+                            onChange={(e) => setSearchInput(e.target.value)}
+                            InputProps={{
+                                startAdornment: (
+                                    <InputAdornment position="start">
+                                        <Search />
+                                    </InputAdornment>
+                                ),
+                                endAdornment: searchInput && (
+                                    <InputAdornment position="end">
+                                        <IconButton
+                                            aria-label="clear search"
+                                            onClick={() => setSearchInput("")}
+                                            edge="end"
+                                            size="small"
+                                        >
+                                            <Clear />
+                                        </IconButton>
+                                    </InputAdornment>
+                                ),
+                            }}
+                        />
+                    </Box>
+
                     {/* Vocabulary Cards Preview */}
                     <MiniVocabCardGrid
                         containerClassName="decks-cards-preview"
                         classPrefix="flashcards-decks__library"
                         loading={!allCardsLoaded}
                         error={error}
-                        entries={vocabEntries}
-                        emptyMessage="Please go to the Discover tab to select cards you would like to learn"
+                        entries={filteredEntries}
+                        emptyMessage={
+                            isSearching
+                                ? "No Learn Now cards match your search."
+                                : "Please go to the Discover tab to select cards you would like to learn"
+                        }
                         onCardClick={handleCardClick}
                     />
 

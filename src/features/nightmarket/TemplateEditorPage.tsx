@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box, Typography, Button, Tooltip, Snackbar, Alert,
   Dialog, DialogTitle, DialogContent, DialogActions, TextField,
-  Menu, MenuItem, ListItemText, FormControl, InputLabel, Select,
+  MenuItem, FormControl, InputLabel, Select,
 } from '@mui/material';
 import GrassIcon from '@mui/icons-material/Grass';
 import ParkIcon from '@mui/icons-material/Park';
@@ -11,7 +11,6 @@ import RouteIcon from '@mui/icons-material/Route';
 import GroupsIcon from '@mui/icons-material/Groups';
 import HighlightAltIcon from '@mui/icons-material/HighlightAlt';
 import RuleIcon from '@mui/icons-material/Rule';
-import HouseIcon from '@mui/icons-material/House';
 import LocalFloristIcon from '@mui/icons-material/LocalFlorist';
 import ScatterPlotIcon from '@mui/icons-material/ScatterPlot';
 import ForestIcon from '@mui/icons-material/Forest';
@@ -30,6 +29,7 @@ import ContentPasteIcon from '@mui/icons-material/ContentPaste';
 import UndoIcon from '@mui/icons-material/Undo';
 import RedoIcon from '@mui/icons-material/Redo';
 import MenuBookIcon from '@mui/icons-material/MenuBook';
+import CloseIcon from '@mui/icons-material/Close';
 import LeafPage from '../../components/LeafPage';
 import { WEIGHT } from '../../theme/scale';
 import { usePageTitle } from '../../hooks/usePageTitle';
@@ -38,18 +38,17 @@ import { useConfirmation } from '../../contexts/ConfirmationContext';
 import type { EditorMasks, DecorCategory } from '../../engine/market/farmTerrain';
 import { editorSurfaceAt, editorDecorRotation, isBlockingDecorUrl, editorDecorCategory } from '../../engine/market/farmTerrain';
 import {
-  houseFootprintCells, houseFits, houseOccupiedCells, houseAnchorCovering, houseFootprintSpans,
-} from '../../engine/market/house';
-import {
   PLACEHOLDER_SIZES, placeholderCoveredCells, placeholderAreaAt, placeholderAreaFits,
   placeholderAreaOverlapsAny, placeholderAreasOverlap, placeholderAreaCells,
   type PlaceholderArea,
 } from '../../engine/market/placeholderArea';
+import { analyzeConditions, borderStreetCells } from '../../engine/market/conditionAnalysis';
 import TemplateEditorViewer, { type EditorTool } from './TemplateEditorViewer';
+import TemplateLoadGallery from './TemplateLoadGallery';
 import {
   checkTemplateNameAvailable, suggestTemplateName, submitTemplate,
-  listTemplates, loadTemplate, definitionToMasks, deleteTemplate, deleteTemplateVersion,
-  type TemplateSummary,
+  listTemplateGallery, loadTemplate, definitionToMasks, deleteTemplate, deleteTemplateVersion,
+  type TemplateGalleryEntry,
 } from './templateEditorApi';
 
 /**
@@ -57,7 +56,7 @@ import {
  * (docs/NIGHT_MARKET_TEMPLATE_EDITOR.md). Desktop-only.
  *
  * Owns the painted mask layers (terrain 1 / terrain 2, street, communal, placeholder,
- * condition, houses, decor) + board size + name + the active VERSION. The header
+ * condition, decor) + board size + name + the active VERSION. The header
  * carries the version switcher + Load / Clear / Delete Version / Delete Template /
  * Properties / Save; a left tool
  * palette selects the active painter (+ grid/street/communal/placeholder/condition view
@@ -81,7 +80,7 @@ const DEFAULT_DIM = 12;
 // 2–12, then every +8 up to 44. Both dropdowns share this list. MIN_DIM/MAX_DIM still
 // bound the handleOk validation (all options fall safely inside them), so a future free
 // entry stays in range.
-const DIM_OPTIONS = [2, 4, 6, 8, 10, 12, 20, 28, 36, 44];
+const DIM_OPTIONS = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 28, 36, 44];
 
 const emptyMasks = (): EditorMasks => ({
   terrain1: new Set<string>(),
@@ -90,7 +89,6 @@ const emptyMasks = (): EditorMasks => ({
   communal: new Set<string>(),
   placeholder: [],
   condition: new Set<string>(),
-  houses: new Map<string, boolean>(),
   decor: new Map<string, string>(),
 });
 
@@ -98,10 +96,9 @@ const emptyMasks = (): EditorMasks => ({
  * A copied board region held by the clipboard tools (see `copyRegion` / `pasteAt`). Every
  * layer is stored as OFFSETS relative to the selection's min corner ("dx,dy"), so the region
  * can be re-stamped anywhere. Copy captures each per-cell mask + decor for the W×H rectangle,
- * plus every house whose ENTIRE 4×5 footprint fits inside the rectangle AND every placeholder
- * area whose whole footprint fits (partly-overhanging houses/areas are skipped — a house's
- * cells still copy their non-house layers). Paste overwrites the target region to match this
- * exactly (subject to the placeholder/condition version gates).
+ * plus every placeholder area whose whole footprint fits (partly-overhanging areas are skipped).
+ * Paste overwrites the target region to match this exactly (subject to the placeholder/condition
+ * version gates).
  */
 interface Clipboard {
   w: number;
@@ -114,8 +111,6 @@ interface Clipboard {
   placeholder: PlaceholderArea[];
   condition: Set<string>;
   decor: Map<string, string>;
-  /** Fully-contained houses: relative front-corner anchor ("dx,dy") + h-flip orientation. */
-  houses: Array<{ rel: string; flip: boolean }>;
 }
 
 /** The clipboard group's accent (pink) — panel tint + button highlight, like the other groups. */
@@ -136,7 +131,6 @@ const cloneMasks = (m: EditorMasks): EditorMasks => ({
   // detaches the snapshot (drop/erase replace the array, never mutate an element).
   placeholder: [...m.placeholder],
   condition: new Set(m.condition),
-  houses: new Map(m.houses),
   decor: new Map(m.decor),
 });
 
@@ -149,13 +143,14 @@ const cloneMasks = (m: EditorMasks): EditorMasks => ({
  * STREET cell — the manual condition tool paints placeholder cells only. Idempotent
  * (re-running adds the same border streets). Returns a fresh masks object with `condition`
  * augmented; all other layers are shared by reference (callers replace the state wholesale).
+ *
+ * The outer-edge street derivation is the SAME one the runtime uses at load
+ * ({@link borderStreetCells} in conditionAnalysis) — reused here so the author-facing preview
+ * and the runtime's canonical scoring can never disagree on what a border-street condition is.
  */
 const withBorderStreetConditions = (masks: EditorMasks, width: number, height: number): EditorMasks => {
   const condition = new Set(masks.condition);
-  for (const cell of masks.street) {
-    const [col, row] = cell.split(',').map(Number);
-    if (col === 0 || col === width - 1 || row === 0 || row === height - 1) condition.add(cell);
-  }
+  for (const cell of borderStreetCells(masks.street, width, height)) condition.add(cell);
   return { ...masks, condition };
 };
 
@@ -173,7 +168,7 @@ interface ToolGroup { key: string; accent: string; tools: ToolDef[]; }
  *               layers, all spriteless tints (violet),
  *   - terrain — terrain 1 / terrain 2 surface masks (green); shares the top letter row with
  *               the masks group (Q/W/E/R masks · T/Y terrain),
- *   - decor   — surface / common / tree decor + the house stamp (amber).
+ *   - decor   — surface / common / tree / wood-panel decor (amber).
  * Each group's `accent` tints its panel background/border (so buttons read as grouped
  * even when idle) and colors the active-tool highlight (so a lit button still reads as
  * belonging to its group). The terrain tools are named generically ("terrain 1/2") so
@@ -206,13 +201,14 @@ const TOOL_GROUPS: ToolGroup[] = [
       { tool: 'terrain2', label: 'Terrain 2 (renders over terrain 1)', icon: <ParkIcon fontSize="small" />, hotkey: 'Y' },
     ],
   },
-  // Decor tools: the house STAMP plus the four sprite-decor categories. Each decor category
-  // places its currently-selected variant (previewed as a ghost); SPACE cycles the variant.
-  // Placing OVERRIDES any decor/plank already on the cell (but never a placed house).
+  // Decor tools: the four sprite-decor categories. Each decor category places its
+  // currently-selected variant (previewed as a ghost); SPACE cycles the variant. Placing
+  // OVERRIDES any decor/plank already on the cell. The ONE exception: a plank refuses to bury a
+  // non-surface (blocking) decor — a common prop or a tree — so those flush wood panels can only
+  // cover empty or surface decor (see placeDecor).
   {
     key: 'decor', accent: '255,183,77',
     tools: [
-      { tool: 'house', label: 'House (4×5 footprint · Space flips L↔R)', icon: <HouseIcon fontSize="small" />, hotkey: 'A' },
       { tool: 'familyDecor', label: 'Surface decor (Space cycles variant)', icon: <LocalFloristIcon fontSize="small" />, hotkey: 'S' },
       { tool: 'commonDecor', label: 'Common decor (Space cycles variant)', icon: <ScatterPlotIcon fontSize="small" />, hotkey: 'D' },
       { tool: 'treeDecor', label: 'Trees (Space cycles variant)', icon: <ForestIcon fontSize="small" />, hotkey: 'F' },
@@ -237,7 +233,7 @@ const toolSupportsEraser = (tool: EditorTool): boolean => !ERASER_UNSUPPORTED_TO
 // Keyboard → tool dispatch. The authoritative source is this map; the per-tool `hotkey`
 // badges above are the display mirror and must match. Keys are compared lower-case. Layout
 // mirrors the physical keyboard, one palette row per keyboard row: Q/W/E/R masks + T/Y terrain
-// (top letter row), A/S/D/F/G decor (home row), C/V copy/paste (bottom row). NON-tool actions
+// (top letter row), S/D/F/G decor (home row), C/V copy/paste (bottom row). NON-tool actions
 // live on the bottom row too and are handled separately in the keydown effect (not via this
 // map): Z undo, X redo, B eraser modifier. The two version-gated tools are gated in the keydown
 // handler (mirroring their disabled tool buttons): placeholder ('e') is version-0-only,
@@ -245,7 +241,7 @@ const toolSupportsEraser = (tool: EditorTool): boolean => !ERASER_UNSUPPORTED_TO
 const HOTKEY_TO_TOOL: Record<string, EditorTool> = {
   q: 'street', w: 'communal', e: 'placeholder', r: 'condition',
   t: 'terrain1', y: 'terrain2',
-  a: 'house', s: 'familyDecor', d: 'commonDecor', f: 'treeDecor', g: 'plankDecor',
+  s: 'familyDecor', d: 'commonDecor', f: 'treeDecor', g: 'plankDecor',
   c: 'copy', v: 'paste',
 };
 
@@ -255,11 +251,11 @@ function TemplateEditorPage() {
   const { user, isAuthenticated } = useAuth();
   const { confirm } = useConfirmation();
 
-  // Validator-only surface. Once auth resolves, bounce non-validators to Home.
-  // (The backend also enforces validator on every endpoint — this is UX, not the
-  // security boundary.)
+  // Template-author-only surface. Once auth resolves, bounce non-authors to Home.
+  // (The backend also enforces isTemplateAuthor on every endpoint — this is UX, not
+  // the security boundary.)
   useEffect(() => {
-    if (isAuthenticated && user && !user.isValidator) navigate('/', { replace: true });
+    if (isAuthenticated && user && !user.isTemplateAuthor) navigate('/', { replace: true });
   }, [isAuthenticated, user, navigate]);
 
   const [width, setWidth] = useState(DEFAULT_DIM);
@@ -275,12 +271,8 @@ function TemplateEditorPage() {
   // scoped to the tool it was enabled on: switching to a different tool auto-clears it (the
   // activeTool effect below), so the eraser never silently carries into the next tool.
   const [eraseMode, setEraseMode] = useState(false);
-  // The house-placement orientation: false = default facing, true = horizontally MIRRORED.
-  // Toggled by Space while the house tool is active; each placed house stores this flip
-  // (masks.houses value). Only the sprite mirrors — the 4×5 footprint is unchanged.
-  const [houseFlip, setHouseFlip] = useState(false);
-  // The placeholder DROP size, as an index into PLACEHOLDER_SIZES (0 = 5×5, 1 = 5×10,
-  // 2 = 10×5 rotated). Space cycles it while the placeholder tool is active; each drop
+  // The placeholder DROP size, as an index into PLACEHOLDER_SIZES (0 = 4×5, 1 = 5×4 rotated,
+  // 2 = 4×10, 3 = 10×4 rotated). Space cycles it while the placeholder tool is active; each drop
   // stamps an area of this size. (Placeholder areas are fixed-size drops now, not a
   // free-painted mask — so adjacent slots stay distinct — see the placeholder tool.)
   const [placeholderSizeIdx, setPlaceholderSizeIdx] = useState(0);
@@ -317,6 +309,29 @@ function TemplateEditorPage() {
   // semantics as showCommunal above.
   const [showCondition, setShowCondition] = useState(true);
 
+  // Live condition breakdown for the AUTHOR (docs/NIGHT_MARKET_TEMPLATES.md § Version
+  // selection rule → "generated on save for the author's information"). Runs the SAME
+  // load-time analysis the runtime selector uses (`analyzeConditions` re-derives the
+  // border-street conditions from `street ∩ outer-edge` and labels every 4-connected
+  // island), so the count the author sees === the runtime's `conditionCount` denominator.
+  // Version 0 carries no conditions by rule → always 0. Nothing here is persisted; the
+  // count is display-only (decision 2026-07-17: no `conditionCount` column — no DB reader).
+  const conditionInfo = useMemo(() => {
+    if (version === 0) return { total: 0, placeholder: 0, borderStreet: 0 };
+    const { islands, conditionCount } = analyzeConditions({
+      condition: masks.condition,
+      placeholderAreas: masks.placeholder,
+      street: masks.street,
+      width,
+      height,
+    });
+    return {
+      total: conditionCount,
+      placeholder: islands.filter((i) => i.kind === 'placeholder').length,
+      borderStreet: islands.filter((i) => i.kind === 'border-street').length,
+    };
+  }, [masks, width, height, version]);
+
   // The clipboard buffer for the copy/paste tools (null = empty). Set by `copyRegion`,
   // consumed by `pasteAt`; paste does NOT clear it, so one copy can be stamped many times.
   // Persists across tool switches / loads until the next copy replaces it.
@@ -333,9 +348,10 @@ function TemplateEditorPage() {
   // the author must follow them by hand). See GuidelinesDialog below.
   const [guidelinesOpen, setGuidelinesOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  // Load dropdown: anchor element + the fetched template summaries.
-  const [loadAnchor, setLoadAnchor] = useState<null | HTMLElement>(null);
-  const [templates, setTemplates] = useState<TemplateSummary[] | null>(null);
+  // Load GALLERY: whether the visual template picker is open (overlays the canvas, Load button
+  // becomes Cancel), and its fetched entries (null while the fetch is in flight).
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const [galleryEntries, setGalleryEntries] = useState<TemplateGalleryEntry[] | null>(null);
   const [snack, setSnack] = useState<{ open: boolean; msg: string; severity: 'success' | 'error' }>(
     { open: false, msg: '', severity: 'success' },
   );
@@ -350,8 +366,8 @@ function TemplateEditorPage() {
   // Latest tool for the paint callback without recreating the viewer's handler.
   const activeToolRef = useRef(activeTool);
   activeToolRef.current = activeTool;
-  // Latest board dims for the paint callback — the house tool needs them to bounds-check
-  // its 4×5 footprint. Kept in refs (like activeToolRef) so paintCell stays identity-stable.
+  // Latest board dims for the paint callback — the placeholder tool needs them to bounds-check
+  // its drop footprint. Kept in refs (like activeToolRef) so paintCell stays identity-stable.
   const widthRef = useRef(width);
   widthRef.current = width;
   const heightRef = useRef(height);
@@ -373,11 +389,7 @@ function TemplateEditorPage() {
   useEffect(() => {
     setEraseMode(false);
   }, [activeTool]);
-  // Latest house-flip orientation for the paint callback (kept in a ref, like activeTool, so
-  // paintCell stays identity-stable). Read when the house tool stamps a house.
-  const houseFlipRef = useRef(houseFlip);
-  houseFlipRef.current = houseFlip;
-  // Latest placeholder drop size for the paint callback (kept in a ref, like houseFlip, so
+  // Latest placeholder drop size for the paint callback (kept in a ref, like activeTool, so
   // paintCell stays identity-stable). Read when the placeholder tool drops an area.
   const placeholderSizeRef = useRef(PLACEHOLDER_SIZES[placeholderSizeIdx]);
   placeholderSizeRef.current = PLACEHOLDER_SIZES[placeholderSizeIdx];
@@ -457,25 +469,28 @@ function TemplateEditorPage() {
       const communal = new Set(prev.communal);
       let placeholder = prev.placeholder; // areas are immutable; replaced (not mutated) on drop/erase
       const condition = new Set(prev.condition);
-      const houses = new Map(prev.houses);
       const decor = new Map(prev.decor);
       const tool = activeToolRef.current;
       // Which cells any placeholder area currently covers — the coverage set the condition
       // cascades key on ("a condition may live only on a street/placeholder cell"). The
-      // street/communal/house/decor branches never touch `placeholder`, so this stays valid
+      // street/communal/decor branches never touch `placeholder`, so this stays valid
       // for them; the placeholder branch recomputes coverage after it drops/erases an area.
       const placeholderCells = placeholderCoveredCells(placeholder);
-      // Cells covered by an already-placed house. Street/decor may NOT overwrite these,
-      // and house placement may not overlap them (nor a street).
-      const occupied = houseOccupiedCells(houses);
 
       // Place a decor tool's currently-selected variant on the cell. The variant is chosen
       // with Space (decorVariantIdx) and previewed as a ghost; a click stamps it, OVERRIDING
-      // any decor/plank already there (decor freely overwrites decor). It still cannot sit on a
-      // placed house (a separate layer). For family/plank the index resolves against the cell's
-      // surface rotation; common/tree/plank rotations are surface-agnostic.
+      // any decor/plank already there (decor freely overwrites decor, EXCEPT a plank refuses to
+      // bury a blocking common prop/tree — guarded below). For family/plank the index resolves
+      // against the cell's surface rotation; common/tree/plank rotations are surface-agnostic.
       const placeDecor = (category: DecorCategory) => {
-        if (occupied.has(k)) return; // decor cannot overwrite a placed house
+        // A plank is a flush wood panel and must never bury a NON-SURFACE (blocking) decor —
+        // a common prop or a tree. Those are real objects a plank would visually cover, so the
+        // plank tool skips any cell already holding one (family/plank surface decor is fine to
+        // overwrite). Mirrors isBlockingDecorUrl via the cell's decor category.
+        if (category === 'plank') {
+          const existing = decor.get(k);
+          if (existing && isBlockingDecorUrl(existing)) return;
+        }
         const surface = editorSurfaceAt({ terrain1, terrain2 }, col, row);
         const rotation = editorDecorRotation(category, surface);
         if (rotation.length === 0) return;
@@ -523,12 +538,6 @@ function TemplateEditorPage() {
             break;
           }
           case 'condition': condition.delete(k); break;
-          case 'house': {
-            // Erasing ANY footprint cell removes the whole house (keyed by front corner).
-            const houseAnchor = houseAnchorCovering(houses, col, row);
-            if (houseAnchor) houses.delete(houseAnchor);
-            break;
-          }
           // A cell holds ONE decor sprite shared by the three decor tools, so a decor
           // eraser removes it only when it belongs to THIS tool's category ("only erase
           // the selected tool") — e.g. the surface-decor eraser leaves a tree untouched.
@@ -541,7 +550,7 @@ function TemplateEditorPage() {
             break;
           }
         }
-        return { terrain1, terrain2, street, communal, placeholder, condition, houses, decor };
+        return { terrain1, terrain2, street, communal, placeholder, condition, decor };
       }
 
       switch (tool) {
@@ -552,11 +561,11 @@ function TemplateEditorPage() {
         case 'terrain2': terrain2.add(k); break;
         case 'street': {
           // Street is now a spriteless walkability tint that MIRRORS communal: it can't
-          // sit under a BLOCKING object — a placed house, common decor, or a tree — so
-          // painting it there is silently REFUSED (no-op). Flush surface-family decor and
-          // the grass terrain coexist with it (the tint draws over them).
+          // sit under a BLOCKING decor — common decor or a tree — so painting it there is
+          // silently REFUSED (no-op). Flush surface-family decor and the grass terrain
+          // coexist with it (the tint draws over them).
           const blockingDecor = decor.has(k) && isBlockingDecorUrl(decor.get(k)!);
-          if (occupied.has(k) || blockingDecor) break;
+          if (blockingDecor) break;
           // Street and communal are mutually-exclusive walkability classes, so painting
           // street clears communal.
           street.add(k);
@@ -565,11 +574,10 @@ function TemplateEditorPage() {
         }
         case 'communal': {
           // Communal-walkable is a walkability annotation (parks/plazas) with no sprite.
-          // It can't sit under a BLOCKING object — a placed house, common decor, or a
-          // tree — so painting it there is silently REFUSED (no-op), mirroring how the
-          // house tool refuses on a blocked cell. (Flush surface-family decor is fine.)
+          // It can't sit under a BLOCKING decor — common decor or a tree — so painting it
+          // there is silently REFUSED (no-op). (Flush surface-family decor is fine.)
           const blockingDecor = decor.has(k) && isBlockingDecorUrl(decor.get(k)!);
-          if (occupied.has(k) || blockingDecor) break;
+          if (blockingDecor) break;
           // It also can't coexist with the street class, so painting it clears street.
           // A condition may live only on a street/placeholder cell, so if this paint
           // removes the street substrate and the cell isn't also a placeholder, the
@@ -579,7 +587,7 @@ function TemplateEditorPage() {
           break;
         }
         case 'placeholder': {
-          // Placeholder areas are FIXED-SIZE DROPS (5×5 / 5×10 / 10×5 — Space cycles the
+          // Placeholder areas are FIXED-SIZE DROPS (4×5 / 5×4 / 4×10 / 10×4 — Space cycles the
           // size), anchored at the hovered near corner and extending +isoX/+isoY. They are an
           // OVERRIDE overlay, not a walkability class, so an area may overlap any surface
           // freely — but NOT another area (each is a distinct occupant slot). SHARED across
@@ -608,44 +616,20 @@ function TemplateEditorPage() {
           if (!placeholderCells.has(k)) break;
           condition.add(k);
           break;
-        case 'house': {
-          // The hovered cell is the house's FRONT (near) corner; its footprint extends
-          // +isoX/+isoY (4×5 by default, transposed to 5×4 when mirrored). Refuse the whole
-          // placement unless every footprint cell is in-bounds and free of another house
-          // (houses are not overwritten). On success, the house overwrites decor + the
-          // walkability tints under its footprint. Both checks use the PENDING flip so the
-          // reserved cells match the ghost/sprite the author sees.
-          const flip = houseFlipRef.current;
-          if (!houseFits(col, row, widthRef.current, heightRef.current, flip)) break;
-          const footprint = houseFootprintCells(col, row, flip);
-          const blocked = footprint.some((c) => occupied.has(c));
-          if (blocked) break;
-          houses.set(k, flip); // stamp with the current mirror orientation
-          // A house is a blocking object — it overwrites decor AND both walkability
-          // classes (street + communal) under its whole footprint (a road/park tile can't
-          // hold a house). Clearing a street cascade-clears any condition on it (a
-          // condition may live only on a street/placeholder cell).
-          for (const c of footprint) {
-            decor.delete(c);
-            communal.delete(c);
-            if (street.delete(c) && !placeholderCells.has(c)) condition.delete(c);
-          }
-          break;
-        }
         case 'familyDecor': placeDecor('family'); break;
         case 'commonDecor': placeDecor('common'); break;
         case 'treeDecor': placeDecor('tree'); break;
         case 'plankDecor': placeDecor('plank'); break;
       }
-      return { terrain1, terrain2, street, communal, placeholder, condition, houses, decor };
+      return { terrain1, terrain2, street, communal, placeholder, condition, decor };
     });
   }, []);
 
   // ── Clipboard: copy / paste ─────────────────────────────────────────────────────
   // COPY captures the selected rectangle into the clipboard as offsets relative to its min
-  // corner: every per-cell mask + decor for the W×H region, plus every house whose ENTIRE
-  // footprint fits inside the rectangle (a house poking out is skipped — its in-region cells
-  // still copy their non-house layers). Reads the live board via masksRef; does not mutate.
+  // corner: every per-cell mask + decor for the W×H region, plus every placeholder area whose
+  // ENTIRE footprint fits inside the rectangle (a partly-overhanging area is skipped). Reads the
+  // live board via masksRef; does not mutate.
   const copyRegion = useCallback((a: { col: number; row: number }, b: { col: number; row: number }) => {
     const c0 = Math.min(a.col, b.col), c1 = Math.max(a.col, b.col);
     const r0 = Math.min(a.row, b.row), r1 = Math.max(a.row, b.row);
@@ -665,16 +649,6 @@ function TemplateEditorPage() {
       const [col, row] = key.split(',').map(Number);
       if (col >= c0 && col <= c1 && row >= r0 && row <= r1) decor.set(`${col - c0},${row - r0}`, url);
     }
-    // Houses fully contained in the rectangle → relative front-corner anchor + its flip.
-    // Containment uses each house's flip-aware spans (a mirrored house is 5×4, not 4×5).
-    const houses: Array<{ rel: string; flip: boolean }> = [];
-    for (const [anchor, flip] of m.houses) {
-      const [ac, ar] = anchor.split(',').map(Number);
-      const { spanX, spanY } = houseFootprintSpans(flip);
-      if (ac >= c0 && ac + spanX - 1 <= c1 && ar >= r0 && ar + spanY - 1 <= r1) {
-        houses.push({ rel: `${ac - c0},${ar - r0}`, flip });
-      }
-    }
     // Placeholder areas whose WHOLE footprint fits the rectangle → re-anchored to its min
     // corner (a partly-overhanging area is skipped — an occupant slot is captured whole or
     // not at all). Kept as {col,row,w,h} records so pasted slots stay distinct.
@@ -689,17 +663,16 @@ function TemplateEditorPage() {
       terrain1: pick(m.terrain1), terrain2: pick(m.terrain2),
       street: pick(m.street), communal: pick(m.communal),
       placeholder, condition: pick(m.condition),
-      decor, houses,
+      decor,
     });
   }, []);
 
   // PASTE stamps the clipboard with its min corner at (col,row), OVERWRITING the target
   // region to match the clipboard exactly. Refused if the footprint would overhang the board
-  // (guaranteed 1:1 with the copy). Any house even partially inside the target region is
-  // removed WHOLE first; then each cell's layers are set to match the clipboard and the
-  // captured houses are placed. Placeholder is written only on v0 (it is shared/owned by v0
-  // and inherited read-only above) and condition only on v>0 (forbidden on v0) — mirroring
-  // the tool version gates, so paste never breaks those invariants.
+  // (guaranteed 1:1 with the copy). Each cell's layers are set to match the clipboard.
+  // Placeholder is written only on v0 (it is shared/owned by v0 and inherited read-only above)
+  // and condition only on v>0 (forbidden on v0) — mirroring the tool version gates, so paste
+  // never breaks those invariants.
   const pasteAt = useCallback((col: number, row: number) => {
     const clip = clipboardRef.current;
     if (!clip) return;
@@ -716,20 +689,8 @@ function TemplateEditorPage() {
       const communal = new Set(prev.communal);
       let placeholder = prev.placeholder; // areas replaced (not mutated) below, only on v0
       const condition = new Set(prev.condition);
-      const houses = new Map(prev.houses);
       const decor = new Map(prev.decor);
-      const c1 = col + w - 1, r1 = row + h - 1;
-      // 1. Remove any existing house whose (flip-aware) footprint intersects the paste
-      //    region (whole). A mirrored house spans 5×4 rather than 4×5, so read its flip.
-      for (const [anchor, flip] of [...houses]) {
-        const [ac, ar] = anchor.split(',').map(Number);
-        const { spanX, spanY } = houseFootprintSpans(flip);
-        const intersects =
-          ac <= c1 && ac + spanX - 1 >= col &&
-          ar <= r1 && ar + spanY - 1 >= row;
-        if (intersects) houses.delete(anchor);
-      }
-      // 2. Overwrite every region cell to exactly match the clipboard.
+      // Overwrite every region cell to exactly match the clipboard.
       const setMembership = (set: Set<string>, key: string, present: boolean) => {
         if (present) set.add(key); else set.delete(key);
       };
@@ -757,13 +718,7 @@ function TemplateEditorPage() {
           placeholder = [...placeholder, { col: col + a.col, row: row + a.row, w: a.w, h: a.h }];
         }
       }
-      // 3. Place the captured houses at their translated anchors (in-bounds by construction),
-      //    preserving each one's mirror orientation.
-      for (const { rel, flip } of clip.houses) {
-        const [dx, dy] = rel.split(',').map(Number);
-        houses.set(`${col + dx},${row + dy}`, flip);
-      }
-      return { terrain1, terrain2, street, communal, placeholder, condition, houses, decor };
+      return { terrain1, terrain2, street, communal, placeholder, condition, decor };
     });
     setDirty(true);
   }, [pushHistory]);
@@ -787,10 +742,10 @@ function TemplateEditorPage() {
   //   A/S terrain · D/F/G/H decor           (home row)
   //   Z undo · X redo · C/V copy/paste · B eraser  (bottom row)
   // Masks/terrain/decor/copy/paste select via HOTKEY_TO_TOOL; grid + the four view toggles +
-  // Z undo / X redo / the B eraser MODIFIER are handled directly below (not tools). SPACE flips
-  // the house-placement orientation (mirror) while the house tool is active. Suppressed while
-  // the Properties dialog is open or focus is in a text field, so typing never paints. Keyed on
-  // [version] so the placeholder gate (v0-only) reads the current version.
+  // Z undo / X redo / the B eraser MODIFIER are handled directly below (not tools). SPACE cycles
+  // the placeholder drop size / decor variant of the active tool. Suppressed while the Properties
+  // dialog is open or focus is in a text field, so typing never paints. Keyed on [version] so the
+  // placeholder gate (v0-only) reads the current version.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       // Let native/browser shortcuts through; only bare keypresses are hotkeys.
@@ -817,13 +772,12 @@ function TemplateEditorPage() {
       // for tools that don't support erasing (copy/paste) — mirrors the disabled toggle button.
       if (key === 'b') { if (toolSupportsEraser(activeTool)) setEraseMode(v => !v); e.preventDefault(); return; }
 
-      // Space is a per-tool modifier: it flips the house-placement mirror (house tool),
-      // cycles the placeholder DROP size 5×5 → 5×10 → 10×5 → 5×5 (placeholder tool), OR advances
-      // the selected decor variant (any decor tool — the ghost previews it). Elsewhere it is
-      // swallowed so it never scrolls the page or re-taps a focused button.
+      // Space is a per-tool modifier: it cycles the placeholder DROP size
+      // 4×5 → 5×4 → 4×10 → 10×4 → 4×5 (placeholder tool), OR advances the selected decor variant
+      // (any decor tool — the ghost previews it). Elsewhere it is swallowed so it never scrolls
+      // the page or re-taps a focused button.
       if (key === ' ') {
-        if (activeTool === 'house') setHouseFlip(f => !f);
-        else if (activeTool === 'placeholder') setPlaceholderSizeIdx(i => (i + 1) % PLACEHOLDER_SIZES.length);
+        if (activeTool === 'placeholder') setPlaceholderSizeIdx(i => (i + 1) % PLACEHOLDER_SIZES.length);
         else if (DECOR_TOOL_CATEGORY[activeTool]) setDecorVariantIdx(i => i + 1);
         e.preventDefault();
         return;
@@ -886,34 +840,38 @@ function TemplateEditorPage() {
     if (tpl.version === 0 && activeTool === 'condition') setActiveTool('terrain1');
   };
 
-  // Open the Load dropdown, fetching the template list fresh each time it opens.
-  const handleOpenLoad = async (anchor: HTMLElement) => {
-    setLoadAnchor(anchor);
-    setTemplates(null); // show a loading item until the fetch resolves
+  // Open the visual Load GALLERY (overlays the canvas), fetching every template's thumbnail
+  // definition fresh each time. On a fetch failure the gallery is closed with a snack error.
+  const handleOpenGallery = async () => {
+    setGalleryOpen(true);
+    setGalleryEntries(null); // null → the overlay shows a "Loading…" state until this resolves
     try {
-      setTemplates(await listTemplates());
+      setGalleryEntries(await listTemplateGallery());
     } catch (err) {
-      setLoadAnchor(null);
-      setSnack({ open: true, msg: err instanceof Error ? err.message : 'Failed to list templates', severity: 'error' });
+      setGalleryOpen(false);
+      setSnack({ open: true, msg: err instanceof Error ? err.message : 'Failed to load template gallery', severity: 'error' });
     }
   };
 
-  // Load a chosen template (version 0) into the editor. Warns first if the current
-  // board has unsaved edits. Marks it as the loaded template so the rename gate will
-  // permit a Save that overwrites it.
-  const handleLoad = async (summary: TemplateSummary) => {
-    setLoadAnchor(null);
+  // Close the gallery without loading anything (the Load button's Cancel state).
+  const handleCloseGallery = () => setGalleryOpen(false);
+
+  // Load a template picked from the gallery. Loads the SAME version the thumbnail previewed
+  // (its most-conditions `chosenVersion`), warning first if the current board has unsaved
+  // edits. Marks it as the loaded template so the rename gate will permit an overwriting Save.
+  const handlePickTemplate = async (entry: TemplateGalleryEntry) => {
     if (dirty) {
       const ok = await confirm(
-        `Loading "${summary.name}" replaces the current board — any unsaved edits will be lost. Continue?`,
+        `Loading "${entry.name}" replaces the current board — any unsaved edits will be lost. Continue?`,
         { title: 'Load template?', confirmText: 'Load', cancelText: 'Keep editing' },
       );
       if (!ok) return;
     }
     try {
-      const tpl = await loadTemplate(summary.name, 0);
+      const tpl = await loadTemplate(entry.name, entry.chosenVersion);
       applyLoadedVersion(tpl);
-      setSnack({ open: true, msg: `Loaded "${tpl.name}"`, severity: 'success' });
+      setGalleryOpen(false);
+      setSnack({ open: true, msg: `Loaded "${tpl.name}" (v${tpl.version})`, severity: 'success' });
     } catch (err) {
       setSnack({ open: true, msg: err instanceof Error ? err.message : 'Failed to load template', severity: 'error' });
     }
@@ -990,9 +948,20 @@ function TemplateEditorPage() {
       setIsNewVersion(false);
       setDirty(false);
       setAvailableVersions(vs => (vs.includes(version) ? vs : [...vs, version].sort((a, b) => a - b)));
+      // Report the condition breakdown so the author knows how many scored conditions the
+      // saved version carries (versions > 0 only — version 0 has none). This mirrors the
+      // runtime's load-time count; nothing is persisted (see `conditionInfo`).
+      const conditionSuffix =
+        version > 0
+          ? ` — ${conditionInfo.total} condition${conditionInfo.total === 1 ? '' : 's'} ` +
+            `(${conditionInfo.placeholder} placeholder, ${conditionInfo.borderStreet} border-street)`
+          : '';
       setSnack({
         open: true,
-        msg: overwritten ? `Saved version ${version} of "${name.trim()}"` : `Created version ${version} of "${name.trim()}"`,
+        msg:
+          (overwritten
+            ? `Saved version ${version} of "${name.trim()}"`
+            : `Created version ${version} of "${name.trim()}"`) + conditionSuffix,
         severity: 'success',
       });
     } catch (err) {
@@ -1097,15 +1066,14 @@ function TemplateEditorPage() {
         return (
           <Tooltip
             key={tool}
-            // The house button reports its current mirror orientation, and the placeholder
-            // button its current DROP size — both cycled by Space while the tool is active.
+            // The placeholder button reports its current DROP size — cycled by Space while the
+            // tool is active.
             title={disabled
               ? disabledReason
               : `${label} (${hotkey})${
-                  tool === 'house' ? (houseFlip ? ' · mirrored' : ' · default facing')
-                    : tool === 'placeholder'
-                      ? ` · ${PLACEHOLDER_SIZES[placeholderSizeIdx].w}×${PLACEHOLDER_SIZES[placeholderSizeIdx].h} (Space to resize)`
-                      : ''
+                  tool === 'placeholder'
+                    ? ` · ${PLACEHOLDER_SIZES[placeholderSizeIdx].w}×${PLACEHOLDER_SIZES[placeholderSizeIdx].h} (Space to resize)`
+                    : ''
                 }`}
             placement="top"
           >
@@ -1118,10 +1086,7 @@ function TemplateEditorPage() {
                 onClick={() => setActiveTool(tool)}
                 sx={paletteBtnSx(activeTool === tool, accent)}
               >
-                {/* House icon mirrors to preview the current placement flip (Space). */}
-                {tool === 'house'
-                  ? <Box component="span" sx={{ display: 'inline-flex', transform: houseFlip ? 'scaleX(-1)' : 'none' }}>{icon}</Box>
-                  : icon}
+                {icon}
                 <HotkeyBadge label={hotkey} />
               </Button>
             </span>
@@ -1167,7 +1132,7 @@ function TemplateEditorPage() {
           </Button>
         </span>
       </Tooltip>
-      {/* Paste — stamp the clipboard as a footprint (like the house tool). Disabled until
+      {/* Paste — stamp the clipboard as a footprint (like the placeholder drop). Disabled until
           something has been copied. */}
       <Tooltip
         title={clipboard ? `Paste clipboard (V) — ${clipboard.w}×${clipboard.h} stamp` : 'Copy a region first to paste'}
@@ -1308,13 +1273,25 @@ function TemplateEditorPage() {
                 Guidelines
               </Button>
             </Tooltip>
-            <Button
-              className="template-editor-load-btn" variant="outlined" size="small"
-              startIcon={<FolderOpenIcon />} onClick={(e) => handleOpenLoad(e.currentTarget)}
-              sx={headerBtnSx}
-            >
-              Load
-            </Button>
+            {/* Load ↔ Cancel: opening the visual gallery flips this button to Cancel so the
+                author can back out of the picker. */}
+            {galleryOpen ? (
+              <Button
+                className="template-editor-load-cancel-btn" variant="outlined" size="small"
+                startIcon={<CloseIcon />} onClick={handleCloseGallery}
+                sx={headerBtnSx}
+              >
+                Cancel
+              </Button>
+            ) : (
+              <Button
+                className="template-editor-load-btn" variant="outlined" size="small"
+                startIcon={<FolderOpenIcon />} onClick={handleOpenGallery}
+                sx={headerBtnSx}
+              >
+                Load
+              </Button>
+            )}
             <Button
               className="template-editor-clear-btn" variant="outlined" size="small"
               startIcon={<DeleteSweepIcon />} onClick={handleClear}
@@ -1370,56 +1347,10 @@ function TemplateEditorPage() {
               Save
             </Button>
           </Box>
-
-          {/* Load dropdown — template names (name-ordered). Selecting one loads it. */}
-          <Menu
-            className="template-editor-load-menu"
-            anchorEl={loadAnchor}
-            open={Boolean(loadAnchor)}
-            onClose={() => setLoadAnchor(null)}
-          >
-            {templates === null && (
-              <MenuItem disabled className="template-editor-load-loading">Loading…</MenuItem>
-            )}
-            {templates !== null && templates.length === 0 && (
-              <MenuItem disabled className="template-editor-load-empty">No templates yet</MenuItem>
-            )}
-            {templates?.map((t) => (
-              <MenuItem
-                key={t.name}
-                className="template-editor-load-item"
-                onClick={() => handleLoad(t)}
-                sx={{ maxWidth: 360, whiteSpace: 'normal', alignItems: 'flex-start' }}
-              >
-                <ListItemText
-                  primary={t.name}
-                  // Multi-line secondary (meta line + optional description) → render in a
-                  // div so we don't nest block spans inside the default <p>.
-                  secondaryTypographyProps={{ component: 'div' }}
-                  secondary={
-                    <>
-                      <Box component="span" className="template-editor-load-meta" sx={{ display: 'block' }}>
-                        {`${t.width}×${t.height} · ${t.versionCount} version${t.versionCount === 1 ? '' : 's'}`}
-                        {t.author ? ` · by ${t.author}` : ''}
-                      </Box>
-                      {t.description && (
-                        <Box
-                          component="span"
-                          className="template-editor-load-description"
-                          sx={{ display: 'block', mt: 0.25, fontStyle: 'italic', opacity: 0.85 }}
-                        >
-                          {t.description}
-                        </Box>
-                      )}
-                    </>
-                  }
-                />
-              </MenuItem>
-            ))}
-          </Menu>
         </Box>
 
-        {/* Left tool palette + grid toggle */}
+        {/* Left tool palette + grid toggle — hidden while the Load gallery overlays the canvas. */}
+        {!galleryOpen && (
         <Box
           className="template-editor-tool-palette"
           // alignItems:flex-start so each group/row box shrinks to fit its own buttons
@@ -1526,9 +1457,18 @@ function TemplateEditorPage() {
               </Tooltip>
               <Tooltip
                 title={
-                  activeTool === 'condition'
-                    ? 'Toggle condition-mask highlight (4) — layer auto-shown while the condition tool is active'
-                    : 'Toggle condition-mask highlight (4)'
+                  <>
+                    {activeTool === 'condition'
+                      ? 'Toggle condition-mask highlight (4) — layer auto-shown while the condition tool is active'
+                      : 'Toggle condition-mask highlight (4)'}
+                    {version > 0 && (
+                      <Box component="span" sx={{ display: 'block', mt: 0.5, opacity: 0.85 }}>
+                        {conditionInfo.total} condition{conditionInfo.total === 1 ? '' : 's'} on this
+                        version — {conditionInfo.placeholder} placeholder,{' '}
+                        {conditionInfo.borderStreet} border-street (auto-added at save)
+                      </Box>
+                    )}
+                  </>
                 }
                 placement="top"
               >
@@ -1556,7 +1496,7 @@ function TemplateEditorPage() {
             {renderToolGroup(terrainGroup)}
           </Box>
 
-          {/* Row 3 (home row) — decor tools (A/S/D/F · house stamp). */}
+          {/* Row 3 (home row) — decor tools (S/D/F/G). */}
           {renderToolGroup(decorGroup)}
 
           {/* Row 4 (bottom keyboard row Z X C V B) — history (Undo Z · Redo X) at the start,
@@ -1598,6 +1538,7 @@ function TemplateEditorPage() {
             </Box>
           </Box>
         </Box>
+        )}
 
         {/* Pixi canvas */}
         <Box className="template-editor-canvas-container" sx={{ flexGrow: 1, width: '100%', height: '100%', position: 'relative' }}>
@@ -1612,9 +1553,7 @@ function TemplateEditorPage() {
             showPlaceholder={showPlaceholder || activeTool === 'placeholder'}
             showCondition={showCondition || activeTool === 'condition'}
             activeTool={activeTool}
-            // Drives the house placement ghost's mirror so the flip is visible before dropping.
-            houseFlip={houseFlip}
-            // Drives the placeholder DROP ghost's size (5×5 / 5×10 / 10×5 — Space cycles it).
+            // Drives the placeholder DROP ghost's size (4×5 / 5×4 / 4×10 / 10×4 — Space cycles it).
             placeholderSize={PLACEHOLDER_SIZES[placeholderSizeIdx]}
             // Drive the decor GHOST: the active decor tool's category (null for non-decor tools)
             // + the selected variant index (Space cycles it). The viewer resolves the sprite for
@@ -1625,14 +1564,14 @@ function TemplateEditorPage() {
             // decor tool, AND the copy tool select by press-drag-release rectangle; the parent
             // decides what the finished rectangle means (fill the mask, fill terrain, tile planks,
             // or capture the region for copy). The OTHER decor tools drag-paint instead, and
-            // placeholder is a fixed-size footprint DROP (like the house tool), not a rectangle.
+            // placeholder is a fixed-size footprint DROP, not a rectangle.
             rectangleMode={
               activeTool === 'street' || activeTool === 'communal' ||
               activeTool === 'terrain1' || activeTool === 'terrain2' ||
               activeTool === 'plankDecor' || activeTool === 'copy'
             }
             onRectComplete={handleRectComplete}
-            // Paste stamps the clipboard as a footprint (like the house tool).
+            // Paste stamps the clipboard as a footprint (like the placeholder drop).
             pasteMode={activeTool === 'paste' && !!clipboard}
             pasteFootprint={clipboard ? { w: clipboard.w, h: clipboard.h } : null}
             onPasteAt={pasteAt}
@@ -1641,6 +1580,41 @@ function TemplateEditorPage() {
             // Snapshot the pre-stroke board so a whole drag-paint is one undo step.
             onEditBegin={pushHistory}
           />
+
+          {/* Load GALLERY overlay — the visual template picker. Covers the canvas (below the
+              header, whose Load↔Cancel button stays reachable) while open. Shows a loading /
+              empty state until the fetched entries arrive; picking one loads it and closes. */}
+          {galleryOpen && (
+            <Box
+              className="template-editor-gallery-overlay"
+              sx={{
+                position: 'absolute', inset: 0, zIndex: 6,
+                backgroundColor: 'rgba(12,16,24,0.82)',
+                display: 'flex', flexDirection: 'column',
+              }}
+            >
+              {galleryEntries === null ? (
+                <Box
+                  className="template-editor-gallery-status"
+                  sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.8)' }}
+                >
+                  <Typography>Loading templates…</Typography>
+                </Box>
+              ) : galleryEntries.length === 0 ? (
+                <Box
+                  className="template-editor-gallery-status"
+                  sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.8)' }}
+                >
+                  <Typography>No templates yet</Typography>
+                </Box>
+              ) : (
+                // Pad the top so the first row clears the translucent header.
+                <Box sx={{ flex: 1, minHeight: 0, pt: '84px' }}>
+                  <TemplateLoadGallery entries={galleryEntries} onPick={handlePickTemplate} />
+                </Box>
+              )}
+            </Box>
+          )}
         </Box>
 
         <PropertiesDialog

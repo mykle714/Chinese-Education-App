@@ -40,11 +40,19 @@ mkdir -p "$REPO_DIR/logs"
 # column between the schedule and the command. The schedule lives HERE — this is
 # the editable source of truth for WHEN the job runs. HH:01 so the 4 AM local-day
 # boundary has definitely ticked over for any timezone whose rollover is on the hour.
+#
+# Two jobs, ordered by minute so the second sees the first's writes:
+#   :01  expire-stale-streaks.sql — debit inactive users + decay their OCCUPANTS (pure SQL).
+#   :02  prune-dangling-templates — remove templates that decay left empty + weakly attached.
+#        This is the TypeScript adjacency fixpoint (impractical in plpgsql), run as COMPILED JS
+#        inside the backend container (the prod image has no tsx/devDeps). It reads
+#        users.lastPenaltyDate to target exactly the users the :01 job just penalized.
 read -r -d '' CONTENT <<EOF || true
 # /etc/cron.d/cow-maintenance — managed by database/cron/install-cron.sh (do not edit by hand).
 # Source of truth lives in the vocabulary-app repo; edit there + redeploy.
 # Hourly inactivity-penalty maintenance — see docs/STREAK_EXPIRATION_CRON.md
 1 * * * * $CRON_USER /usr/bin/docker exec -i cow-postgres-prod psql -U cow_user -d cow_db < $REPO_DIR/database/cron/expire-stale-streaks.sql >> $REPO_DIR/logs/streak-expire.log 2>&1
+2 * * * * $CRON_USER /usr/bin/docker exec cow-backend-prod node dist/scripts/night-market/prune-dangling-templates.js >> $REPO_DIR/logs/prune-templates.log 2>&1
 EOF
 
 # /etc/cron.d is root-owned; elevate only for the write. cron auto-detects the

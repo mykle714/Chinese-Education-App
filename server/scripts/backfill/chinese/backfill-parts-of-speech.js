@@ -39,25 +39,31 @@ const SCRIPT_VERSION = 2; // bump when this script's logic/prompt changes
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // run-log: track duration, version, words/mode, and token usage/cost
-const { stampEntries, validatedClause } = initRunLog({ script: 'chinese/backfill-parts-of-speech', version: SCRIPT_VERSION, anthropic: anthropic });
+const { stampEntries, validatedClause, staleClause } = initRunLog({ script: 'chinese/backfill-parts-of-speech', version: SCRIPT_VERSION, anthropic: anthropic });
 // Never overwrite partsOfSpeech that a validator has approved/flagged as part of
 // the definitions bundle (migration 104, docs/DATA_VALIDATION_SYSTEM.md).
 const validatedFilter = `AND ${validatedClause(['definitions'], 'dictionaryentries_zh')}`;
 const isSpotCheck = process.argv.includes('--spot-check');
+const isStale = process.argv.includes('--stale');
 
 const wordsArg = process.argv.find(a => a.startsWith('--words='));
 const targetWords = wordsArg ? wordsArg.slice('--words='.length).split(',').map(s => s.trim()).filter(Boolean) : null;
 const wordsFilter = targetWords?.length
   ? `AND word1 = ANY(ARRAY[${targetWords.map(w => `'${w.replace(/'/g, "''")}'`).join(', ')}])`
   : '';
+// Targeted runs enrich the named words regardless of discoverable (worker candidates
+// are not-yet-discoverable); untargeted full runs keep the discoverable gate.
+const discoverableGate = targetWords?.length ? '' : 'AND discoverable = TRUE';
 
-// Default (untargeted) runs only fill in missing/empty partsOfSpeech. But when
-// the caller names specific words via --words, the intent is to re-evaluate
-// those entries, so we drop the "needs backfill" guard and reprocess them even
-// if they already carry a (possibly wrong) value.
+// Default (untargeted) runs only fill in missing/empty partsOfSpeech (or, with
+// --stale, also rows stamped below SCRIPT_VERSION). But when the caller names
+// specific words via --words, the intent is to re-evaluate those entries, so we drop
+// the "needs backfill" guard and reprocess them even if they already carry a value.
 const posNullFilter = targetWords?.length
   ? ''
-  : `AND ("partsOfSpeech" IS NULL OR jsonb_array_length("partsOfSpeech") = 0)`;
+  : (isStale
+      ? `AND ("partsOfSpeech" IS NULL OR jsonb_array_length("partsOfSpeech") = 0 OR ${staleClause()})`
+      : `AND ("partsOfSpeech" IS NULL OR jsonb_array_length("partsOfSpeech") = 0)`);
 
 const GEN_MODEL = 'claude-sonnet-4-6';
 const VALIDATOR_MODEL = 'claude-sonnet-4-6';
@@ -423,7 +429,7 @@ async function run() {
       SELECT id, word1, pronunciation, definitions
       FROM dictionaryentries_zh
       WHERE language = 'zh'
-        AND discoverable = TRUE
+        ${discoverableGate}
         ${validatedFilter}
         ${posNullFilter}
         ${wordsFilter}

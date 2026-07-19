@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS users (
     "lastMinutePointIncrement" TIMESTAMP,
     "isPublic"                 BOOLEAN DEFAULT TRUE,
     "isValidator"              BOOLEAN NOT NULL DEFAULT FALSE,
+    "isTemplateAuthor"         BOOLEAN NOT NULL DEFAULT FALSE,
     "currentStreak"            INTEGER NOT NULL DEFAULT 0,
     "lastStreakDate"           DATE,
     "createdAt"                TIMESTAMP DEFAULT NOW()

@@ -72,7 +72,6 @@ export class DictionaryService {
     const entry = await this.dictionaryDAL.findByWord1(trimmedTerm, language);
     if (!entry) return null;
 
-    // characterRationale is a display-ready column — no runtime enrichment step needed.
     return entry;
   }
 

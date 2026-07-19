@@ -131,7 +131,11 @@ export class OnDeckVocabController {
       }
 
       const language = await getUserLanguage(userId);
-      const pool = await this.onDeckVocabService.getGameVocabPool(userId, language, distribution);
+      // Bubble Match emits recognition marks, so its pool honors the recognition
+      // per-type cooldown (docs/MASTERY_REWORK.md § Per-type cooldown, "Games").
+      const pool = await this.onDeckVocabService.getGameVocabPool(
+        userId, language, distribution, ['recognition'] as const
+      );
       res.json(pool);
     } catch (error: any) {
       handleControllerError(error, res, 'OnDeckVocabController.getGamePool');
@@ -166,7 +170,15 @@ export class OnDeckVocabController {
       }
 
       const language = await getUserLanguage(userId);
-      const result = await this.onDeckVocabService.getWordSearchGrid(userId, language, distribution);
+      // Board mode decides the mark type this game emits (docs/MASTERY_REWORK.md
+      // § Per-type cooldown, "Games"): No-Pinyin is a reading review, Pinyin is a
+      // production review. The pool honors that type's per-type cooldown. Default
+      // to production (Pinyin) if the mode param is absent/unrecognized.
+      const mode = String(req.query.mode ?? '');
+      const gameMarkTypes = mode === 'no-pinyin' ? (['reading'] as const) : (['production'] as const);
+      const result = await this.onDeckVocabService.getWordSearchGrid(
+        userId, language, distribution, gameMarkTypes
+      );
       res.json(result);
     } catch (error: any) {
       handleControllerError(error, res, 'OnDeckVocabController.getWordSearchGrid');

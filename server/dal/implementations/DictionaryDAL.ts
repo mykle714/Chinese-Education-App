@@ -22,7 +22,6 @@ const DICTIONARY_COLUMNS = `
   "definitionClusters",
   breakdown, synonyms,
   "exampleSentences",
-  "characterRationale",
   "matchException",
   "shortDefinitionPronunciationOverride",
   "exampleSentenceDefinitionPronunciationOverride",
@@ -30,17 +29,15 @@ const DICTIONARY_COLUMNS = `
   "wordForms"
 `.trim();
 
-// Per-language variant of the SELECT list. `definitionClusters` (migration 90) and
-// `characterRationale` are Chinese-only enrichments (per-cluster pinyin reading; character
-// breakdown rationale — Spanish words aren't made of characters), and neither column exists on
-// the Spanish det (`dictionaryentries_es`) — so for es we select typed NULL placeholders to keep
-// the column list, row shape, and mapRowToEntity uniform across languages without adding
-// meaningless columns to the es table.
+// Per-language variant of the SELECT list. `definitionClusters` (migration 90) is a
+// Chinese-only enrichment (per-cluster pinyin reading) that does not exist on the Spanish
+// det (`dictionaryentries_es`) — so for es we select a typed NULL placeholder to keep the
+// column list, row shape, and mapRowToEntity uniform across languages without adding a
+// meaningless column to the es table.
 function dictionaryColumns(language: string | null | undefined): string {
   if (language === 'es') {
     return DICTIONARY_COLUMNS
-      .replace('"definitionClusters",', 'NULL::jsonb AS "definitionClusters",')
-      .replace('"characterRationale",', 'NULL::jsonb AS "characterRationale",');
+      .replace('"definitionClusters",', 'NULL::jsonb AS "definitionClusters",');
   }
   return DICTIONARY_COLUMNS;
 }
@@ -148,7 +145,6 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
       breakdown: row.breakdown ?? null,
       synonyms: row.synonyms ?? null,
       exampleSentences: row.exampleSentences ?? null, // Enriched on-the-fly via enrichExampleSentencesMetadataBatch
-      characterRationale: row.characterRationale ?? null, // Per-character rationale (jsonb, migration 102); display-ready, no runtime enrichment
       matchException: row.matchException ?? [],
       vernacularScore: row.vernacularScore ?? null,
       wordForms: row.wordForms ?? null,

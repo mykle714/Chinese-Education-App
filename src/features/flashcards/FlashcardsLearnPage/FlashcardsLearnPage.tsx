@@ -39,6 +39,7 @@ import { clearWritingDraft } from "../../../components/handwriting/writingDraftS
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useTTS, SLOW_SENTENCE_RATE } from "../../../hooks/useTTS";
 import { useFlashcardLearnSettings } from "../../../hooks/useFlashcardLearnSettings";
+import type { VocabEntry } from "./types";
 
 const FlashcardsLearnPage: React.FC = () => {
     usePageTitle("Learn");
@@ -275,6 +276,47 @@ const FlashcardsLearnPage: React.FC = () => {
         setIsEicOpen(false);
         eip.clear();
     }, [eip]);
+
+    // "+ Add to Learn Now" from the EIP header 2×2 action grid. The primary card
+    // is already in the library, but drilled-in words (breakdown chars / example
+    // segments opened as entry tabs) may not be — InfoCardPanelBody gates the
+    // button on `entry.discoverable`. Language comes from the entry itself so a
+    // drilled-in word is added under its own language. Mirrors the dictionary
+    // cdp handler (DictionaryCardDetailPage.handleAddToLibrary).
+    const [addToLibSnack, setAddToLibSnack] = useState<string | null>(null);
+    // Entries confirmed to be in the library this session (either freshly added
+    // or reported already-present). Once an entry is here, its Add button is
+    // hidden — the word is in the library, so the action is a no-op. Keyed by
+    // language:entryKey so the same headword in different languages stays
+    // independent. Persists for the page's lifetime (survives entry-tab switches
+    // and EIP reopen); a page reload rebuilds it from scratch, which is fine.
+    const [addedLibraryKeys, setAddedLibraryKeys] = useState<Set<string>>(new Set());
+    const libraryKeyOf = (entry: VocabEntry) => `${entry.language}:${entry.entryKey}`;
+    const handleAddToLibrary = useCallback(async (entry: VocabEntry) => {
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/vocabEntries/add-to-library`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ entryKey: entry.entryKey, language: entry.language }),
+            });
+            if (!res.ok) {
+                setAddToLibSnack('Failed to add to Learn Now');
+                return;
+            }
+            const data: { status: 'added' | 'already-in-library' } = await res.json();
+            setAddToLibSnack(data.status === 'already-in-library' ? 'Already in Learn Now' : 'Added to Learn Now');
+            // Either status means the word is now in the library — hide its Add button.
+            setAddedLibraryKeys((prev) => {
+                const next = new Set(prev);
+                next.add(`${entry.language}:${entry.entryKey}`);
+                return next;
+            });
+        } catch (err) {
+            console.error('Failed to add to library:', err);
+            setAddToLibSnack('Failed to add to Learn Now');
+        }
+    }, [token]);
 
     // The card editor and the EIP can't coexist — entering edit mode dismisses the
     // panel (and the More Info pill is disabled while editing, see MoreInfoPill below).
@@ -594,6 +636,9 @@ const FlashcardsLearnPage: React.FC = () => {
                     const panelEntry = (active?.kind === "entry" ? active.entry : null) ?? currentEntry;
                     const panelBreakdown = (active?.kind === "entry" ? active.breakdownItems : null) ?? breakdownItems;
                     const panelSubTab = active?.kind === "entry" ? active.selectedSubTab : 0;
+                    // Hide the Add button once this entry is known to be in the library:
+                    // drop the handler so InfoCardPanelBody's `onAddToLibrary` gate fails.
+                    const panelAlreadyInLibrary = panelEntry ? addedLibraryKeys.has(libraryKeyOf(panelEntry)) : false;
                     return (
                         <InfoCardSection
                             currentEntry={panelEntry}
@@ -612,6 +657,7 @@ const FlashcardsLearnPage: React.FC = () => {
                             onSpeak={tts.enabled ? tts.speak : undefined}
                             onSpeakSentence={tts.enabled ? speakSentenceAtRate : undefined}
                             speakingKey={tts.speakingKey}
+                            onAddToLibrary={panelAlreadyInLibrary ? undefined : handleAddToLibrary}
                             onOpenCompare={eip.openCompareTab}
                             compareTab={compareTab}
                             onSetCompareSlot={eip.setCompareSlot}
@@ -632,6 +678,25 @@ const FlashcardsLearnPage: React.FC = () => {
                     );
                 })()}
                 <TooManyTabsSnackbar signal={eip.overflowSignal} />
+                {/* "+ Add to Learn Now" result toast from the EIP header action grid.
+                    Neutral severity — "already in library" is an informational outcome,
+                    not an error. */}
+                <Snackbar
+                    open={addToLibSnack !== null}
+                    autoHideDuration={3000}
+                    onClose={() => setAddToLibSnack(null)}
+                    anchorOrigin={{ vertical: "top", horizontal: "center" }}
+                    sx={{ zIndex: 2000 }}
+                >
+                    <Alert
+                        severity={addToLibSnack === 'Failed to add to Learn Now' ? "error" : "success"}
+                        variant="filled"
+                        onClose={() => setAddToLibSnack(null)}
+                        sx={{ fontFamily: FC_FONT }}
+                    >
+                        {addToLibSnack}
+                    </Alert>
+                </Snackbar>
                 {/* Icon-layout save/reset failure toast (e.g. backend PATCH error).
                     Replaces the prior silent console.error so the editor stays open
                     and the user knows the write didn't land. */}

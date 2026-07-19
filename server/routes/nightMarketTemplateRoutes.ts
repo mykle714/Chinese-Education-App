@@ -30,6 +30,14 @@ router.get('/api/nightmarket-templates/suggest-name', authenticateToken, async (
   await nightMarketTemplateController.suggestName(req, res);
 });
 
+// Gallery: one entry per name with the full definition of its most-conditions version,
+// for the editor's visual Load picker. Registered BEFORE `/load` (both are fixed paths, so
+// order is not strictly required, but grouped with the other GETs).
+// @ts-ignore
+router.get('/api/nightmarket-templates/gallery', authenticateToken, async (req, res) => {
+  await nightMarketTemplateController.listTemplateGallery(req, res);
+});
+
 // Load one template version (full definition + availableVersions) by name+version.
 // @ts-ignore
 router.get('/api/nightmarket-templates/load', authenticateToken, async (req, res) => {

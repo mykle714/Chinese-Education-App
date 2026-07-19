@@ -30,17 +30,10 @@ export type { Street };
 import { buildTileGraph, tileKey } from './tileGraph';
 import { buildStreetGraph } from './streetGraph';
 
-// Pedestrian sprite (dormant — kept for a future re-layout that re-populates the
-// field with walkers). Uses the test-asset human + walk frames.
-import humanImgUrl from '../../assets/test-assets/human.png';
-import walkBackLeft1 from '../../assets/test-assets/test-walk-animation/walk_backward_left_1.png';
-import walkBackLeft2 from '../../assets/test-assets/test-walk-animation/walk_backward_left_2.png';
-import walkBackRight1 from '../../assets/test-assets/test-walk-animation/walk_backward_right_1.png';
-import walkBackRight2 from '../../assets/test-assets/test-walk-animation/walk_backward_right_2.png';
-import walkFwdLeft1 from '../../assets/test-assets/test-walk-animation/walk_forward_left_1.png';
-import walkFwdLeft2 from '../../assets/test-assets/test-walk-animation/walk_forward_left_2.png';
-import walkFwdRight1 from '../../assets/test-assets/test-walk-animation/walk_forward_right_1.png';
-import walkFwdRight2 from '../../assets/test-assets/test-walk-animation/walk_forward_right_2.png';
+// Pedestrian sprites — the free-farm player art (two character sets: male /
+// female), each a 4-frame walk cycle in 4 cardinal directions. Indexed by the
+// shared FreeFarmTileset singleton (same pack that draws the terrain).
+import { freeFarmTileset, type Direction, type PlayerGender } from './freeFarmTileset';
 
 // ---------------------------------------------------------------------------
 // Tile authoring helpers (generic — retained for the future authored layout).
@@ -138,17 +131,68 @@ export const STREET_GRAPH = buildStreetGraph(STREETS, TILES);
 // Pedestrian factory (dormant — no walkers are spawned by the current page).
 // ---------------------------------------------------------------------------
 
-const defaultSprite: SpriteDef = {
-  imagePath: humanImgUrl,
-  scale: 1.0,
-  directionalWalk: {
-    north: [walkBackLeft1, walkBackLeft2],
-    east: [walkBackRight1, walkBackRight2],
-    south: [walkFwdRight1, walkFwdRight2],
-    west: [walkFwdLeft1, walkFwdLeft2],
-    fps: 6,
-  },
+/** Walk-cycle frame rate shared by both pedestrian variants. */
+const WALK_FPS = 6;
+
+/**
+ * Build a pedestrian {@link SpriteDef} from one farm-pack character set.
+ *
+ * The pack ships 4-cardinal-direction art (`n`/`e`/`s`/`w`); the engine's iso
+ * headings map onto those facings 1:1. This matches `isoToScreen`'s axes
+ * (E = top-right, N = top-left, S = bottom-right, W = bottom-left) and the
+ * `DirectionalWalkAnimation` semantics (north = backward/away, south =
+ * forward/toward the camera):
+ *   north → 'n' (facing away)     east → 'e' (facing screen-right)
+ *   south → 's' (facing camera)   west → 'w' (facing screen-left)
+ *
+ * Frames render at native scale (1.0) — the pack is authored for the same
+ * 32px tile grid the terrain uses, and the camera does the integer zoom.
+ */
+function makeFarmSprite(gender: PlayerGender): SpriteDef {
+  const framesFor = (d: Direction): string[] => freeFarmTileset.getWalkFrames(gender, d);
+  return {
+    // Idle pose = first south-facing frame (character facing the camera).
+    imagePath: framesFor('s')[0],
+    scale: 1.0,
+    directionalWalk: {
+      north: framesFor('n'),
+      east: framesFor('e'),
+      south: framesFor('s'),
+      west: framesFor('w'),
+      fps: WALK_FPS,
+    },
+  };
+}
+
+/** Pedestrian character variant — one of the farm pack's two player sets. */
+export type PedestrianVariant = PlayerGender;
+
+/** The two pedestrian variants, resolved to concrete sprite defs once at load. */
+export const PEDESTRIAN_SPRITES: Record<PedestrianVariant, SpriteDef> = {
+  male: makeFarmSprite('male'),
+  female: makeFarmSprite('female'),
 };
+
+export const PEDESTRIAN_VARIANTS: PedestrianVariant[] = ['male', 'female'];
+
+/**
+ * Every sprite frame any pedestrian variant can render (idle + all directional walk frames,
+ * both character sets). The renderer ({@link ../../features/nightmarket/PedestrianLayer})
+ * preloads these as textures so `PedestrianDrawable.imagePath` — which names the CURRENT
+ * animation frame — always resolves. Derived from {@link PEDESTRIAN_SPRITES} so it stays in
+ * sync with the sprite definitions.
+ */
+export const PEDESTRIAN_SPRITE_PATHS: string[] = (() => {
+  const paths = new Set<string>();
+  for (const sprite of Object.values(PEDESTRIAN_SPRITES)) {
+    paths.add(sprite.imagePath);
+    const walk = sprite.directionalWalk;
+    if (walk) {
+      for (const f of [...walk.north, ...walk.east, ...walk.south, ...walk.west]) paths.add(f);
+    }
+  }
+  return [...paths];
+})();
 
 export const DEMO_PEDESTRIAN_COUNT = 3;
 
@@ -170,10 +214,19 @@ function randomPedestrianSpeed(): number {
   );
 }
 
-export function makeAmbientPedestrian(id: string, startTile: TileCoord): PedestrianState {
+/** Pick one of the two pedestrian character variants at random. */
+function randomVariant(): PedestrianVariant {
+  return PEDESTRIAN_VARIANTS[Math.floor(Math.random() * PEDESTRIAN_VARIANTS.length)];
+}
+
+export function makeAmbientPedestrian(
+  id: string,
+  startTile: TileCoord,
+  variant: PedestrianVariant = randomVariant(),
+): PedestrianState {
   return {
     id,
-    sprite: defaultSprite,
+    sprite: PEDESTRIAN_SPRITES[variant],
     speedIsoPerSec: randomPedestrianSpeed(),
     currentTile: startTile,
     localProgress: 0,

@@ -413,7 +413,9 @@ export function computeDrawable(
 ): PedestrianDrawable | null {
   let isoX: number;
   let isoY: number;
-  let heading: [number, number] = [1, 0];
+  // Fall back to the last direction actually walked (persisted on the state) so
+  // idle/interacting peds keep their facing; east is only the pre-first-step default.
+  let heading: [number, number] = p.lastHeading ?? [1, 0];
   if (p.committedFromTile) {
     [isoX, isoY] = lerpTile(p.committedFromTile, p.currentTile, p.localProgress);
     heading = headingBetweenTiles(p.committedFromTile, p.currentTile);
@@ -817,6 +819,8 @@ export function tickPedestrian(
       p.waitingSinceMs = undefined;
       p.committedFromTile = { ...p.currentTile };
       p.currentTile = { ...next };
+      // Remember which way we walked so idle-facing survives the step ending.
+      p.lastHeading = headingBetweenTiles(p.committedFromTile, p.currentTile);
 
       const step = advanceLocalProgress(0, dtMs, p.speedIsoPerSec);
       p.localProgress = step.progress;
@@ -883,6 +887,8 @@ export function tickPedestrian(
       p.committedFromTile = { ...p.currentTile };
       p.currentTile = { ...next };
       p.wanderStepsLeft -= 1;
+      // Persist the wander step direction for idle-facing after the burst ends.
+      p.lastHeading = [dir[0], dir[1]];
 
       const step = advanceLocalProgress(0, dtMs, p.speedIsoPerSec);
       p.localProgress = step.progress;

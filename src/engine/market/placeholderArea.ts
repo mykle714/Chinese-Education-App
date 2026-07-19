@@ -31,19 +31,34 @@ export interface PlaceholderArea {
 
 /**
  * The ONLY placeholder sizes the drop tool offers, in Space-cycle order:
- * 5×5 → 5×10 → 10×5 (rotated) → back to 5×5. `w` is the isoX (col) span, `h` the isoY (row)
- * span; the third entry is the second rotated 90°. The editor's size toggle and the server
+ * 4×5 → 5×4 (rotated) → 4×10 → 10×4 (rotated) → back to 4×5. `w` is the isoX (col) span, `h`
+ * the isoY (row) span; each pair is a base rectangle followed by its 90° rotation (4×5 is no
+ * longer square, so rotation now matters). Every size tiles exactly with 4×5 house-footprint
+ * occupants (a 4×5 slot fits one house; a 4×10 fits two stacked) — see the occupant renderer
+ * `src/features/nightmarket/PlaceholderHouseLayer.tsx`. The editor's size toggle and the server
  * validator both key on this list, so a definition can never carry an off-menu size.
  */
 export const PLACEHOLDER_SIZES: ReadonlyArray<{ w: number; h: number }> = [
-  { w: 5, h: 5 },
-  { w: 5, h: 10 },
-  { w: 10, h: 5 },
+  { w: 4, h: 5 },
+  { w: 5, h: 4 },
+  { w: 4, h: 10 },
+  { w: 10, h: 4 },
 ] as const;
 
 /** Whether `(w,h)` is one of the allowed drop sizes (guards both authoring and the save path). */
 export function isValidPlaceholderSize(w: number, h: number): boolean {
   return PLACEHOLDER_SIZES.some((s) => s.w === w && s.h === h);
+}
+
+/**
+ * The stable anchor id ("col_row", underscore) of a placeholder area — its near (min-iso)
+ * corner. Unique within a template because areas can't overlap. This is the id the server
+ * keys an occupant on (`nightmarketunlocks.placeholderAreaId`) and returns in a placement's
+ * `filledPlaceholderIds`; MIRRORS `server/dal/shared/versionSelection.ts#placeholderAreaId`.
+ * Note the underscore separator — distinct from the comma-separated "col,row" CELL keys.
+ */
+export function placeholderAreaId(area: Pick<PlaceholderArea, 'col' | 'row'>): string {
+  return `${area.col}_${area.row}`;
 }
 
 /** The "col,row" cell keys an area covers (its full w×h footprint). */

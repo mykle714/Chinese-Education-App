@@ -2,24 +2,15 @@ import { NightMarketUnlock } from '../../types/nightMarket.js';
 
 /**
  * Night Market Data Access Layer interface
- * Defines contract for night market unlock persistence operations
+ *
+ * ⚠️ The legacy asset-unlock write path was RETIRED (2026-07-17) when migrations 112/113
+ * repurposed `nightmarketunlocks` for the template-placement OCCUPANT model. The old-shape
+ * writers (`createUnlock`/`createBulkUnlocks`/`hasAnyUnlocks`/`getEarnedUnlockCount`/
+ * `getUnlockedAssetIds`) were removed because they can no longer satisfy the NOT NULL
+ * `placedTemplateId`/`placeholderAreaId` columns. Only the read below remains; the occupant
+ * DAL is built in Slice 3/4. See NightMarketService header.
  */
 export interface INightMarketDAL {
-  /** Get all unlocks for a user, ordered by unlockOrder */
+  /** Legacy read: all unlock rows for a user, ordered by unlockOrder. Retained for back-compat. */
   findByUserId(userId: string): Promise<NightMarketUnlock[]>;
-
-  /** Get count of earned unlocks (unlockOrder > 0) for a user */
-  getEarnedUnlockCount(userId: string): Promise<number>;
-
-  /** Insert a single unlock record */
-  createUnlock(userId: string, assetId: string, unlockType: string, unlockOrder: number): Promise<NightMarketUnlock>;
-
-  /** Insert multiple unlock records at once (used for base set seeding) */
-  createBulkUnlocks(unlocks: Array<{ userId: string; assetId: string; unlockType: string; unlockOrder: number }>): Promise<NightMarketUnlock[]>;
-
-  /** Check if user has any unlock records (to determine if base set needs seeding) */
-  hasAnyUnlocks(userId: string): Promise<boolean>;
-
-  /** Get all assetIds already unlocked by a user (for exclusion during random selection) */
-  getUnlockedAssetIds(userId: string): Promise<string[]>;
 }

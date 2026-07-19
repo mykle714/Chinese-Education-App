@@ -15,7 +15,8 @@ function TesterDashboardPage() {
     usePageTitle("Tester Dashboard");
     const navigate = useNavigate();
     const {
-        totalStudyTimeMinutes,
+        accumulativeMinutePoints, // NET balance → big converted-time number
+        grossMinutesEarned,       // GROSS lifetime earned → small caption
         currentStreak
     } = useMinutePoints();
 
@@ -47,7 +48,7 @@ function TesterDashboardPage() {
                                 )}
 
                                 {/* Total Study Time Display */}
-                                <TimeDisplay totalMinutes={totalStudyTimeMinutes} />
+                                <TimeDisplay netMinutes={accumulativeMinutePoints} grossMinutes={grossMinutesEarned} />
 
                                 {/* Streak Counter */}
                                 <StreakCounter currentStreak={currentStreak} />

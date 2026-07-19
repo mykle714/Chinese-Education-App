@@ -67,6 +67,25 @@ export class NightMarketTemplateController {
   }
 
   /**
+   * GET /api/nightmarket-templates/gallery → { templates: TemplateGalleryEntry[] }
+   * One entry per name (with the FULL definition of its most-conditions version) for the
+   * editor's visual Load gallery.
+   */
+  async listTemplateGallery(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = (req as any).user?.userId;
+      if (!userId) {
+        res.status(401).json({ error: 'User not authenticated', code: 'ERR_NOT_AUTHENTICATED' });
+        return;
+      }
+      const templates = await this.service.listTemplateGallery(userId);
+      res.json({ templates });
+    } catch (error: any) {
+      this.handleError(res, error, 'Failed to list template gallery', 'ERR_TEMPLATE_GALLERY_FAILED');
+    }
+  }
+
+  /**
    * GET /api/nightmarket-templates/load?name=...&version=... → { template } | 404
    * Full definition (+ availableVersions) for loading one version into the editor.
    */

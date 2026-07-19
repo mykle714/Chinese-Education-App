@@ -23,6 +23,8 @@ export interface IUserDAL extends IBaseDAL<User, UserCreateData, UserUpdateData>
   getTotalMinutePoints(userId: string): Promise<{ totalMinutePoints: number; currentStreak: number }>;
   updateTotalMinutePoints(userId: string, totalPoints: number): Promise<boolean>;
   incrementTotalMinutePoints(userId: string, pointsToAdd: number): Promise<boolean>;
+  // Signed adjust of totalMinutePoints, floored at 0; returns the new balance (author minute-adjust tool).
+  adjustTotalMinutePoints(userId: string, delta: number): Promise<number>;
 
   // Minute point increment rate limiting
   updateLastMinutePointIncrement(userId: string, timestamp: Date): Promise<boolean>;

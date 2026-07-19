@@ -14,8 +14,15 @@ export interface IUserMinutePointsDAL {
     delta: number
   ): Promise<{ previousMinutes: number; newMinutes: number }>;
 
-  // NOTE: penaltyMinutes is written exclusively by the SQL cron
-  // (database/cron/expire-stale-streaks.sql), never from application code.
+  // Add `amount` to penaltyMinutes for a (user, streakDate, language), inserting the row if
+  // missing (minutesEarned untouched). Written by the hourly SQL cron for real inactivity
+  // penalties; also by the AUTHOR minute-adjust tool's −N "lose minutes" path.
+  addPenaltyMinutesForDate(
+    userId: string,
+    streakDate: string,
+    language: string,
+    amount: number
+  ): Promise<void>;
 
   // Calendar rows for one language over a date range, plus the per-language
   // first-activity lookup that bounds "hasData" on the calendar.
@@ -30,6 +37,10 @@ export interface IUserMinutePointsDAL {
 
   // Lifetime total for a single language — used by the home screen "total study time".
   getTotalMinutesForLanguage(userId: string, language: string): Promise<number>;
+
+  // GLOBAL gross minutes earned across ALL languages (Σ minutesEarned, ignoring penalties).
+  // The "lifetime earned" figure; pairs with the penalty-debited net (users.totalMinutePoints).
+  getGrossMinutesEarned(userId: string): Promise<number>;
 
   // Transaction-aware variant
   addMinutesForDateWithTransaction(

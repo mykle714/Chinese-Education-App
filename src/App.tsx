@@ -173,10 +173,10 @@ function App() {
                     <NightMarketEnginePage />
                   </ProtectedRoute>
                 } />
-                {/* Validator-only template editor. Gated by isValidator alone (the
-                    page bounces non-validators; the backend enforces it too), so
-                    allowPublic — a validator may be a public account, and the
-                    generic isPublic redirect must not pre-empt the validator gate. */}
+                {/* Template-author-only editor. Gated by isTemplateAuthor (migration 115;
+                    the page bounces non-authors; the backend enforces it too), so
+                    allowPublic — a template author may be a public account, and the
+                    generic isPublic redirect must not pre-empt the author gate. */}
                 <Route path="/night-market/template-editor" element={
                   <ProtectedRoute allowPublic>
                     <TemplateEditorPage />

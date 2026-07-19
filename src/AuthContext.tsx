@@ -15,6 +15,7 @@ interface User {
     name: string;
     isPublic?: boolean;
     isValidator?: boolean; // Gates the Reader "Validate" button + validation endpoints (migration 104)
+    isTemplateAuthor?: boolean; // Gates the Night Market template editor + its save endpoints (migration 115); distinct from isValidator
     selectedLanguage?: Language;
     // icons8 id of the chosen profile avatar; null/undefined => name-initial fallback.
     avatarIconId?: string | null;

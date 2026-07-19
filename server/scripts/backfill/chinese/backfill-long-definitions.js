@@ -61,11 +61,12 @@ const SCRIPT_VERSION = 13; // bump when this script's logic/prompt changes
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // run-log: track duration, version, words/mode, and token usage/cost
-const { stampEntries, validatedClause } = initRunLog({ script: 'chinese/backfill-long-definitions', version: SCRIPT_VERSION, anthropic: anthropic });
+const { stampEntries, validatedClause, staleClause } = initRunLog({ script: 'chinese/backfill-long-definitions', version: SCRIPT_VERSION, anthropic: anthropic });
 // Never regenerate a longDefinition that a validator has approved/flagged as part
 // of the definitions bundle (migration 104, docs/DATA_VALIDATION_SYSTEM.md).
 const validatedFilter = `AND ${validatedClause(['definitions'], 'dictionaryentries_zh')}`;
 const isSpotCheck = process.argv.includes('--spot-check');
+const isStale = process.argv.includes('--stale');
 
 const wordsArg = process.argv.find(a => a.startsWith('--words='));
 const targetWords = wordsArg ? wordsArg.slice('--words='.length).split(',').map(s => s.trim()).filter(Boolean) : null;
@@ -80,7 +81,10 @@ const wordsFilter = targetWords?.length
 // we never overwrite a human-reviewed definition.
 const isTargeted = !!targetWords?.length;
 const discoverableFilter = isTargeted ? '' : 'AND discoverable = TRUE';
-const needsBackfillFilter = isTargeted ? '' : 'AND "longDefinition" IS NULL';
+// --stale (untargeted): also revisit rows stamped below SCRIPT_VERSION or never stamped.
+const needsBackfillFilter = isTargeted
+  ? ''
+  : (isStale ? `AND ("longDefinition" IS NULL OR ${staleClause()})` : 'AND "longDefinition" IS NULL');
 
 const GEN_MODEL = 'claude-sonnet-4-6';
 const VALIDATOR_MODEL = 'claude-sonnet-4-6';

@@ -230,7 +230,11 @@ const WordSearchPage: React.FC = () => {
     // to the blocked phase (insufficient cards / wrong language / network error).
     const fetchGrid = useCallback(async (): Promise<WordSearchResponse | null> => {
         try {
-            const res = await fetch(`${API_BASE_URL}/api/onDeck/word-search-grid?${GRID_QUERY}`, {
+            // `mode` steers the server's per-type cooldown filter: No-Pinyin gates
+            // on the reading track, Pinyin on production (docs/MASTERY_REWORK.md
+            // § Per-type cooldown). `mode` is set once on mount, so capturing it in
+            // this empty-deps callback is stable.
+            const res = await fetch(`${API_BASE_URL}/api/onDeck/word-search-grid?${GRID_QUERY}&mode=${mode ?? ""}`, {
                 credentials: "include",
                 headers: authHeader(),
             });

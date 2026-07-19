@@ -45,4 +45,10 @@ router.get('/api/dictionary/count', authenticateToken, async (req, res) => {
   await dictionaryController.getCount(req, res);
 });
 
+// Paginated "used in" list for a single character (infinite scroll on the eip/cdp Used In list)
+// @ts-ignore
+router.get('/api/dictionary/used-in', authenticateToken, async (req, res) => {
+  await dictionaryController.usedIn(req, res);
+});
+
 export default router;

@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { UserService, IssuedRefreshToken } from '../services/UserService.js';
 import { IIcons8DAL } from '../dal/interfaces/IIcons8DAL.js';
+import { NightMarketWorldService } from '../services/NightMarketWorldService.js';
 import { ValidationError, DuplicateError, NotFoundError, DALError } from '../types/dal.js';
 
 // The access-token cookie lives at root (sent with every API request); the
@@ -23,7 +24,12 @@ const SECURE_COOKIES = process.env.NODE_ENV === 'production';
  */
 export class UserController {
   // icons8DAL is used only to validate avatar icon ids (PUT /api/users/avatar).
-  constructor(private userService: UserService, private icons8DAL: IIcons8DAL) {}
+  // nightMarketWorldService seeds each new account's origin hub placement (canonical path).
+  constructor(
+    private userService: UserService,
+    private icons8DAL: IIcons8DAL,
+    private nightMarketWorldService: NightMarketWorldService,
+  ) {}
 
   /**
    * Set the access + refresh cookies after a login or refresh. Both are httpOnly
@@ -60,19 +66,35 @@ export class UserController {
   }
 
   /**
+   * Canonical starter-hub seed for a freshly created account. Best-effort: a seeding failure
+   * (e.g. the hub template is not authored yet) must NOT fail account creation —
+   * NightMarketWorldService's first-load safety net will seed it on the user's first market load.
+   */
+  private async seedNightMarketHub(userId: string | undefined): Promise<void> {
+    if (!userId) return;
+    try {
+      await this.nightMarketWorldService.seedHubPlacement(userId);
+    } catch (seedError) {
+      console.error('[UserController] Night Market hub seed failed (non-fatal):', seedError);
+    }
+  }
+
+  /**
    * Register a new user
    * POST /api/auth/register
    */
   async register(req: Request, res: Response): Promise<void> {
     try {
       const { email, name, password } = req.body;
-      
+
       const newUser = await this.userService.createUser({
         email,
         name,
         password
       });
-      
+
+      await this.seedNightMarketHub(newUser.id);
+
       res.status(201).json(newUser);
     } catch (error) {
       this.handleError(error, res);
@@ -480,13 +502,15 @@ export class UserController {
   async createUser(req: Request, res: Response): Promise<void> {
     try {
       const { email, name, password } = req.body;
-      
+
       const newUser = await this.userService.createUser({
         email,
         name,
         password
       });
-      
+
+      await this.seedNightMarketHub(newUser.id);
+
       res.status(201).json(newUser);
     } catch (error) {
       this.handleError(error, res);

@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { DictionaryService } from '../services/DictionaryService.js';
+import { LazyEnrichmentService } from '../services/LazyEnrichmentService.js';
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import { IVocabEntryDAL } from '../dal/interfaces/IVocabEntryDAL.js';
 import { RateLimitError } from '../types/dal.js';
@@ -13,7 +14,8 @@ export class DictionaryController {
   constructor(
     private dictionaryService: DictionaryService,
     private userDAL: IUserDAL,
-    private vocabEntryDAL: IVocabEntryDAL
+    private vocabEntryDAL: IVocabEntryDAL,
+    private lazyEnrichmentService: LazyEnrichmentService
   ) {}
 
   /**
@@ -74,9 +76,76 @@ export class DictionaryController {
       }
 
       res.json(withUsedIn);
+
+      // On-open lazy-enrichment trigger (docs/DISCOVER_LAZY_ENRICHMENT.md §5). Opening
+      // a word's card-detail page (the eip drill-in link lands here) tops up its
+      // enrichment IFF the requester is a validator and the row is an incomplete zh
+      // candidate. Fire-and-forget AFTER responding — self-gating and never throws, so
+      // it can never delay or fail the lookup.
+      this.lazyEnrichmentService.triggerForWord({
+        word: entry.word1,
+        language,
+        isValidator: user?.isValidator,
+      });
     } catch (error: any) {
       console.error('Error looking up dictionary term:', error);
       res.status(500).json({ error: error.message || 'Failed to lookup term' });
+    }
+  }
+
+  /**
+   * Paginated "used in" list for a single character — the multi-char words that
+   * contain it, in the same vet-first / commonality ordering as the ≤4-item preview
+   * embedded on cards (see findUsedInForCharacter). Powers the infinite-scroll list
+   * on the eip "Used In" tab and the cdp "Used In" section: the card ships the first
+   * few via enrichment, and the client fetches subsequent windows here on scroll.
+   *
+   * GET /api/dictionary/used-in?character=<char>&offset=<num>&limit=<num>
+   * Returns { items: UsedInItem[], hasMore: boolean }. Chinese-only (non-zh → []).
+   */
+  async usedIn(req: Request, res: Response): Promise<void> {
+    try {
+      const { character, offset = '0', limit = '20' } = req.query;
+      const userId = (req as any).user?.userId;
+
+      if (!userId) {
+        res.status(401).json({ error: 'User not authenticated' });
+        return;
+      }
+
+      if (!character || typeof character !== 'string') {
+        res.status(400).json({ error: 'character parameter is required' });
+        return;
+      }
+
+      const offsetNum = parseInt(offset as string, 10);
+      const limitNum = parseInt(limit as string, 10);
+
+      if (isNaN(offsetNum) || offsetNum < 0) {
+        res.status(400).json({ error: 'Invalid offset' });
+        return;
+      }
+      if (isNaN(limitNum) || limitNum < 1 || limitNum > 50) {
+        res.status(400).json({ error: 'Invalid limit (must be between 1 and 50)' });
+        return;
+      }
+
+      const user = await this.userDAL.findById(userId);
+      const language = user?.selectedLanguage || 'zh';
+
+      // Fetch one extra row to detect whether a further page exists, then trim it off.
+      const rows = await this.vocabEntryDAL.findUsedInForCharacter(
+        userId,
+        character,
+        language,
+        limitNum + 1,
+        offsetNum
+      );
+      const hasMore = rows.length > limitNum;
+      res.json({ items: hasMore ? rows.slice(0, limitNum) : rows, hasMore });
+    } catch (error: any) {
+      console.error('Error fetching used-in list:', error);
+      res.status(500).json({ error: error.message || 'Failed to fetch used-in list' });
     }
   }
 

@@ -12,6 +12,7 @@ import { DictionaryService } from '../services/DictionaryService.js';
 import { TextService } from '../services/TextService.js';
 import { ValidationService } from '../services/ValidationService.js';
 import { StarterPacksService } from '../services/StarterPacksService.js';
+import { LazyEnrichmentService } from '../services/LazyEnrichmentService.js';
 import { SortPacksDAL } from './implementations/SortPacksDAL.js';
 import { UserController } from '../controllers/UserController.js';
 import { VocabEntryController } from '../controllers/VocabEntryController.js';
@@ -26,6 +27,10 @@ import { NightMarketService } from '../services/NightMarketService.js';
 import { NightMarketController } from '../controllers/NightMarketController.js';
 import { NightMarketTemplateService } from '../services/NightMarketTemplateService.js';
 import { NightMarketTemplateController } from '../controllers/NightMarketTemplateController.js';
+import { NightMarketPlacementDAL } from './implementations/NightMarketPlacementDAL.js';
+import { NightMarketPlacementService } from '../services/NightMarketPlacementService.js';
+import { NightMarketWorldService } from '../services/NightMarketWorldService.js';
+import { NightMarketWorldController } from '../controllers/NightMarketWorldController.js';
 import { GameAssetDAL } from './implementations/GameAssetDAL.js';
 import { GameProgressDAL } from './implementations/GameProgressDAL.js';
 import { Icons8DAL } from './implementations/Icons8DAL.js';
@@ -47,6 +52,7 @@ const userMinutePointsDAL = new UserMinutePointsDAL();
 const dictionaryDAL = new DictionaryDAL();
 const sortPacksDAL = new SortPacksDAL();
 const nightMarketDAL = new NightMarketDAL();
+const nightMarketPlacementDAL = new NightMarketPlacementDAL();
 const gameAssetDAL = new GameAssetDAL();
 const gameProgressDAL = new GameProgressDAL();
 const icons8DAL = new Icons8DAL();
@@ -57,32 +63,42 @@ const communityLayoutDAL = new CommunityLayoutDAL();
 const userService = new UserService(userDAL, refreshTokenDAL);
 const dictionaryService = new DictionaryService(dictionaryDAL);
 const vocabEntryService = new VocabEntryService(vocabEntryDAL, userDAL, dictionaryService);
+// Request-time (validator-gated) trigger for the zh discover lazy-enrichment pipeline
+// (docs/DISCOVER_LAZY_ENRICHMENT.md §5). Injected into the two trigger points below.
+const lazyEnrichmentService = new LazyEnrichmentService(userDAL);
 // Created before onDeckVocabService because Word Search borrows its level estimate.
-const starterPacksService = new StarterPacksService(vocabEntryDAL, dictionaryDAL, sortPacksDAL);
+const starterPacksService = new StarterPacksService(vocabEntryDAL, dictionaryDAL, sortPacksDAL, lazyEnrichmentService);
 const onDeckVocabService = new OnDeckVocabService(vocabEntryDAL, dictionaryService, starterPacksService);
-const userMinutePointsService = new UserMinutePointsService(userMinutePointsDAL, userDAL);
 const textService = new TextService(userDAL);
 // Validation reuses TextService to persist composed documents (with validation* columns).
 const validationService = new ValidationService(userDAL, textService);
 const nightMarketService = new NightMarketService(nightMarketDAL, userDAL);
 // Validator-authored template CATALOG (definitions), separate from the unlock economy.
 const nightMarketTemplateService = new NightMarketTemplateService(userDAL);
+// Per-user template LAYOUT read (placements → rendered world); seeds the origin hub.
+const nightMarketWorldService = new NightMarketWorldService(nightMarketPlacementDAL, nightMarketTemplateService);
+// Occupant/placement WRITE side (grant flow + spawn). Injected into the minute-points service so
+// earning a minute reconciles the user's unlock entitlement (best-effort — see below).
+const nightMarketPlacementService = new NightMarketPlacementService(nightMarketPlacementDAL, nightMarketTemplateService);
+// Constructed after the placement service so the grant hook can be wired in.
+const userMinutePointsService = new UserMinutePointsService(userMinutePointsDAL, userDAL, nightMarketPlacementService);
 const gameAssetService = new GameAssetService(gameAssetDAL);
 const gameProgressService = new GameProgressService(gameProgressDAL);
 // Community shared-layout feeds + votes; reuses vocabEntryService for the apply-to-card flow.
 const communityLayoutService = new CommunityLayoutService(communityLayoutDAL, vocabEntryService);
 
 // Controller instances
-const userController = new UserController(userService, icons8DAL);
+const userController = new UserController(userService, icons8DAL, nightMarketWorldService);
 const vocabEntryController = new VocabEntryController(vocabEntryService, dictionaryService);
 const onDeckVocabController = new OnDeckVocabController(onDeckVocabService);
 const userMinutePointsController = new UserMinutePointsController(userMinutePointsService);
-const dictionaryController = new DictionaryController(dictionaryService, userDAL, vocabEntryDAL);
+const dictionaryController = new DictionaryController(dictionaryService, userDAL, vocabEntryDAL, lazyEnrichmentService);
 const textController = new TextController(textService);
 const validationController = new ValidationController(validationService);
 const starterPacksController = new StarterPacksController(starterPacksService);
 const nightMarketController = new NightMarketController(nightMarketService);
 const nightMarketTemplateController = new NightMarketTemplateController(nightMarketTemplateService);
+const nightMarketWorldController = new NightMarketWorldController(nightMarketWorldService);
 const gamesController = new GamesController(gameAssetService, gameProgressService);
 // icons8 image serving is a thin DB read → no service layer; the controller takes the DAL directly.
 const icons8Controller = new Icons8Controller(icons8DAL);
@@ -118,6 +134,10 @@ export {
   nightMarketController,
   nightMarketTemplateService,
   nightMarketTemplateController,
+  nightMarketPlacementDAL,
+  nightMarketPlacementService,
+  nightMarketWorldService,
+  nightMarketWorldController,
   gameAssetDAL,
   gameProgressDAL,
   gameAssetService,

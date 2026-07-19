@@ -709,20 +709,36 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
   }
 
   /**
-   * For a single Chinese character, find up to `limit` multi-char words that contain it.
+   * For a single Chinese character, find the multi-char words that contain it —
+   * a single `LIMIT`/`OFFSET` window over one stable global ordering, so callers
+   * can page through the full list (used-in infinite scroll) as well as take just
+   * the leading preview (the ≤4-item list embedded on cards).
    *
-   * Pass 1: user's own vocabentries (vet). Joined to dictionaryentries_zh (det) so we can sort
-   *   by det."vernacularScore" DESC NULLS LAST (then entryKey ASC for determinism).
-   * Pass 2: if pass 1 returns fewer than `limit`, top up from det (global), skipping any
-   *   entryKeys already returned by pass 1. Same ordering. Pass-2 items have vocabEntryId=null.
+   * The universe is the union of two sources, ordered vet-first then by commonality:
+   *   - Pass 1 rows (`is_user = 1`): the user's own vocabentries (vet) containing the
+   *     char, LEFT-JOINed to dictionaryentries_zh (det) for pronunciation/definition/
+   *     "vernacularScore". These carry a real `vocabEntryId`.
+   *   - Pass 2 rows (`is_user = 0`): global det words containing the char that are NOT
+   *     already in the user's vet (deduped via NOT EXISTS). `vocabEntryId` is null.
+   * Only words with vernacularScore 3–5 are surfaced (common enough to be useful);
+   * this filter also excludes null-score rows, including in-library words whose det
+   * row has no score. ORDER BY is_user DESC, "vernacularScore" DESC NULLS LAST,
+   * char_length ASC, "entryKey" ASC — the user's saved (in-library) words come
+   * first, then by commonality, then shortest-word-first, with entryKey as a final
+   * deterministic tiebreak so pagination windows never overlap or skip.
    *
+   * `position(...) > 0` is a plain substring check — no regex meta to escape.
    * Chinese-only; returns [] for non-single-character input or non-zh language.
+   *
+   * Referenced by: DictionaryController.usedIn (paginated endpoint) and
+   * .lookupTerm / OnDeckVocabService.enrichWithUsedIn (offset-0 preview).
    */
   async findUsedInForCharacter(
     userId: string,
     character: string,
     language: string,
-    limit: number = 4
+    limit: number = 4,
+    offset: number = 0
   ): Promise<UsedInItem[]> {
     if (language !== 'zh') return [];
     if (!character) return [];
@@ -731,95 +747,80 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
 
     const ch: string = chars[0];
 
-    // Pass 1: user's vet entries containing the char (excluding the single-char itself).
-    // position(...) > 0 is a plain substring check — no regex meta to escape.
-    const vetQuery: string = `
+    const query: string = `
       SELECT
-        ve.id AS "vocabEntryId",
-        ve."entryKey",
-        de.pronunciation,
-        de.definition,
-        de."vernacularScore"
-      FROM vocabentries_zh ve
-      LEFT JOIN LATERAL (
-        SELECT pronunciation, definitions->>0 AS definition, "vernacularScore"
-        FROM dictionaryentries_zh
-        WHERE word1 = ve."entryKey" AND language = ve.language
-        LIMIT 1
-      ) de ON true
-      WHERE ve."userId" = $1
-        AND ve.language = $2
-        AND ve."entryKey" <> $3
-        AND position($3 IN ve."entryKey") > 0
-        AND char_length(ve."entryKey") <= 4
-      ORDER BY de."vernacularScore" DESC NULLS LAST, ve."entryKey" ASC
-      LIMIT $4
+        m."vocabEntryId",
+        m."entryKey",
+        m.pronunciation,
+        m.definition,
+        m."vernacularScore"
+      FROM (
+        -- Pass 1: the user's saved words (vet) containing the char.
+        SELECT
+          ve.id AS "vocabEntryId",
+          ve."entryKey",
+          de.pronunciation,
+          de.definition,
+          de."vernacularScore",
+          1 AS is_user
+        FROM vocabentries_zh ve
+        LEFT JOIN LATERAL (
+          SELECT pronunciation, definitions->>0 AS definition, "vernacularScore"
+          FROM dictionaryentries_zh
+          WHERE word1 = ve."entryKey" AND language = ve.language
+          LIMIT 1
+        ) de ON true
+        WHERE ve."userId" = $1
+          AND ve.language = $2
+          AND ve."entryKey" <> $3
+          AND position($3 IN ve."entryKey") > 0
+          AND char_length(ve."entryKey") <= 4
+
+        UNION ALL
+
+        -- Pass 2: global det words containing the char, excluding the user's vet words.
+        SELECT
+          NULL::int AS "vocabEntryId",
+          d.word1 AS "entryKey",
+          d.pronunciation,
+          d.definitions->>0 AS definition,
+          d."vernacularScore",
+          0 AS is_user
+        FROM dictionaryentries_zh d
+        WHERE d.language = $2
+          AND char_length(d.word1) > 1
+          AND char_length(d.word1) <= 4
+          AND d.word1 <> $3
+          AND position($3 IN d.word1) > 0
+          AND NOT EXISTS (
+            SELECT 1 FROM vocabentries_zh ve
+            WHERE ve."userId" = $1 AND ve.language = $2 AND ve."entryKey" = d.word1
+          )
+      ) m
+      -- Only surface reasonably common words (vernacularScore 3–5); this also drops
+      -- null-score rows, so an in-library word with no det score is filtered out too.
+      WHERE m."vernacularScore" BETWEEN 3 AND 5
+      ORDER BY m.is_user DESC, m."vernacularScore" DESC NULLS LAST, char_length(m."entryKey") ASC, m."entryKey" ASC
+      LIMIT $4 OFFSET $5
     `;
 
-    const vetResult = await this.dbManager.executeQuery<{
-      vocabEntryId: number;
+    const result = await this.dbManager.executeQuery<{
+      vocabEntryId: number | null;
       entryKey: string;
       pronunciation: string | null;
       definition: string | null;
       vernacularScore: number | null;
     }>(async (client) => {
-      return await client.query(vetQuery, [userId, language, ch, limit]);
+      return await client.query(query, [userId, language, ch, limit, offset]);
     });
 
-    const vetItems: UsedInItem[] = vetResult.recordset.map((row) => ({
-      vocabEntryId: row.vocabEntryId,
+    return result.recordset.map((row) => ({
+      vocabEntryId: row.vocabEntryId ?? null,
       entryKey: row.entryKey,
       pronunciation: row.pronunciation ?? null,
       definition: row.definition ?? null,
       vernacularScore: row.vernacularScore ?? null,
     }));
-
-    if (vetItems.length >= limit) return vetItems;
-
-    // Pass 2: top up from det, skipping pass-1 entryKeys.
-    const remaining: number = limit - vetItems.length;
-    const excluded: string[] = vetItems.map((i) => i.entryKey);
-
-    const detQuery: string = `
-      SELECT
-        word1 AS "entryKey",
-        pronunciation,
-        definitions->>0 AS definition,
-        "vernacularScore"
-      FROM dictionaryentries_zh
-      WHERE language = $1
-        AND char_length(word1) > 1
-        AND char_length(word1) <= 4
-        AND word1 <> $2
-        AND position($2 IN word1) > 0
-        AND ($3::text[] IS NULL OR word1 <> ALL($3::text[]))
-      ORDER BY "vernacularScore" DESC NULLS LAST, word1 ASC
-      LIMIT $4
-    `;
-
-    const detResult = await this.dbManager.executeQuery<{
-      entryKey: string;
-      pronunciation: string | null;
-      definition: string | null;
-      vernacularScore: number | null;
-    }>(async (client) => {
-      return await client.query(detQuery, [
-        language,
-        ch,
-        excluded.length > 0 ? excluded : null,
-        remaining,
-      ]);
-    });
-
-    const detItems: UsedInItem[] = detResult.recordset.map((row) => ({
-      vocabEntryId: null,
-      entryKey: row.entryKey,
-      pronunciation: row.pronunciation ?? null,
-      definition: row.definition ?? null,
-      vernacularScore: row.vernacularScore ?? null,
-    }));
-
-    return [...vetItems, ...detItems];
   }
 
   /**

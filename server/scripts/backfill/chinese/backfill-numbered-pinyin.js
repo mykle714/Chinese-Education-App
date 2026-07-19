@@ -20,7 +20,7 @@ import db from '../../../db.js';
 import { initRunLog } from '../run-log.js';
 const SCRIPT_VERSION = 1; // bump when this script's logic/prompt changes
 // run-log: track duration, version, and words/mode
-const { stampEntries } = initRunLog({ script: 'chinese/backfill-numbered-pinyin', version: SCRIPT_VERSION });
+const { stampEntries, staleClause } = initRunLog({ script: 'chinese/backfill-numbered-pinyin', version: SCRIPT_VERSION });
 
 const BATCH_SIZE = 500;
 
@@ -30,6 +30,12 @@ const targetWords = wordsArg ? wordsArg.slice('--words='.length).split(',').map(
 const wordsFilter = targetWords?.length
   ? `AND word1 = ANY(ARRAY[${targetWords.map(w => `'${w.replace(/'/g, "''")}'`).join(', ')}])`
   : '';
+
+// --stale: also (re)process rows stamped below SCRIPT_VERSION or never stamped, so a
+// populated-but-unstamped numberedPinyin row can be stamped (the on-first-sort worker
+// relies on this to reach completeness). See run-log staleClause.
+const isStale = process.argv.includes('--stale');
+const pinyinGate = isStale ? `("numberedPinyin" IS NULL OR ${staleClause()})` : '"numberedPinyin" IS NULL';
 
 /**
  * Maps every toned diacritic vowel to [base vowel, tone number].
@@ -101,7 +107,7 @@ async function backfillNumberedPinyin() {
     const countResult = await client.query(`
       SELECT COUNT(*) AS count
       FROM dictionaryentries_zh
-      WHERE language = 'zh' AND pronunciation IS NOT NULL AND "numberedPinyin" IS NULL ${wordsFilter}
+      WHERE language = 'zh' AND pronunciation IS NOT NULL AND ${pinyinGate} ${wordsFilter}
     `);
     const total = parseInt(countResult.rows[0].count, 10);
     console.log(`📊 Found ${total} DictionaryEntries needing numberedPinyin backfill\n`);
@@ -118,7 +124,7 @@ async function backfillNumberedPinyin() {
       const batchResult = await client.query(`
         SELECT id, pronunciation
         FROM dictionaryentries_zh
-        WHERE language = 'zh' AND pronunciation IS NOT NULL AND "numberedPinyin" IS NULL AND id > $1 ${wordsFilter}
+        WHERE language = 'zh' AND pronunciation IS NOT NULL AND ${pinyinGate} AND id > $1 ${wordsFilter}
         ORDER BY id ASC
         LIMIT $2
       `, [lastId, BATCH_SIZE]);

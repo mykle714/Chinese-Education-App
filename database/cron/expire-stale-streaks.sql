@@ -41,7 +41,23 @@
 -- from.
 --
 -- Logging: when >= 1 user is penalized, a NOTICE line names the count, user IDs,
--- and stamped missed dates. Idle ticks print only BEGIN / DO / COMMIT.
+-- stamped missed dates, and the number of night-market occupants decayed. Idle ticks
+-- print only BEGIN / DO / COMMIT.
+--
+-- ── Night-market unlock decay (second branch) ────────────────────────────────
+-- In the SAME transaction that debits minutes, trim each penalized user's night-
+-- market OCCUPANTS (nightmarketunlocks rows) down to their new entitlement
+-- target = unlocks(new_total). This mirrors the grant flow
+-- (NightMarketPlacementService.grantUnlocks): earning minutes fills slots, losing
+-- minutes frees them. Only OCCUPANTS are deleted -- placed templates
+-- (nightmarkettemplatelocations) are append-only and NEVER removed, so an emptied
+-- template simply renders its unoccupied version on the next layout read
+-- (recompute-on-read settles the version; this SQL stays pure -- it never computes
+-- a version). Freed slots return to the pool and a future grant backfills them.
+--
+-- The unlocks(m) schedule below is a HARD-CODED MIRROR of
+-- server/dal/shared/unlockSchedule.ts (SQL can't import TS). Keep the breakpoints
+-- in sync with UNLOCK_BREAKPOINTS + the steady-state formula there.
 
 BEGIN;
 
@@ -50,6 +66,7 @@ DECLARE
   penalty_count  int;
   penalty_ids    uuid[];
   penalty_dates  date[];
+  decay_count    int;
 BEGIN
   WITH candidates AS (
     SELECT id AS user_id,
@@ -107,14 +124,60 @@ BEGIN
     FROM final f
     WHERE u.id = f.user_id
     RETURNING f.user_id, f.missed_date, f.tier
+  ),
+  -- Night-market decay: each penalized user's new unlock entitlement from their post-debit
+  -- total. unlocks(m) mirrors server/dal/shared/unlockSchedule.ts (keep in sync).
+  decay_targets AS (
+    SELECT user_id,
+           CASE
+             WHEN new_total >= 60 THEN 17 + floor((new_total - 60) / 60)::int
+             WHEN new_total >= 52 THEN 16
+             WHEN new_total >= 47 THEN 15
+             WHEN new_total >= 42 THEN 14
+             WHEN new_total >= 38 THEN 13
+             WHEN new_total >= 34 THEN 12
+             WHEN new_total >= 30 THEN 11
+             WHEN new_total >= 26 THEN 10
+             WHEN new_total >= 22 THEN 9
+             WHEN new_total >= 18 THEN 8
+             WHEN new_total >= 14 THEN 7
+             WHEN new_total >= 10 THEN 6
+             WHEN new_total >= 7  THEN 5
+             WHEN new_total >= 5  THEN 4
+             WHEN new_total >= 3  THEN 3
+             WHEN new_total >= 2  THEN 2
+             WHEN new_total >= 1  THEN 1
+             ELSE 0
+           END AS target
+    FROM final
+  ),
+  -- Rank each user's occupants randomly; anything ranked beyond `target` is surplus to delete.
+  decay_ranked AS (
+    SELECT u.id AS unlock_id,
+           row_number() OVER (PARTITION BY l."userId" ORDER BY random()) AS rn,
+           dt.target
+    FROM nightmarketunlocks u
+    JOIN nightmarkettemplatelocations l ON l.id = u."placedTemplateId"
+    JOIN decay_targets dt ON dt.user_id = l."userId"
+  ),
+  -- Delete surplus occupants at random (rn > target). Templates are untouched (append-only);
+  -- the unlocks→locations FK cascades the OTHER way, so no placement is removed here.
+  decay_delete AS (
+    DELETE FROM nightmarketunlocks
+    WHERE id IN (SELECT unlock_id FROM decay_ranked WHERE rn > target)
+    RETURNING id
   )
-  SELECT COUNT(*), array_agg(user_id), array_agg(missed_date)
-  INTO   penalty_count, penalty_ids, penalty_dates
-  FROM   user_update;
+  -- Reference BOTH data-modifying CTEs so each executes; scalar sub-selects keep the counts
+  -- independent (user_update drives the penalty log, decay_delete the decay count).
+  SELECT (SELECT COUNT(*)             FROM user_update),
+         (SELECT array_agg(user_id)   FROM user_update),
+         (SELECT array_agg(missed_date) FROM user_update),
+         (SELECT COUNT(*)             FROM decay_delete)
+  INTO   penalty_count, penalty_ids, penalty_dates, decay_count;
 
   IF penalty_count > 0 THEN
-    RAISE NOTICE 'inactivity-cron escalating-penalty % count=% user_ids=% missed_dates=%',
-                 now(), penalty_count, penalty_ids, penalty_dates;
+    RAISE NOTICE 'inactivity-cron escalating-penalty % count=% user_ids=% missed_dates=% decayed_unlocks=%',
+                 now(), penalty_count, penalty_ids, penalty_dates, decay_count;
   END IF;
 END
 $$;

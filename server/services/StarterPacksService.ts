@@ -7,6 +7,7 @@ import db from '../db.js';
 import { dictTableForLanguage } from '../dal/shared/dictTable.js';
 import { vetTableForLanguage, UTCM_USERS_JOIN, UTCM_CATEGORY_EXPR } from '../dal/shared/vetTable.js';
 import { perfectTypedMarkHistory } from '../utils/masteryCompute.js';
+import { LazyEnrichmentService } from './LazyEnrichmentService.js';
 
 /**
  * Starter Packs Service
@@ -22,7 +23,8 @@ import { perfectTypedMarkHistory } from '../utils/masteryCompute.js';
  * `SortCardsPage.tsx` — because the level must react to a SortPack's outcome as soon as
  * it completes, not on the next server round-trip.
  *
- * Card source is the per-language dictionaryentries table (discoverable=TRUE). Per-user
+ * Card source is the per-language dictionaryentries table, gated by _supplyGate:
+ * zh on `sortable=TRUE` (migration 110, lazy-enrichment), es on `discoverable=TRUE`. Per-user
  * sort state lives in two places:
  *   - vocabentries (vet): "Add to Learn Now" / "Already Learned" rows persist what the
  *     user did with a card; the GENERATED `category` column (from markHistory) is what
@@ -57,7 +59,11 @@ export class StarterPacksService {
   constructor(
     private vocabEntryDAL: VocabEntryDAL,
     private dictionaryDAL: DictionaryDAL,
-    private sortPacksDAL: SortPacksDAL
+    private sortPacksDAL: SortPacksDAL,
+    // Request-time lazy-enrichment trigger (docs/DISCOVER_LAZY_ENRICHMENT.md §5).
+    // Sorting a zh card into Learn Now / Already-Learned tops up its enrichment when
+    // the sorter is a validator. Optional so non-DI test construction still works.
+    private lazyEnrichmentService?: LazyEnrichmentService
   ) {}
 
   /**
@@ -142,7 +148,6 @@ export class StarterPacksService {
       synonyms: row.synonyms,
       exampleSentences: row.exampleSentences,
       exampleSentencesMetadata: null, // Computed on-the-fly in _enrichDiscoverCards
-      characterRationale: row.characterRationale ?? null, // Display-ready jsonb (migration 102); no runtime enrichment
       // Optional icons8 icon for the card; client renders it via /api/icons8/<iconId>/image.
       iconId: row.iconId ?? null,
     }));
@@ -152,7 +157,6 @@ export class StarterPacksService {
    * Compute example-sentence enrichment metadata on-the-fly, in batch.
    * The enrichment method dispatches internally on language (Spanish uses
    * whitespace tokenization; Chinese uses greedy segmentation).
-   * (characterRationale needs no enrichment — it is a display-ready column.)
    */
   private async _enrichDiscoverCards(cards: DiscoverCard[], language: string): Promise<DiscoverCard[]> {
     return this.dictionaryDAL.enrichExampleSentencesMetadataBatch(cards, language);
@@ -186,6 +190,24 @@ export class StarterPacksService {
       levelExpr: `de."difficulty"`,
       validPredicate: `de."difficulty" BETWEEN 1 AND 6`,
     };
+  }
+
+  /**
+   * Supply-visibility gate for the discover flows (sort / quick-mark / progress).
+   *
+   * Chinese gates on the `sortable` flag (migration 110) so lazily-enriched cards
+   * appear in discover BEFORE full enrichment; other languages fall back to
+   * `discoverable` (they have no `sortable` column yet — see
+   * docs/DISCOVER_LAZY_ENRICHMENT.md, zh-only scope). `sortable` is a strict
+   * superset of `discoverable` (discoverable ⇒ sortable), so this never *hides* a
+   * previously-visible card.
+   *
+   * @param alias - table alias prefix incl. trailing dot (e.g. `de.`), or '' when
+   *   the query has no alias (getProgress).
+   */
+  private _supplyGate(language: string, alias = 'de.'): string {
+    const col = language === 'zh' ? 'sortable' : 'discoverable';
+    return `${alias}${col} = TRUE`;
   }
 
   /**
@@ -317,11 +339,11 @@ export class StarterPacksService {
       const result = await client.query(`
         SELECT de.id, de.word1, de.word2, de.pronunciation, de.tone, de.definitions,
                de.language, de.script, de."difficulty", de."vernacularScore", de.breakdown, de.synonyms,
-               de."exampleSentences", ${isEs ? 'NULL::jsonb AS "characterRationale"' : 'de."characterRationale"'},
+               de."exampleSentences",
                de."iconId"${posCols}
         FROM ${det} de
         WHERE de.language = $1
-          AND de.discoverable = TRUE
+          AND ${this._supplyGate(language)}
           AND ${validPredicate}
           AND NOT EXISTS (
             SELECT 1 FROM ${vetTable} ve
@@ -349,7 +371,7 @@ export class StarterPacksService {
       const totalResult = await client.query<{ count: string }>(`
         SELECT COUNT(*) as count
         FROM ${table}
-        WHERE language = $1 AND discoverable = TRUE
+        WHERE language = $1 AND ${this._supplyGate(language, '')}
       `, [language]);
 
       // "Sorted" = cards the user has acted on = library vet rows PLUS current skips.
@@ -448,11 +470,11 @@ export class StarterPacksService {
       const result = await client.query(`
         SELECT de.id, de.word1, de.word2, de.pronunciation, de.tone, de.definitions,
                de.language, de.script, de."difficulty", de."vernacularScore", de.breakdown, de.synonyms,
-               de."exampleSentences", ${isEs ? 'NULL::jsonb AS "characterRationale"' : 'de."characterRationale"'},
+               de."exampleSentences",
                de."iconId"${posCols}
         FROM ${det} de
         WHERE de.language = $1
-          AND de.discoverable = TRUE
+          AND ${this._supplyGate(language)}
           AND ${validPredicate}
           AND ${levelExpr} = $3
           AND NOT EXISTS (
@@ -618,6 +640,16 @@ export class StarterPacksService {
     // and later sorted (from an authored pack, or the Skipped-page popup) must leave
     // discover_skips so it no longer shows on the Skipped page.
     await this._clearSkip(userId, cardId, language);
+
+    // On-sort lazy-enrichment trigger (docs/DISCOVER_LAZY_ENRICHMENT.md §5). A skip
+    // never reaches here (it returned early above), so this fires only for a real sort
+    // into Learn Now / Already-Learned. Fire-and-forget: it self-gates to validators +
+    // incomplete zh rows and never throws, so it can't affect the sort response.
+    this.lazyEnrichmentService?.triggerForWord({
+      word: dictEntry.word1,
+      language: dictEntry.language,
+      userId,
+    });
 
     // Pack mode: the client owns its pack queue AND its own adaptive target level
     // (docs §6, rewritten) — it derives the pack's signal from the buckets it already
@@ -831,7 +863,7 @@ export class StarterPacksService {
       const result = await client.query(`
         SELECT de.id, de.word1, de.word2, de.pronunciation, de.tone, de.definitions,
                de.language, de.script, de."difficulty", de."vernacularScore", de.breakdown, de.synonyms,
-               de."exampleSentences", ${isEs ? 'NULL::jsonb AS "characterRationale"' : 'de."characterRationale"'},
+               de."exampleSentences",
                de."iconId"${posCols},
                EXISTS (
                  SELECT 1 FROM ${vetTable} ve
@@ -1044,7 +1076,7 @@ export class StarterPacksService {
       const result = await client.query(`
         SELECT de.id, de.word1, de.word2, de.pronunciation, de.tone, de.definitions,
                de.language, de.script, de."difficulty", de."vernacularScore", de.breakdown, de.synonyms,
-               de."exampleSentences", ${isEs ? 'NULL::jsonb AS "characterRationale"' : 'de."characterRationale"'},
+               de."exampleSentences",
                de."iconId"${posCols}
         FROM discover_skips ds
         JOIN ${det} de ON de.id = ds."cardId" AND de.language = ds.language

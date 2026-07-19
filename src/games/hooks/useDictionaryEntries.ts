@@ -7,7 +7,6 @@ export interface DictionaryEntry {
     pronunciation?: string | null;
     definition?: string | null;
     difficultyTag?: string | null;
-    characterRationale?: unknown;
     [key: string]: unknown;
 }
 

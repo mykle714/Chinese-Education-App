@@ -13,16 +13,11 @@
 // `definitionClusters` is the zh-only orthogonal sense-cluster column (migration
 // 90, docs/DEFINITION_CLUSTERS.md) — NULL for Spanish and for zh entries not yet
 // backfilled. Drives the flp sense-picker dropdown (EnglishBlock).
-//
-// `characterRationale` is the zh-only per-character rationale column (migration 102,
-// docs/CHARACTER_RATIONALE.md): jsonb array of {char, impliedWord} mapping each
-// character to the fuller word it abbreviates (or "") in a multi-char word. NULL for Spanish (the es branch substitutes
-// a typed NULL) and for zh entries not yet backfilled. Replaces the old expansion cols.
 export const DICT_COLS =
   `de.script, de.pronunciation, de.tone, de."difficulty", de."partsOfSpeech", ` +
   `de."vernacularScore", ` +
   `de.breakdown, de.synonyms, de."exampleSentences", ` +
-  `de."characterRationale", de."longDefinition", ` +
+  `de."longDefinition", ` +
   `de.pos, de."hasMultiplePos", de."alternateGender", de."alternateMeaning", ` +
   `de."iconId", ` +
   `de."definitionClusters", ` +
@@ -40,7 +35,7 @@ export const DICT_COLS =
 const DICT_LATERAL_SELECT_ZH =
   `SELECT script, pronunciation, tone, "difficulty", "partsOfSpeech", "vernacularScore",` +
   `       breakdown, synonyms,` +
-  `       "exampleSentences", "characterRationale", "longDefinition",` +
+  `       "exampleSentences", "longDefinition",` +
   `       NULL::varchar AS pos, FALSE AS "hasMultiplePos",` +
   `       NULL::varchar AS "alternateGender", NULL::text AS "alternateMeaning",` +
   `       "iconId",` +
@@ -53,7 +48,7 @@ const DICT_LATERAL_SELECT_ZH =
 const DICT_LATERAL_SELECT_ES =
   `SELECT script, pronunciation, tone, "difficulty", "partsOfSpeech", "vernacularScore",` +
   `       breakdown, synonyms,` +
-  `       "exampleSentences", NULL::jsonb AS "characterRationale", "longDefinition",` +
+  `       "exampleSentences", "longDefinition",` +
   `       pos, "hasMultiplePos", "alternateGender", "alternateMeaning",` +
   `       "iconId",` +
   `       NULL::jsonb AS "definitionClusters",` +

@@ -17,8 +17,12 @@ export type { PlaceholderArea };
  * Night Market Template Service — business logic for validator-authored template
  * definitions (docs/NIGHT_MARKET_TEMPLATE_EDITOR.md).
  *
- * LAYER: service layer. Only a validator (users.isValidator) may list, load, check a
- * name, save, or delete a template. Content is stored verbatim in the `definition`
+ * LAYER: service layer. AUTHORING (list, check a name, suggest a name, save, delete) is
+ * template-author-gated (users.isTemplateAuthor — migration 115, split from isValidator so
+ * dictionary data-approval and market-layout authoring are separate grants). LOADING
+ * (`getTemplate`) is NOT — it is a read the
+ * `/night-market` runtime performs for every authenticated user, so only authenticateToken
+ * guards it. Content is stored verbatim in the `definition`
  * JSONB column of `nightmarkettemplatedefinitions`; the scalar name/width/height are
  * lifted out so the name-availability check and listing can query them directly.
  *
@@ -43,8 +47,17 @@ export type { PlaceholderArea };
  * account-independent CATALOG of template definitions the placement system will
  * later draw from (see docs/NIGHT_MARKET_TEMPLATES.md).
  *
- * Depends on: migrations 107 + 108, IUserDAL.findById (validator gate).
+ * Depends on: migrations 107 + 108 + 115, IUserDAL.findById (template-author gate).
  */
+
+/**
+ * Name of the STARTER hub template — the block every user's market renders at origin before
+ * any unlocks. Identified by this exact name (no `isHub` column); the hub must be authored in
+ * the editor under this name. SERVER mirror of the client's `NIGHT_MARKET_HUB_TEMPLATE_NAME`
+ * (src/features/nightmarket/templateEditorApi.ts) — kept in sync by hand (the server can't
+ * import the client module). See docs/NIGHT_MARKET_TEMPLATE_RUNTIME_PLAN.md.
+ */
+export const NIGHT_MARKET_HUB_TEMPLATE_NAME = 'night-market-hub';
 
 /** Board dimension bounds (template cells). Templates are rectangular, any W×H. */
 export const MIN_TEMPLATE_DIM = 2;
@@ -65,7 +78,7 @@ export interface TemplateDefinition {
   /**
    * Placeholder AREAS (occupant slots) — fixed-size dropped rectangles ({col,row,w,h}, near
    * corner + span). Each is a distinct slot (adjacent areas do NOT merge) and may overlap any
-   * OTHER layer but not another area. Sizes are restricted to 5×5 / 5×10 / 10×5. SHARED across
+   * OTHER layer but not another area. Sizes are restricted to 4×5 / 5×4 / 4×10 / 10×4. SHARED across
    * all versions of a name: authoritative only on version 0; empty on other versions as stored,
    * populated from version 0 on read. (Legacy rows stored a flat string[] cell mask.)
    */
@@ -79,25 +92,12 @@ export interface TemplateDefinition {
    */
   condition: string[];
   /**
-   * Placed houses: front-corner anchor cell "col,row" (each a 4×5 footprint) + horizontal
-   * FLIP (mirror) orientation. Legacy rows stored bare "col,row" strings → read as flip:false.
-   */
-  houses: Array<{ cell: string; flip: boolean }>;
-  /**
-   * Per-cell decor: cell "col,row" → decor sprite STEM. Never under a house (houses
-   * overwrite decor); flush surface-family decor MAY coexist with a street, but BLOCKING
-   * decor (common/tree) may not (it clears the street walkability class in the editor).
+   * Per-cell decor: cell "col,row" → decor sprite STEM. Flush surface-family decor MAY coexist
+   * with a street, but BLOCKING decor (common/tree) may not (it clears the street walkability
+   * class in the editor).
    */
   decor: Record<string, string>;
 }
-
-/**
- * House footprint span in cells (mirrors src/engine/market/house.ts, kept in sync by
- * hand since the server can't import the client asset module): 4 along isoX (E–W) ×
- * 5 along isoY (N–S), anchored at the front (min-iso) corner and extending +isoX/+isoY.
- */
-export const HOUSE_FOOTPRINT_X = 4;
-export const HOUSE_FOOTPRINT_Y = 5;
 
 /**
  * Placeholder-area primitives (`PlaceholderArea`, `PLACEHOLDER_SIZES`, `placeholderAreasOverlap`)
@@ -110,38 +110,13 @@ export const HOUSE_FOOTPRINT_Y = 5;
  * `tree` (`tree_N` / `largeTree_N`) — as opposed to flush surface-family decor
  * (`{lightGrass|darkGrass|dirt}Decor_N`). Blocking objects are mutually exclusive with
  * the communal-walkable class (a park/plaza tile may hold flush surface flora but not a
- * tree/prop/house). Mirrors the stem naming the client tileset indexes by
+ * tree/prop). Mirrors the stem naming the client tileset indexes by
  * (src/engine/market/freeFarmTileset.ts `indexDecor`/`indexTree` +
  * `farmTerrain.isBlockingDecorUrl`) — kept in sync BY HAND, since the server can't
- * import that Vite asset module (same reason the house footprint dims are duplicated).
+ * import that Vite asset module.
  */
 function isBlockingDecorStem(stem: string): boolean {
   return /^decor_\d+$/.test(stem) || /^(tree|largeTree)_\d+$/.test(stem);
-}
-
-/**
- * Footprint spans for a house's mirror orientation. Mirrors the client geometry
- * (src/engine/market/house.ts `houseFootprintSpans`) — a flipped house's ground block is
- * the TRANSPOSE of the default (5 along isoX × 4 along isoY), because the horizontal sprite
- * mirror swaps the +isoX/+isoY screen directions. Kept in sync BY HAND (the server can't
- * import the client Vite module — same reason the footprint dims are duplicated here).
- */
-function houseFootprintSpans(flip: boolean): { spanX: number; spanY: number } {
-  return flip
-    ? { spanX: HOUSE_FOOTPRINT_Y, spanY: HOUSE_FOOTPRINT_X }
-    : { spanX: HOUSE_FOOTPRINT_X, spanY: HOUSE_FOOTPRINT_Y };
-}
-
-/** The cells a house anchored at (col,row) with the given `flip` covers, as "col,row" keys. */
-function houseFootprintCells(col: number, row: number, flip: boolean): string[] {
-  const { spanX, spanY } = houseFootprintSpans(flip);
-  const cells: string[] = [];
-  for (let dx = 0; dx < spanX; dx++) {
-    for (let dy = 0; dy < spanY; dy++) {
-      cells.push(`${col + dx},${row + dy}`);
-    }
-  }
-  return cells;
 }
 
 export interface TemplateDefinitionRow {
@@ -163,6 +138,19 @@ export interface LoadedTemplateRow extends TemplateDefinitionRow {
   availableVersions: number[];
 }
 
+/**
+ * The minimal per-version masks the runtime version SELECTOR needs (returned by
+ * {@link NightMarketTemplateService.getVersionScoringInputs}). `placeholderAreas` + board dims
+ * are shared across a name (from version 0); `street`/`condition` differ per version.
+ */
+export interface VersionScoringInputs {
+  availableVersions: number[];
+  width: number;
+  height: number;
+  placeholderAreas: PlaceholderArea[];
+  versions: Array<{ version: number; street: Set<string>; condition: Set<string> }>;
+}
+
 /** Lightweight row for the editor's Load dropdown — one entry PER NAME (not per version). */
 export interface TemplateSummary {
   name: string;
@@ -176,16 +164,33 @@ export interface TemplateSummary {
   description: string | null;
 }
 
+/**
+ * One entry for the editor's Load GALLERY (the visual template picker) — one per NAME,
+ * carrying the FULL definition of the version selected for its thumbnail: the version
+ * with the MOST condition cells (the richest layout to preview). Ties go to the highest
+ * version number; a name with only version 0 previews version 0 (0 conditions). The
+ * shared `placeholder` layout + `description` are single-sourced on version 0 (see the
+ * class doc), so they are merged in from version 0 when the chosen version is > 0.
+ */
+export interface TemplateGalleryEntry extends TemplateSummary {
+  /** The version chosen for the thumbnail (the one with the most condition cells). */
+  chosenVersion: number;
+  /** Number of condition CELLS in the chosen version's mask (the selection metric). */
+  conditionCount: number;
+  /** The chosen version's full painted definition (placeholder merged from v0). */
+  definition: TemplateDefinition;
+}
+
 export class NightMarketTemplateService {
   constructor(private readonly userDAL: IUserDAL) {}
 
-  /** Throw unless the user exists and is a validator (403). */
-  private async assertValidator(userId: string): Promise<void> {
+  /** Throw unless the user exists and is a template author (403). */
+  private async assertTemplateAuthor(userId: string): Promise<void> {
     const user = await this.userDAL.findById(userId);
     if (!user) throw new NotFoundError('User not found');
-    if (!user.isValidator) {
+    if (!user.isTemplateAuthor) {
       throw new DALError(
-        'Only validators can author Night Market templates',
+        'Only template authors can author Night Market templates',
         'ERR_FORBIDDEN',
         403,
       );
@@ -233,7 +238,7 @@ export class NightMarketTemplateService {
    * index is still the authoritative race guard at Save.
    */
   async isNameAvailable(userId: string, name: string): Promise<boolean> {
-    await this.assertValidator(userId);
+    await this.assertTemplateAuthor(userId);
     const clean = this.cleanName(name);
     const res = await dbManager.executeQuery<{ id: string }>(async (client) =>
       client.query(
@@ -254,7 +259,7 @@ export class NightMarketTemplateService {
    * concurrent create between suggest and save would surface there).
    */
   async suggestDefaultName(userId: string): Promise<string> {
-    await this.assertValidator(userId);
+    await this.assertTemplateAuthor(userId);
     const res = await dbManager.executeQuery<{ name: string }>(async (client) =>
       client.query(
         // Canonical decimal only: `template1`, `template2`, … (rejects `template01`).
@@ -276,7 +281,7 @@ export class NightMarketTemplateService {
    * the Load dropdown. Board dims come from version 0 (all versions share a size).
    */
   async listTemplates(userId: string): Promise<TemplateSummary[]> {
-    await this.assertValidator(userId);
+    await this.assertTemplateAuthor(userId);
     const res = await dbManager.executeQuery<TemplateSummary>(async (client) =>
       client.query(
         // One row per name from the base (min-version = version 0) row: its dims,
@@ -298,13 +303,103 @@ export class NightMarketTemplateService {
   }
 
   /**
-   * Fetch one template version by (name, version), validator-gated; 404 if it does
-   * not exist. Returns the row plus `availableVersions` (all version numbers for the
-   * name). For version > 0 the shared placeholder mask is merged in from version 0
-   * (other versions store an empty placeholder — see the class doc).
+   * List every template (template-author-gated) as ONE entry per name for the editor's
+   * Load GALLERY (the visual picker), each carrying the FULL definition of its thumbnail
+   * version — the version with the MOST condition cells (richest layout), tie-broken by
+   * the highest version number. Version 0 has no conditions, so a single-version template
+   * previews version 0. The shared `placeholder` layout + `description` (single-sourced on
+   * version 0) are merged in when the chosen version is > 0, so the thumbnail's placeholder
+   * tint and caption match every other view of the template.
+   *
+   * Two queries: (1) DISTINCT ON (name) picks the winning row per name ordered by condition
+   * length desc; (2) one pass over version-0 rows supplies the shared placeholder + author +
+   * description + a per-name version count. Board dims come from the chosen row (all versions
+   * of a name share one size, so this equals version 0's).
+   */
+  async listTemplateGallery(userId: string): Promise<TemplateGalleryEntry[]> {
+    await this.assertTemplateAuthor(userId);
+
+    // (1) The thumbnail row per name: the version with the most condition cells (tie →
+    //     highest version). DISTINCT ON keeps the first row per name under this ORDER BY.
+    const chosen = await dbManager.executeQuery<{
+      name: string;
+      chosenVersion: number;
+      width: number;
+      height: number;
+      definition: TemplateDefinition;
+      conditionCount: number;
+    }>(async (client) =>
+      client.query(
+        `SELECT DISTINCT ON (d.name)
+                d.name,
+                d.version AS "chosenVersion",
+                d.width,
+                d.height,
+                d.definition,
+                jsonb_array_length(COALESCE(d.definition->'condition', '[]'::jsonb)) AS "conditionCount"
+         FROM nightmarkettemplatedefinitions d
+         ORDER BY d.name ASC,
+                  jsonb_array_length(COALESCE(d.definition->'condition', '[]'::jsonb)) DESC,
+                  d.version DESC`,
+      ),
+    );
+
+    // (2) Version-0 metadata per name: shared placeholder + description, author name, and
+    //     the version count. Keyed by name for an O(1) merge below.
+    const base = await dbManager.executeQuery<{
+      name: string;
+      placeholder: PlaceholderArea[] | null;
+      description: string | null;
+      author: string | null;
+      versionCount: number;
+    }>(async (client) =>
+      client.query(
+        `SELECT d.name,
+                d.definition->'placeholder' AS placeholder,
+                d.description,
+                u.name AS author,
+                (SELECT COUNT(*)::int FROM nightmarkettemplatedefinitions d2 WHERE d2.name = d.name) AS "versionCount"
+         FROM nightmarkettemplatedefinitions d
+         LEFT JOIN users u ON u.id = d."createdBy"
+         WHERE d.version = 0`,
+      ),
+    );
+    const baseByName = new Map(base.recordset.map((b) => [b.name, b]));
+
+    return chosen.recordset.map((row) => {
+      const b = baseByName.get(row.name);
+      // Placeholder is owned by version 0 — always show v0's on the thumbnail (the chosen
+      // version stores an empty placeholder when it is > 0). Description likewise from v0.
+      row.definition.placeholder = Array.isArray(b?.placeholder) ? b!.placeholder : [];
+      return {
+        name: row.name,
+        width: row.width,
+        height: row.height,
+        versionCount: b?.versionCount ?? 1,
+        author: b?.author ?? null,
+        description: b?.description ?? null,
+        chosenVersion: row.chosenVersion,
+        conditionCount: row.conditionCount,
+        definition: row.definition,
+      };
+    });
+  }
+
+  /**
+   * Fetch one template version by (name, version); 404 if it does not exist. Returns
+   * the row plus `availableVersions` (all version numbers for the name). For version > 0
+   * the shared placeholder mask is merged in from version 0 (other versions store an
+   * empty placeholder — see the class doc).
+   *
+   * NOT validator-gated: loading a template is a read the RUNTIME performs for every
+   * user (the `/night-market` page renders the authored hub via `loadTemplate`). Only
+   * authenticated (enforced by the controller / authenticateToken). Authoring
+   * operations (list/name-check/suggest/save/delete) remain validator-gated. `userId`
+   * is retained for signature symmetry with the authoring methods and future
+   * per-user filtering.
    */
   async getTemplate(userId: string, name: string, version: number): Promise<LoadedTemplateRow> {
-    await this.assertValidator(userId);
+    void userId; // read is public to any authenticated user; see doc above
     const clean = this.cleanName(name);
     const ver = this.cleanVersion(version);
 
@@ -340,12 +435,83 @@ export class NightMarketTemplateService {
   }
 
   /**
+   * Load the per-version SCORING INPUTS for a template name — the minimal masks the runtime
+   * version selector needs to recompute a placement's active version on read
+   * (NightMarketWorldService, docs/NIGHT_MARKET_TEMPLATE_RUNTIME_PLAN.md § "Version selection —
+   * recompute on read"). One query pulls every version's `street` + `condition` masks; the
+   * shared `placeholder` areas and board dims come from version 0 (all versions share them).
+   *
+   * Returns street/condition as ready-to-use `Set<string>` (LOCAL "col,row" keys). 404s if the
+   * name has no rows. NOT validator-gated (a runtime read, like {@link getTemplate}).
+   */
+  async getVersionScoringInputs(name: string): Promise<VersionScoringInputs> {
+    const clean = this.cleanName(name);
+    const res = await dbManager.executeQuery<{
+      version: number;
+      width: number;
+      height: number;
+      street: string[] | null;
+      condition: string[] | null;
+      placeholder: PlaceholderArea[] | null;
+    }>(async (client) =>
+      client.query(
+        `SELECT version, width, height,
+                definition->'street'      AS street,
+                definition->'condition'   AS condition,
+                definition->'placeholder' AS placeholder
+         FROM nightmarkettemplatedefinitions WHERE name = $1 ORDER BY version ASC`,
+        [clean],
+      ),
+    );
+    if (res.recordset.length === 0) throw new NotFoundError('Template not found');
+
+    const base = res.recordset.find((r) => r.version === 0) ?? res.recordset[0];
+    const placeholderAreas = Array.isArray(base.placeholder) ? base.placeholder : [];
+
+    return {
+      availableVersions: res.recordset.map((r) => r.version),
+      width: base.width,
+      height: base.height,
+      placeholderAreas,
+      versions: res.recordset.map((r) => ({
+        version: r.version,
+        street: new Set<string>(Array.isArray(r.street) ? r.street : []),
+        condition: new Set<string>(Array.isArray(r.condition) ? r.condition : []),
+      })),
+    };
+  }
+
+  /**
+   * Load the STARTER hub template ({@link NIGHT_MARKET_HUB_TEMPLATE_NAME}) at a given version
+   * (default 0). Thin convenience over {@link getTemplate} used by the runtime layout read
+   * (NightMarketWorldService) to resolve the hub that seeds every user's market. Inherits
+   * getTemplate's public-read stance (any authenticated user) and its placeholder/description
+   * merge. 404s if the hub template has not been authored yet.
+   */
+  async getStarterTemplate(userId: string, version = 0): Promise<LoadedTemplateRow> {
+    return this.getTemplate(userId, NIGHT_MARKET_HUB_TEMPLATE_NAME, version);
+  }
+
+  /**
+   * Every distinct template name in the catalog (name-ordered). The spawn planner
+   * (NightMarketPlacementService.spawnTemplate) fans this out to {@link getVersionScoringInputs}
+   * to assemble the candidate catalog. NOT validator-gated — a runtime read (spawn runs
+   * server-side for any user), like {@link getVersionScoringInputs}.
+   */
+  async getCatalogNames(): Promise<string[]> {
+    const res = await dbManager.executeQuery<{ name: string }>(async (client) =>
+      client.query('SELECT DISTINCT name FROM nightmarkettemplatedefinitions ORDER BY name ASC'),
+    );
+    return res.recordset.map((r) => r.name);
+  }
+
+  /**
    * Hard-delete an ENTIRE template (all versions of `name`), validator-gated; 404 if
    * the name has no rows. Deleting is name-level (not version-level) so version 0 —
    * the placeholder source of truth — can never be orphaned beneath higher versions.
    */
   async deleteTemplate(userId: string, name: string): Promise<void> {
-    await this.assertValidator(userId);
+    await this.assertTemplateAuthor(userId);
     const clean = this.cleanName(name);
     const res = await dbManager.executeQuery<{ id: string }>(async (client) =>
       client.query('DELETE FROM nightmarkettemplatedefinitions WHERE name = $1 RETURNING id', [clean]),
@@ -362,7 +528,7 @@ export class NightMarketTemplateService {
    * Version" button on version 0 — this is the server-side backstop.
    */
   async deleteTemplateVersion(userId: string, name: string, version: number): Promise<void> {
-    await this.assertValidator(userId);
+    await this.assertTemplateAuthor(userId);
     const clean = this.cleanName(name);
     const ver = this.cleanVersion(version);
     if (ver === 0) {
@@ -396,7 +562,7 @@ export class NightMarketTemplateService {
     userId: string,
     input: { name: string; version: number; width: number; height: number; description?: unknown; definition: TemplateDefinition },
   ): Promise<{ template: TemplateDefinitionRow; overwritten: boolean }> {
-    await this.assertValidator(userId);
+    await this.assertTemplateAuthor(userId);
     const name = this.cleanName(input.name);
     const version = this.cleanVersion(input.version);
     const width = this.cleanDim(input.width, 'width');
@@ -482,14 +648,13 @@ export class NightMarketTemplateService {
   /**
    * Validate the painted masks: every cell is an in-bounds "col,row"; street and
    * communal are mutually exclusive (a cell is street-walkable OR communal-walkable);
-   * BOTH walkability classes are ALSO mutually exclusive with blocking objects (a house
-   * or common/tree decor — see {@link isBlockingDecorStem}); houses fit / don't overlap
-   * streets or each other; decor never hides under a house (flush family decor MAY sit on
-   * a street). Terrain 1 / terrain 2 are INDEPENDENT masks (terrain 2 renders only over
-   * terrain 1 at render time — see farmTerrain), and placeholder + condition are override
-   * overlays that may overlap anything. These coincidence rules mirror the editor's
-   * paint-time guards and are re-checked here so a client bug can't persist an illegal
-   * overlap. Returns a de-duplicated, canonicalized copy.
+   * BOTH walkability classes are ALSO mutually exclusive with blocking common/tree decor
+   * (see {@link isBlockingDecorStem}); flush family decor MAY sit on a street. Terrain 1 /
+   * terrain 2 are INDEPENDENT masks (terrain 2 renders only over terrain 1 at render time —
+   * see farmTerrain), and placeholder + condition are override overlays that may overlap
+   * anything. These coincidence rules mirror the editor's paint-time guards and are
+   * re-checked here so a client bug can't persist an illegal overlap. Returns a
+   * de-duplicated, canonicalized copy.
    */
   private cleanDefinition(def: unknown, width: number, height: number): TemplateDefinition {
     const d = (def ?? {}) as Partial<TemplateDefinition>;
@@ -515,7 +680,7 @@ export class NightMarketTemplateService {
     // Placeholder AREAS: fixed-size dropped rectangles ({col,row,w,h}), an override overlay so
     // they may overlap any OTHER layer — but each is a distinct occupant slot, so areas may not
     // overlap EACH OTHER, their whole footprint must be in-bounds, and their size must be one of
-    // the allowed drops (5×5 / 5×10 / 10×5). Mirrors the editor's drop guards.
+    // the allowed drops (4×5 / 5×4 / 4×10 / 10×4). Mirrors the editor's drop guards.
     const placeholder = this.cleanPlaceholderAreas(d.placeholder, width, height);
     // Condition is a per-cell override overlay (no mutual-exclusion), like the old placeholder.
     const condition = clean(d.condition, 'condition');
@@ -528,81 +693,30 @@ export class NightMarketTemplateService {
         throw new ValidationError(`Cell ${c} cannot be both street and communal-walkable`);
       }
     }
-    // Houses: each anchor's full footprint must be in-bounds, houses may not overlap each
-    // other, and no footprint cell may be a street (house placement overwrites decor but
-    // never a street — mirrors the editor's placement rule). The footprint is flip-aware
-    // (4×5 default, transposed to 5×4 when mirrored), matching the client geometry.
-    const houses = this.cleanHouses(d.houses, inBounds);
-    const houseOccupied = new Set<string>();
-    for (const { cell: anchor, flip } of houses) {
-      const [col, row] = anchor.split(',').map(Number);
-      const { spanX, spanY } = houseFootprintSpans(flip);
-      if (col + spanX > width || row + spanY > height) {
-        throw new ValidationError(`House at ${anchor} extends outside the ${width}×${height} board`);
-      }
-      for (const c of houseFootprintCells(col, row, flip)) {
-        if (houseOccupied.has(c)) throw new ValidationError(`Houses overlap at cell ${c}`);
-        houseOccupied.add(c);
-        if (streetSet.has(c)) throw new ValidationError(`House cell ${c} overlaps a street`);
-      }
-    }
-    // Decor may not sit under a house (houses overwrite decor). Flush surface-family
-    // decor MAY now coexist with a street (street is a spriteless tint, no longer a
-    // plank), so street is not a blanket decor exclusion here — blocking decor over a
-    // street is caught by the street-blocking loop below.
-    const decor = this.cleanDecor(d.decor, inBounds, houseOccupied);
+    // Flush surface-family decor MAY coexist with a street (street is a spriteless tint, no
+    // longer a plank), so street is not a blanket decor exclusion here — blocking decor over a
+    // street/communal cell is caught by the walkability loop below.
+    const decor = this.cleanDecor(d.decor, inBounds);
     // Street and communal are both walkability classes, mutually exclusive with BLOCKING
-    // objects — a house or common/tree decor overwrite them in the editor, so a payload
-    // with a walkability cell also under one is malformed (a bug slipped past the editor's
-    // guards). Flush surface-family decor may coexist, so it is NOT checked. This is the
-    // "check the coincidence rules at save" backstop. (Street⊥house is also caught in the
-    // house loop above; re-checking here keeps the two walkability classes symmetric.)
+    // common/tree decor — a prop/tree overwrites them in the editor, so a payload with a
+    // walkability cell also carrying blocking decor is malformed (a bug slipped past the
+    // editor's guards). Flush surface-family decor may coexist, so it is NOT checked. This is
+    // the "check the coincidence rules at save" backstop.
     for (const [c, label] of [
       ...communal.map((c) => [c, 'communal-walkable'] as const),
       ...street.map((c) => [c, 'street-walkable'] as const),
     ]) {
-      if (houseOccupied.has(c)) {
-        throw new ValidationError(`Cell ${c} is ${label} but sits under a house`);
-      }
       const stem = decor[c];
       if (stem && isBlockingDecorStem(stem)) {
         throw new ValidationError(`Cell ${c} is ${label} but carries blocking decor (${stem})`);
       }
     }
-    return { terrain1, terrain2, street, communal, placeholder, condition, houses, decor };
-  }
-
-  /**
-   * Normalize the houses payload to `{cell, flip}[]`. Accepts either legacy bare "col,row"
-   * strings (→ flip:false, from before mirror support) or `{cell, flip}` objects. Each anchor
-   * must be an in-bounds cell; duplicate anchors collapse to one. The footprint / overlap /
-   * street coincidence checks live in the caller (they need width/height + the street set).
-   */
-  private cleanHouses(raw: unknown, inBounds: Set<string>): Array<{ cell: string; flip: boolean }> {
-    if (raw == null) return [];
-    if (!Array.isArray(raw)) {
-      throw new ValidationError('Template houses must be an array');
-    }
-    const seen = new Set<string>();
-    const out: Array<{ cell: string; flip: boolean }> = [];
-    for (const h of raw) {
-      const cell = typeof h === 'string'
-        ? h
-        : (h && typeof h === 'object' ? (h as { cell?: unknown }).cell : undefined);
-      const flip = typeof h === 'object' && h != null ? !!(h as { flip?: unknown }).flip : false;
-      if (typeof cell !== 'string' || !inBounds.has(cell)) {
-        throw new ValidationError(`Template houses contains an out-of-bounds or malformed anchor: ${JSON.stringify(h)}`);
-      }
-      if (seen.has(cell)) continue; // de-dupe by anchor
-      seen.add(cell);
-      out.push({ cell, flip });
-    }
-    return out;
+    return { terrain1, terrain2, street, communal, placeholder, condition, decor };
   }
 
   /**
    * Validate + normalize the placeholder AREAS payload to `{col,row,w,h}[]`. Each must be a
-   * fixed-size drop (5×5 / 5×10 / 10×5 — {@link PLACEHOLDER_SIZES}), have its whole footprint
+   * fixed-size drop (4×5 / 5×4 / 4×10 / 10×4 — {@link PLACEHOLDER_SIZES}), have its whole footprint
    * in-bounds, and NOT overlap another area (each is a distinct occupant slot). Mirrors the
    * editor's drop guards so a malformed/overlapping payload can't be persisted. A legacy flat
    * `string[]` cell mask has no area shape to recover, so it is rejected (the author must
@@ -622,7 +736,7 @@ export class NightMarketTemplateService {
       }
       const area: PlaceholderArea = { col: col as number, row: row as number, w: w as number, h: h as number };
       if (!PLACEHOLDER_SIZES.some((s) => s.w === area.w && s.h === area.h)) {
-        throw new ValidationError(`Template placeholder area has an unsupported size ${area.w}×${area.h} (allowed: 5×5, 5×10, 10×5)`);
+        throw new ValidationError(`Template placeholder area has an unsupported size ${area.w}×${area.h} (allowed: 4×5, 5×4, 4×10, 10×4)`);
       }
       if (area.col < 0 || area.row < 0 || area.col + area.w > width || area.row + area.h > height) {
         throw new ValidationError(`Placeholder area at (${area.col},${area.row}) size ${area.w}×${area.h} extends outside the ${width}×${height} board`);
@@ -637,18 +751,12 @@ export class NightMarketTemplateService {
 
   /**
    * Validate the decor map: a `cell → sprite-stem` object whose keys are in-bounds
-   * cells and whose values are non-empty stems. A decor cell may NOT sit under a house
-   * (houses overwrite ALL decor — the editor enforces this, and we mirror it here). A
-   * street cell is allowed to carry FLUSH surface-family decor (street is now a spriteless
-   * tint); BLOCKING decor over a street is rejected separately by the caller's
-   * street-blocking check. Stems are accepted as opaque strings — the server has no
-   * tileset to validate them against.
+   * cells and whose values are non-empty stems. A street cell is allowed to carry FLUSH
+   * surface-family decor (street is now a spriteless tint); BLOCKING decor over a street is
+   * rejected separately by the caller's street-blocking check. Stems are accepted as opaque
+   * strings — the server has no tileset to validate them against.
    */
-  private cleanDecor(
-    raw: unknown,
-    inBounds: Set<string>,
-    houseOccupied: Set<string>,
-  ): Record<string, string> {
+  private cleanDecor(raw: unknown, inBounds: Set<string>): Record<string, string> {
     if (raw == null) return {};
     if (typeof raw !== 'object' || Array.isArray(raw)) {
       throw new ValidationError('Template decor must be an object of cell → sprite');
@@ -660,9 +768,6 @@ export class NightMarketTemplateService {
       }
       if (typeof stem !== 'string' || stem.trim().length === 0) {
         throw new ValidationError(`Template decor cell ${cell} has an invalid sprite`);
-      }
-      if (houseOccupied.has(cell)) {
-        throw new ValidationError(`Template decor cell ${cell} is under a house (houses overwrite decor)`);
       }
       out[cell] = stem;
     }

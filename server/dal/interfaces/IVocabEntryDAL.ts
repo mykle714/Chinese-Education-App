@@ -69,7 +69,8 @@ export interface IVocabEntryDAL extends IBaseDAL<VocabEntry, VocabEntryCreateDat
     userId: string,
     character: string,
     language: string,
-    limit?: number
+    limit?: number,
+    offset?: number
   ): Promise<UsedInItem[]>;
 
   // Batch operations with progress tracking

@@ -9,7 +9,7 @@ import db from '../../../db.js';
 import { initRunLog } from '../run-log.js';
 const SCRIPT_VERSION = 1; // bump when this script's logic/prompt changes
 // run-log: track duration, version, and words/mode
-const { stampEntries } = initRunLog({ script: 'chinese/backfill-tones', version: SCRIPT_VERSION });
+const { stampEntries, staleClause } = initRunLog({ script: 'chinese/backfill-tones', version: SCRIPT_VERSION });
 
 const BATCH_SIZE = 500;
 
@@ -19,6 +19,12 @@ const targetWords = wordsArg ? wordsArg.slice('--words='.length).split(',').map(
 const wordsFilter = targetWords?.length
   ? `AND word1 = ANY(ARRAY[${targetWords.map(w => `'${w.replace(/'/g, "''")}'`).join(', ')}])`
   : '';
+
+// --stale: also (re)process rows stamped below this script's SCRIPT_VERSION or never
+// stamped — needed so a populated-but-unstamped tone row can be stamped (the
+// on-first-sort worker relies on this to reach completeness). See run-log staleClause.
+const isStale = process.argv.includes('--stale');
+const toneGate = isStale ? `(tone IS NULL OR ${staleClause()})` : 'tone IS NULL';
 
 const TONE_MARK_MAP = {
   'ā': 1, 'á': 2, 'ǎ': 3, 'à': 4,
@@ -55,7 +61,7 @@ async function backfillDictionaryTones() {
     const countResult = await client.query(`
       SELECT COUNT(*) as count
       FROM dictionaryentries_zh
-      WHERE language = 'zh' AND pronunciation IS NOT NULL AND tone IS NULL ${wordsFilter}
+      WHERE language = 'zh' AND pronunciation IS NOT NULL AND ${toneGate} ${wordsFilter}
     `);
     const total = parseInt(countResult.rows[0].count, 10);
     console.log(`📊 Found ${total} DictionaryEntries needing tone backfill\n`);
@@ -74,7 +80,7 @@ async function backfillDictionaryTones() {
       const batchResult = await client.query(`
         SELECT id, pronunciation
         FROM dictionaryentries_zh
-        WHERE language = 'zh' AND pronunciation IS NOT NULL AND tone IS NULL AND id > $1 ${wordsFilter}
+        WHERE language = 'zh' AND pronunciation IS NOT NULL AND ${toneGate} AND id > $1 ${wordsFilter}
         ORDER BY id ASC
         LIMIT $2
       `, [lastId, BATCH_SIZE]);

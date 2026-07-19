@@ -88,7 +88,7 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
     }
 
     const result = await this.dbManager.executeQuery<User>(async (client) => {
-      return await client.query('SELECT id, email, name, "isPublic", "isValidator", "avatarIconId", "selectedLanguage", "readingGoal", "writingGoal", "lastMinutePointIncrement", "createdAt" FROM Users WHERE id = $1', [id]);
+      return await client.query('SELECT id, email, name, "isPublic", "isValidator", "isTemplateAuthor", "avatarIconId", "selectedLanguage", "readingGoal", "writingGoal", "lastMinutePointIncrement", "createdAt" FROM Users WHERE id = $1', [id]);
     });
 
     return result.recordset[0] || null;
@@ -230,6 +230,33 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
     });
 
     return result.rowsAffected > 0;
+  }
+
+  /**
+   * Adjust totalMinutePoints (the NET balance) by a SIGNED delta, floored at 0 — the general
+   * form of incrementTotalMinutePoints that also allows debits without underflowing. Returns the
+   * resulting balance. Used by the author minute-adjust tool (a −N debit floors like the penalty
+   * cron's GREATEST(0, …)); the study-tick +1 path keeps using incrementTotalMinutePoints.
+   */
+  async adjustTotalMinutePoints(userId: string, delta: number): Promise<number> {
+    if (!userId) {
+      throw new ValidationError('User ID is required');
+    }
+
+    const result = await this.dbManager.executeQuery<{ totalminutepoints: number }>(async (client) => {
+      return await client.query(
+        `UPDATE Users
+         SET "totalMinutePoints" = GREATEST(0, "totalMinutePoints" + $1)
+         WHERE id = $2
+         RETURNING "totalMinutePoints" AS totalminutepoints`,
+        [delta, userId]
+      );
+    });
+
+    if (result.recordset.length === 0) {
+      throw new NotFoundError(`User with ID ${userId} not found`);
+    }
+    return result.recordset[0].totalminutepoints ?? 0;
   }
 
   /**

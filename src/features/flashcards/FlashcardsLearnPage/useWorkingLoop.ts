@@ -16,8 +16,28 @@ import type {
 const markTypeForSideOne = (sideOne: SideOneLanguage): MarkType =>
     sideOne === "en" ? "production" : "recognition";
 
-// Pick a random language for a card's Side 1. Side 2 always shows both.
-const randomSideOneLanguage = (): SideOneLanguage => (Math.random() < 0.5 ? "en" : "zh");
+// Choose which language shows on a specific card's Side 1, honoring the server's
+// per-type cooldown steering (docs/MASTERY_REWORK.md § Per-type cooldown). The
+// card's `readyMarkTypes` lists the flp mark types currently off cooldown; we map
+// production ↔ 'en' (English-first) and recognition ↔ 'zh' (foreign-first),
+// mirroring markTypeForSideOne:
+//   - only production ready  → English-first
+//   - only recognition ready → foreign-first
+//   - both ready (or the field is absent, e.g. an older payload) → honor
+//     `preferEnglishFirst`, otherwise a coin flip (the historical behavior).
+// Side 2 always shows both.
+const sideOneForCard = (
+    card: VocabEntry | null | undefined,
+    preferEnglishFirst = false
+): SideOneLanguage => {
+    const ready = card?.readyMarkTypes;
+    const canProduction = !ready || ready.includes("production");
+    const canRecognition = !ready || ready.includes("recognition");
+    if (canProduction && !canRecognition) return "en";
+    if (canRecognition && !canProduction) return "zh";
+    if (preferEnglishFirst) return "en";
+    return Math.random() < 0.5 ? "en" : "zh";
+};
 
 // Minimal contract the working loop needs from the card-drag layer. Passed as a
 // ref so this hook can read the latest flip value (for undo snapshots) and drive
@@ -149,16 +169,18 @@ export function useWorkingLoop({
                 // resets isFlipped on card change, but currentIndex stays 0 on a
                 // fresh fetch so that reset may not fire — reset explicitly here.
                 cardDragRef.current?.setIsFlipped(false);
-                // First time the user lands on /flashcards/learn, force English on
-                // side one so the first card is always the EN prompt. Avoids the
-                // iOS autoplay edge case on Chinese-side-one auto-narration and
-                // gives a consistent initial view. Subsequent fetches (category
-                // swaps without unmount) go back to random.
+                // First time the user lands on /flashcards/learn, prefer English on
+                // side one so the first card is (when eligible) the EN prompt. Avoids
+                // the iOS autoplay edge case on Chinese-side-one auto-narration and
+                // gives a consistent initial view. Per-type cooldown still wins: if
+                // the first card's production track is cooling, sideOneForCard falls
+                // back to the recognition face. Subsequent fetches (category swaps
+                // without unmount) go back to the steered coin flip.
                 setCurrentSideOneLanguage(
-                    isFirstWorkingLoopFetchRef.current ? "en" : randomSideOneLanguage()
+                    sideOneForCard(cards[0], isFirstWorkingLoopFetchRef.current)
                 );
                 isFirstWorkingLoopFetchRef.current = false;
-                setNextSideOneLanguage(randomSideOneLanguage());
+                setNextSideOneLanguage(sideOneForCard(cards[1]));
             } catch (err) {
                 setError(err instanceof Error ? err.message : "Unknown error");
             } finally {
@@ -256,11 +278,14 @@ export function useWorkingLoop({
         setFlyOut({ slot: activeFrontSlot, direction });
         setActiveFrontSlot(prev => (1 - prev) as 0 | 1);
         setCurrentIndex(prev => (prev + 1) % workingLoop.length);
-        // Promote the peeking card's language to current and generate a fresh
-        // random language for the new back-slot card. useCardDrag resets
+        // Promote the peeking card's language to current and choose the new
+        // back-slot card's Side 1 from ITS readyMarkTypes (steered per-type
+        // cooldown). The new back card is two ahead of the outgoing front (the
+        // card just promoted to front sits one ahead). useCardDrag resets
         // isFlipped=false on card change (keyed off currentIndex).
         setCurrentSideOneLanguage(nextSideOneLanguage);
-        setNextSideOneLanguage(randomSideOneLanguage());
+        const newBackCard = workingLoop[(currentIndex + 2) % workingLoop.length];
+        setNextSideOneLanguage(sideOneForCard(newBackCard));
 
         // Fire mark API in background — newCard replaces the current slot, not the
         // next one, so the UI doesn't need to wait for the response before

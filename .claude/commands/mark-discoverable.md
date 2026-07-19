@@ -48,7 +48,7 @@ UPDATE dictionaryentries_zh SET
   "numberedPinyin" = '<numbered form>',
   definitions = '<cedict defs JSON for new pinyin>'::jsonb,
   tone = NULL, "hskLevel" = NULL, "longDefinition" = NULL, breakdown = NULL,
-  synonyms = NULL, "exampleSentences" = NULL, "characterRationale" = NULL, classifier = NULL,
+  synonyms = NULL, "exampleSentences" = NULL, classifier = NULL,
   "vernacularScore" = NULL,
   "shortDefinitionPronunciationOverride" = NULL,
   "exampleSentenceDefinitionPronunciationOverride" = NULL
@@ -83,16 +83,7 @@ docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-vernacul
 docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --words=未来,摸脉
 docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-example-sentences.js --words=未来,摸脉
 docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-classifier.js --words=未来,摸脉
-docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-character-rationale.js --words=未来,摸脉
 ```
-
-`backfill-character-rationale` runs last: for each multi-char word it explains,
-character by character, why that character is used (folding in an implied longer
-word when illuminating). It only processes words with `char_length(word1) > 1`
-(single characters are skipped). Its `'[]'` (empty-array) sentinel means
-"attempted, no worthwhile breakdown" (e.g. transliterations like 咖啡) — so some
-discoverable words legitimately end with an empty rationale; that is expected,
-not a gap. See `docs/CHARACTER_RATIONALE.md`.
 
 **Parts of speech must run before `backfill-word-forms`, `backfill-long-definitions`, AND `backfill-example-sentences`.** All three depend on `partsOfSpeech`: word-forms and long-definitions only process rows where `partsOfSpeech IS NOT NULL` (they silently skip otherwise), and the example-sentence prompt enforces at least one sentence per listed POS. `backfill-word-forms` additionally reads `definitions[0]`, so it must also run after `backfill-process-definitions-array`. It writes an English `wordForms` map (e.g. `{"past":"ran",...}`), or `{}` when no forms apply, so re-runs skip already-processed rows.
 

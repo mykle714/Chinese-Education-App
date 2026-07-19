@@ -17,8 +17,9 @@ to any individual card**. It is a tab in the eip's **entry-tab strip** — the s
 `EipTabStrip` / `useEipTabs` system that breakdown-word links use to open additional word tabs.
 
 - **Singleton**: at most one Compare tab exists in the strip at a time.
-- **Entry point**: a Compare icon button in the eip entry header's action column (next to
-  `PracticeWritingButton` + `SpeakerButton`). Tapping it pushes the Compare tab (or focuses the
+- **Entry point**: a Compare icon button in the eip entry header's 2×2 action grid (alongside
+  `PracticeWritingButton`, `SpeakerButton`, and the "+ Add to Learn Now" button — reading order
+  Practice / Speaker · Compare / Add). Tapping it pushes the Compare tab (or focuses the
   existing one) and **auto-populates slot A** with the word the user navigated from.
 - **Re-entry from a different word** (Compare tab already open): focus it, **refill slot A**
   with the new source word, and **clear slot B** back to the `+` placeholder (decided — the old
@@ -32,7 +33,7 @@ to any individual card**. It is a tab in the eip's **entry-tab strip** — the s
 
 References: `src/features/flashcards/FlashcardsLearnPage/useEipTabs.ts` (`EipTab`,
 `measureTabWidth`, overflow fitting — the "Compare" label goes through the same width
-measurement), `EipTabStrip.tsx`, `InfoCardPanelBody.tsx` (header actions column, the
+measurement), `EipTabStrip.tsx`, `InfoCardPanelBody.tsx` (header 2×2 action grid, the
 `mobile-demo-eic-actions` Box), `FlashcardsLearnPage.tsx` (mounts both eip wrappers).
 
 The eip renders on flp only (bottom-sheet `InfoCardSection` + centered `InfoCardPopup`); both
@@ -166,7 +167,7 @@ CREATE TABLE word_comparison_cache (
 | Client hook | `src/hooks/useWordComparison.ts` (**new**) | fires the compare request; loading / error / `limitReached` states |
 | Client state | `src/features/flashcards/FlashcardsLearnPage/useEipTabs.ts` | `EipTab` discriminated union (`kind: 'entry' \| 'compare'`); singleton push/focus/refill semantics |
 | Client UI | `src/features/flashcards/FlashcardsLearnPage/CompareTabBody.tsx` (**new**) | slots + search mode (keypad + bar + result cards) + comparison display |
-| Client UI | `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx` | Compare icon button in the header actions column |
+| Client UI | `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx` | Compare icon button in the header 2×2 action grid |
 | Client UI | `src/components/PinyinKeypad.tsx` (**new**, extracted) | shared tone-vowel / accent keypad; replaces DictionaryPage's two inline copies |
 | Client UI | `src/components/CPCDRow.tsx`, `src/components/ForeignText.tsx` | new `"xl"` `CPCDSize` |
 | Reused | `src/hooks/useDictionarySearch.ts`, `src/components/DictionaryEntryRow.tsx` | slot-B search + result cards |

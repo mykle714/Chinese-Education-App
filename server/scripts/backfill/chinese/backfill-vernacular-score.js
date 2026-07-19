@@ -35,12 +35,25 @@ const SCRIPT_VERSION = 1; // bump when this script's logic/prompt changes
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // run-log: track duration, version, words/mode, and token usage/cost
-const { stampEntries } = initRunLog({ script: 'chinese/backfill-vernacular-score', version: SCRIPT_VERSION, anthropic: anthropic });
+const { stampEntries, staleClause } = initRunLog({ script: 'chinese/backfill-vernacular-score', version: SCRIPT_VERSION, anthropic: anthropic });
 
 const isSpotCheck = process.argv.includes('--spot-check');
 const isRandom = process.argv.includes('--random');
 const limitArg = process.argv.find(a => a.startsWith('--limit='));
 const spotCheckLimit = limitArg ? parseInt(limitArg.split('=')[1], 10) : 5;
+
+// --words=未来,摸脉 → scope to specific entries (needed by the on-first-sort worker).
+const wordsArg = process.argv.find(a => a.startsWith('--words='));
+const targetWords = wordsArg ? wordsArg.slice('--words='.length).split(',').map(s => s.trim()).filter(Boolean) : null;
+const wordsFilter = targetWords?.length
+  ? `AND word1 = ANY(ARRAY[${targetWords.map(w => `'${w.replace(/'/g, "''")}'`).join(', ')}])`
+  : '';
+// Targeted runs enrich the named words regardless of discoverable (worker candidates
+// are not-yet-discoverable); untargeted full runs keep the discoverable gate.
+const discoverableGate = targetWords?.length ? '' : 'AND discoverable = TRUE';
+// --stale: also (re)process rows stamped below SCRIPT_VERSION or never stamped.
+const isStale = process.argv.includes('--stale');
+const scoreGate = isStale ? `("vernacularScore" IS NULL OR ${staleClause()})` : '"vernacularScore" IS NULL';
 
 // The rubric + scorer live in the shared lib (./lib/vernacularScore.js) so the
 // definition-clustering backfill scores each sense cluster on the identical 1–5
@@ -65,8 +78,9 @@ async function run() {
       SELECT id, word1, pronunciation, definitions
       FROM dictionaryentries_zh
       WHERE language = 'zh'
-        AND discoverable = TRUE
-        AND "vernacularScore" IS NULL
+        ${discoverableGate}
+        AND ${scoreGate}
+        ${wordsFilter}
       ORDER BY ${isRandom ? 'RANDOM()' : 'id ASC'}
       ${isSpotCheck ? `LIMIT ${spotCheckLimit}` : ''}
     `);

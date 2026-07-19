@@ -219,11 +219,15 @@ export interface VocabEntry {
   selectedSense?: string | null;  // Per-card chosen cluster `sense` label (vet column, migration 99). NULL = default/starred sense. Absent on det-fallback entries (dictionary cdp). See docs/DEFINITION_CLUSTERS.md
   category?: FlashcardCategory;  // utcm level, derived server-side from typedMarkHistory + the account's goals (migration 101)
   typedMarkHistory?: TypedMarkHistory;  // Per-type mark streams (migration 101); drives the cdp progress bar. See docs/MASTERY_REWORK.md
+  // flp face-steering (docs/MASTERY_REWORK.md § Per-type cooldown): the flp mark
+  // types ('recognition'/'production') currently off cooldown, stamped by the
+  // server when this card is offered in the working loop. useWorkingLoop's
+  // sideOneForCard uses it to pick the shown face. Absent ⇒ not flp-routed.
+  readyMarkTypes?: MarkType[];
   starterPackBucket?: StarterPackBucket | null;
   breakdown?: Record<string, { definition: string; pronunciation?: string; sense?: string }> | null;
   synonyms?: string[];
   synonymsMetadata?: Record<string, { definition: string; pronunciation: string }> | null; // Computed at runtime by server
-  characterRationale?: Array<{ char: string; impliedWord: string }> | null;  // zh-only per-character mapping: each char → the fuller everyday word it abbreviates, or "" (migration 102, docs/CHARACTER_RATIONALE.md). Replaces expansion.
   iconId?: string | null;  // Representative icons8 icon joined from det; rendered via <img src="/api/icons8/<iconId>/image">
   iconLayout?: IconLayoutItem[] | null;  // Custom flashcard icon arrangement (vet column, migration 82). NULL = use the default centered iconId. See docs/CARD_ICON_LAYOUT.md
   snapConfig?: SnapConfig | null;  // Per-card icon-editor snap toggles (vet column, migration 88). NULL = all off. See docs/CARD_ICON_LAYOUT.md
@@ -352,7 +356,6 @@ export interface DiscoverCard {
     segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; wordForms?: Record<string, string> }>;
     humanApproved?: boolean;   // Server-computed: TRUE iff a validator approved this exact sentence content (validations row, action='approve') and it still matches the det data (docs/DATA_VALIDATION_SYSTEM.md). Falsy ⇒ est renders the AI-generated styling
   }> | null;
-  characterRationale?: Array<{ char: string; impliedWord: string }> | null;  // zh-only per-character mapping: each char → the fuller everyday word it abbreviates, or "" (migration 102, docs/CHARACTER_RATIONALE.md). Replaces expansion.
   // Optional icons8 icon assigned to this entry (icons8Id); the client renders
   // the icon via <img src="/api/icons8/<iconId>/image">. Null when no icon assigned.
   iconId?: string | null;
@@ -415,6 +418,7 @@ export interface User {
   password?: string; // Not returned to client
   isPublic?: boolean;
   isValidator?: boolean; // Whether user may download/validate dictionary entries (migration 104)
+  isTemplateAuthor?: boolean; // Whether user may author Night Market templates (migration 115); distinct from isValidator
   selectedLanguage?: Language;
   createdAt?: Date;
 }

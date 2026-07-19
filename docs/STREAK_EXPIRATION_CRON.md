@@ -2,10 +2,13 @@
 
 An hourly Postgres cron. It debits minute points from users who fall below the
 `RETENTION_MINUTES` (3-min) streak threshold, on an **escalating schedule** that
-grows with each consecutive missed local day. One transaction, one crontab line
-(`database/cron/expire-stale-streaks.sql`).
+grows with each consecutive missed local day, and — in the **same transaction** —
+decays their Night Market occupants back down to what the lowered minute total now
+entitles (`database/cron/expire-stale-streaks.sql`). A **companion job** one minute
+later then prunes any template that decay left empty and dangling (compiled JS, see
+Branch 2). Two crontab lines, installed together by `database/cron/install-cron.sh`.
 
-## Escalating penalty (single branch)
+## Branch 1 — Escalating penalty
 
 A user "misses" a day when they do not reach the 3-min threshold that local day.
 Missing is tracked purely by `users.lastStreakDate` — the last local day the user
@@ -47,10 +50,14 @@ threshold again** (the increment path sets `lastStreakDate = that day`, driving
 who have never hit the threshold (`lastStreakDate IS NULL` — no reference day to
 escalate from) are out of scope.
 
-> **This cron is the sole authority for streak breaks and point penalties.** No
-> application code writes `penaltyMinutes` or debits points for inactivity — the
-> former `UserDAL.applyStreakPenalty` and `UserMinutePointsDAL.addPenaltyMinutesForDate`
-> methods were removed once they became dead alternates to this SQL.
+> **This cron is the sole authority for streak breaks and INACTIVITY penalties.** No
+> application code debits points for inactivity (`UserDAL.applyStreakPenalty` was removed
+> as a dead alternate to this SQL). One narrow exception writes `penaltyMinutes` from app
+> code: the **template-author dev tool** (`UserMinutePointsService.adjustMinutesForAuthor`
+> via the re-introduced `UserMinutePointsDAL.addPenaltyMinutesForDate`) stamps an
+> *artificial* penalty when an author clicks the nmp −N button — a deliberate test signal,
+> not an inactivity penalty. It also debits `totalMinutePoints` (floored, like this cron)
+> and reconciles the night market. See docs/NIGHT_MARKET_TEMPLATE_RUNTIME_PLAN.md.
 
 > **Removed: weekly achievement reset.** This cron used to have a branch that
 > wiped each user's `weeklies` rows at their local week rollover. The `weeklies`
@@ -60,13 +67,42 @@ escalate from) are out of scope.
 > migration `78-create-wins-table.sql`). Nothing is wiped, so lifetime win history
 > is preserved and no cron branch is needed.
 
-> **Planned branch (DESIGN): Night Market unlock cleanup.** Because the penalty
-> *lowers* `totalMinutePoints`, a planned branch will run in the same transaction
-> to remove Night Market unlocks at random down to the count the minute total now
-> allows, and delete any template left with no occupants (the hub/origin template
-> is exempt). No new table — the deduction is already audited via
-> `userminutepoints.penaltyMinutes`. See
-> [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md#losing-minutes-removes-unlocks).
+## Branch 2 — Night Market occupant decay
+
+Because Branch 1 *lowers* `totalMinutePoints`, this branch (same transaction, three
+data-modifying CTEs: `decay_targets` → `decay_ranked` → `decay_delete`) trims each
+penalized user's Night Market **occupants** (`nightmarketunlocks` rows) down to their
+new entitlement `target = unlocks(new_total)`:
+
+1. `decay_targets` computes each penalized user's `target` from their post-debit
+   total via a `CASE` that **mirrors** `server/dal/shared/unlockSchedule.ts`
+   (`UNLOCK_BREAKPOINTS` + the `m ≥ 60` steady-state formula). SQL can't import TS,
+   so **keep the two in sync**.
+2. `decay_ranked` ranks each user's occupants in **random** order (`row_number() …
+   ORDER BY random()`).
+3. `decay_delete` deletes the surplus (`rn > target`).
+
+This SQL branch deletes **only occupants**; an emptied template renders its unoccupied
+version on the next layout read (recompute-on-read settles each placement's active version),
+so the branch stays **pure SQL** and never computes a version. Freed slots return to the pool
+and a later grant (`NightMarketPlacementService.grantUnlocks`) backfills them before spawning
+anything new. No new table — the minute deduction is already audited via
+`userminutepoints.penaltyMinutes`. The NOTICE line adds `decayed_unlocks=<n>`.
+
+**Template pruning (companion job, not this SQL).** Emptied templates are no longer kept
+forever. A second cron job — `:02`, one minute after this SQL — removes any template that
+decay left **empty AND weakly attached** (0 occupants; touched on {0, 1, or 2 *adjacent*}
+sides; never the starter hub; never a 2-*opposite*-side bridge), iterated to a fixpoint.
+That is an iterative rectangle-adjacency computation that is impractical in plpgsql, so it
+lives in TypeScript (`NightMarketPlacementService.pruneDanglingTemplates`, pure core in
+`server/dal/shared/templatePrune.ts`) and runs as **compiled JS inside `cow-backend-prod`**
+(`node dist/scripts/night-market/prune-dangling-templates.js`; the prod image has no tsx).
+It targets exactly the users this SQL just penalized via `users.lastPenaltyDate`. The live
+author minute-loss tool reaches the same prune through
+`NightMarketPlacementService.reconcileUnlocks`. This **reverses** the former "placements are
+append-only, never removed" invariant. See
+[NIGHT_MARKET_TEMPLATES.md § Losing minutes removes unlocks](./NIGHT_MARKET_TEMPLATES.md#losing-minutes-removes-unlocks)
+and [NIGHT_MARKET_TEMPLATE_RUNTIME_PLAN.md](./NIGHT_MARKET_TEMPLATE_RUNTIME_PLAN.md).
 
 The cron evaluates each user against the 4 AM local-day boundary using their
 stored `users.timezone`.

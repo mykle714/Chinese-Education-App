@@ -155,6 +155,100 @@ pbh = min( 6, max( positive(g) for g in goals ) )
 
 ---
 
+## 6. Per-type cooldown (flp working-loop selection)
+
+> STATUS: **IMPLEMENTED**. Code: `server/services/OnDeckVocabService.ts`
+> (cooldown helpers + both selection paths), `server/routes/flashcardRoutes.ts`
+> (refill call site), `src/features/flashcards/FlashcardsLearnPage/useWorkingLoop.ts`
+> (`sideOneForCard` face-steering). Types: `readyMarkTypes` on `VocabEntry`
+> (`server/types/index.ts`, `src/types.ts`).
+
+After a **correct** mark, a card is put on a **cooldown** so it doesn't
+immediately reappear in the flp working loop. The window **duration** is keyed on
+the card's overall utcm category (weaker = shorter, so weak cards drill more):
+
+| Category | Window |
+|---|---|
+| Unfamiliar | 5 minutes |
+| Target | 24 hours |
+| Comfortable | 7 days |
+| Mastered | 30 days |
+
+### The timer is PER MARK TYPE
+
+The cooldown clock is measured from that card's **last correct mark _of a given
+type_** (`getLastCorrectMarkTimestampForType`), not the newest correct mark across
+all tracks. So Recognition and Production cool down **independently** — getting a
+card right foreign-first (Recognition) does not suppress it from coming back for an
+English-first (Production) drill.
+
+The flp can only ever present **two** of the four mark types (a foreign-first
+prompt → Recognition, an English-first prompt → Production;
+`markTypeForSideOne`). Reading/Writing marks come from other games (Word Search
+No-Pinyin / Practice Writing) and are **never** shown in the loop, so flp cooldown
+eligibility consults **only** the Recognition + Production tracks
+(`FLP_MARK_TYPES`). Consequence: a correct mark earned in **another game** no
+longer wrongly suppresses a card from the flp.
+
+### Eligibility + face steering
+
+When a card is selected for the loop (both the **initial** `getDistributedWorkingLoop`
+build and the **correct-mark refill** `getNextLibraryCardWithFallback`), the
+service computes `flpReadyMarkTypes(card)` = the subset of {recognition,
+production} currently off cooldown:
+
+- **≥1 ready** ⇒ the card is eligible; it's stamped with `readyMarkTypes` and the
+  client's `sideOneForCard` **steers the shown face** to a ready type (only
+  production ready → English-first; only recognition ready → foreign-first; both
+  ready → the historical coin flip).
+- **both cooling** ⇒ the card is **skipped**.
+
+If the entire allowed pool is cooling down, selection falls back to the
+**least-recently-correct** cooled card (`pickLeastRecentlyCorrectFlp` /
+`fetchCooledFallbackCards`, stamped with the single closest-to-expiring type) so
+the loop **never returns empty** for a user who has cards.
+
+### Notes / caveats
+
+- The window duration is still a whole-card property (derived from utcm category),
+  even though the timer is per-type. A per-type strength-based window was
+  considered and deferred.
+
+### Games honor the same per-type cooldown
+
+Each pool-selecting game gates its pool on the per-type cooldown of the **single
+mark type it emits** (`OnDeckVocabService.isCardGameEligible` / `fetchGameCandidates`,
+`server/controllers/OnDeckVocabController.ts`):
+
+| Surface | Mark type | Selection path |
+| --- | --- | --- |
+| Bubble Match | `recognition` | `getGameVocabPool` |
+| Word Search — Pinyin | `production` | `getWordSearchGrid` (mode via `?mode=` query) |
+| Word Search — No-Pinyin | `reading` | `getWordSearchGrid` (mode via `?mode=` query) |
+| Practice Writing | `writing` | — launched per-card from a flashcard; **no pool to gate** |
+
+A card is **fresh** for a game when its game mark type is off cooldown, **cooled**
+otherwise. `fetchGameCandidates` overfetches a per-category shuffled pool and
+splits it fresh/cooled. Both games fill in three phases (the confirmed policy —
+*prefer fresh; when out of fresh, first borrow fresh from other categories; use
+cooled only as a last resort*):
+
+1. Requested-category quotas from **fresh** cards.
+2. Top up to `total` with **fresh** cards from the fallback categories
+   (Target → Comfortable → Unfamiliar → Mastered).
+3. Backfill any remaining shortfall with **cooled** cards (requested categories
+   first, then fallback) — so a just-played library still assembles a full board
+   and entry is **never blocked more than an un-cooled library would**.
+
+Word Search's substring-dedup replacement (`pullReplacement`) uses the same
+fresh-then-cooled preference across `[preferredCategory, …fallback]`.
+
+**Cross-surface note:** Bubble Match and flp both emit `recognition`, so a Bubble
+Match win cools that card's recognition face in the flp working loop, and vice
+versa — the per-type clocks are shared across every surface that emits the type.
+
+---
+
 ## Architecture / layer impact
 
 ### Data layer — storage of typed marks — DECIDED: one keyed jsonb

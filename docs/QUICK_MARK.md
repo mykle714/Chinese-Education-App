@@ -117,7 +117,9 @@ blue → already-learned/Mastered. `sortCard` already has the delete path
 Service method `listQuickMarkCards(language, userId, level, cursor, limit=100)`
 (`server/services/StarterPacksService.ts`):
 
-- `WHERE de.language = $1 AND de.discoverable = TRUE AND <validPredicate>`
+- `WHERE de.language = $1 AND <supplyGate> AND <validPredicate>` — the supply gate is
+  `_supplyGate(language)`: `de.sortable = TRUE` for zh (lazy-enrichment, migration 110;
+  see docs/DISCOVER_LAZY_ENRICHMENT.md), `de.discoverable = TRUE` otherwise
 - `AND <levelExpr> = $level`  (exact level, no ±drift)
 - `AND NOT EXISTS (vet row for this user/word[/pos])`  — excludes already-sorted
 - **Skips are INCLUDED** (resolved): unlike Sort Cards' fresh supply, Quick Mark

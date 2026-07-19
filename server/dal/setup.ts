@@ -29,6 +29,9 @@ import { NightMarketTemplateService } from '../services/NightMarketTemplateServi
 import { NightMarketTemplateController } from '../controllers/NightMarketTemplateController.js';
 import { NightMarketPlacementDAL } from './implementations/NightMarketPlacementDAL.js';
 import { NightMarketPlacementService } from '../services/NightMarketPlacementService.js';
+import { NightMarketSandboxDAL } from './implementations/NightMarketSandboxDAL.js';
+import { NightMarketSandboxService } from '../services/NightMarketSandboxService.js';
+import { NightMarketSandboxController } from '../controllers/NightMarketSandboxController.js';
 import { NightMarketWorldService } from '../services/NightMarketWorldService.js';
 import { NightMarketWorldController } from '../controllers/NightMarketWorldController.js';
 import { GameAssetDAL } from './implementations/GameAssetDAL.js';
@@ -53,6 +56,7 @@ const dictionaryDAL = new DictionaryDAL();
 const sortPacksDAL = new SortPacksDAL();
 const nightMarketDAL = new NightMarketDAL();
 const nightMarketPlacementDAL = new NightMarketPlacementDAL();
+const nightMarketSandboxDAL = new NightMarketSandboxDAL();
 const gameAssetDAL = new GameAssetDAL();
 const gameProgressDAL = new GameProgressDAL();
 const icons8DAL = new Icons8DAL();
@@ -73,8 +77,12 @@ const textService = new TextService(userDAL);
 // Validation reuses TextService to persist composed documents (with validation* columns).
 const validationService = new ValidationService(userDAL, textService);
 const nightMarketService = new NightMarketService(nightMarketDAL, userDAL);
-// Validator-authored template CATALOG (definitions), separate from the unlock economy.
-const nightMarketTemplateService = new NightMarketTemplateService(userDAL);
+// Validator-authored template CATALOG (definitions), separate from the unlock economy. The
+// sandbox DAL is injected so deleting a template also removes every author's sandbox placement
+// of it (docs/NIGHT_MARKET_TEMPLATE_SANDBOX.md § cleanup).
+const nightMarketTemplateService = new NightMarketTemplateService(userDAL, nightMarketSandboxDAL);
+// Desktop-only Template Sandbox: template authors freely tile catalog templates (scratch state).
+const nightMarketSandboxService = new NightMarketSandboxService(nightMarketSandboxDAL, userDAL);
 // Per-user template LAYOUT read (placements → rendered world); seeds the origin hub.
 const nightMarketWorldService = new NightMarketWorldService(nightMarketPlacementDAL, nightMarketTemplateService);
 // Occupant/placement WRITE side (grant flow + spawn). Injected into the minute-points service so
@@ -98,6 +106,7 @@ const validationController = new ValidationController(validationService);
 const starterPacksController = new StarterPacksController(starterPacksService);
 const nightMarketController = new NightMarketController(nightMarketService);
 const nightMarketTemplateController = new NightMarketTemplateController(nightMarketTemplateService);
+const nightMarketSandboxController = new NightMarketSandboxController(nightMarketSandboxService);
 const nightMarketWorldController = new NightMarketWorldController(nightMarketWorldService);
 const gamesController = new GamesController(gameAssetService, gameProgressService);
 // icons8 image serving is a thin DB read → no service layer; the controller takes the DAL directly.
@@ -134,6 +143,9 @@ export {
   nightMarketController,
   nightMarketTemplateService,
   nightMarketTemplateController,
+  nightMarketSandboxDAL,
+  nightMarketSandboxService,
+  nightMarketSandboxController,
   nightMarketPlacementDAL,
   nightMarketPlacementService,
   nightMarketWorldService,

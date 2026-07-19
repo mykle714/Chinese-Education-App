@@ -1,4 +1,5 @@
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
+import { INightMarketSandboxDAL } from '../dal/interfaces/INightMarketSandboxDAL.js';
 import { DALError, NotFoundError, ValidationError } from '../types/dal.js';
 import { dbManager } from '../dal/base/DatabaseManager.js';
 import {
@@ -182,7 +183,15 @@ export interface TemplateGalleryEntry extends TemplateSummary {
 }
 
 export class NightMarketTemplateService {
-  constructor(private readonly userDAL: IUserDAL) {}
+  /**
+   * @param sandboxDAL Optional — when provided, deleting a template also removes every author's
+   *   sandbox placement of it (docs/NIGHT_MARKET_TEMPLATE_SANDBOX.md § cleanup). Optional so
+   *   tests / callers that don't touch the sandbox can construct the service without it.
+   */
+  constructor(
+    private readonly userDAL: IUserDAL,
+    private readonly sandboxDAL?: INightMarketSandboxDAL,
+  ) {}
 
   /** Throw unless the user exists and is a template author (403). */
   private async assertTemplateAuthor(userId: string): Promise<void> {
@@ -517,6 +526,17 @@ export class NightMarketTemplateService {
       client.query('DELETE FROM nightmarkettemplatedefinitions WHERE name = $1 RETURNING id', [clean]),
     );
     if (res.recordset.length === 0) throw new NotFoundError('Template not found');
+
+    // Cascade: the catalog row is gone, so every author's SANDBOX placement of this name can no
+    // longer render — remove them too (templateName is not an FK, so this cascade is manual).
+    // Best-effort: a sandbox-cleanup failure must not roll back a successful catalog delete.
+    if (this.sandboxDAL) {
+      try {
+        await this.sandboxDAL.deleteByTemplateName(clean);
+      } catch (err) {
+        console.error(`[NM-TEMPLATE] ⚠️ Failed to clear sandbox placements for deleted template "${clean}":`, err);
+      }
+    }
   }
 
   /**

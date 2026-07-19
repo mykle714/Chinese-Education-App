@@ -871,6 +871,10 @@ Code this doc will depend on / drive once implemented:
 - New DB table `nightmarkettemplatelocations` (placements — references the catalog by
   `templateName` + persisted `activeVersion`) + new `placedTemplateId` /
   `placeholderAreaId` columns on `nightmarketunlocks` (occupants).
+- **Distinct scratch table** `nightmarkettemplatesandbox` (migration 116) — the per-author
+  freeform Template Sandbox layout, a clone of `nightmarkettemplatelocations` minus the
+  unique-corner index and unrelated to the unlock economy. Not part of the runtime path; see
+  [NIGHT_MARKET_TEMPLATE_SANDBOX.md](./NIGHT_MARKET_TEMPLATE_SANDBOX.md).
 - `users.totalMinutePoints` — the minute accumulator the unlock schedule reads
   (see [MINUTE_POINTS_SYSTEM.md](./MINUTE_POINTS_SYSTEM.md)).
 - `database/cron/expire-stale-streaks.sql` — the hourly maintenance cron has an

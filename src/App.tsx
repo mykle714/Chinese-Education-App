@@ -20,6 +20,7 @@ import ReaderPage from "./features/reader/ReaderPage";
 import ReaderDocumentPage from "./features/reader/ReaderDocumentPage";
 import NightMarketEnginePage from "./features/nightmarket/NightMarketEnginePage";
 import TemplateEditorPage from "./features/nightmarket/TemplateEditorPage";
+import TemplateSandboxPage from "./features/nightmarket/TemplateSandboxPage";
 import DictionaryPage from "./pages/DictionaryPage";
 import DictionaryCardDetailPage from "./pages/DictionaryCardDetailPage";
 import DiscoverPage from "./pages/DiscoverPage";
@@ -180,6 +181,13 @@ function App() {
                 <Route path="/night-market/template-editor" element={
                   <ProtectedRoute allowPublic>
                     <TemplateEditorPage />
+                  </ProtectedRoute>
+                } />
+                {/* Template-author-only sandbox (desktop-only) — freely tile catalog templates.
+                    Same gate/allowPublic rationale as the editor route above. */}
+                <Route path="/night-market/template-sandbox" element={
+                  <ProtectedRoute allowPublic>
+                    <TemplateSandboxPage />
                   </ProtectedRoute>
                 } />
                 <Route path="/profile" element={

@@ -29,6 +29,7 @@ import ContentPasteIcon from '@mui/icons-material/ContentPaste';
 import UndoIcon from '@mui/icons-material/Undo';
 import RedoIcon from '@mui/icons-material/Redo';
 import MenuBookIcon from '@mui/icons-material/MenuBook';
+import NoteAddIcon from '@mui/icons-material/NoteAdd';
 import CloseIcon from '@mui/icons-material/Close';
 import LeafPage from '../../components/LeafPage';
 import { WEIGHT } from '../../theme/scale';
@@ -74,13 +75,13 @@ import {
 
 const MIN_DIM = 2;
 const MAX_DIM = 60;
-const DEFAULT_DIM = 12;
+const DEFAULT_DIM = 16;
 
-// Selectable board dimensions (Properties width/length dropdowns): the small even sizes
-// 2–12, then every +8 up to 44. Both dropdowns share this list. MIN_DIM/MAX_DIM still
-// bound the handleOk validation (all options fall safely inside them), so a future free
-// entry stays in range.
-const DIM_OPTIONS = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 28, 36, 44];
+// Selectable board dimensions (Properties width/length dropdowns): every even size
+// from 2 up to 24, then multiples of 8 up to 48. Both dropdowns share this list.
+// MIN_DIM/MAX_DIM still bound the handleOk validation (all options fall safely inside
+// them), so a future free entry stays in range.
+const DIM_OPTIONS = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 32, 40, 48];
 
 const emptyMasks = (): EditorMasks => ({
   terrain1: new Set<string>(),
@@ -808,6 +809,24 @@ function TemplateEditorPage() {
     setDirty(true);
   };
 
+  // "New Template" — throw away the current board and start fresh: a blank, unbound
+  // v0 board at the default size with no name. Warns first (like Load/version-switch)
+  // if there are unsaved edits, since this is destructive.
+  const handleNewTemplate = async () => {
+    if (dirty) {
+      const ok = await confirm(
+        'Starting a new template replaces the current board — any unsaved edits will be lost. Continue?',
+        { title: 'New template?', confirmText: 'New template', cancelText: 'Keep editing' },
+      );
+      if (!ok) return;
+    }
+    setWidth(DEFAULT_DIM);
+    setHeight(DEFAULT_DIM);
+    setName('');
+    resetToBlank();
+    if (activeTool === 'condition' || activeTool === 'placeholder') setActiveTool('terrain1');
+  };
+
   // Reset all version/loaded state back to a blank, unbound v0 board (after delete).
   const resetToBlank = () => {
     setMasks(emptyMasks());
@@ -1271,6 +1290,15 @@ function TemplateEditorPage() {
                 sx={headerBtnSx}
               >
                 Guidelines
+              </Button>
+            </Tooltip>
+            <Tooltip title="Start a fresh blank template (warns if you have unsaved edits)">
+              <Button
+                className="template-editor-new-btn" variant="outlined" size="small"
+                startIcon={<NoteAddIcon />} onClick={handleNewTemplate}
+                sx={headerBtnSx}
+              >
+                New Template
               </Button>
             </Tooltip>
             {/* Load ↔ Cancel: opening the visual gallery flips this button to Cancel so the

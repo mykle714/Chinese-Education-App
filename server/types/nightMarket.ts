@@ -93,3 +93,21 @@ export interface PlacementOccupant {
   placeholderAreaId: string;  // slot anchor id "col_row" within that placement
   assetId: string;            // which stand asset occupies the slot
 }
+
+/**
+ * One row of `nightmarkettemplatesandbox` (migration 116) — a template author's freeform
+ * scratch placement of a catalog template. Same shape as {@link TemplatePlacementRow} but for
+ * the desktop-only Template Sandbox tool (docs/NIGHT_MARKET_TEMPLATE_SANDBOX.md): `offsetCol`/
+ * `offsetRow` are the SW (min-iso) corner in template-cell units; `activeVersion` is this
+ * instance's independently-switchable version. Unlike the runtime layout, overlaps are allowed.
+ */
+export interface TemplateSandboxRow {
+  id: string;              // UUID primary key
+  userId: string;          // FK to users (the author)
+  templateName: string;    // catalog key: nightmarkettemplatedefinitions.name (name, not a version)
+  activeVersion: number;   // this instance's rendered version (switchable per-tile)
+  offsetCol: number;       // SW-corner isoX offset (col → +isoX = east)
+  offsetRow: number;       // SW-corner isoY offset (row → +isoY = north)
+  locked: boolean;         // when true, this placement cannot be dragged/moved (migration 117)
+  createdAt: Date;
+}

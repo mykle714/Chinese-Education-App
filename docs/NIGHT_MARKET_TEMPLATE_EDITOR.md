@@ -153,6 +153,9 @@ systems in [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md) will consume
   version 0 (no conditions) shows plain cyan slots. **The occupant houses ride the CONDITION view
   toggle** (`showCondition` — a filled slot *is* a condition): toggling conditions off hides the
   houses, and their slots fall back to the normal cyan placeholder tint so they don't vanish.
+  (`TemplateMaskOverlays` exposes an optional **`showHouses`** prop that defaults to `showCondition`
+  for exactly this coupling; the [Template Sandbox](./NIGHT_MARKET_TEMPLATE_SANDBOX.md) overrides
+  it to keep houses on while every tint is off.)
   Implemented in `TemplateEditorViewer`'s
   `TemplateMaskOverlays` (`PlaceholderOccupantHouses` + the filled/empty area split), so both the
   editor scene and the Load gallery show it. The house-tiling geometry is
@@ -363,7 +366,9 @@ re-fingerprinting). Uses `authHeader()` + `API_BASE_URL`.
   (one row **per name** via `DISTINCT ON (name)` + a `versionCount`), `getTemplate(name,
   version)` (404 if missing; returns `availableVersions`; **merges version 0's
   placeholder** for versions > 0), `deleteTemplate(name)` (deletes every version; 404 if
-  none), `deleteTemplateVersion(name, version)` (deletes ONE version; **rejects version 0**
+  none; **then cascades to the Template Sandbox** — best-effort
+  `NightMarketSandboxDAL.deleteByTemplateName(name)` removes every author's placements of the
+  deleted name, see [NIGHT_MARKET_TEMPLATE_SANDBOX.md](./NIGHT_MARKET_TEMPLATE_SANDBOX.md)), `deleteTemplateVersion(name, version)` (deletes ONE version; **rejects version 0**
   with a 400 — it is the base/placeholder source of truth; 404 if that version is missing),
   `saveTemplate({name,version,…})` (validates dims + masks incl. `condition`,
   in-bounds cells; **street ⊥ communal**; family decor MAY sit on a street; **BOTH walkability
@@ -456,5 +461,8 @@ promote-to-code step) is a downstream decision.
   `database/migrations/109-add-description-to-nightmarket-template-definitions.sql`.
 
 Related: [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md),
+[NIGHT_MARKET_TEMPLATE_SANDBOX.md](./NIGHT_MARKET_TEMPLATE_SANDBOX.md) — the sibling
+template-author, desktop-only tool that *tiles* existing templates (this editor *authors* them);
+its `nightmarkettemplatesandbox` rows are cleared when **Delete Template** removes a name,
 [NIGHT_MARKET_FEATURE.md](./NIGHT_MARKET_FEATURE.md),
 [NIGHT_MARKET_GRAPH_ASSUMPTIONS.md](./NIGHT_MARKET_GRAPH_ASSUMPTIONS.md).

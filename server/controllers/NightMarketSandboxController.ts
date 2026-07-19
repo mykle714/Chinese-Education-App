@@ -1,0 +1,117 @@
+import { Request, Response } from 'express';
+import { DALError } from '../types/dal.js';
+import { NightMarketSandboxService } from '../services/NightMarketSandboxService.js';
+
+/**
+ * Night Market template SANDBOX controller — HTTP layer for the desktop-only Template Sandbox
+ * tool (docs/NIGHT_MARKET_TEMPLATE_SANDBOX.md). Thin: extracts the authenticated user, delegates
+ * to NightMarketSandboxService, and maps DALErrors to their statusCode (403 non-author, 400
+ * validation, 404 not found). Every operation is template-author-gated in the service.
+ */
+export class NightMarketSandboxController {
+  constructor(private readonly service: NightMarketSandboxService) {}
+
+  /** GET /api/nightmarket-sandbox → { placements: TemplateSandboxRow[] } */
+  async listPlacements(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = (req as any).user?.userId;
+      if (!userId) {
+        res.status(401).json({ error: 'User not authenticated', code: 'ERR_NOT_AUTHENTICATED' });
+        return;
+      }
+      const placements = await this.service.listPlacements(userId);
+      res.json({ placements });
+    } catch (error: any) {
+      this.handleError(res, error, 'Failed to list sandbox placements', 'ERR_SANDBOX_LIST_FAILED');
+    }
+  }
+
+  /** POST /api/nightmarket-sandbox { templateName, activeVersion, offsetCol, offsetRow } → { placement } */
+  async addPlacement(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = (req as any).user?.userId;
+      if (!userId) {
+        res.status(401).json({ error: 'User not authenticated', code: 'ERR_NOT_AUTHENTICATED' });
+        return;
+      }
+      const { templateName, activeVersion, offsetCol, offsetRow } = req.body ?? {};
+      const placement = await this.service.addPlacement(userId, { templateName, activeVersion, offsetCol, offsetRow });
+      res.status(201).json({ placement });
+    } catch (error: any) {
+      this.handleError(res, error, 'Failed to add sandbox placement', 'ERR_SANDBOX_ADD_FAILED');
+    }
+  }
+
+  /** PATCH /api/nightmarket-sandbox/:id/position { offsetCol, offsetRow } → { placement } */
+  async movePlacement(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = (req as any).user?.userId;
+      if (!userId) {
+        res.status(401).json({ error: 'User not authenticated', code: 'ERR_NOT_AUTHENTICATED' });
+        return;
+      }
+      const { offsetCol, offsetRow } = req.body ?? {};
+      const placement = await this.service.movePlacement(userId, req.params.id, { offsetCol, offsetRow });
+      res.json({ placement });
+    } catch (error: any) {
+      this.handleError(res, error, 'Failed to move sandbox placement', 'ERR_SANDBOX_MOVE_FAILED');
+    }
+  }
+
+  /** PATCH /api/nightmarket-sandbox/:id/version { activeVersion } → { placement } */
+  async setPlacementVersion(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = (req as any).user?.userId;
+      if (!userId) {
+        res.status(401).json({ error: 'User not authenticated', code: 'ERR_NOT_AUTHENTICATED' });
+        return;
+      }
+      const { activeVersion } = req.body ?? {};
+      const placement = await this.service.setPlacementVersion(userId, req.params.id, activeVersion);
+      res.json({ placement });
+    } catch (error: any) {
+      this.handleError(res, error, 'Failed to set sandbox placement version', 'ERR_SANDBOX_VERSION_FAILED');
+    }
+  }
+
+  /** PATCH /api/nightmarket-sandbox/:id/lock { locked } → { placement } */
+  async setPlacementLock(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = (req as any).user?.userId;
+      if (!userId) {
+        res.status(401).json({ error: 'User not authenticated', code: 'ERR_NOT_AUTHENTICATED' });
+        return;
+      }
+      const { locked } = req.body ?? {};
+      const placement = await this.service.setPlacementLock(userId, req.params.id, locked);
+      res.json({ placement });
+    } catch (error: any) {
+      this.handleError(res, error, 'Failed to set sandbox placement lock', 'ERR_SANDBOX_LOCK_FAILED');
+    }
+  }
+
+  /** DELETE /api/nightmarket-sandbox/:id → { deleted: true } */
+  async removePlacement(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = (req as any).user?.userId;
+      if (!userId) {
+        res.status(401).json({ error: 'User not authenticated', code: 'ERR_NOT_AUTHENTICATED' });
+        return;
+      }
+      await this.service.removePlacement(userId, req.params.id);
+      res.json({ deleted: true });
+    } catch (error: any) {
+      this.handleError(res, error, 'Failed to delete sandbox placement', 'ERR_SANDBOX_DELETE_FAILED');
+    }
+  }
+
+  /** Map a DALError to its own statusCode/code; otherwise a 500 fallback. */
+  private handleError(res: Response, error: any, fallbackMsg: string, fallbackCode: string): void {
+    console.error(`[NM-SANDBOX-CONTROLLER] ❌ ${fallbackMsg}:`, error);
+    if (error instanceof DALError) {
+      res.status(error.statusCode || 500).json({ error: error.message, code: error.code });
+    } else {
+      res.status(500).json({ error: fallbackMsg, code: fallbackCode });
+    }
+  }
+}

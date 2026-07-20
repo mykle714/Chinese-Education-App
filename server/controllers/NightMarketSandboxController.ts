@@ -90,6 +90,22 @@ export class NightMarketSandboxController {
     }
   }
 
+  /** PATCH /api/nightmarket-sandbox/:id/settings { settings: {...} } → { placement } (merge patch) */
+  async setPlacementSettings(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = (req as any).user?.userId;
+      if (!userId) {
+        res.status(401).json({ error: 'User not authenticated', code: 'ERR_NOT_AUTHENTICATED' });
+        return;
+      }
+      const { settings } = req.body ?? {};
+      const placement = await this.service.setPlacementSettings(userId, req.params.id, settings);
+      res.json({ placement });
+    } catch (error: any) {
+      this.handleError(res, error, 'Failed to set sandbox placement settings', 'ERR_SANDBOX_SETTINGS_FAILED');
+    }
+  }
+
   /** DELETE /api/nightmarket-sandbox/:id → { deleted: true } */
   async removePlacement(req: Request, res: Response): Promise<void> {
     try {

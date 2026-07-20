@@ -47,6 +47,12 @@ export interface SandboxItem {
   masks: EditorMasks;
   /** When true, this tile cannot be dragged (still selectable). */
   locked: boolean;
+  /**
+   * When true, EVERY placeholder area of this placement previews an occupant house; when false,
+   * none do. The sandbox's per-placement houses toggle (`settings.showHouses`) — it replaces the
+   * editor's condition-driven filled-slot rule for this surface.
+   */
+  showHouses: boolean;
 }
 
 interface GlobalCell { col: number; row: number; }
@@ -89,16 +95,16 @@ function PlacedTemplate({ item, dragOffset }: { item: SandboxItem; dragOffset?: 
     // template and never bleeds across placements.
     <pixiContainer x={screenX} y={screenY} sortableChildren>
       <EditorTerrainLayer tiles={tiles} />
-      {/* Sandbox previews the FINISHED look: no walkability/placeholder/condition tints, but the
-          filled-slot occupant HOUSES still render per this instance's version — a placeholder area
-          holding a condition cell shows a house, an empty area shows nothing. */}
+      {/* Sandbox previews the FINISHED look: no walkability/placeholder/condition tints. Houses
+          are an ALL-or-NOTHING per-placement choice here (the header's Houses toggle) rather than
+          the editor's condition-driven filled-slot rule. */}
       <TemplateMaskOverlays
         masks={item.masks}
         showStreet={false}
         showCommunal={false}
         showPlaceholder={false}
         showCondition={false}
-        showHouses
+        houseMode={item.showHouses ? 'all' : 'none'}
       />
     </pixiContainer>
   );

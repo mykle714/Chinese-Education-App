@@ -1,4 +1,4 @@
-import { TemplateSandboxRow } from '../../types/nightMarket.js';
+import { TemplateSandboxRow, TemplateSandboxSettings } from '../../types/nightMarket.js';
 
 /**
  * Night Market template SANDBOX Data Access Layer interface (migration 116).
@@ -49,6 +49,13 @@ export interface INightMarketSandboxDAL {
    * cannot be dragged/moved. Returns the updated row, or null if no row matched.
    */
   updateLock(userId: string, id: string, locked: boolean): Promise<TemplateSandboxRow | null>;
+
+  /**
+   * MERGE a partial render/view settings patch into one placement's `settings` jsonb bag
+   * (migration 119), scoped to `userId`. Merge (not replace) so a one-key patch leaves the other
+   * settings untouched. Returns the updated row, or null if no row matched.
+   */
+  updateSettings(userId: string, id: string, patch: TemplateSandboxSettings): Promise<TemplateSandboxRow | null>;
 
   /**
    * Delete one placement (the sandbox "Delete selected" action), scoped to `userId`. Returns

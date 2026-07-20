@@ -153,9 +153,10 @@ systems in [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md) will consume
   version 0 (no conditions) shows plain cyan slots. **The occupant houses ride the CONDITION view
   toggle** (`showCondition` — a filled slot *is* a condition): toggling conditions off hides the
   houses, and their slots fall back to the normal cyan placeholder tint so they don't vanish.
-  (`TemplateMaskOverlays` exposes an optional **`showHouses`** prop that defaults to `showCondition`
-  for exactly this coupling; the [Template Sandbox](./NIGHT_MARKET_TEMPLATE_SANDBOX.md) overrides
-  it to keep houses on while every tint is off.)
+  (`TemplateMaskOverlays` exposes an optional **`houseMode`** prop — `'filled'` (the default,
+  derived from `showCondition`, i.e. exactly this coupling) / `'all'` / `'none'`; the
+  [Template Sandbox](./NIGHT_MARKET_TEMPLATE_SANDBOX.md) passes `'all'` or `'none'` from its
+  per-placement Houses toggle, so there the houses ignore conditions entirely.)
   Implemented in `TemplateEditorViewer`'s
   `TemplateMaskOverlays` (`PlaceholderOccupantHouses` + the filled/empty area split), so both the
   editor scene and the Load gallery show it. The house-tiling geometry is

@@ -40,6 +40,12 @@ router.patch('/api/nightmarket-sandbox/:id/lock', authenticateToken, async (req,
   await nightMarketSandboxController.setPlacementLock(req, res);
 });
 
+// Merge a render/view settings patch into one placement's settings bag (e.g. { showHouses }).
+// @ts-ignore
+router.patch('/api/nightmarket-sandbox/:id/settings', authenticateToken, async (req, res) => {
+  await nightMarketSandboxController.setPlacementSettings(req, res);
+});
+
 // Delete one placement (the "Delete selected" action).
 // @ts-ignore
 router.delete('/api/nightmarket-sandbox/:id', authenticateToken, async (req, res) => {

@@ -9,6 +9,8 @@ import CloseIcon from '@mui/icons-material/Close';
 import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
 import LockIcon from '@mui/icons-material/Lock';
 import LockOpenIcon from '@mui/icons-material/LockOpen';
+import HomeIcon from '@mui/icons-material/Home';
+import HomeOutlinedIcon from '@mui/icons-material/HomeOutlined';
 import LeafPage from '../../components/LeafPage';
 import { WEIGHT } from '../../theme/scale';
 import { usePageTitle } from '../../hooks/usePageTitle';
@@ -22,7 +24,8 @@ import {
 } from './templateEditorApi';
 import {
   listSandboxPlacements, addSandboxPlacement, moveSandboxPlacement,
-  setSandboxPlacementVersion, setSandboxPlacementLock, removeSandboxPlacement, type SandboxPlacement,
+  setSandboxPlacementVersion, setSandboxPlacementLock, setSandboxPlacementSettings,
+  removeSandboxPlacement, SANDBOX_SETTING_DEFAULTS, type SandboxPlacement,
 } from './templateSandboxApi';
 
 /**
@@ -142,6 +145,8 @@ function TemplateSandboxPage() {
         height: def.height,
         masks: def.masks,
         locked: p.locked,
+        // Absent setting = the default filled look (see SANDBOX_SETTING_DEFAULTS).
+        showHouses: p.settings?.showHouses ?? SANDBOX_SETTING_DEFAULTS.showHouses,
       });
     }
     return out;
@@ -163,6 +168,17 @@ function TemplateSandboxPage() {
       }
     }
   }, [galleryEntries]);
+
+  // Dismiss the picker without adding anything (Cancel button / Escape).
+  const closePicker = useCallback(() => setPickerOpen(false), []);
+
+  // Escape backs out of the picker, matching the Cancel button.
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closePicker(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [pickerOpen, closePicker]);
 
   const handlePick = useCallback(async (entry: TemplateGalleryEntry) => {
     setPickerOpen(false);
@@ -257,6 +273,28 @@ function TemplateSandboxPage() {
     }
   }, [selected]);
 
+  // ── Houses on/off for the selected tile (settings.showHouses, persisted in the settings bag) ──
+  // ON = every placeholder area of that template previews an occupant house; OFF = none. This
+  // replaces the editor's condition-driven filled-slot rule on the sandbox surface.
+  const selectedShowHouses = selected
+    ? selected.settings?.showHouses ?? SANDBOX_SETTING_DEFAULTS.showHouses
+    : false;
+
+  const handleToggleHouses = useCallback(async () => {
+    if (!selected) return;
+    const id = selected.id;
+    const prevSettings = selected.settings ?? {};
+    const next = !(prevSettings.showHouses ?? SANDBOX_SETTING_DEFAULTS.showHouses);
+    // Optimistic; roll the whole settings object back on failure.
+    setPlacements((prev) => prev.map((p) => (p.id === id ? { ...p, settings: { ...p.settings, showHouses: next } } : p)));
+    try {
+      await setSandboxPlacementSettings(id, { showHouses: next });
+    } catch (err) {
+      setPlacements((prev) => prev.map((p) => (p.id === id ? { ...p, settings: prevSettings } : p)));
+      setSnack({ msg: err instanceof Error ? err.message : 'Failed to change houses setting', sev: 'error' });
+    }
+  }, [selected]);
+
   // ── Delete the selected tile ──
   const handleDelete = useCallback(async () => {
     if (!selected) return;
@@ -337,6 +375,19 @@ function TemplateSandboxPage() {
               </Select>
             </FormControl>
 
+            <Tooltip title={selectedShowHouses ? 'Hide the houses in this template’s placeholders' : 'Show a house in every placeholder of this template'}>
+              <span>
+                <Button
+                  className="template-sandbox-houses-btn" variant="outlined" size="small"
+                  startIcon={selectedShowHouses ? <HomeIcon /> : <HomeOutlinedIcon />}
+                  onClick={handleToggleHouses} disabled={!selected}
+                  sx={headerBtnSx}
+                >
+                  {selectedShowHouses ? 'Houses On' : 'Houses Off'}
+                </Button>
+              </span>
+            </Tooltip>
+
             <Tooltip title={selected?.locked ? 'Unlock so this template can be dragged' : 'Lock this template so it cannot be dragged'}>
               <span>
                 <Button
@@ -362,24 +413,13 @@ function TemplateSandboxPage() {
               </span>
             </Tooltip>
 
-            {/* Add ↔ Cancel: opening the picker flips this to Cancel so the author can back out. */}
-            {pickerOpen ? (
-              <Button
-                className="template-sandbox-add-cancel-btn" variant="outlined" size="small"
-                startIcon={<CloseIcon />} onClick={() => setPickerOpen(false)}
-                sx={headerBtnSx}
-              >
-                Cancel
-              </Button>
-            ) : (
-              <Button
-                className="template-sandbox-add-btn" variant="outlined" size="small"
-                startIcon={<AddIcon />} onClick={openPicker}
-                sx={headerBtnSx}
-              >
-                Add
-              </Button>
-            )}
+            <Button
+              className="template-sandbox-add-btn" variant="outlined" size="small"
+              startIcon={<AddIcon />} onClick={openPicker}
+              sx={headerBtnSx}
+            >
+              Add
+            </Button>
           </Box>
         </Box>
 
@@ -437,6 +477,15 @@ function TemplateSandboxPage() {
               <Typography sx={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.8125rem' }}>
                 {galleryEntries === null ? 'Loading…' : `${filteredEntries.length} shown`}
               </Typography>
+              {/* Cancel must live inside the picker: the overlay (zIndex 20) paints over the
+                  header (zIndex 10), so a header-level dismiss button would be unreachable. */}
+              <Button
+                className="template-sandbox-picker-cancel-btn" variant="outlined" size="small"
+                startIcon={<CloseIcon />} onClick={closePicker}
+                sx={{ ...headerBtnSx, ml: 'auto' }}
+              >
+                Cancel
+              </Button>
             </Box>
             <Box sx={{ flex: 1, minHeight: 0 }}>
               {galleryEntries !== null && <TemplateLoadGallery entries={filteredEntries} onPick={handlePick} />}

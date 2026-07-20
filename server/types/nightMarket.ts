@@ -101,6 +101,16 @@ export interface PlacementOccupant {
  * `offsetRow` are the SW (min-iso) corner in template-cell units; `activeVersion` is this
  * instance's independently-switchable version. Unlike the runtime layout, overlaps are allowed.
  */
+export interface TemplateSandboxSettings {
+  /**
+   * Render an occupant HOUSE in every placeholder area of this placement (migration 119).
+   * Absent = true (the default filled look); false = render no houses at all for this tile.
+   * This REPLACES the editor's condition-driven house preview inside the sandbox: the sandbox
+   * shows either all placeholder houses or none, independent of the version's condition cells.
+   */
+  showHouses?: boolean;
+}
+
 export interface TemplateSandboxRow {
   id: string;              // UUID primary key
   userId: string;          // FK to users (the author)
@@ -109,5 +119,6 @@ export interface TemplateSandboxRow {
   offsetCol: number;       // SW-corner isoX offset (col → +isoX = east)
   offsetRow: number;       // SW-corner isoY offset (row → +isoY = north)
   locked: boolean;         // when true, this placement cannot be dragged/moved (migration 117)
+  settings: TemplateSandboxSettings; // per-placement render/view preference bag (migration 119)
   createdAt: Date;
 }

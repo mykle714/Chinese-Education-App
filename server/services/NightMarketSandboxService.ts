@@ -1,6 +1,6 @@
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import { INightMarketSandboxDAL } from '../dal/interfaces/INightMarketSandboxDAL.js';
-import { TemplateSandboxRow } from '../types/nightMarket.js';
+import { TemplateSandboxRow, TemplateSandboxSettings } from '../types/nightMarket.js';
 import { DALError, NotFoundError, ValidationError } from '../types/dal.js';
 
 /**
@@ -111,6 +111,43 @@ export class NightMarketSandboxService {
     await this.assertTemplateAuthor(userId);
     if (typeof locked !== 'boolean') throw new ValidationError('locked must be a boolean');
     const row = await this.sandboxDAL.updateLock(userId, id, locked);
+    if (!row) throw new NotFoundError('Sandbox placement not found');
+    return row;
+  }
+
+  /**
+   * Whitelist of `settings` keys and their expected types (migration 119). The bag is generic so
+   * new author-facing render switches need no migration, but it is NOT free-form: an unknown key
+   * is rejected here so a client typo can never silently persist dead state.
+   */
+  private static readonly SETTINGS_SCHEMA: Record<keyof TemplateSandboxSettings, 'boolean'> = {
+    showHouses: 'boolean',
+  };
+
+  /** Validate a partial settings patch against {@link SETTINGS_SCHEMA}. */
+  private cleanSettings(value: unknown): TemplateSandboxSettings {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+      throw new ValidationError('settings must be an object');
+    }
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (entries.length === 0) throw new ValidationError('settings patch must contain at least one key');
+    const schema = NightMarketSandboxService.SETTINGS_SCHEMA as Record<string, string | undefined>;
+    for (const [key, val] of entries) {
+      const expected = schema[key];
+      if (!expected) throw new ValidationError(`Unknown sandbox setting "${key}"`);
+      if (typeof val !== expected) throw new ValidationError(`Sandbox setting "${key}" must be a ${expected}`);
+    }
+    return value as TemplateSandboxSettings;
+  }
+
+  /**
+   * Merge a partial render/view settings patch into one placement's `settings` bag (e.g.
+   * `{ showHouses: false }`). 404 if it is not the author's.
+   */
+  async setPlacementSettings(userId: string, id: string, settings: unknown): Promise<TemplateSandboxRow> {
+    await this.assertTemplateAuthor(userId);
+    const patch = this.cleanSettings(settings);
+    const row = await this.sandboxDAL.updateSettings(userId, id, patch);
     if (!row) throw new NotFoundError('Sandbox placement not found');
     return row;
   }

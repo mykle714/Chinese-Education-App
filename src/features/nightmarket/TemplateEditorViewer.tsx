@@ -456,7 +456,7 @@ function PlaceholderOccupantHouses({ areas }: { areas: readonly PlaceholderArea[
  */
 export function TemplateMaskOverlays({
   masks, showStreet = true, showCommunal = true, showPlaceholder = true, showCondition = true,
-  showHouses = showCondition,
+  houseMode = showCondition ? 'filled' : 'none',
 }: {
   masks: EditorMasks;
   showStreet?: boolean;
@@ -464,12 +464,15 @@ export function TemplateMaskOverlays({
   showPlaceholder?: boolean;
   showCondition?: boolean;
   /**
-   * Whether to render the filled-slot occupant HOUSES. Defaults to `showCondition` (a filled
-   * slot IS a condition, so in the editor/gallery the houses ride the condition toggle). The
-   * Template Sandbox decouples them: it hides every tint (all four show* false) but still wants
-   * the houses, so it passes `showHouses` on independently.
+   * Which placeholder areas preview an occupant HOUSE:
+   *   - `'filled'` — only areas containing a condition cell (the editor/gallery rule: a filled
+   *     slot IS a condition, so the houses ride the condition toggle). The default.
+   *   - `'all'`    — every placeholder area, condition or not. Used by the Template Sandbox,
+   *     where the author toggles the whole tile's houses on per placement rather than authoring
+   *     conditions.
+   *   - `'none'`   — no houses.
    */
-  showHouses?: boolean;
+  houseMode?: 'filled' | 'all' | 'none';
 }) {
   // A placeholder area with any condition-mask cell inside its footprint reads as an OCCUPIED
   // slot for this version, so it previews as an occupant HOUSE instead of the placeholder /
@@ -500,16 +503,19 @@ export function TemplateMaskOverlays({
   // placeholder tint (so a filled area doesn't vanish) — i.e. show ALL areas, not just empty.
   const placeholderAreas = showCondition ? emptyAreas : masks.placeholder;
 
+  // `'all'` ignores the condition split entirely (the sandbox's per-placement houses toggle).
+  const houseAreas = houseMode === 'all' ? masks.placeholder : filledAreas;
+
   return (
     <>
       {showStreet && <MaskTintOverlay cells={masks.street} color={STREET_OVERLAY_COLOR} />}
       {showCommunal && <MaskTintOverlay cells={masks.communal} color={COMMUNAL_OVERLAY_COLOR} />}
       {showPlaceholder && <PlaceholderAreaOverlay areas={placeholderAreas} />}
       {showCondition && <MaskTintOverlay cells={tintCondition} color={CONDITION_OVERLAY_COLOR} />}
-      {/* Filled slots preview their occupant house(s) in place of the tint. Gated on `showHouses`
-          (defaults to showCondition, so editor/gallery are unchanged; the sandbox turns tints off
-          but keeps houses on). */}
-      {showHouses && <PlaceholderOccupantHouses areas={filledAreas} />}
+      {/* Occupant house previews. `'filled'` (default) draws them in place of the condition tint,
+          so editor/gallery are unchanged; the sandbox passes `'all'`/`'none'` to render every
+          placeholder area's house or none. */}
+      {houseMode !== 'none' && <PlaceholderOccupantHouses areas={houseAreas} />}
     </>
   );
 }

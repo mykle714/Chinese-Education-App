@@ -316,7 +316,10 @@ function closeGrassNotches(
 
 /**
  * Resolve the LIGHT-layer SURFACE sprite URLs painted on a tile:
- *   - light-grass tile → a single `lightGrass_center` cap,
+ *   - light-grass tile → a single light-grass cap in the tile's OWN `fieldEdge`
+ *     variant, so a grass tile sitting on a rim/rounded tallDirt slab is clipped
+ *     to the same silhouette instead of a full `_center` diamond overhanging it
+ *     (the grass pack ships the identical LandmassEdge set as tallDirt),
  *   - dirt tile bordering grass → the stacked light-grass-boundary overlays chosen
  *     from its 8 grass neighbours,
  *   - interior dirt → none (its own dirt top face shows).
@@ -329,7 +332,7 @@ function closeGrassNotches(
  */
 export function resolveTileSurfaceUrls(tile: FarmTile): string[] {
   if (tile.kind === 'grass') {
-    const grassUrl = freeFarmTileset.getGrassBase('light', 'center');
+    const grassUrl = freeFarmTileset.getGrassBase('light', tile.fieldEdge);
     return grassUrl ? [grassUrl] : [];
   }
   return freeFarmTileset.pickGrassBorderOverlays('light', tile.grassNeighbours);
@@ -338,7 +341,8 @@ export function resolveTileSurfaceUrls(tile: FarmTile): string[] {
 /**
  * Resolve the DARK-layer SURFACE sprite URLs painted on a tile, stacked ABOVE the
  * light layer so dark caps/overlays win on shared tiles:
- *   - dark-grass tile → a single `darkGrass_center` cap (over its light cap),
+ *   - dark-grass tile → a single dark-grass cap in the tile's own `fieldEdge`
+ *     variant (over its light cap), matching the rim/rounded slab underneath,
  *   - non-dark tile bordering dark grass → the stacked dark-grass-boundary overlays
  *     chosen from its 8 dark neighbours (these spill onto light-grass tiles, since
  *     the dark patch lives inside the light one),
@@ -348,7 +352,7 @@ export function resolveTileSurfaceUrls(tile: FarmTile): string[] {
  */
 export function resolveTileDarkSurfaceUrls(tile: FarmTile): string[] {
   if (tile.darkGrass) {
-    const grassUrl = freeFarmTileset.getGrassBase('dark', 'center');
+    const grassUrl = freeFarmTileset.getGrassBase('dark', tile.fieldEdge);
     return grassUrl ? [grassUrl] : [];
   }
   return freeFarmTileset.pickGrassBorderOverlays('dark', tile.darkGrassNeighbours);

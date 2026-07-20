@@ -37,6 +37,7 @@ utcm = mastery progress (unfamiliar, target, comfortable, mastered)
 mdp = mark discoverable pipeline (refers to the skill)
 pbh = progress bar height
 nme = night market editor
+nms = night market sandbox
 
 
 ## Terminology: "Learn Now" cards

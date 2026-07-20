@@ -34,6 +34,11 @@ is a self-contained multi-template renderer.
   **locked** tile cannot be dragged (its selection outline turns red and a 🔒 shows in the
   subtitle); it can still be selected, version-switched, and deleted. Persisted (migration 117), so
   the lock survives reloads.
+- **Houses On / Off** (header, enabled when selected) toggles `settings.showHouses` for the
+  selected tile: **On** renders an occupant house in **every placeholder area** of that template,
+  **Off** renders none. This **replaces** the editor's condition-driven rule on this surface — the
+  sandbox no longer decides per-area from the version's condition cells, it is all-or-nothing per
+  placement. Default (setting absent) is **On**. Persisted in the `settings` bag (migration 118).
 - **Delete** (header, enabled when selected) removes the selected tile from the sandbox
   (confirmation dialog).
 - **Pan** — left-drag empty space, or middle/right-drag anywhere. **Zoom** — mouse wheel
@@ -67,6 +72,7 @@ the unlock economy** (scratch state only).
 | `activeVersion` | INTEGER | this instance's rendered version (per-tile switchable) |
 | `offsetCol` / `offsetRow` | INTEGER | SW (min-iso / near) corner offset in **template-cell units** (`isoX = offsetCol + col`, `isoY = offsetRow + row`). May be negative. |
 | `locked` | BOOLEAN NOT NULL DEFAULT false | **migration 117** — when true, the tile cannot be dragged/moved (a move-guard only; select / version-switch / delete still work). The move SQL guards `locked = false` as a server-side backstop. |
+| `settings` | JSONB NOT NULL DEFAULT `'{}'` | **migration 118** — the per-placement **render/view preference bag**. One generic column instead of a new boolean per switch, so future author-facing toggles need no migration. Keys are whitelisted by `NightMarketSandboxService.SETTINGS_SCHEMA` (unknown key ⇒ 400); patches **merge** (`settings \|\| $3::jsonb`). Current keys: `showHouses` (boolean, absent = true). Structural facts the server reasons about (`offsetCol/Row`, `activeVersion`, `locked`) stay real columns. |
 | `createdAt` | TIMESTAMPTZ | insertion time = chronological order (also the depth-tiebreak) |
 
 Indexes: `("userId","createdAt")` (per-author read order) and `("templateName")` (fast
@@ -77,20 +83,22 @@ from the runtime table intentionally dropped.
 
 - **Service** `server/services/NightMarketSandboxService.ts` — `assertTemplateAuthor` (403,
   mirrors `NightMarketTemplateService`), then `listPlacements` / `addPlacement` / `movePlacement`
-  / `setPlacementVersion` / `removePlacement`, plus `removePlacementsForTemplate(name)` (the
+  / `setPlacementVersion` / `setPlacementLock` / `setPlacementSettings` (validated against the
+  `SETTINGS_SCHEMA` key whitelist) / `removePlacement`, plus `removePlacementsForTemplate(name)` (the
   catalog-delete cascade, **not** author-gated — the caller already gated the catalog delete).
   Validates name (≤120), version (non-negative int), and offsets (integers within a generous
   ±10000 sanity clamp — offsets are freeform, so this is a bound, not a placement rule).
 - **DAL** `server/dal/implementations/NightMarketSandboxDAL.ts`
   (+ `interfaces/INightMarketSandboxDAL.ts`) — pure persistence: `findByUser`, `insert`,
-  `updatePosition` (guarded by `locked = false`), `updateVersion`, `updateLock`, `deleteById`
+  `updatePosition` (guarded by `locked = false`), `updateVersion`, `updateLock`,
+  `updateSettings` (jsonb **merge**, so a one-key patch keeps the rest), `deleteById`
   (all scoped to `userId`), and `deleteByTemplateName` (deliberately **not** user-scoped — the
   catalog is global).
 - **Controller** `server/controllers/NightMarketSandboxController.ts` — thin; maps
   `DALError.statusCode` (403/400/404) to the response.
 - **Routes** `server/routes/nightMarketSandboxRoutes.ts` — `GET /api/nightmarket-sandbox`,
   `POST /api/nightmarket-sandbox`, `PATCH …/:id/position`, `PATCH …/:id/version`,
-  `PATCH …/:id/lock`, `DELETE …/:id`. All `authenticateToken`. Wired in `server/dal/setup.ts`
+  `PATCH …/:id/lock`, `PATCH …/:id/settings`, `DELETE …/:id`. All `authenticateToken`. Wired in `server/dal/setup.ts`
   + `server/server.ts`.
 - **Cascade wiring:** the sandbox DAL is injected into `NightMarketTemplateService`
   (`setup.ts`), whose `deleteTemplate` calls `deleteByTemplateName` after removing the catalog
@@ -103,12 +111,12 @@ wheel-zoom-at-point). Renders **each placement** as its own `sortableChildren` c
 translated to `isoToScreen(offsetCol, offsetRow)` — since `isoToScreen` is linear, a local cell
 `(c,r)` lands at the correct global position — holding an `EditorTerrainLayer` (from
 `buildEditorField`) + `TemplateMaskOverlays`. **The sandbox previews the finished look**: it
-passes every tint flag off (`showStreet/showCommunal/showPlaceholder/showCondition = false`) but
-`showHouses` on — a new `TemplateMaskOverlays` prop that decouples the filled-slot occupant houses
-from the condition toggle (default `showHouses = showCondition`, so the editor/gallery are
-unchanged). So no walkability/placeholder/condition tint shows, but a placeholder area holding a
-condition cell (per **this instance's version**) still renders its occupant house(s), and an empty
-area renders nothing. Placements draw **back-to-front** by `(offsetCol + offsetRow)` (chronological
+passes every tint flag off (`showStreet/showCommunal/showPlaceholder/showCondition = false`) and
+drives houses through `TemplateMaskOverlays`' `houseMode` prop — `'filled'` (default, = the
+editor/gallery's condition-driven filled-slot rule), `'all'` (every placeholder area gets a house),
+or `'none'`. The sandbox passes `'all'` / `'none'` from the placement's `settings.showHouses`
+(`SandboxItem.showHouses`), so a tile shows either all its placeholder houses or none, independent
+of the version's condition cells; no walkability/placeholder/condition tint ever shows. Placements draw **back-to-front** by `(offsetCol + offsetRow)` (chronological
 tiebreak); cross-template occlusion is per-template (a whole board is one depth) — acceptable for
 a freeform sandbox. Hit-testing inverts the projection to a **global** cell (`localToGlobalCell`,
 the editor's `localToCell` minus bounds) and returns the front-most placement whose footprint
@@ -123,15 +131,16 @@ a **def cache** — the loaded `{width,height,masks,availableVersions}` for each
 `(templateName, version)` pair actually in use, keyed `name@version`, fetched on demand via
 `loadTemplate` so **any** version of **any** template can render. Bounces signed-in non-authors
 to Home (UX gate; the backend is the real boundary — same stance as the editor). The header hosts
-the version dropdown, Delete, and Add ↔ Cancel; the picker is an overlay (`TemplateLoadGallery`
+the version dropdown, Lock, Houses On/Off, Delete, and Add ↔ Cancel; the picker is an overlay (`TemplateLoadGallery`
 + the dimension filter) shown over the scene. Moves / version-switches / deletes are **optimistic**
 (local update first, roll back + snackbar on failure).
 
 ### Client API — `src/features/nightmarket/templateSandboxApi.ts`
 
 `listSandboxPlacements`, `addSandboxPlacement`, `moveSandboxPlacement`,
-`setSandboxPlacementVersion`, `setSandboxPlacementLock`, `removeSandboxPlacement` + the
-`SandboxPlacement` type. Uses
+`setSandboxPlacementVersion`, `setSandboxPlacementLock`, `setSandboxPlacementSettings`,
+`removeSandboxPlacement` + the `SandboxPlacement` / `SandboxSettings` types and
+`SANDBOX_SETTING_DEFAULTS` (client-side defaults for absent settings keys). Uses
 `authHeader()` + `API_BASE_URL`. The picker + render inputs reuse the editor's
 `listTemplateGallery` / `loadTemplate` / `definitionToMasks` (`templateEditorApi.ts`).
 
@@ -168,7 +177,8 @@ the version dropdown, Delete, and Add ↔ Cancel; the picker is an overlay (`Tem
   `server/services/NightMarketTemplateService.ts` (delete cascade),
   `server/types/nightMarket.ts` (`TemplateSandboxRow`),
   `database/migrations/116-create-nightmarket-template-sandbox.sql`,
-  `database/migrations/117-add-locked-to-nightmarket-template-sandbox.sql`.
+  `database/migrations/117-add-locked-to-nightmarket-template-sandbox.sql`,
+  `database/migrations/118-add-settings-to-nightmarket-template-sandbox.sql`.
 
 Related: [NIGHT_MARKET_TEMPLATE_EDITOR.md](./NIGHT_MARKET_TEMPLATE_EDITOR.md),
 [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md),

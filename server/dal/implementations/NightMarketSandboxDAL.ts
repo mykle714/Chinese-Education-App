@@ -1,6 +1,6 @@
 import { INightMarketSandboxDAL } from '../interfaces/INightMarketSandboxDAL.js';
 import { dbManager } from '../base/DatabaseManager.js';
-import { TemplateSandboxRow } from '../../types/nightMarket.js';
+import { TemplateSandboxRow, TemplateSandboxSettings } from '../../types/nightMarket.js';
 import { ValidationError } from '../../types/dal.js';
 
 /**
@@ -16,7 +16,7 @@ import { ValidationError } from '../../types/dal.js';
 export class NightMarketSandboxDAL implements INightMarketSandboxDAL {
 
   private static readonly COLS =
-    'id, "userId", "templateName", "activeVersion", "offsetCol", "offsetRow", locked, "createdAt"';
+    'id, "userId", "templateName", "activeVersion", "offsetCol", "offsetRow", locked, settings, "createdAt"';
 
   async findByUser(userId: string): Promise<TemplateSandboxRow[]> {
     if (!userId) throw new ValidationError('User ID is required');
@@ -109,6 +109,28 @@ export class NightMarketSandboxDAL implements INightMarketSandboxDAL {
          WHERE "userId" = $1 AND id = $2
          RETURNING ${NightMarketSandboxDAL.COLS}`,
         [userId, id, locked],
+      );
+    });
+
+    return result.recordset[0] ?? null;
+  }
+
+  async updateSettings(
+    userId: string,
+    id: string,
+    patch: TemplateSandboxSettings,
+  ): Promise<TemplateSandboxRow | null> {
+    if (!userId) throw new ValidationError('User ID is required');
+    if (!id) throw new ValidationError('Placement ID is required');
+
+    // MERGE (`||`) rather than replace, so a partial patch never drops the other settings keys.
+    const result = await dbManager.executeQuery<TemplateSandboxRow>(async (client) => {
+      return await client.query(
+        `UPDATE nightmarkettemplatesandbox
+         SET settings = settings || $3::jsonb
+         WHERE "userId" = $1 AND id = $2
+         RETURNING ${NightMarketSandboxDAL.COLS}`,
+        [userId, id, JSON.stringify(patch)],
       );
     });
 

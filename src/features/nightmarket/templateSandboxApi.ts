@@ -11,6 +11,23 @@ import { authHeader } from '../../utils/authHeader';
  * `nightmarkettemplatesandbox` (migration 116).
  */
 
+/**
+ * Per-placement RENDER/VIEW preference bag (`settings` jsonb, migration 119). A generic bag so a
+ * new author-facing switch needs no migration — but the server whitelists the keys, so add one
+ * here AND in NightMarketSandboxService.SETTINGS_SCHEMA together.
+ */
+export interface SandboxSettings {
+  /**
+   * Render an occupant house in EVERY placeholder area of this placement. Absent = true (the
+   * default filled look); false = no houses at all. In the sandbox this fully replaces the
+   * editor's condition-driven house preview.
+   */
+  showHouses?: boolean;
+}
+
+/** Defaults applied when a key is absent from a placement's stored `settings`. */
+export const SANDBOX_SETTING_DEFAULTS = { showHouses: true } as const;
+
 /** One placed template instance in the author's sandbox (a `nightmarkettemplatesandbox` row). */
 export interface SandboxPlacement {
   id: string;
@@ -22,6 +39,8 @@ export interface SandboxPlacement {
   offsetRow: number;
   /** When true, this tile cannot be dragged/moved (a move-guard only — select/version/delete still work). */
   locked: boolean;
+  /** Render/view preferences for this tile (see {@link SandboxSettings}); `{}` = all defaults. */
+  settings: SandboxSettings;
   createdAt: string;
 }
 
@@ -94,6 +113,22 @@ export async function setSandboxPlacementLock(id: string, locked: boolean): Prom
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.error || 'Failed to set sandbox placement lock');
+  return data.placement;
+}
+
+/**
+ * MERGE a render/view settings patch into one placement's `settings` bag (e.g.
+ * `{ showHouses: false }`). Other keys are left untouched. Returns the updated row.
+ */
+export async function setSandboxPlacementSettings(id: string, settings: SandboxSettings): Promise<SandboxPlacement> {
+  const res = await fetch(`${API_BASE_URL}/api/nightmarket-sandbox/${encodeURIComponent(id)}/settings`, {
+    method: 'PATCH',
+    headers: { ...authHeader(), 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ settings }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || 'Failed to set sandbox placement settings');
   return data.placement;
 }
 

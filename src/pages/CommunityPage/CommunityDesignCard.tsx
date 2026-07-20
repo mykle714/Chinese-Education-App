@@ -54,7 +54,8 @@ const CommunityDesignCard: React.FC<{
           noWrap
           sx={{ fontSize: SIZE.micro, fontWeight: WEIGHT.medium, lineHeight: 1.2 }}
         >
-          {design.ownerName || "A learner"}
+          {/* Credit the designer, not whoever holds the copy that survived dedupe. */}
+          {design.authorName || design.ownerName || "A learner"}
         </Typography>
       </Box>
 

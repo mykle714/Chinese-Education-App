@@ -26,32 +26,32 @@ export class CommunityLayoutService {
   getLearningFeed(
     viewerUserId: string,
     language: Language,
-    excludeOwners: string[],
+    excludeAuthors: string[],
     excludeKeys: string[],
     limit: number,
   ): Promise<CommunityDesign[]> {
-    return this.communityLayoutDAL.getLearningFeed(viewerUserId, language, excludeOwners, excludeKeys, limit);
+    return this.communityLayoutDAL.getLearningFeed(viewerUserId, language, excludeAuthors, excludeKeys, limit);
   }
 
   getTopFeed(
     viewerUserId: string,
     language: Language,
-    excludeOwners: string[],
+    excludeAuthors: string[],
     excludeKeys: string[],
     limit: number,
   ): Promise<CommunityDesign[]> {
-    return this.communityLayoutDAL.getTopFeed(viewerUserId, language, excludeOwners, excludeKeys, limit);
+    return this.communityLayoutDAL.getTopFeed(viewerUserId, language, excludeAuthors, excludeKeys, limit);
   }
 
   getDesignsForEntry(
     viewerUserId: string,
     language: Language,
     entryKey: string,
-    excludeOwners: string[],
+    excludeAuthors: string[],
     excludeKeys: string[],
     limit: number,
   ): Promise<CommunityDesign[]> {
-    return this.communityLayoutDAL.getDesignsForEntry(viewerUserId, language, entryKey, excludeOwners, excludeKeys, limit);
+    return this.communityLayoutDAL.getDesignsForEntry(viewerUserId, language, entryKey, excludeAuthors, excludeKeys, limit);
   }
 
   getMyVotesThisWeek(viewerUserId: string): Promise<VotedDesignKey[]> {
@@ -104,17 +104,21 @@ export class CommunityLayoutService {
     // Snapshot the owner's design and confirm it's genuinely advanced (feeds only show these,
     // but the owner could have changed it between page load and apply).
     const snapshot = await this.communityLayoutDAL.getDesignLayout(ownerUserId, entryKey, language);
-    if (!isAdvancedLayout(snapshot)) {
+    if (!snapshot || !isAdvancedLayout(snapshot.iconLayout)) {
       throw new NotFoundError('That design is no longer available');
     }
-    const layout = snapshot as IconLayoutItem[];
+    const layout = snapshot.iconLayout as IconLayoutItem[];
+    // Attribution travels with the artwork (migration 119): the copy credits whoever DESIGNED it,
+    // which for a copy-of-a-copy is still the original author, never the intermediate sharer.
+    // The feeds then treat this copy as the same design and hide it as a duplicate.
+    const author = snapshot.author;
 
     const existing = await this.communityLayoutDAL.findViewerEntry(viewerUserId, entryKey, language);
 
     if (!existing) {
       // Section-2 "Add card & design": create the card, then apply.
       const { vocabEntryId } = await this.vocabEntryService.addToLibrary(viewerUserId, entryKey, language);
-      await this.vocabEntryService.updateIconLayout(viewerUserId, vocabEntryId, language, layout);
+      await this.vocabEntryService.updateIconLayout(viewerUserId, vocabEntryId, language, layout, undefined, undefined, undefined, undefined, author);
       return 'added-and-applied';
     }
 
@@ -123,7 +127,7 @@ export class CommunityLayoutService {
       return 'would-override';
     }
 
-    await this.vocabEntryService.updateIconLayout(viewerUserId, existing.id, language, layout);
+    await this.vocabEntryService.updateIconLayout(viewerUserId, existing.id, language, layout, undefined, undefined, undefined, undefined, author);
     return 'applied';
   }
 }

@@ -1081,5 +1081,9 @@ SnapConfig | null`, and `TextColors` (`{foreign,english}` of `TextColorMode =
 - **Community sharing** — advanced layouts (`isAdvancedLayout`, multi-icon or a moved single
   icon) are surfaced to other learners on the Community page, where they can be upvoted and
   copied onto a card via the same `updateIconLayout` path: [COMMUNITY_PAGE.md](./COMMUNITY_PAGE.md).
+  That write also maintains the **`author`** column (migration 119) next to `iconLayout`: a save
+  from the editor self-attributes **only if the layout actually changed**, a non-advanced save
+  clears it, and the community copy path forces the original designer's id. It is the community
+  feeds' duplicate-suppression key — see COMMUNITY_PAGE.md § Key concepts. No editor UI reads it.
   The advanced-vs-basic geometry test (`isAdvancedLayout`/`isDefaultPlacement` in
   `cardIconLayout.ts`) is mirrored server-side in `server/dal/shared/advancedLayout.ts`.

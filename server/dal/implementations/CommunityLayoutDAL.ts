@@ -8,15 +8,32 @@ import { WEEK_BOUNDARY } from '../shared/weekBoundary.js';
 import { IS_ADVANCED_LAYOUT } from '../shared/advancedLayout.js';
 
 /**
+ * The AUTHOR of the design on a vet row aliased `ve` (migration 119): who made the layout, as
+ * opposed to `ve."userId"` who merely has it on their card. NULL (every pre-118 row, and any
+ * row saved outside the editor) falls back to the owner — i.e. "assume self-authored".
+ */
+const AUTHOR_OF_VE = `COALESCE(ve.author, ve."userId")`;
+
+/**
+ * Joins the AUTHOR's `users` row so a feed tile can credit whoever designed the layout, not
+ * whichever user happens to hold the copy that survived dedupe. LEFT so a deleted author (the
+ * FK nulls `author`, migration 119) still yields the row — the client falls back to `ownerName`.
+ */
+const AUTHOR_JOIN = `LEFT JOIN users author_u ON author_u.id = ${AUTHOR_OF_VE}`;
+
+/**
  * Reads of OTHER users' advanced card-icon layouts for the Community feeds, plus the upvote
  * log (community_layout_votes, migration 86). See docs/COMMUNITY_PAGE.md.
  *
  * Both feeds join the VIEWER's `users` row (aliased `u`) so the per-design vote tally and the
  * once-a-week window use the viewer's timezone-based week boundary (${WEEK_BOUNDARY}). They
  * read through `vetReadFrom`/`DICT_JOIN` (the same vet→det plumbing as normal card reads) and
- * gate on `IS_ADVANCED_LAYOUT` so only genuinely-decorated designs surface. `excludeOwners`/
- * `excludeKeys` are parallel arrays of already-shown (ownerUserId, entryKey) pairs — the
- * infinite-scroll no-duplicates contract.
+ * gate on `IS_ADVANCED_LAYOUT` so only genuinely-decorated designs surface.
+ *
+ * Duplicate suppression (migration 119) has two halves: `dupRank` collapses rows that share one
+ * design (same word + same author + equal layout jsonb) within a page, and `excludeAuthors`/
+ * `excludeKeys` — parallel arrays of already-shown (authorUserId, entryKey) pairs — carry that
+ * across pages, giving the infinite-scroll no-duplicates contract.
  */
 export class CommunityLayoutDAL implements ICommunityLayoutDAL {
   // Shared SELECT list for a feed row: design identity + det render fields + this-week tally.
@@ -26,6 +43,8 @@ export class CommunityLayoutDAL implements ICommunityLayoutDAL {
     return `
       ve."userId"     AS "ownerUserId",
       owner.name      AS "ownerName",
+      ${AUTHOR_OF_VE} AS "authorUserId",
+      author_u.name   AS "authorName",
       ve."entryKey"   AS "entryKey",
       ve.language     AS language,
       ve."iconLayout" AS "iconLayout",
@@ -42,18 +61,34 @@ export class CommunityLayoutDAL implements ICommunityLayoutDAL {
       )::int AS "${voteCountAlias}"`;
   }
 
-  // NOT-EXISTS clause that drops any (ownerUserId, entryKey) already shown to the client.
-  // `$3` = uuid[] of owners, `$4` = text[] of entryKeys (parallel arrays).
+  // NOT-EXISTS clause that drops any (authorUserId, entryKey) already shown to the client.
+  // `$3` = uuid[] of AUTHORS, `$4` = text[] of entryKeys (parallel arrays).
+  //
+  // Keyed on the author rather than the row owner (migration 119) so pagination inherits the
+  // duplicate collapsing: once a design by author A for word W has been shown, every other
+  // user's *copy* of it is excluded from all later pages too — `dupRank` below only dedupes
+  // within a single page. The cost is that a same-author/same-word row carrying a genuinely
+  // different layout is also skipped on later pages; that is rare and preferable to repeats.
   private readonly excludeClause = `
     AND NOT EXISTS (
-      SELECT 1 FROM unnest($3::uuid[], $4::text[]) AS ex(owner, key)
-      WHERE ex.owner = ve."userId" AND ex.key = ve."entryKey"
+      SELECT 1 FROM unnest($3::uuid[], $4::text[]) AS ex(author, key)
+      WHERE ex.author = ${AUTHOR_OF_VE} AND ex.key = ve."entryKey"
     )`;
+
+  // Window that ranks rows sharing one design — same word, same author, byte-equal layout
+  // (jsonb equality is key-order-independent). The outer query keeps rank 1, so a design and
+  // all the copies made from it collapse to a single feed tile. The ORDER BY prefers the row
+  // whose owner IS the author (the original) and falls back to a stable owner-id tiebreak.
+  private readonly dupRank = `
+    ROW_NUMBER() OVER (
+      PARTITION BY ve."entryKey", ${AUTHOR_OF_VE}, ve."iconLayout"
+      ORDER BY (ve."userId" = ${AUTHOR_OF_VE}) DESC, ve."userId"
+    ) AS "dupRank"`;
 
   async getLearningFeed(
     viewerUserId: string,
     language: string,
-    excludeOwners: string[],
+    excludeAuthors: string[],
     excludeKeys: string[],
     limit: number,
   ): Promise<CommunityDesign[]> {
@@ -62,15 +97,19 @@ export class CommunityLayoutDAL implements ICommunityLayoutDAL {
 
     const result = await dbManager.executeQuery<CommunityDesign>(async (client) => {
       return await client.query(`
+        SELECT * FROM (
         SELECT
           ${this.feedSelect()},
-          TRUE AS "inLibrary"          -- feed 1 is, by definition, words the viewer is learning
+          TRUE AS "inLibrary",         -- feed 1 is, by definition, words the viewer is learning
+          ${this.dupRank}
         FROM ${vetReadFrom(language)}
         JOIN users u ON u.id = $1       -- viewer row → week boundary timezone
-        JOIN users owner ON owner.id = ve."userId"  -- design author → display name
+        JOIN users owner ON owner.id = ve."userId"  -- row owner → display name
+        ${AUTHOR_JOIN}
         ${DICT_JOIN}
         WHERE ve.language = $2
-          AND ve."userId" <> $1        -- other users' designs only
+          AND ve."userId" <> $1        -- other users' rows only
+          AND ${AUTHOR_OF_VE} <> $1    -- ...and never the viewer's own design via someone's copy
           AND ${IS_ADVANCED_LAYOUT}
           AND ve."entryKey" IN (
             SELECT lib."entryKey" FROM ${libTable} lib
@@ -81,9 +120,11 @@ export class CommunityLayoutDAL implements ICommunityLayoutDAL {
               AND compute_utcm_category(lib."typedMarkHistory", u."readingGoal", u."writingGoal") <> 'Mastered'
           )
           ${this.excludeClause}
+        ) d
+        WHERE d."dupRank" = 1          -- one tile per distinct design (see dupRank)
         ORDER BY random()              -- "randomly selected set" per page
         LIMIT $5
-      `, [viewerUserId, language, excludeOwners, excludeKeys, limit]);
+      `, [viewerUserId, language, excludeAuthors, excludeKeys, limit]);
     });
 
     return result.recordset.map(this.normalize);
@@ -92,7 +133,7 @@ export class CommunityLayoutDAL implements ICommunityLayoutDAL {
   async getTopFeed(
     viewerUserId: string,
     language: string,
-    excludeOwners: string[],
+    excludeAuthors: string[],
     excludeKeys: string[],
     limit: number,
   ): Promise<CommunityDesign[]> {
@@ -101,25 +142,31 @@ export class CommunityLayoutDAL implements ICommunityLayoutDAL {
 
     const result = await dbManager.executeQuery<CommunityDesign>(async (client) => {
       return await client.query(`
+        SELECT * FROM (
         SELECT
           ${this.feedSelect()},
           EXISTS (
             SELECT 1 FROM ${libTable} mine
             WHERE mine."userId" = $1 AND mine.language = $2 AND mine."entryKey" = ve."entryKey"
-          ) AS "inLibrary"
+          ) AS "inLibrary",
+          ${this.dupRank}
         FROM ${vetReadFrom(language)}
         JOIN users u ON u.id = $1
-        JOIN users owner ON owner.id = ve."userId"  -- design author → display name
+        JOIN users owner ON owner.id = ve."userId"  -- row owner → display name
+        ${AUTHOR_JOIN}
         ${DICT_JOIN}
         WHERE ve.language = $2
           AND ve."userId" <> $1
+          AND ${AUTHOR_OF_VE} <> $1    -- never the viewer's own design via someone else's copy
           AND ${IS_ADVANCED_LAYOUT}
           -- Every advanced layout is eligible for the Top feed; designs with no vote this
           -- week still appear, sorted to the bottom by the vote-count ORDER BY below.
           ${this.excludeClause}
-        ORDER BY "voteCountThisWeek" DESC, ve."userId", ve."entryKey"  -- top this week, stable tiebreak
+        ) d
+        WHERE d."dupRank" = 1          -- one tile per distinct design (see dupRank)
+        ORDER BY d."voteCountThisWeek" DESC, d."ownerUserId", d."entryKey"  -- top this week, stable tiebreak
         LIMIT $5
-      `, [viewerUserId, language, excludeOwners, excludeKeys, limit]);
+      `, [viewerUserId, language, excludeAuthors, excludeKeys, limit]);
     });
 
     return result.recordset.map(this.normalize);
@@ -129,7 +176,7 @@ export class CommunityLayoutDAL implements ICommunityLayoutDAL {
     viewerUserId: string,
     language: string,
     entryKey: string,
-    excludeOwners: string[],
+    excludeAuthors: string[],
     excludeKeys: string[],
     limit: number,
   ): Promise<CommunityDesign[]> {
@@ -139,24 +186,30 @@ export class CommunityLayoutDAL implements ICommunityLayoutDAL {
 
     const result = await dbManager.executeQuery<CommunityDesign>(async (client) => {
       return await client.query(`
+        SELECT * FROM (
         SELECT
           ${this.feedSelect()},
           EXISTS (
             SELECT 1 FROM ${libTable} mine
             WHERE mine."userId" = $1 AND mine.language = $2 AND mine."entryKey" = ve."entryKey"
-          ) AS "inLibrary"
+          ) AS "inLibrary",
+          ${this.dupRank}
         FROM ${vetReadFrom(language)}
         JOIN users u ON u.id = $1
-        JOIN users owner ON owner.id = ve."userId"  -- design author → display name
+        JOIN users owner ON owner.id = ve."userId"  -- row owner → display name
+        ${AUTHOR_JOIN}
         ${DICT_JOIN}
         WHERE ve.language = $2
           AND ve."userId" <> $1
+          AND ${AUTHOR_OF_VE} <> $1    -- never the viewer's own design via someone else's copy
           AND ve."entryKey" = $5
           AND ${IS_ADVANCED_LAYOUT}
           ${this.excludeClause}
-        ORDER BY "voteCountThisWeek" DESC, ve."userId"  -- top for this word, stable tiebreak
+        ) d
+        WHERE d."dupRank" = 1          -- one tile per distinct design (see dupRank)
+        ORDER BY d."voteCountThisWeek" DESC, d."ownerUserId"  -- top for this word, stable tiebreak
         LIMIT $6
-      `, [viewerUserId, language, excludeOwners, excludeKeys, entryKey, limit]);
+      `, [viewerUserId, language, excludeAuthors, excludeKeys, entryKey, limit]);
     });
 
     return result.recordset.map(this.normalize);
@@ -245,18 +298,20 @@ export class CommunityLayoutDAL implements ICommunityLayoutDAL {
     ownerUserId: string,
     entryKey: string,
     language: string,
-  ): Promise<unknown[] | null> {
+  ): Promise<{ iconLayout: unknown[] | null; author: string } | null> {
     if (!ownerUserId) throw new ValidationError('ownerUserId is required');
     const table = vetTableForLanguage(language);
 
-    const result = await dbManager.executeQuery<{ iconLayout: unknown[] | null }>(async (client) => {
+    // COALESCE(author, "userId") (migration 119): a legacy/unattributed row is treated as
+    // authored by its owner, so a copy of it still carries a stable author forward.
+    const result = await dbManager.executeQuery<{ iconLayout: unknown[] | null; author: string }>(async (client) => {
       return await client.query(`
-        SELECT "iconLayout" FROM ${table}
+        SELECT "iconLayout", COALESCE(author, "userId") AS author FROM ${table}
         WHERE "userId" = $1 AND "entryKey" = $2 AND language = $3
       `, [ownerUserId, entryKey, language]);
     });
 
-    return result.recordset[0]?.iconLayout ?? null;
+    return result.recordset[0] ?? null;
   }
 
   async findViewerEntry(
@@ -280,8 +335,10 @@ export class CommunityLayoutDAL implements ICommunityLayoutDAL {
   // pg returns jsonb already parsed and the COUNT cast as a JS number; coerce defensively so
   // the API contract (numeric voteCountThisWeek, boolean inLibrary) holds regardless of driver.
   private normalize(row: any): CommunityDesign {
+    // dupRank is an internal window value from the dedupe subquery — never part of the API shape.
+    const { dupRank, ...rest } = row;
     return {
-      ...row,
+      ...rest,
       voteCountThisWeek: Number(row.voteCountThisWeek) || 0,
       inLibrary: row.inLibrary === true,
     };

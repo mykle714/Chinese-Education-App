@@ -102,7 +102,8 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     snapConfig?: SnapConfig | null,
     textColors?: TextColors | null,
     textLayout?: TextLayout | null,
-    cardColor?: string | null
+    cardColor?: string | null,
+    author?: string | null
   ): Promise<VocabEntry | null> {
     if (!userId) throw new ValidationError('userId is required');
     if (!id) throw new ValidationError('id is required');
@@ -140,6 +141,23 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     if (cardColor !== undefined) {
       params.push(cardColor);
       sets.push(`"cardColor" = $${params.length}::text`);
+    }
+    // author (migration 119) — who designed the layout being written:
+    //   * a string  → force that author (the community copy path carries the ORIGINAL designer
+    //                 through, so a copy never re-credits the copier),
+    //   * null      → clear the attribution (the layout is no longer a design),
+    //   * undefined → self-attribution, but ONLY if the layout actually changed. The CASE reads
+    //                 the pre-UPDATE "iconLayout", so re-saving an untouched copied design keeps
+    //                 crediting its original author. jsonb IS DISTINCT FROM is key-order-
+    //                 independent, so a cosmetic re-serialization does not count as a change.
+    if (author !== undefined) {
+      params.push(author);
+      sets.push(`author = $${params.length}::uuid`);
+    } else {
+      params.push(userId);
+      sets.push(
+        `author = CASE WHEN "iconLayout" IS DISTINCT FROM $1::jsonb THEN $${params.length}::uuid ELSE author END`,
+      );
     }
     params.push(id, userId);
 

@@ -17,12 +17,15 @@ function authHeaders(token: string | null): HeadersInit {
     : { "Content-Type": "application/json" };
 }
 
-/** A page of designs already-shown designs are excluded via the parallel owner/key arrays. */
+/**
+ * A page of designs. Already-shown designs are excluded via the parallel author/key arrays —
+ * keyed on the design's AUTHOR so other users' copies of a shown design are suppressed too.
+ */
 async function fetchFeed(
   path: string,
   token: string | null,
   language: Language,
-  excludeOwners: string[],
+  excludeAuthors: string[],
   excludeKeys: string[],
   limit: number,
 ): Promise<CommunityDesign[]> {
@@ -30,7 +33,7 @@ async function fetchFeed(
     method: "POST",
     credentials: "include",
     headers: authHeaders(token),
-    body: JSON.stringify({ language, excludeOwners, excludeKeys, limit }),
+    body: JSON.stringify({ language, excludeAuthors, excludeKeys, limit }),
   });
   if (!res.ok) throw new Error(`Community feed failed (${res.status})`);
   const data = await res.json();
@@ -41,22 +44,22 @@ async function fetchFeed(
 export function fetchLearningFeed(
   token: string | null,
   language: Language,
-  excludeOwners: string[],
+  excludeAuthors: string[],
   excludeKeys: string[],
   limit: number,
 ): Promise<CommunityDesign[]> {
-  return fetchFeed("/api/community/learning-feed", token, language, excludeOwners, excludeKeys, limit);
+  return fetchFeed("/api/community/learning-feed", token, language, excludeAuthors, excludeKeys, limit);
 }
 
 /** Feed 2 — page of advanced layouts ranked by votes this week. */
 export function fetchTopFeed(
   token: string | null,
   language: Language,
-  excludeOwners: string[],
+  excludeAuthors: string[],
   excludeKeys: string[],
   limit: number,
 ): Promise<CommunityDesign[]> {
-  return fetchFeed("/api/community/top-feed", token, language, excludeOwners, excludeKeys, limit);
+  return fetchFeed("/api/community/top-feed", token, language, excludeAuthors, excludeKeys, limit);
 }
 
 /** Feed 3 — page of advanced layouts for one specific word, ranked by votes this week. */
@@ -64,7 +67,7 @@ export async function fetchEntryFeed(
   token: string | null,
   language: Language,
   entryKey: string,
-  excludeOwners: string[],
+  excludeAuthors: string[],
   excludeKeys: string[],
   limit: number,
 ): Promise<CommunityDesign[]> {
@@ -72,7 +75,7 @@ export async function fetchEntryFeed(
     method: "POST",
     credentials: "include",
     headers: authHeaders(token),
-    body: JSON.stringify({ entryKey, language, excludeOwners, excludeKeys, limit }),
+    body: JSON.stringify({ entryKey, language, excludeAuthors, excludeKeys, limit }),
   });
   if (!res.ok) throw new Error(`Entry feed failed (${res.status})`);
   const data = await res.json();

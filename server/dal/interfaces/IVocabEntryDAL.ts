@@ -29,7 +29,13 @@ export interface IVocabEntryDAL extends IBaseDAL<VocabEntry, VocabEntryCreateDat
     snapConfig?: SnapConfig | null,
     textColors?: TextColors | null,
     textLayout?: TextLayout | null,
-    cardColor?: string | null
+    cardColor?: string | null,
+    /**
+     * Community attribution for the layout being written (migration 119): a user id forces that
+     * author (community copy path), `null` clears it, `undefined` self-attributes to `userId`
+     * but only when the layout actually changed. See docs/COMMUNITY_PAGE.md.
+     */
+    author?: string | null
   ): Promise<VocabEntry | null>;
   /**
    * Persist (or clear) the chosen definition-cluster sense for one vet row (migration 99).

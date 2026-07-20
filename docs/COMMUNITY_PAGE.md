@@ -40,8 +40,29 @@ the whole page.
 ## Key concepts
 
 - **A "design"** is identified by its owner's vet row: **`(ownerUserId, entryKey, language)`** —
-  one user's saved layout on one word. Votes reference this logical identity (not the vet row's
-  numeric id) so a tally survives the row being edited/re-saved/recreated.
+  one user's saved layout on one word. Votes and apply reference this logical identity (not the vet
+  row's numeric id) so a tally survives the row being edited/re-saved/recreated.
+- **Authorship + duplicate suppression** (migration 119, `author` uuid on both vet tables).
+  Applying a design *copies* the jsonb onto the viewer's row, so one piece of artwork ends up on
+  many users' cards and, without help, appears as many identical feed tiles. `author` records who
+  DESIGNED the layout currently sitting in `iconLayout`, and travels with the artwork:
+  - the icon editor self-attributes on save, **but only when the layout actually changed**
+    (`author = CASE WHEN "iconLayout" IS DISTINCT FROM <new> THEN <saver> ELSE author END` in
+    `VocabEntryDAL.updateIconLayout`) — an untouched re-save of a copied design keeps crediting
+    the original designer; editing it makes the editor the new author;
+  - the apply path passes the source row's author explicitly, so a copy-of-a-copy still credits
+    the original, never the intermediate sharer;
+  - a save whose layout is **not advanced** clears `author` to NULL (it is no longer a design);
+  - NULL = unattributed (all pre-119 rows). Every read uses `COALESCE(author, "userId")`
+    (`AUTHOR_OF_VE` in `CommunityLayoutDAL`), i.e. "assume self-authored", so no backfill is needed.
+
+  A **DESIGN's** identity for display purposes is therefore
+  **`(authorUserId, entryKey, iconLayout)`** — plain jsonb equality on the layout, which is
+  key-order-independent. The feeds keep only one row per such group (`dupRank`, a
+  `ROW_NUMBER()` window preferring the row whose owner *is* the author), credit
+  `authorName`, and additionally drop any design the **viewer** authored
+  (`COALESCE(ve.author, ve."userId") <> viewer`) so your own work is not sold back to you
+  through someone else's copy.
 - **"Advanced"** = `isAdvancedLayout(iconLayout)` — 2+ icons, OR a single icon that's been
   moved/resized/rotated/mirrored. Because the editor persists exactly the active draft and basic
   mode always writes a single **default-placed** icon, this geometric test equals "saved while in
@@ -69,8 +90,9 @@ the whole page.
   lower-third geometry, with the icon arrangement behind. A floating toolbar below holds the vote
   toggle + the apply button.
 - **Thumbnail attribution + inline vote** — each feed thumbnail (`CommunityDesignCard.tsx`) shows
-  the **design owner's name** and an inline **upvote button** below the preview, so a design can
-  be voted without opening the zoom.
+  the **author's name** (`authorName`, falling back to `ownerName` when the author's account is
+  gone) and an inline **upvote button** below the preview, so a design can be voted without opening
+  the zoom. The zoom credits the same name.
 - **Upvote toggle** — the shared `VoteButton.tsx` (used by both the thumbnail and the zoom
   toolbar) is a **toggle**: tap to vote (`POST /vote`), tap again to unvote (`POST /unvote`), once
   per design per week. **Color encodes state — GREY = not voted, COLORED (blue) = voted.** Design
@@ -105,7 +127,7 @@ per cast vote), NOT a per-design counter:
 |---|---|---|
 | `id` | serial PK | |
 | `voterUserId` | uuid → users (CASCADE) | who voted |
-| `ownerUserId` | uuid → users (CASCADE) | the design's author |
+| `ownerUserId` | uuid → users (CASCADE) | the owner of the voted row (votes stay row-keyed, not author-keyed) |
 | `entryKey` | varchar | the voted word (vet identity) |
 | `language` | varchar(8) | `zh` \| `es` |
 | `votedAt` | timestamptz default now() | week filter / tiebreak |
@@ -116,13 +138,26 @@ constraint** — the once-per-week rule is time-windowed (a UNIQUE would block l
 next-week votes), so it is enforced in the DAL's `recordVote` (insert-iff-not-exists-since-the
 -boundary).
 
+### `author` column (migration 119)
+
+`database/migrations/119-add-author-to-vocabentries.sql` adds to **both** `vocabentries_zh` and
+`vocabentries_es`:
+
+| Column | Type | Notes |
+|---|---|---|
+| `author` | uuid → users(id) **ON DELETE SET NULL** | who designed the layout in `iconLayout`; NULL = unattributed/legacy. SET NULL (not CASCADE) so deleting the author never deletes a learner's card. |
+
+Indexed per table (`idx_vocabentries_{zh,es}_author`) for the feed dedupe grouping.
+
 ## Layers
 
 | Layer | File | Responsibility |
 |---|---|---|
 | Migration | `database/migrations/86-*.sql` | the votes table |
+| Migration | `database/migrations/119-*.sql` | `author` on both vet tables (design attribution + dedupe key) |
 | Shared SQL | `server/dal/shared/weekBoundary.ts`, `advancedLayout.ts` | `WEEK_BOUNDARY`, `IS_ADVANCED_LAYOUT` + JS `isAdvancedLayout` |
-| DAL | `server/dal/implementations/CommunityLayoutDAL.ts` (`ICommunityLayoutDAL`) | feed reads (via `vetReadFrom` + `DICT_JOIN`), vote log, `findViewerEntry`, `getDesignLayout`, `getDesignsForEntry` |
+| DAL | `server/dal/implementations/CommunityLayoutDAL.ts` (`ICommunityLayoutDAL`) | feed reads (via `vetReadFrom` + `DICT_JOIN`), duplicate suppression (`AUTHOR_OF_VE`, `AUTHOR_JOIN`, `dupRank`, `excludeClause`), vote log, `findViewerEntry`, `getDesignLayout` (returns layout **+ author**), `getDesignsForEntry` |
+| DAL (write) | `server/dal/implementations/VocabEntryDAL.ts` `updateIconLayout` | the `author` tri-state: id = force, `null` = clear, omitted = self-attribute iff the layout changed |
 | Service | `server/services/CommunityLayoutService.ts` | once-a-week vote guard delegation; `applyDesign` (reuses `VocabEntryService.addToLibrary` + `updateIconLayout`) |
 | Controller | `server/controllers/CommunityLayoutController.ts` | request parsing (exclude arrays, page clamp, language resolution) |
 | Routes | `server/routes/gamesRoutes.ts` (`/api/community/*`); wired in `server/dal/setup.ts` | |
@@ -136,21 +171,28 @@ The read-only design render (`CommunityCardView.tsx`) reuses the same `CardIconL
 ## API (server)
 
 All `authenticateToken`. Feeds are **POST** so the growing exclude lists aren't bound by URL
-length. `excludeOwners`/`excludeKeys` are parallel arrays of already-shown `(ownerUserId,
-entryKey)` pairs (the no-duplicates contract); `language` defaults to the user's study language.
+length. `excludeAuthors`/`excludeKeys` are parallel arrays of already-shown `(authorUserId,
+entryKey)` pairs (the no-duplicates contract) — keyed on the **author**, not the row owner, so once
+a design has been shown every other user's copy of it is excluded from later pages too (`dupRank`
+alone only dedupes *within* a page). The trade-off: a same-author/same-word row carrying a
+genuinely different layout is also skipped on later pages. `language` defaults to the user's study
+language.
 
 | Method & path | Body | Returns |
 |---|---|---|
-| `POST /api/community/learning-feed` | `{ language?, excludeOwners[], excludeKeys[], limit? }` | `{ designs: CommunityDesign[] }` |
-| `POST /api/community/top-feed` | `{ language?, excludeOwners[], excludeKeys[], limit? }` | `{ designs: CommunityDesign[] }` |
-| `POST /api/community/entry-feed` | `{ entryKey, language?, excludeOwners[], excludeKeys[], limit? }` | `{ designs: CommunityDesign[] }` |
+| `POST /api/community/learning-feed` | `{ language?, excludeAuthors[], excludeKeys[], limit? }` | `{ designs: CommunityDesign[] }` |
+| `POST /api/community/top-feed` | `{ language?, excludeAuthors[], excludeKeys[], limit? }` | `{ designs: CommunityDesign[] }` |
+| `POST /api/community/entry-feed` | `{ entryKey, language?, excludeAuthors[], excludeKeys[], limit? }` | `{ designs: CommunityDesign[] }` |
 | `GET  /api/community/my-votes` | — | `{ votes: VotedDesignKey[] }` |
 | `POST /api/community/vote` | `{ ownerUserId, entryKey, language? }` | `{ result: 'recorded' \| 'already-voted' }` |
 | `POST /api/community/unvote` | `{ ownerUserId, entryKey, language? }` | `{ removed: boolean }` (deletes this week's vote) |
 | `POST /api/community/apply-design` | `{ ownerUserId, entryKey, language?, override? }` | `{ result: 'applied' \| 'added-and-applied' \| 'would-override' }` |
 
-`limit` is clamped to `[1, 30]` (default 10). Feeds exclude the viewer's own designs
-(`ve."userId" <> viewer`).
+`limit` is clamped to `[1, 30]` (default 10). Feeds exclude the viewer's own rows
+(`ve."userId" <> viewer`) **and** anything the viewer authored
+(`COALESCE(ve.author, ve."userId") <> viewer`). Each `CommunityDesign` carries `authorUserId` +
+`authorName` alongside `ownerUserId`/`ownerName`; the internal `dupRank` window value is stripped
+in `normalize` and is never part of the API shape.
 
 ## Dependencies / cross-references
 

@@ -83,7 +83,7 @@ function CommunityPage() {
         <>
           <CommunityFeedRow
             title="For words you're learning"
-            fetchPage={(owners, keys, limit) => fetchLearningFeed(token, language, owners, keys, limit)}
+            fetchPage={(authors, keys, limit) => fetchLearningFeed(token, language, authors, keys, limit)}
             votedKeys={votedKeys}
             voteDeltas={voteDeltas}
             onVoteChange={setVote}
@@ -93,7 +93,7 @@ function CommunityPage() {
           />
           <CommunityFeedRow
             title="Top designs this week"
-            fetchPage={(owners, keys, limit) => fetchTopFeed(token, language, owners, keys, limit)}
+            fetchPage={(authors, keys, limit) => fetchTopFeed(token, language, authors, keys, limit)}
             votedKeys={votedKeys}
             voteDeltas={voteDeltas}
             onVoteChange={setVote}

@@ -7,9 +7,10 @@ import { CommunityDesign, VotedDesignKey, VoteResult } from '../../types/communi
  * "This week" everywhere means: since the VIEWER's most-recent-Sunday-04:00 in their local
  * timezone — the same boundary the wins/weeklies system uses (server/dal/shared/weekBoundary.ts).
  * Every feed/vote query is language-scoped and reads only OTHER users' advanced layouts
- * (server/dal/shared/advancedLayout.ts). `excludeOwners`/`excludeKeys` are parallel arrays
- * naming (ownerUserId, entryKey) pairs already shown to the client, so infinite scroll never
- * repeats a design.
+ * (server/dal/shared/advancedLayout.ts). `excludeAuthors`/`excludeKeys` are parallel arrays
+ * naming (authorUserId, entryKey) pairs already shown to the client, so infinite scroll never
+ * repeats a design — keyed on the AUTHOR (migration 119) so copies of an already-shown design
+ * are excluded too. Feeds additionally collapse same-word/same-author/equal-layout rows to one.
  */
 export interface ICommunityLayoutDAL {
   /**
@@ -19,7 +20,7 @@ export interface ICommunityLayoutDAL {
   getLearningFeed(
     viewerUserId: string,
     language: string,
-    excludeOwners: string[],
+    excludeAuthors: string[],
     excludeKeys: string[],
     limit: number,
   ): Promise<CommunityDesign[]>;
@@ -32,7 +33,7 @@ export interface ICommunityLayoutDAL {
   getTopFeed(
     viewerUserId: string,
     language: string,
-    excludeOwners: string[],
+    excludeAuthors: string[],
     excludeKeys: string[],
     limit: number,
   ): Promise<CommunityDesign[]>;
@@ -47,7 +48,7 @@ export interface ICommunityLayoutDAL {
     viewerUserId: string,
     language: string,
     entryKey: string,
-    excludeOwners: string[],
+    excludeAuthors: string[],
     excludeKeys: string[],
     limit: number,
   ): Promise<CommunityDesign[]>;
@@ -77,12 +78,16 @@ export interface ICommunityLayoutDAL {
     language: string,
   ): Promise<boolean>;
 
-  /** The owner's saved iconLayout for one design, or null if the row/layout is gone. */
+  /**
+   * The owner's saved iconLayout for one design plus its author (migration 119, defaulted to the
+   * owner when unattributed), or null if the row is gone. The apply flow carries `author` onto
+   * the copy so attribution survives re-sharing.
+   */
   getDesignLayout(
     ownerUserId: string,
     entryKey: string,
     language: string,
-  ): Promise<unknown[] | null>;
+  ): Promise<{ iconLayout: unknown[] | null; author: string } | null>;
 
   /**
    * The viewer's own vet row for a word (id + current layout), or null if they don't have it.

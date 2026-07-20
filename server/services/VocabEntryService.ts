@@ -7,6 +7,7 @@ import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel
 import { ValidationError, NotFoundError, BulkResult } from '../types/dal.js';
 import db from '../db.js';
 import { vetTableForLanguage } from '../dal/shared/vetTable.js';
+import { isAdvancedLayout } from '../dal/shared/advancedLayout.js';
 
 // ── Icon-layout geometry (mirrors src/pages/FlashcardsLearnPage/cardIconLayout.ts) ──
 // These must stay in lockstep with the client constants so save-time validation clamps
@@ -214,14 +215,20 @@ export class VocabEntryService {
     snapConfig?: SnapConfig | null,
     textColors?: TextColors | null,
     textLayout?: TextLayout | null,
-    cardColor?: string | null
+    cardColor?: string | null,
+    author?: string | null
   ): Promise<VocabEntry> {
     const clean = layout === null ? null : this.validateIconLayout(layout);
     const cleanSnap = snapConfig === undefined ? undefined : this.validateSnapConfig(snapConfig);
     const cleanColors = textColors === undefined ? undefined : this.validateTextColors(textColors);
     const cleanText = textLayout === undefined ? undefined : this.validateTextLayout(textLayout);
     const cleanCardColor = cardColor === undefined ? undefined : this.validateCardColor(cardColor);
-    const updated = await this.vocabEntryDAL.updateIconLayout(userId, entryId, language, clean, cleanSnap, cleanColors, cleanText, cleanCardColor);
+    // Community attribution (migration 119). Only an ADVANCED layout is a "design", so a basic /
+    // cleared layout drops the attribution outright; otherwise the caller decides — the community
+    // copy path passes the original designer's id, and the editor passes nothing so the DAL
+    // self-attributes iff the layout actually changed. See docs/COMMUNITY_PAGE.md.
+    const cleanAuthor = author === undefined && !isAdvancedLayout(clean) ? null : author;
+    const updated = await this.vocabEntryDAL.updateIconLayout(userId, entryId, language, clean, cleanSnap, cleanColors, cleanText, cleanCardColor, cleanAuthor);
     if (!updated) {
       // No row matched the id for this user — either it doesn't exist or isn't theirs.
       throw new NotFoundError('Vocabulary entry not found');

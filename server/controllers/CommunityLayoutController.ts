@@ -11,16 +11,17 @@ const DEFAULT_PAGE = 10;
 /**
  * HTTP layer for the Community page (docs/COMMUNITY_PAGE.md).
  *
- * POST /api/community/learning-feed { language?, excludeOwners[], excludeKeys[], limit? }
- * POST /api/community/top-feed      { language?, excludeOwners[], excludeKeys[], limit? }
- * POST /api/community/entry-feed    { entryKey, language?, excludeOwners[], excludeKeys[], limit? }
+ * POST /api/community/learning-feed { language?, excludeAuthors[], excludeKeys[], limit? }
+ * POST /api/community/top-feed      { language?, excludeAuthors[], excludeKeys[], limit? }
+ * POST /api/community/entry-feed    { entryKey, language?, excludeAuthors[], excludeKeys[], limit? }
  * GET  /api/community/my-votes
  * POST /api/community/vote          { ownerUserId, entryKey, language? }
  * POST /api/community/apply-design  { ownerUserId, entryKey, language?, override? }
  *
  * Feeds are POST (not GET) so the growing exclude lists aren't bound by URL length.
- * `excludeOwners`/`excludeKeys` are parallel arrays naming already-shown (ownerUserId, entryKey)
- * pairs, so infinite scroll never repeats a design.
+ * `excludeAuthors`/`excludeKeys` are parallel arrays naming already-shown (authorUserId, entryKey)
+ * pairs, so infinite scroll never repeats a design — keyed on the design's AUTHOR (migration 119)
+ * so other users' copies of an already-shown design are suppressed too.
  */
 export class CommunityLayoutController {
   constructor(private service: CommunityLayoutService) {}
@@ -34,14 +35,14 @@ export class CommunityLayoutController {
   }
 
   // Parse + sanitize the exclude pair-arrays and page size from a feed request body.
-  private parsePaging(req: Request): { excludeOwners: string[]; excludeKeys: string[]; limit: number } {
-    const owners = Array.isArray(req.body?.excludeOwners) ? req.body.excludeOwners.filter((s: unknown) => typeof s === 'string') : [];
+  private parsePaging(req: Request): { excludeAuthors: string[]; excludeKeys: string[]; limit: number } {
+    const authors = Array.isArray(req.body?.excludeAuthors) ? req.body.excludeAuthors.filter((s: unknown) => typeof s === 'string') : [];
     const keys = Array.isArray(req.body?.excludeKeys) ? req.body.excludeKeys.filter((s: unknown) => typeof s === 'string') : [];
     // unnest() pairs them positionally, so they MUST be the same length — truncate to the shorter.
-    const n = Math.min(owners.length, keys.length);
+    const n = Math.min(authors.length, keys.length);
     const rawLimit = Number(req.body?.limit);
     const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(Math.trunc(rawLimit), 1), MAX_PAGE) : DEFAULT_PAGE;
-    return { excludeOwners: owners.slice(0, n), excludeKeys: keys.slice(0, n), limit };
+    return { excludeAuthors: authors.slice(0, n), excludeKeys: keys.slice(0, n), limit };
   }
 
   /** POST /api/community/learning-feed */
@@ -50,8 +51,8 @@ export class CommunityLayoutController {
       const userId = requireUserId(req, res);
       if (!userId) return;
       const language = await this.resolveLanguage(req, userId);
-      const { excludeOwners, excludeKeys, limit } = this.parsePaging(req);
-      const designs = await this.service.getLearningFeed(userId, language, excludeOwners, excludeKeys, limit);
+      const { excludeAuthors, excludeKeys, limit } = this.parsePaging(req);
+      const designs = await this.service.getLearningFeed(userId, language, excludeAuthors, excludeKeys, limit);
       res.json({ designs });
     } catch (error) {
       handleControllerError(error, res, 'CommunityLayoutController.learningFeed');
@@ -64,8 +65,8 @@ export class CommunityLayoutController {
       const userId = requireUserId(req, res);
       if (!userId) return;
       const language = await this.resolveLanguage(req, userId);
-      const { excludeOwners, excludeKeys, limit } = this.parsePaging(req);
-      const designs = await this.service.getTopFeed(userId, language, excludeOwners, excludeKeys, limit);
+      const { excludeAuthors, excludeKeys, limit } = this.parsePaging(req);
+      const designs = await this.service.getTopFeed(userId, language, excludeAuthors, excludeKeys, limit);
       res.json({ designs });
     } catch (error) {
       handleControllerError(error, res, 'CommunityLayoutController.topFeed');
@@ -83,8 +84,8 @@ export class CommunityLayoutController {
         return;
       }
       const language = await this.resolveLanguage(req, userId);
-      const { excludeOwners, excludeKeys, limit } = this.parsePaging(req);
-      const designs = await this.service.getDesignsForEntry(userId, language, entryKey.trim(), excludeOwners, excludeKeys, limit);
+      const { excludeAuthors, excludeKeys, limit } = this.parsePaging(req);
+      const designs = await this.service.getDesignsForEntry(userId, language, entryKey.trim(), excludeAuthors, excludeKeys, limit);
       res.json({ designs });
     } catch (error) {
       handleControllerError(error, res, 'CommunityLayoutController.entryFeed');

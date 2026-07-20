@@ -2,13 +2,19 @@ import { IconLayoutItem } from './index.js';
 
 /**
  * A community-shared advanced card-icon design surfaced in the Community feeds.
- * A design's identity is (ownerUserId, entryKey, language) — one user's saved layout on one
- * word. Carries just enough det-derived fields to render the read-only mini card / zoom
+ * A ROW's identity is (ownerUserId, entryKey, language) — one user's saved layout on one word —
+ * and that is still what votes/apply are keyed on. The DESIGN's identity is
+ * (authorUserId, entryKey, iconLayout): rows matching on all three are the same artwork copied
+ * around, and the feeds show only one of them (migration 119). Carries just enough det-derived fields to render the read-only mini card / zoom
  * (entryKey + pronunciation + definition + iconLayout). See docs/COMMUNITY_PAGE.md.
  */
 export interface CommunityDesign {
   ownerUserId: string;
   ownerName: string | null;
+  /** Who DESIGNED this layout (the row's owner when unattributed). Drives dedupe + credit. */
+  authorUserId: string;
+  /** The author's display name; null if their account is gone — clients fall back to ownerName. */
+  authorName: string | null;
   entryKey: string;
   language: string;
   iconLayout: IconLayoutItem[] | null;

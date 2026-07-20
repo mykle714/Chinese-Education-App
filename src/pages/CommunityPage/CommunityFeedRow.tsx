@@ -18,7 +18,7 @@ const PAGE_SIZE = 10;
  */
 const CommunityFeedRow: React.FC<{
   title: string;
-  fetchPage: (excludeOwners: string[], excludeKeys: string[], limit: number) => Promise<CommunityDesign[]>;
+  fetchPage: (excludeAuthors: string[], excludeKeys: string[], limit: number) => Promise<CommunityDesign[]>;
   votedKeys: Set<string>;
   voteDeltas: Map<string, number>;
   onVoteChange: (design: CommunityDesign, voted: boolean) => void;
@@ -48,13 +48,15 @@ const CommunityFeedRow: React.FC<{
     setLoading(true);
     try {
       const seen = seenRef.current;
-      const excludeOwners: string[] = [];
+      // Exclude by (author, entryKey), not (owner, entryKey): a design and every copy of it made
+      // by other users share an author, so this suppresses the copies on later pages too.
+      const excludeAuthors: string[] = [];
       const excludeKeys: string[] = [];
       for (const d of designs) {
-        excludeOwners.push(d.ownerUserId);
+        excludeAuthors.push(d.authorUserId ?? d.ownerUserId);
         excludeKeys.push(d.entryKey);
       }
-      const page = await fetchPage(excludeOwners, excludeKeys, PAGE_SIZE);
+      const page = await fetchPage(excludeAuthors, excludeKeys, PAGE_SIZE);
       // Guard against any server-side overlap: only append genuinely-new designs.
       const fresh = page.filter((d) => !seen.has(designKey(d)));
       fresh.forEach((d) => seen.add(designKey(d)));

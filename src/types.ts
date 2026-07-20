@@ -155,6 +155,10 @@ export interface TextColors {
 export interface CommunityDesign {
   ownerUserId: string;
   ownerName?: string | null;
+  /** Who DESIGNED the layout (the owner when unattributed) — feeds dedupe + credit by this. */
+  authorUserId: string;
+  /** The author's display name; null if that account is gone (fall back to ownerName). */
+  authorName?: string | null;
   entryKey: string;
   language: Language;
   iconLayout: IconLayoutItem[] | null;

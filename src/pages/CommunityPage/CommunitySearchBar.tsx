@@ -35,7 +35,7 @@ const EntryDesignsSection: React.FC<{
     </Box>
     <CommunityFeedRow
       title=""
-      fetchPage={(owners, keys, limit) => fetchEntryFeed(token, language, entry.word1, owners, keys, limit)}
+      fetchPage={(authors, keys, limit) => fetchEntryFeed(token, language, entry.word1, authors, keys, limit)}
       votedKeys={votedKeys}
       voteDeltas={voteDeltas}
       onVoteChange={onVoteChange}

@@ -72,7 +72,8 @@ const CommunityDesignZoom: React.FC<{
         >
           <PersonIcon sx={{ fontSize: 16 }} />
           <Typography sx={{ fontSize: SIZE.caption, fontWeight: WEIGHT.medium }}>
-            {design.ownerName || "A learner"}
+            {/* Credit the designer, not whoever holds the copy that survived dedupe. */}
+            {design.authorName || design.ownerName || "A learner"}
           </Typography>
         </Box>
 

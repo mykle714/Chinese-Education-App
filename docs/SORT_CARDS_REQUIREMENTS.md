@@ -209,9 +209,12 @@ the user **chooses** to bring it back, in one of three ways:
 ### 6.2 A SortPack is one signal
 - A **SortPack counts as exactly one signal**, however many of its (up to 3) cards
   get sorted — never one signal per card.
-- **Any "Add to Learn Now" in the pack** makes the whole pack's signal negative,
-  even if other cards in the same pack were "Already Learned". The target drops to
-  **(that pack's level) − 1**.
+- **2 or more "Add to Learn Now" cards in the pack** make the whole pack's signal
+  negative, even if other cards in the same pack were "Already Learned". The target
+  drops to **(that pack's level) − 1**.
+- A pack with **exactly one "Add to Learn Now"** is **neutral**: a single unknown word
+  is not evidence the level is wrong, so it neither drops the target nor counts toward
+  the positive streak below (the streak is left untouched, not reset).
 - A pack where **every** sorted card is "Already Learned" (no "Add to Learn Now" at
   all) is a positive signal. After **2** positive signals **at the same level**, the
   target rises to **(that level) + 1**.
@@ -278,8 +281,9 @@ the user **chooses** to bring it back, in one of three ways:
   on-deck pack with one matching the newly-selected level.
 - Client implementation: `src/pages/SortCardsPage.tsx` — `autoLevelRef` (running
   target), `levelStreakRef` (per-level already-learned streak toward §6.2's
-  upgrade), `packBucketsRef` (per-pack bucket outcomes this session, to derive each
-  pack's one signal), and the `sort-cards__level-chip` / `sort-cards__level-menu`
+  upgrade, threshold `ALREADY_LEARNED_STREAK_TO_UPGRADE`), `packBucketsRef` (per-pack
+  bucket outcomes this session, to derive each pack's one signal — the negative signal
+  needs `LIBRARY_SORTS_TO_DOWNGRADE` library sorts in the pack), and the `sort-cards__level-chip` / `sort-cards__level-menu`
   dropdown. Server: `StarterPacksService.getNextPacks`'s `requestedLevel` (the level
   to center supply on — client's tracked target, or its dropdown pin) and `manual`
   (whether to drift on exhaustion) parameters, threaded through
@@ -328,8 +332,9 @@ the user **chooses** to bring it back, in one of three ways:
    sorted is never served.
 8. **Authored-first supply:** at a level, authored packs are served before system
    fallback single-card packs.
-9. **Level adaptation:** a finished pack contributes exactly one signal — any "Add to
-   Learn Now" in it drops the target to that pack's level minus 1; an all-"Already
+9. **Level adaptation:** a finished pack contributes exactly one signal — 2+ "Add to
+   Learn Now" cards in it drop the target to that pack's level minus 1 (exactly one is
+   neutral and leaves the streak untouched); an all-"Already
    Learned" pack counts toward a 2-pack streak at that level before raising the target
    to that level plus 1; a skipped (or partially skipped, signal-less) pack changes
    nothing. The new target is always anchored on the completing pack's own level, not

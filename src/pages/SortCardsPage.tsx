@@ -41,9 +41,13 @@ const DIFFICULTY_LEVELS = [1, 2, 3, 4, 5, 6];
 const MIN_DIFFICULTY_LEVEL = DIFFICULTY_LEVELS[0];
 const MAX_DIFFICULTY_LEVEL = DIFFICULTY_LEVELS[DIFFICULTY_LEVELS.length - 1];
 // How many consecutive "Already Learned"-only SortPacks at a level are required before
-// the auto target moves up a level (docs §6, rewritten). A single "Add to Learn Now"
-// anywhere in a pack downgrades immediately — no streak needed in that direction.
+// the auto target moves up a level (docs §6, rewritten).
 const ALREADY_LEARNED_STREAK_TO_UPGRADE = 2;
+// How many "Add to Learn Now" sorts WITHIN a single pack are required before the auto
+// target drops a level. Unlike the upgrade streak this is counted inside one pack (no
+// streak across packs), so the downgrade still reacts within a single pack — it just
+// tolerates one unknown word before concluding the level is too hard.
+const LIBRARY_SORTS_TO_DOWNGRADE = 2;
 
 // Drag destinations (Skip is intentionally NOT here — §5.1).
 interface BucketZone {
@@ -76,6 +80,13 @@ const ContentArea = styled(Box)({
 
 // The two destination buckets, laid out evenly across the top. A definite height lets
 // each bucket resolve its `height: 100%` while keeping the card aspect ratio (below).
+// The one card geometry used by the on-deck cards, their placeholders and the buckets.
+// Width is stated explicitly (not left to `aspect-ratio`) because iOS Safari won't infer
+// it in a content-sized flex column — see CardShell.
+const CARD_ASPECT = "136 / 200";
+const CARD_HEIGHT = 150;
+const CARD_WIDTH = Math.round((CARD_HEIGHT * 136) / 200); // 102
+
 const BUCKET_GAP = "36px"; // healthy fixed breathing room between the two buckets
 const BUCKET_EDGE_PADDING = "28px"; // healthy fixed breathing room between each bucket and the screen edge
 
@@ -105,7 +116,9 @@ const Bucket = styled(Box)<{ mainColor: string; accentColor: string; highlight?:
         // "contain" fit), and a hard cap so the buckets never balloon on wide/tall
         // screens. Height then follows from aspect-ratio. Uses the container query
         // units established by BucketsContainer's `containerType: size`.
-        aspectRatio: "136 / 200",
+        // Safe direction for aspect-ratio: the width is definite and the height
+        // is derived from it (the reverse is what breaks in iOS Safari).
+        aspectRatio: CARD_ASPECT,
         width: "min(calc(50cqw - 18px), calc(100cqh * 136 / 200), 190px)",
         minWidth: 0,
         padding: 8,
@@ -254,14 +267,24 @@ const AnimatedBox = animated(Box);
 
 const CardShell = styled(AnimatedBox)<{ locked?: boolean }>(({ locked }) => ({
     position: "relative",
-    aspectRatio: "136 / 200",
-    height: 150,
+    // BOTH dimensions are stated explicitly rather than letting `aspect-ratio`
+    // derive the width from the height. iOS Safari does not resolve an
+    // aspect-ratio-implied *width* for a flex item in a column flex container
+    // whose cross-axis is content-sized (CardSlot: `flex: 0 0 auto` +
+    // `align-items: center`); it falls back to the content's min-content width,
+    // which the wrapping definition text lets collapse far below the true card
+    // width — the card rendered tall and skinny on prod mobile. Deriving the
+    // height from a definite width (what the buckets above do) is fine in
+    // Safari; deriving the width is not.
+    height: CARD_HEIGHT,
+    width: CARD_WIDTH,
+    aspectRatio: CARD_ASPECT, // kept as documentation / belt-and-braces
+    flex: "0 0 auto",
     maxHeight: "100%",
-    maxWidth: "100%",
     // A flex item's default min-width is "auto" (its max-content size), which can
-    // override the aspect-ratio width and stop the definition text below from
-    // wrapping at all. minWidth: 0 lets the card actually hold to its fixed size
-    // and forces long definitions to wrap instead of pushing the card wider.
+    // stop the definition text below from wrapping at all. minWidth: 0 lets the
+    // card actually hold to its fixed size and forces long definitions to wrap
+    // instead of pushing the card wider.
     minWidth: 0,
     // Locked (already-sorted) cards sink toward the page background instead of
     // sitting on the card surface color, reinforcing "not draggable".
@@ -761,17 +784,22 @@ const SortCardsPage: React.FC = () => {
     // Sort one card into a bucket (per-card POST). Optimistic: resolve locally first,
     // then decide (from the ref) whether that completed the pack.
     // A completing pack contributes exactly ONE adaptive-leveling signal, derived from
-    // every bucket sorted into it this session (docs §6, rewritten): any "Add to Learn
-    // Now" outweighs everything else (negative — the user didn't know at least one card
-    // at this level), otherwise an all-"Already Learned" pack is positive. Anchored on
+    // every bucket sorted into it this session (docs §6, rewritten): LIBRARY_SORTS_TO_DOWNGRADE
+    // or more "Add to Learn Now" cards outweigh everything else (negative — several words at
+    // this level were unknown), an all-"Already Learned" pack is positive, and a pack with
+    // exactly one "Add to Learn Now" is neutral (one unknown word is not evidence either way,
+    // so it neither downgrades nor feeds the upgrade streak). Anchored on
     // the completing pack's OWN level (not the running auto target), since the target
     // may already have drifted from an earlier in-flight signal — this is exactly why
     // the update is "set to packLevel±1", never "increment the target".
     const applyPackSignal = useCallback((pack: SortPack) => {
         const outcomes = Object.values(packBucketsRef.current[pack.packKey] ?? {});
-        if (outcomes.includes("library")) {
+        const libraryCount = outcomes.filter((o) => o === "library").length;
+        if (libraryCount >= LIBRARY_SORTS_TO_DOWNGRADE) {
             levelStreakRef.current[pack.level] = 0;
             autoLevelRef.current = Math.max(MIN_DIFFICULTY_LEVEL, pack.level - 1);
+        } else if (libraryCount > 0) {
+            // Exactly one unknown word — neutral: leave the upgrade streak untouched.
         } else if (outcomes.includes("already-learned")) {
             const streak = (levelStreakRef.current[pack.level] ?? 0) + 1;
             if (streak >= ALREADY_LEARNED_STREAK_TO_UPGRADE) {
@@ -1046,7 +1074,7 @@ const SortCardsPage: React.FC = () => {
                                         aria-hidden
                                     >
                                         <CardDeckHeader />
-                                        <Box sx={{ aspectRatio: "136 / 200", height: 150 }} />
+                                        <Box sx={{ width: CARD_WIDTH, height: CARD_HEIGHT }} />
                                         {/* Mirrors the live slot's speaker-button footer height. */}
                                         <Box sx={{ height: 32 }} />
                                     </CardSlotPlaceholder>

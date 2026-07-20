@@ -12,7 +12,13 @@ because the dictionary tables differ — pick the section that matches.
 | Spanish (`es`) | `dictionaryentries_es` | `(word1, pos)` (gender collapsed) | §B — 7-step es pipeline |
 
 If the user doesn't say, infer from the script (Han characters → zh; Latin → es)
-and confirm. Always read `amIOnTheProdMachine.md` first; on PROD, confirm writes.
+and confirm.
+
+> ⚠️ **This pipeline writes directly to PRODUCTION.** Backfills are no longer run on
+> dev and pushed with `/data-deploy` — they run against the prod det tables, so
+> every change reaches learners immediately. Read `amIOnTheProdMachine.md`, confirm
+> the word list with the user, and take a backup
+> (`server/scripts/backfill/backup-det.sh <label>`) before the first write.
 
 ---
 
@@ -71,18 +77,18 @@ RETURNING id, word1, discoverable;
 Run all steps in order with `--words=word1,word2,...` (comma-joined hanzi).
 
 ```bash
-docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-tones.js --words=未来,摸脉
-docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-numbered-pinyin.js --words=未来,摸脉
-docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-dictionary-breakdown.js --words=未来,摸脉
-docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-process-definitions-array.js --words=未来,摸脉
-docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-parts-of-speech.js --words=未来,摸脉
-docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-word-forms.js --words=未来,摸脉
-docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-hsk-level.js --words=未来,摸脉
-docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-long-definitions.js --words=未来,摸脉
-docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-vernacular-score.js --words=未来,摸脉
-docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --words=未来,摸脉
-docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-example-sentences.js --words=未来,摸脉
-docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-classifier.js --words=未来,摸脉
+server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-tones.js --words=未来,摸脉
+server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-numbered-pinyin.js --words=未来,摸脉
+server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-dictionary-breakdown.js --words=未来,摸脉
+server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-process-definitions-array.js --words=未来,摸脉
+server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-parts-of-speech.js --words=未来,摸脉
+server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-word-forms.js --words=未来,摸脉
+server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-hsk-level.js --words=未来,摸脉
+server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-long-definitions.js --words=未来,摸脉
+server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-vernacular-score.js --words=未来,摸脉
+server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-cluster-definitions.js --words=未来,摸脉
+server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-example-sentences.js --words=未来,摸脉
+server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-classifier.js --words=未来,摸脉
 ```
 
 **Parts of speech must run before `backfill-word-forms`, `backfill-long-definitions`, AND `backfill-example-sentences`.** All three depend on `partsOfSpeech`: word-forms and long-definitions only process rows where `partsOfSpeech IS NOT NULL` (they silently skip otherwise), and the example-sentence prompt enforces at least one sentence per listed POS. `backfill-word-forms` additionally reads `definitions[0]`, so it must also run after `backfill-process-definitions-array`. It writes an English `wordForms` map (e.g. `{"past":"ran",...}`), or `{}` when no forms apply, so re-runs skip already-processed rows.
@@ -164,19 +170,19 @@ the AI steps to `discoverable = TRUE`). Per-step form:
 
 ```bash
 # 1-2 deterministic definition cleanup
-docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-split-semicolon-definitions.js
-docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-expand-abbreviations.js
+server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-split-semicolon-definitions.js
+server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-expand-abbreviations.js
 # 3 POS + gender collapse — materializes one row per POS. --dry-run first to review!
-docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-parts-of-speech.js --words=cura,perro --dry-run
-docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-parts-of-speech.js --words=cura,perro
+server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-parts-of-speech.js --words=cura,perro --dry-run
+server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-parts-of-speech.js --words=cura,perro
 # 4-7 AI enrichment (auto-scoped to discoverable rows)
-docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-process-definitions-array.js --words=cura,perro
-docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-long-definitions.js
-docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-example-sentences.js
-docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-vernacular-score.js
+server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-process-definitions-array.js --words=cura,perro
+server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-long-definitions.js
+server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-example-sentences.js
+server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-vernacular-score.js
 ```
 
-Or the whole pipeline at once: `bash server/scripts/run-discoverable-enrichment-es.sh local`
+Or the whole pipeline at once: `bash server/scripts/run-discoverable-enrichment-es.sh local  # ⚠ still dev-shaped; prefer per-step run-prod.sh`
 
 **Notes on the POS step (B3):**
 - Default `--prune-mode=soft` *hides* (sets `discoverable=FALSE`) the folded
@@ -207,14 +213,24 @@ All discoverable rows should have non-null `partsOfSpeech`, `longDefinition`,
 
 ---
 
-## Finally (both languages): remind about data deployment
+## Finally (both languages): enrichment is already live
 
-After enrichment is complete, remind the user to run `/data-deploy` to push the
-changes to production.
+**Enrichment now runs directly against production** — there is no dev→prod push
+step for det data any more, so `/data-deploy` is NOT part of this flow. The rows
+you just enriched are visible to learners as soon as the pipeline finishes, which
+is exactly why the backup and the verification steps above are mandatory rather
+than optional.
+
+To burn a Max-plan session answering these prompts locally instead of spending API
+credit, use `/oracle-backfill` — same pipeline and validators, local answerer.
 
 ## Notes
 
-- Scripts run inside `cow-backend-local` via `npx tsx` — do not use `node` directly.
+- Scripts run **on the host** via `server/scripts/backfill/run-prod.sh <script> [args]`,
+  which points them at `cow-postgres-prod` on 127.0.0.1. The prod backend image ships
+  neither `scripts/backfill/` nor `tsx`, so `docker exec cow-backend-prod` cannot work,
+  and `cow-backend-local` does not exist on this machine.
+- Take a snapshot first: `server/scripts/backfill/backup-det.sh <label>`.
 - The `--words` flag filters the SQL query; the deterministic/AI steps skip entries
   whose target column is already populated, so re-runs are safe.
 - Chinese full reference: `docs/newDictionaryEntriesBackfillInstructions.md`

@@ -23,12 +23,176 @@
  */
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // run-log.js is at server/scripts/backfill/ → server/ is two levels up.
 const SERVER_DIR = path.resolve(__dirname, '..', '..');
 const LOG_PATH = path.join(SERVER_DIR, 'logs', 'backfill-runs.jsonl');
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ORACLE MODE — answer backfill prompts locally instead of calling the API.
+//
+// An "oracle" here is just the black box that turns a built request into a
+// message: `buildRequest(row) → [oracle] → handleResponse(row, message)`.
+// Normally that box is `anthropic.messages.create` (an HTTP call billed to
+// ANTHROPIC_API_KEY). Oracle mode swaps ONLY that box for a local, interactive
+// answerer, leaving every script's parsing/validation/DB-write path untouched —
+// so an oracle-authored answer must survive the exact same validators an API
+// answer would. It cannot bypass its own quality gate.
+//
+// Two phases, driven by BACKFILL_ORACLE:
+//   export → serialize each fully-built request to ORACLE_PROMPTS_FILE and abort
+//            the row (throws OracleExportSignal) so NOTHING is written to the DB.
+//   apply  → look up the pre-authored answer for this request and return it
+//            shaped as a real Anthropic message, with ZEROED usage so the cost
+//            estimator below never books phantom API spend.
+//
+// Requests are keyed by a content hash of (model, system, messages) rather than
+// by row id, because this wrapper only ever sees `params` — never the row. That
+// makes the mapping order-independent and lets `apply` run as a plain re-run of
+// the same command. Two rows that build a byte-identical prompt legitimately
+// share one answer.
+//
+// NOT compatible with --batch: the Batches API returns results through
+// messages.batches.results(), which this wrapper never sees. Scripts are
+// expected to reject the combination (see assertOracleCompatible).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 'export' | 'apply' | null */
+export const ORACLE_MODE = process.env.BACKFILL_ORACLE || null;
+const ORACLE_PROMPTS_FILE = process.env.BACKFILL_ORACLE_PROMPTS
+  || path.join(SERVER_DIR, 'logs', 'oracle-prompts.jsonl');
+const ORACLE_ANSWERS_FILE = process.env.BACKFILL_ORACLE_ANSWERS
+  || path.join(SERVER_DIR, 'logs', 'oracle-answers.jsonl');
+
+// Every AI backfill script independently bails at startup with "ANTHROPIC_API_KEY
+// not set" (15 copies of that guard). In oracle mode there IS no API call — the
+// messages.create wrapper below short-circuits before any network I/O — so that
+// guard is a false blocker. Rather than edit 15 scripts, satisfy it here at the
+// single seam they all import.
+//
+// We CLOBBER any real key rather than merely filling in a missing one. The whole
+// point of oracle mode is that the operator answers instead of the API, so real
+// credentials must not be reachable for the duration of the process. The wrapper
+// already short-circuits messages.create, but a script that built its own Anthropic
+// client, or any future non-messages endpoint, would bypass it and silently spend.
+// With a placeholder key such a path fails loudly with 401 instead. Nothing is ever
+// transmitted, so the placeholder's value is irrelevant.
+if (ORACLE_MODE) {
+  process.env.ANTHROPIC_API_KEY = 'oracle-mode-no-api-call';
+}
+
+/**
+ * Thrown by the export-phase oracle after capturing a prompt. It is NOT a
+ * failure: it exists purely to unwind before `handleResponse` can touch the DB.
+ * The shared runner recognizes `.oracleExport` and counts these separately.
+ */
+export class OracleExportSignal extends Error {
+  constructor(promptId) {
+    super(`oracle-export: captured prompt ${promptId}`);
+    this.name = 'OracleExportSignal';
+    this.oracleExport = true;
+    this.promptId = promptId;
+  }
+}
+
+/**
+ * Stable content-hash id for one request. Only the fields that determine the
+ * answer participate — max_tokens/temperature are excluded so an unrelated
+ * tuning tweak doesn't invalidate a whole authored answer set.
+ */
+export function oraclePromptId(params) {
+  const canonical = JSON.stringify({
+    model: params?.model ?? null,
+    system: params?.system ?? null,
+    messages: params?.messages ?? null,
+  });
+  return crypto.createHash('sha256').update(canonical).digest('hex').slice(0, 16);
+}
+
+/** Lazily-loaded { promptId → answer text } map for the apply phase. */
+let oracleAnswers = null;
+function loadOracleAnswers() {
+  if (oracleAnswers) return oracleAnswers;
+  oracleAnswers = new Map();
+  let raw;
+  try {
+    raw = fs.readFileSync(ORACLE_ANSWERS_FILE, 'utf8');
+  } catch {
+    throw new Error(
+      `oracle-apply: answers file not found at ${ORACLE_ANSWERS_FILE}. `
+      + `Run the export phase first, author the answers, then re-run with BACKFILL_ORACLE=apply.`
+    );
+  }
+  for (const line of raw.split('\n')) {
+    if (!line.trim()) continue;
+    // One malformed line must not sink the whole run — skip it loudly instead.
+    let rec;
+    try { rec = JSON.parse(line); } catch { console.warn('oracle-apply: skipping malformed answers line'); continue; }
+    if (rec?.promptId && typeof rec.text === 'string') oracleAnswers.set(rec.promptId, rec.text);
+  }
+  return oracleAnswers;
+}
+
+/**
+ * The oracle itself: stands in for anthropic.messages.create.
+ * @returns {object} an Anthropic-shaped message (apply phase only)
+ */
+function capturePrompt(promptId, params) {
+  fs.mkdirSync(path.dirname(ORACLE_PROMPTS_FILE), { recursive: true });
+  fs.appendFileSync(ORACLE_PROMPTS_FILE, JSON.stringify({
+    promptId,
+    model: params?.model ?? null,
+    maxTokens: params?.max_tokens ?? null,
+    // `system` may be a plain string or cachedSystem()'s block array; keep the
+    // raw value so the authored answer is written against the true prompt.
+    system: params?.system ?? null,
+    messages: params?.messages ?? null,
+  }) + '\n');
+  throw new OracleExportSignal(promptId);
+}
+
+function oracleCreate(params) {
+  const promptId = oraclePromptId(params);
+
+  if (ORACLE_MODE === 'export') capturePrompt(promptId, params);
+
+  const text = loadOracleAnswers().get(promptId);
+  if (text === undefined) {
+    // NOT an error: several scripts chain calls per row (e.g. definition-array's
+    // "Pass 1 + critic", long-definitions' retry ladder). The export phase can only
+    // ever see the FIRST call, because capturing it unwinds the row before the
+    // second is built. So an unknown prompt during apply means "a later link in the
+    // chain just became reachable" — capture it and unwind, exactly as export does.
+    // The operator authors the new prompt and re-runs apply; each pass advances one
+    // link and the loop converges when a row completes with no new prompts.
+    capturePrompt(promptId, params);
+  }
+  return {
+    id: `msg_oracle_${promptId}`,
+    type: 'message',
+    role: 'assistant',
+    model: params?.model ?? 'oracle',
+    content: [{ type: 'text', text }],
+    stop_reason: 'end_turn',
+    stop_sequence: null,
+    // Zeroed on purpose: no tokens were bought, so the PRICING_PER_MTOK estimate
+    // must stay at $0 rather than inventing spend for a call that never happened.
+    usage: { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+  };
+}
+
+/**
+ * Guard for scripts: oracle mode cannot serve --batch runs. Call after arg parsing.
+ */
+export function assertOracleCompatible(isBatch) {
+  if (ORACLE_MODE && isBatch) {
+    console.error('❌ BACKFILL_ORACLE is incompatible with --batch (batch results bypass the messages.create wrapper).');
+    process.exit(1);
+  }
+}
 
 /**
  * Approximate Anthropic list pricing in USD per 1,000,000 tokens.
@@ -118,16 +282,22 @@ const STAMP_TABLES = new Set(['dictionaryentries_zh', 'dictionaryentries_es']);
  * @param {string} scriptId - the run-log script id, e.g. 'chinese/backfill-long-definitions'
  * @param {number} version  - the script's SCRIPT_VERSION
  */
-export async function stampEntryRun(client, table, ids, scriptId, version) {
+export async function stampEntryRun(client, table, ids, scriptId, version, oracle = false) {
   if (!STAMP_TABLES.has(table)) throw new Error(`stampEntryRun: unknown table "${table}"`);
   const idArr = (Array.isArray(ids) ? ids : [ids]).filter(v => v != null);
   if (idArr.length === 0) return;
+  // `version` still means "which version of the prompt produced this" — that stays
+  // truthful under oracle mode, because the oracle answers the very prompt this
+  // SCRIPT_VERSION builds. `oracle: true` records only WHO answered it (a local
+  // session rather than the pinned model), so oracle- and API-authored rows can be
+  // told apart later. Omitted entirely for normal API runs to keep the log terse.
   await client.query(
     `UPDATE ${table}
         SET "enrichmentLog" = COALESCE("enrichmentLog", '{}'::jsonb)
-            || jsonb_build_object($1::text, jsonb_build_object('ranAt', to_jsonb(now()), 'version', $2::int))
+            || jsonb_build_object($1::text, jsonb_build_object('ranAt', to_jsonb(now()), 'version', $2::int)
+                 || CASE WHEN $4::boolean THEN jsonb_build_object('oracle', true) ELSE '{}'::jsonb END)
       WHERE id = ANY($3::int[])`,
-    [scriptId, version ?? null, idArr]
+    [scriptId, version ?? null, idArr, oracle]
   );
 }
 
@@ -174,14 +344,18 @@ export function initRunLog({ script, version, anthropic, argv } = {}) {
   };
 
   // Instrument the Anthropic client so every messages.create accrues token usage.
+  // Under ORACLE_MODE the real call is replaced entirely (no network, no spend);
+  // usage is still accrued so `apiCalls` counts answered prompts, but every token
+  // field is zero so the cost estimate stays at $0. See "ORACLE MODE" above.
   if (anthropic?.messages?.create) {
     const orig = anthropic.messages.create.bind(anthropic.messages);
     anthropic.messages.create = async (params, ...rest) => {
-      const res = await orig(params, ...rest);
+      const res = ORACLE_MODE ? oracleCreate(params) : await orig(params, ...rest);
       accrueUsage(params?.model, res?.usage);
       return res;
     };
   }
+  if (ORACLE_MODE) state.extra.oracle = ORACLE_MODE;
 
   const finalize = (extra = {}) => {
     Object.assign(state.extra, extra);
@@ -231,7 +405,7 @@ export function initRunLog({ script, version, anthropic, argv } = {}) {
   // Bound stamper: fills in this script's id + version so callers only pass the
   // client, table, and row id(s). See stampEntryRun.
   const stampEntries = (client, table, ids) =>
-    stampEntryRun(client, table, ids, state.script, state.version);
+    stampEntryRun(client, table, ids, state.script, state.version, ORACLE_MODE === 'apply');
 
   // SQL predicate selecting rows this script has NOT yet processed at its CURRENT
   // version — i.e. rows whose `enrichmentLog` stamp for this script is below

@@ -54,3 +54,6 @@ amIOnTheProdMachine.md
 
 # Backfill script parse caches (derived artifacts, rebuilt with --refresh)
 server/scripts/backfill/**/.cache/
+
+# Prod det snapshots taken before each oracle-backfill run (large, regenerable)
+server/backups/

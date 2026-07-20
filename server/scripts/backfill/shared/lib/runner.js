@@ -37,19 +37,25 @@ function labelFor(row) {
 async function runSerial({ anthropic, entries, buildRequest, handleResponse, throttleMs = 200 }) {
   let updated = 0;
   let failed = 0;
+  let exported = 0;
   for (const row of entries) {
+    let wasExport = false;
     try {
       process.stdout.write(`  ${labelFor(row)} ... `);
       const message = await anthropic.messages.create(buildRequest(row));
       const ok = await handleResponse(row, message);
       if (ok) { updated++; } else { console.log('FAILED: unusable model output'); failed++; continue; }
     } catch (err) {
-      console.log(`FAILED: ${err.message}`);
-      failed++;
+      // Oracle export phase: the prompt was captured and the row deliberately
+      // unwound before handleResponse could write. Not a failure. (See the
+      // ORACLE MODE block in run-log.js.)
+      if (err?.oracleExport) { console.log('captured'); exported++; wasExport = true; }
+      else { console.log(`FAILED: ${err.message}`); failed++; }
     }
-    if (throttleMs > 0) await new Promise(r => setTimeout(r, throttleMs));
+    // No point throttling a row that never left the machine.
+    if (throttleMs > 0 && !wasExport) await new Promise(r => setTimeout(r, throttleMs));
   }
-  return { updated, failed };
+  return { updated, failed, exported };
 }
 
 /**
@@ -125,10 +131,11 @@ export async function runBackfill(opts) {
   const result = batch ? await runBatched(opts) : await runSerial(opts);
 
   console.log('\n' + '='.repeat(60));
-  console.log('📊 Backfill Complete!');
+  console.log(result.exported ? '📤 Oracle Export Complete!' : '📊 Backfill Complete!');
   console.log('='.repeat(60));
   console.log(`Total processed : ${entries.length}`);
   console.log(`Updated         : ${result.updated}`);
+  if (result.exported) console.log(`Prompts captured: ${result.exported}  (no DB writes)`);
   console.log(`Errors          : ${result.failed}`);
   console.log('='.repeat(60) + '\n');
 

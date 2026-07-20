@@ -101,10 +101,14 @@ function GalleryScene({
   // Track the canvas size (resizeTo keeps app.screen in sync; the renderer fires 'resize').
   useEffect(() => {
     if (!app?.renderer) return;
+    // Capture the renderer rather than re-reading app.renderer in the cleanup: Pixi's
+    // Application.destroy() nulls app.renderer, and React deletes a subtree parent-first, so the
+    // enclosing <Application>'s cleanup destroys the app BEFORE this child's cleanup runs.
+    const renderer = app.renderer;
     const sync = () => setSize({ w: app.screen.width, h: app.screen.height });
     sync();
-    app.renderer.on('resize', sync);
-    return () => { app.renderer.off('resize', sync); };
+    renderer.on('resize', sync);
+    return () => { renderer.off('resize', sync); };
   }, [app]);
 
   // Column count grows with available width; cell width fills the remaining space evenly.

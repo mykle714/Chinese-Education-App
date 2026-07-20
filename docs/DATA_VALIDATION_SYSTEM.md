@@ -366,11 +366,27 @@ query (`validatedWordFilter`, a `JOIN validations`) — it skips a word if **any
 its rows has a `definitions` validation.
 
 New/undiscovered words have an empty `validationLog`, so initial enrichment and the
-`/mark-discoverable` pipeline are unaffected. One-shot definition-normalization
-passes (`backfill-split-semicolon-definitions`, `backfill-expand-abbreviations`,
-`backfill-single-char-cedict`) are not part of the recurring `--stale` loop; adopt
-`validatedClause(['definitions'], '<their det table>')` there too if they are ever
-re-run over discoverable rows.
+`/mark-discoverable` pipeline are unaffected.
+
+The definition-normalization passes now carry the guard too:
+
+| Script (zh + es) | Writes | Guard |
+|---|---|---|
+| `backfill-split-semicolon-definitions` | `definitions` | `validatedClause(['definitions'], '<det table>')` in its main SELECT |
+| `backfill-expand-abbreviations` | `definitions` | same |
+| `backfill-single-char-cedict` (zh only) | `definitions` | **none needed** — by design it only touches *undiscoverable* single-char rows, which cannot have validations |
+
+These were previously unguarded, which mattered because they run **table-wide with
+no `discoverable` filter** (es pipeline §B3 steps 1–2 invoke them with no `--words`
+scope), so a re-run rewrote `definitions` in place on reviewed rows. On prod the
+guard currently excludes 5 zh rows carrying a `definitions` flag. Their
+`SCRIPT_VERSION` was deliberately **not** bumped: the change narrows row selection
+rather than altering the transformation, and a bump would mark the whole table
+stale and trigger a mass re-process.
+
+Under `/oracle-backfill` (which loops the pipeline directly against prod with no
+`/data-deploy` review gate) this guard is the only thing standing between a
+regeneration loop and a validator's work — treat it as load-bearing.
 
 ---
 

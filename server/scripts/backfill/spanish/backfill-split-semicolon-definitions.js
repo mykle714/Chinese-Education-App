@@ -20,7 +20,7 @@ import db from '../../../db.js';
 import { initRunLog } from '../run-log.js';
 const SCRIPT_VERSION = 1; // bump when this script's logic/prompt changes
 // run-log: track duration, version, and words/mode
-const { stampEntries } = initRunLog({ script: 'spanish/backfill-split-semicolon-definitions', version: SCRIPT_VERSION });
+const { stampEntries, validatedClause } = initRunLog({ script: 'spanish/backfill-split-semicolon-definitions', version: SCRIPT_VERSION });
 
 const DRY_RUN = process.argv.includes('--dry-run');
 
@@ -51,10 +51,16 @@ async function backfillSplitSemicolonDefinitions() {
   const client = await db.getClient();
 
   try {
+    // Skip rows whose `definitions` bundle a validator has already approved/flagged
+    // — this pass rewrites `definitions` in place, so without the guard a re-run
+    // would silently clobber human-reviewed text (docs/DATA_VALIDATION_SYSTEM.md,
+    // "Backfill guard"). Unlike the AI steps this query is deliberately table-wide
+    // (no discoverable filter), which is exactly why it needs the guard.
     const result = await client.query(`
       SELECT id, word1, definitions
       FROM dictionaryentries_es
       WHERE language = 'es'
+        AND ${validatedClause(['definitions'], 'dictionaryentries_es')}
       ORDER BY id
     `);
 

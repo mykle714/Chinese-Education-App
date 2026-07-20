@@ -163,25 +163,37 @@ function localToCell(lx: number, ly: number, width: number, height: number): Cel
   return { col, row };
 }
 
-// ─── Grid overlay (fine per-cell + major every 4, from the SW corner) ───────────
+// ─── Grid overlay (fine per-cell + major every 8, counted inward from the NE corner) ───────────
 const GRID_Z = 9_000;
-const GRID_MAJOR_INTERVAL = 4;
+const GRID_MAJOR_INTERVAL = 8;
+/**
+ * Offset of the FIRST major line from the board's north/east edges, in cells. Majors are counted
+ * inward from the NE corner — the first red line sits `GRID_MAJOR_EDGE_OFFSET` cells in from the
+ * north edge (row `height`) and from the east edge (col `width`), then repeats every
+ * {@link GRID_MAJOR_INTERVAL}. This matches the template authoring guideline that measures
+ * outward-facing street spots inward from an edge, so the red lattice lands ON those spots.
+ */
+const GRID_MAJOR_EDGE_OFFSET = 4;
+/** Whether a grid line `distanceFromEdge` cells in from its reference edge is a MAJOR (red) line. */
+const isMajorLine = (distanceFromEdge: number): boolean =>
+  distanceFromEdge % GRID_MAJOR_INTERVAL === GRID_MAJOR_EDGE_OFFSET % GRID_MAJOR_INTERVAL;
+
 function GridOverlay({ width, height }: { width: number; height: number }) {
   const draw = useCallback((g: Graphics) => {
     g.clear();
     // Board-bounded lines: iso rows/cols from 0..width and 0..height.
-    // Major lines are counted from the SW corner — col 0 (west) and row `height` (south) —
-    // so col lines land on multiples of the interval, row lines on multiples of distance
-    // from the south edge. Fine (non-major) lines draw green first; major lines draw red on top.
+    // Major lines are counted inward from the NE corner — distance from the east edge (`width - c`)
+    // for col lines, from the north edge (`height - r`) for row lines.
+    // Fine (non-major) lines draw green first; major lines draw red on top.
     for (let c = 0; c <= width; c++) {
-      if (c % GRID_MAJOR_INTERVAL === 0) continue;
+      if (isMajorLine(width - c)) continue;
       const a = isoToScreen(c, 0);
       const b = isoToScreen(c, height);
       g.moveTo(a.screenX, a.screenY);
       g.lineTo(b.screenX, b.screenY);
     }
     for (let r = 0; r <= height; r++) {
-      if ((height - r) % GRID_MAJOR_INTERVAL === 0) continue;
+      if (isMajorLine(height - r)) continue;
       const a = isoToScreen(0, r);
       const b = isoToScreen(width, r);
       g.moveTo(a.screenX, a.screenY);
@@ -190,14 +202,14 @@ function GridOverlay({ width, height }: { width: number; height: number }) {
     g.stroke({ color: 0x00c800, width: 0.5, alpha: 0.5 });
 
     for (let c = 0; c <= width; c++) {
-      if (c % GRID_MAJOR_INTERVAL !== 0) continue;
+      if (!isMajorLine(width - c)) continue;
       const a = isoToScreen(c, 0);
       const b = isoToScreen(c, height);
       g.moveTo(a.screenX, a.screenY);
       g.lineTo(b.screenX, b.screenY);
     }
     for (let r = 0; r <= height; r++) {
-      if ((height - r) % GRID_MAJOR_INTERVAL !== 0) continue;
+      if (!isMajorLine(height - r)) continue;
       const a = isoToScreen(0, r);
       const b = isoToScreen(width, r);
       g.moveTo(a.screenX, a.screenY);

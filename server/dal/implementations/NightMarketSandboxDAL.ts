@@ -151,6 +151,19 @@ export class NightMarketSandboxDAL implements INightMarketSandboxDAL {
     return result.rowsAffected > 0;
   }
 
+  async deleteAllForUser(userId: string): Promise<number> {
+    if (!userId) throw new ValidationError('User ID is required');
+
+    const result = await dbManager.executeQuery(async (client) => {
+      return await client.query(
+        'DELETE FROM nightmarkettemplatesandbox WHERE "userId" = $1',
+        [userId],
+      );
+    });
+
+    return result.rowsAffected;
+  }
+
   async deleteByTemplateName(templateName: string): Promise<number> {
     if (!templateName) throw new ValidationError('Template name is required');
 

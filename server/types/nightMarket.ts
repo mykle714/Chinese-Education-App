@@ -101,14 +101,26 @@ export interface PlacementOccupant {
  * `offsetRow` are the SW (min-iso) corner in template-cell units; `activeVersion` is this
  * instance's independently-switchable version. Unlike the runtime layout, overlaps are allowed.
  */
+/**
+ * What a sandbox placement draws in its placeholder AREAS — the tri-state the header's Houses
+ * button cycles (docs/NIGHT_MARKET_TEMPLATE_SANDBOX.md):
+ *   • `all`         — an occupant house in EVERY placeholder area (the default finished look)
+ *   • `placeholder` — no houses; the placeholder areas are TINTED instead, so the author can see
+ *                     exactly where the occupant slots sit
+ *   • `none`        — neither
+ * This replaces the editor's condition-driven filled-slot rule inside the sandbox: what shows is
+ * an explicit per-placement choice, independent of the version's condition cells.
+ */
+export type TemplateSandboxHouseMode = 'all' | 'placeholder' | 'none';
+
 export interface TemplateSandboxSettings {
   /**
-   * Render an occupant HOUSE in every placeholder area of this placement (migration 119).
-   * Absent = true (the default filled look); false = render no houses at all for this tile.
-   * This REPLACES the editor's condition-driven house preview inside the sandbox: the sandbox
-   * shows either all placeholder houses or none, independent of the version's condition cells.
+   * Placeholder-area render mode (migration 119's `settings` bag). Absent = `'all'`.
+   * Replaced the original boolean `showHouses`; because `settings` is a generic jsonb bag this
+   * needed no migration, but any row still carrying `showHouses` is simply ignored (it falls back
+   * to the `'all'` default) — acceptable, this is scratch state.
    */
-  showHouses?: boolean;
+  houseMode?: TemplateSandboxHouseMode;
 }
 
 export interface TemplateSandboxRow {

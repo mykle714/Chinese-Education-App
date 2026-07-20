@@ -2,6 +2,8 @@ import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import { INightMarketSandboxDAL } from '../dal/interfaces/INightMarketSandboxDAL.js';
 import { TemplateSandboxRow, TemplateSandboxSettings } from '../types/nightMarket.js';
 import { DALError, NotFoundError, ValidationError } from '../types/dal.js';
+import { NightMarketPlacementService } from './NightMarketPlacementService.js';
+import { NIGHT_MARKET_HUB_TEMPLATE_NAME } from './NightMarketTemplateService.js';
 
 /**
  * Night Market template SANDBOX service — business logic for the desktop-only Template Sandbox
@@ -20,10 +22,18 @@ import { DALError, NotFoundError, ValidationError } from '../types/dal.js';
  *
  * Depends on: migration 116, IUserDAL.findById (author gate), INightMarketSandboxDAL.
  */
+/** One whitelisted `settings` key: its JS type, plus the allowed values when it is an enum. */
+interface SettingSpec {
+  type: 'boolean' | 'string' | 'number';
+  values?: readonly string[];
+}
+
 export class NightMarketSandboxService {
   constructor(
     private readonly sandboxDAL: INightMarketSandboxDAL,
     private readonly userDAL: IUserDAL,
+    /** The live growth algorithm, reused verbatim by {@link iteratePlacement}. */
+    private readonly placementService: NightMarketPlacementService,
   ) {}
 
   /** Throw unless the user exists and is a template author (403). Mirrors the template service. */
@@ -90,6 +100,36 @@ export class NightMarketSandboxService {
     return this.sandboxDAL.insert(userId, templateName, activeVersion, offsetCol, offsetRow);
   }
 
+  /**
+   * ITERATE — step the REAL runtime growth algorithm once over the author's sandbox layout and
+   * persist whatever it would have placed (the sandbox's "what would the game do here?" button).
+   *
+   * Delegates the geometry to {@link NightMarketPlacementService.planNextPlacement}, the very same
+   * planner the live continent grows with (docs/NIGHT_MARKET_TEMPLATES.md § "Placement algorithm"),
+   * so the sandbox preview can never drift from production behaviour. Two cases:
+   *   • EMPTY sandbox → there are no exposed anchors to attach to, so seed the starter hub at the
+   *     origin, exactly as NightMarketWorldService.seedHubPlacement does for a new account.
+   *   • otherwise → run the planner; `null` (no legal candidate at any anchor) surfaces to the
+   *     client as a "nothing fits" message rather than an error.
+   *
+   * The placement is stored at the version the planner CHOSE (its most-conditioned candidate
+   * version). That differs from the runtime, which persists activeVersion 0 and lets
+   * recompute-on-read settle the version — the sandbox has no version selector pass, so keeping the
+   * planner's version is what makes the result visible and inspectable here.
+   */
+  async iteratePlacement(userId: string): Promise<TemplateSandboxRow | null> {
+    await this.assertTemplateAuthor(userId);
+    const placements = await this.sandboxDAL.findByUser(userId);
+
+    if (placements.length === 0) {
+      return this.sandboxDAL.insert(userId, NIGHT_MARKET_HUB_TEMPLATE_NAME, 0, 0, 0);
+    }
+
+    const { plan } = await this.placementService.planNextPlacement(placements);
+    if (!plan) return null;
+    return this.sandboxDAL.insert(userId, plan.templateName, plan.version, plan.offsetCol, plan.offsetRow);
+  }
+
   /** Move one placement to a new SW-corner offset (drag). 404 if it is not the author's. */
   async movePlacement(
     userId: string,
@@ -120,8 +160,8 @@ export class NightMarketSandboxService {
    * new author-facing render switches need no migration, but it is NOT free-form: an unknown key
    * is rejected here so a client typo can never silently persist dead state.
    */
-  private static readonly SETTINGS_SCHEMA: Record<keyof TemplateSandboxSettings, 'boolean'> = {
-    showHouses: 'boolean',
+  private static readonly SETTINGS_SCHEMA: Record<keyof TemplateSandboxSettings, SettingSpec> = {
+    houseMode: { type: 'string', values: ['all', 'placeholder', 'none'] },
   };
 
   /** Validate a partial settings patch against {@link SETTINGS_SCHEMA}. */
@@ -131,18 +171,23 @@ export class NightMarketSandboxService {
     }
     const entries = Object.entries(value as Record<string, unknown>);
     if (entries.length === 0) throw new ValidationError('settings patch must contain at least one key');
-    const schema = NightMarketSandboxService.SETTINGS_SCHEMA as Record<string, string | undefined>;
+    const schema = NightMarketSandboxService.SETTINGS_SCHEMA as Record<string, SettingSpec | undefined>;
     for (const [key, val] of entries) {
-      const expected = schema[key];
-      if (!expected) throw new ValidationError(`Unknown sandbox setting "${key}"`);
-      if (typeof val !== expected) throw new ValidationError(`Sandbox setting "${key}" must be a ${expected}`);
+      const spec = schema[key];
+      if (!spec) throw new ValidationError(`Unknown sandbox setting "${key}"`);
+      if (typeof val !== spec.type) throw new ValidationError(`Sandbox setting "${key}" must be a ${spec.type}`);
+      // Enum-valued settings additionally check membership, so an unknown mode can never reach
+      // the client renderer (which would silently fall back and hide the author's mistake).
+      if (spec.values && !spec.values.includes(val as string)) {
+        throw new ValidationError(`Sandbox setting "${key}" must be one of: ${spec.values.join(', ')}`);
+      }
     }
     return value as TemplateSandboxSettings;
   }
 
   /**
    * Merge a partial render/view settings patch into one placement's `settings` bag (e.g.
-   * `{ showHouses: false }`). 404 if it is not the author's.
+   * `{ houseMode: 'none' }`). 404 if it is not the author's.
    */
   async setPlacementSettings(userId: string, id: string, settings: unknown): Promise<TemplateSandboxRow> {
     await this.assertTemplateAuthor(userId);
@@ -166,6 +211,15 @@ export class NightMarketSandboxService {
     await this.assertTemplateAuthor(userId);
     const deleted = await this.sandboxDAL.deleteById(userId, id);
     if (!deleted) throw new NotFoundError('Sandbox placement not found');
+  }
+
+  /**
+   * Clear the caller's whole sandbox (the "Clear" action). Author-gated like every other write.
+   * An already-empty sandbox is a no-op success (returns 0) — clearing is idempotent.
+   */
+  async clearPlacements(userId: string): Promise<number> {
+    await this.assertTemplateAuthor(userId);
+    return this.sandboxDAL.deleteAllForUser(userId);
   }
 
   /**

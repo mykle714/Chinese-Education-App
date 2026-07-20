@@ -7,6 +7,7 @@ import { isoToScreen, TILE_WIDTH, TILE_HEIGHT } from '../../engine/market/isomet
 import { buildEditorField, type EditorMasks } from '../../engine/market/farmTerrain';
 import EditorTerrainLayer from './EditorTerrainLayer';
 import { TemplateMaskOverlays } from './TemplateEditorViewer';
+import type { SandboxHouseMode } from './templateSandboxApi';
 
 // Register Pixi.js classes as pixiContainer / pixiSprite / pixiGraphics / pixiText.
 extend({ Container, Sprite, Graphics, Text });
@@ -48,11 +49,12 @@ export interface SandboxItem {
   /** When true, this tile cannot be dragged (still selectable). */
   locked: boolean;
   /**
-   * When true, EVERY placeholder area of this placement previews an occupant house; when false,
-   * none do. The sandbox's per-placement houses toggle (`settings.showHouses`) — it replaces the
-   * editor's condition-driven filled-slot rule for this surface.
+   * What this placement draws in its placeholder AREAS (`settings.houseMode`, cycled by the
+   * header's Houses button): `'all'` = a house in every area, `'placeholder'` = no houses but the
+   * areas TINTED so the slots are visible, `'none'` = neither. Replaces the editor's
+   * condition-driven filled-slot rule for this surface.
    */
-  showHouses: boolean;
+  houseMode: SandboxHouseMode;
 }
 
 interface GlobalCell { col: number; row: number; }
@@ -80,7 +82,14 @@ function itemContains(item: SandboxItem, gc: GlobalCell): boolean {
 }
 
 // ─── One placed template's scene (terrain + mask overlays), offset to its SW corner ──
-function PlacedTemplate({ item, dragOffset }: { item: SandboxItem; dragOffset?: { col: number; row: number } }) {
+function PlacedTemplate(
+  { item, dragOffset, showStreet }: {
+    item: SandboxItem;
+    dragOffset?: { col: number; row: number };
+    /** Tint this placement's street-walkable cells (the view-wide Street overlay toggle). */
+    showStreet: boolean;
+  },
+) {
   const tiles = useMemo(
     () => buildEditorField(item.width, item.height, item.masks),
     [item.width, item.height, item.masks],
@@ -95,19 +104,102 @@ function PlacedTemplate({ item, dragOffset }: { item: SandboxItem; dragOffset?: 
     // template and never bleeds across placements.
     <pixiContainer x={screenX} y={screenY} sortableChildren>
       <EditorTerrainLayer tiles={tiles} />
-      {/* Sandbox previews the FINISHED look: no walkability/placeholder/condition tints. Houses
-          are an ALL-or-NOTHING per-placement choice here (the header's Houses toggle) rather than
-          the editor's condition-driven filled-slot rule. */}
+      {/* Sandbox previews the FINISHED look, so the communal/condition tints never show. Two
+          exceptions, both author-driven: the STREET tint (view-wide toggle, key S — street
+          alignment across seams is what tiling is judged on), and the PLACEHOLDER tint, which is
+          the middle state of this placement's houseMode cycle (key H) — houses off, slots shown.
+          houseMode replaces the editor's condition-driven filled-slot rule on this surface. */}
       <TemplateMaskOverlays
         masks={item.masks}
-        showStreet={false}
+        showStreet={showStreet}
         showCommunal={false}
-        showPlaceholder={false}
+        showPlaceholder={item.houseMode === 'placeholder'}
         showCondition={false}
-        houseMode={item.showHouses ? 'all' : 'none'}
+        houseMode={item.houseMode === 'all' ? 'all' : 'none'}
       />
     </pixiContainer>
   );
+}
+
+// ─── Grid overlay (fine per-cell + major every 8, anchored at the global origin) ──────
+// Mirrors the editor's GridOverlay (TemplateEditorViewer.tsx) but the sandbox surface is
+// UNBOUNDED, so instead of the board rectangle it spans whatever cell range the camera can
+// currently see, recomputed whenever the viewport (pan/zoom/size) changes. Major lines are
+// anchored at global cell 0 rather than the editor's SW board corner — the sandbox has no
+// corner, and the origin is the one landmark every placement's offset is measured from.
+const GRID_Z = 9_000;
+// Every 8 cells, matching the editor's major-line interval (TemplateEditorViewer.GridOverlay) so
+// the two authoring surfaces read at the same scale. The editor counts its majors inward from the
+// board's NE corner; the sandbox has no board, so its lattice stays anchored at global cell 0.
+const GRID_MAJOR_INTERVAL = 8;
+/** Positive modulo, so major lines stay on the same lattice at negative global coords. */
+const mod = (n: number, m: number) => ((n % m) + m) % m;
+
+interface GridBounds { minCol: number; maxCol: number; minRow: number; maxRow: number; }
+
+function SandboxGridOverlay({ bounds }: { bounds: GridBounds }) {
+  const { minCol, maxCol, minRow, maxRow } = bounds;
+  const draw = useCallback((g: Graphics) => {
+    g.clear();
+    // Fine (non-major) lines first, in green; major lines then paint red on top.
+    for (let c = minCol; c <= maxCol; c++) {
+      if (mod(c, GRID_MAJOR_INTERVAL) === 0) continue;
+      const a = isoToScreen(c, minRow);
+      const b = isoToScreen(c, maxRow);
+      g.moveTo(a.screenX, a.screenY);
+      g.lineTo(b.screenX, b.screenY);
+    }
+    for (let r = minRow; r <= maxRow; r++) {
+      if (mod(r, GRID_MAJOR_INTERVAL) === 0) continue;
+      const a = isoToScreen(minCol, r);
+      const b = isoToScreen(maxCol, r);
+      g.moveTo(a.screenX, a.screenY);
+      g.lineTo(b.screenX, b.screenY);
+    }
+    g.stroke({ color: 0x00c800, width: 0.5, alpha: 0.5 });
+
+    for (let c = minCol; c <= maxCol; c++) {
+      if (mod(c, GRID_MAJOR_INTERVAL) !== 0) continue;
+      const a = isoToScreen(c, minRow);
+      const b = isoToScreen(c, maxRow);
+      g.moveTo(a.screenX, a.screenY);
+      g.lineTo(b.screenX, b.screenY);
+    }
+    for (let r = minRow; r <= maxRow; r++) {
+      if (mod(r, GRID_MAJOR_INTERVAL) !== 0) continue;
+      const a = isoToScreen(minCol, r);
+      const b = isoToScreen(maxCol, r);
+      g.moveTo(a.screenX, a.screenY);
+      g.lineTo(b.screenX, b.screenY);
+    }
+    g.stroke({ color: 0xff2020, width: 1, alpha: 0.8 });
+  }, [minCol, maxCol, minRow, maxRow]);
+  return <pixiGraphics draw={draw} zIndex={GRID_Z} />;
+}
+
+/**
+ * The global cell range the camera can currently see, padded by a cell so lines run past the
+ * viewport edges. Derived by inverting the projection at the four screen corners: in iso space a
+ * screen rectangle maps to a diamond, so the axis-aligned min/max over its corners bounds it.
+ */
+function visibleGridBounds(screenW: number, screenH: number, pan: { x: number; y: number }, zoom: number): GridBounds {
+  const cx = screenW / 2 + pan.x;
+  const cy = screenH / 2 + pan.y;
+  const corners = [
+    localToGlobalCell((0 - cx) / zoom, (0 - cy) / zoom),
+    localToGlobalCell((screenW - cx) / zoom, (0 - cy) / zoom),
+    localToGlobalCell((0 - cx) / zoom, (screenH - cy) / zoom),
+    localToGlobalCell((screenW - cx) / zoom, (screenH - cy) / zoom),
+  ];
+  const cols = corners.map((c) => c.col);
+  const rows = corners.map((c) => c.row);
+  const PAD = 1;
+  return {
+    minCol: Math.min(...cols) - PAD,
+    maxCol: Math.max(...cols) + PAD,
+    minRow: Math.min(...rows) - PAD,
+    maxRow: Math.max(...rows) + PAD,
+  };
 }
 
 // ─── Selection outline: the footprint rectangle's four diamond edges, in global coords ──
@@ -142,12 +234,14 @@ interface SceneProps {
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   onMove: (id: string, offsetCol: number, offsetRow: number) => void;
+  showGrid: boolean;
+  showStreet: boolean;
   pan: { x: number; y: number };
   zoom: number;
   onPanChange: (pan: { x: number; y: number }) => void;
 }
 
-function SandboxScene({ items, selectedId, onSelect, onMove, pan, zoom, onPanChange }: SceneProps) {
+function SandboxScene({ items, selectedId, onSelect, onMove, showGrid, showStreet, pan, zoom, onPanChange }: SceneProps) {
   const { app, isInitialised } = useApplication();
 
   // Provisional offset for the tile currently being dragged (null = no drag in progress).
@@ -287,6 +381,11 @@ function SandboxScene({ items, selectedId, onSelect, onMove, pan, zoom, onPanCha
   const cy = app.screen.height / 2 + pan.y;
   const selected = items.find((it) => it.id === selectedId) ?? null;
   const dragForSelected = drag && selected && drag.id === selected.id ? drag : undefined;
+  // Cheap plain compute (no useMemo — this sits after an early return, so hooks are off-limits
+  // here); GridOverlay's draw callback memoizes on the resulting numbers.
+  const gridBounds = showGrid
+    ? visibleGridBounds(app.screen.width, app.screen.height, pan, zoom)
+    : null;
 
   return (
     <pixiContainer x={cx} y={cy} scale={zoom}>
@@ -295,8 +394,10 @@ function SandboxScene({ items, selectedId, onSelect, onMove, pan, zoom, onPanCha
           key={item.id}
           item={item}
           dragOffset={drag && drag.id === item.id ? drag : undefined}
+          showStreet={showStreet}
         />
       ))}
+      {gridBounds && <SandboxGridOverlay bounds={gridBounds} />}
       {selected && <SelectionOutline item={selected} dragOffset={dragForSelected} />}
     </pixiContainer>
   );
@@ -308,9 +409,13 @@ export interface TemplateSandboxViewerProps {
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   onMove: (id: string, offsetCol: number, offsetRow: number) => void;
+  /** Draw the isometric cell grid over the scene (fine green, red every 8 cells). */
+  showGrid?: boolean;
+  /** Tint every placement's street-walkable cells (the header's Street overlay toggle). */
+  showStreet?: boolean;
 }
 
-function TemplateSandboxViewer({ items, selectedId, onSelect, onMove }: TemplateSandboxViewerProps) {
+function TemplateSandboxViewer({ items, selectedId, onSelect, onMove, showGrid = false, showStreet = false }: TemplateSandboxViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
@@ -387,6 +492,8 @@ function TemplateSandboxViewer({ items, selectedId, onSelect, onMove }: Template
             selectedId={selectedId}
             onSelect={onSelect}
             onMove={onMove}
+            showGrid={showGrid}
+            showStreet={showStreet}
             pan={pan}
             zoom={zoom}
             onPanChange={setPan}

@@ -121,6 +121,40 @@ export class NightMarketSandboxController {
     }
   }
 
+  /**
+   * POST /api/nightmarket-sandbox/iterate → { placement } | { placement: null }
+   * Steps the live growth algorithm once over the author's sandbox layout. A null placement is a
+   * successful "nothing legal fits anywhere" answer, not an error — the client reports it.
+   */
+  async iteratePlacement(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = (req as any).user?.userId;
+      if (!userId) {
+        res.status(401).json({ error: 'User not authenticated', code: 'ERR_NOT_AUTHENTICATED' });
+        return;
+      }
+      const placement = await this.service.iteratePlacement(userId);
+      res.json({ placement });
+    } catch (error: any) {
+      this.handleError(res, error, 'Failed to iterate sandbox placement', 'ERR_SANDBOX_ITERATE_FAILED');
+    }
+  }
+
+  /** DELETE /api/nightmarket-sandbox → { deleted: <count> } — clears the caller's whole sandbox. */
+  async clearPlacements(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = (req as any).user?.userId;
+      if (!userId) {
+        res.status(401).json({ error: 'User not authenticated', code: 'ERR_NOT_AUTHENTICATED' });
+        return;
+      }
+      const deleted = await this.service.clearPlacements(userId);
+      res.json({ deleted });
+    } catch (error: any) {
+      this.handleError(res, error, 'Failed to clear sandbox', 'ERR_SANDBOX_CLEAR_FAILED');
+    }
+  }
+
   /** Map a DALError to its own statusCode/code; otherwise a 500 fallback. */
   private handleError(res: Response, error: any, fallbackMsg: string, fallbackCode: string): void {
     console.error(`[NM-SANDBOX-CONTROLLER] ❌ ${fallbackMsg}:`, error);

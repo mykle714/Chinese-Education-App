@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Box, Typography, Button, Tooltip, Snackbar, Alert,
   MenuItem, FormControl, Select, InputLabel,
+  Dialog, DialogTitle, DialogContent, DialogActions,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
@@ -11,6 +12,11 @@ import LockIcon from '@mui/icons-material/Lock';
 import LockOpenIcon from '@mui/icons-material/LockOpen';
 import HomeIcon from '@mui/icons-material/Home';
 import HomeOutlinedIcon from '@mui/icons-material/HomeOutlined';
+import HighlightAltIcon from '@mui/icons-material/HighlightAlt';
+import GridOnIcon from '@mui/icons-material/GridOn';
+import RouteIcon from '@mui/icons-material/Route';
+import LayersClearIcon from '@mui/icons-material/LayersClear';
+import AutoAwesomeMotionIcon from '@mui/icons-material/AutoAwesomeMotion';
 import LeafPage from '../../components/LeafPage';
 import { WEIGHT } from '../../theme/scale';
 import { usePageTitle } from '../../hooks/usePageTitle';
@@ -25,8 +31,12 @@ import {
 import {
   listSandboxPlacements, addSandboxPlacement, moveSandboxPlacement,
   setSandboxPlacementVersion, setSandboxPlacementLock, setSandboxPlacementSettings,
-  removeSandboxPlacement, SANDBOX_SETTING_DEFAULTS, type SandboxPlacement,
+  removeSandboxPlacement, clearSandboxPlacements, iterateSandboxPlacement,
+  SANDBOX_SETTING_DEFAULTS, SANDBOX_HOUSE_MODES,
+  type SandboxPlacement, type SandboxHouseMode,
 } from './templateSandboxApi';
+// Toolbar chrome shared with the Template Editor so both authoring tools look/feel identical.
+import { HotkeyBadge, headerBtnSx, paletteBtnSx } from './editorButtonStyles';
 
 /**
  * TemplateSandboxPage — desktop-only Template Sandbox tool
@@ -56,14 +66,29 @@ interface CachedDef {
 
 const defKey = (name: string, version: number) => `${name}@${version}`;
 
-/** Outlined header button styling — matches the template editor's header buttons. */
-const headerBtnSx = {
-  color: 'rgba(255,255,255,0.9)',
-  borderColor: 'rgba(255,255,255,0.5)',
-  backgroundColor: 'rgba(0,0,0,0.3)',
-  '&:hover': { borderColor: 'white', backgroundColor: 'rgba(0,0,0,0.5)' },
-  '&.Mui-disabled': { color: 'rgba(255,255,255,0.35)', borderColor: 'rgba(255,255,255,0.2)' },
-} as const;
+// ── Toolbar group accents ("r,g,b" triplets, same convention as the editor's palette) ──
+/** View toggles (grid) — the editor's default palette yellow. */
+const VIEW_ACCENT = '255,224,102';
+/** Actions scoped to the SELECTED tile (version · houses · lock). */
+const SELECTION_ACCENT = '129,212,250';
+/** Whole-layout actions (add). */
+const LAYOUT_ACCENT = '165,214,167';
+/** Destructive actions (delete · clear) — red so they read apart from their group's other keys. */
+const DESTRUCTIVE_ACCENT = '255,140,140';
+
+/** Button tooltip copy per placeholder-area render mode (the H cycle). */
+const HOUSE_MODE_LABEL: Record<SandboxHouseMode, string> = {
+  all: 'Houses in every placeholder',
+  placeholder: 'Placeholder areas tinted, no houses',
+  none: 'No houses, no placeholder tint',
+};
+
+/** Panel wrapper tinting a toolbar group with its accent (mirrors the editor's tool groups). */
+const toolGroupSx = (accent: string) => ({
+  display: 'flex', flexDirection: 'row', gap: 0.75, p: 0.75, borderRadius: 1.5,
+  backgroundColor: `rgba(${accent},0.14)`,
+  border: `1px solid rgba(${accent},0.4)`,
+});
 
 function TemplateSandboxPage() {
   usePageTitle();
@@ -75,6 +100,10 @@ function TemplateSandboxPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Def cache: (name@version) → loaded render inputs. Never mutated in place (React identity).
   const [defs, setDefs] = useState<Map<string, CachedDef>>(new Map());
+  // View-only preferences (not persisted, not per-placement): the isometric cell grid overlay and
+  // the street-mask tint. Both are view-WIDE — they apply to every placement, not the selection.
+  const [showGrid, setShowGrid] = useState(false);
+  const [showStreet, setShowStreet] = useState(false);
   const [galleryEntries, setGalleryEntries] = useState<TemplateGalleryEntry[] | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [widthFilter, setWidthFilter] = useState<number | 'any'>('any');
@@ -146,16 +175,22 @@ function TemplateSandboxPage() {
         masks: def.masks,
         locked: p.locked,
         // Absent setting = the default filled look (see SANDBOX_SETTING_DEFAULTS).
-        showHouses: p.settings?.showHouses ?? SANDBOX_SETTING_DEFAULTS.showHouses,
+        houseMode: p.settings?.houseMode ?? SANDBOX_SETTING_DEFAULTS.houseMode,
       });
     }
     return out;
   }, [placements, defs]);
 
   const selected = placements.find((p) => p.id === selectedId) ?? null;
-  const selectedVersions = selected
-    ? defs.get(defKey(selected.templateName, selected.activeVersion))?.availableVersions ?? [selected.activeVersion]
-    : [];
+  // Memoized so its array identity is stable across renders — it is a dep of the version-cycle
+  // callback, which in turn is a dep of the hotkey effect (a fresh [] each render would
+  // re-register the keydown listener on every render).
+  const selectedVersions = useMemo(
+    () => (selected
+      ? defs.get(defKey(selected.templateName, selected.activeVersion))?.availableVersions ?? [selected.activeVersion]
+      : []),
+    [selected, defs],
+  );
 
   // ── Add flow: open the picker (lazy-load the gallery once), pick → drop into the sandbox ──
   const openPicker = useCallback(async () => {
@@ -259,6 +294,15 @@ function TemplateSandboxPage() {
     }
   }, [selected, ensureDef]);
 
+  // Version CYCLING (the V hotkey / the version button): step to the next version of the
+  // selected template, wrapping at the end. The dropdown's explicit pick and this share
+  // handleVersionChange, so both persist identically.
+  const handleCycleVersion = useCallback(() => {
+    if (!selected || selectedVersions.length < 2) return;
+    const i = selectedVersions.indexOf(selected.activeVersion);
+    handleVersionChange(selectedVersions[(i + 1) % selectedVersions.length]);
+  }, [selected, selectedVersions, handleVersionChange]);
+
   // ── Lock / unlock the selected tile (a locked tile can't be dragged) ──
   const handleToggleLock = useCallback(async () => {
     if (!selected) return;
@@ -273,36 +317,34 @@ function TemplateSandboxPage() {
     }
   }, [selected]);
 
-  // ── Houses on/off for the selected tile (settings.showHouses, persisted in the settings bag) ──
-  // ON = every placeholder area of that template previews an occupant house; OFF = none. This
+  // ── Placeholder-area render mode for the selected tile (settings.houseMode, persisted) ──
+  // A three-state CYCLE rather than an on/off toggle: 'all' (a house in every placeholder area) →
+  // 'placeholder' (no houses; the areas are tinted so the slots are visible) → 'none' → back. This
   // replaces the editor's condition-driven filled-slot rule on the sandbox surface.
-  const selectedShowHouses = selected
-    ? selected.settings?.showHouses ?? SANDBOX_SETTING_DEFAULTS.showHouses
-    : false;
+  const selectedHouseMode: SandboxHouseMode = selected
+    ? selected.settings?.houseMode ?? SANDBOX_SETTING_DEFAULTS.houseMode
+    : SANDBOX_SETTING_DEFAULTS.houseMode;
 
-  const handleToggleHouses = useCallback(async () => {
+  const handleCycleHouseMode = useCallback(async () => {
     if (!selected) return;
     const id = selected.id;
     const prevSettings = selected.settings ?? {};
-    const next = !(prevSettings.showHouses ?? SANDBOX_SETTING_DEFAULTS.showHouses);
+    const current = prevSettings.houseMode ?? SANDBOX_SETTING_DEFAULTS.houseMode;
+    const next = SANDBOX_HOUSE_MODES[(SANDBOX_HOUSE_MODES.indexOf(current) + 1) % SANDBOX_HOUSE_MODES.length];
     // Optimistic; roll the whole settings object back on failure.
-    setPlacements((prev) => prev.map((p) => (p.id === id ? { ...p, settings: { ...p.settings, showHouses: next } } : p)));
+    setPlacements((prev) => prev.map((p) => (p.id === id ? { ...p, settings: { ...p.settings, houseMode: next } } : p)));
     try {
-      await setSandboxPlacementSettings(id, { showHouses: next });
+      await setSandboxPlacementSettings(id, { houseMode: next });
     } catch (err) {
       setPlacements((prev) => prev.map((p) => (p.id === id ? { ...p, settings: prevSettings } : p)));
-      setSnack({ msg: err instanceof Error ? err.message : 'Failed to change houses setting', sev: 'error' });
+      setSnack({ msg: err instanceof Error ? err.message : 'Failed to change placeholder render mode', sev: 'error' });
     }
   }, [selected]);
 
-  // ── Delete the selected tile ──
+  // ── Delete the selected tile (no confirmation: the sandbox is a scratch surface,
+  // so re-adding a template is cheap and a modal just slows down iteration) ──
   const handleDelete = useCallback(async () => {
     if (!selected) return;
-    const ok = await confirm(
-      `Remove "${selected.templateName}" from your sandbox layout?`,
-      { title: 'Remove from sandbox?', confirmText: 'Remove' },
-    );
-    if (!ok) return;
     const id = selected.id;
     try {
       await removeSandboxPlacement(id);
@@ -311,7 +353,88 @@ function TemplateSandboxPage() {
     } catch (err) {
       setSnack({ msg: err instanceof Error ? err.message : 'Failed to remove template', sev: 'error' });
     }
-  }, [selected, confirm]);
+  }, [selected]);
+
+  // ── Iterate: let the LIVE growth algorithm place the next template ──
+  // The server runs the same planner the real night market grows with and persists its choice, so
+  // this is a true preview of runtime behaviour rather than a re-implementation. An empty sandbox
+  // seeds the starter hub; `null` means no legal candidate at any exposed anchor.
+  const [iterating, setIterating] = useState(false);
+  // A failed iterate is a RESULT, not an error — the algorithm ran and found nothing legal. It gets
+  // a modal rather than a snackbar because it is the answer the author pressed the button for, and
+  // a toast can be missed while they are looking at the scene.
+  const [noPlacementOpen, setNoPlacementOpen] = useState(false);
+  const handleIterate = useCallback(async () => {
+    if (iterating) return; // one step at a time — the algorithm reads the layout it is growing
+    setIterating(true);
+    try {
+      const row = await iterateSandboxPlacement();
+      if (!row) {
+        setNoPlacementOpen(true);
+        return;
+      }
+      await ensureDef(row.templateName, row.activeVersion);
+      setPlacements((prev) => [...prev, row]);
+      setSelectedId(row.id);
+      setSnack({ msg: `Placed ${row.templateName} v${row.activeVersion} at (${row.offsetCol}, ${row.offsetRow})`, sev: 'success' });
+    } catch (err) {
+      setSnack({ msg: err instanceof Error ? err.message : 'Failed to iterate the sandbox', sev: 'error' });
+    } finally {
+      setIterating(false);
+    }
+  }, [iterating, ensureDef]);
+
+  // ── Clear the whole sandbox ──
+  // Unlike the single-tile delete this DOES confirm: it destroys the entire layout (every tile's
+  // position/version/settings), which is far more work to rebuild than re-adding one template.
+  const handleClear = useCallback(async () => {
+    if (placements.length === 0) return;
+    const ok = await confirm(
+      `Remove all ${placements.length} template${placements.length === 1 ? '' : 's'} from your sandbox? This cannot be undone.`,
+      { title: 'Clear the sandbox?', confirmText: 'Clear' },
+    );
+    if (!ok) return;
+    try {
+      await clearSandboxPlacements();
+      setPlacements([]);
+      setSelectedId(null);
+    } catch (err) {
+      setSnack({ msg: err instanceof Error ? err.message : 'Failed to clear sandbox', sev: 'error' });
+    }
+  }, [placements.length, confirm]);
+
+  // ── Keyboard hotkeys ────────────────────────────────────────────────────────────
+  // One bare key per toolbar button (badged on each button): A add · D delete · L lock ·
+  // H houses · V version cycle · G grid · S street overlay · I iterate. CLEAR IS DELIBERATELY
+  // KEYLESS — it destroys the whole layout, so it must stay a considered click (+ confirmation),
+  // never a stray keypress. The selection-scoped keys (D/L/H/V) no-op
+  // without a selection, mirroring their disabled buttons. Suppressed while the picker overlay
+  // is open (it owns Escape and its own clicks) and while focus is in a text field, so typing
+  // in the filter dropdowns never fires an action.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      // Let native/browser shortcuts through; only bare keypresses are hotkeys.
+      if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+      if (pickerOpen) return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
+
+      switch (e.key.toLowerCase()) {
+        case 'a': openPicker(); break;
+        case 'g': setShowGrid((v) => !v); break;
+        case 's': setShowStreet((v) => !v); break;
+        case 'i': handleIterate(); break;
+        case 'd': handleDelete(); break;
+        case 'l': handleToggleLock(); break;
+        case 'h': handleCycleHouseMode(); break;
+        case 'v': handleCycleVersion(); break;
+        default: return;
+      }
+      e.preventDefault(); // stop the key from re-triggering a focused button
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [pickerOpen, openPicker, handleIterate, handleDelete, handleToggleLock, handleCycleHouseMode, handleCycleVersion]);
 
   return (
     <LeafPage title="Template Sandbox" onBack={() => navigate('/')} className="template-sandbox-root">
@@ -345,81 +468,161 @@ function TemplateSandboxPage() {
             </Typography>
           </Box>
 
+          {/* Toolbar — editor-style 40×40 icon buttons with corner hotkey badges, grouped by
+              scope: VIEW (grid) · SELECTION (version/houses/lock/delete) · LAYOUT (add/clear).
+              Each group's tint matches its accent, exactly as in the template editor's palette.
+              The hotkeys are badged here and dispatched in the keydown effect above — keep the
+              two in sync. */}
           <Box className="template-sandbox-header-actions" sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-            {/* Per-instance version switcher — enabled only when a tile is selected. Lists the
-                selected template name's versions; switching re-renders that one instance. */}
-            <FormControl size="small" className="template-sandbox-version" disabled={!selected}>
-              <Select
-                className="template-sandbox-version-select"
-                value={selected ? selected.activeVersion : ''}
-                displayEmpty
-                onChange={(e) => handleVersionChange(Number(e.target.value))}
-                renderValue={(v) => (selected ? `Version ${v}${v === 0 ? ' (base)' : ''}` : 'Version')}
-                sx={{
-                  color: 'rgba(255,255,255,0.9)',
-                  backgroundColor: 'rgba(0,0,0,0.3)',
-                  fontSize: '0.8125rem',
-                  '.MuiSelect-select': { py: '4px', pl: '10px' },
-                  '.MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.5)' },
-                  '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'white' },
-                  '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: 'white' },
-                  '&.Mui-disabled .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.2)' },
-                  '.MuiSvgIcon-root': { color: 'rgba(255,255,255,0.9)' },
-                }}
+            {/* View-wide (not selection-scoped): the cell grid, with a red line every 8 cells. */}
+            <Box className="template-sandbox-tool-group template-sandbox-tool-group-view" sx={toolGroupSx(VIEW_ACCENT)}>
+              <Tooltip title={showGrid ? 'Hide the cell grid (G)' : 'Show the cell grid — red line every 8 cells (G)'} placement="bottom">
+                <Button
+                  className="template-sandbox-grid-btn"
+                  variant={showGrid ? 'contained' : 'outlined'} size="small"
+                  onClick={() => setShowGrid((v) => !v)}
+                  sx={paletteBtnSx(showGrid, VIEW_ACCENT)}
+                >
+                  <GridOnIcon fontSize="small" />
+                  <HotkeyBadge label="G" />
+                </Button>
+              </Tooltip>
+
+              {/* The street-walkability tint, on EVERY placement — the sandbox otherwise previews
+                  the finished look, but street alignment across seams is what tiling is judged on. */}
+              <Tooltip title={showStreet ? 'Hide the street mask (S)' : 'Show the street mask on every template (S)'} placement="bottom">
+                <Button
+                  className="template-sandbox-street-btn"
+                  variant={showStreet ? 'contained' : 'outlined'} size="small"
+                  onClick={() => setShowStreet((v) => !v)}
+                  sx={paletteBtnSx(showStreet, VIEW_ACCENT)}
+                >
+                  <RouteIcon fontSize="small" />
+                  <HotkeyBadge label="S" />
+                </Button>
+              </Tooltip>
+            </Box>
+
+            {/* Selection-scoped actions — all disabled until a tile is selected. */}
+            <Box className="template-sandbox-tool-group template-sandbox-tool-group-selection" sx={toolGroupSx(SELECTION_ACCENT)}>
+              {/* Per-instance version CYCLER: steps to this template name's next version and
+                  wraps. Reads out the current version in its face, so no dropdown is needed. */}
+              <Tooltip
+                title={selected
+                  ? `Version ${selected.activeVersion}${selected.activeVersion === 0 ? ' (base)' : ''} of ${selectedVersions.length} — cycle to the next (V)`
+                  : 'Select a template to switch its version'}
+                placement="bottom"
               >
-                {selectedVersions.map((v) => (
-                  <MenuItem key={v} value={v} className="template-sandbox-version-option">
-                    {`Version ${v}${v === 0 ? ' (base)' : ''}`}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+                <span>
+                  <Button
+                    className="template-sandbox-version-btn" variant="outlined" size="small"
+                    onClick={handleCycleVersion} disabled={!selected || selectedVersions.length < 2}
+                    sx={paletteBtnSx(false, SELECTION_ACCENT)}
+                  >
+                    <Typography component="span" sx={{ fontSize: '0.8125rem', fontWeight: WEIGHT.bold, lineHeight: 1 }}>
+                      {selected ? `v${selected.activeVersion}` : 'v–'}
+                    </Typography>
+                    <HotkeyBadge label="V" />
+                  </Button>
+                </span>
+              </Tooltip>
 
-            <Tooltip title={selectedShowHouses ? 'Hide the houses in this template’s placeholders' : 'Show a house in every placeholder of this template'}>
-              <span>
+              {/* Tri-state CYCLE (not a toggle): houses → placeholder tint → nothing. The icon
+                  names the CURRENT state; 'all' and 'placeholder' both count as lit. */}
+              <Tooltip title={`${HOUSE_MODE_LABEL[selectedHouseMode]} — cycle (H)`} placement="bottom">
+                <span>
+                  <Button
+                    className={`template-sandbox-houses-btn template-sandbox-houses-btn--${selectedHouseMode}`}
+                    variant={selectedHouseMode === 'none' ? 'outlined' : 'contained'} size="small"
+                    onClick={handleCycleHouseMode} disabled={!selected}
+                    sx={paletteBtnSx(!!selected && selectedHouseMode !== 'none', SELECTION_ACCENT)}
+                  >
+                    {selectedHouseMode === 'all' ? <HomeIcon fontSize="small" />
+                      : selectedHouseMode === 'placeholder' ? <HighlightAltIcon fontSize="small" />
+                      : <HomeOutlinedIcon fontSize="small" />}
+                    <HotkeyBadge label="H" />
+                  </Button>
+                </span>
+              </Tooltip>
+
+              <Tooltip
+                title={selected?.locked
+                  ? 'Unlock so this template can be dragged (L)'
+                  : 'Lock this template so it cannot be dragged (L)'}
+                placement="bottom"
+              >
+                <span>
+                  <Button
+                    className="template-sandbox-lock-btn"
+                    variant={selected?.locked ? 'contained' : 'outlined'} size="small"
+                    onClick={handleToggleLock} disabled={!selected}
+                    sx={paletteBtnSx(!!selected?.locked, SELECTION_ACCENT)}
+                  >
+                    {selected?.locked ? <LockIcon fontSize="small" /> : <LockOpenIcon fontSize="small" />}
+                    <HotkeyBadge label="L" />
+                  </Button>
+                </span>
+              </Tooltip>
+
+              {/* Deletes immediately — no confirmation (the sandbox is a scratch surface). */}
+              <Tooltip title="Delete the selected template from the sandbox (D)" placement="bottom">
+                <span>
+                  <Button
+                    className="template-sandbox-delete-btn" variant="outlined" size="small"
+                    onClick={handleDelete} disabled={!selected}
+                    sx={paletteBtnSx(false, DESTRUCTIVE_ACCENT)}
+                  >
+                    <DeleteForeverIcon fontSize="small" />
+                    <HotkeyBadge label="D" />
+                  </Button>
+                </span>
+              </Tooltip>
+            </Box>
+
+            {/* Whole-layout actions. */}
+            <Box className="template-sandbox-tool-group template-sandbox-tool-group-layout" sx={toolGroupSx(LAYOUT_ACCENT)}>
+              <Tooltip title="Add a template to the sandbox (A)" placement="bottom">
                 <Button
-                  className="template-sandbox-houses-btn" variant="outlined" size="small"
-                  startIcon={selectedShowHouses ? <HomeIcon /> : <HomeOutlinedIcon />}
-                  onClick={handleToggleHouses} disabled={!selected}
-                  sx={headerBtnSx}
+                  className="template-sandbox-add-btn" variant="outlined" size="small"
+                  onClick={openPicker}
+                  sx={paletteBtnSx(false, LAYOUT_ACCENT)}
                 >
-                  {selectedShowHouses ? 'Houses On' : 'Houses Off'}
+                  <AddIcon fontSize="small" />
+                  <HotkeyBadge label="A" />
                 </Button>
-              </span>
-            </Tooltip>
+              </Tooltip>
 
-            <Tooltip title={selected?.locked ? 'Unlock so this template can be dragged' : 'Lock this template so it cannot be dragged'}>
-              <span>
-                <Button
-                  className="template-sandbox-lock-btn" variant="outlined" size="small"
-                  startIcon={selected?.locked ? <LockIcon /> : <LockOpenIcon />}
-                  onClick={handleToggleLock} disabled={!selected}
-                  sx={headerBtnSx}
-                >
-                  {selected?.locked ? 'Unlock' : 'Lock'}
-                </Button>
-              </span>
-            </Tooltip>
+              {/* Runs the live runtime growth algorithm one step (server-side) and places its pick. */}
+              <Tooltip
+                title="Iterate — place the template the live growth algorithm would place next (I)"
+                placement="bottom"
+              >
+                <span>
+                  <Button
+                    className="template-sandbox-iterate-btn" variant="outlined" size="small"
+                    onClick={handleIterate} disabled={iterating}
+                    sx={paletteBtnSx(false, LAYOUT_ACCENT)}
+                  >
+                    <AutoAwesomeMotionIcon fontSize="small" />
+                    <HotkeyBadge label="I" />
+                  </Button>
+                </span>
+              </Tooltip>
 
-            <Tooltip title="Delete the selected template from the sandbox">
-              <span>
-                <Button
-                  className="template-sandbox-delete-btn" variant="outlined" size="small"
-                  startIcon={<DeleteForeverIcon />} onClick={handleDelete} disabled={!selected}
-                  sx={headerBtnSx}
-                >
-                  Delete
-                </Button>
-              </span>
-            </Tooltip>
-
-            <Button
-              className="template-sandbox-add-btn" variant="outlined" size="small"
-              startIcon={<AddIcon />} onClick={openPicker}
-              sx={headerBtnSx}
-            >
-              Add
-            </Button>
+              {/* The only confirmed action here — it destroys every tile's position/version/settings.
+                  Deliberately has NO hotkey for the same reason (see the keydown effect). */}
+              <Tooltip title="Clear the whole sandbox" placement="bottom">
+                <span>
+                  <Button
+                    className="template-sandbox-clear-btn" variant="outlined" size="small"
+                    onClick={handleClear} disabled={placements.length === 0}
+                    sx={paletteBtnSx(false, DESTRUCTIVE_ACCENT)}
+                  >
+                    <LayersClearIcon fontSize="small" />
+                  </Button>
+                </span>
+              </Tooltip>
+            </Box>
           </Box>
         </Box>
 
@@ -429,6 +632,8 @@ function TemplateSandboxPage() {
           selectedId={selectedId}
           onSelect={setSelectedId}
           onMove={handleMove}
+          showGrid={showGrid}
+          showStreet={showStreet}
         />
 
         {/* Picker overlay — the visual template gallery with a dimension filter, over the scene. */}
@@ -488,11 +693,37 @@ function TemplateSandboxPage() {
               </Button>
             </Box>
             <Box sx={{ flex: 1, minHeight: 0 }}>
-              {galleryEntries !== null && <TemplateLoadGallery entries={filteredEntries} onPick={handlePick} />}
+              {/* `houseMode="all"` so each card previews the template FULLY OCCUPIED — the same look a
+                  freshly-added tile has here (sandbox placements default to houseMode 'all'), rather
+                  than the editor's condition-driven filled-slot rule. */}
+              {galleryEntries !== null && (
+                <TemplateLoadGallery entries={filteredEntries} onPick={handlePick} houseMode="all" />
+              )}
             </Box>
           </Box>
         )}
       </Box>
+
+      {/* Iterate's "nothing fits" result — see handleIterate. */}
+      <Dialog
+        className="template-sandbox-no-placement-dialog"
+        open={noPlacementOpen}
+        onClose={() => setNoPlacementOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>No legal placement</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">
+            The growth algorithm found no legal candidate at any exposed anchor of this layout —
+            every complement-direction, equal-width catalog anchor either overlaps a placed template
+            or disagrees across the seam. On a real night market it would stop growing here.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button className="template-sandbox-no-placement-ok" onClick={() => setNoPlacementOpen(false)}>OK</Button>
+        </DialogActions>
+      </Dialog>
 
       <Snackbar
         open={!!snack}

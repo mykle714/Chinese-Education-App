@@ -484,6 +484,14 @@ so "every template with a width-`W` west-facing anchor" is a direct
 7. **Tiebreak — random.** Pick uniformly among survivors. Safe to be truly random
    because the choice is persisted, not recomputed.
 
+**Where it runs.** The pure engine is `server/dal/shared/templatePlacement.ts` (`planSpawn`).
+`NightMarketPlacementService.planNextPlacement` wraps it with catalog/continent loading and is
+shared by two callers: `spawnTemplate` (the live growth path, which persists the plan) and the
+Template Sandbox's **Iterate** button (`NightMarketSandboxService.iteratePlacement` — the author
+tool that steps this algorithm over a scratch layout, see
+[NIGHT_MARKET_TEMPLATE_SANDBOX.md](./NIGHT_MARKET_TEMPLATE_SANDBOX.md)). Keep them on the one
+wrapper so the preview cannot drift from production.
+
 **Anchor fallback + logging.** If **no candidate at the closest anchor is legal**,
 advance to the **next-closest** anchor and repeat, emitting a
 `template-match-not-found` log (account, current template layout, the attempted

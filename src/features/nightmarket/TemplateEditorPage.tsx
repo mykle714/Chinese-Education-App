@@ -51,6 +51,8 @@ import {
   listTemplateGallery, loadTemplate, definitionToMasks, deleteTemplate, deleteTemplateVersion,
   type TemplateGalleryEntry,
 } from './templateEditorApi';
+// Toolbar chrome shared with the Template Sandbox so both authoring tools look/feel identical.
+import { HotkeyBadge, headerBtnSx, paletteBtnSx } from './editorButtonStyles';
 
 /**
  * TemplateEditorPage — validator-only Night Market template authoring surface
@@ -1688,42 +1690,6 @@ function TemplateEditorPage() {
     </LeafPage>
   );
 }
-
-// Small corner badge showing a button's keyboard hotkey. Absolutely anchored to the
-// bottom-right of the (position:relative) MUI ButtonBase; multi-char labels ("Space")
-// shrink to fit the 40px button. Non-interactive so it never eats the button's clicks.
-const HotkeyBadge = ({ label }: { label: string }) => (
-  <Box
-    component="span"
-    className="template-editor-hotkey-badge"
-    sx={{
-      position: 'absolute', bottom: 1, right: 3,
-      fontSize: label.length > 1 ? 7 : 9, lineHeight: 1,
-      fontWeight: WEIGHT.bold, letterSpacing: '0.02em',
-      opacity: 0.9, pointerEvents: 'none',
-    }}
-  >
-    {label}
-  </Box>
-);
-
-const headerBtnSx = {
-  color: 'rgba(255,255,255,0.9)', borderColor: 'rgba(255,255,255,0.5)',
-  backgroundColor: 'rgba(0,0,0,0.3)',
-  '&:hover': { borderColor: 'white', backgroundColor: 'rgba(0,0,0,0.5)' },
-} as const;
-
-// `accent` is an "r,g,b" triplet colouring the active-tool state so a lit button reads
-// as belonging to its group; defaults to the palette yellow for the ungrouped grid/view
-// toggles. The idle state stays neutral (white-ish border) so groups are distinguished
-// by their panel tint, not by idle button colour.
-const paletteBtnSx = (active: boolean, accent = '255,224,102') => ({
-  minWidth: 0, width: 40, height: 40, p: 0,
-  color: active ? 'black' : 'rgba(255,255,255,0.8)',
-  borderColor: active ? `rgba(${accent},0.6)` : 'rgba(255,255,255,0.4)',
-  backgroundColor: active ? `rgba(${accent},0.95)` : 'rgba(0,0,0,0.35)',
-  '&:hover': { borderColor: active ? `rgba(${accent},1)` : 'white', backgroundColor: active ? `rgba(${accent},1)` : 'rgba(0,0,0,0.55)' },
-});
 
 // ─── Guidelines dialog ───────────────────────────────────────────────────────────
 // A read-only reference popup listing the template AUTHORING rules that the editor does

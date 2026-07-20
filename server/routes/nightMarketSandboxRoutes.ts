@@ -40,10 +40,23 @@ router.patch('/api/nightmarket-sandbox/:id/lock', authenticateToken, async (req,
   await nightMarketSandboxController.setPlacementLock(req, res);
 });
 
-// Merge a render/view settings patch into one placement's settings bag (e.g. { showHouses }).
+// Merge a render/view settings patch into one placement's settings bag (e.g. { houseMode }).
 // @ts-ignore
 router.patch('/api/nightmarket-sandbox/:id/settings', authenticateToken, async (req, res) => {
   await nightMarketSandboxController.setPlacementSettings(req, res);
+});
+
+// Run the live growth algorithm once over the sandbox layout and place what it chose ("Iterate").
+// @ts-ignore
+router.post('/api/nightmarket-sandbox/iterate', authenticateToken, async (req, res) => {
+  await nightMarketSandboxController.iteratePlacement(req, res);
+});
+
+// Clear the caller's whole sandbox (the "Clear" action). Registered BEFORE the :id delete so the
+// bare-collection DELETE is never mistaken for a placement id.
+// @ts-ignore
+router.delete('/api/nightmarket-sandbox', authenticateToken, async (req, res) => {
+  await nightMarketSandboxController.clearPlacements(req, res);
 });
 
 // Delete one placement (the "Delete selected" action).

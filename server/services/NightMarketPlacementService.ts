@@ -12,6 +12,8 @@ import {
   deriveAnchors,
   type PlacedTemplate,
   type CatalogVersion,
+  type SpawnPlan,
+  type SpawnFailure,
 } from '../dal/shared/templatePlacement.js';
 import { TemplatePlacementRow } from '../types/nightMarket.js';
 
@@ -33,6 +35,20 @@ export interface GrantResult {
   spawned: number;
   /** The user's occupant count after the pass. */
   total: number;
+}
+
+/**
+ * The minimum a placed template must expose for {@link NightMarketPlacementService.planNextPlacement}
+ * to treat it as part of the layout being grown. Structurally satisfied by both a
+ * `nightmarkettemplatelocations` row (the real continent) and a `nightmarkettemplatesandbox` row
+ * (an author's scratch layout).
+ */
+export interface SpawnSourcePlacement {
+  id: string;
+  templateName: string;
+  activeVersion: number;
+  offsetCol: number;
+  offsetRow: number;
 }
 
 /** A slot an occupant landed in (or would). */
@@ -221,6 +237,35 @@ export class NightMarketPlacementService {
    */
   async spawnTemplate(userId: string): Promise<TemplatePlacementRow | null> {
     const placements = await this.placementDAL.findPlacementsByUser(userId);
+    const { plan, failures, placed } = await this.planNextPlacement(placements);
+
+    // Structured diagnostics — one line per anchor that yielded no legal candidate (spec logging).
+    for (const failure of failures) {
+      console.warn(
+        `[NightMarket] template-match-not-found user=${userId.substring(0, 8)}… ` +
+          `reason=${failure.reason}` +
+          (failure.edge ? ` anchor=${failure.edge}/${failure.width}@dist${failure.originDistance}` : '') +
+          ` layout=[${placed.map((p) => `${p.templateName}@(${p.offsetCol},${p.offsetRow})`).join(', ')}]`,
+      );
+    }
+
+    if (!plan) return null;
+    return this.placementDAL.insertPlacement(userId, plan.templateName, plan.version, plan.offsetCol, plan.offsetRow);
+  }
+
+  /**
+   * Run the pure spawn algorithm ({@link planSpawn}) over ANY layout of placed templates and return
+   * the winning placement WITHOUT persisting it. Split out of {@link spawnTemplate} so the template
+   * SANDBOX (NightMarketSandboxService.iteratePlacement) can step the very same algorithm over an
+   * author's scratch layout — the sandbox's whole purpose is previewing what the runtime would do,
+   * so the two must never diverge into separate implementations.
+   *
+   * `placements` is any surface's rows (the user's continent, or a sandbox layout); the caller
+   * decides what to do with the plan. `placed` is returned alongside for the failure logs.
+   */
+  async planNextPlacement(
+    placements: readonly SpawnSourcePlacement[],
+  ): Promise<{ plan: SpawnPlan | null; failures: SpawnFailure[]; placed: PlacedTemplate[] }> {
     const scoringCache = new Map<string, VersionScoringInputs>();
 
     // Existing continent: each placement rendered at its persisted active version's street mask.
@@ -273,19 +318,7 @@ export class NightMarketPlacementService {
     }
 
     const { plan, failures } = planSpawn(placed, catalog);
-
-    // Structured diagnostics — one line per anchor that yielded no legal candidate (spec logging).
-    for (const failure of failures) {
-      console.warn(
-        `[NightMarket] template-match-not-found user=${userId.substring(0, 8)}… ` +
-          `reason=${failure.reason}` +
-          (failure.edge ? ` anchor=${failure.edge}/${failure.width}@dist${failure.originDistance}` : '') +
-          ` layout=[${placed.map((p) => `${p.templateName}@(${p.offsetCol},${p.offsetRow})`).join(', ')}]`,
-      );
-    }
-
-    if (!plan) return null;
-    return this.placementDAL.insertPlacement(userId, plan.templateName, plan.version, plan.offsetCol, plan.offsetRow);
+    return { plan, failures, placed };
   }
 
   // ── internals ───────────────────────────────────────────────────────────────────────────

@@ -20,7 +20,9 @@ extend({ Container, Sprite, Graphics, Text });
  * inside a SINGLE Pixi Application (one WebGL context for the whole gallery — a per-tile
  * Application would exhaust the browser's ~16-context budget). Each thumbnail draws the
  * template's actual terrain / decor (via {@link EditorTerrainLayer}) plus the shared spriteless
- * mask tints + filled-slot occupant houses (via {@link TemplateMaskOverlays}). Per the author's request the
+ * mask tints + occupant houses (via {@link TemplateMaskOverlays}; `houseMode` chooses whether
+ * houses appear only in condition-filled areas or in EVERY placeholder area — the sandbox's picker
+ * uses the latter so a card previews the template fully occupied). Per the author's request the
  * thumbnail shows the version with the MOST conditions (chosen server-side — see
  * `listTemplateGallery`), so the richest layout is what you preview. Clicking a card fires
  * {@link onPick} with that entry (the parent loads its `chosenVersion`).
@@ -28,6 +30,9 @@ extend({ Container, Sprite, Graphics, Text });
  * The parent owns fetch/loading/empty/error states and the Load↔Cancel button; this component
  * only renders a non-empty entry list.
  */
+
+/** Thumbnail house rule — see the `houseMode` prop. Subset of TemplateMaskOverlays' modes. */
+export type GalleryHouseMode = 'filled' | 'all';
 
 // ── Grid metrics (screen px, pre-scroll) ──────────────────────────────────────────
 const GAP = 16;
@@ -57,15 +62,18 @@ interface PreparedEntry {
  * grass surface, the bottom is the near corner's dirt body, and an extra top allowance clears
  * the taller house sprites so a house-bearing board isn't clipped at the top of its card.
  */
-function prepare(entries: TemplateGalleryEntry[]): PreparedEntry[] {
+function prepare(entries: TemplateGalleryEntry[], houseMode: GalleryHouseMode): PreparedEntry[] {
   return entries.map((entry) => {
     const masks = definitionToMasks(entry.definition);
     const tiles = buildEditorField(entry.width, entry.height, masks);
     // A placeholder area containing a condition cell renders occupant HOUSE(S) (see
     // TemplateMaskOverlays); reserve extra top room so the taller house sprites aren't clipped.
-    const hasOccupant = masks.placeholder.some((area) =>
-      placeholderAreaCells(area).some((c) => masks.condition.has(c)),
-    );
+    // Under `'all'` every placeholder area gets a house, so any area at all needs the allowance.
+    const hasOccupant = houseMode === 'all'
+      ? masks.placeholder.length > 0
+      : masks.placeholder.some((area) =>
+        placeholderAreaCells(area).some((c) => masks.condition.has(c)),
+      );
     const houseAllowance = hasOccupant ? TILE_HEIGHT * 4 : 0;
     const topLocalY =
       -((entry.width - 1) + (entry.height - 1)) * (TILE_HEIGHT / 2) - TILE_HEIGHT - houseAllowance;
@@ -87,12 +95,15 @@ function GalleryScene({
   scrollY,
   onContentHeight,
   onPick,
+  houseMode,
 }: {
   prepared: PreparedEntry[];
   scrollY: number;
   /** Report the total content height so the outer wheel handler can clamp the scroll. */
   onContentHeight: (h: number) => void;
   onPick: (entry: TemplateGalleryEntry) => void;
+  /** House rule for the thumbnails' mask overlays — see the outer component's `houseMode` prop. */
+  houseMode: GalleryHouseMode;
 }) {
   const { app } = useApplication();
   const [size, setSize] = useState({ w: app?.screen.width ?? 0, h: app?.screen.height ?? 0 });
@@ -168,7 +179,7 @@ function GalleryScene({
                 local to this thumbnail and never bleeds across cards. */}
             <pixiContainer x={boardCX} y={containerY} scale={s} sortableChildren>
               <EditorTerrainLayer tiles={p.tiles} />
-              <TemplateMaskOverlays masks={p.masks} />
+              <TemplateMaskOverlays masks={p.masks} houseMode={houseMode} />
             </pixiContainer>
             {/* Caption band. */}
             <pixiText
@@ -212,9 +223,17 @@ function GalleryScene({
 function TemplateLoadGallery({
   entries,
   onPick,
+  houseMode = 'filled',
 }: {
   entries: TemplateGalleryEntry[];
   onPick: (entry: TemplateGalleryEntry) => void;
+  /**
+   * Which placeholder areas preview an occupant house in the thumbnails:
+   * `'filled'` (default — the editor's Load picker: only condition-filled areas, matching what the
+   * editor itself draws) or `'all'` (the sandbox's Add picker: every placeholder area, so a card
+   * previews the template at full occupancy, exactly as a freshly-added tile renders there).
+   */
+  houseMode?: GalleryHouseMode;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(false);
@@ -225,7 +244,7 @@ function TemplateLoadGallery({
   const scrollYRef = useRef(0);
   scrollYRef.current = scrollY;
 
-  const prepared = useMemo(() => prepare(entries), [entries]);
+  const prepared = useMemo(() => prepare(entries, houseMode), [entries, houseMode]);
 
   useEffect(() => { if (containerRef.current) setReady(true); }, []);
 
@@ -268,6 +287,7 @@ function TemplateLoadGallery({
             scrollY={scrollY}
             onContentHeight={onContentHeight}
             onPick={onPick}
+            houseMode={houseMode}
           />
         </Application>
       )}

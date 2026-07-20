@@ -64,6 +64,13 @@ export interface INightMarketSandboxDAL {
   deleteById(userId: string, id: string): Promise<boolean>;
 
   /**
+   * Delete ALL of one author's placements (the sandbox "Clear" action — wipes their whole scratch
+   * layout). Scoped to `userId`; never touches another author's sandbox. Returns the number of
+   * rows removed (0 when the sandbox was already empty — not an error).
+   */
+  deleteAllForUser(userId: string): Promise<number>;
+
+  /**
    * Delete EVERY author's sandbox placements of a template name — the catalog-delete cascade
    * (NightMarketTemplateService.deleteTemplate). Deliberately NOT scoped to a user: the catalog
    * row is global, so when it is deleted no author's placement of it can render. Returns the

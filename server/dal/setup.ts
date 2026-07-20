@@ -81,13 +81,14 @@ const nightMarketService = new NightMarketService(nightMarketDAL, userDAL);
 // sandbox DAL is injected so deleting a template also removes every author's sandbox placement
 // of it (docs/NIGHT_MARKET_TEMPLATE_SANDBOX.md § cleanup).
 const nightMarketTemplateService = new NightMarketTemplateService(userDAL, nightMarketSandboxDAL);
-// Desktop-only Template Sandbox: template authors freely tile catalog templates (scratch state).
-const nightMarketSandboxService = new NightMarketSandboxService(nightMarketSandboxDAL, userDAL);
 // Per-user template LAYOUT read (placements → rendered world); seeds the origin hub.
 const nightMarketWorldService = new NightMarketWorldService(nightMarketPlacementDAL, nightMarketTemplateService);
 // Occupant/placement WRITE side (grant flow + spawn). Injected into the minute-points service so
 // earning a minute reconciles the user's unlock entitlement (best-effort — see below).
 const nightMarketPlacementService = new NightMarketPlacementService(nightMarketPlacementDAL, nightMarketTemplateService);
+// Desktop-only Template Sandbox: template authors freely tile catalog templates (scratch state).
+// Constructed after the placement service — the sandbox's Iterate action reuses its growth planner.
+const nightMarketSandboxService = new NightMarketSandboxService(nightMarketSandboxDAL, userDAL, nightMarketPlacementService);
 // Constructed after the placement service so the grant hook can be wired in.
 const userMinutePointsService = new UserMinutePointsService(userMinutePointsDAL, userDAL, nightMarketPlacementService);
 const gameAssetService = new GameAssetService(gameAssetDAL);

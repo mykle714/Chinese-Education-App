@@ -29,12 +29,6 @@
 >
 > **Build tracker:** the runtime implementation plan (modules, slices, status) lives in
 > [NIGHT_MARKET_TEMPLATE_RUNTIME_PLAN.md](./NIGHT_MARKET_TEMPLATE_RUNTIME_PLAN.md).
->
-> **Proposed authoring change (not implemented):** allowing a street to run **flush along the
-> north/east faces** (parallel to the edge, rather than crossing it) breaks the "border street
-> cell = perpendicular road stub" assumption that anchors, conditions, the seal guard, and street
-> recovery all share. Impact analysis + open decisions:
-> [NIGHT_MARKET_EDGE_STREETS.md](./NIGHT_MARKET_EDGE_STREETS.md).
 
 ## Why templates
 
@@ -477,6 +471,8 @@ so "every template with a width-`W` west-facing anchor" is a direct
 4. **Discard illegal placements** with [`isPlacementLegal`](#isplacementlegalplaceda-placedb--cell-level-seam-check),
    evaluated against **every** already-placed template the candidate would touch
    (nestling into a concavity can create several seams at once).
+4a. **Discard placements that would FLANK a still-open street mouth** — see
+   [The flank ban](#the-flank-ban). Pure geometry, so it runs before the expensive seal check.
 4b. **Discard placements that would SEAL the continent** — see
    [The seal constraint](#the-seal-constraint). Runs after step 4 because it is the expensive
    check (it re-simulates version selection for the whole world).
@@ -522,8 +518,44 @@ The failure reasons (`SpawnFailure.reason`, `templatePlacement.ts`) distinguish 
 | reason | meaning |
 |---|---|
 | `anchor-no-legal-candidate` | nothing in the catalog fit that anchor's seam |
+| `anchor-all-candidates-flank` | candidates fit, but **every** one would flank a still-open street mouth (step 4a); `flankedCandidates` counts them |
 | `anchor-all-candidates-seal` | candidates fit, but **every** one would seal the continent (step 4b); `sealedCandidates` counts them |
 | `all-anchors-exhausted` | every exposed anchor failed — no spawn this pass |
+
+#### The flank ban
+
+> **Implementation.** `anchorFlankCells` + `flankedAnchorKeys` in
+> `server/dal/shared/templatePlacement.ts`, applied as step 4a inside `planSpawn`. Tests:
+> `src/__tests__/anchorFlankBan.test.ts`.
+
+**Rule: an open street mouth may never run flush alongside another template's outer edge.** An
+exposed anchor is a road that stops at the board edge and continues into void; if a template sits
+*beside* that mouth rather than *across* it, the road ends up running along the side of a board —
+it can never be attached to, and it visually dies against a neighbour's face.
+
+**The check.** Take the exposed anchor and its outward direction, step **one cell out**, then look
+**one cell left and one cell right** along the edge axis. Those two **diagonal flank cells** must
+be void. (The cells directly outward of the run itself need no test — `exposedAnchors` only emits
+cells whose outward neighbour is already void, so the mouth's outward strip is void by
+construction. The ban therefore adds exactly two cells per anchor.)
+
+**Applied as a candidate veto over the whole post-placement world.** After a candidate passes the
+seam check, `planSpawn` re-enumerates every exposed anchor of `placed + candidate` and rejects the
+candidate if any of them is flanked — **the candidate's own remaining mouths included**, not just
+the already-placed templates'. The mated anchor itself is never affected: the new template covers
+its outward cells, so it is no longer exposed.
+
+**Only NEW violations veto.** The check is a delta against the flanked-anchor set of the world
+*before* the placement. Vetoing on the absolute count would deadlock growth forever on any layout
+persisted before this ban existed — every candidate would inherit the pre-existing violation and be
+rejected. A pre-existing flanked mouth stays flanked (it is simply unusable); it does not block
+unrelated growth.
+
+**Diagnostics.** A vetoed candidate emits a `candidate-rejected` trace event with
+`reason: 'flanks-open-anchor'` and the anchor keys it would flank
+(`edge:crossLine:alongStart:width`); an anchor whose every candidate is vetoed reports
+`anchor-all-candidates-flank` with `flankedCandidates`. Both surface in the nms Iterate decision
+trace — see [NIGHT_MARKET_TEMPLATE_SANDBOX.md](./NIGHT_MARKET_TEMPLATE_SANDBOX.md).
 
 #### The seal constraint
 
@@ -941,8 +973,9 @@ Code this doc will depend on / drive once implemented:
   [Placeholder areas](#placeholder-areas),
   [Template versions](#template-versions--full-snapshots)).
 - **New placement module** (server-side, runs at spawn time) — the anchor-driven
-  algorithm + `isPlacementLegal` cell-level seam check + `template-match-not-found`
-  logging (see [How a new template attaches](#how-a-new-template-attaches)).
+  algorithm + `isPlacementLegal` cell-level seam check + the `anchorFlankCells` /
+  `flankedAnchorKeys` flank ban (see [The flank ban](#the-flank-ban)) +
+  `template-match-not-found` logging (see [How a new template attaches](#how-a-new-template-attaches)).
 - `server/dal/shared/continentSeal.ts` — the seal guard + `resolvePlacementVersion`, the shared
   per-placement version resolver used by BOTH the guard and
   `NightMarketWorldService.selectVersion` (see [The seal constraint](#the-seal-constraint),

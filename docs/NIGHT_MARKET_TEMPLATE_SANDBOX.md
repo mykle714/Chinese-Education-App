@@ -136,7 +136,10 @@ click behind its confirmation, never a stray keypress.
   widths per edge; then per anchor a `TRY` line, either a `SKIP` (no catalog template exposes a
   complement-edge anchor of that **exact** width — the most common reason a near anchor is passed
   over) or one line per candidate marked `✓` (with `runs=`/`spread=`) or `✗` with its reason
-  (`overlap` / `seam-mismatch` **naming the blocking placement**, or `seals-continent`); and finally
+  (`overlap` / `seam-mismatch` **naming the blocking placement**, `flanks-open-anchor` **listing the
+  street mouths it would run alongside** — see
+  [NIGHT_MARKET_TEMPLATES.md § The flank ban](./NIGHT_MARKET_TEMPLATES.md#the-flank-ban) — or
+  `seals-continent`); and finally
   `WINNER` with the tiebreak values, or `EXHAUSTED`.
   Mechanism, by layer: the pure engine takes an injected `SpawnTrace` callback
   (`server/dal/shared/templatePlacement.ts` — `SpawnTraceEvent`, threaded through `planSpawn`) so it

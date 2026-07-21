@@ -3,7 +3,8 @@
  * § "Edge signatures" + § "Tiling & Placement"). Given the user's current continent of placed
  * templates and the authored catalog, it decides WHERE a new template attaches when every
  * placeholder slot is full: enumerate exposed street anchors → match complement-direction,
- * equal-width catalog anchors → discard illegal seams → discard candidates that would SEAL the
+ * equal-width catalog anchors → discard illegal seams → discard candidates that would FLANK a
+ * still-open street mouth ({@link flankedAnchorKeys}) → discard candidates that would SEAL the
  * continent (the injected {@link SealCheck}) → rank by streets-joined → maximin-spread tiebreak →
  * random tiebreak.
  *
@@ -229,6 +230,74 @@ export function exposedAnchors(placed: readonly PlacedTemplate[]): ExposedAnchor
   return out;
 }
 
+// ── Flank ban (a street mouth may not run alongside a neighbour's outer edge) ───────────────
+
+/**
+ * The two DIAGONAL flank cells of an exposed anchor, in GLOBAL coords: step one cell along the
+ * outward normal, then one cell "left" and "right" along the edge axis — i.e. the cells just off
+ * each END of the anchor's outward-facing mouth.
+ *
+ * (The cells directly outward of the run itself need no test: {@link exposedAnchors} only emits a
+ * cell whose outward neighbour is void, so the whole outward strip is void by construction. The
+ * flanks are the only two cells the ban adds.)
+ */
+export function anchorFlankCells(a: ExposedAnchor): Array<[number, number]> {
+  const [dc, dr] = OUTWARD[a.edge];
+  const alongLo = a.globalAlongStart - 1;
+  const alongHi = a.globalAlongStart + a.width;
+
+  if (a.edge === 'n' || a.edge === 's') {
+    // n/s runs vary by COL on a fixed global row; flanks step outward (±row) and along (±col).
+    const row = a.owner.offsetRow + (a.edge === 'n' ? a.owner.height - 1 : 0) + dr;
+    return [
+      [alongLo, row],
+      [alongHi, row],
+    ];
+  }
+  // e/w runs vary by ROW on a fixed global col.
+  const col = a.owner.offsetCol + (a.edge === 'e' ? a.owner.width - 1 : 0) + dc;
+  return [
+    [col, alongLo],
+    [col, alongHi],
+  ];
+}
+
+/** Stable identity for an exposed anchor: its edge + the global cell run it occupies. */
+function exposedAnchorKey(a: ExposedAnchor): string {
+  const cross =
+    a.edge === 'n' || a.edge === 's'
+      ? a.owner.offsetRow + (a.edge === 'n' ? a.owner.height - 1 : 0)
+      : a.owner.offsetCol + (a.edge === 'e' ? a.owner.width - 1 : 0);
+  return `${a.edge}:${cross}:${a.globalAlongStart}:${a.width}`;
+}
+
+/**
+ * Every exposed anchor in a world whose mouth is FLANKED — a template occupies one of its
+ * {@link anchorFlankCells}. Such a street runs flush alongside that neighbour's outer edge, which
+ * is banned (§ "The flank ban"): the mouth can never be attached to, and the road visually dies
+ * against the side of a board.
+ *
+ * Returned as KEYS rather than a boolean so {@link planSpawn} can veto only the violations a
+ * candidate *introduces*. Vetoing on the absolute count would deadlock spawning forever if a world
+ * already contains a flanked anchor (a layout persisted before this ban existed) — every candidate
+ * would inherit the pre-existing violation and be rejected.
+ */
+export function flankedAnchorKeys(placed: readonly PlacedTemplate[]): Set<string> {
+  const occupied = globalOccupied(footprints(placed));
+  const flanked = new Set<string>();
+
+  for (const a of exposedAnchors(placed)) {
+    for (const [col, row] of anchorFlankCells(a)) {
+      if (occupied.has(tileKey(col, row))) {
+        flanked.add(exposedAnchorKey(a));
+        break;
+      }
+    }
+  }
+
+  return flanked;
+}
+
 // ── Legality (cell-level seam check) ────────────────────────────────────────────────────────
 
 /** A candidate placement (a catalog version pinned at an offset) for legality/scoring checks. */
@@ -391,12 +460,19 @@ export interface SpawnFailure {
      * is logged loudly with the rejected count so the author can fix the catalog.
      */
     | 'anchor-all-candidates-seal'
+    /**
+     * The anchor had geometrically legal candidates, but EVERY one of them would leave some
+     * still-open street mouth FLANKED by the new template's outer edge (§ "The flank ban").
+     */
+    | 'anchor-all-candidates-flank'
     | 'all-anchors-exhausted';
   edge?: Cardinal;
   width?: number;
   originDistance?: number;
   /** For `anchor-all-candidates-seal`: how many otherwise-legal candidates the seal rule rejected. */
   sealedCandidates?: number;
+  /** For `anchor-all-candidates-flank`: how many otherwise-legal candidates the flank ban rejected. */
+  flankedCandidates?: number;
 }
 
 /**
@@ -453,7 +529,9 @@ export type SpawnTraceEvent =
       version: number;
       offsetCol: number;
       offsetRow: number;
-      reason: 'overlap' | 'seam-mismatch' | 'seals-continent';
+      reason: 'overlap' | 'seam-mismatch' | 'flanks-open-anchor' | 'seals-continent';
+      /** For `flanks-open-anchor`: the anchor keys (`edge:cross:alongStart:width`) it would flank. */
+      flankedAnchors?: string[];
       /** For overlap/seam: the placed template that vetoed it (`name@(col,row)`). */
       blocker?: string;
     }
@@ -504,6 +582,10 @@ export function planSpawn(
 ): SpawnResult {
   const index = buildAnchorIndex(catalog);
   const failures: SpawnFailure[] = [];
+
+  // Flank-ban baseline: violations the world ALREADY has (a layout persisted before the ban).
+  // Only NEW violations veto a candidate — see {@link flankedAnchorKeys}.
+  const preFlanked = flankedAnchorKeys(placed);
 
   // Step 1–2: enumerate exposed anchors, closest-to-origin first.
   const anchors = exposedAnchors(placed).sort((a, b) => a.originDistance - b.originDistance);
@@ -560,6 +642,8 @@ export function planSpawn(
     const legal: Scored[] = [];
     // Candidates that passed the seam check but were vetoed by the seal guard (for diagnostics).
     let sealed = 0;
+    // Candidates vetoed by the flank ban (for diagnostics).
+    let flanked = 0;
 
     for (const { cv, anchor } of candidates) {
       const { offsetCol, offsetRow } = solveOffset(ea, cv, anchor);
@@ -586,6 +670,30 @@ export function planSpawn(
           offsetRow,
           reason: rectsOverlap(candidate, blocker) ? 'overlap' : 'seam-mismatch',
           blocker: `${blocker.templateName}@(${blocker.offsetCol},${blocker.offsetRow})`,
+        });
+        continue;
+      }
+
+      // Step 4a (the flank ban): reject a candidate that would leave ANY still-open street mouth —
+      // its own or an already-placed template's — running flush alongside a board's outer edge
+      // (§ "The flank ban"). Cheap (pure geometry over the post-placement world), so it runs before
+      // the version-resimulating seal check.
+      const postFlanked = flankedAnchorKeys([
+        ...placed,
+        { templateName: cv.templateName, activeVersion: cv.version, offsetCol, offsetRow, width: cv.width, height: cv.height, street: cv.street },
+      ]);
+      const introduced = [...postFlanked].filter((k) => !preFlanked.has(k));
+      if (introduced.length > 0) {
+        flanked++;
+        trace?.({
+          type: 'candidate-rejected',
+          index: anchorIndex,
+          templateName: cv.templateName,
+          version: cv.version,
+          offsetCol,
+          offsetRow,
+          reason: 'flanks-open-anchor',
+          flankedAnchors: introduced,
         });
         continue;
       }
@@ -628,6 +736,8 @@ export function planSpawn(
     if (legal.length === 0) {
       // Distinguish "nothing fit the seam" from "everything fit but every fit would seal the
       // continent" — the latter is an authoring gap in the catalog and needs a different fix.
+      // Precedence: the seal veto is the loudest signal (an authoring gap in the catalog), then
+      // the flank ban, then "nothing fit the seam" at all.
       const failure: SpawnFailure =
         sealed > 0
           ? {
@@ -637,7 +747,15 @@ export function planSpawn(
               originDistance: ea.originDistance,
               sealedCandidates: sealed,
             }
-          : { reason: 'anchor-no-legal-candidate', edge: ea.edge, width: ea.width, originDistance: ea.originDistance };
+          : flanked > 0
+            ? {
+                reason: 'anchor-all-candidates-flank',
+                edge: ea.edge,
+                width: ea.width,
+                originDistance: ea.originDistance,
+                flankedCandidates: flanked,
+              }
+            : { reason: 'anchor-no-legal-candidate', edge: ea.edge, width: ea.width, originDistance: ea.originDistance };
       failures.push(failure);
       trace?.({ type: 'anchor-failed', index: anchorIndex, failure });
       continue; // Anchor fallback: try the next-closest anchor.

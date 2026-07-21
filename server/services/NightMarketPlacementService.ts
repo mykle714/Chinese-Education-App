@@ -74,7 +74,8 @@ function formatSpawnTrace(event: SpawnTraceEvent): string[] {
     case 'candidate-rejected':
       return [
         `#${event.index}   ✗ ${event.templateName} v${event.version} @(${event.offsetCol},${event.offsetRow}) ` +
-          `— ${event.reason}${event.blocker ? ` vs ${event.blocker}` : ''}`,
+          `— ${event.reason}${event.blocker ? ` vs ${event.blocker}` : ''}` +
+          (event.flankedAnchors?.length ? ` would flank [${event.flankedAnchors.join(' ')}]` : ''),
       ];
     case 'candidate-legal':
       return [
@@ -90,7 +91,8 @@ function formatSpawnTrace(event: SpawnTraceEvent): string[] {
     case 'anchor-failed':
       return [
         `#${event.index} FAILED reason=${event.failure.reason}` +
-          (event.failure.sealedCandidates ? ` sealedCandidates=${event.failure.sealedCandidates}` : ''),
+          (event.failure.sealedCandidates ? ` sealedCandidates=${event.failure.sealedCandidates}` : '') +
+          (event.failure.flankedCandidates ? ` flankedCandidates=${event.failure.flankedCandidates}` : ''),
       ];
     case 'exhausted':
       return ['EXHAUSTED — no legal placement at any exposed anchor'];

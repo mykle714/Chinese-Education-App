@@ -778,7 +778,11 @@ ${segLines}`;
         }
       }
     }
-  } catch {
+  } catch (err) {
+    // An oracle export capture is a control-flow signal, not a tagger failure — it must
+    // propagate so the round can author the tag prompt. Swallowing it (the old bare
+    // `catch {}`) silently produced empty numberDict/tenseDict on every stamped row.
+    if (err?.oracleExport) throw err;
     // swallow — see fail-open note above
   }
   return result;

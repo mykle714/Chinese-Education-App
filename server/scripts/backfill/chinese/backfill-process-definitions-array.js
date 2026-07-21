@@ -251,6 +251,10 @@ async function run() {
 
         if (!orderChanged) {
           console.log(`unchanged${pass2Disagreed ? ' (pass2 differed but matched original)' : ''}`);
+          // Stamp even though no UPDATE ran: this version of the prompt genuinely executed
+          // and its verdict was "the stored order is already correct". Without the stamp the
+          // row stays version-0 forever and is re-selected and re-answered on every run.
+          await stampEntries(client, 'dictionaryentries_zh', row.id);
           unchanged++;
           continue;
         }

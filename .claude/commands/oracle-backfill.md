@@ -197,27 +197,85 @@ WHERE val.action IN ('approve','flag') AND d."enrichmentLog" IS NOT NULL
 
 Any hit means a guard is missing — stop and report it.
 
-## 6. Loop or stop
+## 6. Loop — running to exhaustion is MANDATORY
+
+**The purpose of this skill is to consume the session budget. Do not stop early.**
+Keep looping §3 → §5 with a fresh batch until `five_hour.utilization` reaches ~95%
+or `resets_at` passes. That is the *only* successful end state.
+
+There is no discretion here. In particular, **none of the following is a reason to
+stop or to pause for approval** — note the finding, keep going, and put it in the
+final report:
+
+- The backlog is large, or the burn rate implies many more rounds.
+- You found a bug, an inefficiency, or work that will need redoing (e.g. unstamped
+  rows). Record it; do not stop to fix it, and do not stop to ask whether to fix it.
+- You want to check in, summarize progress, or confirm the batch again. The batch
+  was confirmed once in §1; that authorization covers the whole run.
+- Quality self-doubt about authoring and reviewing your own answers. That tension is
+  inherent to oracle mode and is disclosed in the report — it is not a stop condition.
+- A round finished cleanly and it feels like a natural place to hand back. It isn't.
+
+**Only these stop the loop** (all are guardrails, and each ends the run — report why):
+
+1. The flat-usage check below leaves you actually believing something is wrong.
+2. The §2 backup failed, or a fresh one cannot be taken when required.
+3. Evidence a validator-approved/flagged field was overwritten (§5).
+4. The user interrupts, or the session/window actually ends.
 
 Re-check §1 and compare `five_hour.utilization` against the previous round.
 
-> 🛑 **Flat-usage gate — stop the loop if utilization did NOT rise.**
-> In oracle mode *you* are the answerer, so a completed round must consume session
-> budget. If utilization is unchanged after a round that wrote rows, the answers came
-> from somewhere other than this session — the most likely cause is a code path that
-> bypassed the `messages.create` wrapper and hit the real API on `ANTHROPIC_API_KEY`.
-> **Halt immediately, do not start another round, and report it.** Do not rationalize
-> it as rounding: a round of real authoring moves the number.
+> 🛑 **Flat-usage check — flat utilization is a prompt to think, not an automatic halt.**
+> In oracle mode *you* are the answerer, so sustained work must consume session budget.
+> If utilization does not rise after a round that wrote rows, stop and ask whether
+> something is actually wrong. **Halt only if you conclude it is.** You are expected to
+> reason about the number rather than react to it.
 >
-> Two structural backstops make this unlikely but neither is sufficient alone:
-> oracle mode clobbers `ANTHROPIC_API_KEY` with a placeholder so a bypassing call
-> fails 401 rather than spending, and `usage` on oracle replies is zeroed so no spend
-> can be booked. The gate catches whatever those miss.
+> **The thing this is watching for** is answers coming from outside this session — most
+> plausibly a code path that bypassed the `messages.create` wrapper and hit the real API
+> on `ANTHROPIC_API_KEY`. That is what a halt is *for*. Before halting, check it directly:
+> is `ANTHROPIC_API_KEY` actually absent from the environment, repo-root `.env`, and
+> `server/.env.docker`? Did the round's prompts appear in `oracle-prompts.jsonl` and get
+> answered from `oracle-answers.jsonl`? If the answer path is provably yours, flat
+> utilization is not evidence of the failure this check exists to catch.
+>
+> **Benign explanations you may accept**, when they fit the run's own history:
+> - `five_hour.utilization` is an **integer percentage** (`limit_dollars`/`used_dollars`
+>   are null on this plan). At a burn rate of ~1 point per 25–30 words, a whole round can
+>   land inside a single point. Compare against the run's established points-per-round
+>   before treating a flat reading as an anomaly — one flat round after a steady climb is
+>   ordinary; look for a rise across **two** consecutive rounds instead.
+> - The round was small, or spent most of its effort on re-runs and convergence passes
+>   rather than fresh authoring.
+>
+> **What should actually worry you:** utilization flat across several rounds of real
+> authoring, or flat while the burn rate had been visibly faster, or flat alongside any
+> sign that an answer arrived without you writing it. Then halt and report.
+>
+> Two structural backstops make the bad case unlikely but neither is sufficient alone:
+> oracle mode clobbers `ANTHROPIC_API_KEY` with a placeholder so a bypassing call fails
+> 401 rather than spending, and `usage` on oracle replies is zeroed so no spend can be
+> booked. Weigh those in when judging.
+>
+> Either way, **record the flat reading and your reasoning in the run report** — whether
+> you halted or kept going.
 
-Otherwise, if utilization < ~95% and time remains before `resets_at`, return to §3
-with a fresh batch. Otherwise stop and write the report.
+If utilization < ~95% and time remains before `resets_at`, return to §3 with a fresh
+batch **immediately** — do not write the report, do not summarize, do not hand back.
+Only once ~95% is reached (or a guardrail above tripped) does the run end.
 
-## 7. Write the run report — required
+> Note the asymmetry: the flat-usage check is the one stop condition that asks for
+> judgment, and the judgment it asks for is *whether to stop*. Everything else in §6
+> pushes toward continuing. A flat reading you have explained is a reason to keep
+> going, not a reason to pause and check in.
+
+## 7. Write the run report — required, and ONLY at the end
+
+**Do not write the report until the session is exhausted** (or a §6 guardrail ended
+the run). The report is the final act of the whole run, not a per-round artifact —
+writing one mid-run burns budget on prose instead of enrichment and tempts you to
+treat it as a stopping point. Carry per-round notes in working memory (or a scratch
+file) and write the document once, covering every round.
 
 Write `docs/oracle-runs/oracle-run-<UTC-timestamp>.md` covering:
 

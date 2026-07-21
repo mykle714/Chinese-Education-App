@@ -122,9 +122,15 @@ export class NightMarketSandboxController {
   }
 
   /**
-   * POST /api/nightmarket-sandbox/iterate → { placement } | { placement: null }
+   * POST /api/nightmarket-sandbox/iterate → { placement, trace } | { placement: null, trace }
    * Steps the live growth algorithm once over the author's sandbox layout. A null placement is a
    * successful "nothing legal fits anywhere" answer, not an error — the client reports it.
+   *
+   * `trace` is the planner's decision log as pre-formatted console lines (see
+   * NightMarketPlacementService.formatSpawnTrace). It is returned on BOTH outcomes — the failing
+   * case is precisely when an author needs it — and the client prints it to the devtools console.
+   * Author-only surface (the route is behind `assertTemplateAuthor`), so the internal geometry it
+   * exposes is not player-visible.
    */
   async iteratePlacement(req: Request, res: Response): Promise<void> {
     try {
@@ -133,8 +139,8 @@ export class NightMarketSandboxController {
         res.status(401).json({ error: 'User not authenticated', code: 'ERR_NOT_AUTHENTICATED' });
         return;
       }
-      const placement = await this.service.iteratePlacement(userId);
-      res.json({ placement });
+      const { placement, trace } = await this.service.iteratePlacement(userId);
+      res.json({ placement, trace });
     } catch (error: any) {
       this.handleError(res, error, 'Failed to iterate sandbox placement', 'ERR_SANDBOX_ITERATE_FAILED');
     }

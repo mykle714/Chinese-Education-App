@@ -23,7 +23,7 @@ import { usePageTitle } from '../../hooks/usePageTitle';
 import { useAuth } from '../../AuthContext';
 import { useConfirmation } from '../../contexts/ConfirmationContext';
 import { type EditorMasks } from '../../engine/market/farmTerrain';
-import TemplateSandboxViewer, { type SandboxItem } from './TemplateSandboxViewer';
+import TemplateSandboxViewer, { type SandboxItem, type PendingPlacement } from './TemplateSandboxViewer';
 import TemplateLoadGallery from './TemplateLoadGallery';
 import {
   listTemplateGallery, loadTemplate, definitionToMasks, type TemplateGalleryEntry,
@@ -109,6 +109,12 @@ function TemplateSandboxPage() {
   const [widthFilter, setWidthFilter] = useState<number | 'any'>('any');
   const [heightFilter, setHeightFilter] = useState<number | 'any'>('any');
   const [snack, setSnack] = useState<{ msg: string; sev: 'success' | 'error' } | null>(null);
+  // PLACEMENT MODE — a template picked from the gallery that is riding the cursor, not yet placed.
+  // Nothing is persisted while it is pending: the row is created on the DROP, so cancelling
+  // (Escape) leaves no trace. Only the identity is held here; the ghost's render inputs come from
+  // the def cache, which is why the pick awaits ensureDef before entering the mode. Declared up
+  // here with the other page state because the Escape effect below closes over it.
+  const [pending, setPending] = useState<{ templateName: string; activeVersion: number } | null>(null);
 
   // Guard concurrent def fetches for the same key (avoid double-loading the same version).
   const inFlight = useRef<Set<string>>(new Set());
@@ -215,20 +221,57 @@ function TemplateSandboxPage() {
     return () => window.removeEventListener('keydown', onKey);
   }, [pickerOpen, closePicker]);
 
+  /** Abandon placement mode without adding anything (Escape / picking a different template). */
+  const cancelPending = useCallback(() => setPending(null), []);
+
+  // Escape also aborts placement mode — the only way out other than dropping, since the tile is
+  // stuck to the cursor. Registered separately from the picker's Escape because the two states are
+  // mutually exclusive (the pick closes the picker before the mode starts).
+  useEffect(() => {
+    if (!pending) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') cancelPending(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [pending, cancelPending]);
+
   const handlePick = useCallback(async (entry: TemplateGalleryEntry) => {
     setPickerOpen(false);
-    // Stagger new drops so repeated adds don't perfectly stack on the origin (overlaps ARE
-    // allowed, but a small offset keeps each fresh tile grabbable).
-    const n = placements.length;
-    const offsetCol = (n % 6) * 4;
-    const offsetRow = Math.floor(n / 6) * 4;
     try {
       // The gallery previews (and we place) the version with the most conditions — its
       // chosenVersion — matching the thumbnail the author just clicked.
       await ensureDef(entry.name, entry.chosenVersion);
+      setPending({ templateName: entry.name, activeVersion: entry.chosenVersion });
+    } catch (err) {
+      setSnack({ msg: err instanceof Error ? err.message : 'Failed to add template', sev: 'error' });
+    }
+  }, [ensureDef]);
+
+  // The pending template joined to its loaded def — the viewer's ghost inputs. Null while the def
+  // is still loading (ensureDef is awaited before `pending` is set, so this is a transient miss
+  // only if the cache was evicted, which it never is today).
+  const pendingItem: PendingPlacement | null = useMemo(() => {
+    if (!pending) return null;
+    const def = defs.get(defKey(pending.templateName, pending.activeVersion));
+    if (!def) return null;
+    return {
+      templateName: pending.templateName,
+      activeVersion: pending.activeVersion,
+      width: def.width,
+      height: def.height,
+      masks: def.masks,
+      // A fresh placement takes the default look, so the ghost previews exactly what will land.
+      houseMode: SANDBOX_SETTING_DEFAULTS.houseMode,
+    };
+  }, [pending, defs]);
+
+  /** The drop click — NOW the row is created, at the cell the author aimed at. */
+  const handlePendingDrop = useCallback(async (offsetCol: number, offsetRow: number) => {
+    if (!pending) return;
+    setPending(null); // leave placement mode immediately; a failed insert re-reports via the snack
+    try {
       const row = await addSandboxPlacement({
-        templateName: entry.name,
-        activeVersion: entry.chosenVersion,
+        templateName: pending.templateName,
+        activeVersion: pending.activeVersion,
         offsetCol,
         offsetRow,
       });
@@ -237,7 +280,7 @@ function TemplateSandboxPage() {
     } catch (err) {
       setSnack({ msg: err instanceof Error ? err.message : 'Failed to add template', sev: 'error' });
     }
-  }, [placements.length, ensureDef]);
+  }, [pending]);
 
   // Filter the picker's entries by the chosen board dimensions (Any = no constraint).
   const filteredEntries = useMemo(() => {
@@ -416,6 +459,9 @@ function TemplateSandboxPage() {
       // Let native/browser shortcuts through; only bare keypresses are hotkeys.
       if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
       if (pickerOpen) return;
+      // Placement mode owns the pointer and Escape; the selection-scoped keys (D/L/H/V) would act
+      // on a tile the author is not looking at, so the whole set is suspended until the drop.
+      if (pending) return;
       const el = e.target as HTMLElement | null;
       if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
 
@@ -434,7 +480,7 @@ function TemplateSandboxPage() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [pickerOpen, openPicker, handleIterate, handleDelete, handleToggleLock, handleCycleHouseMode, handleCycleVersion]);
+  }, [pickerOpen, pending, openPicker, handleIterate, handleDelete, handleToggleLock, handleCycleHouseMode, handleCycleVersion]);
 
   return (
     <LeafPage title="Template Sandbox" onBack={() => navigate('/')} className="template-sandbox-root">
@@ -462,9 +508,13 @@ function TemplateSandboxPage() {
               className="template-sandbox-subtitle" variant="body2"
               sx={{ color: 'rgba(255,255,255,0.85)', textShadow: '1px 1px 2px rgba(0,0,0,0.8)', mt: 0.5 }}
             >
-              {selected
-                ? `${selected.templateName} — v${selected.activeVersion} · (${selected.offsetCol}, ${selected.offsetRow})${selected.locked ? ' · 🔒 locked' : ''}`
-                : `${placements.length} template${placements.length === 1 ? '' : 's'} · click one to select`}
+              {/* Placement mode takes over the subtitle: it is the only on-screen instruction for a
+                  mode the author cannot click their way out of (Escape or drop). */}
+              {pending
+                ? `Placing ${pending.templateName} v${pending.activeVersion} — click to drop · drag to pan · Esc to cancel`
+                : selected
+                  ? `${selected.templateName} — v${selected.activeVersion} · (${selected.offsetCol}, ${selected.offsetRow})${selected.locked ? ' · 🔒 locked' : ''}`
+                  : `${placements.length} template${placements.length === 1 ? '' : 's'} · click one to select`}
             </Typography>
           </Box>
 
@@ -634,6 +684,8 @@ function TemplateSandboxPage() {
           onMove={handleMove}
           showGrid={showGrid}
           showStreet={showStreet}
+          pendingItem={pendingItem}
+          onPendingDrop={handlePendingDrop}
         />
 
         {/* Picker overlay — the visual template gallery with a dimension filter, over the scene. */}

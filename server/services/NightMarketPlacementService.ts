@@ -32,76 +32,68 @@ const GENERIC_OCCUPANT_ASSET_ID = 'occupant-generic';
 const TRACE_TAG = '[NightMarket:placement]';
 
 /**
- * Render one {@link SpawnTraceEvent} to the server console. Lives here (service layer), not in the
- * dep-free geometry engine, because the engine must not own an output channel — see
+ * Render one {@link SpawnTraceEvent} to human-readable console lines. Lives here (service layer),
+ * not in the dep-free geometry engine, because the engine must not own an output format — see
  * {@link ../dal/shared/templatePlacement.SpawnTraceEvent}.
  *
- * Only the nms Iterate button turns this on (NightMarketSandboxService.iteratePlacement); the live
- * growth path passes no trace at all, so production spawns stay silent apart from the existing
+ * Returns LINES rather than printing, because the same text has two sinks and must read identically
+ * in both: the server console, and the nms client's devtools console (the lines ride back on the
+ * Iterate response as `trace`). Formatting once server-side is what keeps them identical — the
+ * client is a dumb printer and never re-derives this text.
+ *
+ * Only the nms Iterate button turns tracing on (NightMarketSandboxService.iteratePlacement); the
+ * live growth path passes no trace at all, so production spawns stay silent apart from the existing
  * `template-match-not-found` warnings.
  */
-function logSpawnTrace(event: SpawnTraceEvent): void {
+function formatSpawnTrace(event: SpawnTraceEvent): string[] {
   switch (event.type) {
-    case 'anchors': {
-      console.log(
-        `${TRACE_TAG} ── anchor queue (${event.anchors.length}), closest-to-origin first ──\n` +
-          event.anchors
-            .map(
-              (a) =>
-                `${TRACE_TAG}   #${a.index} ${a.edge}/w${a.width} dist=${a.originDistance} ` +
-                `alongStart=${a.globalAlongStart} owner=${a.owner}`,
-            )
-            .join('\n'),
-      );
-      console.log(
-        `${TRACE_TAG} catalog mateable widths by edge: ` +
+    case 'anchors':
+      return [
+        `── anchor queue (${event.anchors.length}), closest-to-origin first ──`,
+        ...event.anchors.map(
+          (a) =>
+            `  #${a.index} ${a.edge}/w${a.width} dist=${a.originDistance} ` +
+            `alongStart=${a.globalAlongStart} owner=${a.owner}`,
+        ),
+        'catalog mateable widths by edge: ' +
           Object.entries(event.catalogWidthsByEdge)
             .map(([edge, widths]) => `${edge}=[${widths.join(',')}]`)
             .join(' '),
-      );
-      break;
-    }
+      ];
     case 'anchor':
-      console.log(
-        `${TRACE_TAG} #${event.index} TRY ${event.edge}/w${event.width} dist=${event.originDistance} ` +
+      return [
+        `#${event.index} TRY ${event.edge}/w${event.width} dist=${event.originDistance} ` +
           `owner=${event.owner} → ${event.candidateCount} width-matched catalog candidate(s)`,
-      );
-      break;
+      ];
     case 'anchor-no-candidates':
-      console.log(
-        `${TRACE_TAG} #${event.index} SKIP — no catalog template exposes a ${event.neededEdge} anchor of ` +
+      return [
+        `#${event.index} SKIP — no catalog template exposes a ${event.neededEdge} anchor of ` +
           `width ${event.neededWidth} (available ${event.neededEdge} widths: [${event.availableWidths.join(',')}]). ` +
           `Widths must match EXACTLY, and the catalog carries one version per template (the richest).`,
-      );
-      break;
+      ];
     case 'candidate-rejected':
-      console.log(
-        `${TRACE_TAG} #${event.index}   ✗ ${event.templateName} v${event.version} @(${event.offsetCol},${event.offsetRow}) ` +
+      return [
+        `#${event.index}   ✗ ${event.templateName} v${event.version} @(${event.offsetCol},${event.offsetRow}) ` +
           `— ${event.reason}${event.blocker ? ` vs ${event.blocker}` : ''}`,
-      );
-      break;
+      ];
     case 'candidate-legal':
-      console.log(
-        `${TRACE_TAG} #${event.index}   ✓ ${event.templateName} v${event.version} @(${event.offsetCol},${event.offsetRow}) ` +
+      return [
+        `#${event.index}   ✓ ${event.templateName} v${event.version} @(${event.offsetCol},${event.offsetRow}) ` +
           `runs=${event.matchedRuns} spread=${event.spread}`,
-      );
-      break;
+      ];
     case 'anchor-winner':
-      console.log(
-        `${TRACE_TAG} #${event.index} WINNER ${event.chosen.templateName} v${event.chosen.version} ` +
+      return [
+        `#${event.index} WINNER ${event.chosen.templateName} v${event.chosen.version} ` +
           `@(${event.chosen.offsetCol},${event.chosen.offsetRow}) — bestRuns=${event.bestRuns} ` +
           `bestSpread=${event.bestSpread} randomAmong=${event.survivors}`,
-      );
-      break;
+      ];
     case 'anchor-failed':
-      console.log(
-        `${TRACE_TAG} #${event.index} FAILED reason=${event.failure.reason}` +
+      return [
+        `#${event.index} FAILED reason=${event.failure.reason}` +
           (event.failure.sealedCandidates ? ` sealedCandidates=${event.failure.sealedCandidates}` : ''),
-      );
-      break;
+      ];
     case 'exhausted':
-      console.log(`${TRACE_TAG} EXHAUSTED — no legal placement at any exposed anchor`);
-      break;
+      return ['EXHAUSTED — no legal placement at any exposed anchor'];
   }
 }
 
@@ -356,7 +348,16 @@ export class NightMarketPlacementService {
     placements: readonly SpawnSourcePlacement[],
     filledByPlacement?: ReadonlyMap<string, Set<string>>,
     options?: { trace?: boolean },
-  ): Promise<{ plan: SpawnPlan | null; failures: SpawnFailure[]; placed: PlacedTemplate[] }> {
+  ): Promise<{ plan: SpawnPlan | null; failures: SpawnFailure[]; placed: PlacedTemplate[]; trace: string[] }> {
+    // Collected decision lines (empty unless `options.trace`). Mirrored to the server console AND
+    // returned, so the nms client can replay the exact same text into the browser console.
+    const traceLines: string[] = [];
+    const emit = (lines: string[]): void => {
+      for (const line of lines) {
+        traceLines.push(line);
+        console.log(`${TRACE_TAG} ${line}`);
+      }
+    };
     const scoringCache = new Map<string, VersionScoringInputs>();
 
     // Existing continent: each placement rendered at its persisted active version's street mask.
@@ -439,27 +440,21 @@ export class NightMarketPlacementService {
     if (options?.trace) {
       // The inputs the anchor queue is derived from — without these the per-anchor lines have no
       // frame of reference (origin (0,0) is the seeded hub's SW corner, not the continent centre).
-      console.log(
-        `${TRACE_TAG} ══ plan start ══ placed=${placed.length} catalog=${catalog.length}\n` +
-          placed
-            .map(
-              (p) =>
-                `${TRACE_TAG}   placed ${p.templateName} v${p.activeVersion} @(${p.offsetCol},${p.offsetRow}) ` +
-                `${p.width}×${p.height} streetCells=${p.street.size}`,
-            )
-            .join('\n'),
-      );
-      console.log(
-        `${TRACE_TAG} catalog (richest version per template):\n` +
-          catalog
-            .map(
-              (c) =>
-                `${TRACE_TAG}   ${c.templateName} v${c.version} ${c.width}×${c.height} anchors=[` +
-                c.anchors.map((a) => `${a.edge}/w${a.width}@${a.alongStart}`).join(' ') +
-                ']',
-            )
-            .join('\n'),
-      );
+      emit([
+        `══ plan start ══ placed=${placed.length} catalog=${catalog.length}`,
+        ...placed.map(
+          (p) =>
+            `  placed ${p.templateName} v${p.activeVersion} @(${p.offsetCol},${p.offsetRow}) ` +
+            `${p.width}×${p.height} streetCells=${p.street.size}`,
+        ),
+        'catalog (richest version per template):',
+        ...catalog.map(
+          (c) =>
+            `  ${c.templateName} v${c.version} ${c.width}×${c.height} anchors=[` +
+            c.anchors.map((a) => `${a.edge}/w${a.width}@${a.alongStart}`).join(' ') +
+            ']',
+        ),
+      ]);
     }
 
     const { plan, failures } = planSpawn(
@@ -467,9 +462,9 @@ export class NightMarketPlacementService {
       catalog,
       Math.random,
       sealCheck,
-      options?.trace ? logSpawnTrace : undefined,
+      options?.trace ? (event) => emit(formatSpawnTrace(event)) : undefined,
     );
-    return { plan, failures, placed };
+    return { plan, failures, placed, trace: traceLines };
   }
 
   /** Build one {@link SealPlacement} from a placement's coordinates + its template's scoring inputs. */

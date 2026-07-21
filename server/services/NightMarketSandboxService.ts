@@ -117,20 +117,24 @@ export class NightMarketSandboxService {
    * recompute-on-read settle the version — the sandbox has no version selector pass, so keeping the
    * planner's version is what makes the result visible and inspectable here.
    */
-  async iteratePlacement(userId: string): Promise<TemplateSandboxRow | null> {
+  async iteratePlacement(userId: string): Promise<{ placement: TemplateSandboxRow | null; trace: string[] }> {
     await this.assertTemplateAuthor(userId);
     const placements = await this.sandboxDAL.findByUser(userId);
 
     if (placements.length === 0) {
-      return this.sandboxDAL.insert(userId, NIGHT_MARKET_HUB_TEMPLATE_NAME, 0, 0, 0);
+      const placement = await this.sandboxDAL.insert(userId, NIGHT_MARKET_HUB_TEMPLATE_NAME, 0, 0, 0);
+      return { placement, trace: ['seeded the starter hub at the origin (empty sandbox — no anchors to plan against)'] };
     }
 
-    // `trace: true` — Iterate is an AUTHORING tool, so it dumps the planner's full decision log
+    // `trace: true` — Iterate is an AUTHORING tool, so it collects the planner's full decision log
     // (anchor queue in visit order, per-anchor candidate counts, per-candidate rejection reasons,
-    // tiebreak scores) to the server console. The live growth path leaves it off.
-    const { plan } = await this.placementService.planNextPlacement(placements, undefined, { trace: true });
-    if (!plan) return null;
-    return this.sandboxDAL.insert(userId, plan.templateName, plan.version, plan.offsetCol, plan.offsetRow);
+    // tiebreak scores). The lines go to the server console AND ride back to the client, which
+    // replays them into the browser console — the author is looking at the scene, not the server.
+    // The live growth path leaves tracing off.
+    const { plan, trace } = await this.placementService.planNextPlacement(placements, undefined, { trace: true });
+    if (!plan) return { placement: null, trace };
+    const placement = await this.sandboxDAL.insert(userId, plan.templateName, plan.version, plan.offsetCol, plan.offsetRow);
+    return { placement, trace };
   }
 
   /** Move one placement to a new SW-corner offset (drag). 404 if it is not the author's. */

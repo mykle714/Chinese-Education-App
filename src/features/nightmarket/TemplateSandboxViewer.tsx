@@ -36,6 +36,11 @@ extend({ Container, Sprite, Graphics, Text });
  *     move it, snapped to whole cells (committed via {@link onMove} on release).
  *   - LEFT-drag empty space, or MIDDLE/RIGHT-drag anywhere → pan; wheel → integer zoom.
  *   - LEFT-click empty space → clear the selection.
+ *   - PLACEMENT MODE ({@link pendingItem} non-null): a freshly-picked template follows the cursor
+ *     as a ghost and the FIRST left-click drops it ({@link onPendingDrop}); every other tile
+ *     gesture is suspended for the duration. Panning still works, because a drop only fires on a
+ *     click that did not move (see DROP_SLOP_PX) — so the author can frame the shot before
+ *     committing. This applies to ADDING only; repositioning an existing tile is still drag-based.
  *
  * The parent owns the placement list, the def cache (tiles/masks per name+version), selection,
  * and persistence; this component is a pure renderer + gesture source.
@@ -69,6 +74,20 @@ export interface SandboxItem {
    * areas TINTED so the slots are visible, `'none'` = neither. Replaces the editor's
    * condition-driven filled-slot rule for this surface.
    */
+  houseMode: SandboxHouseMode;
+}
+
+/**
+ * A template that has been PICKED but not yet placed — it rides the cursor until the author clicks
+ * to drop it (placement mode). Same render inputs as a {@link SandboxItem} minus everything that
+ * only exists once a row is persisted (`id`, `locked`) and minus its offset, which IS the cursor.
+ */
+export interface PendingPlacement {
+  templateName: string;
+  activeVersion: number;
+  width: number;
+  height: number;
+  masks: EditorMasks;
   houseMode: SandboxHouseMode;
 }
 
@@ -136,6 +155,67 @@ function PlacedTemplate(
       />
     </>
   );
+}
+
+// ─── Placement-mode ghost: the picked-but-not-yet-dropped template under the cursor ──
+/** Above the grid and every placement, below the selection outline. */
+const GHOST_Z = 90_000;
+const GHOST_ALPHA = 0.72;
+const GHOST_OUTLINE_COLOR = 0x8fffb0; // the page's LAYOUT (add) accent — this is an add in progress
+
+/**
+ * The cursor-following preview. Unlike a placed template this DOES draw inside its own container,
+ * the one exception to the flat-emit rule in the file header: the ghost floats above every
+ * placement by construction (`zIndex` GHOST_Z), so it can never be the thing that needs to
+ * interleave with another template's sprites — and a container is what lets the whole preview take
+ * a single alpha. Its own `sortableChildren` still resolves depth correctly WITHIN the ghost.
+ */
+function GhostTemplate({ pending, cell }: { pending: PendingPlacement; cell: GlobalCell }) {
+  const tiles = useMemo(
+    () => buildEditorField(pending.width, pending.height, pending.masks),
+    [pending.width, pending.height, pending.masks],
+  );
+  // Centre the footprint on the cursor: the author aims at the middle of the template, not its
+  // SW corner, which is off in the south-west and often not even under the pointer.
+  const origin = useMemo(
+    () => ({ col: cell.col - Math.floor(pending.width / 2), row: cell.row - Math.floor(pending.height / 2) }),
+    [cell.col, cell.row, pending.width, pending.height],
+  );
+  const drawOutline = useCallback((g: Graphics) => {
+    g.clear();
+    const corners = [
+      isoToScreen(origin.col, origin.row),
+      isoToScreen(origin.col + pending.width, origin.row),
+      isoToScreen(origin.col + pending.width, origin.row + pending.height),
+      isoToScreen(origin.col, origin.row + pending.height),
+    ];
+    g.moveTo(corners[0].screenX, corners[0].screenY);
+    for (let i = 1; i < corners.length; i++) g.lineTo(corners[i].screenX, corners[i].screenY);
+    g.closePath();
+    g.stroke({ color: GHOST_OUTLINE_COLOR, width: 2, alpha: 0.95 });
+  }, [origin, pending.width, pending.height]);
+
+  return (
+    <pixiContainer zIndex={GHOST_Z} alpha={GHOST_ALPHA} sortableChildren>
+      <EditorTerrainLayer tiles={tiles} origin={origin} />
+      <TemplateMaskOverlays
+        masks={pending.masks}
+        showStreet={false}
+        showCommunal={false}
+        showPlaceholder={pending.houseMode === 'placeholder'}
+        showCondition={false}
+        houseMode={pending.houseMode === 'all' ? 'all' : 'none'}
+        origin={origin}
+        depthMode="world"
+      />
+      <pixiGraphics draw={drawOutline} zIndex={SELECT_Z} />
+    </pixiContainer>
+  );
+}
+
+/** The SW-corner offset a ghost centred on `cell` would land at — the drop coordinate. */
+function ghostOrigin(pending: PendingPlacement, cell: GlobalCell): GlobalCell {
+  return { col: cell.col - Math.floor(pending.width / 2), row: cell.row - Math.floor(pending.height / 2) };
 }
 
 // ─── Grid overlay (fine per-cell + major every 8, anchored at the global origin) ──────
@@ -256,13 +336,28 @@ interface SceneProps {
   pan: { x: number; y: number };
   zoom: number;
   onPanChange: (pan: { x: number; y: number }) => void;
+  pendingItem: PendingPlacement | null;
+  onPendingDrop: (offsetCol: number, offsetRow: number) => void;
 }
 
-function SandboxScene({ items, selectedId, onSelect, onMove, showGrid, showStreet, pan, zoom, onPanChange }: SceneProps) {
+/**
+ * How far the pointer may travel between down and up and still count as a CLICK (and therefore a
+ * drop) rather than a pan. Generous enough to absorb mouse jitter, small enough that a deliberate
+ * pan never drops the ghost by surprise.
+ */
+const DROP_SLOP_PX = 4;
+
+function SandboxScene({
+  items, selectedId, onSelect, onMove, showGrid, showStreet, pan, zoom, onPanChange,
+  pendingItem, onPendingDrop,
+}: SceneProps) {
   const { app, isInitialised } = useApplication();
 
   // Provisional offset for the tile currently being dragged (null = no drag in progress).
   const [drag, setDrag] = useState<{ id: string; col: number; row: number } | null>(null);
+  // Cell under the cursor while placement mode is active (null until the pointer first moves over
+  // the canvas — the ghost only appears once we know where it should be).
+  const [hoverCell, setHoverCell] = useState<GlobalCell | null>(null);
 
   // Refs so the stable pointer handlers read the latest without re-subscribing.
   const panRef = useRef(pan); panRef.current = pan;
@@ -272,6 +367,13 @@ function SandboxScene({ items, selectedId, onSelect, onMove, showGrid, showStree
   const onSelectRef = useRef(onSelect); onSelectRef.current = onSelect;
   const onMoveRef = useRef(onMove); onMoveRef.current = onMove;
   const dragRef = useRef(drag); dragRef.current = drag;
+  const pendingRef = useRef(pendingItem); pendingRef.current = pendingItem;
+  const onPendingDropRef = useRef(onPendingDrop); onPendingDropRef.current = onPendingDrop;
+  const hoverCellRef = useRef(hoverCell); hoverCellRef.current = hoverCell;
+
+  // Leaving placement mode (dropped or cancelled) must forget the hover cell, or re-entering it
+  // would flash the new ghost at the PREVIOUS cursor position for a frame.
+  useEffect(() => { if (!pendingItem) setHoverCell(null); }, [pendingItem]);
 
   // One active gesture at a time: 'move' (drag a selected tile) or 'pan'.
   const gesture = useRef({
@@ -315,6 +417,17 @@ function SandboxScene({ items, selectedId, onSelect, onMove, showGrid, showStree
     stage.hitArea = app.screen;
 
     const onDown = (e: FederatedPointerEvent) => {
+      // PLACEMENT MODE takes the whole left button: no selecting, no tile dragging until the
+      // pending template is dropped. The gesture starts as a pan so the author can still frame the
+      // scene; `onUp` turns it into a DROP if the pointer never really moved (see DROP_SLOP_PX).
+      if (pendingRef.current && e.button === 0) {
+        gesture.current.mode = 'pan';
+        gesture.current.startX = e.global.x;
+        gesture.current.startY = e.global.y;
+        gesture.current.origPanX = panRef.current.x;
+        gesture.current.origPanY = panRef.current.y;
+        return;
+      }
       if (e.button === 0) {
         // Left button: select + drag a tile, or pan empty space.
         const gc = globalCellFromEvent(e);
@@ -351,6 +464,14 @@ function SandboxScene({ items, selectedId, onSelect, onMove, showGrid, showStree
     };
 
     const onMoveEvt = (e: FederatedPointerEvent) => {
+      // Track the cursor cell whenever a template is waiting to be placed — including mid-pan, so
+      // the ghost stays under the pointer while the camera moves beneath it.
+      if (pendingRef.current) {
+        const gc = globalCellFromEvent(e);
+        if (gc && (gc.col !== hoverCellRef.current?.col || gc.row !== hoverCellRef.current?.row)) {
+          setHoverCell(gc);
+        }
+      }
       if (gesture.current.mode === 'move') {
         const gc = globalCellFromEvent(e);
         if (!gc) return;
@@ -365,7 +486,25 @@ function SandboxScene({ items, selectedId, onSelect, onMove, showGrid, showStree
       }
     };
 
-    const onUp = () => {
+    const onUp = (e: FederatedPointerEvent) => {
+      // Placement mode: a left release that did not travel is the DROP click. Anything further than
+      // the slop was a pan, and leaves the template still riding the cursor.
+      const pending = pendingRef.current;
+      if (pending && e.button === 0 && gesture.current.mode === 'pan') {
+        const travelled = Math.hypot(e.global.x - gesture.current.startX, e.global.y - gesture.current.startY);
+        gesture.current.mode = 'none';
+        if (travelled <= DROP_SLOP_PX) {
+          // Prefer the release position over the tracked hover cell: on a click with no intervening
+          // pointermove (a fast click straight after the picker closes) the hover cell may be stale
+          // or unset, and the author still expects the drop where they clicked.
+          const gc = globalCellFromEvent(e) ?? hoverCellRef.current;
+          if (gc) {
+            const origin = ghostOrigin(pending, gc);
+            onPendingDropRef.current(origin.col, origin.row);
+          }
+        }
+        return;
+      }
       if (gesture.current.mode === 'move') {
         const d = dragRef.current;
         const orig = gesture.current.origOffset;
@@ -415,6 +554,9 @@ function SandboxScene({ items, selectedId, onSelect, onMove, showGrid, showStree
       ))}
       {gridBounds && <SandboxGridOverlay bounds={gridBounds} />}
       {selected && <SelectionOutline item={selected} dragOffset={dragForSelected} />}
+      {/* Placement mode — the picked template riding the cursor (nothing until the pointer has
+          been over the canvas, so it can't appear parked at a stale position). */}
+      {pendingItem && hoverCell && <GhostTemplate pending={pendingItem} cell={hoverCell} />}
     </pixiContainer>
   );
 }
@@ -429,9 +571,20 @@ export interface TemplateSandboxViewerProps {
   showGrid?: boolean;
   /** Tint every placement's street-walkable cells (the header's Street overlay toggle). */
   showStreet?: boolean;
+  /**
+   * PLACEMENT MODE: a template picked from the gallery that is riding the cursor. While this is
+   * non-null the viewer suspends selection and tile dragging, draws the ghost, and reports the
+   * first non-panning left-click through {@link onPendingDrop}. Null = normal editing.
+   */
+  pendingItem?: PendingPlacement | null;
+  /** The drop click, in the ghost's SW-corner GLOBAL cell coords (what a placement row stores). */
+  onPendingDrop?: (offsetCol: number, offsetRow: number) => void;
 }
 
-function TemplateSandboxViewer({ items, selectedId, onSelect, onMove, showGrid = false, showStreet = false }: TemplateSandboxViewerProps) {
+function TemplateSandboxViewer({
+  items, selectedId, onSelect, onMove, showGrid = false, showStreet = false,
+  pendingItem = null, onPendingDrop,
+}: TemplateSandboxViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
@@ -520,7 +673,8 @@ function TemplateSandboxViewer({ items, selectedId, onSelect, onMove, showGrid =
     <Box
       className="template-sandbox-viewer"
       ref={containerRef}
-      sx={{ width: '100%', height: '100%', position: 'relative', cursor: 'grab' }}
+      // Crosshair while a template is waiting to be dropped — the pointer is aiming, not grabbing.
+      sx={{ width: '100%', height: '100%', position: 'relative', cursor: pendingItem ? 'crosshair' : 'grab' }}
     >
       {ready && (
         <Application resizeTo={containerRef} backgroundAlpha={0} antialias={false}>
@@ -534,6 +688,10 @@ function TemplateSandboxViewer({ items, selectedId, onSelect, onMove, showGrid =
             pan={pan}
             zoom={zoom}
             onPanChange={setPan}
+            pendingItem={pendingItem}
+            // A pending template with no drop handler would be un-droppable; no-op keeps the
+            // prop optional for any caller that only renders (none today).
+            onPendingDrop={onPendingDrop ?? (() => {})}
           />
         </Application>
       )}

@@ -42,13 +42,27 @@ click behind its confirmation, never a stray keypress.
 
 - **Add** (`A`) opens a visual **picker** — the SAME gallery the editor's *Load* button uses
   (`TemplateLoadGallery`), plus a **dimension filter** (Width / Length dropdowns, populated from
-  the catalog's distinct sizes, `Any` = no constraint). Clicking a card drops that template into
-  the sandbox at the gallery's previewed version (`chosenVersion` — the most-conditions layout).
-  New drops are **staggered** by a few cells so repeated adds don't perfectly stack on the origin.
+  the catalog's distinct sizes, `Any` = no constraint). Clicking a card puts that template — at the
+  gallery's previewed version (`chosenVersion`, the most-conditions layout) — into **placement
+  mode** (below) rather than dropping it at a computed offset; the author chooses where it lands.
   The sandbox passes `houseMode="all"` to the gallery, so each card previews the template's
   most-conditions version **fully occupied** — the same look a freshly-added tile has here (new
   placements default to `houseMode: 'all'`). The editor's Load picker keeps the default
   `'filled'` (condition-driven) thumbnails; the prop is `TemplateLoadGallery.houseMode`.
+- **Placement mode** — the state a template picked from the Add picker is in **before it exists**.
+  The template rides the cursor as a translucent **ghost** (green footprint outline, the Add
+  accent), footprint **centred on the pointer** (an author aims at the middle of a template, not at
+  its SW corner), snapped to whole cells. The **first click drops it**, and only then is the row
+  created — `POST /api/nightmarket-sandbox` fires on the DROP, so an abandoned pick persists
+  nothing. **Escape** cancels. **Panning still works** while placing: a left-drag pans and the
+  ghost keeps tracking the cursor; a drop only fires on a release that travelled ≤ `DROP_SLOP_PX`
+  (4 px), so framing the shot never drops the tile by accident. For the duration, tile selection,
+  tile dragging and every hotkey are **suspended** (the mode owns the pointer and Escape), and the
+  page subtitle becomes the mode's only instruction line. Applies to **adding only** — repositioning
+  an existing tile is still the drag below.
+  Code: `TemplateSandboxPage.pending` / `pendingItem` / `handlePendingDrop`;
+  `TemplateSandboxViewer` — `PendingPlacement`, `GhostTemplate`, `ghostOrigin`, the
+  `pendingItem`/`onPendingDrop` props.
 - **Click** a placed template to **select** it (a yellow footprint outline marks the selection);
   clicking empty space clears the selection.
 - **Drag** a selected template to **move** it — snapped to whole isometric cells, so seams line
@@ -103,10 +117,20 @@ click behind its confirmation, never a stray keypress.
   easy to miss while looking at the scene.
   Server: `POST /api/nightmarket-sandbox/iterate` → `NightMarketSandboxService.iteratePlacement`.
 
-  **Decision trace (server console).** Iterate — and *only* Iterate — passes `{ trace: true }` to
-  `planNextPlacement` (`NightMarketSandboxService.ts:128`), which streams the planner's full
-  reasoning to stdout under the `[NightMarket:placement]` tag. Authoring needs to see *why* an
-  anchor lost, which the summary `template-match-not-found` warning cannot say. Emitted in order:
+  **Decision trace (browser + server console).** Iterate — and *only* Iterate — passes
+  `{ trace: true }` to `planNextPlacement` (`NightMarketSandboxService.iteratePlacement`), which
+  collects the planner's full reasoning. Authoring needs to see *why* an anchor lost, which the
+  summary `template-match-not-found` warning cannot say. The lines have **two sinks**:
+  - the **server console**, under the `[NightMarket:placement]` tag (`emit` in `planNextPlacement`);
+  - the **author's devtools console** — `POST /api/nightmarket-sandbox/iterate` returns
+    `{ placement, trace: string[] }` (on BOTH outcomes; the failing one is when it matters most) and
+    `iterateSandboxPlacement` (`src/features/nightmarket/templateSandboxApi.ts`) prints it as a
+    **collapsed console group** labelled with the outcome. The client is a dumb printer: the server
+    formats the wording (`formatSpawnTrace`, `NightMarketPlacementService.ts`) so the two logs read
+    identically and there is only one formatter to maintain. Author-gated route, so none of this
+    geometry is player-reachable.
+
+  Emitted in order:
   the placed layout + the catalog with each template's derived anchors; the **anchor queue in visit
   order** (`#index edge/width dist=…`, ascending `originDistance`) plus the catalog's mateable
   widths per edge; then per anchor a `TRY` line, either a `SKIP` (no catalog template exposes a
@@ -114,11 +138,12 @@ click behind its confirmation, never a stray keypress.
   over) or one line per candidate marked `✓` (with `runs=`/`spread=`) or `✗` with its reason
   (`overlap` / `seam-mismatch` **naming the blocking placement**, or `seals-continent`); and finally
   `WINNER` with the tiebreak values, or `EXHAUSTED`.
-  Mechanism: the pure engine takes an injected `SpawnTrace` callback
+  Mechanism, by layer: the pure engine takes an injected `SpawnTrace` callback
   (`server/dal/shared/templatePlacement.ts` — `SpawnTraceEvent`, threaded through `planSpawn`) so it
-  stays dep-free and output-channel-agnostic; the console formatting lives in the service layer
-  (`logSpawnTrace`, `NightMarketPlacementService.ts`). Tracing is **off** on the live growth path,
-  which pays nothing for it.
+  stays dep-free and sink-agnostic; the **service** turns events into lines (`formatSpawnTrace`) and
+  both logs and returns them (`planNextPlacement` → `{ …, trace: string[] }`); the **controller**
+  puts them on the response; the **client api module** prints them. Tracing is **off** on the live
+  growth path, which pays nothing for it.
 - **Street overlay** (`S`, always enabled) tints the **street-walkable cells of every placement**.
   The sandbox otherwise previews the *finished* look with all mask tints off (placeholder and
   condition tints are never shown here) — street is the one exception, because cross-seam street
@@ -224,7 +249,11 @@ or `'none'`. The sandbox drives it from the placement's `settings.houseMode`
 the editor's `localToCell` minus bounds) and returns the front-most placement whose footprint
 contains it. Left-drag on a tile moves it (cell-snapped, committed on release); left-drag on
 empty / middle / right pans. A `SelectionOutline` draws the selected footprint's four diamond
-edges in the save-yellow accent.
+edges in the save-yellow accent. When `pendingItem` is set (placement mode) the left button is
+taken over entirely: `onDown` starts a pan, `onMoveEvt` tracks `hoverCell` (even mid-pan, so the
+ghost stays under the pointer), and `onUp` converts a ≤ `DROP_SLOP_PX` release into
+`onPendingDrop(swCol, swRow)` — the drop cell comes from the release event, falling back to
+`hoverCell`, so a click with no intervening `pointermove` still lands where the author clicked.
 
 #### Cross-template depth (per-sprite, global)
 
@@ -248,6 +277,12 @@ sprites (trees, roofs, tall dirt slabs) then paint over a template that genuinel
 of it. That was the pre-2026-07-20 behaviour — placements drawn back-to-front by
 `(offsetCol + offsetRow)` — and no single corner of a footprint can order two templates of
 different sizes.
+
+**The one exception is the placement-mode ghost** (`GhostTemplate`), which *does* use its own
+container. It is legitimate because the ghost floats above every placement by construction
+(`GHOST_Z = 90_000`), so it never needs to interleave with another template's sprites — and a
+container is what lets the whole preview carry one `alpha`. Its own `sortableChildren` still
+orders the sprites **within** the ghost correctly.
 
 ### Page — `src/features/nightmarket/TemplateSandboxPage.tsx`
 

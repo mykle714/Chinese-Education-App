@@ -144,6 +144,14 @@ export async function setSandboxPlacementSettings(id: string, settings: SandboxS
  * market) one step over the sandbox layout and place what it chose. Returns the new placement, or
  * `null` when nothing legal fits at any exposed anchor (a normal answer, not an error). An empty
  * sandbox seeds the starter hub at the origin, mirroring a fresh account.
+ *
+ * SIDE EFFECT — the response carries the planner's decision trace (`trace`: pre-formatted lines,
+ * built server-side by `NightMarketPlacementService.formatSpawnTrace`), which this function prints
+ * to the devtools console as a collapsed group. The printing lives HERE, at the single call site of
+ * the endpoint, rather than in the page component: it is a debugging channel with no bearing on
+ * render state, so threading it through component state would buy nothing. The client never parses
+ * or reformats the lines — the server owns the wording so the browser log and the server log read
+ * identically. See docs/NIGHT_MARKET_TEMPLATE_SANDBOX.md § Iterate → "Decision trace".
  */
 export async function iterateSandboxPlacement(): Promise<SandboxPlacement | null> {
   const res = await fetch(`${API_BASE_URL}/api/nightmarket-sandbox/iterate`, {
@@ -153,7 +161,28 @@ export async function iterateSandboxPlacement(): Promise<SandboxPlacement | null
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.error || 'Failed to iterate the sandbox');
+  logPlacementTrace(data.trace, data.placement ?? null);
   return data.placement ?? null;
+}
+
+/**
+ * Print an Iterate decision trace to the browser console, collapsed so it never buries the rest of
+ * the log. Defensive about the payload shape (an older server build returns no `trace` field) and
+ * about `console.group` (absent in some non-browser test environments).
+ */
+function logPlacementTrace(trace: unknown, placement: SandboxPlacement | null): void {
+  if (!Array.isArray(trace) || trace.length === 0) return;
+  const outcome = placement
+    ? `placed ${placement.templateName} v${placement.activeVersion} @(${placement.offsetCol},${placement.offsetRow})`
+    : 'NO LEGAL PLACEMENT';
+  const label = `[NightMarket:placement] Iterate — ${outcome} (${trace.length} lines)`;
+  if (typeof console.groupCollapsed === 'function') {
+    console.groupCollapsed(label);
+    for (const line of trace) console.log(String(line));
+    console.groupEnd();
+  } else {
+    console.log(`${label}\n${trace.map(String).join('\n')}`);
+  }
 }
 
 /** Clear the whole sandbox (the "Clear" action). Returns how many placements were removed. */

@@ -29,6 +29,12 @@
 >
 > **Build tracker:** the runtime implementation plan (modules, slices, status) lives in
 > [NIGHT_MARKET_TEMPLATE_RUNTIME_PLAN.md](./NIGHT_MARKET_TEMPLATE_RUNTIME_PLAN.md).
+>
+> **Proposed authoring change (not implemented):** allowing a street to run **flush along the
+> north/east faces** (parallel to the edge, rather than crossing it) breaks the "border street
+> cell = perpendicular road stub" assumption that anchors, conditions, the seal guard, and street
+> recovery all share. Impact analysis + open decisions:
+> [NIGHT_MARKET_EDGE_STREETS.md](./NIGHT_MARKET_EDGE_STREETS.md).
 
 ## Why templates
 

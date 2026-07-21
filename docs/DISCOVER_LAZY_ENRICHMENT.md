@@ -270,6 +270,17 @@ both the runtime trigger and the manual CLI):
    carries its `version` (= the script's `SCRIPT_VERSION`, kept in sync by hand) and
    its `validationFields`.
 
+   > **Step ids are paths relative to `scripts/backfill/`, not always `chinese/<name>`.**
+   > Most steps live under `chinese/`, but the language-shared icon step is the bare id
+   > `backfill-icons` (`scripts/backfill/backfill-icons.js`, `--lang=zh|es`). The worker's
+   > `scriptPathFor` therefore resolves the id **as given** (`path.join(__dirname, id)`)
+   > rather than forcing `basename(id)` into `chinese/`. `backfill-icons` runs after
+   > `parts-of-speech` (its icons8 search-term cascade keys off the finalized
+   > `definitions[0]`), is `deterministic: true` — no LLM — but is the one step that makes
+   > outbound HTTP calls, so an oracle run cannot answer it locally. It stamps even when
+   > icons8 returns no match (`iconId` stays NULL), so an unmatchable word still completes
+   > and can be promoted.
+
 3. **Runner executes a word's pending steps** — the runtime trigger spawns
    `server/scripts/backfill/run-lazy-enrichment.js --words=<word> --apply --stale` for
    the single triggered word; the same script run without `--words` is the manual/bulk

@@ -92,6 +92,11 @@ const targetWords = wordsArg
 const wordsFilter = targetWords?.length
   ? `AND word1 = ANY(ARRAY[${targetWords.map((w) => `'${w.replace(/'/g, "''")}'`).join(', ')}])`
   : '';
+// A --words run enriches exactly the named rows regardless of `discoverable`, matching
+// every other manifest step. This matters for the on-first-sort worker, which enriches a
+// row BEFORE promoting it: gating on discoverable=TRUE here would select nothing, never
+// stamp, and leave isComplete() permanently false — the row could never be promoted.
+const discoverableFilter = targetWords?.length ? '' : 'AND discoverable = TRUE';
 
 const ICONS8_TOKEN = process.env.ICONS8_API_KEY;
 
@@ -322,7 +327,7 @@ async function run() {
       SELECT id, word1, definitions
       FROM ${table}
       WHERE "iconId" IS NULL
-        AND discoverable = TRUE
+        ${discoverableFilter}
         ${wordsFilter}
       ORDER BY id ASC
       ${isSpotCheck ? 'LIMIT 5' : ''}
@@ -355,6 +360,11 @@ async function run() {
             : '(cached)';
           console.log(`→ ${result.iconId} "${result.name}" via "${result.term}" ${tag}`);
         } else {
+          // Stamp even though iconId stays NULL: this version of the term cascade really
+          // ran and its verdict was "icons8 has no match". Without the stamp the row is
+          // re-searched on every run and — now that this step is in the manifest — would
+          // block promotion forever on a word icons8 simply does not carry.
+          await stampEntries(client, table, row.id);
           noIcon++;
           console.log(`no icon (${result.reason})`);
         }

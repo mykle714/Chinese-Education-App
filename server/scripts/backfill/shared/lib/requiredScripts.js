@@ -42,6 +42,10 @@ export const REQUIRED_SCRIPTS_ZH = [
   { id: 'chinese/backfill-dictionary-breakdown',      when: 'multiChar', version: 1 },
   { id: 'chinese/backfill-process-definitions-array', when: 'multiDef',  version: 3, validationFields: ['definitions'] },
   { id: 'chinese/backfill-parts-of-speech',           when: 'always',    version: 2, validationFields: ['definitions'] },
+  // Icon search keys off definitions[0] (the dd), so it must follow the two steps that
+  // can still rewrite/reorder `definitions`. Shared across languages (--lang defaults to
+  // zh), hence the un-prefixed id — it lives at scripts/backfill/backfill-icons.js.
+  { id: 'backfill-icons',                             when: 'always',    version: 1, deterministic: true },
   { id: 'chinese/backfill-word-forms',                when: 'always',    version: 3 },
   { id: 'chinese/backfill-hsk-level',                 when: 'always',    version: 2 },
   { id: 'chinese/backfill-long-definitions',          when: 'always',    version: 13, validationFields: ['definitions'] },

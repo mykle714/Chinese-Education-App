@@ -50,7 +50,9 @@ systems in [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md) will consume
   fresh/unnamed template the field is **pre-filled from the server** with a free default
   `template{index}` (`GET …/suggest-name`; a loaded template keeps its own name) · optional
   **description**), **Save** (POST — **upsert by `(name, version)`**:
-  creates or overwrites the active version's row).
+  creates or overwrites the active version's row). Saving an **unnamed** board no longer
+  errors: `handleSubmit` first calls `suggestTemplateName()` and adopts that free default
+  `template{index}` (also written back into the `name` state), so Properties is optional.
 - **Load gallery** (`TemplateLoadGallery.tsx`): pressing **Load** replaces the canvas with a
   scrolling grid of **thumbnails** — every template rendered as a real, scaled isometric board
   (terrain / decor + the spriteless mask tints + filled-slot occupant houses, via the shared
@@ -178,8 +180,12 @@ author must honor them by hand. Keep this list and `AUTHORING_GUIDELINES` in the
 
 1. Only streets of **width 3 or 6** may touch the template edge; other widths are interior-only.
 2. The **maximum street width is 6**.
-3. Outwards-facing streets go at **prescribed edge spots**: measuring from either bottom edge,
-   the first street's bottom edge sits **2 cells** from the edge, then every **8 cells** after.
+3. Streets may only **begin at a red gridline**. Streets are referenced from the **north and
+   east faces**, so the red lattice is counted inward from those two edges
+   (`GRID_MAJOR_EDGE_OFFSET` / `GRID_MAJOR_INTERVAL` in `TemplateEditorViewer.tsx`).
+4. **All streets on a template must be contiguous** — every street cell reachable from every
+   other by street cells alone, with no detached street islands. Applies **per version**, since
+   each version paints its own street mask.
 
 ### Mask semantics
 

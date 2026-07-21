@@ -172,8 +172,8 @@ const GRID_MAJOR_INTERVAL = 8;
  * Offset of the FIRST major line from the board's north/east edges, in cells. Majors are counted
  * inward from the NE corner — the first red line sits `GRID_MAJOR_EDGE_OFFSET` cells in from the
  * north edge (row `height`) and from the east edge (col `width`), then repeats every
- * {@link GRID_MAJOR_INTERVAL}. This matches the template authoring guideline that measures
- * outward-facing street spots inward from an edge, so the red lattice lands ON those spots.
+ * {@link GRID_MAJOR_INTERVAL}. The red lattice IS the authoring guideline made visible: streets
+ * may only begin at a red line, and streets are referenced from the north and east faces.
  */
 const GRID_MAJOR_EDGE_OFFSET = 4;
 /** Whether a grid line `distanceFromEdge` cells in from its reference edge is a MAJOR (red) line. */

@@ -948,9 +948,21 @@ function TemplateEditorPage() {
   };
 
   const handleSubmit = async () => {
-    if (!name.trim()) {
-      setSnack({ open: true, msg: 'Set a template name in Properties first', severity: 'error' });
-      return;
+    // No name chosen yet (never opened Properties) — don't block the save; adopt the next
+    // free default name ("template{n}") from the server, exactly as the Properties popup
+    // would have pre-filled it. `name` state is async, so carry the resolved value locally.
+    let saveName = name.trim();
+    if (!saveName) {
+      setSubmitting(true);
+      try {
+        saveName = (await suggestTemplateName()).trim();
+        setName(saveName);
+      } catch (err) {
+        setSnack({ open: true, msg: err instanceof Error ? err.message : 'Could not pick a template name', severity: 'error' });
+        setSubmitting(false);
+        return;
+      }
+      setSubmitting(false);
     }
     // Auto-place border-street conditions before saving (versions > 0 only — version 0
     // carries no condition mask). Merge them into the live board so the author SEES the
@@ -961,11 +973,11 @@ function TemplateEditorPage() {
     setSubmitting(true);
     try {
       const { overwritten } = await submitTemplate({
-        name: name.trim(), version, width, height, description: description.trim() || null, masks: outgoing,
+        name: saveName, version, width, height, description: description.trim() || null, masks: outgoing,
       });
       // A successful save makes this the loaded template — subsequent saves overwrite it,
       // the rename gate now permits its name, and Delete now targets it.
-      setLoadedName(name.trim());
+      setLoadedName(saveName);
       setIsNewVersion(false);
       setDirty(false);
       setAvailableVersions(vs => (vs.includes(version) ? vs : [...vs, version].sort((a, b) => a - b)));
@@ -981,8 +993,8 @@ function TemplateEditorPage() {
         open: true,
         msg:
           (overwritten
-            ? `Saved version ${version} of "${name.trim()}"`
-            : `Created version ${version} of "${name.trim()}"`) + conditionSuffix,
+            ? `Saved version ${version} of "${saveName}"`
+            : `Created version ${version} of "${saveName}"`) + conditionSuffix,
         severity: 'success',
       });
     } catch (err) {
@@ -1699,7 +1711,8 @@ function TemplateEditorPage() {
 const AUTHORING_GUIDELINES: string[] = [
   'Only streets of width 3 or 6 may touch the edge of the template. Streets of other widths can still be placed within the interior.',
   'The maximum street width is 6.',
-  'Outwards-facing streets go at prescribed spots along the template edge. Measuring from either bottom edge, the first street’s bottom edge sits 2 cells from the edge; subsequent spots repeat every 8 cells from there.',
+  'Streets may only begin at a red gridline. Streets are referenced from the north and east faces, so the red lattice is counted inward from those two edges.',
+  'All streets on a template must be contiguous — every street cell reachable from every other by street cells alone. No detached street islands. This holds per version, since each version paints its own street mask.',
 ];
 
 function GuidelinesDialog({ open, onClose }: { open: boolean; onClose: () => void }) {

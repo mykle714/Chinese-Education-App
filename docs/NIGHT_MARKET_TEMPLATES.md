@@ -477,8 +477,14 @@ so "every template with a width-`W` west-facing anchor" is a direct
    [The seal constraint](#the-seal-constraint). Runs after step 4 because it is the expensive
    check (it re-simulates version selection for the whole world).
 4c. **Score duplicate adjacency** — see [Duplicate-adjacency deprioritization](#duplicate-adjacency-deprioritization).
-   This is a **soft** score, not a discard; it becomes the first ranking key below.
-5. **Rank by duplicate adjacency (minimize) — highest-priority key.** Keep only the
+   This is a **soft** score, not a discard; it becomes the second ranking key below.
+4d. **Score cap-ness** — see [Cap deprioritization](#cap-deprioritization). Also **soft**; it
+   becomes the *first* ranking key below.
+5. **Rank by cap-ness (non-caps first) — highest-priority key.** If any legal candidate at the
+   anchor has more than one anchor, drop every one-anchor **cap** before applying the remaining
+   keys. Because it *filters* rather than vetoes, an anchor whose every legal candidate is a cap
+   still produces a winner — the road ends there.
+5a. **Rank by duplicate adjacency (minimize).** Keep only the
    candidates with the fewest same-name touching neighbors, then apply the remaining
    keys within that set. Because it *filters* rather than vetoes, an anchor where every
    legal candidate is duplicate-adjacent still produces a winner.
@@ -581,10 +587,45 @@ unrelated growth.
 `anchor-all-candidates-flank` with `flankedCandidates`. Both surface in the nms Iterate decision
 trace — see [NIGHT_MARKET_TEMPLATE_SANDBOX.md](./NIGHT_MARKET_TEMPLATE_SANDBOX.md).
 
+#### Cap deprioritization
+
+> **Implementation.** `server/dal/shared/templatePlacement.ts` — `isCapVersion` (scored as `isCap`
+> in the candidate loop of `planSpawn`, applied as the **top** ranking key just after it).
+> Surfaced by `NightMarketPlacementService.formatTraceEvent` (`CAP` on a `candidate-legal` line,
+> `⚠ forced cap` on `anchor-winner`). Pinned by `src/__tests__/capDeprioritization.test.ts`.
+
+A **cap** is a catalog version with exactly **one** anchor. Once it is placed, that single street
+mouth is consumed by the seam it mated on, so the branch it joined **dead-ends**. Caps are authored
+deliberately (a market has to end somewhere) but placing one early wastes an anchor that could have
+kept the street network growing, and a continent full of caps stops sprawling.
+
+So cap-ness is the **first** ranking key: at a given anchor, if *any* multi-anchor candidate is
+legal, every cap is dropped before duplicate-adjacency, street runs, touch count or spread get a
+say. Cap-ness outranks the duplicate key deliberately — an early dead end is a *structural* loss,
+while a same-name neighbor is only cosmetic.
+
+**It is a deprioritization, never a veto**, exactly like the duplicate key: if *every* legal
+candidate at the anchor is a cap, the best of them is still placed (`plan.isCap === true`) and the
+road ends there. That is the caps' intended job — they are the option of last resort, not a
+forbidden one.
+
+Versions with **zero** anchors are a separate case and never arise here: with no anchor they never
+enter the anchor index, so they can never be candidates (hence the check is `anchors.length === 1`).
+
+**Scope: within one anchor** — same limitation as the duplicate key. `planSpawn` returns at the
+first anchor that yields any legal candidate, so it will not abandon a near anchor whose only
+options are caps in favor of a farther anchor that offers a through-template.
+
+**Diagnostics.** Every `candidate-legal` trace event carries `isCap`, and `anchor-winner` carries
+`bestIsCap`; a cap winner is flagged `⚠ forced cap (no non-cap candidate — road ends here)` in the
+nms Iterate trace. Seeing that often means an authoring gap: too few multi-anchor templates mate
+that anchor's edge/width.
+
 #### Duplicate-adjacency deprioritization
 
 > **Implementation.** `server/dal/shared/templatePlacement.ts` — `rectsAbut`, `duplicateAdjacencies`
-> (scored in the candidate loop of `planSpawn`, applied as the first ranking key just after it).
+> (scored in the candidate loop of `planSpawn`, applied as the second ranking key just after it,
+> under [cap-ness](#cap-deprioritization)).
 > Surfaced by `NightMarketPlacementService.formatTraceEvent` (`dupAdj=` / `bestDupAdj=`).
 
 Two copies of the same template sitting flush against each other read as one visually repeated
@@ -600,7 +641,8 @@ minimum-`dupAdjacent` candidates and then applies the street-run / touch-count /
 keys within that set, so:
 
 - if any duplicate-free candidate exists at the anchor, a duplicate-adjacent one can never win —
-  the penalty outranks street-run scoring, not the other way round;
+  the penalty outranks street-run scoring, not the other way round (but *not* cap-ness: a
+  duplicate-free cap loses to a duplicate-adjacent through-template);
 - if **every** legal candidate at the anchor is duplicate-adjacent, the best of them is still
   placed. Blocking here would stall continent growth over a purely cosmetic concern, and the anchor
   would fall through to a worse (farther-from-origin) attachment or fail outright.

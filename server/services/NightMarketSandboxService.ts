@@ -49,6 +49,21 @@ export class NightMarketSandboxService {
     }
   }
 
+  /**
+   * Seed the starter hub at the ORIGIN, LOCKED — the sandbox's fixed anchor.
+   *
+   * The hub is a permanent fixture of the surface, mirroring the runtime where exactly one hub
+   * exists per user, planted at (0,0) and never re-spawned or pruned
+   * (NightMarketWorldService.seedHubPlacement / NightMarketPlacementService's spawn filter). Here
+   * it is inserted locked and {@link setPlacementLock} refuses to unlock it, so it can never be
+   * dragged off the origin and every Iterate plans against the same anchor the game would.
+   *
+   * Shared by {@link iteratePlacement} (empty sandbox) and {@link clearPlacements} (reset).
+   */
+  private seedHub(userId: string): Promise<TemplateSandboxRow> {
+    return this.sandboxDAL.insert(userId, NIGHT_MARKET_HUB_TEMPLATE_NAME, 0, 0, 0, true);
+  }
+
   /** Validate a non-empty template name within the catalog's length cap. */
   private cleanTemplateName(name: unknown): string {
     if (typeof name !== 'string') throw new ValidationError('Template name is required');
@@ -94,6 +109,12 @@ export class NightMarketSandboxService {
   ): Promise<TemplateSandboxRow> {
     await this.assertTemplateAuthor(userId);
     const templateName = this.cleanTemplateName(input.templateName);
+    // The hub is SEED-ONLY here, exactly as in the runtime: one per sandbox, planted at the origin
+    // by seedHub. The client hides it from the Add picker; this is the backstop that keeps a
+    // hand-dropped second hub (which would give Iterate a bogus second anchor) out of the table.
+    if (templateName === NIGHT_MARKET_HUB_TEMPLATE_NAME) {
+      throw new ValidationError('The night market hub is seeded at the origin and cannot be added by hand');
+    }
     const activeVersion = this.cleanVersion(input.activeVersion);
     const offsetCol = this.cleanOffset(input.offsetCol, 'offsetCol');
     const offsetRow = this.cleanOffset(input.offsetRow, 'offsetRow');
@@ -128,7 +149,7 @@ export class NightMarketSandboxService {
     const placements = await this.sandboxDAL.findByUser(userId);
 
     if (placements.length === 0) {
-      const placement = await this.sandboxDAL.insert(userId, NIGHT_MARKET_HUB_TEMPLATE_NAME, 0, 0, 0, true);
+      const placement = await this.seedHub(userId);
       return { placement, trace: ['seeded the starter hub at the origin (empty sandbox — no anchors to plan against)'] };
     }
 
@@ -159,10 +180,24 @@ export class NightMarketSandboxService {
     return row;
   }
 
-  /** Lock / unlock one placement (the move-guard toggle). 404 if it is not the author's. */
+  /**
+   * Lock / unlock one placement (the move-guard toggle). 404 if it is not the author's.
+   *
+   * The HUB can never be unlocked: it is the sandbox's fixed origin anchor (see {@link seedHub}),
+   * and an unlocked hub could be dragged off (0,0), which would silently change what every
+   * subsequent Iterate plans against. The client greys the Lock button out for it; this is the
+   * server-side backstop.
+   */
   async setPlacementLock(userId: string, id: string, locked: unknown): Promise<TemplateSandboxRow> {
     await this.assertTemplateAuthor(userId);
     if (typeof locked !== 'boolean') throw new ValidationError('locked must be a boolean');
+    if (!locked) {
+      const existing = await this.sandboxDAL.findById(userId, id);
+      if (!existing) throw new NotFoundError('Sandbox placement not found');
+      if (existing.templateName === NIGHT_MARKET_HUB_TEMPLATE_NAME) {
+        throw new ValidationError('The night market hub is pinned to the origin and cannot be unlocked');
+      }
+    }
     const row = await this.sandboxDAL.updateLock(userId, id, locked);
     if (!row) throw new NotFoundError('Sandbox placement not found');
     return row;
@@ -219,20 +254,41 @@ export class NightMarketSandboxService {
     return row;
   }
 
-  /** Delete one placement (the "Delete selected" action). 404 if not the author's. */
+  /**
+   * Delete one placement (the "Delete selected" action). 404 if not the author's.
+   *
+   * The HUB is undeletable, for the same reason it is unlockable-proof: it is the surface's fixed
+   * anchor, so "exactly one hub, at the origin, always" holds without the author having to press
+   * Clear or Iterate to get it back.
+   */
   async removePlacement(userId: string, id: string): Promise<void> {
     await this.assertTemplateAuthor(userId);
+    const existing = await this.sandboxDAL.findById(userId, id);
+    if (!existing) throw new NotFoundError('Sandbox placement not found');
+    if (existing.templateName === NIGHT_MARKET_HUB_TEMPLATE_NAME) {
+      throw new ValidationError('The night market hub is a permanent fixture and cannot be deleted');
+    }
     const deleted = await this.sandboxDAL.deleteById(userId, id);
     if (!deleted) throw new NotFoundError('Sandbox placement not found');
   }
 
   /**
-   * Clear the caller's whole sandbox (the "Clear" action). Author-gated like every other write.
-   * An already-empty sandbox is a no-op success (returns 0) — clearing is idempotent.
+   * Clear / RESET the caller's whole sandbox (the "Clear" action). Author-gated like every other
+   * write.
+   *
+   * Not a plain wipe: it deletes every placement and then RESEEDS the starter hub, locked, at the
+   * origin — the same state a brand-new account's market starts from. That makes Clear a true
+   * "back to the beginning" button, so the author's next Iterate plans from the hub exactly as the
+   * live growth algorithm would, instead of from a bare surface with no anchors.
+   *
+   * Returns the number of rows removed (0 when already empty — clearing is idempotent) plus the
+   * freshly seeded hub row, so the client can render it without a refetch.
    */
-  async clearPlacements(userId: string): Promise<number> {
+  async clearPlacements(userId: string): Promise<{ deleted: number; placement: TemplateSandboxRow }> {
     await this.assertTemplateAuthor(userId);
-    return this.sandboxDAL.deleteAllForUser(userId);
+    const deleted = await this.sandboxDAL.deleteAllForUser(userId);
+    const placement = await this.seedHub(userId);
+    return { deleted, placement };
   }
 
   /**

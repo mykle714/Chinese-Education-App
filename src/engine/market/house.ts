@@ -54,9 +54,10 @@ export const HOUSE_FOOTPRINT_Y = 5;
  * footprint (5 along isoX × 4 along isoY), and the depth mapping is derived from the post-flip
  * screen position, so `computeSpriteStrips` produces the transposed feet automatically.
  *
- * At the default strip width (TILE_WIDTH/2 = 16 tex px) the 160px frame cuts into 10 strips on
- * integer pixel boundaries, and the outermost strip centres land at ~3.84 / ~5.16 iso units from
- * the front corner — i.e. the art's base diamond really does span the authored 4×5 footprint.
+ * At the default strip width (TILE_WIDTH/2 = 16 tex px) the 160px frame cuts into 9 anchor-aligned
+ * columns plus the two overhang partials (11 strips), and the outermost feet land at ~3.97 / ~5.03
+ * iso units from the front corner — i.e. the art's base diamond really does span the authored 4×5
+ * footprint, with a few px of roof eave past each far edge.
  */
 export const HOUSE_STRIPS = {
   normal: computeSpriteStrips({

@@ -34,6 +34,22 @@ export class NightMarketSandboxDAL implements INightMarketSandboxDAL {
     return result.recordset;
   }
 
+  async findById(userId: string, id: string): Promise<TemplateSandboxRow | null> {
+    if (!userId) throw new ValidationError('User ID is required');
+    if (!id) throw new ValidationError('Placement ID is required');
+
+    const result = await dbManager.executeQuery<TemplateSandboxRow>(async (client) => {
+      return await client.query(
+        `SELECT ${NightMarketSandboxDAL.COLS}
+         FROM nightmarkettemplatesandbox
+         WHERE "userId" = $1 AND id = $2`,
+        [userId, id],
+      );
+    });
+
+    return result.recordset[0] ?? null;
+  }
+
   async insert(
     userId: string,
     templateName: string,

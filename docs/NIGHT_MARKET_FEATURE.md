@@ -42,31 +42,53 @@ roof).
 The fix is to draw such a sprite as a row of **full-height vertical strips**, each with its own
 foot anchor:
 
-- **Placement is pixel-faithful.** Strip *i* is just the *i*-th vertical crop of the source,
-  drawn in the exact screen column it occupied unsliced — no stretch, no seam. Strips are cut at
-  a fixed `TILE_WIDTH / 2 = 16` texture px from x = 0, so boundaries stay on integer pixels.
+- **Placement is pixel-faithful.** A strip is just a vertical crop of the source, drawn in the
+  exact screen column it occupied unsliced — no stretch, no seam.
 - **Depth comes from the strip's screen-X.** The offset from the anchor maps back to iso units
   along the footprint's two FRONT edges (16 screen px per iso unit): strips left of the anchor
-  walk **+isoY** (the SW edge), strips right of it walk **+isoX** (the SE edge). That point is
-  exactly the block's nearest surface in that screen column.
+  walk **+isoY** (the SW edge), strips right of it walk **+isoX** (the SE edge).
 - **Flip is handled after the mirror.** `flip: true` negates the screen offsets before the depth
   mapping, so a mirrored house automatically gets the transposed 5×4 footprint's feet. Render a
   strip at `anchorScreenX + offsetX` with `anchor.x = flip ? 1 : 0` and `scale.x = flip ? -1 : 1`
   — both combinations draw rightward from that x.
-- **Art may overhang.** A roof eave lands ~0.2 cells past the footprint corner and simply gets an
-  implied foot slightly past it; that is the depth those pixels visually occupy, so it is not
-  clamped.
+
+#### ⚠️ The two rules that keep the ground from punching through
+
+A strip must never sort **deeper than a footprint cell whose screen column it covers** — that
+cell's own terrain (grass cap at `z`, dark cap `z + 0.05`, scatter decor `z + 0.1`/`+0.15`) would
+then draw *over* the building. Before slicing this was free: the whole sprite sat at the
+front-corner depth, above every cell of its own footprint. Slicing gives that up, and it is
+recovered by:
+
+1. **Nearest edge, not centre.** A strip's implied foot is the near end of its span — the
+   shallowest point of the block in that column. Using the centre pushes it half a strip deeper
+   than the cell it covers and terrain wins.
+2. **Cuts aligned to the anchor.** Boundaries step outward from the (texel-rounded) anchor in
+   `TILE_WIDTH / 2` increments, so each strip covers exactly ONE screen column. Cutting from
+   texture x = 0 instead leaves every strip straddling two columns (House.png's base corner is at
+   x = 90.5, 5.5px off the grid) and inheriting the deeper one. The two end strips are partials —
+   the art's overhang past the footprint (the roof eave), which lands on the footprint's far
+   corner.
+
+Together these guarantee the sprite always wins on its own footprint while still yielding to
+anything genuinely in front of it. `src/__tests__/houseStrips.test.ts` asserts this directly over
+every (footprint cell × covering strip) pair; getting either rule wrong produced 14 violations,
+all on the two front-edge cell rows — i.e. the wings.
+
+Consequently a strip-sliced building must render in the **`entity`** slot, not `background`: at
+equal depth the entity fraction (+0.25) clears every terrain sub-layer, whereas a background-slot
+house ties its own cells' decor.
 
 `computeStripPlacements(swX, swY, F, …)` is the **stand** flavour — a bottom-centre-anchored
 square footprint cut into exactly `2F` strips. It is now a thin wrapper over the general
 `computeSpriteStrips`, which additionally takes `anchorTexX` (art whose base corner is not the
 frame centre — `House.png`), an explicit `stripTexW`, and `flip`.
 
-**Houses** are the live consumer: `HOUSE_STRIPS.normal` / `.flipped` precompute the 10 strips of
+**Houses** are the live consumer: `HOUSE_STRIPS.normal` / `.flipped` precompute the 11 strips of
 `House.png` relative to a front corner at (0, 0), and `HouseStripSprites` is the single component
-all three house surfaces render through — `HouseLayer` (nmp sample house, `background` slot +0.1
-lift), `PlaceholderHouseLayer` (runtime filled-slot occupant, `entity` slot) and the template
-editor's `PlaceholderOccupantHouses` (`entity` slot, lifted above the mask tints in flat mode).
+all three house surfaces render through — `HouseLayer` (nmp sample house), `PlaceholderHouseLayer`
+(runtime filled-slot occupant) and the template editor's `PlaceholderOccupantHouses` (lifted above
+the mask tints in flat mode). All three use the `entity` slot.
 Strips are emitted FLAT into the caller's `sortableChildren` container — never wrapped in a
 per-house container, which would collapse them back to one depth.
 

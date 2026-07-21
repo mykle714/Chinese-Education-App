@@ -17,6 +17,13 @@ export interface INightMarketSandboxDAL {
   findByUser(userId: string): Promise<TemplateSandboxRow[]>;
 
   /**
+   * One placement by id, scoped to `userId`; null when missing or foreign. Used by the service to
+   * inspect a row's `templateName` BEFORE mutating it — the hub placement is protected from
+   * unlock/delete, and that rule needs the name the id points at.
+   */
+  findById(userId: string, id: string): Promise<TemplateSandboxRow | null>;
+
+  /**
    * Insert one placement; returns the created row (id/createdAt filled by the DB).
    * `locked` defaults to false (hand-dropped tiles stay draggable); Iterate passes true so an
    * algorithm-chosen placement can't be nudged out of the position the planner picked.

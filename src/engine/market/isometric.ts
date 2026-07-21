@@ -120,15 +120,31 @@ export function computePedestrianZ(isoX: number, isoY: number): number {
 // the source, so gaps/overlaps between adjacent strips never appear.
 //
 // Z-sort, however, treats each strip as if its bottom sits on the footprint's
-// two FRONT (south) diamond edges at that strip's screen-X — which is exactly the
-// nearest surface point of the block in that screen column. We derive an implied
-// "foot iso" by mapping the strip's center-offset (in screen px) back to iso units
-// along those edges: TILE_WIDTH/2 screen px per iso unit horizontally, with the
-// left half walking +isoY (the SW edge) and the right half walking +isoX (the SE
-// edge) out of the front corner. This decouples z-depth from the sprite's authored
-// pixel width — art that overhangs the footprint (a roof eave) simply gets an
-// implied foot slightly past the footprint corner, which is the depth its pixels
-// visually occupy.
+// two FRONT (south) diamond edges at that strip's screen-X. We derive an implied
+// "foot iso" by mapping the strip's offset (in screen px) back to iso units along
+// those edges: TILE_WIDTH/2 screen px per iso unit horizontally, with strips left
+// of the anchor walking +isoY (the SW edge) and strips right of it walking +isoX
+// (the SE edge). This decouples z-depth from the sprite's authored pixel width.
+//
+// TWO RULES MAKE THE DEPTH SAFE AGAINST THE GROUND IT COVERS — get either wrong and
+// the sprite's own footprint terrain (grass caps, dirt slabs, scatter decor at
+// `z + 0.1`/`+0.15`) sorts IN FRONT of the sprite and punches through its wings:
+//
+//   1. NEAREST EDGE, not centre. A strip's foot is the near end of its span — the
+//      shallowest point of the block inside that screen column. Using the centre
+//      pushes the strip half a strip deeper than the cell it covers, and any terrain
+//      on that cell (whose own z is measured at its front vertex) wins.
+//   2. CUTS ALIGNED TO THE ANCHOR. Boundaries are stepped outward from the anchor in
+//      TILE_WIDTH/2 increments, so each strip covers exactly ONE screen column of the
+//      iso grid. Slicing from texture x = 0 instead leaves every strip straddling two
+//      columns (House.png's base corner sits at x = 90.5, i.e. 5.5px off the grid) and
+//      it inherits the deeper column's depth. The two end strips are partials — the
+//      art's overhang past the footprint (a roof eave), which correctly lands on the
+//      footprint's far corner.
+//
+// Together these guarantee: for every terrain cell the sprite overlaps, the covering
+// strip's implied foot is no deeper than that cell — so the sprite always wins on
+// its own footprint, while still yielding to anything genuinely in front of it.
 
 export interface StripPlacement {
   /** 0-based, left-to-right in TEXTURE order (see `offsetX` for screen order under flip). */
@@ -162,7 +178,8 @@ export interface SpriteStripOptions {
   /**
    * Width of one strip in TEXTURE px. Defaults to TILE_WIDTH / 2 — one iso unit
    * of front-edge length per strip, the finest depth granularity the grid can use.
-   * Strips are cut from texture x = 0 so boundaries stay on integer pixels.
+   * Cuts step outward from (the rounded) `anchorTexX`, so each strip covers exactly
+   * one screen column; the two end strips are whatever partial width remains.
    */
   stripTexW?: number;
   /** Render scale of the sprite (1 when the camera container does the zooming). */
@@ -186,23 +203,35 @@ export function computeSpriteStrips(opts: SpriteStripOptions): StripPlacement[] 
     stripTexW = TILE_WIDTH / 2, scale = 1, flip = false,
   } = opts;
 
-  const count = Math.ceil(texW / stripTexW);
+  // Cut boundaries, stepped outward from the anchor so each strip covers exactly one
+  // screen column. Rounded to whole texels: a fractional sub-texture frame resamples
+  // half a texel under `nearest` filtering and shows as a shifted/duplicated column.
+  const anchorCut = Math.min(Math.max(Math.round(anchorTexX), 0), texW);
+  const cuts = new Set<number>([0, texW]);
+  for (let x = anchorCut; x > 0; x -= stripTexW) cuts.add(x);
+  for (let x = anchorCut; x < texW; x += stripTexW) cuts.add(x);
+  const bounds = [...cuts].sort((a, b) => a - b);
+
+  // Signed screen-px offset of a texture-x from the anchor, AFTER any horizontal
+  // mirror (a flip negates the axis, so it also swaps which edge is the left one).
+  const texToScreen = (tx: number) => (tx - anchorTexX) * scale * (flip ? -1 : 1);
+
   const placements: StripPlacement[] = [];
-  for (let i = 0; i < count; i++) {
-    const left = i * stripTexW;
-    const w = Math.min(stripTexW, texW - left); // last strip may be a remainder
-    // Signed screen-px offsets of this strip's edges/centre from the anchor point,
-    // measured AFTER any horizontal mirror (flip negates and swaps the edges).
-    const texToScreen = (tx: number) => (tx - anchorTexX) * scale * (flip ? -1 : 1);
-    const centerOffset = texToScreen(left + w / 2);
-    const leftEdgeOffset = flip ? texToScreen(left + w) : texToScreen(left);
-    // Map |centerOffset| back to iso units along the front (south) diamond edges.
-    const deltaIso = Math.abs(centerOffset) / (TILE_WIDTH / 2);
-    const isLeft = centerOffset < 0;
+  for (let i = 0; i < bounds.length - 1; i++) {
+    const left = bounds[i];
+    const w = bounds[i + 1] - left;
+    const a = texToScreen(left);
+    const b = texToScreen(left + w);
+    const [spanL, spanR] = a <= b ? [a, b] : [b, a];
+    // NEAREST point of the block within this screen column (0 if the span straddles
+    // the anchor), mapped back to iso units along the front edges.
+    const nearOffset = spanL <= 0 && spanR >= 0 ? 0 : Math.min(Math.abs(spanL), Math.abs(spanR));
+    const deltaIso = nearOffset / (TILE_WIDTH / 2);
+    const isLeft = spanR <= 0; // wholly left of the anchor → walks the SW edge
     placements.push({
       stripIndex: i,
       frame: { x: left, y: 0, w, h: texH },
-      offsetX: leftEdgeOffset,
+      offsetX: spanL,
       footIsoX: isLeft ? footIsoX : footIsoX + deltaIso,
       footIsoY: isLeft ? footIsoY + deltaIso : footIsoY,
     });

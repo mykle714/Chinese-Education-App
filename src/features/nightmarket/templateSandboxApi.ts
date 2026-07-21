@@ -185,8 +185,13 @@ function logPlacementTrace(trace: unknown, placement: SandboxPlacement | null): 
   }
 }
 
-/** Clear the whole sandbox (the "Clear" action). Returns how many placements were removed. */
-export async function clearSandboxPlacements(): Promise<number> {
+/**
+ * Clear / RESET the whole sandbox (the "Clear" action). Removes every placement and RESEEDS the
+ * starter hub, locked, at the origin — so the surface lands back in the state a brand-new account's
+ * market starts from rather than empty. Returns how many placements were removed plus the freshly
+ * seeded hub row (render it directly; no refetch needed).
+ */
+export async function clearSandboxPlacements(): Promise<{ deleted: number; placement: SandboxPlacement }> {
   const res = await fetch(`${API_BASE_URL}/api/nightmarket-sandbox`, {
     method: 'DELETE',
     headers: { ...authHeader() },
@@ -194,7 +199,7 @@ export async function clearSandboxPlacements(): Promise<number> {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.error || 'Failed to clear sandbox');
-  return data.deleted ?? 0;
+  return { deleted: data.deleted ?? 0, placement: data.placement };
 }
 
 /** Delete one placement (the "Delete selected" action). */

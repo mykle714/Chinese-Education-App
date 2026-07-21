@@ -21,8 +21,11 @@ describe('HOUSE_STRIPS', () => {
       // Mirrored about the anchor → the sprite's two side extents swap.
       ['flipped', HOUSE_STRIPS.flipped, -RIGHT_OF_ANCHOR, HOUSE_BASE_CORNER.x],
     ] as const) {
-      // 160px frame / 16px strips = 10 strips on integer texture boundaries.
-      expect(strips.length, name).toBe(HOUSE_TEX_SIZE / (TILE_WIDTH / 2));
+      // Cuts step outward from the anchor (texel-rounded to 90), so the 160px frame gives
+      // 9 aligned 16px columns plus the two overhang partials.
+      expect(strips.length, name).toBe(11);
+      // Every cut is a whole texel — a fractional frame resamples under `nearest`.
+      for (const s of strips) expect(Number.isInteger(s.frame.x) && Number.isInteger(s.frame.w), name).toBe(true);
       const spans = strips
         .map((s) => [s.offsetX, s.offsetX + s.frame.w])
         .sort((a, b) => a[0] - b[0]);
@@ -31,6 +34,37 @@ describe('HOUSE_STRIPS', () => {
       for (let i = 1; i < spans.length; i++) expect(spans[i][0], name).toBeCloseTo(spans[i - 1][1]);
       // Full-height slices only — never a vertical cut.
       for (const s of strips) expect(s.frame.h, name).toBe(HOUSE_TEX_SIZE);
+    }
+  });
+
+  /**
+   * THE REGRESSION THAT BIT: a strip must never sort DEEPER than a footprint cell whose screen
+   * column it covers, or that cell's own terrain — worst case its scatter decor at `z + 0.15` —
+   * draws over the house and the ground punches through its wings. Guaranteed by taking each
+   * strip's NEAREST edge and cutting on the anchor-aligned grid; assert it directly.
+   */
+  it('never sorts behind the terrain of a footprint cell it covers', () => {
+    const HALF = TILE_WIDTH / 2;
+    const DECOR_Z = 0.15;   // EditorTerrainLayer's highest terrain sub-layer
+    const ENTITY_Z = 0.25;  // the slot every house strip renders in
+    for (const [name, strips, fx, fy] of [
+      ['normal', HOUSE_STRIPS.normal, HOUSE_FOOTPRINT_X, HOUSE_FOOTPRINT_Y],
+      ['flipped', HOUSE_STRIPS.flipped, HOUSE_FOOTPRINT_Y, HOUSE_FOOTPRINT_X],
+    ] as const) {
+      for (let i = 0; i < fx; i++) {
+        for (let j = 0; j < fy; j++) {
+          // The cell's diamond spans one iso unit either side of its centre column.
+          const cellL = (i - j - 1) * HALF;
+          const cellR = (i - j + 1) * HALF;
+          for (const s of strips) {
+            const overlap = Math.min(cellR, s.offsetX + s.frame.w) - Math.max(cellL, s.offsetX);
+            if (overlap <= 0.5) continue; // sub-pixel touch at a shared corner isn't coverage
+            const stripZ = -(s.footIsoX + s.footIsoY) + ENTITY_Z;
+            const terrainZ = -(i + j) + DECOR_Z;
+            expect(stripZ, `${name} strip@${s.offsetX} vs cell ${i},${j}`).toBeGreaterThan(terrainZ);
+          }
+        }
+      }
     }
   });
 
@@ -61,9 +95,13 @@ describe('computeStripPlacements (stand flavour)', () => {
     expect(strips.length).toBe(6);
     expect(strips[0].offsetX).toBeCloseTo(-48); // left edge = half the art
     expect(strips[0].footIsoX).toBe(10);        // left half walks +isoY off the SW corner
-    expect(strips[0].footIsoY).toBeCloseTo(20 + 2.5);
+    // Outermost strip spans screen [-48, -32]; its NEAREST edge is 32px = 2 iso units out.
+    expect(strips[0].footIsoY).toBeCloseTo(20 + 2);
     expect(strips[5].footIsoY).toBe(20);        // right half walks +isoX
-    expect(strips[5].footIsoX).toBeCloseTo(10 + 2.5);
+    expect(strips[5].footIsoX).toBeCloseTo(10 + 2);
+    // The two innermost strips touch the anchor, so they sit at the front corner itself.
+    expect(strips[2].footIsoX + strips[2].footIsoY).toBeCloseTo(30);
+    expect(strips[3].footIsoX + strips[3].footIsoY).toBeCloseTo(30);
   });
 
   it('is the anchorTexX = texW/2 case of computeSpriteStrips', () => {

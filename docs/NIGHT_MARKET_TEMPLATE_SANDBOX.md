@@ -31,20 +31,46 @@ focus is in a text field. Keep the badges and that effect in sync.
 | `S` | Street overlay on/off | view |
 | `V` | Cycle the selected tile's version | selection |
 | `H` | Cycle placeholder-area render mode (selected) | selection |
-| `L` | Lock/unlock (selected) | selection |
-| `D` | Delete selected (no confirmation) | selection |
+| `L` | Lock/unlock (selected; **never** the hub) | selection |
+| `D` | Delete selected (no confirmation; **never** the hub) | selection |
 | `A` | Add (open the picker) | layout |
 | `I` | Iterate (run the growth algorithm one step) | layout |
-| — | Clear the whole sandbox (**confirmed**) | layout |
+| — | Clear/reset the sandbox back to the hub (**confirmed**) | layout |
 
 **Clear deliberately has no hotkey**: it destroys the entire layout, so it must stay a considered
 click behind its confirmation, never a stray keypress.
+
+### The hub is a permanent fixture
+
+The starter hub (`night-market-hub`, `NIGHT_MARKET_HUB_TEMPLATE_NAME` — mirrored in
+`server/services/NightMarketTemplateService.ts` and `src/features/nightmarket/templateEditorApi.ts`)
+is **not an ordinary sandbox tile**. It mirrors the runtime invariant — exactly one hub per user,
+planted at the origin, never re-spawned and never pruned
+(`NightMarketWorldService.seedHubPlacement`, `NightMarketPlacementService`'s spawn filter,
+`templatePrune.ts`) — so an Iterate on this surface plans from the same anchor the live continent
+would. Four rules enforce it, each with a **client** guard (greyed button + no-op hotkey) and a
+**server** backstop in `NightMarketSandboxService`:
+
+| Rule | Client | Server |
+|---|---|---|
+| **Seeded, locked, at (0,0)** — by **Clear** and by **Iterate** on an empty sandbox | — | `seedHub` → `sandboxDAL.insert(…, 0, 0, 0, locked = true)` |
+| **Cannot be unlocked** (⇒ cannot be dragged off the origin, since the move SQL guards `locked = false`) | Lock button disabled + `handleToggleLock` no-ops when `selectedIsHub` | `setPlacementLock` rejects `locked = false` on the hub (400) |
+| **Cannot be deleted** | Delete button disabled + `handleDelete` no-ops when `selectedIsHub` | `removePlacement` rejects the hub (400) |
+| **Cannot be added by hand** (no second hub) | filtered out of the Add picker (`pickableEntries`) | `addPlacement` rejects the hub name (400) |
+
+Code: `TemplateSandboxPage.selectedIsHub` / `pickableEntries` / `isFreshlyCleared`;
+`NightMarketSandboxService.seedHub` / `addPlacement` / `setPlacementLock` / `removePlacement` /
+`clearPlacements`; `INightMarketSandboxDAL.findById` (added so the service can read a row's
+`templateName` before mutating it by id).
 
 - **Add** (`A`) opens a visual **picker** — the SAME gallery the editor's *Load* button uses
   (`TemplateLoadGallery`), plus a **dimension filter** (Width / Length dropdowns, populated from
   the catalog's distinct sizes, `Any` = no constraint). Clicking a card puts that template — at the
   gallery's previewed version (`chosenVersion`, the most-conditions layout) — into **placement
   mode** (below) rather than dropping it at a computed offset; the author chooses where it lands.
+  **The hub is filtered out** of this list (`pickableEntries`) — it is seed-only here, so offering
+  it could only ever produce a rejected add; the Width/Length dropdowns are derived from the
+  filtered list too, so they never advertise a size only the hub has.
   The sandbox passes `houseMode="all"` to the gallery, so each card previews the template's
   most-conditions version **fully occupied** — the same look a freshly-added tile has here (new
   placements default to `houseMode: 'all'`). The editor's Load picker keeps the default
@@ -72,10 +98,11 @@ click behind its confirmation, never a stray keypress.
   version (`activeVersion`) — each placed tile carries its own version independently. The button
   face reads the current version (`v2`). (This replaced the former Version dropdown: cycling covers
   the handful of versions a name has and keeps the toolbar uniform.)
-- **Lock / Unlock** (`L`, enabled when selected) toggles the selected tile's `locked` flag. A
-  **locked** tile cannot be dragged (its selection outline turns red and a 🔒 shows in the
-  subtitle); it can still be selected, version-switched, and deleted. Persisted (migration 117), so
-  the lock survives reloads.
+- **Lock / Unlock** (`L`, enabled when selected **and not the hub**) toggles the selected tile's
+  `locked` flag. A **locked** tile cannot be dragged (its selection outline turns red and a 🔒 shows
+  in the subtitle); it can still be selected, version-switched, and deleted. Persisted
+  (migration 117), so the lock survives reloads. **The hub can never be unlocked** — see
+  "The hub is a permanent fixture" above.
 - **Houses** (`H`, enabled when selected) **cycles** `settings.houseMode` for the selected tile
   through three states:
   1. **`all`** — an occupant house in **every placeholder area** of that template (the default
@@ -93,14 +120,21 @@ click behind its confirmation, never a stray keypress.
   (`NightMarketSandboxService.SETTINGS_SCHEMA` → `{ type, values }`, unknown value ⇒ 400).
   Render path: `SandboxItem.houseMode` → `TemplateMaskOverlays` (`showPlaceholder` for the tint,
   `houseMode='all'|'none'` for the houses) in `TemplateSandboxViewer.tsx`.
-- **Delete** (`D`, enabled when selected) removes the selected tile from the sandbox
-  **immediately — no confirmation**. The sandbox is a scratch surface, so re-adding one template is
-  cheap and a modal only slows down iteration. (Clear is the confirmed one.)
-- **Clear** (no hotkey, enabled when the sandbox is non-empty) removes **every** placement, behind a
-  **confirmation dialog** — unlike a single delete it destroys the whole layout (every tile's
-  position, version and settings), which is expensive to rebuild.
+- **Delete** (`D`, enabled when selected **and not the hub**) removes the selected tile from the
+  sandbox **immediately — no confirmation**. The sandbox is a scratch surface, so re-adding one
+  template is cheap and a modal only slows down iteration. (Clear is the confirmed one.) **The hub
+  cannot be deleted** — see "The hub is a permanent fixture" above.
+- **Clear / Reset** (no hotkey) removes **every** placement **and reseeds the hub, locked, at the
+  origin** — it is a *reset to a fresh account's starting state*, not a wipe to an empty surface, so
+  the author's next Iterate always has the anchor the live growth algorithm would start from. Behind
+  a **confirmation dialog** ("Reset the sandbox?") — unlike a single delete it destroys the whole
+  layout (every tile's position, version and settings), which is expensive to rebuild.
+  **Disabled only when the sandbox is *already* just the hub at the origin**
+  (`TemplateSandboxPage.isFreshlyCleared`) — deliberately **not** "disabled when empty": an empty
+  sandbox still has a reset to perform, namely seeding the hub.
   Server: `DELETE /api/nightmarket-sandbox` → `NightMarketSandboxService.clearPlacements` →
-  `NightMarketSandboxDAL.deleteAllForUser` (scoped to the caller).
+  `NightMarketSandboxDAL.deleteAllForUser` (scoped to the caller) + `seedHub`. The response is
+  `{ deleted, placement }`; the client renders the returned hub row directly (no refetch).
 - **Iterate** (`I`) runs the **live runtime growth algorithm one step** over the sandbox layout and
   places what it chose — the sandbox's "what would the game actually do here?" control.
   It delegates to `NightMarketPlacementService.planNextPlacement`, the **same planner** the real
@@ -216,15 +250,20 @@ from the runtime table intentionally dropped.
   `NightMarketPlacementService` for `iteratePlacement`; constructed after it in `setup.ts`) — `assertTemplateAuthor` (403,
   mirrors `NightMarketTemplateService`), then `listPlacements` / `addPlacement` / `movePlacement`
   / `setPlacementVersion` / `setPlacementLock` / `setPlacementSettings` (validated against the
-  `SETTINGS_SCHEMA` key whitelist) / `removePlacement`, plus `removePlacementsForTemplate(name)` (the
+  `SETTINGS_SCHEMA` key whitelist) / `removePlacement` / `clearPlacements` (wipe + `seedHub`), plus
+  the hub-protection guards in `addPlacement` / `setPlacementLock` / `removePlacement` (see
+  "The hub is a permanent fixture"), plus `removePlacementsForTemplate(name)` (the
   catalog-delete cascade, **not** author-gated — the caller already gated the catalog delete).
   Validates name (≤120), version (non-negative int), and offsets (integers within a generous
   ±10000 sanity clamp — offsets are freeform, so this is a bound, not a placement rule).
 - **DAL** `server/dal/implementations/NightMarketSandboxDAL.ts`
-  (+ `interfaces/INightMarketSandboxDAL.ts`) — pure persistence: `findByUser`, `insert`,
+  (+ `interfaces/INightMarketSandboxDAL.ts`) — pure persistence: `findByUser`,
+  `findById` (read one row by id so the service can check its `templateName` before a
+  lock/delete — the hub-protection rules), `insert`,
   `updatePosition` (guarded by `locked = false`), `updateVersion`, `updateLock`,
   `updateSettings` (jsonb **merge**, so a one-key patch keeps the rest), `deleteById`,
-  `deleteAllForUser` (the Clear action)
+  `deleteAllForUser` (the Clear action — the hub **reseed** that follows it is a service concern,
+  `seedHub`, so the DAL stays pure CRUD)
   (all scoped to `userId`), and `deleteByTemplateName` (deliberately **not** user-scoped — the
   catalog is global).
 - **Controller** `server/controllers/NightMarketSandboxController.ts` — thin; maps

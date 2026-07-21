@@ -5,8 +5,9 @@
  * placeholder slot is full: enumerate exposed street anchors → match complement-direction,
  * equal-width catalog anchors → discard illegal seams → discard candidates that would FLANK a
  * still-open street mouth ({@link flankedAnchorKeys}) → discard candidates that would SEAL the
- * continent (the injected {@link SealCheck}) → rank by fewest same-name neighbors → streets-joined →
- * most distinct templates touched → maximin-spread tiebreak → random tiebreak.
+ * continent (the injected {@link SealCheck}) → rank by non-cap-first ({@link isCapVersion}) →
+ * fewest same-name neighbors → streets-joined → most distinct templates touched → maximin-spread
+ * tiebreak → random tiebreak.
  *
  * LAYER: dep-free shared engine (same `server/dal/shared/*` family as versionSelection). No DB,
  * no React. Consumed by {@link ../../services/NightMarketPlacementService} at spawn time only —
@@ -137,6 +138,20 @@ export interface CatalogVersion {
   height: number;
   street: Set<string>;
   anchors: TemplateAnchor[];
+}
+
+/**
+ * Is this catalog version a CAP — a dead end that terminates the road it attaches to?
+ *
+ * A cap has exactly ONE anchor, so once it is placed its single street mouth is consumed by the
+ * seam it mated on and the branch grows no further. Caps are authored deliberately (a market has
+ * to end somewhere) but they are the LAST resort: {@link planSpawn} ranks them below every
+ * non-cap candidate at the same anchor, so a cap only lands when nothing else fits there
+ * (§ "Cap deprioritization"). Zero-anchor versions can never be candidates at all — they never
+ * enter the anchor index — so the check is `=== 1`, not `<= 1`.
+ */
+export function isCapVersion(cv: CatalogVersion): boolean {
+  return cv.anchors.length === 1;
 }
 
 /** `anchorIndex[edge][width]` → every catalog anchor of that complement direction + width. */
@@ -530,6 +545,11 @@ export interface SpawnPlan {
   offsetCol: number;
   offsetRow: number;
   /**
+   * Whether the chosen template is a one-anchor CAP ({@link isCapVersion}). `true` on a persisted
+   * plan means every legal candidate at that anchor was a cap — the road had to end there.
+   */
+  isCap: boolean;
+  /**
    * How many same-name placed templates this placement ends up flush against. Preferred to be 0;
    * a non-zero value on a persisted plan means every alternative at that anchor was worse or absent
    * (see {@link duplicateAdjacencies}).
@@ -634,6 +654,8 @@ export type SpawnTraceEvent =
       version: number;
       offsetCol: number;
       offsetRow: number;
+      /** One-anchor dead end ({@link isCapVersion}) — the top-priority soft penalty. */
+      isCap: boolean;
       /** Same-name templates this candidate would touch — the soft duplicate-adjacency penalty. */
       dupAdjacent: number;
       matchedRuns: number;
@@ -645,6 +667,11 @@ export type SpawnTraceEvent =
   | {
       type: 'anchor-winner';
       index: number;
+      /**
+       * Whether the winner is a cap. `true` means EVERY legal candidate at this anchor was a
+       * one-anchor dead end and the cap deprioritization had to yield.
+       */
+      bestIsCap: boolean;
       /**
        * The winning (i.e. lowest) duplicate-adjacency count at this anchor. `> 0` means EVERY legal
        * candidate touched a copy of itself and the deprioritization had to yield.
@@ -837,6 +864,10 @@ export function planSpawn(
       // Step 4c (the duplicate-adjacency deprioritization): NOT a veto — scored, then applied as the
       // FIRST ranking key below, so a self-touching placement is only ever chosen when no
       // alternative at this anchor is duplicate-free.
+      // Step 4d (the cap deprioritization): also NOT a veto — scored, then applied as the TOP
+      // ranking key below, so a road-ending one-anchor template is only ever chosen when every
+      // alternative at this anchor is also a cap (§ "Cap deprioritization").
+      const isCap = isCapVersion(cv);
       const dupAdjacent = duplicateAdjacencies(candidate, placed);
       const matchedRuns = matchedStreetRuns(candidate, placed);
       const touchCount = touchedTemplates(candidate, placed);
@@ -848,13 +879,14 @@ export function planSpawn(
         version: cv.version,
         offsetCol,
         offsetRow,
+        isCap,
         dupAdjacent,
         matchedRuns,
         touchCount,
         spread,
       });
       legal.push({
-        plan: { templateName: cv.templateName, version: cv.version, offsetCol, offsetRow, dupAdjacent, matchedRuns, touchCount, spread },
+        plan: { templateName: cv.templateName, version: cv.version, offsetCol, offsetRow, isCap, dupAdjacent, matchedRuns, touchCount, spread },
         spread,
       });
     }
@@ -887,10 +919,12 @@ export function planSpawn(
       continue; // Anchor fallback: try the next-closest anchor.
     }
 
-    // Step 4c (as a ranking key): fewest same-name neighbors wins, and it outranks every other key —
-    // that is what makes it a strict deprioritization rather than a preference that street-run
-    // scoring can override. Because it FILTERS rather than vetoes, a set where every candidate is
-    // duplicate-adjacent still yields a winner (bestDup > 0) instead of failing the anchor.
+    // Step 4d (as the TOP ranking key): non-caps beat caps. A cap consumes the anchor and ends the
+    // branch, which is a structural loss — worse than any cosmetic same-name adjacency — so it
+    // outranks even the duplicate key. Step 4c: fewest same-name neighbors wins next. Both FILTER
+    // rather than veto, so a set where every candidate is a cap (or every candidate is
+    // duplicate-adjacent) still yields a winner (bestIsCap / bestDup > 0) instead of failing the
+    // anchor — which is exactly the "end the road when it's the only option" behavior.
     // Step 5: maximize matched street runs. Step 5b: maximize distinct templates touched. Step 6:
     // maximin spread. Step 7: random among survivors.
     //
@@ -899,8 +933,10 @@ export function planSpawn(
     // above it, spread can never trade a neighbor away for open void — it chooses only among
     // candidates already tied on contact. (Those ties are the common case: at most anchors every
     // candidate touches exactly the owner, so spread still decides most placements.)
-    const bestDupAdjacent = Math.min(...legal.map((s) => s.plan.dupAdjacent));
-    const byDup = legal.filter((s) => s.plan.dupAdjacent === bestDupAdjacent);
+    const bestIsCap = legal.every((s) => s.plan.isCap); // false as soon as ONE non-cap is legal here
+    const byCap = legal.filter((s) => s.plan.isCap === bestIsCap);
+    const bestDupAdjacent = Math.min(...byCap.map((s) => s.plan.dupAdjacent));
+    const byDup = byCap.filter((s) => s.plan.dupAdjacent === bestDupAdjacent);
     const bestRuns = Math.max(...byDup.map((s) => s.plan.matchedRuns));
     const byRuns = byDup.filter((s) => s.plan.matchedRuns === bestRuns);
     const bestTouch = Math.max(...byRuns.map((s) => s.plan.touchCount));
@@ -911,6 +947,7 @@ export function planSpawn(
     trace?.({
       type: 'anchor-winner',
       index: anchorIndex,
+      bestIsCap,
       bestDupAdjacent,
       bestRuns,
       bestTouch,

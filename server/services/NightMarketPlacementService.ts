@@ -80,7 +80,7 @@ function formatSpawnTrace(event: SpawnTraceEvent): string[] {
     case 'candidate-legal':
       return [
         `#${event.index}   ✓ ${event.templateName} v${event.version} @(${event.offsetCol},${event.offsetRow}) ` +
-          `dupAdj=${event.dupAdjacent} runs=${event.matchedRuns} touch=${event.touchCount} spread=${event.spread}`,
+          `${event.isCap ? 'CAP ' : ''}dupAdj=${event.dupAdjacent} runs=${event.matchedRuns} touch=${event.touchCount} spread=${event.spread}`,
       ];
     case 'anchor-winner':
       return [
@@ -88,6 +88,9 @@ function formatSpawnTrace(event: SpawnTraceEvent): string[] {
           `@(${event.chosen.offsetCol},${event.chosen.offsetRow}) — bestDupAdj=${event.bestDupAdjacent} ` +
           `bestRuns=${event.bestRuns} bestTouch=${event.bestTouch} bestSpread=${event.bestSpread} ` +
           `randomAmong=${event.survivors}` +
+          // Loud for the same reason: a cap ENDS this branch, and it only wins when every legal
+          // candidate at the anchor was a one-anchor dead end.
+          (event.bestIsCap ? ` ⚠ forced cap (no non-cap candidate — road ends here)` : '') +
           // Loud, because it means the deprioritization had to yield: every legal candidate at this
           // anchor touched a copy of itself. Usually an authoring gap (too few mateable templates).
           (event.bestDupAdjacent > 0 ? ` ⚠ forced duplicate-adjacent (no duplicate-free candidate)` : ''),

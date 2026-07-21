@@ -3,8 +3,9 @@
  * § "Edge signatures" + § "Tiling & Placement"). Given the user's current continent of placed
  * templates and the authored catalog, it decides WHERE a new template attaches when every
  * placeholder slot is full: enumerate exposed street anchors → match complement-direction,
- * equal-width catalog anchors → discard illegal seams → rank by streets-joined → maximin-spread
- * tiebreak → random tiebreak.
+ * equal-width catalog anchors → discard illegal seams → discard candidates that would SEAL the
+ * continent (the injected {@link SealCheck}) → rank by streets-joined → maximin-spread tiebreak →
+ * random tiebreak.
  *
  * LAYER: dep-free shared engine (same `server/dal/shared/*` family as versionSelection). No DB,
  * no React. Consumed by {@link ../../services/NightMarketPlacementService} at spawn time only —
@@ -27,17 +28,17 @@
 
 import {
   type Cardinal,
-  outerEdgesOf,
   globalOccupied,
+  boardCells,
   type PlacementOccupancy,
 } from './versionSelection.js';
 
+// `boardCells` lives in versionSelection (single source — the layout read and the seal simulation
+// need it too); re-exported here because this module's callers/tests have always imported it here.
+export { boardCells };
+
 /** Cell-key format shared by every mask here. */
 const tileKey = (col: number, row: number): string => `${col},${row}`;
-function parseCell(key: string): [number, number] {
-  const [col, row] = key.split(',').map(Number);
-  return [col, row];
-}
 
 /** Outward step (Δcol, Δrow) per compass direction (+col = east, +row = NORTH). */
 const OUTWARD: Record<Cardinal, readonly [number, number]> = {
@@ -50,13 +51,6 @@ const OUTWARD: Record<Cardinal, readonly [number, number]> = {
 /** The opposite cardinal — the only edge a non-rotated template can mate with (n↔s, e↔w). */
 export function complement(edge: Cardinal): Cardinal {
   return edge === 'n' ? 's' : edge === 's' ? 'n' : edge === 'e' ? 'w' : 'e';
-}
-
-/** A placed template's board rectangle as LOCAL "col,row" cell keys (its full w×h footprint). */
-export function boardCells(width: number, height: number): Set<string> {
-  const cells = new Set<string>();
-  for (let col = 0; col < width; col++) for (let row = 0; row < height; row++) cells.add(tileKey(col, row));
-  return cells;
 }
 
 // ── Anchors ───────────────────────────────────────────────────────────────────────────────
@@ -269,14 +263,18 @@ function coversGlobal(t: Footprintable, globalCol: number, globalRow: number): b
  * street or both non-street). Generalizes the whole-edge "equal facing-edge signatures" rule to
  * partial / multi-template abutment.
  */
-export function isPlacementLegal(a: Footprintable, b: Footprintable): boolean {
-  // (a) No rectangle overlap.
-  const overlap =
+export function rectsOverlap(a: Footprintable, b: Footprintable): boolean {
+  return (
     a.offsetCol < b.offsetCol + b.width &&
     b.offsetCol < a.offsetCol + a.width &&
     a.offsetRow < b.offsetRow + b.height &&
-    b.offsetRow < a.offsetRow + a.height;
-  if (overlap) return false;
+    b.offsetRow < a.offsetRow + a.height
+  );
+}
+
+export function isPlacementLegal(a: Footprintable, b: Footprintable): boolean {
+  // (a) No rectangle overlap.
+  if (rectsOverlap(a, b)) return false;
 
   // (b) Seam compatibility: every A-cell / adjacent-B-cell pair must agree on street-walkability.
   for (let lc = 0; lc < a.width; lc++) {
@@ -384,17 +382,88 @@ export interface SpawnPlan {
 
 /** Structured `template-match-not-found` diagnostics (§ "Anchor fallback + logging"). */
 export interface SpawnFailure {
-  reason: 'anchor-no-legal-candidate' | 'all-anchors-exhausted';
+  reason:
+    | 'anchor-no-legal-candidate'
+    /**
+     * The anchor had geometrically legal candidates, but EVERY one of them would seal the
+     * continent (§ "The seal constraint"). This is an AUTHORING defect, not a runtime state:
+     * the catalog is supposed to always offer some template that leaves a road stub open. It
+     * is logged loudly with the rejected count so the author can fix the catalog.
+     */
+    | 'anchor-all-candidates-seal'
+    | 'all-anchors-exhausted';
   edge?: Cardinal;
   width?: number;
   originDistance?: number;
+  /** For `anchor-all-candidates-seal`: how many otherwise-legal candidates the seal rule rejected. */
+  sealedCandidates?: number;
 }
+
+/**
+ * The growth-safety guard injected into {@link planSpawn}: given a candidate placement, would the
+ * resulting continent be SEALED (no open street condition left on ANY placement's final rendered
+ * version)? `true` ⇒ the candidate is rejected exactly like an illegal seam.
+ *
+ * The predicate is injected rather than implemented here because deciding it needs every
+ * template's full per-version condition masks — a DB-backed catalog load this dep-free geometry
+ * engine must not take on. {@link ../../services/NightMarketPlacementService.planNextPlacement}
+ * supplies it (backed by {@link ./continentSeal.sealsContinent}) for BOTH the live continent and
+ * the author sandbox, so the two surfaces cannot diverge.
+ */
+export type SealCheck = (candidate: CandidatePlacement) => boolean;
 
 export interface SpawnResult {
   plan: SpawnPlan | null;
   /** One entry per anchor that failed to yield a legal placement (for logging). */
   failures: SpawnFailure[];
 }
+
+// ── Trace (opt-in decision log) ───────────────────────────────────────────────────────────────
+
+/**
+ * Every decision {@link planSpawn} makes, as structured events. Injected as a callback rather than
+ * `console.log`ged here so this module stays a pure, dep-free engine: the CALLER decides whether to
+ * format the events to a terminal (the nms Iterate button does — see
+ * {@link ../../services/NightMarketPlacementService.planNextPlacement}), ship them to a client
+ * inspector, or ignore them entirely. Tracing is OFF unless a callback is passed, so the live
+ * growth path pays nothing.
+ *
+ * The events answer the question the summary `failures` list cannot: why a SPECIFIC nearby anchor
+ * was passed over. `anchor-no-candidates` reports the widths the catalog *does* offer on the needed
+ * edge (the exact-width match at step 3 is the most common silent skip); `candidate-rejected`
+ * names the placed template that blocked it and whether it was an overlap, a seam disagreement, or
+ * the seal guard.
+ */
+export type SpawnTraceEvent =
+  /** The full sorted anchor queue, before any are tried. Index = the order they will be visited. */
+  | {
+      type: 'anchors';
+      anchors: Array<{ index: number; owner: string; edge: Cardinal; width: number; globalAlongStart: number; originDistance: number }>;
+      /** `edge → widths` the catalog can mate with, i.e. the entire reachable match space. */
+      catalogWidthsByEdge: Record<string, number[]>;
+    }
+  /** Starting work on one anchor (visited in queue order). */
+  | { type: 'anchor'; index: number; owner: string; edge: Cardinal; width: number; originDistance: number; candidateCount: number }
+  /** The anchor had ZERO complement-edge/equal-width catalog entries — skipped without geometry. */
+  | { type: 'anchor-no-candidates'; index: number; edge: Cardinal; neededEdge: Cardinal; neededWidth: number; availableWidths: number[] }
+  | {
+      type: 'candidate-rejected';
+      index: number;
+      templateName: string;
+      version: number;
+      offsetCol: number;
+      offsetRow: number;
+      reason: 'overlap' | 'seam-mismatch' | 'seals-continent';
+      /** For overlap/seam: the placed template that vetoed it (`name@(col,row)`). */
+      blocker?: string;
+    }
+  | { type: 'candidate-legal'; index: number; templateName: string; version: number; offsetCol: number; offsetRow: number; matchedRuns: number; spread: number }
+  /** The anchor produced legal candidates; these are the tiebreak results. */
+  | { type: 'anchor-winner'; index: number; bestRuns: number; bestSpread: number; survivors: number; chosen: SpawnPlan }
+  | { type: 'anchor-failed'; index: number; failure: SpawnFailure }
+  | { type: 'exhausted' };
+
+export type SpawnTrace = (event: SpawnTraceEvent) => void;
 
 /**
  * Solve the unique offset that mates candidate anchor `bAnchor` to exposed continent anchor `ea`.
@@ -422,11 +491,16 @@ function solveOffset(ea: ExposedAnchor, cv: CatalogVersion, bAnchor: TemplateAnc
  * placement, or `{ plan: null }` with per-anchor failures when no legal candidate exists at any
  * exposed anchor. `rng` is injectable for a deterministic random tiebreak in tests (default
  * `Math.random`); the choice is persisted, so true randomness is safe in production.
+ *
+ * `sealCheck` (optional) is the growth-safety veto — see {@link SealCheck}. Omitting it restores
+ * the pre-constraint behavior (used by the geometry-only unit tests).
  */
 export function planSpawn(
   placed: readonly PlacedTemplate[],
   catalog: readonly CatalogVersion[],
   rng: () => number = Math.random,
+  sealCheck?: SealCheck,
+  trace?: SpawnTrace,
 ): SpawnResult {
   const index = buildAnchorIndex(catalog);
   const failures: SpawnFailure[] = [];
@@ -434,12 +508,58 @@ export function planSpawn(
   // Step 1–2: enumerate exposed anchors, closest-to-origin first.
   const anchors = exposedAnchors(placed).sort((a, b) => a.originDistance - b.originDistance);
 
-  for (const ea of anchors) {
+  if (trace) {
+    // The whole match space up front: the anchor queue in visit order + every width the catalog can
+    // actually mate with per edge. An anchor whose width is absent from its complement edge's list
+    // is unmatchable by construction, no matter how close to the origin it sits.
+    const catalogWidthsByEdge: Record<string, number[]> = {};
+    for (const [edge, byWidth] of index) catalogWidthsByEdge[edge] = [...byWidth.keys()].sort((a, b) => a - b);
+    trace({
+      type: 'anchors',
+      anchors: anchors.map((a, i) => ({
+        index: i,
+        owner: `${a.owner.templateName}@(${a.owner.offsetCol},${a.owner.offsetRow})`,
+        edge: a.edge,
+        width: a.width,
+        globalAlongStart: a.globalAlongStart,
+        originDistance: a.originDistance,
+      })),
+      catalogWidthsByEdge,
+    });
+  }
+
+  for (let anchorIndex = 0; anchorIndex < anchors.length; anchorIndex++) {
+    const ea = anchors[anchorIndex];
     // Step 3: complement-direction, equal-width catalog candidates.
-    const candidates = index.get(complement(ea.edge))?.get(ea.width) ?? [];
+    const neededEdge = complement(ea.edge);
+    const candidates = index.get(neededEdge)?.get(ea.width) ?? [];
+
+    if (trace) {
+      trace({
+        type: 'anchor',
+        index: anchorIndex,
+        owner: `${ea.owner.templateName}@(${ea.owner.offsetCol},${ea.owner.offsetRow})`,
+        edge: ea.edge,
+        width: ea.width,
+        originDistance: ea.originDistance,
+        candidateCount: candidates.length,
+      });
+      if (candidates.length === 0) {
+        trace({
+          type: 'anchor-no-candidates',
+          index: anchorIndex,
+          edge: ea.edge,
+          neededEdge,
+          neededWidth: ea.width,
+          availableWidths: [...(index.get(neededEdge)?.keys() ?? [])].sort((a, b) => a - b),
+        });
+      }
+    }
 
     type Scored = { plan: SpawnPlan; spread: number };
     const legal: Scored[] = [];
+    // Candidates that passed the seam check but were vetoed by the seal guard (for diagnostics).
+    let sealed = 0;
 
     for (const { cv, anchor } of candidates) {
       const { offsetCol, offsetRow } = solveOffset(ea, cv, anchor);
@@ -453,11 +573,52 @@ export function planSpawn(
         street: cv.street,
       };
 
-      // Step 4: legal against EVERY placed template it would touch.
-      if (!placed.every((p) => isPlacementLegal(candidate, p))) continue;
+      // Step 4: legal against EVERY placed template it would touch. `find` (not `every`) so the
+      // trace can name the blocker and say whether it was a footprint overlap or a seam disagreement.
+      const blocker = placed.find((p) => !isPlacementLegal(candidate, p));
+      if (blocker) {
+        trace?.({
+          type: 'candidate-rejected',
+          index: anchorIndex,
+          templateName: cv.templateName,
+          version: cv.version,
+          offsetCol,
+          offsetRow,
+          reason: rectsOverlap(candidate, blocker) ? 'overlap' : 'seam-mismatch',
+          blocker: `${blocker.templateName}@(${blocker.offsetCol},${blocker.offsetRow})`,
+        });
+        continue;
+      }
+
+      // Step 4b (growth safety): reject a candidate that would leave the continent with NO open
+      // street condition — a sealed continent can never spawn again. Checked AFTER the cheap seam
+      // test because it re-simulates version selection over the whole world (see ./continentSeal).
+      if (sealCheck?.(candidate)) {
+        sealed++;
+        trace?.({
+          type: 'candidate-rejected',
+          index: anchorIndex,
+          templateName: cv.templateName,
+          version: cv.version,
+          offsetCol,
+          offsetRow,
+          reason: 'seals-continent',
+        });
+        continue;
+      }
 
       const matchedRuns = matchedStreetRuns(candidate, placed);
       const spread = maximinSpread(candidate, placed);
+      trace?.({
+        type: 'candidate-legal',
+        index: anchorIndex,
+        templateName: cv.templateName,
+        version: cv.version,
+        offsetCol,
+        offsetRow,
+        matchedRuns,
+        spread,
+      });
       legal.push({
         plan: { templateName: cv.templateName, version: cv.version, offsetCol, offsetRow, matchedRuns, spread },
         spread,
@@ -465,7 +626,20 @@ export function planSpawn(
     }
 
     if (legal.length === 0) {
-      failures.push({ reason: 'anchor-no-legal-candidate', edge: ea.edge, width: ea.width, originDistance: ea.originDistance });
+      // Distinguish "nothing fit the seam" from "everything fit but every fit would seal the
+      // continent" — the latter is an authoring gap in the catalog and needs a different fix.
+      const failure: SpawnFailure =
+        sealed > 0
+          ? {
+              reason: 'anchor-all-candidates-seal',
+              edge: ea.edge,
+              width: ea.width,
+              originDistance: ea.originDistance,
+              sealedCandidates: sealed,
+            }
+          : { reason: 'anchor-no-legal-candidate', edge: ea.edge, width: ea.width, originDistance: ea.originDistance };
+      failures.push(failure);
+      trace?.({ type: 'anchor-failed', index: anchorIndex, failure });
       continue; // Anchor fallback: try the next-closest anchor.
     }
 
@@ -475,9 +649,18 @@ export function planSpawn(
     const bestSpread = Math.max(...byRuns.map((s) => s.spread));
     const survivors = byRuns.filter((s) => s.spread === bestSpread);
     const winner = survivors[Math.floor(rng() * survivors.length)] ?? survivors[0];
+    trace?.({
+      type: 'anchor-winner',
+      index: anchorIndex,
+      bestRuns,
+      bestSpread,
+      survivors: survivors.length,
+      chosen: winner.plan,
+    });
     return { plan: winner.plan, failures };
   }
 
   failures.push({ reason: 'all-anchors-exhausted' });
+  trace?.({ type: 'exhausted' });
   return { plan: null, failures };
 }

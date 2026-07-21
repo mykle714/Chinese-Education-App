@@ -96,10 +96,29 @@ click behind its confirmation, never a stray keypress.
   `NightMarketWorldService.seedHubPlacement`); otherwise the plan is persisted **at the version the
   planner chose** (its most-conditioned candidate version — the runtime instead stores v0 and lets
   recompute-on-read settle it, but the sandbox has no selector pass); a `null` plan (no legal
-  candidate at any exposed anchor) opens a **modal** ("No legal placement") rather than a
+  candidate at any exposed anchor — **including** candidates rejected by the seal constraint,
+  docs/NIGHT_MARKET_TEMPLATES.md § "The seal constraint", which Iterate enforces identically to
+  the live continent) opens a **modal** ("No legal placement") rather than a
   snackbar — it is the *answer* the author pressed the button for, not an error, and a toast is
   easy to miss while looking at the scene.
   Server: `POST /api/nightmarket-sandbox/iterate` → `NightMarketSandboxService.iteratePlacement`.
+
+  **Decision trace (server console).** Iterate — and *only* Iterate — passes `{ trace: true }` to
+  `planNextPlacement` (`NightMarketSandboxService.ts:128`), which streams the planner's full
+  reasoning to stdout under the `[NightMarket:placement]` tag. Authoring needs to see *why* an
+  anchor lost, which the summary `template-match-not-found` warning cannot say. Emitted in order:
+  the placed layout + the catalog with each template's derived anchors; the **anchor queue in visit
+  order** (`#index edge/width dist=…`, ascending `originDistance`) plus the catalog's mateable
+  widths per edge; then per anchor a `TRY` line, either a `SKIP` (no catalog template exposes a
+  complement-edge anchor of that **exact** width — the most common reason a near anchor is passed
+  over) or one line per candidate marked `✓` (with `runs=`/`spread=`) or `✗` with its reason
+  (`overlap` / `seam-mismatch` **naming the blocking placement**, or `seals-continent`); and finally
+  `WINNER` with the tiebreak values, or `EXHAUSTED`.
+  Mechanism: the pure engine takes an injected `SpawnTrace` callback
+  (`server/dal/shared/templatePlacement.ts` — `SpawnTraceEvent`, threaded through `planSpawn`) so it
+  stays dep-free and output-channel-agnostic; the console formatting lives in the service layer
+  (`logSpawnTrace`, `NightMarketPlacementService.ts`). Tracing is **off** on the live growth path,
+  which pays nothing for it.
 - **Street overlay** (`S`, always enabled) tints the **street-walkable cells of every placement**.
   The sandbox otherwise previews the *finished* look with all mask tints off (placeholder and
   condition tints are never shown here) — street is the one exception, because cross-seam street
@@ -187,24 +206,48 @@ from the runtime table intentionally dropped.
 
 ### View — `src/features/nightmarket/TemplateSandboxViewer.tsx`
 
-A Pixi host modeled on `TemplateEditorViewer`'s camera (pan/zoom, `MIN/MAX/DEFAULT_ZOOM`,
-wheel-zoom-at-point). Renders **each placement** as its own `sortableChildren` container
-translated to `isoToScreen(offsetCol, offsetRow)` — since `isoToScreen` is linear, a local cell
-`(c,r)` lands at the correct global position — holding an `EditorTerrainLayer` (from
-`buildEditorField`) + `TemplateMaskOverlays`. **The sandbox previews the finished look**: it
+A Pixi host modeled on `TemplateEditorViewer`'s camera (pan/zoom, `CRISP_FLOOR`/`MAX_ZOOM`/
+`DEFAULT_ZOOM`, wheel-zoom-at-point). **Zoom-out floor:** integer zoom down to `CRISP_FLOOR = 1`,
+and below that a continuous, size-derived floor from `computeMinZoom(items, …)` so a sprawling
+placement set still fits on screen (wheel steps ×0.8 per notch down there) — see
+docs/NIGHT_MARKET_FEATURE.md § "Zoom-out floor scales with the world". Every placement renders its `EditorTerrainLayer` (from `buildEditorField`) +
+`TemplateMaskOverlays` **flat into the one camera container** (`PlacedTemplate` returns a
+fragment, not a container), with its cells shifted into the shared global space by the placement's
+SW corner — see **Cross-template depth** below. **The sandbox previews the finished look**: it
 passes the communal/condition tints off always, `showStreet` from the view-wide Street toggle, and
 `showPlaceholder` from the placement's `houseMode === 'placeholder'` and
 drives houses through `TemplateMaskOverlays`' `houseMode` prop — `'filled'` (default, = the
 editor/gallery's condition-driven filled-slot rule), `'all'` (every placeholder area gets a house),
 or `'none'`. The sandbox drives it from the placement's `settings.houseMode`
 (`SandboxItem.houseMode`): `'all'` → houses everywhere, `'placeholder'` → no houses but
-`showPlaceholder` tint on, `'none'` → neither — all independent of the version's condition cells; the communal and condition tints never show. Placements draw **back-to-front** by `(offsetCol + offsetRow)` (chronological
-tiebreak); cross-template occlusion is per-template (a whole board is one depth) — acceptable for
-a freeform sandbox. Hit-testing inverts the projection to a **global** cell (`localToGlobalCell`,
+`showPlaceholder` tint on, `'none'` → neither — all independent of the version's condition cells; the communal and condition tints never show. Hit-testing inverts the projection to a **global** cell (`localToGlobalCell`,
 the editor's `localToCell` minus bounds) and returns the front-most placement whose footprint
 contains it. Left-drag on a tile moves it (cell-snapped, committed on release); left-drag on
 empty / middle / right pans. A `SelectionOutline` draws the selected footprint's four diamond
 edges in the save-yellow accent.
+
+#### Cross-template depth (per-sprite, global)
+
+The sandbox is the only surface that composites multiple templates, so it is the only one where
+occlusion is decided **between** templates. It is resolved **per sprite**, by one global
+`sortableChildren` pass on the camera container:
+
+- Each placement passes an **`origin`** (`CellOrigin`, `src/engine/market/isometric.ts`) = its
+  SW corner. `EditorTerrainLayer` and every `TemplateMaskOverlays` layer add it to their local
+  cells, so both `isoToScreen` **and** `computeLayerZ` come out in global space — the identity
+  being `computeLayerZ(x + oc, y + or) = computeLayerZ(x, y) − (oc + or)`.
+- `TemplateMaskOverlays` also takes **`depthMode`**: `'flat'` (default — one Graphics per mask at
+  the constant `MASK_TINT_Z`, i.e. above the whole board; correct for the single-template editor
+  and Load gallery) or `'world'` (the sandbox — one Graphics **per cell** / per placeholder area
+  at that cell's own terrain depth, and occupant houses at their raw foot-cell depth instead of
+  the `OCCUPANT_HOUSE_Z_BASE` lift).
+
+**Do not reintroduce a container per placement.** Pixi sorts `zIndex` only among one parent's
+children, so a per-placement container collapses an entire template to a single depth; its tall
+sprites (trees, roofs, tall dirt slabs) then paint over a template that genuinely stands in front
+of it. That was the pre-2026-07-20 behaviour — placements drawn back-to-front by
+`(offsetCol + offsetRow)` — and no single corner of a footprint can order two templates of
+different sizes.
 
 ### Page — `src/features/nightmarket/TemplateSandboxPage.tsx`
 
@@ -240,8 +283,6 @@ Cancel; the picker is an overlay (`TemplateLoadGallery`
 - **No placement legality.** By design there is no seam matching / no-overlap enforcement — the
   sandbox is a scratch surface. If a "snap to legal seam" aid is wanted later, it would consume
   the same `server/dal/shared/templatePlacement.ts` geometry the runtime spawn uses.
-- **Depth at overlaps** is per-template, not per-cell — a whole board sorts at one depth, so two
-  overlapping templates can occlude imperfectly along the seam.
 - **No copy/duplicate, no multi-select, no undo** — one selected tile at a time.
 
 ## Dependency references
@@ -251,6 +292,11 @@ Cancel; the picker is an overlay (`TemplateLoadGallery`
   (`TemplateMaskOverlays`), `TemplateLoadGallery.tsx`, `templateEditorApi.ts`
   (`listTemplateGallery`/`loadTemplate`/`definitionToMasks`),
   `src/engine/market/{isometric,farmTerrain}.ts`.
+- Cross-template depth: `src/engine/market/isometric.ts` (`CellOrigin`, `ORIGIN_ZERO`,
+  `computeLayerZ`), `EditorTerrainLayer.tsx` (`origin` prop → `buildDraws`),
+  `TemplateEditorViewer.tsx` (`OverlayDepthMode`, `cellTintZ`, `MaskTintOverlay`/`MaskTintCell`,
+  `PlaceholderAreaOverlay`/`PlaceholderAreaTint`, `PlaceholderOccupantHouses`),
+  `TemplateSandboxViewer.tsx` (`PlacedTemplate`, the `sortableChildren` camera container).
 - Routing/nav: `src/App.tsx`, `src/pages/HomePage.tsx`.
 - Backend: `server/services/NightMarketSandboxService.ts`,
   `server/controllers/NightMarketSandboxController.ts`,

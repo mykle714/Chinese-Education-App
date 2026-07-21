@@ -3,7 +3,9 @@ import { Application, extend, useTick, useApplication } from '@pixi/react';
 import { Container, Sprite, Graphics, Text, Assets, Texture } from 'pixi.js';
 import type { FederatedPointerEvent } from 'pixi.js';
 import { Box } from '@mui/material';
-import { isoToScreen, computeLayerZ, TILE_WIDTH, TILE_HEIGHT } from '../../engine/market/isometric';
+import {
+  isoToScreen, computeLayerZ, TILE_WIDTH, TILE_HEIGHT, ORIGIN_ZERO, type CellOrigin,
+} from '../../engine/market/isometric';
 import {
   buildEditorField, editorSurfaceAt, editorDecorRotation,
   type EditorMasks, type DecorCategory,
@@ -350,22 +352,75 @@ const PLACEHOLDER_OVERLAY_COLOR = 0x33c8ff; // cyan
 const CONDITION_OVERLAY_COLOR = 0xff9f40; // orange
 const MASK_TINT_ALPHA = 0.4;
 
-function MaskTintOverlay({ cells, color }: { cells: Set<string>; color: number }) {
+/**
+ * How an annotation overlay picks its z:
+ *   - `'flat'`  — one Graphics for the whole mask at the constant {@link MASK_TINT_Z}, i.e. above
+ *     every terrain sprite on the board. Correct (and cheapest) for the SINGLE-template editor
+ *     and Load gallery, where "above the whole board" and "above my own tile" are the same thing.
+ *   - `'world'` — one Graphics PER CELL, seated at that cell's own terrain depth. Required on
+ *     compositing surfaces (the sandbox): a flat tint would otherwise paint over the tall dirt
+ *     slab / trees of a placement that stands in FRONT of the tinted cell.
+ */
+export type OverlayDepthMode = 'flat' | 'world';
+
+/**
+ * Depth for a per-cell annotation tint in world mode: just above the cell's decor sprite
+ * (`z + 0.15` in EditorTerrainLayer) so the tint reads over its own tile, while anything
+ * standing nearer to the camera still occludes it.
+ */
+const cellTintZ = (col: number, row: number) => computeLayerZ(col, row, 'background') + 0.25;
+
+/** Trace one cell diamond, given the cell already resolved to GLOBAL coordinates. */
+function traceGlobalCellDiamond(g: Graphics, col: number, row: number) {
+  const { screenX, screenY } = isoToScreen(col, row);
+  const cy = screenY - TILE_HEIGHT / 2; // diamond centre
+  g.moveTo(screenX, cy - TILE_HEIGHT / 2);
+  g.lineTo(screenX + TILE_WIDTH / 2, cy);
+  g.lineTo(screenX, cy + TILE_HEIGHT / 2);
+  g.lineTo(screenX - TILE_WIDTH / 2, cy);
+  g.closePath();
+}
+
+function MaskTintOverlay(
+  { cells, color, origin = ORIGIN_ZERO, depthMode = 'flat' }:
+  { cells: Set<string>; color: number; origin?: CellOrigin; depthMode?: OverlayDepthMode },
+) {
+  // Mask keys are LOCAL "col,row" strings; resolve them to global cells once.
+  const globalCells = useMemo(
+    () => [...cells].map((cell) => {
+      const [col, row] = cell.split(',').map(Number);
+      return { col: col + origin.col, row: row + origin.row };
+    }),
+     
+    [cells, origin.col, origin.row],
+  );
+
   const draw = useCallback((g: Graphics) => {
     g.clear();
-    for (const cell of cells) {
-      const [col, row] = cell.split(',').map(Number);
-      const { screenX, screenY } = isoToScreen(col, row);
-      const cy = screenY - TILE_HEIGHT / 2; // diamond centre
-      g.moveTo(screenX, cy - TILE_HEIGHT / 2);
-      g.lineTo(screenX + TILE_WIDTH / 2, cy);
-      g.lineTo(screenX, cy + TILE_HEIGHT / 2);
-      g.lineTo(screenX - TILE_WIDTH / 2, cy);
-      g.closePath();
-    }
+    for (const c of globalCells) traceGlobalCellDiamond(g, c.col, c.row);
     g.fill({ color, alpha: MASK_TINT_ALPHA });
-  }, [cells, color]);
+  }, [globalCells, color]);
+
+  if (depthMode === 'world') {
+    return (
+      <>
+        {globalCells.map((c) => (
+          <MaskTintCell key={`${c.col},${c.row}`} col={c.col} row={c.row} color={color} />
+        ))}
+      </>
+    );
+  }
   return <pixiGraphics draw={draw} zIndex={MASK_TINT_Z} />;
+}
+
+/** One world-depth tinted cell (world mode only) — its own Graphics so it can carry its own z. */
+function MaskTintCell({ col, row, color }: { col: number; row: number; color: number }) {
+  const draw = useCallback((g: Graphics) => {
+    g.clear();
+    traceGlobalCellDiamond(g, col, row);
+    g.fill({ color, alpha: MASK_TINT_ALPHA });
+  }, [col, row, color]);
+  return <pixiGraphics draw={draw} zIndex={cellTintZ(col, row)} />;
 }
 
 // ─── Placeholder-area highlight ──────────────────────────────────────────────────
@@ -375,37 +430,63 @@ function MaskTintOverlay({ cells, color }: { cells: Set<string>; color: number }
 // could not tell them apart). Same z as the other mask tints. The block outline connects the
 // four extreme cell vertices of the axis-aligned area (apex = far cell's top vertex, etc.),
 // matching the 2:1 iso projection.
-function PlaceholderAreaOverlay({ areas }: { areas: readonly PlaceholderArea[] }) {
+function PlaceholderAreaOverlay(
+  { areas, origin = ORIGIN_ZERO, depthMode = 'flat' }:
+  { areas: readonly PlaceholderArea[]; origin?: CellOrigin; depthMode?: OverlayDepthMode },
+) {
+  // Areas are authored in LOCAL cells; shift to global so both modes draw from one coordinate set.
+  const globalAreas = useMemo(
+    () => areas.map((a) => ({ ...a, col: a.col + origin.col, row: a.row + origin.row })),
+     
+    [areas, origin.col, origin.row],
+  );
+
+  // One Graphics per AREA in BOTH modes — the two modes differ only in the z each one carries.
+  // (Per-area rather than per-cell because the block outline is a single connected stroke across
+  // the whole slot; areas never overlap, so drawing them separately matches the old batched fill.)
+  return (
+    <>
+      {globalAreas.map((area) => (
+        <PlaceholderAreaTint
+          key={`${area.col},${area.row},${area.w}x${area.h}`}
+          area={area}
+          // World mode seats the slot at its NEAR corner's depth (the largest z of its cells), so
+          // it sits above its own terrain but still behind anything standing in front of it.
+          zIndex={depthMode === 'world' ? cellTintZ(area.col, area.row) : MASK_TINT_Z}
+        />
+      ))}
+    </>
+  );
+}
+
+/** One placeholder slot's cyan fill + block outline. `area` is already in GLOBAL cell space. */
+function PlaceholderAreaTint({ area, zIndex }: { area: PlaceholderArea; zIndex: number }) {
   const draw = useCallback((g: Graphics) => {
     g.clear();
     // Fill every covered cell diamond (translucent), so the whole slot reads as filled.
-    for (const area of areas) {
-      for (let dx = 0; dx < area.w; dx++) {
-        for (let dy = 0; dy < area.h; dy++) traceCellDiamond(g, area.col + dx, area.row + dy);
-      }
+    for (let dx = 0; dx < area.w; dx++) {
+      for (let dy = 0; dy < area.h; dy++) traceCellDiamond(g, area.col + dx, area.row + dy);
     }
     g.fill({ color: PLACEHOLDER_OVERLAY_COLOR, alpha: MASK_TINT_ALPHA });
-    // Then stroke each area's block outline so adjacent areas are visibly separated.
-    for (const area of areas) {
-      const vertex = (c: number, r: number) => {
-        const { screenX, screenY } = isoToScreen(c, r);
-        return { x: screenX, y: screenY - TILE_HEIGHT / 2 }; // diamond centre
-      };
-      const c0 = area.col, c1 = area.col + area.w - 1;
-      const r0 = area.row, r1 = area.row + area.h - 1;
-      const apex = vertex(c1, r1); // far cell — top of the block on screen
-      const right = vertex(c1, r0);
-      const bottom = vertex(c0, r0); // near cell — bottom of the block
-      const left = vertex(c0, r1);
-      g.moveTo(apex.x, apex.y - TILE_HEIGHT / 2); // far cell's TOP vertex
-      g.lineTo(right.x + TILE_WIDTH / 2, right.y); // its RIGHT vertex
-      g.lineTo(bottom.x, bottom.y + TILE_HEIGHT / 2); // near cell's BOTTOM vertex
-      g.lineTo(left.x - TILE_WIDTH / 2, left.y); // its LEFT vertex
-      g.closePath();
-    }
+    // Then stroke the block outline so two ADJACENT slots still read as distinct.
+    const vertex = (c: number, r: number) => {
+      const { screenX, screenY } = isoToScreen(c, r);
+      return { x: screenX, y: screenY - TILE_HEIGHT / 2 }; // diamond centre
+    };
+    const c0 = area.col, c1 = area.col + area.w - 1;
+    const r0 = area.row, r1 = area.row + area.h - 1;
+    const apex = vertex(c1, r1); // far cell — top of the block on screen
+    const right = vertex(c1, r0);
+    const bottom = vertex(c0, r0); // near cell — bottom of the block
+    const left = vertex(c0, r1);
+    g.moveTo(apex.x, apex.y - TILE_HEIGHT / 2); // far cell's TOP vertex
+    g.lineTo(right.x + TILE_WIDTH / 2, right.y); // its RIGHT vertex
+    g.lineTo(bottom.x, bottom.y + TILE_HEIGHT / 2); // near cell's BOTTOM vertex
+    g.lineTo(left.x - TILE_WIDTH / 2, left.y); // its LEFT vertex
+    g.closePath();
     g.stroke({ color: PLACEHOLDER_OVERLAY_COLOR, width: 1.5, alpha: 0.95 });
-  }, [areas]);
-  return <pixiGraphics draw={draw} zIndex={MASK_TINT_Z} />;
+  }, [area.col, area.row, area.w, area.h]);
+  return <pixiGraphics draw={draw} zIndex={zIndex} />;
 }
 
 // ─── Filled-placeholder occupant houses ──────────────────────────────────────────
@@ -415,9 +496,16 @@ function PlaceholderAreaOverlay({ areas }: { areas: readonly PlaceholderArea[] }
 // INSTEAD of the placeholder/condition tint. Seated exactly like a placed house (HOUSE_ANCHOR
 // on each front-corner foot cell, mirrored by negating scale.x). Lifted above the mask tints
 // (MASK_TINT_Z) and z-ordered per foot cell so a 4×10's two houses stack correctly.
+//
+// That lift is a FLAT-mode convenience (single board, tints are the only thing to clear). In
+// WORLD mode the house is a real tall object competing with other placements' terrain and trees,
+// so it drops to its true foot-cell depth with no base at all.
 const OCCUPANT_HOUSE_Z_BASE = MASK_TINT_Z + 100;
 
-function PlaceholderOccupantHouses({ areas }: { areas: readonly PlaceholderArea[] }) {
+function PlaceholderOccupantHouses(
+  { areas, origin = ORIGIN_ZERO, depthMode = 'flat' }:
+  { areas: readonly PlaceholderArea[]; origin?: CellOrigin; depthMode?: OverlayDepthMode },
+) {
   const [texture, setTexture] = useState<Texture | null>(null);
   // Load House.png once; Assets caches it, so this is a no-op after the first mount.
   useEffect(() => {
@@ -429,9 +517,13 @@ function PlaceholderOccupantHouses({ areas }: { areas: readonly PlaceholderArea[
     return () => { cancelled = true; };
   }, []);
 
+  // Houses are derived in local space, then shifted to global cells (position + depth together).
   const houses = useMemo(
-    () => areas.flatMap((area) => occupantHousesForArea(area)),
-    [areas],
+    () => areas
+      .flatMap((area) => occupantHousesForArea(area))
+      .map((h) => ({ ...h, col: h.col + origin.col, row: h.row + origin.row })),
+     
+    [areas, origin.col, origin.row],
   );
   if (!texture) return null;
 
@@ -447,8 +539,10 @@ function PlaceholderOccupantHouses({ areas }: { areas: readonly PlaceholderArea[
             y={screenY}
             anchor={HOUSE_ANCHOR}
             scale={{ x: h.flip ? -1 : 1, y: 1 }}
-            // Lift above the tints, preserving per-foot-cell iso ordering (nearer = on top).
-            zIndex={OCCUPANT_HOUSE_Z_BASE + computeLayerZ(h.col, h.row, 'entity')}
+            // Flat: lift above the tints, preserving per-foot-cell iso ordering (nearer = on top).
+            // World: the raw foot-cell depth, so other placements' terrain/trees sort against it.
+            zIndex={(depthMode === 'world' ? 0 : OCCUPANT_HOUSE_Z_BASE)
+              + computeLayerZ(h.col, h.row, 'entity')}
             eventMode="none"
           />
         );
@@ -465,16 +559,25 @@ function PlaceholderOccupantHouses({ areas }: { areas: readonly PlaceholderArea[
  * gallery's case); the editor passes its four show* toggles. Renders nothing on its own
  * container — the caller nests it inside the board's `sortableChildren` container so the
  * MASK_TINT_Z ordering lands the tints above the terrain sprites.
+ *
+ * On a COMPOSITING surface (the sandbox), pass the placement's `origin` plus
+ * `depthMode="world"`: every layer then draws in global cells at its own per-cell depth, so it
+ * sorts against OTHER placements' sprites instead of floating above the whole scene.
  */
 export function TemplateMaskOverlays({
   masks, showStreet = true, showCommunal = true, showPlaceholder = true, showCondition = true,
   houseMode = showCondition ? 'filled' : 'none',
+  origin = ORIGIN_ZERO, depthMode = 'flat',
 }: {
   masks: EditorMasks;
   showStreet?: boolean;
   showCommunal?: boolean;
   showPlaceholder?: boolean;
   showCondition?: boolean;
+  /** Local→global cell shift for compositing surfaces. Defaults to the identity. */
+  origin?: CellOrigin;
+  /** `'flat'` (single board) or `'world'` (per-cell depth, multi-template). See {@link OverlayDepthMode}. */
+  depthMode?: OverlayDepthMode;
   /**
    * Which placeholder areas preview an occupant HOUSE:
    *   - `'filled'` — only areas containing a condition cell (the editor/gallery rule: a filled
@@ -520,14 +623,24 @@ export function TemplateMaskOverlays({
 
   return (
     <>
-      {showStreet && <MaskTintOverlay cells={masks.street} color={STREET_OVERLAY_COLOR} />}
-      {showCommunal && <MaskTintOverlay cells={masks.communal} color={COMMUNAL_OVERLAY_COLOR} />}
-      {showPlaceholder && <PlaceholderAreaOverlay areas={placeholderAreas} />}
-      {showCondition && <MaskTintOverlay cells={tintCondition} color={CONDITION_OVERLAY_COLOR} />}
+      {showStreet && (
+        <MaskTintOverlay cells={masks.street} color={STREET_OVERLAY_COLOR} origin={origin} depthMode={depthMode} />
+      )}
+      {showCommunal && (
+        <MaskTintOverlay cells={masks.communal} color={COMMUNAL_OVERLAY_COLOR} origin={origin} depthMode={depthMode} />
+      )}
+      {showPlaceholder && (
+        <PlaceholderAreaOverlay areas={placeholderAreas} origin={origin} depthMode={depthMode} />
+      )}
+      {showCondition && (
+        <MaskTintOverlay cells={tintCondition} color={CONDITION_OVERLAY_COLOR} origin={origin} depthMode={depthMode} />
+      )}
       {/* Occupant house previews. `'filled'` (default) draws them in place of the condition tint,
           so editor/gallery are unchanged; the sandbox passes `'all'`/`'none'` to render every
           placeholder area's house or none. */}
-      {houseMode !== 'none' && <PlaceholderOccupantHouses areas={houseAreas} />}
+      {houseMode !== 'none' && (
+        <PlaceholderOccupantHouses areas={houseAreas} origin={origin} depthMode={depthMode} />
+      )}
     </>
   );
 }

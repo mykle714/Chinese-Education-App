@@ -125,7 +125,10 @@ export class NightMarketSandboxService {
       return this.sandboxDAL.insert(userId, NIGHT_MARKET_HUB_TEMPLATE_NAME, 0, 0, 0);
     }
 
-    const { plan } = await this.placementService.planNextPlacement(placements);
+    // `trace: true` — Iterate is an AUTHORING tool, so it dumps the planner's full decision log
+    // (anchor queue in visit order, per-anchor candidate counts, per-candidate rejection reasons,
+    // tiebreak scores) to the server console. The live growth path leaves it off.
+    const { plan } = await this.placementService.planNextPlacement(placements, undefined, { trace: true });
     if (!plan) return null;
     return this.sandboxDAL.insert(userId, plan.templateName, plan.version, plan.offsetCol, plan.offsetRow);
   }

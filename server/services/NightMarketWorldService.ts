@@ -6,13 +6,11 @@ import {
   VersionScoringInputs,
 } from './NightMarketTemplateService.js';
 import {
-  analyzeConditions,
-  abuttingBorderIslandIds,
-  conditionScoreSelector,
+  boardCells,
   globalOccupied,
   type PlacementOccupancy,
-  type VersionConditionState,
 } from '../dal/shared/versionSelection.js';
+import { resolvePlacementVersion } from '../dal/shared/continentSeal.js';
 import { TemplatePlacementRow } from '../types/nightMarket.js';
 import { NotFoundError } from '../types/dal.js';
 
@@ -152,8 +150,12 @@ export class NightMarketWorldService {
   /**
    * Recompute the active version for one placement from live conditions: score every available
    * version by how many of its conditions (filled placeholder slots + neighbor-abutting border
-   * streets) are satisfied, and pick the winner via {@link conditionScoreSelector}. Pure over the
-   * inputs — no DB, no persistence (the caller persists on change).
+   * streets) are satisfied, and pick the winner.
+   *
+   * Delegates to the shared {@link resolvePlacementVersion} — the SAME resolver the placement
+   * seal guard ({@link ../dal/shared/continentSeal}) simulates with, so what the spawn algorithm
+   * predicts will render is exactly what this read then renders. Pure over the inputs — no DB, no
+   * persistence (the caller persists on change).
    */
   private selectVersion(
     placement: TemplatePlacementRow,
@@ -161,33 +163,21 @@ export class NightMarketWorldService {
     filled: Set<string>,
     occupiedByOthers: Set<string>,
   ): number {
-    const byVersion = new Map<number, VersionConditionState>();
-    for (const v of scoring.versions) {
-      const analysis = analyzeConditions({
-        condition: v.condition,
-        placeholderAreas: scoring.placeholderAreas,
-        street: v.street,
-        width: scoring.width,
-        height: scoring.height,
-      });
-      const abutting = abuttingBorderIslandIds({
-        islands: analysis.islands,
+    return resolvePlacementVersion(
+      {
+        key: placement.id,
+        templateName: placement.templateName,
         offsetCol: placement.offsetCol,
         offsetRow: placement.offsetRow,
         width: scoring.width,
         height: scoring.height,
-        occupiedByOthers,
-      });
-      byVersion.set(v.version, { analysis, abuttingBorderIslandIds: abutting });
-    }
-
-    return conditionScoreSelector(scoring.availableVersions, {
-      name: placement.templateName,
-      offsetCol: placement.offsetCol,
-      offsetRow: placement.offsetRow,
-      filledPlaceholderIds: filled,
-      byVersion,
-    });
+        placeholderAreas: scoring.placeholderAreas,
+        versions: scoring.versions,
+        availableVersions: scoring.availableVersions,
+        filledPlaceholderIds: filled,
+      },
+      occupiedByOthers,
+    ).version;
   }
 
   /**
@@ -239,17 +229,4 @@ export class NightMarketWorldService {
   async seedHubPlacement(userId: string): Promise<void> {
     await this.placementDAL.insertPlacement(userId, NIGHT_MARKET_HUB_TEMPLATE_NAME, 0, 0, 0);
   }
-}
-
-/**
- * A placement's full board rectangle as LOCAL "col,row" cell keys — the version-agnostic
- * footprint the border-street abutment test uses. (All versions of a name share one W×H, so the
- * footprint never depends on the active version.)
- */
-function boardCells(width: number, height: number): Set<string> {
-  const cells = new Set<string>();
-  for (let col = 0; col < width; col++) {
-    for (let row = 0; row < height; row++) cells.add(`${col},${row}`);
-  }
-  return cells;
 }

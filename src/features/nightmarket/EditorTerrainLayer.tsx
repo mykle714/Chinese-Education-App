@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Assets, Texture } from 'pixi.js';
-import { isoToScreen, computeLayerZ, TILE_HEIGHT } from '../../engine/market/isometric';
+import { isoToScreen, computeLayerZ, TILE_HEIGHT, ORIGIN_ZERO, type CellOrigin } from '../../engine/market/isometric';
 import { freeFarmTileset } from '../../engine/market/freeFarmTileset';
 import {
   resolveTileSurfaceUrls,
@@ -21,7 +21,10 @@ import {
  * straight from the mask (like communal/placeholder/condition).
  *
  * Sprites are emitted FLAT (direct children of the sortableChildren scene container)
- * for correct global z-sort, exactly as FarmTerrainLayer does.
+ * for correct global z-sort, exactly as FarmTerrainLayer does. Compositing surfaces
+ * (the sandbox) pass an `origin` so a placement's local tiles are positioned AND
+ * depth-sorted in the shared global cell space — see {@link CellOrigin}. Never wrap
+ * this layer in a per-placement container: that would re-isolate the z-sort.
  */
 
 interface TileDraw {
@@ -40,7 +43,7 @@ interface TileDraw {
   decorZ: number;
 }
 
-function buildDraws(tiles: EditorTile[]): { draws: TileDraw[]; urls: Set<string> } {
+function buildDraws(tiles: EditorTile[], origin: CellOrigin): { draws: TileDraw[]; urls: Set<string> } {
   const urls = new Set<string>();
   const draws: TileDraw[] = [];
   for (const t of tiles) {
@@ -56,8 +59,11 @@ function buildDraws(tiles: EditorTile[]): { draws: TileDraw[]; urls: Set<string>
     const decorUrl = t.decorUrl;
     if (decorUrl) urls.add(decorUrl);
 
-    const { screenX, screenY } = isoToScreen(t.isoX, t.isoY);
-    const z = computeLayerZ(t.isoX, t.isoY, 'background');
+    // Local tile → global cell, so position and depth are both in the shared space.
+    const gx = t.isoX + origin.col;
+    const gy = t.isoY + origin.row;
+    const { screenX, screenY } = isoToScreen(gx, gy);
+    const z = computeLayerZ(gx, gy, 'background');
     draws.push({
       key: `${t.isoX},${t.isoY}`,
       x: screenX,
@@ -79,8 +85,13 @@ function buildDraws(tiles: EditorTile[]): { draws: TileDraw[]; urls: Set<string>
   return { draws, urls };
 }
 
-export default function EditorTerrainLayer({ tiles }: { tiles: EditorTile[] }) {
-  const { draws, urls } = useMemo(() => buildDraws(tiles), [tiles]);
+export default function EditorTerrainLayer(
+  { tiles, origin = ORIGIN_ZERO }: { tiles: EditorTile[]; origin?: CellOrigin },
+) {
+  // Keyed on the origin's NUMBERS, not the object — callers build `{col,row}` inline each
+  // render (the sandbox's drag preview does), so an identity dep would rebuild every frame.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const { draws, urls } = useMemo(() => buildDraws(tiles, origin), [tiles, origin.col, origin.row]);
   const [textures, setTextures] = useState<Map<string, Texture> | null>(null);
 
   // `buildDraws` returns a fresh `urls` Set on every rebuild (i.e. every paint), but

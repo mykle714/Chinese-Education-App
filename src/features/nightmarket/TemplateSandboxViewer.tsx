@@ -4,6 +4,7 @@ import { Container, Sprite, Graphics, Text } from 'pixi.js';
 import type { FederatedPointerEvent } from 'pixi.js';
 import { Box } from '@mui/material';
 import { isoToScreen, TILE_WIDTH, TILE_HEIGHT } from '../../engine/market/isometric';
+import { computeMinZoom } from '../../engine/market/cameraFit';
 import { buildEditorField, type EditorMasks } from '../../engine/market/farmTerrain';
 import EditorTerrainLayer from './EditorTerrainLayer';
 import { TemplateMaskOverlays } from './TemplateEditorViewer';
@@ -18,9 +19,17 @@ extend({ Container, Sprite, Graphics, Text });
  *
  * Renders MANY placed catalog templates tiled on one shared isometric grid (this is the first
  * surface that composites multiple templates — the runtime placement renderer is not built yet).
- * Each placement draws its own {@link EditorTerrainLayer} + {@link TemplateMaskOverlays} inside a
- * container translated to the placement's SW-corner offset (`isoToScreen` is linear, so a local
- * cell renders at the correct global position). Templates may overlap freely.
+ * Templates may overlap freely.
+ *
+ * DEPTH (the reason this file looks the way it does): every placement renders its
+ * {@link EditorTerrainLayer} + {@link TemplateMaskOverlays} FLAT into the one camera container,
+ * with its cells shifted by the placement's SW corner (`origin`) into the shared GLOBAL cell
+ * space. Pixi's `sortableChildren` then resolves occlusion PER SPRITE across all placements.
+ *
+ * It must not go back to a container-per-placement: Pixi sorts only within a parent, so a
+ * per-placement container collapses an entire template to a single depth, and a placement's tall
+ * sprites (trees, roofs, tall dirt slabs) then paint over a template that genuinely stands in
+ * front of it. No single corner of a footprint can order two templates of different sizes.
  *
  * Interaction:
  *   - LEFT-click a template → select it (reported via {@link onSelect}); LEFT-drag a template →
@@ -32,9 +41,15 @@ extend({ Container, Sprite, Graphics, Text });
  * and persistence; this component is a pure renderer + gesture source.
  */
 
-const MIN_ZOOM = 1;
+// Whole-number zoom keeps the pixel-art crisp (nearest-neighbour, no fractional resampling), so
+// CRISP_FLOOR is the smallest zoom the sandbox uses while a world still fits on screen. Once the
+// placed continent outgrows the viewport at 1×, the floor drops BELOW it continuously — see
+// {@link computeMinZoom} — trading crispness for the ability to see the whole layout.
+const CRISP_FLOOR = 1;
 const MAX_ZOOM = 10;
 const DEFAULT_ZOOM = 3;
+/** Multiplicative wheel step used below {@link CRISP_FLOOR}, where integer steps no longer exist. */
+const SUB_UNIT_ZOOM_FACTOR = 0.8;
 
 /** One placed template, prepared with its render inputs (tiles/masks) for the active version. */
 export interface SandboxItem {
@@ -98,12 +113,12 @@ function PlacedTemplate(
   // tracks the cursor before the move is committed.
   const col = dragOffset ? dragOffset.col : item.offsetCol;
   const row = dragOffset ? dragOffset.row : item.offsetRow;
-  const { screenX, screenY } = isoToScreen(col, row);
+  // The placement's SW corner IS the local→global cell shift. Everything below draws in GLOBAL
+  // cells rather than inside a translated container — see the depth note in the file header.
+  const origin = useMemo(() => ({ col, row }), [col, row]);
   return (
-    // Own sortableChildren so the board's internal terrain/house z-sort stays local to this
-    // template and never bleeds across placements.
-    <pixiContainer x={screenX} y={screenY} sortableChildren>
-      <EditorTerrainLayer tiles={tiles} />
+    <>
+      <EditorTerrainLayer tiles={tiles} origin={origin} />
       {/* Sandbox previews the FINISHED look, so the communal/condition tints never show. Two
           exceptions, both author-driven: the STREET tint (view-wide toggle, key S — street
           alignment across seams is what tiling is judged on), and the PLACEHOLDER tint, which is
@@ -116,8 +131,10 @@ function PlacedTemplate(
         showPlaceholder={item.houseMode === 'placeholder'}
         showCondition={false}
         houseMode={item.houseMode === 'all' ? 'all' : 'none'}
+        origin={origin}
+        depthMode="world"
       />
-    </pixiContainer>
+    </>
   );
 }
 
@@ -266,14 +283,12 @@ function SandboxScene({ items, selectedId, onSelect, onMove, showGrid, showStree
     movedId: '' as string,
   });
 
-  // Back-to-front draw order: larger (col+row) sits further into the screen, so draw it first.
-  // Chronological order (array index) breaks depth ties — later placements sit on top.
-  const drawOrder = useMemo(() => {
-    return items.map((it, seq) => ({ it, seq }))
-      .sort((a, b) => (b.it.offsetCol + b.it.offsetRow) - (a.it.offsetCol + a.it.offsetRow) || a.seq - b.seq)
-      .map((x) => x.it);
-  }, [items]);
-
+  // NOTE: there is deliberately NO cross-placement draw-order sort here. Depth is resolved
+  // PER SPRITE by the scene container's `sortableChildren` pass, because every placement emits
+  // its sprites flat in global cell space (see PlacedTemplate). Ordering whole placements by
+  // their SW-corner (col+row) — as this component used to — collapses a template to one depth
+  // and makes its tall sprites (trees, roofs, dirt slabs) occlude a placement that genuinely
+  // stands in front of it.
   const globalCellFromEvent = useCallback((e: FederatedPointerEvent): GlobalCell | null => {
     if (!app?.renderer) return null;
     const cx = app.screen.width / 2 + panRef.current.x;
@@ -388,8 +403,9 @@ function SandboxScene({ items, selectedId, onSelect, onMove, showGrid, showStree
     : null;
 
   return (
-    <pixiContainer x={cx} y={cy} scale={zoom}>
-      {drawOrder.map((item) => (
+    // sortableChildren: the single global depth sort over EVERY placement's sprites.
+    <pixiContainer x={cx} y={cy} scale={zoom} sortableChildren>
+      {items.map((item) => (
         <PlacedTemplate
           key={item.id}
           item={item}
@@ -438,10 +454,22 @@ function TemplateSandboxViewer({ items, selectedId, onSelect, onMove, showGrid =
     setPan(next);
   }, [ready]);
 
+  // Placements change on every drag/add/remove, so the fit-derived floor is read lazily from a ref
+  // at gesture time (against the CURRENT element size) rather than recomputed into state on resize.
+  const itemsRef = useRef(items); itemsRef.current = items;
+  const minZoomFor = useCallback((el: HTMLDivElement) => (
+    computeMinZoom(itemsRef.current, el.clientWidth, el.clientHeight, CRISP_FLOOR)
+  ), []);
+
   const applyZoomAtPoint = useCallback((focalX: number, focalY: number, rawZoom: number) => {
     const el = containerRef.current;
     if (!el) return;
-    const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.round(rawZoom)));
+    // At/above the crisp floor zoom stays on whole numbers; below it (a continent too big to fit
+    // at 1×) any fractional value down to the fitted floor is allowed.
+    const minZoom = minZoomFor(el);
+    const newZoom = rawZoom >= CRISP_FLOOR
+      ? Math.min(MAX_ZOOM, Math.round(rawZoom))
+      : Math.max(minZoom, rawZoom);
     if (newZoom === zoomRef.current) return;
     const ratio = newZoom / zoomRef.current;
     const w = el.clientWidth;
@@ -454,15 +482,24 @@ function TemplateSandboxViewer({ items, selectedId, onSelect, onMove, showGrid =
     panRef.current = newPan;
     setZoom(newZoom);
     setPan(newPan);
-  }, []);
+  }, [minZoomFor]);
 
   const handleWheel = useCallback((e: WheelEvent) => {
     e.preventDefault();
     const el = containerRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    const step = e.deltaY < 0 ? 1 : -1;
-    applyZoomAtPoint(e.clientX - rect.left, e.clientY - rect.top, zoomRef.current + step);
+    const current = zoomRef.current;
+    const zoomingIn = e.deltaY < 0;
+    // Integer ladder at/above the crisp floor, geometric ladder below it (there are no whole
+    // numbers left down there, and a fixed −1 step would jump straight to the fitted floor).
+    let next: number;
+    if (zoomingIn) {
+      next = current < CRISP_FLOOR ? Math.min(CRISP_FLOOR, current / SUB_UNIT_ZOOM_FACTOR) : current + 1;
+    } else {
+      next = current > CRISP_FLOOR ? current - 1 : current * SUB_UNIT_ZOOM_FACTOR;
+    }
+    applyZoomAtPoint(e.clientX - rect.left, e.clientY - rect.top, next);
   }, [applyZoomAtPoint]);
 
   // Suppress the context menu so right-drag pan doesn't pop one.

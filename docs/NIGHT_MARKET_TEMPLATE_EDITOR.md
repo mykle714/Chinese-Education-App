@@ -303,6 +303,11 @@ validator explicitly paints shows. Changing the **width or height** in Propertie
   renders **`PlaceholderOccupantHouses`**: any placeholder area containing a condition cell reads
   as FILLED and previews an occupant house (or two, for a 4×10/10×4 slot) in place of its
   placeholder + condition tint (those cells are stripped from the cyan/orange fills).
+  The editor uses these overlays in their default **`depthMode='flat'`** (one Graphics per mask at
+  the constant `MASK_TINT_Z`, above the whole board) with the identity `origin` — a single board
+  has nothing to sort against. The multi-template sandbox passes `'world'` + a per-placement
+  `origin` instead; see
+  [NIGHT_MARKET_TEMPLATE_SANDBOX.md](./NIGHT_MARKET_TEMPLATE_SANDBOX.md) § Cross-template depth.
 
 ### Page — `src/features/nightmarket/TemplateEditorPage.tsx`
 Owns board size + name + the mask layers + active tool + `loadedName` (the loaded/saved

@@ -80,6 +80,25 @@ export function computeLayerZ(isoX: number, isoY: number, slot: RenderSlot): num
 }
 
 /**
+ * A translation from a LOCAL cell space (a template's own 0-based grid) into the GLOBAL cell
+ * space shared by every surface that composites more than one template (the Template Sandbox).
+ *
+ * Adding an origin to a local cell makes BOTH its screen position and its {@link computeLayerZ}
+ * depth global at once — `isoToScreen` is linear and `computeLayerZ` is `-(x + y) + slot`, so the
+ * shift is exactly `-(origin.col + origin.row)` on z. That identity is why compositing surfaces
+ * shift cells rather than translating a per-template container: a container isolates Pixi's
+ * `sortableChildren` pass to its own children, which collapses a whole template to a single depth
+ * and makes tall sprites (trees, house roofs, dirt slabs) occlude across templates incorrectly.
+ */
+export interface CellOrigin {
+  col: number;
+  row: number;
+}
+
+/** The identity origin — local space IS global space (single-template surfaces). */
+export const ORIGIN_ZERO: CellOrigin = { col: 0, row: 0 };
+
+/**
  * Compute z-index for a pedestrian. Same painter's rule as computeLayerZ;
  * pedestrians always render in the `entity` slot.
  */

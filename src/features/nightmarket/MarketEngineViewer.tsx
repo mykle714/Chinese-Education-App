@@ -5,6 +5,7 @@ import type { FederatedPointerEvent } from 'pixi.js';
 import { Box } from '@mui/material';
 import { TILE_SIZE } from '../../engine/market/nightMarketRegistry';
 import { isoToScreen, TILE_WIDTH, TILE_HEIGHT, type ScreenPosition } from '../../engine/market/isometric';
+import { computeMinZoom, type CellFootprint } from '../../engine/market/cameraFit';
 import { buildFarmField, resolveTileSurfaceUrls, resolveTileDarkSurfaceUrls, FIELD_WIDTH, FIELD_HEIGHT } from '../../engine/market/farmTerrain';
 import { freeFarmTileset } from '../../engine/market/freeFarmTileset';
 import TemplateTerrainLayer from './TemplateTerrainLayer';
@@ -71,16 +72,29 @@ interface SceneProps {
   isPinchingRef?: React.RefObject<boolean>;
   /** Bump to force the world to re-fetch its layout. */
   reloadToken?: number;
+  /**
+   * Report the loaded layout's placement rectangles up to the camera host, which derives its
+   * zoom-out floor from them ({@link computeMinZoom}). The world is fetched inside the scene, but
+   * zoom state lives outside it — this is the one value that has to travel back up.
+   */
+  onFootprintsChange?: (footprints: CellFootprint[]) => void;
 }
 
 // Half-integer zoom range — the free-farm art is pixel-art, so whole-number
 // scale factors keep it crisp (nearest-neighbour, no fractional resampling).
 // MIN_ZOOM is the one exception: 0.5 lets the camera pull back further than
 // the crisp floor of 1, trading a blurrier (resampled) view for more visible map.
-const MIN_ZOOM = 0.5;
+const CRISP_FLOOR = 0.5;
 const MAX_ZOOM = 8;
 const DEFAULT_ZOOM = 1;
 const ZOOM_STEP = 0.5;
+/**
+ * Below CRISP_FLOOR the half-step ladder runs out, so the wheel/pinch floor becomes SIZE-derived:
+ * a market whose tiled continent no longer fits at 0.5× may keep pulling back (continuously, and
+ * increasingly blurry) until its whole footprint is on screen — see {@link computeMinZoom}.
+ * This multiplicative step drives the wheel down there.
+ */
+const SUB_FLOOR_ZOOM_FACTOR = 0.8;
 
 // ─── Grid overlay ────────────────────────────────────────────────────────────
 // Static isometric debug grid. Fine green lines mark every single tile (1 iso
@@ -403,7 +417,7 @@ function PlaceholderBoundsOverlay({ placeholders }: { placeholders: PlacedPlaceh
 // ─── Scene ─────────────────────────────────────────────────────────────────
 // Runs inside <Application>. Handles drag-to-pan and renders the terrain.
 
-function NightMarketScene({ pan, zoom, onPanChange, showGrid, debug, isPinchingRef, reloadToken }: SceneProps) {
+function NightMarketScene({ pan, zoom, onPanChange, showGrid, debug, isPinchingRef, reloadToken, onFootprintsChange }: SceneProps) {
   // `isInitialised` flips true once Pixi's async init() (which creates the
   // renderer) resolves; `app`'s identity is stable across init, so an effect
   // keyed only on `app` would bail before the renderer exists and never re-run.
@@ -420,6 +434,14 @@ function NightMarketScene({ pan, zoom, onPanChange, showGrid, debug, isPinchingR
   // terrain + recovered tile/street graphs). Replaces the former static procedural farm
   // plateau (FarmTerrainLayer/WalkwayLayer/HouseLayer).
   const { world, width, height, field, placements } = useMarketWorld(reloadToken);
+
+  // Hand the placement rectangles to the camera host so it can size its zoom-out floor. Kept in a
+  // ref-read effect (not a render-time call) so the parent's state update never happens mid-render.
+  const onFootprintsChangeRef = useRef(onFootprintsChange);
+  onFootprintsChangeRef.current = onFootprintsChange;
+  useEffect(() => {
+    onFootprintsChangeRef.current?.(placements);
+  }, [placements]);
 
   // Slice-2 pedestrians: ambient walkers seeded on the recovered graph. The hook re-seeds
   // when the graph identity changes (first load / version switch) and no-ops while null.
@@ -532,12 +554,23 @@ function MarketEngineViewer({ showGrid, debug = ALL_DEBUG_OFF, reloadToken }: Ma
     if (containerRef.current) setReady(true);
   }, []);
 
+  // The loaded layout's placement rectangles, reported up by the scene. Held in a ref (not state)
+  // because only the gesture handlers read it — a re-render would buy nothing.
+  const footprintsRef = useRef<CellFootprint[]>([]);
+  const handleFootprintsChange = useCallback((footprints: CellFootprint[]) => {
+    footprintsRef.current = footprints;
+  }, []);
+
   // Set a zoom snapped to the nearest ZOOM_STEP, adjusting pan so the focal point stays fixed on screen.
   const applyZoomAtPoint = useCallback((focalX: number, focalY: number, rawZoom: number) => {
     const el = containerRef.current;
     if (!el) return;
-    const snapped = Math.round(rawZoom / ZOOM_STEP) * ZOOM_STEP;
-    const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, snapped));
+    // At/above the crisp floor the half-step ladder applies; below it (a market too big to fit at
+    // 0.5×) any fractional value down to the size-derived floor is allowed.
+    const minZoom = computeMinZoom(footprintsRef.current, el.clientWidth, el.clientHeight, CRISP_FLOOR);
+    const newZoom = rawZoom >= CRISP_FLOOR
+      ? Math.min(MAX_ZOOM, Math.round(rawZoom / ZOOM_STEP) * ZOOM_STEP)
+      : Math.max(minZoom, rawZoom);
     if (newZoom === zoomRef.current) return; // fixed steps — ignore sub-step deltas
     const ratio = newZoom / zoomRef.current;
     const w = el.clientWidth;
@@ -558,8 +591,16 @@ function MarketEngineViewer({ showGrid, debug = ALL_DEBUG_OFF, reloadToken }: Ma
     const el = containerRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    const step = e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP;
-    applyZoomAtPoint(e.clientX - rect.left, e.clientY - rect.top, zoomRef.current + step);
+    const current = zoomRef.current;
+    // Half-step ladder at/above the crisp floor; geometric ladder below it, where a fixed −0.5
+    // step would either hit 0 or leap straight to the fitted floor in one notch.
+    let next: number;
+    if (e.deltaY < 0) {
+      next = current < CRISP_FLOOR ? Math.min(CRISP_FLOOR, current / SUB_FLOOR_ZOOM_FACTOR) : current + ZOOM_STEP;
+    } else {
+      next = current > CRISP_FLOOR ? current - ZOOM_STEP : current * SUB_FLOOR_ZOOM_FACTOR;
+    }
+    applyZoomAtPoint(e.clientX - rect.left, e.clientY - rect.top, next);
   }, [applyZoomAtPoint]);
 
   // Pinch-to-zoom: capture phase so we can preventDefault before Pixi sees the touches.
@@ -636,6 +677,7 @@ function MarketEngineViewer({ showGrid, debug = ALL_DEBUG_OFF, reloadToken }: Ma
             debug={debug}
             isPinchingRef={isPinchingRef}
             reloadToken={reloadToken}
+            onFootprintsChange={handleFootprintsChange}
           />
         </Application>
       )}

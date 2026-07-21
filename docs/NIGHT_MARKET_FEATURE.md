@@ -89,6 +89,33 @@ step), so the grass↔dirt transition is drawn purely by the flat boundary overl
 zoom is clamped to **integers** (`MarketEngineViewer`, default 3), so upscaling stays
 crisp with no fractional resampling. The Pixi `<Application>` sets `antialias={false}`.
 
+### Zoom-out floor scales with the world
+
+*Code: `src/engine/market/cameraFit.ts` (whole file); `MarketEngineViewer.tsx`
+(`CRISP_FLOOR`/`SUB_FLOOR_ZOOM_FACTOR`, `applyZoomAtPoint`, `handleWheel`,
+`SceneProps.onFootprintsChange`); `TemplateSandboxViewer.tsx` (same three, integer ladder). Tests:
+`src/__tests__/cameraFit.test.ts`.*
+
+The camera's zoom-out limit is **derived from world size**, not fixed. `computeMinZoom(footprints,
+viewportW, viewportH, crispFloor)` takes every placement's board rectangle, projects it through
+`isoToScreen` to a screen-space bbox (plus a half-tile margin and 96px of headroom for tall decor
+— houses/trees/dirt slabs), and returns the zoom at which that bbox fills 90% of the viewport,
+clamped to `[ABSOLUTE_MIN_ZOOM = 0.05, crispFloor]`. Because the result never exceeds `crispFloor`
+(nmp `0.5`, nms `1`), **small worlds behave exactly as before**; a continent that has tiled out far
+enough to no longer fit may keep pulling back.
+
+Zoom stays on the crisp ladder (nmp half-steps, nms integers) at/above `crispFloor`. **Below** it
+the value is **continuous** — the ladder has no rungs left there — and the wheel steps
+multiplicatively by `0.8` per notch, so passing under the floor is gradual rather than a single
+jump to the fitted minimum. Art below the crisp floor is fractionally resampled (blurrier); that is
+the deliberate trade for seeing a large market whole.
+
+The floor is recomputed **lazily at gesture time** from the live element size (refs, no resize
+listener or state), so window resizes and placement edits are picked up without re-render churn.
+nmp fetches its layout inside `NightMarketScene` but owns zoom in the outer component, so the scene
+reports its `placements` upward via `onFootprintsChange`; nms already has `items` in the camera
+host and needs no plumbing.
+
 **Debug overlays (nmp):** the page's right-edge toggle column (`NightMarketEnginePage.tsx`)
 drives per-overlay `DebugFlags` on `MarketEngineViewer`, all rendered inside the scene
 container so they pan/zoom with the terrain:

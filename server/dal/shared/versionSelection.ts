@@ -241,6 +241,20 @@ export interface PlacementOccupancy {
   cells: Set<string>;
 }
 
+/**
+ * A placement's full board rectangle as LOCAL "col,row" cell keys — the version-agnostic
+ * footprint every abutment/occupancy test uses. (All versions of a name share one W×H, so the
+ * footprint never depends on the active version.) Single-sourced here because the layout read,
+ * the spawn planner and the seal simulation all need it.
+ */
+export function boardCells(width: number, height: number): Set<string> {
+  const cells = new Set<string>();
+  for (let col = 0; col < width; col++) {
+    for (let row = 0; row < height; row++) cells.add(tileKey(col, row));
+  }
+  return cells;
+}
+
 /** Union of every placement's cells in GLOBAL coordinates. */
 export function globalOccupied(placements: readonly PlacementOccupancy[]): Set<string> {
   const out = new Set<string>();

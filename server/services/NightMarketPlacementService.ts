@@ -5,6 +5,7 @@ import {
   NIGHT_MARKET_HUB_TEMPLATE_NAME,
 } from './NightMarketTemplateService.js';
 import { placeholderAreaId } from '../dal/shared/versionSelection.js';
+import { sealsContinent, type SealPlacement } from '../dal/shared/continentSeal.js';
 import { unlocksForMinutes } from '../dal/shared/unlockSchedule.js';
 import { prunableDanglingPlacements, type PruneRect } from '../dal/shared/templatePrune.js';
 import {
@@ -14,6 +15,8 @@ import {
   type CatalogVersion,
   type SpawnPlan,
   type SpawnFailure,
+  type CandidatePlacement,
+  type SpawnTraceEvent,
 } from '../dal/shared/templatePlacement.js';
 import { TemplatePlacementRow } from '../types/nightMarket.js';
 
@@ -24,6 +27,83 @@ import { TemplatePlacementRow } from '../types/nightMarket.js';
  * for now — the economy (fill/decay slots) is fully functional; only the sprite is a placeholder.
  */
 const GENERIC_OCCUPANT_ASSET_ID = 'occupant-generic';
+
+/** Log prefix for the opt-in placement decision trace (nms Iterate). Grep-able in `docker logs`. */
+const TRACE_TAG = '[NightMarket:placement]';
+
+/**
+ * Render one {@link SpawnTraceEvent} to the server console. Lives here (service layer), not in the
+ * dep-free geometry engine, because the engine must not own an output channel — see
+ * {@link ../dal/shared/templatePlacement.SpawnTraceEvent}.
+ *
+ * Only the nms Iterate button turns this on (NightMarketSandboxService.iteratePlacement); the live
+ * growth path passes no trace at all, so production spawns stay silent apart from the existing
+ * `template-match-not-found` warnings.
+ */
+function logSpawnTrace(event: SpawnTraceEvent): void {
+  switch (event.type) {
+    case 'anchors': {
+      console.log(
+        `${TRACE_TAG} ── anchor queue (${event.anchors.length}), closest-to-origin first ──\n` +
+          event.anchors
+            .map(
+              (a) =>
+                `${TRACE_TAG}   #${a.index} ${a.edge}/w${a.width} dist=${a.originDistance} ` +
+                `alongStart=${a.globalAlongStart} owner=${a.owner}`,
+            )
+            .join('\n'),
+      );
+      console.log(
+        `${TRACE_TAG} catalog mateable widths by edge: ` +
+          Object.entries(event.catalogWidthsByEdge)
+            .map(([edge, widths]) => `${edge}=[${widths.join(',')}]`)
+            .join(' '),
+      );
+      break;
+    }
+    case 'anchor':
+      console.log(
+        `${TRACE_TAG} #${event.index} TRY ${event.edge}/w${event.width} dist=${event.originDistance} ` +
+          `owner=${event.owner} → ${event.candidateCount} width-matched catalog candidate(s)`,
+      );
+      break;
+    case 'anchor-no-candidates':
+      console.log(
+        `${TRACE_TAG} #${event.index} SKIP — no catalog template exposes a ${event.neededEdge} anchor of ` +
+          `width ${event.neededWidth} (available ${event.neededEdge} widths: [${event.availableWidths.join(',')}]). ` +
+          `Widths must match EXACTLY, and the catalog carries one version per template (the richest).`,
+      );
+      break;
+    case 'candidate-rejected':
+      console.log(
+        `${TRACE_TAG} #${event.index}   ✗ ${event.templateName} v${event.version} @(${event.offsetCol},${event.offsetRow}) ` +
+          `— ${event.reason}${event.blocker ? ` vs ${event.blocker}` : ''}`,
+      );
+      break;
+    case 'candidate-legal':
+      console.log(
+        `${TRACE_TAG} #${event.index}   ✓ ${event.templateName} v${event.version} @(${event.offsetCol},${event.offsetRow}) ` +
+          `runs=${event.matchedRuns} spread=${event.spread}`,
+      );
+      break;
+    case 'anchor-winner':
+      console.log(
+        `${TRACE_TAG} #${event.index} WINNER ${event.chosen.templateName} v${event.chosen.version} ` +
+          `@(${event.chosen.offsetCol},${event.chosen.offsetRow}) — bestRuns=${event.bestRuns} ` +
+          `bestSpread=${event.bestSpread} randomAmong=${event.survivors}`,
+      );
+      break;
+    case 'anchor-failed':
+      console.log(
+        `${TRACE_TAG} #${event.index} FAILED reason=${event.failure.reason}` +
+          (event.failure.sealedCandidates ? ` sealedCandidates=${event.failure.sealedCandidates}` : ''),
+      );
+      break;
+    case 'exhausted':
+      console.log(`${TRACE_TAG} EXHAUSTED — no legal placement at any exposed anchor`);
+      break;
+  }
+}
 
 /** Summary of one grant pass — how the entitlement gap was closed (for logging/telemetry). */
 export interface GrantResult {
@@ -237,7 +317,10 @@ export class NightMarketPlacementService {
    */
   async spawnTemplate(userId: string): Promise<TemplatePlacementRow | null> {
     const placements = await this.placementDAL.findPlacementsByUser(userId);
-    const { plan, failures, placed } = await this.planNextPlacement(placements);
+    // Real occupants matter to the seal guard: a filled slot can flip a placement to a version
+    // whose street mask closes an edge, so the simulation must see the live fill state.
+    const filled = await this.filledByPlacement(userId);
+    const { plan, failures, placed } = await this.planNextPlacement(placements, filled);
 
     // Structured diagnostics — one line per anchor that yielded no legal candidate (spec logging).
     for (const failure of failures) {
@@ -245,6 +328,7 @@ export class NightMarketPlacementService {
         `[NightMarket] template-match-not-found user=${userId.substring(0, 8)}… ` +
           `reason=${failure.reason}` +
           (failure.edge ? ` anchor=${failure.edge}/${failure.width}@dist${failure.originDistance}` : '') +
+          (failure.sealedCandidates ? ` sealedCandidates=${failure.sealedCandidates}` : '') +
           ` layout=[${placed.map((p) => `${p.templateName}@(${p.offsetCol},${p.offsetRow})`).join(', ')}]`,
       );
     }
@@ -262,9 +346,16 @@ export class NightMarketPlacementService {
    *
    * `placements` is any surface's rows (the user's continent, or a sandbox layout); the caller
    * decides what to do with the plan. `placed` is returned alongside for the failure logs.
+   *
+   * `filledByPlacement` (optional, `placementId → filled placeholder-area ids`) feeds the SEAL
+   * guard's version simulation. The live continent passes its real occupants; the author sandbox
+   * has no occupant rows and passes nothing (every slot reads as empty) — the guard itself is
+   * identical on both surfaces.
    */
   async planNextPlacement(
     placements: readonly SpawnSourcePlacement[],
+    filledByPlacement?: ReadonlyMap<string, Set<string>>,
+    options?: { trace?: boolean },
   ): Promise<{ plan: SpawnPlan | null; failures: SpawnFailure[]; placed: PlacedTemplate[] }> {
     const scoringCache = new Map<string, VersionScoringInputs>();
 
@@ -317,8 +408,91 @@ export class NightMarketPlacementService {
       });
     }
 
-    const { plan, failures } = planSpawn(placed, catalog);
+    // The existing world as the seal simulation sees it — EVERY authored version of each placed
+    // name, so the guard can re-select each neighbour's final version after the candidate lands.
+    const sealWorld: SealPlacement[] = placements.map((p) =>
+      this.toSealPlacement(p.id, p.templateName, p.offsetCol, p.offsetRow, scoringCache.get(p.templateName)!, filledByPlacement?.get(p.id)),
+    );
+
+    /**
+     * The growth-safety veto (docs/NIGHT_MARKET_TEMPLATES.md § "The seal constraint"): simulate the
+     * post-placement world at every placement's FINAL version and forbid the candidate if not one
+     * open (unabutting) border-street condition survives anywhere. Synchronous because every
+     * template name it can be asked about — placed names and catalog names — is already in
+     * `scoringCache` by the time `planSpawn` runs.
+     */
+    const sealCheck = (candidate: CandidatePlacement): boolean => {
+      const scoring = scoringCache.get(candidate.templateName);
+      if (!scoring) return false; // unreachable (the catalog loop cached it); never veto blindly
+      const candidateSeal = this.toSealPlacement(
+        // A not-yet-persisted candidate needs a key unique within this simulation only.
+        `candidate:${candidate.templateName}@${candidate.offsetCol},${candidate.offsetRow}`,
+        candidate.templateName,
+        candidate.offsetCol,
+        candidate.offsetRow,
+        scoring,
+        undefined, // a fresh placement holds no occupants yet
+      );
+      return sealsContinent([...sealWorld, candidateSeal]);
+    };
+
+    if (options?.trace) {
+      // The inputs the anchor queue is derived from — without these the per-anchor lines have no
+      // frame of reference (origin (0,0) is the seeded hub's SW corner, not the continent centre).
+      console.log(
+        `${TRACE_TAG} ══ plan start ══ placed=${placed.length} catalog=${catalog.length}\n` +
+          placed
+            .map(
+              (p) =>
+                `${TRACE_TAG}   placed ${p.templateName} v${p.activeVersion} @(${p.offsetCol},${p.offsetRow}) ` +
+                `${p.width}×${p.height} streetCells=${p.street.size}`,
+            )
+            .join('\n'),
+      );
+      console.log(
+        `${TRACE_TAG} catalog (richest version per template):\n` +
+          catalog
+            .map(
+              (c) =>
+                `${TRACE_TAG}   ${c.templateName} v${c.version} ${c.width}×${c.height} anchors=[` +
+                c.anchors.map((a) => `${a.edge}/w${a.width}@${a.alongStart}`).join(' ') +
+                ']',
+            )
+            .join('\n'),
+      );
+    }
+
+    const { plan, failures } = planSpawn(
+      placed,
+      catalog,
+      Math.random,
+      sealCheck,
+      options?.trace ? logSpawnTrace : undefined,
+    );
     return { plan, failures, placed };
+  }
+
+  /** Build one {@link SealPlacement} from a placement's coordinates + its template's scoring inputs. */
+  private toSealPlacement(
+    key: string,
+    templateName: string,
+    offsetCol: number,
+    offsetRow: number,
+    scoring: VersionScoringInputs,
+    filled: Set<string> | undefined,
+  ): SealPlacement {
+    return {
+      key,
+      templateName,
+      offsetCol,
+      offsetRow,
+      width: scoring.width,
+      height: scoring.height,
+      placeholderAreas: scoring.placeholderAreas,
+      versions: scoring.versions,
+      availableVersions: scoring.availableVersions,
+      filledPlaceholderIds: filled ?? new Set<string>(),
+    };
   }
 
   // ── internals ───────────────────────────────────────────────────────────────────────────

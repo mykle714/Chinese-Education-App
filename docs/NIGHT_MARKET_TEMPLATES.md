@@ -386,7 +386,9 @@ the shared dimension (height for E/W seams, width for N/S seams) matches.
 
 > **Implementation.** The pure geometry lives in `server/dal/shared/templatePlacement.ts`
 > (`deriveAnchors`, `exposedAnchors`, `buildAnchorIndex`, `isPlacementLegal`, `matchedStreetRuns`,
-> `maximinSpread`, `planSpawn`); the write orchestration is `NightMarketPlacementService`
+> `maximinSpread`, `planSpawn`) plus the growth-safety guard in
+> `server/dal/shared/continentSeal.ts` (§ [The seal constraint](#the-seal-constraint));
+> the write orchestration is `NightMarketPlacementService`
 > (`placeUnlock` / `spawnTemplate` / `grantUnlocks`). Spawn runs **server-side, once, persisted** —
 > never recomputed on the client. **Candidate version rule:** a candidate's walkability is matched
 > against its **most-conditioned version** — the version with the largest `condition` mask, NOT the
@@ -469,6 +471,9 @@ so "every template with a width-`W` west-facing anchor" is a direct
 4. **Discard illegal placements** with [`isPlacementLegal`](#isplacementlegalplaceda-placedb--cell-level-seam-check),
    evaluated against **every** already-placed template the candidate would touch
    (nestling into a concavity can create several seams at once).
+4b. **Discard placements that would SEAL the continent** — see
+   [The seal constraint](#the-seal-constraint). Runs after step 4 because it is the expensive
+   check (it re-simulates version selection for the whole world).
 5. **Rank by matched street runs (maximize).** Score = number of **distinct
    contiguous street runs** the placement joins across all its seams, where a matched
    run is a maximal contiguous set of seam cell-pairs that are `street-walkable` on
@@ -498,6 +503,70 @@ advance to the **next-closest** anchor and repeat, emitting a
 anchor) for each anchor that fails. If **every** exposed anchor fails, emit a final
 `template-match-not-found` log (account, template layout, flag: *all anchors
 exhausted*) and abort the spawn.
+
+For a **full** per-candidate decision log (why a *specific* near anchor was passed over), the nms
+Iterate button enables the injected `SpawnTrace` hook — see
+[NIGHT_MARKET_TEMPLATE_SANDBOX.md](./NIGHT_MARKET_TEMPLATE_SANDBOX.md) § Iterate → "Decision trace".
+Note the step-3 filter is an **exact** width match against the anchor index, and the index is built
+from **one version per template** (the richest), so an exposed run whose width no catalog template
+offers on the complement edge is skipped silently regardless of how close to the origin it sits.
+
+The failure reasons (`SpawnFailure.reason`, `templatePlacement.ts`) distinguish three cases:
+
+| reason | meaning |
+|---|---|
+| `anchor-no-legal-candidate` | nothing in the catalog fit that anchor's seam |
+| `anchor-all-candidates-seal` | candidates fit, but **every** one would seal the continent (step 4b); `sealedCandidates` counts them |
+| `all-anchors-exhausted` | every exposed anchor failed — no spawn this pass |
+
+#### The seal constraint
+
+> **Implementation.** `server/dal/shared/continentSeal.ts` (`openStreetConditions`,
+> `sealsContinent`, `resolvePlacementVersion`), injected into `planSpawn` as the `SealCheck`
+> predicate by `NightMarketPlacementService.planNextPlacement`. Tests:
+> `src/__tests__/continentSeal.test.ts`.
+
+**Rule: a continent must always retain at least one OPEN street condition.** An open street
+condition is a **border-street condition island** — on the version that will actually render —
+whose outer edge does **not** abut a neighbour. That stub is precisely what step 1 later
+enumerates as an exposed anchor, so a continent with **zero** of them is *sealed*: it can never
+spawn again, and the unlock economy silently stalls the moment the last placeholder slot fills.
+Any candidate placement whose resulting world would be sealed is **forbidden**, exactly like an
+illegal seam.
+
+**Evaluated on final versions, not persisted ones.** The check re-runs the whole
+[version selection rule](#version-selection-rule) for **every** placement in the post-placement
+world — the candidate included, over *all* of its authored versions. Two ways a placement can
+seal the continent, and only a full re-simulation catches both:
+
+1. **directly** — the new template plugs the last open stub and exposes none of its own;
+2. **indirectly** — abutting a neighbour satisfies a condition that flips *that neighbour* to a
+   higher-scoring version whose street mask **closes** the edge that used to be open.
+
+Counting exposed anchors at the placements' *persisted* `activeVersion` would miss case 2,
+because the persisted version is only a stability cache that the next layout read re-selects.
+The simulation is exact in a single pass (no fixpoint) for the same reason version selection is:
+conditions key on neighbour **footprints**, never on neighbour versions.
+
+`resolvePlacementVersion` is the **single** implementation of "which version does this placement
+render at" — `NightMarketWorldService.selectVersion` (recompute-on-read) delegates to it too, so
+what the spawn guard predicts will render is exactly what the next layout read renders.
+
+**Occupants matter.** A filled placeholder slot can also flip a placement's version, so the live
+path feeds the simulation its real occupant fill state. The Template Sandbox has no occupant
+rows, so every slot reads as empty there — the guard itself is the same code on both surfaces.
+
+**When no candidate survives.** The spawn is aborted (nothing is placed) and
+`anchor-all-candidates-seal` is logged. **This should never happen in production**: it is an
+**authoring** defect, not a runtime state — the catalog is expected to always offer some template
+that leaves a road stub open. Treat the log as a signal to fix the catalog.
+
+> ⚠️ **Known edge case.** `abuttingBorderIslandIds` satisfies an island when **any** of its cells
+> abuts along **any** of that cell's outward normals. On a template only one cell thick, a border
+> cell sits on two opposite edges at once (e.g. row 0 *is* row `height-1`), so a neighbour on one
+> side marks the island satisfied even though the opposite side is still open — the guard would
+> then read that world as sealed. This is the pre-existing condition semantics, not new behaviour;
+> it only bites for 1-cell-thick templates.
 
 #### `isPlacementLegal(placedA, placedB)` — cell-level seam check
 
@@ -868,6 +937,12 @@ Code this doc will depend on / drive once implemented:
 - **New placement module** (server-side, runs at spawn time) — the anchor-driven
   algorithm + `isPlacementLegal` cell-level seam check + `template-match-not-found`
   logging (see [How a new template attaches](#how-a-new-template-attaches)).
+- `server/dal/shared/continentSeal.ts` — the seal guard + `resolvePlacementVersion`, the shared
+  per-placement version resolver used by BOTH the guard and
+  `NightMarketWorldService.selectVersion` (see [The seal constraint](#the-seal-constraint),
+  [Version selection rule](#version-selection-rule)).
+- `server/dal/shared/versionSelection.ts` — `boardCells` lives here (single source; the layout
+  read, `templatePlacement.ts` and `continentSeal.ts` all use it).
 - `src/engine/market/tileGraph.ts` — tile graph built from placed-template cells.
 - **New street-recovery module** — greedy maximal-rectangle cover of the stitched
   street mask → `Street[]` + `intersectingStreets` (see

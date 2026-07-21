@@ -129,11 +129,17 @@ async function run() {
   try {
     const params = [];
     const wordsFilter = wordsWhereClause('word1', targetWords, params);
+    // A targeted (--words) run enriches the named words regardless of discoverable:
+    // the pre-pass / on-first-sort paths enrich rows that are NOT yet discoverable, so
+    // keeping the gate here would make this step unreachable for exactly the rows that
+    // need it (the deadlock backfill-icons and backfill-hsk-level both had). Untargeted
+    // full-table runs keep the gate. Mirrors backfill-long-definitions.
+    const discoverableFilter = targetWords?.length ? '' : 'AND discoverable = TRUE';
     const { rows: entries } = await client.query(`
       SELECT id, word1, pronunciation, definitions, "partsOfSpeech"
       FROM dictionaryentries_zh
       WHERE language = 'zh'
-        AND discoverable = TRUE
+        ${discoverableFilter}
         AND ${doneGate}
         AND "partsOfSpeech" IS NOT NULL
         AND jsonb_array_length("partsOfSpeech") > 0

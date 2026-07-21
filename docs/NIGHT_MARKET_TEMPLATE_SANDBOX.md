@@ -115,7 +115,13 @@ click behind its confirmation, never a stray keypress.
   the live continent) opens a **modal** ("No legal placement") rather than a
   snackbar — it is the *answer* the author pressed the button for, not an error, and a toast is
   easy to miss while looking at the scene.
-  Server: `POST /api/nightmarket-sandbox/iterate` → `NightMarketSandboxService.iteratePlacement`.
+  **Iterated placements are inserted LOCKED** (both the seeded hub and every planned tile) —
+  unlike hand-dropped ones, which start unlocked. The position is the algorithm's answer, so a
+  stray drag would quietly turn the preview into a hand-made layout that the *next* Iterate then
+  plans against. Press `L` on the tile to unlock and move it.
+  Server: `POST /api/nightmarket-sandbox/iterate` → `NightMarketSandboxService.iteratePlacement` →
+  `NightMarketSandboxDAL.insert(..., locked = true)` (the `locked` param defaults to `false`, which
+  is what the hand-drop `POST /api/nightmarket-sandbox` path uses).
 
   **Decision trace (browser + server console).** Iterate — and *only* Iterate — passes
   `{ trace: true }` to `planNextPlacement` (`NightMarketSandboxService.iteratePlacement`), which

@@ -106,7 +106,13 @@ export class NightMarketSandboxService {
    *
    * Delegates the geometry to {@link NightMarketPlacementService.planNextPlacement}, the very same
    * planner the live continent grows with (docs/NIGHT_MARKET_TEMPLATES.md § "Placement algorithm"),
-   * so the sandbox preview can never drift from production behaviour. Two cases:
+   * so the sandbox preview can never drift from production behaviour.
+   *
+   * Iterated placements are inserted LOCKED (unlike hand-dropped ones): the position is the
+   * algorithm's answer, and a stray drag would silently turn the preview into a hand-made layout
+   * that the next Iterate then plans against. The author can still unlock with L to move it.
+   *
+   * Two cases:
    *   • EMPTY sandbox → there are no exposed anchors to attach to, so seed the starter hub at the
    *     origin, exactly as NightMarketWorldService.seedHubPlacement does for a new account.
    *   • otherwise → run the planner; `null` (no legal candidate at any anchor) surfaces to the
@@ -122,7 +128,7 @@ export class NightMarketSandboxService {
     const placements = await this.sandboxDAL.findByUser(userId);
 
     if (placements.length === 0) {
-      const placement = await this.sandboxDAL.insert(userId, NIGHT_MARKET_HUB_TEMPLATE_NAME, 0, 0, 0);
+      const placement = await this.sandboxDAL.insert(userId, NIGHT_MARKET_HUB_TEMPLATE_NAME, 0, 0, 0, true);
       return { placement, trace: ['seeded the starter hub at the origin (empty sandbox — no anchors to plan against)'] };
     }
 
@@ -133,7 +139,7 @@ export class NightMarketSandboxService {
     // The live growth path leaves tracing off.
     const { plan, trace } = await this.placementService.planNextPlacement(placements, undefined, { trace: true });
     if (!plan) return { placement: null, trace };
-    const placement = await this.sandboxDAL.insert(userId, plan.templateName, plan.version, plan.offsetCol, plan.offsetRow);
+    const placement = await this.sandboxDAL.insert(userId, plan.templateName, plan.version, plan.offsetCol, plan.offsetRow, true);
     return { placement, trace };
   }
 

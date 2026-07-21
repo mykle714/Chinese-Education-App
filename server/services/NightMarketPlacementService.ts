@@ -80,13 +80,17 @@ function formatSpawnTrace(event: SpawnTraceEvent): string[] {
     case 'candidate-legal':
       return [
         `#${event.index}   ✓ ${event.templateName} v${event.version} @(${event.offsetCol},${event.offsetRow}) ` +
-          `runs=${event.matchedRuns} spread=${event.spread}`,
+          `dupAdj=${event.dupAdjacent} runs=${event.matchedRuns} touch=${event.touchCount} spread=${event.spread}`,
       ];
     case 'anchor-winner':
       return [
         `#${event.index} WINNER ${event.chosen.templateName} v${event.chosen.version} ` +
-          `@(${event.chosen.offsetCol},${event.chosen.offsetRow}) — bestRuns=${event.bestRuns} ` +
-          `bestSpread=${event.bestSpread} randomAmong=${event.survivors}`,
+          `@(${event.chosen.offsetCol},${event.chosen.offsetRow}) — bestDupAdj=${event.bestDupAdjacent} ` +
+          `bestRuns=${event.bestRuns} bestTouch=${event.bestTouch} bestSpread=${event.bestSpread} ` +
+          `randomAmong=${event.survivors}` +
+          // Loud, because it means the deprioritization had to yield: every legal candidate at this
+          // anchor touched a copy of itself. Usually an authoring gap (too few mateable templates).
+          (event.bestDupAdjacent > 0 ? ` ⚠ forced duplicate-adjacent (no duplicate-free candidate)` : ''),
       ];
     case 'anchor-failed':
       return [

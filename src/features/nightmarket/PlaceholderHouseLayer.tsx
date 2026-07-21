@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Assets, Texture } from 'pixi.js';
-import { isoToScreen, computeLayerZ } from '../../engine/market/isometric';
-import { HOUSE_ANCHOR, occupantHousesForArea } from '../../engine/market/house';
+import { isoToScreen } from '../../engine/market/isometric';
+import { occupantHousesForArea } from '../../engine/market/house';
+import HouseStripSprites from './HouseStripSprites';
 // House.png lives in the pack's `Originals/` bucket, which freeFarmTileset deliberately
 // excludes (un-adopted source art), so it is imported directly rather than resolved through
 // the tileset registry — same rationale as HouseLayer / EditorTerrainLayer.
@@ -33,9 +34,12 @@ import type { PlacedPlaceholder } from '../../engine/market/templateStitch';
 
 interface HouseDraw {
   key: string;
+  /** Foot cell (front corner of the house footprint). */
+  col: number;
+  row: number;
+  /** Screen position of that foot cell. */
   x: number;
   y: number;
-  z: number;
   /** Horizontally mirror the sprite (negated scale.x about the base-corner anchor). */
   flip: boolean;
 }
@@ -46,16 +50,7 @@ function buildDraws(placeholders: PlacedPlaceholder[]): HouseDraw[] {
     if (!ph.filled) continue; // empty slot → no occupant art
     for (const h of occupantHousesForArea(ph.area)) {
       const { screenX, screenY } = isoToScreen(h.col, h.row);
-      draws.push({
-        key: `${h.col},${h.row}`,
-        x: screenX,
-        y: screenY,
-        // `entity` slot (like pedestrians + the old stump stand-in): foot-anchored at the front
-        // corner so nearer terrain/walkers z-sort correctly around it. Two stacked houses sort by
-        // their own foot cell, so the back one draws behind the front one.
-        z: computeLayerZ(h.col, h.row, 'entity'),
-        flip: h.flip,
-      });
+      draws.push({ key: `${h.col},${h.row}`, col: h.col, row: h.row, x: screenX, y: screenY, flip: h.flip });
     }
   }
   return draws;
@@ -82,18 +77,20 @@ export default function PlaceholderHouseLayer({ placeholders }: { placeholders: 
   return (
     <>
       {draws.map((d) => (
-        <pixiSprite
+        // `entity` slot (like pedestrians + the old stump stand-in), sliced into per-screen-column
+        // strips so walkers passing the near-left wing sort against a different depth than those
+        // passing the near-right wing. Two stacked houses still sort by their own foot cells, so
+        // the back one draws behind the front one.
+        <HouseStripSprites
           key={d.key}
+          keyPrefix={d.key}
           texture={texture}
-          x={d.x}
-          y={d.y}
-          // Base-diamond front corner (HOUSE_ANCHOR), seated on the front-corner foot cell —
-          // matching the live nmp HouseLayer + the editor's house render.
-          anchor={HOUSE_ANCHOR}
-          // Mirror by negating scale.x; Pixi flips about the anchor (the base-diamond front corner).
-          scale={{ x: d.flip ? -1 : 1, y: 1 }}
-          zIndex={d.z}
-          eventMode="none"
+          screenX={d.x}
+          screenY={d.y}
+          col={d.col}
+          row={d.row}
+          flip={d.flip}
+          slot="entity"
         />
       ))}
     </>

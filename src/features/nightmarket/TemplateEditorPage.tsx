@@ -80,10 +80,11 @@ const MAX_DIM = 60;
 const DEFAULT_DIM = 16;
 
 // Selectable board dimensions (Properties width/length dropdowns): every even size
-// from 2 up to 24, then multiples of 8 up to 48. Both dropdowns share this list.
+// from 4 up to 24, then multiples of 8 up to 48. Both dropdowns share this list.
+// (2 is deliberately excluded — boards that small are not usable templates.)
 // MIN_DIM/MAX_DIM still bound the handleOk validation (all options fall safely inside
 // them), so a future free entry stays in range.
-const DIM_OPTIONS = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 32, 40, 48];
+const DIM_OPTIONS = [4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 32, 40, 48];
 
 const emptyMasks = (): EditorMasks => ({
   terrain1: new Set<string>(),

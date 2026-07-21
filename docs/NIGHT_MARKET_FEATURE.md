@@ -26,6 +26,50 @@ when the market adopted the free-farm tileset (see *Terrain rendering* below).
 All night market assets live at `/home/cow/src/assets/` (NOT `public/assets/` — Vite
 imports these directly as modules).
 
+### Depth sorting: sprite-strip slicing for multi-cell sprites
+
+*Code: `src/engine/market/isometric.ts` (`computeSpriteStrips`, `computeStripPlacements`,
+`computeLayerZ`), `src/engine/market/house.ts` (`HOUSE_STRIPS`),
+`src/features/nightmarket/HouseStripSprites.tsx`. Tests: `src/__tests__/houseStrips.test.ts`.*
+
+Everything sorts by the painter's rule `z = -(footIsoX + footIsoY) + slot`, where the foot
+anchor is the sprite's FRONT (min-iso) corner. A sprite one tile wide can carry a single foot.
+Anything **wider than a tile cannot** — one sprite = one quad = one z for its whole width, so a
+pedestrian beside the near-LEFT wing and one beside the near-RIGHT wing are sorted against the
+same depth and one of them is always wrong (walker swallowed by the wall, or floating over the
+roof).
+
+The fix is to draw such a sprite as a row of **full-height vertical strips**, each with its own
+foot anchor:
+
+- **Placement is pixel-faithful.** Strip *i* is just the *i*-th vertical crop of the source,
+  drawn in the exact screen column it occupied unsliced — no stretch, no seam. Strips are cut at
+  a fixed `TILE_WIDTH / 2 = 16` texture px from x = 0, so boundaries stay on integer pixels.
+- **Depth comes from the strip's screen-X.** The offset from the anchor maps back to iso units
+  along the footprint's two FRONT edges (16 screen px per iso unit): strips left of the anchor
+  walk **+isoY** (the SW edge), strips right of it walk **+isoX** (the SE edge). That point is
+  exactly the block's nearest surface in that screen column.
+- **Flip is handled after the mirror.** `flip: true` negates the screen offsets before the depth
+  mapping, so a mirrored house automatically gets the transposed 5×4 footprint's feet. Render a
+  strip at `anchorScreenX + offsetX` with `anchor.x = flip ? 1 : 0` and `scale.x = flip ? -1 : 1`
+  — both combinations draw rightward from that x.
+- **Art may overhang.** A roof eave lands ~0.2 cells past the footprint corner and simply gets an
+  implied foot slightly past it; that is the depth those pixels visually occupy, so it is not
+  clamped.
+
+`computeStripPlacements(swX, swY, F, …)` is the **stand** flavour — a bottom-centre-anchored
+square footprint cut into exactly `2F` strips. It is now a thin wrapper over the general
+`computeSpriteStrips`, which additionally takes `anchorTexX` (art whose base corner is not the
+frame centre — `House.png`), an explicit `stripTexW`, and `flip`.
+
+**Houses** are the live consumer: `HOUSE_STRIPS.normal` / `.flipped` precompute the 10 strips of
+`House.png` relative to a front corner at (0, 0), and `HouseStripSprites` is the single component
+all three house surfaces render through — `HouseLayer` (nmp sample house, `background` slot +0.1
+lift), `PlaceholderHouseLayer` (runtime filled-slot occupant, `entity` slot) and the template
+editor's `PlaceholderOccupantHouses` (`entity` slot, lifted above the mask tints in flat mode).
+Strips are emitted FLAT into the caller's `sortableChildren` container — never wrapped in a
+per-house container, which would collapse them back to one depth.
+
 ---
 
 ## Terrain rendering (free-farm rebuild)

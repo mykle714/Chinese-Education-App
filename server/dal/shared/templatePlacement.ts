@@ -5,8 +5,8 @@
  * placeholder slot is full: enumerate exposed street anchors → match complement-direction,
  * equal-width catalog anchors → discard illegal seams → discard candidates that would FLANK a
  * still-open street mouth ({@link flankedAnchorKeys}) → discard candidates that would SEAL the
- * continent (the injected {@link SealCheck}) → rank by streets-joined → maximin-spread tiebreak →
- * random tiebreak.
+ * continent (the injected {@link SealCheck}) → rank by fewest same-name neighbors → streets-joined →
+ * most distinct templates touched → maximin-spread tiebreak → random tiebreak.
  *
  * LAYER: dep-free shared engine (same `server/dal/shared/*` family as versionSelection). No DB,
  * no React. Consumed by {@link ../../services/NightMarketPlacementService} at spawn time only —
@@ -402,11 +402,63 @@ export function matchedStreetRuns(candidate: CandidatePlacement, placed: readonl
 }
 
 /**
+ * Whether two DISJOINT footprint rectangles touch orthogonally (share a seam line with a non-empty
+ * overlap along it). Corner-only contact is NOT adjacency — the rectangles meet at a point, no cell
+ * pair is orthogonally adjacent, so the two templates never read as one continuous block.
+ * Assumes non-overlap (guaranteed by {@link isPlacementLegal} before this is ever consulted).
+ */
+export function rectsAbut(a: Footprintable, b: Footprintable): boolean {
+  // Vertical seam: one's right edge is the other's left edge, and their row spans overlap.
+  const rowsOverlap = a.offsetRow < b.offsetRow + b.height && b.offsetRow < a.offsetRow + a.height;
+  const colsOverlap = a.offsetCol < b.offsetCol + b.width && b.offsetCol < a.offsetCol + a.width;
+  const touchVertically = a.offsetCol + a.width === b.offsetCol || b.offsetCol + b.width === a.offsetCol;
+  const touchHorizontally = a.offsetRow + a.height === b.offsetRow || b.offsetRow + b.height === a.offsetRow;
+  return (touchVertically && rowsOverlap) || (touchHorizontally && colsOverlap);
+}
+
+/**
+ * Count how many already-placed instances of the SAME template the candidate would sit flush
+ * against (§ step 4c / step 5). This is a SOFT signal, not a veto: two copies of one template
+ * touching reads as a visually repeated block, so we prefer any other legal candidate — but if the
+ * duplicate is the only thing that mates the anchor, placing it beats stalling continent growth.
+ * Compared by `templateName` only (not version): two versions of one template are the same building
+ * to the eye, which is what this rule is about.
+ */
+export function duplicateAdjacencies(candidate: CandidatePlacement, placed: readonly PlacedTemplate[]): number {
+  return placed.filter((p) => p.templateName === candidate.templateName && rectsAbut(candidate, p)).length;
+}
+
+/**
+ * Count how many DISTINCT placed templates the candidate would sit flush against (§ step 5b).
+ * Maximized: contact is preferred over any gap, so a candidate that seats into a concavity and
+ * abuts three neighbors beats one that juts into void touching only the anchor's owner.
+ *
+ * Contact is FOOTPRINT abutment ({@link rectsAbut}), not street agreement — deliberately the same
+ * predicate {@link ../../../src/engine/market/seamAdjacency} uses to satisfy border-street
+ * conditions, so maximizing it directly raises how many conditions the version selector can
+ * satisfy on the final render. The street-flavored signal already exists separately as
+ * {@link matchedStreetRuns}, which outranks this key.
+ *
+ * Always ≥ 1: {@link solveOffset} pins the candidate flush against its anchor's owner, so the
+ * owner is always counted. Same-name neighbors count here too, but they cannot smuggle a
+ * duplicate past {@link duplicateAdjacencies} — that key filters FIRST, so by the time this one is
+ * consulted every surviving candidate already has the same duplicate count.
+ */
+export function touchedTemplates(candidate: CandidatePlacement, placed: readonly PlacedTemplate[]): number {
+  return placed.filter((p) => rectsAbut(candidate, p)).length;
+}
+
+/**
  * Maximin spread (§ step 6, tiebreak): for each EXPOSED boundary cell of the candidate (outward
  * neighbor void), march along the outward normal to the first occupied cell (void ⇒ the `voidGap`
  * sentinel = "infinite"). Return the MINIMUM such gap over the candidate's exposed cells; a larger
  * minimum spreads templates apart. Anchor-touching cells (outward neighbor immediately occupied,
  * gap 0) are excluded, or the metric collapses to 0 for every candidate.
+ *
+ * Ranked BELOW {@link touchedTemplates}, and the two compose into one intent: take contact wherever
+ * it is available, and where a gap is unavoidable, make it as wide as possible. Contact is settled
+ * first, so this key only ever chooses among candidates that already touch equally many templates —
+ * it can never trade a neighbor away for open void.
  */
 export function maximinSpread(
   candidate: CandidatePlacement,
@@ -416,6 +468,22 @@ export function maximinSpread(
   const occupied = globalOccupied(footprints(placed));
   let min = voidGap;
 
+  // Bounding box of the whole continent, from RECTANGLE bounds only — O(placed), not O(cells).
+  // A ray that has left this box can never hit anything, so there is nothing to find between there
+  // and the `voidGap` sentinel. Without this bound every ray aimed at open void walks the full
+  // `voidGap` (1000 steps) before giving up — ~1000 lookups per exposed perimeter cell, per
+  // candidate, per anchor, and again inside the seal check's re-simulation.
+  let minCol = Infinity;
+  let maxCol = -Infinity;
+  let minRow = Infinity;
+  let maxRow = -Infinity;
+  for (const p of placed) {
+    if (p.offsetCol < minCol) minCol = p.offsetCol;
+    if (p.offsetRow < minRow) minRow = p.offsetRow;
+    if (p.offsetCol + p.width - 1 > maxCol) maxCol = p.offsetCol + p.width - 1;
+    if (p.offsetRow + p.height - 1 > maxRow) maxRow = p.offsetRow + p.height - 1;
+  }
+
   for (const edge of ['n', 's', 'e', 'w'] as const) {
     const [dc, dr] = OUTWARD[edge];
     for (const c of edgeCells(edge, candidate.width, candidate.height)) {
@@ -423,8 +491,24 @@ export function maximinSpread(
       const gr = c.row + candidate.offsetRow;
       // Immediately-occupied outward neighbor ⇒ a seam/anchor-touching cell; excluded.
       if (occupied.has(tileKey(gc + dc, gr + dr))) continue;
+
+      // Early-out: a ray travelling along one axis keeps its OTHER coordinate fixed, so if that
+      // coordinate sits outside the box the ray runs alongside the continent and can never hit it.
+      const fixedInBox = dc === 0 ? gc >= minCol && gc <= maxCol : gr >= minRow && gr <= maxRow;
+      if (!fixedInBox) {
+        min = Math.min(min, voidGap);
+        continue;
+      }
+
+      // Steps until the ray exits the box along its travel axis. `voidGap` still caps it, so a
+      // continent wider than the sentinel yields exactly the pre-bound result.
+      const toBoxEdge = dc === 1 ? maxCol - gc : dc === -1 ? gc - minCol : dr === 1 ? maxRow - gr : gr - minRow;
+      const limit = Math.min(toBoxEdge, voidGap);
+
       let gap = voidGap;
-      for (let step = 1; step <= voidGap; step++) {
+      // Starts at 2, not 1: the `continue` above already tested step 1 for this cell, so step 1 can
+      // never be a hit here. The reachable gap domain is therefore {2..voidGap-1} ∪ {voidGap}.
+      for (let step = 2; step <= limit; step++) {
         if (occupied.has(tileKey(gc + dc * step, gr + dr * step))) {
           gap = step;
           break;
@@ -445,7 +529,15 @@ export interface SpawnPlan {
   version: number;
   offsetCol: number;
   offsetRow: number;
+  /**
+   * How many same-name placed templates this placement ends up flush against. Preferred to be 0;
+   * a non-zero value on a persisted plan means every alternative at that anchor was worse or absent
+   * (see {@link duplicateAdjacencies}).
+   */
+  dupAdjacent: number;
   matchedRuns: number;
+  /** Distinct placed templates this placement ends up flush against; maximized (≥ 1). */
+  touchCount: number;
   spread: number;
 }
 
@@ -535,9 +627,36 @@ export type SpawnTraceEvent =
       /** For overlap/seam: the placed template that vetoed it (`name@(col,row)`). */
       blocker?: string;
     }
-  | { type: 'candidate-legal'; index: number; templateName: string; version: number; offsetCol: number; offsetRow: number; matchedRuns: number; spread: number }
+  | {
+      type: 'candidate-legal';
+      index: number;
+      templateName: string;
+      version: number;
+      offsetCol: number;
+      offsetRow: number;
+      /** Same-name templates this candidate would touch — the soft duplicate-adjacency penalty. */
+      dupAdjacent: number;
+      matchedRuns: number;
+      /** Distinct placed templates this candidate would abut — maximized (≥ 1). */
+      touchCount: number;
+      spread: number;
+    }
   /** The anchor produced legal candidates; these are the tiebreak results. */
-  | { type: 'anchor-winner'; index: number; bestRuns: number; bestSpread: number; survivors: number; chosen: SpawnPlan }
+  | {
+      type: 'anchor-winner';
+      index: number;
+      /**
+       * The winning (i.e. lowest) duplicate-adjacency count at this anchor. `> 0` means EVERY legal
+       * candidate touched a copy of itself and the deprioritization had to yield.
+       */
+      bestDupAdjacent: number;
+      bestRuns: number;
+      /** The winning (i.e. highest) distinct-templates-touched count at this anchor. */
+      bestTouch: number;
+      bestSpread: number;
+      survivors: number;
+      chosen: SpawnPlan;
+    }
   | { type: 'anchor-failed'; index: number; failure: SpawnFailure }
   | { type: 'exhausted' };
 
@@ -715,7 +834,12 @@ export function planSpawn(
         continue;
       }
 
+      // Step 4c (the duplicate-adjacency deprioritization): NOT a veto — scored, then applied as the
+      // FIRST ranking key below, so a self-touching placement is only ever chosen when no
+      // alternative at this anchor is duplicate-free.
+      const dupAdjacent = duplicateAdjacencies(candidate, placed);
       const matchedRuns = matchedStreetRuns(candidate, placed);
+      const touchCount = touchedTemplates(candidate, placed);
       const spread = maximinSpread(candidate, placed);
       trace?.({
         type: 'candidate-legal',
@@ -724,11 +848,13 @@ export function planSpawn(
         version: cv.version,
         offsetCol,
         offsetRow,
+        dupAdjacent,
         matchedRuns,
+        touchCount,
         spread,
       });
       legal.push({
-        plan: { templateName: cv.templateName, version: cv.version, offsetCol, offsetRow, matchedRuns, spread },
+        plan: { templateName: cv.templateName, version: cv.version, offsetCol, offsetRow, dupAdjacent, matchedRuns, touchCount, spread },
         spread,
       });
     }
@@ -761,16 +887,33 @@ export function planSpawn(
       continue; // Anchor fallback: try the next-closest anchor.
     }
 
-    // Step 5: maximize matched street runs. Step 6: maximin spread. Step 7: random among survivors.
-    const bestRuns = Math.max(...legal.map((s) => s.plan.matchedRuns));
-    const byRuns = legal.filter((s) => s.plan.matchedRuns === bestRuns);
-    const bestSpread = Math.max(...byRuns.map((s) => s.spread));
-    const survivors = byRuns.filter((s) => s.spread === bestSpread);
+    // Step 4c (as a ranking key): fewest same-name neighbors wins, and it outranks every other key —
+    // that is what makes it a strict deprioritization rather than a preference that street-run
+    // scoring can override. Because it FILTERS rather than vetoes, a set where every candidate is
+    // duplicate-adjacent still yields a winner (bestDup > 0) instead of failing the anchor.
+    // Step 5: maximize matched street runs. Step 5b: maximize distinct templates touched. Step 6:
+    // maximin spread. Step 7: random among survivors.
+    //
+    // 5b and 6 are ONE intent expressed lexicographically: contact beats any gap, and an unavoidable
+    // gap should be as wide as possible. Because each key only filters the survivors of the key
+    // above it, spread can never trade a neighbor away for open void — it chooses only among
+    // candidates already tied on contact. (Those ties are the common case: at most anchors every
+    // candidate touches exactly the owner, so spread still decides most placements.)
+    const bestDupAdjacent = Math.min(...legal.map((s) => s.plan.dupAdjacent));
+    const byDup = legal.filter((s) => s.plan.dupAdjacent === bestDupAdjacent);
+    const bestRuns = Math.max(...byDup.map((s) => s.plan.matchedRuns));
+    const byRuns = byDup.filter((s) => s.plan.matchedRuns === bestRuns);
+    const bestTouch = Math.max(...byRuns.map((s) => s.plan.touchCount));
+    const byTouch = byRuns.filter((s) => s.plan.touchCount === bestTouch);
+    const bestSpread = Math.max(...byTouch.map((s) => s.spread));
+    const survivors = byTouch.filter((s) => s.spread === bestSpread);
     const winner = survivors[Math.floor(rng() * survivors.length)] ?? survivors[0];
     trace?.({
       type: 'anchor-winner',
       index: anchorIndex,
+      bestDupAdjacent,
       bestRuns,
+      bestTouch,
       bestSpread,
       survivors: survivors.length,
       chosen: winner.plan,

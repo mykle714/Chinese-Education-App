@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Assets, Graphics, Texture } from 'pixi.js';
-import { isoToScreen, computeLayerZ } from '../../engine/market/isometric';
-import { HOUSE_ANCHOR } from '../../engine/market/house';
+import { isoToScreen } from '../../engine/market/isometric';
+import HouseStripSprites from './HouseStripSprites';
 // House.png lives in the pack's `Originals/` bucket, which freeFarmTileset
 // deliberately excludes (un-adopted source art), so it is imported directly
 // rather than resolved through the tileset registry.
@@ -10,12 +10,13 @@ import houseUrl from '../../assets/free-assets/free-farm-assets/Environment/Orig
 /**
  * HouseLayer — renders a single house prop on the free-farm ground field.
  *
- * LAYER: view. Painted EXACTLY like a scatter decor (see the decor pass in
- * {@link FarmTerrainLayer}): a single foot-anchored sprite z-sorted per-tile
- * within the terrain's `background` slot (`computeLayerZ(...,'background') + 0.1`).
- * Unlike a decor (which is small enough to anchor at the frame's bottom-center),
- * the house uses a measured {@link HOUSE_ANCHOR} so its base-diamond FRONT CORNER
- * — not the frame's bottom-center — lands on the foot tile's front vertex.
+ * LAYER: view. Painted like a scatter decor (see the decor pass in
+ * {@link FarmTerrainLayer}): foot-anchored and z-sorted per-tile within the terrain's
+ * `background` slot (`computeLayerZ(...,'background') + 0.1`). Unlike a decor (which is
+ * small enough to be one sprite anchored at the frame's bottom-center), the house is
+ * emitted through {@link ./HouseStripSprites} — its measured base-diamond FRONT CORNER
+ * lands on the foot tile's front vertex, and it is sliced into per-screen-column strips
+ * so its 4-cell width does not collapse to a single depth.
  * No whole-plane z-lift — being foot-anchored, tiles BEHIND it draw underneath and
  * tiles IN FRONT draw over it, so it nestles into the ground plane the same way a
  * decor sprite does.
@@ -74,15 +75,18 @@ export default function HouseLayer() {
 
   return (
     <>
-      <pixiSprite
+      <HouseStripSprites
+        keyPrefix="sample-house"
         texture={texture}
-        x={anchorX}
-        y={anchorY}
-        anchor={HOUSE_ANCHOR}
-        // Same z as a scatter decor: just above the foot tile's surface, still within
-        // the background slot (< entity's +0.25).
-        zIndex={computeLayerZ(HOUSE_FOOT.isoX, HOUSE_FOOT.isoY, 'background') + 0.1}
-        eventMode="none"
+        screenX={anchorX}
+        screenY={anchorY}
+        col={HOUSE_FOOT.isoX}
+        row={HOUSE_FOOT.isoY}
+        slot="background"
+        // Same lift as a scatter decor: just above the foot tile's surface, still within
+        // the background slot (< entity's +0.25). Applied to every strip equally, so the
+        // per-column depth ordering is unchanged.
+        zBase={0.1}
       />
       {/* Debug: the sprite's anchor / foot point. */}
       <pixiGraphics draw={drawAnchor} zIndex={ANCHOR_MARKER_Z} />

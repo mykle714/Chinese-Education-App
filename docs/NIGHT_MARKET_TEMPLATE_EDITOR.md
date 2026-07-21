@@ -45,8 +45,8 @@ systems in [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md) will consume
   locally, then version 0 is reloaded as the surviving board), **Delete Template**
   (hard-deletes the WHOLE template — every version — from the DB; disabled until one is
   loaded/saved), **Properties** (popup: New version · width / length —
-  **dropdowns** of the selectable board sizes `DIM_OPTIONS` = `2,4,…,20` (every +2 up to 20)
-  then every +8 to `44`; a legacy size outside the list is folded in so it still shows · name — for a
+  **dropdowns** of the selectable board sizes `DIM_OPTIONS` = `4,6,…,24` (every +2 from 4 to 24)
+  then `32,40,48`; `2` is intentionally not offered; a legacy size outside the list is folded in so it still shows · name — for a
   fresh/unnamed template the field is **pre-filled from the server** with a free default
   `template{index}` (`GET …/suggest-name`; a loaded template keeps its own name) · optional
   **description**), **Save** (POST — **upsert by `(name, version)`**:
@@ -258,10 +258,14 @@ validator explicitly paints shows. Changing the **width or height** in Propertie
 - **`src/engine/market/house.ts`** — the shared, PURE house geometry consumed by the live nmp
   house (`HouseLayer`) and the placeholder-occupant renderers: footprint dims
   (`HOUSE_FOOTPRINT_X`=4, `HOUSE_FOOTPRINT_Y`=5), the measured `HOUSE_ANCHOR` (base-diamond
-  front corner), and `occupantHousesForArea(area)` — which tiles a placeholder area into 1–2
-  `{col,row,flip}` house footprints (5-wide slots use the flipped 5×4 transpose). Shared by the
-  runtime `PlaceholderHouseLayer` and the editor's occupant preview. It imports no asset, so pure
-  layers (`farmTerrain`) can depend on it.
+  front corner), `occupantHousesForArea(area)` — which tiles a placeholder area into 1–2
+  `{col,row,flip}` house footprints (5-wide slots use the flipped 5×4 transpose) — and
+  `HOUSE_STRIPS`, the precomputed per-screen-column depth slices (a house is 4–5 cells wide, so it
+  is never drawn as one sprite; see *Depth sorting: sprite-strip slicing* in
+  [NIGHT_MARKET_FEATURE.md](./NIGHT_MARKET_FEATURE.md)). Shared by the runtime
+  `PlaceholderHouseLayer` and the editor's occupant preview, both of which render through the
+  common `src/features/nightmarket/HouseStripSprites.tsx`. It imports no asset, so pure layers
+  (`farmTerrain`) can depend on it.
 - `editorSurfaceAt(masks, col, row)` → `'dirt' | 'terrain1' | 'terrain2'` (takes just
   `Pick<EditorMasks,'terrain1'|'terrain2'>`, the two masks it reads) and
   `editorDecorRotation(category, surface)` (`category: DecorCategory` = `'family' |
@@ -463,10 +467,12 @@ promote-to-code step) is a downstream decision.
   `isPlankUrl`, `editorDecorCategory`),
   `src/engine/market/freeFarmTileset.ts` (`getDecorUrls`, `getTreeUrls`, `getPlank`),
   `src/engine/market/walkway.ts` (`PLANK_VARIATIONS`),
-  `src/engine/market/house.ts` (footprint dims + `HOUSE_ANCHOR` + `occupantHousesForArea`;
-  also consumed by the live nmp `src/features/nightmarket/HouseLayer.tsx` and the runtime
-  occupant `src/features/nightmarket/PlaceholderHouseLayer.tsx`).
-- View/page: `src/features/nightmarket/{EditorTerrainLayer,TemplateEditorViewer,TemplateEditorPage}.tsx`,
+  `src/engine/market/house.ts` (footprint dims + `HOUSE_ANCHOR` + `HOUSE_STRIPS` +
+  `occupantHousesForArea`; also consumed by the live nmp `src/features/nightmarket/HouseLayer.tsx`
+  and the runtime occupant `src/features/nightmarket/PlaceholderHouseLayer.tsx`).
+- View/page: `src/features/nightmarket/HouseStripSprites.tsx` (the shared strip-sliced house
+  renderer used by all three house surfaces),
+  `src/features/nightmarket/{EditorTerrainLayer,TemplateEditorViewer,TemplateEditorPage}.tsx`,
   `templateEditorApi.ts`.
 - Routing/nav: `src/App.tsx` (`/night-market/template-editor`),
   `src/pages/HomePage.tsx` (validator-gated hub row).

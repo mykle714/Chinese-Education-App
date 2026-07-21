@@ -386,7 +386,7 @@ the shared dimension (height for E/W seams, width for N/S seams) matches.
 
 > **Implementation.** The pure geometry lives in `server/dal/shared/templatePlacement.ts`
 > (`deriveAnchors`, `exposedAnchors`, `buildAnchorIndex`, `isPlacementLegal`, `matchedStreetRuns`,
-> `maximinSpread`, `planSpawn`) plus the growth-safety guard in
+> `touchedTemplates`, `maximinSpread`, `planSpawn`) plus the growth-safety guard in
 > `server/dal/shared/continentSeal.ts` (§ [The seal constraint](#the-seal-constraint));
 > the write orchestration is `NightMarketPlacementService`
 > (`placeUnlock` / `spawnTemplate` / `grantUnlocks`). Spawn runs **server-side, once, persisted** —
@@ -476,18 +476,42 @@ so "every template with a width-`W` west-facing anchor" is a direct
 4b. **Discard placements that would SEAL the continent** — see
    [The seal constraint](#the-seal-constraint). Runs after step 4 because it is the expensive
    check (it re-simulates version selection for the whole world).
-5. **Rank by matched street runs (maximize).** Score = number of **distinct
+4c. **Score duplicate adjacency** — see [Duplicate-adjacency deprioritization](#duplicate-adjacency-deprioritization).
+   This is a **soft** score, not a discard; it becomes the first ranking key below.
+5. **Rank by duplicate adjacency (minimize) — highest-priority key.** Keep only the
+   candidates with the fewest same-name touching neighbors, then apply the remaining
+   keys within that set. Because it *filters* rather than vetoes, an anchor where every
+   legal candidate is duplicate-adjacent still produces a winner.
+5b. **Rank by matched street runs (maximize).** Score = number of **distinct
    contiguous street runs** the placement joins across all its seams, where a matched
    run is a maximal contiguous set of seam cell-pairs that are `street-walkable` on
    both sides. The anchor itself is one; extra seams may add more. A width-4 join and
    a width-1 join each count as **one** run — this rewards the *number* of road
    connections, not their width.
+5c. **Rank by templates touched (maximize).** Score = number of **distinct placed
+   templates** the placement ends up flush against (`touchedTemplates`, built on
+   `rectsAbut` — footprint abutment, corner-only contact excluded). Always ≥ 1, since
+   the placement is pinned flush against its anchor's owner. Deliberately the *same*
+   abutment predicate that satisfies border-street conditions
+   (`src/engine/market/seamAdjacency.ts`), so maximizing contact here directly raises how
+   many conditions the version selector can satisfy on the final render.
 6. **Tiebreak — maximin spread (maximize).** For each **exposed** edge cell of the
    newly placed template, fan out along that cell's outward normal to the first other
    placed template (void ⇒ ∞). Take the **minimum** such gap over the placement's
    exposed edge cells; prefer the placement whose minimum gap is **largest**. This
-   spreads templates apart and avoids pinch points. (Anchor-touching cells are gap 0
-   and are excluded, or the metric collapses to 0 for every candidate.)
+   widens unavoidable gaps and avoids pinch points. (Anchor-touching cells are gap 0
+   and are excluded, or the metric collapses to 0 for every candidate.) Each ray stops
+   at the continent's **bounding box** rather than walking the full ∞ sentinel — a pure
+   speedup (~11×) that is value-identical by construction, since nothing outside the box
+   can be hit. `src/__tests__/maximinSpreadBounds.test.ts` pins it differentially against
+   a frozen copy of the unbounded march; keep that oracle frozen.
+
+> **5c and 6 are one intent, not two competing ones:** *take contact wherever it is
+> available; where a gap is forced, make it as wide as possible.* Ordering matters —
+> because each key only filters the survivors of the key above it, spread can never trade
+> a neighbor away for open void. It chooses only among candidates already tied on contact,
+> which is the common case (at most anchors every candidate touches just the owner), so
+> spread still decides most placements.
 7. **Tiebreak — random.** Pick uniformly among survivors. Safe to be truly random
    because the choice is persisted, not recomputed.
 
@@ -556,6 +580,40 @@ unrelated growth.
 (`edge:crossLine:alongStart:width`); an anchor whose every candidate is vetoed reports
 `anchor-all-candidates-flank` with `flankedCandidates`. Both surface in the nms Iterate decision
 trace — see [NIGHT_MARKET_TEMPLATE_SANDBOX.md](./NIGHT_MARKET_TEMPLATE_SANDBOX.md).
+
+#### Duplicate-adjacency deprioritization
+
+> **Implementation.** `server/dal/shared/templatePlacement.ts` — `rectsAbut`, `duplicateAdjacencies`
+> (scored in the candidate loop of `planSpawn`, applied as the first ranking key just after it).
+> Surfaced by `NightMarketPlacementService.formatTraceEvent` (`dupAdj=` / `bestDupAdj=`).
+
+Two copies of the same template sitting flush against each other read as one visually repeated
+block, which is the most obvious tell that the market is procedurally generated. So a candidate is
+scored by `dupAdjacent` = **how many already-placed templates of the same name its footprint
+touches orthogonally** (corner-only contact does not count — no cell pair is orthogonally adjacent,
+so the two never merge visually). Comparison is by `templateName` only, ignoring version: two
+versions of one template are the same building to the eye.
+
+**It is a deprioritization, never a veto.** Unlike the flank ban and the seal constraint, a
+duplicate-adjacent candidate is *not* discarded — it is ranked last. The ranking keeps only the
+minimum-`dupAdjacent` candidates and then applies the street-run / touch-count / spread / random
+keys within that set, so:
+
+- if any duplicate-free candidate exists at the anchor, a duplicate-adjacent one can never win —
+  the penalty outranks street-run scoring, not the other way round;
+- if **every** legal candidate at the anchor is duplicate-adjacent, the best of them is still
+  placed. Blocking here would stall continent growth over a purely cosmetic concern, and the anchor
+  would fall through to a worse (farther-from-origin) attachment or fail outright.
+
+**Scope: within one anchor.** `planSpawn` returns at the first anchor that yields any legal
+candidate, so the penalty only ever discriminates among candidates competing for the *same* anchor.
+It will not abandon a near anchor whose only options are duplicates in favor of a farther anchor —
+that would be a cross-anchor preference, a larger change to the anchor-fallback loop.
+
+**Diagnostics.** Every `candidate-legal` trace event carries `dupAdjacent`, and `anchor-winner`
+carries `bestDupAdjacent`. A `bestDupAdjacent > 0` winner is flagged with
+`⚠ forced duplicate-adjacent` in the nms Iterate trace — it means the deprioritization had to
+yield, which usually signals an authoring gap (too few templates mate that anchor's edge/width).
 
 #### The seal constraint
 
@@ -934,8 +992,8 @@ construction; projection inside `buildStreetGraph` covers T-junctions (N2).
 > under test (see [Street recovery](#street-recovery-mask--street)).
 
 > **Resolved — placement algorithm.** Anchor-driven, run-off-the-origin selection with
-> cell-level legality, distinct-street-run ranking, maximin spread tiebreak, random
-> final tiebreak, and nearest-first anchor fallback with `template-match-not-found`
+> cell-level legality, distinct-street-run ranking, most-templates-touched then maximin
+> spread tiebreaks, random final tiebreak, and nearest-first anchor fallback with `template-match-not-found`
 > logging (see [How a new template attaches](#how-a-new-template-attaches)).
 
 > **Resolved — communal-walkable routing.** Communal cells are for parks/plazas

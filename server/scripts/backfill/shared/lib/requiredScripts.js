@@ -42,6 +42,10 @@ export const REQUIRED_SCRIPTS_ZH = [
   { id: 'chinese/backfill-dictionary-breakdown',      when: 'multiChar', version: 1 },
   { id: 'chinese/backfill-process-definitions-array', when: 'multiDef',  version: 3, validationFields: ['definitions'] },
   { id: 'chinese/backfill-parts-of-speech',           when: 'always',    version: 2, validationFields: ['definitions'] },
+  // Icon search keys off definitions[0] (the dd), so it must follow the two steps that
+  // can still rewrite/reorder `definitions`. Shared across languages (--lang defaults to
+  // zh), hence the un-prefixed id — it lives at scripts/backfill/backfill-icons.js.
+  { id: 'backfill-icons',                             when: 'always',    version: 1, deterministic: true },
   { id: 'chinese/backfill-word-forms',                when: 'always',    version: 3 },
   { id: 'chinese/backfill-hsk-level',                 when: 'always',    version: 2 },
   { id: 'chinese/backfill-long-definitions',          when: 'always',    version: 13, validationFields: ['definitions'] },
@@ -50,6 +54,35 @@ export const REQUIRED_SCRIPTS_ZH = [
   { id: 'chinese/backfill-example-sentences',         when: 'always',    version: 6, validationFields: ['exampleSentence0', 'exampleSentence1', 'exampleSentence2'] },
   { id: 'chinese/backfill-classifier',                when: 'nounPos',   version: 2 },
 ];
+
+/**
+ * The PRE-PASS subset — the minimum work that makes an entry legally `sortable`
+ * ("level-assigned + lead gloss cleaned", migration 110 / docs/DISCOVER_LAZY_ENRICHMENT.md §2-§4).
+ *
+ * These are a strict subset of the full manifest above, in manifest order, and are
+ * re-run by the same scripts — a pre-passed row is simply a row that has completed
+ * these two steps and none of the other eleven. Everything else is Tier-3 enrichment
+ * that only gates `discoverable`.
+ *
+ * Ordering matters: hsk-level reads `definitions` to judge the level, so process-defs
+ * (which rewrites/reorders `definitions`) must NOT run after it on the same row.
+ * The array order below is the run order; it matches REQUIRED_SCRIPTS_ZH's order.
+ */
+export const PRE_PASS_STEP_IDS = [
+  'chinese/backfill-process-definitions-array',
+  'chinese/backfill-hsk-level',
+];
+
+/** The pre-pass steps as full manifest entries (single source of truth for versions). */
+export const PRE_PASS_SCRIPTS_ZH = PRE_PASS_STEP_IDS
+  .map((id) => REQUIRED_SCRIPTS_ZH.find((s) => s.id === id))
+  .filter(Boolean);
+
+if (PRE_PASS_SCRIPTS_ZH.length !== PRE_PASS_STEP_IDS.length) {
+  // A rename in REQUIRED_SCRIPTS_ZH that forgets this list would silently shrink the
+  // pre-pass and let under-enriched rows be promoted to sortable. Fail loudly instead.
+  throw new Error('requiredScripts: PRE_PASS_STEP_IDS references an id missing from REQUIRED_SCRIPTS_ZH');
+}
 
 /** The distinct validation fields any manifest step writes (for approval lookups). */
 export const VALIDATION_FIELDS = [...new Set(
@@ -121,9 +154,11 @@ function stampInfo(row, id) {
  * MISSING a stamp or stamped BELOW the manifest version. Version-aware, but targets
  * ONLY the out-of-date/missing steps — never "stale everything".
  * @param {Set<string>} approvedFields - validator-approved/flagged fields for this row
+ * @param {Array} steps - which manifest steps to consider (default: all; pass
+ *   PRE_PASS_SCRIPTS_ZH to ask only "what stands between this row and sortable?")
  */
-export function pendingSteps(row, approvedFields = new Set()) {
-  return REQUIRED_SCRIPTS_ZH.filter((step) => {
+export function pendingSteps(row, approvedFields = new Set(), steps = REQUIRED_SCRIPTS_ZH) {
+  return steps.filter((step) => {
     if (!appliesTo(step, row)) return false;
     if (isProtected(step, approvedFields)) return false;
     const { present, version } = stampInfo(row, step.id);
@@ -138,8 +173,8 @@ export function pendingSteps(row, approvedFields = new Set()) {
  * script now honors `--stale`, so a version-stale step can always be brought current
  * — there is no stuck state.
  */
-export function isComplete(row, approvedFields = new Set()) {
-  return REQUIRED_SCRIPTS_ZH.every((step) => {
+export function isComplete(row, approvedFields = new Set(), steps = REQUIRED_SCRIPTS_ZH) {
+  return steps.every((step) => {
     if (!appliesTo(step, row)) return true;
     if (isProtected(step, approvedFields)) return true;
     const { present, version } = stampInfo(row, step.id);
@@ -157,9 +192,9 @@ export function isComplete(row, approvedFields = new Set()) {
  * `discoverable = FALSE` filter for exactly this reason (a stale discoverable row heals
  * in place on next sort). Stuck-free because every script now honors `--stale`.
  */
-export function buildIncompletePredicate(alias = 'de') {
+export function buildIncompletePredicate(alias = 'de', steps = REQUIRED_SCRIPTS_ZH) {
   const log = `COALESCE(${alias}."enrichmentLog", '{}'::jsonb)`;
-  const terms = REQUIRED_SCRIPTS_ZH.map((step) => {
+  const terms = steps.map((step) => {
     const parts = [];
     if (step.when !== 'always') parts.push(conditionSql(step.when, alias));
     // missing OR stamped below the manifest version (null version → treated as 0)
@@ -176,6 +211,43 @@ export function buildIncompletePredicate(alias = 'de') {
 /** Convenience: the COMPLETE predicate (row is fully enriched). */
 export function buildCompletePredicate(alias = 'de') {
   return `NOT ${buildIncompletePredicate(alias)}`;
+}
+
+// ── the `sortable` bar (pre-pass promotion gate) ────────────────────────────────
+
+/**
+ * SQL predicate TRUE when the row at `alias` MAY be promoted to `sortable = TRUE`.
+ *
+ * `sortable` means "level-assigned + lead gloss cleaned; safe to show as a discover
+ * sort card" (migration 110). Two independent conditions, deliberately checked
+ * BOTH ways — column state AND stamp state:
+ *
+ *   1. `difficulty BETWEEN 1 AND 6` — the Tier-1 hard filter the discover supply
+ *      queries apply (`StarterPacksService._levelConfig().validPredicate`). A row
+ *      without it is invisible even when flagged, so promoting it would be a lie.
+ *   2. Every applicable pre-pass step is stamped at its current manifest version
+ *      (or validator-protected). The column check alone is not enough: `difficulty`
+ *      could predate the current prompt, and process-defs writes no column of its
+ *      own that a query can distinguish from raw cedict.
+ *
+ * This is the ONLY definition of the bar; `promote-sortable.js` and `oracle-plan.js`
+ * both import it so the planner can never disagree with the promoter.
+ * Referenced by: scripts/backfill/promote-sortable.js, scripts/backfill/oracle-plan.js,
+ * .claude/commands/oracle-backfill.md §3b, docs/DISCOVER_LAZY_ENRICHMENT.md §4b.
+ */
+export function buildSortableReadyPredicate(alias = 'de') {
+  return `(${alias}."difficulty" BETWEEN 1 AND 6`
+    + ` AND NOT ${buildIncompletePredicate(alias, PRE_PASS_SCRIPTS_ZH)})`;
+}
+
+/**
+ * JS twin of buildSortableReadyPredicate for a fetched row (needs `difficulty`,
+ * `definitions`, `enrichmentLog`). Used by the promoter's per-row re-check.
+ */
+export function isSortableReady(row, approvedFields = new Set()) {
+  const level = Number(row.difficulty);
+  if (!Number.isInteger(level) || level < 1 || level > 6) return false;
+  return isComplete(row, approvedFields, PRE_PASS_SCRIPTS_ZH);
 }
 
 export default REQUIRED_SCRIPTS_ZH;

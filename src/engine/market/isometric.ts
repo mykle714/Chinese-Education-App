@@ -107,39 +107,142 @@ export function computePedestrianZ(isoX: number, isoY: number): number {
 }
 
 // ── Sprite-strip slicing ─────────────────────────────────────────────────────
-// Wide stand sprites are rendered as 2F vertical strips so each strip carries
-// its own foot anchor for painter's-algorithm z-sorting.
+// A big building/stand sprite is a SINGLE quad, so a single foot anchor gives it
+// ONE depth for its whole width — which is wrong for anything wider than a tile:
+// a pedestrian standing beside the near-left wing sorts against the same z as one
+// standing beside the near-right wing. The fix is to draw the sprite as a row of
+// full-height VERTICAL STRIPS, each carrying its own foot anchor, so the
+// painter's-algorithm sort resolves per screen-column.
 //
 // Visual placement is PIXEL-FAITHFUL — each strip occupies the same screen
 // column it would in the unsliced sprite (no horizontal stretching, no
 // vertical shift). The sub-texture frame is just the i-th vertical slice of
-// the source.
+// the source, so gaps/overlaps between adjacent strips never appear.
 //
-// Z-sort, however, treats each strip as if its bottom sits on the stand's
-// SW/SE diamond edge at that strip's screen-X. We derive an implied "foot
-// iso" by mapping the strip's center-offset (in screen px) back to iso units
-// along the south edges. This decouples z-depth from the sprite's authored
-// pixel width — gaps/overlaps between adjacent strips never appear because
-// the strips render at their natural pixel positions.
+// Z-sort, however, treats each strip as if its bottom sits on the footprint's
+// two FRONT (south) diamond edges at that strip's screen-X. We derive an implied
+// "foot iso" by mapping the strip's offset (in screen px) back to iso units along
+// those edges: TILE_WIDTH/2 screen px per iso unit horizontally, with strips left
+// of the anchor walking +isoY (the SW edge) and strips right of it walking +isoX
+// (the SE edge). This decouples z-depth from the sprite's authored pixel width.
+//
+// TWO RULES MAKE THE DEPTH SAFE AGAINST THE GROUND IT COVERS — get either wrong and
+// the sprite's own footprint terrain (grass caps, dirt slabs, scatter decor at
+// `z + 0.1`/`+0.15`) sorts IN FRONT of the sprite and punches through its wings:
+//
+//   1. NEAREST EDGE, not centre. A strip's foot is the near end of its span — the
+//      shallowest point of the block inside that screen column. Using the centre
+//      pushes the strip half a strip deeper than the cell it covers, and any terrain
+//      on that cell (whose own z is measured at its front vertex) wins.
+//   2. CUTS ALIGNED TO THE ANCHOR. Boundaries are stepped outward from the anchor in
+//      TILE_WIDTH/2 increments, so each strip covers exactly ONE screen column of the
+//      iso grid. Slicing from texture x = 0 instead leaves every strip straddling two
+//      columns (House.png's base corner sits at x = 90.5, i.e. 5.5px off the grid) and
+//      it inherits the deeper column's depth. The two end strips are partials — the
+//      art's overhang past the footprint (a roof eave), which correctly lands on the
+//      footprint's far corner.
+//
+// Together these guarantee: for every terrain cell the sprite overlaps, the covering
+// strip's implied foot is no deeper than that cell — so the sprite always wins on
+// its own footprint, while still yielding to anything genuinely in front of it.
 
 export interface StripPlacement {
-  /** 0..2F-1, 0 = leftmost column, F-1 = innermost left, F = innermost right, 2F-1 = rightmost. */
+  /** 0-based, left-to-right in TEXTURE order (see `offsetX` for screen order under flip). */
   stripIndex: number;
   /** Sub-texture frame within the source. Always full-height; horizontal slice only. */
   frame: { x: number; y: number; w: number; h: number };
-  /** Screen-X offset of the strip's LEFT edge from the sprite's original anchor (sx0). */
+  /**
+   * Screen-X offset of the strip's LEFT edge from the sprite's anchor point.
+   * Render the strip at `anchorScreenX + offsetX` with `anchor.x = flip ? 1 : 0`
+   * and `scale.x = flip ? -1 : 1` — both combinations draw rightward from that x.
+   */
   offsetX: number;
   /** Implied foot iso (used only for z-sort). */
   footIsoX: number;
   footIsoY: number;
 }
 
+export interface SpriteStripOptions {
+  /** Foot anchor of the whole sprite — the footprint's FRONT (min-iso) corner. */
+  footIsoX: number;
+  footIsoY: number;
+  /** Source texture dimensions in pixels. */
+  texW: number;
+  texH: number;
+  /**
+   * Texture-X of the sprite's anchor point (the pixel that seats on the front
+   * corner). Bottom-centre-anchored art passes `texW / 2`; art with a measured
+   * off-centre base corner (House.png) passes that corner's x.
+   */
+  anchorTexX: number;
+  /**
+   * Width of one strip in TEXTURE px. Defaults to TILE_WIDTH / 2 — one iso unit
+   * of front-edge length per strip, the finest depth granularity the grid can use.
+   * Cuts step outward from (the rounded) `anchorTexX`, so each strip covers exactly
+   * one screen column; the two end strips are whatever partial width remains.
+   */
+  stripTexW?: number;
+  /** Render scale of the sprite (1 when the camera container does the zooming). */
+  scale?: number;
+  /**
+   * Horizontally mirrored sprite. Mirroring swaps which screen side each texture
+   * column lands on, so the depth mapping is computed AFTER the flip.
+   */
+  flip?: boolean;
+}
+
 /**
- * Enumerate `2F` vertical-slice placements for a stand at (swX, swY).
- * Pass the texture dimensions and render scale so screen offsets and
- * implied foot positions can be computed from the asset's actual pixel
- * extent (avoids stretching/gap artifacts when the artwork isn't exactly
- * 2F·TILE_WIDTH/2 wide).
+ * Enumerate the vertical-strip placements for one foot-anchored sprite.
+ *
+ * Consumers: {@link ./house HOUSE_STRIPS} (the House.png building, rendered by
+ * `HouseStripSprites`). Stands go through {@link computeStripPlacements}.
+ */
+export function computeSpriteStrips(opts: SpriteStripOptions): StripPlacement[] {
+  const {
+    footIsoX, footIsoY, texW, texH, anchorTexX,
+    stripTexW = TILE_WIDTH / 2, scale = 1, flip = false,
+  } = opts;
+
+  // Cut boundaries, stepped outward from the anchor so each strip covers exactly one
+  // screen column. Rounded to whole texels: a fractional sub-texture frame resamples
+  // half a texel under `nearest` filtering and shows as a shifted/duplicated column.
+  const anchorCut = Math.min(Math.max(Math.round(anchorTexX), 0), texW);
+  const cuts = new Set<number>([0, texW]);
+  for (let x = anchorCut; x > 0; x -= stripTexW) cuts.add(x);
+  for (let x = anchorCut; x < texW; x += stripTexW) cuts.add(x);
+  const bounds = [...cuts].sort((a, b) => a - b);
+
+  // Signed screen-px offset of a texture-x from the anchor, AFTER any horizontal
+  // mirror (a flip negates the axis, so it also swaps which edge is the left one).
+  const texToScreen = (tx: number) => (tx - anchorTexX) * scale * (flip ? -1 : 1);
+
+  const placements: StripPlacement[] = [];
+  for (let i = 0; i < bounds.length - 1; i++) {
+    const left = bounds[i];
+    const w = bounds[i + 1] - left;
+    const a = texToScreen(left);
+    const b = texToScreen(left + w);
+    const [spanL, spanR] = a <= b ? [a, b] : [b, a];
+    // NEAREST point of the block within this screen column (0 if the span straddles
+    // the anchor), mapped back to iso units along the front edges.
+    const nearOffset = spanL <= 0 && spanR >= 0 ? 0 : Math.min(Math.abs(spanL), Math.abs(spanR));
+    const deltaIso = nearOffset / (TILE_WIDTH / 2);
+    const isLeft = spanR <= 0; // wholly left of the anchor → walks the SW edge
+    placements.push({
+      stripIndex: i,
+      frame: { x: left, y: 0, w, h: texH },
+      offsetX: spanL,
+      footIsoX: isLeft ? footIsoX : footIsoX + deltaIso,
+      footIsoY: isLeft ? footIsoY + deltaIso : footIsoY,
+    });
+  }
+  return placements;
+}
+
+/**
+ * Stand flavour of {@link computeSpriteStrips}: a bottom-centre-anchored, square
+ * `footprintSize`×`footprintSize` sprite cut into exactly `2F` strips (one per iso
+ * unit of its two front edges) regardless of the art's authored pixel width.
  */
 export function computeStripPlacements(
   swX: number,
@@ -149,24 +252,13 @@ export function computeStripPlacements(
   texH: number,
   scale: number,
 ): StripPlacement[] {
-  const F = footprintSize;
-  const stripTexW = texW / (2 * F);
-  const stripScreenW = stripTexW * scale;
-  const placements: StripPlacement[] = [];
-  for (let i = 0; i < 2 * F; i++) {
-    // Center-offset of this strip (signed screen px from sprite center).
-    const centerOffset = (i + 0.5 - F) * stripScreenW;
-    // Map |centerOffset| back to iso units along the SW/SE diamond edge.
-    // TILE_WIDTH/2 screen px per iso unit on the horizontal axis.
-    const deltaIso = Math.abs(centerOffset) / (TILE_WIDTH / 2);
-    const isLeft = i < F;
-    placements.push({
-      stripIndex: i,
-      frame: { x: i * stripTexW, y: 0, w: stripTexW, h: texH },
-      offsetX: (i - F) * stripScreenW,   // left edge of strip relative to sx0
-      footIsoX: isLeft ? swX : swX + deltaIso,
-      footIsoY: isLeft ? swY + deltaIso : swY,
-    });
-  }
-  return placements;
+  return computeSpriteStrips({
+    footIsoX: swX,
+    footIsoY: swY,
+    texW,
+    texH,
+    anchorTexX: texW / 2,
+    stripTexW: texW / (2 * footprintSize),
+    scale,
+  });
 }

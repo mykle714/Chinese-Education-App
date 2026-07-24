@@ -45,12 +45,14 @@ systems in [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md) will consume
   locally, then version 0 is reloaded as the surviving board), **Delete Template**
   (hard-deletes the WHOLE template — every version — from the DB; disabled until one is
   loaded/saved), **Properties** (popup: New version · width / length —
-  **dropdowns** of the selectable board sizes `DIM_OPTIONS` = `2,4,…,20` (every +2 up to 20)
-  then every +8 to `44`; a legacy size outside the list is folded in so it still shows · name — for a
+  **dropdowns** of the selectable board sizes `DIM_OPTIONS` = `4,6,…,24` (every +2 from 4 to 24)
+  then `32,40,48`; `2` is intentionally not offered; a legacy size outside the list is folded in so it still shows · name — for a
   fresh/unnamed template the field is **pre-filled from the server** with a free default
   `template{index}` (`GET …/suggest-name`; a loaded template keeps its own name) · optional
   **description**), **Save** (POST — **upsert by `(name, version)`**:
-  creates or overwrites the active version's row).
+  creates or overwrites the active version's row). Saving an **unnamed** board no longer
+  errors: `handleSubmit` first calls `suggestTemplateName()` and adopts that free default
+  `template{index}` (also written back into the `name` state), so Properties is optional.
 - **Load gallery** (`TemplateLoadGallery.tsx`): pressing **Load** replaces the canvas with a
   scrolling grid of **thumbnails** — every template rendered as a real, scaled isometric board
   (terrain / decor + the spriteless mask tints + filled-slot occupant houses, via the shared
@@ -178,8 +180,12 @@ author must honor them by hand. Keep this list and `AUTHORING_GUIDELINES` in the
 
 1. Only streets of **width 3 or 6** may touch the template edge; other widths are interior-only.
 2. The **maximum street width is 6**.
-3. Outwards-facing streets go at **prescribed edge spots**: measuring from either bottom edge,
-   the first street's bottom edge sits **2 cells** from the edge, then every **8 cells** after.
+3. Streets may only **begin at a red gridline**. Streets are referenced from the **north and
+   east faces**, so the red lattice is counted inward from those two edges
+   (`GRID_MAJOR_EDGE_OFFSET` / `GRID_MAJOR_INTERVAL` in `TemplateEditorViewer.tsx`).
+4. **All streets on a template must be contiguous** — every street cell reachable from every
+   other by street cells alone, with no detached street islands. Applies **per version**, since
+   each version paints its own street mask.
 
 ### Mask semantics
 
@@ -252,10 +258,14 @@ validator explicitly paints shows. Changing the **width or height** in Propertie
 - **`src/engine/market/house.ts`** — the shared, PURE house geometry consumed by the live nmp
   house (`HouseLayer`) and the placeholder-occupant renderers: footprint dims
   (`HOUSE_FOOTPRINT_X`=4, `HOUSE_FOOTPRINT_Y`=5), the measured `HOUSE_ANCHOR` (base-diamond
-  front corner), and `occupantHousesForArea(area)` — which tiles a placeholder area into 1–2
-  `{col,row,flip}` house footprints (5-wide slots use the flipped 5×4 transpose). Shared by the
-  runtime `PlaceholderHouseLayer` and the editor's occupant preview. It imports no asset, so pure
-  layers (`farmTerrain`) can depend on it.
+  front corner), `occupantHousesForArea(area)` — which tiles a placeholder area into 1–2
+  `{col,row,flip}` house footprints (5-wide slots use the flipped 5×4 transpose) — and
+  `HOUSE_STRIPS`, the precomputed per-screen-column depth slices (a house is 4–5 cells wide, so it
+  is never drawn as one sprite; see *Depth sorting: sprite-strip slicing* in
+  [NIGHT_MARKET_FEATURE.md](./NIGHT_MARKET_FEATURE.md)). Shared by the runtime
+  `PlaceholderHouseLayer` and the editor's occupant preview, both of which render through the
+  common `src/features/nightmarket/HouseStripSprites.tsx`. It imports no asset, so pure layers
+  (`farmTerrain`) can depend on it.
 - `editorSurfaceAt(masks, col, row)` → `'dirt' | 'terrain1' | 'terrain2'` (takes just
   `Pick<EditorMasks,'terrain1'|'terrain2'>`, the two masks it reads) and
   `editorDecorRotation(category, surface)` (`category: DecorCategory` = `'family' |
@@ -457,10 +467,12 @@ promote-to-code step) is a downstream decision.
   `isPlankUrl`, `editorDecorCategory`),
   `src/engine/market/freeFarmTileset.ts` (`getDecorUrls`, `getTreeUrls`, `getPlank`),
   `src/engine/market/walkway.ts` (`PLANK_VARIATIONS`),
-  `src/engine/market/house.ts` (footprint dims + `HOUSE_ANCHOR` + `occupantHousesForArea`;
-  also consumed by the live nmp `src/features/nightmarket/HouseLayer.tsx` and the runtime
-  occupant `src/features/nightmarket/PlaceholderHouseLayer.tsx`).
-- View/page: `src/features/nightmarket/{EditorTerrainLayer,TemplateEditorViewer,TemplateEditorPage}.tsx`,
+  `src/engine/market/house.ts` (footprint dims + `HOUSE_ANCHOR` + `HOUSE_STRIPS` +
+  `occupantHousesForArea`; also consumed by the live nmp `src/features/nightmarket/HouseLayer.tsx`
+  and the runtime occupant `src/features/nightmarket/PlaceholderHouseLayer.tsx`).
+- View/page: `src/features/nightmarket/HouseStripSprites.tsx` (the shared strip-sliced house
+  renderer used by all three house surfaces),
+  `src/features/nightmarket/{EditorTerrainLayer,TemplateEditorViewer,TemplateEditorPage}.tsx`,
   `templateEditorApi.ts`.
 - Routing/nav: `src/App.tsx` (`/night-market/template-editor`),
   `src/pages/HomePage.tsx` (validator-gated hub row).

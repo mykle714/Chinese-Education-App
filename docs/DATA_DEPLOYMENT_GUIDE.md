@@ -1,5 +1,11 @@
 # Data Deployment Guide
 
+> ⚠️ **DEPRECATED direction.** Prod is now the **source of truth** for these tables.
+> The local → prod push described here (the `/data-deploy` skill) is deprecated;
+> refresh dev boxes by pulling **down** from prod with `/data-pull` (prod → local),
+> which covers `icons8`, `dictionaryentries_zh`, `dictionaryentries_es`, and
+> `validations`. This guide is retained for reference and rare prod-seeding one-offs.
+
 ## Overview
 
 A "data deployment" syncs one or more local reference tables to production, completely overwriting prod's copy. This is done after running backfill scripts locally that enrich reference data.

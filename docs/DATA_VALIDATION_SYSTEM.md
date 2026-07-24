@@ -61,10 +61,20 @@ auto-deleted after the first action.
 - **`validations`** table — one CURRENT row per (entry, field) reviewed by a validator:
   ```
   id UUID PK · entryId INTEGER · language VARCHAR(10) · field VARCHAR(50)
-  validatorUserId UUID (FK users ON DELETE CASCADE) · validatorName TEXT
+  validatorUserId UUID (NOT a FK — see below) · validatorName TEXT
   action VARCHAR(20) CHECK IN ('approve','flag') · content TEXT NULLABLE · createdAt
   UNIQUE (entryId, language, field, validatorUserId)   -- one record per user/field
   ```
+  `validatorUserId` **was** `FK users(id) ON DELETE CASCADE`, but **migration 120
+  dropped that FK** (the column stays `UUID NOT NULL`). Reason: prod is the source of
+  truth for `validations` and it is pulled DOWN to dev boxes via `/data-pull`; a dev
+  box that lacks a prod validator's account would otherwise abort the restore. The
+  column is never JOINed to `users` — it is a scalar identity only (the unique
+  constraint + the "did I already validate this?" filters), and display uses the
+  denormalized `validatorName` — so the FK bought nothing on reads. Now consistent
+  with `entryId` / `texts.validationEntryId`, which are deliberately unconstrained
+  ids. Trade-off: deleting a user no longer cascades away their validation rows;
+  they survive as (harmless, still-displayable) orphans.
   `content` is the data version approved, copied verbatim from the document the
   validator read — `NULL` for a flag (flag is just a signal; it carries no
   suggested edit). The unique constraint keys the Reader-document path's

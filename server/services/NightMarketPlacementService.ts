@@ -74,33 +74,32 @@ function formatSpawnTrace(event: SpawnTraceEvent): string[] {
     case 'candidate-rejected':
       return [
         `#${event.index}   ✗ ${event.templateName} v${event.version} @(${event.offsetCol},${event.offsetRow}) ` +
-          `— ${event.reason}${event.blocker ? ` vs ${event.blocker}` : ''}`,
+          `— ${event.reason}${event.blocker ? ` vs ${event.blocker}` : ''}` +
+          (event.flankedAnchors?.length ? ` would flank [${event.flankedAnchors.join(' ')}]` : ''),
       ];
     case 'candidate-legal':
       return [
         `#${event.index}   ✓ ${event.templateName} v${event.version} @(${event.offsetCol},${event.offsetRow}) ` +
-          `runs=${event.matchedRuns} spread=${event.spread}` +
-          (event.repeatsNeighbor ? ' ⟳ repeats-neighbour (demoted)' : ''),
+          `${event.isCap ? 'CAP ' : ''}dupAdj=${event.dupAdjacent} runs=${event.matchedRuns} touch=${event.touchCount} spread=${event.spread}`,
       ];
     case 'anchor-winner':
       return [
         `#${event.index} WINNER ${event.chosen.templateName} v${event.chosen.version} ` +
-          `@(${event.chosen.offsetCol},${event.chosen.offsetRow}) — bestRuns=${event.bestRuns} ` +
-          `bestSpread=${event.bestSpread} randomAmong=${event.survivors}` +
-          (event.repeatingCandidates ? ` demotedRepeats=${event.repeatingCandidates}` : '') +
-          // Only reachable when EVERY candidate at this anchor abutted a same-name template.
-          (event.repeatForced ? ' ⟳ repeats-neighbour — DEFERRED, trying further anchors first' : ''),
-      ];
-    case 'repeat-fallback':
-      return [
-        `FALLBACK to anchor #${event.index} — no anchor offered a non-repeating placement; ` +
-          `using ${event.chosen.templateName} v${event.chosen.version} ` +
-          `@(${event.chosen.offsetCol},${event.chosen.offsetRow}) beside its twin`,
+          `@(${event.chosen.offsetCol},${event.chosen.offsetRow}) — bestDupAdj=${event.bestDupAdjacent} ` +
+          `bestRuns=${event.bestRuns} bestTouch=${event.bestTouch} bestSpread=${event.bestSpread} ` +
+          `randomAmong=${event.survivors}` +
+          // Loud for the same reason: a cap ENDS this branch, and it only wins when every legal
+          // candidate at the anchor was a one-anchor dead end.
+          (event.bestIsCap ? ` ⚠ forced cap (no non-cap candidate — road ends here)` : '') +
+          // Loud, because it means the deprioritization had to yield: every legal candidate at this
+          // anchor touched a copy of itself. Usually an authoring gap (too few mateable templates).
+          (event.bestDupAdjacent > 0 ? ` ⚠ forced duplicate-adjacent (no duplicate-free candidate)` : ''),
       ];
     case 'anchor-failed':
       return [
         `#${event.index} FAILED reason=${event.failure.reason}` +
-          (event.failure.sealedCandidates ? ` sealedCandidates=${event.failure.sealedCandidates}` : ''),
+          (event.failure.sealedCandidates ? ` sealedCandidates=${event.failure.sealedCandidates}` : '') +
+          (event.failure.flankedCandidates ? ` flankedCandidates=${event.failure.flankedCandidates}` : ''),
       ];
     case 'exhausted':
       return ['EXHAUSTED — no legal placement at any exposed anchor'];

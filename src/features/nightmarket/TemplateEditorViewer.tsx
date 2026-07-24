@@ -10,7 +10,8 @@ import {
   buildEditorField, editorSurfaceAt, editorDecorRotation,
   type EditorMasks, type DecorCategory,
 } from '../../engine/market/farmTerrain';
-import { HOUSE_ANCHOR, occupantHousesForArea } from '../../engine/market/house';
+import { occupantHousesForArea } from '../../engine/market/house';
+import HouseStripSprites from './HouseStripSprites';
 import {
   placeholderAreaFits, placeholderAreaOverlapsAny, placeholderAreaCells, type PlaceholderArea,
 } from '../../engine/market/placeholderArea';
@@ -172,8 +173,8 @@ const GRID_MAJOR_INTERVAL = 8;
  * Offset of the FIRST major line from the board's north/east edges, in cells. Majors are counted
  * inward from the NE corner — the first red line sits `GRID_MAJOR_EDGE_OFFSET` cells in from the
  * north edge (row `height`) and from the east edge (col `width`), then repeats every
- * {@link GRID_MAJOR_INTERVAL}. This matches the template authoring guideline that measures
- * outward-facing street spots inward from an edge, so the red lattice lands ON those spots.
+ * {@link GRID_MAJOR_INTERVAL}. The red lattice IS the authoring guideline made visible: streets
+ * may only begin at a red line, and streets are referenced from the north and east faces.
  */
 const GRID_MAJOR_EDGE_OFFSET = 4;
 /** Whether a grid line `distanceFromEdge` cells in from its reference edge is a MAJOR (red) line. */
@@ -495,7 +496,8 @@ function PlaceholderAreaTint({ area, zIndex }: { area: PlaceholderArea; zIndex: 
 // a house (or two adjacent houses for a 4×10/10×4 slot; see {@link occupantHousesForArea}) —
 // INSTEAD of the placeholder/condition tint. Seated exactly like a placed house (HOUSE_ANCHOR
 // on each front-corner foot cell, mirrored by negating scale.x). Lifted above the mask tints
-// (MASK_TINT_Z) and z-ordered per foot cell so a 4×10's two houses stack correctly.
+// (MASK_TINT_Z) and z-ordered per foot cell so a 4×10's two houses stack correctly. Depth is
+// per-screen-column (HouseStripSprites), not one z for the whole sprite.
 //
 // That lift is a FLAT-mode convenience (single board, tints are the only thing to clear). In
 // WORLD mode the house is a real tall object competing with other placements' terrain and trees,
@@ -532,18 +534,19 @@ function PlaceholderOccupantHouses(
       {houses.map((h) => {
         const { screenX, screenY } = isoToScreen(h.col, h.row);
         return (
-          <pixiSprite
+          <HouseStripSprites
             key={`occupant:${h.col},${h.row}`}
+            keyPrefix={`occupant:${h.col},${h.row}`}
             texture={texture}
-            x={screenX}
-            y={screenY}
-            anchor={HOUSE_ANCHOR}
-            scale={{ x: h.flip ? -1 : 1, y: 1 }}
-            // Flat: lift above the tints, preserving per-foot-cell iso ordering (nearer = on top).
-            // World: the raw foot-cell depth, so other placements' terrain/trees sort against it.
-            zIndex={(depthMode === 'world' ? 0 : OCCUPANT_HOUSE_Z_BASE)
-              + computeLayerZ(h.col, h.row, 'entity')}
-            eventMode="none"
+            screenX={screenX}
+            screenY={screenY}
+            col={h.col}
+            row={h.row}
+            flip={h.flip}
+            slot="entity"
+            // Flat: lift above the tints, preserving per-strip iso ordering (nearer = on top).
+            // World: the raw foot depth, so other placements' terrain/trees sort against it.
+            zBase={depthMode === 'world' ? 0 : OCCUPANT_HOUSE_Z_BASE}
           />
         );
       })}

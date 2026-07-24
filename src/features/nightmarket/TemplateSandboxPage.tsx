@@ -26,8 +26,8 @@ import { type EditorMasks } from '../../engine/market/farmTerrain';
 import TemplateSandboxViewer, { type SandboxItem, type PendingPlacement } from './TemplateSandboxViewer';
 import TemplateLoadGallery from './TemplateLoadGallery';
 import {
-  listTemplateGallery, loadTemplate, definitionToMasks, NIGHT_MARKET_HUB_TEMPLATE_NAME,
-  type TemplateGalleryEntry,
+  listTemplateGallery, loadTemplate, definitionToMasks,
+  NIGHT_MARKET_HUB_TEMPLATE_NAME, type TemplateGalleryEntry,
 } from './templateEditorApi';
 import {
   listSandboxPlacements, addSandboxPlacement, moveSandboxPlacement,
@@ -189,6 +189,11 @@ function TemplateSandboxPage() {
   }, [placements, defs]);
 
   const selected = placements.find((p) => p.id === selectedId) ?? null;
+  // The hub is the surface's PERMANENT fixture: seeded locked at the origin (by Clear, or by
+  // Iterate on an empty sandbox) and protected server-side from unlock, move and delete
+  // (NightMarketSandboxService), mirroring the runtime's one-hub-at-(0,0) invariant. The
+  // selection-scoped Lock and Delete buttons grey out for it; version and houses still apply.
+  const selectedIsHub = selected?.templateName === NIGHT_MARKET_HUB_TEMPLATE_NAME;
   // Memoized so its array identity is stable across renders — it is a dep of the version-cycle
   // callback, which in turn is a dep of the hotkey effect (a fresh [] each render would
   // re-register the keydown listener on every render).
@@ -283,22 +288,23 @@ function TemplateSandboxPage() {
     }
   }, [pending]);
 
-  // Everything the Add picker may offer. The starter hub is EXCLUDED entirely: the sandbox always
-  // already holds exactly one hub (seeded by Clear/Iterate, permanently locked at the origin),
-  // mirroring the runtime where the continent has a single fixed root — letting an author drop a
-  // second one would model a world the growth algorithm can never produce. Both the cards AND the
-  // dimension dropdowns derive from this list, so a size only the hub has never appears as a filter.
+  // The catalog MINUS the hub. The hub is seed-only on this surface (Clear/Iterate plant exactly
+  // one at the origin and the server rejects a hand-added second), so offering it in the picker
+  // would only ever produce a rejected add. Filtered once here so the dimension dropdowns below
+  // never advertise a size that only the hub has either.
   const pickableEntries = useMemo(
     () => (galleryEntries ?? []).filter((e) => e.name !== NIGHT_MARKET_HUB_TEMPLATE_NAME),
     [galleryEntries],
   );
 
   // Filter the picker's entries by the chosen board dimensions (Any = no constraint).
-  const filteredEntries = useMemo(() => pickableEntries.filter(
-    (e) => (widthFilter === 'any' || e.width === widthFilter) && (heightFilter === 'any' || e.height === heightFilter),
+  const filteredEntries = useMemo(() => (
+    pickableEntries.filter(
+      (e) => (widthFilter === 'any' || e.width === widthFilter) && (heightFilter === 'any' || e.height === heightFilter),
+    )
   ), [pickableEntries, widthFilter, heightFilter]);
 
-  // Distinct widths / heights present among the pickable templates, for the filter dropdowns.
+  // Distinct widths / heights present in the catalog, for the filter dropdowns.
   const widthOptions = useMemo(
     () => [...new Set(pickableEntries.map((e) => e.width))].sort((a, b) => a - b),
     [pickableEntries],
@@ -355,10 +361,9 @@ function TemplateSandboxPage() {
   }, [selected, selectedVersions, handleVersionChange]);
 
   // ── Lock / unlock the selected tile (a locked tile can't be dragged) ──
-  // The starter hub is PERMANENTLY locked — it is the continent's fixed root, so the toggle is
-  // disabled for it (the server rejects the unlock too; this just avoids a pointless round trip).
-  const isHubSelected = selected?.templateName === NIGHT_MARKET_HUB_TEMPLATE_NAME;
   const handleToggleLock = useCallback(async () => {
+    // The hub stays locked forever (see `selectedIsHub`) — the hotkey must no-op for it just like
+    // the greyed-out button, or L would fire a request the server rejects.
     if (!selected || selected.templateName === NIGHT_MARKET_HUB_TEMPLATE_NAME) return;
     const id = selected.id;
     const next = !selected.locked;
@@ -398,7 +403,8 @@ function TemplateSandboxPage() {
   // ── Delete the selected tile (no confirmation: the sandbox is a scratch surface,
   // so re-adding a template is cheap and a modal just slows down iteration) ──
   const handleDelete = useCallback(async () => {
-    if (!selected) return;
+    // The hub is undeletable (see `selectedIsHub`); no-op so the D hotkey matches its disabled button.
+    if (!selected || selected.templateName === NIGHT_MARKET_HUB_TEMPLATE_NAME) return;
     const id = selected.id;
     try {
       await removeSandboxPlacement(id);
@@ -438,17 +444,25 @@ function TemplateSandboxPage() {
     }
   }, [iterating, ensureDef]);
 
-  // ── Clear (= RESET the sandbox) ──
+  // Is the sandbox ALREADY in the post-reset state (nothing but the hub, sitting at the origin)?
+  // That is what Clear produces, so pressing it again would be a no-op — the button greys out.
+  // Note this is deliberately NOT "empty": an empty sandbox (an author who has never cleared or
+  // iterated) still has a reset to perform, namely seeding the hub.
+  const isFreshlyCleared = placements.length === 1
+    && placements[0].templateName === NIGHT_MARKET_HUB_TEMPLATE_NAME
+    && placements[0].offsetCol === 0 && placements[0].offsetRow === 0;
+
+  // ── Clear / RESET the whole sandbox ──
   // Unlike the single-tile delete this DOES confirm: it destroys the entire layout (every tile's
   // position/version/settings), which is far more work to rebuild than re-adding one template.
-  // The server does not leave the board empty — it re-seeds the LOCKED starter hub at the origin,
-  // so the author lands on the same state a new account's continent starts in and Iterate always
-  // has an anchor to grow from. The hub row it returns IS the sandbox's whole contents afterwards.
+  // It does not leave the surface EMPTY — the server reseeds the hub, locked, at the origin, so
+  // Clear returns the sandbox to a fresh account's starting state and the next Iterate has the
+  // same anchor the live growth algorithm would start from.
   const handleClear = useCallback(async () => {
-    if (placements.length === 0) return;
+    if (isFreshlyCleared) return; // already just the hub — nothing to reset
     const ok = await confirm(
-      `Remove all ${placements.length} template${placements.length === 1 ? '' : 's'} and reset the sandbox to the starter hub? This cannot be undone.`,
-      { title: 'Reset the sandbox?', confirmText: 'Clear' },
+      `Remove all ${placements.length} template${placements.length === 1 ? '' : 's'} from your sandbox and start over from the hub at the origin? This cannot be undone.`,
+      { title: 'Reset the sandbox?', confirmText: 'Reset' },
     );
     if (!ok) return;
     try {
@@ -459,7 +473,7 @@ function TemplateSandboxPage() {
     } catch (err) {
       setSnack({ msg: err instanceof Error ? err.message : 'Failed to clear sandbox', sev: 'error' });
     }
-  }, [placements.length, confirm, ensureDef]);
+  }, [isFreshlyCleared, placements.length, confirm, ensureDef]);
 
   // ── Keyboard hotkeys ────────────────────────────────────────────────────────────
   // One bare key per toolbar button (badged on each button): A add · D delete · L lock ·
@@ -610,9 +624,10 @@ function TemplateSandboxPage() {
                 </span>
               </Tooltip>
 
+              {/* Disabled for the hub — it is pinned to the origin and can never be unlocked. */}
               <Tooltip
-                title={isHubSelected
-                  ? 'The starter hub is permanently locked — it is the continent’s fixed root'
+                title={selectedIsHub
+                  ? 'The night market hub is pinned to the origin — it cannot be unlocked'
                   : selected?.locked
                     ? 'Unlock so this template can be dragged (L)'
                     : 'Lock this template so it cannot be dragged (L)'}
@@ -622,7 +637,7 @@ function TemplateSandboxPage() {
                   <Button
                     className="template-sandbox-lock-btn"
                     variant={selected?.locked ? 'contained' : 'outlined'} size="small"
-                    onClick={handleToggleLock} disabled={!selected || isHubSelected}
+                    onClick={handleToggleLock} disabled={!selected || selectedIsHub}
                     sx={paletteBtnSx(!!selected?.locked, SELECTION_ACCENT)}
                   >
                     {selected?.locked ? <LockIcon fontSize="small" /> : <LockOpenIcon fontSize="small" />}
@@ -631,12 +646,18 @@ function TemplateSandboxPage() {
                 </span>
               </Tooltip>
 
-              {/* Deletes immediately — no confirmation (the sandbox is a scratch surface). */}
-              <Tooltip title="Delete the selected template from the sandbox (D)" placement="bottom">
+              {/* Deletes immediately — no confirmation (the sandbox is a scratch surface).
+                  Disabled for the hub, which is a permanent fixture of the surface. */}
+              <Tooltip
+                title={selectedIsHub
+                  ? 'The night market hub is a permanent fixture — it cannot be deleted'
+                  : 'Delete the selected template from the sandbox (D)'}
+                placement="bottom"
+              >
                 <span>
                   <Button
                     className="template-sandbox-delete-btn" variant="outlined" size="small"
-                    onClick={handleDelete} disabled={!selected}
+                    onClick={handleDelete} disabled={!selected || selectedIsHub}
                     sx={paletteBtnSx(false, DESTRUCTIVE_ACCENT)}
                   >
                     <DeleteForeverIcon fontSize="small" />
@@ -678,11 +699,11 @@ function TemplateSandboxPage() {
 
               {/* The only confirmed action here — it destroys every tile's position/version/settings.
                   Deliberately has NO hotkey for the same reason (see the keydown effect). */}
-              <Tooltip title="Clear the whole sandbox" placement="bottom">
+              <Tooltip title="Reset the sandbox — clear every template back to just the locked hub at the origin" placement="bottom">
                 <span>
                   <Button
                     className="template-sandbox-clear-btn" variant="outlined" size="small"
-                    onClick={handleClear} disabled={placements.length === 0}
+                    onClick={handleClear} disabled={isFreshlyCleared}
                     sx={paletteBtnSx(false, DESTRUCTIVE_ACCENT)}
                   >
                     <LayersClearIcon fontSize="small" />

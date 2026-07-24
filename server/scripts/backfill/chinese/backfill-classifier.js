@@ -94,11 +94,15 @@ async function run() {
   try {
     const params = [];
     const wordsFilter = wordsWhereClause('word1', targetWords, params);
+    // See backfill-word-forms.js: an explicit --words list is an instruction to enrich
+    // exactly those rows, including not-yet-discoverable ones coming up through the
+    // pre-pass. Untargeted full-table runs keep the discoverable gate.
+    const discoverableFilter = targetWords?.length ? '' : 'AND discoverable = TRUE';
     const { rows: entries } = await client.query(`
       SELECT id, word1, pronunciation, definitions
       FROM dictionaryentries_zh
       WHERE language = 'zh'
-        AND discoverable = TRUE
+        ${discoverableFilter}
         AND ${doneGate}
         ${wordsFilter}
       ORDER BY id ASC

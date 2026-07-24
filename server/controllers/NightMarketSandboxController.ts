@@ -147,9 +147,9 @@ export class NightMarketSandboxController {
   }
 
   /**
-   * DELETE /api/nightmarket-sandbox → { deleted: <count>, placement: <re-seeded hub row> }.
-   * Clear is a RESET, not an empty: the sandbox comes back holding the locked starter hub at the
-   * origin (see NightMarketSandboxService.clearPlacements).
+   * DELETE /api/nightmarket-sandbox → { deleted: <count>, placement } — RESETS the caller's whole
+   * sandbox: every placement is removed and the starter hub is reseeded locked at the origin. The
+   * seeded row rides back so the client can render the post-reset state without a refetch.
    */
   async clearPlacements(req: Request, res: Response): Promise<void> {
     try {

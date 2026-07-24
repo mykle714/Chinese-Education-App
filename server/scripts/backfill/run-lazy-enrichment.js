@@ -55,7 +55,6 @@ import {
   pendingSteps, isComplete, buildIncompletePredicate, VALIDATION_FIELDS,
 } from './shared/lib/requiredScripts.js';
 
-const CHINESE_DIR = path.join(__dirname, 'chinese');
 // Per-step child command. Override for non-container hosts (e.g. ENRICH_STEP_CMD="node").
 const STEP_CMD = (process.env.ENRICH_STEP_CMD || 'npx tsx').split(' ');
 
@@ -125,9 +124,14 @@ async function loadApprovedFields(client, ids) {
   return byId;
 }
 
-/** Absolute path to a step's script file from its manifest scriptId (chinese/<name>). */
+/**
+ * Absolute path to a step's script file from its manifest scriptId. Manifest ids are
+ * paths relative to this directory — usually `chinese/<name>`, but language-shared steps
+ * (e.g. `backfill-icons`) sit at the backfill root, so resolve the id as given rather
+ * than forcing every step into chinese/ via basename().
+ */
 function scriptPathFor(stepId) {
-  return path.join(CHINESE_DIR, `${path.basename(stepId)}.js`);
+  return path.join(__dirname, `${stepId}.js`);
 }
 
 async function main() {

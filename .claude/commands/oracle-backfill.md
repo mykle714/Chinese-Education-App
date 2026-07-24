@@ -114,6 +114,71 @@ check**) → A2 before enriching. For es use §B1–B2.
 > script, that script re-derives its own `doneGate` — pass `--words=` and let it
 > decide. Never hand-pick rows around a gate.
 
+### 3b. When the discoverable backlog runs dry → grow the sortable corpus
+
+`--discoverable` eventually returns "nothing pending". **That is not the end of the
+run** — it is the switch to the *pre-pass*, and §6 still applies. ~114k zh rows are
+`sortable = FALSE`, i.e. invisible in Sort Cards / Quick Mark entirely, so there is
+always work. Switch to:
+
+```bash
+server/scripts/backfill/run-prod.sh scripts/backfill/oracle-plan.js --unsortable --limit=25
+```
+
+**Why a separate scope:** `sortable` (migration 110) is a much lower bar than
+`discoverable` — "level-assigned + lead gloss cleaned; safe to show as a sort card".
+It needs only the **two-step pre-pass**, not the 13-step manifest:
+
+| # | Step | Applies to |
+|---|---|---|
+| 1 | `chinese/backfill-process-definitions-array` | multi-def rows (cleans + orders `definitions`, synthesizes the ≤20-char lead gloss the card face shows) |
+| 2 | `chinese/backfill-hsk-level` | all rows (`difficulty` ∈ 1..6 — the Tier-1 hard filter; without it the card is invisible even when flagged) |
+
+Order is fixed and non-negotiable: process-defs **before** hsk-level, because the
+level judgment reads `definitions`. `--unsortable` plans against exactly these two
+(`PRE_PASS_SCRIPTS_ZH`) — it will not list the other eleven, which gate `discoverable`
+only.
+
+The planner also **curates and ranks the batch**, and this matters more than it looks:
+the pre-pass will never finish 113k rows, so the ordering decides which slice of the
+corpus learners actually get. It filters to Han-only 1–4 char headwords with real
+definitions (no `%` / `110` / `A片` / `surname X` stubs) and orders by a
+corpus-derived character-commonness score (`CHAR_FREQ_CTE` — a character's score is how
+many headwords contain it; a word scores as its rarest character). Without it, id order
+serves up 鳚/鹮/丂; with it, 大人 / 大学 / 市区 / 国. **Do not hand-pick around this
+filter** — take the batch the planner gives you.
+
+**Then run the three phases of the round, in this order:**
+
+1. **Pre-pass** — the two scripts above, export→author→apply per §4.
+2. **Promote to sortable** — never with hand-written SQL:
+   ```bash
+   server/scripts/backfill/run-prod.sh scripts/backfill/promote-sortable.js --words=<batch>            # dry run
+   server/scripts/backfill/run-prod.sh scripts/backfill/promote-sortable.js --words=<batch> --apply
+   ```
+   It re-derives the bar (`buildSortableReadyPredicate`: valid `difficulty` **and**
+   every applicable pre-pass step stamped at manifest version) and re-asserts it inside
+   the `UPDATE`, so a half-finished batch cannot be flagged. Rows it prints as
+   `✗ not ready` name their own blocker — re-run that step, never force the flag.
+3. **Carry the batch on to discoverable** — the same words are now the round's
+   `--words=` list for the remaining manifest steps. Re-run the planner scoped to them
+   (`--words=<batch>`) and work its plan exactly as §4; the row promotes to
+   `discoverable` only via the normal completeness gate.
+
+If the session ends mid-batch, nothing is inconsistent: unpromoted rows simply stay
+`sortable = FALSE` and a later `promote-sortable.js --limit=N` (no `--words`) sweeps up
+every row that already cleared the bar.
+
+**Marking sortable is deliberately the LAST act of phase 1, not the first.** A row
+flipped `sortable = TRUE` before it has a `difficulty` is filtered out of every supply
+query anyway (`validPredicate`), so pre-marking gains nothing and risks surfacing a raw
+cedict gloss if the level lands before the definitions pass.
+
+**`sortable` is not `discoverable`.** `promote-sortable.js` never touches
+`discoverable`; that flag keeps its meaning and its CLAUDE.md prohibition. Promoting a
+row to sortable ships it to the discover grids only — not to the dictionary, reader, or
+flashcard surfaces.
+
 ### Guardrails baked into the SQL
 
 - **Approved fields are never overwritten.** Every writer of a validatable column
@@ -197,11 +262,32 @@ WHERE val.action IN ('approve','flag') AND d."enrichmentLog" IS NOT NULL
 
 Any hit means a guard is missing — stop and report it.
 
+After a §3b pre-pass round, also confirm the invariant that no row is flagged beyond
+what it earned — every `sortable` row must clear the bar, and `discoverable ⇒ sortable`:
+
+```sql
+-- both counts MUST be 0
+SELECT
+  count(*) FILTER (WHERE sortable AND (difficulty IS NULL OR difficulty NOT BETWEEN 1 AND 6)) AS sortable_without_level,
+  count(*) FILTER (WHERE discoverable AND NOT sortable)                                       AS discoverable_not_sortable
+FROM dictionaryentries_zh WHERE language = 'zh';
+```
+
+A non-zero `sortable_without_level` means something promoted outside
+`promote-sortable.js` — that is the same class of violation as a hand-set
+`discoverable`. Stop and report it.
+
 ## 6. Loop — running to exhaustion is MANDATORY
 
 **The purpose of this skill is to consume the session budget. Do not stop early.**
 Keep looping §3 → §5 with a fresh batch until `five_hour.utilization` reaches ~95%
 or `resets_at` passes. That is the *only* successful end state.
+
+Work is drawn in this priority order, falling through when a scope is exhausted:
+**(1)** `--discoverable` refresh/heal on shipped rows → **(2)** §3b pre-pass on
+`sortable = FALSE` rows, promote them to sortable, then carry that same batch through
+the rest of the manifest to `discoverable`. There is no third state where the loop has
+nothing to do.
 
 There is no discretion here. In particular, **none of the following is a reason to
 stop or to pause for approval** — note the finding, keep going, and put it in the
@@ -215,6 +301,13 @@ final report:
 - Quality self-doubt about authoring and reviewing your own answers. That tension is
   inherent to oracle mode and is disclosed in the report — it is not a stop condition.
 - A round finished cleanly and it feels like a natural place to hand back. It isn't.
+- **`--discoverable` reports nothing pending.** The refresh backlog draining is a
+  *scope change*, not an ending: drop to §3b and start growing the sortable corpus
+  (~114k rows are `sortable = FALSE`). "Out of work" is only ever true if §3b's
+  `--unsortable` plan is *also* empty — which, at oracle pace, it will not be.
+- A batch is blocked on content you decline to author (an explicit or invalid sense).
+  Drop those specific words from the batch, note them for the report, and continue with
+  the rest — do not let a handful of unanswerable rows end the run.
 
 **Only these stop the loop** (all are guardrails, and each ends the run — report why):
 
@@ -283,6 +376,11 @@ Write `docs/oracle-runs/oracle-run-<UTC-timestamp>.md` covering:
 - **Backup**: path from §2, plus the restore command.
 - **Words**: every word newly marked discoverable (id + pronunciation), and every
   already-discoverable row refreshed and why (null column vs `--stale`).
+- **Pre-pass rounds (§3b)**: every word promoted to `sortable` (id + level assigned),
+  every word the promoter rejected with its printed blocker, and the corpus counters
+  before/after (`sortable` / `discoverable` / remaining unsortable). Note which
+  promoted words were then carried on to `discoverable` in the same round and which
+  were left at sortable for a later round.
 - **Per script**: prompts exported, answers authored, rows updated, rows rejected by
   the validator — with the reason and how the answer was corrected.
 - **A1.5 pronunciation decisions**: readings checked, changed, or deliberately left.

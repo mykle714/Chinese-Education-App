@@ -1,7 +1,8 @@
 /**
  * Backfill Script: AI-powered HSK level assignment for dictionaryentries_zh
  *
- * For each discoverable zh entry where difficulty IS NULL, asks Claude Sonnet
+ * For each discoverable zh entry where difficulty IS NULL (or ANY zh entry when
+ * --words= names it — see the pre-pass note on the query), asks Claude Sonnet
  * to assign a single HSK level, stored as the bare integer 1..6 in the smallint
  * `difficulty` column (migration 92; the model's "HSKn" token is parsed to n).
  *
@@ -96,11 +97,18 @@ async function run() {
   try {
     const params = [];
     const wordsFilter = wordsWhereClause('word1', targetWords, params);
+    // An explicit --words list is an instruction to level exactly those rows, so it
+    // drops the discoverable gate: `difficulty` is the Tier-1 prerequisite for a row
+    // ever BECOMING sortable (and later discoverable), so gating the words path on
+    // discoverable = TRUE would make the pre-pass unable to level a single new row —
+    // the same deadlock backfill-icons had. Unscoped runs keep the gate (a full-corpus
+    // sweep is a Batches-API job, not a serial one).
+    const discoverableFilter = targetWords?.length ? '' : 'AND discoverable = TRUE';
     const { rows: entries } = await client.query(`
       SELECT id, word1, pronunciation, definitions
       FROM dictionaryentries_zh
       WHERE language = 'zh'
-        AND discoverable = TRUE
+        ${discoverableFilter}
         AND ${doneGate}
         ${wordsFilter}
       ORDER BY id ASC

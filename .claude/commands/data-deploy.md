@@ -1,4 +1,10 @@
-# Data Deployment (reference tables → prod)
+# Data Deployment (reference tables → prod) — ⚠️ DEPRECATED
+
+> **DEPRECATED.** Prod is now the **source of truth** for these data tables. Do not
+> push them local → prod anymore. To refresh a dev box, pull the tables **down** with
+> [`/data-pull`](./data-pull.md) (prod → local) instead. This file is retained only
+> for reference and for the rare one-off where prod genuinely needs to be seeded from
+> local; if you use it, confirm with the user first.
 
 Sync one or more local reference tables to production, completely overwriting prod's copy.
 

@@ -200,6 +200,66 @@ batch mode — and a decision point on whether `process-definitions-array` (whic
 must first be ported to the shared runner to batch) belongs in the pre-pass at
 full-corpus scale or should itself be partially deferred.
 
+### 4b. Incremental pre-pass — the `/oracle-backfill` path (IMPLEMENTED)
+
+The full-corpus pre-pass above is still unrun. In the meantime the pre-pass also
+runs **incrementally, in batches of ~25 words**, as the fallback scope of the
+`/oracle-backfill` skill (`.claude/commands/oracle-backfill.md` §3b): when the
+refresh backlog on already-`discoverable` rows drains, the loop switches to
+`sortable = FALSE` rows and grows the sortable corpus instead of stopping. It is
+the same two scripts, the same validators, the same stamps — only the *answerer* is
+local (zero API egress), which is why it is viable at all at ~85 h/51k-rows API pace.
+
+**The pre-pass subset is declared once**, in the manifest, as a strict subset of the
+13 steps — `PRE_PASS_STEP_IDS` / `PRE_PASS_SCRIPTS_ZH`
+(`server/scripts/backfill/shared/lib/requiredScripts.js`). Run order is
+process-defs **then** hsk-level, because the level judgment reads `definitions` and
+process-defs rewrites them. A missing id throws at import rather than silently
+shrinking the pre-pass.
+
+**The `sortable` bar is `buildSortableReadyPredicate`** (same file), and it checks
+column state AND stamp state:
+
+```
+difficulty BETWEEN 1 AND 6                       -- the Tier-1 supply filter (§2)
+AND every applicable pre-pass step is stamped at its current manifest version
+    (or validator-protected)
+```
+
+Both halves are needed: `difficulty` alone can predate the current prompt, and
+process-defs writes no column a query can distinguish from raw cedict.
+
+**`promote-sortable.js`** (`server/scripts/backfill/promote-sortable.js`) is the only
+writer of `sortable` outside the lazy worker. Dry-run by default; `--words=` gives a
+per-word verdict, and bare `--limit=N` sweeps up any row that already cleared the bar
+(the self-heal for an interrupted round). It re-asserts the predicate **inside the
+UPDATE**, so a row that changed between SELECT and UPDATE cannot slip through, and it
+**never touches `discoverable`** — that flag keeps its CLAUDE.md prohibition. The
+oracle round then carries the same batch through the remaining manifest steps to
+`discoverable` by the normal completeness gate.
+
+**Planning**: `oracle-plan.js --unsortable` scopes to `sortable = FALSE` and plans
+against `PRE_PASS_SCRIPTS_ZH` only (otherwise all 113,989 rows would report 13 pending
+steps each). It applies a candidate-quality filter — Han-only 1–4 char headwords with
+non-empty definitions, no `surname X` stubs — because plain id order walks the
+punctuation/numeral head of the cedict import (`%`, `110`, `11区`, `3C`, `A片`).
+
+**Ordering (`CHAR_FREQ_CTE`)**: the project has no frequency list or column, so the
+dictionary is used as its own corpus — a character's score is the number of headwords
+it appears in, and a word scores as the MIN over its characters. One grouped pass over
+~114k headwords, sub-second, recomputed per plan so it cannot go stale and needs no new
+column. This is what decides *which* slice of the 113,989 unsortable rows learners get,
+since the pre-pass will never finish all of them: id order yields 鳚 (blenny) / 鹮
+(ibis) / 丂, the score yields 大人 / 大学 / 市区 / 国. Caveat: it ranks characters, not
+words, so a rare word of common characters (人子, 国学) can rank high.
+
+**One deadlock fixed to make this possible**: `backfill-hsk-level.js` gated on
+`discoverable = TRUE` *in addition to* its `--words=` filter, so it could never level a
+row that was not already shipped — i.e. it could never produce the `difficulty` that a
+row needs to become sortable in the first place. A `--words=` run now drops that gate
+(unscoped runs keep it). `backfill-process-definitions-array.js` already had the
+equivalent carve-out on its `--words=` branch.
+
 ## 5. Lazy enrichment — request-time, validator-gated
 
 Layer: **service** — the runtime entry point is
@@ -269,6 +329,17 @@ both the runtime trigger and the manual CLI):
    uses. **No new tracking column** — reuse `enrichmentLog`. Each manifest step also
    carries its `version` (= the script's `SCRIPT_VERSION`, kept in sync by hand) and
    its `validationFields`.
+
+   > **Step ids are paths relative to `scripts/backfill/`, not always `chinese/<name>`.**
+   > Most steps live under `chinese/`, but the language-shared icon step is the bare id
+   > `backfill-icons` (`scripts/backfill/backfill-icons.js`, `--lang=zh|es`). The worker's
+   > `scriptPathFor` therefore resolves the id **as given** (`path.join(__dirname, id)`)
+   > rather than forcing `basename(id)` into `chinese/`. `backfill-icons` runs after
+   > `parts-of-speech` (its icons8 search-term cascade keys off the finalized
+   > `definitions[0]`), is `deterministic: true` — no LLM — but is the one step that makes
+   > outbound HTTP calls, so an oracle run cannot answer it locally. It stamps even when
+   > icons8 returns no match (`iconId` stays NULL), so an unmatchable word still completes
+   > and can be promoted.
 
 3. **Runner executes a word's pending steps** — the runtime trigger spawns
    `server/scripts/backfill/run-lazy-enrichment.js --words=<word> --apply --stale` for
@@ -416,7 +487,12 @@ still surfaced *after* that step's batch completes and *before* the dependent
 - ✅ **Version-aware candidacy + completeness** — `buildIncompletePredicate` / `isComplete`
   / `pendingSteps` all treat a below-manifest-version stamp as pending; the worker's
   candidate query dropped `discoverable = FALSE` so stale shipped rows heal in place (§5).
-- ✅ Pre-pass DECISION recorded = full, batched, `--no-critic` run (§4a) — *not yet run*.
+- ✅ Pre-pass DECISION recorded = full, batched, `--no-critic` run (§4a) — *the
+  full-corpus batched run is still unrun*; an **incremental** pre-pass now runs via
+  `/oracle-backfill` §3b + `promote-sortable.js` (§4b).
+- ✅ **`sortable` promotion outside the full manifest** (`promote-sortable.js`, §4b) —
+  bar declared once as `buildSortableReadyPredicate` over `PRE_PASS_SCRIPTS_ZH`,
+  re-asserted inside the UPDATE; never writes `discoverable`.
 
 **Open:**
 1. **Batch port (DEFERRED, out of current scope)** — port `process-definitions-array`
@@ -440,7 +516,9 @@ still surfaced *after* that step's batch completes and *before* the dependent
   (`_rowsToDiscoverCards`), sort commit (`sortCard`) — fires the **on-sort** trigger (§5).
 - `server/controllers/DictionaryController.ts` — `lookupTerm` fires the **on-open**
   trigger after responding (the eip drill-in / cdp lands here) (§5).
-- `server/scripts/backfill/shared/lib/requiredScripts.js` — the manifest + `buildIncompletePredicate` / `appliesTo` (§5).
+- `server/scripts/backfill/shared/lib/requiredScripts.js` — the manifest + `buildIncompletePredicate` / `appliesTo` (§5); the pre-pass subset `PRE_PASS_STEP_IDS` / `PRE_PASS_SCRIPTS_ZH` and the `sortable` bar `buildSortableReadyPredicate` / `isSortableReady` (§4b).
+- `server/scripts/backfill/promote-sortable.js` — the pre-pass promoter; only writer of `sortable` besides the worker (§4b).
+- `server/scripts/backfill/oracle-plan.js` — round planner; `--unsortable` scope + candidate-quality filter (§4b).
 - `server/scripts/backfill/run-lazy-enrichment.js` — the per-word step runner / manual bulk drain (§5).
 - `server/scripts/backfill/chinese/backfill-hsk-level.js` — difficulty (Sonnet).
 - `server/scripts/backfill/chinese/backfill-process-definitions-array.js` — lead-gloss cleanup.

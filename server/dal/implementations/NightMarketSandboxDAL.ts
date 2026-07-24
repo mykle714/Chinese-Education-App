@@ -64,7 +64,7 @@ export class NightMarketSandboxDAL implements INightMarketSandboxDAL {
     const result = await dbManager.executeQuery<TemplateSandboxRow>(async (client) => {
       return await client.query(
         `INSERT INTO nightmarkettemplatesandbox
-           ("userId", "templateName", "activeVersion", "offsetCol", "offsetRow", locked)
+           ("userId", "templateName", "activeVersion", "offsetCol", "offsetRow", "locked")
          VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING ${NightMarketSandboxDAL.COLS}`,
         [userId, templateName, activeVersion, offsetCol, offsetRow, locked],

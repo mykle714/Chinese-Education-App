@@ -9,6 +9,10 @@
  * only — it imports NO asset (the PNG is pulled in by the view components), so pure
  * layers can depend on it without dragging in an image.
  *
+ * DEPTH. A house is 4–5 cells wide, so it is NOT drawn as one sprite — {@link HOUSE_STRIPS} cuts
+ * it into per-screen-column strips, each with its own foot anchor, so pedestrians and terrain sort
+ * correctly against its near-left and near-right wings independently.
+ *
  * FOOTPRINT. A house occupies a rectangle anchored at its FRONT (near, min-iso) corner —
  * the cell whose south vertex the house's base-diamond front corner seats on — extending
  * +isoX (east) and +isoY (north), i.e. up-and-back into the board from that corner. By
@@ -16,6 +20,8 @@
  * along isoY (4×5); an h-flipped house is the TRANSPOSE (5 along isoX × 4 along isoY) because a
  * horizontal mirror about the front corner swaps the +isoX/+isoY screen directions.
  */
+
+import { computeSpriteStrips } from './isometric';
 
 /** Native `House.png` frame size (square). */
 export const HOUSE_TEX_SIZE = 160;
@@ -37,6 +43,35 @@ export const HOUSE_ANCHOR = {
 export const HOUSE_FOOTPRINT_X = 4;
 /** Default footprint span in cells: 5 along isoY (N–S). */
 export const HOUSE_FOOTPRINT_Y = 5;
+
+/**
+ * Per-screen-column depth slices of `House.png`, relative to a house whose front corner sits at
+ * cell (0, 0) — add the house's `col`/`row` to each strip's `footIsoX`/`footIsoY` to get its real
+ * foot anchor. See the "Sprite-strip slicing" block in {@link ./isometric} for why a building this
+ * wide cannot be depth-sorted as one sprite.
+ *
+ * Two tables because a mirrored house is not just a mirrored image — the flip transposes the
+ * footprint (5 along isoX × 4 along isoY), and the depth mapping is derived from the post-flip
+ * screen position, so `computeSpriteStrips` produces the transposed feet automatically.
+ *
+ * At the default strip width (TILE_WIDTH/2 = 16 tex px) the 160px frame cuts into 9 anchor-aligned
+ * columns plus the two overhang partials (11 strips), and the outermost feet land at ~3.97 / ~5.03
+ * iso units from the front corner — i.e. the art's base diamond really does span the authored 4×5
+ * footprint, with a few px of roof eave past each far edge.
+ */
+export const HOUSE_STRIPS = {
+  normal: computeSpriteStrips({
+    footIsoX: 0, footIsoY: 0,
+    texW: HOUSE_TEX_SIZE, texH: HOUSE_TEX_SIZE,
+    anchorTexX: HOUSE_BASE_CORNER.x,
+  }),
+  flipped: computeSpriteStrips({
+    footIsoX: 0, footIsoY: 0,
+    texW: HOUSE_TEX_SIZE, texH: HOUSE_TEX_SIZE,
+    anchorTexX: HOUSE_BASE_CORNER.x,
+    flip: true,
+  }),
+} as const;
 
 /**
  * Tile a placeholder area (a `{col,row,w,h}` rectangle) with 4×5 house footprints, returning each

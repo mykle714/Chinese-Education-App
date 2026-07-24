@@ -3,10 +3,11 @@
  * § "Edge signatures" + § "Tiling & Placement"). Given the user's current continent of placed
  * templates and the authored catalog, it decides WHERE a new template attaches when every
  * placeholder slot is full: enumerate exposed street anchors → match complement-direction,
- * equal-width catalog anchors → discard illegal seams → discard candidates that would SEAL the
- * continent (the injected {@link SealCheck}) → prefer candidates that do NOT abut a same-name
- * template ({@link sharesSeamWithSameTemplate}) → rank by streets-joined → maximin-spread tiebreak →
- * random tiebreak.
+ * equal-width catalog anchors → discard illegal seams → discard candidates that would FLANK a
+ * still-open street mouth ({@link flankedAnchorKeys}) → discard candidates that would SEAL the
+ * continent (the injected {@link SealCheck}) → rank by non-cap-first ({@link isCapVersion}) →
+ * fewest same-name neighbors → streets-joined → most distinct templates touched → maximin-spread
+ * tiebreak → random tiebreak.
  *
  * LAYER: dep-free shared engine (same `server/dal/shared/*` family as versionSelection). No DB,
  * no React. Consumed by {@link ../../services/NightMarketPlacementService} at spawn time only —
@@ -139,6 +140,20 @@ export interface CatalogVersion {
   anchors: TemplateAnchor[];
 }
 
+/**
+ * Is this catalog version a CAP — a dead end that terminates the road it attaches to?
+ *
+ * A cap has exactly ONE anchor, so once it is placed its single street mouth is consumed by the
+ * seam it mated on and the branch grows no further. Caps are authored deliberately (a market has
+ * to end somewhere) but they are the LAST resort: {@link planSpawn} ranks them below every
+ * non-cap candidate at the same anchor, so a cap only lands when nothing else fits there
+ * (§ "Cap deprioritization"). Zero-anchor versions can never be candidates at all — they never
+ * enter the anchor index — so the check is `=== 1`, not `<= 1`.
+ */
+export function isCapVersion(cv: CatalogVersion): boolean {
+  return cv.anchors.length === 1;
+}
+
 /** `anchorIndex[edge][width]` → every catalog anchor of that complement direction + width. */
 export type AnchorIndex = Map<Cardinal, Map<number, Array<{ cv: CatalogVersion; anchor: TemplateAnchor }>>>;
 
@@ -230,6 +245,74 @@ export function exposedAnchors(placed: readonly PlacedTemplate[]): ExposedAnchor
   return out;
 }
 
+// ── Flank ban (a street mouth may not run alongside a neighbour's outer edge) ───────────────
+
+/**
+ * The two DIAGONAL flank cells of an exposed anchor, in GLOBAL coords: step one cell along the
+ * outward normal, then one cell "left" and "right" along the edge axis — i.e. the cells just off
+ * each END of the anchor's outward-facing mouth.
+ *
+ * (The cells directly outward of the run itself need no test: {@link exposedAnchors} only emits a
+ * cell whose outward neighbour is void, so the whole outward strip is void by construction. The
+ * flanks are the only two cells the ban adds.)
+ */
+export function anchorFlankCells(a: ExposedAnchor): Array<[number, number]> {
+  const [dc, dr] = OUTWARD[a.edge];
+  const alongLo = a.globalAlongStart - 1;
+  const alongHi = a.globalAlongStart + a.width;
+
+  if (a.edge === 'n' || a.edge === 's') {
+    // n/s runs vary by COL on a fixed global row; flanks step outward (±row) and along (±col).
+    const row = a.owner.offsetRow + (a.edge === 'n' ? a.owner.height - 1 : 0) + dr;
+    return [
+      [alongLo, row],
+      [alongHi, row],
+    ];
+  }
+  // e/w runs vary by ROW on a fixed global col.
+  const col = a.owner.offsetCol + (a.edge === 'e' ? a.owner.width - 1 : 0) + dc;
+  return [
+    [col, alongLo],
+    [col, alongHi],
+  ];
+}
+
+/** Stable identity for an exposed anchor: its edge + the global cell run it occupies. */
+function exposedAnchorKey(a: ExposedAnchor): string {
+  const cross =
+    a.edge === 'n' || a.edge === 's'
+      ? a.owner.offsetRow + (a.edge === 'n' ? a.owner.height - 1 : 0)
+      : a.owner.offsetCol + (a.edge === 'e' ? a.owner.width - 1 : 0);
+  return `${a.edge}:${cross}:${a.globalAlongStart}:${a.width}`;
+}
+
+/**
+ * Every exposed anchor in a world whose mouth is FLANKED — a template occupies one of its
+ * {@link anchorFlankCells}. Such a street runs flush alongside that neighbour's outer edge, which
+ * is banned (§ "The flank ban"): the mouth can never be attached to, and the road visually dies
+ * against the side of a board.
+ *
+ * Returned as KEYS rather than a boolean so {@link planSpawn} can veto only the violations a
+ * candidate *introduces*. Vetoing on the absolute count would deadlock spawning forever if a world
+ * already contains a flanked anchor (a layout persisted before this ban existed) — every candidate
+ * would inherit the pre-existing violation and be rejected.
+ */
+export function flankedAnchorKeys(placed: readonly PlacedTemplate[]): Set<string> {
+  const occupied = globalOccupied(footprints(placed));
+  const flanked = new Set<string>();
+
+  for (const a of exposedAnchors(placed)) {
+    for (const [col, row] of anchorFlankCells(a)) {
+      if (occupied.has(tileKey(col, row))) {
+        flanked.add(exposedAnchorKey(a));
+        break;
+      }
+    }
+  }
+
+  return flanked;
+}
+
 // ── Legality (cell-level seam check) ────────────────────────────────────────────────────────
 
 /** A candidate placement (a catalog version pinned at an offset) for legality/scoring checks. */
@@ -293,42 +376,6 @@ export function isPlacementLegal(a: Footprintable, b: Footprintable): boolean {
   return true;
 }
 
-// ── Repetition (same-template adjacency) ────────────────────────────────────────────────────
-
-/**
- * Whether two non-overlapping footprints ABUT — i.e. their rectangles are orthogonally flush and
- * their extents overlap along the seam line, so they share at least one cell pair. Diagonal corner
- * contact is NOT abutment (the ranges must overlap by ≥1 cell, not merely meet at a point), which
- * matches the seam definition {@link isPlacementLegal} enforces walkability across.
- */
-export function sharesSeam(a: Footprintable, b: Footprintable): boolean {
-  const colsOverlap = a.offsetCol < b.offsetCol + b.width && b.offsetCol < a.offsetCol + a.width;
-  const rowsOverlap = a.offsetRow < b.offsetRow + b.height && b.offsetRow < a.offsetRow + a.height;
-  // Vertically flush (one's north edge is the other's south edge) with overlapping columns, or
-  // horizontally flush with overlapping rows.
-  const rowsFlush = a.offsetRow + a.height === b.offsetRow || b.offsetRow + b.height === a.offsetRow;
-  const colsFlush = a.offsetCol + a.width === b.offsetCol || b.offsetCol + b.width === a.offsetCol;
-  return (colsOverlap && rowsFlush) || (rowsOverlap && colsFlush);
-}
-
-/**
- * The VARIETY rule (docs/NIGHT_MARKET_TEMPLATES.md § "No repeated neighbours"): does this candidate
- * land flush against an already-placed template of the SAME NAME? Two copies of one template side by
- * side read as an obvious tile repeat, so {@link planSpawn} sorts such candidates last.
- *
- * SOFT, not a veto: unlike the seal guard this never removes a candidate, because the catalog may
- * legitimately offer only one template that fits a given anchor width — a hard rule would stall
- * growth there. Identity is the template NAME, ignoring version: two versions of one template are
- * the same artwork, and a placement's active version is recomputed on every layout read anyway, so a
- * version-keyed rule would flip as neighbours fill in.
- */
-export function sharesSeamWithSameTemplate(
-  candidate: CandidatePlacement,
-  placed: readonly PlacedTemplate[],
-): boolean {
-  return placed.some((p) => p.templateName === candidate.templateName && sharesSeam(candidate, p));
-}
-
 // ── Scoring ─────────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -370,11 +417,63 @@ export function matchedStreetRuns(candidate: CandidatePlacement, placed: readonl
 }
 
 /**
+ * Whether two DISJOINT footprint rectangles touch orthogonally (share a seam line with a non-empty
+ * overlap along it). Corner-only contact is NOT adjacency — the rectangles meet at a point, no cell
+ * pair is orthogonally adjacent, so the two templates never read as one continuous block.
+ * Assumes non-overlap (guaranteed by {@link isPlacementLegal} before this is ever consulted).
+ */
+export function rectsAbut(a: Footprintable, b: Footprintable): boolean {
+  // Vertical seam: one's right edge is the other's left edge, and their row spans overlap.
+  const rowsOverlap = a.offsetRow < b.offsetRow + b.height && b.offsetRow < a.offsetRow + a.height;
+  const colsOverlap = a.offsetCol < b.offsetCol + b.width && b.offsetCol < a.offsetCol + a.width;
+  const touchVertically = a.offsetCol + a.width === b.offsetCol || b.offsetCol + b.width === a.offsetCol;
+  const touchHorizontally = a.offsetRow + a.height === b.offsetRow || b.offsetRow + b.height === a.offsetRow;
+  return (touchVertically && rowsOverlap) || (touchHorizontally && colsOverlap);
+}
+
+/**
+ * Count how many already-placed instances of the SAME template the candidate would sit flush
+ * against (§ step 4c / step 5). This is a SOFT signal, not a veto: two copies of one template
+ * touching reads as a visually repeated block, so we prefer any other legal candidate — but if the
+ * duplicate is the only thing that mates the anchor, placing it beats stalling continent growth.
+ * Compared by `templateName` only (not version): two versions of one template are the same building
+ * to the eye, which is what this rule is about.
+ */
+export function duplicateAdjacencies(candidate: CandidatePlacement, placed: readonly PlacedTemplate[]): number {
+  return placed.filter((p) => p.templateName === candidate.templateName && rectsAbut(candidate, p)).length;
+}
+
+/**
+ * Count how many DISTINCT placed templates the candidate would sit flush against (§ step 5b).
+ * Maximized: contact is preferred over any gap, so a candidate that seats into a concavity and
+ * abuts three neighbors beats one that juts into void touching only the anchor's owner.
+ *
+ * Contact is FOOTPRINT abutment ({@link rectsAbut}), not street agreement — deliberately the same
+ * predicate {@link ../../../src/engine/market/seamAdjacency} uses to satisfy border-street
+ * conditions, so maximizing it directly raises how many conditions the version selector can
+ * satisfy on the final render. The street-flavored signal already exists separately as
+ * {@link matchedStreetRuns}, which outranks this key.
+ *
+ * Always ≥ 1: {@link solveOffset} pins the candidate flush against its anchor's owner, so the
+ * owner is always counted. Same-name neighbors count here too, but they cannot smuggle a
+ * duplicate past {@link duplicateAdjacencies} — that key filters FIRST, so by the time this one is
+ * consulted every surviving candidate already has the same duplicate count.
+ */
+export function touchedTemplates(candidate: CandidatePlacement, placed: readonly PlacedTemplate[]): number {
+  return placed.filter((p) => rectsAbut(candidate, p)).length;
+}
+
+/**
  * Maximin spread (§ step 6, tiebreak): for each EXPOSED boundary cell of the candidate (outward
  * neighbor void), march along the outward normal to the first occupied cell (void ⇒ the `voidGap`
  * sentinel = "infinite"). Return the MINIMUM such gap over the candidate's exposed cells; a larger
  * minimum spreads templates apart. Anchor-touching cells (outward neighbor immediately occupied,
  * gap 0) are excluded, or the metric collapses to 0 for every candidate.
+ *
+ * Ranked BELOW {@link touchedTemplates}, and the two compose into one intent: take contact wherever
+ * it is available, and where a gap is unavoidable, make it as wide as possible. Contact is settled
+ * first, so this key only ever chooses among candidates that already touch equally many templates —
+ * it can never trade a neighbor away for open void.
  */
 export function maximinSpread(
   candidate: CandidatePlacement,
@@ -384,6 +483,22 @@ export function maximinSpread(
   const occupied = globalOccupied(footprints(placed));
   let min = voidGap;
 
+  // Bounding box of the whole continent, from RECTANGLE bounds only — O(placed), not O(cells).
+  // A ray that has left this box can never hit anything, so there is nothing to find between there
+  // and the `voidGap` sentinel. Without this bound every ray aimed at open void walks the full
+  // `voidGap` (1000 steps) before giving up — ~1000 lookups per exposed perimeter cell, per
+  // candidate, per anchor, and again inside the seal check's re-simulation.
+  let minCol = Infinity;
+  let maxCol = -Infinity;
+  let minRow = Infinity;
+  let maxRow = -Infinity;
+  for (const p of placed) {
+    if (p.offsetCol < minCol) minCol = p.offsetCol;
+    if (p.offsetRow < minRow) minRow = p.offsetRow;
+    if (p.offsetCol + p.width - 1 > maxCol) maxCol = p.offsetCol + p.width - 1;
+    if (p.offsetRow + p.height - 1 > maxRow) maxRow = p.offsetRow + p.height - 1;
+  }
+
   for (const edge of ['n', 's', 'e', 'w'] as const) {
     const [dc, dr] = OUTWARD[edge];
     for (const c of edgeCells(edge, candidate.width, candidate.height)) {
@@ -391,8 +506,24 @@ export function maximinSpread(
       const gr = c.row + candidate.offsetRow;
       // Immediately-occupied outward neighbor ⇒ a seam/anchor-touching cell; excluded.
       if (occupied.has(tileKey(gc + dc, gr + dr))) continue;
+
+      // Early-out: a ray travelling along one axis keeps its OTHER coordinate fixed, so if that
+      // coordinate sits outside the box the ray runs alongside the continent and can never hit it.
+      const fixedInBox = dc === 0 ? gc >= minCol && gc <= maxCol : gr >= minRow && gr <= maxRow;
+      if (!fixedInBox) {
+        min = Math.min(min, voidGap);
+        continue;
+      }
+
+      // Steps until the ray exits the box along its travel axis. `voidGap` still caps it, so a
+      // continent wider than the sentinel yields exactly the pre-bound result.
+      const toBoxEdge = dc === 1 ? maxCol - gc : dc === -1 ? gc - minCol : dr === 1 ? maxRow - gr : gr - minRow;
+      const limit = Math.min(toBoxEdge, voidGap);
+
       let gap = voidGap;
-      for (let step = 1; step <= voidGap; step++) {
+      // Starts at 2, not 1: the `continue` above already tested step 1 for this cell, so step 1 can
+      // never be a hit here. The reachable gap domain is therefore {2..voidGap-1} ∪ {voidGap}.
+      for (let step = 2; step <= limit; step++) {
         if (occupied.has(tileKey(gc + dc * step, gr + dr * step))) {
           gap = step;
           break;
@@ -413,14 +544,21 @@ export interface SpawnPlan {
   version: number;
   offsetCol: number;
   offsetRow: number;
-  matchedRuns: number;
-  spread: number;
   /**
-   * True when the winner abuts a same-name template — only possible when NO non-repeating candidate
-   * existed at the winning anchor (see {@link sharesSeamWithSameTemplate}). Diagnostic only; not
-   * persisted.
+   * Whether the chosen template is a one-anchor CAP ({@link isCapVersion}). `true` on a persisted
+   * plan means every legal candidate at that anchor was a cap — the road had to end there.
    */
-  repeatsNeighbor: boolean;
+  isCap: boolean;
+  /**
+   * How many same-name placed templates this placement ends up flush against. Preferred to be 0;
+   * a non-zero value on a persisted plan means every alternative at that anchor was worse or absent
+   * (see {@link duplicateAdjacencies}).
+   */
+  dupAdjacent: number;
+  matchedRuns: number;
+  /** Distinct placed templates this placement ends up flush against; maximized (≥ 1). */
+  touchCount: number;
+  spread: number;
 }
 
 /** Structured `template-match-not-found` diagnostics (§ "Anchor fallback + logging"). */
@@ -434,12 +572,19 @@ export interface SpawnFailure {
      * is logged loudly with the rejected count so the author can fix the catalog.
      */
     | 'anchor-all-candidates-seal'
+    /**
+     * The anchor had geometrically legal candidates, but EVERY one of them would leave some
+     * still-open street mouth FLANKED by the new template's outer edge (§ "The flank ban").
+     */
+    | 'anchor-all-candidates-flank'
     | 'all-anchors-exhausted';
   edge?: Cardinal;
   width?: number;
   originDistance?: number;
   /** For `anchor-all-candidates-seal`: how many otherwise-legal candidates the seal rule rejected. */
   sealedCandidates?: number;
+  /** For `anchor-all-candidates-flank`: how many otherwise-legal candidates the flank ban rejected. */
+  flankedCandidates?: number;
 }
 
 /**
@@ -496,7 +641,9 @@ export type SpawnTraceEvent =
       version: number;
       offsetCol: number;
       offsetRow: number;
-      reason: 'overlap' | 'seam-mismatch' | 'seals-continent';
+      reason: 'overlap' | 'seam-mismatch' | 'flanks-open-anchor' | 'seals-continent';
+      /** For `flanks-open-anchor`: the anchor keys (`edge:cross:alongStart:width`) it would flank. */
+      flankedAnchors?: string[];
       /** For overlap/seam: the placed template that vetoed it (`name@(col,row)`). */
       blocker?: string;
     }
@@ -507,26 +654,37 @@ export type SpawnTraceEvent =
       version: number;
       offsetCol: number;
       offsetRow: number;
+      /** One-anchor dead end ({@link isCapVersion}) — the top-priority soft penalty. */
+      isCap: boolean;
+      /** Same-name templates this candidate would touch — the soft duplicate-adjacency penalty. */
+      dupAdjacent: number;
       matchedRuns: number;
+      /** Distinct placed templates this candidate would abut — maximized (≥ 1). */
+      touchCount: number;
       spread: number;
-      /** Abuts an already-placed template of the same name (sorted last, never rejected). */
-      repeatsNeighbor: boolean;
     }
   /** The anchor produced legal candidates; these are the tiebreak results. */
   | {
       type: 'anchor-winner';
       index: number;
+      /**
+       * Whether the winner is a cap. `true` means EVERY legal candidate at this anchor was a
+       * one-anchor dead end and the cap deprioritization had to yield.
+       */
+      bestIsCap: boolean;
+      /**
+       * The winning (i.e. lowest) duplicate-adjacency count at this anchor. `> 0` means EVERY legal
+       * candidate touched a copy of itself and the deprioritization had to yield.
+       */
+      bestDupAdjacent: number;
       bestRuns: number;
+      /** The winning (i.e. highest) distinct-templates-touched count at this anchor. */
+      bestTouch: number;
       bestSpread: number;
       survivors: number;
       chosen: SpawnPlan;
-      /** How many candidates the variety preference demoted, and whether it had to yield anyway. */
-      repeatingCandidates: number;
-      repeatForced: boolean;
     }
   | { type: 'anchor-failed'; index: number; failure: SpawnFailure }
-  /** Every anchor's only winners repeated a neighbour; the earliest one is used after all. */
-  | { type: 'repeat-fallback'; index: number; chosen: SpawnPlan }
   | { type: 'exhausted' };
 
 export type SpawnTrace = (event: SpawnTraceEvent) => void;
@@ -560,11 +718,6 @@ function solveOffset(ea: ExposedAnchor, cv: CatalogVersion, bAnchor: TemplateAnc
  *
  * `sealCheck` (optional) is the growth-safety veto — see {@link SealCheck}. Omitting it restores
  * the pre-constraint behavior (used by the geometry-only unit tests).
- *
- * The VARIETY rule (§ "No repeated neighbours") is applied at two levels, both soft: within an
- * anchor, repeating candidates lose to non-repeating ones; across anchors, an anchor whose only
- * winner repeats is DEFERRED — the search keeps walking outward and the deferred winner is used
- * only if no anchor produces a non-repeating one. Growth therefore never stalls on the rule.
  */
 export function planSpawn(
   placed: readonly PlacedTemplate[],
@@ -575,9 +728,10 @@ export function planSpawn(
 ): SpawnResult {
   const index = buildAnchorIndex(catalog);
   const failures: SpawnFailure[] = [];
-  // The best repeating winner seen so far (from the closest such anchor) — used only if the whole
-  // anchor queue fails to produce a non-repeating placement. See the variety rule in the doc block.
-  let repeatFallback: { plan: SpawnPlan; index: number } | null = null;
+
+  // Flank-ban baseline: violations the world ALREADY has (a layout persisted before the ban).
+  // Only NEW violations veto a candidate — see {@link flankedAnchorKeys}.
+  const preFlanked = flankedAnchorKeys(placed);
 
   // Step 1–2: enumerate exposed anchors, closest-to-origin first.
   const anchors = exposedAnchors(placed).sort((a, b) => a.originDistance - b.originDistance);
@@ -634,6 +788,8 @@ export function planSpawn(
     const legal: Scored[] = [];
     // Candidates that passed the seam check but were vetoed by the seal guard (for diagnostics).
     let sealed = 0;
+    // Candidates vetoed by the flank ban (for diagnostics).
+    let flanked = 0;
 
     for (const { cv, anchor } of candidates) {
       const { offsetCol, offsetRow } = solveOffset(ea, cv, anchor);
@@ -664,6 +820,30 @@ export function planSpawn(
         continue;
       }
 
+      // Step 4a (the flank ban): reject a candidate that would leave ANY still-open street mouth —
+      // its own or an already-placed template's — running flush alongside a board's outer edge
+      // (§ "The flank ban"). Cheap (pure geometry over the post-placement world), so it runs before
+      // the version-resimulating seal check.
+      const postFlanked = flankedAnchorKeys([
+        ...placed,
+        { templateName: cv.templateName, activeVersion: cv.version, offsetCol, offsetRow, width: cv.width, height: cv.height, street: cv.street },
+      ]);
+      const introduced = [...postFlanked].filter((k) => !preFlanked.has(k));
+      if (introduced.length > 0) {
+        flanked++;
+        trace?.({
+          type: 'candidate-rejected',
+          index: anchorIndex,
+          templateName: cv.templateName,
+          version: cv.version,
+          offsetCol,
+          offsetRow,
+          reason: 'flanks-open-anchor',
+          flankedAnchors: introduced,
+        });
+        continue;
+      }
+
       // Step 4b (growth safety): reject a candidate that would leave the continent with NO open
       // street condition — a sealed continent can never spawn again. Checked AFTER the cheap seam
       // test because it re-simulates version selection over the whole world (see ./continentSeal).
@@ -681,9 +861,17 @@ export function planSpawn(
         continue;
       }
 
+      // Step 4c (the duplicate-adjacency deprioritization): NOT a veto — scored, then applied as the
+      // FIRST ranking key below, so a self-touching placement is only ever chosen when no
+      // alternative at this anchor is duplicate-free.
+      // Step 4d (the cap deprioritization): also NOT a veto — scored, then applied as the TOP
+      // ranking key below, so a road-ending one-anchor template is only ever chosen when every
+      // alternative at this anchor is also a cap (§ "Cap deprioritization").
+      const isCap = isCapVersion(cv);
+      const dupAdjacent = duplicateAdjacencies(candidate, placed);
       const matchedRuns = matchedStreetRuns(candidate, placed);
+      const touchCount = touchedTemplates(candidate, placed);
       const spread = maximinSpread(candidate, placed);
-      const repeatsNeighbor = sharesSeamWithSameTemplate(candidate, placed);
       trace?.({
         type: 'candidate-legal',
         index: anchorIndex,
@@ -691,20 +879,14 @@ export function planSpawn(
         version: cv.version,
         offsetCol,
         offsetRow,
+        isCap,
+        dupAdjacent,
         matchedRuns,
+        touchCount,
         spread,
-        repeatsNeighbor,
       });
       legal.push({
-        plan: {
-          templateName: cv.templateName,
-          version: cv.version,
-          offsetCol,
-          offsetRow,
-          matchedRuns,
-          spread,
-          repeatsNeighbor,
-        },
+        plan: { templateName: cv.templateName, version: cv.version, offsetCol, offsetRow, isCap, dupAdjacent, matchedRuns, touchCount, spread },
         spread,
       });
     }
@@ -712,6 +894,8 @@ export function planSpawn(
     if (legal.length === 0) {
       // Distinguish "nothing fit the seam" from "everything fit but every fit would seal the
       // continent" — the latter is an authoring gap in the catalog and needs a different fix.
+      // Precedence: the seal veto is the loudest signal (an authoring gap in the catalog), then
+      // the flank ban, then "nothing fit the seam" at all.
       const failure: SpawnFailure =
         sealed > 0
           ? {
@@ -721,49 +905,57 @@ export function planSpawn(
               originDistance: ea.originDistance,
               sealedCandidates: sealed,
             }
-          : { reason: 'anchor-no-legal-candidate', edge: ea.edge, width: ea.width, originDistance: ea.originDistance };
+          : flanked > 0
+            ? {
+                reason: 'anchor-all-candidates-flank',
+                edge: ea.edge,
+                width: ea.width,
+                originDistance: ea.originDistance,
+                flankedCandidates: flanked,
+              }
+            : { reason: 'anchor-no-legal-candidate', edge: ea.edge, width: ea.width, originDistance: ea.originDistance };
       failures.push(failure);
       trace?.({ type: 'anchor-failed', index: anchorIndex, failure });
       continue; // Anchor fallback: try the next-closest anchor.
     }
 
-    // Step 4c (variety): prefer candidates that do NOT abut a same-name template. This outranks the
-    // street-run score on purpose — a repeated neighbour is the most visible tiling artifact, so a
-    // repeat is taken only when the anchor offers nothing else (never when a distinct template fits).
-    const nonRepeating = legal.filter((s) => !s.plan.repeatsNeighbor);
-    const repeatingCandidates = legal.length - nonRepeating.length;
-    const preferred = nonRepeating.length > 0 ? nonRepeating : legal;
-
-    // Step 5: maximize matched street runs. Step 6: maximin spread. Step 7: random among survivors.
-    const bestRuns = Math.max(...preferred.map((s) => s.plan.matchedRuns));
-    const byRuns = preferred.filter((s) => s.plan.matchedRuns === bestRuns);
-    const bestSpread = Math.max(...byRuns.map((s) => s.spread));
-    const survivors = byRuns.filter((s) => s.spread === bestSpread);
+    // Step 4d (as the TOP ranking key): non-caps beat caps. A cap consumes the anchor and ends the
+    // branch, which is a structural loss — worse than any cosmetic same-name adjacency — so it
+    // outranks even the duplicate key. Step 4c: fewest same-name neighbors wins next. Both FILTER
+    // rather than veto, so a set where every candidate is a cap (or every candidate is
+    // duplicate-adjacent) still yields a winner (bestIsCap / bestDup > 0) instead of failing the
+    // anchor — which is exactly the "end the road when it's the only option" behavior.
+    // Step 5: maximize matched street runs. Step 5b: maximize distinct templates touched. Step 6:
+    // maximin spread. Step 7: random among survivors.
+    //
+    // 5b and 6 are ONE intent expressed lexicographically: contact beats any gap, and an unavoidable
+    // gap should be as wide as possible. Because each key only filters the survivors of the key
+    // above it, spread can never trade a neighbor away for open void — it chooses only among
+    // candidates already tied on contact. (Those ties are the common case: at most anchors every
+    // candidate touches exactly the owner, so spread still decides most placements.)
+    const bestIsCap = legal.every((s) => s.plan.isCap); // false as soon as ONE non-cap is legal here
+    const byCap = legal.filter((s) => s.plan.isCap === bestIsCap);
+    const bestDupAdjacent = Math.min(...byCap.map((s) => s.plan.dupAdjacent));
+    const byDup = byCap.filter((s) => s.plan.dupAdjacent === bestDupAdjacent);
+    const bestRuns = Math.max(...byDup.map((s) => s.plan.matchedRuns));
+    const byRuns = byDup.filter((s) => s.plan.matchedRuns === bestRuns);
+    const bestTouch = Math.max(...byRuns.map((s) => s.plan.touchCount));
+    const byTouch = byRuns.filter((s) => s.plan.touchCount === bestTouch);
+    const bestSpread = Math.max(...byTouch.map((s) => s.spread));
+    const survivors = byTouch.filter((s) => s.spread === bestSpread);
     const winner = survivors[Math.floor(rng() * survivors.length)] ?? survivors[0];
     trace?.({
       type: 'anchor-winner',
       index: anchorIndex,
+      bestIsCap,
+      bestDupAdjacent,
       bestRuns,
+      bestTouch,
       bestSpread,
       survivors: survivors.length,
       chosen: winner.plan,
-      repeatingCandidates,
-      repeatForced: winner.plan.repeatsNeighbor,
     });
-
-    // Cross-anchor half of the variety rule: hold a repeating winner back and keep searching the
-    // remaining (further-out) anchors for one that doesn't repeat. Only the FIRST such winner is
-    // kept, so the fallback still honours the closest-anchor ordering.
-    if (winner.plan.repeatsNeighbor) {
-      repeatFallback ??= { plan: winner.plan, index: anchorIndex };
-      continue;
-    }
     return { plan: winner.plan, failures };
-  }
-
-  if (repeatFallback) {
-    trace?.({ type: 'repeat-fallback', index: repeatFallback.index, chosen: repeatFallback.plan });
-    return { plan: repeatFallback.plan, failures };
   }
 
   failures.push({ reason: 'all-anchors-exhausted' });

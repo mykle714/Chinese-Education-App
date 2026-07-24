@@ -82,6 +82,7 @@ server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-numbered-p
 server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-dictionary-breakdown.js --words=未来,摸脉
 server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-process-definitions-array.js --words=未来,摸脉
 server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-parts-of-speech.js --words=未来,摸脉
+server/scripts/backfill/run-prod.sh scripts/backfill/backfill-icons.js --lang=zh --words=未来,摸脉
 server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-word-forms.js --words=未来,摸脉
 server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-hsk-level.js --words=未来,摸脉
 server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-long-definitions.js --words=未来,摸脉
@@ -92,6 +93,8 @@ server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-classifier
 ```
 
 **Parts of speech must run before `backfill-word-forms`, `backfill-long-definitions`, AND `backfill-example-sentences`.** All three depend on `partsOfSpeech`: word-forms and long-definitions only process rows where `partsOfSpeech IS NOT NULL` (they silently skip otherwise), and the example-sentence prompt enforces at least one sentence per listed POS. `backfill-word-forms` additionally reads `definitions[0]`, so it must also run after `backfill-process-definitions-array`. It writes an English `wordForms` map (e.g. `{"past":"ran",...}`), or `{}` when no forms apply, so re-runs skip already-processed rows.
+
+**`backfill-icons` must run AFTER `backfill-process-definitions-array` and `backfill-parts-of-speech`.** Its icons8 search-term cascade starts from the dd (`definitions[0]`), and both of those steps can still rewrite or reorder `definitions` — searching earlier would key the icon off a gloss the card never shows. It is deterministic (no LLM) but it *does* make outbound icons8 HTTP calls, so it is the one manifest step an oracle run cannot answer locally; it lives at the backfill root (not `chinese/`) because it is language-shared — pass `--lang=zh|es`. Rows whose every candidate term misses are stamped with `iconId` left NULL, so a word icons8 does not carry still completes.
 
 **`backfill-cluster-definitions` must run BEFORE `backfill-example-sentences`.** Example-sentences reads `definitionClusters` to tag each generated sentence with the exact `sense` label it demonstrates (and to steer coverage toward every register-4/5 sense); it **skips any row whose `definitionClusters` IS NULL**. Clustering reads the finalized `definitions` (so it must run after `backfill-process-definitions-array`) and writes `definitionClusters` — orthogonal sense clusters; see `docs/DEFINITION_CLUSTERS.md`.
 
@@ -110,6 +113,9 @@ SELECT word1, tone, "hskLevel",
   breakdown IS NOT NULL AS has_breakdown,
   classifier IS NOT NULL AS has_classifier,
   "vernacularScore" IS NOT NULL AS has_vernacular_score,
+  -- has_icon may legitimately be false: icons8 carries no match for some words. The
+  -- backfill-icons stamp in "enrichmentLog" is what proves the step ran.
+  "iconId" IS NOT NULL AS has_icon,
   discoverable
 FROM dictionaryentries_zh
 WHERE word1 = ANY(ARRAY['未来', '摸脉']) AND language = 'zh';
@@ -177,6 +183,8 @@ server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-parts-of-s
 server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-parts-of-speech.js --words=cura,perro
 # 4-7 AI enrichment (auto-scoped to discoverable rows)
 server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-process-definitions-array.js --words=cura,perro
+# icons8 icon — after the definitions steps (search keys off definitions[0]); shared script, es table via --lang
+server/scripts/backfill/run-prod.sh scripts/backfill/backfill-icons.js --lang=es --words=cura,perro
 server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-long-definitions.js
 server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-example-sentences.js
 server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-vernacular-score.js

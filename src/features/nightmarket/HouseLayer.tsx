@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Assets, Graphics, Texture } from 'pixi.js';
-import { isoToScreen, computeLayerZ } from '../../engine/market/isometric';
-import { HOUSE_ANCHOR } from '../../engine/market/house';
+import { isoToScreen } from '../../engine/market/isometric';
+import HouseStripSprites from './HouseStripSprites';
 // House.png lives in the pack's `Originals/` bucket, which freeFarmTileset
 // deliberately excludes (un-adopted source art), so it is imported directly
 // rather than resolved through the tileset registry.
@@ -10,19 +10,15 @@ import houseUrl from '../../assets/free-assets/free-farm-assets/Environment/Orig
 /**
  * HouseLayer — renders a single house prop on the free-farm ground field.
  *
- * LAYER: view. Painted EXACTLY like a scatter decor (see the decor pass in
- * {@link FarmTerrainLayer}): a single foot-anchored sprite z-sorted per-tile
- * within the terrain's `background` slot (`computeLayerZ(...,'background') + 0.1`).
- * Unlike a decor (which is small enough to anchor at the frame's bottom-center),
- * the house uses a measured {@link HOUSE_ANCHOR} so its base-diamond FRONT CORNER
- * — not the frame's bottom-center — lands on the foot tile's front vertex.
- * No whole-plane z-lift — being foot-anchored, tiles BEHIND it draw underneath and
- * tiles IN FRONT draw over it, so it nestles into the ground plane the same way a
- * decor sprite does.
+ * LAYER: view. Foot-anchored into the ground plane like a scatter decor (see the decor
+ * pass in {@link FarmTerrainLayer}), but emitted through {@link ./HouseStripSprites}: its
+ * measured base-diamond FRONT CORNER lands on the foot tile's front vertex, and the sprite
+ * is sliced into per-screen-column strips so its 4-cell width does not collapse to a single
+ * depth. No whole-plane z-lift — being foot-anchored, tiles BEHIND it draw underneath and
+ * tiles IN FRONT draw over it.
  *
- * NOTE: like a decor it sorts in the background slot (below the entity slot), so a
- * future pedestrian would always render in front of it. If the house needs to
- * occlude/ be occluded by walkers, move it to the `entity` slot.
+ * It sorts in the `entity` slot (a decor uses `background`) — see the slot note on the
+ * component below; that is also what lets a pedestrian pass behind it.
  *
  * NOTE: the foot tile is a hard-coded SAMPLE — replace with an authored/
  * data-driven placement once buildings become part of the market layout.
@@ -74,15 +70,19 @@ export default function HouseLayer() {
 
   return (
     <>
-      <pixiSprite
+      <HouseStripSprites
+        keyPrefix="sample-house"
         texture={texture}
-        x={anchorX}
-        y={anchorY}
-        anchor={HOUSE_ANCHOR}
-        // Same z as a scatter decor: just above the foot tile's surface, still within
-        // the background slot (< entity's +0.25).
-        zIndex={computeLayerZ(HOUSE_FOOT.isoX, HOUSE_FOOT.isoY, 'background') + 0.1}
-        eventMode="none"
+        screenX={anchorX}
+        screenY={anchorY}
+        col={HOUSE_FOOT.isoX}
+        row={HOUSE_FOOT.isoY}
+        // `entity`, NOT `background`: each strip now sorts at the depth of the very cells it
+        // covers, so a background-slot house would tie/lose against those cells' own scatter
+        // decor (`decorZ = z + 0.1`) and let the ground punch through its wings. The entity
+        // slot clears every terrain sub-layer by ≥0.1 at equal depth, and pedestrians (also
+        // `entity`) still sort per screen column against it.
+        slot="entity"
       />
       {/* Debug: the sprite's anchor / foot point. */}
       <pixiGraphics draw={drawAnchor} zIndex={ANCHOR_MARKER_Z} />

@@ -49,6 +49,21 @@ export class NightMarketSandboxService {
     }
   }
 
+  /**
+   * Seed the starter hub at the ORIGIN, LOCKED — the sandbox's fixed anchor.
+   *
+   * The hub is a permanent fixture of the surface, mirroring the runtime where exactly one hub
+   * exists per user, planted at (0,0) and never re-spawned or pruned
+   * (NightMarketWorldService.seedHubPlacement / NightMarketPlacementService's spawn filter). Here
+   * it is inserted locked and {@link setPlacementLock} refuses to unlock it, so it can never be
+   * dragged off the origin and every Iterate plans against the same anchor the game would.
+   *
+   * Shared by {@link iteratePlacement} (empty sandbox) and {@link clearPlacements} (reset).
+   */
+  private seedHub(userId: string): Promise<TemplateSandboxRow> {
+    return this.sandboxDAL.insert(userId, NIGHT_MARKET_HUB_TEMPLATE_NAME, 0, 0, 0, true);
+  }
+
   /** Validate a non-empty template name within the catalog's length cap. */
   private cleanTemplateName(name: unknown): string {
     if (typeof name !== 'string') throw new ValidationError('Template name is required');
@@ -94,6 +109,12 @@ export class NightMarketSandboxService {
   ): Promise<TemplateSandboxRow> {
     await this.assertTemplateAuthor(userId);
     const templateName = this.cleanTemplateName(input.templateName);
+    // The hub is SEED-ONLY here, exactly as in the runtime: one per sandbox, planted at the origin
+    // by seedHub. The client hides it from the Add picker; this is the backstop that keeps a
+    // hand-dropped second hub (which would give Iterate a bogus second anchor) out of the table.
+    if (templateName === NIGHT_MARKET_HUB_TEMPLATE_NAME) {
+      throw new ValidationError('The night market hub is seeded at the origin and cannot be added by hand');
+    }
     const activeVersion = this.cleanVersion(input.activeVersion);
     const offsetCol = this.cleanOffset(input.offsetCol, 'offsetCol');
     const offsetRow = this.cleanOffset(input.offsetRow, 'offsetRow');
@@ -106,7 +127,13 @@ export class NightMarketSandboxService {
    *
    * Delegates the geometry to {@link NightMarketPlacementService.planNextPlacement}, the very same
    * planner the live continent grows with (docs/NIGHT_MARKET_TEMPLATES.md § "Placement algorithm"),
-   * so the sandbox preview can never drift from production behaviour. Two cases:
+   * so the sandbox preview can never drift from production behaviour.
+   *
+   * Iterated placements are inserted LOCKED (unlike hand-dropped ones): the position is the
+   * algorithm's answer, and a stray drag would silently turn the preview into a hand-made layout
+   * that the next Iterate then plans against. The author can still unlock with L to move it.
+   *
+   * Two cases:
    *   • EMPTY sandbox → there are no exposed anchors to attach to, so seed the starter hub at the
    *     origin, exactly as NightMarketWorldService.seedHubPlacement does for a new account.
    *   • otherwise → run the planner; `null` (no legal candidate at any anchor) surfaces to the
@@ -116,17 +143,13 @@ export class NightMarketSandboxService {
    * version). That differs from the runtime, which persists activeVersion 0 and lets
    * recompute-on-read settle the version — the sandbox has no version selector pass, so keeping the
    * planner's version is what makes the result visible and inspectable here.
-   *
-   * Both paths insert with `locked = true`: an iterated tile represents what the ALGORITHM decided,
-   * so dragging it would silently invalidate the layout the author is inspecting. The author can
-   * still unlock it from the toolbar (L) to move it by hand.
    */
   async iteratePlacement(userId: string): Promise<{ placement: TemplateSandboxRow | null; trace: string[] }> {
     await this.assertTemplateAuthor(userId);
     const placements = await this.sandboxDAL.findByUser(userId);
 
     if (placements.length === 0) {
-      const placement = await this.sandboxDAL.insert(userId, NIGHT_MARKET_HUB_TEMPLATE_NAME, 0, 0, 0, true);
+      const placement = await this.seedHub(userId);
       return { placement, trace: ['seeded the starter hub at the origin (empty sandbox — no anchors to plan against)'] };
     }
 
@@ -160,10 +183,10 @@ export class NightMarketSandboxService {
   /**
    * Lock / unlock one placement (the move-guard toggle). 404 if it is not the author's.
    *
-   * The starter hub is PERMANENTLY LOCKED: it is the continent's fixed root at the origin, every
-   * planner run grows outward from it, and moving it would make the sandbox model a world the
-   * runtime can never produce. So an unlock request targeting a hub placement is rejected (400)
-   * rather than silently ignored — the client hides the toggle for it, this is the backstop.
+   * The HUB can never be unlocked: it is the sandbox's fixed origin anchor (see {@link seedHub}),
+   * and an unlocked hub could be dragged off (0,0), which would silently change what every
+   * subsequent Iterate plans against. The client greys the Lock button out for it; this is the
+   * server-side backstop.
    */
   async setPlacementLock(userId: string, id: string, locked: unknown): Promise<TemplateSandboxRow> {
     await this.assertTemplateAuthor(userId);
@@ -172,7 +195,7 @@ export class NightMarketSandboxService {
       const existing = await this.sandboxDAL.findById(userId, id);
       if (!existing) throw new NotFoundError('Sandbox placement not found');
       if (existing.templateName === NIGHT_MARKET_HUB_TEMPLATE_NAME) {
-        throw new ValidationError('The starter hub is permanently locked and cannot be unlocked');
+        throw new ValidationError('The night market hub is pinned to the origin and cannot be unlocked');
       }
     }
     const row = await this.sandboxDAL.updateLock(userId, id, locked);
@@ -231,28 +254,40 @@ export class NightMarketSandboxService {
     return row;
   }
 
-  /** Delete one placement (the "Delete selected" action). 404 if not the author's. */
+  /**
+   * Delete one placement (the "Delete selected" action). 404 if not the author's.
+   *
+   * The HUB is undeletable, for the same reason it is unlockable-proof: it is the surface's fixed
+   * anchor, so "exactly one hub, at the origin, always" holds without the author having to press
+   * Clear or Iterate to get it back.
+   */
   async removePlacement(userId: string, id: string): Promise<void> {
     await this.assertTemplateAuthor(userId);
+    const existing = await this.sandboxDAL.findById(userId, id);
+    if (!existing) throw new NotFoundError('Sandbox placement not found');
+    if (existing.templateName === NIGHT_MARKET_HUB_TEMPLATE_NAME) {
+      throw new ValidationError('The night market hub is a permanent fixture and cannot be deleted');
+    }
     const deleted = await this.sandboxDAL.deleteById(userId, id);
     if (!deleted) throw new NotFoundError('Sandbox placement not found');
   }
 
   /**
-   * Clear the caller's sandbox (the "Clear" action) and RESET it to a fresh world: every placement
-   * is removed, then the starter hub is re-seeded LOCKED at the origin — the same state a brand-new
-   * account's continent starts in (NightMarketWorldService.seedHubPlacement). Clear is therefore a
-   * "start over" button, not an "empty the board" button: a truly empty sandbox has no exposed
-   * anchors, so Iterate could only ever seed the hub as its first step anyway. Making the reset
-   * explicit means the author is always looking at a layout the growth algorithm can actually run
-   * against, and the hub — the continent's fixed root — is never accidentally missing or moved.
-   * Author-gated like every other write. Idempotent: clearing an already-reset sandbox re-seeds it.
-   * Returns the removed count plus the freshly seeded hub row.
+   * Clear / RESET the caller's whole sandbox (the "Clear" action). Author-gated like every other
+   * write.
+   *
+   * Not a plain wipe: it deletes every placement and then RESEEDS the starter hub, locked, at the
+   * origin — the same state a brand-new account's market starts from. That makes Clear a true
+   * "back to the beginning" button, so the author's next Iterate plans from the hub exactly as the
+   * live growth algorithm would, instead of from a bare surface with no anchors.
+   *
+   * Returns the number of rows removed (0 when already empty — clearing is idempotent) plus the
+   * freshly seeded hub row, so the client can render it without a refetch.
    */
   async clearPlacements(userId: string): Promise<{ deleted: number; placement: TemplateSandboxRow }> {
     await this.assertTemplateAuthor(userId);
     const deleted = await this.sandboxDAL.deleteAllForUser(userId);
-    const placement = await this.sandboxDAL.insert(userId, NIGHT_MARKET_HUB_TEMPLATE_NAME, 0, 0, 0, true);
+    const placement = await this.seedHub(userId);
     return { deleted, placement };
   }
 

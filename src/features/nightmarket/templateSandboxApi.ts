@@ -186,9 +186,10 @@ function logPlacementTrace(trace: unknown, placement: SandboxPlacement | null): 
 }
 
 /**
- * Clear the sandbox (the "Clear" action) and RESET it: the server wipes every placement, then
- * re-seeds the LOCKED starter hub at the origin. Returns how many placements were removed plus the
- * new hub row, which is the sandbox's entire contents afterwards.
+ * Clear / RESET the whole sandbox (the "Clear" action). Removes every placement and RESEEDS the
+ * starter hub, locked, at the origin — so the surface lands back in the state a brand-new account's
+ * market starts from rather than empty. Returns how many placements were removed plus the freshly
+ * seeded hub row (render it directly; no refetch needed).
  */
 export async function clearSandboxPlacements(): Promise<{ deleted: number; placement: SandboxPlacement }> {
   const res = await fetch(`${API_BASE_URL}/api/nightmarket-sandbox`, {

@@ -146,7 +146,11 @@ export class NightMarketSandboxController {
     }
   }
 
-  /** DELETE /api/nightmarket-sandbox → { deleted: <count> } — clears the caller's whole sandbox. */
+  /**
+   * DELETE /api/nightmarket-sandbox → { deleted: <count>, placement: <re-seeded hub row> }.
+   * Clear is a RESET, not an empty: the sandbox comes back holding the locked starter hub at the
+   * origin (see NightMarketSandboxService.clearPlacements).
+   */
   async clearPlacements(req: Request, res: Response): Promise<void> {
     try {
       const userId = (req as any).user?.userId;
@@ -154,8 +158,8 @@ export class NightMarketSandboxController {
         res.status(401).json({ error: 'User not authenticated', code: 'ERR_NOT_AUTHENTICATED' });
         return;
       }
-      const deleted = await this.service.clearPlacements(userId);
-      res.json({ deleted });
+      const { deleted, placement } = await this.service.clearPlacements(userId);
+      res.json({ deleted, placement });
     } catch (error: any) {
       this.handleError(res, error, 'Failed to clear sandbox', 'ERR_SANDBOX_CLEAR_FAILED');
     }

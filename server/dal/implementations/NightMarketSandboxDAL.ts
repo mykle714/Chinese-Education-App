@@ -34,12 +34,29 @@ export class NightMarketSandboxDAL implements INightMarketSandboxDAL {
     return result.recordset;
   }
 
+  async findById(userId: string, id: string): Promise<TemplateSandboxRow | null> {
+    if (!userId) throw new ValidationError('User ID is required');
+    if (!id) throw new ValidationError('Placement ID is required');
+
+    const result = await dbManager.executeQuery<TemplateSandboxRow>(async (client) => {
+      return await client.query(
+        `SELECT ${NightMarketSandboxDAL.COLS}
+         FROM nightmarkettemplatesandbox
+         WHERE "userId" = $1 AND id = $2`,
+        [userId, id],
+      );
+    });
+
+    return result.recordset[0] ?? null;
+  }
+
   async insert(
     userId: string,
     templateName: string,
     activeVersion: number,
     offsetCol: number,
     offsetRow: number,
+    locked = false,
   ): Promise<TemplateSandboxRow> {
     if (!userId) throw new ValidationError('User ID is required');
     if (!templateName) throw new ValidationError('Template name is required');
@@ -47,10 +64,10 @@ export class NightMarketSandboxDAL implements INightMarketSandboxDAL {
     const result = await dbManager.executeQuery<TemplateSandboxRow>(async (client) => {
       return await client.query(
         `INSERT INTO nightmarkettemplatesandbox
-           ("userId", "templateName", "activeVersion", "offsetCol", "offsetRow")
-         VALUES ($1, $2, $3, $4, $5)
+           ("userId", "templateName", "activeVersion", "offsetCol", "offsetRow", locked)
+         VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING ${NightMarketSandboxDAL.COLS}`,
-        [userId, templateName, activeVersion, offsetCol, offsetRow],
+        [userId, templateName, activeVersion, offsetCol, offsetRow, locked],
       );
     });
 

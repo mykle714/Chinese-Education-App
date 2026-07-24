@@ -49,6 +49,11 @@ click behind its confirmation, never a stray keypress.
   most-conditions version **fully occupied** — the same look a freshly-added tile has here (new
   placements default to `houseMode: 'all'`). The editor's Load picker keeps the default
   `'filled'` (condition-driven) thumbnails; the prop is `TemplateLoadGallery.houseMode`.
+  **The starter hub is filtered OUT of the picker** (`TemplateSandboxPage.pickableEntries`): the
+  sandbox always already holds exactly one, seeded by Clear/Iterate and permanently locked at the
+  origin, mirroring the runtime's single fixed root — a second one would be un-modellable. The
+  Width/Length dropdowns derive from the same filtered list, so a size only the hub has never
+  appears as a filter option.
 - **Placement mode** — the state a template picked from the Add picker is in **before it exists**.
   The template rides the cursor as a translucent **ghost** (green footprint outline, the Add
   accent), footprint **centred on the pointer** (an author aims at the middle of a template, not at
@@ -76,6 +81,12 @@ click behind its confirmation, never a stray keypress.
   **locked** tile cannot be dragged (its selection outline turns red and a 🔒 shows in the
   subtitle); it can still be selected, version-switched, and deleted. Persisted (migration 117), so
   the lock survives reloads.
+  **The starter hub (`night-market-hub`) is permanently locked** — it is the continent's fixed root
+  at the origin that every planner run grows outward from, so moving it would model a world the
+  runtime can never produce. The button is **disabled** whenever a hub tile is selected (with an
+  explanatory tooltip) and the `L` hotkey no-ops on it (`TemplateSandboxPage.isHubSelected` /
+  `handleToggleLock`); `NightMarketSandboxService.setPlacementLock` rejects any unlock of a hub
+  placement with a **400** as the server-side backstop.
 - **Houses** (`H`, enabled when selected) **cycles** `settings.houseMode` for the selected tile
   through three states:
   1. **`all`** — an occupant house in **every placeholder area** of that template (the default
@@ -96,11 +107,19 @@ click behind its confirmation, never a stray keypress.
 - **Delete** (`D`, enabled when selected) removes the selected tile from the sandbox
   **immediately — no confirmation**. The sandbox is a scratch surface, so re-adding one template is
   cheap and a modal only slows down iteration. (Clear is the confirmed one.)
-- **Clear** (no hotkey, enabled when the sandbox is non-empty) removes **every** placement, behind a
-  **confirmation dialog** — unlike a single delete it destroys the whole layout (every tile's
-  position, version and settings), which is expensive to rebuild.
+- **Clear** (no hotkey, enabled when the sandbox is non-empty) is a **RESET**, not an empty: it
+  removes **every** placement and then **re-seeds the starter hub, locked, at the origin** — the
+  exact state a new account's continent starts in (`NightMarketWorldService.seedHubPlacement`). It
+  sits behind a **confirmation dialog** ("Reset the sandbox?") because, unlike a single delete, it
+  destroys the whole layout (every tile's position, version and settings), which is expensive to
+  rebuild. Why re-seed rather than leave it blank: a blank sandbox has no exposed anchors, so
+  Iterate's only possible first step is to seed that same hub — doing it up front means the author is
+  always looking at a layout the growth algorithm can actually run against, and the continent's root
+  is never missing.
   Server: `DELETE /api/nightmarket-sandbox` → `NightMarketSandboxService.clearPlacements` →
-  `NightMarketSandboxDAL.deleteAllForUser` (scoped to the caller).
+  `NightMarketSandboxDAL.deleteAllForUser` (scoped to the caller) + `insert(..., locked = true)`.
+  Response is `{ deleted, placement }`; the client replaces its whole list with that one row
+  (`TemplateSandboxPage.handleClear`).
 - **Iterate** (`I`) runs the **live runtime growth algorithm one step** over the sandbox layout and
   places what it chose — the sandbox's "what would the game actually do here?" control.
   It delegates to `NightMarketPlacementService.planNextPlacement`, the **same planner** the real
@@ -116,6 +135,11 @@ click behind its confirmation, never a stray keypress.
   snackbar — it is the *answer* the author pressed the button for, not an error, and a toast is
   easy to miss while looking at the scene.
   Server: `POST /api/nightmarket-sandbox/iterate` → `NightMarketSandboxService.iteratePlacement`.
+
+  **Iterated tiles spawn LOCKED** (`locked = true` on both the hub-seed and planner paths). An
+  iterated tile is the *algorithm's* answer, so dragging it would silently invalidate the layout the
+  author is inspecting; hand-added tiles (Add) still spawn unlocked. The author can unlock it with
+  `L` at any time to move it by hand.
 
   **Decision trace (browser + server console).** Iterate — and *only* Iterate — passes
   `{ trace: true }` to `planNextPlacement` (`NightMarketSandboxService.iteratePlacement`), which
@@ -138,6 +162,12 @@ click behind its confirmation, never a stray keypress.
   over) or one line per candidate marked `✓` (with `runs=`/`spread=`) or `✗` with its reason
   (`overlap` / `seam-mismatch` **naming the blocking placement**, or `seals-continent`); and finally
   `WINNER` with the tiebreak values, or `EXHAUSTED`.
+  A `✓` candidate may also carry `⟳ repeats-neighbour (demoted)` — it abuts a template of the same
+  name and is sorted behind every non-repeating candidate
+  ([NIGHT_MARKET_TEMPLATES.md § No repeated neighbours](./NIGHT_MARKET_TEMPLATES.md#no-repeated-neighbours)).
+  A `WINNER` so marked is **deferred**, not returned: the search continues outward, and a closing
+  `FALLBACK to anchor #n` line means no anchor at all offered a non-repeating placement — the signal
+  that the catalog is too thin at that anchor width.
   Mechanism, by layer: the pure engine takes an injected `SpawnTrace` callback
   (`server/dal/shared/templatePlacement.ts` — `SpawnTraceEvent`, threaded through `planSpawn`) so it
   stays dep-free and sink-agnostic; the **service** turns events into lines (`formatSpawnTrace`) and
@@ -193,7 +223,7 @@ the unlock economy** (scratch state only).
 | `templateName` | VARCHAR(120) | catalog key — `nightmarkettemplatedefinitions.name` (a name, **not** an FK) |
 | `activeVersion` | INTEGER | this instance's rendered version (per-tile switchable) |
 | `offsetCol` / `offsetRow` | INTEGER | SW (min-iso / near) corner offset in **template-cell units** (`isoX = offsetCol + col`, `isoY = offsetRow + row`). May be negative. |
-| `locked` | BOOLEAN NOT NULL DEFAULT false | **migration 117** — when true, the tile cannot be dragged/moved (a move-guard only; select / version-switch / delete still work). The move SQL guards `locked = false` as a server-side backstop. |
+| `locked` | BOOLEAN NOT NULL DEFAULT false | **migration 117** — when true, the tile cannot be dragged/moved (a move-guard only; select / version-switch / delete still work). The move SQL guards `locked = false` as a server-side backstop. Set to **true at insert** for every algorithm-placed tile (Iterate) and for the Clear/Iterate hub seed; hub rows can never be unlocked. |
 | `settings` | JSONB NOT NULL DEFAULT `'{}'` | **migration 118** — the per-placement **render/view preference bag**. One generic column instead of a new boolean per switch, so future author-facing toggles need no migration. Keys are whitelisted by `NightMarketSandboxService.SETTINGS_SCHEMA` (unknown key ⇒ 400); patches **merge** (`settings \|\| $3::jsonb`). Current keys: `houseMode` (`'all' \| 'placeholder' \| 'none'`, absent = `'all'`; replaced the original boolean `showHouses`, which is now ignored where still present). Structural facts the server reasons about (`offsetCol/Row`, `activeVersion`, `locked`) stay real columns. |
 | `createdAt` | TIMESTAMPTZ | insertion time = chronological order (also the depth-tiebreak) |
 
@@ -212,10 +242,12 @@ from the runtime table intentionally dropped.
   Validates name (≤120), version (non-negative int), and offsets (integers within a generous
   ±10000 sanity clamp — offsets are freeform, so this is a bound, not a placement rule).
 - **DAL** `server/dal/implementations/NightMarketSandboxDAL.ts`
-  (+ `interfaces/INightMarketSandboxDAL.ts`) — pure persistence: `findByUser`, `insert`,
+  (+ `interfaces/INightMarketSandboxDAL.ts`) — pure persistence: `findByUser`,
+  `findById` (backs the hub-unlock guard), `insert` (takes an optional `locked` — false for
+  hand-added tiles, true for the hub seed and every Iterate placement),
   `updatePosition` (guarded by `locked = false`), `updateVersion`, `updateLock`,
   `updateSettings` (jsonb **merge**, so a one-key patch keeps the rest), `deleteById`,
-  `deleteAllForUser` (the Clear action)
+  `deleteAllForUser` (the wipe half of the Clear reset)
   (all scoped to `userId`), and `deleteByTemplateName` (deliberately **not** user-scoped — the
   catalog is global).
 - **Controller** `server/controllers/NightMarketSandboxController.ts` — thin; maps

@@ -79,13 +79,23 @@ function formatSpawnTrace(event: SpawnTraceEvent): string[] {
     case 'candidate-legal':
       return [
         `#${event.index}   ✓ ${event.templateName} v${event.version} @(${event.offsetCol},${event.offsetRow}) ` +
-          `runs=${event.matchedRuns} spread=${event.spread}`,
+          `runs=${event.matchedRuns} spread=${event.spread}` +
+          (event.repeatsNeighbor ? ' ⟳ repeats-neighbour (demoted)' : ''),
       ];
     case 'anchor-winner':
       return [
         `#${event.index} WINNER ${event.chosen.templateName} v${event.chosen.version} ` +
           `@(${event.chosen.offsetCol},${event.chosen.offsetRow}) — bestRuns=${event.bestRuns} ` +
-          `bestSpread=${event.bestSpread} randomAmong=${event.survivors}`,
+          `bestSpread=${event.bestSpread} randomAmong=${event.survivors}` +
+          (event.repeatingCandidates ? ` demotedRepeats=${event.repeatingCandidates}` : '') +
+          // Only reachable when EVERY candidate at this anchor abutted a same-name template.
+          (event.repeatForced ? ' ⟳ repeats-neighbour — DEFERRED, trying further anchors first' : ''),
+      ];
+    case 'repeat-fallback':
+      return [
+        `FALLBACK to anchor #${event.index} — no anchor offered a non-repeating placement; ` +
+          `using ${event.chosen.templateName} v${event.chosen.version} ` +
+          `@(${event.chosen.offsetCol},${event.chosen.offsetRow}) beside its twin`,
       ];
     case 'anchor-failed':
       return [

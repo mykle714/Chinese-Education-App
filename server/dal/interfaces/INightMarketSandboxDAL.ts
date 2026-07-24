@@ -16,13 +16,21 @@ export interface INightMarketSandboxDAL {
   /** All of an author's sandbox placements, in chronological order (createdAt ASC). */
   findByUser(userId: string): Promise<TemplateSandboxRow[]>;
 
-  /** Insert one placement; returns the created row (id/createdAt filled by the DB). */
+  /** One of the author's placements by id, or null if it is missing or another author's. */
+  findById(userId: string, id: string): Promise<TemplateSandboxRow | null>;
+
+  /**
+   * Insert one placement; returns the created row (id/createdAt filled by the DB).
+   * `locked` defaults to false (hand-placed tiles stay draggable); Iterate passes true so
+   * algorithm-placed tiles can't be nudged out of the geometry the planner chose.
+   */
   insert(
     userId: string,
     templateName: string,
     activeVersion: number,
     offsetCol: number,
     offsetRow: number,
+    locked?: boolean,
   ): Promise<TemplateSandboxRow>;
 
   /**

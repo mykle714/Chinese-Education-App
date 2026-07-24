@@ -26,7 +26,8 @@ import { type EditorMasks } from '../../engine/market/farmTerrain';
 import TemplateSandboxViewer, { type SandboxItem, type PendingPlacement } from './TemplateSandboxViewer';
 import TemplateLoadGallery from './TemplateLoadGallery';
 import {
-  listTemplateGallery, loadTemplate, definitionToMasks, type TemplateGalleryEntry,
+  listTemplateGallery, loadTemplate, definitionToMasks, NIGHT_MARKET_HUB_TEMPLATE_NAME,
+  type TemplateGalleryEntry,
 } from './templateEditorApi';
 import {
   listSandboxPlacements, addSandboxPlacement, moveSandboxPlacement,
@@ -282,22 +283,29 @@ function TemplateSandboxPage() {
     }
   }, [pending]);
 
-  // Filter the picker's entries by the chosen board dimensions (Any = no constraint).
-  const filteredEntries = useMemo(() => {
-    if (!galleryEntries) return [];
-    return galleryEntries.filter(
-      (e) => (widthFilter === 'any' || e.width === widthFilter) && (heightFilter === 'any' || e.height === heightFilter),
-    );
-  }, [galleryEntries, widthFilter, heightFilter]);
-
-  // Distinct widths / heights present in the catalog, for the filter dropdowns.
-  const widthOptions = useMemo(
-    () => [...new Set((galleryEntries ?? []).map((e) => e.width))].sort((a, b) => a - b),
+  // Everything the Add picker may offer. The starter hub is EXCLUDED entirely: the sandbox always
+  // already holds exactly one hub (seeded by Clear/Iterate, permanently locked at the origin),
+  // mirroring the runtime where the continent has a single fixed root — letting an author drop a
+  // second one would model a world the growth algorithm can never produce. Both the cards AND the
+  // dimension dropdowns derive from this list, so a size only the hub has never appears as a filter.
+  const pickableEntries = useMemo(
+    () => (galleryEntries ?? []).filter((e) => e.name !== NIGHT_MARKET_HUB_TEMPLATE_NAME),
     [galleryEntries],
   );
+
+  // Filter the picker's entries by the chosen board dimensions (Any = no constraint).
+  const filteredEntries = useMemo(() => pickableEntries.filter(
+    (e) => (widthFilter === 'any' || e.width === widthFilter) && (heightFilter === 'any' || e.height === heightFilter),
+  ), [pickableEntries, widthFilter, heightFilter]);
+
+  // Distinct widths / heights present among the pickable templates, for the filter dropdowns.
+  const widthOptions = useMemo(
+    () => [...new Set(pickableEntries.map((e) => e.width))].sort((a, b) => a - b),
+    [pickableEntries],
+  );
   const heightOptions = useMemo(
-    () => [...new Set((galleryEntries ?? []).map((e) => e.height))].sort((a, b) => a - b),
-    [galleryEntries],
+    () => [...new Set(pickableEntries.map((e) => e.height))].sort((a, b) => a - b),
+    [pickableEntries],
   );
 
   // ── Drag commit: persist a moved tile's new SW-corner offset ──
@@ -347,8 +355,11 @@ function TemplateSandboxPage() {
   }, [selected, selectedVersions, handleVersionChange]);
 
   // ── Lock / unlock the selected tile (a locked tile can't be dragged) ──
+  // The starter hub is PERMANENTLY locked — it is the continent's fixed root, so the toggle is
+  // disabled for it (the server rejects the unlock too; this just avoids a pointless round trip).
+  const isHubSelected = selected?.templateName === NIGHT_MARKET_HUB_TEMPLATE_NAME;
   const handleToggleLock = useCallback(async () => {
-    if (!selected) return;
+    if (!selected || selected.templateName === NIGHT_MARKET_HUB_TEMPLATE_NAME) return;
     const id = selected.id;
     const next = !selected.locked;
     setPlacements((prev) => prev.map((p) => (p.id === id ? { ...p, locked: next } : p)));
@@ -427,24 +438,28 @@ function TemplateSandboxPage() {
     }
   }, [iterating, ensureDef]);
 
-  // ── Clear the whole sandbox ──
+  // ── Clear (= RESET the sandbox) ──
   // Unlike the single-tile delete this DOES confirm: it destroys the entire layout (every tile's
   // position/version/settings), which is far more work to rebuild than re-adding one template.
+  // The server does not leave the board empty — it re-seeds the LOCKED starter hub at the origin,
+  // so the author lands on the same state a new account's continent starts in and Iterate always
+  // has an anchor to grow from. The hub row it returns IS the sandbox's whole contents afterwards.
   const handleClear = useCallback(async () => {
     if (placements.length === 0) return;
     const ok = await confirm(
-      `Remove all ${placements.length} template${placements.length === 1 ? '' : 's'} from your sandbox? This cannot be undone.`,
-      { title: 'Clear the sandbox?', confirmText: 'Clear' },
+      `Remove all ${placements.length} template${placements.length === 1 ? '' : 's'} and reset the sandbox to the starter hub? This cannot be undone.`,
+      { title: 'Reset the sandbox?', confirmText: 'Clear' },
     );
     if (!ok) return;
     try {
-      await clearSandboxPlacements();
-      setPlacements([]);
+      const { placement } = await clearSandboxPlacements();
+      await ensureDef(placement.templateName, placement.activeVersion);
+      setPlacements([placement]);
       setSelectedId(null);
     } catch (err) {
       setSnack({ msg: err instanceof Error ? err.message : 'Failed to clear sandbox', sev: 'error' });
     }
-  }, [placements.length, confirm]);
+  }, [placements.length, confirm, ensureDef]);
 
   // ── Keyboard hotkeys ────────────────────────────────────────────────────────────
   // One bare key per toolbar button (badged on each button): A add · D delete · L lock ·
@@ -596,16 +611,18 @@ function TemplateSandboxPage() {
               </Tooltip>
 
               <Tooltip
-                title={selected?.locked
-                  ? 'Unlock so this template can be dragged (L)'
-                  : 'Lock this template so it cannot be dragged (L)'}
+                title={isHubSelected
+                  ? 'The starter hub is permanently locked — it is the continent’s fixed root'
+                  : selected?.locked
+                    ? 'Unlock so this template can be dragged (L)'
+                    : 'Lock this template so it cannot be dragged (L)'}
                 placement="bottom"
               >
                 <span>
                   <Button
                     className="template-sandbox-lock-btn"
                     variant={selected?.locked ? 'contained' : 'outlined'} size="small"
-                    onClick={handleToggleLock} disabled={!selected}
+                    onClick={handleToggleLock} disabled={!selected || isHubSelected}
                     sx={paletteBtnSx(!!selected?.locked, SELECTION_ACCENT)}
                   >
                     {selected?.locked ? <LockIcon fontSize="small" /> : <LockOpenIcon fontSize="small" />}

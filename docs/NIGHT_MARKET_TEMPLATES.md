@@ -474,6 +474,10 @@ so "every template with a width-`W` west-facing anchor" is a direct
 4b. **Discard placements that would SEAL the continent** — see
    [The seal constraint](#the-seal-constraint). Runs after step 4 because it is the expensive
    check (it re-simulates version selection for the whole world).
+4c. **Demote placements that repeat a neighbour** — see
+   [No repeated neighbours](#no-repeated-neighbours). Unlike 4/4b this is a **preference**, not a
+   veto: a candidate flush against a same-name template is kept but sorted behind every
+   non-repeating candidate, so it wins only when nothing else fits.
 5. **Rank by matched street runs (maximize).** Score = number of **distinct
    contiguous street runs** the placement joins across all its seams, where a matched
    run is a maximal contiguous set of seam cell-pairs that are `street-walkable` on
@@ -497,7 +501,8 @@ tool that steps this algorithm over a scratch layout, see
 [NIGHT_MARKET_TEMPLATE_SANDBOX.md](./NIGHT_MARKET_TEMPLATE_SANDBOX.md)). Keep them on the one
 wrapper so the preview cannot drift from production.
 
-**Anchor fallback + logging.** If **no candidate at the closest anchor is legal**,
+**Anchor fallback + logging.** If **no candidate at the closest anchor is legal** — or its only
+legal winner repeats a neighbour (step 4c) —
 advance to the **next-closest** anchor and repeat, emitting a
 `template-match-not-found` log (account, current template layout, the attempted
 anchor) for each anchor that fails. If **every** exposed anchor fails, emit a final
@@ -518,6 +523,40 @@ The failure reasons (`SpawnFailure.reason`, `templatePlacement.ts`) distinguish 
 | `anchor-no-legal-candidate` | nothing in the catalog fit that anchor's seam |
 | `anchor-all-candidates-seal` | candidates fit, but **every** one would seal the continent (step 4b); `sealedCandidates` counts them |
 | `all-anchors-exhausted` | every exposed anchor failed — no spawn this pass |
+
+#### No repeated neighbours
+
+> **Implementation.** `server/dal/shared/templatePlacement.ts` — `sharesSeam`,
+> `sharesSeamWithSameTemplate` (the predicate), the step-4c filter + the cross-anchor
+> `repeatFallback` inside `planSpawn`, and the `repeatsNeighbor` field on `SpawnPlan` /
+> `candidate-legal` / `anchor-winner` / `repeat-fallback` trace events. Trace formatting:
+> `NightMarketPlacementService.formatSpawnTrace`. Tests: `src/__tests__/templateVariety.test.ts`.
+
+**Rule: two placements of the same template should not sit flush against each other.** A
+duplicated pair side by side is the most visible tiling artifact in the market — it reads as a
+repeated wallpaper tile rather than a grown street — so the planner avoids it.
+
+- **"Touching" = sharing a seam.** The footprint rectangles are orthogonally flush *and* their
+  extents overlap by ≥1 cell, i.e. they share at least one cell pair (`sharesSeam`). This is the
+  same relation [`isPlacementLegal`](#isplacementlegalplaceda-placedb--cell-level-seam-check)
+  checks walkability across. **Diagonal corner contact is allowed** — the rectangles meet at a
+  point, not a cell pair.
+- **Identity is the template NAME, ignoring version.** Two versions of one template are the same
+  artwork; and because a placement's active version is recomputed on every layout read
+  (§ [Version selection rule](#version-selection-rule)), a version-keyed rule would flip its verdict
+  as neighbouring slots fill.
+- **It is SOFT at two levels, and can never stall growth.** Within an anchor, repeating candidates
+  lose to every non-repeating one (this outranks the step-5 street-run score, since a visible repeat
+  costs more than one extra road join). Across anchors, an anchor whose only winner repeats is
+  **deferred** — the search keeps walking outward, and the deferred winner is used only if *no*
+  anchor yields a clean one. A hard veto was rejected because a thin catalog can legitimately offer
+  only one template at a given anchor width, and refusing it would freeze the unlock economy.
+- **`SpawnPlan.repeatsNeighbor`** records whether the chosen placement ended up beside its twin. It
+  is diagnostic only — **not persisted**; nothing downstream branches on it.
+
+**Authoring signal.** A `repeat-fallback` line in the nms Iterate decision trace means the catalog
+is too thin at that anchor width: every template that mates there is already the neighbour. Adding
+one more template with an anchor of that width on the complement edge removes the repeat.
 
 #### The seal constraint
 
@@ -896,7 +935,9 @@ construction; projection inside `buildStreetGraph` covers T-junctions (N2).
 > under test (see [Street recovery](#street-recovery-mask--street)).
 
 > **Resolved — placement algorithm.** Anchor-driven, run-off-the-origin selection with
-> cell-level legality, distinct-street-run ranking, maximin spread tiebreak, random
+> cell-level legality, a same-name-neighbour demotion
+> ([No repeated neighbours](#no-repeated-neighbours)), distinct-street-run ranking, maximin
+> spread tiebreak, random
 > final tiebreak, and nearest-first anchor fallback with `template-match-not-found`
 > logging (see [How a new template attaches](#how-a-new-template-attaches)).
 
@@ -935,7 +976,8 @@ Code this doc will depend on / drive once implemented:
   [Placeholder areas](#placeholder-areas),
   [Template versions](#template-versions--full-snapshots)).
 - **New placement module** (server-side, runs at spawn time) — the anchor-driven
-  algorithm + `isPlacementLegal` cell-level seam check + `template-match-not-found`
+  algorithm + `isPlacementLegal` cell-level seam check + `sharesSeamWithSameTemplate` variety
+  preference (see [No repeated neighbours](#no-repeated-neighbours)) + `template-match-not-found`
   logging (see [How a new template attaches](#how-a-new-template-attaches)).
 - `server/dal/shared/continentSeal.ts` — the seal guard + `resolvePlacementVersion`, the shared
   per-placement version resolver used by BOTH the guard and

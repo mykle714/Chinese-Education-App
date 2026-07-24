@@ -4,7 +4,8 @@
  * templates and the authored catalog, it decides WHERE a new template attaches when every
  * placeholder slot is full: enumerate exposed street anchors → match complement-direction,
  * equal-width catalog anchors → discard illegal seams → discard candidates that would SEAL the
- * continent (the injected {@link SealCheck}) → rank by streets-joined → maximin-spread tiebreak →
+ * continent (the injected {@link SealCheck}) → prefer candidates that do NOT abut a same-name
+ * template ({@link sharesSeamWithSameTemplate}) → rank by streets-joined → maximin-spread tiebreak →
  * random tiebreak.
  *
  * LAYER: dep-free shared engine (same `server/dal/shared/*` family as versionSelection). No DB,
@@ -292,6 +293,42 @@ export function isPlacementLegal(a: Footprintable, b: Footprintable): boolean {
   return true;
 }
 
+// ── Repetition (same-template adjacency) ────────────────────────────────────────────────────
+
+/**
+ * Whether two non-overlapping footprints ABUT — i.e. their rectangles are orthogonally flush and
+ * their extents overlap along the seam line, so they share at least one cell pair. Diagonal corner
+ * contact is NOT abutment (the ranges must overlap by ≥1 cell, not merely meet at a point), which
+ * matches the seam definition {@link isPlacementLegal} enforces walkability across.
+ */
+export function sharesSeam(a: Footprintable, b: Footprintable): boolean {
+  const colsOverlap = a.offsetCol < b.offsetCol + b.width && b.offsetCol < a.offsetCol + a.width;
+  const rowsOverlap = a.offsetRow < b.offsetRow + b.height && b.offsetRow < a.offsetRow + a.height;
+  // Vertically flush (one's north edge is the other's south edge) with overlapping columns, or
+  // horizontally flush with overlapping rows.
+  const rowsFlush = a.offsetRow + a.height === b.offsetRow || b.offsetRow + b.height === a.offsetRow;
+  const colsFlush = a.offsetCol + a.width === b.offsetCol || b.offsetCol + b.width === a.offsetCol;
+  return (colsOverlap && rowsFlush) || (rowsOverlap && colsFlush);
+}
+
+/**
+ * The VARIETY rule (docs/NIGHT_MARKET_TEMPLATES.md § "No repeated neighbours"): does this candidate
+ * land flush against an already-placed template of the SAME NAME? Two copies of one template side by
+ * side read as an obvious tile repeat, so {@link planSpawn} sorts such candidates last.
+ *
+ * SOFT, not a veto: unlike the seal guard this never removes a candidate, because the catalog may
+ * legitimately offer only one template that fits a given anchor width — a hard rule would stall
+ * growth there. Identity is the template NAME, ignoring version: two versions of one template are
+ * the same artwork, and a placement's active version is recomputed on every layout read anyway, so a
+ * version-keyed rule would flip as neighbours fill in.
+ */
+export function sharesSeamWithSameTemplate(
+  candidate: CandidatePlacement,
+  placed: readonly PlacedTemplate[],
+): boolean {
+  return placed.some((p) => p.templateName === candidate.templateName && sharesSeam(candidate, p));
+}
+
 // ── Scoring ─────────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -378,6 +415,12 @@ export interface SpawnPlan {
   offsetRow: number;
   matchedRuns: number;
   spread: number;
+  /**
+   * True when the winner abuts a same-name template — only possible when NO non-repeating candidate
+   * existed at the winning anchor (see {@link sharesSeamWithSameTemplate}). Diagnostic only; not
+   * persisted.
+   */
+  repeatsNeighbor: boolean;
 }
 
 /** Structured `template-match-not-found` diagnostics (§ "Anchor fallback + logging"). */
@@ -457,10 +500,33 @@ export type SpawnTraceEvent =
       /** For overlap/seam: the placed template that vetoed it (`name@(col,row)`). */
       blocker?: string;
     }
-  | { type: 'candidate-legal'; index: number; templateName: string; version: number; offsetCol: number; offsetRow: number; matchedRuns: number; spread: number }
+  | {
+      type: 'candidate-legal';
+      index: number;
+      templateName: string;
+      version: number;
+      offsetCol: number;
+      offsetRow: number;
+      matchedRuns: number;
+      spread: number;
+      /** Abuts an already-placed template of the same name (sorted last, never rejected). */
+      repeatsNeighbor: boolean;
+    }
   /** The anchor produced legal candidates; these are the tiebreak results. */
-  | { type: 'anchor-winner'; index: number; bestRuns: number; bestSpread: number; survivors: number; chosen: SpawnPlan }
+  | {
+      type: 'anchor-winner';
+      index: number;
+      bestRuns: number;
+      bestSpread: number;
+      survivors: number;
+      chosen: SpawnPlan;
+      /** How many candidates the variety preference demoted, and whether it had to yield anyway. */
+      repeatingCandidates: number;
+      repeatForced: boolean;
+    }
   | { type: 'anchor-failed'; index: number; failure: SpawnFailure }
+  /** Every anchor's only winners repeated a neighbour; the earliest one is used after all. */
+  | { type: 'repeat-fallback'; index: number; chosen: SpawnPlan }
   | { type: 'exhausted' };
 
 export type SpawnTrace = (event: SpawnTraceEvent) => void;
@@ -494,6 +560,11 @@ function solveOffset(ea: ExposedAnchor, cv: CatalogVersion, bAnchor: TemplateAnc
  *
  * `sealCheck` (optional) is the growth-safety veto — see {@link SealCheck}. Omitting it restores
  * the pre-constraint behavior (used by the geometry-only unit tests).
+ *
+ * The VARIETY rule (§ "No repeated neighbours") is applied at two levels, both soft: within an
+ * anchor, repeating candidates lose to non-repeating ones; across anchors, an anchor whose only
+ * winner repeats is DEFERRED — the search keeps walking outward and the deferred winner is used
+ * only if no anchor produces a non-repeating one. Growth therefore never stalls on the rule.
  */
 export function planSpawn(
   placed: readonly PlacedTemplate[],
@@ -504,6 +575,9 @@ export function planSpawn(
 ): SpawnResult {
   const index = buildAnchorIndex(catalog);
   const failures: SpawnFailure[] = [];
+  // The best repeating winner seen so far (from the closest such anchor) — used only if the whole
+  // anchor queue fails to produce a non-repeating placement. See the variety rule in the doc block.
+  let repeatFallback: { plan: SpawnPlan; index: number } | null = null;
 
   // Step 1–2: enumerate exposed anchors, closest-to-origin first.
   const anchors = exposedAnchors(placed).sort((a, b) => a.originDistance - b.originDistance);
@@ -609,6 +683,7 @@ export function planSpawn(
 
       const matchedRuns = matchedStreetRuns(candidate, placed);
       const spread = maximinSpread(candidate, placed);
+      const repeatsNeighbor = sharesSeamWithSameTemplate(candidate, placed);
       trace?.({
         type: 'candidate-legal',
         index: anchorIndex,
@@ -618,9 +693,18 @@ export function planSpawn(
         offsetRow,
         matchedRuns,
         spread,
+        repeatsNeighbor,
       });
       legal.push({
-        plan: { templateName: cv.templateName, version: cv.version, offsetCol, offsetRow, matchedRuns, spread },
+        plan: {
+          templateName: cv.templateName,
+          version: cv.version,
+          offsetCol,
+          offsetRow,
+          matchedRuns,
+          spread,
+          repeatsNeighbor,
+        },
         spread,
       });
     }
@@ -643,9 +727,16 @@ export function planSpawn(
       continue; // Anchor fallback: try the next-closest anchor.
     }
 
+    // Step 4c (variety): prefer candidates that do NOT abut a same-name template. This outranks the
+    // street-run score on purpose — a repeated neighbour is the most visible tiling artifact, so a
+    // repeat is taken only when the anchor offers nothing else (never when a distinct template fits).
+    const nonRepeating = legal.filter((s) => !s.plan.repeatsNeighbor);
+    const repeatingCandidates = legal.length - nonRepeating.length;
+    const preferred = nonRepeating.length > 0 ? nonRepeating : legal;
+
     // Step 5: maximize matched street runs. Step 6: maximin spread. Step 7: random among survivors.
-    const bestRuns = Math.max(...legal.map((s) => s.plan.matchedRuns));
-    const byRuns = legal.filter((s) => s.plan.matchedRuns === bestRuns);
+    const bestRuns = Math.max(...preferred.map((s) => s.plan.matchedRuns));
+    const byRuns = preferred.filter((s) => s.plan.matchedRuns === bestRuns);
     const bestSpread = Math.max(...byRuns.map((s) => s.spread));
     const survivors = byRuns.filter((s) => s.spread === bestSpread);
     const winner = survivors[Math.floor(rng() * survivors.length)] ?? survivors[0];
@@ -656,8 +747,23 @@ export function planSpawn(
       bestSpread,
       survivors: survivors.length,
       chosen: winner.plan,
+      repeatingCandidates,
+      repeatForced: winner.plan.repeatsNeighbor,
     });
+
+    // Cross-anchor half of the variety rule: hold a repeating winner back and keep searching the
+    // remaining (further-out) anchors for one that doesn't repeat. Only the FIRST such winner is
+    // kept, so the fallback still honours the closest-anchor ordering.
+    if (winner.plan.repeatsNeighbor) {
+      repeatFallback ??= { plan: winner.plan, index: anchorIndex };
+      continue;
+    }
     return { plan: winner.plan, failures };
+  }
+
+  if (repeatFallback) {
+    trace?.({ type: 'repeat-fallback', index: repeatFallback.index, chosen: repeatFallback.plan });
+    return { plan: repeatFallback.plan, failures };
   }
 
   failures.push({ reason: 'all-anchors-exhausted' });

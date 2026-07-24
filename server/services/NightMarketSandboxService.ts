@@ -116,13 +116,17 @@ export class NightMarketSandboxService {
    * version). That differs from the runtime, which persists activeVersion 0 and lets
    * recompute-on-read settle the version — the sandbox has no version selector pass, so keeping the
    * planner's version is what makes the result visible and inspectable here.
+   *
+   * Both paths insert with `locked = true`: an iterated tile represents what the ALGORITHM decided,
+   * so dragging it would silently invalidate the layout the author is inspecting. The author can
+   * still unlock it from the toolbar (L) to move it by hand.
    */
   async iteratePlacement(userId: string): Promise<{ placement: TemplateSandboxRow | null; trace: string[] }> {
     await this.assertTemplateAuthor(userId);
     const placements = await this.sandboxDAL.findByUser(userId);
 
     if (placements.length === 0) {
-      const placement = await this.sandboxDAL.insert(userId, NIGHT_MARKET_HUB_TEMPLATE_NAME, 0, 0, 0);
+      const placement = await this.sandboxDAL.insert(userId, NIGHT_MARKET_HUB_TEMPLATE_NAME, 0, 0, 0, true);
       return { placement, trace: ['seeded the starter hub at the origin (empty sandbox — no anchors to plan against)'] };
     }
 
@@ -133,7 +137,7 @@ export class NightMarketSandboxService {
     // The live growth path leaves tracing off.
     const { plan, trace } = await this.placementService.planNextPlacement(placements, undefined, { trace: true });
     if (!plan) return { placement: null, trace };
-    const placement = await this.sandboxDAL.insert(userId, plan.templateName, plan.version, plan.offsetCol, plan.offsetRow);
+    const placement = await this.sandboxDAL.insert(userId, plan.templateName, plan.version, plan.offsetCol, plan.offsetRow, true);
     return { placement, trace };
   }
 
@@ -153,10 +157,24 @@ export class NightMarketSandboxService {
     return row;
   }
 
-  /** Lock / unlock one placement (the move-guard toggle). 404 if it is not the author's. */
+  /**
+   * Lock / unlock one placement (the move-guard toggle). 404 if it is not the author's.
+   *
+   * The starter hub is PERMANENTLY LOCKED: it is the continent's fixed root at the origin, every
+   * planner run grows outward from it, and moving it would make the sandbox model a world the
+   * runtime can never produce. So an unlock request targeting a hub placement is rejected (400)
+   * rather than silently ignored — the client hides the toggle for it, this is the backstop.
+   */
   async setPlacementLock(userId: string, id: string, locked: unknown): Promise<TemplateSandboxRow> {
     await this.assertTemplateAuthor(userId);
     if (typeof locked !== 'boolean') throw new ValidationError('locked must be a boolean');
+    if (!locked) {
+      const existing = await this.sandboxDAL.findById(userId, id);
+      if (!existing) throw new NotFoundError('Sandbox placement not found');
+      if (existing.templateName === NIGHT_MARKET_HUB_TEMPLATE_NAME) {
+        throw new ValidationError('The starter hub is permanently locked and cannot be unlocked');
+      }
+    }
     const row = await this.sandboxDAL.updateLock(userId, id, locked);
     if (!row) throw new NotFoundError('Sandbox placement not found');
     return row;
@@ -221,12 +239,21 @@ export class NightMarketSandboxService {
   }
 
   /**
-   * Clear the caller's whole sandbox (the "Clear" action). Author-gated like every other write.
-   * An already-empty sandbox is a no-op success (returns 0) — clearing is idempotent.
+   * Clear the caller's sandbox (the "Clear" action) and RESET it to a fresh world: every placement
+   * is removed, then the starter hub is re-seeded LOCKED at the origin — the same state a brand-new
+   * account's continent starts in (NightMarketWorldService.seedHubPlacement). Clear is therefore a
+   * "start over" button, not an "empty the board" button: a truly empty sandbox has no exposed
+   * anchors, so Iterate could only ever seed the hub as its first step anyway. Making the reset
+   * explicit means the author is always looking at a layout the growth algorithm can actually run
+   * against, and the hub — the continent's fixed root — is never accidentally missing or moved.
+   * Author-gated like every other write. Idempotent: clearing an already-reset sandbox re-seeds it.
+   * Returns the removed count plus the freshly seeded hub row.
    */
-  async clearPlacements(userId: string): Promise<number> {
+  async clearPlacements(userId: string): Promise<{ deleted: number; placement: TemplateSandboxRow }> {
     await this.assertTemplateAuthor(userId);
-    return this.sandboxDAL.deleteAllForUser(userId);
+    const deleted = await this.sandboxDAL.deleteAllForUser(userId);
+    const placement = await this.sandboxDAL.insert(userId, NIGHT_MARKET_HUB_TEMPLATE_NAME, 0, 0, 0, true);
+    return { deleted, placement };
   }
 
   /**

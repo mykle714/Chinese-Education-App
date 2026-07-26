@@ -82,14 +82,14 @@ LIMIT 400;
 
 ### es — first 400 (when we do Spanish)
 
-Same query against `dictionaryentries_es`, plus a `pos` column in the SELECT (Spanish
-identity is `(word1, pos)`, so the same `word1` can appear as multiple rows):
+Same query against `dictionaryentries_es`. Spanish identity is `word1` (migration 123
+merged the old per-(pos, gender) rows), so each word appears exactly once — as in zh:
 
 ```bash
 docker exec cow-postgres-local psql -U cow_user -d cow_db --csv -c "
 SELECT
   row_number() OVER (ORDER BY ABS(CAST(difficulty AS INTEGER) - 1) ASC, id ASC) AS sort_order,
-  id, word1, pronunciation, pos, difficulty,
+  id, word1, pronunciation, difficulty,
   (definitions->>0) AS definition,
   CASE WHEN \"iconId\" IS NOT NULL THEN 'yes' ELSE '' END AS has_icon
 FROM dictionaryentries_es

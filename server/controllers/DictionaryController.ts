@@ -53,9 +53,30 @@ export class DictionaryController {
       // opened from a breakdown tap) get the same _segments/segmentMetadata
       // shape that flashcards do — otherwise pinyin won't render above each token.
       const [withExampleMeta] = await this.dictionaryService.enrichExampleSentencesMetadataBatch([entry], language);
-      // Split the long definition into English prose + embedded-Chinese runs so the EIP
-      // Definition tab can render inline cpcd (with the segment popup) for any Chinese it contains.
-      const [withLongDefMeta] = await this.dictionaryService.enrichLongDefinitionMetadataBatch([withExampleMeta], language);
+
+      // Per-user sense pick (docs/DEFINITION_CLUSTERS.md). A lookup is frequently the SAME
+      // word the requester already studies as a flashcard; if they have picked a non-default
+      // sense on that card, the eip drill-in (and the dictionary cdp) must show that sense's
+      // dd, not det's default. `selectedSense` is therefore attached from the requester's vet
+      // row — it is a per-user read-time field, never det data. Non-fatal: a failure here just
+      // leaves the entry on its default sense.
+      // ORDER MATTERS: this must precede enrichLongDefinitionMetadataBatch, which narrows the
+      // per-sense `longDefinition` (zh) to the picked sense — attach it after, and the extended
+      // definition would describe the default sense while the dd above it shows the picked one.
+      let withSelectedSense: typeof withExampleMeta & { selectedSense?: string | null } = withExampleMeta;
+      try {
+        const savedCard = await this.vocabEntryDAL.findByUserAndKey(userId, entry.word1, language);
+        if (savedCard?.selectedSense) {
+          withSelectedSense = { ...withExampleMeta, selectedSense: savedCard.selectedSense };
+        }
+      } catch (err) {
+        console.error(`Failed to attach selectedSense for "${entry.word1}":`, err);
+      }
+
+      // Narrow the long definition to that sense, then split it into English prose +
+      // embedded-Chinese runs so the EIP Definition tab can render inline cpcd (with the
+      // segment popup) for any Chinese it contains.
+      const [withLongDefMeta] = await this.dictionaryService.enrichLongDefinitionMetadataBatch([withSelectedSense], language);
       // Attaches definitionsApproved (validated 'definitions' field) so the client
       // knows whether to render the longDefinition/partsOfSpeech AI-generated styling.
       const [enrichedEntry] = await this.dictionaryService.enrichDefinitionsApprovalBatch([withLongDefMeta], language);

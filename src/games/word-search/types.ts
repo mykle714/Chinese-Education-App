@@ -33,6 +33,17 @@ export interface PlacedWord {
     definition: string;
     /** Ordered [row, col] path, one entry per character. */
     cells: [number, number][];
+    /**
+     * Sub-character visual parts, one array per character (aligned by position):
+     * 想吃 → [["木","目","心"], ["口","乞"]]. Already ordered most-common-first, so
+     * revealing them in order escalates the hint from weak to decisive.
+     *
+     * The hint currency for **No Pinyin** mode — see `componentUnits.ts` and
+     * `WordSearchHintRow`. An empty inner array means that character is atomic
+     * (人, 口, 木): it has no parts, so its ladder goes straight to the character.
+     * Absent on boards saved before this shipped; treat as all-empty.
+     */
+    charComponents?: string[][];
 }
 
 /**

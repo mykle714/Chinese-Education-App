@@ -10,7 +10,11 @@ import { hasChinese, tonedToNumberedPinyin } from "./textUtils";
 //   • numbered pinyin ("jian4")   → match against the pronunciation converted to
 //                                    numbered form (tone-exact).
 //   • toneless pinyin ("jian")    → match against pronunciation with tones stripped.
-//   • English ("fitness")         → substring match on the definition text.
+//   • English ("fitness")         → substring match on the card's displayed definition
+//                                    (dd) only. longDefinition is intentionally NOT
+//                                    searched: it is a long prose elaboration, so
+//                                    matching it surfaces cards whose visible text does
+//                                    not contain the query, which reads as a false hit.
 //
 // It is a best-effort client mirror, not a byte-for-byte reimplementation of the
 // server's numbered-pinyin regex (buildNumberedPinyinPattern); it favors forgiving
@@ -20,7 +24,7 @@ import { hasChinese, tonedToNumberedPinyin } from "./textUtils";
 interface EntrySearchIndex {
   entry: VocabEntry;
   word: string; // entryKey, lowercased
-  definition: string; // definition (+ longDefinition), lowercased
+  definition: string; // definition (dd) only, lowercased — longDefinition is deliberately excluded
   numberedPinyin: string; // "jian4 shen1"
   tonelessPinyin: string; // "jian shen"
 }
@@ -30,7 +34,7 @@ const buildIndex = (entry: VocabEntry): EntrySearchIndex => {
   return {
     entry,
     word: (entry.entryKey ?? "").toLowerCase(),
-    definition: `${entry.definition ?? ""} ${entry.longDefinition ?? ""}`.toLowerCase(),
+    definition: (entry.definition ?? "").toLowerCase(),
     numberedPinyin,
     tonelessPinyin: numberedPinyin.replace(/[0-5]/g, ""),
   };

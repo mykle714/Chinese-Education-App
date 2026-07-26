@@ -29,11 +29,11 @@ data the reader already loads.
    (`processDocumentForTokens`, `src/utils/tokenUtils.ts` — the client mirror of the
    server's `getAllSubstrings(maxLen=4)`) and fetches matching rows via
    `POST /api/vocabEntries/by-tokens` → `loadedDictionaryCards` (det rows incl.
-   `vernacularScore` + `matchException`) and `loadedPersonalCards` (vet rows).
+   `frequencyScore` + `matchException`) and `loadedPersonalCards` (vet rows).
 2. `ReaderPage.tsx` memoizes the segmentation
    (`segmentSpans` `useMemo`, keyed on `selectedText?.content` + the two card
    arrays — **never on `token`**, per the silent-token-refresh rule in CLAUDE.md):
-   - `buildReaderDictMap(dictCards, personalCards)` — word1 → `{vernacularScore}`;
+   - `buildReaderDictMap(dictCards, personalCards)` — word1 → `{frequencyScore}`;
      personal `entryKey`s are merged in (score 0) so user-created words are
      tappable. They are normally a subset of det, so segmentation is unaffected.
    - `buildExcludeSet(dictCards)` — `matchException` tokens suppressed from matching.
@@ -68,7 +68,7 @@ interface SegmentSpan { start: number; end: number; text: string }
 `documentSegmentation.ts` `segmentWithDict` is a port of
 `server/dal/shared/segmentString.ts:segmentWithDict`. **Keep the scoring rules in
 sync when editing either side** (both files' headers cross-reference each other):
-length tiers 4→1; per tier the highest `vernacularScore` wins (null = 0),
+length tiers 4→1; per tier the highest `frequencyScore` wins (null = 0),
 tiebreak later position; winner extracted, remainders recurse; per-char fallback.
 
 Intentional divergences from the server version (not drift):

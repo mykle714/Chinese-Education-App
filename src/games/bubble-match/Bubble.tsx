@@ -1,7 +1,7 @@
 import React from "react";
 import { Box, Typography } from "@mui/material";
 import ForeignText from "../../components/ForeignText";
-import { stripParentheses } from "../../utils/definitionUtils";
+import { resolveDisplayDefinition } from "../../utils/definitionUtils";
 import { FONTS } from "../../theme/fonts";
 import { API_BASE_URL } from "../../constants";
 import type { BubbleBody, BubbleStatus } from "./types";
@@ -100,7 +100,9 @@ const Bubble: React.FC<BubbleProps> = ({
     // outer node, so the content scales with it rather than re-flowing each frame.
     const contentScale = wordContentScale([...entry.entryKey].length, targetRadius);
 
-    const defText = stripParentheses(entry.definition ?? "");
+    // The definition bubble is a dd surface: it must read exactly like the flashcard
+    // face for the same card, so it resolves through the shared resolver (chosen sense).
+    const defText = resolveDisplayDefinition(entry);
     // Definition bubbles show the entry's representative icons8 icon (same one as
     // the flashcard faces) stacked above the text. Absent icon -> text only, no
     // reserved space (a bubble has no fixed image slot like the card does).

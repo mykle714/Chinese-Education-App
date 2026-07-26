@@ -55,7 +55,7 @@ Corpus total: **114,774 zh**. `difficulty` is `NULL` on **113,942** rows — so 
 |---|---|---|---|
 | **1 — must exist to APPEAR** | `difficulty` ∈ 1..6 | 832 / 114,774 | `validPredicate` hard-filter |
 | **2 — render the card face** | `word1`, `definitions[0]`, `pronunciation`, `tone` | 114,673–114,772 | already present corpus-wide (cedict import + tone pass) |
-| **3 — AI enrichment (eip tabs)** | `vernacularScore`, `breakdown`, `synonyms`, `exampleSentences`, `longDefinition`, `partsOfSpeech`, `wordForms`, `definitionClusters`, `classifier` | ~831 or fewer | nullable, feed flashcard tabs, deferrable |
+| **3 — AI enrichment (eip tabs)** | `frequencyScore`, `breakdown`, `synonyms`, `exampleSentences`, `longDefinition`, `partsOfSpeech`, `wordForms`, `definitionClusters`, `classifier` | ~831 or fewer | nullable, feed flashcard tabs, deferrable |
 
 **Why the pre-pass is these two scripts specifically:**
 - **`difficulty`** is Tier-1 — without it the card is filtered out entirely.
@@ -352,14 +352,14 @@ both the runtime trigger and the manual CLI):
    approval-protected, and is **missing OR stamped below its manifest `version`** — so a
    bumped script re-runs **only that one script**, never "stale everything". Manifest
    order encodes the `mark-discoverable.md` §A3 constraints (POS → word-forms / long-def
-   / example-sentences; vernacular + POS → cluster-definitions → example-sentences).
+   / example-sentences; frequency + POS → cluster-definitions → example-sentences).
    **Dry-run by default** (prints candidates + planned commands, writes/spends nothing);
    `--apply` spawns steps and promotes.
 
    > **Every pipeline script now honors `--stale`** (ORs `staleClause()` into its
    > null-column doneGate) **and drops its `discoverable = TRUE` gate when `--words` is
    > targeted** — so a targeted re-run actually re-processes a populated below-version
-   > row AND works on a not-yet-discoverable candidate. (`backfill-vernacular-score` also
+   > row AND works on a not-yet-discoverable candidate. (`backfill-frequency-score` also
    > gained `--words` support, which it lacked.) `process-defs` re-processes multi-def
    > rows regardless (no null gate); its targeted branch also gained the `validatedClause`
    > guard it was missing. Deterministic `tones` / `numbered-pinyin` honor `--stale` too,
@@ -393,6 +393,15 @@ these gates.
 > authoritative list feeding both the completeness check and the worker's step
 > sequence — it replaces what a jobs table's status column would have implied.
 
+**Language scope.** The file now holds two manifests — `REQUIRED_SCRIPTS_ZH` and
+`REQUIRED_SCRIPTS_ES` (select with `scriptsForLanguage(lang)`) — but *everything in
+this document is still Chinese-only*. The lazy-enrichment worker
+(`run-lazy-enrichment.js`), the pre-pass, `promote-sortable.js` and the `sortable` bar
+all hardcode `language = 'zh'`, and `dictionaryentries_es` has no `sortable` column at
+all. The es manifest exists for `oracle-plan.js --lang=es`, which plans the
+`/mark-discoverable` §B3 pipeline; Spanish words do **not** self-heal on first sort.
+Adding that would mean adding `sortable` to the es table first.
+
 ## 6. Batch API strategy for the enrichment scripts
 
 **Decision (2026-07-17): always run the AI backfill steps via the Batches API**
@@ -417,7 +426,7 @@ scripts don't map onto the runner's one-request-per-row model without a redesign
 |---|---|
 | Deterministic (no AI, no batch needed) | `tones`, `numbered-pinyin` |
 | AI + already `--batch`-capable | `hsk-level`, `word-forms`, `classifier` |
-| AI, needs porting | `dictionary-breakdown`, `process-definitions-array`, `parts-of-speech`, `long-definitions`, `vernacular-score`, `cluster-definitions`, `example-sentences` |
+| AI, needs porting | `dictionary-breakdown`, `process-definitions-array`, `parts-of-speech`, `long-definitions`, `frequency-score`, `cluster-definitions`, `example-sentences` |
 
 Batch mode itself (`scripts/backfill/shared/lib/runner.js` `runBatched`) is fully
 implemented but **has never actually been run** (0 `--batch` runs in
@@ -431,14 +440,14 @@ A ported script supplies two pure functions to `runBackfill`
 - `handleResponse(row, message)` → parse the single message + write the row.
 
 Reference implementation already in the tree:
-`scripts/backfill/spanish/backfill-vernacular-score.js` (single Sonnet call/word).
+`scripts/backfill/spanish/backfill-frequency-score.js` (single Sonnet call/word).
 
 ### Per-script porting classification
 
 | Step | Calls/word | Port effort | Notes |
 |---|---|---|---|
-| `dictionary-breakdown` | 1 | **Mechanical** | mirror the vernacular-score template |
-| `vernacular-score` (zh) | 1 | **Mechanical** | near-identical twin already ported for es |
+| `dictionary-breakdown` | 1 | **Mechanical** | mirror the frequency-score template |
+| `frequency-score` (zh) | 1 | **Mechanical** | near-identical twin already ported for es |
 | `parts-of-speech` | multi | **Redesign** | multi-call per word |
 | `example-sentences` | multi | **Redesign** | ~988 loc; enforces ≥1 sentence/POS |
 | `long-definitions` | multi | **Redesign** | routes through `DictionaryService.generateLongDefinition` (Haiku), not raw `anthropic` |
@@ -482,7 +491,7 @@ still surfaced *after* that step's batch completes and *before* the dependent
   unmarked (kept `sortable`). End state: `discoverable` = 273 (§3a).
 - ✅ **`--stale` on EVERY pipeline script** — all 9 that lacked it now OR `staleClause()`
   into their doneGate AND drop the `discoverable = TRUE` gate when `--words` is targeted
-  (so the worker can enrich not-yet-discoverable candidates). `backfill-vernacular-score`
+  (so the worker can enrich not-yet-discoverable candidates). `backfill-frequency-score`
   gained `--words`; `process-defs`'s targeted branch gained the missing `validatedClause`.
 - ✅ **Version-aware candidacy + completeness** — `buildIncompletePredicate` / `isComplete`
   / `pendingSteps` all treat a below-manifest-version stamp as pending; the worker's
@@ -516,14 +525,14 @@ still surfaced *after* that step's batch completes and *before* the dependent
   (`_rowsToDiscoverCards`), sort commit (`sortCard`) — fires the **on-sort** trigger (§5).
 - `server/controllers/DictionaryController.ts` — `lookupTerm` fires the **on-open**
   trigger after responding (the eip drill-in / cdp lands here) (§5).
-- `server/scripts/backfill/shared/lib/requiredScripts.js` — the manifest + `buildIncompletePredicate` / `appliesTo` (§5); the pre-pass subset `PRE_PASS_STEP_IDS` / `PRE_PASS_SCRIPTS_ZH` and the `sortable` bar `buildSortableReadyPredicate` / `isSortableReady` (§4b).
-- `server/scripts/backfill/promote-sortable.js` — the pre-pass promoter; only writer of `sortable` besides the worker (§4b).
-- `server/scripts/backfill/oracle-plan.js` — round planner; `--unsortable` scope + candidate-quality filter (§4b).
+- `server/scripts/backfill/shared/lib/requiredScripts.js` — the manifests (`REQUIRED_SCRIPTS_ZH`, `REQUIRED_SCRIPTS_ES`, `scriptsForLanguage`) + `buildIncompletePredicate` / `appliesTo` (§5); the zh-only pre-pass subset `PRE_PASS_STEP_IDS` / `PRE_PASS_SCRIPTS_ZH` and the zh-only `sortable` bar `buildSortableReadyPredicate` / `isSortableReady` (§4b).
+- `server/scripts/backfill/promote-sortable.js` — the pre-pass promoter; only writer of `sortable` besides the worker (§4b). zh only.
+- `server/scripts/backfill/oracle-plan.js` — round planner; `--lang=zh|es`, plus the zh-only `--unsortable` scope + candidate-quality filter (§4b).
 - `server/scripts/backfill/run-lazy-enrichment.js` — the per-word step runner / manual bulk drain (§5).
 - `server/scripts/backfill/chinese/backfill-hsk-level.js` — difficulty (Sonnet).
 - `server/scripts/backfill/chinese/backfill-process-definitions-array.js` — lead-gloss cleanup.
 - `server/scripts/backfill/shared/lib/runner.js` — serial/batch execution engine (`runBackfill`).
-- `server/scripts/backfill/spanish/backfill-vernacular-score.js` — reference batch-ported script.
+- `server/scripts/backfill/spanish/backfill-frequency-score.js` — reference batch-ported script.
 - `server/scripts/backfill/run-log.js` — pricing table, `enrichmentLog` stamps, `validatedClause`.
 - `server/logs/backfill-runs.jsonl` — source of the actuals in §4.
 - `.claude/commands/mark-discoverable.md` — the pipeline skill whose §A3 steps gain `--batch`.

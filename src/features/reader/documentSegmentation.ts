@@ -15,7 +15,7 @@
  *
  * Data flow: useVocabularyProcessing already fetches det rows for every
  * 1–4-char substring of the document (POST /api/vocabEntries/by-tokens →
- * DICTIONARY_COLUMNS includes vernacularScore + matchException), so the gsa
+ * DICTIONARY_COLUMNS includes frequencyScore + matchException), so the gsa
  * runs entirely on data the reader has in memory — no extra requests.
  *
  * Docs: docs/READER_SEGMENTATION.md (feature doc, depends on this file);
@@ -39,12 +39,12 @@ export interface SegmentSpan {
 
 /** The single piece of per-word data the gsa scoring reads. */
 interface ReaderSegmentMeta {
-    vernacularScore: number | null;
+    frequencyScore: number | null;
 }
 
 /**
  * Build the word1 → meta lookup the gsa scores against.
- * Port of server buildDictMap slimmed to segmentation's needs (vernacularScore);
+ * Port of server buildDictMap slimmed to segmentation's needs (frequencyScore);
  * first det entry per word1 wins, matching the server's behavior.
  *
  * Personal vocab entryKeys are merged in afterwards (score 0) so user-created
@@ -59,13 +59,13 @@ export function buildReaderDictMap(
 
     for (const entry of dictCards) {
         if (!map.has(entry.word1)) {
-            map.set(entry.word1, { vernacularScore: entry.vernacularScore ?? null });
+            map.set(entry.word1, { frequencyScore: entry.frequencyScore ?? null });
         }
     }
 
     for (const card of personalCards) {
         if (card.entryKey && !map.has(card.entryKey)) {
-            map.set(card.entryKey, { vernacularScore: null });
+            map.set(card.entryKey, { frequencyScore: null });
         }
     }
 
@@ -94,7 +94,7 @@ export function buildExcludeSet(dictCards: DictionaryEntry[]): Set<string> {
  * Best-score segmentation of a Han run using the pre-built dictionary map.
  * Port of server segmentWithDict's core (see file header for the omitted
  * passes): tries substring lengths 4→1; within a length tier every matching
- * substring is scored by vernacularScore (null = 0) and the best one wins,
+ * substring is scored by frequencyScore (null = 0) and the best one wins,
  * tiebreaking on later position (higher startIdx). The winner is extracted and
  * the left/right remainders recurse. Falls back to single characters when
  * nothing matches at any length.
@@ -118,7 +118,7 @@ export function segmentWithDict(
             // Multi-char matchException tokens are suppressed; single chars never are
             if (length > 1 && excludeTokens?.has(substring)) continue;
 
-            const score = dictMap.get(substring)!.vernacularScore ?? 0;
+            const score = dictMap.get(substring)!.frequencyScore ?? 0;
             if (score > bestScore || (score === bestScore && startIdx > bestIdx)) {
                 bestScore = score;
                 bestIdx = startIdx;

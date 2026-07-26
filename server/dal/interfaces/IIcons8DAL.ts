@@ -69,14 +69,13 @@ export interface IIcons8DAL {
    *   returns [] without writing.
    *
    * @param language vet/det language code ('zh' | 'es'); selects the det table.
-   * @param entryKey det `word1` headword.
-   * @param pos      saved vet POS (Spanish disambiguation); NULL for Chinese.
+   * @param entryKey det `word1` headword — unique per language in both det tables
+   *                 (es since migration 123), so it identifies exactly one row.
    * @param term     client-computed default search term (iconSearchTerm()).
    */
   getOrWarmDefaultIconResults(
     language: string,
     entryKey: string,
-    pos: string | null,
     term: string
   ): Promise<Icons8ListItem[]>;
 }

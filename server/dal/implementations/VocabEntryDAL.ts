@@ -2,7 +2,8 @@ import { PoolClient, QueryResult } from 'pg';
 import { BaseDAL } from '../base/BaseDAL.js';
 import { IVocabEntryDAL } from '../interfaces/IVocabEntryDAL.js';
 import { dbManager } from '../base/DatabaseManager.js';
-import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, UsedInItem, IconLayoutItem, SnapConfig, TextColors, TextLayout, TypedMarkHistory } from '../../types/index.js';
+import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, UsedInItem, IconLayoutItem, SnapConfig, TextColors, TextLayout, TypedMarkHistory, DefinitionCluster } from '../../types/index.js';
+import { resolveDisplayDefinition } from '../../utils/definitions.js';
 import { ValidationError, NotFoundError, BulkResult, ITransaction, DALError } from '../../types/dal.js';
 import db from '../../db.js';
 import { DICT_COLS, DICT_JOIN } from '../shared/dictJoin.js';
@@ -23,7 +24,7 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
   }
 
   // ── Per-language write routing (vet split, migration 66) ───────────────────
-  // Inserts go to the table for the row's language (es carries `pos`). Id-based
+  // Inserts go to the table for the row's language. Id-based
   // update/delete run against BOTH physical tables — ids are globally unique
   // (shared sequence), so exactly one row matches.
 
@@ -246,7 +247,7 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
   /**
    * Find vocabulary entry by user and key
    */
-  async findByUserAndKey(userId: string, entryKey: string, language: string, pos?: string): Promise<VocabEntry | null> {
+  async findByUserAndKey(userId: string, entryKey: string, language: string): Promise<VocabEntry | null> {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
@@ -257,21 +258,17 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
       throw new ValidationError('Language is required');
     }
 
-    // (userId, entryKey, language) is the base identity — the same spelling can exist
-    // independently per study language. Spanish adds `pos` (verb vs noun of the same
-    // spelling are distinct saved cards): when a pos is supplied, match it too.
-    const params: any[] = [userId, entryKey, language];
-    let posPredicate = '';
-    if (pos !== undefined) {
-      params.push(pos);
-      posPredicate = ` AND ve.pos IS NOT DISTINCT FROM $${params.length}`;
-    }
+    // (userId, entryKey, language) is THE identity for both languages — the same spelling
+    // can exist independently per study language, and nothing finer. Spanish used to add
+    // `pos` here, so a learner held `vivir`(v) and `vivir`(n) as two separate cards; since
+    // migration 123 a Spanish word is one card carrying every sense, and which sense the
+    // card shows is a per-card `selectedSense` pick rather than part of its identity.
     const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
       return await client.query(`
         SELECT ve.*, ${DICT_COLS}
         FROM ${vetReadFrom(language)} ${DICT_JOIN}
-        WHERE ve."userId" = $1 AND ve."entryKey" = $2 AND ve."language" = $3${posPredicate}
-      `, params);
+        WHERE ve."userId" = $1 AND ve."entryKey" = $2 AND ve."language" = $3
+      `, [userId, entryKey, language]);
     });
 
     return result.recordset[0] || null;
@@ -591,9 +588,7 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
         // Identity is (userId, entryKey, language) — default to 'zh' if the
         // import didn't tag a language so legacy single-language data still works.
         const entryLanguage = entry.language || 'zh';
-        // Route to the per-language vet table (vocabentries_zh / _es). Bulk import
-        // doesn't carry a pos, so es rows insert with pos NULL (the sort flow,
-        // not this path, captures the specific POS).
+        // Route to the per-language vet table (vocabentries_zh / _es).
         const vetTable = vetTableForLanguage(entryLanguage);
 
         try {
@@ -688,11 +683,13 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
       SELECT
         ve.id,
         ve."entryKey" as entrykey,
+        ve."selectedSense",
         de.pronunciation,
-        de.definition
+        de.definition,
+        de."definitionClusters"
       FROM vocabentries_zh ve
       LEFT JOIN LATERAL (
-        SELECT pronunciation, definitions->>0 as definition
+        SELECT pronunciation, definitions->>0 as definition, "definitionClusters"
         FROM dictionaryentries_zh
         WHERE word1 = ve."entryKey" AND language = ve.language LIMIT 1
       ) de ON true
@@ -712,8 +709,10 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     const result = await this.dbManager.executeQuery<{
       id: number;
       entrykey: string;
+      selectedSense: string | null;
       pronunciation: string | null;
       definition: string | null;
+      definitionClusters: DefinitionCluster[] | null;
     }>(async (client) => {
       return await client.query(query, [userId, language, word, pattern, limit]);
     });
@@ -722,7 +721,11 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
       id: row.id,
       entryKey: row.entrykey,
       pronunciation: row.pronunciation ?? null,
-      definition: row.definition ?? null,
+      // These rows are the user's OWN cards, so the related-words list is a dd surface:
+      // flatten through the shared resolver (chosen sense -> definitions[0] fallback) rather
+      // than shipping det's definitions[0]. The clusters themselves stay server-side.
+      // See docs/DEFINITION_CLUSTERS.md.
+      definition: resolveDisplayDefinition(row) || null,
     }));
   }
 
@@ -735,12 +738,12 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
    * The universe is the union of two sources, ordered vet-first then by commonality:
    *   - Pass 1 rows (`is_user = 1`): the user's own vocabentries (vet) containing the
    *     char, LEFT-JOINed to dictionaryentries_zh (det) for pronunciation/definition/
-   *     "vernacularScore". These carry a real `vocabEntryId`.
+   *     "frequencyScore". These carry a real `vocabEntryId`.
    *   - Pass 2 rows (`is_user = 0`): global det words containing the char that are NOT
    *     already in the user's vet (deduped via NOT EXISTS). `vocabEntryId` is null.
-   * Only words with vernacularScore 3–5 are surfaced (common enough to be useful);
+   * Only words with frequencyScore 3–5 are surfaced (common enough to be useful);
    * this filter also excludes null-score rows, including in-library words whose det
-   * row has no score. ORDER BY is_user DESC, "vernacularScore" DESC NULLS LAST,
+   * row has no score. ORDER BY is_user DESC, "frequencyScore" DESC NULLS LAST,
    * char_length ASC, "entryKey" ASC — the user's saved (in-library) words come
    * first, then by commonality, then shortest-word-first, with entryKey as a final
    * deterministic tiebreak so pagination windows never overlap or skip.
@@ -771,7 +774,9 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
         m."entryKey",
         m.pronunciation,
         m.definition,
-        m."vernacularScore"
+        m."definitionClusters",
+        m."selectedSense",
+        m."frequencyScore"
       FROM (
         -- Pass 1: the user's saved words (vet) containing the char.
         SELECT
@@ -779,11 +784,13 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
           ve."entryKey",
           de.pronunciation,
           de.definition,
-          de."vernacularScore",
+          de."definitionClusters",
+          ve."selectedSense",
+          de."frequencyScore",
           1 AS is_user
         FROM vocabentries_zh ve
         LEFT JOIN LATERAL (
-          SELECT pronunciation, definitions->>0 AS definition, "vernacularScore"
+          SELECT pronunciation, definitions->>0 AS definition, "definitionClusters", "frequencyScore"
           FROM dictionaryentries_zh
           WHERE word1 = ve."entryKey" AND language = ve.language
           LIMIT 1
@@ -802,7 +809,12 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
           d.word1 AS "entryKey",
           d.pronunciation,
           d.definitions->>0 AS definition,
-          d."vernacularScore",
+          -- Pass-2 words are NOT in the user's library, so there is no sense pick to honor:
+          -- these rows deliberately keep the plain definitions[0] dd (typed NULLs keep the
+          -- UNION ALL column lists aligned).
+          NULL::jsonb AS "definitionClusters",
+          NULL::text AS "selectedSense",
+          d."frequencyScore",
           0 AS is_user
         FROM dictionaryentries_zh d
         WHERE d.language = $2
@@ -815,10 +827,10 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
             WHERE ve."userId" = $1 AND ve.language = $2 AND ve."entryKey" = d.word1
           )
       ) m
-      -- Only surface reasonably common words (vernacularScore 3–5); this also drops
+      -- Only surface reasonably common words (frequencyScore 3–5); this also drops
       -- null-score rows, so an in-library word with no det score is filtered out too.
-      WHERE m."vernacularScore" BETWEEN 3 AND 5
-      ORDER BY m.is_user DESC, m."vernacularScore" DESC NULLS LAST, char_length(m."entryKey") ASC, m."entryKey" ASC
+      WHERE m."frequencyScore" BETWEEN 3 AND 5
+      ORDER BY m.is_user DESC, m."frequencyScore" DESC NULLS LAST, char_length(m."entryKey") ASC, m."entryKey" ASC
       LIMIT $4 OFFSET $5
     `;
 
@@ -827,7 +839,9 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
       entryKey: string;
       pronunciation: string | null;
       definition: string | null;
-      vernacularScore: number | null;
+      definitionClusters: DefinitionCluster[] | null;
+      selectedSense: string | null;
+      frequencyScore: number | null;
     }>(async (client) => {
       return await client.query(query, [userId, language, ch, limit, offset]);
     });
@@ -836,8 +850,10 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
       vocabEntryId: row.vocabEntryId ?? null,
       entryKey: row.entryKey,
       pronunciation: row.pronunciation ?? null,
-      definition: row.definition ?? null,
-      vernacularScore: row.vernacularScore ?? null,
+      // Pass-1 (saved) rows resolve to the learner's chosen sense; pass-2 rows carry NULL
+      // clusters, so the resolver returns their plain definitions[0] dd unchanged.
+      definition: resolveDisplayDefinition(row) || null,
+      frequencyScore: row.frequencyScore ?? null,
     }));
   }
 

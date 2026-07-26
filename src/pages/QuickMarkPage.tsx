@@ -20,7 +20,7 @@ import { SIZE, WEIGHT, LEADING, TRACKING } from "../theme/scale";
 // QUICK MARK (docs/QUICK_MARK.md) — the Discover hub's bulk-triage grid, the second
 // activity (between Sort Cards and Skipped Cards). The user picks a difficulty level,
 // sees every not-yet-sorted discoverable word at that level as mini cards ordered by
-// vernacular score, taps each to cycle a 3-state mark (empty → Learn Now → Mastered),
+// frequency score, taps each to cycle a 3-state mark (empty → Learn Now → Mastered),
 // and hits Save to commit them all at once. Persistence reuses the Sort Cards buckets
 // verbatim (library / already-learned), so nothing new is stored.
 //
@@ -31,7 +31,7 @@ import { SIZE, WEIGHT, LEADING, TRACKING } from "../theme/scale";
 const DIFFICULTY_LEVELS = [1, 2, 3, 4, 5, 6];
 
 // A card cursor for keyset pagination — the last card's sort-key coordinates. Matches
-// the server's ORDER BY (vernacularScore DESC NULLS LAST, id ASC).
+// the server's ORDER BY (frequencyScore DESC NULLS LAST, id ASC).
 interface QuickMarkCursor {
     score: number | null;
     id: number;
@@ -66,6 +66,10 @@ const QuickMarkPage: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
     const [savedToast, setSavedToast] = useState(false);
+    // Snapshot of `marks` as of the last successful save (empty on a fresh/reset load).
+    // The Save button is enabled (green) only while `marks` differs from this baseline;
+    // saving re-baselines it, so tracking restarts from the just-saved state.
+    const [savedMarks, setSavedMarks] = useState<Record<number, QuickMarkState>>({});
 
     // Guard so the intersection-observer sentinel doesn't fire overlapping loads.
     const loadingMoreRef = useRef(false);
@@ -106,6 +110,7 @@ const QuickMarkPage: React.FC = () => {
             if (reset) {
                 setCards(data.cards);
                 setMarks({});
+                setSavedMarks({}); // fresh session → nothing pending, Save starts grey
                 setSelectedLevel(data.level); // seed (mount) or confirm (user pick)
             } else {
                 // De-dupe defensively in case a concurrent save shifted the window.
@@ -143,7 +148,7 @@ const QuickMarkPage: React.FC = () => {
     const loadMore = useCallback(() => {
         if (loadingMoreRef.current || !hasMore || cards.length === 0) return;
         const last = cards[cards.length - 1];
-        loadPage(selectedLevel, { score: last.vernacularScore ?? null, id: last.id }, false);
+        loadPage(selectedLevel, { score: last.frequencyScore ?? null, id: last.id }, false);
     }, [hasMore, cards, selectedLevel, loadPage]);
 
     // Cycle one card's mark on tap. Functional update so onCycle stays referentially
@@ -165,16 +170,31 @@ const QuickMarkPage: React.FC = () => {
         });
     }, []);
 
+    // Are there unsaved changes? Compare the current marks against the last-saved
+    // baseline over the union of both key sets, treating a missing key as `empty` —
+    // so a card cycled all the way back to empty (or cleared after a save that left it
+    // empty) correctly reads as "no change", while a Clear that undoes a saved mark
+    // reads as dirty (it still needs a save to delete the vet row).
+    const isDirty = useMemo(() => {
+        const ids = new Set([...Object.keys(marks), ...Object.keys(savedMarks)]);
+        for (const id of ids) {
+            const key = Number(id);
+            if ((marks[key] ?? "empty") !== (savedMarks[key] ?? "empty")) return true;
+        }
+        return false;
+    }, [marks, savedMarks]);
+
     // Save = reconcile every touched card to its on-screen mark in one request. Cards
     // stay in view afterward (their last chance to undo — docs §6); the page is NOT
     // refetched, so already-loaded cards keep their positions.
     const handleSave = useCallback(async () => {
-        // Re-entrancy guard lives here (not on the button's `disabled`) so the Save
-        // button never greys out — it must always look pressable, since the user may
-        // want to Clear a previous save and re-save that empty state (deleting the
-        // vet rows). A concurrent tap while a save is in flight is simply ignored.
-        if (saving) return;
-        const payload = Object.entries(marks).map(([cardId, state]) => ({ cardId: Number(cardId), state }));
+        // Re-entrancy guard: a concurrent tap while a save is in flight is ignored.
+        // (The button is also disabled while `saving`, but keep the guard for safety.)
+        if (saving || !isDirty) return;
+        // Snapshot the marks being committed — `marks` can change mid-flight, and the
+        // baseline must reflect exactly what the server received, not the later state.
+        const snapshot = marks;
+        const payload = Object.entries(snapshot).map(([cardId, state]) => ({ cardId: Number(cardId), state }));
         if (payload.length === 0) return;
         setSaving(true);
         try {
@@ -186,17 +206,18 @@ const QuickMarkPage: React.FC = () => {
             });
             if (!response.ok) throw new Error(`quick-mark-batch failed: ${response.status}`);
             await response.json();
+            setSavedMarks(snapshot); // re-baseline → Save goes back to grey
             setSavedToast(true);
         } catch (err) {
             console.error("Error saving quick marks:", err);
-            setError("Failed to save. Please try again.");
+            setError("Failed to save. Please try again."); // baseline untouched → stays green for a retry
         } finally {
             setSaving(false);
         }
-    }, [saving, marks, authHeaders, language]);
+    }, [saving, isDirty, marks, authHeaders, language]);
 
     // MiniVocabCardGrid takes VocabEntry[]; a DiscoverCard supplies everything the
-    // Quick Mark card reads (id + entryKey + definition + pronunciation + vernacularScore
+    // Quick Mark card reads (id + entryKey + definition + pronunciation + frequencyScore
     // + iconId). Stable per `cards` so the grid's incremental reveal doesn't thrash.
     const entries = useMemo(() => cards as unknown as VocabEntry[], [cards]);
     const cardById = useMemo(() => new Map(cards.map((c) => [c.id, c])), [cards]);
@@ -259,7 +280,16 @@ const QuickMarkPage: React.FC = () => {
                         variant="contained"
                         size="small"
                         onClick={handleSave}
-                        sx={{ minWidth: "unset", px: 1.25, py: 0.25, height: "30px", fontSize: SIZE.micro, textTransform: "lowercase", lineHeight: LEADING.normal, borderRadius: "6px", backgroundColor: COLORS.greenMain, "&:hover": { backgroundColor: COLORS.greenMain } }}
+                        // Grey + unpressable with nothing pending; green once the marks
+                        // diverge from the last-saved baseline, back to grey after saving.
+                        disabled={!isDirty || saving}
+                        sx={{
+                            minWidth: "unset", px: 1.25, py: 0.25, height: "30px", fontSize: SIZE.micro,
+                            textTransform: "lowercase", lineHeight: LEADING.normal, borderRadius: "6px",
+                            backgroundColor: COLORS.greenMain,
+                            "&:hover": { backgroundColor: COLORS.greenMain },
+                            "&.Mui-disabled": { backgroundColor: COLORS.card, color: COLORS.textSecondary },
+                        }}
                     >
                         save
                     </Button>

@@ -21,6 +21,7 @@ import { useWordSearchSettings } from "./useWordSearchSettings";
 import { saveGameState, loadGameState, clearGameState, type SavedWordSearchState } from "./gameStateStorage";
 import { GRID_QUERY, TOTAL_WORDS, HINT_BAR_UNITS, HINT_COST, medalForTime, modeConfigFor, formatTimeMs } from "./constants";
 import { countPinyinUnits } from "./pinyinUnits";
+import { countComponentUnits } from "./componentUnits";
 import type { BonusWord, PlacedWord, WordSearchResponse } from "./types";
 
 type Phase = "loading" | "blocked" | "playing" | "won";
@@ -506,12 +507,26 @@ const WordSearchPage: React.FC = () => {
         return data.words.some((w) => !found.has(w.entryKey));
     }, [data, hintEntryKey, hintLocationRevealed, hintUnits, found]);
 
+    // How many reveals the hinted word offers before its location is the only thing
+    // left to give. The two boards spend DIFFERENT currencies for the same ladder:
+    // the Pinyin board spells out phonetic units, while the No Pinyin board — which
+    // exists to hide exactly that — reveals sub-character component glyphs and then
+    // the character itself, per character (see componentUnits.ts). Everything after
+    // "fully revealed" (location reveal, then the free re-shake) is shared.
+    const totalRevealUnits = useCallback(
+        (word: PlacedWord): number =>
+            showPinyin
+                ? countPinyinUnits(word.pinyin)
+                : countComponentUnits(word.entryKey, word.charComponents),
+        [showPinyin]
+    );
+
     // Spend a hint:
     // - Current hinted word already has its LOCATION revealed (fully spelled
     //   out and nagged once before): re-shake it for FREE, no unit cost — the
     //   player has already paid for this reveal, so repeat presses are just a
     //   "where was that again?" nudge, not a new hint.
-    // - Current hinted word still unfound, pinyin units left to reveal: drain
+    // - Current hinted word still unfound, reveal units left: drain
     //   HINT_COST and reveal one more.
     // - Current hinted word still unfound, fully spelled out for the first
     //   time: drain HINT_COST, lock onto it, and reveal its actual grid
@@ -527,7 +542,7 @@ const WordSearchPage: React.FC = () => {
                 return;
             }
             if (hintUnits < HINT_COST) return;
-            if (hintRevealCount < countPinyinUnits(current.pinyin)) {
+            if (hintRevealCount < totalRevealUnits(current)) {
                 setHintRevealCount((c) => c + 1);
             } else {
                 setHintLocationRevealed(true);
@@ -544,7 +559,7 @@ const WordSearchPage: React.FC = () => {
         setHintRevealCount(1);
         setHintLocationRevealed(false);
         setHintUnits((u) => u - HINT_COST);
-    }, [data, hintUnits, hintEntryKey, hintRevealCount, hintLocationRevealed, found]);
+    }, [data, hintUnits, hintEntryKey, hintRevealCount, hintLocationRevealed, found, totalRevealUnits]);
 
     // Win when every target is found. Freeze the timer, capture the final time.
     useEffect(() => {
@@ -662,6 +677,7 @@ const WordSearchPage: React.FC = () => {
                 <WordSearchHintRow
                     word={data.words.find((w) => w.entryKey === hintEntryKey) ?? null}
                     revealCount={hintRevealCount}
+                    currency={showPinyin ? "pinyin" : "components"}
                 />
 
                 <WordSearchGrid

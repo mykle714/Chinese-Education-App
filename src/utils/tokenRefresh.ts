@@ -43,6 +43,33 @@ export function attemptTokenRefresh(): Promise<string | null> {
   return inflight;
 }
 
+/**
+ * End the session on the SERVER: revoke the presented refresh token and clear
+ * both auth cookies (POST /api/auth/logout).
+ *
+ * Every client-side "you are logged out now" path must call this. Clearing only
+ * the in-memory access token leaves the httpOnly refresh cookie alive, so the
+ * login screen ends up sitting on top of a still-valid session — AuthContext's
+ * silent refresh signs the user straight back in, and deleting "/login" from the
+ * URL walks into the app. Revoking makes the redirect mean what it says.
+ *
+ * Uses the captured native fetch so it can never re-enter the interceptor (which
+ * is what calls it) and swallows failures — the client-side clear happens
+ * regardless.
+ */
+export async function endServerSession(): Promise<void> {
+  try {
+    await nativeFetch(`${API_BASE_URL}/api/auth/logout`, {
+      method: 'POST',
+      credentials: 'include', // send the httpOnly refresh cookie so it can be revoked
+    });
+  } catch {
+    // Network error — nothing more we can do client-side.
+  } finally {
+    authStorage.clearToken();
+  }
+}
+
 async function doRefresh(): Promise<string | null> {
   try {
     const res = await nativeFetch(`${API_BASE_URL}/api/auth/refresh`, {

@@ -10,7 +10,7 @@
 **Quick Mark** is the **second** Discover-hub activity (after Sort Cards). Where
 Sort Cards is a slow, one-pack-at-a-time drag flow, Quick Mark is a **fast bulk
 triage grid**: the user picks a difficulty level, sees every not-yet-sorted
-discoverable word at that level as a wall of mini cards ordered by vernacular
+discoverable word at that level as a wall of mini cards ordered by conversation-frequency
 score, taps each card to assign it a destination, and hits **Save** to commit
 them all in one request.
 
@@ -61,7 +61,7 @@ Legend:     ○ skip/none    ✓ Add to Learn Now    Ⓜ Mastered
 
 Each card carries **two** corner badges:
 
-- **Top-left — vernacular badge** (unchanged): the word's `vernacularScore`
+- **Top-left — frequency badge** (unchanged): the word's `frequencyScore`
   (1 = literary … 5 = natural colloquial), same circular dot Sort Cards draws at
   `SortCardsPage.tsx:307-331`.
 - **Top-right — 3-state mark indicator** (new). Tapping the card **cycles** it:
@@ -76,7 +76,7 @@ Each card carries **two** corner badges:
   until Save**, and stays editable *after* Save too (§6 — Save reconciles).
 
 `MiniVocabCard` draws a UTCM category badge top-left and has no top-right slot / no
-vernacular badge, and Quick Mark cards are det rows (not saved `VocabEntry`s). So the
+frequency badge, and Quick Mark cards are det rows (not saved `VocabEntry`s). So the
 grid renders a dedicated **`QuickMarkCard`** (`src/components/QuickMarkCard.tsx`) — same
 92×132 thumbnail geometry, but driven by a `DiscoverCard` and carrying the two corner
 badges. It is plugged in via a new **`renderCard`** prop on `MiniVocabCardGrid` (which
@@ -125,7 +125,7 @@ Service method `listQuickMarkCards(language, userId, level, cursor, limit=100)`
 - **Skips are INCLUDED** (resolved): unlike Sort Cards' fresh supply, Quick Mark
   does **not** add the `discover_skips` exclusion (`StarterPacksService.ts` `skipFilter`)
   — a skipped word still has no vet row and gets a second chance to be triaged here.
-- `ORDER BY de."vernacularScore" DESC NULLS LAST, de.id ASC`
+- `ORDER BY de."frequencyScore" DESC NULLS LAST, de.id ASC`
 
 **Pagination is KEYSET, not offset** (this is a correctness requirement, not a
 preference): the batch save creates vet rows for the marked cards, which drops them
@@ -133,7 +133,7 @@ out of this vet-excluding result set. A numeric `OFFSET` would then skip that ma
 still-unsorted cards on the next page. Instead the client sends the last card's
 `{ score, id }` as a cursor and the query resumes strictly after it on the stable sort
 key — immune to rows removed above. `cursorScore` may be empty (the trailing
-NULL-`vernacularScore` block); the query switches to `(vernacularScore IS NULL AND
+NULL-`frequencyScore` block); the query switches to `(frequencyScore IS NULL AND
 id > cursorId)` there. `hasMore` is probed by fetching `limit + 1`.
 
 **Default level** (resolved): opening the page with no `level` seeds from the user's
@@ -153,10 +153,16 @@ Returns `{ cards: DiscoverCard[], level, hasMore }` (`DiscoverCard`, `src/types.
   replacement-card compute); `empty` → `undoSort` deletes any vet row for that card
   (no-op if none). Per-card failures are logged and skipped; response is
   `{ success, applied }`.
-  **Save is always pressable** (never greyed) — the user may want to Clear a previous
-  save and Save that empty state to un-do it, so the button can't be gated on
-  "something is marked". Re-entrancy (double-tap while a save is in flight) is guarded
-  inside the handler, not via `disabled`.
+  **Dirty-gated button** (`QuickMarkPage.tsx`, `isDirty` + `savedMarks`): the button is
+  **grey/disabled when there is nothing to save** and **green/pressable once the marks
+  diverge from the last-saved state**; a successful save re-baselines `savedMarks` to the
+  committed snapshot, so it returns to grey and starts tracking anew. Dirtiness is a
+  key-union comparison of `marks` vs `savedMarks` treating a missing key as `empty`, so:
+  a card cycled all the way back to empty reads as *clean*, but a **Clear of a
+  previously-saved mark reads as dirty** (it still needs a save to delete the vet row) —
+  which is why the gate can't simply be "something is marked". A failed save leaves the
+  baseline untouched, so the button stays green for a retry. Re-entrancy is guarded both
+  by `disabled={… || saving}` and an early return in the handler.
 - **Saved cards stay in view** (resolved): the current page is **not** refetched
   after Save, so the user keeps their last chance to undo — re-cycle a card's mark
   and Save again to move/remove it. Once they **leave the page**, saved cards are
@@ -184,7 +190,7 @@ spacer the last card row overlaps the floating footer pill by ~50px.
 | ---------------- | --------------------------------------------------------------------- |
 | Route/nav        | `useDiscoverNavigation` (quickMarkPath), `App` route, `DiscoverPage` row |
 | Page (view)      | `QuickMarkPage` (`NodePage` + level dropdown + legend + grid)          |
-| Component        | `QuickMarkCard` (mini-card geometry + vernacular badge + 3-state badge)|
+| Component        | `QuickMarkCard` (mini-card geometry + frequency badge + 3-state badge)|
 | HTTP route       | `POST /api/starter-packs/quick-mark-batch`, `GET …/:language/quick-mark` |
 | Controller       | `StarterPacksController` (new handlers)                                |
 | Service          | `StarterPacksService.listQuickMarkCards`, `.quickMarkBatch`           |

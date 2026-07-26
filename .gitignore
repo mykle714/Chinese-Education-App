@@ -57,3 +57,9 @@ server/scripts/backfill/**/.cache/
 
 # Prod det snapshots taken before each oracle-backfill run (large, regenerable)
 server/backups/
+
+# Character-decomposition source (makemeahanzi, LGPLv3) — build-time input for
+# backfill-character-components.js. Fetched on demand; deliberately NOT vendored,
+# so the LGPL data never enters this repo or ships to a client. See
+# server/scripts/backfill/chinese/lib/decompose.js.
+data/hanzi/cache/

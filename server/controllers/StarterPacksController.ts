@@ -191,7 +191,7 @@ export class StarterPacksController {
       const level = parseRequestedLevel(req.query.level);
 
       // Keyset cursor: cursorId anchors the page; cursorScore may be a number OR empty
-      // (the trailing NULL-vernacularScore block). No cursorId → first page (null cursor).
+      // (the trailing NULL-frequencyScore block). No cursorId → first page (null cursor).
       const cursorIdRaw = typeof req.query.cursorId === 'string' ? parseInt(req.query.cursorId, 10) : NaN;
       let cursor: { score: number | null; id: number } | null = null;
       if (Number.isInteger(cursorIdRaw)) {

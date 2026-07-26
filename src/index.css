@@ -1,3 +1,26 @@
+/* Sub-character component glyphs for the word search No Pinyin hint row.
+ *
+ * WHY THIS EXISTS: index.html loads Noto Sans SC from Google Fonts, which subsets CJK
+ * by character FREQUENCY (not by Unicode block). Component glyphs are disproportionately
+ * rare — ⺀ ⺮ ⺼ 㐬 耂 ⺌ 龹 殸 ⺈ … — so a slice of them is simply not served and would
+ * fall back to the OS font (wrong typeface next to the grid) or render as tofu.
+ *
+ * This is a subset of the SAME face, so per-glyph fallback to "Noto Sans SC" for
+ * everything it doesn't carry is visually seamless. Regenerate whenever
+ * dictionaryentries_zh.components changes:
+ *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/generate-component-font.js
+ *
+ * Source: Noto Sans SC, SIL OFL 1.1 — see data/hanzi/NotoSansSC-OFL.txt.
+ * `font-display: swap` keeps the hint row readable while the file loads.
+ */
+@font-face {
+  font-family: "HanziComponents";
+  src: url("./assets/fonts/hanzi-components.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   /* Mirrors FONTS.sans in src/theme/fonts.ts (CSS can't import the TS token). */
   font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;

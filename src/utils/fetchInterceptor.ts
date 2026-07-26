@@ -1,4 +1,4 @@
-import { attemptTokenRefresh } from './tokenRefresh';
+import { attemptTokenRefresh, endServerSession } from './tokenRefresh';
 import * as authStorage from './authStorage';
 
 // Store navigation and auth clearing functions
@@ -29,7 +29,16 @@ const NO_REFRESH_PATHS = [
   '/api/auth/refresh',
 ];
 
-const isUnauthorized = (status: number) => status === 401 || status === 403;
+/**
+ * Only 401 means "your session is not valid" — it is the sole status
+ * authenticateToken (server/authMiddleware.ts) returns for a missing/expired/
+ * invalid token. 403 means the OPPOSITE: the server authenticated you fine and
+ * is refusing this particular resource (e.g. GET /api/texts/:id for another
+ * user's document, TextController.ts). Treating 403 as expiry logged a
+ * perfectly valid session out — the user experienced it as the app "crashing"
+ * to the login screen.
+ */
+const isUnauthorized = (status: number) => status === 401;
 
 /**
  * Re-run the original request once with a freshly refreshed access token,
@@ -83,6 +92,11 @@ export const setupFetchInterceptor = () => {
 
       // Refresh failed (or retry still unauthorized): the session is truly over.
       console.log('Session expired and refresh failed — redirecting to login...');
+
+      // Kill it server-side FIRST. A refresh cookie that outlives this redirect
+      // leaves the login screen sitting on a live session, which AuthContext's
+      // silent refresh immediately restores (see endServerSession).
+      await endServerSession();
 
       if (clearAuthState) {
         clearAuthState();

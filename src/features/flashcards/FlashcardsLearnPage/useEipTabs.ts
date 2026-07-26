@@ -235,6 +235,18 @@ export function useEipTabs({ apiBaseUrl, token, stripRef }: UseEipTabsOptions) {
         }
     }, [apiBaseUrl, token, tabs, stripRef]);
 
+    // Re-seed an already-open entry tab from a fresher copy of the same word. Tabs hold a
+    // SNAPSHOT of the entry, so a change made outside the panel while it is open (today:
+    // the flashcard's sense picker writing `selectedSense`) would otherwise leave the eip
+    // header showing the previous sense's dd. Matched by entryKey; the tab's own UI state
+    // (color, measured width, selected sub-tab, breakdown rows) is preserved. No-op when
+    // no tab holds that word.
+    const syncEntry = useCallback((entry: VocabEntry) => {
+        setTabs(prev => prev.map(t =>
+            t.kind === "entry" && t.id === entry.entryKey ? { ...t, entry } : t
+        ));
+    }, []);
+
     const setActive = useCallback((index: number) => {
         setActiveIndex(index);
     }, []);
@@ -274,6 +286,7 @@ export function useEipTabs({ apiBaseUrl, token, stripRef }: UseEipTabsOptions) {
         isTabbedMode,
         openForRoot,
         openForEntryKey,
+        syncEntry,
         openCompareTab,
         setCompareSlot,
         setCompareResult,

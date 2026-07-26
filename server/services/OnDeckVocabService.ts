@@ -15,7 +15,7 @@ import {
   type WordSearchInput,
   type WordSearchGrid,
 } from './wordSearchGrid.js';
-import { resolveSenseGloss } from '../utils/definitions.js';
+import { resolveSenseGloss, resolveDisplayDefinition } from '../utils/definitions.js';
 
 // Difficulty-targeted study modes launched from the decks page (Easy/Hard
 // buttons). Each mode shapes BOTH the initial working-loop distribution and the
@@ -1130,17 +1130,34 @@ export class OnDeckVocabService {
       // standalone gloss. One batched clusters query over every distinct target
       // component character; fall back to the char's stored breakdown definition when
       // the row/label doesn't resolve.
+      // The same pass also collects each character's `components` (migration 125) — the
+      // sub-character visual parts the No Pinyin hint ladder reveals one at a time. It
+      // rides this existing query rather than adding a round trip, since both are
+      // per-target-character facts keyed by the same word1 list.
       const targetChars = [...new Set(withAudio.flatMap((w) => [...w.entryKey]))];
       const charClusters = new Map<string, Array<{ sense?: string | null; glosses?: string[] | null }>>();
+      const charComponentsMap = new Map<string, string[]>();
       if (targetChars.length > 0) {
-        const clustersResult = await client.query<{ word1: string; definitionClusters: unknown }>(`
-          SELECT word1, "definitionClusters"
+        const clustersResult = await client.query<{
+          word1: string;
+          definitionClusters: unknown;
+          components: unknown;
+        }>(`
+          SELECT word1, "definitionClusters", components
           FROM dictionaryentries_zh
           WHERE language = 'zh' AND word1 = ANY($1)
         `, [targetChars]);
         for (const row of clustersResult.rows) {
           if (!charClusters.has(row.word1) && Array.isArray(row.definitionClusters)) {
             charClusters.set(row.word1, row.definitionClusters as Array<{ sense?: string | null; glosses?: string[] | null }>);
+          }
+          // NULL (never backfilled) and [] (verified atomic) both mean "no parts to
+          // reveal" to the client, so both collapse to an empty array here.
+          if (!charComponentsMap.has(row.word1) && Array.isArray(row.components)) {
+            charComponentsMap.set(
+              row.word1,
+              (row.components as unknown[]).filter((c): c is string => typeof c === 'string')
+            );
           }
         }
       }
@@ -1158,8 +1175,13 @@ export class OnDeckVocabService {
           id: w.id,
           entryKey: w.entryKey,
           pinyin: w.pronunciation ?? '',
-          definition: w.definition ?? '',
+          // The word list is a dd surface for a SAVED card, so it must honor the learner's
+          // per-card sense pick (vet.selectedSense) exactly as the flashcard face does. The
+          // clusters don't travel in the grid payload, so the resolution happens here.
+          // See docs/DEFINITION_CLUSTERS.md.
+          definition: resolveDisplayDefinition(w),
           charSenses,
+          charComponents: [...w.entryKey].map((char) => charComponentsMap.get(char) ?? []),
         };
       });
       const generated = generateWordSearchGrid(inputs, fillerPool, rows, cols);

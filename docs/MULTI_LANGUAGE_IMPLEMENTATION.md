@@ -5,7 +5,7 @@
 > been abandoned: dictionary data now lives in **per-language tables** because their
 > identity/keying differs (see CLAUDE.md → "Dictionary Tables"). The Chinese table was
 > renamed `dictionaryentries` → `dictionaryentries_zh`, Spanish lives in
-> `dictionaryentries_es` (key = word1+pos+gender), and affixes in `affixes`. The
+> `dictionaryentries_es` (key = word1, as of migration 123), and affixes in `affixes`. The
 > ja/ko/vi import scripts referenced below are currently **broken on purpose** (they
 > throw on startup) and those languages are **not user-selectable** until per-language
 > tables (`dictionaryentries_ja/_ko/_vi`) are created.

@@ -3,7 +3,7 @@ import { COLORS } from "../../theme/colors";
 import { Box, Typography } from "@mui/material";
 import { SIZE, WEIGHT } from "../../theme/scale";
 import type { VocabEntry } from "../../types";
-import { stripParentheses } from "../../utils/definitionUtils";
+import { resolveDisplayDefinition } from "../../utils/definitionUtils";
 import Bubble from "./Bubble";
 import { stepPhysics, planSpawn, fillRatio, randRange, type Bounds } from "./physics";
 import { selectNextBubble } from "./spawnSelection";
@@ -91,7 +91,9 @@ function lengthScaledRadius(
 
 /** Radius for a definition bubble, scaled to the length of its English text. */
 function definitionRadius(entry: VocabEntry): number {
-    const len = stripParentheses(entry.definition ?? "").length;
+    // MUST match Bubble.tsx's defText transform — this length drives the bubble's radius,
+    // so measuring a different string than the one rendered would mis-size the bubble.
+    const len = resolveDisplayDefinition(entry).length;
     return lengthScaledRadius(
         len,
         DEFINITION_LEN_MIN,

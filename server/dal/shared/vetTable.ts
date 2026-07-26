@@ -1,9 +1,9 @@
 // Resolve the per-language `vocabentries` table (vet) name from a language code.
 // User vocab is split per language family (mirroring the det split, see CLAUDE.md):
-// Chinese saved cards live in `vocabentries_zh`, Spanish in `vocabentries_es`
-// (which adds `pos` to the identity so verb vs noun of the same spelling are
-// distinct saved cards). The two tables share one id sequence, so ids are globally
-// unique across the pair.
+// Chinese saved cards live in `vocabentries_zh`, Spanish in `vocabentries_es`. Both
+// now share ONE identity — (userId, entryKey, language); es dropped `pos` from its key
+// in migration 123, when a Spanish word stopped spanning multiple det rows. The two
+// tables share one id sequence, so ids are globally unique across the pair.
 //
 // WHITELIST: only ever returns one of two fixed, hard-coded table names and never
 // interpolates caller-controlled text, so the result is safe to splice into SQL.
@@ -13,13 +13,18 @@ export function vetTableForLanguage(language: string | null | undefined): string
 }
 
 // FROM source (aliased `ve`) for a language-scoped vet read that feeds DICT_JOIN.
-// DICT_JOIN references `ve.pos`; the es table has it, but the zh table does not,
-// so the zh source is wrapped to expose a NULL `pos`. Pair with vetTableForLanguage
-// for plain (non-joined) language-scoped queries.
+//
+// This used to wrap the zh table in a subquery that synthesized a NULL `pos` column,
+// because DICT_JOIN's Spanish branch referenced `ve.pos` to pick between a word's
+// several det rows. Migration 121 removed that need (one det row per word1, sense
+// chosen via `selectedSense`), so both languages are now a plain aliased table and the
+// zh read no longer pays for a wrapping subquery.
+//
+// Kept as its own function rather than inlined at the ~19 call sites: it marks which
+// queries are DICT_JOIN reads, and gives any future per-language FROM divergence one
+// place to live.
 export function vetReadFrom(language: string | null | undefined): string {
-  return language === 'es'
-    ? 'vocabentries_es ve'
-    : '(SELECT *, NULL::varchar AS pos FROM vocabentries_zh) ve';
+  return `${vetTableForLanguage(language)} ve`;
 }
 
 // Both physical vet tables, for id-only operations that must hit whichever holds

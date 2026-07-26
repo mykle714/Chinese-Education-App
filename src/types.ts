@@ -38,6 +38,18 @@ export type LongDefinitionPart =
       segmentMetadata: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo; wordForms?: Record<string, string> }>;
     };
 
+// One sense's extended definition, as sent by the server (zh only). `longDefinition` is
+// stored per SENSE (docs/DEFINITION_CLUSTERS.md), and the sense picker is optimistic —
+// no refetch — so the server ships EVERY sense with its own `parts` and the client picks
+// the one the card is on via `resolveLongDefinitionForSense` (src/utils/definitionUtils.ts).
+// Mirrors the server LongDefinitionSenseView type.
+export interface LongDefinitionSenseView {
+  sense: string;                        // cluster `sense` label — matches definitionClusters/selectedSense
+  pos?: string | null;
+  definition: string;
+  parts?: LongDefinitionPart[] | null;
+}
+
 // Flashcard Category type for spaced repetition
 export type FlashcardCategory = 'Unfamiliar' | 'Target' | 'Comfortable' | 'Mastered';
 
@@ -64,7 +76,7 @@ export interface UsedInItem {
   entryKey: string;
   pronunciation: string | null;
   definition: string | null;
-  vernacularScore: number | null;
+  frequencyScore: number | null;
 }
 
 /**
@@ -197,7 +209,8 @@ export interface VocabEntry {
   entryKey: string;
   definition?: string | null;  // det.definitions[0] — joined from dictionaryentries at read time
   longDefinition?: string | null;
-  longDefinitionParts?: LongDefinitionPart[] | null;  // Computed at runtime: longDefinition split into English + cpcd-able Chinese runs
+  longDefinitionParts?: LongDefinitionPart[] | null;  // Computed at runtime: the CURRENT sense's longDefinition split into English + cpcd-able Chinese runs
+  longDefinitionSenses?: LongDefinitionSenseView[] | null;  // Computed at runtime (zh): every sense's definition + parts; resolve with resolveLongDefinitionForSense. NULL for es/legacy per-POS rows.
   // Server-computed (enrichDefinitionsApprovalBatch): TRUE iff a validator approved
   // the 'definitions' field (partsOfSpeech + definitions[] + longDefinition, bundled
   // as one validation unit) and it still matches the det data (docs/DATA_VALIDATION_SYSTEM.md).
@@ -211,14 +224,7 @@ export interface VocabEntry {
   tone?: string | null;
   difficulty?: DifficultyLevel | null;
   partsOfSpeech?: string[] | null;
-  // Spanish (es) only: the saved sense's part of speech + whether this word1 has
-  // multiple discoverable POS (so the UI shows a "(v)"/"(n)" disambiguation badge),
-  // plus the secondary gender-homograph gloss. Null/false for Chinese.
-  pos?: string | null;
-  hasMultiplePos?: boolean;
-  alternateGender?: string | null;
-  alternateMeaning?: string | null;
-  vernacularScore?: number | null;  // 1=literary … 5=natural colloquial
+  frequencyScore?: number | null;  // 1=almost never spoken … 5=constant in daily speech
   definitionClusters?: DefinitionCluster[] | null;  // Orthogonal sense clusters (zh; migration 90) — see docs/DEFINITION_CLUSTERS.md
   selectedSense?: string | null;  // Per-card chosen cluster `sense` label (vet column, migration 99). NULL = default/starred sense. Absent on det-fallback entries (dictionary cdp). See docs/DEFINITION_CLUSTERS.md
   category?: FlashcardCategory;  // utcm level, derived server-side from typedMarkHistory + the account's goals (migration 101)
@@ -289,14 +295,16 @@ export interface DictionaryEntry {
   numberedPinyin?: string | null;
   tone?: string | null;
   partsOfSpeech?: string[] | null;
-  vernacularScore?: number | null;  // 1=literary … 5=natural colloquial
+  frequencyScore?: number | null;  // 1=almost never spoken … 5=constant in daily speech
   matchException?: string[] | null; // Multi-char tokens this entry suppresses during gsa segmentation (zh det column, already sent by /by-tokens; consumed by src/features/reader/documentSegmentation.ts)
   definitions: string[]; // Array of definition strings (flat cache)
   definitionClusters?: DefinitionCluster[] | null;  // Orthogonal sense clusters (zh; migration 90) — see docs/DEFINITION_CLUSTERS.md
+  selectedSense?: string | null;  // Attached at read time by GET /api/dictionary/lookup: the REQUESTING user's saved sense pick for this word (vet.selectedSense) when they have it as a card, so an eip drill-in shows the same dd as their flashcard. Absent when they have no card for it. See docs/DEFINITION_CLUSTERS.md
   shortDefinitionPronunciationOverride?: ShortDefinitionPronunciationOverride | null; // Raw override object from DB
   shortDefinition?: string | null;
   longDefinition?: string | null;
-  longDefinitionParts?: LongDefinitionPart[] | null;  // Computed at runtime: longDefinition split into English + cpcd-able Chinese runs
+  longDefinitionParts?: LongDefinitionPart[] | null;  // Computed at runtime: the CURRENT sense's longDefinition split into English + cpcd-able Chinese runs
+  longDefinitionSenses?: LongDefinitionSenseView[] | null;  // Computed at runtime (zh): every sense's definition + parts; resolve with resolveLongDefinitionForSense. NULL for es/legacy per-POS rows.
   // Server-computed (enrichDefinitionsApprovalBatch): TRUE iff a validator approved
   // the 'definitions' field and it still matches the det data (docs/DATA_VALIDATION_SYSTEM.md).
   definitionsApproved?: boolean;
@@ -314,15 +322,22 @@ export interface AiDictionaryEntry {
   source: 'ai';
 }
 
-// One orthogonal sense cluster within a Chinese entry's `definitionClusters`
-// (migration 90). Glosses sharing one core meaning are grouped and ordered
+// One orthogonal sense cluster within an entry's `definitionClusters`
+// (zh: migration 90; es: migration 123). Glosses sharing one core meaning are grouped and ordered
 // prototypical→vernacular within the cluster; clusters are mutually orthogonal.
+// ("vernacular" here means plainness of WORDING within a gloss list — unrelated to
+// `frequencyScore`, which measures how often the sense comes up in conversation.)
 // See docs/DEFINITION_CLUSTERS.md.
 export interface DefinitionCluster {
   sense: string;                  // short English label for the shared meaning
-  reading: string;                // numbered pinyin for THIS sense (heteronyms differ, e.g. 会计 → "kuai4")
+  reading: string | null;         // zh: numbered pinyin for THIS sense (heteronyms differ, e.g. 会计 → "kuai4"). NULL for es — Spanish pronunciation is not per-sense.
   pos: string[] | null;           // part(s) of speech for this sense (always an array; single-POS senses are a 1-element array)
-  vernacularScore: number | null; // 1–5 register, scored independently per cluster
+  // es only (NULL for zh): grammatical gender of THIS sense. Spanish's hard sense
+  // boundary is pos + gender the way Chinese's is `reading` — gender carries distinct
+  // meaning (cura/m "priest" vs cura/f "cure"), so the two never share a cluster.
+  // Migration 121 folded the old per-gender det ROWS into these clusters.
+  gender?: string | null;
+  frequencyScore: number | null; // 1–5 conversation frequency, scored independently per cluster
   glosses: string[];              // verbatim source glosses, ordered prototypical→vernacular
 }
 
@@ -337,14 +352,11 @@ export interface DiscoverCard {
   word2?: string | null;
   script?: string | null;
   difficulty?: DifficultyLevel | null;
-  // Colloquial-register score for the whole entry (1 = literary … 5 = natural
-  // colloquial). Drives the sort-flow supply ordering (highest register first)
-  // and the vernacular-dots badge on the mini card.
-  vernacularScore?: number | null;
-  // Spanish (es) only: this card's POS, and whether the word1 has multiple
-  // discoverable POS (→ show a "(v)"/"(n)" badge). Null/false for Chinese.
-  pos?: string | null;
-  hasMultiplePos?: boolean;
+  // Everyday-conversation frequency for the whole entry (1 = almost never spoken
+  // … 5 = constant in daily speech). Drives the sort-flow supply ordering (most
+  // frequent first)
+  // and the frequency-dots badge on the mini card.
+  frequencyScore?: number | null;
   breakdown?: Record<string, { definition: string; pronunciation?: string; sense?: string }> | null;
   synonyms?: string[] | null;
   exampleSentences?: Array<{

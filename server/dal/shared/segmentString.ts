@@ -11,7 +11,7 @@ export interface SegmentMeta {
   // Verbatim overrides from exampleSentenceDefinitionPronunciationOverride — bypass context-matching when set
   overridePronunciation?: string;
   overrideDefinition?: string;
-  vernacularScore?: number | null;
+  frequencyScore?: number | null;
   wordForms?: Record<string, string>;  // AI-generated English conjugation map (e.g. {past: "ran", present: "runs"})
   definitionClusters?: DefinitionCluster[] | null;  // Orthogonal sense clusters (zh; migration 90) — used to resolve a segment's dd from its tagged sense (senseDict)
 }
@@ -131,7 +131,7 @@ export function buildDictMap(dictEntries: DictionaryEntry[]): Map<string, Segmen
         pronunciation: entry.pronunciation || '',
         definition: fallbackDefinition,
         definitions,
-        vernacularScore: entry.vernacularScore ?? null,
+        frequencyScore: entry.frequencyScore ?? null,
         // Carry overrides through so the enrichment loop can apply them verbatim
         ...(esOverride?.pronunciation != null && { overridePronunciation: esOverride.pronunciation }),
         ...(esOverride?.definition != null && { overrideDefinition: esOverride.definition }),
@@ -167,7 +167,7 @@ export function buildExcludeSet(dictEntries: DictionaryEntry[]): Set<string> {
 /**
  * Best-score segmentation of a Chinese string using a pre-fetched dictionary map.
  * Tries substring lengths 4→1. At each length tier, all matching substrings are
- * evaluated and the one with the highest vernacularScore is chosen (null treated as 0).
+ * evaluated and the one with the highest frequencyScore is chosen (null treated as 0).
  * Tiebreak: later position in the string wins (higher startIdx).
  * The winner is extracted, then left/right remainders are recursively segmented.
  * Falls back to individual characters when no dictionary match exists at any length.
@@ -205,7 +205,7 @@ export function segmentWithDict(
 
   // Priority pass: if any candidate substring (at any length/position) appears in
   // prioritySegments, the front-most listed one wins outright — bypassing the
-  // length-tier and vernacularScore logic below.
+  // length-tier and frequencyScore logic below.
   if (prioritySegments && prioritySegments.length > 0) {
     let bestPriorityRank = Infinity;
     let bestPriorityIdx = -1;
@@ -271,7 +271,7 @@ export function segmentWithDict(
     }
   }
 
-  // Try each length tier longest-first; within a tier, pick highest vernacularScore
+  // Try each length tier longest-first; within a tier, pick highest frequencyScore
   // (null = 0), tiebreaking on later position (higher startIdx = more specific context)
   for (let length = Math.min(4, chars.length); length >= 1; length--) {
     let bestIdx = -1;
@@ -283,7 +283,7 @@ export function segmentWithDict(
       // Skip multi-char tokens listed in matchException — single chars are never excluded
       if (length > 1 && excludeTokens?.has(substring)) continue;
 
-      const score = dictMap.get(substring)!.vernacularScore ?? 0;
+      const score = dictMap.get(substring)!.frequencyScore ?? 0;
       if (score > bestScore || (score === bestScore && startIdx > bestIdx)) {
         bestScore = score;
         bestIdx = startIdx;

@@ -56,9 +56,9 @@ const RANDOM_GRID_ATTEMPTS = 5;
 ```
 
 - Attempts `0..4` (5 total): today's algorithm exactly as documented in
-  `WORD_SEARCH_GAME.md` §2 — random start, 4-directional snaking (2-char
-  words forward-only), per-word backtracking, whole-grid regeneration on
-  failure.
+  `WORD_SEARCH_GAME.md` §2 — random start, 4-directional snaking (short words
+  then oriented into reading order), per-word backtracking, whole-grid
+  regeneration on failure.
 - If attempt 5 is reached (all 5 random attempts failed to place all 10
   words): **do not** keep retrying randomly. Instead pick one of the 10
   fixed templates (§3) at random and use the template placement path (§4).
@@ -129,10 +129,12 @@ export interface WordSearchTemplate {
 export const WORD_SEARCH_TEMPLATES: WordSearchTemplate[]; // length 10, 7x7 only
 ```
 
-Slot cell order is the fixed "reading direction" for that slot — same
-convention as a random-placed word's `cells` path (parent doc §2/§4): a word
-assigned to a slot always reads its characters forward along that order,
-never reversed.
+Slot cell order is the slot's authored **traversal**, not a guaranteed reading
+direction: a 4-character word always reads forward along it, but a 2- or 3-cell
+run of it may point backwards (e.g. right-to-left). Such runs are therefore
+passed through `orientPath` (parent doc §2 "Reading order") before being
+committed, exactly as random placement does — so the short-word reading-order
+rule holds identically in both modes.
 
 ---
 
@@ -153,9 +155,10 @@ chosen `WordSearchTemplate`:
      remaining `4-N` cells in that slot (before and/or after the run) are
      **not** part of any word — they're handed to the same filler flood as
      every other empty cell (parent doc §2 "Filler").
-   - This mirrors the parent doc's existing forward-reading convention: a
-     word's own path is always contiguous and reads forward, whatever subset
-     of the slot it occupies.
+     The run is then handed to `orientPath` (parent doc §2 "Reading order"),
+     which reverses it when its shape has an unambiguous reading direction —
+     so a 2-char word never lands right-to-left/bottom-to-top, and a 3-char
+     word reads correctly when straight or ⌞-bent.
 3. Commit all word cells (`occupied[r][c] = true`, `cells[r][c] = {char,
    pinyin}`), exactly as the random-placement path already does after
    `tryPlaceWord` succeeds.

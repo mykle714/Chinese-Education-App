@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { API_BASE_URL } from './constants';
 import type { Language } from './types';
 import { setFetchInterceptorHandlers, setupFetchInterceptor } from './utils/fetchInterceptor';
-import { setRefreshHandlers, attemptTokenRefresh } from './utils/tokenRefresh';
+import { setRefreshHandlers, attemptTokenRefresh, endServerSession } from './utils/tokenRefresh';
 import { notifyLogin } from './utils/authSync';
 import * as authStorage from './utils/authStorage';
 
@@ -120,12 +120,22 @@ export function AuthProvider({ children }: AuthProviderProps) {
                         setUser(userData);
                         notifyLogin(token);
                     } else {
-                        // If the token is invalid, clear it
-                        console.log('Token validation failed, clearing stored token');
-                        authStorage.clearToken();
+                        // The access token is unusable. End the session on the
+                        // server as well before clearing it locally: setToken(null)
+                        // re-runs this effect down the no-token branch, which
+                        // silently refreshes — and if the refresh cookie were still
+                        // alive it would mint another token that fails /me the same
+                        // way, spinning this effect forever (each turn nulling
+                        // `user`, which also clobbers a login the user just made).
+                        // Revoking makes the follow-up refresh fail once and stop.
+                        console.log('Token validation failed, ending session');
+                        await endServerSession();
                         setToken(null);
                     }
                 } catch (error) {
+                    // Network/parse failure — clear locally only. This is not a
+                    // credential verdict, so we must NOT revoke a session that may
+                    // still be perfectly good once the network recovers.
                     console.error('Error checking authentication:', error);
                     authStorage.clearToken();
                     setToken(null);
@@ -226,12 +236,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
     // Logout function
     const logout = async () => {
         try {
-            await fetch(`${API_BASE_URL}/api/auth/logout`, {
-                method: 'POST',
-                credentials: 'include' // Include cookies
-            });
+            // Shared with the interceptor's session-expiry path: revokes the
+            // refresh token server-side and clears both auth cookies.
+            await endServerSession();
 
-            authStorage.clearToken();
             setToken(null);
             setUser(null);
             navigate('/login');

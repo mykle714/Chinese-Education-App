@@ -1,3 +1,8 @@
+// The stored shapes of the `longDefinition` JSONB column (per-sense array for zh,
+// per-POS object for es/legacy). Defined in utils/definitions.ts alongside its
+// resolvers; that module imports nothing, so this direction introduces no cycle.
+import type { LongDefinitionValue } from '../utils/definitions.js';
+
 // Custom error type with code and status code
 export interface CustomError extends Error {
   code?: string;
@@ -135,6 +140,17 @@ export type LongDefinitionPart =
       segmentMetadata: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo; wordForms?: Record<string, string> }>;
     };
 
+// One sense's extended definition as SHIPPED to the client (zh): the stored
+// { sense, pos, definition } plus that text's own segmentation. Every sense is sent so the
+// client can follow the learner's sense pick without a refetch (the picker is optimistic) —
+// see DictionaryDAL.enrichLongDefinitionMetadataBatch and docs/DEFINITION_CLUSTERS.md.
+export interface LongDefinitionSenseView {
+  sense: string;                              // cluster `sense` label — matches definitionClusters/selectedSense
+  pos?: string | null;
+  definition: string;
+  parts?: LongDefinitionPart[] | null;        // computed at runtime, same treatment as longDefinitionParts
+}
+
 // Dictionary Entry type for multi-language dictionaries
 export interface DictionaryEntry {
   id: number;
@@ -157,11 +173,19 @@ export interface DictionaryEntry {
   // Definitions
   definitions: string[];  // Parsed JSON array (flat cache; owned by backfill-process-definitions-array.js)
   definitionClusters?: DefinitionCluster[] | null;  // Orthogonal sense clusters (migration 90); additive metadata, see docs/DEFINITION_CLUSTERS.md
+  selectedSense?: string | null;  // Computed at read time (DictionaryController.lookupTerm): the REQUESTING user's saved sense pick for this word from their vet row. NOT a det column - it makes a lookup's dd match that user's flashcard. See docs/DEFINITION_CLUSTERS.md
   shortDefinitionPronunciationOverride?: ShortDefinitionPronunciationOverride | null; // Raw override object from DB
   shortDefinition?: string | null; // Resolved at runtime: override.definition ?? generateShortDefinition()
   exampleSentenceDefinitionPronunciationOverride?: ExampleSentenceDefinitionPronunciationOverride | null; // Raw override object from DB; applied verbatim in segment popups
-  longDefinition?: string | null;
+  longDefinition?: string | null;   // Hydrated at read time from the JSONB column, narrowed to the card's CURRENT sense — see resolveLongDefinition
+  // Transient carrier for the raw JSONB `longDefinition` column (per-sense array for zh).
+  // mapRowToEntity must collapse `longDefinition` to a string for the ~all consumers that
+  // type it as one, but the per-user sense pick (`selectedSense`) is attached LATER in the
+  // lookup path — so the un-narrowed value rides along here and enrichLongDefinitionMetadataBatch
+  // re-resolves from it, then drops this field from the payload. See docs/DEFINITION_MAPPING.md #5.
+  longDefinitionRaw?: LongDefinitionValue | null;
   longDefinitionParts?: LongDefinitionPart[] | null;  // Computed at runtime: longDefinition split into English + cpcd-able Chinese runs
+  longDefinitionSenses?: LongDefinitionSenseView[] | null;  // Computed at runtime (zh): EVERY sense's definition + parts, so the client can follow the sense picker without a refetch. NULL for es/legacy per-POS rows.
   // Computed at read time (DictionaryDAL.enrichDefinitionsApprovalBatch): TRUE iff a
   // validations row (field='definitions', action='approve') matches the entry's
   // CURRENT raw partsOfSpeech + definitions + longDefinition columns (all three,
@@ -192,7 +216,7 @@ export interface DictionaryEntry {
     humanApproved?: boolean;   // Computed at read time (enrichExampleSentencesMetadataBatch): TRUE iff a validations row with action='approve' matches this sentence's current foreignText+english (docs/DATA_VALIDATION_SYSTEM.md). Falsy ⇒ client renders the AI-generated styling
   }> | null;
   matchException?: string[] | null;  // Multi-char tokens to suppress during GSA segmentation
-  vernacularScore?: number | null;   // Higher = more colloquially common; used by GSA to prefer common words
+  frequencyScore?: number | null;   // Higher = more frequent in everyday conversation; used by GSA to prefer common words
   wordForms?: Record<string, string> | null;  // AI-generated English conjugation map (e.g. {past: "ran", present: "runs"})
 };
 
@@ -268,17 +292,22 @@ export interface WordComparisonResult {
   comparisonParts: LongDefinitionPart[] | null;
 }
 
-// One orthogonal sense cluster within a Chinese dictionary entry's
-// `definitionClusters` (migration 90). Glosses sharing one core meaning are
+// One orthogonal sense cluster within a dictionary entry's `definitionClusters`
+// (zh: migration 90; es: migration 123). Glosses sharing one core meaning are
 // grouped and ordered prototypical→vernacular WITHIN the cluster; clusters
-// themselves are mutually orthogonal and ordered most→least useful. Heteronyms
-// stay in one row, distinguished by per-cluster `reading`. Difficulty stays at
-// the word level (not duplicated here). See docs/DEFINITION_CLUSTERS.md.
+// themselves are mutually orthogonal and ordered most→least useful. Difficulty
+// stays at the word level (not duplicated here).
+//
+// Each language keeps its homographs in ONE row, distinguished by the field that
+// carries its hard sense boundary: `reading` for Chinese (heteronyms — 会
+// hui4/kuai4), `gender` for Spanish (cura/m "priest" vs cura/f "cure"). The other
+// field is NULL. See docs/DEFINITION_CLUSTERS.md.
 export interface DefinitionCluster {
   sense: string;                  // short English label for the shared meaning
-  reading: string;                // numbered pinyin for THIS sense (e.g. 会计 → "kuai4")
+  reading: string | null;         // zh: numbered pinyin for THIS sense (e.g. 会计 → "kuai4"). NULL for es.
   pos: string[] | null;           // part(s) of speech for this sense (always an array; single-POS senses are a 1-element array)
-  vernacularScore: number | null; // 1–5 register, scored independently per cluster (null = scoring failed)
+  gender?: string | null;         // es: grammatical gender of THIS sense (m/f/mf/…). NULL for zh.
+  frequencyScore: number | null; // 1–5 conversation frequency, scored independently per cluster (null = scoring failed)
   glosses: string[];              // verbatim source glosses, ordered prototypical→vernacular
 }
 
@@ -293,14 +322,10 @@ export interface DiscoverCard {
   word2?: string | null;
   script?: string | null;
   difficulty?: DifficultyLevel | null;
-  // Colloquial-register score for the whole entry (1 = literary … 5 = natural
-  // colloquial), read straight from the det `vernacularScore` column. Drives the
-  // sort-flow supply ordering (highest register first) and the mini-card badge.
-  vernacularScore?: number | null;
-  // Spanish (es) only: this card's POS + whether the word1 has multiple
-  // discoverable POS (→ client shows a "(v)"/"(n)" badge). Null/false for Chinese.
-  pos?: string | null;
-  hasMultiplePos?: boolean;
+  // Everyday-conversation frequency for the whole entry (1 = almost never spoken …
+  // 5 = constant in daily speech), read straight from the det `frequencyScore` column. Drives the
+  // sort-flow supply ordering (most frequent first) and the mini-card badge.
+  frequencyScore?: number | null;
   breakdown?: Record<string, { definition: string; sense?: string }> | null;
   synonyms?: string[] | null;
   exampleSentences?: Array<{
@@ -401,7 +426,7 @@ export interface UsedInItem {
   entryKey: string;
   pronunciation: string | null;
   definition: string | null;
-  vernacularScore: number | null;
+  frequencyScore: number | null;
 }
 
 // VocabEntry model type
@@ -507,7 +532,7 @@ export interface VocabEntry {
   // validations row (field='definitions', action='approve') matches the entry's
   // CURRENT raw partsOfSpeech + definitions + longDefinition columns (docs/DATA_VALIDATION_SYSTEM.md).
   definitionsApproved?: boolean;
-  vernacularScore?: number | null;  // 1–5 register score from dictionaryentries_zh (1=literary, 5=natural colloquial)
+  frequencyScore?: number | null;  // 1–5 conversation-frequency score from dictionaryentries_zh (1=almost never spoken, 5=constant in daily speech)
   definitionClusters?: DefinitionCluster[] | null;  // Orthogonal sense clusters (zh; migration 90), joined from det via DICT_JOIN — see docs/DEFINITION_CLUSTERS.md
   selectedSense?: string | null;  // Per-card chosen cluster `sense` label (vet column, migration 99). NULL = default/starred sense. See docs/DEFINITION_CLUSTERS.md
   typedMarkHistory?: TypedMarkHistory;  // Per-type mark streams (migration 101); see docs/MASTERY_REWORK.md
@@ -527,6 +552,7 @@ export interface VocabEntry {
   synonymsMetadata?: Record<string, { definition: string; pronunciation: string }> | null;  // Computed at runtime by batch-reading from dictionaryentries_zh
   longDefinition?: string | null;  // AI-generated extended definition (25–150 chars) from dictionaryentries_zh
   longDefinitionParts?: LongDefinitionPart[] | null;  // Computed at runtime: longDefinition split into English + cpcd-able Chinese runs
+  longDefinitionSenses?: LongDefinitionSenseView[] | null;  // Computed at runtime (zh): EVERY sense's definition + parts, so the client can follow the sense picker without a refetch. NULL for es/legacy per-POS rows.
   iconId?: string | null;  // Representative icons8 icon (FK to icons8.icons8Id) joined from det; client renders via <img src="/api/icons8/<iconId>/image">
   iconLayout?: IconLayoutItem[] | null;  // Custom flashcard icon arrangement (vet column, migration 82). NULL = use the default centered iconId. See docs/CARD_ICON_LAYOUT.md
   snapConfig?: SnapConfig | null;  // Per-card icon-editor snap toggles (vet column, migration 88). NULL = all off. See docs/CARD_ICON_LAYOUT.md

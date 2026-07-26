@@ -115,11 +115,14 @@ Body format — plain human-readable prose, **not** JSON — built by the shared
 formatters in `server/utils/validationBodyFormat.ts`:
 - **`composeDefinitionsBody`** — `Parts of Speech: <comma list>`, then
   `Definitions:` as a numbered list, then `Long Definition:` followed by the prose.
-  `longDefinition` is read straight from the raw det column, which for zh is a
-  per-POS JSONB **object** (migration 70), so the formatter normalizes it through
-  `longDefObjectToDisplayString` (the same helper the API uses to hydrate the
-  client string) before rendering — passing the raw object to `.trim()` directly
-  threw a 500 on every definitions Approve.
+  `longDefinition` is read straight from the raw det column, which is JSONB
+  (migration 70) — a **per-sense array** for zh (`[{sense, pos, definition}, …]`,
+  docs/DEFINITION_CLUSTERS.md) and a **per-POS object** for es/pre-v14 rows — so the
+  formatter normalizes it through `longDefToDisplayString` before rendering; passing
+  the raw value to `.trim()` directly threw a 500 on every definitions Approve. The
+  validator reviews the field as a whole, so this shows **every** sense labeled
+  `"<sense> (<pos>): …"`, unlike the learner surfaces, which show only the sense the
+  card is on (`resolveLongDefinition`).
 - **`composeExampleSentenceBody`** — `Sentence:` followed by `foreignText`, then
   `Translation:` followed by `english`. Only these two reviewable fields are shown
   — the rest of the stored sentence object (`tense`, `numberDict`, `segments`,
@@ -367,13 +370,22 @@ Applied to the recurring AI writers:
 
 | Field group | `validatedClause([...], table)` | Scripts (zh + es) |
 |---|---|---|
-| Definitions bundle | `['definitions']` | `backfill-parts-of-speech`, `backfill-long-definitions`, `backfill-process-definitions-array` |
-| Example sentences | `['exampleSentence0','exampleSentence1','exampleSentence2']` | `backfill-example-sentences` |
+| Definitions bundle | `['definitions']` | zh: `backfill-parts-of-speech`, `backfill-process-definitions-array`, `backfill-split-semicolon-definitions`, `backfill-expand-abbreviations`<br>es: `backfill-process-definitions-array`, `backfill-long-definitions`, `backfill-split-semicolon-definitions`, `backfill-expand-abbreviations` |
+| Example sentences | `['exampleSentence0','exampleSentence1','exampleSentence2']` | `backfill-example-sentences` (both languages) |
 
-`spanish/backfill-parts-of-speech.js` rewrites definitions/partsOfSpeech and
-re-NULLs enrichment for a whole `word1`, so it is guarded at the word-selection
-query (`validatedWordFilter`, a `JOIN validations`) — it skips a word if **any** of
-its rows has a `definitions` validation.
+The two deterministic cleanups (`split-semicolon-definitions`, `expand-abbreviations`)
+are the ones that most need the guard: unlike the AI steps they scan their det table
+**table-wide** with no `discoverable` filter, so without it a routine re-run would
+clobber human-reviewed text anywhere in the dictionary.
+
+There is no longer a Spanish `backfill-parts-of-speech.js`. It was deleted by
+migration 123 — before that it materialized one det row per POS, so it needed a
+word-level guard (`validatedWordFilter`, a `JOIN validations`) to skip a `word1` if
+**any** of its rows carried a `definitions` validation. Spanish is now one row per
+`word1`, and its replacement `backfill-cluster-definitions.js` writes only
+`definitionClusters` + `partsOfSpeech` — neither of which is a validatable field — so
+it needs no `validatedClause` at all. If a validatable field is ever added to the
+clusterer's write set, it must take the guard.
 
 New/undiscovered words have an empty `validationLog`, so initial enrichment and the
 `/mark-discoverable` pipeline are unaffected.

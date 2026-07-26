@@ -2,48 +2,65 @@
  * Backfill Script: AI-powered longDefinition for dictionaryentries_zh
  *
  * Pipeline (mirrors backfill-parts-of-speech.js):
- *   1. Generator agent (Sonnet) — writes a per-POS definition OBJECT { "<pos>": "..." }.
+ *   1. Generator agent (Sonnet) — writes a per-(sense, POS) definition ARRAY.
  *   2. Validator agent (Sonnet) — checks all hard constraints; may reject with a critique.
  *   3. Regenerator agent (Opus) — on rejection, retries once informed by the validator critique.
- *   4. Chooser agent (Opus) — picks the better definition object between Sonnet's and Opus's attempts.
+ *   4. Chooser agent (Opus) — picks the better definition array between Sonnet's and Opus's attempts.
  *
- * Only processes entries where partsOfSpeech is already populated so definitions
- * accurately reflect every grammatical role. Run backfill-parts-of-speech.js first.
+ * ONE DEFINITION PER (SENSE, PART OF SPEECH) PAIR (v15). Through v13 this wrote one definition
+ * per PART OF SPEECH ({ "noun": "...", "verb": "..." }), which collapsed a polyseme's unrelated
+ * meanings into a single blob per grammatical role — 会 "can" and 会 "a meeting" are different
+ * words to a learner, not different rows of one table. The unit is now the SENSE × POS pair:
+ * each entry's `definitionClusters` (migration 90, docs/DEFINITION_CLUSTERS.md) supplies the
+ * senses, and a cluster's `pos` LIST is honored in full — every part of speech that sense takes
+ * gets its own definition, because the roles mean different things (坏 "broken / to break down"
+ * is `["adjective","verb"]`: the adjective is the STATE "it is broken", the verb is the EVENT
+ * "it breaks down"). `buildSlots` expands clusters into those pairs; a cluster with no `pos` of
+ * its own yields ONE slot whose POS the model chooses from the word's `partsOfSpeech`.
+ * Entries are gated on `definitionClusters IS NOT NULL` — run backfill-cluster-definitions.js
+ * first (the mark-discoverable pipeline already orders it so).
  *
- * PHILOSOPHY — ANCHOR FIRST, THEN ENRICH (v13). Every agent is shown the "displayed
- * gloss" the learner already sees on the flp flashcard (definitions[0] with
- * parentheticals stripped — see deriveDisplayDefinition / the frontend's
- * stripParentheses). Each POS value is written in one of two modes:
- *   MODE A (clean match) — when the gloss word already captures the everyday sense
- *     (INCLUDING the English word's own breadth: 水 = "water" and English "water"
- *     already spans rivers/floods, so 水 is a clean match), the value MUST open with
- *     the verbatim anchor sentence "Matches the common English definition for <gloss>."
- *     followed — only when there is something worth adding — by a SECOND paragraph
- *     (literal \n\n) of plain cultural context and/or an extended sense the English
- *     word lacks (e.g. 马's xiangqi piece).
- *   MODE B (disambiguate) — when the POS carries a sense the gloss word does NOT cover
- *     (e.g. 大's noun "eldest/senior"), no anchor: pin down the sense(s) plainly.
- * Wording must be SIMPLE (beginner-level). The anchor is the ONE sanctioned place to
- * restate the gloss and reference English; elsewhere those remain forbidden. Still no
- * synonym lists, register commentary, or regional-usage elaboration. Chinese characters
- * ARE allowed for citing culturally significant idioms (pinyin is not); output stays
- * primarily English.
+ * The `sense` label is the join key back to `definitionClusters` (and to the learner's
+ * per-card `selectedSense`, migration 99), so it must be copied VERBATIM from the cluster —
+ * a drifted label silently un-links the definition from its sense.
  *
- * OUTPUT SHAPE: a JSON OBJECT keyed by part of speech — one definition per POS,
- * primary POS first (e.g. { "noun": "...", "verb": "..." }). Single-POS words emit a
- * one-key object. This is stored verbatim in the JSONB `longDefinition` column
- * (migration 70) and joined back into a labeled "pos: ... \n\n pos: ..." string at the
- * read boundary (longDefObjectToDisplayString) for the API/renderer.
+ * PHILOSOPHY — DEFINE THE SENSE, PLAINLY, THEN ENRICH. Each value explains what this ONE
+ * sense means in plain beginner English and, when there is something genuinely worth adding,
+ * gives cultural context or an extended use in a second paragraph. There is NO anchor
+ * sentence: the "Matches the common English definition for <gloss>." opener (v13's Mode A)
+ * was removed — with several senses on screen it read as noise, and it re-stated a gloss the
+ * learner is already looking at. No synonym lists, no register commentary, no regional-usage
+ * elaboration. Chinese characters ARE allowed for citing culturally significant idioms
+ * (pinyin is not); output stays primarily English.
  *
- * LENGTH is per POS value: each definition value must be MIN_LEN..MAX_LEN_PER_POS
- * (25–125) chars, independent of how many POS the word has. Because the validator only
- * length-checks the first attempt, a final enforceMaxLen step (Opus tightener)
- * guarantees every value respects the budget.
+ * OUTPUT SHAPE: a JSON ARRAY of per-pair objects, ordered default-sense-first (the same
+ * highest-frequency-first order the flp sense-picker uses, so element 0 is the fallback for
+ * readers with no clusters to resolve against) and, within a sense, in the cluster's own `pos`
+ * order:
+ *   [{ "sense": "<cluster label, verbatim>", "pos": "<one POS>", "definition": "..." }, ...]
+ * SEVERAL ELEMENTS MAY SHARE A `sense` — one per POS. Stored verbatim in the JSONB
+ * `longDefinition` column (migration 70). At the read boundary the LEARNER surfaces show the
+ * sense the card is on, with its POS blocks labeled and joined when it has more than one
+ * (`resolveLongDefinition` in server/utils/definitions.ts); the validator review document
+ * shows every pair (`longDefToDisplayString`).
+ *
+ * HEADWORD-CITATION GUARD: rule 4 bans citing the headword (or a compound merely containing
+ * it) in Chinese, and the LLM reviewers enforce that unreliably — in testing the validator
+ * passed "as in 学说 (a theory…)" for 说 and the chooser then PREFERRED it. So the check is
+ * deterministic (`headwordCitations`, a substring test), with one Opus repair pass
+ * (`repairHeadwordCitations`); anything surviving is still written but printed to stdout as a
+ * `⚠ LONGDEF REVIEW` line for the human sweep — the same self-flagging contract the clusterer
+ * uses (see .claude/commands/mark-discoverable.md §A3).
+ *
+ * LENGTH is per PAIR: each definition must be MIN_LEN..MAX_LEN_PER_SENSE (25–200) chars,
+ * independent of how many pairs the word has. Because the validator only
+ * length-checks the first attempt, a final enforceMaxLen step (Opus tightener) guarantees
+ * every value respects the budget.
  *
  * Usage:
- *   docker exec cow-backend-local npx tsx scripts/backfill-long-definitions.js              # full backfill
- *   docker exec cow-backend-local npx tsx scripts/backfill-long-definitions.js --spot-check # test 5 entries
- *   docker exec cow-backend-local npx tsx scripts/backfill-long-definitions.js --words=快,打
+ *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-long-definitions.js              # full backfill
+ *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-long-definitions.js --spot-check # test 5 entries
+ *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-long-definitions.js --words=快,打
  */
 
 import dotenv from 'dotenv';
@@ -56,7 +73,7 @@ dotenv.config({ path: path.join(__dirname, '../../../.env.docker') });
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
 import { initRunLog, cachedSystem } from '../run-log.js';
-const SCRIPT_VERSION = 13; // bump when this script's logic/prompt changes
+const SCRIPT_VERSION = 15; // bump when this script's logic/prompt changes
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -82,6 +99,8 @@ const wordsFilter = targetWords?.length
 const isTargeted = !!targetWords?.length;
 const discoverableFilter = isTargeted ? '' : 'AND discoverable = TRUE';
 // --stale (untargeted): also revisit rows stamped below SCRIPT_VERSION or never stamped.
+// NOTE: rows written before v14 hold the OLD per-POS object shape and v14 rows hold at most
+// one POS per sense, so a --stale sweep is how existing entries get migrated to the per-pair array.
 const needsBackfillFilter = isTargeted
   ? ''
   : (isStale ? `AND ("longDefinition" IS NULL OR ${staleClause()})` : 'AND "longDefinition" IS NULL');
@@ -95,49 +114,38 @@ const RETRY_MODEL = 'claude-opus-4-8';
 //  and tightener prompts so all agents judge by the exact same criteria.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Length budget is PER POS VALUE. Each POS gets its own independent definition with
-// its own budget — total length is no longer split across senses. A 1-POS word and
-// each sense of a 3-POS word are all bounded by the same [MIN_LEN, MAX_LEN_PER_POS].
+// Length budget is PER (sense, POS) PAIR. Each pair gets its own independent definition with
+// its own budget — total length is not split across them. A one-pair word and each pair of a
+// five-pair word are all bounded by the same [MIN_LEN, MAX_LEN_PER_SENSE].
 const MIN_LEN = 25;
-// Raised from 125 to fit the anchor-first, two-paragraph Mode-A shape: a ~48-char
-// anchor sentence ("Matches the common English definition for horse.") plus a blank
-// line plus one or two plain culture sentences. Still a CEILING, not a target — an
-// anchor-only value (no culture to add) is perfectly valid and far shorter.
-const MAX_LEN_PER_POS = 250;
+// 250 in v13 only to fit the ~48-char anchor sentence plus a culture paragraph. With the
+// anchor gone (see the header), 200 leaves room for two plain paragraphs. Still a CEILING,
+// not a target — a single clear sentence is a perfectly good definition.
+const MAX_LEN_PER_SENSE = 200;
 
-// ── Object-shape helpers ─────────────────────────────────────────────────────
-// A definition is a plain object keyed by POS: { "<pos>": "<text>", ... }.
+// ── Array-shape helpers ──────────────────────────────────────────────────────
+// A definition is an array of { sense, pos, definition }, one element per (sense, POS) pair —
+// so a sense taking two parts of speech contributes two elements sharing a `sense`.
 
-// String values of a definition object (defensive against non-string entries).
+// Definition strings of a definition array (defensive against malformed elements).
 function defValues(def) {
-  return def && typeof def === 'object' && !Array.isArray(def)
-    ? Object.values(def).filter(v => typeof v === 'string')
+  return Array.isArray(def)
+    ? def.filter(d => d && typeof d.definition === 'string').map(d => d.definition)
     : [];
 }
 
-// POS keys whose value exceeds the per-POS ceiling.
-function overBudgetKeys(def) {
-  return Object.entries(def || {})
-    .filter(([, v]) => typeof v === 'string' && v.length > MAX_LEN_PER_POS)
-    .map(([k]) => k);
+// Pair labels whose definition exceeds the per-pair ceiling (sense + POS, since a sense alone
+// no longer identifies one definition).
+function overBudgetSenses(def) {
+  return (Array.isArray(def) ? def : [])
+    .filter(d => d && typeof d.definition === 'string' && d.definition.length > MAX_LEN_PER_SENSE)
+    .map(d => `${d.sense} (${d.pos ?? '?'})`);
 }
 
-// True when the object covers exactly the expected POS and every value is in range.
-function isValidDefObject(def, posList) {
-  if (!def || typeof def !== 'object' || Array.isArray(def)) return false;
-  const keys = Object.keys(def);
-  if (keys.length === 0) return false;
-  // Every expected POS must be present (extra keys are tolerated but discouraged).
-  for (const pos of posList) {
-    if (!(pos in def)) return false;
-  }
-  return defValues(def).every(v => v.length >= MIN_LEN && v.length <= MAX_LEN_PER_POS);
-}
-
-// Every value within [MIN_LEN, MAX_LEN_PER_POS]; used by enforceMaxLen.
+// Every value within [MIN_LEN, MAX_LEN_PER_SENSE]; used by enforceMaxLen.
 function defWithinBudget(def) {
   const vals = defValues(def);
-  return vals.length > 0 && vals.every(v => v.length >= MIN_LEN && v.length <= MAX_LEN_PER_POS);
+  return vals.length > 0 && vals.every(v => v.length >= MIN_LEN && v.length <= MAX_LEN_PER_SENSE);
 }
 
 // Longest value length — surfaced in spot-check tags so an over-budget value is visible.
@@ -146,62 +154,128 @@ function maxValueLen(def) {
   return vals.length ? Math.max(...vals.map(v => v.length)) : 0;
 }
 
-// Compact, length-annotated rendering of an object for inclusion in agent prompts.
+// Compact, length-annotated rendering of an array for inclusion in agent prompts.
 function annotateDefForPrompt(def) {
-  return Object.entries(def || {})
-    .map(([pos, v]) => `  "${pos}" (${typeof v === 'string' ? v.length : 0} chars): "${v}"`)
+  return (Array.isArray(def) ? def : [])
+    .map(d => `  sense "${d?.sense}" [pos: ${d?.pos ?? '?'}] (${typeof d?.definition === 'string' ? d.definition.length : 0} chars): "${d?.definition}"`)
     .join('\n');
 }
 
 // Human-readable one-liner for console/spot-check logging.
 function defToLogString(def) {
-  return Object.entries(def || {})
-    .map(([pos, v]) => `${pos}: ${v}`)
+  return (Array.isArray(def) ? def : [])
+    .map(d => `${d?.sense} (${d?.pos ?? '?'}): ${d?.definition}`)
     .join('  |  ');
 }
 
-function definitionRulesText() {
+// ── Sense (cluster) helpers ──────────────────────────────────────────────────
+
+// Cluster order the READ boundary assumes: highest frequencyScore first (nulls last),
+// identical to the client's sortedSenseClusters / server resolveSelectedCluster. Writing
+// the array in this order makes element 0 the default sense, which is what a reader with
+// no clusters on hand falls back to (resolveLongDefinition).
+function sortedClusters(clusters) {
+  return [...clusters].sort((a, b) => (b?.frequencyScore ?? -1) - (a?.frequencyScore ?? -1));
+}
+
+// Usable sense clusters for an entry: must carry a non-empty `sense` label (the join key).
+function usableClusters(clusters) {
+  return Array.isArray(clusters)
+    ? sortedClusters(clusters.filter(c => c && typeof c.sense === 'string' && c.sense.trim().length > 0))
+    : [];
+}
+
+/**
+ * The unit of generation: one SLOT per (sense, POS) PAIR.
+ *
+ * A cluster's `pos` is a LIST because a sense can be used in more than one grammatical
+ * role, and those roles carry genuinely different meanings for a learner — 坏's
+ * "broken / spoiled / to break down" is `["adjective","verb"]`: the adjective is "it is
+ * broken", the verb is "it breaks down". Collapsing that to one pick silently drops a
+ * meaning, so EVERY listed POS gets its own definition.
+ *
+ * A cluster carrying no `pos` of its own yields a single slot with `pos: null`; the word's
+ * `partsOfSpeech` is offered to the model as the candidate list and it fills the POS in.
+ * (We deliberately do NOT fan a pos-less cluster out across the whole word-level POS set —
+ * that would invent sense/POS combinations the clusterer never asserted.)
+ *
+ * Order: cluster order (default sense first) and, within a cluster, the cluster's own
+ * `pos` order — which is what the read boundary and the validator document both display.
+ */
+function buildSlots(clusters, partsOfSpeech) {
+  const wordPos = Array.isArray(partsOfSpeech) ? partsOfSpeech.filter(Boolean) : [];
+  const slots = [];
+  for (const c of clusters) {
+    const posOptions = Array.isArray(c.pos) ? c.pos.filter(Boolean) : [];
+    const glosses = Array.isArray(c.glosses) ? c.glosses.join('; ') : '';
+    if (posOptions.length === 0) {
+      slots.push({ sense: c.sense, pos: null, glosses, candidates: wordPos });
+    } else {
+      for (const pos of posOptions) slots.push({ sense: c.sense, pos, glosses, candidates: posOptions });
+    }
+  }
+  return slots;
+}
+
+// The per-entry slot block every agent sees: the exact (sense, POS) pairs to cover, the
+// labels to copy back verbatim, and each sense's source glosses (what the sense covers).
+function slotContextBlock(slots) {
+  return slots
+    .map((s, i) => {
+      const posLine = s.pos
+        ? `     part of speech: ${s.pos}`
+        : `     part of speech: CHOOSE ONE from: ${s.candidates.join(', ') || 'unknown'}`;
+      return `  ${i + 1}. sense: "${s.sense}"\n${posLine}\n     source glosses for this sense (what it covers — context only, do NOT restate): ${s.glosses || '(none)'}`;
+    })
+    .join('\n');
+}
+
+// Slots that share a sense label with at least one other slot — the pairs whose definitions
+// must NOT be interchangeable, called out explicitly in the prompt.
+function multiPosSenses(slots) {
+  const counts = new Map();
+  for (const s of slots) counts.set(s.sense, (counts.get(s.sense) ?? 0) + 1);
+  return [...counts.entries()].filter(([, n]) => n > 1).map(([sense]) => sense);
+}
+
+function definitionRulesText(slots) {
+  const shared = multiPosSenses(slots);
+  const sharedNote = shared.length
+    ? `\nNOTE — these senses appear MORE THAN ONCE below, once per part of speech: ${shared.map(s => `"${s}"`).join(', ')}.
+Each of those pairs needs its OWN definition describing the word AS THAT PART OF SPEECH. They must not
+be paraphrases of each other. Example: a sense glossed "broken / to break down" listed as both adjective
+and verb — the adjective describes the resulting STATE (something is out of order / no longer usable),
+the verb describes the EVENT (it stops working / goes bad). Write the state one for the adjective and
+the event one for the verb.\n`
+    : '';
+
   return `
-A "long definition" is a plain-language enrichment shown in the extra-info panel. Its job is to ANCHOR
-the learner in the word's ordinary meaning first, then add cultural or extended nuance. The learner also
-sees a short gloss (provided below as the "displayed gloss").
+A "long definition" is a plain-language enrichment shown in the extra-info panel, written PER SENSE AND
+PART OF SPEECH. The learner is looking at ONE sense of the word at a time (they pick it from the card's
+sense menu), and sees that sense's short gloss right above your text. Your job is to explain what that
+one sense means in that one grammatical role, plainly, and then add cultural or extended nuance only if
+there is something worth adding.
 
-WRITE EACH POS VALUE IN ONE OF TWO MODES — decide per part of speech:
+The word's (sense, part of speech) PAIRS are listed below. Write exactly one definition for EACH PAIR —
+a sense that takes two parts of speech gets TWO definitions, one per role:
 
-MODE A — CLEAN MATCH. Use this whenever the word's everyday meaning for this POS is fully captured by the
-displayed gloss word. IMPORTANT: the English gloss word's OWN breadth counts as a match — if English
-speakers already use the gloss word for the same range of things, it is still a clean match. Example:
-水 means "water", and English "water" already covers rivers, floods, and liquids in general, so 水 is a
-CLEAN MATCH, not a word to disambiguate. Test: told only that this word means "<gloss>", would a native
-English speaker already understand its core everyday use correctly? If yes → Mode A. Format:
-  1. FIRST SENTENCE, VERBATIM: "Matches the common English definition for <gloss>." — swap in the gloss
-     word as given, but normalized to its bare dictionary form: drop a leading article ("a"/"an"/"the")
-     and, for a verb gloss written as an infinitive, drop the leading "to" (gloss "horse" → "...for
-     horse."; gloss "to eat" → "...for eat."; gloss "a knife" → "...for knife."). Keep the noun singular.
-     This required opening sentence is the ONE place you state the gloss and reference English; both are
-     mandatory here.
-  2. THEN, ONLY IF there is something genuinely worth adding, a SECOND PARAGRAPH separated by a blank line
-     — write a literal \\n\\n between the two paragraphs in the string value. The second paragraph gives
-     CULTURAL CONTEXT (how the concept figures in daily life, customs, associations, or a common set
-     phrase) and/or a notable EXTENDED sense the English word lacks (e.g. 马 also names the horse piece in
-     xiangqi). Keep it to ONE or TWO plain sentences, and never repeat the anchor. If there is nothing
-     genuinely useful to add, STOP after the first sentence — do NOT pad.
-
-MODE B — DISAMBIGUATE. Use this when this POS carries a meaning the displayed gloss word does NOT cover —
-a genuinely different concept (e.g. 大's noun sense "the eldest / a senior", which "big" never means). Do
-NOT use the anchor sentence in Mode B. Instead, in plain language, pin down which sense(s) the word
-actually covers and any scope limit or connotation. One to three sentences, no anchor.
-
-How to write it (BOTH modes):
+${slotContextBlock(slots)}
+${sharedNote}
+How to write each definition:
+- STAY INSIDE THE ASSIGNED SENSE **AND** PART OF SPEECH. Define only what THIS sense means when used in
+  THIS grammatical role. Do not define, contrast with, or allude to the word's other senses — or to the
+  same sense's other part of speech — each pair gets its own definition, and the learner sees only the
+  one they are on. Never write "this can also mean ..." or "as a verb it means ...".
+- DO NOT RESTATE THE GLOSS. The learner already sees this sense's gloss. Say what the gloss cannot:
+  what the sense actually covers, where its edges are, and any nuance a bare gloss loses. Do NOT open
+  by echoing the gloss back.
 - WRITE SIMPLY. Use short, common words and short sentences, as if explaining to a beginner. Avoid
   academic, abstract, or flowery wording. Plain and clear always beats clever.
 - BE BRIEF. The length cap is a CEILING, not a target. Say only what matters and stop.
-- IGNORE RARE LITERARY / FORMAL SENSES; STAY ON EVERYDAY MEANING. If the word has an everyday sense AND a
-  much more literary, classical, archaic, formal, technical, or legal sense (what a register scorer would
-  rate 1 "literary/classical/formal-only" or 2 "formal/written-leaning"), cover ONLY the everyday sense(s)
-  and OMIT the rare one entirely — do not cite, gloss, or allude to it. EXCEPTION: if EVERY sense of the
-  word is itself formal/literary, define it normally. Omit the rare sense silently; never announce that a
-  sense is formal or literary.
+- CULTURAL CONTEXT IS OPTIONAL AND GOES LAST. When the sense figures in daily life, customs,
+  associations, or a common set phrase in a way a learner would not guess, add it as a SECOND
+  PARAGRAPH separated by a literal \\n\\n. If there is nothing genuinely useful to add, STOP after the
+  first paragraph — do NOT pad.
 - USE CHINESE CHARACTERS SPARINGLY — only to cite a term that is itself CULTURALLY SIGNIFICANT (a real
   idiom / chengyu, or a culturally loaded phrase such as 九五之尊 or 关系网). Do NOT use Chinese for
   constructed example sentences or trivial collocations; describe ordinary usage in English. When you do
@@ -209,76 +283,63 @@ How to write it (BOTH modes):
   list.
 - DO NOT LIST SYNONYMS. This is a definition, not a thesaurus.
 
-Output shape — a JSON object keyed by part of speech:
-- Write ONE value per part of speech, as a JSON object whose KEYS are the parts of speech (exactly as
-  given) and whose VALUES are that POS's definition string, ordered from the MOST common/primary POS to
-  the least, e.g.:
-      {"noun": "<mode A or B text for the noun sense>", "verb": "<mode A or B text for the verb sense>"}
-- If the word has only ONE part of speech, still emit a one-key object, e.g. {"noun": "..."}.
-- Each VALUE is an independent definition for that single sense — do NOT label it with the POS inside the
-  string, and do NOT cram other senses into it.
+Output shape — a JSON array, one object per (sense, part of speech) PAIR:
+[
+  {"sense": "<the sense label, copied VERBATIM from the list above>", "pos": "<that pair's part of speech>", "definition": "<the text>"},
+  ...
+]
+- Cover EVERY numbered pair listed above, in the SAME ORDER, and copy each \`sense\` label
+  character-for-character — it is the key that links this definition back to the sense the learner
+  picked. Never invent, merge, split, reword, or drop a pair. A sense listed twice (two parts of
+  speech) MUST produce two entries with the same \`sense\` and different \`pos\`.
+- A word with one sense and one part of speech still emits a one-element array.
 
 Hard constraints — all must be satisfied:
 
-1. LENGTH — EACH value must be between ${MIN_LEN} and ${MAX_LEN_PER_POS} characters (the \\n\\n break
-   counts). This budget is PER POS value, not a shared total. The upper bound is a hard CEILING, never a
-   target — a much shorter, anchor-only value is perfectly fine. Never exceed ${MAX_LEN_PER_POS} for any
-   one value.
-2. ANCHOR FORMAT (MODE A) — When the POS is a clean match, the value MUST begin with the exact sentence
-   "Matches the common English definition for <gloss>." using the displayed gloss word verbatim (singular,
-   no article). Anything after it must be a distinct SECOND paragraph separated by a literal \\n\\n, and
-   must not repeat the anchor. A clean-match value that omits or mangles this opening sentence is invalid.
-3. PRIMARILY ENGLISH — CHINESE ONLY WHEN CULTURALLY SIGNIFICANT, NO PINYIN — Write in English. Include Chinese characters ONLY to cite a term that is itself culturally significant (an established idiom, chengyu, or culturally loaded set phrase, e.g. 九五之尊, 关系网). Do NOT use Chinese for ad-hoc example sentences, trivial collocations, or to illustrate ordinary grammar (e.g. 你能来吗, 现在几点) — describe such usage in English. This holds even for grammatical/function words. Do NOT cite the headword itself in Chinese, nor ordinary compounds/derived words that merely contain it (e.g. 能量, 能力) — reserve Chinese for STANDALONE, culturally significant idioms or set phrases. NEVER romanize Chinese into pinyin (with or without tone marks). Other non-ASCII letters (e.g. accented Latin letters) are forbidden.
-4. NO SYNONYM LIST — Do not present the meaning as a string of synonymous words.
-5. POS COVERAGE & FORMAT — The object must contain exactly one key per part of speech given (cover every POS), keyed and ordered as specified above. Do not omit a POS, invent extra POS, or merge senses.
-6. REFERENCE ENGLISH ONLY IN THE ANCHOR — Do not mention "English", "the English word", or compare the word to its English rendering ANYWHERE except the required Mode-A anchor sentence. Outside that one sentence, describe the word on its own terms.
-7. NO REGISTER COMMENTARY — Do not describe how formal, colloquial, literary, slangy, or technical the word is. The learner already infers register from the word's vernacular score; spend the space on meaning and concept instead.
-8. NO REGIONAL-USAGE ELABORATION — Do not describe which regions, dialects, or countries use the word, or note regional variants. Focus on meaning, not geographic distribution.
-9. NO "APPEARS IN" FILLER — Do not append example-word lists with "appears in", "found in", "seen in", or similar tacked-on phrasing. Cite a related phrase only when it is woven into a sentence explaining a nuance, never as a list to fill space.
-10. SENTENCE COUNT — Use between 1 and 3 sentences total (inclusive). In Mode A that is the anchor sentence plus at most two culture sentences. Reject a value with 4 or more sentences, or one whose extra sentence is a tacked-on citation or a padding aside that adds no distinct nuance.
-11. NO RARE-SENSE COVERAGE — Do not define, cite, or allude to a sense that is markedly more literary/classical/formal/technical/legal than the word's everyday sense(s) — a sense a register scorer would rate 1 or 2 — WHEN the word also has a common everyday sense. Cover only the everyday sense(s). EXCEPTION: if every sense of the word is formal/literary, define it normally.
+1. LENGTH — EACH definition must be between ${MIN_LEN} and ${MAX_LEN_PER_SENSE} characters (the \\n\\n break
+   counts). This budget is PER PAIR, not a shared total. The upper bound is a hard CEILING, never a
+   target — a much shorter, one-sentence definition is perfectly fine. Never exceed ${MAX_LEN_PER_SENSE}
+   for any one definition.
+2. PAIR COVERAGE & LABELS — Exactly one element per listed (sense, POS) pair, in the given order, each
+   \`sense\` copied verbatim. No missing pairs, no extra pairs, no reworded labels, no dropping one part
+   of speech of a sense.
+3. POS — \`pos\` is a single part-of-speech string: the one given for that pair (or, where the pair says
+   CHOOSE ONE, the one from the candidate list that the sense really is). Never a list.
+3b. DISTINCT PER POS — When a sense appears under two parts of speech, the two definitions must describe
+   genuinely different things (the state vs. the event, the thing vs. the act). Two definitions that
+   could be swapped without anyone noticing are a violation.
+4. PRIMARILY ENGLISH — CHINESE ONLY WHEN CULTURALLY SIGNIFICANT, NO PINYIN — Write in English. Include Chinese characters ONLY to cite a term that is itself culturally significant (an established idiom, chengyu, or culturally loaded set phrase, e.g. 九五之尊, 关系网). Do NOT use Chinese for ad-hoc example sentences, trivial collocations, or to illustrate ordinary grammar (e.g. 你能来吗, 现在几点) — describe such usage in English. This holds even for grammatical/function words. Do NOT cite the headword itself in Chinese, nor ordinary compounds/derived words that merely contain it (e.g. 能量, 能力) — reserve Chinese for STANDALONE, culturally significant idioms or set phrases. NEVER romanize Chinese into pinyin (with or without tone marks). Other non-ASCII letters (e.g. accented Latin letters) are forbidden.
+5. NO SYNONYM LIST — Do not present the meaning as a string of synonymous words.
+6. NO GLOSS RESTATEMENT — Do not open by repeating or lightly paraphrasing the sense's own gloss, and do
+   not mention "English", "the English word", or compare the word to its English rendering.
+7. NO CROSS-PAIR COVERAGE — Do not define, cite, or allude to any OTHER sense of the word — or to the
+   same sense's other part of speech — inside a pair's definition.
+8. NO REGISTER COMMENTARY — Do not describe how formal, colloquial, literary, slangy, or technical the word is; spend the space on meaning and concept instead.
+9. NO REGIONAL-USAGE ELABORATION — Do not describe which regions, dialects, or countries use the word, or note regional variants. Focus on meaning, not geographic distribution.
+10. NO "APPEARS IN" FILLER — Do not append example-word lists with "appears in", "found in", "seen in", or similar tacked-on phrasing. Cite a related phrase only when it is woven into a sentence explaining a nuance, never as a list to fill space.
+11. SENTENCE COUNT — Use between 1 and 3 sentences per definition (inclusive). Reject a definition with 4 or more sentences, or one whose extra sentence is a tacked-on citation or a padding aside that adds no distinct nuance.
 `;
 }
 
 const VIOLATION_CODE_LABELS = {
-  too_short: `One or more POS values is under ${MIN_LEN} characters (rule 1)`,
-  too_long: `One or more POS values exceeds the ${MAX_LEN_PER_POS}-character per-POS budget (rule 1)`,
-  missing_anchor: 'A clean-match (Mode A) POS value omits the required opening "Matches the common English definition for <gloss>." sentence, or does not put it first (rule 2)',
-  malformed_anchor: 'The anchor sentence is not verbatim — wrong gloss word, altered wording, added article/plural, or not separated from the culture paragraph by a blank line (rule 2)',
-  wrong_mode: 'Anchors (Mode A) a POS that carries a sense the gloss word does not cover, or disambiguates (Mode B) a POS that is a clean match and should be anchored (rule 2)',
-  uses_pinyin: 'Romanizes a Chinese word into pinyin instead of using Chinese characters (rule 3)',
-  gratuitous_chinese: 'Uses Chinese for an ad-hoc example, the headword itself, or an ordinary compound/derived word rather than a standalone culturally significant term (rule 3)',
-  contains_non_english: 'Contains non-ASCII letters other than Chinese characters (e.g. accented Latin letters / pinyin diacritics) (rule 3)',
-  lists_synonyms: 'Presents the meaning as a list/string of synonymous words (rule 4)',
-  poor_pos_coverage: 'Object does not contain exactly one key per part of speech (missing/extra POS, or wrong object shape) (rule 5)',
-  references_english: 'Mentions English or compares the word to its English rendering OUTSIDE the allowed Mode-A anchor sentence (rule 6)',
-  comments_on_register: 'Comments on register / formality / colloquialness (rule 7)',
-  elaborates_regional: 'Elaborates on regional, dialectal, or geographic usage (rule 8)',
-  appears_in_filler: 'Uses an "appears in" / "found in" style tacked-on example listing (rule 9)',
-  extra_sentence: 'Exceeds 3 sentences, or pads with a tacked-on sentence citing a related phrase/chengyu or a filler aside (rule 10)',
-  covers_rare_sense: 'Defines, cites, or alludes to a rare literary/classical/formal-only sense (register 1–2) when the word also has an everyday sense (rule 11)',
+  too_short: `One or more sense definitions is under ${MIN_LEN} characters (rule 1)`,
+  too_long: `One or more sense definitions exceeds the ${MAX_LEN_PER_SENSE}-character per-pair budget (rule 1)`,
+  poor_sense_coverage: 'Array does not contain exactly one element per listed (sense, POS) pair, in order — a missing/extra/merged pair, a sense whose second part of speech was dropped, or a wrong array shape (rule 2)',
+  altered_sense_label: 'A `sense` label was reworded, trimmed, or invented rather than copied verbatim from the sense list (rule 2)',
+  bad_pos: 'A `pos` is missing, is a list, or is not the part of speech assigned to that pair (rule 3)',
+  duplicate_pos_definitions: "A sense's two part-of-speech definitions say the same thing — they are interchangeable rather than describing the state vs. the event / the thing vs. the act (rule 3b)",
+  uses_pinyin: 'Romanizes a Chinese word into pinyin instead of using Chinese characters (rule 4)',
+  gratuitous_chinese: 'Uses Chinese for an ad-hoc example, the headword itself, or an ordinary compound/derived word rather than a standalone culturally significant term (rule 4)',
+  contains_non_english: 'Contains non-ASCII letters other than Chinese characters (e.g. accented Latin letters / pinyin diacritics) (rule 4)',
+  lists_synonyms: 'Presents the meaning as a list/string of synonymous words (rule 5)',
+  restates_gloss: "Opens by repeating/paraphrasing the sense's gloss, or references English / the English rendering (rule 6)",
+  covers_other_sense: "Defines, cites, or alludes to another of the word's senses inside this sense's definition (rule 7)",
+  comments_on_register: 'Comments on register / formality / colloquialness (rule 8)',
+  elaborates_regional: 'Elaborates on regional, dialectal, or geographic usage (rule 9)',
+  appears_in_filler: 'Uses an "appears in" / "found in" style tacked-on example listing (rule 10)',
+  extra_sentence: 'Exceeds 3 sentences, or pads with a tacked-on sentence citing a related phrase/chengyu or a filler aside (rule 11)',
   inaccurate: 'Definition is factually misleading or incorrect for a learner',
 };
-
-// Mirror of the frontend's stripParentheses (src/utils/definitionUtils.ts): the flp
-// flashcard shows definitions[0] with parentheticals removed, so we derive the
-// "displayed gloss" the same way to give the agents exactly what the learner sees.
-function stripParentheses(text) {
-  return (text ?? '').replace(/\s*\([^)]*\)/g, '').trim();
-}
-
-// The display definition shown in flp is the FIRST element of the (already
-// usefulness-ranked) definitions array, parentheticals stripped.
-function deriveDisplayDefinition(definitions) {
-  if (!Array.isArray(definitions) || definitions.length === 0) return '';
-  return stripParentheses(definitions[0]);
-}
-
-// Context block injected into every agent prompt so all agents know — but never
-// restate — the gloss the learner already sees on the flashcard.
-function displayDefinitionBlock(displayDefinition) {
-  return `Displayed gloss (already shown to the learner on the flashcard — for your context only; do NOT restate or paraphrase it): "${displayDefinition || '(none)'}"`;
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Utility
@@ -296,51 +357,82 @@ function parseJsonFromResponse(text) {
   }
 }
 
-// Parse an agent response into a normalized definition object keyed by the expected
-// POS (in posList order). Tolerates markdown fences / extra prose around the JSON.
-// Keeps only string values for the expected POS; trims them. Returns null if no
-// expected POS has a non-empty value.
-function parseDefObject(responseText, posList) {
+// Parse an agent response into a normalized per-(sense, POS) definition array. Tolerates
+// markdown fences / extra prose around the JSON. Elements are matched back to the requested
+// SLOTS on (sense, pos), case/whitespace-insensitively so a re-cased label or POS still links
+// up, and emitted in slot order — the order the read boundary and validator document assume.
+// A slot the model skipped is simply absent; the validator's coverage rule catches that.
+// Returns null if no slot got a usable definition.
+function parseDefArray(responseText, slots) {
   const raw = parseJsonFromResponse(responseText);
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-  const out = {};
-  for (const pos of posList) {
-    const v = raw[pos];
-    if (typeof v === 'string' && v.trim().length > 0) out[pos] = v.trim();
+  const items = Array.isArray(raw) ? raw : null;
+  if (!items) return null;
+
+  const norm = s => (typeof s === 'string' ? s.trim().toLowerCase() : '');
+  const key = (sense, pos) => `${norm(sense)} ${norm(pos)}`;
+
+  // Index every usable response element twice: by (sense, pos) for the normal match, and by
+  // sense alone as the fallback for a pos-less slot (or a model that omitted `pos`).
+  const byPair = new Map();
+  const bySense = new Map();
+  for (const item of items) {
+    if (!item || typeof item !== 'object') continue;
+    if (typeof item.definition !== 'string' || item.definition.trim().length === 0) continue;
+    const pairKey = key(item.sense, item.pos);
+    if (!byPair.has(pairKey)) byPair.set(pairKey, item);
+    const senseKey = norm(item.sense);
+    if (senseKey && !bySense.has(senseKey)) bySense.set(senseKey, item);
   }
-  return Object.keys(out).length > 0 ? out : null;
+
+  const used = new Set();
+  const out = [];
+  for (const slot of slots) {
+    // Exact pair first; for a slot with no assigned POS fall back to any not-yet-consumed
+    // element carrying that sense (the model chose the POS for us).
+    let item = byPair.get(key(slot.sense, slot.pos));
+    if (!item && slot.pos === null) {
+      const cand = bySense.get(norm(slot.sense));
+      if (cand && !used.has(cand)) item = cand;
+    }
+    if (!item || used.has(item)) continue;
+    used.add(item);
+    out.push({
+      // Always the CLUSTER's label and the SLOT's POS (when assigned), never the model's echo —
+      // the join key must match the cluster exactly.
+      sense: slot.sense,
+      pos: slot.pos ?? (typeof item.pos === 'string' && item.pos.trim() ? item.pos.trim() : null),
+      definition: item.definition.trim(),
+    });
+  }
+  return out.length > 0 ? out : null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Agent 1: generator (Sonnet) — emits the per-POS definition OBJECT
+//  Agent 1: generator (Sonnet) — emits the per-sense definition ARRAY
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function generateDefinition(word, partsOfSpeech, displayDefinition, model = GEN_MODEL) {
-  const posList = Array.isArray(partsOfSpeech) ? partsOfSpeech.filter(Boolean) : [];
-  const posLine = posList.length > 0 ? `Parts of speech (primary first): ${posList.join(', ')}` : '';
-
-  // Static instruction prefix (identical for every entry) → cached system block.
-  // Per-entry data (word/POS/displayed gloss) stays in the user message so the
-  // cached prefix is byte-identical across the run. See cachedSystem in run-log.js.
+async function generateDefinition(word, slots, model = GEN_MODEL) {
+  // The rules text embeds this entry's sense list, so — unlike v13 — the system block is
+  // per-entry and NOT byte-identical across the run. cachedSystem still marks it cacheable
+  // (harmless; it just won't hit for a fresh word) and keeps the call shape uniform with
+  // the other backfills.
   const systemText = `You are a Chinese language expert writing concise English definitions for a learner dictionary.
 
-${definitionRulesText()}
+${definitionRulesText(slots)}
 
-Respond with ONLY the JSON object (keys = the parts of speech given, values = each definition) — no markdown fences, no extra prose.`;
+Respond with ONLY the JSON array (one object per sense) — no markdown fences, no extra prose.`;
 
-  const prompt = `Word: ${word}
-${posLine}
-${displayDefinitionBlock(displayDefinition)}`;
+  const prompt = `Word: ${word}`;
 
   const response = await anthropic.messages.create({
     model,
-    max_tokens: 600,
+    max_tokens: 1200,
     temperature: 0.3,
     system: cachedSystem(systemText),
     messages: [{ role: 'user', content: prompt }],
   });
 
-  return parseDefObject(response.content[0].text, posList);
+  return parseDefArray(response.content[0].text, slots);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -348,35 +440,29 @@ ${displayDefinitionBlock(displayDefinition)}`;
 //  Returns { accept, violatedRules: string[], critique }
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function validateDefinition(word, partsOfSpeech, displayDefinition, proposed) {
-  const posList = Array.isArray(partsOfSpeech) ? partsOfSpeech.filter(Boolean) : [];
+async function validateDefinition(word, slots, proposed) {
+  const systemText = `You are a strict reviewer checking a per-(sense, POS) English definition array for a Chinese word. Apply every constraint formally — do not approve if any rule is violated, including for any single (sense, POS) pair. Respond only with valid JSON.
 
-  // Static reviewer scaffold (rules + violation codes + response format) → cached
-  // system block; the per-entry word/POS/gloss/proposed object → user message.
-  const systemText = `You are a strict reviewer checking a per-POS English definition object for a Chinese word. Apply every constraint formally — do not approve if any rule is violated, including for any single POS value. Respond only with valid JSON.
-
-${definitionRulesText()}
+${definitionRulesText(slots)}
 
 Violation codes you may cite:
 ${Object.entries(VIOLATION_CODE_LABELS).map(([k, v]) => `  - "${k}": ${v}`).join('\n')}
 
-The per-POS budget is ${MAX_LEN_PER_POS} characters.
+The per-pair budget is ${MAX_LEN_PER_SENSE} characters.
 
-If the object satisfies every constraint, respond with: {"accept": true}
-If any constraint is violated (for any POS value), respond with:
-  {"accept": false, "violatedRules": ["code1", "code2"], "critique": "1-2 sentences naming which POS value(s) fail and what a corrected object should look like"}
+If the array satisfies every constraint, respond with: {"accept": true}
+If any constraint is violated (for any pair), respond with:
+  {"accept": false, "violatedRules": ["code1", "code2"], "critique": "1-2 sentences naming which pair(s) fail and what a corrected array should look like"}
 
 Respond with ONLY valid JSON, no markdown.`;
 
   const prompt = `Word: ${word}
-Parts of speech (primary first): ${posList.join(', ') || 'N/A'}
-${displayDefinitionBlock(displayDefinition)}
-Proposed definition object (per-POS char counts shown):
+Proposed definition array (per-pair char counts shown):
 ${annotateDefForPrompt(proposed)}`;
 
   const response = await anthropic.messages.create({
     model: VALIDATOR_MODEL,
-    max_tokens: 300,
+    max_tokens: 400,
     temperature: 0.1,
     system: cachedSystem(systemText),
     messages: [{ role: 'user', content: prompt }],
@@ -401,19 +487,16 @@ ${annotateDefForPrompt(proposed)}`;
 //  Agent 3: regenerator (Opus) — corrects an attempt that failed validation
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function regenerateDefinition(word, partsOfSpeech, displayDefinition, priorDef, violatedRules, critique) {
-  const posList = Array.isArray(partsOfSpeech) ? partsOfSpeech.filter(Boolean) : [];
+async function regenerateDefinition(word, slots, priorDef, violatedRules, critique) {
   const violationLines = violatedRules
     .map(code => `  - ${code}: ${VIOLATION_CODE_LABELS[code] ?? code}`)
     .join('\n');
 
-  const prompt = `Your previous per-POS English definition object for a Chinese word was rejected by a strict reviewer. Produce a corrected object that fixes all flagged violations.
+  const prompt = `Your previous per-(sense, POS) English definition array for a Chinese word was rejected by a strict reviewer. Produce a corrected array that fixes all flagged violations.
 
-${definitionRulesText()}
+${definitionRulesText(slots)}
 
 Word: ${word}
-Parts of speech (primary first): ${posList.join(', ') || 'N/A'}
-${displayDefinitionBlock(displayDefinition)}
 
 Previous attempt:
 ${annotateDefForPrompt(priorDef)}
@@ -422,41 +505,37 @@ ${violationLines || '  (none specified)'}
 Reviewer critique:
 ${critique || '(none)'}
 
-Apply all constraints precisely. You may keep, change, or restructure any value. Respond with ONLY the corrected JSON object — no markdown fences, no extra prose.`;
+Apply all constraints precisely. You may keep, change, or restructure any definition. Respond with ONLY the corrected JSON array — no markdown fences, no extra prose.`;
 
   const response = await anthropic.messages.create({
     model: RETRY_MODEL,
-    max_tokens: 600,
+    max_tokens: 1200,
     // Note: claude-opus-4-8 does not accept the `temperature` parameter — omit it.
-    system: 'You are a Chinese language expert writing concise, rule-compliant per-POS English definition objects. Respond only with the JSON object.',
+    system: 'You are a Chinese language expert writing concise, rule-compliant per-sense English definition arrays. Respond only with the JSON array.',
     messages: [{ role: 'user', content: prompt }],
   });
 
-  return parseDefObject(response.content[0].text, posList);
+  return parseDefArray(response.content[0].text, slots);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Agent 4: chooser (Opus) — final adjudicator between Sonnet's and Opus's objects
+//  Agent 4: chooser (Opus) — final adjudicator between Sonnet's and Opus's arrays
 //  Returns { winner: 'sonnet' | 'opus', reason: string }
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function chooseDefinition(word, partsOfSpeech, displayDefinition, sonnetDef, opusDef) {
-  const posList = Array.isArray(partsOfSpeech) ? partsOfSpeech.filter(Boolean) : [];
+async function chooseDefinition(word, slots, sonnetDef, opusDef) {
+  const prompt = `Two per-(sense, POS) English definition arrays have been proposed for a Chinese word. Pick the better one as written — do not propose a third.
 
-  const prompt = `Two per-POS English definition objects have been proposed for a Chinese word. Pick the better one as written — do not propose a third.
-
-${definitionRulesText()}
+${definitionRulesText(slots)}
 
 Word: ${word}
-Parts of speech (primary first): ${posList.join(', ') || 'N/A'}
-${displayDefinitionBlock(displayDefinition)}
 
 Option A (sonnet):
 ${annotateDefForPrompt(sonnetDef)}
 Option B (opus):
 ${annotateDefForPrompt(opusDef)}
 
-Judge which object better satisfies all constraints and quality goals. Penalize constraint violations (including any value exceeding the ${MAX_LEN_PER_POS}-character per-POS budget) AND vague or unhelpful definitions.
+Judge which array better satisfies all constraints and quality goals. Penalize constraint violations (including any definition exceeding the ${MAX_LEN_PER_SENSE}-character per-pair budget, a missing pair, a dropped part of speech, or a reworded sense label) AND vague or unhelpful definitions.
 
 Respond with ONLY one of:
   {"winner": "sonnet", "reason": "1 short sentence"}
@@ -467,7 +546,7 @@ or
     model: RETRY_MODEL,
     max_tokens: 200,
     // Note: claude-opus-4-8 does not accept the `temperature` parameter — omit it.
-    system: 'You are a strict adjudicator picking between two dictionary definition objects. Respond only with valid JSON.',
+    system: 'You are a strict adjudicator picking between two dictionary definition arrays. Respond only with valid JSON.',
     messages: [{ role: 'user', content: prompt }],
   });
 
@@ -480,60 +559,105 @@ or
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Agent 5: tightener (Opus) — compresses over-budget POS values to <= MAX_LEN_PER_POS
+//  Agent 5: tightener (Opus) — compresses over-budget definitions to <= MAX_LEN_PER_SENSE
 //  without losing nuance. Needed because the validator only length-checks the
 //  first (Sonnet) attempt; the retry/chooser path can otherwise emit over-budget
-//  values that are never re-measured.
+//  definitions that are never re-measured.
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function tightenDefinition(word, partsOfSpeech, displayDefinition, tooLongDef) {
-  const posList = Array.isArray(partsOfSpeech) ? partsOfSpeech.filter(Boolean) : [];
-  const offenders = overBudgetKeys(tooLongDef);
+async function tightenDefinition(word, slots, tooLongDef) {
+  const offenders = overBudgetSenses(tooLongDef);
 
-  const prompt = `A per-POS English definition object for a Chinese word has one or more values over the ${MAX_LEN_PER_POS}-character per-POS budget. Staying within ${MAX_LEN_PER_POS} characters PER VALUE is MANDATORY and is the top priority — cut whatever it takes from the over-long value(s), dropping the least-essential details, to land at ${MAX_LEN_PER_POS} characters or fewer for EACH value. Keep the single most important nuance per value; losing secondary nuance is acceptable. Keep the same POS keys; do not drop or add a POS.
+  const prompt = `A per-(sense, POS) English definition array for a Chinese word has one or more definitions over the ${MAX_LEN_PER_SENSE}-character per-pair budget. Staying within ${MAX_LEN_PER_SENSE} characters PER DEFINITION is MANDATORY and is the top priority — cut whatever it takes from the over-long definition(s), dropping the least-essential details, to land at ${MAX_LEN_PER_SENSE} characters or fewer for EACH. Keep the single most important nuance per definition; losing secondary nuance is acceptable. Keep the same (sense, POS) pairs and their verbatim labels; do not drop or add a pair.
 
-${definitionRulesText()}
+${definitionRulesText(slots)}
 
 Word: ${word}
-Parts of speech (primary first): ${posList.join(', ') || 'N/A'}
-${displayDefinitionBlock(displayDefinition)}
 
-Over-budget object (per-POS char counts shown; values over budget: ${offenders.join(', ') || 'n/a'}):
+Over-budget array (per-pair char counts shown; pairs over budget: ${offenders.join(', ') || 'n/a'}):
 ${annotateDefForPrompt(tooLongDef)}
 
-Respond with ONLY the shortened JSON object — no markdown fences, no extra prose. EVERY value MUST be ${MAX_LEN_PER_POS} characters or fewer.`;
+Respond with ONLY the shortened JSON array — no markdown fences, no extra prose. EVERY definition MUST be ${MAX_LEN_PER_SENSE} characters or fewer.`;
 
   const response = await anthropic.messages.create({
     model: RETRY_MODEL,
-    max_tokens: 600,
+    max_tokens: 1200,
     // Note: claude-opus-4-8 does not accept the `temperature` parameter — omit it.
-    system: 'You are a Chinese language expert compressing per-POS definition objects to a strict per-value length while preserving nuance. Respond only with the JSON object.',
+    system: 'You are a Chinese language expert compressing per-sense definition arrays to a strict per-definition length while preserving nuance. Respond only with the JSON array.',
     messages: [{ role: 'user', content: prompt }],
   });
 
-  return parseDefObject(response.content[0].text, posList);
+  return parseDefArray(response.content[0].text, slots);
 }
 
 // Programmatic length guard. The validator only checks Sonnet's first attempt, so
-// the Opus retry/chooser path can return objects with over-budget values. Given
-// candidate objects ordered best-first, return the first whose every value is within
-// [MIN_LEN, MAX_LEN_PER_POS]; otherwise ask Opus to compress (up to 4 tries); as a
-// last resort return the candidate with the smallest worst-case value and flag it.
-async function enforceMaxLen(word, partsOfSpeech, displayDefinition, candidates) {
+// the Opus retry/chooser path can return arrays with over-budget definitions. Given
+// candidate arrays ordered best-first, return the first whose every definition is within
+// [MIN_LEN, MAX_LEN_PER_SENSE]; otherwise ask Opus to compress (up to 4 tries); as a
+// last resort return the candidate with the smallest worst-case definition and flag it.
+async function enforceMaxLen(word, slots, candidates) {
   const valid = candidates.filter(Boolean);
   for (const c of valid) {
     if (defWithinBudget(c)) return { definition: c, tightened: false, overBudget: false };
   }
   let current = valid[0];
   for (let i = 0; i < 4 && current; i++) {
-    const t = await tightenDefinition(word, partsOfSpeech, displayDefinition, current);
+    const t = await tightenDefinition(word, slots, current);
     if (t && defWithinBudget(t)) return { definition: t, tightened: true, overBudget: false };
-    // Keep shrinking from whichever has the smaller worst-case value so far.
+    // Keep shrinking from whichever has the smaller worst-case definition so far.
     if (t && maxValueLen(t) < maxValueLen(current)) current = t;
   }
   const all = [...valid, current].filter(Boolean).sort((a, b) => maxValueLen(a) - maxValueLen(b));
   const best = all[0];
-  return { definition: best, tightened: true, overBudget: maxValueLen(best) > MAX_LEN_PER_POS };
+  return { definition: best, tightened: true, overBudget: maxValueLen(best) > MAX_LEN_PER_SENSE };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Headword-citation guard (deterministic)
+//
+//  Rule 4 forbids citing the HEADWORD itself, or an ordinary compound that merely
+//  contains it (说 → 学说), in Chinese — those are exactly the citations a learner
+//  gains nothing from. The LLM reviewers enforce this unreliably: observed in
+//  testing, the validator passed "A parent 说 a child means …" / "as in 学说 (a
+//  theory…)" and the Opus chooser then PREFERRED that candidate *because* of the
+//  example. So the check is done in code, where it cannot be argued with.
+//
+//  A plain substring test on the headword catches both cases at once: the bare
+//  headword, and any compound containing it. Culturally significant idioms that do
+//  NOT contain the headword stay allowed (rule 4 permits them), so this guard is
+//  narrow by construction.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Marker for the stdout review lines. Kept stable — the mark-discoverable skill agent
+// greps for it and surfaces the flagged entries to the user (same contract as the
+// clusterer's "⚠ CLUSTER REVIEW"). See .claude/commands/mark-discoverable.md §A3.
+const REVIEW_MARKER = '⚠ LONGDEF REVIEW';
+
+// The "<sense> (<pos>)" labels of every definition that cites the headword.
+function headwordCitations(def, word) {
+  return (Array.isArray(def) ? def : [])
+    .filter(d => d && typeof d.definition === 'string' && d.definition.includes(word))
+    .map(d => `${d.sense} (${d.pos ?? '?'})`);
+}
+
+// One corrective pass over a definition array that cites the headword, reusing the
+// regenerator (Opus) with the violation named. Returns the corrected array when it is
+// strictly better (fewer citing pairs), otherwise the original — a repair that fixes
+// nothing must not cost us the candidate we already had.
+async function repairHeadwordCitations(word, slots, def) {
+  const citing = headwordCitations(def, word);
+  if (citing.length === 0) return def;
+
+  const critique =
+    `These definitions cite the headword ${word} in Chinese — either alone or inside a compound ` +
+    `that contains it (e.g. a word like 学说 for the headword 说): ${citing.join('; ')}. ` +
+    `Rewrite those definitions to describe the usage entirely in English. Do not replace the ` +
+    `citation with a different Chinese word unless it is a standalone, culturally significant ` +
+    `idiom that does NOT contain ${word}. Leave the other definitions unchanged.`;
+
+  const repaired = await regenerateDefinition(word, slots, def, ['gratuitous_chinese'], critique);
+  if (!repaired) return def;
+  return headwordCitations(repaired, word).length < citing.length ? repaired : def;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -541,26 +665,41 @@ async function enforceMaxLen(word, partsOfSpeech, displayDefinition, candidates)
 //  Returns { definition, attempts, model, accepted, finalCritique, ... }
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function runDefinitionPipeline(word, partsOfSpeech, displayDefinition) {
-  // Per-POS budget is constant (MAX_LEN_PER_POS); kept in the result for logging.
-  const maxLen = MAX_LEN_PER_POS;
+/**
+ * Shared tail of every pipeline branch: repair headword citations, then enforce the
+ * length budget, then re-check citations on whatever actually won (the tightener can
+ * reintroduce one, and enforceMaxLen may fall back to a different candidate).
+ * Surviving citations are returned as `cited` for the caller to flag — never silently
+ * dropped, and never a reason to discard an otherwise good definition.
+ */
+async function finalizeDefinition(word, slots, candidates) {
+  const [first, ...rest] = candidates.filter(Boolean);
+  const repaired = first ? await repairHeadwordCitations(word, slots, first) : null;
+  const enforced = await enforceMaxLen(word, slots, [repaired, ...rest]);
+  return { ...enforced, cited: headwordCitations(enforced.definition, word) };
+}
 
-  const firstDef = await generateDefinition(word, partsOfSpeech, displayDefinition, GEN_MODEL);
+async function runDefinitionPipeline(word, slots) {
+  // Per-sense budget is constant (MAX_LEN_PER_SENSE); kept in the result for logging.
+  const maxLen = MAX_LEN_PER_SENSE;
+
+  const firstDef = await generateDefinition(word, slots, GEN_MODEL);
   if (!firstDef) {
     return { definition: null, attempts: 1, model: GEN_MODEL, accepted: false, maxLen, finalCritique: 'Generator returned empty/unparseable output' };
   }
 
-  const verdict1 = await validateDefinition(word, partsOfSpeech, displayDefinition, firstDef);
+  const verdict1 = await validateDefinition(word, slots, firstDef);
   if (verdict1.accept) {
-    // Validator already enforced length, but guard anyway in case it miscounted.
-    const enforced = await enforceMaxLen(word, partsOfSpeech, displayDefinition, [firstDef]);
-    return { definition: enforced.definition, attempts: 1, model: GEN_MODEL, accepted: true, maxLen, tightened: enforced.tightened, overBudget: enforced.overBudget, finalCritique: '' };
+    // Validator already enforced length, but guard anyway in case it miscounted — and run
+    // the deterministic headword-citation guard, which the validator does NOT reliably apply.
+    const enforced = await finalizeDefinition(word, slots, [firstDef]);
+    return { definition: enforced.definition, attempts: 1, model: GEN_MODEL, accepted: true, maxLen, tightened: enforced.tightened, overBudget: enforced.overBudget, cited: enforced.cited, finalCritique: '' };
   }
 
   // Sonnet's attempt was rejected — retry with Opus, informed by the critique.
-  const retryDef = await regenerateDefinition(word, partsOfSpeech, displayDefinition, firstDef, verdict1.violatedRules, verdict1.critique);
+  const retryDef = await regenerateDefinition(word, slots, firstDef, verdict1.violatedRules, verdict1.critique);
   if (!retryDef) {
-    const enforced = await enforceMaxLen(word, partsOfSpeech, displayDefinition, [firstDef]);
+    const enforced = await finalizeDefinition(word, slots, [firstDef]);
     return {
       definition: enforced.definition,
       attempts: 2,
@@ -569,17 +708,20 @@ async function runDefinitionPipeline(word, partsOfSpeech, displayDefinition) {
       maxLen,
       tightened: enforced.tightened,
       overBudget: enforced.overBudget,
+      cited: enforced.cited,
       finalCritique: `Opus retry returned empty output; falling back to Sonnet's attempt. Original critique: ${verdict1.critique}`,
     };
   }
 
   // Opus chooser picks between Sonnet's original and Opus's correction.
-  const choice = await chooseDefinition(word, partsOfSpeech, displayDefinition, firstDef, retryDef);
+  const choice = await chooseDefinition(word, slots, firstDef, retryDef);
   const winnerDef = choice.winner === 'sonnet' ? firstDef : retryDef;
   const winnerModel = choice.winner === 'sonnet' ? GEN_MODEL : RETRY_MODEL;
   const otherDef = choice.winner === 'sonnet' ? retryDef : firstDef;
-  // Enforce the budget, preferring the chooser's winner, then the other candidate.
-  const enforced = await enforceMaxLen(word, partsOfSpeech, displayDefinition, [winnerDef, otherDef]);
+  // Repair headword citations, then enforce the budget, preferring the chooser's winner and
+  // falling back to the other candidate. The citation guard runs on the WINNER specifically
+  // because the chooser has been observed rewarding a citing candidate over a clean one.
+  const enforced = await finalizeDefinition(word, slots, [winnerDef, otherDef]);
   return {
     definition: enforced.definition,
     attempts: 2,
@@ -591,6 +733,7 @@ async function runDefinitionPipeline(word, partsOfSpeech, displayDefinition) {
     maxLen,
     tightened: enforced.tightened,
     overBudget: enforced.overBudget,
+    cited: enforced.cited,
     finalCritique: '',
   };
 }
@@ -604,7 +747,7 @@ async function run() {
     console.log('🔍 SPOT CHECK MODE — processing 5 entries only\n');
   }
   if (targetWords?.length) console.log(`🎯 Scoped to: ${targetWords.join(', ')}\n`);
-  console.log('🚀 Starting AI-powered longDefinition backfill (generator → validator → opus retry → opus chooser)...\n');
+  console.log('🚀 Starting AI-powered per-sense longDefinition backfill (generator → validator → opus retry → opus chooser)...\n');
 
   if (!process.env.ANTHROPIC_API_KEY) {
     console.error('❌ ANTHROPIC_API_KEY not set');
@@ -614,11 +757,12 @@ async function run() {
   const client = await db.getClient();
 
   try {
-    // Only process entries that already have partsOfSpeech so long definitions
-    // correctly reflect every grammatical role the word can take. Run
-    // backfill-parts-of-speech.js first if entries are being skipped here.
+    // Senses come from definitionClusters, so clustering must have run first
+    // (backfill-cluster-definitions.js — the mark-discoverable pipeline orders it before
+    // this script). partsOfSpeech is still required as the fallback POS list for a
+    // cluster that carries none of its own.
     const { rows: entries } = await client.query(`
-      SELECT id, word1, "partsOfSpeech", definitions
+      SELECT id, word1, "partsOfSpeech", "definitionClusters"
       FROM dictionaryentries_zh
       WHERE language = 'zh'
         ${discoverableFilter}
@@ -626,6 +770,8 @@ async function run() {
         ${needsBackfillFilter}
         AND "partsOfSpeech" IS NOT NULL
         AND jsonb_array_length("partsOfSpeech") > 0
+        AND "definitionClusters" IS NOT NULL
+        AND jsonb_array_length("definitionClusters") > 0
         ${wordsFilter}
       ORDER BY id ASC
       ${isSpotCheck ? 'LIMIT 5' : ''}
@@ -640,17 +786,32 @@ async function run() {
 
     let updated = 0;
     let failed = 0;
+    let skipped = 0;
     let acceptedFirst = 0;
+    let flaggedEntries = 0;   // entries whose final text still cites the headword (see REVIEW_MARKER)
     let opusRetries = 0;
     let chooserPickedSonnet = 0;
     let chooserPickedOpus = 0;
 
     for (const row of entries) {
       try {
-        process.stdout.write(`  ${row.word1} [${(row.partsOfSpeech ?? []).join(', ')}] ... `);
+        const clusters = usableClusters(row.definitionClusters);
+        if (clusters.length === 0) {
+          // Clustered but every cluster lacks a usable `sense` label — there is no join key
+          // to write against, so skip rather than produce definitions nothing can address.
+          console.log(`  ${row.word1} ... SKIPPED: no sense-labeled clusters`);
+          skipped++;
+          continue;
+        }
 
-        const displayDefinition = deriveDisplayDefinition(row.definitions);
-        const result = await runDefinitionPipeline(row.word1, row.partsOfSpeech ?? [], displayDefinition);
+        // Expand the clusters into (sense, POS) pairs — the unit of generation.
+        const slots = buildSlots(clusters, row.partsOfSpeech ?? []);
+        const senseCount = clusters.length;
+        process.stdout.write(
+          `  ${row.word1} [${senseCount} sense${senseCount === 1 ? '' : 's'} → ${slots.length} pair${slots.length === 1 ? '' : 's'}] ... `
+        );
+
+        const result = await runDefinitionPipeline(row.word1, slots);
 
         if (!result.definition) {
           console.log(`FAILED: ${result.finalCritique}`);
@@ -658,16 +819,27 @@ async function run() {
           continue;
         }
 
-        // longDefinition is a JSONB object keyed by POS — serialize for the jsonb param.
+        // longDefinition is a JSONB array of per-(sense, POS) objects — serialize for the jsonb param.
         await client.query(
           `UPDATE dictionaryentries_zh SET "longDefinition" = $1::jsonb WHERE id = $2`,
           [JSON.stringify(result.definition), row.id]
         );
         await stampEntries(client, 'dictionaryentries_zh', row.id);
 
-        // Tag shows the worst-case value length against the per-POS budget and whether
-        // the tightener had to run (and whether it still came up short).
-        const lenTag = `[max ${maxValueLen(result.definition)}/${result.maxLen}${result.tightened ? ' tightened' : ''}${result.overBudget ? ' ⚠OVER' : ''}]`;
+        // A citation that survived the repair pass is written, not discarded — the definition
+        // is still useful — but flagged to stdout for the human review sweep. See REVIEW_MARKER.
+        if (result.cited?.length) {
+          flaggedEntries++;
+          console.log(
+            `\n${REVIEW_MARKER} ${row.word1} (id=${row.id}): cites the headword (or a compound ` +
+            `containing it) after one repair pass — ${result.cited.join('; ')}`
+          );
+        }
+
+        // Tag shows the worst-case definition length against the per-pair budget, how many of
+        // the entry's (sense, POS) pairs got covered, and whether the tightener had to run.
+        const coverage = `${result.definition.length}/${slots.length} pairs`;
+        const lenTag = `[${coverage}, max ${maxValueLen(result.definition)}/${result.maxLen}${result.tightened ? ' tightened' : ''}${result.overBudget ? ' ⚠OVER' : ''}]`;
         const defStr = defToLogString(result.definition);
 
         if (result.attempts === 1) {
@@ -700,7 +872,9 @@ async function run() {
     console.log('='.repeat(60));
     console.log(`Total processed         : ${entries.length}`);
     console.log(`Updated                 : ${updated}`);
+    console.log(`Skipped (no sense label): ${skipped}`);
     console.log(`Accepted on 1st pass    : ${acceptedFirst}`);
+    console.log(`Flagged for review      : ${flaggedEntries} entr${flaggedEntries === 1 ? 'y' : 'ies'}${flaggedEntries ? ` (see "${REVIEW_MARKER}" lines above)` : ''}`);
     console.log(`Opus retries triggered  : ${opusRetries}`);
     console.log(`  Chooser picked sonnet : ${chooserPickedSonnet}`);
     console.log(`  Chooser picked opus   : ${chooserPickedOpus}`);

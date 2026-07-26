@@ -3,7 +3,7 @@ import { Box, Typography, IconButton } from "@mui/material";
 import ForeignText from "./ForeignText";
 import CardIconLayer from "../cardIcons/CardIconLayer";
 import { iconImageUrl, isAdvancedLayout } from "../cardIcons/cardIconLayout";
-import { stripParentheses } from "../utils/definitionUtils";
+import { resolveDisplayDefinition } from "../utils/definitionUtils";
 import { resolveTextColor } from "../utils/cardTextColor";
 import { resolveCardColor } from "../utils/cardColor";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
@@ -282,7 +282,9 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
                     zIndex: 1,
                 }}
             >
-                {stripParentheses(entry.definition ?? '')}
+                {/* dd via the shared resolver so the thumbnail matches the card face's
+                    chosen sense (vet.selectedSense) rather than det's definitions[0]. */}
+                {resolveDisplayDefinition(entry)}
             </Typography>
         </Box>
     );

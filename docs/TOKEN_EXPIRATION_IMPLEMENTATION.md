@@ -103,18 +103,39 @@ broadcasts it via `setRefreshHandlers`, and returns it; returns `null` on failur
 Captures the **native** fetch at module load so refresh requests are never
 self-intercepted.
 
+`endServerSession()` (same module, same native fetch) is the **one** way the client
+ends a session: `POST /api/auth/logout` (revoking the refresh-token family and
+clearing both cookies) plus the local in-memory clear. Used by the interceptor's
+give-up path, `AuthContext.logout`, and `checkAuth`'s token-rejected branch.
+
+> ⚠️ **A redirect to `/login` must always revoke the refresh cookie.** Clearing only
+> the in-memory access token leaves the httpOnly refresh cookie alive, so the login
+> screen sits on top of a *still-valid* session: `checkAuth`'s silent refresh signs
+> the user back in behind the form, and deleting `/login` from the URL walks
+> straight into the app. It can also spin `checkAuth` forever (refresh succeeds →
+> `/api/auth/me` fails → clear → refresh …), and each turn nulls `user`, which
+> clobbers a login the user just completed — the "my logins don't work on the login
+> screen" bug.
+
 ### Interceptor — `src/utils/fetchInterceptor.ts`
 
 This is the single auth layer: it monkeypatches the global `fetch`, so every
 request (including those made via the `src/api/http.ts` typed wrapper) is covered.
 (The former axios `apiClient` was retired — the app now uses one fetch-based
 transport.)
-On a 401/403 from a **refreshable** endpoint:
+On a **401** from a **refreshable** endpoint:
 1. `attemptTokenRefresh()`.
 2. On success, **retry the original request once** with the fresh token, then
    return the retry response (caller never sees the 401).
-3. On failure (or still-401 retry), clear auth state, set the `sessionExpired`
-   flag, and redirect to `/login`.
+3. On failure (or still-401 retry), `endServerSession()` (revoke + clear cookies),
+   clear auth state, set the `sessionExpired` flag, and redirect to `/login`.
+
+**401 only — never 403.** `authenticateToken` (`server/authMiddleware.ts`) returns
+401 for every missing/expired/invalid-token case; a 403 means the request *was*
+authenticated and the server is refusing that specific resource (e.g.
+`GET /api/texts/:id` for another user's document,
+`server/controllers/TextController.ts`). Treating 403 as expiry logged valid
+sessions out — users experienced it as the app "crashing" to the login screen.
 
 `NO_REFRESH_PATHS` excludes `login`/`register`/`logout`/`refresh` (a 401 there is a
 real failure or would recurse). **`/api/auth/me` is intentionally eligible** so an
@@ -147,6 +168,19 @@ retry uses a `_retried` flag.
     still validate. The effect stays keyed on `token` only (an
     `eslint-disable react-hooks/exhaustive-deps` documents that `user` is read as a
     guard, not a trigger).
+  - **Token rejected by `/me`** → `endServerSession()` before `setToken(null)`, so
+    the follow-up silent refresh fails once instead of looping (see the warning
+    above). A **network/parse** failure is not a credential verdict: it clears
+    locally only, never revoking a session that may be fine once the net recovers.
+- `logout` delegates to `endServerSession()` (no duplicated logout fetch).
+
+### `src/pages/LoginPage.tsx`
+Renders `null` while `isLoading`, then `<Navigate to="/" replace />` when
+`isAuthenticated`. The form must never sit on top of a live session — that state is
+reachable whenever a silent refresh restores a session after something bounced the
+user to `/login`, and it used to be a dead end escapable only by hand-editing
+`/login` out of the URL. Consequence: signing in as a different account requires
+logging out first (which now genuinely revokes the session).
 
 ## Security model
 - Refresh tokens are opaque + **hashed at rest** → a DB leak yields no usable

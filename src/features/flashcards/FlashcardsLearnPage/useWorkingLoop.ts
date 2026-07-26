@@ -44,8 +44,11 @@ const sideOneForCard = (
 // the drag layer (reset flip / reset drag position) without taking a render-time
 // dependency on useCardDrag, which is initialized *after* this hook in the page.
 export interface CardDragControls {
-    isFlipped: boolean;
     setIsFlipped: (value: boolean) => void;
+    // Brings a card back on Side 2 (used by mark-undo — the user has already seen
+    // that card's answer). Takes the resetKey (currentIndex) the restore targets
+    // so the drag layer's per-card reset effect doesn't flip it back to Side 1.
+    restoreFlipped: (targetResetKey: number) => void;
     // Snaps the front card's drag translation back to center. Called once the
     // fly-out completes — useCardDrag's per-card reset effect resets flip state
     // but intentionally leaves drag position alone (the fly-out animates from the
@@ -265,7 +268,6 @@ export function useWorkingLoop({
         const preDismissSnapshot: Omit<LastMarkUndoSnapshot, "cardId" | "markTimestamp" | "markType" | "displacedMark"> = {
             workingLoop: [...workingLoop],
             currentIndex,
-            isFlipped: cardDragRef.current?.isFlipped ?? false,
             currentSideOneLanguage,
             nextSideOneLanguage,
         };
@@ -389,7 +391,10 @@ export function useWorkingLoop({
 
             setWorkingLoop(lastMarkUndoSnapshot.workingLoop);
             setCurrentIndex(lastMarkUndoSnapshot.currentIndex);
-            cardDragRef.current?.setIsFlipped(lastMarkUndoSnapshot.isFlipped);
+            // Undo always lands on Side 2: a card can only be dismissed after it
+            // has been flipped, so the user has already seen its answer — sending
+            // it back to Side 1 would re-quiz them on a card they just marked.
+            cardDragRef.current?.restoreFlipped(lastMarkUndoSnapshot.currentIndex);
             setCurrentSideOneLanguage(lastMarkUndoSnapshot.currentSideOneLanguage);
             setNextSideOneLanguage(lastMarkUndoSnapshot.nextSideOneLanguage);
             setLastMarkUndoSnapshot(null);

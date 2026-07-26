@@ -3,9 +3,13 @@ import { stripParentheses } from "../utils/definitionUtils";
 
 // Presentation-layer text prep shared by both render paths: strip parenthetical
 // asides (mirrors the flp gloss treatment). Blank lines are intentionally left
-// intact — the per-POS join in longDefObjectToDisplayString separates each POS
-// block with `\n\n`, and with the hosts' `whiteSpace: pre-line` that paints as a
-// real blank line between blocks, which is what we want for multi-POS entries.
+// intact — a definition may carry a `\n\n` between its meaning paragraph and its
+// cultural-context paragraph, and with the hosts' `whiteSpace: pre-line` that paints
+// as a real blank line between them, which is what we want.
+//
+// NOTE: this component is handed ONE sense's text (the host resolves which sense via
+// resolveLongDefinitionForSense — see docs/DEFINITION_CLUSTERS.md); it never renders
+// the multi-sense join, which exists only in the validator review document.
 function prepareText(text: string): string {
   return stripParentheses(text);
 }
@@ -102,10 +106,10 @@ const LongDefinitionDisplay: React.FC<LongDefinitionDisplayProps> = ({
   // server still left unsplit) → render the original plain, parenthetical-stripped text.
   if (!longDefinitionParts?.length) {
     if (!longDefinition) return null;
-    // `whiteSpace: pre-line` preserves the newlines carried in the text — the per-POS
-    // `\n\n` from longDefObjectToDisplayString renders as a blank line between POS
-    // blocks, and single `\n`s as line breaks — without it the DOM would collapse them
-    // and the lines/blocks would run together.
+    // `whiteSpace: pre-line` preserves the newlines carried in the text — a `\n\n`
+    // renders as a blank line between the definition's two paragraphs, and single `\n`s
+    // as line breaks — without it the DOM would collapse them and the lines/blocks would
+    // run together.
     const text = (
       <Typography className={className} sx={[...(Array.isArray(sx) ? sx : [sx]), { whiteSpace: "pre-line" }]}>
         {prepareText(longDefinition)}
@@ -128,9 +132,9 @@ const LongDefinitionDisplay: React.FC<LongDefinitionDisplayProps> = ({
     <Typography
       component="div"
       className={className}
-      // pre-line preserves the newlines carried inside the text parts — the per-POS
-      // `\n\n` renders as a blank line between POS blocks — same reason as the
-      // plain-text fallback above.
+      // pre-line preserves the newlines carried inside the text parts — a `\n\n`
+      // renders as a blank line between the definition's paragraphs — same reason as
+      // the plain-text fallback above.
       sx={[
         ...(Array.isArray(sx) ? sx : [sx]),
         { whiteSpace: "pre-line", ...(hasForeignPart && { lineHeight: "31px" }) },

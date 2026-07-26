@@ -258,11 +258,11 @@ bash server/scripts/run-discoverable-enrichment.sh [production|local]
 | 1 | `backfill/chinese/backfill-split-semicolon-definitions.js` | `definitions` | Expands semicolon-delimited elements into separate array entries. Runs on ALL zh entries. |
 | 2 | `backfill/chinese/backfill-process-definitions-array.js` | `definitions` | AI reorders definitions from most prototypical to least, and prunes very low-confidence glosses (broken English, incredibly rare/archaic). Runs on discoverable zh entries with >1 definition. |
 | 3 | `backfill/chinese/backfill-hsk-level.js` | `hskLevel` | AI assigns one level token per entry (`HSK1`..`HSK6`). |
-| 4 | `backfill/chinese/backfill-long-definitions.js` | `longDefinition` | AI generates 25–75 char elaboration. Depends on sorted definitions from step 2. |
+| 4 | `backfill/chinese/backfill-long-definitions.js` | `longDefinition` | AI generates ONE 25–200 char elaboration **per sense**, from `definitionClusters` — so it runs after clustering (see [DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md)), not just after step 2. |
 | 5 | `backfill/chinese/backfill-example-sentences.js` | `exampleSentences` | AI generates 3 example sentences. Segment metadata (`_segments`, `segmentMetadata`) is computed at runtime — not stored. |
 | 6 | `backfill/chinese/backfill-classifier.js` | `classifier` | AI assigns measure word(s). |
 | 7 | `backfill/chinese/backfill-dictionary-breakdown.js` | `breakdown` | AI generates per-character breakdown (multi-char words only). |
-| 8 | `backfill/chinese/backfill-vernacular-score.js` | `vernacularScore` | AI scores vernacular vs. literary register (1–5). |
+| 8 | `backfill/chinese/backfill-frequency-score.js` | `frequencyScore` | AI scores everyday-conversation frequency (1–5). |
 
 ---
 
@@ -297,7 +297,12 @@ bash server/scripts/run-discoverable-enrichment.sh [production|local]
 
 ### longDefinition Generation
 
-Uses Claude Haiku (`claude-haiku-4-5-20251001`) with a prompt that asks for a 25–75 character elaboration of the short definition. Only generated for `language = 'zh'`.
+Sonnet generates, validates, and (on rejection) Opus regenerates/adjudicates — see the
+script header. The unit is the SENSE, not the word: one 25–200 char definition per
+`definitionClusters` entry, each tagged with the one POS that sense takes, stored as a
+JSONB array keyed by the cluster's `sense` label. Only generated for `language = 'zh'`
+(Spanish has its own per-POS script). Canonical description:
+[DEFINITION_MAPPING.md](./DEFINITION_MAPPING.md) #5.
 
 **Examples**:
 - 不 → `"used to negate verbs and adjectives in Chinese"`

@@ -26,11 +26,21 @@ export function dictionaryEntryToVocabEntry(dict: DictionaryEntry): VocabEntry {
         language: dict.language,
         pronunciation: dict.pronunciation ?? null,
         definition: dict.definitions?.[0] ?? null,
+        // Sense clusters + the requester's saved pick for this word (attached by
+        // DictionaryController.lookupTerm when they have it as a card). Together these let
+        // resolveDisplayDefinition give a drilled-in eip tab the SAME dd the learner sees on
+        // their flashcard, instead of det's default sense. Both are absent for words the user
+        // has no card for, which falls back to the default sense. See docs/DEFINITION_CLUSTERS.md.
+        definitionClusters: dict.definitionClusters ?? null,
+        selectedSense: dict.selectedSense ?? null,
         longDefinition: dict.longDefinition ?? null,
         longDefinitionParts: dict.longDefinitionParts ?? null,
+        // Every sense's long definition (zh), so the drill-in resolves the same sense as the
+        // dd above — carried for the same reason as definitionClusters/selectedSense.
+        longDefinitionSenses: dict.longDefinitionSenses ?? null,
         definitionsApproved: dict.definitionsApproved ?? false,
         partsOfSpeech: dict.partsOfSpeech ?? null,
-        vernacularScore: dict.vernacularScore ?? null,
+        frequencyScore: dict.frequencyScore ?? null,
         difficulty: (anyDict.difficulty as DifficultyLevel | null | undefined) ?? null,
         breakdown: anyDict.breakdown
             ? Object.fromEntries(

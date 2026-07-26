@@ -1,17 +1,19 @@
 /**
- * The authoritative "fully enriched" manifest for the Chinese det pipeline.
+ * The authoritative "fully enriched" manifests for the det enrichment pipelines.
  *
  * LAYER: data-enrichment (backfill) utility layer.
  *
  * ONE source of truth for the completeness check + the on-first-sort worker
- * (docs/DISCOVER_LAZY_ENRICHMENT.md §5). Mirrors the 12-step zh pipeline in
- * `.claude/commands/mark-discoverable.md` §A. `id` MUST match the `script:` id each
- * backfill passes to initRunLog (that is the key it stamps into `enrichmentLog`).
+ * (docs/DISCOVER_LAZY_ENRICHMENT.md §5). `REQUIRED_SCRIPTS_ZH` mirrors the 13-step zh
+ * pipeline in `.claude/commands/mark-discoverable.md` §A; `REQUIRED_SCRIPTS_ES` mirrors
+ * the 8-step es pipeline in §B3. `id` MUST match the `script:` id each backfill passes
+ * to initRunLog (that is the key it stamps into `enrichmentLog`).
  *
  * Each step carries:
- *   - when: applicability. 'always' | 'multiChar' | 'multiDef' | 'nounPos'. A step
- *     is only required on rows it applies to (breakdown → multi-char;
- *     process-defs → multi-def; classifier → nouns).
+ *   - when: applicability. 'always' | 'multiChar' | 'multiDef' | 'nounPos' |
+ *     'esSemicolonDef' | 'esAbbrevDef'. A step is only required on rows it applies to
+ *     (breakdown → multi-char; process-defs → multi-def; classifier → nouns; the two
+ *     deterministic es cleanups → rows whose text actually contains their trigger).
  *   - version: the script's CURRENT `SCRIPT_VERSION`. **Keep in sync by hand when a
  *     script bumps its SCRIPT_VERSION** — this is the manifest's known-good version,
  *     used to detect a row stamped by an out-of-date script (§7 open item).
@@ -32,7 +34,13 @@
  * pipeline script now honors `--stale` (ORs `staleClause()` into its doneGate) and a
  * `--words` run enriches the named words regardless of `discoverable`.
  *
- * Referenced by: scripts/backfill/run-lazy-enrichment.js, docs/DISCOVER_LAZY_ENRICHMENT.md.
+ * The `steps` parameter on pendingSteps / isComplete / buildIncompletePredicate is what
+ * carries the language — pass `scriptsForLanguage(lang)`. The zh default is kept only so
+ * the zh-only callers (run-lazy-enrichment, promote-sortable) read unchanged.
+ *
+ * Referenced by: scripts/backfill/run-lazy-enrichment.js (zh only),
+ * scripts/backfill/oracle-plan.js, scripts/backfill/promote-sortable.js (zh only),
+ * docs/DISCOVER_LAZY_ENRICHMENT.md, .claude/commands/oracle-backfill.md.
  */
 
 /** Ordered pipeline steps (order encodes mark-discoverable §A3 constraints). */
@@ -48,12 +56,78 @@ export const REQUIRED_SCRIPTS_ZH = [
   { id: 'backfill-icons',                             when: 'always',    version: 1, deterministic: true },
   { id: 'chinese/backfill-word-forms',                when: 'always',    version: 3 },
   { id: 'chinese/backfill-hsk-level',                 when: 'always',    version: 2 },
-  { id: 'chinese/backfill-long-definitions',          when: 'always',    version: 13, validationFields: ['definitions'] },
-  { id: 'chinese/backfill-vernacular-score',          when: 'always',    version: 1 },
-  { id: 'chinese/backfill-cluster-definitions',       when: 'always',    version: 4 },
+  { id: 'chinese/backfill-frequency-score',           when: 'always',    version: 2 },
+  { id: 'chinese/backfill-cluster-definitions',       when: 'always',    version: 5 },
+  // Long-definitions writes ONE definition per (SENSE, POS) PAIR, taking its senses (and the
+  // `sense` labels it keys on) plus each sense's POS list from `definitionClusters` — so it
+  // MUST follow clustering, and skips any row that isn't clustered yet. docs/DEFINITION_CLUSTERS.md.
+  { id: 'chinese/backfill-long-definitions',          when: 'always',    version: 15, validationFields: ['definitions'] },
   { id: 'chinese/backfill-example-sentences',         when: 'always',    version: 6, validationFields: ['exampleSentence0', 'exampleSentence1', 'exampleSentence2'] },
   { id: 'chinese/backfill-classifier',                when: 'nounPos',   version: 2 },
 ];
+
+/**
+ * Ordered pipeline steps for SPANISH (order encodes mark-discoverable §B3 constraints).
+ *
+ * Spanish has no pinyin / tone / HSK / breakdown / classifier, and — unlike zh — no
+ * `parts-of-speech` step at all: `partsOfSpeech` is a by-product of clustering since
+ * migration 123 retired `spanish/backfill-parts-of-speech.js` (which used to
+ * materialize one det row per POS). There is also no `sortable` column on
+ * `dictionaryentries_es`, so there is no es pre-pass subset — see PRE_PASS_SCRIPTS_ZH.
+ *
+ * DEPENDENCY ORDER (why this sequence, not §B3's original one):
+ *   1-2. The deterministic cleanups rewrite `definitions` in place, so they come first.
+ *        Both stamp ONLY when they actually change a row, so they carry a `when` that
+ *        tests for their trigger text — otherwise every es row would read as
+ *        permanently pending for a step that has nothing to do on it.
+ *   3.   process-definitions-array re-orders and PRUNES `definitions`.
+ *   4.   icons keys its icons8 search off the dd (`definitions[0]`), so it must follow
+ *        every step that can still rewrite that array (mirrors the zh manifest).
+ *   5.   frequency-score writes the word-level `frequencyScore` column.
+ *   6.   cluster-definitions partitions `definitions` into senses, and its `checkShape`
+ *        validator requires the clusters to be an EXACT partition of that array — so it
+ *        MUST run after process-definitions-array, or a later prune silently invalidates
+ *        the stored partition. (This is the one place §B3 was wrong: it had clustering
+ *        at step 3, ahead of process-defs.)
+ *        NOTE a deliberate zh/es divergence: the zh clusterer's single-gloss fast path
+ *        COPIES the word-level partsOfSpeech/frequencyScore onto the lone cluster, so zh
+ *        hard-requires those steps first. The es fast path instead writes
+ *        `frequencyScore: null` and lets the word-level column own it, so es has no such
+ *        hard dependency — frequency-score sits ahead of clustering purely to keep the
+ *        two language pipelines in the same shape.
+ *   7-8. long-definitions and example-sentences both read the cluster `sense` labels to
+ *        tag what they generate, so they must follow clustering.
+ */
+export const REQUIRED_SCRIPTS_ES = [
+  { id: 'spanish/backfill-split-semicolon-definitions', when: 'esSemicolonDef', version: 1, deterministic: true, validationFields: ['definitions'] },
+  { id: 'spanish/backfill-expand-abbreviations',        when: 'esAbbrevDef',    version: 1, deterministic: true, validationFields: ['definitions'] },
+  { id: 'spanish/backfill-process-definitions-array',   when: 'multiDef',       version: 3, validationFields: ['definitions'] },
+  // Language-shared script at scripts/backfill/backfill-icons.js — pass --lang=es.
+  // Un-prefixed id because it stamps the same key for every language.
+  { id: 'backfill-icons',                               when: 'always',         version: 1, deterministic: true },
+  { id: 'spanish/backfill-frequency-score',             when: 'always',         version: 4 },
+  { id: 'spanish/backfill-cluster-definitions',         when: 'always',         version: 1 },
+  { id: 'spanish/backfill-long-definitions',            when: 'always',         version: 2, validationFields: ['definitions'] },
+  { id: 'spanish/backfill-example-sentences',           when: 'always',         version: 1, validationFields: ['exampleSentence0', 'exampleSentence1', 'exampleSentence2'] },
+];
+
+/** Manifest for a language code. Throws on a language with no pipeline. */
+export function scriptsForLanguage(language) {
+  switch (language) {
+    case 'zh': return REQUIRED_SCRIPTS_ZH;
+    case 'es': return REQUIRED_SCRIPTS_ES;
+    default: throw new Error(`requiredScripts: no manifest for language "${language}"`);
+  }
+}
+
+/** The det table holding a language's entries (the two are intentionally NOT unified). */
+export function detTableForLanguage(language) {
+  switch (language) {
+    case 'zh': return 'dictionaryentries_zh';
+    case 'es': return 'dictionaryentries_es';
+    default: throw new Error(`requiredScripts: no det table for language "${language}"`);
+  }
+}
 
 /**
  * The PRE-PASS subset — the minimum work that makes an entry legally `sortable`
@@ -84,9 +158,14 @@ if (PRE_PASS_SCRIPTS_ZH.length !== PRE_PASS_STEP_IDS.length) {
   throw new Error('requiredScripts: PRE_PASS_STEP_IDS references an id missing from REQUIRED_SCRIPTS_ZH');
 }
 
-/** The distinct validation fields any manifest step writes (for approval lookups). */
+/**
+ * The distinct validation fields any manifest step writes (for approval lookups).
+ * Union across languages: it is only ever used to bound a `validations` lookup, and
+ * both pipelines write the same field names, so a union costs nothing and cannot
+ * under-fetch when a caller plans a language this list was not derived from.
+ */
 export const VALIDATION_FIELDS = [...new Set(
-  REQUIRED_SCRIPTS_ZH.flatMap((s) => s.validationFields || [])
+  [...REQUIRED_SCRIPTS_ZH, ...REQUIRED_SCRIPTS_ES].flatMap((s) => s.validationFields || [])
 )];
 
 // ── applicability ─────────────────────────────────────────────────────────────
@@ -99,6 +178,13 @@ function conditionSql(when, alias) {
     case 'multiDef':  return `jsonb_array_length(COALESCE(${alias}.definitions, '[]'::jsonb)) > 1`;
     // partsOfSpeech is a jsonb array of pos strings (e.g. ["noun"]); `?` tests membership.
     case 'nounPos':   return `COALESCE(${alias}."partsOfSpeech", '[]'::jsonb) ? 'noun'`;
+    // The two deterministic es cleanups scan the whole table but stamp ONLY when they
+    // rewrite a row, so "has no stamp" is the normal state for a row they no-op on.
+    // Their applicability is therefore the presence of their trigger text in the
+    // definitions blob — keep these in lockstep with the scripts' own transforms.
+    case 'esSemicolonDef': return `COALESCE(${alias}.definitions, '[]'::jsonb)::text LIKE '%;%'`;
+    // Mirrors expandAbbreviations()'s /\bsth\b/ and /\bsb\b/ — \y is Postgres's word boundary.
+    case 'esAbbrevDef':    return `COALESCE(${alias}.definitions, '[]'::jsonb)::text ~ '\\ysth\\y|\\ysb\\y'`;
     default: throw new Error(`requiredScripts: unknown condition "${when}"`);
   }
 }
@@ -113,6 +199,9 @@ export function appliesTo(step, row) {
     case 'multiChar': return [...word1].length > 1;
     case 'multiDef':  return defs.length > 1;
     case 'nounPos':   return pos.includes('noun');
+    // JS twins of the es conditions above — same triggers as the scripts' transforms.
+    case 'esSemicolonDef': return defs.some((d) => String(d).includes(';'));
+    case 'esAbbrevDef':    return defs.some((d) => /\bsth\b|\bsb\b/.test(String(d)));
     default: return false;
   }
 }
@@ -217,6 +306,10 @@ export function buildCompletePredicate(alias = 'de') {
 
 /**
  * SQL predicate TRUE when the row at `alias` MAY be promoted to `sortable = TRUE`.
+ *
+ * ZH ONLY. `dictionaryentries_es` has no `sortable` column (and no HSK level feeding
+ * `difficulty`), so Spanish has no pre-pass and no sortable bar — every es row is either
+ * discoverable or not. Do not generalize this without adding that column first.
  *
  * `sortable` means "level-assigned + lead gloss cleaned; safe to show as a discover
  * sort card" (migration 110). Two independent conditions, deliberately checked

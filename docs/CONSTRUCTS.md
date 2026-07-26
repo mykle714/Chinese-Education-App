@@ -10,8 +10,15 @@ There are two types of definitions stored per vocab entry.
 - Each language's entries come from a different crowdsourced source and may follow different formatting conventions.
 
 ### Long Definition (`longDefinition`)
-- **Source:** `dictionaryentries_zh.longDefinition` (DET)
-- An AI-generated extended definition (25–150 chars), fetched via DICT_JOIN.
+- **Source:** `dictionaryentries_zh.longDefinition` (DET), fetched via DICT_JOIN.
+- AI-generated, and stored **one definition per (SENSE, PART OF SPEECH) pair** (zh): a JSONB
+  array of `{ sense, pos, definition }`, 25–200 chars each, keyed by the `definitionClusters`
+  sense label — a sense that takes two parts of speech gets two entries. Spanish still stores
+  one per POS (a JSONB object).
+- The learner sees only the sense their card is on; the API hydrates it to that one
+  string (`resolveLongDefinition`) and ships every sense as `longDefinitionSenses` so the
+  client can follow the sense picker. See [DEFINITION_MAPPING.md](./DEFINITION_MAPPING.md)
+  #5 and [DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md).
 
 ---
 
@@ -52,7 +59,7 @@ Joined via `LEFT JOIN LATERAL` in `server/dal/shared/dictJoin.ts`, matching on `
 | `hskLevel` | `hskLevel` | HSK1–HSK6 level |
 | `script` | `script` | Writing system variant (traditional/simplified/kanji) |
 | `breakdown` | `breakdown` | JSONB `Record<char, { definition: string }>` — per-character decomposition |
-| `longDefinition` | `longDefinition` | AI-generated extended definition (25–150 chars) |
+| `longDefinition` | `longDefinition` | AI-generated extended definition, JSONB **per sense** for zh (`[{sense, pos, definition}]`, 25–200 chars each) / per POS for es; hydrated at read time to the card's current sense — see [DEFINITION_MAPPING.md](./DEFINITION_MAPPING.md) #5 |
 | `exampleSentences` *(raw)* | `exampleSentences` | JSONB array of `{ chinese, english, translatedVocab, tense, partOfSpeechDict }`. `tense` is `'past' \| 'present' \| 'future'` — the temporal *meaning* of the sentence, not just which Chinese aspect markers are present. `partOfSpeechDict` keys are word tokens that appear in the Chinese sentence (single- or multi-char); values are POS tags. See "Example-sentence tense-aware popups" below. |
 | `wordForms` | `wordForms` | JSONB `Record<string, string>` — AI-generated English inflection map for the entry, keyed by `past`, `present`, `future`, `gerund`, `adverb`, `adjective`, `noun`. Only the keys relevant to the entry's `partsOfSpeech` are populated. `{}` means "processed, nothing applicable" (so the backfill doesn't retry it). |
 | `expansion` | `expansion` | Fuller/expanded form of the word (e.g., 不知不觉 for 知觉) |
@@ -69,7 +76,7 @@ Computed by `OnDeckVocabService` after the DB query, before the API response is 
 | `expansionMetadata` | For each character in the `expansion` string, looks up `pronunciation` and `definition` in `dictionaryentries_zh`; result: `Record<char, { pronunciation, definition }>` | `DictionaryService.enrichExpansionMetadataBatch()` |
 | `synonymsMetadata` | Collects all unique synonym words from the batch, batch-queries `dictionaryentries_zh`, builds `Record<word, { definition, pronunciation }>` | `DictionaryService.enrichEntriesWithSynonymMetadata()` |
 | `relatedWords` | Finds up to 4 of the user's own library words (VET `starterPackBucket = 'library'`) that share characters with `entryKey`. Chinese only. Returns `Array<{ id, entryKey, pronunciation, definition }>` | `OnDeckVocabService.enrichWithRelatedWords()` → `VocabEntryDAL.findRelatedBySharedCharacters()` |
-| `usedIn` | Single-character zh entries only. Multi-char (2–4 char) words that contain this character. The field enriched onto the card is just the **first 4-item preview** (`limit=4, offset=0`); the full list is paged on demand (see below). Only words with `vernacularScore BETWEEN 3 AND 5` are surfaced (common-enough words; this also drops null-score rows, including in-library words with no det score). One `LIMIT`/`OFFSET` window over a single stable ordering: `is_user DESC, "vernacularScore" DESC NULLS LAST, char_length("entryKey") ASC, "entryKey" ASC` (in-library first, then commonality, then shortest word first, then alphabetical as a deterministic tiebreak), where `is_user=1` rows are the user's vet entries containing the char (LEFT-JOINed to `dictionaryentries_zh` for metadata, real `vocabEntryId`) and `is_user=0` rows are global det words containing the char that are NOT in the user's vet (`vocabEntryId === null`, deduped via `NOT EXISTS`). `offset=0` reproduces the old two-pass result. Returns `UsedInItem[]`. | `OnDeckVocabService.enrichWithUsedIn()` / `DictionaryController.lookupTerm` (offset-0 preview) and `DictionaryController.usedIn` (paginated) → `VocabEntryDAL.findUsedInForCharacter(userId, char, lang, limit, offset)` |
+| `usedIn` | Single-character zh entries only. Multi-char (2–4 char) words that contain this character. The field enriched onto the card is just the **first 4-item preview** (`limit=4, offset=0`); the full list is paged on demand (see below). Only words with `frequencyScore BETWEEN 3 AND 5` are surfaced (common-enough words; this also drops null-score rows, including in-library words with no det score). One `LIMIT`/`OFFSET` window over a single stable ordering: `is_user DESC, "frequencyScore" DESC NULLS LAST, char_length("entryKey") ASC, "entryKey" ASC` (in-library first, then commonality, then shortest word first, then alphabetical as a deterministic tiebreak), where `is_user=1` rows are the user's vet entries containing the char (LEFT-JOINed to `dictionaryentries_zh` for metadata, real `vocabEntryId`) and `is_user=0` rows are global det words containing the char that are NOT in the user's vet (`vocabEntryId === null`, deduped via `NOT EXISTS`). `offset=0` reproduces the old two-pass result. Returns `UsedInItem[]`. | `OnDeckVocabService.enrichWithUsedIn()` / `DictionaryController.lookupTerm` (offset-0 preview) and `DictionaryController.usedIn` (paginated) → `VocabEntryDAL.findUsedInForCharacter(userId, char, lang, limit, offset)` |
 
 ---
 

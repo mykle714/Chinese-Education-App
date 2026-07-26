@@ -11,16 +11,17 @@
  * this text, so there is no format to guard against on submit.
  */
 
-import { longDefObjectToDisplayString, type LongDefinitionObject } from './definitions.js';
+import { longDefToDisplayString, type LongDefinitionValue } from './definitions.js';
 
 export interface DefinitionsRawFields {
   partsOfSpeech: string[] | null;
   definitions: string[] | null;
-  // Raw det column: for zh this is a JSONB object keyed by POS (migration 70), NOT a
-  // plain string. Callers pass the raw column value straight through (both
-  // ValidationService.composeBody and DictionaryDAL's approval-freshness check read the
-  // fresh column), so the string-or-object union must be normalized here — see below.
-  longDefinition: LongDefinitionObject | string | null;
+  // Raw det column: for zh this is a JSONB array of per-sense objects (and for older
+  // rows / Spanish, a JSONB object keyed by POS — migration 70), NOT a plain string.
+  // Callers pass the raw column value straight through (both ValidationService.composeBody
+  // and DictionaryDAL's approval-freshness check read the fresh column), so the union
+  // must be normalized here — see below.
+  longDefinition: LongDefinitionValue | null;
 }
 
 export interface ExampleSentenceReviewableFields {
@@ -33,11 +34,13 @@ export function composeDefinitionsBody(raw: DefinitionsRawFields): string {
   const defs = raw.definitions?.length
     ? raw.definitions.map((d, i) => `${i + 1}. ${d}`).join('\n')
     : '(none)';
-  // Normalize the per-POS JSONB object (zh) into the same labeled display string the
-  // client renders (DictionaryDAL hydrates it via the identical helper) before trimming
-  // — calling `.trim()` on the raw object throws "trim is not a function" (was a 500 on
-  // every definitions Approve). Handles the plain-string case (es / already-hydrated) too.
-  const long = longDefObjectToDisplayString(raw.longDefinition)?.trim() || '(none)';
+  // Normalize the raw JSONB (per-sense array for zh, per-POS object for es/legacy) into
+  // the ALL-senses labeled string before trimming — calling `.trim()` on the raw value
+  // throws "trim is not a function" (was a 500 on every definitions Approve). Handles
+  // the plain-string case (already-hydrated) too. The validator reviews the whole field,
+  // so this deliberately shows EVERY sense — unlike the learner surfaces, which show only
+  // the picked sense (resolveLongDefinition).
+  const long = longDefToDisplayString(raw.longDefinition)?.trim() || '(none)';
   return `Parts of Speech: ${pos}\n\nDefinitions:\n${defs}\n\nLong Definition:\n${long}`;
 }
 

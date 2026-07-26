@@ -11,8 +11,7 @@ import NodePage from "../components/NodePage";
 import MinutePointsFireBadge from "../minutePoints/MinutePointsFireBadge";
 import { FLOATING_FOOTER_CLEARANCE } from "../components/MobileFooter";
 import ForeignText from "../components/ForeignText";
-import PosBadge from "../components/PosBadge";
-import VernacularScoreDots from "../components/VernacularScoreDots";
+import FrequencyScoreDots from "../components/FrequencyScoreDots";
 import SpeakerButton from "../components/SpeakerButton";
 import { API_BASE_URL } from "../constants";
 import { stripParentheses } from "../utils/definitionUtils";
@@ -28,9 +27,9 @@ import { SIZE, WEIGHT, LEADING, TRACKING } from "../theme/scale";
 // The on-deck unit is now a SORT PACK (docs/SORT_CARDS_REQUIREMENTS.md §4.5): up to 3
 // draggable cards (no sentence band). The client holds a short FIFO queue of PACKS
 // (target 2: on-deck + buffer). The server selects card CONTENT; the CLIENT owns
-// adaptive LEVELING (docs §6, rewritten) — see the autoLevelRef/levelStreakRef state
-// below. Skip is a de-emphasized header button (not a drag target). Undo reverses one
-// card action at a time (sort OR skip), 3 deep.
+// adaptive LEVELING (docs §6) — see the autoLevelRef state below. Skip is a
+// de-emphasized header button (not a drag target). Undo reverses one card action at a
+// time (sort OR skip), 3 deep.
 
 const UNDO_DEPTH = 3;
 
@@ -40,14 +39,6 @@ const UNDO_DEPTH = 3;
 const DIFFICULTY_LEVELS = [1, 2, 3, 4, 5, 6];
 const MIN_DIFFICULTY_LEVEL = DIFFICULTY_LEVELS[0];
 const MAX_DIFFICULTY_LEVEL = DIFFICULTY_LEVELS[DIFFICULTY_LEVELS.length - 1];
-// How many consecutive "Already Learned"-only SortPacks at a level are required before
-// the auto target moves up a level (docs §6, rewritten).
-const ALREADY_LEARNED_STREAK_TO_UPGRADE = 2;
-// How many "Add to Learn Now" sorts WITHIN a single pack are required before the auto
-// target drops a level. Unlike the upgrade streak this is counted inside one pack (no
-// streak across packs), so the downgrade still reacts within a single pack — it just
-// tolerates one unknown word before concluding the level is too hard.
-const LIBRARY_SORTS_TO_DOWNGRADE = 2;
 
 // Drag destinations (Skip is intentionally NOT here — §5.1).
 interface BucketZone {
@@ -65,6 +56,38 @@ interface UndoEntry {
     bucket: string; // 'library' | 'already-learned' | 'skip'
     pack: SortPack;
 }
+
+// Single console-log shape for the whole sort flow, so a card entering the UI and a
+// card arriving from the server read identically in the console. `event` names the
+// moment ("card displayed" | "card queued"); the word1 is inlined into the label
+// because that is what makes a line scannable, and the payload carries everything
+// else about the card plus the pack it belongs to.
+// The PACK's level and key are inlined into the label too, because adaptive leveling
+// (§6) runs on `pack.level` — NOT on the card's own `difficulty`. An authored pack
+// mixes card difficulties (e.g. level-5 pack:48 = 自由/自在 at difficulty 4 plus
+// 自由自在 at 5), so reading per-card `difficulty` off these lines makes a correct
+// level step look like a repeat. packKey also makes it obvious when N lines are one
+// multi-card pack (one signal) rather than N packs.
+// NOTE: entryKey IS word1 on DiscoverCard (src/types.ts) — relabelled here for clarity.
+const logSortCard = (
+    event: string,
+    card: DiscoverCard,
+    pack: SortPack,
+    extra: Record<string, unknown> = {}
+) => {
+    console.log(`[sort-flow] ${event}: ${card.entryKey} [packLevel=${pack.level} ${pack.packKey}]`, {
+        word1: card.entryKey,
+        definition: card.definition,
+        pronunciation: card.pronunciation,
+        frequencyScore: card.frequencyScore,
+        packLevel: pack.level, // the leveling signal's anchor (§6)
+        cardDifficulty: card.difficulty, // the CARD's own band — not what leveling uses
+        cardId: card.id,
+        pack: { packKey: pack.packKey, packId: pack.packId, level: pack.level },
+        ...extra,
+        card,
+    });
+};
 
 const ContentArea = styled(Box)({
     flex: 1,
@@ -158,7 +181,7 @@ const Bucket = styled(Box)<{ mainColor: string; accentColor: string; highlight?:
 // BucketsContainer above it flex-fills. Extra bottom padding lifts the card row clear
 // of the floating footer pill. The platform look (rounded top, top-edge highlight, and
 // a soft drop shadow beneath) reads as a surface the cards physically rest on — the
-// per-card vernacular meter + speaker button live in a header band along its top.
+// per-card frequency meter + speaker button live in a header band along its top.
 const OnDeckSection = styled(Box)({
     width: "100%",
     flex: "0 0 auto",
@@ -213,7 +236,7 @@ const CardSlot = styled(Box)({
 });
 
 // Header band above each card: the "Commonality" caption over the 5-dot register meter
-// (vernacularScore) with an "x/5" readout beside it. Fixed minHeight so cards with no
+// (frequencyScore) with an "x/5" readout beside it. Fixed minHeight so cards with no
 // score keep their card faces aligned with neighbors that do. Sits on the platform
 // surface, not on the draggable card, so it stays put while the card is dragged away.
 const CardDeckHeader = styled(Box)({
@@ -378,24 +401,6 @@ const DraggableCard = memo(function DraggableCard({ card, locked, onCheckCollisi
         api.start({ y: 0, opacity: 1, config: { tension: 280, friction: 26 } });
     }, [api]);
 
-    const valueRef = useRef<HTMLElement | null>(null);
-    useEffect(() => {
-        const el = valueRef.current;
-        if (!el) return;
-        const rect = el.getBoundingClientRect();
-        const cs = getComputedStyle(el);
-        console.log("[sort-cards] definition geometry v2", {
-            entryKey: card.entryKey,
-            definition: card.definition,
-            elRect: { width: rect.width, height: rect.height },
-            scrollWidth: el.scrollWidth,
-            scrollHeight: el.scrollHeight,
-            clientWidth: el.clientWidth,
-            clientHeight: el.clientHeight,
-            computed: { display: cs.display, whiteSpace: cs.whiteSpace, lineHeight: cs.lineHeight, maxHeight: cs.maxHeight, overflow: cs.overflow, fontSize: cs.fontSize, width: cs.width },
-        });
-    }, [card.entryKey, card.definition]);
-
     const bind = useDrag(
         ({ first, down, movement: [mx, my], xy: [px, py] }) => {
             if (locked) return;
@@ -448,10 +453,8 @@ const DraggableCard = memo(function DraggableCard({ card, locked, onCheckCollisi
             </Box>
             <Box className="sort-cards__card-key-group" sx={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
                 <ForeignText size="sm" className="sort-cards__card-key" text={card.entryKey} pronunciation={card.pronunciation} />
-                <PosBadge pos={card.pos} hasMultiplePos={card.hasMultiplePos} />
             </Box>
             <Typography
-                ref={valueRef}
                 className="sort-cards__card-value"
                 sx={{
                     fontSize: SIZE.micro,
@@ -528,20 +531,17 @@ const SortCardsPage: React.FC = () => {
     const [selectedLevel, setSelectedLevel] = useState<number | null>(null);
     const [levelMenuAnchor, setLevelMenuAnchor] = useState<HTMLElement | null>(null);
 
-    // Adaptive leveling state (docs/SORT_CARDS_REQUIREMENTS.md §6, rewritten): the
-    // CLIENT is the sole owner of the auto target level once seeded. Refs (not state)
-    // because they must be read synchronously by advancePack right after a signal
-    // updates them — no re-render round-trip, and the number is never displayed
-    // (fluctuates too much to show live — the chip just reads "Auto").
+    // Adaptive leveling state (docs/SORT_CARDS_REQUIREMENTS.md §6): the CLIENT is the
+    // sole owner of the auto target level once seeded. Refs (not state) because they
+    // must be read synchronously by advancePack right after a signal updates them — no
+    // re-render round-trip, and the number is never displayed (fluctuates too much to
+    // show live — the chip just reads "Auto").
     //   - autoLevelRef: the current auto target; null until the first (cold-start)
     //     server response seeds it.
-    //   - levelStreakRef: per-level count of consecutive "Already Learned"-only packs
-    //     seen at that level, toward the 2-pack upgrade threshold.
     //   - packBucketsRef: which bucket each card in a pack was actually sorted into
     //     THIS session, so a completing pack's signal can be derived (a pack counts as
     //     ONE signal no matter how many of its cards were sorted — §6).
     const autoLevelRef = useRef<number | null>(null);
-    const levelStreakRef = useRef<Record<number, number>>({});
     const packBucketsRef = useRef<Record<string, Record<number, string>>>({});
 
     const bucketRefs = useRef<Map<string, HTMLElement>>(new Map());
@@ -630,16 +630,22 @@ const SortCardsPage: React.FC = () => {
     );
     // The chip shows the bare label once the user has pinned a specific difficulty via
     // the dropdown, or just "Auto" — the adaptive target moves per-pack and fluctuates
-    // too much to show live (docs §6, rewritten), so it is never rendered as a number.
+    // too much to show live (docs §6), so it is never rendered as a number.
     const levelLabel = selectedLevel != null ? difficultyLabel(selectedLevel) : "Auto";
 
-    // Log every time a new sort pack lands on-deck (queue[0] changes).
+    // Log every card that lands on-deck (i.e. becomes a live, visible slot). One log
+    // per card, keyed on the pack — a pack arriving on-deck emits one of these per card
+    // it carries. See logSortCard for the payload shape.
     useEffect(() => {
         if (!currentPack) return;
-        console.log("[sort-flow] pack on-deck", {
-            sortPack: currentPack,
-            estimatedLevel: autoLevelRef.current,
-        });
+        for (const card of currentPack.cards) {
+            logSortCard("card displayed", card, currentPack, {
+                estimatedLevel: autoLevelRef.current,
+                // Pre-sorted cards render locked (greyed, undraggable) rather than
+                // sortable, so the log distinguishes them from live slots.
+                locked: !!card.sorted,
+            });
+        }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentPack?.packKey]);
 
@@ -726,7 +732,7 @@ const SortCardsPage: React.FC = () => {
             // Reads autoLevelRef fresh (not a stale closure) — handleSortCard updates it
             // synchronously from the completing pack's signal BEFORE calling advancePack,
             // so a downgrade/upgrade is reflected in THIS replenish request already
-            // (docs §6, rewritten: "set to sortPackLevel±1", never a stale increment).
+            // (docs §6: "set to sortPackLevel±1", never a stale increment).
             const requestLevel = selectedLevel != null ? selectedLevel : autoLevelRef.current;
             const response = await fetch(`${API_BASE_URL}/api/starter-packs/next-pack`, {
                 method: "POST",
@@ -745,6 +751,20 @@ const SortCardsPage: React.FC = () => {
             if (data.nextPack) {
                 const next = data.nextPack;
                 setQueue((prev) => (prev.some((p) => p.packKey === next.packKey) ? prev : [...prev, next]));
+                // Log every card the replenish call brought back, one line each — the
+                // mirror of the "card displayed" logs these same cards will emit once
+                // this pack reaches the head of the queue. Dedup is tested against
+                // `rest` (not inside the setQueue updater, which runs later and may be
+                // re-invoked by StrictMode) — it is the same list the updater compares.
+                if (!rest.some((p) => p.packKey === next.packKey)) {
+                    for (const card of next.cards) {
+                        logSortCard("card queued", card, next, {
+                            requestedLevel: requestLevel,
+                            servedLevel: data.level,
+                            replacedPackKey: completedKey,
+                        });
+                    }
+                }
             }
         } catch (error) {
             console.error("Error fetching next pack:", error);
@@ -784,30 +804,19 @@ const SortCardsPage: React.FC = () => {
     // Sort one card into a bucket (per-card POST). Optimistic: resolve locally first,
     // then decide (from the ref) whether that completed the pack.
     // A completing pack contributes exactly ONE adaptive-leveling signal, derived from
-    // every bucket sorted into it this session (docs §6, rewritten): LIBRARY_SORTS_TO_DOWNGRADE
-    // or more "Add to Learn Now" cards outweigh everything else (negative — several words at
-    // this level were unknown), an all-"Already Learned" pack is positive, and a pack with
-    // exactly one "Add to Learn Now" is neutral (one unknown word is not evidence either way,
-    // so it neither downgrades nor feeds the upgrade streak). Anchored on
-    // the completing pack's OWN level (not the running auto target), since the target
-    // may already have drifted from an earlier in-flight signal — this is exactly why
-    // the update is "set to packLevel±1", never "increment the target".
+    // every bucket sorted into it this session (docs §6). The rule is deliberately naive
+    // — no streaks, no thresholds: ANY "Add to Learn Now" card means the level was too
+    // hard (target − 1), and a pack sorted entirely as "Already Learned" means it was too
+    // easy (target + 1). Anchored on the completing pack's OWN level (not the running
+    // auto target), since the target may already have drifted from an earlier in-flight
+    // signal — this is exactly why the update is "set to packLevel±1", never "increment
+    // the target".
     const applyPackSignal = useCallback((pack: SortPack) => {
         const outcomes = Object.values(packBucketsRef.current[pack.packKey] ?? {});
-        const libraryCount = outcomes.filter((o) => o === "library").length;
-        if (libraryCount >= LIBRARY_SORTS_TO_DOWNGRADE) {
-            levelStreakRef.current[pack.level] = 0;
+        if (outcomes.includes("library")) {
             autoLevelRef.current = Math.max(MIN_DIFFICULTY_LEVEL, pack.level - 1);
-        } else if (libraryCount > 0) {
-            // Exactly one unknown word — neutral: leave the upgrade streak untouched.
         } else if (outcomes.includes("already-learned")) {
-            const streak = (levelStreakRef.current[pack.level] ?? 0) + 1;
-            if (streak >= ALREADY_LEARNED_STREAK_TO_UPGRADE) {
-                levelStreakRef.current[pack.level] = 0;
-                autoLevelRef.current = Math.min(MAX_DIFFICULTY_LEVEL, pack.level + 1);
-            } else {
-                levelStreakRef.current[pack.level] = streak;
-            }
+            autoLevelRef.current = Math.min(MAX_DIFFICULTY_LEVEL, pack.level + 1);
         }
         // A pack with no library/already-learned outcomes (fully skipped) carries no
         // signal at all — nothing to do (§5.1).
@@ -816,7 +825,6 @@ const SortCardsPage: React.FC = () => {
     const handleSortCard = useCallback(async (cardId: number, bucketId: string) => {
         const pack = currentPack;
         if (!pack) return;
-        console.log("[sort-flow] sort", { cardId, bucketId, packKey: pack.packKey, packId: pack.packId });
         pushUndo({ action: "sort", cardId, bucket: bucketId, pack });
         markResolved(pack.packKey, [cardId]);
         packBucketsRef.current = {
@@ -1086,12 +1094,12 @@ const SortCardsPage: React.FC = () => {
                                     className="sort-cards__card-slot"
                                 >
                                     {/* Header band: "Commonality" caption over the 5-dot
-                                        register meter (vernacularScore, 1 = literary … 5 =
+                                        register meter (frequencyScore, 1 = literary … 5 =
                                         natural colloquial) + an x/5 readout. Lives on the
                                         platform, not the card, so it stays put while the
                                         card is dragged into a bucket. */}
                                     <CardDeckHeader className="sort-cards__card-deck-header">
-                                        {card.vernacularScore != null && (
+                                        {card.frequencyScore != null && (
                                             <>
                                                 {isMiddleCard && (
                                                     <CommonalityLabel className="sort-cards__commonality-label">
@@ -1099,14 +1107,14 @@ const SortCardsPage: React.FC = () => {
                                                     </CommonalityLabel>
                                                 )}
                                                 <CommonalityMeterRow className="sort-cards__commonality-meter">
-                                                    <VernacularScoreDots
-                                                        className="sort-cards__card-vernacular-dots"
-                                                        score={card.vernacularScore}
+                                                    <FrequencyScoreDots
+                                                        className="sort-cards__card-frequency-dots"
+                                                        score={card.frequencyScore}
                                                         dotSize={7}
                                                         gap={3}
                                                     />
                                                     <CommonalityScoreValue className="sort-cards__commonality-value">
-                                                        {card.vernacularScore}/5
+                                                        {card.frequencyScore}/5
                                                     </CommonalityScoreValue>
                                                 </CommonalityMeterRow>
                                             </>

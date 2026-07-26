@@ -21,12 +21,16 @@
  *   scripts/backfill/run-prod.sh scripts/backfill/oracle-plan.js --limit=25
  *   scripts/backfill/run-prod.sh scripts/backfill/oracle-plan.js --new --limit=25
  *   scripts/backfill/run-prod.sh scripts/backfill/oracle-plan.js --words=未来,摸脉
+ *   scripts/backfill/run-prod.sh scripts/backfill/oracle-plan.js --lang=es --discoverable
  *
  * FLAGS
+ *   --lang=zh|es    which pipeline to plan (default zh). Selects the manifest AND the
+ *                   det table — the two are intentionally not unified (see CLAUDE.md).
  *   --discoverable  only already-shipped rows (refresh/heal work)   [default: both]
  *   --new           only undiscoverable rows (candidates to ship)
  *   --unsortable    PRE-PASS scope: not-yet-sortable rows, planned against the
- *                   two-step pre-pass subset only (see PRE_PASS_SCRIPTS_ZH)
+ *                   two-step pre-pass subset only (see PRE_PASS_SCRIPTS_ZH). ZH ONLY —
+ *                   `dictionaryentries_es` has no `sortable` column.
  *   --words=a,b     restrict to these word1 values (ignores the above)
  *   --limit=N       cap the candidate rows examined (default 50)
  *   --json          emit machine-readable JSON instead of the table
@@ -43,11 +47,12 @@ dotenv.config({ path: path.join(__dirname, '../../.env.docker') });
 
 import db from '../../db.js';
 import {
-  REQUIRED_SCRIPTS_ZH,
   PRE_PASS_SCRIPTS_ZH,
   VALIDATION_FIELDS,
   pendingSteps,
   buildIncompletePredicate,
+  scriptsForLanguage,
+  detTableForLanguage,
 } from './shared/lib/requiredScripts.js';
 
 const argv = process.argv.slice(2);
@@ -57,12 +62,31 @@ const val = (name) => {
   return hit ? hit.slice(name.length + 3) : null;
 };
 
+const LANG = val('lang') || 'zh';
 const ONLY_DISCOVERABLE = has('--discoverable');
 const ONLY_NEW = has('--new');
 const ONLY_UNSORTABLE = has('--unsortable');
 const AS_JSON = has('--json');
 const LIMIT = Number(val('limit') || 50);
 const WORDS = (val('words') || '').split(',').map((s) => s.trim()).filter(Boolean);
+
+// Fail fast on an unknown language rather than planning zh under an es-shaped intent.
+// Caught so a typo'd --lang prints one usable line instead of a module-load stack trace.
+let MANIFEST, DET_TABLE;
+try {
+  MANIFEST = scriptsForLanguage(LANG);
+  DET_TABLE = detTableForLanguage(LANG);
+} catch {
+  console.error(`❌ unknown --lang="${LANG}". Supported: zh, es.`);
+  process.exit(1);
+}
+
+// `sortable` (migration 110) exists only on the zh table, so the whole pre-pass concept
+// is zh-only. Refuse rather than silently planning the full manifest instead.
+if (ONLY_UNSORTABLE && LANG !== 'zh') {
+  console.error(`❌ --unsortable is zh-only: ${DET_TABLE} has no \`sortable\` column.`);
+  process.exit(1);
+}
 
 /**
  * Corpus-derived character-commonness table, used to order the --unsortable pre-pass
@@ -125,7 +149,7 @@ async function main() {
     // against the two-step pre-pass subset — otherwise every one of the 113k rows
     // would report all 13 steps pending and drown the plan in Tier-3 work that does
     // not gate a sort card. Every other scope plans the full manifest.
-    const steps = ONLY_UNSORTABLE ? PRE_PASS_SCRIPTS_ZH : REQUIRED_SCRIPTS_ZH;
+    const steps = ONLY_UNSORTABLE ? PRE_PASS_SCRIPTS_ZH : MANIFEST;
 
     // buildIncompletePredicate encodes applicability + version-staleness + approval
     // protection. A --words run skips it: an explicit word list is an instruction to
@@ -133,25 +157,27 @@ async function main() {
     const incomplete = WORDS.length ? 'TRUE' : buildIncompletePredicate('d', steps);
 
     const lim = Number.isFinite(LIMIT) && LIMIT > 0 ? LIMIT : 50;
+    // `sortable` is a zh-only column (migration 110) — selecting it for es would throw.
     const cols = `d.id, d.word1, d.pronunciation, d.definitions, d."partsOfSpeech",
-                  d."enrichmentLog", d.discoverable, d.sortable, d.difficulty`;
+                  d."enrichmentLog", d.discoverable, d.difficulty`
+      + (LANG === 'zh' ? ', d.sortable' : '');
 
     const { rows } = await client.query(
       ONLY_UNSORTABLE
         ? `${CHAR_FREQ_CTE}
            SELECT ${cols}, min(cf.n) AS score
-             FROM dictionaryentries_zh d
+             FROM ${DET_TABLE} d
              CROSS JOIN LATERAL regexp_split_to_table(d.word1, '') AS c(ch)
              JOIN charfreq cf ON cf.ch = c.ch
-            WHERE d.language = 'zh'
+            WHERE d.language = '${LANG}'
               AND ${incomplete}
               ${scope}
             GROUP BY d.id
             ORDER BY ${order}
             LIMIT ${lim}`
         : `SELECT ${cols}
-             FROM dictionaryentries_zh d
-            WHERE d.language = 'zh'
+             FROM ${DET_TABLE} d
+            WHERE d.language = '${LANG}'
               AND ${incomplete}
               ${scope}
             ORDER BY ${order}
@@ -166,7 +192,7 @@ async function main() {
     // Validator approvals/flags for exactly these rows, so pendingSteps can honor them.
     const { rows: vRows } = await client.query(
       `SELECT "entryId", field FROM validations
-        WHERE language = 'zh' AND action IN ('approve','flag')
+        WHERE language = '${LANG}' AND action IN ('approve','flag')
           AND field = ANY($1::text[]) AND "entryId" = ANY($2::int[])`,
       [VALIDATION_FIELDS, rows.map((r) => r.id)]
     );
@@ -187,6 +213,7 @@ async function main() {
 
     if (AS_JSON) {
       console.log(JSON.stringify({
+        language: LANG,
         scope: ONLY_UNSORTABLE ? 'unsortable' : ONLY_DISCOVERABLE ? 'discoverable' : ONLY_NEW ? 'new' : WORDS.length ? 'words' : 'all',
         candidates: rows.map((r) => ({
           id: r.id, word1: r.word1, discoverable: r.discoverable, sortable: r.sortable,
@@ -197,7 +224,7 @@ async function main() {
     }
 
     const shipped = rows.filter((r) => r.discoverable).length;
-    console.log(`\n📋 Oracle plan — ${rows.length} candidate rows `
+    console.log(`\n📋 Oracle plan [${LANG}] — ${rows.length} candidate rows `
       + (ONLY_UNSORTABLE
         ? '(PRE-PASS scope: not-yet-sortable)\n'
         : `(${shipped} already discoverable, ${rows.length - shipped} new)\n`));
@@ -208,7 +235,7 @@ async function main() {
       if (!words.length) continue;
       total += words.length;
       const preview = words.slice(0, 8).join(',') + (words.length > 8 ? ` …+${words.length - 8}` : '');
-      console.log(`  ${String(words.length).padStart(4)}  ${step.id.replace('chinese/', '')}  (v${step.version}, ${step.when})`);
+      console.log(`  ${String(words.length).padStart(4)}  ${step.id.replace(/^(chinese|spanish)\//, '')}  (v${step.version}, ${step.when})`);
       console.log(`        --words=${preview}`);
     }
     console.log(`\n  ${total} prompt(s) total across ${[...byScript].filter(([, w]) => w.length).length} script(s).`);

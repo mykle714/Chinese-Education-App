@@ -1,22 +1,33 @@
 /**
- * Backfill Script: AI-powered vernacular register scoring for dictionaryentries_zh
+ * Backfill Script: AI-powered everyday-conversation FREQUENCY scoring for
+ * dictionaryentries_zh
  *
- * For each discoverable zh entry where "vernacularScore" IS NULL, asks Claude Sonnet
- * to score how vernacular (everyday spoken) vs. literary/formal the word is:
+ * For each discoverable zh entry where "frequencyScore" IS NULL, asks Claude Sonnet
+ * how often the word comes up in ordinary spoken Mandarin:
  *
- *   5 = Natural vernacular — everyday spoken Mandarin; sounds completely natural in casual speech
- *   4 = Informal-leaning — more common in speech than writing; slightly colloquial feel
- *   3 = Neutral register — appropriate in both spoken and written contexts; no strong register markedness
- *   2 = Formal/written-leaning — more at home in writing, news, or formal speech than casual conversation
- *   1 = Literary/classical/formal only — archaic, poetic, or restricted to written/formal contexts; sounds unnatural in everyday speech
+ *   5 = Constant — comes up daily in ordinary talk
+ *   4 = Common — comes up most weeks; a learner meets it early and often
+ *   3 = Moderately common — comes up when the topic calls for it
+ *   2 = Uncommon in speech — mostly met while reading or in specialist talk
+ *   1 = Almost never spoken — literary, classical, archaic, or narrowly technical
+ *
+ * The rubric itself lives in ./lib/frequencyScore.js, shared with the per-cluster
+ * scorer in backfill-cluster-definitions.js so both score on one identical scale.
+ *
+ * NOTE (migration 122, SCRIPT_VERSION 2): this scored REGISTER (colloquial↔literary)
+ * until it was renamed and re-pointed at frequency — every consumer (gsa tie-break,
+ * search relevance, starter-pack ordering, the quick-mark 3–5 gate, dd's cluster
+ * pick) already treated the number as "how common is this word". Rows written by
+ * v1 hold register scores; re-run with --stale to re-score them under the new rubric.
  *
  * NULL means "not yet scored". After processing, the column holds an integer 1–5.
  *
  * Usage:
- *   docker exec cow-backend-local npx tsx scripts/backfill-vernacular-score.js                          # full backfill
- *   docker exec cow-backend-local npx tsx scripts/backfill-vernacular-score.js --spot-check             # test 5 entries with reasoning
- *   docker exec cow-backend-local npx tsx scripts/backfill-vernacular-score.js --spot-check --random    # random 5 entries
- *   docker exec cow-backend-local npx tsx scripts/backfill-vernacular-score.js --spot-check --random --limit=25
+ *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-frequency-score.js                          # full backfill
+ *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-frequency-score.js --stale                  # also re-score rows stamped below SCRIPT_VERSION
+ *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-frequency-score.js --spot-check             # test 5 entries with reasoning
+ *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-frequency-score.js --spot-check --random    # random 5 entries
+ *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-frequency-score.js --spot-check --random --limit=25
  */
 
 import dotenv from 'dotenv';
@@ -29,13 +40,13 @@ dotenv.config({ path: path.join(__dirname, '../../../.env.docker') });
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
 import { initRunLog } from '../run-log.js';
-import { createVernacularScorer, SCORE_LABELS } from './lib/vernacularScore.js';
-const SCRIPT_VERSION = 1; // bump when this script's logic/prompt changes
+import { createFrequencyScorer, SCORE_LABELS } from './lib/frequencyScore.js';
+const SCRIPT_VERSION = 2; // bump when this script's logic/prompt changes (v2: register rubric → everyday-conversation frequency, migration 122)
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // run-log: track duration, version, words/mode, and token usage/cost
-const { stampEntries, staleClause } = initRunLog({ script: 'chinese/backfill-vernacular-score', version: SCRIPT_VERSION, anthropic: anthropic });
+const { stampEntries, staleClause } = initRunLog({ script: 'chinese/backfill-frequency-score', version: SCRIPT_VERSION, anthropic: anthropic });
 
 const isSpotCheck = process.argv.includes('--spot-check');
 const isRandom = process.argv.includes('--random');
@@ -53,18 +64,18 @@ const wordsFilter = targetWords?.length
 const discoverableGate = targetWords?.length ? '' : 'AND discoverable = TRUE';
 // --stale: also (re)process rows stamped below SCRIPT_VERSION or never stamped.
 const isStale = process.argv.includes('--stale');
-const scoreGate = isStale ? `("vernacularScore" IS NULL OR ${staleClause()})` : '"vernacularScore" IS NULL';
+const scoreGate = isStale ? `("frequencyScore" IS NULL OR ${staleClause()})` : '"frequencyScore" IS NULL';
 
-// The rubric + scorer live in the shared lib (./lib/vernacularScore.js) so the
+// The rubric + scorer live in the shared lib (./lib/frequencyScore.js) so the
 // definition-clustering backfill scores each sense cluster on the identical 1–5
 // scale. Spot-check mode asks for one-line reasoning alongside the score.
-const { scoreVernacular } = createVernacularScorer({ anthropic });
+const { scoreFrequency } = createFrequencyScorer({ anthropic });
 
 async function run() {
   if (isSpotCheck) {
     console.log(`SPOT CHECK MODE — processing ${spotCheckLimit} entries with reasoning${isRandom ? ' (random sample)' : ''}\n`);
   }
-  console.log('Starting AI-powered vernacularScore backfill...\n');
+  console.log('Starting AI-powered frequencyScore backfill...\n');
 
   if (!process.env.ANTHROPIC_API_KEY) {
     console.error('ANTHROPIC_API_KEY not set');
@@ -85,7 +96,7 @@ async function run() {
       ${isSpotCheck ? `LIMIT ${spotCheckLimit}` : ''}
     `);
 
-    console.log(`Found ${entries.length} entries needing vernacularScore backfill\n`);
+    console.log(`Found ${entries.length} entries needing frequencyScore backfill\n`);
 
     if (entries.length === 0) {
       console.log('Nothing to process.');
@@ -102,7 +113,7 @@ async function run() {
       try {
         process.stdout.write(`  ${row.word1} (${row.pronunciation}) ... `);
 
-        const result = await scoreVernacular(row.word1, row.pronunciation, row.definitions, { withReasoning: isSpotCheck });
+        const result = await scoreFrequency(row.word1, row.pronunciation, row.definitions, { withReasoning: isSpotCheck });
 
         if (isSpotCheck) {
           console.log(`${result.score}  |  ${result.reasoning}`);
@@ -111,7 +122,7 @@ async function run() {
         }
 
         await client.query(
-          `UPDATE dictionaryentries_zh SET "vernacularScore" = $1 WHERE id = $2`,
+          `UPDATE dictionaryentries_zh SET "frequencyScore" = $1 WHERE id = $2`,
           [result.score, row.id]
         );
         await stampEntries(client, 'dictionaryentries_zh', row.id);

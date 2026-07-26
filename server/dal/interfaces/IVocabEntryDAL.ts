@@ -49,7 +49,7 @@ export interface IVocabEntryDAL extends IBaseDAL<VocabEntry, VocabEntryCreateDat
     selectedSense: string | null
   ): Promise<VocabEntry | null>;
   findByUserIdAndLanguage(userId: string, language: string, limit?: number, offset?: number): Promise<VocabEntry[]>;
-  findByUserAndKey(userId: string, entryKey: string, language: string, pos?: string): Promise<VocabEntry | null>;
+  findByUserAndKey(userId: string, entryKey: string, language: string): Promise<VocabEntry | null>;
   countByUserIdAndLanguage(userId: string, language: string): Promise<number>;
 
   // Search and filtering

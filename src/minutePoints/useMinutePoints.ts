@@ -133,7 +133,6 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
   const activityTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const animationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const tickIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const saveCounterRef = useRef<number>(0);
 
   // Mirror volatile values into refs so the tick interval (registered once on mount)
   // always reads the latest value without being re-registered every render.
@@ -232,8 +231,6 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
       return;
     }
 
-    saveCounterRef.current = 0;
-
     tickIntervalRef.current = setInterval(() => {
       const currentState = stateRef.current;
       const currentUserId = userIdRef.current;
@@ -277,23 +274,7 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
         grossMinutesEarned: newGrossMinutes
       };
 
-      if (process.env.NODE_ENV === 'development') {
-        saveCounterRef.current += 1;
-        if (saveCounterRef.current % 5 === 0) {
-          const currentProgress = (newTotal % MINUTE_POINTS_CONFIG.MILLISECONDS_PER_POINT) / MINUTE_POINTS_CONFIG.MILLISECONDS_PER_POINT * 100;
-          const secondsAccumulated = Math.floor((newTotal % MINUTE_POINTS_CONFIG.MILLISECONDS_PER_POINT) / 1000);
-          console.log(
-            `[MINUTE POINTS] ⚡ Timer tick: ${newTotal}ms total, ` +
-            `${currentProgress.toFixed(1)}% progress, ${secondsAccumulated}s accumulated`
-          );
-        }
-      }
-
       if (pointsEarned > 0) {
-        if (process.env.NODE_ENV === 'development') {
-          console.log(`[MINUTE POINTS] 🔥 Point earned! Total: ${newPoints} points`);
-        }
-
         dispatch({ type: 'START_ANIMATION' });
         if (animationTimeoutRef.current) {
           clearTimeout(animationTimeoutRef.current);
@@ -359,10 +340,6 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
           lastActivity: new Date().toISOString()
         };
         saveMinutePointsData(userId, languageRef.current, storageData);
-
-        if (process.env.NODE_ENV === 'development') {
-          console.log('[MINUTE POINTS] ⏸ Going inactive, saved state');
-        }
       }
 
       dispatch({ type: 'SET_ACTIVE', payload: false });

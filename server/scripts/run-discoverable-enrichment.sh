@@ -24,12 +24,19 @@
 #   3. backfill-parts-of-speech              — assign POS tag set (AI)
 #   4. backfill-word-forms                   — generate English wordForms map (AI; needs POS + definitions[0])
 #   5. backfill-hsk-level                    — assign HSK1-HSK6 level (AI)
-#   6. backfill-long-definitions             — generate longDefinition (AI)
-#   7. backfill-example-sentences            — generate example sentences (AI)
-#   8. backfill-expansion                    — generate expansion form (AI)
-#   9. backfill-classifier                   — assign measure words (AI)
-#  10. backfill-dictionary-breakdown         — per-character breakdown (AI)
-#  11. backfill-vernacular-score             — score vernacular register (AI)
+#   6. backfill-frequency-score             — score conversation frequency (AI)
+#   7. backfill-cluster-definitions          — split definitions into sense clusters (AI; needs POS + frequency score)
+#   8. backfill-long-definitions             — generate one longDefinition PER SENSE (AI; needs definitionClusters)
+#   9. backfill-example-sentences            — generate example sentences (AI; needs definitionClusters)
+#  10. backfill-expansion                    — generate expansion form (AI)
+#  11. backfill-classifier                   — assign measure words (AI)
+#  12. backfill-dictionary-breakdown         — per-character breakdown (AI)
+#
+# Ordering constraints (mirror of the /mark-discoverable §A3 pipeline — keep the two in sync):
+#   - frequency-score + parts-of-speech BEFORE clustering (the single-definition fast path
+#     copies both onto the lone cluster).
+#   - clustering BEFORE long-definitions and example-sentences: both key off the `sense`
+#     labels in `definitionClusters` and skip rows that aren't clustered yet.
 #
 # Note: exampleSentencesMetadata is NOT a pipeline step. Segment metadata
 # (pronunciation, definition, particleOrClassifier per token) is computed
@@ -116,23 +123,27 @@ run_script "Step 4: Word Forms" "backfill-word-forms.js"
 # Step 5: Assign HSK level for discoverable zh entries (AI)
 run_script "Step 5: HSK Level" "backfill-hsk-level.js"
 
-# Step 6: Generate longDefinition using sorted definitions (AI)
-run_script "Step 6: Long Definitions" "backfill-long-definitions.js"
+# Step 6: Conversation-frequency score (AI) — must precede clustering (fast path copies it)
+run_script "Step 6: Frequency Score" "backfill-frequency-score.js"
 
-# Step 7: Generate example sentences (AI) — uses definitions
-run_script "Step 7: Example Sentences" "backfill-example-sentences.js"
+# Step 7: Split definitions into orthogonal sense clusters (AI) — needs POS (step 3) +
+# frequency score (step 6). Supplies the `sense` labels steps 8 and 9 key off.
+run_script "Step 7: Cluster Definitions" "backfill-cluster-definitions.js"
 
-# Step 8: Generate expansion form (AI)
-run_script "Step 8: Expansion" "backfill-expansion-claude.js"
+# Step 8: Generate one longDefinition PER SENSE (AI) — needs definitionClusters (step 7)
+run_script "Step 8: Long Definitions" "backfill-long-definitions.js"
 
-# Step 9: Assign measure words / classifiers (AI)
-run_script "Step 9: Classifiers" "backfill-classifier.js"
+# Step 9: Generate example sentences (AI) — needs definitionClusters (step 7)
+run_script "Step 9: Example Sentences" "backfill-example-sentences.js"
 
-# Step 10: Per-character breakdown for multi-character words (AI)
-run_script "Step 10: Dictionary Breakdown" "backfill-dictionary-breakdown.js"
+# Step 10: Generate expansion form (AI)
+run_script "Step 10: Expansion" "backfill-expansion-claude.js"
 
-# Step 11: Vernacular register score (AI)
-run_script "Step 11: Vernacular Score" "backfill-vernacular-score.js"
+# Step 11: Assign measure words / classifiers (AI)
+run_script "Step 11: Classifiers" "backfill-classifier.js"
+
+# Step 12: Per-character breakdown for multi-character words (AI)
+run_script "Step 12: Dictionary Breakdown" "backfill-dictionary-breakdown.js"
 
 END_TIME=$(date +%s)
 DURATION=$((END_TIME - START_TIME))

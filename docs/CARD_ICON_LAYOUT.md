@@ -218,8 +218,10 @@ When the picker opens it pre-fills its search box with the card's English meanin
 **default query**) so relevant icons surface immediately. Two pieces make that instant:
 
 1. **The query is computed by one shared function** — `iconSearchTerm(definition)` in
-   `src/utils/definitionUtils.ts`. It applies `stripParentheses` (so the term matches the
-   card's `EnglishBlock` display) then an **ordered list of leading-phrase strips**
+   `src/utils/definitionUtils.ts`. Callers feed it the card's **resolved dd**
+   (`resolveDisplayDefinition`, so the term follows the learner's chosen sense exactly as
+   `EnglishBlock` renders it); it then applies `stripParentheses` (a no-op on an already-
+   resolved dd, kept for raw callers) and an **ordered list of leading-phrase strips**
    (`ICON_SEARCH_LEADING_STRIPS`: `to be ` then `to `, so "to understand" → "understand",
    "to be hungry" → "hungry"). Add new strip rules to that list only — every caller
    (picker `initialTerm`, the prefetch term) goes through this one function. Previously the

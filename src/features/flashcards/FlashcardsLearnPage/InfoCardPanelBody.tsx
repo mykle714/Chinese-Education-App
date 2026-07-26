@@ -2,12 +2,11 @@ import React, { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, use
 import { Box, IconButton, Typography, useTheme } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
-import { stripParentheses } from "../../../utils/definitionUtils";
+import { resolveDisplayDefinition, resolveLongDefinitionForSense } from "../../../utils/definitionUtils";
 import ForeignText, { type CPCDSize } from "../../../components/ForeignText";
-import PosBadge from "../../../components/PosBadge";
 import PracticeWritingButton from "../../../components/handwriting/PracticeWritingButton";
 import LongDefinitionDisplay from "../../../components/LongDefinitionDisplay";
-import VernacularScoreDots from "../../../components/VernacularScoreDots";
+import FrequencyScoreDots from "../../../components/FrequencyScoreDots";
 import { aiGeneratedSurfaceSx } from "../../../theme/aiGeneratedStyling";
 import InfoCardBlockButton from "./InfoCardBlockButton";
 import UsedInPaginatedList from "../UsedInPaginatedList";
@@ -143,9 +142,17 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
     const theme = useTheme();
     const fc = theme.palette.flashcard;
 
+    // The long definition is stored per sense (zh) — render the one this card is on. The
+    // tab's entry snapshot is re-seeded (useEipTabs.syncEntry) whenever the flashcard's
+    // sense picker changes `selectedSense`, so no index override is needed here: resolving
+    // from the entry keeps the panel in lockstep with the card underneath it.
+    const { longDefinition, longDefinitionParts } = currentEntry
+        ? resolveLongDefinitionForSense(currentEntry)
+        : { longDefinition: null, longDefinitionParts: null };
+
     // Tab content availability — order matches TAB_LABELS: definition, examples, breakdown
     const definitionTabHasContent = !!(
-        currentEntry?.longDefinition ||
+        longDefinition ||
         currentEntry?.difficulty ||
         (currentEntry?.partsOfSpeech?.length ?? 0) > 0
     );
@@ -385,11 +392,11 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
         if (tabIndex === 0) {
             return definitionTabHasContent ? (
                 <Box className="mobile-demo-definition-wrapper" sx={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-                    {(currentEntry?.longDefinition || currentEntry?.longDefinitionParts?.length) && (
+                    {(longDefinition || longDefinitionParts?.length) && (
                         <LongDefinitionDisplay
                             className="mobile-demo-long-definition-text"
-                            longDefinition={currentEntry?.longDefinition}
-                            longDefinitionParts={currentEntry?.longDefinitionParts}
+                            longDefinition={longDefinition}
+                            longDefinitionParts={longDefinitionParts}
                             showPinyin={showPinyin}
                             showPinyinColor={showPinyinColor}
                             onSegmentOpen={onExampleSegmentClick}
@@ -404,7 +411,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                             }}
                         />
                     )}
-                    {(currentEntry?.difficulty || (currentEntry?.partsOfSpeech?.length ?? 0) > 0 || currentEntry?.vernacularScore != null) && (
+                    {(currentEntry?.difficulty || (currentEntry?.partsOfSpeech?.length ?? 0) > 0 || currentEntry?.frequencyScore != null) && (
                         <Box
                             className="mobile-demo-definition-meta-strip"
                             sx={{
@@ -454,25 +461,25 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                                     </Typography>
                                 </Box>
                             )}
-                            {currentEntry?.vernacularScore != null && (
-                                // vernacularScore is AI-scored (backfill-vernacular-score.js) with no
+                            {currentEntry?.frequencyScore != null && (
+                                // frequencyScore is AI-scored (backfill-frequency-score.js) with no
                                 // validation field, so it always carries the AI-generated box (no
                                 // badge — a small value chip, like the Type chip above).
                                 <Box
-                                    className="mobile-demo-vernacular-meta mobile-demo-vernacular-meta--ai-generated"
+                                    className="mobile-demo-frequency-meta mobile-demo-frequency-meta--ai-generated"
                                     sx={{ display: "flex", flexDirection: "column", gap: "3px", ...aiGeneratedSurfaceSx, borderRadius: "8px", padding: "4px 8px" }}
                                 >
                                     <Typography sx={{ fontSize: SIZE.micro, fontWeight: WEIGHT.bold, color: fc.textSecondary, letterSpacing: TRACKING.caps, textTransform: "uppercase", fontFamily: FC_FONT }}>
                                         Commonality
                                     </Typography>
-                                    <Box className="mobile-demo-vernacular-dots" sx={{ display: "flex", alignItems: "center", gap: "5px", height: 19 }}>
-                                        <VernacularScoreDots
-                                            score={currentEntry.vernacularScore!}
+                                    <Box className="mobile-demo-frequency-dots" sx={{ display: "flex", alignItems: "center", gap: "5px", height: 19 }}>
+                                        <FrequencyScoreDots
+                                            score={currentEntry.frequencyScore!}
                                             filledColor={fc.onSurface}
                                             emptyBorderColor={fc.border}
                                         />
                                         <Typography sx={{ fontSize: SIZE.micro, fontWeight: WEIGHT.bold, color: fc.onSurface, fontFamily: FC_FONT, lineHeight: 1 }}>
-                                            {currentEntry.vernacularScore}/5
+                                            {currentEntry.frequencyScore}/5
                                         </Typography>
                                     </Box>
                                 </Box>
@@ -600,10 +607,6 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                         showPinyin={showPinyin}
                     />
                 )}
-                {/* "(v)"/"(n)" badge for Spanish words with multiple discoverable POS */}
-                {currentEntry && (
-                    <PosBadge pos={currentEntry.pos} hasMultiplePos={currentEntry.hasMultiplePos} />
-                )}
                 {currentEntry && (
                     <Typography
                         className="mobile-demo-eic-header-english"
@@ -617,7 +620,10 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                             minWidth: 0,
                         }}
                     >
-                        {stripParentheses(currentEntry.definition ?? '')}
+                        {/* The eip header gloss is a dd: it must agree with the flashcard face,
+                            so it resolves through the shared resolver (chosen sense →
+                            definitions[0] fallback) instead of reading definitions[0] directly. */}
+                        {resolveDisplayDefinition(currentEntry)}
                     </Typography>
                 )}
                 {/* Header action buttons laid out as a 2×2 grid (reading order:

@@ -9,7 +9,7 @@ because the dictionary tables differ — pick the section that matches.
 | Language | Table | Key | Pipeline |
 |---|---|---|---|
 | Chinese (`zh`) | `dictionaryentries_zh` | `word1` | §A — 10-step CJK pipeline |
-| Spanish (`es`) | `dictionaryentries_es` | `(word1, pos)` (gender collapsed) | §B — 7-step es pipeline |
+| Spanish (`es`) | `dictionaryentries_es` | `word1` | §B — 7-step es pipeline |
 
 If the user doesn't say, infer from the script (Han characters → zh; Latin → es)
 and confirm.
@@ -55,7 +55,7 @@ UPDATE dictionaryentries_zh SET
   definitions = '<cedict defs JSON for new pinyin>'::jsonb,
   tone = NULL, "hskLevel" = NULL, "longDefinition" = NULL, breakdown = NULL,
   synonyms = NULL, "exampleSentences" = NULL, classifier = NULL,
-  "vernacularScore" = NULL,
+  "frequencyScore" = NULL,
   "shortDefinitionPronunciationOverride" = NULL,
   "exampleSentenceDefinitionPronunciationOverride" = NULL
 WHERE id = <id>;
@@ -85,12 +85,14 @@ server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-parts-of-s
 server/scripts/backfill/run-prod.sh scripts/backfill/backfill-icons.js --lang=zh --words=未来,摸脉
 server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-word-forms.js --words=未来,摸脉
 server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-hsk-level.js --words=未来,摸脉
-server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-long-definitions.js --words=未来,摸脉
-server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-vernacular-score.js --words=未来,摸脉
+server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-frequency-score.js --words=未来,摸脉
 server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-cluster-definitions.js --words=未来,摸脉
+server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-long-definitions.js --words=未来,摸脉
 server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-example-sentences.js --words=未来,摸脉
 server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-classifier.js --words=未来,摸脉
 ```
+
+**`backfill-cluster-definitions` must run BEFORE `backfill-long-definitions`.** Long-definitions writes ONE definition per SENSE, keyed by the cluster's `sense` label (docs/DEFINITION_CLUSTERS.md), so it takes its sense list straight from `definitionClusters` and **skips any row that isn't clustered yet** (`definitionClusters IS NOT NULL` is in its WHERE clause). This is why long-definitions moved after clustering in the sequence above.
 
 **Parts of speech must run before `backfill-word-forms`, `backfill-long-definitions`, AND `backfill-example-sentences`.** All three depend on `partsOfSpeech`: word-forms and long-definitions only process rows where `partsOfSpeech IS NOT NULL` (they silently skip otherwise), and the example-sentence prompt enforces at least one sentence per listed POS. `backfill-word-forms` additionally reads `definitions[0]`, so it must also run after `backfill-process-definitions-array`. It writes an English `wordForms` map (e.g. `{"past":"ran",...}`), or `{}` when no forms apply, so re-runs skip already-processed rows.
 
@@ -98,7 +100,9 @@ server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-classifier
 
 **`backfill-cluster-definitions` must run BEFORE `backfill-example-sentences`.** Example-sentences reads `definitionClusters` to tag each generated sentence with the exact `sense` label it demonstrates (and to steer coverage toward every register-4/5 sense); it **skips any row whose `definitionClusters` IS NULL**. Clustering reads the finalized `definitions` (so it must run after `backfill-process-definitions-array`) and writes `definitionClusters` — orthogonal sense clusters; see `docs/DEFINITION_CLUSTERS.md`.
 
-**`backfill-parts-of-speech` and `backfill-vernacular-score` must run BEFORE `backfill-cluster-definitions`.** Clustering's single-definition fast path copies the word-level `partsOfSpeech` and `vernacularScore` straight onto the lone cluster (instead of spending API calls to re-derive them), so those columns must already be populated or the fast-path cluster gets `pos`/`vernacularScore` = null. (Multi-definition entries are unaffected — they score each cluster independently in Stage C.) This is why vernacular-score was moved ahead of clustering in the sequence above.
+**`backfill-parts-of-speech` and `backfill-frequency-score` must run BEFORE `backfill-cluster-definitions`.** Clustering's single-definition fast path copies the word-level `partsOfSpeech` and `frequencyScore` straight onto the lone cluster (instead of spending API calls to re-derive them), so those columns must already be populated or the fast-path cluster gets `pos`/`frequencyScore` = null. (Multi-definition entries are unaffected — they score each cluster independently in Stage C.) This is why frequency-score was moved ahead of clustering in the sequence above.
+
+**Scan the `backfill-long-definitions` output for `⚠ LONGDEF REVIEW <word> (id=...): <reason>` lines and surface them too.** A definition is flagged when it still cites the headword — or an ordinary compound containing it (说 → 学说) — in Chinese after one automatic repair pass. Rule 4 forbids that (the learner gains nothing from being shown the word they are already looking at), but the LLM validator/chooser enforce it unreliably, so the check is deterministic in the script. The flagged text IS written, so these are quality nits to fix by re-running `--words=<word>` or hand-editing, not blockers.
 
 **Scan the `backfill-cluster-definitions` output for `⚠ CLUSTER REVIEW <word> (id=...): <reason>` lines and surface every one of them to the user for human review.** It self-flags any sense it is even slightly unsure about (uncertain readings/heteronyms, borderline split/merge calls, low-confidence ordering, etc.). These are the cases most likely to need a manual fix (e.g. a wrong heteronym reading) before `/data-deploy` — and a wrong cluster here now also feeds a wrong `sense` into the example sentences downstream.
 
@@ -112,7 +116,7 @@ SELECT word1, tone, "hskLevel",
   "exampleSentences" IS NOT NULL AS has_examples,
   breakdown IS NOT NULL AS has_breakdown,
   classifier IS NOT NULL AS has_classifier,
-  "vernacularScore" IS NOT NULL AS has_vernacular_score,
+  "frequencyScore" IS NOT NULL AS has_frequency_score,
   -- has_icon may legitimately be false: icons8 carries no match for some words. The
   -- backfill-icons stamp in "enrichmentLog" is what proves the step ran.
   "iconId" IS NOT NULL AS has_icon,
@@ -125,48 +129,40 @@ WHERE word1 = ANY(ARRAY['未来', '摸脉']) AND language = 'zh';
 
 # §B — Spanish (`dictionaryentries_es`)
 
-Spanish differs in two ways that matter here:
-
-1. **The key is `(word1, pos)`** (gender was collapsed out by migration 64). A
-   single `word1` therefore has **one row per part of speech** — e.g. `vivir`
-   gets a verb row, `perro` gets a noun row and an adjective row.
-2. **Gender-homographs** (same spelling, different meaning by gender, e.g.
-   `cura` f="cure" / m="priest") keep the **most common** sense as the row's
-   primary meaning; the secondary gender is parked in the scalar
-   `alternateGender` + `alternateMeaning` (short gloss) columns. The
-   parts-of-speech step (B3) does this collapse automatically.
+Spanish is keyed by `word1` exactly like Chinese (migration 123). A word's several
+parts of speech and its gender-homographs (`cura` f="cure" / m="priest") live INSIDE
+the row as `definitionClusters` — the same sense-cluster column Chinese uses — so
+there is one row, one card, and the learner picks the sense. Before migration 123
+each (pos, gender) was its own det row and its own card.
 
 There is **no** pinyin / tone / HSK / breakdown / classifier for Spanish, and
-`partsOfSpeech` is produced by the POS step (B3), not the Wiktionary import.
+`partsOfSpeech` is produced by the clustering step (B3), not the Wiktionary import.
 
-### B1. Resolve the word + pick the meaning to surface
+### B1. Resolve the word + review its senses
 
-Spanish rows are split by `(pos, gender)` until B3 collapses them. Inspect the
-candidate rows so you (and the user) can see every POS/gender sense:
+One row per word, so inspect the row and the senses it carries:
 
 ```sql
-SELECT id, word1, pos, gender, jsonb_array_length(definitions) AS n_defs,
-       left(definitions->>0, 40) AS def0
+SELECT id, word1, jsonb_array_length(definitions) AS n_defs,
+       left(definitions->>0, 40) AS def0,
+       (SELECT jsonb_agg(c->>'sense') FROM jsonb_array_elements("definitionClusters") c) AS senses
 FROM dictionaryentries_es
-WHERE language = 'es' AND word1 = ANY(ARRAY['cura', 'perro', ...])
-ORDER BY word1, pos, gender;
+WHERE language = 'es' AND word1 = ANY(ARRAY['cura', 'perro', ...]);
 ```
 
-Confirm with the user which words to make discoverable. Marking the word
-discoverable makes **all of its genuine POS rows** discoverable (B3 rebuilds them
-holistically), so flag any junk/vulgar sense (e.g. `leche`/interj = "shit") the
-user may not want surfaced.
+Confirm with the user which words to make discoverable. **Every sense of the word
+becomes reachable** from the card's sense picker, so flag any junk/vulgar sense
+(e.g. `leche` = "shit", `perro` = "asshole") the user may not want surfaced — the
+remedy is to remove that gloss from `definitions` before clustering, not to hide a
+row.
 
 ### B2. Set discoverable = TRUE
-
-Mark the canonical row id(s) for each word (B3 reads ALL rows of the word1 and
-rebuilds them, so marking one representative row per word is enough):
 
 ```sql
 UPDATE dictionaryentries_es
 SET discoverable = TRUE
-WHERE id = ANY(ARRAY[28814, 89876, ...])
-RETURNING id, word1, pos, gender;
+WHERE language = 'es' AND word1 = ANY(ARRAY['cura', 'perro'])
+RETURNING id, word1;
 ```
 
 ### B3. Run the es pipeline scoped to the words
@@ -174,50 +170,69 @@ RETURNING id, word1, pos, gender;
 Either run each step with `--words=...`, or run the whole runner (it auto-scopes
 the AI steps to `discoverable = TRUE`). Per-step form:
 
+The order below is authoritative and is encoded in `REQUIRED_SCRIPTS_ES`
+(`server/scripts/backfill/shared/lib/requiredScripts.js`) — that manifest, not this
+list, is what `oracle-plan.js --lang=es` plans against. Keep the two in sync.
+
 ```bash
-# 1-2 deterministic definition cleanup
+# 1-2 deterministic definition cleanup (table-wide; they rewrite `definitions` in place)
 server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-split-semicolon-definitions.js
 server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-expand-abbreviations.js
-# 3 POS + gender collapse — materializes one row per POS. --dry-run first to review!
-server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-parts-of-speech.js --words=cura,perro --dry-run
-server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-parts-of-speech.js --words=cura,perro
-# 4-7 AI enrichment (auto-scoped to discoverable rows)
+# 3 order + prune `definitions` (AI) — MUST precede clustering, see the note below
 server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-process-definitions-array.js --words=cura,perro
-# icons8 icon — after the definitions steps (search keys off definitions[0]); shared script, es table via --lang
+# 4 icons8 icon — after every step that can still rewrite definitions[0]; shared script, es table via --lang
 server/scripts/backfill/run-prod.sh scripts/backfill/backfill-icons.js --lang=es --words=cura,perro
+# 5 word-level frequency score
+server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-frequency-score.js
+# 6 sense clustering (also writes partsOfSpeech). --dry-run first to review!
+server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-cluster-definitions.js --words=cura,perro --dry-run
+server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-cluster-definitions.js --words=cura,perro
+# 7-8 sense-tagged generation — both read the cluster `sense` labels, so they follow clustering
 server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-long-definitions.js
 server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-example-sentences.js
-server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-vernacular-score.js
 ```
 
-Or the whole pipeline at once: `bash server/scripts/run-discoverable-enrichment-es.sh local  # ⚠ still dev-shaped; prefer per-step run-prod.sh`
+Or the whole pipeline at once: `bash server/scripts/run-discoverable-enrichment-es.sh local  # dev-shaped (local Docker); prefer per-step run-prod.sh for prod`
 
-**Notes on the POS step (B3):**
-- Default `--prune-mode=soft` *hides* (sets `discoverable=FALSE`) the folded
-  secondary-gender rows. Use `--prune-mode=hard` to DELETE them — required before
-  the eventual `(word1, pos)` unique-constraint swap, but destructive.
-- Always do a `--dry-run` first and review the printed UPDATE/INSERT/HIDE actions.
-- Any 3rd distinct-meaning gender is printed as `⚠ DROPPED (manual review)` — it
-  is not auto-lost; decide what to do with it by hand.
-- When B3 changes a row's definitions it NULLs that row's `longDefinition` /
-  `exampleSentences` / `vernacularScore` so steps 5-7 regenerate them.
+**`backfill-process-definitions-array` MUST run BEFORE `backfill-cluster-definitions`.**
+The clusterer's `checkShape` validator requires the clusters to be an **exact partition**
+of `definitions` — every gloss assigned to exactly one sense. process-defs re-orders and
+*prunes* that array, so running it afterwards leaves stored clusters referencing glosses
+the row no longer has. This mirrors the zh manifest, where process-defs is step 4 and
+clustering is step 10.
+
+**Notes on the clustering step (step 6):**
+- It only ever writes `definitionClusters` + `partsOfSpeech` on the ONE row for the
+  word. It never inserts, deletes, or hides a row — the row-reconciling
+  `backfill-parts-of-speech.js` it replaced did all three (migration 123 removed the
+  need; see the script header).
+- Always do a `--dry-run` first and review the printed clusters. Each line shows
+  `[frequency] sense (pos gender): glosses`.
+- It re-runs only on words it has never clustered; pass `--force` to re-cluster. The
+  mechanical clusters seeded by migration 123 do NOT count as clustered.
+- Grep the output for `⚠ CLUSTER REVIEW` — the model self-flags every sense boundary,
+  gender, or broken gloss it is unsure about, and those lines need a human read
+  before the words go live. **Surface them to the user.**
+- It never rewrites `definitions` (owned by `backfill-process-definitions-array`), so
+  no dependent enrichment is invalidated by this step.
 
 ### B4. Verify enrichment
 
 ```sql
-SELECT word1, pos, gender, "alternateGender", "alternateMeaning",
+SELECT word1,
+  jsonb_array_length("definitionClusters") AS n_senses,
   "partsOfSpeech" IS NOT NULL AS has_pos,
   "longDefinition" IS NOT NULL AS has_long_def,
   "exampleSentences" IS NOT NULL AS has_examples,
-  "vernacularScore" IS NOT NULL AS has_vern,
+  "frequencyScore" IS NOT NULL AS has_freq,
   discoverable
 FROM dictionaryentries_es
 WHERE language = 'es' AND word1 = ANY(ARRAY['cura', 'perro'])
-ORDER BY word1, pos;
+ORDER BY word1;
 ```
 
-All discoverable rows should have non-null `partsOfSpeech`, `longDefinition`,
-`exampleSentences`, `vernacularScore`.
+All discoverable rows should have non-null `definitionClusters`, `partsOfSpeech`,
+`longDefinition`, `exampleSentences`, `frequencyScore`.
 
 ---
 
@@ -242,5 +257,10 @@ credit, use `/oracle-backfill` — same pipeline and validators, local answerer.
 - The `--words` flag filters the SQL query; the deterministic/AI steps skip entries
   whose target column is already populated, so re-runs are safe.
 - Chinese full reference: `docs/newDictionaryEntriesBackfillInstructions.md`
-- Spanish POS/gender model: `database/migrations/64-add-alternate-gender-to-dictionaryentries-es.sql`
-  and `server/scripts/backfill/spanish/backfill-parts-of-speech.js`.
+- Spanish sense model: `database/migrations/123-es-word1-unique-clustered-senses.sql`
+  (made `word1` unique and moved the per-(pos, gender) split into `definitionClusters`,
+  superseding migration 64's `alternateGender`/`alternateMeaning` columns) and
+  `server/scripts/backfill/spanish/backfill-cluster-definitions.js`, which replaced the
+  deleted `backfill-parts-of-speech.js`. Model docs: `docs/DEFINITION_CLUSTERS.md`.
+- Pipeline manifests (what the oracle planner uses):
+  `server/scripts/backfill/shared/lib/requiredScripts.js`.

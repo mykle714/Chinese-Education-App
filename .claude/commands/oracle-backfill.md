@@ -74,8 +74,9 @@ Dumps `dictionaryentries_zh`, `dictionaryentries_es`, `validations` to
 ## 3. Plan the round — which scripts, which rows
 
 **Do not run a fixed script list.** Ask the planner, which reads the authoritative
-zh manifest (`server/scripts/backfill/shared/lib/requiredScripts.js`) — the same
-source of truth the on-first-sort lazy-enrichment worker uses:
+manifests (`server/scripts/backfill/shared/lib/requiredScripts.js` —
+`REQUIRED_SCRIPTS_ZH` / `REQUIRED_SCRIPTS_ES`, selected by `--lang`) — the same source
+of truth the on-first-sort lazy-enrichment worker uses:
 
 ```bash
 # refresh/heal work on already-shipped words
@@ -103,8 +104,16 @@ The manifest — not this document — decides what "pending" means:
   The planner prints these under `🛡 validator-protected`.
 
 The manifest's `version` is hand-synced to each script's `SCRIPT_VERSION` (see its
-header). If you bump a `SCRIPT_VERSION`, bump the manifest too or the planner will
-under-report. Verify sync before a long run.
+header). If you bump a `SCRIPT_VERSION`, bump the manifest too — in **both** manifests
+if the script is language-shared (`backfill-icons`) — or the planner will under-report.
+**Verify sync before a long run** (read-only, no DB, exits non-zero on drift):
+
+```bash
+server/scripts/backfill/run-prod.sh scripts/backfill/check-manifest-sync.js
+```
+
+Drift where the *script* is ahead of the manifest is the dangerous direction: rows
+stamped at the older version read as current, so the planner never re-runs them.
 
 For **new** words, take the planner's candidates to the user, then follow
 `/mark-discoverable` §A1 → A1.5 (**do not skip the cedict most-popular-reading
@@ -194,16 +203,33 @@ flashcard surfaces.
 
 Run the scripts **the planner named, in the order it printed** — manifest order
 encodes the hard dependencies (POS before word-forms/long-defs/examples; clusters
-before examples; POS + vernacular-score before clusters). Re-run the planner after
+before examples; POS + frequency-score before clusters). Re-run the planner after
 a round to pick up steps unblocked by the previous one (e.g. `classifier` becomes
 applicable only once `partsOfSpeech` exists).
 
-**Spanish has no manifest** — `requiredScripts.js` is zh-only, so `oracle-plan.js`
-cannot plan es. Fall back to the fixed §B3 order there and rely on each script's own
-`doneGate`: `split-semicolon-definitions · expand-abbreviations · parts-of-speech
-(--dry-run first!) · process-definitions-array · long-definitions ·
-example-sentences · vernacular-score`. Flag this asymmetry to the user if es work
-becomes routine — an es manifest would be the fix.
+**Spanish plans the same way** — pass `--lang=es` to the planner and to every script
+path below (`scripts/backfill/spanish/…`). `REQUIRED_SCRIPTS_ES` is the es manifest,
+so applicability, version-staleness and approval protection all behave exactly as they
+do for zh:
+
+```bash
+server/scripts/backfill/run-prod.sh scripts/backfill/oracle-plan.js --lang=es --discoverable --limit=50
+server/scripts/backfill/run-prod.sh scripts/backfill/oracle-plan.js --lang=es --new --limit=25
+```
+
+Four es-specific things to know:
+
+- **`--unsortable` is zh-only** and the planner refuses it for es. `dictionaryentries_es`
+  has no `sortable` column, so there is no es pre-pass and §3b does not apply — when the
+  es `--discoverable` backlog drains, move to `--lang=es --new` or back to zh.
+- **There is no es `parts-of-speech` step.** `partsOfSpeech` is a by-product of
+  `spanish/backfill-cluster-definitions`, which replaced the old row-materializing
+  `spanish/backfill-parts-of-speech.js` (deleted, migration 123).
+- **Always `--dry-run` the clusterer first** and review the printed clusters
+  (`[frequency] sense (pos gender): glosses`) before the export/apply cycle.
+- **`--new` does not filter junk headwords for es** — the head of the Wiktionary import
+  is punctuation and abbreviations (`&`, `&c.`, `'tamo'`). §B1 requires confirming the
+  word list with the user anyway; do that before authoring a single prompt.
 
 Per script, three steps:
 
@@ -249,7 +275,7 @@ senses and they feed the downstream example sentences.
 
 Run `/mark-discoverable` §A4 (zh) / §B4 (es) verification SQL. Every newly
 discoverable row must have non-null `partsOfSpeech`, `longDefinition`,
-`exampleSentences`, `vernacularScore` (+ zh `breakdown`, `classifier`, `difficulty`).
+`exampleSentences`, `frequencyScore` (+ zh `breakdown`, `classifier`, `difficulty`).
 
 Confirm no reviewed field moved:
 

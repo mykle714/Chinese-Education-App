@@ -22,7 +22,7 @@ import CardIconCanvas from "./CardIconCanvas";
 import { measureDefaultEnglishCenterY } from "../../../cardIcons/cardTextLayout";
 import CardEditToolbar, { CARD_EDIT_ANIM_MS, CARD_EDIT_ANIM_EASING, TOOLBAR_DROPDOWN_SELECTOR } from "./CardEditToolbar";
 import IconPickerDialog from "../../../components/IconPickerDialog";
-import { iconSearchTerm, stripParentheses, resolveSelectedSenseIndex } from "../../../utils/definitionUtils";
+import { iconSearchTerm, resolveSelectedSenseIndex, resolveDisplayDefinition } from "../../../utils/definitionUtils";
 import SheetPanel, { type SheetPanelBodyHandle } from "./SheetPanel";
 import SettingsPanelBody from "./SettingsPanelBody";
 import {
@@ -88,8 +88,8 @@ const FlashcardsLearnPage: React.FC = () => {
     // re-pointed at the real drag controls after useCardDrag runs (latest-ref
     // pattern — see assignment after the useCardDrag call).
     const cardDragRef = useRef<CardDragControls>({
-        isFlipped: false,
         setIsFlipped: () => {},
+        restoreFlipped: () => {},
         resetDragPosition: () => {},
     });
 
@@ -121,6 +121,7 @@ const FlashcardsLearnPage: React.FC = () => {
         isDragging,
         isFlipped,
         setIsFlipped,
+        restoreFlipped,
         resetDragPosition,
         showSwipeHint,
         showTapToFlipHint,
@@ -129,7 +130,7 @@ const FlashcardsLearnPage: React.FC = () => {
     } = useCardDrag(isAnimating, handleCardDismiss, currentIndex);
 
     // Keep the bridge ref pointing at the live drag controls every render.
-    cardDragRef.current = { isFlipped, setIsFlipped, resetDragPosition };
+    cardDragRef.current = { setIsFlipped, restoreFlipped, resetDragPosition };
 
     // ── Custom card icon layout (edit mode) ───────────────────────────────────
     // All fie editor state + actions live in useCardIconEditor. See docs/CARD_ICON_LAYOUT.md.
@@ -265,11 +266,24 @@ const FlashcardsLearnPage: React.FC = () => {
     const eip = useEipTabs({ apiBaseUrl: API_BASE_URL, token, stripRef: eipStripRef });
 
     const openEicSheet = () => {
-        if (!currentEntry) return;
+        if (!displayCurrentEntry) return;
         setIsEicOpen(true);
         setEicHintConsumed(true);
-        eip.openForRoot(currentEntry);
+        // Seed the root tab from the OVERRIDE-MERGED entry, not the raw one: a sense
+        // picked earlier this session lives in the editor's `selectedSense` override
+        // until the working loop refetches, and the eip header's dd must match the card.
+        eip.openForRoot(displayCurrentEntry);
     };
+
+    // Keep an OPEN eip in step with a sense picked on the card underneath it. Entry tabs
+    // hold a snapshot, so without this the panel header would keep rendering the previous
+    // sense's dd after the learner switches senses on the flashcard. Keyed on the sense
+    // value (not the entry object, whose identity changes every render) so this fires once
+    // per actual pick. See docs/DEFINITION_CLUSTERS.md.
+    useEffect(() => {
+        if (!isEicOpen || !displayCurrentEntry) return;
+        eip.syncEntry(displayCurrentEntry);
+    }, [isEicOpen, displayCurrentEntry?.id, displayCurrentEntry?.selectedSense]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Closes the EIP entirely and discards every tab (scrim tap or drag-dismiss).
     const closeEip = useCallback(() => {
@@ -506,7 +520,7 @@ const FlashcardsLearnPage: React.FC = () => {
                             onRotateStep={handleRotateStep}
                             onResizeStep={handleResizeStep}
                             foreignLabel={currentEntry?.entryKey ?? ""}
-                            englishLabel={stripParentheses(currentEntry?.definition ?? "")}
+                            englishLabel={currentEntry ? resolveDisplayDefinition(currentEntry) : ""}
                             textForeign={textForeign}
                             textEnglish={textEnglish}
                             onSetTextForeign={setTextForeign}
@@ -633,7 +647,7 @@ const FlashcardsLearnPage: React.FC = () => {
                     // instead (InfoCardSection branches on `compareTab`).
                     const active = eip.activeTab;
                     const compareTab = active?.kind === "compare" ? active : null;
-                    const panelEntry = (active?.kind === "entry" ? active.entry : null) ?? currentEntry;
+                    const panelEntry = (active?.kind === "entry" ? active.entry : null) ?? displayCurrentEntry;
                     const panelBreakdown = (active?.kind === "entry" ? active.breakdownItems : null) ?? breakdownItems;
                     const panelSubTab = active?.kind === "entry" ? active.selectedSubTab : 0;
                     // Hide the Add button once this entry is known to be in the library:
@@ -744,7 +758,7 @@ const FlashcardsLearnPage: React.FC = () => {
                 // this edit session (remembered across opens); otherwise the card's English
                 // meaning (parsed via the shared iconSearchTerm: stripParentheses to match
                 // the card display, then the "to " / "to be " infinitive strips).
-                initialTerm={lastIconQuery ?? iconSearchTerm(displayCurrentEntry?.definition)}
+                initialTerm={lastIconQuery ?? iconSearchTerm(displayCurrentEntry ? resolveDisplayDefinition(displayCurrentEntry) : null)}
                 onTermChange={setLastIconQuery}
                 // Render the warmed default-query results instantly on open (when they
                 // belong to THIS card); typing a new term reverts to a live search.

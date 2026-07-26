@@ -1,16 +1,39 @@
-# Definition Clusters (Chinese)
+# Definition Clusters
 
 > Child of [DEFINITION_MAPPING.md](./DEFINITION_MAPPING.md) — the index of all
 > definition forms across the app and the operations between them. This doc
 > covers one form: `definitionClusters`.
+>
+> **Deploying the Spanish convergence (migration 123)?** See
+> [ES_CLUSTERED_SENSES_DEPLOYMENT.md](./ES_CLUSTERED_SENSES_DEPLOYMENT.md) — the
+> operational runbook: migration ordering, pre-flight checks, locking/runtime,
+> verification, rollback, and the post-deploy clusterer run.
 
-Splits a Chinese dictionary entry's flat `definitions` array into **sense
-clusters** stored in the `definitionClusters` jsonb column. Many headwords carry
+Splits a dictionary entry's flat `definitions` array into **sense clusters**
+stored in the `definitionClusters` jsonb column. Many headwords carry
 mutually-unrelated meanings (会 = "can" / "will" / "to meet" / "meeting" / the
 kuài "to reckon accounts" sense); a single globally-ranked list forces those
 senses to interleave. Clustering groups each sense, ranks glosses
 prototypical→vernacular **within** the cluster, and scores each cluster's
-register **independently**.
+frequency **independently**.
+
+**Both languages use this model** — Chinese since migration 90, Spanish since
+migration 123. They differ only in what makes a hard sense boundary:
+
+| | Chinese (zh) | Spanish (es) |
+|---|---|---|
+| Boundary field | `reading` — heteronyms never share a cluster (会 hui4/kuai4) | `pos` + `gender` — gender carries distinct meaning (`cura`/f "cure" vs `cura`/m "priest") |
+| The other field | `gender` is NULL | `reading` is NULL (Spanish pronunciation is not per-sense) |
+| Migration | 90 | 123 |
+| Clusterer | `chinese/backfill-cluster-definitions.js` | `spanish/backfill-cluster-definitions.js` |
+
+Spanish arrived here from the opposite direction. Its senses used to be
+**materialized as ROWS** — one det row per (word1, pos, gender) — with a whole
+parallel code path (`vocabentries_es.pos` in the card's identity, a `match_rank`
+preference in the dict join, `hasMultiplePos`/`alternateGender`/`alternateMeaning`
+columns, a POS badge) existing solely to answer "which row did the learner mean?".
+Migration 123 merged those rows and deleted that path: the question is now answered
+one layer up by the learner's `selectedSense`, exactly as it always was for Chinese.
 
 ## Goal & design rationale
 
@@ -22,9 +45,9 @@ interleaved blob. Three properties matter:
 1. **One reading per cluster.** Heteronyms (会 hui4/kuai4, 得 de2/de5/dei3, 和
    he2/huo2/he4/hu2) never share a cluster — reading is a hard boundary. This
    also lets a future per-reading row split be a pure data migration.
-2. **Register is per-cluster, not per-word.** A word-level `vernacularScore` is a
-   lie for polysemes: 干 "to do" is vernacular (5) but 干 "shield" is literary
-   (1). Each cluster is scored independently.
+2. **Frequency is per-cluster, not per-word.** A word-level `frequencyScore` is a
+   lie for polysemes: 干 "to do" comes up constantly (5) while 干 "shield" is
+   effectively never spoken (1). Each cluster is scored independently.
 3. **Granularity by shared *core idea*, decided by a dedicated pass.** A cluster
    groups glosses that mean the same thing; distinct ideas stay apart. Getting
    this granularity right in a single split prompt proved unstable (it either
@@ -49,32 +72,48 @@ stare / wrong character"), which surfaces as a review flag.
 
 ## Data model
 
-`dictionaryentries_zh."definitionClusters"` — `jsonb`, nullable (NULL = not yet
-clustered). Array of cluster objects:
+`dictionaryentries_zh."definitionClusters"` and
+`dictionaryentries_es."definitionClusters"` — `jsonb`, nullable (NULL = not yet
+clustered). Array of cluster objects; ONE shape for both languages:
 
 ```jsonc
+// zh — separated by reading
 [
-  { "sense": "to be able to / know how", "reading": "hui4", "pos": ["verb"],
-    "vernacularScore": 5, "glosses": ["can", "to know how to", "to have the skill"] },
-  { "sense": "to reckon accounts", "reading": "kuai4", "pos": ["verb"],
-    "vernacularScore": 1, "glosses": ["(bound form) to reckon accounts"] }
+  { "sense": "to be able to / know how", "reading": "hui4", "pos": ["verb"], "gender": null,
+    "frequencyScore": 5, "glosses": ["can", "to know how to", "to have the skill"] },
+  { "sense": "to reckon accounts", "reading": "kuai4", "pos": ["verb"], "gender": null,
+    "frequencyScore": 1, "glosses": ["(bound form) to reckon accounts"] }
+]
+
+// es — separated by pos + gender
+[
+  { "sense": "cure / remedy", "reading": null, "pos": ["n"], "gender": "f",
+    "frequencyScore": 4, "glosses": ["cure (something that restores good health)", "healing"] },
+  { "sense": "priest", "reading": null, "pos": ["n"], "gender": "m",
+    "frequencyScore": 3, "glosses": ["priest", "curate"] }
 ]
 ```
 
 | Field | Meaning |
 |---|---|
-| `sense` | short English label for the shared meaning |
-| `reading` | numbered pinyin for **this** sense — heteronyms differ (会计 → `kuai4`), so a future per-reading row split is a pure data migration, not a schema change |
-| `pos` | part(s) of speech for this sense — **always `string[] \| null`** (single-POS senses are a 1-element array). Normalized at write time by `toPosArray`; existing rows were migrated string→array. |
-| `vernacularScore` | 1–5 register, scored **independently per cluster** (`null` = scoring failed). Same rubric/scale as the word-level `vernacularScore`. |
+| `sense` | short English label for the shared meaning. **Unique within the entry** — `vet.selectedSense` addresses a cluster by this label |
+| `reading` | zh: numbered pinyin for **this** sense — heteronyms differ (会计 → `kuai4`), so a future per-reading row split is a pure data migration, not a schema change. **NULL for es** |
+| `pos` | part(s) of speech for this sense — **always `string[] \| null`** (single-POS senses are a 1-element array). Normalized at write time by `toPosArray`; existing rows were migrated string→array. es reuses the raw Wiktionary abbreviations (`n`, `v`, `adj`, …) |
+| `gender` | es: grammatical gender of **this** sense (`m`, `f`, `mf`, `m-p`, …). This is what a Spanish gender-homograph's second det ROW became in migration 123. **NULL for zh** |
+| `frequencyScore` | 1–5 everyday-conversation frequency, scored **independently per cluster** (`null` = scoring failed). Same rubric/scale as the word-level `frequencyScore`. Also the **sort key**: `sortedSenseClusters` orders by it, so the highest-scoring cluster is the entry's default/starred sense |
 | `glosses` | verbatim source glosses, ordered prototypical→vernacular within the cluster |
 
 **Difficulty stays at the word level** (the `difficulty` column) and is *not*
 duplicated per cluster.
 
-- Migration: `database/migrations/90-add-definition-clusters-to-zh.sql`
+- Migrations: `database/migrations/90-add-definition-clusters-to-zh.sql` (zh),
+  `database/migrations/123-es-word1-unique-clustered-senses.sql` (es — adds the
+  column, merges the per-(pos,gender) rows into one row per `word1`, and seeds a
+  mechanical cluster per merged row)
 - Types: `DefinitionCluster` in `server/types/index.ts` and `src/types.ts`
   (added to the `DictionaryEntry` shape as `definitionClusters`).
+- Display helper: `senseGrammarTag` in `src/utils/definitionUtils.ts` renders a
+  cluster's `pos`/`gender` as a short tag ("n · m") for the picker's flat (es) path.
 
 ## Ownership: clusters vs. the flat `definitions`
 
@@ -100,7 +139,7 @@ The two intentionally diverge — `definitions` is **not** a strict flatten of
 | **A — Split** | Sonnet (Opus on retry) partitions the entry's glosses into clusters **verbatim** — every input gloss lands in exactly one cluster; no add/rephrase/drop. Rules: **reading is a hard boundary** (never mix readings in a cluster); cluster by **shared core idea**; err toward *finer, precise* atomic senses (the merge pass consolidates). Validated by `validatePartition` (exact partition). | `backfill-cluster-definitions.js` (`CLUSTER_INSTRUCTIONS`, `callCluster`, `clusterEntry`, `validatePartition`) |
 | **A.5 — Merge (opt-in `--merge-pass`)** | A second Sonnet call reviews Stage-A's candidate clusters and **consolidates over-similar ones**, leaning toward merging but never crossing a reading boundary and never fusing an incoherent grab-bag. It only **regroups** existing glosses, so the result is re-checked as an exact partition; on any error or validation failure it **keeps Stage A's clusters** (the merge must never lose a gloss). | `backfill-cluster-definitions.js` (`MERGE_INSTRUCTIONS`, `mergeClusters`, `mergeUser`) |
 | **B — Order/prune within cluster** | Reuses the shared Pass-1/2 gloss-ordering pipeline per cluster (skips the API for ≤1-gloss clusters). Standalone-safe: Pass-1 also prunes broken/archaic glosses, so the clusterer runs on raw cedict glosses too. | `lib/orderGlosses.js` (`createGlossOrderer` → `pass1Sort`, `pass2Critique`) |
-| **C — Score register** | Scores each cluster's vernacular register 1–5 **independently** (会 "can"=5 vs "accounts"=1), identical rubric to the word-level scorer. | `lib/vernacularScore.js` (`createVernacularScorer` → `scoreVernacular`) |
+| **C — Score frequency** | Scores each cluster's conversation frequency 1–5 **independently** (会 "can"=5 vs "accounts"=1), identical rubric to the word-level scorer. | `lib/frequencyScore.js` (`createFrequencyScorer` → `scoreFrequency`) |
 
 The clusterer then writes **only** `definitionClusters` and stamps the run log.
 
@@ -118,8 +157,8 @@ re-implementing the prompts:
   synthesis, the parenthetical/validation helpers, and `createGlossOrderer`.
   Imported by `backfill-process-definitions-array.js` (flat array) and
   `backfill-cluster-definitions.js` (per cluster).
-- `lib/vernacularScore.js` — the `SCALE_AND_GUIDELINES` rubric, `SCORE_LABELS`,
-  and `createVernacularScorer`. Imported by `backfill-vernacular-score.js`
+- `lib/frequencyScore.js` — the `SCALE_AND_GUIDELINES` rubric, `SCORE_LABELS`,
+  and `createFrequencyScorer`. Imported by `backfill-frequency-score.js`
   (word level) and `backfill-cluster-definitions.js` (per cluster).
 
 ## Running
@@ -143,11 +182,11 @@ single-gloss words unclustered would wrongly read as "not processed".
 **Single-definition fast path (zero API calls).** A one-definition entry skips *every*
 model call (Stage A/A.5/B/C) and is built locally: the lone definition is used verbatim
 as both the cluster's `sense` label and its only gloss, with `reading` = the row's
-primary reading. `pos` and `vernacularScore` are **copied from the word-level columns**
-(`partsOfSpeech`, `vernacularScore`) rather than re-derived — for a single-sense word
+primary reading. `pos` and `frequencyScore` are **copied from the word-level columns**
+(`partsOfSpeech`, `frequencyScore`) rather than re-derived — for a single-sense word
 the word-level values already describe that one sense, so no API call is needed. Both
 fall back to `null` if their column isn't populated at clustering time, so in the
-mark-discoverable pipeline **`backfill-parts-of-speech` and `backfill-vernacular-score`
+mark-discoverable pipeline **`backfill-parts-of-speech` and `backfill-frequency-score`
 must run before clustering** (the pipeline is ordered accordingly). So a bulk `--all`
 run is cheap for the single-gloss majority and only spends tokens on genuinely
 polysemous (`≥2`-definition) entries. Trade-off: the `sense` is the raw source gloss,
@@ -161,17 +200,76 @@ is surfaced via the `⚠ CLUSTER REVIEW` stdout lines described above (no file) 
 wrong cluster/reading here also propagates a wrong `sense` into the example
 sentences downstream.
 
+## The Spanish clusterer
+
+`server/scripts/backfill/spanish/backfill-cluster-definitions.js` — **step 6** of the
+mark-discoverable §B3 pipeline, where it replaced `backfill-parts-of-speech.js`. The
+canonical order is `REQUIRED_SCRIPTS_ES` in
+`server/scripts/backfill/shared/lib/requiredScripts.js`.
+
+> ⚠️ **`spanish/backfill-process-definitions-array.js` MUST run before the clusterer.**
+> `checkShape` (below) enforces an exact partition of `definitions`, and process-defs
+> re-orders and *prunes* that array — clustering first leaves the stored partition
+> pointing at glosses the row no longer has. This matches zh, where process-defs is
+> manifest step 4 and clustering step 10.
+>
+> One deliberate zh/es divergence sits next to it: zh's single-gloss fast path *copies*
+> the word-level `partsOfSpeech`/`frequencyScore` onto the lone cluster, so zh hard-requires
+> those steps first. The es fast path writes `frequencyScore: null` and lets the word-level
+> column own it, so es has no such dependency — `frequency-score` is ordered ahead of
+> clustering only to keep the two pipelines the same shape.
+
+```bash
+docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-cluster-definitions.js               # discoverable, never AI-clustered
+docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-cluster-definitions.js --force       # re-cluster
+docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-cluster-definitions.js --words=cura,perro
+docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-cluster-definitions.js --dry-run     # print clusters, write nothing
+docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-cluster-definitions.js --spot-check  # first 5 words, implies --dry-run
+```
+
+**Shape: one generation call, not zh's four stages.** Where the Chinese clusterer
+runs split → merge → order → score as separate passes, the Spanish one asks a single
+Opus call for the finished clusters (labels, pos/gender, gloss order, and per-cluster
+`frequencyScore` together), then has a Sonnet reviewer accept-or-critique it, with one
+Opus regeneration on rejection. It can do this because Spanish starts from a much
+stronger prior: Wiktionary already tagged every gloss with its pos and gender, so the
+model is *checking and refining* a partition rather than discovering one from a flat
+list. `checkShape` still enforces an EXACT PARTITION (every source gloss used once,
+verbatim, none invented or dropped) deterministically, before any model judges quality.
+
+| Stage | What | Code |
+|---|---|---|
+| **Generate** | Opus partitions the entry's glosses into clusters, labels each sense, assigns pos/gender, orders glosses within the cluster, and scores each cluster's conversation frequency 1–5. | `generateClusters`, `CLUSTER_RULES` |
+| **Check** | Deterministic: exact partition, unique sense labels, score range. No API call. | `checkShape` |
+| **Review** | Sonnet judges *quality* only — mixed meanings, mergeable duplicates, violated pos/gender boundaries, a wrong lead gloss, an implausible score. | `validateClusters` |
+| **Retry** | Opus regenerates against the critique; if the retry fails the partition check, the first (mechanically valid) attempt is kept — a rejected retry must never lose a gloss. | `regenerateClusters`, `runPipeline` |
+
+**Seeded clusters are input, not output.** Migration 123 wrote a *mechanical* cluster
+per merged row for the 9,087 multi-row words, carrying Wiktionary's pos/gender. Those
+are fed to the model as the source senses. Because a seeded row is already non-NULL,
+the "already clustered?" gate can't be `definitionClusters IS NULL` — it is instead
+`enrichmentLog ? 'spanish/backfill-cluster-definitions'`, i.e. *has this script ever
+stamped this row*. The migration deliberately did not stamp.
+
+**Single-gloss fast path (zero API calls)**, same idea as zh: the lone gloss becomes
+both the label and the only gloss, `frequencyScore` left NULL for the word-level scorer.
+
+**It only ever UPDATEs `definitionClusters` + `partsOfSpeech` on one row.** No INSERT,
+no DELETE, no discoverable-toggling — all of which its predecessor did, because senses
+were rows. And like zh it never writes `definitions`.
+
 ## Consumers
 
 `definitionClusters` is additive metadata; its downstream readers:
 
 | Consumer | Uses | Code |
 |---|---|---|
-| **Example sentences** (est) — generation | The list of `sense` labels + per-cluster `vernacularScore`, to tag each generated sentence with the target-word sense it demonstrates and to steer coverage toward every register-4/5 sense. | `server/scripts/backfill/chinese/backfill-example-sentences.js` (`buildSenseContext`) — see [EXAMPLE_SENTENCES.md](./EXAMPLE_SENTENCES.md) |
+| **Example sentences** (est) — generation | The list of `sense` labels + per-cluster `frequencyScore`, to tag each generated sentence with the target-word sense it demonstrates and to steer coverage toward every register-4/5 sense. | `server/scripts/backfill/chinese/backfill-example-sentences.js` (`buildSenseContext`) — see [EXAMPLE_SENTENCES.md](./EXAMPLE_SENTENCES.md) |
 | **Example sentences** (est) — per-segment tagging | Each segment's own cluster labels are offered to the tagging pass, which writes a `senseDict[segment]` label; at read time a matching cluster's `ddt(cluster)` becomes that segment's displayed dd. | `backfill-example-sentences.js` (`tagSentenceSegments`), `server/dal/shared/segmentString.ts` (`buildSegmentMetadata`) |
-| **flp sense-picker** (EnglishBlock) | `ddt(cluster)` renders each cluster as a display string in the dropdown; the menu is **sectioned by `reading`** (one `ListSubheader` per distinct pinyin, tone-marked via `numberedToTonedPinyin` and per-syllable tone-colored via `getToneColor`), preserving the vernacular sort within each section and the star on the global default (index 0). The clusters are ordered by the shared `sortedSenseClusters(entry)` helper (highest vernacular first) — the single source of truth both the picker and the persistence layer address. | `src/utils/definitionUtils.ts` (`ddt`, `sortedSenseClusters`), `src/features/flashcards/FlashcardsLearnPage/FlashCardSection.tsx` (`EnglishBlock` → `senseSections`), `src/utils/textUtils.ts` (`numberedToTonedPinyin`), `src/utils/toneColors.ts` (`getToneColor`) |
+| **flp sense-picker** (EnglishBlock) | `ddt(cluster)` renders each cluster as a display string in the dropdown. **zh — sectioned by `reading`**: one `ListSubheader` per distinct pinyin, tone-marked via `numberedToTonedPinyin` and per-syllable tone-colored via `getToneColor`, preserving the frequency sort within each section and the star on the global default (index 0). **es — flat list**: `senseSections` returns null when no cluster carries a reading (sectioning would emit one meaningless "—" heading over the whole list), so each row renders instead with its own `senseGrammarTag` ("n · m") to carry the disambiguation. Both paths render through the same `renderSenseItem` so selection/star/stop-propagation can't drift apart. The clusters are ordered by the shared `sortedSenseClusters(entry)` helper (highest frequency first) — the single source of truth both the picker and the persistence layer address. | `src/utils/definitionUtils.ts` (`ddt`, `senseGrammarTag`, `sortedSenseClusters`), `src/features/flashcards/FlashcardsLearnPage/FlashCardSection.tsx` (`EnglishBlock` → `senseSections`, `renderSenseItem`), `src/utils/textUtils.ts` (`numberedToTonedPinyin`), `src/utils/toneColors.ts` (`getToneColor`) |
+| **Long definition** (eip Definition tab, cdp) | The unit of generation is the cluster × POS pair: `backfill-long-definitions.js` writes one `longDefinition` entry per (cluster, part of speech), keyed by the cluster's `sense` label — a cluster whose `pos` lists several roles gets one definition per role, since the roles carry different meanings (docs/DEFINITION_MAPPING.md #5). `buildSlots` does the expansion; a cluster with no `pos` of its own yields one slot whose POS the model picks from the word-level `partsOfSpeech`. At read time the learner sees only the sense their card is on — resolved server-side by `resolveLongDefinition` and client-side (following the optimistic sense picker, no refetch) by `resolveLongDefinitionForSense`, both using the same sorted-cluster + `selectedSense` pick as dd. A re-clustering that changes a `sense` label orphans that sense's definition until the backfill re-runs (readers fall back to the default sense). | `server/scripts/backfill/chinese/backfill-long-definitions.js`; `server/utils/definitions.ts` (`resolveLongDefinition`, `resolveSelectedCluster`, `longDefToDisplayString`); `server/dal/implementations/DictionaryDAL.ts` (`enrichLongDefinitionMetadataBatch` — ships every sense as `longDefinitionSenses`); `src/utils/definitionUtils.ts` (`resolveLongDefinitionForSense`); `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx`; `src/features/flashcards/VocabCardDetailBody.tsx` |
 | **Character breakdown** (bt tab + Word Search) | Each component character's *context-correct* gloss = the char's cluster keyed by `breakdown[char].sense` (the label written by `backfill-breakdown-senses.js`), rendered via `ddt`. The breakdown tab reads the materialized `breakdown[char].definition`; Word Search re-resolves it live at grid build via `resolveSenseGloss`. Both surface the **same dd**. | `server/utils/definitions.ts` (`resolveSenseGloss`); `server/services/OnDeckVocabService.ts` (`getWordSearchGrid`); `src/utils/breakdownUtils.ts` — see [BREAKDOWN_FEATURE_IMPLEMENTATION.md](./BREAKDOWN_FEATURE_IMPLEMENTATION.md) §5b, [WORD_SEARCH_GAME.md](./WORD_SEARCH_GAME.md) §2/§4 |
-| **Per-account sense selection** (`selectedSense`, migration 99) | The learner's chosen sense is persisted **per user per word** so it survives reloads/re-promotion. Stored as the cluster's `sense` LABEL (not an index) so it's stable across re-clustering/re-scoring; resolved back to a sorted index on read (falls back to the default/starred sense if the label no longer matches). Only the two user-context surfaces persist — the **read-only dictionary cdp uses a det-fallback entry with no userId and always shows the default** (its picker is local-only, never saved). | vet column `selectedSense` (`database/migrations/99-add-selected-sense-to-vocabentries.sql`); `src/utils/definitionUtils.ts` (`resolveSelectedSenseIndex`); `src/utils/vocabApi.ts` (`saveSelectedSense`); flp: `useCardIconEditor.ts` (`persistSelectedSense`) → `FlashCardSection.tsx` (`CardFace.handleSelectSense`); saved-card cdp: `VocabCardDetailPage.tsx` (`handleSelectSense`); server: `PATCH /api/vocabEntries/:id/selected-sense` (`VocabEntryController.updateSelectedSense` → `VocabEntryService.updateSelectedSense` → `VocabEntryDAL.updateSelectedSense`) |
+| **Per-account sense selection** (`selectedSense`, migration 99) | The learner's chosen sense is persisted **per user per word** so it survives reloads/re-promotion. Stored as the cluster's `sense` LABEL (not an index) so it's stable across re-clustering/re-scoring; resolved back to a sorted index on read (falls back to the default/starred sense if the label no longer matches). Only the two user-context surfaces **persist** a pick (flp card face, saved-card cdp) — the read-only dictionary cdp's picker is local-only, never saved (there may be no vet row to write). **Every dd surface READS the pick**, via `resolveDisplayDefinition` — see [DEFINITION_MAPPING.md](./DEFINITION_MAPPING.md) form #3 for the full call-site list. Payloads that flatten dd to a plain string server-side (word-search word list, related words, used-in pass 1) resolve it with the server twin in `server/utils/definitions.ts`. An **open eip follows a pick made on the card underneath it**: entry tabs hold a snapshot, so the flp re-seeds the matching tab via `useEipTabs.syncEntry` whenever `selectedSense` changes. **Dictionary lookups carry the requester's pick**: `GET /api/dictionary/lookup/:term` attaches `selectedSense` from the caller's vet row when they have that word as a card, so an eip drill-in and the dictionary cdp show the same sense as their flashcard (absent ⇒ default/starred sense). | vet column `selectedSense` (`database/migrations/99-add-selected-sense-to-vocabentries.sql`); `src/utils/definitionUtils.ts` (`resolveSelectedSenseIndex`, `resolveDisplayDefinition`); `server/utils/definitions.ts` (`resolveDisplayDefinition` — server twin); `src/utils/vocabApi.ts` (`saveSelectedSense`); `src/features/flashcards/FlashcardsLearnPage/useEipTabs.ts` (`syncEntry`); `server/controllers/DictionaryController.ts` (`lookupTerm` — attaches the caller's `selectedSense`); `src/features/flashcards/FlashcardsLearnPage/dictEntryAdapter.ts` (carries `definitionClusters` + `selectedSense`); `server/dal/implementations/VocabEntryDAL.ts` (`findRelatedBySharedCharacters`, `findUsedInForCharacter`); `server/services/OnDeckVocabService.ts` (`getWordSearchGrid`); flp: `useCardIconEditor.ts` (`persistSelectedSense`) → `FlashCardSection.tsx` (`CardFace.handleSelectSense`); saved-card cdp: `VocabCardDetailPage.tsx` (`handleSelectSense`); server: `PATCH /api/vocabEntries/:id/selected-sense` (`VocabEntryController.updateSelectedSense` → `VocabEntryService.updateSelectedSense` → `VocabEntryDAL.updateSelectedSense`) |
 
 ## Human review: model self-flagging via stdout
 

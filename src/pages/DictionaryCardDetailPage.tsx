@@ -16,6 +16,7 @@ import { COLORS } from "../theme/colors";
 import { CardFaceSide, ChineseBlock, EnglishBlock } from "../features/flashcards/FlashcardsLearnPage/FlashCardSection";
 import { CARD_BASE_WIDTH, CARD_BASE_HEIGHT } from "../features/flashcards/FlashcardsLearnPage/constants";
 import { dictionaryEntryToVocabEntry } from "../features/flashcards/FlashcardsLearnPage/dictEntryAdapter";
+import { resolveSelectedSenseIndex } from "../utils/definitionUtils";
 import { VocabCardBadges, VocabCardSections } from "../features/flashcards/VocabCardDetailBody";
 
 // READ-ONLY dictionary card detail (cdp) — the page a dictionary result opens into
@@ -70,7 +71,14 @@ const DictionaryCardDetailPage: React.FC = () => {
                 if (!res.ok) throw new Error("Word not found");
                 const dictData: DictionaryEntry = await res.json();
                 if (cancelled) return;
-                setEntry(dictionaryEntryToVocabEntry(dictData));
+                const adapted = dictionaryEntryToVocabEntry(dictData);
+                setEntry(adapted);
+                // Seed the hero card from the requester's SAVED pick for this word when the
+                // lookup carried one (they have it as a flashcard) - so the dictionary page and
+                // their card agree. Falls back to the default/starred sense otherwise. The
+                // picker here stays local-only: this page has no vet row to write when the word
+                // is not in their library. See docs/DEFINITION_CLUSTERS.md.
+                setSelectedSenseIndex(resolveSelectedSenseIndex(adapted));
             } catch (err: unknown) {
                 if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load word");
             } finally {
@@ -197,6 +205,9 @@ const DictionaryCardDetailPage: React.FC = () => {
                             entry={entry}
                             showPinyin={showPinyin}
                             showPinyinColor={showPinyinColor}
+                            // Keeps the Definition box's long definition on the same sense
+                            // as the picker above (per-sense longDefinition).
+                            selectedSenseIndex={selectedSenseIndex}
                             onWordOpen={handleWordOpen}
                             // Same slow-rate-aware sentence narration as the flp est.
                             onSpeakSentence={

@@ -2,7 +2,7 @@ import React from "react";
 import { Box, Card, CardContent, IconButton, ListItemIcon, ListItemText, ListSubheader, Menu, MenuItem, Typography, useTheme } from "@mui/material";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import StarIcon from "@mui/icons-material/Star";
-import { ddt, stripParentheses, sortedSenseClusters, resolveSelectedSenseIndex } from "../../../utils/definitionUtils";
+import { ddt, senseGrammarTag, sortedSenseClusters, resolveSelectedSenseIndex, resolveDisplayDefinition } from "../../../utils/definitionUtils";
 import { numberedToTonedPinyin } from "../../../utils/textUtils";
 import { getToneColor } from "../../../utils/toneColors";
 import { DraggableCardContainer, SwipeHintLabel, FlipHintLabel } from "./styled";
@@ -19,7 +19,7 @@ import {
 } from "./constants";
 import { SIZE, WEIGHT, LEADING, TRACKING } from "../../../theme/scale";
 import type { VocabEntry, SideOneLanguage } from "./types";
-import type { IconLayoutItem, TextLayout } from "../../../types";
+import type { DefinitionCluster, IconLayoutItem, TextLayout } from "../../../types";
 import CardIconLayer from "../../../cardIcons/CardIconLayer";
 import { defaultLayoutForIcon, isAdvancedLayout } from "../../../cardIcons/cardIconLayout";
 import { resolveTextLayout, textItemTransform, defaultEnglishTopAnchorTransform } from "../../../cardIcons/cardTextLayout";
@@ -203,7 +203,7 @@ const englishFontSize = (text: string): number => {
 // single cluster) render exactly as before — no trigger, no picker.
 export const EnglishBlock: React.FC<{
     entry: VocabEntry;
-    // Index into the vernacular-sorted cluster list currently shown. Owned by CardFace
+    // Index into the frequency-sorted cluster list currently shown. Owned by CardFace
     // (per-entry state) so both faces (Side 1 English mode + Side 2) stay in sync and
     // the pick resets to the top (starred) sense whenever the card changes.
     selectedSenseIndex?: number;
@@ -221,18 +221,24 @@ export const EnglishBlock: React.FC<{
 
     // A picker only makes sense with a real choice — a single-cluster (or unclustered)
     // entry falls back to the plain definitions[0] dd, unchanged from before this feature.
-    // Sorted highest vernacular register first (nulls last) so index 0 is always the
+    // Sorted highest conversation-frequency first (nulls last) so index 0 is always the
     // starred/default sense.
     const sortedClusters = React.useMemo(() => sortedSenseClusters(entry), [entry]);
 
-    // The picker groups the vernacular-sorted clusters into reading sections so the
+    // The picker groups the frequency-sorted clusters into reading sections so the
     // menu reads as "these senses share this pinyin". Grouping preserves the sort:
-    // readings appear in the order their first (highest-vernacular) cluster does, and
-    // clusters stay vernacular-ordered within a section — so the starred default (the
+    // readings appear in the order their first (highest-frequency) cluster does, and
+    // clusters stay frequency-ordered within a section — so the starred default (the
     // global index 0) always heads the first section. Each entry keeps its original
     // index into `sortedClusters` so `selectedSenseIndex` addressing is unchanged.
+    //
+    // NULL when no cluster carries a reading — i.e. Spanish, whose senses are separated by
+    // pos/gender rather than pronunciation (migration 123). Sectioning those would emit one
+    // meaningless "—" heading over the whole list, so the render falls back to a flat list
+    // and each item shows its own grammar tag instead (see senseGrammarTag).
     const senseSections = React.useMemo(() => {
         if (!sortedClusters) return null;
+        if (!sortedClusters.some((c) => c.reading)) return null;
         const sections: { reading: string; items: { cluster: typeof sortedClusters[number]; index: number }[] }[] = [];
         sortedClusters.forEach((cluster, index) => {
             const reading = cluster.reading ?? '';
@@ -246,14 +252,55 @@ export const EnglishBlock: React.FC<{
         return sections;
     }, [sortedClusters]);
 
-    const text = sortedClusters
-        ? ddt(sortedClusters[selectedSenseIndex] ?? sortedClusters[0])
-        : stripParentheses(entry.definition ?? '');
+    // The card face's dd goes through the shared resolver like every other dd surface;
+    // the live `selectedSenseIndex` is passed as the override so a pick made this session
+    // shows immediately, before the persisted `selectedSense` round-trips back.
+    const text = resolveDisplayDefinition(entry, selectedSenseIndex);
 
     const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
     // Mirrors SpeakerButton: the trigger sits inside the draggable/flippable card, so
     // press events must not bubble to the card's own touch/mouse handlers.
     const stopCardHandlers = (e: React.SyntheticEvent) => e.stopPropagation();
+
+    // One sense row, shared by the sectioned (zh) and flat (es) render paths so the
+    // selection / star / stop-propagation behavior can't drift between them. The grammar
+    // tag ("n · m") is shown only on the flat path, where nothing else distinguishes two
+    // senses that happen to read the same; the zh path's reading heading already does.
+    const renderSenseItem = (
+        cluster: DefinitionCluster,
+        index: number,
+        showGrammarTag: boolean,
+    ) => {
+        const tag = showGrammarTag ? senseGrammarTag(cluster) : null;
+        return (
+            <MenuItem
+                key={`sense-${index}`}
+                selected={index === selectedSenseIndex}
+                // The Menu renders in a portal, but React synthetic events bubble
+                // through the React tree — so a tap here would otherwise reach the
+                // card's flip handlers. Stop every press event, same as the trigger.
+                onClick={(e) => { stopCardHandlers(e); onSelectSense?.(index); setAnchorEl(null); }}
+                onMouseDown={stopCardHandlers}
+                onTouchStart={stopCardHandlers}
+                onTouchEnd={stopCardHandlers}
+            >
+                {index === 0 && (
+                    <ListItemIcon sx={{ minWidth: 28 }}>
+                        <StarIcon fontSize="small" sx={{ color: theme.palette.warning.main }} />
+                    </ListItemIcon>
+                )}
+                <ListItemText inset={index !== 0} primary={ddt(cluster)} />
+                {tag && (
+                    <Typography
+                        className="mobile-demo-flashcard-sense-grammar"
+                        sx={{ ml: 1.5, fontSize: SIZE.micro, color: theme.palette.text.secondary, whiteSpace: 'nowrap' }}
+                    >
+                        {tag}
+                    </Typography>
+                )}
+            </MenuItem>
+        );
+    };
 
     // The sense-picker trigger, structured exactly like ChineseBlock's `actions`
     // (writing + speaker buttons): a small column Box, so the two blocks stay
@@ -325,7 +372,7 @@ export const EnglishBlock: React.FC<{
                         </Box>
                     )
                 )}
-                {senseSections && (
+                {sortedClusters && (
                     <Menu
                         className="mobile-demo-flashcard-sense-menu"
                         anchorEl={anchorEl}
@@ -339,9 +386,13 @@ export const EnglishBlock: React.FC<{
                         onTouchStart={stopCardHandlers}
                         onTouchEnd={stopCardHandlers}
                     >
-                        {/* One pinyin-labelled section per distinct reading; MUI's Menu flattens
-                            this array of fragments, so ListSubheader + MenuItems render inline. */}
-                        {senseSections.map((section) => [
+                        {/* zh: one pinyin-labelled section per distinct reading; MUI's Menu flattens
+                            this array of fragments, so ListSubheader + MenuItems render inline.
+                            es: no readings to section by, so the clusters render flat with a
+                            per-sense grammar tag ("n · m") carrying the disambiguation instead. */}
+                        {!senseSections && sortedClusters.map((cluster, index) =>
+                            renderSenseItem(cluster, index, true))}
+                        {senseSections?.map((section) => [
                             <ListSubheader
                                 key={`heading-${section.reading}`}
                                 className="mobile-demo-flashcard-sense-reading"
@@ -364,26 +415,9 @@ export const EnglishBlock: React.FC<{
                                     ))
                                     : <span style={{ color: theme.palette.text.secondary }}>—</span>}
                             </ListSubheader>,
-                            ...section.items.map(({ cluster, index }) => (
-                                <MenuItem
-                                    key={`${cluster.reading}-${index}`}
-                                    selected={index === selectedSenseIndex}
-                                    // The Menu renders in a portal, but React synthetic events bubble
-                                    // through the React tree — so a tap here would otherwise reach the
-                                    // card's flip handlers. Stop every press event, same as the trigger.
-                                    onClick={(e) => { stopCardHandlers(e); onSelectSense?.(index); setAnchorEl(null); }}
-                                    onMouseDown={stopCardHandlers}
-                                    onTouchStart={stopCardHandlers}
-                                    onTouchEnd={stopCardHandlers}
-                                >
-                                    {index === 0 && (
-                                        <ListItemIcon sx={{ minWidth: 28 }}>
-                                            <StarIcon fontSize="small" sx={{ color: theme.palette.warning.main }} />
-                                        </ListItemIcon>
-                                    )}
-                                    <ListItemText inset={index !== 0} primary={ddt(cluster)} />
-                                </MenuItem>
-                            )),
+                            // The reading heading above already disambiguates these senses,
+                            // so the per-item grammar tag would be noise here.
+                            ...section.items.map(({ cluster, index }) => renderSenseItem(cluster, index, false)),
                         ])}
                     </Menu>
                 )}
@@ -698,7 +732,7 @@ const CardFace: React.FC<{
     const fc = theme.palette.flashcard;
 
     // Which definitionClusters sense EnglishBlock currently displays (index into its
-    // vernacular-sorted list). Lives here — not inside EnglishBlock — so Side 1 (English
+    // frequency-sorted list). Lives here — not inside EnglishBlock — so Side 1 (English
     // mode) and Side 2 stay in sync on the same pick. On a card change it re-seeds from the
     // entry's PERSISTED choice (`selectedSense` label → sorted index, migration 99), falling
     // back to the top/starred sense when there's no saved pick.

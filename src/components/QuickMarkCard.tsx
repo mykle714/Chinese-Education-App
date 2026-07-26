@@ -20,7 +20,7 @@ interface QuickMarkCardProps {
 
 // The top-right 3-state indicator. Empty = hollow ring; library = green check;
 // already-learned = solid blue disc with a white "M". Shares the 18px circular
-// footprint of the vernacular badge so the two corners read as a matched pair.
+// footprint of the frequency badge so the two corners read as a matched pair.
 const StateIndicator: React.FC<{ state: QuickMarkState }> = ({ state }) => {
     const base = {
         width: 18,
@@ -61,7 +61,7 @@ const StateIndicator: React.FC<{ state: QuickMarkState }> = ({ state }) => {
 
 // A Quick Mark triage card. Mirrors MiniVocabCard's 92×132 thumbnail geometry so it
 // drops into the shared MiniVocabCardGrid, but is driven by a raw DiscoverCard (not a
-// saved VocabEntry) and carries two corner badges: the vernacular register (top-left,
+// saved VocabEntry) and carries two corner badges: the conversation frequency (top-left,
 // same as Sort Cards) and the tappable 3-state mark indicator (top-right). Tapping the
 // card cycles the mark; nothing persists until the page's Save (docs/QUICK_MARK.md).
 const QuickMarkCardComponent: React.FC<QuickMarkCardProps> = ({ card, state, onCycle, animationDelayMs }) => {
@@ -89,12 +89,12 @@ const QuickMarkCardComponent: React.FC<QuickMarkCardProps> = ({ card, state, onC
                 // cycles its mark, so it should not read as a "raised" interactive tile.
             }}
         >
-            {/* Vernacular-register badge — top-left circular tag (1 = literary … 5 =
+            {/* Conversation-frequency badge — top-left circular tag (1 = almost never spoken … 5 =
                 natural colloquial), matching the Sort Cards / mini-card badge. */}
-            {card.vernacularScore != null && (
+            {card.frequencyScore != null && (
                 <Box
-                    className="quick-mark-card__vernacular-badge"
-                    aria-label={`vernacular register ${card.vernacularScore} of 5`}
+                    className="quick-mark-card__frequency-badge"
+                    aria-label={`conversation frequency ${card.frequencyScore} of 5`}
                     sx={{
                         position: "absolute",
                         top: 8,
@@ -113,7 +113,7 @@ const QuickMarkCardComponent: React.FC<QuickMarkCardProps> = ({ card, state, onC
                         boxShadow: "0 1px 2px rgba(0, 0, 0, 0.3)",
                     }}
                 >
-                    {card.vernacularScore}
+                    {card.frequencyScore}
                 </Box>
             )}
 

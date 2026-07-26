@@ -44,7 +44,7 @@ Footer "Discover" tab
 - **`/discover/quick-mark/:language` (quick mark):** a **node page** (`NodePage`, keeps
   the footer, ← back → `/discover`). A level dropdown (no Auto) filters to every
   not-yet-sorted discoverable word at that level, shown in the shared `MiniVocabCardGrid`
-  ordered by vernacular score. Each card has a vernacular badge (top-left) and a tappable
+  ordered by frequency score. Each card has a frequency badge (top-left) and a tappable
   3-state indicator (top-right: empty / green "Add to Learn Now" / blue "Mastered");
   Save commits all marks at once, Clear resets them. See [QUICK_MARK.md](./QUICK_MARK.md).
 - **`/discover/sort/:language` (sort):** a **node page** (see

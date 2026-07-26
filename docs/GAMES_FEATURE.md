@@ -307,7 +307,9 @@ activePage="home"`), not `GamePage`.
 
 - A game uses the **full pool**: 15 Target + 10 Comfortable library cards =
   **25 pairs → 50 bubbles**. Each pair = one **word** bubble (cpcd) and one
-  **definition** bubble (the flashcard's `stripParentheses(definition)`).
+  **definition** bubble (the flashcard's dd, via `resolveDisplayDefinition` — so a bubble
+  shows the learner's chosen sense, matching the card face; see
+  [DEFINITION_MAPPING.md](./DEFINITION_MAPPING.md) form #3).
 - Bubbles **launch** on a per-level cadence and **float** with momentum-preserving
   elastic collisions (`physics.ts`). Drag a bubble onto its partner to match
   (bidirectional). Correct → green pop + removal; wrong → red shake + release.

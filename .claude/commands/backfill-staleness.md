@@ -146,7 +146,7 @@ consequences for the estimate:
   the cache-read economics are reflected, not a single cold call.
 - Caching only triggers for a static prefix **above ~1k tokens** (empirically: a
   1,247-token prefix cached; smaller ones silently don't). Scripts with tiny
-  prompts (`hsk-level`, `classifier`, `particles`, `word-forms`, `vernacular-score`)
+  prompts (`hsk-level`, `classifier`, `particles`, `word-forms`, `frequency-score`)
   do not cache — their cost is just input × price, no cache discount.
 - Opus retry/chooser calls in the multi-agent scripts are **not** cached (and often
   dominate cost on hard entries), so caching dents the Sonnet hot path more than the

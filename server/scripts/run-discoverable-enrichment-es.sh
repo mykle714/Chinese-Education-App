@@ -9,35 +9,47 @@
 # Spanish backfill scripts live in server/scripts/backfill/spanish/.
 # The Chinese equivalent pipeline is run-discoverable-enrichment.sh.
 #
-# NOTE: dictionaryentries_es currently has 0 discoverable rows, and the AI steps
-# filter discoverable = TRUE, so they no-op until Spanish rows are flagged
-# discoverable. The two deterministic definition-cleanup steps run on all es rows.
+# The AI steps filter discoverable = TRUE, so they only touch flagged rows. The two
+# deterministic definition-cleanup steps run table-wide on all es rows.
+#
+# ⚠ THIS RUNNER IS DEV-SHAPED: it drives `docker exec` against a local backend
+# container. `cow-backend-prod` ships neither scripts/backfill/ nor tsx, so the
+# `production` mode below CANNOT work — for prod use the per-step
+# `server/scripts/backfill/run-prod.sh` invocations in /mark-discoverable §B3.
 #
 # Prerequisites:
 #   - Docker containers must be running
 #   - ANTHROPIC_API_KEY must be set in server/.env.docker
-#   - dictionaryentries_es must be populated (import-esdict-temp.ts) with
-#     partsOfSpeech (used by long-definitions and example-sentences)
+#   - dictionaryentries_es must be populated (import-esdict-temp.ts)
 #
 # Usage:
 #   bash server/scripts/run-discoverable-enrichment-es.sh [production|local]
 #   Default: local
 #
-# Pipeline order (each step depends on the previous):
+# Pipeline order — MUST match REQUIRED_SCRIPTS_ES in
+# server/scripts/backfill/shared/lib/requiredScripts.js, which is what
+# oracle-plan.js --lang=es plans against. Update both together.
 #   1. backfill-split-semicolon-definitions  — normalize definitions array (deterministic)
 #   2. backfill-expand-abbreviations         — expand sth/sb in definitions (deterministic)
-#   3. backfill-parts-of-speech              — materialize one row per POS, delegate
-#                                              definitions, collapse gender into
-#                                              alternateGender/alternateMeaning (AI)
-#   4. backfill-process-definitions-array    — sort defs by usefulness + prune (AI)
-#   5. backfill-long-definitions             — generate longDefinition (AI)
-#   6. backfill-example-sentences            — generate example sentences (AI)
-#   7. backfill-vernacular-score             — score vernacular register (AI)
+#   3. backfill-process-definitions-array    — sort defs by usefulness + prune (AI)
+#   4. backfill-icons (--lang=es)            — icons8 lookup keyed off definitions[0]
+#   5. backfill-frequency-score              — word-level conversation-frequency score (AI)
+#   6. backfill-cluster-definitions          — partition definitions into sense clusters,
+#                                              also writes partsOfSpeech (AI)
+#   7. backfill-long-definitions             — generate longDefinition per sense (AI)
+#   8. backfill-example-sentences            — generate example sentences per sense (AI)
 #
-# Step 3 runs before sort/long/examples because it rewrites each row's definitions
-# and partsOfSpeech, which those later steps consume. It defaults to --prune-mode=soft
-# (folded gender rows are hidden, not deleted); pass production-side review before a
-# hard prune. See backfill/spanish/backfill-parts-of-speech.js for details.
+# Why this order:
+#   - Steps 1-3 all rewrite `definitions`; everything downstream reads it.
+#   - Step 4 keys its icon search off definitions[0], so it follows every rewriter.
+#   - Step 6's checkShape requires clusters to be an EXACT PARTITION of `definitions`,
+#     so it MUST follow step 3 — clustering first would leave the partition referencing
+#     glosses a later prune removed.
+#   - Steps 7-8 read the cluster `sense` labels to tag what they generate.
+#
+# There is NO Spanish parts-of-speech step: `partsOfSpeech` is a by-product of step 6.
+# The old backfill-parts-of-speech.js materialized one det row per POS and was deleted
+# by migration 123, which made word1 unique and moved the split into definitionClusters.
 #
 # Intentionally NOT in the Spanish pipeline (vs the Chinese one):
 #   - synonyms: removed from the project
@@ -84,14 +96,25 @@ check_container() {
     print_success "Backend container is running"
 }
 
-# All Spanish backfill scripts live under scripts/backfill/spanish/
+# Most Spanish backfill scripts live under scripts/backfill/spanish/; the icons step is
+# language-shared and lives at the backfill root, hence the explicit path + args below.
 SCRIPT_DIR="backfill/spanish"
 
+# run_script <label> <script-name> [extra args…]  — path relative to $SCRIPT_DIR
 run_script() {
-    local label="$1"
-    local script="$2"
+    local label="$1"; shift
+    local script="$1"; shift
     print_header "$label"
-    docker exec -i "$BACKEND_CONTAINER" sh -c "npx tsx /app/scripts/$SCRIPT_DIR/$script"
+    docker exec -i "$BACKEND_CONTAINER" sh -c "npx tsx /app/scripts/$SCRIPT_DIR/$script $*"
+    print_success "$label complete"
+}
+
+# run_root_script <label> <script-name> [extra args…]  — path relative to scripts/backfill
+run_root_script() {
+    local label="$1"; shift
+    local script="$1"; shift
+    print_header "$label"
+    docker exec -i "$BACKEND_CONTAINER" sh -c "npx tsx /app/scripts/backfill/$script $*"
     print_success "$label complete"
 }
 
@@ -115,20 +138,25 @@ run_script "Step 1: Split Semicolon Definitions" "backfill-split-semicolon-defin
 # Step 2: Expand sth/sb abbreviations in definitions (deterministic)
 run_script "Step 2: Expand Abbreviations" "backfill-expand-abbreviations.js"
 
-# Step 3: Materialize one row per POS, delegate definitions, collapse gender (AI)
-run_script "Step 3: Parts of Speech & Gender Collapse" "backfill-parts-of-speech.js"
+# Step 3: Sort definitions from most useful to least + prune low-value (AI).
+# Must precede clustering — see the exact-partition note in the header.
+run_script "Step 3: Process Definitions Array" "backfill-process-definitions-array.js"
 
-# Step 4: Sort definitions from most useful to least + prune low-value (AI)
-run_script "Step 4: Process Definitions Array" "backfill-process-definitions-array.js"
+# Step 4: icons8 icon lookup — keyed off definitions[0], so it follows every step that
+# can still rewrite that array. Language-shared script at the backfill root.
+run_root_script "Step 4: Icons" "backfill-icons.js" --lang=es
 
-# Step 5: Generate longDefinition using sorted definitions (AI)
-run_script "Step 5: Long Definitions" "backfill-long-definitions.js"
+# Step 5: Word-level everyday-conversation frequency score (AI)
+run_script "Step 5: Frequency Score" "backfill-frequency-score.js"
 
-# Step 6: Generate example sentences (AI) — uses partsOfSpeech
-run_script "Step 6: Example Sentences" "backfill-example-sentences.js"
+# Step 6: Partition definitions into sense clusters; also writes partsOfSpeech (AI)
+run_script "Step 6: Cluster Definitions" "backfill-cluster-definitions.js"
 
-# Step 7: Vernacular register score (AI)
-run_script "Step 7: Vernacular Score" "backfill-vernacular-score.js"
+# Step 7: Generate longDefinition per sense (AI) — reads cluster `sense` labels
+run_script "Step 7: Long Definitions" "backfill-long-definitions.js"
+
+# Step 8: Generate example sentences per sense (AI) — reads cluster `sense` labels
+run_script "Step 8: Example Sentences" "backfill-example-sentences.js"
 
 END_TIME=$(date +%s)
 DURATION=$((END_TIME - START_TIME))

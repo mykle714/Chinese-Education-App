@@ -71,10 +71,9 @@ For each of the 10 words, in order:
 1. Pick a **random empty start cell** for the word's first character.
 2. For each subsequent character, pick a **random empty cell adjacent** to the
    previous one. Adjacency is **orthogonal only (4-dir: up/down/left/right)** —
-   no diagonals. Same adjacency governs valid drag-selection paths. **Exception:**
-   2-character words only step **down or right** (`FORWARD_NEIGHBORS`), so their
-   single step always reads in character order; 3+ character words are
-   unaffected and may snake in any of the 4 directions at each step.
+   no diagonals. Same adjacency governs valid drag-selection paths. The walk is
+   unrestricted at every length; short words are then flipped into reading
+   order by `orientPath` (see "Reading order" below).
 3. If at any step no valid (empty, in-bounds) adjacent cell exists,
    **backtrack**: abandon this placement and retry from a new random start.
 4. Retry the word up to **10 times**. If it still fails, **regenerate the whole
@@ -93,9 +92,26 @@ Words **do not overlap** — every character occupies its own cell (a cell used 
 one word is not available to another). This keeps each word a single unambiguous
 path.
 
+### Reading order (short words)
+
+`orientPath` (`server/services/wordSearchGrid.ts`) runs on every placed path in
+**both** random and template mode. A path and its reverse cover the same cells,
+so orienting is only ever a possible reversal — it never rejects a placement,
+and cell data (char/pinyin/definition) is attached by path index afterwards, so
+a flip simply relabels the cells. The rule, by shape:
+
+| Length | Shape | Forced traversal |
+|---|---|---|
+| 2 | the single step | **down or right** |
+| 3 | straight vertical | **top → bottom** |
+| 3 | straight horizontal | **left → right** |
+| 3 | ⌞ bend (arm above the corner + arm right of it) | **down, then right** — the way the L glyph is drawn |
+| 3 | the three *rotated* L bends | **unconstrained** — the rotation gives the player no reading-order cue, so either direction is equally ambiguous |
+| 4+ | any | **unconstrained** — a multi-turn snake has no reading order |
+
 Placement has no pinyin-width awareness — words are ordered longest-first and
-placed with plain 4-directional snaking (`NEIGHBORS`, or `FORWARD_NEIGHBORS` for
-2-char words per above), with no horizontal-neighbor width check. (A prior version graded
+placed with plain 4-directional snaking (`NEIGHBORS`, then oriented per above),
+with no horizontal-neighbor width check. (A prior version graded
 horizontally-adjacent pinyin widths and forced colliding words to snake
 vertically; that rule was removed — wide pinyin in adjacent cells may now visually
 crowd on the row axis. Revisit if that reads as a real usability issue in
@@ -309,8 +325,10 @@ Vertical stack inside the standard leaf-page content area:
   Match HUD "Lv 1 · Chill" label: `fontSize: SIZE.body` (14px),
   `fontWeight: WEIGHT.bold`, `color: "#6b6b6b"`
   (`src/games/bubble-match/BubbleStage.tsx:889`). Found glosses get struck
-  through / dimmed. (Glosses are `stripParentheses(definition)`, kept short so
-  they tile; a very long definition is truncated.)
+  through / dimmed. (Glosses are the dd resolved SERVER-side in
+  `OnDeckVocabService.getWordSearchGrid` via `resolveDisplayDefinition`, so they honor the
+  learner's per-card `selectedSense`; kept short so they tile, and a very long definition is
+  truncated. See [DEFINITION_MAPPING.md](./DEFINITION_MAPPING.md) form #3.)
 - **Grid (bottom):** one big **rounded-corner rectangle** filling the remaining
   height, containing the 7×7 array of cpcd cells. Each cell is one cpcd
   character (may be wrapped per-row in `CPCDRow`). The grid respects the header
@@ -451,8 +469,9 @@ tap-to-reveal affordance as example-sentence segments
 ([EXAMPLE_SENTENCES.md](./EXAMPLE_SENTENCES.md) / `SegmentedSentenceDisplay`). This
 lets the player re-check the meaning of a Chinese word they just uncovered.
 
-Because a word's grid cells can snake in any direction (up/down/backwards, per
-§2's forward-only exception only applying to 2-char words), the glyphs alone
+Because a word's grid cells can snake in any direction (up/down/backwards — §2's
+"Reading order" only constrains 2-char words and the unambiguous 3-char shapes),
+the glyphs alone
 don't reliably read in the word's actual character order. Both this popup and
 the bonus-word miss popup below therefore **prepend the word's Chinese text**
 (`activePopup.entryKey`, bold, space-separated from the definition — no dash)
@@ -610,9 +629,81 @@ hint nudges recall without handing over the answer.
 
 Open (minor, resolve at build time): minute-points eligibility (likely add the
 route to `MINUTE_POINTS_ELIGIBLE_PAGES`), and whether to persist a best-time /
-medal per user. **No new database tables or columns are anticipated** — the grid
-is generated on demand; an optional best-time could reuse the existing
-`gameprogress` JSONB blob (`{ bestTimeMs, medal }`).
+medal per user. An optional best-time could reuse the existing `gameprogress`
+JSONB blob (`{ bestTimeMs, medal }`).
+
+#### 5a-ii. Component hints (No Pinyin mode)
+
+The reveal ladder above spends **pinyin units**, which is exactly what the **No
+Pinyin** board exists to hide — so that board spends a different currency:
+a character's **sub-character visual parts**. Everything after "fully revealed"
+(the yellow location reveal, then the free re-shake) is shared between modes;
+only the reveal step differs.
+
+Code: `componentUnits.ts` (the counterpart to `pinyinUnits.ts`),
+`WordSearchHintRow.tsx` (`currency` prop), `WordSearchPage.tsx`
+(`totalRevealUnits`), `src/theme/fonts.ts` (`FONTS.hanziComponents`),
+`src/index.css` (`@font-face`).
+
+- **Data:** `dictionaryentries_zh.components` (migration 125) — a jsonb array of
+  single-character strings per **single-character** row: 想 → `["木","目","心"]`,
+  从 → `["人","人"]` (multiplicity kept), 江 → `["氵","工"]`. The **bound form** is
+  stored (氵 not 水, ⺮ not 竹) because the player is matching a *shape*.
+  ⚠️ Distinct from `breakdown`, which holds per-CHARACTER glosses of a
+  MULTI-character word — see docs/BREAKDOWN_FEATURE_IMPLEMENTATION.md.
+- **Ordering is most-common-first**, by component frequency across all ~9.8k
+  single-char det rows. Hints therefore **escalate**: the first (cheapest) reveal
+  is a part shared by hundreds of characters and barely narrows a grid scan; the
+  last is nearly identifying.
+- **Transport:** `WordSearchInput.charComponents` / `PlacedWord.charComponents`
+  — `string[][]`, one array per character, position-aligned with `entryKey`.
+  Populated in `OnDeckVocabService.getWordSearchGrid` by extending the existing
+  batched per-target-character query (no extra round trip). Sent in **both**
+  modes; only the No Pinyin board consumes it.
+- **The per-character ladder:** each character offers `max(components.length, 1)`
+  reveals — one per part, except the step that would reveal the **last** part
+  instead reveals **the character itself, replacing that character's accumulated
+  glyphs**. Showing every part is equivalent to showing the answer, so the ladder
+  spends that final step on the answer directly rather than on a complete parts
+  list the player still has to assemble. Consequences: an **atomic** character
+  (人, 口, 木, 行 — empty array) contributes exactly 1 reveal, and a
+  **single-part** character contributes 1 as well, going straight to the
+  character without ever showing its lone part. Reveals are distributed
+  **round-robin across characters** (same posture as `distributeRevealTiers`), so
+  a short character can finish while a longer one still shows parts:
+
+  ```
+  想     _  →  木_  →  木目_  →  想
+  相     _  →  木_  →  相
+  人     _  →  人
+  银行   _ _  →  钅_ _  →  钅_ 行  →  银 行
+  会议   _ _  →  会 _  →  会 讠_  →  会 议
+  ```
+
+- ⚠️ **Font dependency.** index.html loads Noto Sans SC from Google Fonts, which
+  subsets CJK by character **frequency, not by Unicode block**. Component glyphs
+  are disproportionately rare, so ~4% of them (⺀ ⺮ ⺼ 㐬 耂 ⺌ 龹 殸 ⺈ 兟 矦 ⺍ …)
+  are **not served** and would fall back to the OS font (wrong typeface beside
+  the grid) or render as tofu. `src/assets/fonts/hanzi-components.woff2` is a
+  self-hosted subset of the **same face**, listed first in
+  `FONTS.hanziComponents` so the browser falls back per glyph seamlessly.
+
+**Regenerating the data + font** (both deterministic, no AI, free to re-run — and
+they must run in that order, since the font subset is built from the column):
+
+```bash
+docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-character-components.js
+docker exec cow-backend-local npx tsx scripts/backfill/chinese/generate-component-font.js
+```
+
+The decomposition source is makemeahanzi's `dictionary.txt` (**LGPLv3**), fetched on
+demand into the gitignored `data/hanzi/cache/` — a **build-time input only**, never
+vendored and never shipped to a client; only derived per-character facts reach the DB.
+The subset's source face `data/hanzi/NotoSansSC-VF.ttf` **is** committed (SIL OFL 1.1,
+`data/hanzi/NotoSansSC-OFL.txt`). Decomposition depth follows a radical-stop policy
+(radicals are atomic; a part expands only when its expansion is a clean compound of
+non-stroke radicals) — the rules and rationale live in
+`server/scripts/backfill/chinese/lib/decompose.js`.
 
 ### 5b. Pause/resume persistence
 
@@ -696,13 +787,19 @@ Frontend (`src/games/word-search/`):
   the actively-hinted word's gloss `HINT_ACCENT_COLOR` (§5a).
 - `WordSearchHintBar.tsx` — the 8-segment HUD hint gauge with the `HINT_COST`
   threshold line (§5a).
-- `WordSearchHintRow.tsx` — the letter-hint display row between the gloss list
-  and the grid; one fixed-width underscore island per character, hangman-style
-  (`buildMask`; §5a).
+- `WordSearchHintRow.tsx` — the hint display row between the gloss list and the
+  grid. Renders whichever currency the board spends (`currency` prop): the
+  Pinyin board's fixed-width underscore islands, hangman-style (`buildMask`;
+  §5a), or the No Pinyin board's component glyphs in a line, collapsing to the
+  character once its parts run out (§5a-ii).
 - `pinyinUnits.ts` — splits a tone-marked pinyin syllable into its phonetic
   building-block units (initial / medial glide / final), Bopomofo-segmentation-
   informed but rendered as plain pinyin text; used by `WordSearchHintRow` and
   `WordSearchPage`'s reveal-cap check (§5a).
+- `componentUnits.ts` — the No Pinyin counterpart to `pinyinUnits.ts`: turns a
+  word's `charComponents` into the per-character reveal ladder (every part, then
+  the character itself), distributed round-robin across characters
+  (`countComponentUnits` / `buildComponentReveals`; §5a-ii).
 - `WordSearchHeader.tsx` — restart button + hint button + settings cog + fire
   badge (LeafPage `rightContent`); the timer toggle lives in the settings
   dialog (see §3 Header controls). Pinyin is no longer a toggle — it's fixed by

@@ -33,7 +33,7 @@
  *     • ≥2 clusters                                       → offered to the model.
  *   If any character needs disambiguation, ONE Sonnet call per word returns
  *   {char: senseLabel}; each label is validated against that character's own cluster
- *   labels (invalid/absent → fall back to the most-vernacular cluster + a ⚠ review line).
+ *   labels (invalid/absent → fall back to the most-frequent cluster + a ⚠ review line).
  *
  * Depends on: backfill-dictionary-breakdown.js (breakdown must exist) and
  * backfill-cluster-definitions.js (component chars must be clustered) having run first.
@@ -85,10 +85,10 @@ function clusterLeadGloss(cluster) {
 }
 
 // The default cluster for a character (used when the model can't disambiguate):
-// the most-vernacular sense, matching the frontend's sortedSenseClusters index-0
+// the most-frequent sense, matching the frontend's sortedSenseClusters index-0
 // default. Ties keep source order.
 function defaultCluster(clusters) {
-  return [...clusters].sort((a, b) => (b?.vernacularScore ?? 0) - (a?.vernacularScore ?? 0))[0];
+  return [...clusters].sort((a, b) => (b?.frequencyScore ?? 0) - (a?.frequencyScore ?? 0))[0];
 }
 
 // Only keep well-formed clusters that actually carry a usable label.

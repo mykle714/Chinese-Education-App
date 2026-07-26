@@ -39,7 +39,6 @@ export interface LastMarkUndoSnapshot {
     displacedMark: ReviewMark | null;
     workingLoop: VocabEntry[];
     currentIndex: number;
-    isFlipped: boolean;
     currentSideOneLanguage: SideOneLanguage;
     nextSideOneLanguage: SideOneLanguage;
 }

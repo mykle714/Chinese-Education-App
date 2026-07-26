@@ -92,12 +92,16 @@ natural identity/keying differs. Do not try to force them into one table.
 | Concept | Table | Identity / key | Notes |
 |---|---|---|---|
 | **Chinese det** (cdet) | `dictionaryentries_zh` | surrogate `id`; looked up by `word1` (+ `language`) | The original rich table, **renamed from `dictionaryentries` (migration 57)** and now Chinese-only. Holds Chinese (`zh`) data plus all CJK-style enrichment columns (`numberedPinyin`, `tone`, `hskLevel`, `breakdown`, `classifier`, etc.). A `gender` column used to exist (added by migration 55 back when this table was the unified `dictionaryentries`) but was always NULL for Chinese and was **dropped by migration 103**; grammatical gender is a Spanish-only concept living on `dictionaryentries_es`. |
-| **Spanish det** (sdet) | `dictionaryentries_es` | logical key **(`word1`, `pos`, `gender`)**, enforced by a `UNIQUE NULLS NOT DISTINCT` constraint (surrogate `id` PK) | Schema = clone of `dictionaryentries_zh` + scalar `pos` + `gender` (retained here as part of the identity key; dropped from zh by migration 103) + `etymology` (Wiktionary etymology text, migration 59) + `raw` (jsonb source blocks). `longDefinition` is reserved for the AI definition-elaboration backfill, NOT etymology. Gender-homographs are **separate rows** (e.g. `cura`/n/f = "cure" vs `cura`/n/m = "priest"), because gender carries distinct meaning in Spanish. `gender` holds a cleaned primary token (`m`, `f`, `mf`, `mfbysense`, `m-p`, …); `?`/unknown is NULL. |
+| **Spanish det** (sdet) | `dictionaryentries_es` | `word1` (+ `language`), enforced by `uq_es_word1_language` (surrogate `id` PK) | Schema = clone of `dictionaryentries_zh` + `etymology` (Wiktionary etymology text, migration 59) + `raw` (jsonb source blocks). `longDefinition` is reserved for the AI definition-elaboration backfill, NOT etymology. A word's several parts of speech and its gender-homographs (`cura`/f "cure" vs `cura`/m "priest") live **inside** the row as `definitionClusters` — the same sense-cluster column zh uses — with `pos` + `gender` per cluster. Until migration 123 they were **separate rows** keyed (`word1`, `pos`, `gender`); that migration merged them and dropped the `pos`/`gender`/`hasMultiplePos`/`alternateGender`/`alternateMeaning` columns. |
 | **Affixes** | `affixes` | (`language`, `affix`, `type`) | Bound morphemes for ALL languages. Kept out of the det tables because they are not standalone headwords. `type` ∈ {`prefix`,`suffix`,`interfix`,`infix`} (migration 61 added interfix/infix for Spanish `-i-`/`-x-`). `gender` ∈ {`m`,`f`,NULL} and `number` ∈ {`s`,`p`,NULL} (migration 61) carry the singular/plural + gender caveats for inflected affix forms (e.g. `-eada` = feminine singular of `-eado`). |
 
-Why the split: Chinese identity is essentially `word1`; Spanish identity needs
-`pos` + `gender` to keep semantic homographs distinct. Rather than overload one
-schema, each gets its own table. Source for Spanish/affixes: `doozan/spanish_data`
+Why the split: **not** identity — both tables are keyed by `word1` since migration
+123 — but ENRICHMENT. The zh table carries CJK-only columns (`numberedPinyin`,
+`tone`, `hskLevel`, `breakdown`, `classifier`, `wordForms`) that are meaningless for
+Spanish, and the es table carries `etymology` + `raw` that are meaningless for
+Chinese. Rather than one schema half-NULL in both directions, each gets its own
+table and the shared read path unions them (`server/dal/shared/dictJoin.ts`).
+Source for Spanish/affixes: `doozan/spanish_data`
 (`es-en.data`, Wiktionary-derived, CC-BY-SA), imported via
 `server/scripts/import-esdict-temp.ts`; the `raw` column preserves the full
 per-POS source structure (gender, etymology, glosses, syn/q/usage).
@@ -109,7 +113,7 @@ import scripts (`import-jmdict.ts`, `import-edict2.ts`, `import-kedict.ts`,
 (they throw on startup and reference not-yet-existing `dictionaryentries_ja/_ko/_vi`).
 Those languages are **not user-selectable** for now; build the per-language
 tables before re-enabling them. Relevant migrations: 55 (gender), 57 (rename →
-`dictionaryentries_zh`), 58 (create `dictionaryentries_es`), 59 (es etymology), 60 (affixes), 61 (affix gender/number + interfix/infix), 103 (drop vestigial `gender` from `dictionaryentries_zh`).
+`dictionaryentries_zh`), 58 (create `dictionaryentries_es`), 59 (es etymology), 60 (affixes), 61 (affix gender/number + interfix/infix), 103 (drop vestigial `gender` from `dictionaryentries_zh`), 123 (es converges on the zh clustered-sense model: `word1` unique, per-(pos,gender) rows merged into `definitionClusters`).
 
 ### Marking Words Discoverable
 
@@ -117,7 +121,7 @@ It is **illegal** to set `discoverable = TRUE` on any `dictionaryentries_zh` or
 `dictionaryentries_es` row outside of the `/mark-discoverable` skill. Setting
 the flag directly (a bare `UPDATE ... SET discoverable = TRUE`) without running
 the rest of that skill's pipeline leaves the row's enrichment columns
-(`partsOfSpeech`, `longDefinition`, `exampleSentences`, `vernacularScore`, zh's
+(`partsOfSpeech`, `longDefinition`, `exampleSentences`, `frequencyScore`, zh's
 `breakdown`/`classifier`/`wordForms`/`definitionClusters`, etc.) null, and the
 word ships to learners incompletely enriched. Always go through
 `/mark-discoverable` end to end, including its verification step.
@@ -153,7 +157,7 @@ An hourly Postgres cron on the prod server (a) breaks stale streaks (mirroring `
 
 ### Definition Mapping
 → See [docs/DEFINITION_MAPPING.md](./docs/DEFINITION_MAPPING.md) — index of every definition *form* across the app (flat `definitions`, lead gloss, dd, `shortDefinition`, `longDefinition`, per-segment defs) and the enrichment operations that transform one into the next.
-  → Sense clustering: [docs/DEFINITION_CLUSTERS.md](./docs/DEFINITION_CLUSTERS.md) — splitting `definitions` into orthogonal sense clusters (`definitionClusters`, migration 90); per-cluster reading + 1–5 vernacular score.
+  → Sense clustering: [docs/DEFINITION_CLUSTERS.md](./docs/DEFINITION_CLUSTERS.md) — splitting `definitions` into orthogonal sense clusters (`definitionClusters`, migration 90); per-cluster reading + 1–5 conversation-frequency score.
 
 ### Character Breakdown Feature
 → See [docs/BREAKDOWN_FEATURE_IMPLEMENTATION.md](./docs/BREAKDOWN_FEATURE_IMPLEMENTATION.md)

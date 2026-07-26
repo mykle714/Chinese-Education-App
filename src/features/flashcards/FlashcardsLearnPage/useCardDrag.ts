@@ -7,6 +7,10 @@ interface UseCardDragReturn {
     isDragging: boolean;
     isFlipped: boolean;
     setIsFlipped: React.Dispatch<React.SetStateAction<boolean>>;
+    // Puts the (restored) card back on Side 2 — used by mark-undo, which brings a
+    // card the user has already flipped back into view. Survives the per-card
+    // reset effect that would otherwise force Side 1 (see restoreFlippedRef).
+    restoreFlipped: (targetResetKey: number) => void;
     hasFlippedCurrentCard: boolean;
     resetDragPosition: () => void;
     // Whether the swipe-direction hint labels (← Incorrect / Correct →) should be
@@ -64,6 +68,16 @@ export function useCardDrag(
     const flipLockRef = useRef(false);
     const flipLockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+    // Holds the resetKey that restoreFlipped() is restoring for, so the per-card
+    // reset effect can land on Side 2 instead of Side 1 for exactly that card.
+    // Undo changes resetKey (currentIndex) and restores the flip in the same
+    // batch, so the reset effect always runs afterwards and would otherwise
+    // clobber the restored flip back to Side 1. Storing the key (rather than a
+    // bare flag) makes a stale value harmless: if the effect never runs for that
+    // key, the next genuine card change sees a mismatch, resets normally, and
+    // clears it.
+    const restoreFlippedForKeyRef = useRef<number | null>(null);
+
     // Tracks whether the current touch interaction's touchstart was actually
     // accepted (i.e. not swallowed by the isAnimating/flipLock gate). dragStart is
     // a single ref shared across every card and is only refreshed inside an
@@ -87,6 +101,16 @@ export function useCardDrag(
         }, CARD_FLIP_MS);
     };
 
+    // Put the card straight onto Side 2 without the tap-to-flip gate. Used when a
+    // card the user already flipped is brought back into view (mark-undo): the
+    // user has seen the answer, so re-hiding it behind Side 1 would be wrong —
+    // and hasFlippedCurrentCard must be true or the card couldn't be swiped again.
+    const restoreFlipped = useCallback((targetResetKey: number) => {
+        restoreFlippedForKeyRef.current = targetResetKey;
+        setIsFlipped(true);
+        setHasFlippedCurrentCard(true);
+    }, []);
+
     // Clear any pending lockout timer on unmount to avoid a stray callback.
     useEffect(() => () => {
         if (flipLockTimer.current) clearTimeout(flipLockTimer.current);
@@ -94,10 +118,14 @@ export function useCardDrag(
 
     // Reset flip-tracking whenever the card changes. New cards always start on
     // Side 1 (isFlipped=false) — the flip is one-way and the Side 1 language
-    // randomization lives in the parent page now.
+    // randomization lives in the parent page now. The one exception is an undo
+    // restore (restoreFlipped), where the incoming card is one the user already
+    // flipped, so it comes back on Side 2.
     useEffect(() => {
-        setHasFlippedCurrentCard(false);
-        setIsFlipped(false);
+        const isUndoRestore = restoreFlippedForKeyRef.current === resetKey;
+        restoreFlippedForKeyRef.current = null;
+        setHasFlippedCurrentCard(isUndoRestore);
+        setIsFlipped(isUndoRestore);
         setShowSwipeHint(false);
         setShowTapToFlipHint(false);
         setShakeNonce(0);
@@ -331,6 +359,7 @@ export function useCardDrag(
         isDragging,
         isFlipped,
         setIsFlipped,
+        restoreFlipped,
         hasFlippedCurrentCard,
         showSwipeHint,
         showTapToFlipHint,

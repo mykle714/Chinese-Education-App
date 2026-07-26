@@ -1,9 +1,9 @@
 import { BaseDAL } from '../base/BaseDAL.js';
 import { IDictionaryDAL } from '../interfaces/IDictionaryDAL.js';
 import { dbManager } from '../base/DatabaseManager.js';
-import { DictionaryEntry, DictionaryEntryCreateData, ParticleClassifierEntry } from '../../types/index.js';
+import { DictionaryEntry, DictionaryEntryCreateData, ParticleClassifierEntry, DefinitionCluster } from '../../types/index.js';
 import { ValidationError } from '../../types/dal.js';
-import { resolveShortDefinition, longDefObjectToDisplayString } from '../../utils/definitions.js';
+import { resolveShortDefinition, resolveLongDefinition, type LongDefinitionValue, type LongDefinitionSense } from '../../utils/definitions.js';
 import { ShortDefinitionPronunciationOverride, ExampleSentenceDefinitionPronunciationOverride } from '../../types/index.js';
 import { getAllSubstrings, buildDictMap, buildExcludeSet, segmentWithDict, buildSegmentMetadata, splitHanRuns, RenderedSegmentMeta } from '../shared/segmentString.js';
 import { LongDefinitionPart } from '../../types/index.js';
@@ -25,7 +25,7 @@ const DICTIONARY_COLUMNS = `
   "matchException",
   "shortDefinitionPronunciationOverride",
   "exampleSentenceDefinitionPronunciationOverride",
-  "vernacularScore",
+  "frequencyScore",
   "wordForms"
 `.trim();
 
@@ -43,9 +43,9 @@ function dictionaryColumns(language: string | null | undefined): string {
 }
 
 // Shared relevance tiebreak for every "list of det rows" query: shortest word1 first, then
-// highest vernacular register, then alphabetical. Kept as one constant so the three query sites
+// highest conversation frequency, then alphabetical. Kept as one constant so the three query sites
 // below (searchByWord1, its numbered-pinyin fallback, findMultipleByWord1) can't drift apart.
-const RELEVANCE_ORDER_BY = `LENGTH(word1), "vernacularScore" DESC NULLS LAST, word1`;
+const RELEVANCE_ORDER_BY = `LENGTH(word1), "frequencyScore" DESC NULLS LAST, word1`;
 
 /**
  * Parse a numbered-pinyin search query (e.g. "jian4 shen1") into a Postgres regex matched
@@ -138,15 +138,24 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
       shortDefinitionPronunciationOverride: (row.shortDefinitionPronunciationOverride as ShortDefinitionPronunciationOverride | null) ?? null,
       shortDefinition: resolveShortDefinition(definitions, row.shortDefinitionPronunciationOverride),
       exampleSentenceDefinitionPronunciationOverride: (row.exampleSentenceDefinitionPronunciationOverride as ExampleSentenceDefinitionPronunciationOverride | null) ?? null,
-      // Stored as a JSONB object keyed by POS (migration 70); hydrated to the canonical
-      // labeled string the API/renderer expect (see longDefObjectToDisplayString).
-      longDefinition: longDefObjectToDisplayString(row.longDefinition),
+      // Stored as JSONB (migration 70): a per-SENSE array for zh, a per-POS object for
+      // es/legacy rows. Hydrated to the single string the API/renderer expect, narrowed
+      // to the sense this row is on — a bare det read has no per-user `selectedSense`, so
+      // it resolves to the default/starred sense; user-context reads re-resolve it in
+      // enrichLongDefinitionMetadataBatch below. See resolveLongDefinition.
+      longDefinition: resolveLongDefinition(row.longDefinition, {
+        definitionClusters: row.definitionClusters ?? null,
+        selectedSense: row.selectedSense ?? null,
+      }),
+      // Un-narrowed column value, so a later-attached per-user sense pick can still
+      // re-resolve it (see the field's doc on DictionaryEntry).
+      longDefinitionRaw: row.longDefinition ?? null,
       definitionClusters: row.definitionClusters ?? null,
       breakdown: row.breakdown ?? null,
       synonyms: row.synonyms ?? null,
       exampleSentences: row.exampleSentences ?? null, // Enriched on-the-fly via enrichExampleSentencesMetadataBatch
       matchException: row.matchException ?? [],
-      vernacularScore: row.vernacularScore ?? null,
+      frequencyScore: row.frequencyScore ?? null,
       wordForms: row.wordForms ?? null,
     };
   }
@@ -1002,34 +1011,93 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
    * one batched dictionary query + one batched particle/classifier query across all entries.
    * Computed on-the-fly; not stored in the DB.
    *
-   * @param entries - Objects with optional `longDefinition` field
+   * ALSO where the per-SENSE shape (zh, docs/DEFINITION_CLUSTERS.md) is unpacked. The
+   * column holds one definition per sense, and the learner sees only the sense their card
+   * is on — but that pick changes CLIENT-SIDE (the flp/cdp sense picker is optimistic and
+   * triggers no refetch), so narrowing here alone would leave the panel showing the
+   * previous sense's text. Every sense is therefore shipped, each with its OWN parts, as
+   * `longDefinitionSenses`; the client resolves which one to render (resolveLongDefinition
+   * in src/utils/definitionUtils.ts), exactly as it already resolves dd. `longDefinition` /
+   * `longDefinitionParts` stay populated with the currently-resolved sense so every
+   * existing consumer (and any payload that never carries the senses) keeps working.
+   *
+   * @param entries - Objects with optional `longDefinition` field (raw JSONB or hydrated
+   *                  string), optionally `longDefinitionRaw` / `definitionClusters` /
+   *                  `selectedSense` to resolve the current sense
    * @param language - Language filter for dictionary lookups (default: 'zh')
    */
   async enrichLongDefinitionMetadataBatch<T extends {
     longDefinition?: string | null;
+    longDefinitionRaw?: LongDefinitionValue | null;
+    definitionClusters?: DefinitionCluster[] | null;
+    selectedSense?: string | null;
   }>(entries: T[], language: string = 'zh'): Promise<T[]> {
-    // `longDefinition` is stored as a JSONB object keyed by POS (migration 70). Some
-    // callers reach here with the raw object (dictJoin-based queries bypass the row→entity
-    // map), so normalize each entry to the canonical labeled string first — both for the
-    // segmentation below and on the entry itself, so the API never leaks the raw object.
-    for (const entry of entries) {
-      entry.longDefinition = longDefObjectToDisplayString(
-        entry.longDefinition as Parameters<typeof longDefObjectToDisplayString>[0]
-      );
-    }
-
-    // Split each long definition into runs once; reused for both candidate collection
-    // and the final part assembly below.
-    const runsByEntry = entries.map(entry => {
-      const text = typeof entry.longDefinition === 'string' ? entry.longDefinition : '';
-      return text ? splitHanRuns(text) : [];
+    // `longDefinition` is stored as JSONB (migration 70) — a per-sense array for zh, a
+    // per-POS object for es/legacy rows. Some callers reach here with that raw value
+    // (dictJoin-based queries bypass the row→entity map) and others with the string
+    // mapRowToEntity already hydrated (plus `longDefinitionRaw` alongside it). Keep the
+    // raw value for the per-sense unpacking below, then resolve the display string from
+    // it — `selectedSense` may have been attached after mapRowToEntity ran — so the API
+    // never leaks the raw JSONB.
+    const rawByEntry = entries.map(entry =>
+      (entry.longDefinitionRaw ?? entry.longDefinition) as LongDefinitionValue | null
+    );
+    entries.forEach((entry, i) => {
+      entry.longDefinition = resolveLongDefinition(rawByEntry[i], entry);
+      delete entry.longDefinitionRaw;
     });
+
+    // Per-sense definitions (zh) — empty for the legacy per-POS object / plain strings,
+    // which have no sense dimension and are served by `longDefinition` alone.
+    const sensesByEntry: LongDefinitionSense[][] = rawByEntry.map(raw =>
+      Array.isArray(raw)
+        ? raw.filter(s => s && typeof s.definition === 'string' && s.definition.trim().length > 0)
+        : []
+    );
+
+    // One flat segmentation pass over every string we need parts for — the entry's
+    // resolved text plus each of its senses — so the batched dictionary query below still
+    // happens exactly once for the whole call.
+    const texts: string[] = [];
+    const resolvedIdx: number[] = [];       // index into `texts` for entry i's resolved string
+    const senseIdx: number[][] = [];        // indices into `texts` for entry i's senses
+    entries.forEach((entry, i) => {
+      resolvedIdx[i] = texts.push(typeof entry.longDefinition === 'string' ? entry.longDefinition : '') - 1;
+      senseIdx[i] = sensesByEntry[i].map(s => texts.push(s.definition) - 1);
+    });
+
+    const partsByText = await this.segmentLongDefinitionTexts(texts, language);
+
+    return entries.map((entry, i) => ({
+      ...entry,
+      longDefinitionParts: partsByText[resolvedIdx[i]],
+      longDefinitionSenses: sensesByEntry[i].length
+        ? sensesByEntry[i].map((s, j) => ({ ...s, parts: partsByText[senseIdx[i][j]] }))
+        : null,
+    }));
+  }
+
+  /**
+   * Split each text into `LongDefinitionPart[]` (English prose runs + embedded-Chinese runs
+   * carrying cpcd segmentation metadata), sharing ONE batched dictionary query across every
+   * text. Extracted from enrichLongDefinitionMetadataBatch so an entry's resolved definition
+   * and each of its per-sense definitions can be segmented in the same pass.
+   *
+   * Returns one entry per input text, positionally; null for an empty text.
+   */
+  private async segmentLongDefinitionTexts(
+    texts: string[],
+    language: string
+  ): Promise<(LongDefinitionPart[] | null)[]> {
+    // Split each text into runs once; reused for both candidate collection and the final
+    // part assembly below.
+    const runsByText = texts.map(text => (text ? splitHanRuns(text) : []));
 
     // Only Chinese runs need dictionary segmentation. For non-zh (no Han) this stays empty
     // and we short-circuit without touching the DB.
     const allCandidates = new Set<string>();
     if (language === 'zh') {
-      for (const runs of runsByEntry) {
+      for (const runs of runsByText) {
         for (const run of runs) {
           if (run.type !== 'han') continue;
           for (const candidate of getAllSubstrings(run.value)) {
@@ -1041,26 +1109,19 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
 
     if (allCandidates.size === 0) {
       // No embedded Chinese anywhere: every long definition is a single text part.
-      return entries.map((entry, i) => ({
-        ...entry,
-        longDefinitionParts: runsByEntry[i].length
-          ? runsByEntry[i].map(run => ({ type: 'text' as const, value: run.value }))
-          : null,
-      }));
+      return runsByText.map(runs =>
+        runs.length ? runs.map(run => ({ type: 'text' as const, value: run.value })) : null
+      );
     }
 
-    // Single batch dictionary query for all Chinese runs across all entries.
+    // Single batch dictionary query for all Chinese runs across all texts.
     const dictEntries = await this.findMultipleByWord1([...allCandidates], language);
     const dictMap = buildDictMap(dictEntries);
     const excludeTokens = buildExcludeSet(dictEntries);
 
-    return entries.map((entry, i) => {
-      const runs = runsByEntry[i];
-      if (runs.length === 0) {
-        return { ...entry, longDefinitionParts: null };
-      }
-
-      const parts: LongDefinitionPart[] = runs.map(run => {
+    return runsByText.map(runs => {
+      if (runs.length === 0) return null;
+      return runs.map((run): LongDefinitionPart => {
         if (run.type === 'text') {
           return { type: 'text', value: run.value };
         }
@@ -1073,8 +1134,6 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
           buildSegmentMetadata(segments, dictMap);
         return { type: 'foreign', foreignText: run.value, _segments: segments, segmentMetadata };
       });
-
-      return { ...entry, longDefinitionParts: parts };
     });
   }
 

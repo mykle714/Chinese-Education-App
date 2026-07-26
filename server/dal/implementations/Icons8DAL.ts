@@ -128,35 +128,21 @@ export class Icons8DAL implements IIcons8DAL {
   async getOrWarmDefaultIconResults(
     language: string,
     entryKey: string,
-    pos: string | null,
     term: string
   ): Promise<Icons8ListItem[]> {
     if (!entryKey) throw new ValidationError('entryKey is required');
 
     const table = dictTableForLanguage(language);
-    // Only the Spanish det carries a `pos` column (the zh table substitutes a NULL
-    // literal in dictJoin), so we only reference / order by pos for es. Mirroring the
-    // dictJoin preference (exact-pos row first) keeps the cache on the same det row
-    // whose definition produced the term.
-    const isEs = table === 'dictionaryentries_es';
+    // (word1, language) identifies exactly one det row in both tables now — es since
+    // migration 123 — so the cache lands on THE row for this word. The Spanish branch
+    // used to take a `pos` argument and order by an exact-pos match, mirroring dictJoin,
+    // to pick among a word's several rows; there is only one row to pick now.
     const row = await dbManager.executeQuery<{ id: number; cached: Icons8ListItem[] | null }>(
       async (client) => {
-        if (isEs) {
-          return await client.query(
-            `SELECT id, "defaultIconResults" AS cached
-               FROM ${table}
-              WHERE word1 = $1 AND language = $2
-              ORDER BY (CASE WHEN $3::varchar IS NOT NULL AND pos = $3 THEN 0 ELSE 1 END),
-                       definitions->>0 NULLS LAST
-              LIMIT 1`,
-            [entryKey, language, pos]
-          );
-        }
         return await client.query(
           `SELECT id, "defaultIconResults" AS cached
              FROM ${table}
             WHERE word1 = $1 AND language = $2
-            ORDER BY definitions->>0 NULLS LAST
             LIMIT 1`,
           [entryKey, language]
         );

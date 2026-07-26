@@ -6,7 +6,7 @@
  * "will" / "to meet" / "meeting" / the kuai4 "to reckon accounts" sense). A
  * single globally-ranked list forces those orthogonal senses to interleave.
  * Clustering groups each sense, ranks glosses prototypical→vernacular WITHIN the
- * cluster, scores each cluster's register independently, and keeps clusters
+ * cluster, scores each cluster's conversation frequency independently, and keeps clusters
  * themselves orthogonal. See docs/DEFINITION_CLUSTERS.md.
  *
  * Pipeline (per entry):
@@ -19,7 +19,7 @@
  *     gloss-ordering pipeline (lib/orderGlosses.js). Standalone-safe: works on
  *     raw cedict glosses too, since Pass-1 prunes broken/archaic glosses. (≤1
  *     gloss clusters skip the API.)
- *   Stage C — SCORE each cluster's vernacular register 1–5 (lib/vernacularScore.js),
+ *   Stage C — SCORE each cluster's conversation frequency 1–5 (lib/frequencyScore.js),
  *     independently — the whole point of clustering (会 "can"=5 vs "accounts"=1).
  *
  * HUMAN REVIEW: there is no review file. Anything the clustering model is even
@@ -55,9 +55,9 @@ import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
 import { initRunLog, cachedSystem } from '../run-log.js';
 import { createGlossOrderer } from './lib/orderGlosses.js';
-import { createVernacularScorer } from './lib/vernacularScore.js';
+import { createFrequencyScorer } from './lib/frequencyScore.js';
 
-const SCRIPT_VERSION = 4; // bump when this script's logic/prompt changes (v4: Stage A.5 merge prompt no longer fuses etymologically-related but context-distinct senses, e.g. 月 moon vs month; v2: cluster single-definition entries too — dropped the `definitions > 1` gate; single-def uses a zero-API fast path, definition verbatim as the sense; cluster `pos` now always a string[] via toPosArray)
+const SCRIPT_VERSION = 5; // bump when this script's logic/prompt changes (v5: Stage C rubric re-pointed from register to everyday-conversation frequency, and the per-cluster key renamed vernacularScore → frequencyScore, migration 122; v4: Stage A.5 merge prompt no longer fuses etymologically-related but context-distinct senses, e.g. 月 moon vs month; v2: cluster single-definition entries too — dropped the `definitions > 1` gate; single-def uses a zero-API fast path, definition verbatim as the sense; cluster `pos` now always a string[] via toPosArray)
 
 const isSpotCheck = process.argv.includes('--spot-check');
 const includeAll  = process.argv.includes('--all');
@@ -91,9 +91,9 @@ const tempParams = (model) => /opus-4-8/.test(model) ? {} : { temperature: 0 };
 // the agent driving the mark-discoverable skill can detect and surface these.
 const REVIEW_MARKER = '⚠ CLUSTER REVIEW';
 
-// Shared cores (decision 5: one source of truth for ordering + register).
+// Shared cores (decision 5: one source of truth for ordering + frequency).
 const { pass1Sort, pass2Critique } = createGlossOrderer({ anthropic, cachedSystem });
-const { scoreVernacular } = createVernacularScorer({ anthropic });
+const { scoreFrequency } = createFrequencyScorer({ anthropic });
 
 // ─── Stage A: clustering prompt ───────────────────────────────────────────────
 
@@ -111,7 +111,7 @@ Rules:
 
 3. CLUSTER BY SHARED CORE IDEA. Within a single reading, put in ONE cluster the glosses that express the SAME core idea — near-synonyms, inflections, or one underlying image applied in a slightly different frame — even if they differ in part of speech, grammatical role, domain, or surface context. Those surface differences are NOT reasons to split. Split into different clusters when two groups of glosses are genuinely different senses. It is fine to err toward FINER, precise clusters here — a later consolidation pass will merge any that turn out too similar. Aim for clean, self-consistent atomic senses.
 
-4. REGISTER SPLIT (the one exception that ADDS clusters). Within a single origin, if the glosses straddle a LARGE register/frequency gap — some are everyday modern usage while others are literary, classical, archaic, or narrowly technical — split that origin into register-homogeneous clusters (same reading and sense family, but grouped so each cluster's members share a similar register). This keeps the later per-cluster register score honest. Do NOT split for small register differences — only for a clear everyday-vs-literary/archaic gap (e.g. 别 everyday "don't …!" vs. literary "to part from").
+4. REGISTER SPLIT (the one exception that ADDS clusters). Within a single origin, if the glosses straddle a LARGE register/frequency gap — some are everyday modern usage while others are literary, classical, archaic, or narrowly technical — split that origin into register-homogeneous clusters (same reading and sense family, but grouped so each cluster's members share a similar register). This keeps the later per-cluster frequency score honest — an everyday sense and an archaic one must not share a score. Do NOT split for small register differences — only for a clear everyday-vs-literary/archaic gap (e.g. 别 everyday "don't …!" vs. literary "to part from").
 
 5. Order the clusters most- to least-useful for a modern learner: frequent everyday senses first; archaic/literary/technical/dialectal senses last.
 
@@ -121,7 +121,7 @@ Rules:
    - "pos": the part(s) of speech for this sense — ALWAYS a JSON array of strings, even when only one applies (e.g. ["verb"] or ["verb","noun"]).
    - "glosses": the input glosses belonging to this sense (any order — they are re-ranked later).
 
-7. FLAG YOUR UNCERTAINTY. If you are even slightly unsure about ANY decision, add a short note to "reviewNotes" so a human can double-check. Err heavily toward flagging — a false alarm is cheap, a wrong card is not. Flag things like: an ambiguous origin boundary (could reasonably split or merge), a gloss that plausibly belongs in two clusters, a register split you were unsure whether to make, an uncertain or guessed "reading" (especially heteronyms), a sense whose register/pos you're unsure of, broken/cryptic source glosses, or anything that just looks off. If you are fully confident, return an empty array.
+7. FLAG YOUR UNCERTAINTY. If you are even slightly unsure about ANY decision, add a short note to "reviewNotes" so a human can double-check. Err heavily toward flagging — a false alarm is cheap, a wrong card is not. Flag things like: an ambiguous origin boundary (could reasonably split or merge), a gloss that plausibly belongs in two clusters, a register split you were unsure whether to make, an uncertain or guessed "reading" (especially heteronyms), a sense whose pos you're unsure of, broken/cryptic source glosses, or anything that just looks off. If you are fully confident, return an empty array.
 
 Worked example (note the origin-merges: "can/know-how" and "likely to" are one modal origin; "meeting" senses stay together across noun/verb):
 Word: 会  (primary reading: hui4)
@@ -347,15 +347,15 @@ async function run() {
     // them as clustered). --force re-clusters; otherwise skip already-set rows.
     const { rows: entries } = await client.query(
       targetIds
-        ? `SELECT id, word1, pronunciation, "numberedPinyin", definitions, "partsOfSpeech", "vernacularScore"
+        ? `SELECT id, word1, pronunciation, "numberedPinyin", definitions, "partsOfSpeech", "frequencyScore"
            FROM dictionaryentries_zh WHERE id = ANY($1) ORDER BY id ASC`
         : targetWords?.length
-        ? `SELECT id, word1, pronunciation, "numberedPinyin", definitions, "partsOfSpeech", "vernacularScore"
+        ? `SELECT id, word1, pronunciation, "numberedPinyin", definitions, "partsOfSpeech", "frequencyScore"
            FROM dictionaryentries_zh
            WHERE language = 'zh' AND word1 = ANY($1)
              AND jsonb_array_length(definitions) >= 1
            ORDER BY id ASC`
-        : `SELECT id, word1, pronunciation, "numberedPinyin", definitions, "partsOfSpeech", "vernacularScore"
+        : `SELECT id, word1, pronunciation, "numberedPinyin", definitions, "partsOfSpeech", "frequencyScore"
            FROM dictionaryentries_zh
            WHERE language = 'zh'
              ${includeAll ? '' : 'AND discoverable = TRUE'}
@@ -390,8 +390,8 @@ async function run() {
           // A single-definition entry is trivially one cluster, so skip EVERY model
           // call — Stage A split, A.5 merge, B ordering, C scoring — and use the lone
           // definition verbatim as BOTH the sense label and the cluster's only gloss.
-          // `pos`/`vernacularScore` are pulled straight from the WORD-LEVEL columns
-          // (`partsOfSpeech`, `vernacularScore`) instead of re-deriving them per cluster:
+          // `pos`/`frequencyScore` are pulled straight from the WORD-LEVEL columns
+          // (`partsOfSpeech`, `frequencyScore`) instead of re-deriving them per cluster:
           // for a single-sense word the word-level values already describe that one
           // sense, so no API call is needed. Both fall back to null if their column
           // isn't populated yet (e.g. clustering run standalone before those backfills;
@@ -402,7 +402,7 @@ async function run() {
             sense: gloss,
             reading: primaryReading,
             pos: toPosArray(row.partsOfSpeech),
-            vernacularScore: row.vernacularScore != null ? Number(row.vernacularScore) : null,
+            frequencyScore: row.frequencyScore != null ? Number(row.frequencyScore) : null,
             glosses: [gloss],
           }];
           reviewNotes = [];
@@ -458,20 +458,20 @@ async function run() {
               // On ordering failure, keep the model's original cluster order.
             }
 
-            // Stage C: per-cluster vernacular register (1–5), scored independently.
-            let vernacularScore = null;
+            // Stage C: per-cluster conversation frequency (1–5), scored independently.
+            let frequencyScore = null;
             try {
-              const s = await scoreVernacular(row.word1, cluster.reading, glosses);
-              vernacularScore = s.score;
+              const s = await scoreFrequency(row.word1, cluster.reading, glosses);
+              frequencyScore = s.score;
             } catch {
-              reviewNotes.push(`vernacular score failed for "${cluster.sense}" cluster (left null)`);
+              reviewNotes.push(`frequency score failed for "${cluster.sense}" cluster (left null)`);
             }
 
             finalClusters.push({
               sense: cluster.sense,
               reading: cluster.reading,
               pos: toPosArray(cluster.pos),
-              vernacularScore,
+              frequencyScore,
               glosses,
             });
           }
@@ -484,7 +484,7 @@ async function run() {
         if (isSpotCheck) {
           console.log(`${finalClusters.length} cluster(s)`);
           for (const fc of finalClusters) {
-            console.log(`      • [${fc.reading}] ${fc.sense}  (v=${fc.vernacularScore}, pos=${JSON.stringify(fc.pos)})`);
+            console.log(`      • [${fc.reading}] ${fc.sense}  (v=${fc.frequencyScore}, pos=${JSON.stringify(fc.pos)})`);
             console.log(`          ${JSON.stringify(fc.glosses)}`);
           }
           printReviewFlags(row.word1, row.id, reviewNotes);

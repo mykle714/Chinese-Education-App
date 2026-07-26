@@ -62,7 +62,7 @@ export async function ensureIcon8(token: string | null, iconId: string): Promise
  */
 export async function fetchDefaultIconResults(
   token: string | null,
-  params: { language: string; entryKey: string; pos: string | null; term: string }
+  params: { language: string; entryKey: string; term: string }
 ): Promise<IconSearchItem[]> {
   const res = await fetch(`${API_BASE_URL}/api/icons8/default-results`, {
     method: "POST",

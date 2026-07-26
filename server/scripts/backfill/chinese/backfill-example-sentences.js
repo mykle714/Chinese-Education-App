@@ -32,7 +32,7 @@
  *   with a warning — every generated sentence is guaranteed a validated sense.
  *
  * COVERAGE: the generator is asked to cover (a) every part of speech the word can
- * take, and (b) every sense scored 4–5 (the vernacular/common senses). After the
+ * take, and (b) every sense scored 4–5 (the senses heard most in conversation). After the
  * batch, any uncovered POS or high-value sense is backfilled one sentence at a time.
  *
  * PROMPT CACHING: the large static instruction set is hoisted into a cached
@@ -121,8 +121,8 @@ const ALLOWED_NUMBERS = new Set(['singular', 'plural']);
 const ALLOWED_POS_TAG_SET = new Set(ALLOWED_POS_TAGS);
 const ALLOWED_POS_LINE = ALLOWED_POS_TAGS.join(', ');
 
-// A sense qualifies as a coverage target when its per-cluster vernacularScore is
-// at least this — i.e. the common/vernacular senses a learner is most likely to meet.
+// A sense qualifies as a coverage target when its per-cluster frequencyScore is
+// at least this — i.e. the high-frequency senses a learner is most likely to meet.
 const HIGH_VALUE_SENSE_SCORE = 4;
 
 // Minimum number of senses a multi-sense word must be steered to cover — a floor
@@ -157,7 +157,7 @@ function coverablePosSet(clusters) {
 
 // Pick the coverage-target senses (the senses the generator is REQUIRED to
 // demonstrate) for a multi-sense entry, sized to `desired` (the sentence budget).
-// Ranking: vernacularScore desc → free forms before bound forms → original order.
+// Ranking: frequencyScore desc → free forms before bound forms → original order.
 // The required set = every register-≥-HIGH_VALUE_SENSE_SCORE sense, extended down
 // the ranking until it reaches `desired` senses (capped at the senses that exist).
 // This guarantees (a) a word whose senses are all register 1–3 (e.g. 节, top score
@@ -165,7 +165,7 @@ function coverablePosSet(clusters) {
 // every sentence slot, so extra slots don't collapse into duplicates.
 function selectCoverageSenses(clusters, desired) {
   const ranked = clusters
-    .map((c, i) => ({ sense: c.sense, score: Number(c.vernacularScore) || 0, bound: isBoundFormCluster(c), i }))
+    .map((c, i) => ({ sense: c.sense, score: Number(c.frequencyScore) || 0, bound: isBoundFormCluster(c), i }))
     .sort((a, b) => b.score - a.score || Number(a.bound) - Number(b.bound) || a.i - b.i);
 
   const highValueCount = ranked.filter(c => c.score >= HIGH_VALUE_SENSE_SCORE).length;
@@ -281,7 +281,7 @@ function formatSenses(clusters) {
   return clusters.map((c) => {
     const pos = c.pos?.join('/');  // definitionClusters.pos is always string[] | null
     const glosses = Array.isArray(c.glosses) ? c.glosses.join('; ') : '';
-    const score = c.vernacularScore;
+    const score = c.frequencyScore;
     return `- "${c.sense}"${pos ? ` (${pos})` : ''}${score != null ? ` [register ${score}/5]` : ''}${glosses ? ` — ${glosses}` : ''}`;
   }).join('\n');
 }
@@ -688,7 +688,7 @@ async function loadSegmentDictData(client, foreignText) {
   if (candidates.length === 0) return null;
 
   const { rows } = await client.query(
-    `SELECT word1, pronunciation, definitions, "vernacularScore", "matchException",
+    `SELECT word1, pronunciation, definitions, "frequencyScore", "matchException",
             "definitionClusters", "partsOfSpeech"
      FROM dictionaryentries_zh
      WHERE language = 'zh' AND word1 = ANY($1::text[])`,
@@ -701,7 +701,7 @@ async function loadSegmentDictData(client, foreignText) {
     word1: r.word1,
     pronunciation: r.pronunciation || '',
     definitions: Array.isArray(r.definitions) ? r.definitions : [r.definitions],
-    vernacularScore: r.vernacularScore ?? null,
+    frequencyScore: r.frequencyScore ?? null,
     matchException: r.matchException ?? [],
     definitionClusters: Array.isArray(r.definitionClusters) ? r.definitionClusters : null,
   }));

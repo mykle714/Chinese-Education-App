@@ -13,13 +13,13 @@ import { LazyEnrichmentService } from './LazyEnrichmentService.js';
  * Starter Packs Service
  * Business logic for the discover / "sort cards" flow.
  *
- * DESIGN (see docs/SORT_CARDS_REQUIREMENTS.md §6 — adaptive leveling, rewritten): the
+ * DESIGN (see docs/SORT_CARDS_REQUIREMENTS.md §6 — adaptive leveling): the
  * CLIENT owns the adaptive level once the session starts. The server's only leveling
  * job is (a) a one-time COLD-START seed via `estimateLevel` when the client enters the
  * flow with no level yet, and (b) serving supply centered on whatever level the client
  * asks for next, drifting to adjacent levels when that level's supply runs out (unless
  * the request is a manual dropdown pin, which never drifts). The client tracks its own
- * running target level and the "already learned" streak that promotes it — see
+ * running target level and moves it ±1 per completed SortPack — see
  * `SortCardsPage.tsx` — because the level must react to a SortPack's outcome as soon as
  * it completes, not on the next server round-trip.
  *
@@ -140,10 +140,7 @@ export class StarterPacksService {
       word2: row.word2,
       script: row.script,
       difficulty: row.difficulty,
-      vernacularScore: row.vernacularScore ?? null,
-      // Spanish POS badge fields (NULL/false for Chinese — see _fetchSupplyRows).
-      pos: row.pos ?? null,
-      hasMultiplePos: row.hasMultiplePos ?? false,
+      frequencyScore: row.frequencyScore ?? null,
       breakdown: row.breakdown,
       synonyms: row.synonyms,
       exampleSentences: row.exampleSentences,
@@ -214,7 +211,7 @@ export class StarterPacksService {
    * COLD-START ONLY (docs §6.1): the lowest level the user has NOT yet cleared, used to
    * seed the client's adaptive target level the first time it enters the flow with no
    * level of its own to send. Once seeded, the client tracks and moves its own target
-   * level per-SortPack-signal (§6, rewritten) — this is never called again mid-session
+   * level per-SortPack-signal (§6) — this is never called again mid-session
    * to re-derive or override that running estimate. Pure function of vet mastery state,
    * so it still picks up flashcard-review progress (and demotions) automatically for
    * the NEXT cold start (e.g. a fresh session after time away).
@@ -323,36 +320,30 @@ export class StarterPacksService {
         ? `(SELECT ds."createdAt" FROM discover_skips ds WHERE ds."userId" = $2 AND ds.language = de.language AND ds."cardId" = de.id) ASC,`
         : '';
 
-      // Spanish det carries pos / hasMultiplePos (for the POS badge); Chinese det does
-      // not, so substitute literals. A Spanish word1 has one discoverable row per POS,
-      // so a card is "already sorted" only when the user has a vet row for that SAME
-      // pos — exclude per (word1, pos), not per word1.
-      const isEs = language === 'es';
-      const posCols = isEs
-        ? `, de.pos, de."hasMultiplePos"`
-        : `, NULL::varchar AS pos, FALSE AS "hasMultiplePos"`;
-      const excludePos = isEs ? ` AND ve.pos IS NOT DISTINCT FROM de.pos` : '';
-
+      // Both languages are now one det row per word1 (es since migration 123), so a card
+      // is "already sorted" when the user holds a vet row for that word — full stop. The
+      // Spanish branch used to exclude per (word1, pos) because the same spelling supplied
+      // several discoverable cards, one per POS.
       params.push(opts.limit);
       const limitParam = `$${params.length}`;
 
       const result = await client.query(`
         SELECT de.id, de.word1, de.word2, de.pronunciation, de.tone, de.definitions,
-               de.language, de.script, de."difficulty", de."vernacularScore", de.breakdown, de.synonyms,
+               de.language, de.script, de."difficulty", de."frequencyScore", de.breakdown, de.synonyms,
                de."exampleSentences",
-               de."iconId"${posCols}
+               de."iconId"
         FROM ${det} de
         WHERE de.language = $1
           AND ${this._supplyGate(language)}
           AND ${validPredicate}
           AND NOT EXISTS (
             SELECT 1 FROM ${vetTable} ve
-            WHERE ve."userId" = $2 AND ve."entryKey" = de.word1 AND ve.language = de.language${excludePos}
+            WHERE ve."userId" = $2 AND ve."entryKey" = de.word1 AND ve.language = de.language
           )
           ${skipFilter}
           ${excludeFilter}
           ${exactLevelFilter}
-        ORDER BY ${recycleOrder} ABS(${levelExpr} - $3) ASC, de."vernacularScore" DESC NULLS LAST, de.id ASC
+        ORDER BY ${recycleOrder} ABS(${levelExpr} - $3) ASC, de."frequencyScore" DESC NULLS LAST, de.id ASC
         LIMIT ${limitParam}
       `, params);
       return result.rows;
@@ -414,7 +405,7 @@ export class StarterPacksService {
    * Pagination is keyset, NOT offset: the batch save creates vet rows for the cards
    * the user marked, which drops them out of this (vet-excluding) result set. A numeric
    * OFFSET would then skip that many still-unsorted cards on the next page. A cursor on
-   * the stable sort key — `(vernacularScore DESC NULLS LAST, id ASC)` — always resumes
+   * the stable sort key — `(frequencyScore DESC NULLS LAST, id ASC)` — always resumes
    * exactly after the last card shown, regardless of rows removed above it. The cursor
    * is the last-seen `{ score, id }`; null (first page) means no lower bound.
    *
@@ -433,12 +424,6 @@ export class StarterPacksService {
     const det = this._dictTable(language);
     const vetTable = this._vetTable(language);
     const { levelExpr, validPredicate } = this._levelConfig(language);
-    // Spanish det carries pos / hasMultiplePos (POS badge) and needs per-(word1,pos)
-    // exclusion; Chinese substitutes literals and excludes per word1 (see _fetchSupplyRows).
-    const isEs = language === 'es';
-    const posCols = isEs ? `, de.pos, de."hasMultiplePos"` : `, NULL::varchar AS pos, FALSE AS "hasMultiplePos"`;
-    const excludePos = isEs ? ` AND ve.pos IS NOT DISTINCT FROM de.pos` : '';
-
     // $1 language, $2 userId, $3 level, then optional cursor score+id, then limit.
     const params: any[] = [language, userId, resolvedLevel];
     let cursorFilter = '';
@@ -454,11 +439,11 @@ export class StarterPacksService {
       //     id, or any NULL score (which sorts after every non-NULL score).
       cursorFilter = `
         AND CASE
-              WHEN $${scoreIdx}::int IS NULL THEN (de."vernacularScore" IS NULL AND de.id > $${idIdx})
+              WHEN $${scoreIdx}::int IS NULL THEN (de."frequencyScore" IS NULL AND de.id > $${idIdx})
               ELSE (
-                de."vernacularScore" < $${scoreIdx}::int
-                OR (de."vernacularScore" = $${scoreIdx}::int AND de.id > $${idIdx})
-                OR de."vernacularScore" IS NULL
+                de."frequencyScore" < $${scoreIdx}::int
+                OR (de."frequencyScore" = $${scoreIdx}::int AND de.id > $${idIdx})
+                OR de."frequencyScore" IS NULL
               )
             END`;
     }
@@ -469,9 +454,9 @@ export class StarterPacksService {
     try {
       const result = await client.query(`
         SELECT de.id, de.word1, de.word2, de.pronunciation, de.tone, de.definitions,
-               de.language, de.script, de."difficulty", de."vernacularScore", de.breakdown, de.synonyms,
+               de.language, de.script, de."difficulty", de."frequencyScore", de.breakdown, de.synonyms,
                de."exampleSentences",
-               de."iconId"${posCols}
+               de."iconId"
         FROM ${det} de
         WHERE de.language = $1
           AND ${this._supplyGate(language)}
@@ -479,10 +464,10 @@ export class StarterPacksService {
           AND ${levelExpr} = $3
           AND NOT EXISTS (
             SELECT 1 FROM ${vetTable} ve
-            WHERE ve."userId" = $2 AND ve."entryKey" = de.word1 AND ve.language = de.language${excludePos}
+            WHERE ve."userId" = $2 AND ve."entryKey" = de.word1 AND ve.language = de.language
           )
           ${cursorFilter}
-        ORDER BY de."vernacularScore" DESC NULLS LAST, de.id ASC
+        ORDER BY de."frequencyScore" DESC NULLS LAST, de.id ASC
         LIMIT $${limitIdx}
       `, params);
 
@@ -584,12 +569,11 @@ export class StarterPacksService {
     const client = await db.getClient();
     try {
       // Find or create the corresponding VocabEntry. Identity is
-      // (userId, entryKey, language[, pos]) — Spanish adds pos so verb vs noun of
-      // the same spelling are distinct saved cards. Scope the lookup accordingly.
-      const isEs = dictEntry.language === 'es';
+      // (userId, entryKey, language) for BOTH languages — Spanish dropped `pos` from the
+      // key in migration 123, so one Spanish word is one card carrying all its senses.
       const vetTable = this._vetTable(dictEntry.language);
       const existing = await this.vocabEntryDAL.findByUserAndKey(
-        userId, dictEntry.word1, dictEntry.language, isEs ? (dictEntry.pos ?? undefined) : undefined
+        userId, dictEntry.word1, dictEntry.language
       );
 
       let vocabEntryId: number;
@@ -599,19 +583,12 @@ export class StarterPacksService {
         // so it is omitted here: a fresh row's empty history yields 'Unfamiliar', and
         // the shouldMarkMastered branch below writes an 8/8 history that yields
         // 'Mastered' automatically.
-        const insertResult = isEs
-          ? await client.query(`
-              INSERT INTO ${vetTable} (
-                "userId", "entryKey", language, pos, "starterPackBucket"
-              ) VALUES ($1, $2, $3, $4, $5)
-              RETURNING id
-            `, [userId, dictEntry.word1, dictEntry.language, dictEntry.pos, actualBucket])
-          : await client.query(`
-              INSERT INTO ${vetTable} (
-                "userId", "entryKey", language, "starterPackBucket"
-              ) VALUES ($1, $2, $3, $4)
-              RETURNING id
-            `, [userId, dictEntry.word1, dictEntry.language, actualBucket]);
+        const insertResult = await client.query(`
+          INSERT INTO ${vetTable} (
+            "userId", "entryKey", language, "starterPackBucket"
+          ) VALUES ($1, $2, $3, $4)
+          RETURNING id
+        `, [userId, dictEntry.word1, dictEntry.language, actualBucket]);
         vocabEntryId = insertResult.rows[0].id;
         console.log(`[StarterPacks] Created VocabEntry id=${vocabEntryId} for entryKey=${dictEntry.word1}`);
       } else {
@@ -652,7 +629,7 @@ export class StarterPacksService {
     });
 
     // Pack mode: the client owns its pack queue AND its own adaptive target level
-    // (docs §6, rewritten) — it derives the pack's signal from the buckets it already
+    // (docs §6) — it derives the pack's signal from the buckets it already
     // knows client-side, so there is nothing level-related for the server to compute or
     // echo back here. Mark the pack seen when its last card was just sorted.
     if (inPackMode) {
@@ -689,7 +666,7 @@ export class StarterPacksService {
    * Undo the last sort. The client passes the bucket it sorted into so we reverse the
    * exact trace (docs §8):
    *   - skip            → DELETE the discover_skips row (by cardId — no word1 lookup).
-   *   - library / already-learned → DELETE the vet row (by word1[, pos]).
+   *   - library / already-learned → DELETE the vet row (by word1).
    * Returns { success } — the client already has the card to re-show; it does not
    * need a replacement.
    */
@@ -722,33 +699,26 @@ export class StarterPacksService {
     const table = this._dictTable(language);
     const client = await db.getClient();
     try {
-      // Get word1 (+ pos for Spanish) for the dictionary entry from the
-      // language-appropriate table (card ids collide across the per-language
-      // tables — see _dictTable).
-      const isEs = language === 'es';
+      // Get word1 for the dictionary entry from the language-appropriate table (card ids
+      // collide across the per-language tables — see _dictTable).
       const dictResult = await client.query(`
-        SELECT word1, ${isEs ? 'pos' : 'NULL::varchar AS pos'} FROM ${table} WHERE id = $1
+        SELECT word1 FROM ${table} WHERE id = $1
       `, [cardId]);
 
       const word1: string | undefined = dictResult.rows[0]?.word1;
-      const pos: string | null = dictResult.rows[0]?.pos ?? null;
 
       if (!word1) {
         return { success: false, message: 'Card not found in sorted list' };
       }
 
-      // For Spanish, delete only the specific (word1, pos) saved card.
-      const deleteResult = isEs
-        ? await client.query(`
-            DELETE FROM ${this._vetTable(language)}
-            WHERE "userId" = $1 AND "entryKey" = $2 AND language = $3 AND pos IS NOT DISTINCT FROM $4
-            RETURNING id
-          `, [userId, word1, language, pos])
-        : await client.query(`
-            DELETE FROM ${this._vetTable(language)}
-            WHERE "userId" = $1 AND "entryKey" = $2 AND language = $3
-            RETURNING id
-          `, [userId, word1, language]);
+      // One vet row per (user, word, language) in both languages now, so the undo deletes
+      // exactly the row the sort created. Spanish used to need a `pos IS NOT DISTINCT FROM`
+      // predicate here to avoid deleting a sibling card of the same spelling.
+      const deleteResult = await client.query(`
+        DELETE FROM ${this._vetTable(language)}
+        WHERE "userId" = $1 AND "entryKey" = $2 AND language = $3
+        RETURNING id
+      `, [userId, word1, language]);
 
       if (deleteResult.rows.length === 0) {
         return { success: false, message: 'Card not found in sorted list' };
@@ -765,15 +735,12 @@ export class StarterPacksService {
    * language-appropriate dictionary table. Returns just the fields sortCard needs
    * (word1 + language). Replaces DictionaryDAL.findById, which is _zh-only.
    */
-  private async _findDiscoverCardById(cardId: number, language: string): Promise<{ word1: string; language: string; pos: string | null } | null> {
+  private async _findDiscoverCardById(cardId: number, language: string): Promise<{ word1: string; language: string } | null> {
     const table = this._dictTable(language);
-    // Only the Spanish det carries `pos`; the Chinese det has no such column, so
-    // select a literal NULL there to keep one shape.
-    const posSelect = language === 'es' ? 'pos' : 'NULL::varchar AS pos';
     const client = await db.getClient();
     try {
-      const result = await client.query<{ word1: string; language: string; pos: string | null }>(`
-        SELECT word1, language, ${posSelect} FROM ${table} WHERE id = $1
+      const result = await client.query<{ word1: string; language: string }>(`
+        SELECT word1, language FROM ${table} WHERE id = $1
       `, [cardId]);
       return result.rows[0] ?? null;
     } finally {
@@ -848,26 +815,22 @@ export class StarterPacksService {
    * Hydrate a set of det ids into DiscoverCards (in the given id order) tagged with
    * per-user pack state: `sorted` (has a library vet row → locked + "sorted!") and
    * `skipped` (currently in discover_skips → draggable again inside a pack). Used for
-   * authored-pack cards; Spanish matches vet per (word1, pos).
+   * authored-pack cards.
    */
   private async _hydrateCards(entryIds: number[], userId: string, language: string): Promise<DiscoverCard[]> {
     if (entryIds.length === 0) return [];
     const det = this._dictTable(language);
     const vetTable = this._vetTable(language);
-    const isEs = language === 'es';
-    const posCols = isEs ? `, de.pos, de."hasMultiplePos"` : `, NULL::varchar AS pos, FALSE AS "hasMultiplePos"`;
-    const excludePos = isEs ? ` AND ve.pos IS NOT DISTINCT FROM de.pos` : '';
-
     const client = await db.getClient();
     try {
       const result = await client.query(`
         SELECT de.id, de.word1, de.word2, de.pronunciation, de.tone, de.definitions,
-               de.language, de.script, de."difficulty", de."vernacularScore", de.breakdown, de.synonyms,
+               de.language, de.script, de."difficulty", de."frequencyScore", de.breakdown, de.synonyms,
                de."exampleSentences",
-               de."iconId"${posCols},
+               de."iconId",
                EXISTS (
                  SELECT 1 FROM ${vetTable} ve
-                 WHERE ve."userId" = $2 AND ve."entryKey" = de.word1 AND ve.language = de.language${excludePos}
+                 WHERE ve."userId" = $2 AND ve."entryKey" = de.word1 AND ve.language = de.language
                ) AS sorted,
                EXISTS (
                  SELECT 1 FROM discover_skips ds
@@ -890,13 +853,13 @@ export class StarterPacksService {
   }
 
   /**
-   * A pack's colloquial-register rank for the within-level supply ordering: the mean
-   * vernacularScore across its cards that have one. A pack with no scored cards ranks
+   * A pack's conversation-frequency rank for the within-level supply ordering: the mean
+   * frequencyScore across its cards that have one. A pack with no scored cards ranks
    * -1 so it sinks below any pack that has a real score.
    */
-  private _packVernacularRank(pack: SortPack): number {
+  private _packFrequencyRank(pack: SortPack): number {
     const scores = pack.cards
-      .map((c) => c.vernacularScore)
+      .map((c) => c.frequencyScore)
       .filter((s): s is number => typeof s === 'number');
     if (scores.length === 0) return -1;
     return scores.reduce((sum, s) => sum + s, 0) / scores.length;
@@ -963,7 +926,7 @@ export class StarterPacksService {
    *
    * `requestedLevel` is the level to center supply on. Two callers, same param:
    *   - AUTO (client's adaptive target): the client sends the level it is currently
-   *     tracking (docs §6, rewritten — it moves the target itself as SortPacks resolve,
+   *     tracking (docs §6 — it moves the target itself as SortPacks resolve,
    *     no server round-trip needed to decide the next level). `null` means the client
    *     has no target yet (its very first fetch this session) — the server seeds one
    *     via the cold-start `estimateLevel`.
@@ -1013,9 +976,9 @@ export class StarterPacksService {
       const candidates = await this.sortPacksDAL.fetchPacksAtLevel(language, lvl, excludePackIds, remaining1 * 3 + 5);
       const authored = await this._hydrateAuthoredPacks(candidates, userId, language);
       // Within a level, surface the most colloquial packs first (docs §5): rank each
-      // pack by the mean vernacularScore of its cards (nulls sink to the bottom), a
+      // pack by the mean frequencyScore of its cards (nulls sink to the bottom), a
       // stable sort so ties keep the authored packOrder from fetchPacksAtLevel.
-      authored.sort((a, b) => this._packVernacularRank(b) - this._packVernacularRank(a));
+      authored.sort((a, b) => this._packFrequencyRank(b) - this._packFrequencyRank(a));
       for (const p of authored) {
         if (packs.length >= limit) break;
         if (p.cards.some((c) => !c.sorted)) { // never serve an all-sorted pack (§4.5)
@@ -1069,15 +1032,13 @@ export class StarterPacksService {
    */
   async listSkipped(userId: string, language: string): Promise<DiscoverCard[]> {
     const det = this._dictTable(language);
-    const isEs = language === 'es';
-    const posCols = isEs ? `, de.pos, de."hasMultiplePos"` : `, NULL::varchar AS pos, FALSE AS "hasMultiplePos"`;
     const client = await db.getClient();
     try {
       const result = await client.query(`
         SELECT de.id, de.word1, de.word2, de.pronunciation, de.tone, de.definitions,
-               de.language, de.script, de."difficulty", de."vernacularScore", de.breakdown, de.synonyms,
+               de.language, de.script, de."difficulty", de."frequencyScore", de.breakdown, de.synonyms,
                de."exampleSentences",
-               de."iconId"${posCols}
+               de."iconId"
         FROM discover_skips ds
         JOIN ${det} de ON de.id = ds."cardId" AND de.language = ds.language
         WHERE ds."userId" = $1 AND ds.language = $2

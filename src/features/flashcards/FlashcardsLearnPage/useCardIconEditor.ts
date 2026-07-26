@@ -25,7 +25,7 @@ import {
     TEXT_BLOCKS,
 } from "../../../cardIcons/cardTextLayout";
 import { saveIconLayout, fetchDefaultIconResults, type IconSearchItem } from "../../../cardIcons/cardIconApi";
-import { iconSearchTerm } from "../../../utils/definitionUtils";
+import { iconSearchTerm, resolveDisplayDefinition } from "../../../utils/definitionUtils";
 import { saveSelectedSense } from "../../../utils/vocabApi";
 import {
     ICON_LAYOUT_MAX_ITEMS,
@@ -500,13 +500,14 @@ export function useCardIconEditor({ currentEntry, nextEntry, token }: UseCardIco
         // Warm the icon picker: fetch (and cache on the server) the default-query
         // results for this card so they're ready the instant the picker opens. Fire-and
         // -forget — on failure the picker simply does its normal live search on open.
-        const term = iconSearchTerm(displayCurrentEntry.definition);
+        // Warm on the DISPLAYED dd (chosen sense), matching the picker's prefill exactly —
+        // the two share a cache key, so a divergence here would waste the warm.
+        const term = iconSearchTerm(resolveDisplayDefinition(displayCurrentEntry));
         const entryId = displayCurrentEntry.id;
         if (displayCurrentEntry.entryKey && displayCurrentEntry.language) {
             fetchDefaultIconResults(token, {
                 language: displayCurrentEntry.language,
                 entryKey: displayCurrentEntry.entryKey,
-                pos: displayCurrentEntry.pos ?? null,
                 term,
             })
                 .then((icons) => setDefaultIconResults({ entryId, term, icons }))

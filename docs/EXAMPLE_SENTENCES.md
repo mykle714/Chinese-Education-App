@@ -50,7 +50,7 @@ reads the sense list and:
   `backfill-example-sentences.js`), so a spread of senses is structural, not left to
   the model's discretion:
   1. **Required sense set** — `selectCoverageSenses(clusters, budget)` ranks senses by
-     `vernacularScore` (**free forms before bound forms** on ties), then requires every
+     `frequencyScore` (**free forms before bound forms** on ties), then requires every
      register-≥-4 sense **plus** enough top-ranked senses to fill the sentence budget
      (`Math.max(3, coverablePos count)`). This replaced a fixed register-≥-4 filter that
      silently produced an *empty* required set — and thus **zero** diversity steering —

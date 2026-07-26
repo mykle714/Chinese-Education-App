@@ -4,7 +4,7 @@ import { useAuth } from "../AuthContext";
 import { useConfirmation } from "../contexts/ConfirmationContext";
 import { useVocabularyUpdate } from "../contexts/VocabularyUpdateContext";
 import { apiGet, apiDelete } from "../api/http";
-import { stripParentheses } from "../utils/definitionUtils";
+import { resolveDisplayDefinition } from "../utils/definitionUtils";
 import {
     Container,
     Typography,
@@ -207,7 +207,8 @@ function EntryDetailPage() {
                 </Typography>
                 <Divider sx={{ my: 2 }} />
                 <Typography variant="body1" paragraph>
-                    {stripParentheses(entry.definition ?? '')}
+                    {/* dd via the shared resolver — honors this card's chosen sense. */}
+                    {resolveDisplayDefinition(entry)}
                 </Typography>
                 {renderTags(entry)}
                 <Divider sx={{ my: 2 }} />

@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { IDictionaryDAL } from '../dal/interfaces/IDictionaryDAL.js';
-import { DictionaryEntry, VocabEntry, AiDictionaryEntry, WordComparisonResult, LongDefinitionPart } from '../types/index.js';
+import { DictionaryEntry, VocabEntry, AiDictionaryEntry, WordComparisonResult, LongDefinitionPart, DefinitionCluster } from '../types/index.js';
+import type { LongDefinitionValue } from '../utils/definitions.js';
 import { ValidationError, RateLimitError } from '../types/dal.js';
 import { getAllSubstrings, buildDictMap, buildExcludeSet, segmentWithDict } from '../dal/shared/segmentString.js';
 import { DICTIONARY_AI_DAILY_LIMIT } from '../constants.js';
@@ -490,7 +491,7 @@ Rules:
         .trim()
         // The prompt asks for ONE paragraph, but the model sometimes still puts blank
         // lines between sentences. `LongDefinitionDisplay` renders this with
-        // whiteSpace: pre-line (needed for real per-POS \n\n breaks in longDefinition),
+        // whiteSpace: pre-line (needed for real paragraph \n\n breaks in longDefinition),
         // so any stray newline here would render as a visible paragraph gap.
         .replace(/\s*\n+\s*/g, ' ');
       if (!comparison) return null; // transient — don't cache
@@ -687,8 +688,12 @@ Write ONE concise paragraph (3-5 sentences), plain text, no markdown, no headers
           definition: entry.definitions[0],
         };
       } else {
+        // No det entry (or no definitions) for this character — store an empty
+        // string rather than placeholder text. The breakdown row still renders
+        // the character + pinyin, just with a blank definition column; a literal
+        // "No definition" would otherwise ship to learners as if it were content.
         breakdown[char] = {
-          definition: 'No definition',
+          definition: '',
         };
       }
     }
@@ -918,13 +923,19 @@ Respond with only the definition text — no quotes, no extra text.`;
 
   /**
    * Enrich entries with `longDefinitionParts` — the long definition split into English
-   * prose + cpcd-able Chinese runs. Delegates to the DAL batch method (one DB query).
+   * prose + cpcd-able Chinese runs — and narrow a per-sense (zh) `longDefinition` to the
+   * sense the card is on. Delegates to the DAL batch method (one DB query).
    *
-   * @param entries - Objects with optional `longDefinition` field
+   * @param entries - Objects with optional `longDefinition` field and the optional
+   *                  sense-narrowing fields (`longDefinitionRaw`, `definitionClusters`,
+   *                  `selectedSense`)
    * @param language - Language filter (default: 'zh')
    */
   async enrichLongDefinitionMetadataBatch<T extends {
     longDefinition?: string | null;
+    longDefinitionRaw?: LongDefinitionValue | null;
+    definitionClusters?: DefinitionCluster[] | null;
+    selectedSense?: string | null;
   }>(entries: T[], language: string = 'zh'): Promise<T[]> {
     return this.dictionaryDAL.enrichLongDefinitionMetadataBatch(entries, language);
   }

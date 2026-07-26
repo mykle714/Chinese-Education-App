@@ -1,4 +1,5 @@
-import { DictionaryEntry, DictionaryEntryCreateData, AiDictionaryCacheRow, WordComparisonRow } from '../../types/index.js';
+import { DictionaryEntry, DictionaryEntryCreateData, AiDictionaryCacheRow, WordComparisonRow, DefinitionCluster } from '../../types/index.js';
+import type { LongDefinitionValue } from '../../utils/definitions.js';
 import { IBaseDAL } from './IBaseDAL.js';
 
 /**
@@ -109,11 +110,18 @@ export interface IDictionaryDAL extends IBaseDAL<DictionaryEntry, DictionaryEntr
    * English-prose parts and embedded-Chinese parts (each carrying segmentation metadata
    * so the client renders them as cpcd with the example-sentence popup).
    *
-   * @param entries - Array of objects with optional `longDefinition` field
+   * Also narrows a per-sense (zh) `longDefinition` to the sense the card is on, using the
+   * entry's `definitionClusters` + `selectedSense` — see resolveLongDefinition.
+   *
+   * @param entries - Array of objects with optional `longDefinition` (raw JSONB or hydrated
+   *                  string) and the optional sense-narrowing fields
    * @param language - Language filter for dictionary lookups (Chinese-only; non-zh is a no-op)
    */
   enrichLongDefinitionMetadataBatch<T extends {
     longDefinition?: string | null;
+    longDefinitionRaw?: LongDefinitionValue | null;
+    definitionClusters?: DefinitionCluster[] | null;
+    selectedSense?: string | null;
   }>(entries: T[], language?: string): Promise<T[]>;
 
   /**

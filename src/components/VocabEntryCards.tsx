@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { stripParentheses } from '../utils/definitionUtils';
+import { resolveDisplayDefinition } from '../utils/definitionUtils';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../AuthContext';
 import {
@@ -229,7 +229,8 @@ const VocabEntryCards = ({ refreshTrigger, searchTerm = '' }: VocabEntryCardsPro
                 </Typography>
                 <Divider className="vocab-entry-cards__divider" sx={{ mb: 2 }} />
                 <Typography className="vocab-entry-cards__entry-value" variant="body1" color="text.secondary" sx={{ flexGrow: 1, mb: 2 }}>
-                  {stripParentheses(entry.definition ?? '')}
+                  {/* dd via the shared resolver — honors this card's chosen sense. */}
+                  {resolveDisplayDefinition(entry)}
                 </Typography>
                 {entry.createdAt && (
                   <>

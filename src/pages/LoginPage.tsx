@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
+import { Link as RouterLink, Navigate } from 'react-router-dom';
 import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -28,7 +28,7 @@ type LoginFormData = z.infer<typeof loginSchema>;
 
 function LoginPage() {
     usePageTitle("Login");
-    const { login, error } = useAuth();
+    const { login, error, isAuthenticated, isLoading } = useAuth();
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [loginError, setLoginError] = useState<string | null>(error);
     const [sessionExpiredMessage, setSessionExpiredMessage] = useState<string | null>(null);
@@ -61,6 +61,15 @@ function LoginPage() {
             setIsSubmitting(false);
         }
     };
+
+    // Never render the form on top of a live session. Landing here while still
+    // signed in used to be a dead end: the form sat over a valid session and the
+    // only way into the app was hand-editing "/login" out of the URL. The session
+    // can legitimately be alive here (a silent refresh restored it after a
+    // transient failure bounced us to /login), so send the user to the app
+    // instead. `replace` keeps /login out of the history stack.
+    if (isLoading) return null; // auth state still resolving — don't flash the form
+    if (isAuthenticated) return <Navigate to="/" replace />;
 
     return (
         <Container maxWidth="lg" sx={{ py: 4 }}>

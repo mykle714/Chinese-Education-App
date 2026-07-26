@@ -28,6 +28,22 @@ export interface WordSearchInput {
    * its generic standalone gloss. Absent → cells carry no per-char definition.
    */
   charSenses?: Array<{ sense: string | null; definition: string | null }>;
+  /**
+   * Per-character sub-character VISUAL PARTS, one array per entryKey character
+   * (aligned by position): 想吃 → [["木","目","心"], ["口","乞"]]. Read from each
+   * character's own det `components` column (migration 125), already ordered
+   * most-common-first so hints escalate from weak to decisive.
+   *
+   * This is the hint currency for the **No Pinyin** mode, which by definition cannot
+   * spend the pinyin spell-out the hint meter normally uses. An EMPTY inner array is
+   * meaningful: that character is atomic (人, 口, 木) and has no part to reveal, so
+   * its hint ladder goes straight to revealing the character itself.
+   *
+   * Sent in BOTH modes (it is small and lets the client switch without a refetch);
+   * only the No Pinyin board actually consumes it.
+   * See docs/WORD_SEARCH_GAME.md §5a and CLIENT-side WordSearchHintRow.tsx.
+   */
+  charComponents?: string[][];
 }
 
 /** A single grid cell: one Chinese character + its pinyin syllable. */
@@ -68,15 +84,49 @@ const NEIGHBORS: [number, number][] = [
 ];
 
 /**
- * Down/right only — used for 2-character words so their single step always
- * reads in character order (top-to-bottom or left-to-right), never reversed.
- * Longer words still snake through all 4 NEIGHBORS since a mid-word turn makes
- * "reading order" ambiguous anyway.
+ * Force a short word's path to be traced in "reading order" where the shape it
+ * occupies has an unambiguous one (see docs/WORD_SEARCH_GAME.md §2).
+ *
+ * A path and its reverse cover the same cells, so orienting is always just a
+ * possible reversal — it never rejects a placement:
+ *
+ *   - **2 cells** (one step): always forced to read down or right.
+ *   - **3 cells, straight**: forced top-to-bottom / left-to-right.
+ *   - **3 cells, ⌞ bend** (arm above the corner + arm right of it): forced to
+ *     start at the top arm, i.e. down-then-right, the way the L glyph is drawn.
+ *   - **3 cells, any other bend** (the three rotated Ls): left as-is — the
+ *     rotation gives the player no reading-order cue, so either direction is
+ *     equally (un)ambiguous and we don't constrain placement.
+ *   - **4+ cells**: left as-is; a multi-turn snake has no reading order.
+ *
+ * Character/pinyin/definition data is attached per path index *after* this runs
+ * (see `buildCell` callers), so reorienting here simply relabels the cells.
  */
-const FORWARD_NEIGHBORS: [number, number][] = [
-  [1, 0],
-  [0, 1],
-];
+export function orientPath(path: [number, number][]): [number, number][] {
+  const reversed = () => [...path].reverse();
+
+  if (path.length === 2) {
+    const [[r0, c0], [r1, c1]] = path;
+    return r1 > r0 || c1 > c0 ? path : reversed();
+  }
+
+  if (path.length === 3) {
+    const [a, b, c] = path;
+    if (a[1] === b[1] && b[1] === c[1]) return a[0] < c[0] ? path : reversed(); // vertical
+    if (a[0] === b[0] && b[0] === c[0]) return a[1] < c[1] ? path : reversed(); // horizontal
+
+    // Bent: `b` is the corner. Only the ⌞ orientation (arm directly above the
+    // corner, arm directly right of it) is constrained.
+    const ends = [a, c];
+    const hasArmAbove = ends.some(([r, cc]) => r === b[0] - 1 && cc === b[1]);
+    const hasArmRight = ends.some(([r, cc]) => r === b[0] && cc === b[1] + 1);
+    if (!hasArmAbove || !hasArmRight) return path;
+    // Start at the vertical (top) arm so the word reads down, then right.
+    return a[1] === b[1] ? path : reversed();
+  }
+
+  return path;
+}
 
 /**
  * Per-word placement attempts before we give up on the whole grid and
@@ -200,10 +250,10 @@ function findWordOccurrences(
 /**
  * Try to lay a single word of `len` characters as a snaking path of empty cells.
  * Picks a random empty start, then repeatedly steps to a random empty orthogonal
- * neighbor. 2-character words step only down or right (FORWARD_NEIGHBORS) so
- * they always read in character order; longer words snake through all 4
- * NEIGHBORS. Returns the ordered path, or null if it hit a dead end (the
- * caller retries with a new random start).
+ * neighbor (all 4 NEIGHBORS, any length). The resulting path is then run through
+ * `orientPath`, which flips short words onto their reading-order direction, so
+ * the walk itself needs no directional restriction. Returns the ordered path, or
+ * null if it hit a dead end (the caller retries with a new random start).
  */
 function tryPlaceWord(
   len: number,
@@ -218,13 +268,12 @@ function tryPlaceWord(
 
   const path: [number, number][] = [[startR, startC]];
   const inPath = new Set<string>([`${startR},${startC}`]);
-  const directions = len === 2 ? FORWARD_NEIGHBORS : NEIGHBORS;
 
   for (let i = 1; i < len; i++) {
     const [r, c] = path[path.length - 1];
     // Empty, in-bounds neighbors not already on this path.
     const options: [number, number][] = [];
-    for (const [dr, dc] of directions) {
+    for (const [dr, dc] of NEIGHBORS) {
       const nr = r + dr;
       const nc = c + dc;
       if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
@@ -238,7 +287,7 @@ function tryPlaceWord(
     inPath.add(`${next[0]},${next[1]}`);
   }
 
-  return path;
+  return orientPath(path);
 }
 
 /**
@@ -319,7 +368,10 @@ export function generateWordSearchGrid(
         const len = chars.length;
         const maxOffset = slot.length - len;
         const offset = maxOffset > 0 ? randInt(rng, maxOffset + 1) : 0;
-        const path = slot.slice(offset, offset + len);
+        // A slot's authored order is only a traversal, not a reading order: a
+        // 2- or 3-cell run of it can point backwards. Orient it the same way
+        // random placement does so the rule holds in both modes.
+        const path = orientPath(slot.slice(offset, offset + len));
 
         path.forEach(([r, c], idx) => {
           occupied[r][c] = true;

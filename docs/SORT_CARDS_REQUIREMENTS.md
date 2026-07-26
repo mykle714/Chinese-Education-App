@@ -119,14 +119,14 @@ A **sort pack** is a small group of vocabulary cards shown together:
   middle, and a **play-audio button** underneath.
     - **Commonality header band** (`CardDeckHeader`). A **"Commonality"** caption
       (`CommonalityLabel`) over a row (`CommonalityMeterRow`) of the **five-dot register
-      meter** (`VernacularScoreDots`, `score` dots filled / rest hollow — the word's
-      `vernacularScore`, 1 = literary … 5 = natural colloquial) beside an **"x/5"**
+      meter** (`FrequencyScoreDots`, `score` dots filled / rest hollow — the word's
+      `frequencyScore`, 1 = literary … 5 = natural colloquial) beside an **"x/5"**
       numeric readout (`CommonalityScoreValue`). Rendered only when the entry has a
       score. This is the per-card face of the register ordering the supply uses (§6.4).
       The band lives on the platform (a sibling above `CardShell`, not inside it), so it
       stays put while the card is dragged into a bucket. *(Replaced the old top-left
       circular numeric badge, which is gone. "Commonality" is the user-facing name for
-      `vernacularScore`; the eip + cdp meters use the same label + x/5 form.)*
+      `frequencyScore`; the eip + cdp meters use the same label + x/5 form.)*
     - **Play-audio button.** A `SpeakerButton` **below the card** that narrates just that
       card's word on tap (`handlePlayCardAudio` → `tts.speakSentence`), independent of
       the pack-level autoplay; spins while that card is speaking
@@ -209,15 +209,14 @@ the user **chooses** to bring it back, in one of three ways:
 ### 6.2 A SortPack is one signal
 - A **SortPack counts as exactly one signal**, however many of its (up to 3) cards
   get sorted — never one signal per card.
-- **2 or more "Add to Learn Now" cards in the pack** make the whole pack's signal
-  negative, even if other cards in the same pack were "Already Learned". The target
-  drops to **(that pack's level) − 1**.
-- A pack with **exactly one "Add to Learn Now"** is **neutral**: a single unknown word
-  is not evidence the level is wrong, so it neither drops the target nor counts toward
-  the positive streak below (the streak is left untouched, not reset).
-- A pack where **every** sorted card is "Already Learned" (no "Add to Learn Now" at
-  all) is a positive signal. After **2** positive signals **at the same level**, the
-  target rises to **(that level) + 1**.
+- The rule is deliberately **naive — no streaks, no thresholds, no counters**:
+  - **Any "Add to Learn Now" card in the pack** makes the whole pack's signal negative,
+    even if other cards in the same pack were "Already Learned". The target drops to
+    **(that pack's level) − 1**. One unknown word at the level is enough.
+  - A pack where **every** sorted card is "Already Learned" (no "Add to Learn Now" at
+    all) is positive and raises the target to **(that level) + 1** immediately.
+- There is **no neutral pack**: any pack with at least one sorted card moves the target
+  one way or the other. Only fully-skipped packs carry no signal.
 - **Skips carry no signal** (§5.1) — a pack that is skipped, or partially skipped
   with no library/already-learned cards in it, moves the target in neither
   direction.
@@ -236,12 +235,12 @@ the user **chooses** to bring it back, in one of three ways:
 - **At the target level, authored packs are served first**, then **system fallback
   single-card packs** for the remaining un-sorted, un-skipped words at that level
   (§4.5). **Within each of those two groups, supply is ordered by colloquial
-  register — highest `vernacularScore` first** (natural/colloquial words before
-  literary ones): authored packs by the mean `vernacularScore` of their cards,
+  register — highest `frequencyScore` first** (natural/colloquial words before
+  literary ones): authored packs by the mean `frequencyScore` of their cards,
   fallback singles by the card's own score; entries with no score sink to the end,
   and ties keep the prior order (authored curation order / card id).
   Implemented in `StarterPacksService.getNextPacks` (authored sort via
-  `_packVernacularRank`) and the `_fetchSupplyRows` `ORDER BY` (singles).
+  `_packFrequencyRank`) and the `_fetchSupplyRows` `ORDER BY` (singles).
 - When the user has **sorted all packs at their level**, the flow **offers packs from
   adjacent levels** so the user always has something to sort (§4.4), serving them **as
   close to the target level as possible** — exhaust the nearest levels first and only
@@ -280,10 +279,9 @@ the user **chooses** to bring it back, in one of three ways:
   is an explicit user action, and it is acceptable (expected) for it to replace the
   on-deck pack with one matching the newly-selected level.
 - Client implementation: `src/pages/SortCardsPage.tsx` — `autoLevelRef` (running
-  target), `levelStreakRef` (per-level already-learned streak toward §6.2's
-  upgrade, threshold `ALREADY_LEARNED_STREAK_TO_UPGRADE`), `packBucketsRef` (per-pack
-  bucket outcomes this session, to derive each pack's one signal — the negative signal
-  needs `LIBRARY_SORTS_TO_DOWNGRADE` library sorts in the pack), and the `sort-cards__level-chip` / `sort-cards__level-menu`
+  target) and `packBucketsRef` (per-pack bucket outcomes this session, from which
+  `applyPackSignal` derives the pack's one ±1 signal — there is no streak/threshold
+  state), plus the `sort-cards__level-chip` / `sort-cards__level-menu`
   dropdown. Server: `StarterPacksService.getNextPacks`'s `requestedLevel` (the level
   to center supply on — client's tracked target, or its dropdown pin) and `manual`
   (whether to drift on exhaustion) parameters, threaded through
@@ -332,11 +330,11 @@ the user **chooses** to bring it back, in one of three ways:
    sorted is never served.
 8. **Authored-first supply:** at a level, authored packs are served before system
    fallback single-card packs.
-9. **Level adaptation:** a finished pack contributes exactly one signal — 2+ "Add to
-   Learn Now" cards in it drop the target to that pack's level minus 1 (exactly one is
-   neutral and leaves the streak untouched); an all-"Already
-   Learned" pack counts toward a 2-pack streak at that level before raising the target
-   to that level plus 1; a skipped (or partially skipped, signal-less) pack changes
+9. **Level adaptation:** a finished pack contributes exactly one signal — any "Add to
+   Learn Now" card in it drops the target to that pack's level minus 1; an all-"Already
+   Learned" pack raises the target to that level plus 1. There is no streak or threshold
+   to accumulate: one pack, one ±1 move. A skipped (or partially skipped, signal-less)
+   pack changes
    nothing. The new target is always anchored on the completing pack's own level, not
    an increment of a possibly-stale running target.
 10. **Out of in-level cards:** when the in-level pool is exhausted, the user is served

@@ -2,12 +2,14 @@
  * Shared Spanish part-of-speech vocabulary + mapping.
  *
  * The Spanish det (`dictionaryentries_es`) stores POS in two shapes:
- *   - scalar `pos`  — the raw Wiktionary abbreviation (n, v, adj, …) and part of
- *     the logical key.
- *   - `partsOfSpeech` jsonb — the friendly token tags (noun, verb, …) consumed by
- *     the example-sentence generator's per-token `partOfSpeechDict`.
+ *   - per-cluster `pos` — the raw Wiktionary abbreviations (n, v, adj, …) inside each
+ *     `definitionClusters` entry, naming the part(s) of speech of THAT sense. (Until
+ *     migration 123 this was a scalar `pos` COLUMN that formed part of the row's
+ *     logical key, because each POS was its own det row.)
+ *   - `partsOfSpeech` jsonb — the word-level friendly token tags (noun, verb, …)
+ *     consumed by the example-sentence generator's per-token `partOfSpeechDict`.
  *
- * Both the example-sentences backfill and the parts-of-speech backfill need the
+ * Both the example-sentences backfill and the clustering backfill need the
  * raw→friendly mapping, so it lives here instead of being copy-pasted. (The
  * Chinese `shared/lib/posTags.js` set is CJK-specific — it has 'classifier' /
  * 'onomatopoeia' and lacks 'article'/'determiner' — so Spanish keeps its own.)

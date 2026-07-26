@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { stripParentheses, iconSearchTerm, resolveSelectedSenseIndex, sortedSenseClusters } from "../../utils/definitionUtils";
+import { iconSearchTerm, resolveSelectedSenseIndex, sortedSenseClusters, resolveDisplayDefinition } from "../../utils/definitionUtils";
 import { useParams, useNavigate } from "react-router-dom";
 import {
     Box, IconButton, Alert, useTheme,
@@ -63,6 +63,9 @@ const VocabCardDetailPage: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [actionLoading, setActionLoading] = useState(false);
+    // Guards the destructive delete behind an explicit confirmation (same pattern as
+    // the icon reset-to-default dialog below).
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     // Which definitionClusters sense EnglishBlock currently shows on the hero card.
     // Mirrors CardFace: seeds from this saved card's PERSISTED choice (`selectedSense` label →
     // sorted index, migration 99), falling back to the top/starred sense. Persisted on pick.
@@ -189,8 +192,9 @@ const VocabCardDetailPage: React.FC = () => {
         return () => clearWritingDraft();
     }, []);
 
-    // Hard-deletes the VocabEntry and returns to the decks page
-    const handleDelete = async () => {
+    // Hard-deletes the VocabEntry and returns to the decks page. Only reachable
+    // after the user confirms in the delete dialog.
+    const handleDeleteConfirmed = async () => {
         if (!entry) return;
         try {
             setActionLoading(true);
@@ -199,6 +203,7 @@ const VocabCardDetailPage: React.FC = () => {
                 credentials: 'include',
             });
             if (!response.ok) throw new Error('Failed to delete card');
+            setDeleteConfirmOpen(false);
             navigate('/flashcards/decks', { state: { refresh: Date.now() } });
         } catch (err) {
             console.error('Error deleting card:', err);
@@ -234,7 +239,7 @@ const VocabCardDetailPage: React.FC = () => {
                         className="vocab-card-detail__delete-button"
                         aria-label="Delete card"
                         disabled={actionLoading}
-                        onClick={handleDelete}
+                        onClick={() => setDeleteConfirmOpen(true)}
                         sx={{ color: '#ef5350' }}
                     >
                         <DeleteOutlineIcon />
@@ -316,7 +321,7 @@ const VocabCardDetailPage: React.FC = () => {
                                         onRotateStep={handleRotateStep}
                                         onResizeStep={handleResizeStep}
                                         foreignLabel={entry.entryKey}
-                                        englishLabel={stripParentheses(entry.definition ?? "")}
+                                        englishLabel={resolveDisplayDefinition(entry, selectedSenseIndex)}
                                         textForeign={textForeign}
                                         textEnglish={textEnglish}
                                         onSetTextForeign={setTextForeign}
@@ -441,6 +446,9 @@ const VocabCardDetailPage: React.FC = () => {
                                 entry={entry}
                                 showPinyin={showPinyin}
                                 showPinyinColor={showPinyinColor}
+                                // Keeps the Definition box's long definition on the same
+                                // sense as the picker above (per-sense longDefinition).
+                                selectedSenseIndex={selectedSenseIndex}
                                 // Same slow-rate-aware sentence narration as the flp est.
                                 onSpeakSentence={
                                     tts.enabled
@@ -481,10 +489,34 @@ const VocabCardDetailPage: React.FC = () => {
                     onClose={() => setIconSearchOpen(false)}
                     title={advMode ? "Add an icon" : "Change icon"}
                     onPick={handlePickIcon}
-                    initialTerm={lastIconQuery ?? iconSearchTerm(displayCurrentEntry?.definition)}
+                    initialTerm={lastIconQuery ?? iconSearchTerm(displayCurrentEntry ? resolveDisplayDefinition(displayCurrentEntry, selectedSenseIndex) : null)}
                     onTermChange={setLastIconQuery}
                     prefetched={pickerPrefetched}
                 />
+
+                {/* Delete-card confirmation — the delete is a hard delete of the
+                    VocabEntry (review history included), so it must be explicit. */}
+                <Dialog
+                    className="vocab-card-detail__delete-dialog"
+                    open={deleteConfirmOpen}
+                    onClose={() => !actionLoading && setDeleteConfirmOpen(false)}
+                >
+                    <DialogTitle>Delete this card?</DialogTitle>
+                    <DialogContent>
+                        <DialogContentText>
+                            This permanently removes{entry ? ` "${entry.entryKey}"` : " this card"} from
+                            your collection, along with its review history. This can't be undone.
+                        </DialogContentText>
+                    </DialogContent>
+                    <DialogActions>
+                        <Button onClick={() => setDeleteConfirmOpen(false)} disabled={actionLoading}>
+                            Cancel
+                        </Button>
+                        <Button onClick={handleDeleteConfirmed} color="error" disabled={actionLoading}>
+                            Delete
+                        </Button>
+                    </DialogActions>
+                </Dialog>
 
                 {/* Reset-to-default confirmation. */}
                 <Dialog

@@ -1,6 +1,6 @@
 import { Box, Typography, Chip, useTheme } from "@mui/material";
 import { styled } from "@mui/material/styles";
-import { stripParentheses } from "../../utils/definitionUtils";
+import { resolveLongDefinitionForSense, stripParentheses } from "../../utils/definitionUtils";
 import type { VocabEntry } from "../../types";
 import ForeignText from "../../components/ForeignText";
 import LongDefinitionDisplay from "../../components/LongDefinitionDisplay";
@@ -91,6 +91,11 @@ interface VocabCardSectionsProps {
     entry: VocabEntry;
     showPinyin: boolean;
     showPinyinColor: boolean;
+    // The sense the card is currently showing (index into sortedSenseClusters), owned by
+    // the host page's sense picker. The Definition box renders THAT sense's long definition
+    // — see resolveLongDefinitionForSense. Omit to fall back to the entry's persisted
+    // `selectedSense` / the default sense.
+    selectedSenseIndex?: number;
     // When set, breakdown/used-in rows and example segments drill into the card
     // detail of the tapped word. Omit to keep them passive (saved-card page).
     onWordOpen?: (word: string) => void;
@@ -104,6 +109,7 @@ export const VocabCardSections: React.FC<VocabCardSectionsProps> = ({
     entry,
     showPinyin,
     showPinyinColor,
+    selectedSenseIndex,
     onWordOpen,
     onSpeakSentence,
     speakingKey,
@@ -119,7 +125,11 @@ export const VocabCardSections: React.FC<VocabCardSectionsProps> = ({
     const hasBreakdownBox = isSingleChar ? hasUsedIn : hasBreakdown;
     const breakdownItems = getBreakdownItems(entry);
 
-    const hasDefinitionBox = !!(entry.longDefinition || entry.longDefinitionParts?.length || (entry.partsOfSpeech?.length ?? 0) > 0 || entry.vernacularScore != null);
+    // The long definition is stored per sense (zh) — render the one the card is on, in
+    // lockstep with the sense picker above it. See docs/DEFINITION_CLUSTERS.md.
+    const { longDefinition, longDefinitionParts } = resolveLongDefinitionForSense(entry, selectedSenseIndex);
+
+    const hasDefinitionBox = !!(longDefinition || longDefinitionParts?.length || (entry.partsOfSpeech?.length ?? 0) > 0 || entry.frequencyScore != null);
     const hasExamples = entry.exampleSentences && entry.exampleSentences.length > 0;
     const hasSynonyms = entry.synonyms && entry.synonyms.length > 0;
     const hasRelatedWords = entry.relatedWords && entry.relatedWords.length > 0;
@@ -128,15 +138,15 @@ export const VocabCardSections: React.FC<VocabCardSectionsProps> = ({
     return (
         <>
             {/* Definition — mirrors the eip's "definition" tab: long definition +
-                parts-of-speech/vernacular meta strip. */}
+                parts-of-speech/frequency meta strip. */}
             {hasDefinitionBox && (
                 <SectionCard className="vocab-card-detail__definition">
                     <SectionLabel>Definition</SectionLabel>
-                    {(entry.longDefinition || entry.longDefinitionParts?.length) && (
+                    {(longDefinition || longDefinitionParts?.length) && (
                         <LongDefinitionDisplay
                             className="vocab-card-detail__long-definition-text"
-                            longDefinition={entry.longDefinition}
-                            longDefinitionParts={entry.longDefinitionParts}
+                            longDefinition={longDefinition}
+                            longDefinitionParts={longDefinitionParts}
                             showPinyin={showPinyin}
                             showPinyinColor={showPinyinColor}
                             aiGenerated={!entry.definitionsApproved}
@@ -145,8 +155,8 @@ export const VocabCardSections: React.FC<VocabCardSectionsProps> = ({
                             sx={{ fontSize: SIZE.body, color: fc.onSurface, fontFamily: FC_FONT, lineHeight: 1.6 }}
                         />
                     )}
-                    {/* HSK/Level lives in the top pill list, so this strip covers only Type + Vernacular. */}
-                    {((entry.partsOfSpeech?.length ?? 0) > 0 || entry.vernacularScore != null) && (
+                    {/* HSK/Level lives in the top pill list, so this strip covers only Type + Commonality (frequencyScore). */}
+                    {((entry.partsOfSpeech?.length ?? 0) > 0 || entry.frequencyScore != null) && (
                         <Box
                             className="vocab-card-detail__definition-meta-strip"
                             sx={{
@@ -176,14 +186,14 @@ export const VocabCardSections: React.FC<VocabCardSectionsProps> = ({
                                     </Typography>
                                 </Box>
                             )}
-                            {entry.vernacularScore != null && (
+                            {entry.frequencyScore != null && (
                                 <Box
-                                    className="vocab-card-detail__vernacular-meta vocab-card-detail__vernacular-meta--ai-generated"
+                                    className="vocab-card-detail__frequency-meta vocab-card-detail__frequency-meta--ai-generated"
                                     sx={{
                                         display: "flex",
                                         flexDirection: "column",
                                         gap: "3px",
-                                        // vernacularScore is AI-scored (backfill-vernacular-score.js) with
+                                        // frequencyScore is AI-scored (backfill-frequency-score.js) with
                                         // no validation field, so it always carries the AI-generated box
                                         // (no badge — a small value chip, like the Type chip above).
                                         ...aiGeneratedSurfaceSx,
@@ -195,7 +205,7 @@ export const VocabCardSections: React.FC<VocabCardSectionsProps> = ({
                                     <Box sx={{ display: "flex", alignItems: "center", gap: "5px", height: 19 }}>
                                         <Box sx={{ display: "flex", alignItems: "center", gap: "4px" }}>
                                             {[1, 2, 3, 4, 5].map((level) => {
-                                                const filled = level <= entry.vernacularScore!;
+                                                const filled = level <= entry.frequencyScore!;
                                                 return (
                                                     <Box
                                                         key={level}
@@ -211,7 +221,7 @@ export const VocabCardSections: React.FC<VocabCardSectionsProps> = ({
                                             })}
                                         </Box>
                                         <Typography sx={{ fontSize: SIZE.micro, fontWeight: WEIGHT.bold, color: fc.onSurface, lineHeight: 1 }}>
-                                            {entry.vernacularScore}/5
+                                            {entry.frequencyScore}/5
                                         </Typography>
                                     </Box>
                                 </Box>

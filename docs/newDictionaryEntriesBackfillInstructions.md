@@ -97,8 +97,9 @@ Note: Assigns one level token per entry (`HSK1`..`HSK6`). Use `--spot-check` to 
 ```bash
 docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-long-definitions.js --words=word1,word2
 ```
-Populates: `longDefinition` (Claude Haiku)
-Filter: `language = 'zh' AND discoverable = TRUE AND longDefinition IS NULL`
+Populates: `longDefinition` — one definition per SENSE, read from `definitionClusters`,
+so **run `backfill-cluster-definitions.js` first** (see [DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md)).
+Filter: `language = 'zh' AND discoverable = TRUE AND longDefinition IS NULL AND partsOfSpeech IS NOT NULL AND definitionClusters IS NOT NULL`
 Note: `shortDefinition` is no longer stored — it is computed at runtime from `definitions` via `server/utils/definitions.ts`.
 
 ---

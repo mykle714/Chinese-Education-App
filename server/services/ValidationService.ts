@@ -9,6 +9,7 @@ import { ValidationError, NotFoundError } from '../types/dal.js';
 import { dbManager } from '../dal/base/DatabaseManager.js';
 import { TextService } from './TextService.js';
 import { composeDefinitionsBody, composeExampleSentenceBody } from '../utils/validationBodyFormat.js';
+import { longDefToDisplayString, type LongDefinitionValue } from '../utils/definitions.js';
 
 /**
  * Validation Service — business logic for the human-in-the-loop data-validation
@@ -57,7 +58,9 @@ interface DetFieldRow {
   pronunciation: string | null;
   partsOfSpeech: string[] | null;
   definitions: string[] | null;
-  longDefinition: string | null;
+  // Raw JSONB column, NOT a string: a per-sense array for zh, a per-POS object for
+  // es/legacy rows (migration 70). composeBody normalizes it via longDefToDisplayString.
+  longDefinition: LongDefinitionValue | null;
   exampleSentences: Array<{ foreignText?: unknown; english?: unknown }> | null;
 }
 
@@ -412,7 +415,9 @@ export class ValidationService {
   /** Mirrors composeValidationDoc's SQL eligibility check, applied to an already-loaded row. */
   private isFieldPopulated(entry: DetFieldRow, field: ValidationField): boolean {
     if (field === 'definitions') {
-      return !!entry.partsOfSpeech?.length && !!entry.definitions?.length && !!entry.longDefinition;
+      // longDefinition is raw JSONB — an empty array/object is "present" to a truthiness
+      // check but renders as nothing, so test the composed text instead.
+      return !!entry.partsOfSpeech?.length && !!entry.definitions?.length && !!longDefToDisplayString(entry.longDefinition);
     }
     const index = Number(field.slice('exampleSentence'.length));
     return (entry.exampleSentences?.length ?? 0) > index;

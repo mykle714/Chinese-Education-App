@@ -1,6 +1,6 @@
 import { useState, useEffect, memo, useRef } from "react";
 import { WEIGHT } from '../../theme/scale';
-import { stripParentheses } from "../../utils/definitionUtils";
+import { stripParentheses, resolveDisplayDefinition } from "../../utils/definitionUtils";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "../../AuthContext";
 import { FLASHCARD_CONTENT_UPDATE_DELAY, API_BASE_URL } from "../../constants";
@@ -397,7 +397,7 @@ function FlashcardsPage() {
             setentryKey(entry.entryKey);
             setCurrentEntry(entry);
             setDisplayEntry(entry);
-            setDefinition(entry.definition ?? '');
+            setDefinition(resolveDisplayDefinition(entry));
         } else {
             // Only delay if flip states differ (animation will occur)
             const isFlipAnimation = currentFlipState !== undefined && targetFlipState !== undefined && currentFlipState !== targetFlipState;
@@ -410,14 +410,14 @@ function FlashcardsPage() {
                     setentryKey(entry.entryKey);
                     setCurrentEntry(entry);
                     setDisplayEntry(entry);
-                    setDefinition(entry.definition ?? '');
+                    setDefinition(resolveDisplayDefinition(entry));
                 }, FLASHCARD_CONTENT_UPDATE_DELAY);
             } else {
                 // No flip animation, update everything immediately
                 setentryKey(entry.entryKey);
                 setCurrentEntry(entry);
                 setDisplayEntry(entry);
-                setDefinition(entry.definition ?? '');
+                setDefinition(resolveDisplayDefinition(entry));
             }
         }
     };
@@ -760,7 +760,10 @@ function FlashcardsPage() {
         const historyEntry: HistoryEntry = {
             id: entry.id,
             entryKey: entry.entryKey,
-            definition: entry.definition,
+            // Snapshot the RESOLVED dd (chosen sense), not det's definitions[0]: history rows
+            // and the card rebuilt from them carry only this string, so resolving here is what
+            // keeps the session list agreeing with the card the learner actually saw.
+            definition: resolveDisplayDefinition(entry),
             isCorrect,
             timestamp: new Date(),
             wasFlipped: isFlipped // Track the current flip state
@@ -1022,6 +1025,8 @@ function FlashcardsPage() {
                                                 </Typography>
                                             </Box>
                                             <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                                                {/* Already the resolved dd (addToHistory stores it that way);
+                                                    the strip is kept as a no-op guard for legacy rows. */}
                                                 {stripParentheses(entry.definition ?? '')}
                                             </Typography>
                                         </CardContent>

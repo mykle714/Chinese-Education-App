@@ -1,18 +1,27 @@
 import React from "react";
 import { Box } from "@mui/material";
 import { SIZE, WEIGHT } from "../../theme/scale";
+import { FONTS } from "../../theme/fonts";
 import { HINT_ACCENT_COLOR, LETTER_HINT_BLANK_WIDTH } from "./constants";
 import { wordToPinyinUnits } from "./pinyinUnits";
+import { buildComponentReveals } from "./componentUnits";
 import type { PlacedWord } from "./types";
 
 interface WordSearchHintRowProps {
     /** The word currently being hinted, or null if no hint has been used yet
      *  (or the last hinted word was just found). */
     word: PlacedWord | null;
-    /** How many pinyin units of `word` have been revealed so far in total,
-     *  distributed round-robin across syllables (see `distributeRevealTiers`
-     *  below), not filled one syllable at a time. */
+    /** How many units of `word` have been revealed so far in total, distributed
+     *  round-robin across characters (see `distributeRevealTiers` below, or
+     *  `distributeComponentReveals` in componentUnits.ts), not filled one
+     *  character at a time. */
     revealCount: number;
+    /**
+     * Which currency this board's hints spend. The Pinyin board reveals phonetic
+     * units of the pinyin; the No Pinyin board cannot (that is the thing it hides)
+     * and reveals sub-character COMPONENT GLYPHS instead. See componentUnits.ts.
+     */
+    currency: "pinyin" | "components";
 }
 
 /**
@@ -81,9 +90,17 @@ function buildMask(syllableUnits: string[][], revealCount: number): string {
  * tints the matching English gloss, so the two visually pair up. See
  * docs/WORD_SEARCH_GAME.md §5a.
  */
-const WordSearchHintRow: React.FC<WordSearchHintRowProps> = ({ word, revealCount }) => {
-    const syllableUnits = word ? wordToPinyinUnits(word.pinyin) : [];
-    const mask = word ? buildMask(syllableUnits, revealCount) : "";
+const WordSearchHintRow: React.FC<WordSearchHintRowProps> = ({ word, revealCount, currency }) => {
+    // Pinyin board: one underscore island per syllable, filling with phonetic units.
+    const pinyinMask =
+        word && currency === "pinyin" ? buildMask(wordToPinyinUnits(word.pinyin), revealCount) : "";
+
+    // No Pinyin board: one island per CHARACTER, filling with component glyphs in a
+    // line, then collapsing to the character itself once that character's parts run out.
+    const componentReveals =
+        word && currency === "components"
+            ? buildComponentReveals(word.entryKey, word.charComponents, revealCount)
+            : [];
 
     return (
         <Box
@@ -97,7 +114,7 @@ const WordSearchHintRow: React.FC<WordSearchHintRowProps> = ({ word, revealCount
                 pb: 0.5,
             }}
         >
-            {word && (
+            {word && currency === "pinyin" && (
                 <Box
                     component="span"
                     className="word-search__hint-row-mask"
@@ -111,7 +128,47 @@ const WordSearchHintRow: React.FC<WordSearchHintRowProps> = ({ word, revealCount
                         whiteSpace: "nowrap",
                     }}
                 >
-                    {mask}
+                    {pinyinMask}
+                </Box>
+            )}
+
+            {word && currency === "components" && (
+                <Box
+                    className="word-search__hint-row-components"
+                    sx={{
+                        display: "flex",
+                        alignItems: "center",
+                        // One gap between characters' islands; the glyphs WITHIN an island
+                        // run together so they read as parts of one character.
+                        gap: 1.5,
+                        whiteSpace: "nowrap",
+                    }}
+                >
+                    {componentReveals.map((reveal, i) => (
+                        <Box
+                            component="span"
+                            // Islands are positional and the word never reorders, so the
+                            // index is a stable key here.
+                            key={i}
+                            className={
+                                reveal.isCharacter
+                                    ? "word-search__hint-row-character"
+                                    : "word-search__hint-row-parts"
+                            }
+                            sx={{
+                                // FONTS.hanziComponents puts the self-hosted subset first so
+                                // rare component glyphs (⺮ ⺼ 㐬 …) render in the same face as
+                                // the grid instead of tofu. See src/index.css.
+                                fontFamily: FONTS.hanziComponents,
+                                fontSize: SIZE.bodyLg,
+                                fontWeight: WEIGHT.bold,
+                                color: HINT_ACCENT_COLOR,
+                                lineHeight: 1.25,
+                            }}
+                        >
+                            {reveal.text}
+                        </Box>
+                    ))}
                 </Box>
             )}
         </Box>

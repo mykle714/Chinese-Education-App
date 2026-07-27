@@ -27,7 +27,7 @@ import ForeignText from "../../../components/ForeignText";
 import { SpeakerButton } from "../../../components/SpeakerButton";
 import PracticeWritingButton from "../../../components/handwriting/PracticeWritingButton";
 import { getCategoryColor } from "../../../utils/categoryColors";
-import { resolveTextColor } from "../../../utils/cardTextColor";
+import { resolveTextColor, DD_TONES } from "../../../utils/cardTextColor";
 import { resolveCardColor } from "../../../utils/cardColor";
 
 // Re-exported so existing imports `from './FlashCardSection'` keep working.
@@ -214,10 +214,22 @@ export const EnglishBlock: React.FC<{
     // that measurement. Side 1 (front, English mode) omits this — same asymmetry as
     // ChineseBlock. See docs/CARD_ICON_LAYOUT.md "Movable text".
     inlineActions?: boolean;
-}> = ({ entry, selectedSenseIndex = 0, onSelectSense, inlineActions = false }) => {
+    // When true, the picker's zh reading headings are replaced by neutral "Group N"
+    // labels. Used on the FRONT/question side, where the card shows only English and the
+    // learner is supposed to produce the Chinese — a tone-colored pinyin heading in the
+    // sense menu would hand them the pronunciation (and the tones) for free. The grouping
+    // itself is still useful (it shows which senses share a reading), so only the label is
+    // censored; the back/answer side and all non-quiz surfaces show the real pinyin.
+    censorReadings?: boolean;
+}> = ({ entry, selectedSenseIndex = 0, onSelectSense, inlineActions = false, censorReadings = false }) => {
     const theme = useTheme();
-    // Per-card Contrast override for the English definition; theme default otherwise.
-    const englishColor = resolveTextColor(entry.textColors?.english) ?? theme.palette.flashcard.onSurface;
+    // The dd draws from DD_TONES (dark grey / muted light grey) rather than the foreign
+    // glyphs' pure black/white — it is supporting text, so it sits one step off full
+    // contrast. Which of the two tones is used is either the card theme's pick (the `dd`
+    // token) or, when the learner has made an explicit per-card Contrast pick, the tone
+    // they chose from that same pair.
+    const englishColor =
+        resolveTextColor(entry.textColors?.english, DD_TONES) ?? theme.palette.flashcard.dd;
 
     // A picker only makes sense with a real choice — a single-cluster (or unclustered)
     // entry falls back to the plain definitions[0] dd, unchanged from before this feature.
@@ -392,7 +404,7 @@ export const EnglishBlock: React.FC<{
                             per-sense grammar tag ("n · m") carrying the disambiguation instead. */}
                         {!senseSections && sortedClusters.map((cluster, index) =>
                             renderSenseItem(cluster, index, true))}
-                        {senseSections?.map((section) => [
+                        {senseSections?.map((section, sectionIndex) => [
                             <ListSubheader
                                 key={`heading-${section.reading}`}
                                 className="mobile-demo-flashcard-sense-reading"
@@ -403,10 +415,15 @@ export const EnglishBlock: React.FC<{
                                     bgcolor: 'transparent',
                                 }}
                             >
-                                {/* Per-syllable tone coloring, matching cpcd/pinyin elsewhere. An
-                                    empty reading (should not happen for a clustered zh entry) falls
-                                    back to a neutral em dash. */}
-                                {section.reading
+                                {/* Front/question side: the reading is the answer, so the heading
+                                    becomes a bare ordinal label ("Group 1"). Sections are already in
+                                    frequency order, so the numbering is stable for a given card. */}
+                                {censorReadings
+                                    ? <span style={{ color: theme.palette.text.secondary }}>{`Group ${sectionIndex + 1}`}</span>
+                                /* Per-syllable tone coloring, matching cpcd/pinyin elsewhere. An
+                                   empty reading (should not happen for a clustered zh entry) falls
+                                   back to a neutral em dash. */
+                                : section.reading
                                     ? numberedToTonedPinyin(section.reading).split(/\s+/).filter(Boolean).map((syllable, si) => (
                                         <React.Fragment key={si}>
                                             {si > 0 && ' '}
@@ -800,7 +817,13 @@ const CardFace: React.FC<{
             >
                 {sideOneLanguage === 'zh'
                     ? <ChineseBlock entry={entry} showPinyin={showPinyin} showPinyinColor={showPinyinColor} onSpeak={onSpeak} speakingKey={speakingKey} showWriting={false} />
-                    : <EnglishBlock entry={entry} selectedSenseIndex={selectedSenseIndex} onSelectSense={handleSelectSense} />}
+                    : <EnglishBlock
+                        entry={entry}
+                        selectedSenseIndex={selectedSenseIndex}
+                        onSelectSense={handleSelectSense}
+                        // Question side: censor the sense picker's pinyin headings (see the prop).
+                        censorReadings
+                    />}
             </CardFaceSide>
 
             {/* Side 2 — always shows both Chinese and English, and the icon arrangement. */}

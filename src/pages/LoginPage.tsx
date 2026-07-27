@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useAuth } from '../AuthContext';
 import * as authStorage from '../utils/authStorage';
+import { authLog, authError, tokenPreview } from '../utils/authDebug';
 import {
     Container,
     Typography,
@@ -51,16 +52,33 @@ function LoginPage() {
     }, []);
 
     const onSubmit = async (data: LoginFormData) => {
+        // Trace the auth state the form is submitting FROM. If a stale session is
+        // still alive here (isAuthenticated true, or a token in memory), the login
+        // is racing AuthContext's checkAuth effect, which is the failure mode this
+        // page was reported to have.
+        authLog('LoginPage: submit', {
+            email: data.email,
+            isAuthenticated,
+            isLoading,
+            tokenInMemory: tokenPreview(authStorage.getToken()),
+            path: window.location.pathname,
+        });
         setIsSubmitting(true);
         setLoginError(null);
         try {
             await login(data.email, data.password);
+            authLog('LoginPage: submit resolved OK');
         } catch (error: unknown) {
+            authError('LoginPage: submit REJECTED', error);
             setLoginError(error instanceof Error ? error.message : 'Login failed. Please try again.');
         } finally {
             setIsSubmitting(false);
         }
     };
+
+    // Trace every render's auth verdict — this is what decides whether the user
+    // sees the form, a blank screen (isLoading stuck true), or a bounce to "/".
+    authLog('LoginPage: render', { isLoading, isAuthenticated, isSubmitting });
 
     // Never render the form on top of a live session. Landing here while still
     // signed in used to be a dead end: the form sat over a valid session and the
@@ -68,8 +86,14 @@ function LoginPage() {
     // can legitimately be alive here (a silent refresh restored it after a
     // transient failure bounced us to /login), so send the user to the app
     // instead. `replace` keeps /login out of the history stack.
-    if (isLoading) return null; // auth state still resolving — don't flash the form
-    if (isAuthenticated) return <Navigate to="/" replace />;
+    if (isLoading) {
+        authLog('LoginPage: rendering NOTHING (auth still resolving)');
+        return null; // auth state still resolving — don't flash the form
+    }
+    if (isAuthenticated) {
+        authLog('LoginPage: already authenticated -> redirecting to /');
+        return <Navigate to="/" replace />;
+    }
 
     return (
         <Container maxWidth="lg" sx={{ py: 4 }}>

@@ -412,6 +412,27 @@ export class UserService {
   }
 
   /**
+   * Update the account's display preferences. Deliberately separate from
+   * updateGoals: goals change what "mastered" means, these only change how
+   * things are drawn. Currently one flag; new display knobs (pinyin visibility,
+   * pinyin color, …) migrate here from localStorage as they become
+   * account-level. See docs/EXAMPLE_SENTENCES.md.
+   */
+  async updateDisplaySettings(userId: string, settings: { showSegmentSpaces?: boolean }): Promise<User> {
+    if (!userId) {
+      throw new ValidationError('User ID is required');
+    }
+    const updateData: { showSegmentSpaces?: boolean } = {};
+    if (typeof settings.showSegmentSpaces === 'boolean') updateData.showSegmentSpaces = settings.showSegmentSpaces;
+    if (Object.keys(updateData).length === 0) {
+      throw new ValidationError('At least one display setting (showSegmentSpaces: boolean) is required');
+    }
+    const updatedUser = await this.userDAL.update(userId, updateData);
+    delete updatedUser.password;
+    return updatedUser;
+  }
+
+  /**
    * Get all users (admin function)
    */
   async getAllUsers(): Promise<User[]> {

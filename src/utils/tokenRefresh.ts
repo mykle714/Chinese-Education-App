@@ -12,6 +12,7 @@
  */
 import { API_BASE_URL } from '../constants';
 import * as authStorage from './authStorage';
+import { authLog, authError, tokenPreview } from './authDebug';
 
 // Capture the native fetch at module-eval time — this runs before
 // setupFetchInterceptor() patches window.fetch (that happens in a useEffect),
@@ -58,13 +59,19 @@ export function attemptTokenRefresh(): Promise<string | null> {
  * regardless.
  */
 export async function endServerSession(): Promise<void> {
+  // Log the caller: a session ending unexpectedly is almost always someone
+  // calling this at the wrong moment, and the stack names them.
+  authLog('endServerSession: revoking refresh token', {
+    calledFrom: new Error().stack?.split('\n').slice(2, 5).join(' | '),
+  });
   try {
     await nativeFetch(`${API_BASE_URL}/api/auth/logout`, {
       method: 'POST',
       credentials: 'include', // send the httpOnly refresh cookie so it can be revoked
     });
-  } catch {
+  } catch (e) {
     // Network error — nothing more we can do client-side.
+    authError('endServerSession: logout request failed', e);
   } finally {
     authStorage.clearToken();
   }
@@ -78,19 +85,29 @@ async function doRefresh(): Promise<string | null> {
     });
 
     if (!res.ok) {
+      // 401 here = no/expired/revoked refresh cookie (or reuse detected, which
+      // revokes the whole family). 429 = refreshLimiter. Both surface as "you got
+      // logged out", so distinguishing them matters.
+      authError('refresh: FAILED', {
+        status: res.status,
+        retryAfter: res.headers.get('retry-after'),
+      });
       return null;
     }
 
     const data = await res.json();
     const newToken: unknown = data?.token;
     if (typeof newToken === 'string' && newToken.length > 0) {
+      authLog('refresh: OK', { token: tokenPreview(newToken) });
       authStorage.setToken(newToken);
       onAccessTokenRefreshed?.(newToken);
       return newToken;
     }
+    authError('refresh: 200 but no token in payload');
     return null;
-  } catch {
+  } catch (e) {
     // Network error etc. — treat as a failed refresh.
+    authError('refresh: network error', e);
     return null;
   }
 }

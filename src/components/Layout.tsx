@@ -66,6 +66,7 @@ function Layout({ children }: LayoutProps) {
         "/night-market",
         "/reader",
         "/dictionary",
+        "/compare",
         "/tester-dashboard",
         // Settings opens from the Account header gear as a leaf (slide-up sheet).
         "/settings",

@@ -3,12 +3,36 @@
  *
  * Spanish counterpart of backfill/chinese/backfill-process-definitions-array.js.
  *
- * Two jobs in one pass over the `definitions` array:
- *   (a) REORDER the glosses from most to least useful for a modern learner.
- *   (b) PRUNE very low-confidence glosses — broken English, or incredibly
+ * Three jobs over the `definitions` array:
+ *   (a) SPLIT comma-joined synonym runs into one gloss per element (see below).
+ *   (b) REORDER the glosses from most to least useful for a modern learner.
+ *   (c) PRUNE very low-confidence glosses — broken English, or incredibly
  *       rare/archaic senses already covered by another gloss. Exclusively
  *       parenthetical glosses (e.g. "(literary)") are KEPT but may never rank
  *       first. The model may drop but never add or rephrase a string.
+ *
+ * Comma splitting (job a) — why the MODEL decides, not a regex:
+ *   The Wiktionary-derived es source packs synonym runs into ONE gloss separated
+ *   by commas ("later, afterwards, afterward, post"), where the zh source (CEDICT)
+ *   delimits with "/" into separate array elements. 22.7% of discoverable es rows
+ *   have a comma in definitions[0] vs 0.9% for zh, so every downstream consumer
+ *   keyed off definitions[0] — dd (docs/DEFINITION_MAPPING.md #3), the icons8
+ *   search term, the cluster partition — inherits a whole synonym list where it
+ *   expects one gloss.
+ *
+ *   A comma is NOT always a delimiter, and the distinction is semantic, not
+ *   lexical: "to break the law, rule, order" delimits the OBJECTS of one verb
+ *   (splitting it invents "to rule" / "to order"), and ", especially of a house"
+ *   / ", e.g. well or poorly" are prose continuations. A regex cannot tell those
+ *   apart, so a model makes the call — but in its OWN pass (see below), because
+ *   folded into the ranking prompt it fired only intermittently.
+ *
+ *   The model chooses WHERE to cut; `applySplits` (shared/lib/commaSplit.js)
+ *   mechanically forbids everything else. The proposed pieces must be an EXACT,
+ *   IN-ORDER PARTITION of the gloss's top-level comma segments, each optionally
+ *   carrying the run's leading "to " and/or leading parenthetical. An invented
+ *   word, a dropped segment, or a reordering is rejected and logged, and the
+ *   gloss stays whole.
  *
  * TODO(es-linguistics): the ranking prompt + worked examples below were adapted
  * from the Chinese version. The principles (modern frequency, restrictive
@@ -17,7 +41,11 @@
  * that regional senses (e.g. peninsular vs Latin-American) may need their own
  * handling.
  *
- * Two-pass design:
+ * Three-pass design:
+ *   Split pass (Sonnet) — decides which glosses are comma-joined synonym runs and
+ *     breaks them apart. Skipped entirely when no gloss has a top-level comma, and
+ *     non-fatal on failure: the entry just gets ranked with its glosses still joined.
+ *     Runs FIRST so both ranking passes see one gloss per element.
  *   Pass 1 (Sonnet) — first ordering + pruning using a tuned prompt with few-shots.
  *   Pass 2 (Sonnet) — critic that sees the original list + Pass 1's output,
  *     and either confirms, refines with a one-line reason, or flags
@@ -34,9 +62,9 @@
  *   right behind it. This is the only step that intentionally writes a
  *   NON-source string, so every generated gloss is surfaced in the review log.
  *
- * Disagreements (Pass 2 ≠ Pass 1), low_confidence flags, any pruned glosses, and
- * every generated short gloss are dumped to a timestamped review file in /tmp so
- * the user can skim post-run.
+ * Disagreements (Pass 2 ≠ Pass 1), low_confidence flags, any pruned glosses, every
+ * gloss the model split, and every generated short gloss are dumped to a timestamped
+ * review file in /tmp so the user can skim post-run.
  *
  * Usage:
  *   npx tsx scripts/backfill/spanish/backfill-process-definitions-array.js                # discoverable es entries
@@ -57,7 +85,8 @@ dotenv.config({ path: path.join(__dirname, '../../../.env.docker') });
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
 import { initRunLog, cachedSystem } from '../run-log.js';
-const SCRIPT_VERSION = 3; // bump when this script's logic/prompt changes
+import { applySplits, hasSplittableComma } from '../shared/lib/commaSplit.js';
+const SCRIPT_VERSION = 4; // bump when this script's logic/prompt changes
 
 const isSpotCheck = process.argv.includes('--spot-check');
 const includeAll  = process.argv.includes('--all');
@@ -87,7 +116,106 @@ const RETRY_MODEL = 'claude-opus-4-8'; // used when a Sonnet response fails vali
 // gloss to prepend (see generateShortGloss).
 const MAX_FIRST_GLOSS_LEN = 20;
 
+// Both ranking passes echo the whole definitions list back. Splitting lengthens that
+// list substantially (pasar: 22 source glosses → 36 after splitting), and at the old
+// 1024 the critic's echo was truncated mid-JSON and failed as "no object in response"
+// on both models. Sized for the longest es entries with headroom; the short-gloss call
+// returns one string and keeps its own small budget.
+const RANKING_MAX_TOKENS = 4096;
+
 const REVIEW_LOG_PATH = `/tmp/process-definitions-array-review-${Date.now()}.log`;
+
+// An entry is worth an API call if there is something to reorder OR something to
+// split. The second disjunct matters: a ONE-element array is nothing to rank, but
+// "later, afterwards, post" is still a comma run this pass must break apart, and the
+// old `jsonb_array_length(definitions) > 1` filter skipped exactly those rows.
+const HAS_WORK_CLAUSE = `(jsonb_array_length(definitions) > 1 OR definitions->>0 LIKE '%,%')`;
+
+// ─── Split pass prompt ──────────────────────────────────────────────────────
+// Splitting gets its OWN call rather than riding along on Pass 1. Folded into the
+// ranking prompt it fired only intermittently on long entries — pasar (22 glosses)
+// split all ten of its runs on one attempt and none on the next, because ranking
+// dominates the model's attention. In isolation, with the whole instruction budget
+// on one decision, it is consistent. Costs one extra Sonnet call per entry that has
+// a comma at all (HAS_WORK_CLAUSE gates on that), and none for entries without.
+
+const SPLIT_SYSTEM = `You are a Spanish lexicographer deciding whether a comma inside an English gloss separates two interchangeable translations or is part of a single translation.`;
+
+const SPLIT_INSTRUCTIONS = `You are given a Spanish word and its list of English definitions. The source packs several interchangeable glosses into ONE string separated by commas. Your only job is to identify which of those strings are synonym runs and break them apart, one gloss per piece. Do not reorder, do not remove, do not judge usefulness — another step does all of that.
+
+Examine EVERY definition in the list, not just the first.
+
+SPLIT when the commas separate alternative wordings of the SAME sense:
+- "later, afterwards, afterward, post" → ["later", "afterwards", "afterward", "post"]
+- "to anger, to exasperate, to infuriate" → ["to anger", "to exasperate", "to infuriate"]
+- "to open, open up" → ["to open", "to open up"]   (a pair still counts)
+- "bitter, sour (having an acrid taste)" → ["bitter", "sour (having an acrid taste)"]   (a TRAILING parenthetical belongs to its own piece only — do not copy it onto the others)
+
+DO NOT SPLIT when the comma is doing anything else:
+- Shared object list — "to break the law, rule, order" means break {the law, a rule, an order}. Splitting it would invent the verbs "to rule" and "to order". Leave it alone.
+- Prose continuation — "wall, especially of a house or room"; "to turn out, e.g. well or poorly"; "a member or supporter of Ciudadanos, a Spanish political party".
+- Coordination — "to be granted, awarded, or given (potentially by chance)".
+- Inside a parenthetical — "to look up (in a search engine, dictionary, etc.)". Those commas are not at the top level.
+When in doubt, leave the gloss alone. A joined gloss is far better than an invented one.
+
+Two markers scope the WHOLE run and MUST be carried onto every piece:
+- A leading parenthetical: "(of food) bad, spoiled, rotten" → ["(of food) bad", "(of food) spoiled", "(of food) rotten"]. Never let a restrictive, regional, or vulgar marker fall off the trailing pieces.
+- A leading infinitive "to": "to eat away, corrode" → ["to eat away", "to corrode"], NOT ["to eat away", "corrode"].
+
+A piece must be one or more WHOLE comma-separated segments in their original order. You may leave two segments joined if they belong together — "to break, break open, (new ground, a game, etc.)" → ["to break", "to break open, (new ground, a game, etc.)"] is correct, because the dangling note belongs with "break open". Apart from re-attaching the two markers above, copy the text character-for-character.
+
+Return ONLY a JSON object listing the glosses you are splitting. Omit every gloss you are leaving alone; an empty list is a valid and common answer.
+{
+  "splits": [
+    { "from": "<the exact original gloss>", "into": ["<piece>", "<piece>", ...] }
+  ]
+}`;
+
+function splitUser(word, definitions) {
+  return `Word: ${word}
+
+Definitions:
+${JSON.stringify(definitions, null, 2)}`;
+}
+
+async function callSplit(word, definitions, model) {
+  const response = await anthropic.messages.create({
+    model,
+    max_tokens: RANKING_MAX_TOKENS,
+    system: cachedSystem(`${SPLIT_SYSTEM}\n\n${SPLIT_INSTRUCTIONS}`),
+    messages: [{ role: 'user', content: splitUser(word, definitions) }],
+  });
+  const raw = response.content[0].text;
+  const objMatch = raw.match(/\{[\s\S]*\}/);
+  if (!objMatch) return { error: 'no object in response', raw };
+  let parsed;
+  try { parsed = JSON.parse(objMatch[0]); }
+  catch (e) { return { error: `JSON parse: ${e.message}`, raw }; }
+  if (!Array.isArray(parsed.splits)) return { error: 'malformed split response', parsed };
+  return applySplits(definitions, parsed.splits);
+}
+
+/**
+ * Split pass with the standard Sonnet→Opus escalation. A failure here is NOT fatal:
+ * the entry falls through to ranking with its glosses still joined, exactly as before
+ * this pass existed, so a bad split call can never cost an entry its reordering.
+ */
+async function splitDefinitions(word, definitions) {
+  // Nothing to do unless some gloss actually has a top-level comma.
+  if (!definitions.some(hasSplittableComma)) {
+    return { expanded: definitions, applied: [], rejected: [] };
+  }
+  const first = await callSplit(word, definitions, PASS1_MODEL);
+  if (!first.error) return { ...first, model: PASS1_MODEL };
+  const retry = await callSplit(word, definitions, RETRY_MODEL);
+  if (!retry.error) return { ...retry, model: RETRY_MODEL, retried: true };
+  return {
+    expanded: definitions,
+    applied: [],
+    rejected: [],
+    error: `split failed both models (sonnet: ${first.error}, opus: ${retry.error})`,
+  };
+}
 
 // ─── Pass 1 prompt ──────────────────────────────────────────────────────────
 // Tuned for the failures we observed: parenthetical confusion (一下), modern
@@ -139,6 +267,11 @@ Input:  ["shoal (of fish)", "bench", "bank (financial institution)"]
 Output: ["bank (financial institution)", "bench", "shoal (of fish)"]
 Reason: The financial sense is the most frequent for a modern learner, then the concrete "bench", then the restricted "(of fish)" sense.
 
+Word: después
+Input:  ["later", "afterwards", "afterward", "post", "next", "after"]
+Output: ["after", "later", "next", "afterwards", "afterward", "post"]
+Reason: "after" and "later" are the everyday senses a learner meets first; "afterward" and "post" are lower-frequency variants of the same idea and rank last.
+
 Rules:
 - You MAY drop low-value definitions per the Removal guidance above, but you must NEVER add, rephrase, or alter any string. Every definition you return must be copied character-for-character exactly as it appears in the input, including parenthetical notes, punctuation, and formatting.
 - Return at least one definition; never return an empty array.
@@ -159,7 +292,7 @@ const PASS2_SYSTEM = `You are a Spanish linguistics expert reviewing a junior an
 // Static instruction body → cached system block; per-entry word + the two orderings
 // go in the user message (pass2User). All instructions lead so the cached prefix is
 // byte-identical across calls.
-const PASS2_INSTRUCTIONS = `Review the proposed ordering for the given word and decide whether to confirm, refine, or flag it.
+const PASS2_INSTRUCTIONS = `Review the proposed definition list for the given word and decide whether to confirm, refine, or flag it.
 
 Ranking principles (the junior was given these — apply the same ones):
 1. FIRST — sense a modern (2020s) Spanish learner is most likely to encounter; for everyday/tech terms, modern usage beats etymological core.
@@ -212,11 +345,6 @@ ${JSON.stringify(pass1, null, 2)}`;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function parseJsonFromResponse(raw) {
-  let cleaned = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
-  return JSON.parse(cleaned);
-}
-
 // An "exclusively parenthetical" gloss is one that, after trimming whitespace,
 // both opens with "(" and closes with ")" (e.g. "(literary)", "(grammar)").
 // These are kept but must never rank first.
@@ -246,9 +374,13 @@ function demoteLeadingParenthetical(order) {
 // demoteLeadingParenthetical, not enforced here.)
 // `dropped` (entries present in original but not the candidate) is returned for
 // logging so a human can review every removal.
+//
+// NOTE: by the time the ranking passes run, `original` is the POST-SPLIT array, so
+// this stays a strict verbatim check — splitting is the split pass's job alone.
 function validateProcessed(original, candidate) {
   if (!Array.isArray(candidate)) return { ok: false, error: 'not an array' };
   if (candidate.length === 0) return { ok: false, error: 'empty result' };
+  if (candidate.some(d => typeof d !== 'string')) return { ok: false, error: 'non-string element' };
   const originalSet = new Set(original);
   const added = candidate.filter(d => !originalSet.has(d));
   if (added.length) return { ok: false, error: 'added/rephrased element', added };
@@ -261,7 +393,7 @@ function validateProcessed(original, candidate) {
 async function callPass1(word, definitions, model) {
   const response = await anthropic.messages.create({
     model,
-    max_tokens: 1024,
+    max_tokens: RANKING_MAX_TOKENS,
     system: cachedSystem(`${PASS1_SYSTEM}\n\n${PASS1_INSTRUCTIONS}`),
     messages: [{ role: 'user', content: pass1User(word, definitions) }],
   });
@@ -276,19 +408,28 @@ async function callPass1(word, definitions, model) {
   return { order: demoteLeadingParenthetical(parsed), dropped: v.dropped };
 }
 
+// Render a failed call's error with the offending strings attached. Without the
+// `added` list an "added/rephrased element" failure says nothing about WHICH string
+// the model invented, which is the only detail that makes the failure actionable.
+function describeFailure(result) {
+  return result.added?.length
+    ? `${result.error}: ${JSON.stringify(result.added)}`
+    : result.error;
+}
+
 async function pass1Sort(word, definitions) {
   const first = await callPass1(word, definitions, PASS1_MODEL);
   if (!first.error) return { ...first, model: PASS1_MODEL };
   // Validation failed on Sonnet — retry with Opus
   const retry = await callPass1(word, definitions, RETRY_MODEL);
   if (!retry.error) return { ...retry, model: RETRY_MODEL, retried: true, firstError: first.error };
-  return { error: `pass1 failed both models (sonnet: ${first.error}, opus: ${retry.error})` };
+  return { error: `pass1 failed both models (sonnet: ${describeFailure(first)}, opus: ${describeFailure(retry)})` };
 }
 
 async function callPass2(word, original, pass1, model) {
   const response = await anthropic.messages.create({
     model,
-    max_tokens: 1024,
+    max_tokens: RANKING_MAX_TOKENS,
     system: cachedSystem(`${PASS2_SYSTEM}\n\n${PASS2_INSTRUCTIONS}`),
     messages: [{ role: 'user', content: pass2User(word, original, pass1) }],
   });
@@ -316,7 +457,7 @@ async function pass2Critique(word, original, pass1) {
   if (!first.error) return { ...first, model: PASS2_MODEL };
   const retry = await callPass2(word, original, pass1, RETRY_MODEL);
   if (!retry.error) return { ...retry, model: RETRY_MODEL, retried: true, firstError: first.error };
-  return { error: `pass2 failed both models (sonnet: ${first.error}, opus: ${retry.error})` };
+  return { error: `pass2 failed both models (sonnet: ${describeFailure(first)}, opus: ${describeFailure(retry)})` };
 }
 
 // ─── Short leading-gloss synthesis ────────────────────────────────────────
@@ -395,6 +536,7 @@ function flushReviewLog() {
       `  Pass 1:   ${JSON.stringify(e.pass1)}`,
       `  Final:    ${JSON.stringify(e.final)}`,
       e.dropped && e.dropped.length ? `  Dropped:  ${JSON.stringify(e.dropped)}` : null,
+      ...(e.split ?? []).map(s => `  Split:    ${JSON.stringify(s.from)} → ${JSON.stringify(s.into)}`),
       e.generated ? `  Generated: ${JSON.stringify(e.generated)} (synthetic leading gloss)` : null,
       e.reason ? `  Reason:   ${e.reason}` : null,
     ].filter(Boolean).join('\n');
@@ -429,14 +571,14 @@ async function run() {
            FROM dictionaryentries_es
            WHERE language = 'es'
              AND word1 = ANY($1)
-             AND jsonb_array_length(definitions) > 1
+             AND ${HAS_WORK_CLAUSE}
            ORDER BY id ASC`
         : `SELECT id, word1, pronunciation, definitions
            FROM dictionaryentries_es
            WHERE language = 'es'
              ${includeAll ? '' : 'AND discoverable = TRUE'}
              ${validatedFilter}
-             AND jsonb_array_length(definitions) > 1
+             AND ${HAS_WORK_CLAUSE}
            ORDER BY id ASC
            ${isSpotCheck ? 'LIMIT 5' : ''}`,
       targetIds ? [targetIds] : targetWords?.length ? [targetWords] : []
@@ -452,6 +594,7 @@ async function run() {
     let lowConf   = 0;
     let opusRetries = 0;
     let glossesPruned = 0; // total glosses removed across all entries
+    let glossesSplit = 0;  // total comma-joined runs broken into separate glosses
     let shortGenerated = 0; // total synthetic short leading glosses prepended
 
     for (const row of entries) {
@@ -462,7 +605,18 @@ async function run() {
       try {
         process.stdout.write(`  [${row.id}] ${row.word1} (${definitions.length} defs) ... `);
 
-        const p1 = await pass1Sort(row.word1, definitions);
+        // Split pass FIRST, so the ranking passes see one gloss per element. Everything
+        // downstream — pass 1's input, the critic's "original", the verbatim-copy
+        // validation, the dropped-gloss diff — is keyed off `expanded`, not the raw DB
+        // array. A split failure is non-fatal: `expanded` falls back to `definitions`.
+        const sp = await splitDefinitions(row.word1, definitions);
+        if (sp.retried) opusRetries++;
+        if (sp.error) console.log(`\n    split fail (${sp.error}) — ranking unsplit glosses`);
+        for (const r of sp.rejected) console.log(`\n    split rejected: ${JSON.stringify(r.from)} — ${r.reason}`);
+        const expanded = sp.expanded;
+        const splitGlosses = sp.applied;
+
+        const p1 = await pass1Sort(row.word1, expanded);
         if (p1.error) {
           console.log(`FAIL pass1 (${p1.error})`);
           failed++;
@@ -475,14 +629,14 @@ async function run() {
         let reason = '';
 
         if (!skipCritic) {
-          const p2 = await pass2Critique(row.word1, definitions, p1.order);
+          const p2 = await pass2Critique(row.word1, expanded, p1.order);
           if (p2.retried) opusRetries++;
           if (p2.error) {
             console.log(`pass2 fail (${p2.error}) — using pass1`);
             // Keep p1 result, but log for review
             logReview({
               id: row.id, word: row.word1, action: 'pass2_failed',
-              original: definitions, pass1: p1.order, final: p1.order,
+              original: definitions, expanded, pass1: p1.order, final: p1.order,
               reason: `Critic error: ${p2.error}`,
             });
           } else {
@@ -507,7 +661,7 @@ async function run() {
             console.log(`short-gloss fail (${sg.error}) — leaving long gloss first`);
             logReview({
               id: row.id, word: row.word1, action: 'short_gloss_failed',
-              original: definitions, pass1: p1.order, final: finalOrder,
+              original: definitions, expanded, pass1: p1.order, final: finalOrder,
               reason: `Short-gloss error: ${sg.error}`,
             });
           } else {
@@ -521,20 +675,25 @@ async function run() {
 
         const orderChanged = JSON.stringify(finalOrder) !== JSON.stringify(definitions);
         const pass2Disagreed = !skipCritic && JSON.stringify(finalOrder) !== JSON.stringify(p1.order);
-        // Glosses present in the original but pruned from the final result.
+        // Diff against `expanded`, not the raw DB array: a gloss the split pass broke
+        // apart is absent from finalOrder verbatim, so diffing the raw array would
+        // report every split as a destructive prune.
         const finalSet = new Set(finalOrder);
-        const droppedGlosses = definitions.filter(d => !finalSet.has(d));
+        const droppedGlosses = expanded.filter(d => !finalSet.has(d));
 
         // Log entries that need human review:
         // - refined (critic overrode pass1)
         // - low_confidence (critic uncertain)
         // - any pruning (removals are destructive — always surface for review)
+        // - any comma split (an over-split invents a sense the word does not have,
+        //   which no later step can detect — always surface for review)
         // - any generated short gloss (synthetic non-source string)
-        if (action === 'refined' || action === 'low_confidence' || droppedGlosses.length || generatedFirst) {
+        if (action === 'refined' || action === 'low_confidence' || droppedGlosses.length
+            || splitGlosses.length || generatedFirst) {
           logReview({
             id: row.id, word: row.word1, action,
-            original: definitions, pass1: p1.order, final: finalOrder,
-            dropped: droppedGlosses, generated: generatedFirst, reason,
+            original: definitions, expanded, pass1: p1.order, final: finalOrder,
+            dropped: droppedGlosses, split: splitGlosses, generated: generatedFirst, reason,
           });
         }
 
@@ -550,6 +709,7 @@ async function run() {
           console.log(`    Pass1:  ${JSON.stringify(p1.order)}`);
           if (pass2Disagreed) console.log(`    Final:  ${JSON.stringify(finalOrder)}  ← critic refined`);
           if (droppedGlosses.length) console.log(`    Pruned: ${JSON.stringify(droppedGlosses)}`);
+          for (const s of splitGlosses) console.log(`    Split:  ${JSON.stringify(s.from)} → ${JSON.stringify(s.into)}`);
           if (generatedFirst) console.log(`    Short:  ${JSON.stringify(generatedFirst)}  ← generated leading gloss`);
           if (reason) console.log(`    Reason: ${reason}`);
           unchanged++; // not actually written
@@ -564,9 +724,12 @@ async function run() {
 
         updated++;
         glossesPruned += droppedGlosses.length;
-        const tag = droppedGlosses.length
-          ? `processed [${action}], pruned ${droppedGlosses.length}`
-          : `processed [${action}]`;
+        glossesSplit += splitGlosses.length;
+        const tag = [
+          `processed [${action}]`,
+          splitGlosses.length ? `split ${splitGlosses.length}` : null,
+          droppedGlosses.length ? `pruned ${droppedGlosses.length}` : null,
+        ].filter(Boolean).join(', ');
         console.log(tag);
 
         if (updated % 100 === 0) {
@@ -593,6 +756,7 @@ async function run() {
       console.log(`Unchanged       : ${unchanged}`);
       console.log(`Failed/invalid  : ${failed}`);
       console.log(`Glosses pruned  : ${glossesPruned}`);
+      console.log(`Comma runs split: ${glossesSplit}`);
     }
     console.log(`Short glosses   : ${shortGenerated} generated`);
     if (!skipCritic) {

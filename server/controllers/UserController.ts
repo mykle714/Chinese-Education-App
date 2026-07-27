@@ -275,6 +275,32 @@ export class UserController {
   }
 
   /**
+   * Update the account's display preferences.
+   * PUT /api/users/display-settings — Body: { showSegmentSpaces?: boolean }
+   * See docs/EXAMPLE_SENTENCES.md.
+   */
+  async updateDisplaySettings(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = (req as any).user?.userId;
+      if (!userId) {
+        res.status(401).json({ error: 'User not authenticated', code: 'ERR_NOT_AUTHENTICATED' });
+        return;
+      }
+
+      const { showSegmentSpaces } = req.body ?? {};
+      if (showSegmentSpaces !== undefined && typeof showSegmentSpaces !== 'boolean') {
+        res.status(400).json({ error: 'showSegmentSpaces must be a boolean', code: 'ERR_INVALID_REQUEST' });
+        return;
+      }
+
+      const updatedUser = await this.userService.updateDisplaySettings(userId, { showSegmentSpaces });
+      res.json(updatedUser);
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  /**
    * Update the user's profile avatar (the icons8 icon they picked).
    * PUT /api/users/avatar
    *

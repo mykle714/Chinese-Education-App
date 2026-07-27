@@ -104,7 +104,7 @@ twin lives in `src/utils/definitionUtils.ts`.)
 | Generation | `server/scripts/backfill/chinese/backfill-example-sentences.js` (generator/validator/repair) | Produces the sentence text + `translatedVocab`/`sense`/`targetPos` (target-word coverage signal only) |
 | Tagging pass | same file (`tagSentenceSegments` + `callSegmentTagger`) | Runs the read-path GSA on the final text, then tags each segment with `pos`/`sense`/`number`/`tense`; persists `segments` + the four segment-keyed dicts |
 | Read/enrichment | `server/dal/implementations/DictionaryDAL.ts` (`enrichExampleSentencesMetadataBatch`) + `server/dal/shared/segmentString.ts` (`buildSegmentMetadata`) | Renders stored `segments` (live GSA fallback); attaches per-segment pronunciation/definition/wordForms, resolving dd from `senseDict` → `ddt(cluster)` |
-| Presentation (one sentence) | `src/components/SegmentedSentenceDisplay.tsx` | Renders one sentence's segments as cpcd; hover/tap shows the segment popup; draws the headword underline (`vocabWord`) |
+| Presentation (one sentence) | `src/components/SegmentedSentenceDisplay.tsx` | Renders one sentence's segments as cpcd; hover/tap shows the segment popup; draws the headword underline (`vocabWord`); hosts the drag-scrub gesture (see below) |
 | Presentation (est block) | `src/features/flashcards/ExampleSentenceList.tsx` | **Single source of truth for the est UI** — maps the sentence list into per-sentence cards (speaker button + `SegmentedSentenceDisplay` + English gloss). See below. |
 
 ## The est block is one shared component (`ExampleSentenceList`)
@@ -124,8 +124,42 @@ Each per-sentence card carries: a top-right `SpeakerButton` (gated on
 `slowExampleSentences`, matching the flp), the `SegmentedSentenceDisplay` (with
 `vocabWord`/`language` so the headword is underlined), and the English translation
 rendered through `renderEnglishWithVocabUnderline` (`exampleSentenceText.tsx`, shared)
-which underlines the `translatedVocab` substring. The only surface difference is the
-`compact` prop (cdp passes it for denser stacking); every functional feature is shared.
+which underlines the `translatedVocab` substring.
+
+**The two surfaces are now formatting-identical.** There is no surface-specific
+prop left: the cdp used to pass `compact` (smaller glyph/pinyin for denser
+stacking) and to omit `showSegmentSpaces`; both were removed so a sentence renders
+byte-for-byte the same in the eip's Examples tab and in the cdp's
+`vocab-card-detail__examples` `SectionCard`. The only remaining difference is the
+chrome *around* the block — the cdp wraps it in a `SectionCard` with an
+"EXAMPLE SENTENCES" `SectionLabel`, the eip renders it bare in the tab panel.
+(`SegmentedSentenceDisplay`/`CPCDRow` still accept `compact`; other cdp sections
+use it. `ExampleSentenceList` just never passes it.)
+
+### Word spacing is an account setting
+
+`showSegmentSpaces` — "Show spaces between words", which makes
+`SegmentedSentenceDisplay` render each segment as its own `CPCDRow` separated by
+`SEGMENT_GAP_BY_SIZE` instead of one continuous row — is **account-level**:
+`users."showSegmentSpaces"` (boolean NOT NULL DEFAULT false, migration
+`129-add-show-segment-spaces-to-users.sql`).
+
+| Layer | Where |
+|---|---|
+| Column | `users."showSegmentSpaces"` (migration 129) |
+| Read path | `UserDAL.findById` select list (`server/dal/implementations/UserDAL.ts:91`); `User` / `UserUpdateData` in `server/types/index.ts` |
+| Write path | `PUT /api/users/display-settings` → `UserController.updateDisplaySettings` → `UserService.updateDisplaySettings` (`server/routes/userRoutes.ts`) |
+| Client state | `AuthContext` `User.showSegmentSpaces` + `updateDisplaySettings()` (`src/AuthContext.tsx`) |
+| Toggle UI | Settings page → **Display** section (`settings-page__display-section` / `settings-page__segment-spaces-row`, `src/pages/SettingsPage.tsx`), a `Paper` + `Switch` row matching the Narration section. **Chinese only** — rendered when `(user.selectedLanguage ?? 'zh') === 'zh'`, because Latin-script sentences always render spaced (`SegmentedSentenceDisplay`'s `isLatin` branch) so the switch would be a no-op for Spanish. `selectedLanguage` is nullable with a `'zh'` DB default, hence the `??`. |
+| Consumer | `ExampleSentenceList` reads `useAuth().user?.showSegmentSpaces` directly |
+
+It was previously a device-local flp toggle in
+`useFlashcardLearnSettings` (localStorage `flashcard.learn-settings`) threaded down
+`FlashcardsLearnPage → InfoCardSection/InfoCardPopup → InfoCardPanelBody →
+ExampleSentenceList`. The cdp had no way to reach that chain and so always rendered
+un-spaced. `ExampleSentenceList` now reads the account value itself and **the prop
+no longer exists on any of those components** — no caller can forget to thread it.
+The flp settings sheet (`SettingsPanelBody`) deliberately no longer lists the row.
 
 ### AI-generated vs human-approved styling
 
@@ -165,6 +199,141 @@ tapped segment's headword.
   `pointerdown` suppresses the touch compatibility-click, which otherwise fires after the
   popup closes and lands on whatever is behind it (the "tap registers behind the popup" bug).
   The native capture-phase outside-tap dismiss handler additionally whitelists `popupRef`.
+
+## Tap-to-speak (single segment)
+
+Tapping a segment **selects it and narrates it** — the same per-segment narration the
+drag-scrub uses, just for one word instead of a walked sequence.
+
+- **Where.** `toggleFromIndex` in `SegmentedSentenceDisplay.tsx` (the handler behind
+  `CPCDRow`'s `onTapToggle` → cell `onTouchEnd`). It fires
+  `onSegmentSpeak(segment, segmentMetadata[segment]?.pronunciation)` — the identical call
+  `step()` makes during a scrub, so tap narration inherits the parent's slow-rate wrapper
+  (`slowExampleSentences`) and the pinyin-hinted TTS cache key for free.
+- **Gating.** Narration only happens where `onSegmentSpeak` is wired, i.e. est
+  (`ExampleSentenceList.tsx`). Long-definition, expansion-tab and citation displays pass no
+  narration callback and stay silent on tap. Whole-run (citation) mode resolves an empty
+  `segment`, so it is silent as well.
+- **Select-only.** A tap that *deselects* (re-tapping the selected word, dismissing the
+  popup) does not speak. `toggleFromIndex` therefore resolves the next range against
+  `selectedRangeRef.current` and advances the ref synchronously instead of using a
+  `setSelectedRange` updater — a side effect must not live inside an updater (StrictMode
+  double-invokes them), and the synchronous ref write keeps a fast second tap correct.
+- **Autoplay.** The call runs inside the `touchend` gesture, which by itself satisfies
+  mobile autoplay policy — no separate `tts.cloud.unlock()` priming is needed on this path
+  (unlike the scrub, whose audio starts from `pointermove`).
+- **Desktop.** Character cells select on hover (`onMouseEnter`) and only toggle on
+  `onTouchEnd`, so tap-to-speak is a touch-path behavior; hovering never narrates.
+
+## One selection at a time (cross-sentence deselect)
+
+**Invariant: at most one segment selection exists in the app at any moment.** Selecting
+a segment in one sentence clears the selection in every other mounted
+`SegmentedSentenceDisplay`.
+
+- **Why it needs enforcing.** Each sentence renders its own display with its own
+  `selectedRange` state, and a display's tap-to-dismiss rule cannot tell its own
+  characters from a sibling's — both the scrub-enabled `pointerup` rule
+  (`target.closest('.cpcd-row__char-cell')`) and the non-scrub capture-phase
+  `pointerdown` rule (`rowRef.contains(target)`) treat a tap on *another* sentence's
+  word as "not an outside tap". Left alone, tapping a word in sentence B leaves
+  sentence A's word selected: two popups open at once, and two competing
+  `claimHorizontalGesture()` claims, so the drag-scrub is ambiguous about which
+  sentence it should walk.
+- **Mechanism.** `src/utils/segmentSelectionOwner.ts` — a module-level registry of
+  `{ token, clear }` owners, deliberately not React context (the displays are siblings
+  under call sites with no shared state to lift into, and the claim must land
+  synchronously inside a touch handler). Each display registers on mount with a stable
+  identity token (`useRef({})`) and unregisters on unmount.
+- **Claim points.** `selectFromIndex` (desktop hover) and `toggleFromIndex` (touch tap)
+  call `claimSegmentSelection(token)` before writing their own state; the claim clears
+  *other* owners only, so that ordering is safe. A deselecting tap does not claim —
+  nobody else holds a selection to clear.
+- **`clear` drops the ref too**, not just the state: the scrub's document-level
+  listeners read `selectedRangeRef`, and a stale range there would let a drag resurrect
+  a selection the display no longer owns.
+- **Scope is global, not per-est-block** — a selection in the long-definition or compare
+  display is cleared by an est tap and vice versa, which is what "one popup on screen"
+  should mean.
+
+## Drag-scrub (walk the selection word-by-word with audio)
+
+While a segment is selected, a **horizontal drag started anywhere on screen** walks
+the selection through that sentence one segment at a time and **narrates each word**
+it lands on. This makes "read this sentence word by word" a single continuous
+gesture instead of a tap-per-word.
+
+- **Where.** `SegmentedSentenceDisplay.tsx` (the `SCRUB_*` constants + the drag-scrub
+  `useEffect`). It is **opt-in per call site** via the `onSegmentSpeak` prop, wired only
+  by `ExampleSentenceList` — long-definition/citation displays stay tap-only, and
+  whole-run mode (`runTranslation`) is excluded since it has no word-by-word selection.
+- **Only the sentence holding the selection reacts.** The document listeners are
+  installed only while *that* instance has a `selectedRange`, so sibling sentences
+  and other displays ignore the same drag.
+- **Gesture.** `pointerdown` arms and remembers the origin → `pointermove` commits to a
+  scrub once horizontal travel passes `SCRUB_LOCK_PX` (12px) **and dominates vertical**
+  travel; vertical-dominant travel past `SCRUB_VERTICAL_ABORT_PX` disarms the gesture so
+  the panel scrolls normally → thereafter every `SCRUB_STEP_PX` of travel ratchets the
+  selection one segment and fires `onSegmentSpeak`. Listeners are
+  `capture: true, passive: true` — the scrub never `preventDefault`s.
+- **Tuning.** `SCRUB_STEP_PX` (currently **28px per word**) is the gesture's one knob;
+  lower = more sensitive. The ratchet measures from the gesture's ORIGIN, not from where
+  the axis locked, so the first word lands at exactly one step of travel rather than at
+  lock distance + a full step.
+- **The selection owns horizontal gestures.** While a segment is selected, the eip's
+  swipe-to-change-tab **stands down** — otherwise one drag would both walk the words and
+  slide the panel. The user deselects (tap off a word) to side-swipe the eip again.
+  Mechanism: `src/utils/segmentScrubLock.ts`, a ref-counted module-level claim
+  (`claimHorizontalGesture` / `isHorizontalGestureClaimed`) held for as long as a
+  scrub-enabled selection exists. `InfoCardPanelBody`'s axis lock resolves horizontal
+  intent to a new `"none"` axis when the claim is held: it `stopPropagation`s (keeping
+  SheetPanel's vertical resize/dismiss listener out of the gesture) but leaves the track
+  untouched and does **not** `preventDefault`, so the scrub's pointer events flow
+  normally. **Vertical scrolling is never affected.** A plain module flag rather than
+  context because both sides are raw non-React listeners needing a synchronous answer
+  mid-gesture, with no re-render.
+- **Ends of the sentence clamp** — no wrap, no hand-off to the neighboring sentence. On
+  a clamp the ratchet re-bases to the current X so reversing direction responds
+  immediately instead of first repaying the overshoot.
+- **Steppable segments** = one entry per segment head, punctuation excluded (`scrubSegments`),
+  matching what taps can select.
+- **Tap/selection interactions** (the fiddly parts):
+  - Tap-to-dismiss moved from `pointerdown` to `pointerup` **when scrub is enabled** (both
+    the document handler and the row's own background handler): a scrub may start outside
+    the row, and clearing on pointerdown would destroy the very selection the drag moves.
+    On a no-scrub pointerup, anything that is not a `.cpcd-row__char-cell` and not the
+    popup clears the selection — the previous behavior, one event later.
+  - `suppressTapRef` blocks `selectFromIndex`/`toggleFromIndex` from the moment a scrub
+    locks until `SCRUB_TAP_SUPPRESS_MS` (300ms) after it ends. Character cells select on
+    `touchend`, and **touchend targets the element the touch started on**, so without this
+    the drag's release would re-select the word it began over and undo the last step.
+  - Gesture state lives in a **ref** (`gestureRef`), not the effect closure, because
+    narration flips the parent's `speakingKey` mid-drag; closure state would reset the
+    drag on that re-render. The callback props are likewise read through refs and kept
+    out of the effect deps for the same reason.
+  - `selectedRangeRef` is updated **synchronously** inside the step, since one fast
+    pointermove can cross several step widths before React commits.
+  - The scrub sets `document.body.style.userSelect = "none"` while locked (desktop mouse
+    drags would otherwise paint a text selection across the page) and restores it on
+    pointerup/cancel/unmount.
+- **Audio.** `ExampleSentenceList` passes the existing `onSpeakSentence` callback as
+  `onSegmentSpeak` — same `(text, pronunciation)` signature — so word narration inherits
+  the parent's slow-rate wrapper and is absent whenever narration is off. Pronunciation
+  comes from `segmentMetadata[segment].pronunciation` (the pinyin hint the cloud TTS
+  cache keys on). `onScrubStart` fires on the gesture's `pointerdown` and calls
+  `tts.cloud.unlock()` — the narration itself starts from `pointermove`, which mobile
+  autoplay policy will not accept as the unlocking gesture (see `useTTS.unlockAudio`).
+- **Scrub narration is debounced** by `SCRUB_AUDIO_DELAY_MS` (300ms): each step replaces
+  the previous word's pending play (`queueSegmentNarration`), so sweeping across a
+  sentence speaks only the word the drag comes to rest on instead of machine-gunning
+  every word it crossed. A deliberate word-by-word drag is unaffected — each step
+  outlasts the delay. The pending play is dropped when a tap supersedes it, when the
+  selection is dismissed, when another display claims the selection, and on unmount, so
+  audio can never arrive for a word that is no longer selected.
+  **Tap-to-narrate is NOT debounced** — it is a single deliberate act, and it must fire
+  inside the touch gesture to satisfy mobile autoplay policy. (Playing from a timer is
+  fine for the scrub only because `onScrubStart` already unlocked the context on that
+  gesture's pointerdown.)
 
 > Popup placement: the definition popup is a MUI `Popper` portal anchored to a
 > viewport-space virtual element (so it escapes ancestor overflow clipping). Popper

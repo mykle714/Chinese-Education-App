@@ -45,7 +45,7 @@ interface LongDefinitionDisplayProps {
   // Entry identity for the inline validator Approve/Flag buttons (field is always
   // 'definitions' here — see docs/DATA_VALIDATION_SYSTEM.md). Both must be provided
   // to show the buttons; omit for surfaces with no single backing det entry (e.g.
-  // CompareTabBody's AI comparison paragraph, which has no validation field at all).
+  // CompareWorkspace's AI comparison paragraph, which has no validation field at all).
   word1?: string;
   language?: Language;
 }
@@ -167,6 +167,14 @@ const LongDefinitionDisplay: React.FC<LongDefinitionDisplayProps> = ({
               flexWrap="nowrap"
               showPinyin={showPinyin}
               showPinyinColor={showPinyinColor}
+              // A translated run behaves as ONE unit: tapping it highlights the whole
+              // Chinese phrase and shows its English translation, rather than glossing the
+              // tapped word. Only runs the dictionary has NO entry for are translated
+              // (clauses, sentences) — a run that is itself a headword, and any run not yet
+              // backfilled, arrives without `translation` and keeps the per-segment popup,
+              // which is also the only mode that can drill into the eip.
+              // See docs/DEFINITION_MAPPING.md form #5b.
+              runTranslation={part.translation}
               onSegmentOpen={onSegmentOpen}
               sentence={{
                 foreignText: part.foreignText,

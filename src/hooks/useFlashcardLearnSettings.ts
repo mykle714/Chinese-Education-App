@@ -7,7 +7,10 @@ const STORAGE_KEY = 'flashcard.learn-settings';
 export interface FlashcardLearnSettings {
     showPinyin: boolean;
     showPinyinColor: boolean;
-    showSegmentSpaces: boolean;
+    // NOTE: word spacing ("Show spaces between words") is NOT here — it moved to
+    // an account-level setting (users."showSegmentSpaces", migration 129) so the
+    // eip and the cdp can't disagree. Read it from useAuth(), toggle it on the
+    // Account page. See docs/EXAMPLE_SENTENCES.md.
     autoplayChinese: boolean;
     // Show the card's progress category (Unfamiliar/Target/Comfortable/Mastered)
     // as a colored chip on the back (Side 2) of the card. Opt-in, off by default.
@@ -22,7 +25,6 @@ export interface FlashcardLearnSettings {
 const DEFAULT_SETTINGS: FlashcardLearnSettings = {
     showPinyin: true,
     showPinyinColor: true,
-    showSegmentSpaces: false,
     autoplayChinese: true,
     showProgressCategory: false,
     slowExampleSentences: false,

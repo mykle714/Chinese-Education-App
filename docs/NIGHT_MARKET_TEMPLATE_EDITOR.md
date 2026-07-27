@@ -83,9 +83,10 @@ systems in [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md) will consume
 - **Left tool palette** (each color-coded group is a **horizontal row of buttons**; groups
   stack vertically and each box shrinks to fit its own buttons). Rows mirror the keyboard,
   top→bottom: **(1)** a view-control row — the **grid toggle** (own group; the grid draws a fine
-  green line per cell plus a **red major line every 8 cells**, counted **inward from the NE
-  corner** — the first red line sits **4 cells in from the north edge and 4 in from the east
-  edge**, so the red lattice lands on the prescribed outward-facing street spots from the
+  green line per cell plus a **red major line every 4 cells**, counted **inward from the NE
+  corner** — the offset anchor is **4 cells in from the north edge and 4 in from the east
+  edge**, which at a 4-cell interval means the edges themselves are also major lines, so the
+  red lattice lands on the prescribed outward-facing street spots from the
   authoring guidelines. `GRID_MAJOR_INTERVAL` / `GRID_MAJOR_EDGE_OFFSET` / `isMajorLine` in
   `src/features/nightmarket/TemplateEditorViewer.tsx`) beside the
   mask-view toggles (own group, in mask-tool order: **street-**, **communal-**,

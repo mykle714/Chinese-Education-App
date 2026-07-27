@@ -1,4 +1,4 @@
-# Word Compare Feature — eip "Compare" tab
+# Word Compare Feature — eip "Compare" tab + the `/compare` page
 
 > Status: **DESIGN — decided, not yet implemented.** All open questions below were resolved with
 > the user on 2026-07-07; see [Resolved decisions](#resolved-decisions).
@@ -7,6 +7,57 @@ A learner viewing a word in the eip (Extra Info Panel) often wants to know how i
 near-synonym (高兴 vs 开心, ser vs estar). This feature adds a **Compare** surface to the eip:
 pick a second word, and an AI-generated explanation of the difference between the two words is
 fetched (server-cached, so each distinct pair is billed at most once) and displayed.
+
+---
+
+## Two surfaces, one component
+
+Compare is reachable from **two** places, and both render the exact same component —
+`src/components/CompareWorkspace.tsx` (shared, NOT under `features/`, because two surfaces
+consume it):
+
+| Surface | Entry point | Where the state lives | Slot A on open |
+|---|---|---|---|
+| **eip Compare tab** (flp) | Compare icon in the eip header's 2×2 action grid | the singleton Compare tab object in `useEipTabs` | pre-filled with the word the user came from |
+| **`/compare` page** (hp) | "Compare Words" row in the Home hub menu | `useState` in `src/pages/ComparePage.tsx` | empty (the user arrives without a source word) |
+
+The contract between them is the `CompareState` interface exported by `CompareWorkspace`
+(`{ slotA, slotB, comparison, comparisonParts }`). `CompareEipTab extends CompareState`, so the
+tab object IS a valid workspace state and there is one shape, not two. The workspace itself owns
+no slot state — it is presentational plus the in-flight request (`useWordComparison`), and hands
+every result back through `onResult` for the owner to persist.
+
+Surface differences are exactly three props:
+- `onSegmentOpen` — the eip passes its drill-in handler so tapping embedded Chinese opens a word
+  tab; the page **omits it** (passive definition popup only — decided 2026-07-26), since it has no
+  eip mounted.
+- `scrollTouchAction` — `"none"` in the eip (SheetPanel drives scrolling/resizing from its own
+  gesture handlers), `"pan-y"` on the page so the region scrolls natively. See the app-wide
+  touch rule in [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md).
+- the forwarded `{root, scroll}` ref — used by SheetPanel in the eip, ignored by the page.
+
+### The `/compare` page
+
+A **node** page (keeps the footer, left arrow, slides in from the right — see
+[LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md)), matching the other Home-hub destinations
+(Dictionary, Reader, Games). A new node page must be registered in **four** places — miss one and
+the page half-works rather than erroring:
+
+| File | Registry | Symptom if missed |
+|---|---|---|
+| `src/App.tsx` | the `<Route>` | 404 |
+| `src/components/Layout.tsx` | `MOBILE_DEMO_PATHS` | renders OUTSIDE the phone frame: no footer at all, and `NodePage`'s `position:absolute` slide surface has nothing to be clipped by |
+| `src/utils/pageTransition.ts` | `NODE_ROUTES` | no slide-in-from-right; falls back to a plain route swap |
+| `src/components/FooterPresenter.tsx` | `FOOTER_ROUTES` | footer pill slides away on arrival (route reads as footerless) |
+
+`ProtectedRoute` uses **`allowPublic`**, like every other Home-hub page. Without it, public/demo
+accounts are bounced to `/` by the `user?.isPublic && !allowPublic` branch, so the hub button
+silently does nothing for them (every seeded local test user is public). The compare request is
+still auth-gated and rate-limited server-side.
+
+Like the cdp it forces `showPinyin` on regardless of the flp toggle
+(the two slots are the reference material), and reads `showPinyinColor` from
+`useFlashcardLearnSettings`.
 
 ---
 
@@ -27,7 +78,7 @@ to any individual card**. It is a tab in the eip's **entry-tab strip** — the s
 - **Tab shape**: `useEipTabs`' `EipTab` currently assumes `entry: VocabEntry`; the Compare tab
   is a second variant (discriminated union, e.g. `kind: 'entry' | 'compare'`) with its own state
   (slot A entry, slot B entry | null, search text, comparison result/loading/error). When the
-  Compare tab is active, the panel renders `CompareTabBody` **instead of** the normal
+  Compare tab is active, the panel renders `CompareWorkspace` **instead of** the normal
   `InfoCardPanelBody` content (no entry header, no inner sub-tab strip).
 - Closing the Compare tab (the strip's X button) discards its state entirely.
 
@@ -113,16 +164,30 @@ New endpoint (auth required): **`POST /api/dictionary/compare`** — body
                 static system block + tiny volatile user message. Both words' det definitions
                 (+ partsOfSpeech) are inlined as grounding so the model explains THESE senses.
                 No web-search tool (both words are known) — cheaper/faster than the fallback.
+                Returns a { paragraph, citations } envelope (see below), max_tokens 1200.
 6. Count        increment dictionary_ai_usage once the model call completes (billed = counted).
-7. Cache write  upsert the paragraph into word_comparison_cache; return it.
+7. Cache write  upsert the paragraph AND its citations into word_comparison_cache; return them.
 ```
 
 - Mirrors the dictionary AI-fallback pipeline
   ([DICTIONARY_AI_FALLBACK_SEARCH.md](./DICTIONARY_AI_FALLBACK_SEARCH.md)): same lazy Anthropic
   client pattern, prompt-caching shape, `RateLimitError` → 429 mapping, and streak-day bounding.
-- **Response shape: one free-text paragraph** (decided). The prompt asks for a single concise
-  paragraph (~3–5 sentences) contrasting the two words — register, typical contexts, one short
-  inline example each — plain text, no markdown/JSON.
+- **Response shape: a `{ paragraph, citations }` JSON envelope** (2026-07-26; superseded the
+  original bare-prose contract). `paragraph` is unchanged — one concise paragraph (~3–5
+  sentences) contrasting the two words, register, typical contexts, one short inline example
+  each, plain text, no markdown. `citations` is one `{ zh, en }` per maximal Chinese run
+  quoted in the paragraph, copied verbatim so it joins back to the rendered run.
+  **Why in the same call** rather than a follow-up translation pass: Compare is a live path on
+  a shared daily budget, and the budget is sized around ONE call per pair.
+- **Parsing degrades, never throws** (`parseComparisonResponse`, exported from
+  `DictionaryService.ts`): strict `JSON.parse` first; then a field-level salvage that pulls
+  `paragraph` and each well-formed `{zh, en}` out positionally — the observed failure is a
+  model writing an unescaped `"` inside the paragraph, which is valid English and invalid
+  JSON; then, failing everything, the whole response is treated as the paragraph with no
+  citations, i.e. exactly the pre-2026-07-26 behavior. The prompt separately asks the model
+  not to use double quotes inside string values.
+- **Chinese only.** The es prompt asks for an empty `citations` array: Spanish comparison text
+  embeds no Han runs, so the parts splitter produces nothing to attach a translation to.
 - A model/parse failure returns an error **without caching** (transient), matching the fallback's
   behavior; the client shows a retryable error note.
 
@@ -137,6 +202,7 @@ CREATE TABLE word_comparison_cache (
   "wordB"      varchar     NOT NULL,
   language     varchar(8)  NOT NULL,   -- 'zh' | 'es'; both words are in this language
   comparison   text        NOT NULL,   -- the AI paragraph (free text — decided)
+  citations    jsonb,                  -- migration 127: [{zh, en}] translations of the Chinese runs quoted in `comparison`
   model        varchar,                -- model id that produced it (regeneration bookkeeping)
   "queriedAt"  timestamptz NOT NULL DEFAULT now(),
   UNIQUE ("wordA", "wordB", language)
@@ -150,6 +216,27 @@ CREATE TABLE word_comparison_cache (
   comparison — so no NULL-marker/staleness machinery. `queriedAt` supports manual
   invalidation/regeneration later.
 - The `UNIQUE` constraint doubles as the read-path index.
+- **`citations` (migration 127)** — same `{ zh, en }` shape as
+  `dictionaryentries_zh."longDefinitionCitations"` (migration 126,
+  [DEFINITION_MAPPING.md](./DEFINITION_MAPPING.md) form #5b), because both feed the same
+  renderer: `DictionaryService.withComparisonParts` hands them to
+  `enrichLongDefinitionMetadataBatch`, which sets `translation` on the matching `foreign` part,
+  and `LongDefinitionDisplay` then renders that run as ONE tappable unit — tap anywhere in the
+  Chinese and the whole run highlights with its English translation, instead of glossing the
+  tapped word. A translated run is not drillable (a quoted phrase is not a headword).
+- **Cached citations are a SUPERSET of what renders.** The model cites the two compared
+  headwords (and other real words) constantly, but the read path applies a citation **only to
+  a run that has no `dictionaryentries_zh` row** — a dictionary word keeps its per-segment
+  popup and its eip drill-in, which whole-run mode would remove (see
+  [DEFINITION_MAPPING.md](./DEFINITION_MAPPING.md) form #5b). In practice only the paragraph's
+  example *sentences* render translated. The filter lives at read time, in
+  `segmentLongDefinitionTexts`, rather than pruning at write time: the generator cannot know
+  det's contents, and a stored citation must stop rendering by itself once its phrase is later
+  added to det. Nothing is filtered on the way into the cache.
+- **Rows cached before migration 127 keep `citations` NULL and are NOT invalidated** (decided
+  2026-07-26): they serve exactly as they always have, with per-segment popups, and only gain
+  citations if that pair is ever regenerated. No bulk regeneration — an old pair isn't worth an
+  AI call nobody asked for.
 
 ---
 
@@ -158,15 +245,20 @@ CREATE TABLE word_comparison_cache (
 | Layer | File | Responsibility |
 |---|---|---|
 | Migration | `database/migrations/105-create-word-comparison-cache.sql` (**new**) | the cache table |
-| DAL | `server/dal/implementations/DictionaryDAL.ts` | `getComparison(wordA, wordB, language)`, `upsertComparison(...)`; reuses `getAiUsageCount` / `incrementAiUsage` |
+| Migration | `database/migrations/127-add-citations-to-word-comparison-cache.sql` | `citations jsonb` — run translations (nullable; old rows keep NULL) |
+| DAL | `server/dal/implementations/DictionaryDAL.ts` | `getComparison(wordA, wordB, language)`, `upsertComparison(..., citations)`; `buildCitationMap` + `segmentLongDefinitionTexts(texts, language, citationsByText)` attach `translation` to each `foreign` part; reuses `getAiUsageCount` / `incrementAiUsage` |
 | DAL iface | `server/dal/interfaces/IDictionaryDAL.ts` | new method signatures |
-| Service | `server/services/DictionaryService.ts` | `compareWords(wordA, wordB, language, userId, usageDate)` — canonical ordering, cache, shared limit gate, prompt build with det-definition grounding, upsert |
+| Service | `server/services/DictionaryService.ts` | `compareWords(...)` — canonical ordering, cache, shared limit gate, `{paragraph, citations}` prompt build with det-definition grounding, upsert; `parseComparisonResponse` (exported, degrading parser); `withComparisonParts(comparison, language, citations)` |
 | Controller | `server/controllers/DictionaryController.ts` | `compare` handler (`tz` → `usageDate`; `RateLimitError` → 429) |
 | Routes | `server/routes/dictionaryRoutes.ts` | `POST /api/dictionary/compare` |
 | Types | `server/types/*`, `src/types.ts` | compare request/response types |
 | Client hook | `src/hooks/useWordComparison.ts` (**new**) | fires the compare request; loading / error / `limitReached` states |
-| Client state | `src/features/flashcards/FlashcardsLearnPage/useEipTabs.ts` | `EipTab` discriminated union (`kind: 'entry' \| 'compare'`); singleton push/focus/refill semantics |
-| Client UI | `src/features/flashcards/FlashcardsLearnPage/CompareTabBody.tsx` (**new**) | slots + search mode (keypad + bar + result cards) + comparison display |
+| Client state | `src/features/flashcards/FlashcardsLearnPage/useEipTabs.ts` | `EipTab` discriminated union (`kind: 'entry' \| 'compare'`); `CompareEipTab extends CompareState`; singleton push/focus/refill semantics |
+| Client UI | `src/components/CompareWorkspace.tsx` (**shared**) | the whole compare surface — slots + search mode (keypad + bar + result cards) + comparison display; exports `CompareState` / `CompareWorkspaceHandle`. Owns no slot state; both surfaces drive it. |
+| Client page | `src/pages/ComparePage.tsx` (**new**) | `/compare` node page: owns a `CompareState` `useState` and renders `CompareWorkspace` |
+| Route / nav | `src/App.tsx`, `src/components/Layout.tsx` (`MOBILE_DEMO_PATHS`), `src/utils/pageTransition.ts` (`NODE_ROUTES`), `src/components/FooterPresenter.tsx` (`FOOTER_ROUTES`), `src/pages/HomePage.tsx` | the `/compare` route, its phone-frame membership, its right-slide direction, its footer (Home tab), and the "Compare Words" hub row |
+| Shared util | `src/utils/dictEntryAdapter.ts` (**moved** out of `features/flashcards/FlashcardsLearnPage/`) | `dictionaryEntryToVocabEntry` — now consumed by the shared workspace, the eip, and the dictionary cdp |
+| Client UI | `src/components/LongDefinitionDisplay.tsx`, `src/components/SegmentedSentenceDisplay.tsx` | shared renderer; `runTranslation` puts a translated run into whole-run (passive) mode |
 | Client UI | `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx` | Compare icon button in the header 2×2 action grid |
 | Client UI | `src/components/PinyinKeypad.tsx` (**new**, extracted) | shared tone-vowel / accent keypad; replaces DictionaryPage's two inline copies |
 | Client UI | `src/components/CPCDRow.tsx`, `src/components/ForeignText.tsx` | new `"xl"` `CPCDSize` |
@@ -195,11 +287,24 @@ English-query space. Cache hits are always free and don't consume a slot.
 4. **Re-entry with a Compare tab already open** — refill slot A with the new source word,
    **clear slot B**.
 5. **Slot-B search scope** — full dictionary (any det row), via `useDictionarySearch` unchanged.
-6. **Response shape** — one free-text paragraph (`comparison text` column).
+6. **Response shape** — one free-text paragraph (`comparison text` column). *(Superseded
+   2026-07-26: the model now returns `{ paragraph, citations }`; the `comparison` column still
+   stores only the paragraph, and the citations go to the new `citations` column.)*
 7. **Keypad** — visible only while the slot-B search bar is open.
 8. **AI budget & key** — share `dictionary_ai_usage` (one combined daily cap) and
    `DICT_AI_API_KEY` with the dictionary AI fallback.
 9. **CLAUDE.md** — one-line link added under 📚 Features.
+
+### Added 2026-07-26 — the standalone `/compare` page
+
+10. **Second entry point** — a "Compare Words" row in the **Home hub** (`/`), not Discover.
+11. **Shared, not copied** — `CompareTabBody` was moved out of
+    `features/flashcards/FlashcardsLearnPage/` to `src/components/CompareWorkspace.tsx` and
+    decoupled from `CompareEipTab` (it now takes a plain `CompareState`, which the eip tab
+    extends). Two surfaces consume it ⇒ it is shared code, per the shared-vs-feature rule.
+    `dictEntryAdapter.ts` moved to `src/utils/` for the same reason.
+12. **Word taps on the page** — passive definition popup only; the page does not mount the eip
+    and does not navigate away.
 
 ## Dependencies / cross-references
 

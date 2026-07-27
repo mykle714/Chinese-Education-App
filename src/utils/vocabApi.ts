@@ -5,17 +5,21 @@
 
 import type { VocabEntry, VocabLookupResponse, DictionaryEntry } from '../types';
 import { API_BASE_URL } from '../constants';
+import { authHeader } from './authHeader';
 import { getCachedEntries, cacheEntries, getCachedDictionaryEntries, cacheDictionaryEntries } from './vocabCache';
 
 /**
  * Fetches vocabulary entries by tokens with cache integration
  * @param tokens Array of tokens to look up
- * @param token JWT authentication token
+ * @param token JWT authentication token. Optional — omit it (or pass null) to read
+ *   the LIVE token at call time via `authHeader()`, which keeps the caller's
+ *   callback identity stable across silent token refreshes (see authHeader.ts and
+ *   CLAUDE.md "Never reload on token refresh").
  * @returns Promise resolving to both personal and dictionary entries
  */
 export async function fetchVocabEntriesByTokens(
   tokens: string[],
-  token: string
+  token?: string | null
 ): Promise<VocabLookupResponse> {
   if (!tokens || tokens.length === 0) {
     console.log('[VOCAB-CLIENT] 📝 No tokens provided for vocabulary lookup');
@@ -69,7 +73,7 @@ export async function fetchVocabEntriesByTokens(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
+        ...(token ? { Authorization: `Bearer ${token}` } : authHeader()),
       },
       credentials: 'include',
       body: JSON.stringify({ tokens: tokensNeedingFetch }),

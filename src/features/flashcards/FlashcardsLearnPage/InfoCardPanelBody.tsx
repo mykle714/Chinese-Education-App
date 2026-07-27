@@ -25,6 +25,7 @@ import {
 import { SIZE, WEIGHT, TRACKING } from "../../../theme/scale";
 import { SpeakerButton } from "./FlashCardSection";
 import ExampleSentenceList from "../ExampleSentenceList";
+import { isHorizontalGestureClaimed } from "../../../utils/segmentScrubLock";
 import type { VocabEntry, BreakdownItem, UsedInItem } from "./types";
 
 // Resting track offset for a tab: the track is (N·100%) wide with N equal
@@ -39,7 +40,6 @@ export interface InfoCardPanelBodyProps {
     breakdownItems: BreakdownItem[];
     showPinyin: boolean;
     showPinyinColor?: boolean;
-    showSegmentSpaces?: boolean;
     isFlipped: boolean;
     onBreakdownItemClick?: (item: BreakdownItem) => void;
     onUsedInItemClick?: (item: UsedInItem) => void;
@@ -107,7 +107,6 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
     breakdownItems,
     showPinyin,
     showPinyinColor = true,
-    showSegmentSpaces = false,
     onBreakdownItemClick,
     onUsedInItemClick,
     onExampleSegmentClick,
@@ -198,8 +197,11 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
     const paneWidthRef = useRef(0);
     const touchStartRef = useRef<{ x: number; y: number } | null>(null);
     // null = undecided (within the axis-lock slop), "x" = swipe owns the
-    // gesture, "y" = handed off untouched to SheetPanel's vertical listener.
-    const swipeAxisRef = useRef<"x" | "y" | null>(null);
+    // gesture, "y" = handed off untouched to SheetPanel's vertical listener,
+    // "none" = horizontal, but an example-sentence segment selection has claimed
+    // horizontal gestures for its drag-scrub, so this swipe sits the gesture out
+    // (see src/utils/segmentScrubLock.ts).
+    const swipeAxisRef = useRef<"x" | "y" | "none" | null>(null);
     // Live finger delta of an in-flight horizontal drag; null = no drag.
     // Doubles as the "drag in flight" flag for the self-heal paths.
     const dragDxRef = useRef<number | null>(null);
@@ -334,7 +336,13 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                 // to SheetPanel's vertical resize/scroll instead of
                 // changing tabs. Only lock "y" when vertical movement is
                 // clearly (30%+) ahead of horizontal.
-                swipeAxisRef.current = Math.abs(dy) > Math.abs(dx) * 1.3 ? "y" : "x";
+                const axis = Math.abs(dy) > Math.abs(dx) * 1.3 ? "y" : "x";
+                // A selected example-sentence segment owns horizontal gestures
+                // (drag-scrub). Resolve horizontal intent to "none" instead of
+                // "x": the tab must not slide while the same drag is walking the
+                // sentence word by word. The user deselects to swipe tabs again.
+                // Vertical intent is unaffected — scrolling always works.
+                swipeAxisRef.current = axis === "x" && isHorizontalGestureClaimed() ? "none" : axis;
                 if (swipeAxisRef.current === "y") {
                     // Vertical intent: hand the gesture off to SheetPanel's
                     // own resize/scroll listener from here on. Its
@@ -344,6 +352,14 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                     // the whole gesture so far — no motion is lost.
                     return;
                 }
+            }
+            if (swipeAxisRef.current === "none") {
+                // Scrub-owned horizontal gesture: keep it away from SheetPanel's
+                // vertical resize/dismiss listener too, but leave the track alone
+                // and don't preventDefault — the scrub reads pointer events and
+                // needs the browser's normal event flow to continue.
+                e.stopPropagation();
+                return;
             }
             if (swipeAxisRef.current !== "x") return;
             // Horizontal intent: block SheetPanel's vertical resize/scroll
@@ -505,7 +521,6 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                     language={currentEntry?.language}
                     showPinyin={showPinyin}
                     showPinyinColor={showPinyinColor}
-                    showSegmentSpaces={showSegmentSpaces}
                     onSegmentOpen={onExampleSegmentClick}
                     onSpeakSentence={onSpeakSentence}
                     speakingKey={speakingKey}
@@ -613,7 +628,9 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                         sx={{
                             fontSize: SIZE.bodyLg,
                             fontWeight: WEIGHT.medium,
-                            color: fc.onSurface,
+                            // Matches the flp card face: the dd is de-emphasized one step off
+                            // `onSurface` (dark grey on light card themes) via the `dd` token.
+                            color: fc.dd,
                             fontFamily: FC_FONT,
                             lineHeight: 1.3,
                             flex: 1,

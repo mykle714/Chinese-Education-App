@@ -59,7 +59,7 @@ const FlashcardsLearnPage: React.FC = () => {
         : undefined;
 
     const { settings: learnSettings, update: updateLearnSettings } = useFlashcardLearnSettings();
-    const { showPinyin, showPinyinColor, showSegmentSpaces, autoplayChinese, showProgressCategory, slowExampleSentences } = learnSettings;
+    const { showPinyin, showPinyinColor, autoplayChinese, showProgressCategory, slowExampleSentences } = learnSettings;
     // Settings sheet open/close. Independent from the EIC sheet so the two can
     // coexist if needed (each one renders its own SheetPanel).
     const [settingsOpen, setSettingsOpen] = useState(false);
@@ -643,7 +643,7 @@ const FlashcardsLearnPage: React.FC = () => {
                     // always seeds a root tab before this renders, so activeTab is present;
                     // the currentEntry/breakdownItems fallbacks are a paint-safety net only.
                     // The Compare tab (docs/WORD_COMPARE_FEATURE.md) is a different kind — it
-                    // has no entry/breakdown/sub-tab of its own, so it renders CompareTabBody
+                    // has no entry/breakdown/sub-tab of its own, so it renders CompareWorkspace
                     // instead (InfoCardSection branches on `compareTab`).
                     const active = eip.activeTab;
                     const compareTab = active?.kind === "compare" ? active : null;
@@ -661,7 +661,6 @@ const FlashcardsLearnPage: React.FC = () => {
                             breakdownItems={panelBreakdown}
                             showPinyin={showPinyin}
                             showPinyinColor={showPinyinColor}
-                            showSegmentSpaces={showSegmentSpaces}
                             isFlipped={isFlipped}
                             onClose={closeEip}
                             onBreakdownItemClick={(item) => eip.openForEntryKey(item.character)}

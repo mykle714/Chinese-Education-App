@@ -43,6 +43,12 @@ interface ForeignTextBaseProps {
     // triangle) with one plain pinyin line underneath. Ignored for Latin-script
     // languages, which always render plain text regardless of layout.
     layout?: "row" | "block";
+    // Latin-script only: explicit font size for the plain-text branch, overriding the
+    // PLAIN_CHAR_FONT/`size` mapping. Use when a surface is too narrow for the Latin
+    // word at the size its Chinese counterpart needs (Spanish words are many glyphs
+    // wide where a Chinese word is 1–2). Ignored entirely for character-based
+    // languages, whose sizing must stay on the shared cpcd scale.
+    plainFontSize?: string;
     // Block layout only, and only consulted for a 3-character word: whether the
     // first two characters are one segment (see CPCDBlock's triangle-orientation
     // comment). Leave undefined to let ForeignText auto-detect it (a cached det
@@ -137,6 +143,7 @@ const ForeignText: React.FC<ForeignTextProps> = ({
     characterColor,
     layout = "row",
     firstTwoAreSegment,
+    plainFontSize,
 }) => {
     // Resolve language: explicit prop wins, otherwise the user's selection.
     const { user } = useAuth();
@@ -158,7 +165,8 @@ const ForeignText: React.FC<ForeignTextProps> = ({
         // Spanish (and other Latin-script languages): plain text. Prefer the raw
         // `text`; fall back to reconstructing it from any provided items.
         const plain = text ?? (items ?? []).map((item) => item.character).join("");
-        const fontSize = compact ? PLAIN_COMPACT_CHAR_FONT[size] : PLAIN_CHAR_FONT[size];
+        // Explicit per-call-site override wins over the size-derived scale.
+        const fontSize = plainFontSize ?? (compact ? PLAIN_COMPACT_CHAR_FONT[size] : PLAIN_CHAR_FONT[size]);
         return (
             <Box
                 className={className}

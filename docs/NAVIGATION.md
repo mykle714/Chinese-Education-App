@@ -19,7 +19,10 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
 
 2. **Home menu** (`/`, `HomePage`) — a `HubMenu` (the shared row component, also
    used by Discover + Games hubs) of secondary destinations:
-   **Night Market**, **Games**, **Reader**, **Dictionary**, **Tester Dashboard**.
+   **Night Market**, **Games**, **Community**, **Reader**, **Dictionary**,
+   **Compare Words** (`/compare` — see
+   [WORD_COMPARE_FEATURE.md](./WORD_COMPARE_FEATURE.md)), **Tester Dashboard**
+   (plus two template-author-only rows).
 
 3. **Back-arrow drill-ins** — every page reached from a hub has a common header
    with a back button. These come in two archetypes (see
@@ -30,7 +33,9 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
      `/night-market`, `/reader`, `/tester-dashboard` use their own headers.
    - Sort Cards (`/discover/sort/:language`) → back to `/discover` (leaf).
    - Card Detail (`/flashcards/card/:id`, saved-card cdp) → back (node); Mastered
-     Cards (`/flashcards/mastered`) → back to Decks (node).
+     Cards (`/flashcards/mastered`) → back to Decks (node). Its breakdown/used-in/
+     example drill-ins open the tapped word's saved card when the learner has one,
+     else the read-only dictionary cdp (`src/hooks/useOpenWordCard.ts`).
    - Dictionary result tap → the read-only dictionary cdp (`/dictionary/card/:word`,
      node); its breakdown/example drill-ins open more read-only cdps. See
      [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) "Card detail (cdp): two surfaces".

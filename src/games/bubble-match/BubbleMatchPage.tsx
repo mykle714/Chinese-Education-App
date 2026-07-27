@@ -14,9 +14,8 @@ import type { VocabEntry } from "../../types";
 import LeafPage from "../../components/LeafPage";
 import BubbleMatchHeaderControls from "./BubbleMatchHeader";
 import BubbleMatchEndPopup from "./BubbleMatchEndPopup";
-import BubbleMatchLevelMenu from "./BubbleMatchLevelMenu";
 import BubbleStage from "./BubbleStage";
-import { GAME_DISTRIBUTION, GAME_KEY, LEVEL_CONFIGS, TOTAL_PAIRS } from "./constants";
+import { GAME_DISTRIBUTION, GAME_KEY, LEVEL_CONFIGS, MAX_AVOID_IDS, MIN_REPLAY_PAIRS, TOTAL_PAIRS } from "./constants";
 import type { LevelConfig } from "./types";
 import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
 
@@ -25,8 +24,10 @@ interface GamePoolResponse {
     cards: VocabEntry[];
     requested: Record<string, number>;
     available: Record<string, number>;
-    /** Number of cards the game needs to run (sum of the requested distribution). */
+    /** Number of cards a full board needs (sum of the requested distribution). */
     total: number;
+    /** Cards this particular call had to return (< total for a partial refill). */
+    needed: number;
     sufficient: boolean;
 }
 
@@ -50,53 +51,6 @@ function shuffle<T>(arr: T[]): T[] {
 const poolQuery = Object.entries(GAME_DISTRIBUTION)
     .map(([cat, n]) => `${encodeURIComponent(cat)}=${n}`)
     .join("&");
-
-/**
- * Two-line replay button for the game-over grid: a bold "<Same|Different> Level"
- * top line and a "<Same|Different> Cards" bottom line, split by a short centered
- * divider that floats clear of both side edges (inset to 55% width). The divider
- * uses `currentColor`, so it tints to match the button text on both the contained
- * (filled) and outlined variants without a hardcoded color.
- */
-const ReplayGridButton: React.FC<{
-    className: string;
-    variant: "contained" | "outlined";
-    topLabel: string;
-    bottomLabel: string;
-    onClick: () => void;
-}> = ({ className, variant, topLabel, bottomLabel, onClick }) => (
-    <Button
-        className={className}
-        variant={variant}
-        onClick={onClick}
-        sx={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            gap: 0.6,
-            py: 1.25,
-            px: 0.5,
-            minWidth: 0,
-            borderRadius: "14px",
-            textTransform: "none",
-            lineHeight: LEADING.tight,
-        }}
-    >
-        <Box component="span" className="bubble-match__replay-btn-top" sx={{ fontSize: SIZE.body, fontWeight: WEIGHT.bold, whiteSpace: "nowrap" }}>
-            {topLabel}
-        </Box>
-        {/* Centered inset divider — stops short of both edges (does not connect). */}
-        <Box
-            component="span"
-            aria-hidden
-            className="bubble-match__replay-btn-divider"
-            sx={{ width: "55%", height: "1px", backgroundColor: "currentColor", opacity: 0.4 }}
-        />
-        <Box component="span" className="bubble-match__replay-btn-bottom" sx={{ fontSize: SIZE.caption, fontWeight: WEIGHT.medium, opacity: 0.85, whiteSpace: "nowrap" }}>
-            {bottomLabel}
-        </Box>
-    </Button>
-);
 
 /**
  * Bubble Match — page shell + game-flow state machine.
@@ -124,7 +78,7 @@ const BubbleMatchPage: React.FC = () => {
     const tts = useTTS();
     const { settings, update } = useFlashcardLearnSettings();
     const { showPinyin, showPinyinColor, autoplayChinese } = settings;
-    const { clearedLevels, recordWin } = useGameWins(GAME_KEY);
+    const { recordWin } = useGameWins(GAME_KEY);
 
     // Block the mobile browser's edge-swipe-back gesture while this page is
     // mounted — an edge swipe would otherwise navigate away mid-drag. CSS
@@ -148,28 +102,48 @@ const BubbleMatchPage: React.FC = () => {
     const [level, setLevel] = useState<LevelConfig>(initialLevel);
     // Whether the game-over card is collapsed into the top-right corner puck.
     const [popupMinimized, setPopupMinimized] = useState(false);
-    // Whether the "Different Level / Same Cards" floating level menu is open over
-    // the end popup. Selecting a level replays the loaded pool at that level.
-    const [levelMenuOpen, setLevelMenuOpen] = useState(false);
+    // Vocab-entry ids the player successfully matched DURING the run (post-loss
+    // cleanup drags are excluded — BubbleStage suppresses onMark in cleanup mode).
+    // "Play Again" retires exactly these and keeps the rest of the board, so words
+    // the player couldn't match come back until they get them. Reset by beginRun.
+    const matchedIdsRef = useRef<Set<number>>(new Set());
+    // Every card cleared at any point THIS PAGE SESSION — a client-side cooldown
+    // that outlives a single run. Sent as the refill's `avoid` list so round 3
+    // doesn't hand back what was cleared in round 1. Never reset while mounted;
+    // the server treats it as a soft preference, so a small library can still
+    // fill a board from it rather than starving.
+    const clearedThisSessionRef = useRef<Set<number>>(new Set());
     // Bumped on each (re)start so BubbleStage remounts with a clean slate.
     const runIdRef = useRef(0);
     const [runId, setRunId] = useState(0);
 
-    // Fetch a fresh, randomized game pool from the server (the endpoint orders
-    // candidates by RANDOM(), so each call yields a different vocab set).
+    // Fetch a randomized game pool from the server (the endpoint orders candidates
+    // by RANDOM(), so each call yields a different vocab set).
+    //
+    // `refill` requests a PARTIAL pool: only `need` cards, never one of `keepIds`
+    // (hard exclude — those are still on the board) and preferring not to return
+    // one of `avoidIds` (soft — cards already cleared this session). That's the
+    // "Play Again" path. A partial fetch never blocks on a shortfall (the caller
+    // still has its kept cards to play with); a full fetch does.
+    //
     // Returns the cards on success, or null after switching to the blocked phase
-    // (insufficient cards or a network error). Shared by the initial mount load
-    // and the "different vocab set" replay.
-    const fetchGamePool = useCallback(async (): Promise<VocabEntry[] | null> => {
+    // (insufficient cards or a network error).
+    const fetchGamePool = useCallback(async (
+        refill?: { need: number; keepIds: number[]; avoidIds: number[] }
+    ): Promise<VocabEntry[] | null> => {
         try {
-            const res = await fetch(`${API_BASE_URL}/api/onDeck/game-pool?${poolQuery}`, {
+            const query = refill
+                ? `${poolQuery}&need=${refill.need}&exclude=${refill.keepIds.join(",")}`
+                  + `&avoid=${refill.avoidIds.join(",")}`
+                : poolQuery;
+            const res = await fetch(`${API_BASE_URL}/api/onDeck/game-pool?${query}`, {
                 credentials: "include",
                 headers: authHeader(),
             });
             if (!res.ok) throw new Error("Failed to load game pool");
             const data: GamePoolResponse = await res.json();
 
-            if (!data.sufficient) {
+            if (!data.sufficient && !refill) {
                 // The game tops up across buckets, so the only hard requirement is
                 // a total of `data.total` library cards. Report the shortfall.
                 const have = Object.values(data.available).reduce((sum, n) => sum + n, 0);
@@ -199,7 +173,7 @@ const BubbleMatchPage: React.FC = () => {
     const beginRun = useCallback((cfg: LevelConfig, runPool: VocabEntry[]) => {
         setLevel(cfg);
         setPopupMinimized(false);
-        setLevelMenuOpen(false);
+        matchedIdsRef.current = new Set(); // new run → nothing matched yet
         setPool(shuffle(runPool));
         runIdRef.current += 1;
         setRunId(runIdRef.current);
@@ -237,26 +211,57 @@ const BubbleMatchPage: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id]);
 
-    // Start (or replay) the given level on the already-loaded card set
-    // (reshuffled launch order). Primes the audio element inside this real click
-    // gesture: in-game autoplay fires from a bubble's pointerdown but only after
-    // an awaited fetch, which loses gesture context — without this, mobile
-    // autoplay policy would silently drop the first Chinese bubble's narration.
+    // Restart the current level on the already-loaded card set (reshuffled launch
+    // order) — the header's mid-run restart. Primes the audio element inside this
+    // real click gesture: in-game autoplay fires from a bubble's pointerdown but
+    // only after an awaited fetch, which loses gesture context — without this,
+    // mobile autoplay policy would silently drop the first Chinese bubble's
+    // narration.
     const startLevel = useCallback((cfg: LevelConfig) => {
         tts.unlockAudio();
         beginRun(cfg, pool);
     }, [tts.unlockAudio, beginRun, pool]);
 
-    // Start the given level on a freshly fetched (different) card set. Primes
-    // audio inside the click gesture before the awaited fetch — same reason as
-    // startLevel.
-    const startLevelNewVocab = useCallback(async (cfg: LevelConfig) => {
+    // The end popup's single "Play Again": same level, PARTIALLY refreshed board.
+    // Cards the player matched during the run are retired and replaced by fresh
+    // ones; cards they failed to match stay in the set so they get another go at
+    // them. The refill request carries BOTH lists: the kept ids as a hard exclude
+    // (they're still on the board — a duplicate would be two identical bubbles)
+    // and every card cleared this session as a soft avoid (so the words just
+    // retired don't come straight back as their own replacements). Primes audio
+    // inside the click gesture before the awaited fetch (see startLevel).
+    const playAgain = useCallback(async () => {
         tts.unlockAudio();
+        const kept = pool.filter((c) => !matchedIdsRef.current.has(c.id));
+        const need = TOTAL_PAIRS - kept.length;
+        // Nothing matched (or the board is somehow already full) → straight replay,
+        // no round trip.
+        if (need <= 0) {
+            beginRun(level, kept);
+            return;
+        }
         setPhase("loading");
-        const cards = await fetchGamePool();
-        if (!cards) return; // fetchGamePool already switched to the blocked phase
-        beginRun(cfg, cards);
-    }, [tts.unlockAudio, fetchGamePool, beginRun]);
+        const fresh = await fetchGamePool({
+            need,
+            keepIds: kept.map((c) => c.id),
+            // Newest-first cap: a Set keeps insertion order, so the tail is the
+            // most recently cleared. See MAX_AVOID_IDS.
+            avoidIds: [...clearedThisSessionRef.current].slice(-MAX_AVOID_IDS),
+        });
+        if (!fresh) return; // network error → fetchGamePool switched to blocked
+        const nextPool = [...kept, ...fresh];
+        // A refill can come up short if the library shrank mid-session. A slightly
+        // smaller board still plays (BubbleStage sizes itself off the pool), but
+        // below the floor there's no game left to offer.
+        if (nextPool.length < MIN_REPLAY_PAIRS) {
+            setBlockMessage(
+                `You need at least ${MIN_REPLAY_PAIRS} Learn Now cards to play again. Study more cards to keep going.`
+            );
+            setPhase("blocked");
+            return;
+        }
+        beginRun(level, nextPool);
+    }, [tts.unlockAudio, fetchGamePool, beginRun, pool, level]);
 
     // Record a flashcard review mark for a matched/mismatched bubble's vocab
     // entry, reusing the same endpoint flp's working loop calls. Fire-and-forget:
@@ -264,6 +269,13 @@ const BubbleMatchPage: React.FC = () => {
     // Only invoked from in-game drag matches — not from post-loss cleanup drags
     // after the game ends (BubbleStage suppresses onMark while cleanupMode is on).
     const markBubbleMatch = useCallback((entry: VocabEntry, isCorrect: boolean) => {
+        // Remember which cards were cleared in-run so "Play Again" can retire them
+        // and keep the ones still on the field. Only successful matches count — a
+        // wrong drop leaves both bubbles in play.
+        if (isCorrect) {
+            matchedIdsRef.current.add(entry.id);
+            clearedThisSessionRef.current.add(entry.id);
+        }
         const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
         const headers: HeadersInit = {
             "Content-Type": "application/json",
@@ -323,45 +335,35 @@ const BubbleMatchPage: React.FC = () => {
         </Box>
     );
 
-    // Shared replay actions for BOTH end-of-run popups (won / lost), laid out as
-    // a 2×2 grid so the victory and game-over cards share identical controls and
-    // differ only in their text box:
-    //   Same Level / Same Cards        Same Level / Different Cards
-    //   Different Level / Same Cards   Back to Games
-    // "Different Level / Same Cards" opens the floating level menu (over the end
-    // popup); picking a level replays the same loaded pool at that level. `level`
-    // is the level that just ended.
-    const replayGridActions = (
+    // Shared replay actions for BOTH end-of-run popups (won / lost): a single
+    // primary "Play Again" (same level, matched cards swapped out — see playAgain)
+    // above a secondary "Back to Games". The victory and game-over cards share
+    // identical controls and differ only in their text box.
+    const replayActions = (
         <Box
             className="bubble-match__replay-actions"
-            sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1.5, width: "100%" }}
+            sx={{ display: "flex", flexDirection: "column", gap: 1.25, width: "100%" }}
         >
-            <ReplayGridButton
-                className="bubble-match__replay-btn bubble-match__replay-btn--same-same"
+            <Button
+                className="bubble-match__replay-btn bubble-match__replay-btn--play-again"
                 variant="contained"
-                topLabel="Same Level"
-                bottomLabel="Same Cards"
-                onClick={() => startLevel(level)}
-            />
-            <ReplayGridButton
-                className="bubble-match__replay-btn bubble-match__replay-btn--same-diff"
-                variant="contained"
-                topLabel="Same Level"
-                bottomLabel="Different Cards"
-                onClick={() => startLevelNewVocab(level)}
-            />
-            <ReplayGridButton
-                className="bubble-match__replay-btn bubble-match__replay-btn--diff-same"
-                variant="outlined"
-                topLabel="Different Level"
-                bottomLabel="Same Cards"
-                onClick={() => setLevelMenuOpen(true)}
-            />
+                onClick={playAgain}
+                sx={{
+                    py: 1.25,
+                    borderRadius: "14px",
+                    textTransform: "none",
+                    fontSize: SIZE.bodyLg,
+                    fontWeight: WEIGHT.bold,
+                    lineHeight: LEADING.tight,
+                }}
+            >
+                Play Again
+            </Button>
             <Button
                 className="bubble-match__replay-btn bubble-match__replay-btn--back"
                 variant="outlined"
                 onClick={() => navigate("/games")}
-                sx={{ textTransform: "none", borderRadius: "14px", fontWeight: WEIGHT.medium }}
+                sx={{ py: 1, borderRadius: "14px", textTransform: "none", fontWeight: WEIGHT.medium }}
             >
                 Back to Games
             </Button>
@@ -396,13 +398,13 @@ const BubbleMatchPage: React.FC = () => {
             >
                 <Typography className="bubble-match__popup-title" sx={{ fontSize: SIZE.heading, fontWeight: WEIGHT.bold, color: fc.onSurface }}>🏆 Level {level.level} cleared!</Typography>
                 <Typography className="bubble-match__popup-msg" sx={{ fontSize: SIZE.bodyLg, color: fc.textSecondary }}>
-                    You matched all {TOTAL_PAIRS} pairs on Level {level.level} — {level.label}. 🎉
+                    You matched all {pool.length} pairs on Level {level.level} — {level.label}. 🎉
                 </Typography>
                 {/* Weekly ⭐ badge for the level just cleared. */}
                 <Typography className="bubble-match__popup-weekly" sx={{ fontSize: SIZE.body, fontWeight: WEIGHT.bold, color: fc.onSurface }}>
                     ⭐ Weekly badge unlocked: {level.label}!
                 </Typography>
-                {replayGridActions}
+                {replayActions}
             </BubbleMatchEndPopup>
         );
     } else if (phase === "lost") {
@@ -413,7 +415,7 @@ const BubbleMatchPage: React.FC = () => {
                 onRestore={() => setPopupMinimized(false)}
             >
                 <Typography className="bubble-match__popup-title" sx={{ fontSize: SIZE.heading, fontWeight: WEIGHT.bold, color: fc.onSurface }}>Try again?</Typography>
-                {replayGridActions}
+                {replayActions}
             </BubbleMatchEndPopup>
         );
     }
@@ -481,21 +483,6 @@ const BubbleMatchPage: React.FC = () => {
                             cleanupMode={phase === "lost" && popupMinimized}
                         />
                         {popup}
-                        {/* "Different Level / Same Cards" floating menu — layered
-                            over the end popup; picking a level replays the loaded
-                            pool at that level. */}
-                        {(phase === "won" || phase === "lost") && levelMenuOpen && (
-                            <BubbleMatchLevelMenu
-                                levels={LEVEL_CONFIGS}
-                                currentLevel={level.level}
-                                clearedLevels={clearedLevels}
-                                onPick={(cfg) => {
-                                    setLevelMenuOpen(false);
-                                    startLevel(cfg);
-                                }}
-                                onClose={() => setLevelMenuOpen(false)}
-                            />
-                        )}
                     </>
                 ) : (
                     centered

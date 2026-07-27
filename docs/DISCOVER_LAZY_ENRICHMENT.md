@@ -25,7 +25,7 @@ curated set of **fully-enriched, `discoverable = TRUE`** Chinese entries (148 on
 dev). The rest of `dictionaryentries_zh` (~114k rows) is invisible.
 
 We want **every zh det entry to be sortable**, while keeping the expensive
-per-word AI enrichment (the 13-step Chinese pipeline) **off the critical path**.
+per-word AI enrichment (the 14-step Chinese pipeline) **off the critical path**.
 The model is two phases:
 
 1. **Corpus pre-pass** — run the *minimum* backfill on **all** rows so a card can
@@ -211,7 +211,7 @@ the same two scripts, the same validators, the same stamps — only the *answere
 local (zero API egress), which is why it is viable at all at ~85 h/51k-rows API pace.
 
 **The pre-pass subset is declared once**, in the manifest, as a strict subset of the
-13 steps — `PRE_PASS_STEP_IDS` / `PRE_PASS_SCRIPTS_ZH`
+14 steps — `PRE_PASS_STEP_IDS` / `PRE_PASS_SCRIPTS_ZH`
 (`server/scripts/backfill/shared/lib/requiredScripts.js`). Run order is
 process-defs **then** hsk-level, because the level judgment reads `definitions` and
 process-defs rewrites them. A missing id throws at import rather than silently
@@ -420,13 +420,13 @@ Batch is always ≥ as cheap as serial; the margin varies by cache ratio:
 The genuine cost of "always batch" is **engineering**, not runtime: multi-pass
 scripts don't map onto the runner's one-request-per-row model without a redesign.
 
-### Current batch support (zh pipeline, 13 steps)
+### Current batch support (zh pipeline, 14 steps)
 
 | Support | Steps |
 |---|---|
 | Deterministic (no AI, no batch needed) | `tones`, `numbered-pinyin` |
 | AI + already `--batch`-capable | `hsk-level`, `word-forms`, `classifier` |
-| AI, needs porting | `dictionary-breakdown`, `process-definitions-array`, `parts-of-speech`, `long-definitions`, `frequency-score`, `cluster-definitions`, `example-sentences` |
+| AI, needs porting | `dictionary-breakdown`, `process-definitions-array`, `parts-of-speech`, `long-definitions`, `longdef-citations`, `frequency-score`, `cluster-definitions`, `example-sentences` |
 
 Batch mode itself (`scripts/backfill/shared/lib/runner.js` `runBatched`) is fully
 implemented but **has never actually been run** (0 `--batch` runs in

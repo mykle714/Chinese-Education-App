@@ -337,6 +337,28 @@ activePage="home"`), not `GamePage`.
   restart icon (`BubbleMatchHeaderControls.onRestart`, wired only while
   `phase === "playing"`) that re-runs the **same level with the same words**
   (reshuffled launch order) via `startLevel(level)`.
+- **Replay (end popup) — one "Play Again", partial card refresh:** the won/lost
+  card shows a single primary **Play Again** over a secondary **Back to Games**
+  (`replayActions` in `BubbleMatchPage.tsx`). Play Again replays the **same level**
+  on a **partially refreshed board**: every pair the player *matched during the
+  run* is retired and replaced with a fresh card, while every pair they *failed to
+  match* stays in the set, so a word keeps coming back until it's cleared. The page
+  records cleared cards in `matchedIdsRef` from `markBubbleMatch(entry, true)` —
+  post-loss cleanup drags don't count (`BubbleStage` suppresses `onMark` in
+  `cleanupMode`) — and `beginRun` resets that set each run. A second ref,
+  `clearedThisSessionRef`, accumulates every card cleared across ALL rounds while
+  the page stays mounted (capped to the newest `MAX_AVOID_IDS` = 200) and acts as a
+  client-side cooldown, so round 3 doesn't hand back what round 1 cleared. The
+  refill hits `game-pool?...&need=N&exclude=<kept ids>&avoid=<cleared ids>`:
+  **kept ids are a hard exclude** (returning one would duplicate a live bubble),
+  **cleared ids are a soft avoid** (last-resort tier). Nothing matched
+  (`need === 0`) replays with no round trip. If the
+  library shrank mid-session the refill may come up short — a smaller board still
+  plays (the stage sizes itself off the pool), below `MIN_REPLAY_PAIRS` (4) the page
+  blocks instead.
+  **Consequence:** leaving to the Games hub and re-entering always draws a wholly
+  new random pool (the page remounts and refetches); staying in the popup is what
+  preserves the unmatched words.
 - **Levels do not chain** — a level picker selects difficulty (launch cadence +
   ceiling-shrink speed); all use the full pool. **There is no clock.** Once the
   whole pool has launched, on the next launch-tick a **descending ceiling**
@@ -358,10 +380,7 @@ activePage="home"`), not `GamePage`.
   node carries the loop's transform, inner node carries CSS pop/shake),
   `physics.ts`, `BubbleMatchHeader.tsx` (right-slot controls: restart button +
   pinyin/autoplay toggles + fire badge), `BubbleMatchEndPopup.tsx` (won/lost card
-  + minimize-to-corner puck), `BubbleMatchLevelMenu.tsx` (the floating
-  "Different Level / Same Cards" level picker layered over the end popup — lists
-  all levels, marks the current one, replays the loaded pool at the picked
-  level), `constants.ts`, `types.ts`.
+  + minimize-to-corner puck), `constants.ts`, `types.ts`.
 - `src/games/registry.ts` — registers the game (`requiresAuth: true`).
 
 ### Backend
@@ -369,9 +388,40 @@ activePage="home"`), not `GamePage`.
 Reuses the OnDeck vocab stack (no new tables). New endpoints in `server.ts`:
 
 - `GET /api/onDeck/game-pool?Target=15&Comfortable=10` →
-  `{ cards, requested, available, sufficient }`. `OnDeckVocabService.getGameVocabPool`
+  `{ cards, requested, available, total, needed, sufficient }`. `OnDeckVocabService.getGameVocabPool`
   pulls library cards per category (same RANDOM ordering + `definition` source as
   the working loop), enriches + pre-warms TTS, and reports availability so the
   client can block entry when the user lacks enough words.
+  **Category buckets are per mark type**: each game passes the single mark type it
+  emits (Bubble Match `recognition`; Word Search `reading`/`production` by mode) and
+  candidates are bucketed by that track's own recent mark history
+  (`compute_type_category`), not by the goal-blended overall utcm category the flp
+  and decks page use — so each game's difficulty distribution reflects the skill it
+  actually trains. That same per-type category also selects the card's cooldown
+  window. See [MASTERY_REWORK.md § "Games select by their own mark type"](./MASTERY_REWORK.md).
+  **Partial refill** (`&need=N&exclude=12,34&avoid=56,78`, added for Bubble Match's
+  single "Play Again"): returns only `N` cards. The per-bucket quotas are scaled by
+  `need / total` so a partial board keeps the same difficulty mix as a full one
+  (need=10 of a 2/10/6/2 board → 1/5/3/1), `requested` echoes the scaled quotas,
+  `total` stays the full board size, and `needed` / `sufficient` are both relative
+  to `need`. All three params are optional; omitting them is the original
+  full-board behavior.
+
+  **Three fill tiers** (`getGameVocabPool`), drained in order until `need` is met:
+
+  | Tier | Contents | Drained |
+  |---|---|---|
+  | 1. fresh | game mark type off cooldown | requested buckets, then fallback order |
+  | 2. cooled | on the per-type cooldown | requested buckets, then fallback order |
+  | 3. avoided | ids passed as `avoid` (just cleared) | requested buckets, then fallback order |
+
+  `exclude` is enforced in SQL (`fetchGameCandidates`'s `excludeIds`) and is
+  absolute; `avoid` is a *tier demotion*, so a library too small to fill the board
+  any other way still assembles one rather than starving.
+  ⚠️ The avoided tier must be its own tier, **not** the tail of the matching
+  category's cooled queue: every fill loop walks category-by-category, so a demoted
+  Unfamiliar card parked in the Unfamiliar cooled queue is still drawn ahead of
+  every Mastered cooled card — which is exactly how the first cut of this feature
+  handed back the cards the player had just cleared.
 - `GET /api/onDeck/category-counts` → `{ Unfamiliar, Target, Comfortable, Mastered }`,
   also surfaced under each bucket label on the decks page.

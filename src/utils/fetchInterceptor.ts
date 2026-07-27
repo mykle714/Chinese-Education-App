@@ -1,5 +1,6 @@
 import { attemptTokenRefresh, endServerSession } from './tokenRefresh';
 import * as authStorage from './authStorage';
+import { authLog, authError } from './authDebug';
 
 // Store navigation and auth clearing functions
 let navigateToLogin: (() => void) | null = null;
@@ -63,13 +64,35 @@ async function retryWithToken(
   return originalFetch(input, { ...init, headers, credentials: 'include' });
 }
 
+/**
+ * Marker branded onto the patched fetch so we can recognise our own handiwork.
+ *
+ * The guard MUST live on the function object, not in a module-level `let`.
+ * setupFetchInterceptor() is called from a useEffect with no cleanup, and it gets
+ * re-invoked in two ways: React StrictMode (src/main.tsx) double-mounts in dev,
+ * and — far worse — Vite HMR re-evaluates this module on every edit, which resets
+ * any module-level flag while window.fetch stays patched from the previous
+ * generation. Each re-invocation then captured an ALREADY-PATCHED window.fetch as
+ * its "original", stacking interceptors. Observed in the wild: 21 nested layers
+ * after a debugging session, so one 401 ran the refresh/retry/end-session logic
+ * 21 times over. A symbol on the function survives both StrictMode and HMR.
+ */
+const INTERCEPTOR_MARK = Symbol.for('cow.fetchInterceptor.installed');
+
+type MarkedFetch = typeof fetch & { [INTERCEPTOR_MARK]?: true };
+
 // Setup global fetch interceptor
 export const setupFetchInterceptor = () => {
-  // Store the original fetch
+  if ((window.fetch as MarkedFetch)[INTERCEPTOR_MARK]) {
+    authLog('interceptor: already installed on window.fetch, skipping re-patch');
+    return;
+  }
+
+  // Store the original (genuinely unpatched) fetch
   const originalFetch = window.fetch;
 
   // Override the global fetch
-  window.fetch = async (...args): Promise<Response> => {
+  const patched: MarkedFetch = async (...args): Promise<Response> => {
     // Call the original fetch — network errors propagate naturally
     const response = await originalFetch(...args);
 
@@ -79,19 +102,27 @@ export const setupFetchInterceptor = () => {
     // On an auth failure for a refreshable endpoint, try to transparently refresh
     // the access token and retry the original request once before giving up.
     if (!skipRefresh && isUnauthorized(response.status)) {
+      authLog('interceptor: 401 — attempting refresh + retry', { url });
       const newToken = await attemptTokenRefresh();
 
       if (newToken) {
         const retried = await retryWithToken(originalFetch, args, newToken);
         // If the retry now succeeds, the caller never sees the 401.
         if (!isUnauthorized(retried.status)) {
+          authLog('interceptor: retry succeeded after refresh', { url, status: retried.status });
           return retried;
         }
         // Still unauthorized after a fresh token => fall through to logout.
+        authError('interceptor: retry STILL 401 after a fresh token', { url });
       }
 
       // Refresh failed (or retry still unauthorized): the session is truly over.
-      console.log('Session expired and refresh failed — redirecting to login...');
+      // This is the single most important line to look for when the app "crashes"
+      // to the login screen — `url` names the request that ended the session.
+      authError('interceptor: ENDING SESSION and redirecting to /login', {
+        url,
+        refreshSucceeded: !!newToken,
+      });
 
       // Kill it server-side FIRST. A refresh cookie that outlives this redirect
       // leaves the login screen sitting on a live session, which AuthContext's
@@ -111,4 +142,8 @@ export const setupFetchInterceptor = () => {
 
     return response;
   };
+
+  patched[INTERCEPTOR_MARK] = true;
+  window.fetch = patched;
+  authLog('interceptor: installed');
 };

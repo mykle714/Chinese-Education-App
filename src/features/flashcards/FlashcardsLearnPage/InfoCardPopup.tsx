@@ -10,7 +10,6 @@ export interface InfoCardPopupProps {
     onTabChange: (tab: number) => void;
     breakdownItems: BreakdownItem[];
     showPinyin: boolean;
-    showSegmentSpaces?: boolean;
     isFlipped: boolean;
     onClose: () => void;
     onBreakdownItemClick?: (item: BreakdownItem) => void;
@@ -39,7 +38,6 @@ function InfoCardPopup({
     onTabChange,
     breakdownItems,
     showPinyin,
-    showSegmentSpaces,
     isFlipped,
     onClose,
     onBreakdownItemClick,
@@ -95,7 +93,6 @@ function InfoCardPopup({
                     onTabChange={onTabChange}
                     breakdownItems={breakdownItems}
                     showPinyin={showPinyin}
-                    showSegmentSpaces={showSegmentSpaces}
                     isFlipped={isFlipped}
                     onBreakdownItemClick={onBreakdownItemClick}
                     onUsedInItemClick={onUsedInItemClick}

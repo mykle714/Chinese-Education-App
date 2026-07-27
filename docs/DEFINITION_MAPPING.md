@@ -101,7 +101,8 @@ Child docs:
     labeled and joined (`"<sense> (<pos>): …\n\n…"`), via `validationBodyFormat`.
 - **Then:** split into `longDefinitionParts` (`LongDefinitionPart[]`) — alternating
   English-prose and cpcd-able Chinese runs for the renderer
-  (`server/types/index.ts`).
+  (`server/types/index.ts`), each Chinese run carrying its whole-run `translation` when
+  one exists (form #5b — only runs that aren't themselves det headwords get one).
 - **Client-side sense resolution:** because the sense picker is optimistic (no refetch),
   the server ships EVERY sense with its own parts as `longDefinitionSenses`
   (`LongDefinitionSenseView[]`), and the client picks with
@@ -114,12 +115,75 @@ Child docs:
   (= `onExampleSegmentClick` → `eip.openForEntryKey`), so the segment popup is
   tappable and drills into the eip for that headword — the same gesture as the est
   popups. The cdp (`VocabCardDetailPage.tsx`) omits `onSegmentOpen`, so there the
-  popup stays a passive tooltip (it has no eip).
+  popup stays a passive tooltip (it has no eip). A run that carries a `translation`
+  (form #5b) overrides all of that: it becomes one tappable unit showing the phrase's
+  meaning, and is never drillable.
 - **Producer:** `backfill-long-definitions.js` — reads `definitionClusters`, so it runs
   AFTER `backfill-cluster-definitions.js` and skips unclustered rows.
 - **Rolling this out:** [LONGDEF_PER_SENSE_MIGRATION.md](./LONGDEF_PER_SENSE_MIGRATION.md) —
   the deploy/regeneration runbook (code must ship BEFORE any data is regenerated; the legacy
   per-POS object stays readable until each row is re-run).
+
+### 5b. `longDefinitionCitations` — translations of the Chinese quoted inside #5
+- **Shape:** `jsonb` array of `{ zh, en }` (zh only, migration 126) —
+  `[{ "zh": "光明磊落", "en": "open, honest, and upright" }]`.
+- **What it is for:** a long definition may quote Chinese inline ("almost always met inside
+  the set phrase 光明磊落"). The read path already splits that run out as a `foreign` part;
+  without a translation, tapping it glossed **one segment** of the phrase, which reads as a
+  word list rather than as the thing being cited. Each entry here supplies the meaning of the
+  WHOLE run, so the run becomes a single tappable unit.
+- **Key:** the run text itself, produced by `splitHanRuns`
+  (`server/dal/shared/segmentString.ts`) — a *maximal* CJK run, so **interior CJK punctuation
+  is part of the key** (`他会说中文，我也会` is one run, not two). The producer extracts runs with
+  that same function, precisely so the key can never drift from what the reader looks up.
+- **Scope:** one list per ENTRY, covering the runs cited by **every** sense — the runs are
+  keyed by text alone, so no sense dimension is needed.
+- **Only runs that are NOT det headwords are translated.** If the whole run has its own
+  `dictionaryentries_zh` row (`光明磊落`, `看见`), the dictionary already glosses it per segment
+  and the eip popup can drill into it; a translation would replace that with whole-run mode
+  and take the drill-in away. So translation is reserved for what det has no answer for —
+  clauses and sentences (`我在看那只鸟`). Discoverable is irrelevant: **any** row counts,
+  because a row means definitions exist. Enforced at READ time in
+  `segmentLongDefinitionTexts` (`detWords`), not only at write time, because the Compare
+  generator cannot know det's contents and because a stored citation must stop rendering by
+  itself once its phrase is later added to det. The producer applies the same rule to skip
+  the API call. Practical consequence: a definition that only quotes headwords correctly
+  ends up with `[]`.
+  - The read path's segmentation lookup only ever asks about ≤4-char tokens
+    (`SEGMENTATION_MAX_TOKEN_CHARS`, `server/dal/shared/segmentString.ts`), so over-length
+    whole runs are added to that same batch query explicitly — zh has thousands of 5+ char
+    idiom headwords. The extra rows are excluded from `buildDictMap`/`buildExcludeSet` so
+    segmentation behavior is unchanged.
+- **Its own column, deliberately:** `definitionsApproved` (docs/DATA_VALIDATION_SYSTEM.md)
+  hashes the raw `partsOfSpeech` + `definitions` + `longDefinition` columns, so folding
+  translations into `longDefinition` would invalidate every existing validator approval.
+  These are a rendering aid, not part of the reviewed definition text.
+- **Attached at read time:** `enrichLongDefinitionMetadataBatch` →
+  `segmentLongDefinitionTexts(texts, language, citationsByText)` sets `translation` on the
+  matching `foreign` part and then **drops** the raw list from the payload
+  (`server/dal/implementations/DictionaryDAL.ts`; `buildCitationMap` indexes it).
+- **Renderer:** `SegmentedSentenceDisplay`'s `runTranslation` prop
+  (`src/components/SegmentedSentenceDisplay.tsx`) — whole-run mode: a tap or hover anywhere
+  in the run (**including its punctuation cells**) selects the entire run and the popup shows
+  the translation. The popup is **passive** in this mode: a cited phrase is not a headword,
+  so there is nothing for `onSegmentOpen` to drill into. An untranslated run keeps the
+  per-segment popup — which is how a run that IS a headword always serves (see the rule
+  above), and how every not-yet-backfilled entry serves.
+- **Producer:** `server/scripts/backfill/chinese/backfill-longdef-citations.js` — one model
+  call per entry, all its runs translated together with the full definition as disambiguating
+  context — after dropping the runs that are det headwords, which never reach the model.
+  Runs it can't translate are dropped and printed as `⚠ CITATION REVIEW` (a skipped headword
+  is NOT flagged — it's the correct outcome). Entries with nothing translatable are stamped
+  `[]` (not NULL) so full runs don't re-examine them.
+- **Pipeline position:** immediately AFTER `backfill-long-definitions.js`; re-running that
+  script for a word **invalidates** this column for that word. See
+  `.claude/commands/mark-discoverable.md`.
+- **Compare twin:** the eip Compare tab stores the identical `{ zh, en }` shape in
+  `word_comparison_cache.citations` (migration 127) and renders through the same component —
+  see [WORD_COMPARE_FEATURE.md](./WORD_COMPARE_FEATURE.md). Compare is a live path, so its
+  citations come from the comparison call itself rather than a backfill — and since the
+  model there cites the two headwords constantly, most of its citations are filtered out by
+  the not-a-headword rule and only its example sentences render translated.
 
 ### 6. `definitionClusters` — orthogonal sense clusters
 - **Shape:** `DefinitionCluster[]` (jsonb, migration 90); each cluster groups
@@ -159,10 +223,71 @@ Rough order; each is an idempotent backfill in
 | 1 | Import | `import-cedict-pg.ts` | creates raw `definitions` |
 | 2 | Split semicolons | `backfill-split-semicolon-definitions.js` | `"a; b"` → `["a","b"]` array elements |
 | 3 | Expand abbreviations | `backfill-expand-abbreviations.js` | expands cedict abbreviations in each gloss |
-| 4 | Reorder + prune (+ synthetic headline) | `backfill-process-definitions-array.js` | rewrites `definitions` ordering; may prepend a synthetic short lead gloss (owns the column) |
+| 4 | Split commas (es only) + reorder + prune (+ synthetic headline) | `backfill-process-definitions-array.js` | **es:** breaks comma-joined synonym runs into one gloss per element (see below); **both:** rewrites `definitions` ordering; may prepend a synthetic short lead gloss (owns the column) |
 | 5 | Word-level frequency | `backfill-frequency-score.js` | sets word-level `frequencyScore` (drives GSA, not a definition form) |
 | 6 | Cluster | `backfill-cluster-definitions.js` | produces `definitionClusters` (form #6) |
 | 7 | Long definition | `backfill-long-definitions.js` | produces `longDefinition` (form #5), one definition per cluster from step 6 |
+| 8 | Cite translations | `backfill-longdef-citations.js` | produces `longDefinitionCitations` (form #5b) — one English translation per Chinese run quoted in step 7's text. Re-running step 7 invalidates it. |
+
+#### Step 4, Spanish only: the comma split
+**Code:** `server/scripts/backfill/spanish/backfill-process-definitions-array.js`
+(split pass: `SPLIT_INSTRUCTIONS`, `applySplits` call, `splitDefinitions`),
+`server/scripts/backfill/shared/lib/commaSplit.js` (the guard),
+`…/commaSplit.test.mjs` (40 cases).
+
+**The problem it solves.** The zh source (CEDICT) delimits glosses with `/`, so one
+array element is one gloss. The es source (Wiktionary via `doozan/spanish_data`) packs
+synonym runs into one string with commas — `después` → `["later, afterwards, afterward,
+post", "next", "after"]`. Measured on discoverable rows, `definitions[0]` contains a
+comma in **22.7% of es rows vs 0.9% of zh**. Every consumer keyed off `definitions[0]`
+inherits the whole list where it expects one gloss: dd (form #3 — the flashcard face,
+eip header, cdp, bubble-match), the icons8 search term, and the cluster partition.
+
+**Why the model decides, in its own pass.** A comma is not always a delimiter, and the
+difference is semantic, not lexical:
+
+| Keep whole | Why |
+|---|---|
+| `to break the law, rule, order` | the commas delimit the verb's OBJECTS — splitting invents "to rule" / "to order" |
+| `wall, especially of a house or room` | prose continuation |
+| `to turn out, e.g. well or poorly` | `e.g.` continuation |
+| `to be granted, awarded, or given` | coordination |
+| `to look up (in a search engine, dictionary, etc.)` | comma is inside a parenthetical, not top-level |
+
+Splitting was first folded into the ranking Pass 1, and it fired only intermittently —
+`pasar` (22 glosses) split all ten of its runs on one attempt and none on the next,
+because ranking dominates the model's attention. It now gets a **dedicated Sonnet call
+that runs first**, skipped entirely when no gloss has a top-level comma and non-fatal on
+failure (the entry is simply ranked with its glosses still joined). Both ranking passes
+therefore always see one gloss per element, and their verbatim-copy validation is
+unchanged.
+
+**The guard (`isExactPartition`).** The model chooses *where* to cut; the code forbids
+everything else. Proposed pieces must be an exact, in-order partition of the gloss's
+top-level comma segments, so an invented word, a dropped segment, or a reordering is
+rejected and the gloss stays whole. Each piece may re-attach the two markers that scope
+the whole run and would otherwise fall off the trailing pieces:
+- **leading note** — `(of food) bad, spoiled` → `(of food) bad`, `(of food) spoiled`,
+  keeping restrictive/regional/vulgar markers that ranking principles 3 and 5 demote on;
+- **leading infinitive** — `to eat away, corrode` → `to eat away`, `to corrode`
+  (2,205 es glosses have this gap).
+
+A **partial** split is legal and sometimes correct: `to break, break open, (new ground, a
+game, etc.)` → `["to break", "to break open, (new ground, a game, etc.)"]`, because the
+dangling note belongs with "break open".
+
+The guard fires on real output — in a spot check the model proposed
+`["to like [+de]", "to enjoy [+de]"]` for `to like, to enjoy [+de]`, copying the trailing
+`[+de]` backwards onto a piece that never had it; that was rejected and logged.
+
+Every split and every rejection is written to the run's `/tmp` review log, because an
+over-split invents a sense the word does not have and no later step can detect it.
+
+**Two consequences for the rest of the pipeline:** the entry-selection filter widened
+from `jsonb_array_length(definitions) > 1` to also admit single-element arrays whose
+gloss has a comma (those were previously skipped and are exactly the `después` case),
+and `max_tokens` on both ranking passes went 1024 → 4096, since splitting lengthens the
+list each pass must echo (`pasar`: 22 → 36).
 
 ### Shared logic (`scripts/backfill/chinese/lib/`)
 The ordering and frequency cores are extracted so steps 4, 6, and 7 share one

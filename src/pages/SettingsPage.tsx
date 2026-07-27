@@ -32,6 +32,7 @@ import {
 import PaletteIcon from '@mui/icons-material/Palette';
 import LanguageIcon from '@mui/icons-material/Language';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
+import SpaceBarIcon from '@mui/icons-material/SpaceBar';
 import LockIcon from '@mui/icons-material/Lock';
 import { Visibility, VisibilityOff, Warning } from '@mui/icons-material';
 import { useTheme, type ThemeMode } from '../contexts/ThemeContext';
@@ -44,13 +45,32 @@ function SettingsPage() {
     usePageTitle("Settings");
     const navigate = useNavigate();
     const { themeMode, setThemeMode, availableThemes } = useTheme();
-    const { user, updateLanguage, changePassword, deleteAccount } = useAuth();
+    const { user, updateLanguage, changePassword, deleteAccount, updateDisplaySettings } = useAuth();
     const [languageSuccess, setLanguageSuccess] = useState(false);
     const [languageError, setLanguageError] = useState<string | null>(null);
     const { settings: ttsSettings, update: updateTTSSettings } = useTTSSettings();
 
     const handleThemeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         setThemeMode(event.target.value as ThemeMode);
+    };
+
+    // Display preferences (docs/EXAMPLE_SENTENCES.md). Word spacing is account-level
+    // (users."showSegmentSpaces", migration 129) rather than a device-local flp toggle,
+    // so the eip and the cdp can never disagree. Chinese-only: Latin-script sentences
+    // are always rendered spaced (SegmentedSentenceDisplay's isLatin branch), so the
+    // switch would be a no-op for Spanish. selectedLanguage is nullable with a 'zh'
+    // default in the DB, so treat "unset" as Chinese.
+    const [displaySaving, setDisplaySaving] = useState(false);
+    const showDisplaySettings = (user?.selectedLanguage ?? 'zh') === 'zh';
+    const handleToggleSegmentSpaces = async (next: boolean) => {
+        setDisplaySaving(true);
+        try {
+            await updateDisplaySettings({ showSegmentSpaces: next });
+        } catch {
+            /* AuthContext surfaces the error; the switch reverts with the user state */
+        } finally {
+            setDisplaySaving(false);
+        }
     };
 
     const handleLanguageChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -374,6 +394,40 @@ function SettingsPage() {
                     </Box>
                 </CardContent>
             </Paper>
+
+            {/* Display Settings Section — Chinese only (see showDisplaySettings) */}
+            {showDisplaySettings && (
+                <Paper elevation={2} sx={{ mb: 4 }} className="settings-page__display-section">
+                    <CardContent sx={{ p: 4 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+                            <SpaceBarIcon sx={{ mr: 2, color: 'primary.main' }} />
+                            <Typography variant="h5" component="h2" fontWeight="bold">
+                                Display
+                            </Typography>
+                        </Box>
+
+                        <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+                            How Chinese sentences are laid out wherever they appear.
+                        </Typography>
+
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }} className="settings-page__segment-spaces-row">
+                            <Box>
+                                <Typography variant="body1" fontWeight="bold">Show spaces between words</Typography>
+                                <Typography variant="body2" color="text.secondary">
+                                    Separates each word in example sentences — on the flashcard info
+                                    panel and the card detail page alike.
+                                </Typography>
+                            </Box>
+                            <Switch
+                                checked={user?.showSegmentSpaces === true}
+                                disabled={displaySaving}
+                                onChange={(e) => handleToggleSegmentSpaces(e.target.checked)}
+                                inputProps={{ 'aria-label': 'Show spaces between words' }}
+                            />
+                        </Box>
+                    </CardContent>
+                </Paper>
+            )}
 
             {/* Change Password Section */}
             <Paper elevation={2} sx={{ mb: 4 }} className="settings-page__password-section">

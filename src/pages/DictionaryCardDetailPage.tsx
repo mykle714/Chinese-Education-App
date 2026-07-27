@@ -11,11 +11,11 @@ import { useAuth } from "../AuthContext";
 import { useSlideNavigate } from "../hooks/useSlideNavigate";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useFlashcardLearnSettings } from "../hooks/useFlashcardLearnSettings";
-import { useTTS, SLOW_SENTENCE_RATE } from "../hooks/useTTS";
+import { useTTS, useAutoSpeakEntry, SLOW_SENTENCE_RATE } from "../hooks/useTTS";
 import { COLORS } from "../theme/colors";
 import { CardFaceSide, ChineseBlock, EnglishBlock } from "../features/flashcards/FlashcardsLearnPage/FlashCardSection";
 import { CARD_BASE_WIDTH, CARD_BASE_HEIGHT } from "../features/flashcards/FlashcardsLearnPage/constants";
-import { dictionaryEntryToVocabEntry } from "../features/flashcards/FlashcardsLearnPage/dictEntryAdapter";
+import { dictionaryEntryToVocabEntry } from "../utils/dictEntryAdapter";
 import { resolveSelectedSenseIndex } from "../utils/definitionUtils";
 import { VocabCardBadges, VocabCardSections } from "../features/flashcards/VocabCardDetailBody";
 
@@ -49,6 +49,9 @@ const DictionaryCardDetailPage: React.FC = () => {
     const tts = useTTS();
 
     const [entry, setEntry] = useState<VocabEntry | null>(null);
+    // Entering the cdp narrates the word once (see useAutoSpeakEntry); the speaker
+    // button on the hero card remains available for replays.
+    useAutoSpeakEntry(tts, entry);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     // Which definitionClusters sense EnglishBlock shows on the hero card.

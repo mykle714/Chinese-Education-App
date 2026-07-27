@@ -4,7 +4,7 @@
  * LAYER: data-enrichment (backfill) utility layer.
  *
  * ONE source of truth for the completeness check + the on-first-sort worker
- * (docs/DISCOVER_LAZY_ENRICHMENT.md §5). `REQUIRED_SCRIPTS_ZH` mirrors the 13-step zh
+ * (docs/DISCOVER_LAZY_ENRICHMENT.md §5). `REQUIRED_SCRIPTS_ZH` mirrors the 14-step zh
  * pipeline in `.claude/commands/mark-discoverable.md` §A; `REQUIRED_SCRIPTS_ES` mirrors
  * the 8-step es pipeline in §B3. `id` MUST match the `script:` id each backfill passes
  * to initRunLog (that is the key it stamps into `enrichmentLog`).
@@ -21,7 +21,7 @@
  *     If a validator has approved/flagged one, the script self-skips it via
  *     `validatedClause`, so the worker must NOT run the step on that row and must
  *     NOT wait for its stamp — the human-reviewed content is authoritative.
- *       process-defs / parts-of-speech / long-definitions → 'definitions'
+ *       process-defs / parts-of-speech / long-definitions / longdef-citations → 'definitions'
  *       example-sentences → 'exampleSentence0..2'
  *     (These mirror the scripts' own validatedClause calls — see each script.)
  *
@@ -62,6 +62,10 @@ export const REQUIRED_SCRIPTS_ZH = [
   // `sense` labels it keys on) plus each sense's POS list from `definitionClusters` — so it
   // MUST follow clustering, and skips any row that isn't clustered yet. docs/DEFINITION_CLUSTERS.md.
   { id: 'chinese/backfill-long-definitions',          when: 'always',    version: 15, validationFields: ['definitions'] },
+  // Translates the Chinese runs QUOTED INSIDE the long definition (migration 126), so it reads
+  // that step's output and must follow it. Re-running long-definitions for a word invalidates
+  // this column for that word. docs/DEFINITION_MAPPING.md #5b.
+  { id: 'chinese/backfill-longdef-citations',         when: 'always',    version: 2, validationFields: ['definitions'] },
   { id: 'chinese/backfill-example-sentences',         when: 'always',    version: 6, validationFields: ['exampleSentence0', 'exampleSentence1', 'exampleSentence2'] },
   { id: 'chinese/backfill-classifier',                when: 'nounPos',   version: 2 },
 ];

@@ -130,12 +130,29 @@ together with `iconLayout` by the same `PATCH …/icon-layout`. Type `SnapConfig
 `theme`. Persists the editor's **Contrast** menu per saved word (see the Contrast tool under
 "Edit-mode UX"). `foreign` colors the foreign-word **glyphs only** (the Chinese characters /
 Spanish word) — the pinyin overlay is **never** affected; `english` colors the English
-definition. `theme` follows the device/app theme (the existing default), `dark` forces black
-(`#000`), `light` forces white (`#fff`). Written together with `iconLayout` by the same
-`PATCH …/icon-layout`. Types `TextColorMode` / `TextColors` live in `src/types.ts` +
-`server/types/index.ts`; the resolver `resolveTextColor` lives in
-`src/utils/cardTextColor.ts` (returns `undefined` for `theme` so callers keep their
-theme-aware default).
+definition. `theme` follows the device/app theme (the existing default), `dark` forces the
+**dark tone**, `light` forces the **light tone**.
+
+`dark`/`light` name a *tone*, not a literal color — the concrete pair is a property of the
+surface, expressed as a `TextTonePair` (`src/utils/cardTextColor.ts`):
+
+| Surface | Pair | dark / light |
+|---|---|---|
+| Foreign-word glyphs | `DEFAULT_TEXT_TONES` | `#000000` / `#FFFFFF` |
+| dd (flp card faces + eip header gloss), **all languages** | `DD_TONES` | `#5A5A60` / `#b8b8bc` |
+
+The dd is de-emphasized one step off full contrast in whichever direction the surface runs —
+it is supporting text beside the headword, not the headword itself. `DD_TONES` is mirrored by
+the `flashcard.dd` theme token (`src/contexts/ThemeContext.tsx`), which selects one of the
+same two values per card theme (dark card theme → light tone, light/blue/green → dark tone)
+for the `theme`/unset case — **keep the token values and `DD_TONES` in sync**.
+
+Written together with `iconLayout` by the same `PATCH …/icon-layout`. Types `TextColorMode` /
+`TextColors` live in `src/types.ts` + `server/types/index.ts`; the resolver
+`resolveTextColor(mode, tones?)` lives in `src/utils/cardTextColor.ts` (returns `undefined`
+for `theme` so callers keep their theme-aware default; `tones` defaults to
+`DEFAULT_TEXT_TONES`). Call sites: `FlashCardSection.tsx:116` (foreign) and `:226` (dd, the
+only tone-pair-aware site), `MiniVocabCard.tsx:49-50`.
 
 **Per-card card background fill — `cardColor` text** on both vet tables (migration
 `database/migrations/94-add-card-color-to-vocabentries.sql`). A raw CSS hex string (NOT a
@@ -1057,7 +1074,8 @@ SnapConfig | null`, and `TextColors` (`{foreign,english}` of `TextColorMode =
 'theme'|'dark'|'light'`) + `textColors?: TextColors | null`, and `cardColor?: string | null`
 (the card background fill, migration 94) on the `VocabEntry` interface, in both
 `server/types/index.ts` and client `src/types.ts`. `SnapConfig` is re-exported from
-`CardIconCanvas.tsx`. The Contrast color resolver `resolveTextColor` lives in
+`CardIconCanvas.tsx`. The Contrast color resolver `resolveTextColor` and the tone pairs
+(`TextTonePair`, `DEFAULT_TEXT_TONES`, `DD_TONES`) live in
 `src/utils/cardTextColor.ts`; the card-fill palette + resolver (`CARD_COLOR_OPTIONS` /
 `resolveCardColor`) live in `src/utils/cardColor.ts`, with the server's allow-list
 `CARD_COLOR_VALUES` in `server/types/index.ts` (kept in sync by hand).

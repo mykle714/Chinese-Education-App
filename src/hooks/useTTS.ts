@@ -177,3 +177,41 @@ export function useTTS() {
         updateSettings: update,
     };
 }
+
+/**
+ * useAutoSpeakEntry — narrate a card's word once, as soon as it lands.
+ *
+ * Used by both cdp variants (VocabCardDetailPage, DictionaryCardDetailPage) so
+ * opening a card detail page immediately pronounces the word without the user
+ * having to hit the speaker button.
+ *
+ * Fires at most once per entryKey: the ref guard means unrelated re-renders
+ * (edit-mode toggles, sense picks, a silent token refresh re-running the fetch)
+ * never re-trigger narration, while a drill-in to a DIFFERENT word does.
+ * Autoplay is safe here because reaching a cdp always involves a tap, and the
+ * cloud provider arms a global one-shot gesture listener that resumes its shared
+ * AudioContext (see CloudTTSProvider.unlock).
+ */
+export function useAutoSpeakEntry(
+    tts: ReturnType<typeof useTTS>,
+    entry: VocabEntry | null | undefined,
+) {
+    // Last entryKey we narrated, so each word plays exactly once per mount.
+    const spokenKeyRef = useRef<string | null>(null);
+    const { speak, enabled } = tts;
+
+    useEffect(() => {
+        if (!enabled) return;
+        if (!entry?.entryKey) return;
+        // The server already told us synthesis fails for this card — don't
+        // bother (mirrors the prefetch guard).
+        if (entry.hasAudio === false) return;
+        if (spokenKeyRef.current === entry.entryKey) return;
+        spokenKeyRef.current = entry.entryKey;
+        void speak(entry);
+        // Deliberately keyed on entryKey rather than the entry object: the entry
+        // is refetched/replaced on unrelated updates, and re-speaking then would
+        // be an unwanted second playback.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [entry?.entryKey, entry?.hasAudio, enabled, speak]);
+}

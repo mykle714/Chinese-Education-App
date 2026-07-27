@@ -1,9 +1,10 @@
 import { useCallback, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { TONE_COLORS } from "../../../utils/toneColors";
-import { dictionaryEntryToVocabEntry } from "./dictEntryAdapter";
+import { dictionaryEntryToVocabEntry } from "../../../utils/dictEntryAdapter";
 import { getBreakdownItems } from "../../../utils/breakdownUtils";
 import type { DictionaryEntry, LongDefinitionPart } from "../../../types";
+import type { CompareState } from "../../../components/CompareWorkspace";
 import type { VocabEntry, BreakdownItem } from "./types";
 import { FONTS } from "../../../theme/fonts";
 
@@ -22,20 +23,18 @@ export interface EntryEipTab {
 // The Compare tab (docs/WORD_COMPARE_FEATURE.md) — a SINGLETON, not attached to any card. Slot A
 // starts filled with the word the user navigated from; slot B is picked via an in-tab dictionary
 // search. Both slots are independently clearable (tap-to-arm, tap-again-to-confirm — see
-// CompareTabBody) and re-fillable via the same search, so either can end up empty. `comparison`
+// CompareWorkspace) and re-fillable via the same search, so either can end up empty. `comparison`
 // caches the last-fetched AI paragraph for the CURRENT (slotA, slotB) pair so switching to another
 // entry tab and back doesn't lose it; it's cleared whenever either slot changes (a new pair).
-export interface CompareEipTab {
+//
+// The slot/comparison half of this tab IS `CompareState` — the exact shape the shared
+// CompareWorkspace renders from — so the eip tab and the standalone /compare page drive one
+// component from one contract instead of two parallel shapes.
+export interface CompareEipTab extends CompareState {
     kind: "compare";
     id: "compare";
     toneColor: string;
     measuredWidth: number;
-    slotA: VocabEntry | null;
-    slotB: VocabEntry | null;
-    comparison: string | null;
-    // Embedded-Chinese runs of `comparison`, GSA-segmented + pinyin-annotated server-side (same
-    // treatment as longDefinition) — rendered via the shared LongDefinitionDisplay component.
-    comparisonParts: LongDefinitionPart[] | null;
 }
 
 export type EipTab = EntryEipTab | CompareEipTab;
@@ -169,7 +168,7 @@ export function useEipTabs({ apiBaseUrl, token, stripRef }: UseEipTabsOptions) {
 
     // Compare tab is a singleton (kind: "compare"), so a slot / the fetched result are updated in
     // place by kind rather than by index. Either slot can be set/cleared (docs/WORD_COMPARE_FEATURE.md
-    // — CompareTabBody's tap-to-arm/tap-to-confirm delete, or picking a new word via search);
+    // — CompareWorkspace's tap-to-arm/tap-to-confirm delete, or picking a new word via search);
     // changing either slot invalidates the cached comparison for the old pair.
     const setCompareSlot = useCallback((slot: "A" | "B", entry: VocabEntry | null) => {
         const key = slot === "A" ? "slotA" : "slotB";

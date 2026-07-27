@@ -8,6 +8,8 @@ import { FC_FONT } from "./FlashcardsLearnPage/constants";
 import { SIZE, LEADING } from "../../theme/scale";
 import { aiGeneratedSurfaceSx } from "../../theme/aiGeneratedStyling";
 import { AiGeneratedBadge } from "../../components/AiGeneratedBadge";
+import { useAuth } from "../../AuthContext";
+import { tts } from "../../services/tts";
 import type { VocabEntry, Language, ValidationField } from "../../types";
 
 // One example sentence, as stored on a vet/det row.
@@ -25,7 +27,8 @@ const EXAMPLE_SENTENCE_FIELDS: ValidationField[] = [
 //   - the eip's Examples tab (InfoCardPanelBody), and
 //   - the read-only + saved cdp (VocabCardDetailBody / VocabCardSections).
 // Every est feature (headword underline, English-gloss underline, per-segment
-// definition popups + drill-in, per-sentence audio) lives here exactly once.
+// definition popups + drill-in, per-sentence audio, the drag-scrub gesture that
+// walks the selection word-by-word with audio) lives here exactly once.
 interface ExampleSentenceListProps {
   sentences: ExampleSentence[];
   // Headword to underline within each sentence's foreign text (and, via
@@ -34,11 +37,8 @@ interface ExampleSentenceListProps {
   language?: Language;
   showPinyin: boolean;
   showPinyinColor: boolean;
-  // Renders a real gap between segment groups (eip user toggle). Defaults off.
-  showSegmentSpaces?: boolean;
-  // Smaller glyph + pinyin, for denser surfaces (the cdp stacks several boxes).
-  // Defaults to the eip's full size so the two look identical unless opted out.
-  compact?: boolean;
+  // NOTE: word spacing is NOT a prop — it is read from the account setting below
+  // so no caller can forget to thread it (the cdp did, for exactly that reason).
   // When set, tapping a segment's popup drills into that word's card detail.
   onSegmentOpen?: (segment: string) => void;
   // TTS: when provided, each sentence shows a top-right speaker button. Omit to
@@ -53,14 +53,16 @@ const ExampleSentenceList: React.FC<ExampleSentenceListProps> = ({
   language,
   showPinyin,
   showPinyinColor,
-  showSegmentSpaces = false,
-  compact = false,
   onSegmentOpen,
   onSpeakSentence,
   speakingKey,
 }) => {
   const theme = useTheme();
   const fc = theme.palette.flashcard;
+  // Account-level display preference (users."showSegmentSpaces", migration 129) —
+  // read here rather than threaded so every est surface renders identically.
+  const { user } = useAuth();
+  const showSegmentSpaces = user?.showSegmentSpaces === true;
 
   return (
     <Box
@@ -138,7 +140,6 @@ const ExampleSentenceList: React.FC<ExampleSentenceListProps> = ({
           <SegmentedSentenceDisplay
             sentence={sentence}
             size="sm"
-            compact={compact}
             flexWrap="wrap"
             className="example-sentence-foreign"
             showPinyin={showPinyin}
@@ -148,6 +149,16 @@ const ExampleSentenceList: React.FC<ExampleSentenceListProps> = ({
             language={language}
             selectable
             onSegmentOpen={onSegmentOpen}
+            // Drag-scrub: while a segment is selected, a horizontal drag anywhere
+            // on screen walks the selection word-by-word and narrates each word.
+            // Reuses the sentence-narration callback (same (text, pronunciation)
+            // signature), so it inherits the parent's slow-rate wrapper and is
+            // absent whenever narration is off.
+            onSegmentSpeak={onSpeakSentence}
+            // Unlock the audio context on the gesture's pointerdown — the scrub's
+            // own narration fires from pointermove, too late for mobile autoplay
+            // policy to treat it as user-initiated.
+            onScrubStart={onSpeakSentence ? () => tts.cloud.unlock() : undefined}
           />
           <Typography
             className="example-sentence-english"

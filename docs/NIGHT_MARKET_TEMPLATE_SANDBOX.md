@@ -195,7 +195,7 @@ Code: `TemplateSandboxPage.selectedIsHub` / `pickableEntries` / `isFreshlyCleare
   `TemplateSandboxPage` → `TemplateSandboxViewer` (`showStreet` prop) → `SandboxScene` →
   `PlacedTemplate` → `TemplateMaskOverlays.showStreet`.
 - **Grid On / Off** (`G`, always enabled) toggles the isometric **cell grid** over the whole
-  surface: a fine green line per cell with a **red major line every 8 cells**, for eyeballing
+  surface: a fine green line per cell with a **red major line every 4 cells**, for eyeballing
   seams and spacing across placements. Unlike the editor's board-bounded grid, the sandbox has no
   board — the overlay spans the **currently visible cell range** (recomputed from pan/zoom/canvas
   size each render) and its major lines (every **8** cells, matching the editor's interval) are anchored at

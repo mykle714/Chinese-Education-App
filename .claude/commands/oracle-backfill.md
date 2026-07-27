@@ -136,7 +136,7 @@ server/scripts/backfill/run-prod.sh scripts/backfill/oracle-plan.js --unsortable
 
 **Why a separate scope:** `sortable` (migration 110) is a much lower bar than
 `discoverable` — "level-assigned + lead gloss cleaned; safe to show as a sort card".
-It needs only the **two-step pre-pass**, not the 13-step manifest:
+It needs only the **two-step pre-pass**, not the 14-step manifest:
 
 | # | Step | Applies to |
 |---|---|---|

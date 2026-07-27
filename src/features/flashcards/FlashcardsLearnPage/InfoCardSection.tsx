@@ -1,7 +1,7 @@
 import { useRef, forwardRef } from "react";
 import SheetPanel, { type SheetPanelHandle } from "./SheetPanel";
 import InfoCardPanelBody, { type InfoCardPanelBodyHandle } from "./InfoCardPanelBody";
-import CompareTabBody from "./CompareTabBody";
+import CompareWorkspace from "../../../components/CompareWorkspace";
 import type { VocabEntry, BreakdownItem, UsedInItem } from "./types";
 import type { CompareEipTab } from "./useEipTabs";
 import type { LongDefinitionPart } from "../../../types";
@@ -13,7 +13,6 @@ interface InfoCardSectionProps {
     breakdownItems: BreakdownItem[];
     showPinyin: boolean;
     showPinyinColor?: boolean;
-    showSegmentSpaces?: boolean;
     isFlipped: boolean;
     onClose: () => void;
     initialHeight?: number | null;
@@ -30,7 +29,7 @@ interface InfoCardSectionProps {
     // added; undefined hides the button (see InfoCardPanelBody).
     onAddToLibrary?: (entry: VocabEntry) => void;
     // Compare tab (docs/WORD_COMPARE_FEATURE.md). `onOpenCompare` renders the header's Compare
-    // button (undefined hides it). `compareTab` set ⇒ the panel renders CompareTabBody instead of
+    // button (undefined hides it). `compareTab` set ⇒ the panel renders CompareWorkspace instead of
     // InfoCardPanelBody's normal definition/examples/breakdown content — the Compare tab has no
     // entry/breakdown/sub-tab of its own.
     onOpenCompare?: (entry: VocabEntry) => void;
@@ -52,7 +51,6 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
     breakdownItems,
     showPinyin,
     showPinyinColor = true,
-    showSegmentSpaces = false,
     isFlipped,
     onClose,
     initialHeight,
@@ -87,9 +85,9 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
         >
             {({ bindHeaderDrag }) => (
                 compareTab ? (
-                    <CompareTabBody
+                    <CompareWorkspace
                         ref={panelRef}
-                        tab={compareTab}
+                        state={compareTab}
                         onSetSlot={onSetCompareSlot ?? (() => {})}
                         onResult={onCompareResult ?? (() => {})}
                         showPinyin={showPinyin}
@@ -105,7 +103,6 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
                         breakdownItems={breakdownItems}
                         showPinyin={showPinyin}
                         showPinyinColor={showPinyinColor}
-                        showSegmentSpaces={showSegmentSpaces}
                         isFlipped={isFlipped}
                         onBreakdownItemClick={onBreakdownItemClick}
                         onUsedInItemClick={onUsedInItemClick}

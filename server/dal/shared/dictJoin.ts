@@ -13,7 +13,7 @@ export const DICT_COLS =
   `de.script, de.pronunciation, de.tone, de."difficulty", de."partsOfSpeech", ` +
   `de."frequencyScore", ` +
   `de.breakdown, de.synonyms, de."exampleSentences", ` +
-  `de."longDefinition", ` +
+  `de."longDefinition", de."longDefinitionCitations", ` +
   `de."iconId", ` +
   `de."definitionClusters", ` +
   `de.definition`;
@@ -31,10 +31,18 @@ export const DICT_COLS =
 // the POS/gender split into `definitionClusters`, so "which sense did the learner
 // mean?" is now answered ONE LAYER UP by their `selectedSense` label, exactly as it
 // already was for Chinese heteronyms.
-const DICT_LATERAL_SELECT =
+//
+// ONE column diverges again as of migration 126: `longDefinitionCitations` (translations for
+// the Chinese runs cited inside a long definition) is a zh-only enrichment — Spanish long
+// definitions contain no Han runs, so the es branch substitutes a typed NULL to keep the two
+// SELECT lists union-compatible. Same pattern `dictionaryColumns()` uses for definitionClusters.
+const dictLateralSelect = (language: 'zh' | 'es'): string =>
   `SELECT script, pronunciation, tone, "difficulty", "partsOfSpeech", "frequencyScore",` +
   `       breakdown, synonyms,` +
   `       "exampleSentences", "longDefinition",` +
+  (language === 'zh'
+    ? `       "longDefinitionCitations",`
+    : `       NULL::jsonb AS "longDefinitionCitations",`) +
   `       "iconId",` +
   `       "definitionClusters",` +
   `       definitions, definitions->>0 AS definition`;
@@ -57,10 +65,10 @@ const DICT_LATERAL_SELECT =
 // without it being returned in the SELECT list.
 export const DICT_JOIN =
   `LEFT JOIN LATERAL (` +
-  `  ${DICT_LATERAL_SELECT} FROM dictionaryentries_zh` +
+  `  ${dictLateralSelect('zh')} FROM dictionaryentries_zh` +
   `    WHERE ve.language <> 'es' AND word1 = ve."entryKey" AND language = ve.language` +
   `  UNION ALL` +
-  `  ${DICT_LATERAL_SELECT} FROM dictionaryentries_es` +
+  `  ${dictLateralSelect('es')} FROM dictionaryentries_es` +
   `    WHERE ve.language = 'es' AND word1 = ve."entryKey" AND language = ve.language` +
   `  LIMIT 1` +
   `) de ON true`;

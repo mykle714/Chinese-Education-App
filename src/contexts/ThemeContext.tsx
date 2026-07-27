@@ -3,14 +3,21 @@ import { ThemeProvider, createTheme, type Theme } from '@mui/material/styles';
 import { CssBaseline } from '@mui/material';
 import { FONTS } from '../theme/fonts';
 import { SIZE, WEIGHT, LEADING, TRACKING } from '../theme/scale';
+import { DD_TONES } from '../utils/cardTextColor';
 
 // Per-surface color tokens for the flashcard learn page.
-// All 18 fields must be defined for every theme — no optional fields.
+// All 19 fields must be defined for every theme — no optional fields.
 export interface FlashcardPalette {
     background: string;         // page & EIC sheet background
     flashCard: string;          // card face background
     border: string;             // dividers, chip borders, dashed separators
     onSurface: string;          // primary text on any flashcard surface
+    // dd color (flp card faces + eip header gloss), all languages. The English gloss is
+    // supporting text next to the headword, so it is de-emphasized one step off `onSurface`
+    // rather than sharing it. Always one of the two DD_TONES — this token just says which
+    // tone the card theme runs; a per-card Contrast pick overrides the choice with the
+    // other tone from the same pair.
+    dd: string;
     textSecondary: string;      // muted labels, inactive tab text, arrow icons
     toggleActiveBg: string;     // pinyin/spaces toggle — active (selected) background
     toggleInactiveBg: string;   // pinyin/spaces toggle — inactive background
@@ -106,6 +113,7 @@ const createAppTheme = (mode: ThemeMode): Theme => {
                         flashCard:          '#2c2c2c',
                         border:             'rgba(255,255,255,0.1)',
                         onSurface:          '#eeeeee',
+                        dd:                 DD_TONES.light,
                         textSecondary:      'rgba(255,255,255,0.45)',
                         toggleActiveBg:     '#4a4a4a',
                         toggleInactiveBg:   '#2a2a2a',
@@ -153,6 +161,7 @@ const createAppTheme = (mode: ThemeMode): Theme => {
                         flashCard:          '#BACFE6',
                         border:             'rgba(92,92,102,0.18)',
                         onSurface:          '#1C1C1E',
+                        dd:                 DD_TONES.dark,
                         textSecondary:      '#8A8480',
                         toggleActiveBg:     '#C8D9EF',   // old light-blue surface, now the accent
                         toggleInactiveBg:   '#D7D7D4',
@@ -200,6 +209,7 @@ const createAppTheme = (mode: ThemeMode): Theme => {
                         flashCard:          '#CCDFC5',
                         border:             'rgba(92,92,102,0.18)',
                         onSurface:          '#1C1C1E',
+                        dd:                 DD_TONES.dark,
                         textSecondary:      '#8A8480',
                         toggleActiveBg:     '#BDD9B5',   // old light-green surface, now the accent
                         toggleInactiveBg:   '#D7D7D4',
@@ -248,6 +258,7 @@ const createAppTheme = (mode: ThemeMode): Theme => {
                         flashCard:          '#D8D8DC',
                         border:             'rgba(92,92,102,0.18)',
                         onSurface:          '#1C1C1E',
+                        dd:                 DD_TONES.dark,
                         textSecondary:      '#6E6E73',
                         toggleActiveBg:     '#5C5C66',
                         toggleInactiveBg:   '#F2F2F4',

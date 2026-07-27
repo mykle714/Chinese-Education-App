@@ -41,3 +41,19 @@ export const UTCM_USERS_JOIN = `JOIN users u ON u.id = ve."userId"`;
 export const UTCM_CATEGORY_EXPR = `compute_utcm_category(ve."typedMarkHistory", u."readingGoal", u."writingGoal")`;
 // Ready-made SELECT-list fragment: the computed category under its column name.
 export const UTCM_CATEGORY_SELECT = `${UTCM_CATEGORY_EXPR} AS category`;
+
+/**
+ * In-query utcm category for ONE mark type (migration 128, docs/MASTERY_REWORK.md
+ * § "Games select by their own mark type"). Banded off that single track's 0..8
+ * positive count instead of the goal-blended pbh, so a game buckets cards by the
+ * history of the track it actually exercises.
+ *
+ * Unlike UTCM_CATEGORY_EXPR this needs NO users join — a per-type band is
+ * goal-independent. References `ve` (the vet alias) only.
+ *
+ * The mark type is passed as a BIND PARAMETER, never interpolated: callers hand in
+ * the placeholder (e.g. `'$5'`) and bind the MarkType value alongside it.
+ */
+export function typeCategoryExpr(markTypeParam: string): string {
+  return `compute_type_category(ve."typedMarkHistory", ${markTypeParam})`;
+}

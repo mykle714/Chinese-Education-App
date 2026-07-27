@@ -144,6 +144,7 @@ Every other route (all leaf pages, login, etc.) is absent → the footer slides 
 | `/discover/skipped/:language` | `SkippedCardsPage` | Node |
 | `/dictionary` | `DictionaryPage` | Node (footer added; tapping a result opens the dictionary cdp) |
 | `/dictionary/card/:word` | `DictionaryCardDetailPage` | Node (read-only cdp; det-keyed by word) |
+| `/compare` | `ComparePage` | Node (word-compare surface reached from the Home hub; auth-required — see [WORD_COMPARE_FEATURE.md](./WORD_COMPARE_FEATURE.md)) |
 | `/reader` | `ReaderPage` | Node (document list; footer kept, Home tab) — opening a document routes to `/reader/:id`, a footerless node-style surface, see § below |
 | `/reader/:id` | `ReaderDocumentPage` | Node-style (footerless) — the open-document cdp-style page, see § below |
 | `/tester-dashboard` | `TesterDashboardPage` | Leaf |
@@ -178,8 +179,8 @@ examples / synonyms+related):
 
 - **Saved-card cdp** (`/flashcards/card/:id`, `VocabCardDetailPage`) — loads a vet
   row by id; editable (icon-editor toolbar + delete). Reached from Decks/Mastered, so
-  the **Flashcards** tab stays active. Passes no `onWordOpen`, so breakdown/example
-  rows are passive.
+  the **Flashcards** tab stays active. Passes `onWordOpen` (see § "Breakdown drill-in
+  targets" below), so breakdown blocks / used-in rows / example segments are tappable.
 - **Read-only dictionary cdp** (`/dictionary/card/:word`, `DictionaryCardDetailPage`)
   — fetches the det row via `/api/dictionary/lookup/:word` and adapts it
   (`dictEntryAdapter`, which now carries `iconId`). **No edits**: no toolbar/delete,
@@ -189,6 +190,45 @@ examples / synonyms+related):
   example-sentence segments drill into the cdp of the tapped word (the same drill-in
   the eip offers, except it navigates to a cdp instead of opening a nested eip tab).
   Every linked page is itself this read-only cdp, so read-only propagates recursively.
+
+### Breakdown drill-in targets
+
+Both surfaces make the Character Breakdown blocks (`InfoCardBlockButton`), the
+single-char **Used In** rows and the example-sentence segments tappable by passing
+`onWordOpen` to `VocabCardSections`. They differ only in where a tap LANDS:
+
+| Surface | Handler | Target |
+|---|---|---|
+| Read-only dictionary cdp | `DictionaryCardDetailPage.handleWordOpen` (`src/pages/DictionaryCardDetailPage.tsx:97`) | always `/dictionary/card/:word` — browsing the dictionary never jumps into the editable deck surface |
+| Saved-card cdp | `useOpenWordCard` (`src/hooks/useOpenWordCard.ts`), wired in `VocabCardDetailPage.tsx` | the learner's own `/flashcards/card/:id` when a vet row exists for that word, else `/dictionary/card/:word` |
+
+`useOpenWordCard` resolves word → saved-card id through
+`fetchVocabEntriesByTokens` (`src/utils/vocabApi.ts`), whose per-token client cache
+makes repeat taps network-free; the hook also **prewarms** that cache on mount with
+every linkable word on the page (breakdown characters + used-in keys) so the first
+tap navigates without a round trip. A failed lookup falls back to the dictionary
+cdp, and an in-flight lookup swallows further taps so one gesture never produces two
+navigations. Both routes are node-page prefixes in `pageTransition.ts`, so either
+target slides in from the right.
+
+### Auto-narration on entry
+
+Both cdp surfaces narrate the word **once, automatically, as soon as the entry
+loads** — the user does not have to press the hero speaker button (that button
+stays available for replays). Shared implementation: `useAutoSpeakEntry(tts, entry)`
+in `src/hooks/useTTS.ts`, called from `VocabCardDetailPage.tsx` and
+`DictionaryCardDetailPage.tsx` right after their `entry` state.
+
+Behavior:
+- Fires at most once **per `entryKey`**, guarded by a ref — so edit-mode toggles,
+  sense picks, and a silent token refresh re-running the fetch never re-trigger
+  playback, while drilling into a *different* word does.
+- No-ops when narration is disabled in settings (`tts.enabled`) or when the server
+  flagged the card as unsynthesizable (`entry.hasAudio === false`) — the same guard
+  `useTTS.prefetch` uses.
+- Autoplay is legal here because reaching a cdp always involves a tap, and
+  `CloudTTSProvider` arms a one-shot global gesture listener that resumes its
+  shared `AudioContext`.
 
 ## Reader: node list + node-style document page (cdp-style)
 

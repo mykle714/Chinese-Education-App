@@ -252,7 +252,7 @@ the cdp, the dictionary card detail. Hidden entirely for non-validators.
   `!entry.definitionsApproved`, so its inverse is exactly "already approved" — same
   signal that drives the AI-generated border/tint/badge). Wired from
   `VocabCardDetailBody.tsx` and `InfoCardPanelBody.tsx` (both pass
-  `entry.entryKey`/`entry.language`). **Not** wired from `CompareTabBody.tsx` — its
+  `entry.entryKey`/`entry.language`). **Not** wired from `CompareWorkspace.tsx` — its
   `LongDefinitionDisplay` renders the AI word-comparison paragraph
   (docs/WORD_COMPARE_FEATURE.md), which has no backing det field at all.
 - **`ValidationService.submitEntryValidation`** (server) — the method behind

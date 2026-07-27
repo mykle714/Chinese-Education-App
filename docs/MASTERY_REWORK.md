@@ -210,9 +210,10 @@ the loop **never returns empty** for a user who has cards.
 
 ### Notes / caveats
 
-- The window duration is still a whole-card property (derived from utcm category),
-  even though the timer is per-type. A per-type strength-based window was
-  considered and deferred.
+- **flp only:** the window duration is a whole-card property (derived from the
+  overall utcm category), even though the timer is per-type. Games no longer share
+  this — they key the duration on the per-type category of the track they play
+  (Section 7).
 
 ### Games honor the same per-type cooldown
 
@@ -246,6 +247,89 @@ fresh-then-cooled preference across `[preferredCategory, …fallback]`.
 **Cross-surface note:** Bubble Match and flp both emit `recognition`, so a Bubble
 Match win cools that card's recognition face in the flp working loop, and vice
 versa — the per-type clocks are shared across every surface that emits the type.
+
+---
+
+## 7. Games select by their own mark type
+
+> STATUS: **IMPLEMENTED** (migration 128). Code:
+> `database/migrations/128-add-compute-type-category.sql` (`compute_type_category`),
+> `server/dal/shared/vetTable.ts` (`typeCategoryExpr`),
+> `server/utils/masteryCompute.ts` (`computeTypeCategory`),
+> `server/services/OnDeckVocabService.ts` (`fetchGameCandidates`,
+> `isCardGameEligible`, `isTypeOnCooldown`, `getGameVocabPool`,
+> `getWordSearchGrid`), `server/controllers/OnDeckVocabController.ts`.
+
+A pool-selecting game buckets its candidate words by the **recent mark history of
+the single mark type that game emits** — not by the card's overall, goal-blended
+utcm category.
+
+### Why
+
+`compute_utcm_category` answers *"how far along is this card overall?"* by blending
+every goal track through the pbh formula. That is right for the flp (which presents
+two mark types on one card) and the decks page, but wrong for a game that exercises
+exactly one track. A card with a maxed Recognition window and an empty Reading
+window reads as **Comfortable** overall, so Word Search No-Pinyin used to serve it
+as a Comfortable word even though the learner has never once read it. The game's
+distribution (its Unfamiliar/Target/Comfortable/Mastered quotas) is a statement
+about how hard the board should be *for the skill being trained*, so it must read
+the track being trained.
+
+### Per-type bands
+
+`compute_type_category(typedMarkHistory, markType)` bands that one track's raw
+positive count — the same 0–8 window and same "empty slots are negative" rule as
+`mastery_positive_count` — at the **same cut points as the pbh bands**:
+
+| positive(type) | Band |
+|---|---|
+| 0–2 | Unfamiliar |
+| 3–5 | Target |
+| 6–7 | Comfortable |
+| 8 | Mastered |
+
+Mastered therefore requires a **perfect 8/8** window for that type. The TS mirror
+`computeTypeCategory` reuses `categoryForPbh` directly, since the cut points are
+shared by construction.
+
+Unlike `UTCM_CATEGORY_EXPR`, `typeCategoryExpr` needs **no users join** — a
+per-type band is goal-independent. The mark type is passed as a bind parameter,
+never interpolated.
+
+### Which type each surface uses
+
+| Surface | Buckets by | Cooldown window keyed on |
+| --- | --- | --- |
+| Bubble Match | `recognition` per-type category | `recognition` per-type category |
+| Word Search — Pinyin | `production` per-type category | `production` per-type category |
+| Word Search — No-Pinyin | `reading` per-type category | `reading` per-type category |
+| flp working loop | overall utcm (unchanged) | overall utcm (unchanged) |
+| decks page counts | overall utcm (unchanged) | — |
+
+The flp keeps the overall category because it presents **two** mark types on one
+card; a single whole-card band is the coherent choice there.
+
+Because the service signature is now a single `gameMarkType: MarkType` (it was a
+`readonly MarkType[]`), per-type bucketing is unambiguous — a game that emitted two
+types would have no single track to band on. Every current game emits exactly one.
+
+### Cooldown windows follow the same track
+
+`isTypeOnCooldown` now takes an explicit `windowCategory`. The **duration** table
+(5 min / 24 h / 7 d / 30 d) is unchanged, but games look it up under the **per-type**
+category rather than the overall one, so a card that is Mastered overall yet weak in
+Reading rests only 5 minutes before Word Search No-Pinyin may serve it again. The
+flp passes `card.category` and behaves exactly as before.
+
+### Known divergence: `available` counts
+
+The `available` map both game endpoints return still comes from
+`getCategoryCounts`, which uses the **overall** utcm category (it is shared with the
+decks page). So the client's "you have N Comfortable cards" hint can disagree with
+the pool the same request assembled. This is a deliberate trade (one shared count
+source); if the hints ever need to match, add a per-type count variant for the game
+callers rather than switching `getCategoryCounts` itself.
 
 ---
 

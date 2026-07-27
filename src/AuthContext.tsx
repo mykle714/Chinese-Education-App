@@ -7,6 +7,7 @@ import { setFetchInterceptorHandlers, setupFetchInterceptor } from './utils/fetc
 import { setRefreshHandlers, attemptTokenRefresh, endServerSession } from './utils/tokenRefresh';
 import { notifyLogin } from './utils/authSync';
 import * as authStorage from './utils/authStorage';
+import { authLog, authError, tokenPreview, readBodySafely, rateLimitInfo } from './utils/authDebug';
 
 // Define the User type
 interface User {
@@ -23,6 +24,10 @@ interface User {
     // always goals; these two are the account's optional extras.
     readingGoal?: boolean;
     writingGoal?: boolean;
+    // Display preference (migration 129, docs/EXAMPLE_SENTENCES.md): render a real
+    // gap between word segments in segmented sentences. Account-level so the eip
+    // and the cdp can never disagree, and it follows the user across devices.
+    showSegmentSpaces?: boolean;
 }
 
 // Define the AuthContext type
@@ -39,6 +44,7 @@ interface AuthContextType {
     updateLanguage: (language: Language) => Promise<void>;
     updateAvatar: (avatarIconId: string | null) => Promise<void>;
     updateGoals: (goals: { readingGoal?: boolean; writingGoal?: boolean }) => Promise<void>;
+    updateDisplaySettings: (settings: { showSegmentSpaces?: boolean }) => Promise<void>;
     error: string | null;
 }
 
@@ -103,7 +109,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
         // the refresh rotation and trip "Refresh token reuse detected" (the
         // mid-edit logout). Initial load AND the silent-refresh-on-load path both
         // have user === null, so they fall through and still validate/refresh below.
-        if (token && user) return;
+        authLog('checkAuth effect fired', {
+            token: tokenPreview(token),
+            hasUser: !!user,
+            isLoading,
+        });
+        if (token && user) {
+            authLog('checkAuth: skipped (token + user already present)');
+            return;
+        }
         const checkAuth = async () => {
             // Only proceed if we have a valid token
             if (token && token !== 'null' && token !== 'undefined' && token.length > 10) {
@@ -117,9 +131,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
                     if (response.ok) {
                         const userData = await response.json();
+                        authLog('checkAuth: /me OK', { userId: userData?.id });
                         setUser(userData);
                         notifyLogin(token);
                     } else {
+                        authError('checkAuth: /me REJECTED — this CLEARS the session', {
+                            status: response.status,
+                            token: tokenPreview(token),
+                        });
                         // The access token is unusable. End the session on the
                         // server as well before clearing it locally: setToken(null)
                         // re-runs this effect down the no-token branch, which
@@ -150,7 +169,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
                     console.log('Invalid token detected, clearing:', token);
                     authStorage.clearToken();
                 }
+                authLog('checkAuth: no usable access token — attempting silent refresh');
                 const refreshed = await attemptTokenRefresh();
+                authLog('checkAuth: silent refresh result', {
+                    refreshed: tokenPreview(refreshed),
+                    // A refresh that returns a token IDENTICAL to the one already in
+                    // state is a hang: React bails out of the re-render, so this
+                    // effect never re-runs and isLoading stays true forever (the
+                    // login screen then renders nothing at all).
+                    identicalToStateToken: !!refreshed && refreshed === token,
+                });
                 if (!refreshed) {
                     setToken(null);
                     setIsLoading(false);
@@ -175,6 +203,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     // Login function
     const login = async (email: string, password: string) => {
         setError(null);
+        authLog('login: POST /api/auth/login', { email, apiBase: API_BASE_URL });
         try {
             const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
                 method: 'POST',
@@ -190,18 +219,47 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 credentials: 'include' // Include cookies
             });
 
+            // Read the body ONCE, defensively: a bare response.json() on a
+            // non-JSON error body (nginx HTML 502, empty 429) throws a SyntaxError,
+            // and the user would see "Unexpected token <" instead of the server's
+            // actual complaint.
+            const { json: body, text: rawBody } = await readBodySafely(response);
+
             if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Login failed');
+                authError('login: server REJECTED', {
+                    ...rateLimitInfo(response),
+                    error: body?.error,
+                    code: body?.code,
+                    rawBody: body ? undefined : rawBody.slice(0, 300),
+                });
+                throw new Error(
+                    (typeof body?.error === 'string' && body.error) ||
+                    `Login failed (HTTP ${response.status})`
+                );
             }
 
-            const data = await response.json();
+            const data = body as { user?: User; token?: string } | null;
+            if (!data?.token || !data.user) {
+                // 200 with a malformed payload — would otherwise leave the app in a
+                // half-logged-in state (user set, no token) with no error shown.
+                authError('login: 200 but payload is malformed', { rawBody: rawBody.slice(0, 300) });
+                throw new Error('Login failed: the server returned an unexpected response');
+            }
+
+            authLog('login: server ACCEPTED', {
+                userId: data.user.id,
+                token: tokenPreview(data.token),
+                sameAsCurrentToken: data.token === token,
+            });
+
             setUser(data.user);
             setToken(data.token);
             authStorage.setToken(data.token);
             notifyLogin(data.token);
             navigate('/');
+            authLog('login: state set + navigated to /');
         } catch (error: unknown) {
+            authError('login: threw', error);
             setError(error instanceof Error ? error.message : 'Login failed');
             throw error;
         }
@@ -405,6 +463,38 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
     };
 
+    // Toggle the account's display preferences (currently just word spacing in
+    // segmented sentences — docs/EXAMPLE_SENTENCES.md). Purely cosmetic, so unlike
+    // updateGoals it has no downstream effect on mastery data.
+    const updateDisplaySettings = async (settings: { showSegmentSpaces?: boolean }) => {
+        setError(null);
+        try {
+            if (!token || token === 'null' || token === 'undefined' || token.length <= 10) {
+                throw new Error('You must be logged in to update your display settings');
+            }
+
+            const response = await fetch(`${API_BASE_URL}/api/users/display-settings`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`,
+                },
+                credentials: 'include',
+                body: JSON.stringify(settings)
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || 'Failed to update display settings');
+            }
+
+            setUser({ ...user!, ...settings });
+        } catch (error: unknown) {
+            setError(error instanceof Error ? error.message : 'Failed to update display settings');
+            throw error;
+        }
+    };
+
     const value = {
         user,
         token,
@@ -418,6 +508,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         updateLanguage,
         updateAvatar,
         updateGoals,
+        updateDisplaySettings,
         error
     };
 

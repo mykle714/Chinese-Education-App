@@ -256,6 +256,11 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
                     text={entry.entryKey}
                     pronunciation={entry.pronunciation}
                     characterColor={characterColor}
+                    // Latin-script (es) only: a Spanish headword is many glyphs wide where a
+                    // Chinese one is 1–2, so the shared xs size (18px) overruns this 76px-wide
+                    // card body. Drop it to 14px; zh is unaffected (ForeignText ignores this
+                    // for character-based languages).
+                    plainFontSize="14px"
                 />
             </Box>
 

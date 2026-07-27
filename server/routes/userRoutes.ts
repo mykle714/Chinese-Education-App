@@ -42,6 +42,12 @@ router.put('/api/users/goals', authenticateToken, async (req, res) => {
   await userController.updateGoals(req, res);
 });
 
+// Update the account's display preferences (word spacing). See docs/EXAMPLE_SENTENCES.md
+// @ts-ignore
+router.put('/api/users/display-settings', authenticateToken, async (req, res) => {
+  await userController.updateDisplaySettings(req, res);
+});
+
 // Minute Points — increment by 1
 // @ts-ignore
 router.post('/api/users/minute-points/increment', authenticateToken, async (req, res) => {

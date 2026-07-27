@@ -117,6 +117,9 @@ phase (description text + level buttons) is gone; the flow is now
 comes from `location.state.level`; a stray navigation with no valid level
 (e.g. a manual URL visit) **redirects to `/games`** rather than defaulting, so
 a level must be picked from the hub (Word Search does the same for its mode).
-The page begins that run as soon as the card pool loads. The in-game "different level" floating
-menu (`BubbleMatchLevelMenu.tsx`, shown after a run ends) is unchanged — it
-remains a secondary fast-replay shortcut once already in a run.
+The page begins that run as soon as the card pool loads. The hub is now the **only**
+place a level is chosen: the end-of-run popup offers a single "Play Again" (same
+level, partially refreshed cards — see
+[GAMES_FEATURE.md § Bubble Match replay](./GAMES_FEATURE.md)) plus "Back to Games",
+and the old in-game "different level" floating menu (`BubbleMatchLevelMenu.tsx`)
+has been deleted.

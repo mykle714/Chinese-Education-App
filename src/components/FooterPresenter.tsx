@@ -25,10 +25,11 @@ const FOOTER_ROUTES: Record<string, FooterTab> = {
     "/games": "home",
     "/community": "home",
     "/flashcards/mastered": "flashcards",
-    // Dictionary and Reader are node pages reached from the Home menu, so they
-    // keep the Home tab.
+    // Dictionary, Reader and Compare are node pages reached from the Home menu, so
+    // they keep the Home tab.
     "/dictionary": "home",
     "/reader": "home",
+    "/compare": "home",
 };
 
 // Footer-bearing NODE pages reached via a parameterized path (e.g.

@@ -22,11 +22,13 @@ import ExampleSentenceList from "./ExampleSentenceList";
 // stay in each page; everything BELOW the hero (badges + the four info boxes) is
 // identical and lives here so a change to, say, the examples box shows on both.
 //
-// Drill-in wiring: when `onWordOpen` is provided (the dictionary surface),
-// breakdown/used-in rows and example-sentence segments become tappable links to
-// the card detail of that word — the same drill-in the eip offers, except it
-// opens the cdp instead of a nested eip tab. Omitted on the saved-card page, so
-// those rows stay passive there (unchanged behavior).
+// Drill-in wiring: when `onWordOpen` is provided, breakdown blocks, used-in rows
+// and example-sentence segments become tappable links to the card detail of that
+// word — the same drill-in the eip offers, except it opens the cdp instead of a
+// nested eip tab. Both surfaces pass it; they differ only in WHERE it lands:
+//   • dictionary cdp → always `/dictionary/card/:word` (stay read-only)
+//   • saved-card cdp → the learner's saved card if one exists, else the dictionary
+//     cdp (see src/hooks/useOpenWordCard.ts)
 
 // Info section card — same flashcard-palette tokens as the eip (fc.background +
 // fc.cardShadowSubtle) so these boxes read as one visual system and stay
@@ -286,8 +288,6 @@ export const VocabCardSections: React.FC<VocabCardSectionsProps> = ({
                         language={entry.language}
                         showPinyin={showPinyin}
                         showPinyinColor={showPinyinColor}
-                        // Denser than the eip because the cdp stacks several info boxes.
-                        compact
                         onSegmentOpen={onWordOpen}
                         onSpeakSentence={onSpeakSentence}
                         speakingKey={speakingKey}

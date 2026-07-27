@@ -218,17 +218,17 @@ function ghostOrigin(pending: PendingPlacement, cell: GlobalCell): GlobalCell {
   return { col: cell.col - Math.floor(pending.width / 2), row: cell.row - Math.floor(pending.height / 2) };
 }
 
-// ─── Grid overlay (fine per-cell + major every 8, anchored at the global origin) ──────
+// ─── Grid overlay (fine per-cell + major every 4, anchored at the global origin) ──────
 // Mirrors the editor's GridOverlay (TemplateEditorViewer.tsx) but the sandbox surface is
 // UNBOUNDED, so instead of the board rectangle it spans whatever cell range the camera can
 // currently see, recomputed whenever the viewport (pan/zoom/size) changes. Major lines are
 // anchored at global cell 0 rather than the editor's SW board corner — the sandbox has no
 // corner, and the origin is the one landmark every placement's offset is measured from.
 const GRID_Z = 9_000;
-// Every 8 cells, matching the editor's major-line interval (TemplateEditorViewer.GridOverlay) so
+// Every 4 cells, matching the editor's major-line interval (TemplateEditorViewer.GridOverlay) so
 // the two authoring surfaces read at the same scale. The editor counts its majors inward from the
 // board's NE corner; the sandbox has no board, so its lattice stays anchored at global cell 0.
-const GRID_MAJOR_INTERVAL = 8;
+const GRID_MAJOR_INTERVAL = 4;
 /** Positive modulo, so major lines stay on the same lattice at negative global coords. */
 const mod = (n: number, m: number) => ((n % m) + m) % m;
 
@@ -567,7 +567,7 @@ export interface TemplateSandboxViewerProps {
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   onMove: (id: string, offsetCol: number, offsetRow: number) => void;
-  /** Draw the isometric cell grid over the scene (fine green, red every 8 cells). */
+  /** Draw the isometric cell grid over the scene (fine green, red every 4 cells). */
   showGrid?: boolean;
   /** Tint every placement's street-walkable cells (the header's Street overlay toggle). */
   showStreet?: boolean;

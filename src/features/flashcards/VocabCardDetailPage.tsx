@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { iconSearchTerm, resolveSelectedSenseIndex, sortedSenseClusters, resolveDisplayDefinition } from "../../utils/definitionUtils";
 import { useParams, useNavigate } from "react-router-dom";
 import {
@@ -17,7 +17,7 @@ import IconPickerDialog from "../../components/IconPickerDialog";
 import { clearWritingDraft } from "../../components/handwriting/writingDraftStore";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
-import { useTTS, SLOW_SENTENCE_RATE } from "../../hooks/useTTS";
+import { useTTS, useAutoSpeakEntry, SLOW_SENTENCE_RATE } from "../../hooks/useTTS";
 import { useAuth } from "../../AuthContext";
 import { COLORS } from "../../theme/colors";
 import { CardFaceSide, ChineseBlock, EnglishBlock } from "./FlashcardsLearnPage/FlashCardSection";
@@ -28,6 +28,8 @@ import { useCardIconEditor } from "./FlashcardsLearnPage/useCardIconEditor";
 import CardIconCanvas from "./FlashcardsLearnPage/CardIconCanvas";
 import CardEditToolbar, { CARD_EDIT_ANIM_MS, CARD_EDIT_ANIM_EASING, TOOLBAR_DROPDOWN_SELECTOR } from "./FlashcardsLearnPage/CardEditToolbar";
 import { VocabCardBadges, VocabCardSections } from "./VocabCardDetailBody";
+import { getBreakdownItems } from "../../utils/breakdownUtils";
+import { useOpenWordCard } from "../../hooks/useOpenWordCard";
 import MasteryProgressBar from "./MasteryProgressBar";
 import ForeignText from "../../components/ForeignText";
 
@@ -60,6 +62,9 @@ const VocabCardDetailPage: React.FC = () => {
     // ChineseBlock. Hidden when narration is disabled in settings (onSpeak undefined).
     const tts = useTTS();
     const [entry, setEntry] = useState<VocabEntry | null>(null);
+    // Entering the cdp narrates the word once (see useAutoSpeakEntry); the speaker
+    // button on the hero card remains available for replays.
+    useAutoSpeakEntry(tts, entry);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [actionLoading, setActionLoading] = useState(false);
@@ -71,6 +76,20 @@ const VocabCardDetailPage: React.FC = () => {
     // sorted index, migration 99), falling back to the top/starred sense. Persisted on pick.
     const [selectedSenseIndex, setSelectedSenseIndex] = useState(0);
     useEffect(() => { setSelectedSenseIndex(entry ? resolveSelectedSenseIndex(entry) : 0); }, [entry?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Drill-in: the info boxes' breakdown blocks, "Used In" rows and example-sentence
+    // segments open the tapped word's cdp — the learner's own saved card when they
+    // have one, else the read-only dictionary cdp (see useOpenWordCard). Prewarm the
+    // lookup cache with this card's breakdown characters + used-in words so the first
+    // tap navigates without a round trip.
+    const linkableWords = useMemo(
+        () => [
+            ...getBreakdownItems(entry).map((item) => item.character),
+            ...(entry?.usedIn ?? []).map((item) => item.entryKey),
+        ],
+        [entry]
+    );
+    const handleWordOpen = useOpenWordCard(linkableWords);
 
     // The flashcard icon editor (fie) — the same toolbar/canvas flp opens on its
     // back face. There's no "next card" here (single-card page), so nextEntry is
@@ -440,12 +459,14 @@ const VocabCardDetailPage: React.FC = () => {
                             </Box>
 
                             {/* Info boxes (definition / breakdown / examples / synonyms) —
-                                shared with the read-only dictionary cdp. No onWordOpen here,
-                                so breakdown/example rows stay passive on the saved-card page. */}
+                                shared with the read-only dictionary cdp. onWordOpen makes the
+                                breakdown blocks / used-in rows / example segments drill into
+                                the tapped word's cdp (saved card first, dictionary fallback). */}
                             <VocabCardSections
                                 entry={entry}
                                 showPinyin={showPinyin}
                                 showPinyinColor={showPinyinColor}
+                                onWordOpen={handleWordOpen}
                                 // Keeps the Definition box's long definition on the same
                                 // sense as the picker above (per-sense longDefinition).
                                 selectedSenseIndex={selectedSenseIndex}

@@ -553,9 +553,9 @@ function TemplateSandboxPage() {
               The hotkeys are badged here and dispatched in the keydown effect above — keep the
               two in sync. */}
           <Box className="template-sandbox-header-actions" sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-            {/* View-wide (not selection-scoped): the cell grid, with a red line every 8 cells. */}
+            {/* View-wide (not selection-scoped): the cell grid, with a red line every 4 cells. */}
             <Box className="template-sandbox-tool-group template-sandbox-tool-group-view" sx={toolGroupSx(VIEW_ACCENT)}>
-              <Tooltip title={showGrid ? 'Hide the cell grid (G)' : 'Show the cell grid — red line every 8 cells (G)'} placement="bottom">
+              <Tooltip title={showGrid ? 'Hide the cell grid (G)' : 'Show the cell grid — red line every 4 cells (G)'} placement="bottom">
                 <Button
                   className="template-sandbox-grid-btn"
                   variant={showGrid ? 'contained' : 'outlined'} size="small"

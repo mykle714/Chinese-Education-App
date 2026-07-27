@@ -36,6 +36,11 @@ export type LongDefinitionPart =
       foreignText: string;
       _segments: string[];
       segmentMetadata: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo; wordForms?: Record<string, string> }>;
+      // English translation of the WHOLE run (det `longDefinitionCitations`, migration 126;
+      // comparison-cache `citations`, migration 127 — attached server-side). Present flips the
+      // run's rendering from per-segment popups to a whole-run highlight showing this text;
+      // absent (un-backfilled entries, older cached comparisons) keeps the per-segment popup.
+      translation?: string | null;
     };
 
 // One sense's extended definition, as sent by the server (zh only). `longDefinition` is

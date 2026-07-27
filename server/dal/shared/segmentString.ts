@@ -90,6 +90,16 @@ export function pickDefinitionForTranslatedSentence(
 }
 
 /**
+ * Longest token the segmenter will ever match: `getAllSubstrings` stops generating
+ * candidates here, and `segmentWithDict`'s length tiers start here (`Math.min(4, ...)`).
+ * Consequence for callers: a dictionary lookup driven by these candidates can only tell
+ * you about headwords of at most this many characters — anything longer (zh has thousands
+ * of 5+ char idioms) must be looked up explicitly. See
+ * DictionaryDAL.segmentLongDefinitionTexts, which does exactly that for whole runs.
+ */
+export const SEGMENTATION_MAX_TOKEN_CHARS = 4;
+
+/**
  * Generate all candidate substrings of a Chinese string, from longest to shortest.
  * Used to batch-lookup dictionary entries in a single DB call.
  *
@@ -97,7 +107,7 @@ export function pickDefinitionForTranslatedSentence(
  * @param maxLen - Maximum substring length to consider (default 4)
  * @returns Deduplicated array of candidate substrings
  */
-export function getAllSubstrings(str: string, maxLen: number = 4): string[] {
+export function getAllSubstrings(str: string, maxLen: number = SEGMENTATION_MAX_TOKEN_CHARS): string[] {
   const chars = [...str];
   const seen = new Set<string>();
 

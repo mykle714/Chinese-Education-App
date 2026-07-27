@@ -31,7 +31,8 @@
 # oracle-plan.js --lang=es plans against. Update both together.
 #   1. backfill-split-semicolon-definitions  — normalize definitions array (deterministic)
 #   2. backfill-expand-abbreviations         — expand sth/sb in definitions (deterministic)
-#   3. backfill-process-definitions-array    — sort defs by usefulness + prune (AI)
+#   3. backfill-process-definitions-array    — split comma-joined synonym runs, then
+#                                              sort defs by usefulness + prune (AI)
 #   4. backfill-icons (--lang=es)            — icons8 lookup keyed off definitions[0]
 #   5. backfill-frequency-score              — word-level conversation-frequency score (AI)
 #   6. backfill-cluster-definitions          — partition definitions into sense clusters,
@@ -41,6 +42,10 @@
 #
 # Why this order:
 #   - Steps 1-3 all rewrite `definitions`; everything downstream reads it.
+#   - Step 3 owns the COMMA split (docs/DEFINITION_MAPPING.md, "Step 4, Spanish only").
+#     The es source packs synonym runs into one gloss ("later, afterwards, post") where
+#     CEDICT would give separate elements, so without this step definitions[0] — and
+#     therefore dd, the icon search term, and every cluster gloss — is a whole list.
 #   - Step 4 keys its icon search off definitions[0], so it follows every rewriter.
 #   - Step 6's checkShape requires clusters to be an EXACT PARTITION of `definitions`,
 #     so it MUST follow step 3 — clustering first would leave the partition referencing
@@ -138,8 +143,9 @@ run_script "Step 1: Split Semicolon Definitions" "backfill-split-semicolon-defin
 # Step 2: Expand sth/sb abbreviations in definitions (deterministic)
 run_script "Step 2: Expand Abbreviations" "backfill-expand-abbreviations.js"
 
-# Step 3: Sort definitions from most useful to least + prune low-value (AI).
-# Must precede clustering — see the exact-partition note in the header.
+# Step 3: Split comma-joined synonym runs, then sort definitions from most useful to
+# least + prune low-value (AI). Must precede clustering — see the exact-partition note
+# in the header (and the split must precede it too, or clusters partition joined runs).
 run_script "Step 3: Process Definitions Array" "backfill-process-definitions-array.js"
 
 # Step 4: icons8 icon lookup — keyed off definitions[0], so it follows every step that

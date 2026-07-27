@@ -88,6 +88,7 @@ server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-hsk-level.
 server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-frequency-score.js --words=未来,摸脉
 server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-cluster-definitions.js --words=未来,摸脉
 server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-long-definitions.js --words=未来,摸脉
+server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-longdef-citations.js --words=未来,摸脉
 server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-example-sentences.js --words=未来,摸脉
 server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-classifier.js --words=未来,摸脉
 ```
@@ -102,6 +103,12 @@ server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-classifier
 
 **`backfill-parts-of-speech` and `backfill-frequency-score` must run BEFORE `backfill-cluster-definitions`.** Clustering's single-definition fast path copies the word-level `partsOfSpeech` and `frequencyScore` straight onto the lone cluster (instead of spending API calls to re-derive them), so those columns must already be populated or the fast-path cluster gets `pos`/`frequencyScore` = null. (Multi-definition entries are unaffected — they score each cluster independently in Stage C.) This is why frequency-score was moved ahead of clustering in the sequence above.
 
+**`backfill-longdef-citations` must run IMMEDIATELY AFTER `backfill-long-definitions`.** It reads the long definition, pulls out every embedded Chinese run with the same `splitHanRuns` the read path uses, and stores an English translation per run in `longDefinitionCitations` (migration 126) so a tap on a cited phrase highlights the WHOLE phrase and shows what it means, instead of glossing one word of it. It therefore cannot run before the definition exists, and **any later re-run of `backfill-long-definitions` for a word invalidates this column for that word** (the runs may have changed) — re-run it with the same `--words=` afterwards. Entries whose definition has nothing translatable are stamped `[]`, not left NULL, so a full run doesn't keep re-examining them.
+
+**`[]` and short citation lists are normal, not failures.** Only runs that are NOT themselves dictionary words get translated: if the whole run has its own `dictionaryentries_zh` row (`光明磊落`, `看见`), the dictionary already glosses it and the eip can drill into it, so it is skipped with no API call and keeps the per-segment popup. Translation exists for what det has no answer for — clauses and sentences. A definition that only quotes headwords therefore ends up with `[]`, and the script prints `[N det headwords skipped: …]` on that word's line. Do not treat either as a miss.
+
+**Scan the `backfill-longdef-citations` output for `⚠ CITATION REVIEW <word> (id=...)` lines.** A run is flagged when the model returned no usable translation for it (or returned a `zh` that doesn't match the run character-for-character, which would never join back to the rendered part). Those runs are simply left untranslated and keep the per-segment popup — a quality nit fixable with `--words=<word>`, not a blocker. A run skipped for being a det headword is NOT flagged: that is the intended outcome, not a failure.
+
 **Scan the `backfill-long-definitions` output for `⚠ LONGDEF REVIEW <word> (id=...): <reason>` lines and surface them too.** A definition is flagged when it still cites the headword — or an ordinary compound containing it (说 → 学说) — in Chinese after one automatic repair pass. Rule 4 forbids that (the learner gains nothing from being shown the word they are already looking at), but the LLM validator/chooser enforce it unreliably, so the check is deterministic in the script. The flagged text IS written, so these are quality nits to fix by re-running `--words=<word>` or hand-editing, not blockers.
 
 **Scan the `backfill-cluster-definitions` output for `⚠ CLUSTER REVIEW <word> (id=...): <reason>` lines and surface every one of them to the user for human review.** It self-flags any sense it is even slightly unsure about (uncertain readings/heteronyms, borderline split/merge calls, low-confidence ordering, etc.). These are the cases most likely to need a manual fix (e.g. a wrong heteronym reading) before `/data-deploy` — and a wrong cluster here now also feeds a wrong `sense` into the example sentences downstream.
@@ -111,6 +118,10 @@ server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-classifier
 ```sql
 SELECT word1, tone, "hskLevel",
   "longDefinition" IS NOT NULL AS has_long_def,
+  -- has_longdef_citations is TRUE even for '[]' — a definition with nothing translatable
+  -- (quotes no Chinese, or every quoted run is itself a det headword) records "done" as [].
+  -- NULL means the step never ran (or failed) for this word.
+  "longDefinitionCitations" IS NOT NULL AS has_longdef_citations,
   "partsOfSpeech" IS NOT NULL AS has_parts_of_speech,
   "wordForms" IS NOT NULL AS has_word_forms,
   "exampleSentences" IS NOT NULL AS has_examples,
@@ -223,6 +234,10 @@ SELECT word1,
   jsonb_array_length("definitionClusters") AS n_senses,
   "partsOfSpeech" IS NOT NULL AS has_pos,
   "longDefinition" IS NOT NULL AS has_long_def,
+  -- has_longdef_citations is TRUE even for '[]' — a definition with nothing translatable
+  -- (quotes no Chinese, or every quoted run is itself a det headword) records "done" as [].
+  -- NULL means the step never ran (or failed) for this word.
+  "longDefinitionCitations" IS NOT NULL AS has_longdef_citations,
   "exampleSentences" IS NOT NULL AS has_examples,
   "frequencyScore" IS NOT NULL AS has_freq,
   discoverable

@@ -27,6 +27,14 @@ Reuses Bubble Match's pool machinery so the two games feel like siblings.
   `OnDeckVocabService.GAME_FALLBACK_ORDER`.
 - Cards are library (`starterPackBucket = 'library'`), language-scoped, same as
   the bubble-match pool.
+- **Buckets are per mark type, and differ by mode.** A candidate's
+  Unfamiliar/Target/Comfortable/Mastered bucket comes from the recent mark history
+  of the mode's own mark type — `reading` in No-Pinyin, `production` in Pinyin —
+  via `compute_type_category`, **not** the goal-blended overall utcm category. So
+  the same library yields a different word set in each mode: a card drilled hard in
+  Pinyin mode still shows up as Unfamiliar for No-Pinyin. The same per-type category
+  also picks that card's cooldown window. See
+  [MASTERY_REWORK.md § "Games select by their own mark type"](./MASTERY_REWORK.md).
 - **≤4-character cap**: each per-category candidate query filters
   `LENGTH(ve."entryKey") <= 4` — words longer than that are never selectable
   for this game. This keeps every word compatible with the template fallback's

@@ -182,6 +182,44 @@ user to `/login`, and it used to be a dead end escapable only by hand-editing
 `/login` out of the URL. Consequence: signing in as a different account requires
 logging out first (which now genuinely revokes the session).
 
+### Tracing — `src/utils/authDebug.ts`
+The auth path spans four modules that mutate each other's state asynchronously
+(`LoginPage` → `AuthContext.login` → the `checkAuth` effect → `fetchInterceptor` →
+`tokenRefresh`), so a failed login rarely has a single stack trace. Every step in
+that chain emits one `console.log` line through `authLog()` / `authError()`, tagged
+`[auth +Nms]` with a page-load-relative clock, so the console reads as an ordered
+story. **Filter the browser console on `[auth]`.**
+
+- On by default; silence with `localStorage.authDebug = 'off'`.
+- Never logs a password; tokens go through `tokenPreview()` (length + first/last 4).
+- The two lines that explain a surprise logout:
+  - `interceptor: ENDING SESSION and redirecting to /login` — its `url` field names
+    the request whose 401 killed the session.
+  - `endServerSession: revoking refresh token` — its `calledFrom` field carries a
+    3-frame stack slice naming the caller.
+- `readBodySafely()` / `rateLimitInfo()` also harden the real code path: `login`
+  used to call a bare `await response.json()` on the error branch, so a non-JSON
+  error body (nginx HTML 502, empty 429) threw a `SyntaxError` and the user saw a
+  JSON parse message instead of the server's actual complaint.
+
+Referenced by: `src/utils/authDebug.ts`, plus the `authLog` call sites in
+`src/AuthContext.tsx`, `src/pages/LoginPage.tsx`, `src/utils/fetchInterceptor.ts`,
+`src/utils/tokenRefresh.ts`.
+
+### Single-install guard — `setupFetchInterceptor()`
+`src/utils/fetchInterceptor.ts` brands the patched function with
+`Symbol.for('cow.fetchInterceptor.installed')` and returns early if `window.fetch`
+already carries it. `AuthContext` calls `setupFetchInterceptor()` from a `useEffect`
+with no cleanup, and it gets re-invoked two ways: StrictMode (`src/main.tsx:25`)
+double-mounts in dev, and **Vite HMR re-evaluates the module on every edit**. Each
+re-invocation captured the already-patched `window.fetch` as its "original",
+stacking interceptors — 21 nested layers were observed in a real console trace, so
+one 401 ran the refresh / retry / `endServerSession` logic 21 times over.
+
+⚠️ The marker must live **on the function object**, not in a module-level `let`: HMR
+resets module state while `window.fetch` stays patched from the previous
+generation, so a `let installed = false` guard silently fails to guard.
+
 ## Security model
 - Refresh tokens are opaque + **hashed at rest** → a DB leak yields no usable
   tokens.

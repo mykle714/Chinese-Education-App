@@ -46,7 +46,9 @@ const SettingsPanelBody = forwardRef<SheetPanelBodyHandle, SettingsPanelBodyProp
         { key: "showPinyin", label: "Show pinyin", visible: true },
         // Pinyin color is meaningless when pinyin itself is hidden — nest it under pinyin.
         { key: "showPinyinColor", label: "Color pinyin by tone", visible: settings.showPinyin, indented: true },
-        { key: "showSegmentSpaces", label: "Show spaces between words", visible: true },
+        // NOTE: "Show spaces between words" is deliberately absent — it is an
+        // account-level setting now (Account page → Display), because it must apply
+        // identically on the eip and the cdp. See docs/EXAMPLE_SENTENCES.md.
         { key: "autoplayChinese", label: "Autoplay audio on Chinese side", visible: true },
         // Slow only the example-sentence audio; the flashcard word stays at 1×.
         { key: "slowExampleSentences", label: "Slow example sentence audio (0.65×)", visible: true },

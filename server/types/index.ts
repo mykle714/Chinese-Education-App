@@ -37,6 +37,7 @@ export interface User {
   avatarIconId?: string | null; // FK to icons8("icons8Id") — the icon chosen as profile avatar (migration 77)
   readingGoal?: boolean; // Account opts into the Reading mastery goal (migration 101, docs/MASTERY_REWORK.md)
   writingGoal?: boolean; // Account opts into the Writing mastery goal (migration 101, docs/MASTERY_REWORK.md)
+  showSegmentSpaces?: boolean; // Display pref: gap between word segments in segmented sentences (migration 129, docs/EXAMPLE_SENTENCES.md)
   lastMinutePointIncrement?: Date; // Last successful minute-point increment (for rate limiting)
   createdAt?: Date;
 }
@@ -65,6 +66,7 @@ export interface UserUpdateData {
   avatarIconId?: string | null; // Set when the user picks/clears their profile avatar (migration 77)
   readingGoal?: boolean; // Toggled in account settings (migration 101)
   writingGoal?: boolean; // Toggled in account settings (migration 101)
+  showSegmentSpaces?: boolean; // Toggled in account settings (migration 129)
 }
 
 // Auth response type
@@ -128,6 +130,15 @@ export interface ExampleSentenceDefinitionPronunciationOverride {
   pronunciation?: string | null; // Shown verbatim in the segment popup instead of stored pronunciation
 }
 
+// An English translation of ONE Chinese run cited inside a long definition / comparison
+// paragraph, keyed by the run's exact text. Stored in dictionaryentries_zh."longDefinitionCitations"
+// (migration 126) and word_comparison_cache.citations (migration 127); attached to the matching
+// `foreign` part at read time. See docs/DEFINITION_MAPPING.md.
+export interface LongDefinitionCitation {
+  zh: string;   // the embedded Chinese run, verbatim (the join key to a `foreign` part's foreignText)
+  en: string;   // its English translation, as one phrase/sentence
+}
+
 // One ordered piece of a long definition split into English prose vs. embedded Chinese.
 // `text` parts render as plain prose; `foreign` parts carry the same segmentation payload
 // as an example sentence so the client renders them as cpcd with the hover/tap popup.
@@ -138,6 +149,11 @@ export type LongDefinitionPart =
       foreignText: string;
       _segments: string[];
       segmentMetadata: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo; wordForms?: Record<string, string> }>;
+      // English translation of the WHOLE run, when one has been generated for it. Present
+      // flips the client from per-segment popups to a whole-run highlight + this text
+      // (SegmentedSentenceDisplay `runTranslation`). Absent (older rows, or a run the
+      // generator skipped) keeps today's per-segment behavior.
+      translation?: string | null;
     };
 
 // One sense's extended definition as SHIPPED to the client (zh): the stored
@@ -184,6 +200,11 @@ export interface DictionaryEntry {
   // lookup path — so the un-narrowed value rides along here and enrichLongDefinitionMetadataBatch
   // re-resolves from it, then drops this field from the payload. See docs/DEFINITION_MAPPING.md #5.
   longDefinitionRaw?: LongDefinitionValue | null;
+  // Raw `longDefinitionCitations` column (zh, migration 126): translations for the Chinese
+  // runs cited in this entry's long definition. Consumed by enrichLongDefinitionMetadataBatch,
+  // which folds each one onto its `foreign` part and then drops this field from the payload —
+  // the client never needs the standalone list.
+  longDefinitionCitations?: LongDefinitionCitation[] | null;
   longDefinitionParts?: LongDefinitionPart[] | null;  // Computed at runtime: longDefinition split into English + cpcd-able Chinese runs
   longDefinitionSenses?: LongDefinitionSenseView[] | null;  // Computed at runtime (zh): EVERY sense's definition + parts, so the client can follow the sense picker without a refetch. NULL for es/legacy per-POS rows.
   // Computed at read time (DictionaryDAL.enrichDefinitionsApprovalBatch): TRUE iff a
@@ -278,6 +299,10 @@ export interface WordComparisonRow {
   wordB: string;
   language: string;
   comparison: string;
+  // Translations of the Chinese runs cited in `comparison` (migration 127), produced by the
+  // same structured model call. NULL on rows cached before that migration — those serve with
+  // per-segment popups until the pair is regenerated.
+  citations: LongDefinitionCitation[] | null;
   model: string | null;
   queriedAt: string;
 }
@@ -285,8 +310,10 @@ export interface WordComparisonRow {
 // The eip Compare tab's response shape (docs/WORD_COMPARE_FEATURE.md): the raw AI paragraph plus
 // its GSA segmentation (embedded Chinese runs → cpcd-able parts with per-segment pinyin +
 // definition), computed at READ TIME the same way `longDefinition` is — see
-// `enrichLongDefinitionMetadataBatch` — and NOT persisted in `word_comparison_cache` (only the
-// raw `comparison` text is cached; parts are recomputed on every serve, cached or fresh).
+// `enrichLongDefinitionMetadataBatch`. The PARTS themselves are not persisted (recomputed on
+// every serve, cached or fresh); the paragraph and its run translations are, in
+// `word_comparison_cache.comparison` / `.citations` (migration 127), and the translations are
+// folded onto the matching `foreign` parts here.
 export interface WordComparisonResult {
   comparison: string;
   comparisonParts: LongDefinitionPart[] | null;
@@ -551,6 +578,7 @@ export interface VocabEntry {
   synonyms?: string[];  // Array of Chinese synonym words
   synonymsMetadata?: Record<string, { definition: string; pronunciation: string }> | null;  // Computed at runtime by batch-reading from dictionaryentries_zh
   longDefinition?: string | null;  // AI-generated extended definition (25–150 chars) from dictionaryentries_zh
+  longDefinitionCitations?: LongDefinitionCitation[] | null;  // Raw det column (migration 126), joined via DICT_JOIN; folded onto the `foreign` parts and dropped by enrichLongDefinitionMetadataBatch
   longDefinitionParts?: LongDefinitionPart[] | null;  // Computed at runtime: longDefinition split into English + cpcd-able Chinese runs
   longDefinitionSenses?: LongDefinitionSenseView[] | null;  // Computed at runtime (zh): EVERY sense's definition + parts, so the client can follow the sense picker without a refetch. NULL for es/legacy per-POS rows.
   iconId?: string | null;  // Representative icons8 icon (FK to icons8.icons8Id) joined from det; client renders via <img src="/api/icons8/<iconId>/image">

@@ -166,15 +166,19 @@ function localToCell(lx: number, ly: number, width: number, height: number): Cel
   return { col, row };
 }
 
-// ─── Grid overlay (fine per-cell + major every 8, counted inward from the NE corner) ───────────
+// ─── Grid overlay (fine per-cell + major every 4, counted inward from the NE corner) ───────────
 const GRID_Z = 9_000;
-const GRID_MAJOR_INTERVAL = 8;
+const GRID_MAJOR_INTERVAL = 4;
 /**
  * Offset of the FIRST major line from the board's north/east edges, in cells. Majors are counted
  * inward from the NE corner — the first red line sits `GRID_MAJOR_EDGE_OFFSET` cells in from the
  * north edge (row `height`) and from the east edge (col `width`), then repeats every
  * {@link GRID_MAJOR_INTERVAL}. The red lattice IS the authoring guideline made visible: streets
  * may only begin at a red line, and streets are referenced from the north and east faces.
+ *
+ * NOTE: with the interval now 4 this offset is congruent to 0, so the north/east edges themselves
+ * are major lines. It is kept (rather than zeroed) because it names the anchor the lattice is
+ * counted from, which still matters if the interval ever moves back off a divisor of 4.
  */
 const GRID_MAJOR_EDGE_OFFSET = 4;
 /** Whether a grid line `distanceFromEdge` cells in from its reference edge is a MAJOR (red) line. */

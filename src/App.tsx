@@ -22,6 +22,7 @@ import NightMarketEnginePage from "./features/nightmarket/NightMarketEnginePage"
 import TemplateEditorPage from "./features/nightmarket/TemplateEditorPage";
 import TemplateSandboxPage from "./features/nightmarket/TemplateSandboxPage";
 import DictionaryPage from "./pages/DictionaryPage";
+import ComparePage from "./pages/ComparePage";
 import DictionaryCardDetailPage from "./pages/DictionaryCardDetailPage";
 import DiscoverPage from "./pages/DiscoverPage";
 import TesterDashboardPage from "./pages/TesterDashboardPage";
@@ -110,6 +111,16 @@ function App() {
                 <Route path="/dictionary/card/:word" element={
                   <ProtectedRoute allowPublic>
                     <DictionaryCardDetailPage />
+                  </ProtectedRoute>
+                } />
+                {/* Standalone home for the word-compare feature (docs/WORD_COMPARE_FEATURE.md),
+                    reached from the Home hub. `allowPublic` like every other Home-hub node page:
+                    without it ProtectedRoute bounces public/demo accounts straight back to "/",
+                    so the hub button would silently do nothing for them. The compare request
+                    itself is still auth-gated + rate-limited server-side. */}
+                <Route path="/compare" element={
+                  <ProtectedRoute allowPublic>
+                    <ComparePage />
                   </ProtectedRoute>
                 } />
                 <Route path="/discover" element={

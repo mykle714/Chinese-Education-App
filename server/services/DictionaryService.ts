@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { IDictionaryDAL } from '../dal/interfaces/IDictionaryDAL.js';
-import { DictionaryEntry, VocabEntry, AiDictionaryEntry, WordComparisonResult, LongDefinitionPart, DefinitionCluster } from '../types/index.js';
+import { DictionaryEntry, VocabEntry, AiDictionaryEntry, WordComparisonResult, LongDefinitionPart, LongDefinitionCitation, DefinitionCluster } from '../types/index.js';
 import type { LongDefinitionValue } from '../utils/definitions.js';
 import { ValidationError, RateLimitError } from '../types/dal.js';
 import { getAllSubstrings, buildDictMap, buildExcludeSet, segmentWithDict } from '../dal/shared/segmentString.js';
@@ -36,6 +36,66 @@ const AI_EMPTY_CACHE_TTL_MS = 90 * 24 * 60 * 60 * 1000; // ~3 months
 // CJK-ideograph test (BMP + Ext-A), mirroring the client's textUtils.hasChinese. Used to route a
 // query down the Chinese (vs pinyin) branch of the AI synthetic-entry fallback.
 const hasChinese = (text: string): boolean => /[一-鿿㐀-䶿]/.test(text);
+
+/**
+ * Parse the Compare model's `{ paragraph, citations }` envelope (docs/WORD_COMPARE_FEATURE.md).
+ *
+ * DEGRADES, NEVER THROWS — the paragraph is the product; the citations are a rendering nicety.
+ * If the response isn't the expected JSON (a prose-only answer, a fenced block, a truncated
+ * object), the whole text is treated as the paragraph and citations come back null, which is
+ * exactly how every pre-migration-127 cached row already serves.
+ *
+ * The object is located by slicing from the first `{` to the last `}` — `citations` is an array
+ * of objects, so the flat `\{[^{}]*\}` scan used by the AI-entry fallback can't match it.
+ */
+export function parseComparisonResponse(raw: string): { paragraph: string; citations: LongDefinitionCitation[] | null } {
+  const text = (raw || '').trim();
+  if (!text) return { paragraph: '', citations: null };
+
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start !== -1 && end > start) {
+    try {
+      const obj = JSON.parse(text.slice(start, end + 1));
+      if (obj && typeof obj.paragraph === 'string' && obj.paragraph.trim()) {
+        const citations = Array.isArray(obj.citations)
+          ? obj.citations
+              .filter((c: any) => c && typeof c.zh === 'string' && typeof c.en === 'string' && c.zh.trim() && c.en.trim())
+              .map((c: any): LongDefinitionCitation => ({ zh: c.zh, en: c.en.trim() }))
+          : [];
+        return { paragraph: obj.paragraph.trim(), citations: citations.length ? citations : null };
+      }
+    } catch { /* malformed envelope — try the field-level salvage below */ }
+  }
+
+  // SALVAGE. The single most common malformation is an unescaped double quote INSIDE a string
+  // value — the model writes `means "I am reading a book"` in the paragraph, which is valid
+  // English and invalid JSON, and strict parsing then rejects an otherwise perfect answer
+  // (observed on the very first live pair). The prompt asks it not to, but a prompt is not a
+  // guarantee, so the fields are also pulled out positionally: the paragraph is everything
+  // between the `"paragraph":` opener and the `"citations":` key, and each citation is a
+  // well-formed {zh, en} object. Interior quotes survive as literal characters, which is what
+  // we want to render anyway.
+  if (text.includes('"paragraph"')) {
+    const unescape = (s: string): string => s.replace(/\\"/g, '"').replace(/\\n/g, ' ').replace(/\\\\/g, '\\');
+    const paragraphMatch = text.match(/"paragraph"\s*:\s*"([\s\S]*?)"\s*,\s*"citations"\s*:/);
+    const paragraph = paragraphMatch ? unescape(paragraphMatch[1]).trim() : '';
+    if (paragraph) {
+      const citations: LongDefinitionCitation[] = [];
+      const citationRegex = /\{\s*"zh"\s*:\s*"([\s\S]*?)"\s*,\s*"en"\s*:\s*"([\s\S]*?)"\s*\}/g;
+      for (const match of text.matchAll(citationRegex)) {
+        const zh = unescape(match[1]).trim();
+        const en = unescape(match[2]).trim();
+        if (zh && en) citations.push({ zh, en });
+      }
+      return { paragraph, citations: citations.length ? citations : null };
+    }
+  }
+
+  // Prose fallback: the model ignored the envelope entirely (or emitted something we can't
+  // read at all) — treat the whole response as the paragraph, exactly as before migration 127.
+  return { paragraph: text, citations: null };
+}
 
 // The AI-fallback UI state a search resolves to (docs/DICTIONARY_AI_FALLBACK_SEARCH.md):
 //   canAskAi  — offer the "AI" button (cache miss or stale-empty)
@@ -442,7 +502,9 @@ Rules:
     const cached = await this.dictionaryDAL.getComparison(sortedA, sortedB, language);
     // Normalize on read too, so rows cached before the newline-collapsing fix (below)
     // don't keep rendering with stray paragraph gaps until they're regenerated.
-    if (cached) return this.withComparisonParts(cached.comparison.replace(/\s*\n+\s*/g, ' '), language);
+    // Rows cached before migration 127 carry no `citations`; they serve exactly as before
+    // (per-segment popups) rather than paying a fresh model call to top themselves up.
+    if (cached) return this.withComparisonParts(cached.comparison.replace(/\s*\n+\s*/g, ' '), language, cached.citations);
 
     const anthropic = getDictAiClient();
     if (!anthropic) return null; // feature disabled (no DICT_AI_API_KEY)
@@ -471,10 +533,14 @@ Rules:
     const userText = `Word 1 — ${groundingLine(sortedA, entryA)}\nWord 2 — ${groundingLine(sortedB, entryB)}`;
 
     let comparison: string;
+    let citations: LongDefinitionCitation[] | null = null;
     try {
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-6',
-        max_tokens: 400,
+        // Roomier than the prose-only budget (400) because the payload now also carries a
+        // translation per cited Chinese run (~8 runs on a busy pair, plus JSON overhead).
+        // A truncated response would lose the citations array entirely.
+        max_tokens: 1200,
         temperature: 0.3,
         system: [{ type: 'text', text: systemText, cache_control: { type: 'ephemeral' } }],
         messages: [{ role: 'user', content: userText }],
@@ -484,24 +550,27 @@ Rules:
       // regardless of what text comes back (mirrors generateAiEntry's counting rule).
       await this.dictionaryDAL.incrementAiUsage(userId, usageDate);
 
-      comparison = response.content
+      const rawText = response.content
         .filter((b): b is Anthropic.TextBlock => b.type === 'text')
         .map(b => b.text)
         .join('\n')
-        .trim()
-        // The prompt asks for ONE paragraph, but the model sometimes still puts blank
-        // lines between sentences. `LongDefinitionDisplay` renders this with
-        // whiteSpace: pre-line (needed for real paragraph \n\n breaks in longDefinition),
-        // so any stray newline here would render as a visible paragraph gap.
-        .replace(/\s*\n+\s*/g, ' ');
+        .trim();
+
+      const parsed = parseComparisonResponse(rawText);
+      // The prompt asks for ONE paragraph, but the model sometimes still puts blank
+      // lines between sentences. `LongDefinitionDisplay` renders this with
+      // whiteSpace: pre-line (needed for real paragraph \n\n breaks in longDefinition),
+      // so any stray newline here would render as a visible paragraph gap.
+      comparison = parsed.paragraph.replace(/\s*\n+\s*/g, ' ');
+      citations = parsed.citations;
       if (!comparison) return null; // transient — don't cache
     } catch (error: any) {
       console.error(`Failed to generate word comparison for "${sortedA}" vs "${sortedB}":`, error.message);
       return null;
     }
 
-    await this.dictionaryDAL.upsertComparison(sortedA, sortedB, language, comparison, 'claude-sonnet-4-6');
-    return this.withComparisonParts(comparison, language);
+    await this.dictionaryDAL.upsertComparison(sortedA, sortedB, language, comparison, 'claude-sonnet-4-6', citations);
+    return this.withComparisonParts(comparison, language, citations);
   }
 
   /**
@@ -511,24 +580,49 @@ Rules:
    * only the raw paragraph is persisted in `word_comparison_cache`. Reuses the DAL method as-is by
    * passing the paragraph through the same `{ longDefinition }` shape it enriches for det rows.
    */
-  private async withComparisonParts(comparison: string, language: string): Promise<WordComparisonResult> {
+  private async withComparisonParts(
+    comparison: string,
+    language: string,
+    citations: LongDefinitionCitation[] | null = null,
+  ): Promise<WordComparisonResult> {
     const [enriched] = await this.dictionaryDAL.enrichLongDefinitionMetadataBatch<{
       longDefinition: string;
+      longDefinitionCitations?: LongDefinitionCitation[] | null;
       longDefinitionParts?: LongDefinitionPart[] | null;
-    }>([{ longDefinition: comparison }], language);
+    }>([{ longDefinition: comparison, longDefinitionCitations: citations }], language);
     return { comparison, comparisonParts: enriched.longDefinitionParts ?? null };
   }
 
   /**
    * Static system prompt for the Compare tab's comparison paragraph (docs/WORD_COMPARE_FEATURE.md).
-   * Always asks for ONE free-text paragraph (decided) — no markdown/JSON — so the cache column and
-   * client rendering stay a plain string.
+   *
+   * The paragraph itself is still ONE plain-text paragraph (decided) — but the RESPONSE is now a
+   * small JSON envelope `{ paragraph, citations }` so the same single call also returns an English
+   * translation for every Chinese run it cites (migration 127). Doing it here rather than in a
+   * follow-up call keeps Compare at one model call per pair, which is what the shared daily AI
+   * budget is sized around. `paragraph` is what gets cached/rendered; `citations` only feeds the
+   * whole-run tap popup, so a malformed/absent citations array degrades to today's behavior
+   * (see parseComparisonResponse).
+   *
+   * Spanish takes the SAME envelope for shape uniformity, but with no citations: es comparison text
+   * embeds no Han runs, so the parts splitter produces nothing to attach a translation to.
    */
   private buildCompareSystemPrompt(language: string): string {
     const languageName = language === 'es' ? 'Spanish' : 'Mandarin Chinese';
+    const citationRule = language === 'es'
+      ? `"citations" must be an empty array — this language needs no run translations.`
+      : `"citations" must contain ONE entry for EVERY maximal run of Chinese characters that appears in "paragraph" (including the two headwords themselves wherever they appear, and every example phrase or sentence). Each entry is { "zh": "<the run copied VERBATIM, exactly as it appears in the paragraph, including any Chinese punctuation inside it>", "en": "<its natural English translation>" }. Copy the run character-for-character — a run that does not match the paragraph text exactly is discarded. List each distinct run once. For a single word, "en" is a short gloss; for a phrase or sentence, "en" is a natural translation of the whole thing.`;
+
     return `You are a ${languageName} tutor. You are given two ${languageName} words, each with its dictionary definition(s) (or a note that none is on file). Explain the difference between them for a learner.
 
-Write ONE concise paragraph (3-5 sentences), plain text, no markdown, no headers, no bullet points. Cover: what the two words share in meaning, how they differ (register, connotation, typical grammatical role, or typical context of use), and include one short example use for each word so the contrast is concrete. Do not just repeat the raw dictionary definitions verbatim — synthesize the distinction in your own words. If the words are near-total synonyms with no meaningful difference, say so plainly rather than inventing one.`;
+Respond with ONLY a JSON object, no markdown fences and no commentary around it, of the form:
+{"paragraph": "...", "citations": [{"zh": "...", "en": "..."}]}
+
+Do not use the double-quote character anywhere inside "paragraph" or inside a translation — write example glosses without quotes, or use single quotes. (An unescaped quote breaks the JSON.)
+
+"paragraph" is ONE concise paragraph (3-5 sentences), plain text, no markdown, no headers, no bullet points, no newlines. Cover: what the two words share in meaning, how they differ (register, connotation, typical grammatical role, or typical context of use), and include one short example use for each word so the contrast is concrete. Do not just repeat the raw dictionary definitions verbatim — synthesize the distinction in your own words. If the words are near-total synonyms with no meaningful difference, say so plainly rather than inventing one.
+
+${citationRule}`;
   }
 
   /**

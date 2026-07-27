@@ -198,6 +198,12 @@ type SenseCluster = { sense?: string | null; glosses?: string[] | null; frequenc
  *
  * Returns null when there is no real choice to make (unclustered, or a single cluster) —
  * the same `< 2` gate the client applies — so callers use their flat fallback.
+ *
+ * Clusters with no displayable English (a lead gloss that is entirely parenthetical, e.g.
+ * 上来 "(verb complement indicating success)") are dropped before that gate, mirroring the
+ * client's `sortedSenseClusters` — they are not offered in the picker, so the server must
+ * not resolve a card onto one either. Label-addressed reads (`resolveSenseGloss`) are
+ * unaffected and still see every cluster.
  * See docs/DEFINITION_CLUSTERS.md.
  */
 export function resolveSelectedCluster(entry: {
@@ -205,8 +211,12 @@ export function resolveSelectedCluster(entry: {
   selectedSense?: string | null;
 }): SenseCluster | null {
   const clusters = entry.definitionClusters;
-  if (!Array.isArray(clusters) || clusters.length < 2) return null;
-  const sorted = [...clusters].sort((a, b) => (b?.frequencyScore ?? -1) - (a?.frequencyScore ?? -1));
+  if (!Array.isArray(clusters)) return null;
+  const displayable = clusters.filter(
+    (c) => c && Array.isArray(c.glosses) && ddt({ glosses: c.glosses as string[] }) !== ''
+  );
+  if (displayable.length < 2) return null;
+  const sorted = displayable.sort((a, b) => (b?.frequencyScore ?? -1) - (a?.frequencyScore ?? -1));
   const idx = entry.selectedSense ? sorted.findIndex((c) => c && c.sense === entry.selectedSense) : -1;
   return sorted[idx >= 0 ? idx : 0] ?? null;
 }

@@ -30,7 +30,12 @@ All test users are created automatically via database initialization scripts in 
 
 ### 4. Reader Vocabulary Test User ⭐ NEW
 - **Email**: `reader-vocab-test@example.com`
-- **Password**: `TestPassword123!`
+- **Password**: `password` — verified against the bcrypt hash seeded by
+  `database/init/03-reader-vocab-test-user.sql:9`. This doc previously claimed
+  `TestPassword123!`, which does **not** match that hash; logging in with it gets a
+  legitimate 400 `Invalid email or password` from
+  `server/services/UserService.ts:106`. The other three test users really are
+  `testing123`.
 - **Vocabulary Entries**: 135 words from reader texts
 - **Content**: All vocabulary from the three reader documents:
   - **咖啡店的早晨** (Coffee Shop Morning) - 47 words

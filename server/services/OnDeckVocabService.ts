@@ -6,7 +6,8 @@ import { StarterPacksService } from './StarterPacksService.js';
 import { ValidationError } from '../types/dal.js';
 import db from '../db.js';
 import { dictTableForLanguage } from '../dal/shared/dictTable.js';
-import { vetTableForLanguage, vetReadFrom, UTCM_USERS_JOIN, UTCM_CATEGORY_EXPR, UTCM_CATEGORY_SELECT } from '../dal/shared/vetTable.js';
+import { vetTableForLanguage, vetReadFrom, UTCM_USERS_JOIN, UTCM_CATEGORY_EXPR, UTCM_CATEGORY_SELECT, typeCategoryExpr } from '../dal/shared/vetTable.js';
+import { computeTypeCategory } from '../utils/masteryCompute.js';
 import { DICT_COLS, DICT_JOIN } from '../dal/shared/dictJoin.js';
 import { ttsService } from './TTSService.js';
 import {
@@ -88,10 +89,12 @@ export class OnDeckVocabService {
   // correct should not reappear in the working loop until its cooldown elapses.
   // Shorter windows for weaker categories so the user gets more repetition.
   //
-  // The window DURATION is keyed on the card's overall utcm category, but the
-  // timer is applied PER MARK TYPE (see isTypeOnCooldown): recognition and
-  // production cool down on independent clocks. See docs/MASTERY_REWORK.md
-  // (§ Per-type cooldown).
+  // The timer is always applied PER MARK TYPE (see isTypeOnCooldown): recognition
+  // and production cool down on independent clocks. The window DURATION is keyed on
+  // a utcm category the CALLER chooses — the flp uses the card's overall (goal-
+  // blended) category, while the games use the per-type category of the single track
+  // they exercise, so a card weak in one track rests briefly for that track's game
+  // even when it is strong overall. See docs/MASTERY_REWORK.md (§ Per-type cooldown).
   private static readonly COOLDOWN_MS_BY_CATEGORY: Record<string, number> = {
     Unfamiliar: 5 * 60 * 1000,            // 5 minutes
     Target: 24 * 60 * 60 * 1000,          // 24 hours
@@ -126,11 +129,18 @@ export class OnDeckVocabService {
     return latest;
   }
 
-  // Whether ONE mark type of a card is still cooling down. The window duration is
-  // chosen by the card's overall utcm category; the elapsed time is measured from
-  // that type's own last correct mark.
-  private isTypeOnCooldown(card: VocabEntry, type: MarkType, now: number): boolean {
-    const cooldownMs = OnDeckVocabService.COOLDOWN_MS_BY_CATEGORY[card.category ?? ''];
+  // Whether ONE mark type of a card is still cooling down. `windowCategory` selects
+  // the window DURATION (flp: the card's overall category; games: the per-type
+  // category of the track being played); the elapsed time is always measured from
+  // that type's own last correct mark. An unrecognized/absent category means "no
+  // cooldown configured" ⇒ never cooling.
+  private isTypeOnCooldown(
+    card: VocabEntry,
+    type: MarkType,
+    now: number,
+    windowCategory: string | null | undefined
+  ): boolean {
+    const cooldownMs = OnDeckVocabService.COOLDOWN_MS_BY_CATEGORY[windowCategory ?? ''];
     if (cooldownMs === undefined) return false;
 
     const lastCorrect = this.getLastCorrectMarkTimestampForType(card.typedMarkHistory, type);
@@ -143,7 +153,11 @@ export class OnDeckVocabService {
   // card is fully on cooldown for the flp and should be skipped. Stamped onto the
   // returned card as `readyMarkTypes` so the client can steer which face it shows.
   private flpReadyMarkTypes(card: VocabEntry, now: number): MarkType[] {
-    return OnDeckVocabService.FLP_MARK_TYPES.filter(type => !this.isTypeOnCooldown(card, type, now));
+    // flp windows are keyed on the card's OVERALL category: the loop presents two
+    // mark types on one card, so a single whole-card window is the coherent choice.
+    return OnDeckVocabService.FLP_MARK_TYPES.filter(
+      type => !this.isTypeOnCooldown(card, type, now, card.category)
+    );
   }
 
   // The single flp mark type whose cooldown is CLOSEST TO EXPIRING (oldest last
@@ -196,36 +210,55 @@ export class OnDeckVocabService {
     return best ? { ...best, readyMarkTypes: [bestType] } : null;
   }
 
-  // A card is playable in a game when ≥1 of that game's mark types is off its
-  // per-type cooldown. Single-type games reduce to "that one type is off
-  // cooldown" (bubble-match = recognition; word-search = reading in No-Pinyin
-  // mode, production in Pinyin mode). See docs/MASTERY_REWORK.md § Per-type
-  // cooldown ("Games").
-  private isCardGameEligible(card: VocabEntry, markTypes: readonly MarkType[], now: number): boolean {
-    return markTypes.some(type => !this.isTypeOnCooldown(card, type, now));
+  // A card is playable in a game when the ONE mark type that game emits is off its
+  // per-type cooldown (bubble-match = recognition; word-search = reading in
+  // No-Pinyin mode, production in Pinyin mode). The window duration comes from that
+  // same track's per-type category, so the whole game path — bucketing and resting
+  // alike — reads only the history of the track it exercises.
+  // See docs/MASTERY_REWORK.md § Per-type cooldown ("Games").
+  private isCardGameEligible(card: VocabEntry, markType: MarkType, now: number): boolean {
+    const windowCategory = computeTypeCategory(card.typedMarkHistory, markType);
+    return !this.isTypeOnCooldown(card, markType, now, windowCategory);
   }
 
   /**
    * Fetch per-category library candidates for a game, split into `eligible`
-   * (≥1 of the game's mark types off cooldown = fresh) vs `cooled` (all of the
-   * game's mark types still cooling). Each partition preserves the SQL RANDOM()
-   * order. Games fill their pool from `eligible` first — requested categories,
-   * then fallback categories — and only dip into `cooled` as a last resort to
-   * reach the required count, so the per-type cooldown is honored without ever
-   * blocking entry more than an un-cooled library would.
+   * (the game's mark type is off cooldown = fresh) vs `cooled` (still cooling).
+   * Each partition preserves the SQL RANDOM() order. Games fill their pool from
+   * `eligible` first — requested categories, then fallback categories — and only
+   * dip into `cooled` as a last resort to reach the required count, so the
+   * per-type cooldown is honored without ever blocking entry more than an
+   * un-cooled library would.
+   *
+   * BUCKETING IS PER MARK TYPE (docs/MASTERY_REWORK.md § "Games select by their own
+   * mark type"): the category a candidate is filed under comes from the recent mark
+   * history of `markType` alone (compute_type_category), NOT from the goal-blended
+   * compute_utcm_category the flp and decks page use. A card with a maxed
+   * Recognition window but an empty Reading window is a Mastered candidate for
+   * Bubble Match and an Unfamiliar one for Word Search No-Pinyin — which is the
+   * point: each game drills the track it is actually training.
+   *
+   * The row's OVERALL category is still selected (as `category`) so downstream
+   * consumers of VocabEntry keep their usual whole-card field; only the WHERE
+   * bucket changed. That is also why the users join stays.
    *
    * `maxEntryKeyLen` (Word Search) restricts candidates to short words the grid
    * can place; omit for no length cap.
+   *
+   * `excludeIds` drops specific vocab-entry ids from every bucket. Used by the
+   * partial-refill game pool (Bubble Match's "Play Again" keeps the cards the
+   * player failed to match, so those must not come back as replacements).
    */
   private async fetchGameCandidates(
     client: PoolClient,
     userId: string,
     language: string,
     categories: string[],
-    markTypes: readonly MarkType[],
+    markType: MarkType,
     now: number,
     cap: number,
-    maxEntryKeyLen?: number
+    maxEntryKeyLen?: number,
+    excludeIds: number[] = []
   ): Promise<{ eligible: Record<string, VocabEntry[]>; cooled: Record<string, VocabEntry[]> }> {
     const eligible: Record<string, VocabEntry[]> = {};
     const cooled: Record<string, VocabEntry[]> = {};
@@ -241,16 +274,17 @@ export class OnDeckVocabService {
         WHERE ve."userId" = $1
         AND ve."language" = $4
         AND ve."starterPackBucket" = 'library'
-        AND ${UTCM_CATEGORY_EXPR} = $2
+        AND ${typeCategoryExpr('$5')} = $2
+        AND NOT (ve.id = ANY($6::int[]))
         ${lenClause}
         ORDER BY RANDOM()
         LIMIT $3
-      `, [userId, category, cap, language]);
+      `, [userId, category, cap, language, markType, excludeIds]);
 
       const fresh: VocabEntry[] = [];
       const stale: VocabEntry[] = [];
       for (const row of result.rows) {
-        (this.isCardGameEligible(row, markTypes, now) ? fresh : stale).push(row);
+        (this.isCardGameEligible(row, markType, now) ? fresh : stale).push(row);
       }
       eligible[category] = fresh;
       cooled[category] = stale;
@@ -717,6 +751,17 @@ export class OnDeckVocabService {
   /**
    * Count library cards per category for the requested categories. Used by the
    * decks page (per-bucket counts) and to gate game entry.
+   *
+   * NOTE — known divergence: these counts use the OVERALL (goal-blended) utcm
+   * category, while the game pools bucket by the per-type category of the mark
+   * type they emit (see fetchGameCandidates). So the `available` map a game
+   * reports can disagree with the pool it actually assembled — e.g. a library of
+   * cards that are Comfortable overall but have an empty reading track counts as
+   * Comfortable here while Word Search No-Pinyin draws them as Unfamiliar. This is
+   * deliberate (one shared count source across decks + games); if the game hints
+   * ever need to match the pool, give the game callers a per-type count variant
+   * rather than switching this one. docs/MASTERY_REWORK.md § "Games select by
+   * their own mark type".
    */
   async getCategoryCounts(
     userId: string,
@@ -781,23 +826,46 @@ export class OnDeckVocabService {
    * TTS pre-warmed so in-game autoplay is instant, mirroring the
    * distributed-working-loop endpoint.
    *
-   * PER-TYPE COOLDOWN (docs/MASTERY_REWORK.md § Per-type cooldown, "Games"):
-   * `gameMarkTypes` is the mark type(s) this game emits (bubble-match =
-   * ['recognition']). The pool is filled FRESH-FIRST — cards whose game mark type
-   * is off cooldown, drawn from the requested categories then the fallback
+   * PER-TYPE SELECTION (docs/MASTERY_REWORK.md § "Games select by their own mark
+   * type" + § Per-type cooldown, "Games"): `gameMarkType` is the mark type this
+   * game emits (bubble-match = 'recognition'). It drives BOTH which category
+   * bucket each candidate falls in (banded off that track's own 8-mark window) and
+   * the per-type cooldown. The pool is filled FRESH-FIRST — cards whose game mark
+   * type is off cooldown, drawn from the requested categories then the fallback
    * categories — and only tops up with COOLED cards (same category order) as a
    * last resort, so a recently-played library still yields a full board.
+   *
+   * PARTIAL REFILL (`opts.need` + `opts.excludeIds`): Bubble Match's "Play Again"
+   * keeps the pairs the player failed to match and only swaps out the ones they
+   * cleared, so it asks for `need` (< total) cards while excluding the kept ids.
+   * The requested per-bucket quotas are scaled down by `need / total` so a partial
+   * refill keeps roughly the same difficulty mix as a full board instead of being
+   * front-loaded with whichever bucket happens to be listed first.
+   *
+   * TWO TIERS OF "don't give me this card":
+   *   - `excludeIds` is HARD — filtered out in SQL, can never come back. Used for
+   *     cards still on the board (returning one would duplicate a live bubble).
+   *   - `avoidIds` is SOFT — the card is demoted to the same last-resort tier as
+   *     a cooled card, so it only reappears if the library can't fill the board
+   *     without it. Used for cards the player just cleared: they should feel
+   *     retired for a while, but a 21-card library must still assemble a board.
+   *     This also covers the race where the client's fire-and-forget mark POST
+   *     hasn't landed yet, so the real per-type cooldown isn't visible to this
+   *     query.
    */
   async getGameVocabPool(
     userId: string,
     language: string,
     distribution: Record<string, number>,
-    gameMarkTypes: readonly MarkType[]
+    gameMarkType: MarkType,
+    opts: { need?: number; excludeIds?: number[]; avoidIds?: number[] } = {}
   ): Promise<{
     cards: VocabEntry[];
     requested: Record<string, number>;
     available: Record<string, number>;
     total: number;
+    /** Cards this call had to return (= `total` for a full board, fewer for a refill). */
+    needed: number;
     sufficient: boolean;
   }> {
     if (!userId) {
@@ -806,6 +874,18 @@ export class OnDeckVocabService {
 
     const now = Date.now();
     const total = Object.values(distribution).reduce((sum, n) => sum + n, 0);
+    const excludeIds = opts.excludeIds ?? [];
+    // How many cards this call must actually return. A full board asks for
+    // `total`; a partial refill asks for fewer (the rest are cards the caller is
+    // keeping and has listed in excludeIds).
+    const target = Math.max(0, Math.min(opts.need ?? total, total));
+    // Scale the per-bucket quotas to the target so a partial refill preserves the
+    // requested difficulty mix (e.g. need=10 of a 2/10/6/2 board → 1/5/3/1)
+    // instead of being filled entirely from whichever bucket is enumerated first.
+    const scaled: Record<string, number> = {};
+    for (const [category, count] of Object.entries(distribution)) {
+      scaled[category] = target === total ? count : Math.round((count * target) / total);
+    }
     // Count availability across both the requested buckets and the fallback
     // buckets so the client can show accurate "you have N" hints.
     const countCategories = Array.from(
@@ -817,9 +897,30 @@ export class OnDeckVocabService {
     try {
       // Per-category candidates split fresh (game type off cooldown) vs cooled.
       const { eligible, cooled } = await this.fetchGameCandidates(
-        client, userId, language, countCategories, gameMarkTypes, now,
-        OnDeckVocabService.GAME_CANDIDATE_CAP
+        client, userId, language, countCategories, gameMarkType, now,
+        OnDeckVocabService.GAME_CANDIDATE_CAP, undefined, excludeIds
       );
+
+      // Soft-avoid: pull just-cleared cards out of BOTH tiers into a third,
+      // strictly-last tier. It has to be its own tier rather than the back of the
+      // matching category's `cooled` queue: the fill loops iterate category-by-
+      // category, so a demoted card sitting in (say) the Unfamiliar cooled queue
+      // would still be drawn ahead of every Mastered cooled card — which is
+      // exactly how a refill ended up handing back the cards just cleared.
+      const avoidIds = new Set(opts.avoidIds ?? []);
+      const avoided: Record<string, VocabEntry[]> = {};
+      if (avoidIds.size > 0) {
+        for (const category of countCategories) {
+          const fresh = eligible[category] ?? [];
+          const rested = cooled[category] ?? [];
+          eligible[category] = fresh.filter((c) => !avoidIds.has(c.id));
+          cooled[category] = rested.filter((c) => !avoidIds.has(c.id));
+          avoided[category] = [
+            ...fresh.filter((c) => avoidIds.has(c.id)),
+            ...rested.filter((c) => avoidIds.has(c.id)),
+          ];
+        }
+      }
 
       const selectedIds = new Set<number>();
       const cards: VocabEntry[] = [];
@@ -834,24 +935,33 @@ export class OnDeckVocabService {
         }
       };
 
-      // 1. Fill each requested bucket up to its quota from FRESH cards.
-      for (const [category, count] of Object.entries(distribution)) {
-        drain(eligible[category] ?? [], count);
+      // 1. Fill each requested bucket up to its (target-scaled) quota from FRESH
+      //    cards, never overshooting the target.
+      for (const [category, count] of Object.entries(scaled)) {
+        if (cards.length >= target) break;
+        drain(eligible[category] ?? [], Math.min(count, target - cards.length));
       }
-      // 2. Still short → top up to `total` with FRESH cards from the fallback
+      // 2. Still short → top up to `target` with FRESH cards from the fallback
       //    buckets (Target → Comfortable → Unfamiliar → Mastered).
       for (const category of OnDeckVocabService.GAME_FALLBACK_ORDER) {
-        if (cards.length >= total) break;
-        drain(eligible[category] ?? [], total - cards.length);
+        if (cards.length >= target) break;
+        drain(eligible[category] ?? [], target - cards.length);
       }
       // 3. Last resort → COOLED cards (requested buckets first, then fallback),
       //    so a just-played library still assembles a full board.
       for (const category of [...Object.keys(distribution), ...OnDeckVocabService.GAME_FALLBACK_ORDER]) {
-        if (cards.length >= total) break;
-        drain(cooled[category] ?? [], total - cards.length);
+        if (cards.length >= target) break;
+        drain(cooled[category] ?? [], target - cards.length);
+      }
+      // 4. Absolute last resort → AVOIDED cards (just cleared by the caller). Only
+      //    reached when the library is too small to fill the board without reusing
+      //    them; a roomy library never gets here.
+      for (const category of [...Object.keys(distribution), ...OnDeckVocabService.GAME_FALLBACK_ORDER]) {
+        if (cards.length >= target) break;
+        drain(avoided[category] ?? [], target - cards.length);
       }
 
-      const sufficient = cards.length >= total;
+      const sufficient = cards.length >= target;
 
       // Enrich (long defs / parts of speech etc.) then pre-warm audio. We skip
       // the related-words / used-in passes the EIC needs — the game only renders
@@ -859,7 +969,9 @@ export class OnDeckVocabService {
       const enriched = await this.enrichEntriesPipeline(cards, language);
       const withAudio = await this.prewarmAudio(enriched);
 
-      return { cards: withAudio, requested: { ...distribution }, available, total, sufficient };
+      // `total` stays the full board size (what the client's "you need N Learn
+      // Now cards" message quotes); `needed` is what THIS call had to return.
+      return { cards: withAudio, requested: { ...scaled }, available, total, needed: target, sufficient };
     } finally {
       client.release();
     }
@@ -906,9 +1018,12 @@ export class OnDeckVocabService {
    * Word Search is Chinese-only for now (the grid is a cpcd character lattice);
    * non-`zh` languages return `sufficient: false` with a language note.
    *
-   * PER-TYPE COOLDOWN (docs/MASTERY_REWORK.md § Per-type cooldown, "Games"):
-   * `gameMarkTypes` is the mode's mark type — ['reading'] for No-Pinyin,
-   * ['production'] for Pinyin. Both the initial selection and the substring-dedup
+   * PER-TYPE SELECTION (docs/MASTERY_REWORK.md § "Games select by their own mark
+   * type" + § Per-type cooldown, "Games"): `gameMarkType` is the mode's mark type —
+   * 'reading' for No-Pinyin, 'production' for Pinyin — and it decides both the
+   * category bucket each candidate lands in and its cooldown. Because the two modes
+   * bucket off different tracks, the SAME library yields different word sets per
+   * mode, which is the intent. Both the initial selection and the substring-dedup
    * replacements prefer FRESH cards (that type off cooldown) across the requested
    * then fallback categories, dipping into COOLED cards only as a last resort so
    * the game never blocks a just-played library.
@@ -917,7 +1032,7 @@ export class OnDeckVocabService {
     userId: string,
     language: string,
     distribution: Record<string, number>,
-    gameMarkTypes: readonly MarkType[]
+    gameMarkType: MarkType
   ): Promise<{
     grid: GridCell[][] | null;
     words: WordSearchGrid['words'];
@@ -958,7 +1073,7 @@ export class OnDeckVocabService {
       // these both for the initial selection and for substring replacements, so a
       // card is never reused across passes.
       const { eligible, cooled } = await this.fetchGameCandidates(
-        client, userId, language, countCategories, gameMarkTypes, now,
+        client, userId, language, countCategories, gameMarkType, now,
         OnDeckVocabService.WORD_SEARCH_CANDIDATE_CAP, 4
       );
 

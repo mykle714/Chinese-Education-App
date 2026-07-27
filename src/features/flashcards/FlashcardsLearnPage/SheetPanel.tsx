@@ -59,6 +59,14 @@ interface SheetPanelProps {
 // default height — the default height is the floor.
 const SNAP_DURATION_MS = 220;
 
+// Multiplier applied to every vertical delta that resizes the sheet (grabber /
+// tab-strip drag, touch resize, wheel resize, and release momentum — which
+// inherits the scaling through applyDelta). >1 makes the panel travel further
+// than the finger for the same gesture; 1 is 1:1 tracking. Content scrolling is
+// deliberately NOT scaled — only the resize path — so scrolling still feels
+// native.
+const RESIZE_SENSITIVITY = 1.1;
+
 // Shared 3-stop snap rule used by every release path (grabber drag, touch
 // release, momentum decay): below default → dismiss (0); at or above it →
 // whichever of {default, max} is nearer.
@@ -141,7 +149,7 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
                 setIsSnapping(false);
             }
             const maxH = parentHeightRef.current * 0.92;
-            const newH = dragStartHeightRef.current - my;
+            const newH = dragStartHeightRef.current - my * RESIZE_SENSITIVITY;
             const clampedH = Math.max(0, Math.min(maxH, newH));
             if (!last) {
                 sheetHeightRef.current = clampedH;
@@ -198,7 +206,11 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
             return depth === max;
         };
 
-        const applyDelta = (dy: number): boolean => {
+        // `rawDy` is the gesture delta in px; the sheet moves by that delta
+        // scaled by RESIZE_SENSITIVITY. Sign (and therefore the grow/shrink
+        // branch chosen) is unaffected since the multiplier is positive.
+        const applyDelta = (rawDy: number): boolean => {
+            const dy = rawDy * RESIZE_SENSITIVITY;
             const maxH = parentHeightRef.current * 0.92;
             const h = sheetHeightRef.current ?? 0;
             const st = scrollEl.scrollTop;
@@ -234,7 +246,8 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
                 const st = scrollEl.scrollTop;
                 const h = sheetHeightRef.current ?? 0;
                 if (st === 0 && h > 0) {
-                    const next = Math.max(h + dy, 0);
+                    // Shrink path bypasses applyDelta, so scale here too.
+                    const next = Math.max(h + dy * RESIZE_SENSITIVITY, 0);
                     const dismissThreshold = defaultHeightRef.current;
                     if (next < dismissThreshold) {
                         sheetHeightRef.current = 0;

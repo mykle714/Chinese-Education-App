@@ -58,6 +58,25 @@ export function categoryForPbh(pbh: number): FlashcardCategory {
   return FlashcardCategory.MASTERED;
 }
 
+/**
+ * utcm band for ONE mark type, from that track's raw 0..8 positive count.
+ *
+ * TS mirror of the SQL compute_type_category() (migration 128). Deliberately reuses
+ * categoryForPbh: the per-type bands are the SAME cut points as the pbh bands, just
+ * applied to a single track's count rather than the goal-blended height — so a
+ * maxed track (8/8) is Mastered FOR THAT TYPE while the card may sit anywhere
+ * overall. Used by the game pool selection (which exercises exactly one track) and
+ * to pick that pool's cooldown window.
+ *
+ * See docs/MASTERY_REWORK.md § "Games select by their own mark type".
+ */
+export function computeTypeCategory(
+  history: TypedMarkHistory | undefined,
+  type: MarkType
+): FlashcardCategory {
+  return categoryForPbh(positiveCount((history ?? {})[type]));
+}
+
 // Full utcm compute from a card's typed history + the account's goals.
 export function computeUtcm(history: TypedMarkHistory | undefined, goals: MasteryGoals): FlashcardCategory {
   return categoryForPbh(progressBarHeight(history, goals));

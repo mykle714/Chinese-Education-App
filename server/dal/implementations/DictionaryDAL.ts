@@ -5,8 +5,8 @@ import { DictionaryEntry, DictionaryEntryCreateData, ParticleClassifierEntry, De
 import { ValidationError } from '../../types/dal.js';
 import { resolveShortDefinition, resolveLongDefinition, type LongDefinitionValue, type LongDefinitionSense } from '../../utils/definitions.js';
 import { ShortDefinitionPronunciationOverride, ExampleSentenceDefinitionPronunciationOverride } from '../../types/index.js';
-import { getAllSubstrings, buildDictMap, buildExcludeSet, segmentWithDict, buildSegmentMetadata, splitHanRuns, RenderedSegmentMeta } from '../shared/segmentString.js';
-import { LongDefinitionPart } from '../../types/index.js';
+import { getAllSubstrings, buildDictMap, buildExcludeSet, segmentWithDict, buildSegmentMetadata, splitHanRuns, SEGMENTATION_MAX_TOKEN_CHARS, RenderedSegmentMeta } from '../shared/segmentString.js';
+import { LongDefinitionPart, LongDefinitionCitation } from '../../types/index.js';
 import { segmentPinyin } from '../../utils/pinyinSegment.js';
 import { dictTableForLanguage } from '../shared/dictTable.js';
 import { AiDictionaryCacheRow, WordComparisonRow } from '../../types/index.js';
@@ -18,7 +18,7 @@ const DICTIONARY_COLUMNS = `
   id, language, script, discoverable, "createdAt",
   word1, word2, pronunciation, "numberedPinyin", tone,
   "partsOfSpeech", "difficulty",
-  definitions, "longDefinition",
+  definitions, "longDefinition", "longDefinitionCitations",
   "definitionClusters",
   breakdown, synonyms,
   "exampleSentences",
@@ -29,17 +29,46 @@ const DICTIONARY_COLUMNS = `
   "wordForms"
 `.trim();
 
-// Per-language variant of the SELECT list. `definitionClusters` (migration 90) is a
-// Chinese-only enrichment (per-cluster pinyin reading) that does not exist on the Spanish
-// det (`dictionaryentries_es`) — so for es we select a typed NULL placeholder to keep the
-// column list, row shape, and mapRowToEntity uniform across languages without adding a
-// meaningless column to the es table.
+// Per-language variant of the SELECT list: for columns that exist only on
+// `dictionaryentries_zh` we select a typed NULL placeholder so the column list, row shape,
+// and mapRowToEntity stay uniform across languages without adding meaningless columns to
+// the es table. Same pattern as dictJoin.ts's `dictLateralSelect`.
+//
+// `definitionClusters` is NOT one of them: it started zh-only (migration 90) but migration
+// 123 converged es on the same clustered-sense model (a word's POS/gender homographs became
+// clusters inside one row instead of separate rows), so es must read the real column —
+// NULLing it here silently hid every Spanish sense cluster on the det-direct read path.
 function dictionaryColumns(language: string | null | undefined): string {
   if (language === 'es') {
+    // `longDefinitionCitations` (migration 126) is zh-only: es long definitions carry no
+    // Han runs, so the parts splitter never produces a `foreign` part to attach one to.
     return DICTIONARY_COLUMNS
-      .replace('"definitionClusters",', 'NULL::jsonb AS "definitionClusters",');
+      .replace('"longDefinitionCitations",', 'NULL::jsonb AS "longDefinitionCitations",');
   }
   return DICTIONARY_COLUMNS;
+}
+
+/**
+ * Index a citation list (dictionaryentries_zh."longDefinitionCitations", migration 126, or
+ * word_comparison_cache.citations, migration 127) by its Chinese run text, for O(1) lookup
+ * while assembling `longDefinitionParts`.
+ *
+ * Defensive about the column's contents: it is model-authored JSONB, so non-array values,
+ * non-object elements, and blank/missing `zh`/`en` are skipped rather than trusted. A
+ * duplicated `zh` keeps the FIRST translation (the generator is told to emit each run once).
+ * Returns null for an empty/absent list so callers can skip the per-run lookup entirely.
+ */
+function buildCitationMap(citations: LongDefinitionCitation[] | null | undefined): Map<string, string> | null {
+  if (!Array.isArray(citations) || citations.length === 0) return null;
+  const map = new Map<string, string>();
+  for (const citation of citations) {
+    if (!citation || typeof citation !== 'object') continue;
+    const { zh, en } = citation;
+    if (typeof zh !== 'string' || typeof en !== 'string') continue;
+    if (!zh.trim() || !en.trim() || map.has(zh)) continue;
+    map.set(zh, en.trim());
+  }
+  return map.size > 0 ? map : null;
 }
 
 // Shared relevance tiebreak for every "list of det rows" query: shortest word1 first, then
@@ -150,6 +179,10 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
       // Un-narrowed column value, so a later-attached per-user sense pick can still
       // re-resolve it (see the field's doc on DictionaryEntry).
       longDefinitionRaw: row.longDefinition ?? null,
+      // Translations for the Chinese runs cited in the long definition (migration 126).
+      // Carried raw here; enrichLongDefinitionMetadataBatch folds them onto the matching
+      // `foreign` parts and drops the field before the payload ships.
+      longDefinitionCitations: row.longDefinitionCitations ?? null,
       definitionClusters: row.definitionClusters ?? null,
       breakdown: row.breakdown ?? null,
       synonyms: row.synonyms ?? null,
@@ -561,7 +594,7 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
   async getComparison(wordA: string, wordB: string, language: string): Promise<WordComparisonRow | null> {
     const result = await this.dbManager.executeQuery<WordComparisonRow>(async (client) => {
       return await client.query(`
-        SELECT id, "wordA", "wordB", language, comparison, model, "queriedAt"
+        SELECT id, "wordA", "wordB", language, comparison, citations, model, "queriedAt"
         FROM word_comparison_cache
         WHERE "wordA" = $1 AND "wordB" = $2 AND language = $3
       `, [wordA, wordB, language]);
@@ -572,23 +605,29 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
   /**
    * Insert or refresh a cached comparison for a canonically-ordered pair. `queriedAt` is reset
    * to now() so it reflects the most recent (re-)generation.
+   *
+   * `citations` (migration 127) are the translations of the Chinese runs cited in the
+   * paragraph, produced by the same model call. NULL when the model returned none (or when a
+   * legacy prose-only response was parsed) — those runs then render with per-segment popups.
    */
   async upsertComparison(
     wordA: string,
     wordB: string,
     language: string,
     comparison: string,
-    model: string
+    model: string,
+    citations: LongDefinitionCitation[] | null = null
   ): Promise<void> {
     await this.dbManager.executeQuery(async (client) => {
       return await client.query(`
-        INSERT INTO word_comparison_cache ("wordA", "wordB", language, comparison, model, "queriedAt")
-        VALUES ($1, $2, $3, $4, $5, now())
+        INSERT INTO word_comparison_cache ("wordA", "wordB", language, comparison, citations, model, "queriedAt")
+        VALUES ($1, $2, $3, $4, $5, $6, now())
         ON CONFLICT ("wordA", "wordB", language) DO UPDATE
           SET comparison = EXCLUDED.comparison,
+              citations = EXCLUDED.citations,
               model = EXCLUDED.model,
               "queriedAt" = now()
-      `, [wordA, wordB, language, comparison, model]);
+      `, [wordA, wordB, language, comparison, citations?.length ? JSON.stringify(citations) : null, model]);
     });
   }
 
@@ -1029,6 +1068,7 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
   async enrichLongDefinitionMetadataBatch<T extends {
     longDefinition?: string | null;
     longDefinitionRaw?: LongDefinitionValue | null;
+    longDefinitionCitations?: LongDefinitionCitation[] | null;
     definitionClusters?: DefinitionCluster[] | null;
     selectedSense?: string | null;
   }>(entries: T[], language: string = 'zh'): Promise<T[]> {
@@ -1061,20 +1101,34 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
     const texts: string[] = [];
     const resolvedIdx: number[] = [];       // index into `texts` for entry i's resolved string
     const senseIdx: number[][] = [];        // indices into `texts` for entry i's senses
+    // Per-text run→translation lookup (migration 126). An entry's citations cover the runs
+    // cited by ANY of its senses, so the SAME map rides along with every text that entry
+    // contributes — the attach step below matches on the run's exact text.
+    const citationsByText: (Map<string, string> | null)[] = [];
     entries.forEach((entry, i) => {
-      resolvedIdx[i] = texts.push(typeof entry.longDefinition === 'string' ? entry.longDefinition : '') - 1;
-      senseIdx[i] = sensesByEntry[i].map(s => texts.push(s.definition) - 1);
+      const citationMap = buildCitationMap(entry.longDefinitionCitations);
+      const push = (text: string): number => {
+        citationsByText.push(citationMap);
+        return texts.push(text) - 1;
+      };
+      resolvedIdx[i] = push(typeof entry.longDefinition === 'string' ? entry.longDefinition : '');
+      senseIdx[i] = sensesByEntry[i].map(s => push(s.definition));
     });
 
-    const partsByText = await this.segmentLongDefinitionTexts(texts, language);
+    const partsByText = await this.segmentLongDefinitionTexts(texts, language, citationsByText);
 
-    return entries.map((entry, i) => ({
-      ...entry,
-      longDefinitionParts: partsByText[resolvedIdx[i]],
-      longDefinitionSenses: sensesByEntry[i].length
-        ? sensesByEntry[i].map((s, j) => ({ ...s, parts: partsByText[senseIdx[i][j]] }))
-        : null,
-    }));
+    return entries.map((entry, i) => {
+      // The raw citation list is a server-side join key only — the translations are already
+      // folded into the parts, so drop it rather than shipping a duplicate payload.
+      const { longDefinitionCitations: _citations, ...rest } = entry;
+      return {
+        ...(rest as T),
+        longDefinitionParts: partsByText[resolvedIdx[i]],
+        longDefinitionSenses: sensesByEntry[i].length
+          ? sensesByEntry[i].map((s, j) => ({ ...s, parts: partsByText[senseIdx[i][j]] }))
+          : null,
+      };
+    });
   }
 
   /**
@@ -1084,10 +1138,20 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
    * and each of its per-sense definitions can be segmented in the same pass.
    *
    * Returns one entry per input text, positionally; null for an empty text.
+   *
+   * `citationsByText` (optional, positional) supplies each text's run→English-translation
+   * lookup — det's `longDefinitionCitations` (migration 126) or the comparison cache's
+   * `citations` (migration 127). A matched run gets `translation` on its `foreign` part,
+   * which flips the client to whole-run highlight + translation; an unmatched run keeps
+   * the per-segment popup.
+   *
+   * A citation is applied ONLY to a run that is not itself a det headword — see the
+   * `detWords` check below.
    */
   private async segmentLongDefinitionTexts(
     texts: string[],
-    language: string
+    language: string,
+    citationsByText?: (Map<string, string> | null)[]
   ): Promise<(LongDefinitionPart[] | null)[]> {
     // Split each text into runs once; reused for both candidate collection and the final
     // part assembly below.
@@ -1096,6 +1160,10 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
     // Only Chinese runs need dictionary segmentation. For non-zh (no Han) this stays empty
     // and we short-circuit without touching the DB.
     const allCandidates = new Set<string>();
+    // Runs LONGER than the segmentation window (getAllSubstrings caps candidates at 4 chars)
+    // that we still need a det-membership answer for — see `detWords` below. Shorter runs are
+    // already covered by their own substring set.
+    const longRunCandidates = new Set<string>();
     if (language === 'zh') {
       for (const runs of runsByText) {
         for (const run of runs) {
@@ -1103,6 +1171,7 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
           for (const candidate of getAllSubstrings(run.value)) {
             allCandidates.add(candidate);
           }
+          if ([...run.value].length > SEGMENTATION_MAX_TOKEN_CHARS) longRunCandidates.add(run.value);
         }
       }
     }
@@ -1114,13 +1183,32 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
       );
     }
 
-    // Single batch dictionary query for all Chinese runs across all texts.
-    const dictEntries = await this.findMultipleByWord1([...allCandidates], language);
-    const dictMap = buildDictMap(dictEntries);
-    const excludeTokens = buildExcludeSet(dictEntries);
+    // Single batch dictionary query for all Chinese runs across all texts, plus the
+    // over-length whole runs (membership only, see below).
+    const dictEntries = await this.findMultipleByWord1(
+      [...allCandidates, ...longRunCandidates],
+      language
+    );
 
-    return runsByText.map(runs => {
+    // Every headword the batch found — the authority for "does this run have a det entry?".
+    // Built from the RAW result so 5+ char headwords (5.7k of them in zh: idioms, set
+    // phrases) are answerable, which `dictMap` alone cannot do.
+    const detWords = new Set(dictEntries.map(entry => entry.word1));
+
+    // Segmentation inputs are built from the ≤4-char subset ONLY, i.e. exactly the rows the
+    // candidate set used to return before the over-length runs were added. Feeding the long
+    // rows in would be inert for GSA matching (it never tries tokens longer than 4) but NOT
+    // for buildExcludeSet, which would absorb their `matchException` tokens and could change
+    // how unrelated runs segment.
+    const segmentationEntries = dictEntries.filter(
+      entry => [...entry.word1].length <= SEGMENTATION_MAX_TOKEN_CHARS
+    );
+    const dictMap = buildDictMap(segmentationEntries);
+    const excludeTokens = buildExcludeSet(segmentationEntries);
+
+    return runsByText.map((runs, textIndex) => {
       if (runs.length === 0) return null;
+      const citations = citationsByText?.[textIndex] ?? null;
       return runs.map((run): LongDefinitionPart => {
         if (run.type === 'text') {
           return { type: 'text', value: run.value };
@@ -1132,7 +1220,24 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
         const segments = segmentWithDict(run.value, dictMap, excludeTokens);
         const segmentMetadata: Record<string, RenderedSegmentMeta> =
           buildSegmentMetadata(segments, dictMap);
-        return { type: 'foreign', foreignText: run.value, _segments: segments, segmentMetadata };
+        // Whole-run translation when this run was translated (see citationsByText). Keyed on
+        // the run's exact text, which is what the generator was handed, so the key matches.
+        //
+        // A run that is ITSELF a det headword is never translated, even when a citation
+        // exists for it: the dictionary already glosses it per segment and the popup can
+        // drill into the eip, both of which whole-run mode takes away. Translation is for
+        // runs det has no answer for — clauses and sentences. Enforced here rather than at
+        // write time because the Compare generator (migration 127) cannot know det's
+        // contents, and because this way a citation stops rendering by itself once its
+        // phrase is later added to det.
+        const translation = detWords.has(run.value) ? null : (citations?.get(run.value) ?? null);
+        return {
+          type: 'foreign',
+          foreignText: run.value,
+          _segments: segments,
+          segmentMetadata,
+          ...(translation ? { translation } : {}),
+        };
       });
     });
   }

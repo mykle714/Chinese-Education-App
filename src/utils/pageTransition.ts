@@ -18,7 +18,7 @@ export type SlideDir = "up" | "right";
 
 // Node pages (keep footer, slide from the right). Everything else that slides is a
 // leaf (slide up). Keep in sync with LeafPage/NodePage usage + FooterPresenter.
-const NODE_ROUTES = new Set<string>(["/games", "/flashcards/mastered", "/dictionary", "/reader"]);
+const NODE_ROUTES = new Set<string>(["/games", "/flashcards/mastered", "/dictionary", "/reader", "/compare"]);
 // Node pages reached via a parameterized path (matched by prefix). The two
 // card-detail routes are footer-bearing node pages: the saved-card cdp
 // (/flashcards/card/:id) and the read-only dictionary cdp (/dictionary/card/:word).

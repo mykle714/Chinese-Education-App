@@ -25,6 +25,7 @@ Every column in `dictionaryentries_zh` and the script responsible for populating
 | `hskLevel` | `backfill/chinese/backfill-hsk-level.js` or import/seed data | AI (Claude Sonnet) or — | **Yes** (for backfill) | zh |
 | `shortDefinition` | *Not stored — computed at runtime* | Deterministic via `server/utils/definitions.ts` | — | all |
 | `longDefinition` | `backfill/chinese/backfill-long-definitions.js` | AI (Claude Haiku) | **Yes** | zh |
+| `longDefinitionCitations` | `backfill/chinese/backfill-longdef-citations.js` | AI (Claude Sonnet) | **Yes** | zh |
 | `synonyms` | *Deprecated — no longer backfilled (script removed)* | — | — | zh |
 | `synonymsMetadata` | *Not stored — computed at runtime from existing `synonyms` data* | Deterministic via `DictionaryService.enrichEntriesWithSynonymMetadata()` | — | zh |
 | `exampleSentences` | `backfill/chinese/backfill-example-sentences.js` | AI (Claude) | **Yes** | zh |
@@ -100,6 +101,19 @@ docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-long-def
 Populates: `longDefinition` — one definition per SENSE, read from `definitionClusters`,
 so **run `backfill-cluster-definitions.js` first** (see [DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md)).
 Filter: `language = 'zh' AND discoverable = TRUE AND longDefinition IS NULL AND partsOfSpeech IS NOT NULL AND definitionClusters IS NOT NULL`
+
+---
+
+**Step 5b — Long-Definition Citations**
+```bash
+docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-longdef-citations.js --words=word1,word2
+```
+Populates: `longDefinitionCitations` — one `{zh, en}` per Chinese run quoted inside the long
+definition, so the client can highlight the whole cited phrase and show its translation
+(migration 126; [DEFINITION_MAPPING.md](./DEFINITION_MAPPING.md) form #5b).
+**Run immediately after step 5** — it reads that output, and re-running step 5 for a word
+invalidates this column for that word.
+Filter: `language = 'zh' AND discoverable = TRUE AND longDefinition IS NOT NULL AND longDefinitionCitations IS NULL`
 Note: `shortDefinition` is no longer stored — it is computed at runtime from `definitions` via `server/utils/definitions.ts`.
 
 ---

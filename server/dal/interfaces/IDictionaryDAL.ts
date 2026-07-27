@@ -1,4 +1,4 @@
-import { DictionaryEntry, DictionaryEntryCreateData, AiDictionaryCacheRow, WordComparisonRow, DefinitionCluster } from '../../types/index.js';
+import { DictionaryEntry, DictionaryEntryCreateData, AiDictionaryCacheRow, WordComparisonRow, DefinitionCluster, LongDefinitionCitation } from '../../types/index.js';
 import type { LongDefinitionValue } from '../../utils/definitions.js';
 import { IBaseDAL } from './IBaseDAL.js';
 
@@ -89,7 +89,8 @@ export interface IDictionaryDAL extends IBaseDAL<DictionaryEntry, DictionaryEntr
     wordB: string,
     language: string,
     comparison: string,
-    model: string
+    model: string,
+    citations?: LongDefinitionCitation[] | null
   ): Promise<void>;
 
   /**
@@ -120,6 +121,7 @@ export interface IDictionaryDAL extends IBaseDAL<DictionaryEntry, DictionaryEntr
   enrichLongDefinitionMetadataBatch<T extends {
     longDefinition?: string | null;
     longDefinitionRaw?: LongDefinitionValue | null;
+    longDefinitionCitations?: LongDefinitionCitation[] | null;
     definitionClusters?: DefinitionCluster[] | null;
     selectedSense?: string | null;
   }>(entries: T[], language?: string): Promise<T[]>;

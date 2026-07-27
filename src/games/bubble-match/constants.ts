@@ -31,6 +31,20 @@ export const GAME_DISTRIBUTION: Record<string, number> = {
 // — 20 pairs → 40 bubbles. The level only changes launch cadence + duration.
 export const TOTAL_PAIRS = Object.values(GAME_DISTRIBUTION).reduce((a, b) => a + b, 0);
 
+// Floor for a "Play Again" board. That replay keeps the pairs the player failed
+// to match and refills only the matched ones, so a library that shrank mid-session
+// can hand back fewer than TOTAL_PAIRS. A slightly short board still plays fine
+// (BubbleStage sizes itself off the pool length), but below this there's no game
+// worth starting and the page blocks instead.
+export const MIN_REPLAY_PAIRS = 4;
+
+// Cap on the "recently cleared" id list a Play Again refill sends as `avoid`. The
+// set grows by up to TOTAL_PAIRS per round and rides in the query string, so a long
+// session would otherwise build an unbounded URL. Only the most recently cleared
+// ids are sent (insertion order); older ones age out of the soft cooldown, which is
+// the intended behavior anyway.
+export const MAX_AVOID_IDS = 200;
+
 // Three independently-playable difficulty levels. Higher levels launch the
 // 40 bubbles faster AND drop the ceiling faster once they're all out, so the
 // field jams quicker. There is no clock — the only loss is the field over-packing

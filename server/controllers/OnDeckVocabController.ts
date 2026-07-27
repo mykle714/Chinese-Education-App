@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { OnDeckVocabService, type StudyMode } from '../services/OnDeckVocabService.js';
 import { requireUserId, getUserLanguage, handleControllerError } from '../utils/controllerUtils.js';
+import { MarkType } from '../types/index.js';
 
 /**
  * OnDeck Vocabulary Controller
@@ -108,7 +109,15 @@ export class OnDeckVocabController {
    * Defaults to 2 Unfamiliar + 10 Target + 6 Comfortable + 2 Mastered (20 total)
    * when no recognised category params are supplied. The service tops the pool
    * up to its total from fallback buckets when a quota can't be met, so this is
-   * a best-effort fill. Returns { cards, requested, available, total, sufficient }.
+   * a best-effort fill. Returns { cards, requested, available, total, needed,
+   * sufficient }.
+   *
+   * PARTIAL REFILL: `&need=N&exclude=12,34&avoid=56,78` returns only N cards,
+   * never returns an `exclude`d id, and treats `avoid`ed ids as cooled (drawn
+   * only if the library can't fill the board without them). Bubble Match's single
+   * "Play Again" button uses this to swap out only the pairs the player matched:
+   * the pairs still on the board are `exclude`d and every pair cleared this
+   * session is `avoid`ed.
    */
   getGamePool = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -130,11 +139,30 @@ export class OnDeckVocabController {
         distribution.Mastered = 2;
       }
 
+      // Partial-refill params, all optional and defensively parsed — anything
+      // unparseable falls back to full-board behavior.
+      //   exclude — csv of vocab-entry ids that can NEVER come back (still on the
+      //             board), filtered in SQL
+      //   avoid   — csv of ids to treat as cooled (just cleared this session), only
+      //             drawn if the library can't fill the board otherwise
+      //   need    — how many cards to return
+      const parseIdCsv = (raw: unknown): number[] =>
+        String(raw ?? '')
+          .split(',')
+          .map((part) => parseInt(part, 10))
+          .filter((n) => Number.isInteger(n) && n > 0);
+      const excludeIds = parseIdCsv(req.query.exclude);
+      const avoidIds = parseIdCsv(req.query.avoid);
+      const rawNeed = parseInt(String(req.query.need ?? ''), 10);
+      const need = Number.isFinite(rawNeed) && rawNeed >= 0 ? rawNeed : undefined;
+
       const language = await getUserLanguage(userId);
-      // Bubble Match emits recognition marks, so its pool honors the recognition
-      // per-type cooldown (docs/MASTERY_REWORK.md § Per-type cooldown, "Games").
+      // Bubble Match emits recognition marks, so its pool is bucketed by each
+      // card's RECOGNITION mark history (not the goal-blended overall category) and
+      // honors the recognition per-type cooldown. See docs/MASTERY_REWORK.md
+      // § "Games select by their own mark type".
       const pool = await this.onDeckVocabService.getGameVocabPool(
-        userId, language, distribution, ['recognition'] as const
+        userId, language, distribution, 'recognition', { need, excludeIds, avoidIds }
       );
       res.json(pool);
     } catch (error: any) {
@@ -171,13 +199,14 @@ export class OnDeckVocabController {
 
       const language = await getUserLanguage(userId);
       // Board mode decides the mark type this game emits (docs/MASTERY_REWORK.md
-      // § Per-type cooldown, "Games"): No-Pinyin is a reading review, Pinyin is a
-      // production review. The pool honors that type's per-type cooldown. Default
-      // to production (Pinyin) if the mode param is absent/unrecognized.
+      // § "Games select by their own mark type"): No-Pinyin is a reading review,
+      // Pinyin is a production review. That type buckets the pool by its own mark
+      // history and gates its per-type cooldown. Default to production (Pinyin) if
+      // the mode param is absent/unrecognized.
       const mode = String(req.query.mode ?? '');
-      const gameMarkTypes = mode === 'no-pinyin' ? (['reading'] as const) : (['production'] as const);
+      const gameMarkType: MarkType = mode === 'no-pinyin' ? 'reading' : 'production';
       const result = await this.onDeckVocabService.getWordSearchGrid(
-        userId, language, distribution, gameMarkTypes
+        userId, language, distribution, gameMarkType
       );
       res.json(result);
     } catch (error: any) {

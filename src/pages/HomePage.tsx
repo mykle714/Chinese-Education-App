@@ -8,6 +8,7 @@ import ArticleIcon from "@mui/icons-material/Article";
 import BookIcon from "@mui/icons-material/Book";
 import DashboardIcon from "@mui/icons-material/Dashboard";
 import GroupsIcon from "@mui/icons-material/Groups";
+import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
 import MobileTabScreen from "../components/MobileTabScreen";
 import { useAuth } from "../AuthContext";
 import { HubMenu, HubMenuRow } from "../components/HubMenu";
@@ -50,6 +51,9 @@ function HomePage() {
         { key: "community", to: "/community", title: "Community", subtitle: "Discover and upvote card designs from other learners", icon: <GroupsIcon sx={iconSx} />, bgColor: COLORS.greenAccent },
         { key: "reader", to: "/reader", title: "Reader", subtitle: "Read texts and mine new words", icon: <ArticleIcon sx={iconSx} />, bgColor: COLORS.yellowAccent },
         { key: "dictionary", to: "/dictionary", title: "Dictionary", subtitle: "Look up words and add them to your decks", icon: <BookIcon sx={iconSx} />, bgColor: COLORS.redAccent },
+        // Standalone home for the eip's Compare surface (docs/WORD_COMPARE_FEATURE.md) — same
+        // CompareWorkspace component, reached without going through a flashcard.
+        { key: "compare", to: "/compare", title: "Compare Words", subtitle: "See how two similar words differ", icon: <CompareArrowsIcon sx={iconSx} />, bgColor: COLORS.greenAccent },
         { key: "tester-dashboard", to: "/tester-dashboard", title: "Tester Dashboard", subtitle: "Study time, streak, and activity", icon: <DashboardIcon sx={iconSx} />, bgColor: COLORS.blueAccent },
         // Template-author-only: the Night Market template authoring editor (desktop-only).
         ...(user?.isTemplateAuthor

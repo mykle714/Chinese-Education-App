@@ -1,5 +1,4 @@
-import type { DictionaryEntry } from "../../../types";
-import type { VocabEntry, DifficultyLevel, UsedInItem } from "./types";
+import type { DictionaryEntry, VocabEntry, DifficultyLevel, UsedInItem } from "../types";
 
 // Adapts a dictionaryentries-table record (det) returned by
 // /api/dictionary/lookup/:term into the VocabEntry shape that

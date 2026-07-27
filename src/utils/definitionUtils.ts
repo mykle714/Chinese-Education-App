@@ -46,10 +46,21 @@ export function senseGrammarTag(
 }
 
 /**
- * The entry's definition clusters sorted highest-frequency first (nulls last),
+ * The entry's DISPLAYABLE definition clusters sorted highest-frequency first (nulls last),
  * so index 0 is always the starred/default sense. Returns null when the entry has no real
- * choice to offer (unclustered or a single cluster) — the caller then falls back to the flat
- * `definitions[0]` dd, exactly as before the clustering feature.
+ * choice to offer (unclustered, or fewer than two displayable clusters) — the caller then
+ * falls back to the flat `definitions[0]` dd, exactly as before the clustering feature.
+ *
+ * A cluster whose lead gloss is ENTIRELY parenthetical — the grammatical-particle senses
+ * 上来 "(verb complement indicating success)", 了 "(completed action marker)", 在 "(used
+ * before a verb to indicate an action in progress)" — has an empty `ddt` and carries no
+ * displayable English, so it is not a sense the learner can meaningfully pick. Such clusters
+ * are dropped BEFORE the `< 2` gate, so they neither render as a blank picker row nor leave a
+ * word like 上来 showing a one-item dropdown.
+ *
+ * The drop is scoped to the PICKER/dd path deliberately: label-addressed reads (a segment's
+ * tagged sense, a breakdown char's gloss) still see every cluster and apply their own
+ * empty-gloss fallback — see `resolveSenseGloss` in server/utils/definitions.ts.
  *
  * Single source of truth for the sense picker's ordering: EnglishBlock renders from this,
  * and the persistence layer resolves `selectedSense` labels against the SAME order. See
@@ -59,8 +70,10 @@ export function sortedSenseClusters(
   entry: Pick<VocabEntry, 'definitionClusters'>,
 ): DefinitionCluster[] | null {
   const clusters = entry.definitionClusters;
-  if (!clusters || clusters.length < 2) return null;
-  return [...clusters].sort((a, b) => (b.frequencyScore ?? -1) - (a.frequencyScore ?? -1));
+  if (!clusters) return null;
+  const displayable = clusters.filter((c) => ddt(c) !== '');
+  if (displayable.length < 2) return null;
+  return displayable.sort((a, b) => (b.frequencyScore ?? -1) - (a.frequencyScore ?? -1));
 }
 
 /**

@@ -78,7 +78,12 @@ sentence is authored or validated.
 `sort_packs` is hand-authored reference data, and it is **not** in the `/data-deploy`
 allowlist (`docs/DATA_DEPLOYMENT_GUIDE.md` — that skill covers `dictionaryentries_zh`,
 `dictionaryentries_es`, `particlesandclassifiers`, `icons8` only). There is no dump
-file and no import script. **Authored packs therefore travel only as seed migrations.**
+file and no import script. **Authored packs travel as seed migrations, which means
+they ship with the ordinary code deploy** — `/deploy` picks the file up in its pending
+migration set like any other, `database/deploy/migrate.sh` applies it in `sort -V`
+order and records it in `schema_migrations`. There is no separate pack-deployment
+step, no out-of-band data push, and nothing to remember: authoring a new pack means
+writing the next seed migration, and it reaches prod the next time code does.
 
 > **Failure mode if you forget.** An environment with an empty `sort_packs` is not
 > visibly broken — `fetchPacksAtLevel` returns nothing at every level and
@@ -97,12 +102,19 @@ rules, which any future pack seed should follow:
 | Skip (with `RAISE WARNING`) any pack whose words don't all resolve; `RAISE NOTICE` the inserted/existing/skipped counts | A dictionary missing one word must not abort a deploy. Read the NOTICE after running — a nonzero skip count means that environment's det table is behind. |
 | Don't write `entryWords` | `trg_sort_packs_sync_entry_words` (migration 96) derives it on INSERT. |
 
-Verify after applying, on the target box:
+**Authoring a new pack** (e.g. filling the level 3/4 gap): insert it locally, confirm
+`npx tsx server/scripts/validate-sort-packs.ts` passes, then write the next-numbered
+seed migration for the new rows only and commit it. The deploy carries it.
+
+Post-deploy verification, on the target box — part of the normal deploy's verify step:
 
 ```bash
 docker exec cow-postgres-prod psql -U cow_user -d cow_db \
   -c "SELECT language, level, count(*) FROM sort_packs GROUP BY 1,2 ORDER BY 1,2;"
 ```
+
+Expected after migration 131: `zh` → 19 packs at level 1, 2 at level 2, 23 at level 5,
+11 at level 6. Levels 3 and 4 are legitimately empty (none authored yet).
 
 ## 3. Layer 1 — Server (`server/services/StarterPacksService.ts`)
 

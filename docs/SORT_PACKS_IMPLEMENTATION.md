@@ -34,7 +34,8 @@ Migrations live in `database/migrations/` (run by `database/deploy/migrate.sh`; 
 (§below). Current shape:
 
 ```sql
--- Authored sort packs (reference data; synced to prod via /data-deploy).
+-- Authored sort packs (reference data; delivered via SEED MIGRATIONS — see §2.1.
+-- NOT a /data-deploy table: it is absent from that skill's allowlist).
 CREATE TABLE sort_packs (
   id                SERIAL PRIMARY KEY,
   language          VARCHAR   NOT NULL,            -- 'zh' | 'es'
@@ -71,6 +72,37 @@ code should treat it as a join key; `entryIds` is authoritative.
 (`validate-sort-packs.ts`, §6, used to assert every `entryIds` card's `word1` occurred in
 the sentence). Authoring a pack is now just picking its up-to-3 `entryIds` directly; no
 sentence is authored or validated.
+
+### 2.1 Getting authored packs into another environment (seed migrations)
+
+`sort_packs` is hand-authored reference data, and it is **not** in the `/data-deploy`
+allowlist (`docs/DATA_DEPLOYMENT_GUIDE.md` — that skill covers `dictionaryentries_zh`,
+`dictionaryentries_es`, `particlesandclassifiers`, `icons8` only). There is no dump
+file and no import script. **Authored packs therefore travel only as seed migrations.**
+
+> **Failure mode if you forget.** An environment with an empty `sort_packs` is not
+> visibly broken — `fetchPacksAtLevel` returns nothing at every level and
+> `getNextPacks` silently falls through to system packs-of-1, so the sort flow serves
+> 100% single cards and no authored pack is ever offered. This is exactly what shipped
+> to production between migration 93 and migration 131.
+
+`131-seed-zh-sort-packs.sql` is the reference implementation for such a seed. Its
+rules, which any future pack seed should follow:
+
+| Rule | Why |
+|---|---|
+| Seed rows **by `word1`**, resolving to `entryIds` at run time | det ids are not portable across environments — prod is the source of truth for `dictionaryentries_zh` and its ids need not match the authoring box. Safe for `zh` (word1 is unique per language there); do **not** generalize to `es` without re-checking the homograph caveat above. |
+| Insert **explicit `id`s**, then `setval` the sequence past them | `users."seenPacks"` stores raw `sort_packs.id` values, so an id is user-visible state — every environment must agree on which id is which pack. |
+| `ON CONFLICT (id) DO NOTHING` | Idempotent; never clobbers a pack that environment already has under that id. |
+| Skip (with `RAISE WARNING`) any pack whose words don't all resolve; `RAISE NOTICE` the inserted/existing/skipped counts | A dictionary missing one word must not abort a deploy. Read the NOTICE after running — a nonzero skip count means that environment's det table is behind. |
+| Don't write `entryWords` | `trg_sort_packs_sync_entry_words` (migration 96) derives it on INSERT. |
+
+Verify after applying, on the target box:
+
+```bash
+docker exec cow-postgres-prod psql -U cow_user -d cow_db \
+  -c "SELECT language, level, count(*) FROM sort_packs GROUP BY 1,2 ORDER BY 1,2;"
+```
 
 ## 3. Layer 1 — Server (`server/services/StarterPacksService.ts`)
 
@@ -209,3 +241,5 @@ Replace `DiscoverFetchResponse.cards` with `packs`.
 - `src/pages/DiscoverPage.tsx`, `src/hooks/useDiscoverNavigation.ts`, `src/App.tsx` — nav.
 - `src/features/flashcards/MasteredCardsPage.tsx` — template for `SkippedCardsPage`.
 - `src/types.ts` (`DiscoverCard`, `DiscoverFetchResponse`, new `SortPack`).
+- `database/migrations/131-seed-zh-sort-packs.sql` — the zh pack seed (§2.1); the only
+  delivery path for authored packs into a non-authoring environment.

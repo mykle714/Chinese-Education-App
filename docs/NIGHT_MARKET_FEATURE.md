@@ -1,5 +1,11 @@
 # Night Market Feature
 
+> **One market per language since migration 130.** `nightmarkettemplatelocations`
+> and `nightmarketunlocks` both carry a `language`; corner-uniqueness is
+> `(userId, language, offsetCol, offsetRow)`. Each language's continent is funded by
+> that language's own wallet, and every placement/layout call is scoped to a
+> `(userId, language)` pair. See [PER_LANGUAGE_STREAKS.md](./PER_LANGUAGE_STREAKS.md).
+
 ## Overview
 
 The Night Market is a visual reward system tied to work points. As users study and accumulate work points (1 point = 1 minute of active study), they unlock items that populate a personal night market scene. Each user's market is unique because unlocks are randomly selected from a pool and persisted for the life of the account.

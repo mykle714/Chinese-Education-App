@@ -37,12 +37,14 @@ export interface UserLayoutResponse {
 }
 
 /**
- * Fetch the authenticated user's rendered template layout. The token is read live via
- * {@link authHeader} so a silent refresh doesn't require re-creating the caller (CLAUDE.md
- * token rule) — callers must key their load effect on a stable auth identity, not `token`.
+ * Fetch the authenticated user's rendered template layout FOR ONE LANGUAGE. Each language grows
+ * its own market, funded by its own wallet (docs/PER_LANGUAGE_STREAKS.md), so switching languages
+ * loads a different continent. The token is read live via {@link authHeader} so a silent refresh
+ * doesn't require re-creating the caller (CLAUDE.md token rule) — callers must key their load
+ * effect on a stable auth identity plus `language`, never on `token`.
  */
-export async function loadUserLayout(): Promise<PlacedTemplatePayload[]> {
-  const res = await fetch(`${API_BASE_URL}/api/night-market/layout`, {
+export async function loadUserLayout(language: string): Promise<PlacedTemplatePayload[]> {
+  const res = await fetch(`${API_BASE_URL}/api/night-market/layout?language=${encodeURIComponent(language)}`, {
     headers: { ...authHeader() },
     credentials: 'include',
   });
@@ -53,7 +55,7 @@ export async function loadUserLayout(): Promise<PlacedTemplatePayload[]> {
 
 /** Fresh balances returned by the author minute-adjust tool. */
 export interface AdjustMinutesResult {
-  /** NET balance (users.totalMinutePoints) after the adjust — drives the market + the nmp badge. */
+  /** NET balance for the SELECTED LANGUAGE after the adjust — drives that market + the nmp badge. */
   totalMinutePoints: number;
   /** GLOBAL gross lifetime earned after the adjust. */
   grossMinutesEarned: number;

@@ -26,10 +26,16 @@ import type { TerrainField } from '../../engine/market/farmTerrain';
  * as a stand-in occupant marker. The nav graphs are unchanged (the houses are decor, not stands), so
  * `buildMarketWorld` still takes no stands.
  *
+ * PER-LANGUAGE MARKET (migration 130, docs/PER_LANGUAGE_STREAKS.md): each language has its own
+ * continent funded by its own wallet, so the layout read is scoped to `user.selectedLanguage` and
+ * switching languages legitimately reloads a DIFFERENT world. `selectedLanguage` is therefore a
+ * real dependency of the load effect, not an incidental one.
+ *
  * TOKEN RULE (CLAUDE.md): the load effect keys on the stable auth identity
- * (`isAuthenticated`), NEVER on `token` — the access token rotates every ~15 min and would
- * otherwise re-fetch/reset the world on each silent refresh. {@link loadUserLayout} builds
- * its own `authHeader()` per request, so it self-heals the rotated token without a dep.
+ * (`isAuthenticated`) plus that language, NEVER on `token` — the access token rotates every
+ * ~15 min and would otherwise re-fetch/reset the world on each silent refresh.
+ * {@link loadUserLayout} builds its own `authHeader()` per request, so it self-heals the rotated
+ * token without a dep.
  */
 
 /**
@@ -91,7 +97,10 @@ const EMPTY_FIELD: TerrainField = { originCol: 0, originRow: 0, contains: () => 
  *   (it is NOT the rotating access token the CLAUDE.md reload rule warns against).
  */
 export function useMarketWorld(reloadToken = 0): UseMarketWorldResult {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
+  // Which market to render. Falls back to 'zh' before the user object has loaded, matching the
+  // server-side default in resolveLanguage().
+  const language = user?.selectedLanguage ?? 'zh';
   const [state, setState] = useState<MarketWorldState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -105,7 +114,7 @@ export function useMarketWorld(reloadToken = 0): UseMarketWorldResult {
       try {
         // The server returns the user's persisted placements (each with its resolved
         // activeVersion + loaded definition) and seeds the origin hub on first load.
-        const placements = await loadUserLayout();
+        const placements = await loadUserLayout(language);
         if (cancelled) return;
         if (placements.length === 0) {
           // Should not happen (the server always seeds the hub), but guard so the render
@@ -172,7 +181,7 @@ export function useMarketWorld(reloadToken = 0): UseMarketWorldResult {
       cancelled = true;
     };
     // Keyed on the stable auth identity + the manual reloadToken — see the TOKEN RULE note above.
-  }, [isAuthenticated, reloadToken]);
+  }, [isAuthenticated, language, reloadToken]);
 
   return {
     world: state?.world ?? null,

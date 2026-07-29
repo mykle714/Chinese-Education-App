@@ -3,6 +3,7 @@ import { UserDAL } from './implementations/UserDAL.js';
 import { RefreshTokenDAL } from './implementations/RefreshTokenDAL.js';
 import { VocabEntryDAL } from './implementations/VocabEntryDAL.js';
 import { UserMinutePointsDAL } from './implementations/UserMinutePointsDAL.js';
+import { UserLanguagePointsDAL } from './implementations/UserLanguagePointsDAL.js';
 import { DictionaryDAL } from './implementations/DictionaryDAL.js';
 import { UserService } from '../services/UserService.js';
 import { VocabEntryService } from '../services/VocabEntryService.js';
@@ -52,6 +53,8 @@ const userDAL = new UserDAL();
 const refreshTokenDAL = new RefreshTokenDAL();
 const vocabEntryDAL = new VocabEntryDAL();
 const userMinutePointsDAL = new UserMinutePointsDAL();
+// Per-(user, language) wallet + streak state (migration 130, docs/PER_LANGUAGE_STREAKS.md).
+const userLanguagePointsDAL = new UserLanguagePointsDAL();
 const dictionaryDAL = new DictionaryDAL();
 const sortPacksDAL = new SortPacksDAL();
 const nightMarketDAL = new NightMarketDAL();
@@ -90,7 +93,7 @@ const nightMarketPlacementService = new NightMarketPlacementService(nightMarketP
 // Constructed after the placement service — the sandbox's Iterate action reuses its growth planner.
 const nightMarketSandboxService = new NightMarketSandboxService(nightMarketSandboxDAL, userDAL, nightMarketPlacementService);
 // Constructed after the placement service so the grant hook can be wired in.
-const userMinutePointsService = new UserMinutePointsService(userMinutePointsDAL, userDAL, nightMarketPlacementService);
+const userMinutePointsService = new UserMinutePointsService(userMinutePointsDAL, userDAL, userLanguagePointsDAL, nightMarketPlacementService);
 const gameAssetService = new GameAssetService(gameAssetDAL);
 const gameProgressService = new GameProgressService(gameProgressDAL);
 // Community shared-layout feeds + votes; reuses vocabEntryService for the apply-to-card flow.
@@ -121,6 +124,7 @@ export {
   refreshTokenDAL,
   vocabEntryDAL,
   userMinutePointsDAL,
+  userLanguagePointsDAL,
   dictionaryDAL,
   sortPacksDAL,
   userService,

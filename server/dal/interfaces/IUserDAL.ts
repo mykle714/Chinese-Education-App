@@ -19,27 +19,23 @@ export interface IUserDAL extends IBaseDAL<User, UserCreateData, UserUpdateData>
   // Batch operations
   findUsersCreatedAfter(date: Date): Promise<User[]>;
 
-  // Total minute points operations
-  getTotalMinutePoints(userId: string): Promise<{ totalMinutePoints: number; currentStreak: number }>;
-  updateTotalMinutePoints(userId: string, totalPoints: number): Promise<boolean>;
-  incrementTotalMinutePoints(userId: string, pointsToAdd: number): Promise<boolean>;
-  // Signed adjust of totalMinutePoints, floored at 0; returns the new balance (author minute-adjust tool).
-  adjustTotalMinutePoints(userId: string, delta: number): Promise<number>;
-
   // Minute point increment rate limiting
   updateLastMinutePointIncrement(userId: string, timestamp: Date): Promise<boolean>;
 
   // Timezone tracking — kept fresh from the client so the streak-expiration
-  // cron can compute "today" in each user's local 4 AM-bounded day.
+  // cron can compute "today" in each user's local 4 AM-bounded day. Still a
+  // property of the PERSON, not of the language they are studying.
   updateTimezoneIfChanged(userId: string, timezone: string): Promise<void>;
 
-  // Streak operations
-  getUserStreakInfo(userId: string): Promise<{ currentStreak: number; lastStreakDate: string | null }>;
-  setStreak(userId: string, currentStreak: number, lastStreakDate: string): Promise<boolean>;
-  // NOTE: streak-break / inactivity penalties are applied exclusively by the SQL
-  // cron (database/cron/expire-stale-streaks.sql), not from application code.
+  // NOTE: wallets and streaks are NOT here — since migration 130 they are
+  // per-(user, language) and live in IUserLanguagePointsDAL. `users` no longer has
+  // totalMinutePoints / currentStreak / lastStreakDate / lastPenaltyDate columns.
+  // See docs/PER_LANGUAGE_STREAKS.md.
+  //
+  // Streak-break / inactivity penalties remain the exclusive province of the SQL
+  // cron (database/cron/expire-stale-streaks.sql), never application code.
 
-  // Leaderboard operations (returns isPublic so callers can mask streak from non-public users)
-  getAllUsersWithTotalPoints(): Promise<Array<{ userId: string; email: string; name: string; totalMinutePoints: number }>>;
-  getPublicUsersWithTotalPoints(): Promise<Array<{ userId: string; email: string; name: string; totalMinutePoints: number; currentStreak: number; isPublic: boolean; avatarIconId: string | null }>>;
+  // Leaderboard roster. Returns identity + isPublic only; the caller joins the
+  // per-language totals from IUserLanguagePointsDAL.getTotalsForAllUsers().
+  getLeaderboardRoster(): Promise<Array<{ userId: string; email: string; name: string; isPublic: boolean; avatarIconId: string | null }>>;
 }

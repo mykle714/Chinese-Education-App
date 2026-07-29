@@ -19,10 +19,13 @@ export function getBrowserTimezone(): string {
 
 /** Per-language snapshot powering the home screen + fire badge. */
 export interface LanguageMinuteSummary {
-  totalMinutePoints: number;   // GLOBAL penalty-debited NET balance (users.totalMinutePoints); drives unlocks + the prominent number. Decays on loss.
-  grossMinutesEarned: number;  // GLOBAL lifetime minutes earned (Σ minutesEarned, all languages), ignoring penalties; only grows. gross ≥ net.
+  totalMinutePoints: number;   // NET wallet FOR THE REQUESTED LANGUAGE (user_language_points.totalMinutePoints);
+                               // drives that language's unlocks + the prominent number. Decays on loss.
+  grossMinutesEarned: number;  // Lifetime minutes earned IN THE REQUESTED LANGUAGE (Σ minutesEarned for that
+                               // language), ignoring penalties; only grows. gross ≥ net for that language.
   todayMinutes: number;        // minutes earned today (4 AM-local day) for this language (fire badge)
-  currentStreak: number;       // GLOBAL streak (not language-scoped)
+  currentStreak: number;       // Streak FOR THE REQUESTED LANGUAGE — since migration 130 there is no global
+                               // streak; each language keeps its own (docs/PER_LANGUAGE_STREAKS.md).
 }
 
 /**

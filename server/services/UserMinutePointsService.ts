@@ -1,5 +1,6 @@
 import { IUserMinutePointsDAL } from '../dal/interfaces/IUserMinutePointsDAL.js';
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
+import { IUserLanguagePointsDAL } from '../dal/interfaces/IUserLanguagePointsDAL.js';
 import { NightMarketPlacementService } from './NightMarketPlacementService.js';
 import {
   MinutePointsIncrementRequest,
@@ -17,19 +18,29 @@ import {
 /**
  * UserMinutePoints Service.
  *
- * Streak day = a 4 AM-bounded calendar day in the user's local timezone.
- * Increment ticks the streak the moment a user crosses STREAK_CONFIG.RETENTION_MINUTES
- * for the current streak day.
+ * LAYER: service. Owns the study-time economy: earning minutes, crossing the daily
+ * threshold, and reconciling the night market that minutes fund.
  *
- * Streak breaks (gap ≥ 2 days since lastStreakDate) are handled exclusively by
- * the hourly Postgres cron at database/cron/expire-stale-streaks.sql — it
- * stamps the penalty row and rolls users.lastStreakDate / currentStreak /
- * totalMinutePoints forward.
+ * EVERYTHING HERE IS PER-LANGUAGE (migration 130, docs/PER_LANGUAGE_STREAKS.md).
+ * The wallet, the streak and the penalty schedule are keyed (userId, language) in
+ * user_language_points; a user studying zh and es has two independent tracks that
+ * never read or write each other's state. Three minutes of Spanish no longer keeps
+ * a Chinese streak alive.
+ *
+ * Streak day = a 4 AM-bounded calendar day in the user's local timezone. The
+ * timezone stays a property of the PERSON (users.timezone) — only the progress it
+ * bounds is per-language.
+ *
+ * Streak breaks (gap ≥ 2 days since that language's lastStreakDate) are handled
+ * exclusively by the hourly Postgres cron at database/cron/expire-stale-streaks.sql
+ * — it stamps the penalty row and rolls that language's lastStreakDate /
+ * currentStreak / totalMinutePoints forward.
  */
 export class UserMinutePointsService {
   constructor(
     private userMinutePointsDAL: IUserMinutePointsDAL,
     private userDAL: IUserDAL,
+    private userLanguagePointsDAL: IUserLanguagePointsDAL,
     // Optional: the night-market grant flow. When present, earning a minute reconciles the
     // user's unlock entitlement (fill slots / spawn templates). Best-effort — a failure here
     // must never break the minute-point increment, so the call is wrapped + swallowed below.
@@ -72,12 +83,16 @@ export class UserMinutePointsService {
 
     await this.userMinutePointsDAL.addMinutesForDate(userId, streakDate, language, 1);
 
-    await this.userDAL.incrementTotalMinutePoints(userId, 1);
+    const totalMinutePoints = await this.userLanguagePointsDAL.incrementPoints(userId, language, 1);
 
-    // The streak is GLOBAL: studying any language counts. Decide the threshold
-    // crossing on the day's total summed across all languages, not the single
-    // language row we just bumped.
-    const newMinutes = await this.userMinutePointsDAL.getMinutesForDate(userId, streakDate);
+    // The streak is PER-LANGUAGE: only minutes in THIS language can advance THIS
+    // language's streak. Decide the threshold crossing on the single language row
+    // we just bumped, never on the cross-language sum.
+    const newMinutes = await this.userMinutePointsDAL.getMinutesForDateAndLanguage(
+      userId,
+      streakDate,
+      language
+    );
     const previousMinutes = newMinutes - 1;
 
     const crossedThreshold =
@@ -85,22 +100,23 @@ export class UserMinutePointsService {
       newMinutes >= STREAK_CONFIG.RETENTION_MINUTES;
 
     if (crossedThreshold) {
-      await this.advanceStreakForDate(userId, streakDate);
-      console.log(`[MINUTE-POINTS-SERVICE] 🔥 Streak advanced for user ${userId.substring(0, 8)}... on ${streakDate}`);
+      await this.advanceStreakForDate(userId, language, streakDate);
+      console.log(`[MINUTE-POINTS-SERVICE] 🔥 ${language} streak advanced for user ${userId.substring(0, 8)}... on ${streakDate}`);
     }
 
     await this.userDAL.updateLastMinutePointIncrement(userId, now);
 
-    // Reconcile the night-market unlock entitlement for the new lifetime total (best-effort).
-    // The grant flow fills placeholder slots / spawns templates; it is idempotent (no-ops when
-    // already at target) so calling it every tick is cheap when no new threshold was crossed. A
-    // failure here must not surface to the study loop, so it is caught and logged only.
+    // Reconcile THIS LANGUAGE's night-market unlock entitlement against its new wallet
+    // (best-effort). Each language grows its own market, so the grant is scoped to the
+    // language whose minute we just banked. The grant flow fills placeholder slots /
+    // spawns templates; it is idempotent (no-ops when already at target) so calling it
+    // every tick is cheap when no new threshold was crossed. A failure here must not
+    // surface to the study loop, so it is caught and logged only.
     if (this.nightMarketPlacementService) {
       try {
-        const { totalMinutePoints } = await this.userDAL.getTotalMinutePoints(userId);
-        await this.nightMarketPlacementService.grantUnlocks(userId, totalMinutePoints);
+        await this.nightMarketPlacementService.grantUnlocks(userId, language, totalMinutePoints);
       } catch (err) {
-        console.error(`[MINUTE-POINTS-SERVICE] night-market grant failed for user ${userId.substring(0, 8)}…`, err);
+        console.error(`[MINUTE-POINTS-SERVICE] night-market grant failed for user ${userId.substring(0, 8)}… (${language})`, err);
       }
     }
   }
@@ -113,9 +129,10 @@ export class UserMinutePointsService {
    *   • delta < 0 → adds |delta| to today's `penaltyMinutes` (GROSS unchanged) AND debits
    *     totalMinutePoints (NET ↓, floored at 0) — the same shape as the real penalty cron, which is
    *     why GROSS stays put and the two dashboard numbers diverge.
-   * Then reconciles the night market to the new NET (grant on +, decay on −). Gated on
-   * users.isTemplateAuthor (403). NOT rate-limited (unlike the +1 study path). Returns the fresh
-   * NET balance + GLOBAL gross so the client can update both numbers immediately.
+   * Then reconciles that language's night market to the new NET (grant on +, decay on −).
+   * Gated on users.isTemplateAuthor (403). NOT rate-limited (unlike the +1 study path).
+   * Returns the fresh NET balance + gross for THAT LANGUAGE so the client can update both
+   * numbers immediately. All of it is scoped to users.selectedLanguage.
    */
   async adjustMinutesForAuthor(
     userId: string,
@@ -138,22 +155,23 @@ export class UserMinutePointsService {
     if (delta > 0) {
       // Earn signal: gross + net both rise.
       await this.userMinutePointsDAL.addMinutesForDate(userId, streakDate, language, delta);
-      await this.userDAL.incrementTotalMinutePoints(userId, delta);
+      await this.userLanguagePointsDAL.incrementPoints(userId, language, delta);
     } else if (delta < 0) {
       // Loss signal: penalty rises (gross intact), net falls floored at 0.
       const amount = -delta;
       await this.userMinutePointsDAL.addPenaltyMinutesForDate(userId, streakDate, language, amount);
-      await this.userDAL.adjustTotalMinutePoints(userId, -amount);
+      await this.userLanguagePointsDAL.adjustPoints(userId, language, -amount);
     }
 
-    // Make the market match the new net balance. Unlike the passive study-tick grant, this is an
-    // explicit author action, so a reconcile failure is allowed to surface (not swallowed).
-    const { totalMinutePoints } = await this.userDAL.getTotalMinutePoints(userId);
+    // Make THIS LANGUAGE's market match its new net balance. Unlike the passive study-tick
+    // grant, this is an explicit author action, so a reconcile failure is allowed to surface
+    // (not swallowed).
+    const { totalMinutePoints } = await this.userLanguagePointsDAL.getProgress(userId, language);
     if (this.nightMarketPlacementService && delta !== 0) {
-      await this.nightMarketPlacementService.reconcileUnlocks(userId, totalMinutePoints);
+      await this.nightMarketPlacementService.reconcileUnlocks(userId, language, totalMinutePoints);
     }
 
-    const grossMinutesEarned = await this.userMinutePointsDAL.getGrossMinutesEarned(userId);
+    const grossMinutesEarned = await this.userMinutePointsDAL.getTotalMinutesForLanguage(userId, language);
     return { totalMinutePoints, grossMinutesEarned };
   }
 
@@ -211,10 +229,10 @@ export class UserMinutePointsService {
   }
 
   /**
-   * Lifetime minutes the user has earned studying `language`.
-   * Powers the home screen's "total study time" for the selected language.
-   * (Distinct from users.totalMinutePoints, which is the global, penalty-debited
-   * accumulator used by the leaderboard.)
+   * Lifetime minutes the user has earned studying `language` — GROSS, ignoring
+   * penalties, so it only ever grows. Powers the home screen's "total study time".
+   * (Distinct from user_language_points.totalMinutePoints, which is the same
+   * language's penalty-debited NET wallet; the two DIVERGE once penalised.)
    */
   async getTotalForLanguage(userId: string, language: string): Promise<number> {
     return this.userMinutePointsDAL.getTotalMinutesForLanguage(userId, language);
@@ -231,19 +249,19 @@ export class UserMinutePointsService {
   }
 
   /**
-   * One-shot snapshot for the client's minute-points hook. Returns the two GLOBAL
-   * balances the UI now distinguishes:
-   *   • totalMinutePoints — the penalty-debited NET balance (users.totalMinutePoints);
-   *     drives the night-market unlocks + the prominent "current balance" number. Decays
-   *     when the user loses points.
-   *   • grossMinutesEarned — GLOBAL lifetime minutes earned (Σ minutesEarned, all
-   *     languages), ignoring penalties; only ever grows. Shown as the secondary
-   *     "total earned" figure. gross ≥ net, and they DIFFER for penalized users.
-   * Plus per-language today's minutes (for the fire badge) and the GLOBAL current streak.
+   * One-shot snapshot for the client's minute-points hook. EVERY figure is scoped to
+   * `language` — since migration 130 there is no global balance or global streak:
+   *   • totalMinutePoints — that language's penalty-debited NET wallet
+   *     (user_language_points.totalMinutePoints); drives ITS night-market unlocks and the
+   *     prominent "current balance" number. Decays when the language is neglected.
+   *   • grossMinutesEarned — that language's lifetime minutes earned (Σ minutesEarned for
+   *     the language), ignoring penalties; only ever grows. Shown as the secondary "total
+   *     earned" figure. gross ≥ net, and they DIFFER once that language has been penalised.
+   *   • todayMinutes — that language's minutes today (the fire badge).
+   *   • currentStreak — that language's streak.
    *
-   * NOTE: `totalMinutePoints` previously returned the per-LANGUAGE gross earned — a
-   * misnomer that also made the client's unlock-availability check disagree with the
-   * server (which grants on global net). It now returns the true users.totalMinutePoints.
+   * Switching languages therefore swaps the entire snapshot, which is the intended UX:
+   * each language shows its own independent progress.
    */
   async getLanguageSummary(
     userId: string,
@@ -251,16 +269,16 @@ export class UserMinutePointsService {
     timestamp: string,
     tz: string
   ): Promise<{ totalMinutePoints: number; grossMinutesEarned: number; todayMinutes: number; currentStreak: number }> {
-    const [grossMinutesEarned, todayMinutes, globalTotals] = await Promise.all([
-      this.userMinutePointsDAL.getGrossMinutesEarned(userId),
+    const [grossMinutesEarned, todayMinutes, progress] = await Promise.all([
+      this.userMinutePointsDAL.getTotalMinutesForLanguage(userId, language),
       this.getTodayMinutes(userId, language, timestamp, tz),
-      this.userDAL.getTotalMinutePoints(userId),
+      this.userLanguagePointsDAL.getProgress(userId, language),
     ]);
     return {
-      totalMinutePoints: globalTotals.totalMinutePoints,
+      totalMinutePoints: progress.totalMinutePoints,
       grossMinutesEarned,
       todayMinutes,
-      currentStreak: globalTotals.currentStreak,
+      currentStreak: progress.currentStreak,
     };
   }
 
@@ -269,14 +287,21 @@ export class UserMinutePointsService {
   // ─────────────────────────────────────────────────────────────
 
   /**
-   * Update the user's currentStreak after they crossed the daily threshold for `streakDate`.
-   * Continues if the previous streak day was yesterday; otherwise restarts at 1.
+   * Update ONE LANGUAGE's currentStreak after it crossed the daily threshold for
+   * `streakDate`. Continues if that language's previous streak day was yesterday;
+   * otherwise restarts at 1. Other languages are untouched.
    */
-  private async advanceStreakForDate(userId: string, streakDate: string): Promise<void> {
-    const info = await this.userDAL.getUserStreakInfo(userId);
+  private async advanceStreakForDate(
+    userId: string,
+    language: string,
+    streakDate: string
+  ): Promise<void> {
+    const info = await this.userLanguagePointsDAL.getProgress(userId, language);
     let newStreak: number;
 
     if (!info.lastStreakDate) {
+      // First time this language has ever hit the threshold. This is also the moment
+      // it becomes eligible for the penalty cron, which skips lastStreakDate IS NULL.
       newStreak = 1;
     } else if (info.lastStreakDate === streakDate) {
       // Already credited for today. (Shouldn't happen given the threshold guard, but harmless.)
@@ -284,12 +309,12 @@ export class UserMinutePointsService {
     } else if (daysBetween(info.lastStreakDate, streakDate) === 1) {
       newStreak = info.currentStreak + 1;
     } else {
-      // Gap > 1 day means the user came back after a break before the
+      // Gap > 1 day means the user came back to this language after a break before the
       // hourly streak-expiration cron noticed. Treat this as a fresh streak.
       newStreak = 1;
     }
 
-    await this.userDAL.setStreak(userId, newStreak, streakDate);
+    await this.userLanguagePointsDAL.setStreak(userId, language, newStreak, streakDate);
   }
 
   private parseTimestamp(input: string): Date {

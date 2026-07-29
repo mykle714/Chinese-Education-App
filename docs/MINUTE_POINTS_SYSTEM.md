@@ -1,5 +1,10 @@
 # Minute Points & Streak System
 
+> **Per-language since migration 130.** Wallets, streaks and penalties are keyed
+> `(userId, language)` in `user_language_points`; `users.totalMinutePoints` /
+> `.currentStreak` / `.lastStreakDate` / `.lastPenaltyDate` no longer exist. See
+> [PER_LANGUAGE_STREAKS.md](./PER_LANGUAGE_STREAKS.md).
+
 The minute-points system tracks active learning time and converts it into a daily
 streak. One minute of focused activity = one minute point. The user's streak
 counts consecutive days they earned at least `STREAK_CONFIG.RETENTION_MINUTES`

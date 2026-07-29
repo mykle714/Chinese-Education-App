@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { NightMarketWorldService } from '../services/NightMarketWorldService.js';
 import { requireUserId, handleControllerError } from '../utils/controllerUtils.js';
+import { resolveLanguage } from '../utils/languageParam.js';
 
 /**
  * Night Market World Controller — the runtime LAYOUT read endpoint.
@@ -22,7 +23,10 @@ export class NightMarketWorldController {
       const userId = requireUserId(req, res);
       if (!userId) return;
 
-      const result = await this.worldService.getUserLayout(userId);
+      // Each language grows its own market (migration 130), so the layout read is scoped to the
+      // language the client is studying; ?language= defaults to 'zh' for older clients.
+      const language = resolveLanguage(req.query.language);
+      const result = await this.worldService.getUserLayout(userId, language);
       res.json(result);
     } catch (error) {
       handleControllerError(error, res, 'NightMarketWorldController.getLayout');

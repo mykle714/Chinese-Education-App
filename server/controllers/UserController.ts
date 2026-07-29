@@ -70,10 +70,13 @@ export class UserController {
    * (e.g. the hub template is not authored yet) must NOT fail account creation —
    * NightMarketWorldService's first-load safety net will seed it on the user's first market load.
    */
-  private async seedNightMarketHub(userId: string | undefined): Promise<void> {
+  private async seedNightMarketHub(userId: string | undefined, language: string): Promise<void> {
     if (!userId) return;
     try {
-      await this.nightMarketWorldService.seedHubPlacement(userId);
+      // Seed the hub for the account's INITIAL language only. Other languages seed their own hub
+      // lazily on first market load (NightMarketWorldService.seedHubIfAbsent), so a learner who
+      // never touches Spanish never gets an empty Spanish continent.
+      await this.nightMarketWorldService.seedHubPlacement(userId, language);
     } catch (seedError) {
       console.error('[UserController] Night Market hub seed failed (non-fatal):', seedError);
     }
@@ -93,7 +96,8 @@ export class UserController {
         password
       });
 
-      await this.seedNightMarketHub(newUser.id);
+      // New accounts default to selectedLanguage 'zh' (column default); seed that market's hub.
+      await this.seedNightMarketHub(newUser.id, newUser.selectedLanguage || 'zh');
 
       res.status(201).json(newUser);
     } catch (error) {
@@ -506,20 +510,9 @@ export class UserController {
     }
   }
 
-  /**
-   * Get total minute points and current streak for a user
-   * GET /api/users/:id/total-minute-points
-   */
-  async getTotalMinutePoints(req: Request, res: Response): Promise<void> {
-    try {
-      const { id } = req.params;
-
-      const result = await this.userService.getTotalMinutePoints(id);
-      res.json(result);
-    } catch (error) {
-      this.handleError(error, res);
-    }
-  }
+  // NOTE: GET /api/users/:id/total-minute-points was removed by migration 130. There is no single
+  // "total minute points" any more — each language has its own wallet. The client reads
+  // GET /api/users/minute-points/summary?language=… instead. See docs/PER_LANGUAGE_STREAKS.md.
 
   /**
    * Create new user (admin function)
@@ -535,7 +528,8 @@ export class UserController {
         password
       });
 
-      await this.seedNightMarketHub(newUser.id);
+      // New accounts default to selectedLanguage 'zh' (column default); seed that market's hub.
+      await this.seedNightMarketHub(newUser.id, newUser.selectedLanguage || 'zh');
 
       res.status(201).json(newUser);
     } catch (error) {

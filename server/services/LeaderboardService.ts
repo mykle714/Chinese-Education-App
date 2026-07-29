@@ -1,11 +1,20 @@
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import { IUserMinutePointsDAL } from '../dal/interfaces/IUserMinutePointsDAL.js';
+import { IUserLanguagePointsDAL } from '../dal/interfaces/IUserLanguagePointsDAL.js';
 import { IWinsDAL } from '../dal/interfaces/IWinsDAL.js';
 import { LeaderboardEntry, LeaderboardResponse } from '../types/leaderboard.js';
 import { ValidationError } from '../types/dal.js';
 
 /**
  * Leaderboard Service.
+ *
+ * DELIBERATELY GLOBAL, unlike the rest of the minute-points domain. Wallets and
+ * streaks are per-language since migration 130 (docs/PER_LANGUAGE_STREAKS.md), but
+ * the board stays a single cross-language ranking:
+ *   • rank on the SUM of each user's per-language wallets;
+ *   • show the MAX of their per-language streaks ("best streak").
+ * Splitting the board per language would fragment an already-small user base, and
+ * a learner's standing should reflect all the study they did, not just one track.
  *
  * Note: streak is hidden (null) for users with isPublic = false. This is the only
  * field gated on isPublic — totals and minutes are still public.
@@ -14,15 +23,21 @@ export class LeaderboardService {
   constructor(
     private userDAL: IUserDAL,
     private userMinutePointsDAL: IUserMinutePointsDAL,
+    private userLanguagePointsDAL: IUserLanguagePointsDAL,
     private winsDAL: IWinsDAL
   ) {}
 
   async getLeaderboard(): Promise<LeaderboardResponse> {
     try {
-      // Returns ALL users plus their isPublic flag; we mask streak for non-public ones below.
-      const usersWithPoints = await this.userDAL.getPublicUsersWithTotalPoints();
+      // Roster = identity + isPublic only (points no longer live on `users`); we mask streak for
+      // non-public ones below. Totals come from one grouped query over user_language_points, so
+      // the join stays O(1) queries rather than O(users).
+      const [roster, totalsByUser] = await Promise.all([
+        this.userDAL.getLeaderboardRoster(),
+        this.userLanguagePointsDAL.getTotalsForAllUsers(),
+      ]);
 
-      if (usersWithPoints.length === 0) {
+      if (roster.length === 0) {
         return { success: true, data: [], totalUsers: 0 };
       }
 
@@ -43,17 +58,23 @@ export class LeaderboardService {
 
       const leaderboardEntries: LeaderboardEntry[] = [];
 
-      for (const user of usersWithPoints) {
+      for (const user of roster) {
+        // Today's/yesterday's minutes stay summed ACROSS languages — this is a
+        // "how active were you" figure, not a per-track streak concern.
         const todaysMinutes = await this.userMinutePointsDAL.getMinutesForDate(user.userId, todayStr);
         const yesterdaysMinutes = await this.userMinutePointsDAL.getMinutesForDate(user.userId, yesterdayStr);
+
+        // A user with no user_language_points rows has never studied anything; treat as zeroes
+        // rather than skipping, so the isPublic-filter below stays the single exclusion rule.
+        const totals = totalsByUser.get(user.userId);
 
         leaderboardEntries.push({
           userId: user.userId,
           email: user.email,
           name: user.name,
-          accumulativeMinutePoints: user.totalMinutePoints,
-          // Hide streak from non-public users.
-          currentStreak: user.isPublic ? user.currentStreak : null,
+          accumulativeMinutePoints: totals?.totalMinutePoints ?? 0,
+          // Hide streak from non-public users. Best = MAX across the user's languages.
+          currentStreak: user.isPublic ? (totals?.bestStreak ?? 0) : null,
           todaysMinutes,
           yesterdaysMinutes,
           weeklyAchievements: weeklyAchievementCounts.get(user.userId) ?? 0,

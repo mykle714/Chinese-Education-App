@@ -85,10 +85,8 @@ router.get('/api/users/:id', authenticateToken, async (req, res) => {
   await userController.getUserById(req, res);
 });
 
-// Get total minute points for a user
-// @ts-ignore
-router.get('/api/users/:id/total-minute-points', authenticateToken, async (req, res) => {
-  await userController.getTotalMinutePoints(req, res);
-});
+// NOTE: GET /api/users/:id/total-minute-points was removed by migration 130 — wallets are
+// per-language now, so there is no single total to return. Use
+// GET /api/users/minute-points/summary?language=… (UserMinutePointsController.getSummary).
 
 export default router;

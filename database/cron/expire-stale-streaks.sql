@@ -1,53 +1,62 @@
 -- Hourly escalating inactivity-penalty cron (prod only).
 --
+-- PER-LANGUAGE since migration 130 (docs/PER_LANGUAGE_STREAKS.md). Every unit of
+-- state this cron reads and writes is keyed (userId, language) via
+-- user_language_points: the wallet, the streak, the reference day and the
+-- once-per-day guard. A user studying zh and es has two INDEPENDENT tracks, and a
+-- lapse in both debits both on the same tick. The old global columns on `users`
+-- (totalMinutePoints / currentStreak / lastStreakDate / lastPenaltyDate) are no
+-- longer read here and are dropped by migration 131.
+--
 -- ONE branch: an escalating penalty for consecutive full local days spent
--- BELOW the RETENTION_MINUTES (3-min) streak threshold. "Missing" a day means
--- not reaching the threshold that day, tracked purely by users.lastStreakDate
--- (the last local day the user hit 3 min). lastStreakDate is advanced ONLY by
--- the minute-points increment path -- this cron never touches it -- so the day
--- gap grows by exactly one each continued local day and snaps back to 0 the
--- moment the user hits the threshold again.
+-- BELOW the RETENTION_MINUTES (3-min) streak threshold IN THAT LANGUAGE. "Missing"
+-- a day means not reaching the threshold in that language that day, tracked purely
+-- by user_language_points."lastStreakDate" (the last local day the user hit 3 min
+-- in that language). lastStreakDate is advanced ONLY by the minute-points increment
+-- path -- this cron never touches it -- so the day gap grows by exactly one each
+-- continued local day and snaps back to 0 the moment the user hits the threshold
+-- in that language again.
 --
 -- Tier is DERIVED from dates, not stored:
 --     tier = today_local - lastStreakDate - 1     (# of full missed days)
 -- Penalty schedule by tier (minutes):
 --     1 -> 3    2 -> 15   3 -> 30   4 -> 60   5 -> 90   6 -> 120
---     7+ -> everything remaining (account set to 0)
+--     7+ -> everything remaining (that language's wallet set to 0)
 -- Cumulative through tier 6 = 318; tier 7 wipes any remainder. Keep this
 -- schedule in sync with STREAK_CONFIG.PENALTY_SCHEDULE_MINUTES in
 -- server/constants.ts (and the client mirror in src/constants.ts).
 --
--- Applied at most once per user per local day (guarded by users.lastPenaltyDate).
--- Each tick:
---   * debits the tier penalty from totalMinutePoints, floored at 0;
+-- Applied at most once per (user, language) per local day, guarded by
+-- user_language_points."lastPenaltyDate". Each tick, for each eligible pair:
+--   * debits the tier penalty from THAT LANGUAGE's totalMinutePoints, floored at 0;
 --   * stamps the ACTUAL amount removed (total - new_total) as penaltyMinutes on
---     the just-completed missed day (yesterday local = today_local - 1), so the
---     calendar shows the real deduction even when a small balance underflows;
---   * resets currentStreak to 0 (a missed day always breaks the streak);
---   * bumps lastPenaltyDate to today_local (idempotency -- later ticks the same
---     local day are no-ops).
+--     the just-completed missed day (yesterday local = today_local - 1) for THAT
+--     language, so the calendar shows the real deduction even when a small balance
+--     underflows. The language is now KNOWN rather than guessed from
+--     users."selectedLanguage" -- that guess was the write/read mismatch this
+--     design replaces;
+--   * resets that language's currentStreak to 0 (a missed day always breaks it);
+--   * bumps that language's lastPenaltyDate to today_local (idempotency -- later
+--     ticks the same local day are no-ops).
 --
--- (There used to be a Branch C that wiped each user's `weeklies` rows at their
--- local week rollover. That table is gone: weekly achievements are now derived
--- as a timestamp filter over the persistent append-only `wins` log -- see
--- WinsDAL.getWeeklyCountsByUser -- so nothing needs to be wiped.)
+-- Timezone still comes from users.timezone: the local-day boundary is a property
+-- of the person, not of the language they are studying.
 --
--- Deploy note: because the tier is derived from lastStreakDate, a user inactive
--- for many days lands on their true tier on the very first tick. In steady state
--- the previous flat-10/day cron already drained most long-inactive balances to
--- 0, so few users carry a balance into this change; those that do are recently
--- inactive and sit at low tiers. Users who have never hit the threshold
--- (lastStreakDate IS NULL) are exempt -- there is no reference day to escalate
--- from.
+-- Languages that have never crossed the threshold (lastStreakDate IS NULL) are
+-- exempt -- there is no reference day to escalate from. This is what implements
+-- the "only languages ever studied" scope: a language enters the penalty system
+-- the first time it hits 3 minutes.
 --
--- Logging: when >= 1 user is penalized, a NOTICE line names the count, user IDs,
--- stamped missed dates, and the number of night-market occupants decayed. Idle ticks
--- print only BEGIN / DO / COMMIT.
+-- Logging: when >= 1 (user, language) pair is penalized, a NOTICE line names the
+-- count, user IDs, languages, stamped missed dates, and the number of night-market
+-- occupants decayed. Idle ticks print only BEGIN / DO / COMMIT.
 --
--- ── Night-market unlock decay (second branch) ────────────────────────────────
--- In the SAME transaction that debits minutes, trim each penalized user's night-
--- market OCCUPANTS (nightmarketunlocks rows) down to their new entitlement
--- target = unlocks(new_total). This mirrors the grant flow
+-- -- Night-market unlock decay (second branch) --------------------------------
+-- In the SAME transaction that debits minutes, trim each penalized (user, language)
+-- pair's night-market OCCUPANTS (nightmarketunlocks rows for THAT language) down to
+-- target = unlocks(new_total_for_that_language). Each language grows its own market
+-- (migration 130), so decay is partitioned by (userId, language) and one language's
+-- lapse never touches another language's stalls. This mirrors the grant flow
 -- (NightMarketPlacementService.grantUnlocks): earning minutes fills slots, losing
 -- minutes frees them. Only OCCUPANTS are deleted -- placed templates
 -- (nightmarkettemplatelocations) are append-only and NEVER removed, so an emptied
@@ -65,19 +74,24 @@ DO $$
 DECLARE
   penalty_count  int;
   penalty_ids    uuid[];
+  penalty_langs  text[];
   penalty_dates  date[];
   decay_count    int;
 BEGIN
   WITH candidates AS (
-    SELECT id AS user_id,
-           COALESCE("selectedLanguage", 'zh') AS language,
-           "totalMinutePoints" AS total_points,
-           (((now() AT TIME ZONE timezone) - INTERVAL '4 hours')::date) AS today_local,
-           "lastStreakDate"::date AS last_streak_date,
-           "lastPenaltyDate" AS last_penalty_date
-    FROM users
-    WHERE "totalMinutePoints" > 0
-      AND "lastStreakDate" IS NOT NULL
+    -- One candidate row per (user, language) progress row with something to lose.
+    -- users is joined only for the timezone: the local-day boundary belongs to the
+    -- person, not the language.
+    SELECT p."userId" AS user_id,
+           p.language,
+           p."totalMinutePoints" AS total_points,
+           (((now() AT TIME ZONE u.timezone) - INTERVAL '4 hours')::date) AS today_local,
+           p."lastStreakDate"::date AS last_streak_date,
+           p."lastPenaltyDate" AS last_penalty_date
+    FROM user_language_points p
+    JOIN users u ON u.id = p."userId"
+    WHERE p."totalMinutePoints" > 0
+      AND p."lastStreakDate" IS NOT NULL
   ),
   eligible AS (
     SELECT user_id, language, total_points, today_local,
@@ -87,8 +101,6 @@ BEGIN
     WHERE (today_local - last_streak_date) >= 2                    -- at least one full missed day
       AND (last_penalty_date IS NULL OR last_penalty_date < today_local)  -- once per local day
   ),
-  -- The streak is global, but the audit row needs a language: attribute the
-  -- penalty to whatever language the user currently has selected.
   computed AS (
     SELECT user_id, language, total_points, today_local, missed_date, tier,
            CASE
@@ -98,14 +110,14 @@ BEGIN
              WHEN tier = 4 THEN 60
              WHEN tier = 5 THEN 90
              WHEN tier = 6 THEN 120
-             ELSE total_points          -- tier >= 7: wipe the remaining balance
+             ELSE total_points          -- tier >= 7: wipe this language's remaining balance
            END AS nominal_penalty
     FROM eligible
   ),
   final AS (
     SELECT user_id, language, today_local, missed_date, tier,
            GREATEST(0, total_points - nominal_penalty) AS new_total,      -- floored debit
-           LEAST(nominal_penalty, total_points)        AS actual_penalty  -- what actually left the balance
+           LEAST(nominal_penalty, total_points)        AS actual_penalty  -- what actually left the wallet
     FROM computed
   ),
   penalty_insert AS (
@@ -116,19 +128,21 @@ BEGIN
                   "updatedAt"      = now()
     RETURNING "userId"
   ),
-  user_update AS (
-    UPDATE users u
+  progress_update AS (
+    UPDATE user_language_points p
     SET "totalMinutePoints" = f.new_total,
         "currentStreak"     = 0,
-        "lastPenaltyDate"   = f.today_local
+        "lastPenaltyDate"   = f.today_local,
+        "updatedAt"         = now()
     FROM final f
-    WHERE u.id = f.user_id
-    RETURNING f.user_id, f.missed_date, f.tier
+    WHERE p."userId" = f.user_id AND p.language = f.language
+    RETURNING f.user_id, f.language, f.missed_date, f.tier
   ),
-  -- Night-market decay: each penalized user's new unlock entitlement from their post-debit
-  -- total. unlocks(m) mirrors server/dal/shared/unlockSchedule.ts (keep in sync).
+  -- Night-market decay: each penalized (user, language) pair's new unlock entitlement
+  -- from that language's post-debit total. unlocks(m) mirrors
+  -- server/dal/shared/unlockSchedule.ts (keep in sync).
   decay_targets AS (
-    SELECT user_id,
+    SELECT user_id, language,
            CASE
              WHEN new_total >= 60 THEN 17 + floor((new_total - 60) / 60)::int
              WHEN new_total >= 52 THEN 16
@@ -151,33 +165,39 @@ BEGIN
            END AS target
     FROM final
   ),
-  -- Rank each user's occupants randomly; anything ranked beyond `target` is surplus to delete.
+  -- Rank each pair's occupants randomly WITHIN ITS OWN MARKET; anything ranked
+  -- beyond `target` is surplus to delete. Partitioning by (userId, language) is what
+  -- keeps one language's lapse from trimming another language's stalls.
   decay_ranked AS (
     SELECT u.id AS unlock_id,
-           row_number() OVER (PARTITION BY l."userId" ORDER BY random()) AS rn,
+           row_number() OVER (
+             PARTITION BY u."userId", u.language ORDER BY random()
+           ) AS rn,
            dt.target
     FROM nightmarketunlocks u
-    JOIN nightmarkettemplatelocations l ON l.id = u."placedTemplateId"
-    JOIN decay_targets dt ON dt.user_id = l."userId"
+    JOIN decay_targets dt
+      ON dt.user_id = u."userId" AND dt.language = u.language
   ),
-  -- Delete surplus occupants at random (rn > target). Templates are untouched (append-only);
-  -- the unlocks→locations FK cascades the OTHER way, so no placement is removed here.
+  -- Delete surplus occupants at random (rn > target). Templates are untouched
+  -- (append-only); the unlocks->locations FK cascades the OTHER way, so no placement
+  -- is removed here.
   decay_delete AS (
     DELETE FROM nightmarketunlocks
     WHERE id IN (SELECT unlock_id FROM decay_ranked WHERE rn > target)
     RETURNING id
   )
-  -- Reference BOTH data-modifying CTEs so each executes; scalar sub-selects keep the counts
-  -- independent (user_update drives the penalty log, decay_delete the decay count).
-  SELECT (SELECT COUNT(*)             FROM user_update),
-         (SELECT array_agg(user_id)   FROM user_update),
-         (SELECT array_agg(missed_date) FROM user_update),
-         (SELECT COUNT(*)             FROM decay_delete)
-  INTO   penalty_count, penalty_ids, penalty_dates, decay_count;
+  -- Reference BOTH data-modifying CTEs so each executes; scalar sub-selects keep the
+  -- counts independent (progress_update drives the penalty log, decay_delete the decay count).
+  SELECT (SELECT COUNT(*)               FROM progress_update),
+         (SELECT array_agg(user_id)     FROM progress_update),
+         (SELECT array_agg(language)    FROM progress_update),
+         (SELECT array_agg(missed_date) FROM progress_update),
+         (SELECT COUNT(*)               FROM decay_delete)
+  INTO   penalty_count, penalty_ids, penalty_langs, penalty_dates, decay_count;
 
   IF penalty_count > 0 THEN
-    RAISE NOTICE 'inactivity-cron escalating-penalty % count=% user_ids=% missed_dates=% decayed_unlocks=%',
-                 now(), penalty_count, penalty_ids, penalty_dates, decay_count;
+    RAISE NOTICE 'inactivity-cron escalating-penalty % count=% user_ids=% languages=% missed_dates=% decayed_unlocks=%',
+                 now(), penalty_count, penalty_ids, penalty_langs, penalty_dates, decay_count;
   END IF;
 END
 $$;

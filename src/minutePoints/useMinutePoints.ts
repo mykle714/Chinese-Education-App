@@ -16,9 +16,11 @@ import { getMinutePointsPaused } from './minutePointsPause';
 
 export interface UseMinutePointsReturn {
   currentPoints: number;
-  /** GLOBAL penalty-debited NET balance (users.totalMinutePoints) — drives unlocks + the prominent "current balance" number; decays on loss. */
+  /** Penalty-debited NET wallet for the SELECTED LANGUAGE (user_language_points.totalMinutePoints)
+   *  — drives that language's unlocks + the prominent "current balance" number; decays on loss. */
   accumulativeMinutePoints: number;
-  /** GLOBAL lifetime minutes earned (Σ minutesEarned, all languages), ignoring penalties; only grows. gross ≥ net. Shown as the secondary "total earned" figure. */
+  /** Lifetime minutes earned in the SELECTED LANGUAGE (Σ minutesEarned for it), ignoring penalties;
+   *  only grows. gross ≥ net. Shown as the secondary "total earned" figure. */
   grossMinutesEarned: number;
   todaysMinutePointsMilli: number;
   liveSeconds: number;
@@ -37,7 +39,7 @@ export interface UseMinutePointsReturn {
 interface MinutePointsState {
   todaysMinutePointsMilli: number;
   todaysMinutePointsMinutes: number;
-  accumulativeMinutePoints: number; // NET (users.totalMinutePoints)
+  accumulativeMinutePoints: number; // NET wallet for the selected language (user_language_points)
   grossMinutesEarned: number;       // GROSS lifetime earned (Σ minutesEarned)
   lastActivity: Date | null;
   isActive: boolean;

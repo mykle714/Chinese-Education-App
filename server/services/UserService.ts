@@ -439,30 +439,11 @@ export class UserService {
     return await this.userDAL.findAll();
   }
 
-  /**
-   * Get total minute points and current streak for a user
-   */
-  async getTotalMinutePoints(userId: string): Promise<{ totalMinutePoints: number; currentStreak: number }> {
-    if (!userId) {
-      throw new ValidationError('User ID is required');
-    }
-
-    return await this.userDAL.getTotalMinutePoints(userId);
-  }
-
-  /**
-   * Increment total minute points for a user (used during daily sync)
-   */
-  async incrementTotalMinutePoints(userId: string, pointsToAdd: number): Promise<boolean> {
-    if (!userId) {
-      throw new ValidationError('User ID is required');
-    }
-    if (pointsToAdd < 0) {
-      throw new ValidationError('Points to add must be positive');
-    }
-
-    return await this.userDAL.incrementTotalMinutePoints(userId, pointsToAdd);
-  }
+  // NOTE: getTotalMinutePoints / incrementTotalMinutePoints used to live here, reading the global
+  // users.totalMinutePoints column. Migration 130 made wallets per-language, so there is no single
+  // "the user's points" to return. Callers now go through UserMinutePointsService
+  // (getLanguageSummary / incrementMinutePoints), which is language-aware.
+  // See docs/PER_LANGUAGE_STREAKS.md.
 
   /**
    * Post-login bookkeeping. Today: refresh users.timezone so the hourly

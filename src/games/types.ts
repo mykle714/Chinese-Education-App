@@ -1,3 +1,4 @@
+import type { Language } from "../types";
 import type { LazyExoticComponent, ComponentType } from "react";
 
 /**
@@ -24,6 +25,18 @@ export interface GameDef {
     Component: LazyExoticComponent<ComponentType>;
     /** When true, hide the game from public/demo accounts. Defaults to false. */
     requiresAuth?: boolean;
+    /**
+     * Languages this game can be played in. Omit for language-agnostic games
+     * (the default — the first three games all work in any language).
+     *
+     * Speed Reading is structurally zh-only: a round is built by substituting ONE
+     * character of the headword, and "a different character" has no Spanish
+     * analogue that isn't just "a different word" — which is a different game.
+     * The hub HIDES a game whose languages exclude the learner's selection rather
+     * than showing it and blocking on entry, because a visible-but-dead row reads
+     * as a bug.
+     */
+    languages?: Language[];
     /** Optional gating rules evaluated at hub render time. */
     unlock?: {
         minVocabEntries?: number;

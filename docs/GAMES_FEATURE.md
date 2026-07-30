@@ -1,14 +1,59 @@
 # Games Feature
 
-A new top-level section of the mobile demo where users access mini-games that
-reinforce vocabulary and character learning. The first surface is a hub page
-listing all available games; individual games will live as their own pages
-linked from the hub.
+A top-level section of the mobile demo where users access mini-games that
+reinforce vocabulary and character learning. The hub page lists all registered
+games; each game lives as its own page linked from the hub.
 
 ## Status
 
-- Hub page (`/games`) — scaffolded, empty menu + empty-state copy.
-- Games — none yet. Menu list is intentionally empty until the first game ships.
+- Hub page (`/games`) — shipped. Renders `GAME_REGISTRY` through the shared
+  `HubMenu`; the empty state is now only a fallback for when every game is gated
+  out (public/demo accounts).
+- Games — **four shipped**, all registered in `src/games/registry.ts`:
+  - **Bubble Match** (`/games/bubble-match`) — see [§ Game: Bubble Match](#game-bubble-match-gamesbubble-match).
+  - **Word Search** (`/games/word-search`) — see [WORD_SEARCH_GAME.md](./WORD_SEARCH_GAME.md).
+  - **Match Speed** (`/games/match-speed`) — see [MATCH_SPEED_GAME.md](./MATCH_SPEED_GAME.md).
+    A tap-to-match recognition speed drill: 2 columns × 5 rows (foreign |
+    English), 60-second clock, board refills every 2s, medals by pairs matched.
+  - **Speed Reading** (`/games/speed-reading`) — see
+    [SPEED_READING_GAME.md](./SPEED_READING_GAME.md). A **reading** drill: pinyin
+    + definition + audio at the top, then two word options — the real word and
+    one where a single character has been swapped for another real character from
+    the player's library. 60-second clock, medals by correct picks.
+
+  Bubble Match and Word Search are **DOM + `requestAnimationFrame`** games; Match
+  Speed and Speed Reading are **DOM + timers only** (no rAF loop — no physics and no
+  per-frame animation, just CSS transitions and intervals). None uses the
+  Pixi runtime scaffolding described in
+  [§ Layer 2](#layer-2--runtime-srcgamesruntime), which remains unused — see the
+  warning there before building on it.
+
+### What Speed Reading introduced
+
+Speed Reading is the first game to need machinery the other three didn't, all of
+which is now shared:
+
+- **A language gate on `GameDef`** — `languages?: Language[]`, evaluated in
+  `GamesPage` against `user.selectedLanguage`. A game whose languages exclude the
+  learner is **hidden** from the hub, not shown-and-blocked (a visible row that
+  dead-ends reads as a bug). Speed Reading declares `["zh"]`; the other three omit
+  the field and are unaffected.
+- **`?markType=` on `GET /api/onDeck/gamePool`** — the endpoint used to hardcode
+  `recognition` back when Bubble Match was its only caller. A game's pool must be
+  bucketed by, and cooled on, the track it actually MARKS; Speed Reading marks
+  **reading**. Bubble Match's call site now passes `markType=recognition`
+  explicitly, so no caller relies on the default.
+- **`GlyphSvg`** (`src/components/handwriting/`) — a static glyph renderer, the
+  second consumer of the `hanzi-writer-data` stroke corpus after the Practice
+  Writing guide.
+
+It owns **no tables and no migrations**: a round's wrong option is a real
+character read out of the player's own library at game load.
+
+It is also the app's first emitter of **negative reading marks** — deliberately.
+A player who taps randomly scores ~50% and earns negatives at that rate; the marks
+are an honest record of the answers given. No accuracy floor, no suppression. Only
+**Skip** is exempt, because a skip is not an answer.
 
 ## Routes
 
@@ -21,14 +66,18 @@ Each individual game gets its own route under `/games/<slug>`.
 **Bubble Match is a leaf page (no footer).** `BubbleMatchPage` is wrapped in
 `LeafPage` (see [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md)): the down-arrow back
 button (→ `/games`) is the only way out, there is **no** footer on any of its
-screens (info / picker / loading / blocked / stage), and the page slides up on
-enter / down on exit. The pinyin + autoplay toggles and the fire badge live in
+screens (loading / blocked / stage — the level is picked on the hub, so there is
+no in-game picker screen), and the page slides up on enter / down on exit. The pinyin + autoplay toggles and the fire badge live in
 the header's right slot via `BubbleMatchHeaderControls`.
 
-The **generic** in-game shell `src/games/runtime/GamePage.tsx` (for future
-registry games that don't ship their own page) still renders
+**Word Search is also a leaf page**, wrapped the same way (down arrow → `/games`,
+no footer, slides up on enter).
+
+The **generic** in-game shell `src/games/runtime/GamePage.tsx` is **not used by
+either shipped game** — both own their page. It still renders
 `MobileFooter activePage="home"` on its info/loading screens and hides it during
-the live stage (`!showStage`); it has not been migrated to a leaf page yet.
+the live stage (`!showStage`); it has not been migrated to a leaf page yet, so a
+game adopting it today would get the wrong chrome. See the Layer 2 warning below.
 
 ## Navigation entry point
 
@@ -43,18 +92,25 @@ tapped — footer-tab nav does not animate).
 ## Design decisions
 
 ### 1. Hub is a vertical, width-spanning menu
-Each game appears as a single full-width row in `games-page__menu`. This makes
-the hub feel like a clean directory rather than a tiled launcher and keeps
-parity with the long-form scroll surfaces elsewhere in the mobile demo (decks,
-discover). Rows will be tall enough to hold an icon, a title, and a short
-subtitle/blurb — exact row anatomy will be decided when the first game is
-designed.
+Each game appears as a full-width row rendered by the shared `HubMenu` /
+`HubMenuRow` components (also used by the Home and Discover hubs — see
+[HUB_MENU_SYSTEM.md](./HUB_MENU_SYSTEM.md)). This makes the hub feel like a clean
+directory rather than a tiled launcher and keeps parity with the long-form scroll
+surfaces elsewhere in the mobile demo (decks, discover).
+
+Two games fan out into horizontally-scrolling sub-card strips instead of a single
+row, both special-cased in `GamesPage.tsx` rather than generalized onto `GameDef`:
+Bubble Match uses a generic `HubMenuArrayItem` (one sub-card per difficulty level,
+since the in-game level picker was removed), and Word Search owns its whole strip
+via `WordSearchHubItem` (Pinyin / No Pinyin + a resume card, which needs
+confirm-before-clobber click handling).
 
 ### 2. Empty state instead of placeholder cards
-While there are no games, the hub renders a centered empty state ("No games
-yet" + subtitle) instead of mocked rows. Rationale: placeholder rows tend to
-get shipped by accident, and a real empty state forces a clear "first game"
-design moment.
+When the registry yields no visible rows — every game gated out by `requiresAuth`
+or `unlock`, e.g. on a public/demo account — the hub renders a centered empty
+state ("No games yet" + subtitle) instead of mocked rows. Originally this covered
+the pre-first-game period; it now survives as the gated-out fallback. Rationale:
+placeholder rows tend to get shipped by accident.
 
 ### 3. Left back arrow on the hub (node page)
 The hub is a **node page** (`NodePage`), so it shows a **left** back arrow
@@ -69,14 +125,14 @@ rather than a separate visual system. Design tokens are duplicated locally
 for now; if a third page needs them we should hoist a shared
 `MobileSurface` primitive.
 
-## Open questions (to resolve when adding the first game)
+## Resolved decisions (were open questions before the first game shipped)
 
-- Row anatomy: icon size, title/subtitle hierarchy, trailing chevron vs. none.
-- Locking / progression: can any game be played at any time, or are some
-  gated behind deck progress / vocab counts?
-- Score / streak surfacing: do games contribute to the existing
-  minute-points / streak system, or do they have their own progression?
-- Sort order of the menu: manual curation, recency, or recommended-first?
+| Question | Resolution |
+| --- | --- |
+| Row anatomy | Owned by the shared `HubMenu` / `HubMenuRow`, not by this page. See [HUB_MENU_SYSTEM.md](./HUB_MENU_SYSTEM.md). |
+| Locking / progression | Two gates on `GameDef`, both evaluated at hub render time: `requiresAuth` (hides the game from public/demo accounts) and `unlock.minVocabEntries`. A game may *additionally* block at entry when the vocab pool comes back short — `game-pool`'s `sufficient` flag drives Bubble Match's blocked screen. No game is gated behind another game. |
+| Score / streak surfacing | Games feed the **existing** systems, not a parallel one. Both game routes are in `MINUTE_POINTS_ELIGIBLE_PAGES` (`src/constants.ts:13-20`) and are in the start-on-entry subset (a player reads the board before their first tap), so play time accrues minute points and streak exactly as flp does. Matches emit real review marks via `POST /api/flashcards/mark` — so playing a game moves mastery. Wins are counted separately via `POST /api/users/me/wins` and read back by `useGameWins` for the hub's `HubMenuStatBadge`. |
+| Sort order of the menu | Manual curation — `GAME_REGISTRY` array order, top to bottom. Not recency or recommendation-ranked. |
 
 ## Mobile demo frame (shared sizing)
 
@@ -93,9 +149,12 @@ page). Just register the route in `MOBILE_DEMO_PATHS` and render the page's
 content directly — header + content area + `MobileFooter`. The frame is
 applied for you.
 
-Today's `MOBILE_DEMO_PATHS`: `/`, `/flashcards/decks`, `/flashcards/mastered`,
-`/account`, `/flashcards/learn`, `/discover`, `/games`, plus any path under
-`/discover/sort/` or `/flashcards/card/`.
+Today's `MOBILE_DEMO_PATHS` (`src/components/Layout.tsx:56-82`): `/`,
+`/flashcards/decks`, `/flashcards/mastered`, `/account`, `/flashcards/learn`,
+`/discover`, `/games`, `/community`, `/night-market`, `/reader`, `/dictionary`,
+`/compare`, `/tester-dashboard`, `/settings`, `...GAME_ROUTES`, plus any path
+under `/discover/sort/`, `/discover/quick-mark/`, `/discover/skipped/`,
+`/flashcards/card/`, `/dictionary/card/`, or `/reader/`.
 
 ## Mobile demo header (shared header hierarchy)
 
@@ -140,6 +199,10 @@ frontend layers and a thin backend.
 export const GAME_REGISTRY: GameDef[] = [
   { gameId: "bubble-match", title: "Bubble Match", route: "/games/bubble-match",
     requiresAuth: true, Component: lazy(() => import("./bubble-match/BubbleMatchPage")) },
+  { gameId: "word-search", title: "Word Search", route: "/games/word-search",
+    requiresAuth: true, Component: lazy(() => import("./word-search/WordSearchPage")) },
+  { gameId: "match-speed", title: "Match Speed", route: "/games/match-speed",
+    Component: lazy(() => import("./match-speed/MatchSpeedPage")) },
 ];
 ```
 
@@ -149,7 +212,7 @@ Each `GameDef` (`src/games/types.ts`) carries `gameId`, `title`, `subtitle`,
 
 The registry is consumed by:
 
-- `src/pages/GamesPage.tsx` — renders one menu row per registered game; falls
+- `src/games/GamesPage.tsx` — renders one menu row per registered game; falls
   back to the existing empty state when nothing is registered (or everything
   is gated out).
 - `src/App.tsx` — iterates `GAME_REGISTRY` to mount one route per game, each
@@ -162,7 +225,18 @@ component. No edits to `GamesPage`, `App`, or `Layout`.
 
 ### Layer 2 — Runtime (`src/games/runtime/`)
 
-- **`GameStage.tsx`** — generic Pixi.js host. Props:
+> ⚠️ **`GameStage.tsx`, `GamePage.tsx`, and `useGameActors.ts` are unused
+> scaffolding.** They were built ahead of the first game and **no shipped game
+> imports them** — both Bubble Match and Word Search are DOM + rAF and own their
+> own page shell. They are documented here because they still exist and still
+> compile, but treat them as unproven: `GamePage` renders the wrong chrome for a
+> leaf page (see Routes above), and neither the Pixi host nor the actor handle has
+> ever run in production. Prefer copying a shipped game's structure. The only
+> runtime file that IS live is **`GameEndPopup.tsx`** (used by Word Search
+> directly and by Bubble Match through `BubbleMatchEndPopup`), which is why the
+> folder survives.
+
+- **`GameStage.tsx`** *(unused)* — generic Pixi.js host. Props:
 
   ```ts
   interface GameStageProps {
@@ -178,27 +252,41 @@ component. No edits to `GamesPage`, `App`, or `Layout`.
   backend's `imagePath` (`/games/<gameId>/...`) via `API_BASE_URL`. Games own
   the scene tree by rendering pixi JSX through `children`.
 
-- **`GamePage.tsx`** — page-level shell. Renders `<MobileDemoHeader>` (with
-  back-nav to `/games`) + a flex `ContentArea` + `<MobileFooter
-  activePage="home">`. Most games render `<GamePage game={gameDef}>{stage}</GamePage>`.
+- **`GamePage.tsx`** *(unused)* — page-level shell. Renders `<MobileDemoHeader>`
+  (with back-nav to `/games`) + a flex `ContentArea` + `<MobileFooter
+  activePage="home">`. The intent was `<GamePage game={gameDef}>{stage}</GamePage>`;
+  no game does this.
 
-- **`useGameActors.ts`** — generalized version of the night market's
+- **`useGameActors.ts`** *(unused)* — generalized version of the night market's
   `usePixiPedestrians` handle. Generic over the game's actor type; returns
-  `{ tick, getDrawables, getActors, setActors, setSpeedMultiplier }`. Games
-  can ignore this and roll their own simulation if they prefer.
+  `{ tick, getDrawables, getActors, setActors, setSpeedMultiplier }`.
+
+- **`GameEndPopup.tsx`** *(live)* — the shared end-of-run popup **shell**:
+  presentational layer owning the scrim, the card chrome (× button), the corner
+  puck, and the FLIP-style collapse animation between them. The **page** owns the
+  `minimized` flag and the card's content (title / message / actions), passed as
+  `children`; `classPrefix` keeps each game's BEM classes distinct. Word Search
+  renders it directly; Bubble Match wraps it in `BubbleMatchEndPopup` to pin
+  `classPrefix="bubble-match"`.
 
 ### Layer 3 — Data hooks (`src/games/hooks/`)
 
-All reuse `src/api/http.ts` (the typed cookie-auth `fetch` wrapper — `apiGet` /
+Reuse `src/api/http.ts` (the typed cookie-auth `fetch` wrapper — `apiGet` /
 `apiPost`). It inherits transparent token-refresh from the global fetch
 interceptor (`src/utils/fetchInterceptor.ts`).
 
 | Hook | Endpoint | Notes |
 | --- | --- | --- |
-| `useVocabEntries({ category?, language? })` | `GET /api/vocabentries` | User's saved vocab (vet). Same data FlashcardsLearnPage uses. |
-| `useDictionaryEntries({ terms })` | `GET /api/dictionary/lookup/:term` (×N in parallel) | Detail lookup against det. Missing terms swallowed individually. |
-| `useGameAssets(gameId)` | `GET /api/games/:gameId/assets` | Drives `GameStage` texture preload. |
-| `useGameProgress<TState>(gameId)` | `GET` / `POST /api/games/:gameId/progress` | No-ops for public / unauthenticated accounts. |
+| `useGameAssets(gameId)` | `GET /api/games/:gameId/assets` | Was built to drive `GameStage` texture preload; unused while `GameStage` is. |
+| `useGameProgress<TState>(gameId)` | `GET` / `POST /api/games/:gameId/progress` | No-ops for public / unauthenticated accounts. Unused — Word Search persists its board to `localStorage` (`gameStateStorage.ts`) instead. |
+
+> **There is no generic vocab hook here, and that is deliberate.** Two hooks used
+> to live in this folder — `useVocabEntries` (`GET /api/vocabentries`) and
+> `useDictionaryEntries` (`GET /api/dictionary/lookup/:term`) — both exposing a
+> flat `definition?: string | null` with no sense fields. Neither was ever used by
+> a shipped game, and both were **deleted (2026-07-28)** because writing a new game
+> against them would have silently produced sense-blind definitions. Game vocab
+> comes from the OnDeck endpoints instead; see the rule below.
 
 ### Layer 4 — Backend (`server/`)
 
@@ -216,8 +304,8 @@ Follows the existing DAL + Service + Controller pattern:
   `server/dal/implementations/GameProgressDAL.ts`
 - `server/services/GameAssetService.ts`, `server/services/GameProgressService.ts`
 - `server/controllers/GamesController.ts`
-- Wired in `server/dal/setup.ts`; routes registered inline in
-  `server/server.ts`:
+- Wired in `server/dal/setup.ts`; routes registered in
+  `server/routes/gamesRoutes.ts` (split out of `server.ts`; paths unchanged):
   - `GET  /api/games/:gameId/assets`
   - `GET  /api/games/:gameId/progress`
   - `POST /api/games/:gameId/progress`
@@ -226,40 +314,93 @@ Follows the existing DAL + Service + Controller pattern:
 `server/public/games/<gameId>/` and upserts one `gameassets` row per file —
 safe to re-run.
 
+### Sense correctness — every game must honor the learner's selected sense
+
+A word in the learner's library has a **chosen sense**: `vet.selectedSense`
+(migration 99) stores a `definitionClusters` **label**, and the flashcard face
+shows that cluster's gloss, not `definitions[0]`. A game showing a different
+English gloss than the flashcard the player learned it from is a bug — the player
+reads it as the game not knowing their word. See
+[DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md) and
+[DEFINITION_MAPPING.md](./DEFINITION_MAPPING.md) form #3 (dd).
+
+**The rule:** never render `entry.definition` / `definitions->>0` raw for a card
+the player owns. Resolve through one of the two twin resolvers:
+
+| Where the clusters live | Resolver | File |
+| --- | --- | --- |
+| Payload carries `definitionClusters` + `selectedSense` → resolve on the **client** | `resolveDisplayDefinition(entry)` | `src/utils/definitionUtils.ts` |
+| Payload flattens dd and drops the clusters → resolve on the **server**, before serializing | `resolveDisplayDefinition(entry)` | `server/utils/definitions.ts` |
+
+Both apply the identical rule: keep clusters with a non-empty `ddt`, bail to the
+flat `definition` when fewer than 2 remain (no real choice), sort by
+`frequencyScore` desc, match `selectedSense` by label, else index 0. They are
+**hand-maintained twins** (separate builds, no shared module, no test asserting
+they agree) — change one, change the other.
+
+How the two shipped games satisfy this:
+
+- **Bubble Match** resolves on the client. `game-pool` selects `ve.*, ${DICT_COLS}`
+  (`OnDeckVocabService.fetchGameCandidates`), so `selectedSense` (from `ve.*`) and
+  `definitionClusters` (`server/dal/shared/dictJoin.ts`) both reach the browser;
+  `Bubble.tsx` calls `resolveDisplayDefinition(entry)` for the text and
+  `BubbleStage.tsx` calls it again for bubble sizing — deliberately the same
+  resolver, so a bubble is always sized for the string it actually shows.
+- **Word Search** resolves on the server, because the grid payload intentionally
+  does not carry clusters: `OnDeckVocabService.getWordSearchGrid` sets
+  `definition: resolveDisplayDefinition(w)` when building `WordSearchInput`.
+
+Two deliberate exceptions, both correct:
+
+- **Word Search single-character tap popups** are *context*-resolved, which is
+  stronger than sense-resolved: the gloss is `resolveSenseGloss(charClusters, sense)`
+  keyed by the parent word's stored `breakdown[char].sense`, so tapping 明 in 明白
+  shows its meaning **in that word**, not its generic standalone gloss.
+- **Word Search bonus words** (a real det headword the player traced that isn't a
+  target) use raw `definitions->>0`. There is no `vet` row for them — they aren't
+  the player's cards — so they follow the standard det-fallback rule (index 0),
+  the same as discover cards and the read-only dictionary cdp.
+
 ### Adding a new game — checklist
 
-1. Drop image files into `server/public/games/<gameId>/`.
-2. Run `node server/scripts/seedGameAssets.js <gameId>`.
-3. Create `src/games/<gameId>/<GameId>Page.tsx`:
+Reflects what the two shipped games actually do. The Pixi path
+(`seedGameAssets` → `useGameAssets` → `GameStage` → `GamePage`) is still wired
+end to end, but is unproven — see the Layer 2 warning. Unless the game genuinely
+needs a WebGL scene graph, copy Bubble Match or Word Search instead.
 
-   ```tsx
-   const MyGamePage: React.FC = () => {
-     const game = GAME_REGISTRY.find(g => g.gameId === "<gameId>")!;
-     const { assets } = useGameAssets(game.gameId);
-     return (
-       <GamePage game={game}>
-         <GameStage assets={assets} onTick={...}>
-           {/* pixi JSX */}
-         </GameStage>
-       </GamePage>
-     );
-   };
-   export default MyGamePage;
-   ```
-
-4. Append the `GameDef` to `GAME_REGISTRY` in `src/games/registry.ts`:
+1. Create `src/games/<gameId>/<GameId>Page.tsx`. Wrap it in `LeafPage`
+   (down arrow → `/games`, no footer) — both shipped games are leaf pages; use
+   `NodePage` only if the game should keep the footer. **Do not** add a per-page
+   `IPhoneFrame` — the frame comes from `MobileDemoFrame` via `Layout.tsx`.
+2. Fetch vocab from the OnDeck stack, not from a generic vocab endpoint:
+   `GET /api/onDeck/gamePool?<Category>=<n>...` returns library cards bucketed by
+   the mark type the game emits. Pass that mark type; see the backend notes under
+   [§ Game: Bubble Match](#backend). Block entry on `sufficient === false`.
+3. **Render definitions through `resolveDisplayDefinition`** — see
+   [§ Sense correctness](#sense-correctness--every-game-must-honor-the-learners-selected-sense).
+   This is the single easiest thing to get wrong in a new game.
+4. Emit review marks with `POST /api/flashcards/mark` (`type` = the one track the
+   game trains: `recognition` / `production` / `reading` / `writing`), and wins
+   with `POST /api/users/me/wins` if the hub should show a win badge.
+5. Add the route to `MINUTE_POINTS_ELIGIBLE_PAGES` (and the start-on-entry subset)
+   in `src/constants.ts` so play time accrues points and streak.
+6. Reuse `GameEndPopup` for the won/lost card so the minimize-to-puck behavior
+   matches the other games.
+7. Append the `GameDef` to `GAME_REGISTRY` in `src/games/registry.ts`:
 
    ```ts
    {
      gameId: "<gameId>",
      title: "...",
      route: "/games/<gameId>",
+     requiresAuth: true,
      Component: React.lazy(() => import("./<gameId>/<GameId>Page")),
    }
    ```
 
-No other edits needed — the hub, router, and mobile-demo frame all wire
-themselves automatically from the registry.
+Steps 1–6 are the game. Step 7 is all the wiring: the hub, router, and
+mobile-demo frame configure themselves from the registry, so `GamesPage`, `App`,
+and `Layout` need no edits.
 
 ## Files
 
@@ -268,19 +409,22 @@ themselves automatically from the registry.
 - `src/components/MobileDemoHeader.tsx` — shared header (back / title / active badge / extraActions); no hamburger
 - `src/components/PageHeader.tsx` — base header (renamed `rightItems` → `rightContent`)
 - `src/components/Layout.tsx` — wires `MobileDemoFrame` into demo routes; spreads `GAME_ROUTES` into `MOBILE_DEMO_PATHS`
-- `src/pages/GamesPage.tsx` — hub page; renders `GAME_REGISTRY`
+- `src/games/GamesPage.tsx` — hub page; renders `GAME_REGISTRY`
 - `src/App.tsx` — `/games` route + per-game routes from registry
 - `src/games/registry.ts` — central `GAME_REGISTRY` + `GAME_ROUTES`
 - `src/games/types.ts` — `GameDef`, `GameAsset`, `GameProgress`
-- `src/games/runtime/GameStage.tsx` — generic Pixi host
-- `src/games/runtime/GamePage.tsx` — page shell every game uses
-- `src/games/runtime/useGameActors.ts` — generic actor handle (tick + drawables)
-- `src/games/hooks/useVocabEntries.ts`, `useDictionaryEntries.ts`, `useGameAssets.ts`, `useGameProgress.ts`
+- `src/games/runtime/GameEndPopup.tsx` — shared end-of-run popup shell (**live**; both games)
+- `src/games/runtime/GameStage.tsx` — generic Pixi host (**unused**)
+- `src/games/runtime/GamePage.tsx` — generic page shell (**unused**; no game adopts it)
+- `src/games/runtime/useGameActors.ts` — generic actor handle, tick + drawables (**unused**)
+- `src/games/hooks/useGameAssets.ts`, `useGameProgress.ts` (**unused**; `useVocabEntries.ts` + `useDictionaryEntries.ts` deleted 2026-07-28 as sense-blind — see Layer 3)
+- `src/utils/definitionUtils.ts` / `server/utils/definitions.ts` — the dd resolvers every game's definition text must go through
 - `server/dal/implementations/GameAssetDAL.ts`, `GameProgressDAL.ts`
 - `server/services/GameAssetService.ts`, `GameProgressService.ts`
 - `server/controllers/GamesController.ts`
 - `server/dal/setup.ts` — DI wiring
-- `server/server.ts` — route registration
+- `server/routes/gamesRoutes.ts` — route registration (games + night market + community + leaderboard)
+- `server/routes/onDeckRoutes.ts` — `game-pool` / `word-search-grid` route registration
 - `server/scripts/seedGameAssets.js` — asset seed helper
 - `database/migrations/52-create-game-tables.sql` — `gameassets` + `gameprogress`
 
@@ -291,7 +435,7 @@ hidden as snaking (orthogonal) paths in a 12×16 grid of colored-pinyin (cpcd)
 characters. Drag or tap to trace; any valid multi-char selection pops a
 dictionary info-card + audio. Count-up timer → medal on completion. Reuses
 Bubble Match's pool + fallback distribution, adds a substring de-dup pass and a
-server-side snaking grid generator (`GET /api/onDeck/word-search-grid`). Full
+server-side snaking grid generator (`GET /api/onDeck/wordSearchGrid`). Full
 spec + file map: → [WORD_SEARCH_GAME.md](./WORD_SEARCH_GAME.md).
 
 ## Game: Bubble Match (`/games/bubble-match`)
@@ -299,14 +443,17 @@ spec + file map: → [WORD_SEARCH_GAME.md](./WORD_SEARCH_GAME.md).
 The first shipped game. **Does not use the Pixi `GameStage`/`useGameActors`
 runtime** — it is a DOM + `requestAnimationFrame` game (absolutely-positioned
 bubbles moved via `transform`), chosen for direct reuse of the colored-pinyin
-`CPCDRow` (cpcd) and cheap circle-circle physics at ~50 bubbles. It still renders
-through the standard page shell (its own flp-style header + `MobileFooter
-activePage="home"`), not `GamePage`.
+`CPCDRow` (cpcd) and cheap circle-circle physics at ~50 bubbles. It owns its page
+shell (`LeafPage` + its own flp-style header, **no footer** — see Routes above),
+not `GamePage`.
 
 ### Gameplay
 
-- A game uses the **full pool**: 15 Target + 10 Comfortable library cards =
-  **25 pairs → 50 bubbles**. Each pair = one **word** bubble (cpcd) and one
+- A game uses the **full pool**: the `GAME_DISTRIBUTION` mix (`constants.ts:23-28`)
+  of 2 Unfamiliar + 10 Target + 6 Comfortable + 2 Mastered library cards =
+  **20 pairs (`TOTAL_PAIRS`) → 40 bubbles**. That mix is *preferred*, not strict —
+  the server tops the pool up to 20 from the fallback buckets when one can't fill
+  its quota. Each pair = one **word** bubble (cpcd) and one
   **definition** bubble (the flashcard's dd, via `resolveDisplayDefinition` — so a bubble
   shows the learner's chosen sense, matching the card face; see
   [DEFINITION_MAPPING.md](./DEFINITION_MAPPING.md) form #3).
@@ -359,8 +506,12 @@ activePage="home"`), not `GamePage`.
   **Consequence:** leaving to the Games hub and re-entering always draws a wholly
   new random pool (the page remounts and refetches); staying in the popup is what
   preserves the unmatched words.
-- **Levels do not chain** — a level picker selects difficulty (launch cadence +
-  ceiling-shrink speed); all use the full pool. **There is no clock.** Once the
+- **Levels do not chain** — the level is picked **on the Games hub** (one
+  `HubMenuArrayItem` sub-card per `LEVEL_CONFIGS` entry) and arrives via
+  `location.state.level`; there is no in-game picker any more, and a direct visit
+  with no valid level redirects back to the hub rather than defaulting. The level
+  sets difficulty only (launch cadence + ceiling-shrink speed); all levels use the
+  full pool. **There is no clock** — `LevelConfig` carries no duration. Once the
   whole pool has launched, on the next launch-tick a **descending ceiling**
   (`boundsRef.top`, rising at the level's `shrinkSpeedPxPerSec`) starts closing
   in from the top, compressing the field. Win = clear all pairs. Lose = the field
@@ -369,12 +520,14 @@ activePage="home"`), not `GamePage`.
   in `constants.ts` (`LEVEL_CONFIGS`, `GAME_DISTRIBUTION`, `MIN_PLAY_HEIGHT`,
   sizes, physics).
 - Minute-points: `/games/bubble-match` is in `MINUTE_POINTS_ELIGIBLE_PAGES`
-  (`src/constants.ts`); the header's `MinutePointsFireBadge` works as on flp.
+  (`src/constants.ts:13-20`, alongside `/games/word-search`) and in the
+  start-on-entry subset, so time accrues from mount rather than from the first
+  tap; the header's `MinutePointsFireBadge` works as on flp.
 
 ### Files
 
-- `src/games/bubble-match/` — `BubbleMatchPage.tsx` (flow: loading → blocked |
-  picker → playing → won | lost), `BubbleStage.tsx` (restartable rAF loop, launcher,
+- `src/games/bubble-match/` — `BubbleMatchPage.tsx` (flow: loading → (blocked) →
+  playing → (won | lost) → playing (replay)), `BubbleStage.tsx` (restartable rAF loop, launcher,
   descending ceiling, drag/hover/match, post-loss cleanup mode, HUD, red glow),
   `Bubble.tsx` (one bubble; outer
   node carries the loop's transform, inner node carries CSS pop/shake),
@@ -385,9 +538,10 @@ activePage="home"`), not `GamePage`.
 
 ### Backend
 
-Reuses the OnDeck vocab stack (no new tables). New endpoints in `server.ts`:
+Reuses the OnDeck vocab stack (no new tables). Endpoints registered in
+`server/routes/onDeckRoutes.ts`:
 
-- `GET /api/onDeck/game-pool?Target=15&Comfortable=10` →
+- `GET /api/onDeck/gamePool?Target=15&Comfortable=10` →
   `{ cards, requested, available, total, needed, sufficient }`. `OnDeckVocabService.getGameVocabPool`
   pulls library cards per category (same RANDOM ordering + `definition` source as
   the working loop), enriches + pre-warms TTS, and reports availability so the
@@ -399,6 +553,14 @@ Reuses the OnDeck vocab stack (no new tables). New endpoints in `server.ts`:
   and decks page use — so each game's difficulty distribution reflects the skill it
   actually trains. That same per-type category also selects the card's cooldown
   window. See [MASTERY_REWORK.md § "Games select by their own mark type"](./MASTERY_REWORK.md).
+  **Each returned card carries `gameCategory`** — the bucket it was actually drawn
+  from (`fetchGameCandidates` stamps it as it partitions rows). It is NOT the same
+  field as the card's `category`, which is the goal-blended overall utcm level; both
+  ride on the entry and mean different things, hence the explicit name. The stamp
+  reports the queue *drained*, so it stays truthful when a short bucket is topped up
+  from the fallback order. Match Speed sorts its per-category client-side card
+  buffer by it (see [MATCH_SPEED_GAME.md](./MATCH_SPEED_GAME.md) § Backend change);
+  Bubble Match and Word Search ignore it, so the field is purely additive.
   **Partial refill** (`&need=N&exclude=12,34&avoid=56,78`, added for Bubble Match's
   single "Play Again"): returns only `N` cards. The per-bucket quotas are scaled by
   `need / total` so a partial board keeps the same difficulty mix as a full one
@@ -423,5 +585,5 @@ Reuses the OnDeck vocab stack (no new tables). New endpoints in `server.ts`:
   Unfamiliar card parked in the Unfamiliar cooled queue is still drawn ahead of
   every Mastered cooled card — which is exactly how the first cut of this feature
   handed back the cards the player had just cleared.
-- `GET /api/onDeck/category-counts` → `{ Unfamiliar, Target, Comfortable, Mastered }`,
+- `GET /api/onDeck/categoryCounts` → `{ Unfamiliar, Target, Comfortable, Mastered }`,
   also surfaced under each bucket label on the decks page.

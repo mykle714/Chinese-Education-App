@@ -16,7 +16,7 @@ import EditIcon from "@mui/icons-material/Edit";
 import PracticeWritingPopup from "./PracticeWritingPopup";
 import { useAuth } from "../../AuthContext";
 import { fetchCompletedLevels } from "./completions";
-import { API_BASE_URL } from "../../constants";
+import { markFlashcard } from "../../api/flashcards";
 
 interface PracticeWritingButtonProps {
   character: string;
@@ -88,18 +88,14 @@ export default function PracticeWritingButton({
   // word was written correctly). Fire-and-forget, only when we know the vet card.
   // See docs/MASTERY_REWORK.md.
   const handleWritingMark = useCallback((isCorrect: boolean) => {
-    if (vocabEntryId == null || !token || token === "null" || token === "undefined") return;
-    fetch(`${API_BASE_URL}/api/flashcards/mark`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      credentials: "include",
-      // excludeIds empty: the drill doesn't use the endpoint's replacement card.
-      body: JSON.stringify({ cardId: vocabEntryId, isCorrect, type: "writing", excludeIds: [] }),
-    }).catch((err) => console.error(`[PracticeWriting] writing mark failed → card ${vocabEntryId}:`, err));
-  }, [vocabEntryId, token]);
+    // Gated on isAuthenticated rather than on the token string: the mark is only
+    // meaningful for a signed-in user, and `isAuthenticated` is the stable identity
+    // (the raw token rotates every ~15 min). markFlashcard supplies the header.
+    if (vocabEntryId == null || !isAuthenticated) return;
+    // excludeIds defaults to []: the drill doesn't use the endpoint's replacement card.
+    markFlashcard({ cardId: vocabEntryId, isCorrect, type: "writing" })
+      .catch((err) => console.error(`[PracticeWriting] writing mark failed → card ${vocabEntryId}:`, err));
+  }, [vocabEntryId, isAuthenticated]);
 
   if (!eligible) return null;
 

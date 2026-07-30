@@ -9,6 +9,12 @@ The application consists of three main services:
 - **Backend**: Express + TypeScript API server
 - **Database**: PostgreSQL with initialization scripts
 
+## Related documents
+
+- [DEV_MACHINE_SETUP.md](./DEV_MACHINE_SETUP.md) — standing up a SECOND local dev
+  machine with full parity (secrets, seed data, machine identity). This guide covers
+  day-to-day container operation; that one covers first-time provisioning.
+
 ## Prerequisites
 
 - Docker Engine 20.10+

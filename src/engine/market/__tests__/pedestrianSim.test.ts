@@ -10,7 +10,7 @@ import {
   type PedestrianTickContext,
 } from '../pedestrianAgent';
 import type { PlacedTemplate } from '../templateStitch';
-import type { TemplateDefinitionPayload } from '../../../features/nightmarket/templateEditorApi';
+import type { TemplateDefinitionPayload } from '../templateDefinition';
 
 /**
  * Headless smoke test for the slice-2 pedestrian wiring: assemble a MarketWorld from a small

@@ -9,8 +9,9 @@ import { useTTS } from "../../hooks/useTTS";
 import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
 import { useBlockEdgeSwipe } from "../../hooks/useBlockEdgeSwipe";
 import { useGameWins } from "../../hooks/useGameWins";
+import { markFlashcard } from "../../api/flashcards";
 import { authHeader } from "../../utils/authHeader";
-import type { VocabEntry } from "../../types";
+import type { Language, VocabEntry } from "../../types";
 import LeafPage from "../../components/LeafPage";
 import BubbleMatchHeaderControls from "./BubbleMatchHeader";
 import BubbleMatchEndPopup from "./BubbleMatchEndPopup";
@@ -19,7 +20,7 @@ import { GAME_DISTRIBUTION, GAME_KEY, LEVEL_CONFIGS, MAX_AVOID_IDS, MIN_REPLAY_P
 import type { LevelConfig } from "./types";
 import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
 
-/** Shape returned by GET /api/onDeck/game-pool. */
+/** Shape returned by GET /api/onDeck/gamePool. */
 interface GamePoolResponse {
     cards: VocabEntry[];
     requested: Record<string, number>;
@@ -47,9 +48,14 @@ function shuffle<T>(arr: T[]): T[] {
     return a;
 }
 
-/** Build the `?Unfamiliar=2&Target=10&...` query from the launch distribution. */
-const poolQuery = Object.entries(GAME_DISTRIBUTION)
-    .map(([cat, n]) => `${encodeURIComponent(cat)}=${n}`)
+/** Build the `?markType=recognition&Unfamiliar=2&Target=10&...` query from the
+    launch distribution. Bubble Match is a recognition drill (foreign → meaning),
+    so its pool must be bucketed and cooled by the RECOGNITION track. The endpoint
+    used to hardcode that; it is now parameterized (Speed Reading pools on `reading`),
+    and every caller states its own type rather than relying on the default.
+    See docs/MASTERY_REWORK.md § "Games select by their own mark type". */
+const poolQuery = ["markType=recognition"]
+    .concat(Object.entries(GAME_DISTRIBUTION).map(([cat, n]) => `${encodeURIComponent(cat)}=${n}`))
     .join("&");
 
 /**
@@ -60,7 +66,8 @@ const poolQuery = Object.entries(GAME_DISTRIBUTION)
  * LEVEL_CONFIGS entry — see GamesPage.tsx) and passed in via `location.state.
  * level`; this page no longer has its own in-game level picker. A run locks
  * in a single set of TOTAL_PAIRS cards (20 pairs = 40 bubbles); the chosen
- * level only sets the launch cadence + clock. Clearing the level wins the run
+ * level only sets the launch cadence + ceiling-shrink speed (there is no clock —
+ * see LEVEL_CONFIGS in constants.ts). Clearing the level wins the run
  * (and banks its weekly badge plus every easier level's), and the field
  * over-packing loses it.
  *
@@ -74,7 +81,7 @@ const BubbleMatchPage: React.FC = () => {
     const location = useLocation();
     const theme = useTheme();
     const fc = theme.palette.flashcard;
-    const { token, user } = useAuth();
+    const { user } = useAuth();
     const tts = useTTS();
     const { settings, update } = useFlashcardLearnSettings();
     const { showPinyin, showPinyinColor, autoplayChinese } = settings;
@@ -136,7 +143,7 @@ const BubbleMatchPage: React.FC = () => {
                 ? `${poolQuery}&need=${refill.need}&exclude=${refill.keepIds.join(",")}`
                   + `&avoid=${refill.avoidIds.join(",")}`
                 : poolQuery;
-            const res = await fetch(`${API_BASE_URL}/api/onDeck/game-pool?${query}`, {
+            const res = await fetch(`${API_BASE_URL}/api/onDeck/gamePool?${query}`, {
                 credentials: "include",
                 headers: authHeader(),
             });
@@ -276,28 +283,15 @@ const BubbleMatchPage: React.FC = () => {
             matchedIdsRef.current.add(entry.id);
             clearedThisSessionRef.current.add(entry.id);
         }
-        const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-        const headers: HeadersInit = {
-            "Content-Type": "application/json",
-            "x-user-timezone": userTimeZone,
-        };
-        if (token && token !== "null" && token !== "undefined") {
-            headers["Authorization"] = `Bearer ${token}`;
-        }
-        console.log(`[BubbleMatch] mark → card ${entry.id} (${entry.entryKey}) as ${isCorrect ? "correct" : "incorrect"}`);
-        fetch(`${API_BASE_URL}/api/flashcards/mark`, {
-            method: "POST",
-            headers,
-            credentials: "include",
-            // Bubble Match is a recognition drill (foreign → meaning); see
-            // docs/MASTERY_REWORK.md.
-            // excludeIds empty: the game doesn't use the replacement card the
-            // endpoint returns, so there's nothing to dedupe against.
-            body: JSON.stringify({ cardId: entry.id, isCorrect, type: "recognition", excludeIds: [] }),
-        })
-            .then((res) => console.log(`[BubbleMatch] mark response → card ${entry.id}: HTTP ${res.status}`))
+        // Bubble Match is a recognition drill (foreign → meaning); see
+        // docs/MASTERY_REWORK.md.
+        // excludeIds defaults to []: the game doesn't use the replacement card the
+        // endpoint returns, so there's nothing to dedupe against.
+        markFlashcard({ cardId: entry.id, isCorrect, type: "recognition" })
             .catch((err) => console.error(`[BubbleMatch] mark failed → card ${entry.id}:`, err));
-    }, [token]);
+        // No `token` dep — markFlashcard reads the header at call time, so this
+        // callback's identity is stable across a silent refresh (CLAUDE.md ⛔ rule).
+    }, []);
 
     // Clearing the chosen level wins the run and logs the win (via useGameWins'
     // recordWin, shared with the Games hub's level badges). Levels don't chain
@@ -433,6 +427,9 @@ const BubbleMatchPage: React.FC = () => {
             onBack={() => navigate("/games")}
             rightContent={
                 <BubbleMatchHeaderControls
+                    // Gates the pinyin toggle out for Latin-script languages, where
+                    // ForeignText ignores it entirely.
+                    language={(user?.selectedLanguage ?? "zh") as Language}
                     showPinyin={showPinyin}
                     onTogglePinyin={() => update({ showPinyin: !showPinyin })}
                     autoplayChinese={autoplayChinese}

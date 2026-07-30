@@ -40,9 +40,12 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // run-log: track duration, version, words/mode, and token usage/cost
 const { stampEntries, validatedClause, staleClause } = initRunLog({ script: 'chinese/backfill-parts-of-speech', version: SCRIPT_VERSION, anthropic: anthropic });
-// Never overwrite partsOfSpeech that a validator has approved/flagged as part of
-// the definitions bundle (migration 104, docs/DATA_VALIDATION_SYSTEM.md).
-const validatedFilter = `AND ${validatedClause(['definitions'], 'dictionaryentries_zh')}`;
+// Never overwrite partsOfSpeech that a validator has approved/flagged (migration 104,
+// docs/DATA_VALIDATION_SYSTEM.md). Guards on the DEDICATED 'partsOfSpeech' field since
+// migration 132 split POS out of the definitions bundle — that migration re-filed every
+// pre-existing 'definitions' review as a 'partsOfSpeech' one too, so no protection was
+// lost, and a definitions review no longer freezes the POS tags (or vice versa).
+const validatedFilter = `AND ${validatedClause(['partsOfSpeech'], 'dictionaryentries_zh')}`;
 const isSpotCheck = process.argv.includes('--spot-check');
 const isStale = process.argv.includes('--stale');
 

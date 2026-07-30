@@ -7,7 +7,9 @@
   "scripts": {
     "build": "tsc",
     "start": "tsx server.ts",
-    "dev": "nodemon --ext ts,tsx,js,mjs,json --exec \"tsx server.ts\""
+    "dev": "nodemon --ext ts,tsx,js,mjs,json --exec \"tsx server.ts\"",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.77.0",
@@ -41,10 +43,11 @@
     "@types/cors": "^2.8.13",
     "@types/express": "^4.17.17",
     "@types/jsonwebtoken": "^9.0.10",
-    "@types/node": "^18.15.11",
+    "@types/node": "^20.19.43",
     "nodemon": "^2.0.22",
     "ts-node": "^10.9.2",
     "tsx": "^4.20.3",
-    "typescript": "^5.0.4"
+    "typescript": "^5.0.4",
+    "vitest": "^4.1.10"
   }
 }

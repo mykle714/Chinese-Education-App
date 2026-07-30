@@ -164,6 +164,50 @@ Each card is dragged into one of **two** destinations:
 **Skip is no longer a destination** — it is a de-emphasized action (§5.1), deliberately
 removed from the drag targets so the user reaches for a real destination first.
 
+Note that **both** destinations persist identically as `starterPackBucket = 'library'`
+(`StarterPacksService.sortCard`, `server/services/StarterPacksService.ts:556-612`).
+What separates them is that Already Learned *additionally* writes a perfect 8/8 typed
+mark history across all four tracks, which resolves the row's utcm category to
+**Mastered**. There is no `'already-learned'` value stored anywhere — the two
+destinations are distinguishable only by the resulting utcm category.
+
+### 5.3 Library tally (level bar corners)
+The level bar carries a two-figure running tally of the account's library, one figure in
+each of its corners, so the user can see their collection grow as they sort:
+
+| Figure | Corner | Definition | Color |
+| --- | --- | --- | --- |
+| **Learn Now** | top-left | library cards whose utcm category is Unfamiliar + Target + Comfortable | `COLORS.redMain` (= `CATEGORY_COLORS.Unfamiliar`) |
+| **Mastered** | top-right | library cards whose utcm category is Mastered | `COLORS.blueMain` (= `CATEGORY_COLORS.Mastered`) |
+
+- The figures sit in **opposite corners** rather than as one cluster, so each reads as its
+  own standing total instead of the pair reading as a ratio. Each corner is on the **same
+  side as its own drop bucket** below it (Add to Learn Now is the left bucket, Already
+  Learned the right), so a figure and the bucket that feeds it share a side.
+
+- The two figures are **disjoint** (Learn Now deliberately *excludes* Mastered) so they
+  read as the two drop buckets and sum to the whole library. This differs from the decks
+  page's `totalLibraryCards`, which is the inclusive total.
+- Each figure is tinted with its own bucket's color; those are already the utcm category
+  colors, so the tally, the drop buckets and the decks page share one color language.
+- The baseline is fetched **once** on mount from `GET /api/onDeck/categoryCounts`
+  (`useCategoryCounts`, `src/hooks/useCategoryCounts.ts:19`). Sorts made during the
+  session are layered on as an **optimistic delta** — a drop bumps its figure
+  immediately and Undo (§4.6) gives it back — rather than refetching a whole-library
+  aggregate once per card. A skip moves neither figure (it creates no vet row).
+- The delta is exact because the supply query excludes any word the user already holds a
+  vet row for, so every sortable on-deck card is a brand-new library row rather than a
+  re-categorization of a row already in the baseline.
+- It renders only once the baseline has loaded, so no "0" flashes before the real value.
+- Position: the two ends of the level bar, **not** the page header — that row already
+  holds autoplay / skip / undo / the minute-points badge. Both figures are absolutely
+  positioned so the level chip stays centered regardless of how wide either number
+  grows, and are `pointer-events: none` so they can never intercept a drag.
+- Client implementation: `src/features/discover/SortCardsPage.tsx` — the `SortTallyCorner`
+  (`side="left" | "right"`) / `SortTallyValue` / `SortTallyLabel` styled components,
+  `learnNowCount` / `masteredCount` derivations, and `adjustTally` (called from
+  `handleSortCard` and `handleUndo`).
+
 ### 5.1 Skip is a de-emphasized action, not a drag target
 - Skip is a single **button in the top-right corner** of the sort screen — not a drag
   bucket. The intent is to **de-emphasize** skipping as an option.
@@ -278,17 +322,41 @@ the user **chooses** to bring it back, in one of three ways:
 - A level switch is **exempt** from §6.5's "must not disturb the on-deck card" rule: it
   is an explicit user action, and it is acceptable (expected) for it to replace the
   on-deck pack with one matching the newly-selected level.
-- Client implementation: `src/pages/SortCardsPage.tsx` — `autoLevelRef` (running
+- Client implementation: `src/features/discover/SortCardsPage.tsx` — `autoLevelRef` (running
   target) and `packBucketsRef` (per-pack bucket outcomes this session, from which
   `applyPackSignal` derives the pack's one ±1 signal — there is no streak/threshold
   state), plus the `sort-cards__level-chip` / `sort-cards__level-menu`
   dropdown. Server: `StarterPacksService.getNextPacks`'s `requestedLevel` (the level
   to center supply on — client's tracked target, or its dropdown pin) and `manual`
   (whether to drift on exhaustion) parameters, threaded through
-  `GET /api/starter-packs/:language` (`level`/`mode` query params) and
-  `POST /api/starter-packs/next-pack` (`level`/`mode` body fields) via
+  `GET /api/starterPacks/:language` (`level`/`mode` query params) and
+  `POST /api/starterPacks/nextPack` (`level`/`mode` body fields) via
   `StarterPacksController`. `estimateLevel` is called **only** for the cold-start
   seed (§6.1) — never again mid-session.
+
+---
+
+## 6.6 Client API module — `src/features/discover/starterPacksApi.ts`
+
+All three Discover pages (`SortCardsPage.tsx`, `QuickMarkPage.tsx`,
+`SkippedCardsPage.tsx`) reach the server through this one module. It exports
+`fetchStarterPacks` / `fetchNextPack` / `sortCard` / `skipPack` / `undoSort` /
+`fetchSkippedCards` / `recycleSkips` / `fetchQuickMarkPage` / `saveQuickMarks`.
+
+Two rules it exists to enforce:
+
+1. **One spelling per endpoint.** Each page previously hand-rolled its own
+   `fetch(`${API_BASE_URL}/api/starterPacks/...`)` + `res.ok` ladder, so the same
+   endpoint was written three different ways and a path or payload change had three
+   places to miss.
+2. **No `token` in the signature.** Calls go through the shared transport
+   `src/api/http.ts`, which reads the bearer token fresh at call time. The pages used to
+   keep an `authHeaders = useMemo(..., [token])` whose identity churned every ~15 minutes
+   on a silent token refresh, dragging that churn into every callback dep array that
+   touched it — the failure mode CLAUDE.md's "Never reload/reset a page on a silent token
+   refresh" rule exists to prevent. Load effects key on `isAuthenticated`, never `token`.
+
+API paths are camelCase; they must stay in step with `server/routes/starterPacksRoutes.ts`.
 
 ---
 
@@ -354,7 +422,10 @@ the user **chooses** to bring it back, in one of three ways:
     that level (no drift to adjacent levels, and pack outcomes seen while pinned don't
     feed the auto target) until switched back to Auto; the Auto entry always just reads
     "Auto" — it never displays the target level number.
-17. **Undo/level interaction (known simplification):** undoing a card action does not
+17. **Library tally:** the top-right tally shows the account's Learn Now and Mastered
+    library counts as two disjoint figures; a drop into either bucket increments the
+    matching figure immediately, Undo decrements it, and a skip changes neither.
+18. **Undo/level interaction (known simplification):** undoing a card action does not
     reverse any level-target change that action's completing pack already triggered —
     the target it moved to stays in effect. See `SortCardsPage.tsx`'s
     `applyPackSignal`.

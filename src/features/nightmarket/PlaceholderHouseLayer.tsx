@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { Assets, Texture } from 'pixi.js';
 import { isoToScreen } from '../../engine/market/isometric';
 import { occupantHousesForArea } from '../../engine/market/house';
@@ -56,7 +56,7 @@ function buildDraws(placeholders: PlacedPlaceholder[]): HouseDraw[] {
   return draws;
 }
 
-export default function PlaceholderHouseLayer({ placeholders }: { placeholders: PlacedPlaceholder[] }) {
+function PlaceholderHouseLayer({ placeholders }: { placeholders: PlacedPlaceholder[] }) {
   const draws = useMemo(() => buildDraws(placeholders), [placeholders]);
 
   // Single House.png texture → preload once (nearest scaling to stay crisp under the integer
@@ -96,3 +96,6 @@ export default function PlaceholderHouseLayer({ placeholders }: { placeholders: 
     </>
   );
 }
+
+/** Memoised for the same reason as {@link ./EditorTerrainLayer} — nmp re-renders its scene every frame. */
+export default memo(PlaceholderHouseLayer);

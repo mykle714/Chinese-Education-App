@@ -11,6 +11,7 @@ import {
   type EditorMasks, type DecorCategory,
 } from '../../engine/market/farmTerrain';
 import { occupantHousesForArea } from '../../engine/market/house';
+import { useCameraControls } from '../../hooks/useCameraControls';
 import HouseStripSprites from './HouseStripSprites';
 import {
   placeholderAreaFits, placeholderAreaOverlapsAny, placeholderAreaCells, type PlaceholderArea,
@@ -146,9 +147,12 @@ export interface TemplateEditorViewerProps {
   onEditBegin?: () => void;
 }
 
+// Whole-number zoom ladder — the camera settles onto it between gestures (continuous while the
+// wheel moves, snapped at rest) so the pixel-art board stays crisp. See {@link useCameraControls}.
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 10;
 const DEFAULT_ZOOM = 3;
+const ZOOM_STEP = 1;
 
 interface Cell { col: number; row: number; }
 
@@ -998,15 +1002,20 @@ function EditorScene({ width, height, masks, showGrid, showStreet, showCommunal,
 
 // ─── Outer component: pan/zoom state + wheel zoom + Application mount ─────────────
 function TemplateEditorViewer({ width, height, masks, showGrid, showStreet, showCommunal, showPlaceholder, showCondition, activeTool, placeholderSize, decorCategory, decorVariantIdx, rectangleMode, onRectComplete, pasteMode, pasteFootprint, onPasteAt, eraseMode, onPaintCell, onEditBegin }: TemplateEditorViewerProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(DEFAULT_ZOOM);
-  const [ready, setReady] = useState(false);
+  // The board is a fixed authored size, so unlike nmp/nms there is no fit-derived sub-floor here:
+  // MIN_ZOOM is both the ladder's bottom rung and the hard floor.
+  const { containerRef, pan, zoom, setPan, ready } = useCameraControls({
+    crispFloor: MIN_ZOOM,
+    maxZoom: MAX_ZOOM,
+    ladderStep: ZOOM_STEP,
+    initialZoom: DEFAULT_ZOOM,
+    suppressContextMenu: true,
+  });
 
-  const panRef = useRef(pan); panRef.current = pan;
-  const zoomRef = useRef(zoom); zoomRef.current = zoom;
-
-  useEffect(() => { if (containerRef.current) setReady(true); }, []);
+  // Zoom is read through a ref by the centring effect below, which must NOT re-run on zoom change
+  // (that would yank the board back to centre mid-edit every time the author scrolled).
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
 
   // Centre the board in the viewport on mount and whenever the size changes. Centre
   // the board's true screen bounding box: its top is the far corner's surface
@@ -1019,51 +1028,8 @@ function TemplateEditorViewer({ width, height, masks, showGrid, showStreet, show
     const topLocalY = -((width - 1) + (height - 1)) * (TILE_HEIGHT / 2) - TILE_HEIGHT; // far corner surface
     const bottomLocalY = TILE_HEIGHT; // near corner (0,0) dirt body
     const centreLocalY = (topLocalY + bottomLocalY) / 2;
-    const next = { x: 0, y: -centreLocalY * zoomRef.current + HEADER_CLEARANCE };
-    panRef.current = next;
-    setPan(next);
-  }, [width, height, ready]);
-
-  const applyZoomAtPoint = useCallback((focalX: number, focalY: number, rawZoom: number) => {
-    const el = containerRef.current;
-    if (!el) return;
-    const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.round(rawZoom)));
-    if (newZoom === zoomRef.current) return;
-    const ratio = newZoom / zoomRef.current;
-    const w = el.clientWidth;
-    const h = el.clientHeight;
-    const newPan = {
-      x: (focalX - w / 2) * (1 - ratio) + panRef.current.x * ratio,
-      y: (focalY - h / 2) * (1 - ratio) + panRef.current.y * ratio,
-    };
-    zoomRef.current = newZoom;
-    panRef.current = newPan;
-    setZoom(newZoom);
-    setPan(newPan);
-  }, []);
-
-  const handleWheel = useCallback((e: WheelEvent) => {
-    e.preventDefault();
-    const el = containerRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const step = e.deltaY < 0 ? 1 : -1;
-    applyZoomAtPoint(e.clientX - rect.left, e.clientY - rect.top, zoomRef.current + step);
-  }, [applyZoomAtPoint]);
-
-  // Suppress the browser context menu so right-drag pan doesn't pop a menu.
-  const handleContextMenu = useCallback((e: MouseEvent) => { e.preventDefault(); }, []);
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    el.addEventListener('wheel', handleWheel, { passive: false });
-    el.addEventListener('contextmenu', handleContextMenu);
-    return () => {
-      el.removeEventListener('wheel', handleWheel);
-      el.removeEventListener('contextmenu', handleContextMenu);
-    };
-  }, [handleWheel, handleContextMenu, ready]);
+    setPan({ x: 0, y: -centreLocalY * zoomRef.current + HEADER_CLEARANCE });
+  }, [width, height, ready, setPan]);
 
   return (
     <Box

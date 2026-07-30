@@ -14,6 +14,7 @@ import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import { useAuth } from "../../AuthContext";
 import { useTheme as useCustomTheme } from "../../contexts/ThemeContext";
 import { API_BASE_URL } from "../../constants";
+import { apiPost, apiPut, ApiError } from "../../api/http";
 import VocabDisplayCard from "../../components/VocabDisplayCard";
 import { useVocabularyUpdate } from "../../contexts/VocabularyUpdateContext";
 import { processDocumentForTokens } from "../../utils/tokenUtils";
@@ -71,7 +72,7 @@ function ReaderDocumentPage() {
     const [savingEdit, setSavingEdit] = useState(false);
     const [editSaveError, setEditSaveError] = useState<string | null>(null);
 
-    const vocabularyProcessing = useVocabularyProcessing(token);
+    const vocabularyProcessing = useVocabularyProcessing();
     const readerSettings = useReaderSettings();
     const contentEditor = useReaderContentEditor();
 
@@ -271,28 +272,20 @@ function ReaderDocumentPage() {
         setSavingEdit(true);
         setEditSaveError(null);
         try {
-            const response = await fetch(`${API_BASE_URL}/api/texts/${text.id}`, {
-                method: 'PUT',
-                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({ content: contentEditor.draft }),
-            });
-            if (!response.ok) {
-                const data = await response.json().catch(() => null);
-                setEditSaveError(data?.error || 'Failed to save changes');
-                return;
-            }
-            const updated = await response.json();
+            const updated = await apiPut<Text>(`/api/texts/${text.id}`, { content: contentEditor.draft });
             await vocabularyProcessing.processDocumentVocabularyIncremental(text, updated);
             setText(updated);
             contentEditor.exitEditMode();
         } catch (err) {
             console.error('Error saving document edit:', err);
-            setEditSaveError('Failed to save changes');
+            // ApiError's message is the server's `error` field, which is what the
+            // hand-rolled version read off the response body.
+            setEditSaveError(err instanceof ApiError ? err.message : 'Failed to save changes');
         } finally {
             setSavingEdit(false);
         }
-    }, [text, token, contentEditor, vocabularyProcessing]);
+        // No `token` dep: apiPut reads the header at call time (CLAUDE.md ⛔ rule).
+    }, [text, contentEditor, vocabularyProcessing]);
 
     const handleDelete = useCallback(() => {
         setDeleteDialogOpen(true);
@@ -311,24 +304,18 @@ function ReaderDocumentPage() {
     const submitValidation = useCallback(async (action: 'approve' | 'flag') => {
         if (!text?.validationEntryId) return;
         try {
-            const response = await fetch(`${API_BASE_URL}/api/validation/${text.id}/submit`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({ action }),
-            });
-            const data = await response.json();
-            if (!response.ok) {
-                notifyValidation(data?.error || 'Failed to submit validation', 'error');
-                return;
-            }
+            await apiPost(`/api/validation/${text.id}/submit`, { action });
             notifyValidation(action === 'flag' ? 'Flagged — thank you!' : 'Approved — thank you!', 'success');
             navigate("/reader"); // the entry can't be re-validated; return to the list
         } catch (err) {
             console.error('Error submitting validation:', err);
-            notifyValidation('Failed to submit validation', 'error');
+            notifyValidation(
+                err instanceof ApiError ? err.message : 'Failed to submit validation',
+                'error'
+            );
         }
-    }, [text, token, navigate, notifyValidation]);
+        // No `token` dep: apiPost reads the header at call time (CLAUDE.md ⛔ rule).
+    }, [text, navigate, notifyValidation]);
 
     const handleApprove = useCallback(() => submitValidation('approve'), [submitValidation]);
     const handleFlag = useCallback(() => submitValidation('flag'), [submitValidation]);

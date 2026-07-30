@@ -13,6 +13,7 @@ import {
   TypedMarkHistory,
 } from '../types/index.js';
 import { computeUtcm, appendTypedMark, MasteryGoals } from '../utils/masteryCompute.js';
+import { handle } from './asyncHandler.js';
 
 /**
  * Flashcard mark/undo routes — /api/flashcards/*
@@ -52,8 +53,7 @@ async function fetchGoals(client: any, userId: string): Promise<MasteryGoals> {
 }
 
 // Mark a flashcard as correct or incorrect (protected route)
-// @ts-ignore
-router.post('/api/flashcards/mark', authenticateToken, async (req, res) => {
+router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) => {
   const client = await db.getClient();
 
   try {
@@ -215,11 +215,10 @@ router.post('/api/flashcards/mark', authenticateToken, async (req, res) => {
       code: error.code || 'ERR_MARK_FAILED'
     });
   }
-});
+}));
 
 // Undo the most recently saved flashcard mark (protected route)
-// @ts-ignore
-router.post('/api/flashcards/undo-last-mark', authenticateToken, async (req, res) => {
+router.post('/api/flashcards/undoLastMark', authenticateToken, handle(async (req, res) => {
   const client = await db.getClient();
   try {
     const userId = (req as any).user?.userId;
@@ -342,6 +341,6 @@ router.post('/api/flashcards/undo-last-mark', authenticateToken, async (req, res
       code: error.code || 'ERR_UNDO_MARK_FAILED'
     });
   }
-});
+}));
 
 export default router;

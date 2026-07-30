@@ -52,7 +52,10 @@ import {
   type TemplateGalleryEntry,
 } from './templateEditorApi';
 // Toolbar chrome shared with the Template Sandbox so both authoring tools look/feel identical.
-import { HotkeyBadge, headerBtnSx, paletteBtnSx } from './editorButtonStyles';
+import {
+  PaletteButton, toolGroupSx, headerActionsSx,
+  headerBtnSx, headerBtnDangerSx, headerBtnPrimarySx,
+} from './editorButtonStyles';
 
 /**
  * TemplateEditorPage — validator-only Night Market template authoring surface
@@ -121,6 +124,8 @@ interface Clipboard {
 const CLIPBOARD_ACCENT = '244,143,177';
 /** The undo/redo group's accent (steel blue) — reads as a utility group, apart from the paints. */
 const HISTORY_ACCENT = '120,164,214';
+/** The eraser modifier's accent (red) — the same red the sandbox gives its destructive actions. */
+const ERASE_ACCENT = '255,140,140';
 
 /** Cap on retained undo snapshots (board is ≤60×60, so a snapshot is cheap; this just bounds memory). */
 const HISTORY_LIMIT = 60;
@@ -1083,11 +1088,7 @@ function TemplateEditorPage() {
     <Box
       key={key}
       className={`template-editor-tool-group template-editor-tool-group-${key}`}
-      sx={{
-        display: 'flex', flexDirection: 'row', gap: 0.75, p: 0.75, borderRadius: 1.5,
-        backgroundColor: `rgba(${accent},0.14)`,
-        border: `1px solid rgba(${accent},0.4)`,
-      }}
+      sx={toolGroupSx(accent)}
     >
       {tools.map(({ tool, label, icon, hotkey }) => {
         const disabled =
@@ -1098,8 +1099,9 @@ function TemplateEditorPage() {
             ? 'Placeholder is editable only on version 0'
             : 'The condition mask is only available on versions above 0';
         return (
-          <Tooltip
+          <PaletteButton
             key={tool}
+            className={`template-editor-tool template-editor-tool-${tool}`}
             // The placeholder button reports its current DROP size — cycled by Space while the
             // tool is active.
             title={disabled
@@ -1109,22 +1111,14 @@ function TemplateEditorPage() {
                     ? ` · ${PLACEHOLDER_SIZES[placeholderSizeIdx].w}×${PLACEHOLDER_SIZES[placeholderSizeIdx].h} (Space to resize)`
                     : ''
                 }`}
-            placement="top"
+            hotkey={hotkey}
+            active={activeTool === tool}
+            accent={accent}
+            disabled={disabled}
+            onClick={() => setActiveTool(tool)}
           >
-            <span>
-              <Button
-                className={`template-editor-tool template-editor-tool-${tool}`}
-                variant={activeTool === tool ? 'contained' : 'outlined'}
-                size="small"
-                disabled={disabled}
-                onClick={() => setActiveTool(tool)}
-                sx={paletteBtnSx(activeTool === tool, accent)}
-              >
-                {icon}
-                <HotkeyBadge label={hotkey} />
-              </Button>
-            </span>
-          </Tooltip>
+            {icon}
+          </PaletteButton>
         );
       })}
     </Box>
@@ -1136,56 +1130,43 @@ function TemplateEditorPage() {
   const renderClipboardGroup = () => (
     <Box
       className="template-editor-tool-group template-editor-tool-group-clipboard"
-      sx={{
-        display: 'flex', flexDirection: 'row', gap: 0.75, p: 0.75, borderRadius: 1.5,
-        backgroundColor: `rgba(${CLIPBOARD_ACCENT},0.14)`,
-        border: `1px solid rgba(${CLIPBOARD_ACCENT},0.4)`,
-      }}
+      sx={toolGroupSx(CLIPBOARD_ACCENT)}
     >
       {/* Copy — rectangle-select a region into the clipboard. A pink ring marks a loaded
-          clipboard (distinct from the contained fill that marks the active tool). */}
-      <Tooltip
+          clipboard (distinct from the accent fill that marks the active tool). The ring is an
+          outset box-shadow, so it never changes the button's 40×40 footprint. */}
+      <PaletteButton
+        className="template-editor-tool template-editor-tool-copy"
         title={clipboard
           ? `Copy region (C) · clipboard holds ${clipboard.w}×${clipboard.h}`
           : 'Copy region — drag a rectangle to capture it (C)'}
-        placement="top"
+        hotkey="C"
+        active={activeTool === 'copy'}
+        accent={CLIPBOARD_ACCENT}
+        onClick={() => setActiveTool('copy')}
+        sx={clipboard
+          ? {
+              boxShadow: `0 0 0 2px rgba(${CLIPBOARD_ACCENT},0.9)`,
+              // paletteBtnSx zeroes the shadow on hover — re-assert the ring so it stays lit.
+              '&:hover': { boxShadow: `0 0 0 2px rgba(${CLIPBOARD_ACCENT},1)` },
+            }
+          : undefined}
       >
-        <span>
-          <Button
-            className="template-editor-tool template-editor-tool-copy"
-            variant={activeTool === 'copy' ? 'contained' : 'outlined'}
-            size="small"
-            onClick={() => setActiveTool('copy')}
-            sx={{
-              ...paletteBtnSx(activeTool === 'copy', CLIPBOARD_ACCENT),
-              ...(clipboard ? { boxShadow: `0 0 0 2px rgba(${CLIPBOARD_ACCENT},0.9)` } : {}),
-            }}
-          >
-            <ContentCopyIcon fontSize="small" />
-            <HotkeyBadge label="C" />
-          </Button>
-        </span>
-      </Tooltip>
+        <ContentCopyIcon fontSize="small" />
+      </PaletteButton>
       {/* Paste — stamp the clipboard as a footprint (like the placeholder drop). Disabled until
           something has been copied. */}
-      <Tooltip
+      <PaletteButton
+        className="template-editor-tool template-editor-tool-paste"
         title={clipboard ? `Paste clipboard (V) — ${clipboard.w}×${clipboard.h} stamp` : 'Copy a region first to paste'}
-        placement="top"
+        hotkey="V"
+        active={activeTool === 'paste'}
+        accent={CLIPBOARD_ACCENT}
+        disabled={!clipboard}
+        onClick={() => setActiveTool('paste')}
       >
-        <span>
-          <Button
-            className="template-editor-tool template-editor-tool-paste"
-            variant={activeTool === 'paste' ? 'contained' : 'outlined'}
-            size="small"
-            disabled={!clipboard}
-            onClick={() => setActiveTool('paste')}
-            sx={paletteBtnSx(activeTool === 'paste', CLIPBOARD_ACCENT)}
-          >
-            <ContentPasteIcon fontSize="small" />
-            <HotkeyBadge label="V" />
-          </Button>
-        </span>
-      </Tooltip>
+        <ContentPasteIcon fontSize="small" />
+      </PaletteButton>
     </Box>
   );
 
@@ -1194,42 +1175,26 @@ function TemplateEditorPage() {
   const renderHistoryGroup = () => (
     <Box
       className="template-editor-tool-group template-editor-tool-group-history"
-      sx={{
-        display: 'flex', flexDirection: 'row', gap: 0.75, p: 0.75, borderRadius: 1.5,
-        backgroundColor: `rgba(${HISTORY_ACCENT},0.14)`,
-        border: `1px solid rgba(${HISTORY_ACCENT},0.4)`,
-      }}
+      sx={toolGroupSx(HISTORY_ACCENT)}
     >
-      <Tooltip title={canUndo ? 'Undo (Z)' : 'Nothing to undo'} placement="top">
-        <span>
-          <Button
-            className="template-editor-tool template-editor-tool-undo"
-            variant="outlined"
-            size="small"
-            disabled={!canUndo}
-            onClick={handleUndo}
-            sx={paletteBtnSx(false, HISTORY_ACCENT)}
-          >
-            <UndoIcon fontSize="small" />
-            <HotkeyBadge label="Z" />
-          </Button>
-        </span>
-      </Tooltip>
-      <Tooltip title={canRedo ? 'Redo (X)' : 'Nothing to redo'} placement="top">
-        <span>
-          <Button
-            className="template-editor-tool template-editor-tool-redo"
-            variant="outlined"
-            size="small"
-            disabled={!canRedo}
-            onClick={handleRedo}
-            sx={paletteBtnSx(false, HISTORY_ACCENT)}
-          >
-            <RedoIcon fontSize="small" />
-            <HotkeyBadge label="X" />
-          </Button>
-        </span>
-      </Tooltip>
+      <PaletteButton
+        className="template-editor-tool template-editor-tool-undo"
+        title={canUndo ? 'Undo (Z)' : 'Nothing to undo'}
+        hotkey="Z" accent={HISTORY_ACCENT}
+        disabled={!canUndo}
+        onClick={handleUndo}
+      >
+        <UndoIcon fontSize="small" />
+      </PaletteButton>
+      <PaletteButton
+        className="template-editor-tool template-editor-tool-redo"
+        title={canRedo ? 'Redo (X)' : 'Nothing to redo'}
+        hotkey="X" accent={HISTORY_ACCENT}
+        disabled={!canRedo}
+        onClick={handleRedo}
+      >
+        <RedoIcon fontSize="small" />
+      </PaletteButton>
     </Box>
   );
 
@@ -1263,7 +1228,7 @@ function TemplateEditorPage() {
             </Typography>
           </Box>
 
-          <Box className="template-editor-header-actions" sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+          <Box className="template-editor-header-actions" sx={headerActionsSx}>
             {/* Version switcher — switches the active (name, version), reloading the target
                 from its last saved state (unsaved edits discarded after a warn). Lives here
                 (not in Properties) so switching versions is a one-click header action. The
@@ -1271,19 +1236,21 @@ function TemplateEditorPage() {
             <FormControl
               size="small"
               className="template-editor-header-version"
+              sx={{ flex: '0 0 auto' }}
             >
               <Select
                 className="template-editor-header-version-select"
                 value={version}
                 onChange={(e) => handleSwitchVersion(Number(e.target.value))}
                 // Rendered to read like the outlined header buttons (headerBtnSx): no
-                // floating label, small-button metrics, same border/background/hover.
+                // floating label, the same 32px height, same border/background/hover.
                 renderValue={(v) => `Version ${v}${v === 0 ? ' (base)' : ''}${isNewVersion ? ' • unsaved' : ''}`}
                 sx={{
+                  height: 32,
                   color: 'rgba(255,255,255,0.9)',
                   backgroundColor: 'rgba(0,0,0,0.3)',
                   fontSize: '0.8125rem',
-                  '.MuiSelect-select': { py: '4px', pl: '10px' },
+                  '.MuiSelect-select': { display: 'flex', alignItems: 'center', py: 0, pl: '10px' },
                   '.MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.5)' },
                   '&:hover': { backgroundColor: 'rgba(0,0,0,0.5)' },
                   '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'white' },
@@ -1358,7 +1325,7 @@ function TemplateEditorPage() {
                   className="template-editor-delete-version-btn" variant="outlined" size="small"
                   startIcon={<LayersClearIcon />} onClick={handleDeleteVersion}
                   disabled={!loadedName || version === 0}
-                  sx={{ ...headerBtnSx, color: 'rgba(255,140,140,0.95)', borderColor: 'rgba(255,140,140,0.5)', '&:hover': { borderColor: 'rgb(255,140,140)', backgroundColor: 'rgba(80,0,0,0.4)' } }}
+                  sx={headerBtnDangerSx}
                 >
                   Delete Version
                 </Button>
@@ -1369,7 +1336,7 @@ function TemplateEditorPage() {
                 <Button
                   className="template-editor-delete-btn" variant="outlined" size="small"
                   startIcon={<DeleteForeverIcon />} onClick={handleDelete} disabled={!loadedName}
-                  sx={{ ...headerBtnSx, color: 'rgba(255,140,140,0.95)', borderColor: 'rgba(255,140,140,0.5)', '&:hover': { borderColor: 'rgb(255,140,140)', backgroundColor: 'rgba(80,0,0,0.4)' } }}
+                  sx={headerBtnDangerSx}
                 >
                   Delete Template
                 </Button>
@@ -1383,9 +1350,11 @@ function TemplateEditorPage() {
               Properties
             </Button>
             <Button
-              className="template-editor-submit-btn" variant="contained" size="small"
+              // `outlined` like every other header button — the yellow fill comes from the sx,
+              // so Save shares their exact box metrics instead of `contained`'s.
+              className="template-editor-submit-btn" variant="outlined" size="small"
               startIcon={<SaveIcon />} onClick={handleSubmit} disabled={submitting}
-              sx={{ ...headerBtnSx, color: 'black', backgroundColor: 'rgba(255,224,102,0.95)', '&:hover': { backgroundColor: 'rgba(255,224,102,1)' } }}
+              sx={headerBtnPrimarySx}
             >
               Save
             </Button>
@@ -1410,95 +1379,63 @@ function TemplateEditorPage() {
           <Box className="template-editor-tool-row" sx={{ display: 'flex', gap: 1 }}>
             <Box
               className="template-editor-tool-group template-editor-tool-group-grid"
-              sx={{
-                display: 'flex', flexDirection: 'row', gap: 0.75, p: 0.75, borderRadius: 1.5,
-                backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.2)',
-              }}
+              sx={toolGroupSx()}
             >
-              <Tooltip title="Toggle gridlines (`)" placement="top">
-                <Button
-                  className="template-editor-grid-toggle"
-                  variant={showGrid ? 'contained' : 'outlined'}
-                  size="small"
-                  onClick={() => setShowGrid(v => !v)}
-                  sx={paletteBtnSx(showGrid)}
-                >
-                  <GridOnIcon fontSize="small" />
-                  <HotkeyBadge label="`" />
-                </Button>
-              </Tooltip>
+              <PaletteButton
+                className="template-editor-grid-toggle"
+                title="Toggle gridlines (`)"
+                hotkey="`"
+                active={showGrid}
+                onClick={() => setShowGrid(v => !v)}
+              >
+                <GridOnIcon fontSize="small" />
+              </PaletteButton>
             </Box>
             <Box
               className="template-editor-tool-group template-editor-tool-group-mask-view"
-              sx={{
-                display: 'flex', flexDirection: 'row', gap: 0.75, p: 0.75, borderRadius: 1.5,
-                backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.2)',
-              }}
+              sx={toolGroupSx()}
             >
-              <Tooltip
+              <PaletteButton
+                className="template-editor-street-toggle"
                 title={
                   activeTool === 'street'
                     ? 'Toggle street-walkable highlight (1) — layer auto-shown while the street tool is active'
                     : 'Toggle street-walkable highlight (1)'
                 }
-                placement="top"
+                hotkey="1"
+                active={showStreet}
+                onClick={() => setShowStreet(v => !v)}
               >
-                <span>
-                  <Button
-                    className="template-editor-street-toggle"
-                    variant={showStreet ? 'contained' : 'outlined'}
-                    size="small"
-                    onClick={() => setShowStreet(v => !v)}
-                    sx={paletteBtnSx(showStreet)}
-                  >
-                    <RouteIcon fontSize="small" />
-                    <HotkeyBadge label="1" />
-                  </Button>
-                </span>
-              </Tooltip>
-              <Tooltip
+                <RouteIcon fontSize="small" />
+              </PaletteButton>
+              <PaletteButton
+                className="template-editor-communal-toggle"
                 title={
                   activeTool === 'communal'
                     ? 'Toggle communal-walkable highlight (2) — layer auto-shown while the communal tool is active'
                     : 'Toggle communal-walkable highlight (2)'
                 }
-                placement="top"
+                hotkey="2"
+                active={showCommunal}
+                onClick={() => setShowCommunal(v => !v)}
               >
-                <span>
-                  <Button
-                    className="template-editor-communal-toggle"
-                    variant={showCommunal ? 'contained' : 'outlined'}
-                    size="small"
-                    onClick={() => setShowCommunal(v => !v)}
-                    sx={paletteBtnSx(showCommunal)}
-                  >
-                    <GroupsIcon fontSize="small" />
-                    <HotkeyBadge label="2" />
-                  </Button>
-                </span>
-              </Tooltip>
-              <Tooltip
+                <GroupsIcon fontSize="small" />
+              </PaletteButton>
+              <PaletteButton
+                className="template-editor-placeholder-toggle"
                 title={
                   activeTool === 'placeholder'
                     ? 'Toggle placeholder-area highlight (3) — layer auto-shown while the placeholder tool is active'
                     : 'Toggle placeholder-area highlight (3)'
                 }
-                placement="top"
+                hotkey="3"
+                active={showPlaceholder}
+                onClick={() => setShowPlaceholder(v => !v)}
               >
-                <span>
-                  <Button
-                    className="template-editor-placeholder-toggle"
-                    variant={showPlaceholder ? 'contained' : 'outlined'}
-                    size="small"
-                    onClick={() => setShowPlaceholder(v => !v)}
-                    sx={paletteBtnSx(showPlaceholder)}
-                  >
-                    <HighlightAltIcon fontSize="small" />
-                    <HotkeyBadge label="3" />
-                  </Button>
-                </span>
-              </Tooltip>
-              <Tooltip
+                <HighlightAltIcon fontSize="small" />
+              </PaletteButton>
+              <PaletteButton
+                className="template-editor-condition-toggle"
                 title={
                   <>
                     {activeTool === 'condition'
@@ -1513,21 +1450,12 @@ function TemplateEditorPage() {
                     )}
                   </>
                 }
-                placement="top"
+                hotkey="4"
+                active={showCondition}
+                onClick={() => setShowCondition(v => !v)}
               >
-                <span>
-                  <Button
-                    className="template-editor-condition-toggle"
-                    variant={showCondition ? 'contained' : 'outlined'}
-                    size="small"
-                    onClick={() => setShowCondition(v => !v)}
-                    sx={paletteBtnSx(showCondition)}
-                  >
-                    <RuleIcon fontSize="small" />
-                    <HotkeyBadge label="4" />
-                  </Button>
-                </span>
-              </Tooltip>
+                <RuleIcon fontSize="small" />
+              </PaletteButton>
             </Box>
           </Box>
 
@@ -1551,33 +1479,23 @@ function TemplateEditorPage() {
             {renderClipboardGroup()}
             <Box
               className="template-editor-tool-group template-editor-tool-group-erase"
-              sx={{
-                display: 'flex', flexDirection: 'row', gap: 0.75, p: 0.75, borderRadius: 1.5,
-                backgroundColor: 'rgba(255,140,140,0.14)', border: '1px solid rgba(255,140,140,0.4)',
-              }}
+              sx={toolGroupSx(ERASE_ACCENT)}
             >
-              <Tooltip
-                // Disabled for tools that can't be erased (copy/paste); its own layer-removal
-                // has no meaning there. A <span> wrapper lets the tooltip show while disabled.
+              {/* Disabled for tools that can't be erased (copy/paste); its own layer-removal
+                  has no meaning there — PaletteButton's span wrapper keeps the tooltip alive. */}
+              <PaletteButton
+                className="template-editor-erase-toggle"
                 title={toolSupportsEraser(activeTool)
                   ? `Eraser — removes only the selected tool's layer (B)${eraseMode ? ' · ON' : ''}`
                   : 'The eraser does not apply to the copy/paste tools'}
-                placement="top"
+                hotkey="B"
+                active={eraseMode}
+                accent={ERASE_ACCENT}
+                disabled={!toolSupportsEraser(activeTool)}
+                onClick={() => setEraseMode(v => !v)}
               >
-                <span>
-                  <Button
-                    className="template-editor-erase-toggle"
-                    variant={eraseMode ? 'contained' : 'outlined'}
-                    size="small"
-                    disabled={!toolSupportsEraser(activeTool)}
-                    onClick={() => setEraseMode(v => !v)}
-                    sx={paletteBtnSx(eraseMode, '255,140,140')}
-                  >
-                    <BackspaceIcon fontSize="small" />
-                    <HotkeyBadge label="B" />
-                  </Button>
-                </span>
-              </Tooltip>
+                <BackspaceIcon fontSize="small" />
+              </PaletteButton>
             </Box>
           </Box>
         </Box>

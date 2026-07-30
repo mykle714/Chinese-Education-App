@@ -16,10 +16,10 @@ import { getMinutePointsPaused } from './minutePointsPause';
 
 export interface UseMinutePointsReturn {
   currentPoints: number;
-  /** GLOBAL penalty-debited NET balance (users.totalMinutePoints) — drives unlocks + the prominent "current balance" number; decays on loss. */
+  /** THIS LANGUAGE's penalty-debited NET balance — the prominent "current balance" number; decays on loss. Per-language since migration 134. */
   accumulativeMinutePoints: number;
-  /** GLOBAL lifetime minutes earned (Σ minutesEarned, all languages), ignoring penalties; only grows. gross ≥ net. Shown as the secondary "total earned" figure. */
-  grossMinutesEarned: number;
+  /** THIS LANGUAGE's lifetime minutes earned, ignoring penalties; only grows. gross ≥ net. Shown as the secondary "total earned" figure. */
+  lifetimeMinutesEarned: number;
   todaysMinutePointsMilli: number;
   liveSeconds: number;
   isActive: boolean;
@@ -37,8 +37,8 @@ export interface UseMinutePointsReturn {
 interface MinutePointsState {
   todaysMinutePointsMilli: number;
   todaysMinutePointsMinutes: number;
-  accumulativeMinutePoints: number; // NET (users.totalMinutePoints)
-  grossMinutesEarned: number;       // GROSS lifetime earned (Σ minutesEarned)
+  accumulativeMinutePoints: number; // NET for the selected language
+  lifetimeMinutesEarned: number;       // GROSS lifetime earned for this language — monotonic, penalties never lower it
   lastActivity: Date | null;
   isActive: boolean;
   isAnimating: boolean;
@@ -48,7 +48,7 @@ interface MinutePointsState {
 
 type MinutePointsAction =
   | { type: 'LOAD_DATA'; payload: Omit<MinutePointsState, 'isActive' | 'isAnimating' | 'isSyncing'> }
-  | { type: 'TICK'; payload: { newMilliseconds: number; newMinutes: number; newAccumulativePoints: number; newGrossMinutes: number } }
+  | { type: 'TICK'; payload: { newMilliseconds: number; newMinutes: number; newAccumulativePoints: number; newLifetimeMinutes: number } }
   | { type: 'REFRESH_ACTIVE'; payload: { now: Date } }
   | { type: 'START_ANIMATION' }
   | { type: 'STOP_ANIMATION' }
@@ -67,7 +67,7 @@ const minutePointsReducer = (state: MinutePointsState, action: MinutePointsActio
         todaysMinutePointsMilli: action.payload.newMilliseconds,
         todaysMinutePointsMinutes: action.payload.newMinutes,
         accumulativeMinutePoints: action.payload.newAccumulativePoints,
-        grossMinutesEarned: action.payload.newGrossMinutes
+        lifetimeMinutesEarned: action.payload.newLifetimeMinutes
       };
     case 'REFRESH_ACTIVE':
       return { ...state, lastActivity: action.payload.now, isActive: true };
@@ -107,7 +107,7 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
     todaysMinutePointsMilli: 0,
     todaysMinutePointsMinutes: 0,
     accumulativeMinutePoints: 0,
-    grossMinutesEarned: 0,
+    lifetimeMinutesEarned: 0,
     lastActivity: null,
     isActive: false,
     isAnimating: false,
@@ -156,7 +156,7 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
           todaysMinutePointsMilli: 0,
           todaysMinutePointsMinutes: 0,
           accumulativeMinutePoints: 0,
-          grossMinutesEarned: 0,
+          lifetimeMinutesEarned: 0,
           lastActivity: null,
           currentStreak: 0
         }
@@ -187,7 +187,7 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
       const accumulativePoints = serverData?.totalMinutePoints ?? stored.totalMinutePoints;
       // Gross ≥ net always; when offline (no serverData) we only have the cached net, so
       // fall back to it (gross == net until the next successful summary fetch corrects it).
-      const grossMinutesEarned = serverData?.grossMinutesEarned ?? accumulativePoints;
+      const lifetimeMinutesEarned = serverData?.lifetimeMinutesEarned ?? accumulativePoints;
       const currentStreak = serverData?.currentStreak ?? 0;
 
       // Seed today's milliseconds from the server's whole-minute count, but keep
@@ -210,7 +210,7 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
           todaysMinutePointsMilli,
           todaysMinutePointsMinutes: calculatePointsFromMilliseconds(todaysMinutePointsMilli),
           accumulativeMinutePoints: accumulativePoints,
-          grossMinutesEarned,
+          lifetimeMinutesEarned,
           lastActivity: new Date(),
           currentStreak
         }
@@ -254,7 +254,7 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
       // (a penalty is the only thing that pulls net below gross, and that happens via the
       // author button / cron, not the study tick).
       const newAccumulativePoints: number = currentState.accumulativeMinutePoints + pointsEarned;
-      const newGrossMinutes: number = currentState.grossMinutesEarned + pointsEarned;
+      const newLifetimeMinutes: number = currentState.lifetimeMinutesEarned + pointsEarned;
 
       dispatch({
         type: 'TICK',
@@ -262,7 +262,7 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
           newMilliseconds: newTotal,
           newMinutes: newPoints,
           newAccumulativePoints,
-          newGrossMinutes
+          newLifetimeMinutes
         }
       });
 
@@ -271,7 +271,7 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
         todaysMinutePointsMilli: newTotal,
         todaysMinutePointsMinutes: newPoints,
         accumulativeMinutePoints: newAccumulativePoints,
-        grossMinutesEarned: newGrossMinutes
+        lifetimeMinutesEarned: newLifetimeMinutes
       };
 
       if (pointsEarned > 0) {
@@ -288,7 +288,8 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
 
         incrementMinutePoint(languageRef.current, tokenRef.current).then((result) => {
           if (result.success && wasAtThreshold) {
-            // Streak is global; refetch it via the per-language summary.
+            // The streak is per-language (migration 134); the summary returns this
+            // language's streak, which is the one the badge shows.
             fetchLanguageSummary(languageRef.current, tokenRef.current).then((data) => {
               if (data) {
                 dispatch({ type: 'SET_STREAK', payload: data.currentStreak });
@@ -425,7 +426,7 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
   return {
     currentPoints: state.todaysMinutePointsMinutes,
     accumulativeMinutePoints: state.accumulativeMinutePoints,
-    grossMinutesEarned: state.grossMinutesEarned,
+    lifetimeMinutesEarned: state.lifetimeMinutesEarned,
     todaysMinutePointsMilli: state.todaysMinutePointsMilli,
     liveSeconds,
     isActive: state.isActive,

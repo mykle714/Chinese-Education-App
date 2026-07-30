@@ -1,9 +1,7 @@
-import { PoolClient } from 'pg';
 import { DatabaseManager } from './DatabaseManager.js';
 import { IBaseDAL } from '../interfaces/IBaseDAL.js';
-import { 
-  PaginationOptions, 
-  PaginatedResult, 
+import {
+  PaginationOptions,
   ITransaction,
   NotFoundError,
   ValidationError,
@@ -11,8 +9,23 @@ import {
 } from '../../types/dal.js';
 
 /**
- * Abstract base class for all Data Access Layer implementations
- * Provides common CRUD operations and utilities for PostgreSQL
+ * Generic CRUD base for DALs whose identity is "one table, one primary-key column".
+ *
+ * ── Who extends this ───────────────────────────────────────────────────────────
+ * `UserDAL` and `VocabEntryDAL`. That is the whole list, and it should stay short:
+ * a DAL only belongs here if a bare `SELECT * FROM <table> WHERE <pk> = $1` is
+ * CORRECT for it. `DictionaryDAL` used to extend this and bound itself to
+ * `dictionaryentries_zh` in its `super()` call, while every real query in the file
+ * resolved its table per language through `dictTableForLanguage()`. It used none of
+ * the inherited methods, so nothing was broken — but the first caller to reach for
+ * `dictionaryDAL.findById(id)` on a Spanish entry would have got a silent
+ * wrong-table read, with no type error and no runtime error. It no longer extends
+ * this class. See docs/ARCHITECTURE_REVIEW.md finding 1.
+ *
+ * ── Why this is short ──────────────────────────────────────────────────────────
+ * Seven further generic methods (`findAllPaginated`, `count`, `createMany`,
+ * `findByIds`, `exists`, `updateWithTransaction`, `deleteWithTransaction`) were
+ * removed: each had zero call sites in the entire server. See IBaseDAL.
  */
 export abstract class BaseDAL<T, TCreate, TUpdate> implements IBaseDAL<T, TCreate, TUpdate> {
   protected dbManager: DatabaseManager;
@@ -59,37 +72,6 @@ export abstract class BaseDAL<T, TCreate, TUpdate> implements IBaseDAL<T, TCreat
     });
 
     return result.recordset;
-  }
-
-  /**
-   * Find all records with pagination metadata
-   */
-  async findAllPaginated(options: PaginationOptions): Promise<PaginatedResult<T>> {
-    const { limit = 10, offset = 0 } = options;
-    
-    const [data, total] = await Promise.all([
-      this.findAll(options),
-      this.count()
-    ]);
-
-    return {
-      data,
-      total,
-      hasMore: offset + data.length < total,
-      limit,
-      offset
-    };
-  }
-
-  /**
-   * Count total records in the table
-   */
-  async count(): Promise<number> {
-    const result = await this.dbManager.executeQuery<{ count: string }>(async (client) => {
-      return await client.query(`SELECT COUNT(*) as count FROM ${this.tableName}`);
-    });
-
-    return parseInt(result.recordset[0].count);
   }
 
   /**
@@ -178,102 +160,6 @@ export abstract class BaseDAL<T, TCreate, TUpdate> implements IBaseDAL<T, TCreat
     }
 
     return result.rows[0];
-  }
-
-  /**
-   * Update a record within a transaction
-   */
-  async updateWithTransaction(id: string | number, data: TUpdate, transaction: ITransaction): Promise<T> {
-    if (!id) {
-      throw new ValidationError(`${this.primaryKeyColumn} is required`);
-    }
-
-    this.validateUpdateData(data);
-
-    const { setClause, values } = this.buildUpdateQuery(data);
-    
-    const client = transaction.getClient();
-    const result = await client.query(`
-      UPDATE ${this.tableName} 
-      SET ${setClause} 
-      WHERE ${this.primaryKeyColumn} = $${values.length + 1}
-      RETURNING *
-    `, [...values, id]);
-
-    if (result.rows.length === 0) {
-      throw new NotFoundError(`Record with ${this.primaryKeyColumn} ${id} not found`);
-    }
-
-    return result.rows[0];
-  }
-
-  /**
-   * Delete a record within a transaction
-   */
-  async deleteWithTransaction(id: string | number, transaction: ITransaction): Promise<boolean> {
-    if (!id) {
-      throw new ValidationError(`${this.primaryKeyColumn} is required`);
-    }
-
-    const client = transaction.getClient();
-    const result = await client.query(`DELETE FROM ${this.tableName} WHERE ${this.primaryKeyColumn} = $1`, [id]);
-
-    return result.rowCount > 0;
-  }
-
-  /**
-   * Create multiple records
-   */
-  async createMany(data: TCreate[]): Promise<T[]> {
-    if (!data || data.length === 0) {
-      return [];
-    }
-
-    return await this.dbManager.executeInTransaction(async (transaction) => {
-      const results: T[] = [];
-      
-      for (const item of data) {
-        const result = await this.createWithTransaction(item, transaction);
-        results.push(result);
-      }
-      
-      return results;
-    });
-  }
-
-  /**
-   * Find multiple records by their IDs
-   */
-  async findByIds(ids: (string | number)[]): Promise<T[]> {
-    if (!ids || ids.length === 0) {
-      return [];
-    }
-
-    const placeholders = ids.map((_, index) => `$${index + 1}`).join(',');
-    
-    const result = await this.dbManager.executeQuery<T>(async (client) => {
-      return await client.query(`
-        SELECT * FROM ${this.tableName} 
-        WHERE ${this.primaryKeyColumn} IN (${placeholders})
-      `, ids);
-    });
-
-    return result.recordset;
-  }
-
-  /**
-   * Check if a record exists
-   */
-  async exists(id: string | number): Promise<boolean> {
-    if (!id) {
-      return false;
-    }
-
-    const result = await this.dbManager.executeQuery<{ count: string }>(async (client) => {
-      return await client.query(`SELECT COUNT(*) as count FROM ${this.tableName} WHERE ${this.primaryKeyColumn} = $1`, [id]);
-    });
-
-    return parseInt(result.recordset[0].count) > 0;
   }
 
   // Protected utility methods for subclasses to override

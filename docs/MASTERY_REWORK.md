@@ -50,10 +50,25 @@ Confirmed mark sources:
 
 | Type | Produced by | Sign |
 |---|---|---|
-| **Recognition** | flp **foreign-first** review (zh chars-first / es spanish-first → meaning); **Bubble Match** | correct / incorrect |
-| **Production** | flp **English-first** review (meaning → foreign); **Word Search "Pinyin" mode** matches | flp: correct/incorrect. Word Search: **positive-only** (a match = positive Production mark; no negatives) |
-| **Reading** | **Word Search "No Pinyin" mode** matches (`WordSearchMode = 'no-pinyin'`, `src/games/word-search/constants.ts`) | **positive-only** (same as Pinyin mode) |
+| **Recognition** | flp **foreign-first** review (zh chars-first / es spanish-first → meaning); **Bubble Match**; **Match Speed** | correct / incorrect |
+| **Production** | flp **English-first** review (meaning → foreign); **Word Search "Pinyin" mode** matches | flp: correct/incorrect. Word Search: **positive-only** (a match = positive Production mark; no negatives), and **hinted words emit nothing at all** — see note below |
+| **Reading** | **Word Search "No Pinyin" mode** matches (`WordSearchMode = 'no-pinyin'`, `src/games/word-search/constants.ts`); **Speed Reading** (`docs/SPEED_READING_GAME.md`) | Word Search: **positive-only**. Speed Reading: **correct / incorrect** — see below |
 | **Writing** | **Practice Writing drill** (`docs/PRACTICE_WRITING.md`), top-1 stroke grading | correct / incorrect |
+
+**Speed Reading emits NEGATIVE reading marks, and that is intended.** It is the
+first surface to do so — every other reading source is positive-only. A round is
+a forced two-way choice, so a player who taps randomly scores ~50% and earns
+negative reading marks at that rate. That is the correct record: the marks reflect
+the answers actually given, and a player who guesses genuinely does not know the
+reading. There is no accuracy floor and no mark suppression. The one exempt path
+is **Skip**, because a skip is not an answer — it fires nothing, exactly as a
+hinted Word Search word does.
+
+**Word Search hints suppress the mark.** A word that received any hint on the
+board emits no mark when found (`hintedWordsRef` / `markWordFound` in
+`src/games/word-search/WordSearchPage.tsx`) — part of the answer was shown, so
+neither a positive nor a negative reading is warranted. See
+[WORD_SEARCH_GAME.md §5a](./WORD_SEARCH_GAME.md).
 
 The two Word Search modes already exist and are chosen at launch from the hub
 (fixed per run) — the mode slug cleanly disambiguates Production vs Reading.
@@ -223,10 +238,22 @@ mark type it emits** (`OnDeckVocabService.isCardGameEligible` / `fetchGameCandid
 
 | Surface | Mark type | Selection path |
 | --- | --- | --- |
-| Bubble Match | `recognition` | `getGameVocabPool` |
+| Bubble Match | `recognition` | `getGameVocabPool` (via `?markType=recognition`) |
+| Match Speed | `recognition` | `getGameVocabPool` (via `?markType=recognition`) |
+| Speed Reading | `reading` | `getGameVocabPool` (via `?markType=reading`) |
 | Word Search — Pinyin | `production` | `getWordSearchGrid` (mode via `?mode=` query) |
 | Word Search — No-Pinyin | `reading` | `getWordSearchGrid` (mode via `?mode=` query) |
 | Practice Writing | `writing` | — launched per-card from a flashcard; **no pool to gate** |
+
+> **`getGamePool` is parameterized, not recognition-with-an-exception.** It used
+> to hardcode `'recognition'` when Bubble Match was its only caller. Speed Reading
+> emits
+> **reading** marks, so pooling through it unchanged would have gated on the wrong
+> cooldown track and bucketed by the wrong per-type category — a card just read
+> correctly would come straight back, while a card weak in reading would be
+> treated as strong because recognition of it is good. The endpoint now takes
+> `?markType=` and **every caller passes it explicitly**; the internal default is
+> a safety net for a malformed request, not a calling convention.
 
 A card is **fresh** for a game when its game mark type is off cooldown, **cooled**
 otherwise. `fetchGameCandidates` overfetches a per-category shuffled pool and
@@ -302,13 +329,24 @@ never interpolated.
 | Surface | Buckets by | Cooldown window keyed on |
 | --- | --- | --- |
 | Bubble Match | `recognition` per-type category | `recognition` per-type category |
+| Match Speed | `recognition` per-type category | `recognition` per-type category |
 | Word Search — Pinyin | `production` per-type category | `production` per-type category |
 | Word Search — No-Pinyin | `reading` per-type category | `reading` per-type category |
+| Speed Reading | `reading` per-type category | `reading` per-type category |
 | flp working loop | overall utcm (unchanged) | overall utcm (unchanged) |
 | decks page counts | overall utcm (unchanged) | — |
 
 The flp keeps the overall category because it presents **two** mark types on one
 card; a single whole-card band is the coherent choice there.
+
+**The bucket is visible on the wire.** `fetchGameCandidates` stamps each returned
+row with `gameCategory` — the per-type bucket it was actually drawn from — which is
+deliberately distinct from the row's `category` (the goal-blended overall utcm level
+`UTCM_CATEGORY_SELECT` fills in). Both ride on the same entry and mean different
+things, so the names must stay explicit. Match Speed keys its client-side card
+buffer off `gameCategory` (docs/MATCH_SPEED_GAME.md § Backend change); Bubble Match
+and Word Search ignore it. It reports the queue actually drained, so it stays
+truthful when a short bucket is topped up from `GAME_FALLBACK_ORDER`.
 
 Because the service signature is now a single `gameMarkType: MarkType` (it was a
 `readonly MarkType[]`), per-type bucketing is unambiguous — a game that emitted two
@@ -395,7 +433,8 @@ Implications to work through:
 
 - ✅ **Recognition** = foreign-first flp + Bubble Match; **Production** =
   English-first flp + Word Search **Pinyin** mode (positive-only); **Reading** =
-  Word Search **No Pinyin** mode (positive-only); **Writing** = Practice Writing
+  Word Search **No Pinyin** mode (positive-only) + **Speed Reading** (correct/incorrect);
+  **Writing** = Practice Writing
   drill (correct/incorrect). These are the **only** emitters. (Section 1.)
 - ✅ **Scope**: mark/goal logic is **language-agnostic**, but Reading/Writing
   emitters are zh-only ⇒ **es never gets Reading/Writing goals** (toggles hidden;

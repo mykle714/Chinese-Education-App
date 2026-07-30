@@ -10,7 +10,7 @@ import type { UsedInItem, Language } from "../../types";
 // limit on lookupTerm / OnDeckVocabService). A preview that comes back FULL means
 // there may be more to page through; a short preview is the whole list.
 const PREVIEW_COUNT = 4;
-// Window size per infinite-scroll fetch against /api/dictionary/used-in.
+// Window size per infinite-scroll fetch against /api/dictionary/usedIn.
 const PAGE_SIZE = 20;
 
 interface UsedInPaginatedListProps {
@@ -31,7 +31,7 @@ interface UsedInPaginatedListProps {
  * (InfoCardPanelBody) and the cdp "Used In" section (VocabCardSections).
  *
  * Seeds from the card's embedded preview (no fetch for users who never expand),
- * then infinite-scrolls the rest via GET /api/dictionary/used-in?offset=&limit=,
+ * then infinite-scrolls the rest via GET /api/dictionary/usedIn?offset=&limit=,
  * where offset is the running item count so pages continue seamlessly after the
  * preview. hasMore starts true only when the preview came back full (== PREVIEW_COUNT).
  *
@@ -78,7 +78,7 @@ export function UsedInPaginatedList({
         try {
             const offset = itemsRef.current.length;
             const res = await fetch(
-                `${API_BASE_URL}/api/dictionary/used-in?character=${encodeURIComponent(character)}&offset=${offset}&limit=${PAGE_SIZE}`,
+                `${API_BASE_URL}/api/dictionary/usedIn?character=${encodeURIComponent(character)}&offset=${offset}&limit=${PAGE_SIZE}`,
                 { headers: authHeader(), credentials: "include" }
             );
             if (!res.ok) {

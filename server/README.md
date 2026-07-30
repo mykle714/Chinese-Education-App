@@ -19,7 +19,7 @@ This is the backend API server for the vocabulary application, providing endpoin
 - `POST /api/auth/login` - Login a user
 - `POST /api/auth/logout` - Logout a user
 - `GET /api/auth/me` - Get current authenticated user
-- `POST /api/auth/change-password` - Change user password
+- `POST /api/auth/changePassword` - Change user password
 
 ### Vocabulary Entries
 - `GET /api/vocabEntries` - Get all vocabulary entries (protected)
@@ -29,7 +29,7 @@ This is the backend API server for the vocabulary application, providing endpoin
 - `PUT /api/vocabEntries/:id` - Update a vocabulary entry (protected)
 - `DELETE /api/vocabEntries/:id` - Delete a vocabulary entry (protected)
 - `POST /api/vocabEntries/import` - Import vocabulary entries from CSV (protected)
-- `POST /api/vocabEntries/by-tokens` - Get vocabulary entries by tokens (protected)
+- `POST /api/vocabEntries/byTokens` - Get vocabulary entries by tokens (protected)
 
 ### Users
 - `GET /api/users` - Get all users (protected)
@@ -40,10 +40,10 @@ This is the backend API server for the vocabulary application, providing endpoin
 - `GET /api/texts` - Get all reading texts (protected)
 
 ### OnDeck Vocabulary
-- `GET /api/onDeck/library-cards` - Get all library cards (protected)
-- `GET /api/onDeck/mastered-library-cards` - Get mastered library cards (protected)
-- `GET /api/onDeck/non-mastered-library-cards` - Get non-mastered library cards (protected)
-- `GET /api/onDeck/distributed-working-loop` - Get distributed working loop cards (protected)
+- `GET /api/onDeck/libraryCards` - Get all library cards (protected)
+- `GET /api/onDeck/masteredLibraryCards` - Get mastered library cards (protected)
+- `GET /api/onDeck/nonMasteredLibraryCards` - Get non-mastered library cards (protected)
+- `GET /api/onDeck/distributedWorkingLoop` - Get distributed working loop cards (protected)
 
 ## Project Structure
 

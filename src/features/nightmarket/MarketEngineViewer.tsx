@@ -5,12 +5,18 @@ import type { FederatedPointerEvent } from 'pixi.js';
 import { Box } from '@mui/material';
 import { TILE_SIZE } from '../../engine/market/nightMarketRegistry';
 import { isoToScreen, TILE_WIDTH, TILE_HEIGHT, type ScreenPosition } from '../../engine/market/isometric';
-import { computeMinZoom, type CellFootprint } from '../../engine/market/cameraFit';
+import { computeMinZoom, clampPan, visibleCellWindow, type CellFootprint } from '../../engine/market/cameraFit';
+import { useCameraControls } from '../../hooks/useCameraControls';
 import { buildFarmField, resolveTileSurfaceUrls, resolveTileDarkSurfaceUrls, FIELD_WIDTH, FIELD_HEIGHT } from '../../engine/market/farmTerrain';
 import { freeFarmTileset } from '../../engine/market/freeFarmTileset';
 import TemplateTerrainLayer from './TemplateTerrainLayer';
 import PlaceholderHouseLayer from './PlaceholderHouseLayer';
+// Publishes the camera zoom to the sprite leaves so a building's outer layers can ghost out as the
+// camera closes in — see engine/market/layerTranslucency.
+import { CameraZoomProvider } from './CameraZoomContext';
 import PedestrianLayer from './PedestrianLayer';
+import GroundBackdropLayer from './GroundBackdropLayer';
+import nmpPerf from './nmpPerf';
 import { useMarketWorld } from './useMarketWorld';
 import { usePixiPedestrians } from '../../hooks/usePixiPedestrians';
 import type { PlacedPlaceholder } from '../../engine/market/templateStitch';
@@ -80,21 +86,32 @@ interface SceneProps {
   onFootprintsChange?: (footprints: CellFootprint[]) => void;
 }
 
-// Half-integer zoom range — the free-farm art is pixel-art, so whole-number
-// scale factors keep it crisp (nearest-neighbour, no fractional resampling).
-// MIN_ZOOM is the one exception: 0.5 lets the camera pull back further than
-// the crisp floor of 1, trading a blurrier (resampled) view for more visible map.
+/**
+ * Camera ladder for nmp. The free-farm art is pixel-art (nearest-neighbour, `antialias={false}`),
+ * so the camera SETTLES onto half-steps between gestures — see {@link useCameraControls}, which keeps
+ * the zoom continuous while the user is pinching/scrolling and only lands on a rung at rest.
+ *
+ * CRISP_FLOOR (0.5) is the bottom rung. Below it the ladder runs out and the floor becomes
+ * SIZE-derived: a market whose tiled continent no longer fits at 0.5× may keep pulling back
+ * (continuously, and increasingly blurry) until its whole footprint is on screen — see
+ * {@link computeMinZoom}.
+ *
+ * ⚠ Only the whole numbers on this ladder are truly pixel-crisp; 1.5×/2.5× resample. The half-step
+ * spacing predates the settle tween and is kept because the 0.5→8 range needs finer rungs than
+ * whole numbers give it near the bottom. Raise ZOOM_STEP to 1 if the odd rungs ever read as soft.
+ */
 const CRISP_FLOOR = 0.5;
 const MAX_ZOOM = 8;
 const DEFAULT_ZOOM = 1;
 const ZOOM_STEP = 0.5;
+
 /**
- * Below CRISP_FLOOR the half-step ladder runs out, so the wheel/pinch floor becomes SIZE-derived:
- * a market whose tiled continent no longer fits at 0.5× may keep pulling back (continuously, and
- * increasingly blurry) until its whole footprint is on screen — see {@link computeMinZoom}.
- * This multiplicative step drives the wheel down there.
+ * Cells of real, autotiled default ground drawn around the market. Small on purpose: its only job is
+ * to give the market's edge tiles in-field neighbours to autotile against, because everything past
+ * it is covered by {@link ./GroundBackdropLayer}'s single tiling quad. Sizing this to the camera's
+ * zoomed-out reach instead (the first cut) meant tens of thousands of sprites — see that layer.
  */
-const SUB_FLOOR_ZOOM_FACTOR = 0.8;
+const APRON_RING_CELLS = 4;
 
 // ─── Grid overlay ────────────────────────────────────────────────────────────
 // Static isometric debug grid. Fine green lines mark every single tile (1 iso
@@ -414,6 +431,29 @@ function PlaceholderBoundsOverlay({ placeholders }: { placeholders: PlacedPlaceh
   );
 }
 
+// ─── Pedestrian ticker ───────────────────────────────────────────────────────
+
+/**
+ * Owns the animation frame: advances the pedestrian FSM and re-renders ONLY the pedestrian sprites.
+ *
+ * ⚠️ PERF-CRITICAL SPLIT. The frame counter used to live in {@link NightMarketScene}, so every tick
+ * re-rendered the scene and React reconciled the whole terrain tree (thousands of `pixiSprite`
+ * elements) 60 times a second. Keeping the counter in this leaf confines the per-frame work to the
+ * ~dozen pedestrian sprites. Do not hoist it back up — and note that the memoisation on the terrain
+ * layers is the second half of the same fix, since a scene re-render for any other reason (a pan)
+ * would otherwise still rebuild the terrain.
+ */
+function PedestrianTicker({ pedestrians }: { pedestrians: ReturnType<typeof usePixiPedestrians> }) {
+  const [, setFrame] = useState(0);
+  useTick((ticker) => {
+    const now = performance.now();
+    nmpPerf.frame(now); // dev-only; see ./nmpPerf for how to switch it on
+    pedestrians.tick(ticker.deltaMS, now);
+    setFrame((f) => (f + 1) % 1_000_000);
+  });
+  return <PedestrianLayer drawables={pedestrians.getDrawables()} />;
+}
+
 // ─── Scene ─────────────────────────────────────────────────────────────────
 // Runs inside <Application>. Handles drag-to-pan and renders the terrain.
 
@@ -450,14 +490,9 @@ function NightMarketScene({ pan, zoom, onPanChange, showGrid, debug, isPinchingR
     streetGraph: world?.streetGraph ?? null,
   });
 
-  // Frame counter: bumping state each tick forces a re-render so the pedestrian sprites read
-  // their fresh positions from `getDrawables()` below. The ped FSM is advanced in the same
-  // tick (one RAF loop drives both simulation and render).
-  const [, setFrame] = useState(0);
-  useTick((ticker) => {
-    pedestrians.tick(ticker.deltaMS, performance.now());
-    setFrame((f) => (f + 1) % 1_000_000);
-  });
+  // NOTE: the per-frame simulation + re-render lives in <PedestrianTicker> below, NOT here. Bumping
+  // frame state in this component re-rendered the entire scene at 60fps — including the terrain,
+  // the app's largest element tree — which was the dominant cost of nmp's lag.
 
   // Stage pointer events: drag-to-pan. Keyed on `isInitialised` so it reattaches
   // once the renderer exists.
@@ -498,6 +533,27 @@ function NightMarketScene({ pan, zoom, onPanChange, showGrid, debug, isPinchingR
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [app, isInitialised]);
 
+  // Which cells the camera can currently see, for terrain culling. An apron-padded field is far
+  // larger than the market (tens of thousands of cells at the zoom-out floor), so building it whole
+  // is not affordable — this bounds the work to the viewport. `visibleCellWindow` quantises its
+  // edges, so the memo below re-runs only every few cells of travel, not every dragged pixel
+  // (the scene itself re-renders every tick to advance the pedestrians).
+  const screenW = app?.renderer ? app.screen.width : 0;
+  const screenH = app?.renderer ? app.screen.height : 0;
+  const cullWindow = useMemo(
+    () => visibleCellWindow(pan, zoom, screenW, screenH),
+    [pan, zoom, screenW, screenH],
+  );
+
+  // Census: the numbers that decide whether the lag is "this market is genuinely enormous" or
+  // "something is rebuilding that shouldn't". `world` is the authored span; `window` is what the
+  // camera can currently see, and is what the terrain actually builds. See ./nmpPerf.
+  nmpPerf.count('world-cells', width * height);
+  nmpPerf.count(
+    'window-cells',
+    (cullWindow.maxCol - cullWindow.minCol + 1) * (cullWindow.maxRow - cullWindow.minRow + 1),
+  );
+
   // app.screen reads app.renderer.screen — gate on renderer, not screen.
   if (!app?.renderer) return null;
 
@@ -506,26 +562,42 @@ function NightMarketScene({ pan, zoom, onPanChange, showGrid, debug, isPinchingR
 
   return (
     <pixiContainer x={cx} y={cy} scale={zoom} sortableChildren>
-      {showGrid && <GridOverlay />}
-      {world && <TemplateTerrainLayer world={world.terrain} width={width} height={height} field={field} />}
-      {/* Occupant markers: a house (or two adjacent houses) in each FILLED placeholder slot
-          (temporary stand-in until the real stand-asset catalog exists). Cosmetic only — not in
-          the graph. */}
-      {world && <PlaceholderHouseLayer placeholders={world.placeholderAreas} />}
-      {world && <PedestrianLayer drawables={pedestrians.getDrawables()} />}
-      {/* Template/placeholder bounds read the STITCHED layout (placements + world.placeholderAreas),
-          so unlike the two overlays below they stay correct against the real template render. */}
-      {debug.templateBounds && <TemplateBoundsOverlay templates={placements} />}
-      {debug.placeholderBounds && world && (
-        <PlaceholderBoundsOverlay placeholders={world.placeholderAreas} />
-      )}
-      {/* NOTE: the GrassOverlay/OverlayLabels debug tints below still visualize the OLD
-          procedural buildFarmField, not the stitched template terrain — they are stale
-          against the template render and want re-targeting when a debug pass is
-          needed (both default off). */}
-      {debug.grass && <GrassOverlay />}
-      {debug.overlayLabels && <OverlayLabels />}
-      {debug.origin && <OriginOverlay />}
+      {/* Context only — emits no display object, so the layers below stay DIRECT children of the
+          container and keep taking part in its single global z-sort. */}
+      <CameraZoomProvider zoom={zoom}>
+        {/* Infinite default ground — one tiling quad behind everything, so the viewport is never
+            bare however far the camera pulls back. The real tiles only cover the market + ring. */}
+        <GroundBackdropLayer pan={pan} zoom={zoom} viewportW={screenW} viewportH={screenH} />
+        {showGrid && <GridOverlay />}
+        {world && (
+          <TemplateTerrainLayer
+            world={world.terrain}
+            width={width}
+            height={height}
+            field={field}
+            apronPad={APRON_RING_CELLS}
+            cullWindow={cullWindow}
+          />
+        )}
+        {/* Occupant markers: a house (or two adjacent houses) in each FILLED placeholder slot
+            (temporary stand-in until the real stand-asset catalog exists). Cosmetic only — not in
+            the graph. */}
+        {world && <PlaceholderHouseLayer placeholders={world.placeholderAreas} />}
+        {world && <PedestrianTicker pedestrians={pedestrians} />}
+        {/* Template/placeholder bounds read the STITCHED layout (placements + world.placeholderAreas),
+            so unlike the two overlays below they stay correct against the real template render. */}
+        {debug.templateBounds && <TemplateBoundsOverlay templates={placements} />}
+        {debug.placeholderBounds && world && (
+          <PlaceholderBoundsOverlay placeholders={world.placeholderAreas} />
+        )}
+        {/* NOTE: the GrassOverlay/OverlayLabels debug tints below still visualize the OLD
+            procedural buildFarmField, not the stitched template terrain — they are stale
+            against the template render and want re-targeting when a debug pass is
+            needed (both default off). */}
+        {debug.grass && <GrassOverlay />}
+        {debug.overlayLabels && <OverlayLabels />}
+        {debug.origin && <OriginOverlay />}
+      </CameraZoomProvider>
     </pixiContainer>
   );
 }
@@ -534,132 +606,41 @@ function NightMarketScene({ pan, zoom, onPanChange, showGrid, debug, isPinchingR
 // Outer component: pan/zoom state, gesture handlers, Application mount.
 
 function MarketEngineViewer({ showGrid, debug = ALL_DEBUG_OFF, reloadToken }: MarketEngineViewerProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [pan, setPan] = useState({ x: 0, y: 250 });
-  const [zoom, setZoom] = useState(DEFAULT_ZOOM);
-  const [ready, setReady] = useState(false);
-
-  // Refs kept in sync so gesture handlers read the latest values without
-  // recreating on every render.
-  const panRef = useRef(pan);
-  panRef.current = pan;
-  const zoomRef = useRef(zoom);
-  zoomRef.current = zoom;
-
-  // True while a 2-finger pinch is active — suppresses the Pixi drag handler.
-  const isPinchingRef = useRef(false);
-  const pinchRef = useRef({ active: false, startDist: 0, startZoom: 1, startPanX: 0, startPanY: 0, midX: 0, midY: 0 });
-
-  useEffect(() => {
-    if (containerRef.current) setReady(true);
-  }, []);
-
   // The loaded layout's placement rectangles, reported up by the scene. Held in a ref (not state)
-  // because only the gesture handlers read it — a re-render would buy nothing.
+  // because only the camera-limit callbacks read it — a re-render would buy nothing.
   const footprintsRef = useRef<CellFootprint[]>([]);
+
+  // Shared camera: continuous pinch/wheel zoom that settles onto the ZOOM_STEP ladder at rest, a
+  // zoom-out floor that drops below CRISP_FLOOR once the tiled continent outgrows the viewport, and
+  // a pan clamp that keeps the market anchored to the viewport.
+  const { containerRef, pan, zoom, setPan, reclampPan, isPinchingRef, ready } = useCameraControls({
+    crispFloor: CRISP_FLOOR,
+    maxZoom: MAX_ZOOM,
+    ladderStep: ZOOM_STEP,
+    initialZoom: DEFAULT_ZOOM,
+    // Seats the origin hub below the header on first paint (then gets clamped once the world loads).
+    initialPan: { x: 0, y: 250 },
+    minZoomFor: (el) => computeMinZoom(footprintsRef.current, el.clientWidth, el.clientHeight, CRISP_FLOOR),
+    // Keeps the point under the screen centre inside the placement bbox. Viewport-independent, so
+    // the element the host hands us is unused here.
+    clampPan: (p, z) => clampPan(p, footprintsRef.current, z),
+    enablePinch: true,
+  });
+
+  // The clamp's inputs move without the pan moving — the world finishes loading, or the element
+  // resizes — and nothing else would notice that the standing pan has gone out of bounds.
   const handleFootprintsChange = useCallback((footprints: CellFootprint[]) => {
     footprintsRef.current = footprints;
-  }, []);
-
-  // Set a zoom snapped to the nearest ZOOM_STEP, adjusting pan so the focal point stays fixed on screen.
-  const applyZoomAtPoint = useCallback((focalX: number, focalY: number, rawZoom: number) => {
-    const el = containerRef.current;
-    if (!el) return;
-    // At/above the crisp floor the half-step ladder applies; below it (a market too big to fit at
-    // 0.5×) any fractional value down to the size-derived floor is allowed.
-    const minZoom = computeMinZoom(footprintsRef.current, el.clientWidth, el.clientHeight, CRISP_FLOOR);
-    const newZoom = rawZoom >= CRISP_FLOOR
-      ? Math.min(MAX_ZOOM, Math.round(rawZoom / ZOOM_STEP) * ZOOM_STEP)
-      : Math.max(minZoom, rawZoom);
-    if (newZoom === zoomRef.current) return; // fixed steps — ignore sub-step deltas
-    const ratio = newZoom / zoomRef.current;
-    const w = el.clientWidth;
-    const h = el.clientHeight;
-    const newPan = {
-      x: (focalX - w / 2) * (1 - ratio) + panRef.current.x * ratio,
-      y: (focalY - h / 2) * (1 - ratio) + panRef.current.y * ratio,
-    };
-    zoomRef.current = newZoom;
-    panRef.current = newPan;
-    setZoom(newZoom);
-    setPan(newPan);
-  }, []);
-
-  // Wheel zoom centered on the cursor. One ZOOM_STEP per notch.
-  const handleWheel = useCallback((e: WheelEvent) => {
-    e.preventDefault();
-    const el = containerRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const current = zoomRef.current;
-    // Half-step ladder at/above the crisp floor; geometric ladder below it, where a fixed −0.5
-    // step would either hit 0 or leap straight to the fitted floor in one notch.
-    let next: number;
-    if (e.deltaY < 0) {
-      next = current < CRISP_FLOOR ? Math.min(CRISP_FLOOR, current / SUB_FLOOR_ZOOM_FACTOR) : current + ZOOM_STEP;
-    } else {
-      next = current > CRISP_FLOOR ? current - ZOOM_STEP : current * SUB_FLOOR_ZOOM_FACTOR;
-    }
-    applyZoomAtPoint(e.clientX - rect.left, e.clientY - rect.top, next);
-  }, [applyZoomAtPoint]);
-
-  // Pinch-to-zoom: capture phase so we can preventDefault before Pixi sees the touches.
-  const handleTouchStart = useCallback((e: TouchEvent) => {
-    if (e.touches.length === 2) {
-      e.preventDefault();
-      isPinchingRef.current = true;
-      const t0 = e.touches[0];
-      const t1 = e.touches[1];
-      const el = containerRef.current!;
-      const rect = el.getBoundingClientRect();
-      const dx = t1.clientX - t0.clientX;
-      const dy = t1.clientY - t0.clientY;
-      pinchRef.current = {
-        active: true,
-        startDist: Math.sqrt(dx * dx + dy * dy),
-        startZoom: zoomRef.current,
-        startPanX: panRef.current.x,
-        startPanY: panRef.current.y,
-        midX: (t0.clientX + t1.clientX) / 2 - rect.left,
-        midY: (t0.clientY + t1.clientY) / 2 - rect.top,
-      };
-    }
-  }, []);
-
-  const handleTouchMove = useCallback((e: TouchEvent) => {
-    if (!pinchRef.current.active || e.touches.length !== 2) return;
-    e.preventDefault();
-    const t0 = e.touches[0];
-    const t1 = e.touches[1];
-    const dx = t1.clientX - t0.clientX;
-    const dy = t1.clientY - t0.clientY;
-    const newDist = Math.sqrt(dx * dx + dy * dy);
-    const scale = newDist / pinchRef.current.startDist;
-    // Snap to the nearest ZOOM_STEP around the pinch midpoint.
-    applyZoomAtPoint(pinchRef.current.midX, pinchRef.current.midY, pinchRef.current.startZoom * scale);
-  }, [applyZoomAtPoint]);
-
-  const handleTouchEnd = useCallback(() => {
-    pinchRef.current.active = false;
-    isPinchingRef.current = false;
-  }, []);
+    reclampPan();
+  }, [reclampPan]);
 
   useEffect(() => {
     const el = containerRef.current;
-    if (!el) return;
-    el.addEventListener('wheel', handleWheel, { passive: false });
-    el.addEventListener('touchstart', handleTouchStart, { passive: false, capture: true });
-    el.addEventListener('touchmove', handleTouchMove, { passive: false });
-    el.addEventListener('touchend', handleTouchEnd);
-    el.addEventListener('touchcancel', handleTouchEnd);
-    return () => {
-      el.removeEventListener('wheel', handleWheel);
-      el.removeEventListener('touchstart', handleTouchStart, { capture: true });
-      el.removeEventListener('touchmove', handleTouchMove);
-      el.removeEventListener('touchend', handleTouchEnd);
-      el.removeEventListener('touchcancel', handleTouchEnd);
-    };
-  }, [handleWheel, handleTouchStart, handleTouchMove, handleTouchEnd, ready]);
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => reclampPan());
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [containerRef, ready, reclampPan]);
 
   return (
     <Box

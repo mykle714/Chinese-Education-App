@@ -19,7 +19,7 @@ consume it):
 | Surface | Entry point | Where the state lives | Slot A on open |
 |---|---|---|---|
 | **eip Compare tab** (flp) | Compare icon in the eip header's 2×2 action grid | the singleton Compare tab object in `useEipTabs` | pre-filled with the word the user came from |
-| **`/compare` page** (hp) | "Compare Words" row in the Home hub menu | `useState` in `src/pages/ComparePage.tsx` | empty (the user arrives without a source word) |
+| **`/compare` page** (hp) | "Compare Words" row in the Home hub menu | `useState` in `src/features/dictionary/ComparePage.tsx` | empty (the user arrives without a source word) |
 
 The contract between them is the `CompareState` interface exported by `CompareWorkspace`
 (`{ slotA, slotB, comparison, comparisonParts }`). `CompareEipTab extends CompareState`, so the
@@ -123,7 +123,7 @@ wrappers get Compare for free since they share the tab system and panel body.
   same debounce, segment mode, and language scoping as the dictionary page. Search scope is the
   **full dictionary** (any det row — decided).
 - **Keypad**: the tone-marked vowel buttons currently inlined (twice — mobile + desktop
-  variants) in `src/pages/DictionaryPage.tsx` (`SPECIAL_CHARACTERS`, `getVowelColor`,
+  variants) in `src/features/dictionary/DictionaryPage.tsx` (`SPECIAL_CHARACTERS`, `getVowelColor`,
   `specialCharButtonSx`, `handleSpecialCharClick`) are **extracted into a shared
   `src/components/PinyinKeypad.tsx`** and reused here; DictionaryPage's two inline copies are
   replaced by the shared component (dedup cleanup). For `es` the same component renders the
@@ -255,7 +255,7 @@ CREATE TABLE word_comparison_cache (
 | Client hook | `src/hooks/useWordComparison.ts` (**new**) | fires the compare request; loading / error / `limitReached` states |
 | Client state | `src/features/flashcards/FlashcardsLearnPage/useEipTabs.ts` | `EipTab` discriminated union (`kind: 'entry' \| 'compare'`); `CompareEipTab extends CompareState`; singleton push/focus/refill semantics |
 | Client UI | `src/components/CompareWorkspace.tsx` (**shared**) | the whole compare surface — slots + search mode (keypad + bar + result cards) + comparison display; exports `CompareState` / `CompareWorkspaceHandle`. Owns no slot state; both surfaces drive it. |
-| Client page | `src/pages/ComparePage.tsx` (**new**) | `/compare` node page: owns a `CompareState` `useState` and renders `CompareWorkspace` |
+| Client page | `src/features/dictionary/ComparePage.tsx` (**new**) | `/compare` node page: owns a `CompareState` `useState` and renders `CompareWorkspace` |
 | Route / nav | `src/App.tsx`, `src/components/Layout.tsx` (`MOBILE_DEMO_PATHS`), `src/utils/pageTransition.ts` (`NODE_ROUTES`), `src/components/FooterPresenter.tsx` (`FOOTER_ROUTES`), `src/pages/HomePage.tsx` | the `/compare` route, its phone-frame membership, its right-slide direction, its footer (Home tab), and the "Compare Words" hub row |
 | Shared util | `src/utils/dictEntryAdapter.ts` (**moved** out of `features/flashcards/FlashcardsLearnPage/`) | `dictionaryEntryToVocabEntry` — now consumed by the shared workspace, the eip, and the dictionary cdp |
 | Client UI | `src/components/LongDefinitionDisplay.tsx`, `src/components/SegmentedSentenceDisplay.tsx` | shared renderer; `runTranslation` puts a translated run into whole-run (passive) mode |
@@ -313,7 +313,7 @@ English-query space. Cache hits are always free and don't consume a slot.
   migrations 99–100, `streakDateOf`).
 - eip entry-tab system this extends: `src/features/flashcards/FlashcardsLearnPage/useEipTabs.ts`,
   `EipTabStrip.tsx`; panel body + header actions: `InfoCardPanelBody.tsx`.
-- Keypad source being extracted: `src/pages/DictionaryPage.tsx` (`SPECIAL_CHARACTERS`,
+- Keypad source being extracted: `src/features/dictionary/DictionaryPage.tsx` (`SPECIAL_CHARACTERS`,
   `getVowelColor`, `specialCharButtonSx`).
 - Search reuse: `src/hooks/useDictionarySearch.ts`, `src/components/DictionaryEntryRow.tsx`.
 - cpcd sizing (new `"xl"`): `src/components/CPCDRow.tsx`, `src/components/ForeignText.tsx`.

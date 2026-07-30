@@ -3,7 +3,7 @@ import { recoverStreets } from '../streetRecovery';
 import { buildMarketWorld } from '../marketWorld';
 import { tileKey } from '../tileGraph';
 import type { PlacedTemplate } from '../templateStitch';
-import type { TemplateDefinitionPayload } from '../../../features/nightmarket/templateEditorApi';
+import type { TemplateDefinitionPayload } from '../templateDefinition';
 
 /** Build a cell set from an inclusive rectangle [c0,c1]×[r0,r1]. */
 function rectCells(c0: number, c1: number, r0: number, r1: number): string[] {

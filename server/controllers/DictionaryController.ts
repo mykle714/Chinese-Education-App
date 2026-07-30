@@ -5,6 +5,7 @@ import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import { IVocabEntryDAL } from '../dal/interfaces/IVocabEntryDAL.js';
 import { RateLimitError } from '../types/dal.js';
 import { resolveTimezone, streakDateOf } from '../utils/streakDate.js';
+import { requireUserId, getUserLanguage } from '../utils/controllerUtils.js';
 
 /**
  * Dictionary Controller - Handles HTTP requests for dictionary operations
@@ -79,7 +80,7 @@ export class DictionaryController {
       const [withLongDefMeta] = await this.dictionaryService.enrichLongDefinitionMetadataBatch([withSelectedSense], language);
       // Attaches definitionsApproved (validated 'definitions' field) so the client
       // knows whether to render the longDefinition/partsOfSpeech AI-generated styling.
-      const [enrichedEntry] = await this.dictionaryService.enrichDefinitionsApprovalBatch([withLongDefMeta], language);
+      const [enrichedEntry] = await this.dictionaryService.enrichFieldApprovalsBatch([withLongDefMeta], language);
 
       // For single-character zh entries, also attach the per-user "used in"
       // list (up to 4 multi-char words containing this character, capped at
@@ -121,7 +122,7 @@ export class DictionaryController {
    * on the eip "Used In" tab and the cdp "Used In" section: the card ships the first
    * few via enrichment, and the client fetches subsequent windows here on scroll.
    *
-   * GET /api/dictionary/used-in?character=<char>&offset=<num>&limit=<num>
+   * GET /api/dictionary/usedIn?character=<char>&offset=<num>&limit=<num>
    * Returns { items: UsedInItem[], hasMore: boolean }. Chinese-only (non-zh → []).
    */
   async usedIn(req: Request, res: Response): Promise<void> {
@@ -237,7 +238,7 @@ export class DictionaryController {
    * Generate an AI synthetic dictionary entry for a pinyin query with no real match — the "AI"
    * button target (docs/DICTIONARY_AI_FALLBACK_SEARCH.md). Returns `{ entry }`, where `entry` is a
    * display-only AiDictionaryEntry, or `null` for an empty result / disabled feature / invalid input.
-   * POST /api/dictionary/ai-entry  { term, language? }
+   * POST /api/dictionary/aiEntry  { term, language? }
    */
   async aiEntry(req: Request, res: Response): Promise<void> {
     try {
@@ -374,7 +375,13 @@ export class DictionaryController {
    */
   async getCount(req: Request, res: Response): Promise<void> {
     try {
-      const count = await this.dictionaryService.getTotalCount();
+      // Per-language: the two dictionaries are separate tables of very different
+      // sizes, so "the count" is only meaningful once a language is chosen. Falls
+      // back to the requesting user's selected language.
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+      const language = await getUserLanguage(userId);
+      const count = await this.dictionaryService.getTotalCount(language);
       res.json({ count });
     } catch (error: any) {
       console.error('Error getting dictionary count:', error);

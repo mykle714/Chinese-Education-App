@@ -225,7 +225,9 @@ export class TTSService {
   }
 }
 
-export const ttsService = new TTSService();
+// NOTE: no module-level singleton here. TTSService is constructed once in
+// dal/setup.ts like every other service, so it is visible from the composition
+// root and can be substituted in a test (docs/ARCHITECTURE_REVIEW.md finding 8).
 
 // --- SSML pinyin helpers -----------------------------------------------------
 //

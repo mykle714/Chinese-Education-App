@@ -3,6 +3,7 @@ import { UserDAL } from './implementations/UserDAL.js';
 import { RefreshTokenDAL } from './implementations/RefreshTokenDAL.js';
 import { VocabEntryDAL } from './implementations/VocabEntryDAL.js';
 import { UserMinutePointsDAL } from './implementations/UserMinutePointsDAL.js';
+import { UserLanguageTotalsDAL } from './implementations/UserLanguageTotalsDAL.js';
 import { DictionaryDAL } from './implementations/DictionaryDAL.js';
 import { UserService } from '../services/UserService.js';
 import { VocabEntryService } from '../services/VocabEntryService.js';
@@ -46,12 +47,21 @@ import { CommunityLayoutController } from '../controllers/CommunityLayoutControl
 import { GameAssetService } from '../services/GameAssetService.js';
 import { GameProgressService } from '../services/GameProgressService.js';
 import { GamesController } from '../controllers/GamesController.js';
+import { SpeedReadingDAL } from './implementations/SpeedReadingDAL.js';
+import { SpeedReadingService } from '../services/SpeedReadingService.js';
+import { SpeedReadingController } from '../controllers/SpeedReadingController.js';
+import { LeaderboardService } from '../services/LeaderboardService.js';
+import { LeaderboardController } from '../controllers/LeaderboardController.js';
+import { TTSService } from '../services/TTSService.js';
+import { TTSController } from '../controllers/TTSController.js';
 
 // DAL instances
 const userDAL = new UserDAL();
 const refreshTokenDAL = new RefreshTokenDAL();
 const vocabEntryDAL = new VocabEntryDAL();
 const userMinutePointsDAL = new UserMinutePointsDAL();
+// Per-(user,language) counters + streak state; replaced the global counters on `users` (migration 134).
+const userLanguageTotalsDAL = new UserLanguageTotalsDAL();
 const dictionaryDAL = new DictionaryDAL();
 const sortPacksDAL = new SortPacksDAL();
 const nightMarketDAL = new NightMarketDAL();
@@ -62,9 +72,11 @@ const gameProgressDAL = new GameProgressDAL();
 const icons8DAL = new Icons8DAL();
 const winsDAL = new WinsDAL();
 const communityLayoutDAL = new CommunityLayoutDAL();
+// Speed Reading owns no tables — this DAL reads the player's library.
+const speedReadingDAL = new SpeedReadingDAL();
 
 // Service instances (with DI)
-const userService = new UserService(userDAL, refreshTokenDAL);
+const userService = new UserService(userDAL, refreshTokenDAL, userLanguageTotalsDAL);
 const dictionaryService = new DictionaryService(dictionaryDAL);
 const vocabEntryService = new VocabEntryService(vocabEntryDAL, userDAL, dictionaryService);
 // Request-time (validator-gated) trigger for the zh discover lazy-enrichment pipeline
@@ -72,7 +84,6 @@ const vocabEntryService = new VocabEntryService(vocabEntryDAL, userDAL, dictiona
 const lazyEnrichmentService = new LazyEnrichmentService(userDAL);
 // Created before onDeckVocabService because Word Search borrows its level estimate.
 const starterPacksService = new StarterPacksService(vocabEntryDAL, dictionaryDAL, sortPacksDAL, lazyEnrichmentService);
-const onDeckVocabService = new OnDeckVocabService(vocabEntryDAL, dictionaryService, starterPacksService);
 const textService = new TextService(userDAL);
 // Validation reuses TextService to persist composed documents (with validation* columns).
 const validationService = new ValidationService(userDAL, textService);
@@ -90,11 +101,19 @@ const nightMarketPlacementService = new NightMarketPlacementService(nightMarketP
 // Constructed after the placement service — the sandbox's Iterate action reuses its growth planner.
 const nightMarketSandboxService = new NightMarketSandboxService(nightMarketSandboxDAL, userDAL, nightMarketPlacementService);
 // Constructed after the placement service so the grant hook can be wired in.
-const userMinutePointsService = new UserMinutePointsService(userMinutePointsDAL, userDAL, nightMarketPlacementService);
+const userMinutePointsService = new UserMinutePointsService(userMinutePointsDAL, userLanguageTotalsDAL, userDAL, nightMarketPlacementService);
 const gameAssetService = new GameAssetService(gameAssetDAL);
 const gameProgressService = new GameProgressService(gameProgressDAL);
 // Community shared-layout feeds + votes; reuses vocabEntryService for the apply-to-card flow.
 const communityLayoutService = new CommunityLayoutService(communityLayoutDAL, vocabEntryService);
+// Read-only aggregate over three DALs; streak is masked for non-public users.
+const leaderboardService = new LeaderboardService(userDAL, userMinutePointsDAL, winsDAL);
+// Provider-pluggable text-to-speech with an on-disk cache. No DB dependencies, but it
+// is constructed HERE rather than as a module singleton so every service has one
+// lifetime owner (docs/ARCHITECTURE_REVIEW.md finding 8).
+const ttsService = new TTSService();
+// Constructed after ttsService: the working loop pre-warms each card's audio.
+const onDeckVocabService = new OnDeckVocabService(vocabEntryDAL, dictionaryService, starterPacksService, ttsService);
 
 // Controller instances
 const userController = new UserController(userService, icons8DAL, nightMarketWorldService);
@@ -110,17 +129,24 @@ const nightMarketTemplateController = new NightMarketTemplateController(nightMar
 const nightMarketSandboxController = new NightMarketSandboxController(nightMarketSandboxService);
 const nightMarketWorldController = new NightMarketWorldController(nightMarketWorldService);
 const gamesController = new GamesController(gameAssetService, gameProgressService);
+// Speed Reading is game-SPECIFIC and so gets its own controller rather than
+// growing the game-agnostic GamesController.
+const speedReadingService = new SpeedReadingService(speedReadingDAL);
+const speedReadingController = new SpeedReadingController(speedReadingService);
 // icons8 image serving is a thin DB read → no service layer; the controller takes the DAL directly.
 const icons8Controller = new Icons8Controller(icons8DAL);
 // wins is a thin per-user event log → no service layer; controller takes the DAL directly.
 const winsController = new WinsController(winsDAL);
 const communityLayoutController = new CommunityLayoutController(communityLayoutService);
+const leaderboardController = new LeaderboardController(leaderboardService);
+const ttsController = new TTSController(ttsService);
 
 export {
   userDAL,
   refreshTokenDAL,
   vocabEntryDAL,
   userMinutePointsDAL,
+  userLanguageTotalsDAL,
   dictionaryDAL,
   sortPacksDAL,
   userService,
@@ -156,6 +182,9 @@ export {
   gameAssetService,
   gameProgressService,
   gamesController,
+  speedReadingDAL,
+  speedReadingService,
+  speedReadingController,
   icons8DAL,
   icons8Controller,
   winsDAL,
@@ -163,4 +192,8 @@ export {
   communityLayoutDAL,
   communityLayoutService,
   communityLayoutController,
+  leaderboardService,
+  leaderboardController,
+  ttsService,
+  ttsController,
 };

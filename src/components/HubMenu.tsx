@@ -72,6 +72,28 @@ const ArrayScroll = styled(Box)(() => ({
     "&::-webkit-scrollbar": { display: "none" },
 }));
 
+// Column wrapper for a fan-out strip that carries a group header above it, so
+// the header + strip read as ONE menu item inside MenuList's 28px gap.
+const ArrayGroup = styled(Box)(() => ({
+    display: "flex",
+    flexDirection: "column",
+    width: "100%",
+    gap: 8,
+}));
+
+// Group header row. Its 10% side inset matches ArrayScroll's padding (and
+// MenuCard's centered 80% width) so the title lines up with the first sub-card's
+// left edge and the badge with the last card's right edge of a full-width row.
+const ArrayGroupHeaderRow = styled(Box)(() => ({
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    width: "100%",
+    padding: "0 10%",
+    boxSizing: "border-box",
+}));
+
 const RowIconTile = styled(Box)(() => ({
     alignSelf: "center",
     width: 72,
@@ -103,12 +125,21 @@ const CornerBadgeSlot = styled(Box)(() => ({
 
 /** Small pill for a card's top-right corner: an optional weekly ⭐ plus an
     optional "×N" count (e.g. lifetime wins). Renders nothing if both are
-    empty/falsy. */
-export const HubMenuStatBadge: React.FC<{ starred?: boolean; count?: number }> = ({ starred, count }) => {
+    empty/falsy.
+
+    `variant` picks the fill for the surface it sits on: `"card"` (default) is
+    the translucent white that reads on a pastel hub card; `"header"` is the
+    neutral tint used by {@link HubMenuGroupHeader}, which sits on the plain page
+    background where translucent white would disappear. */
+export const HubMenuStatBadge: React.FC<{ starred?: boolean; count?: number; variant?: "card" | "header" }> = ({
+    starred,
+    count,
+    variant = "card",
+}) => {
     if (!starred && !count) return null;
     return (
         <Box
-            className="hub-menu__stat-badge"
+            className={`hub-menu__stat-badge hub-menu__stat-badge--${variant}`}
             sx={{
                 display: "flex",
                 alignItems: "center",
@@ -116,7 +147,8 @@ export const HubMenuStatBadge: React.FC<{ starred?: boolean; count?: number }> =
                 px: 1,
                 py: 0.25,
                 borderRadius: "999px",
-                backgroundColor: "rgba(255, 255, 255, 0.55)",
+                flexShrink: 0,
+                backgroundColor: variant === "header" ? COLORS.rowHoverBg : "rgba(255, 255, 255, 0.55)",
                 fontSize: SIZE.caption,
                 fontWeight: WEIGHT.bold,
                 color: COLORS.onSurface,
@@ -128,6 +160,42 @@ export const HubMenuStatBadge: React.FC<{ starred?: boolean; count?: number }> =
         </Box>
     );
 };
+
+/** Header line above a fan-out strip: the game/group name on the left and an
+    optional aggregate stat (e.g. a {@link HubMenuStatBadge}) on the right.
+    Exported so feature-owned strips (Word Search's hub item) render the exact
+    same header as a generic {@link HubMenuArrayItem}.
+
+    This is where a GAME-WIDE total belongs — the sub-cards below it are per
+    level/mode, so a count pinned to one of them would read as that card's own
+    score. See docs/HUB_MENU_SYSTEM.md. */
+export const HubMenuGroupHeader: React.FC<{ title: string; stat?: ReactNode; className?: string }> = ({
+    title,
+    stat,
+    className,
+}) => (
+    <ArrayGroupHeaderRow className={className ?? "hub-menu__group-header"}>
+        <Typography
+            className="hub-menu__group-header-title"
+            sx={{
+                fontSize: SIZE.body,
+                fontWeight: WEIGHT.bold,
+                color: COLORS.textSecondary,
+                fontFamily: FONTS.sans,
+                lineHeight: LEADING.normal,
+                textTransform: "uppercase",
+                letterSpacing: "0.06em",
+                minWidth: 0,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+            }}
+        >
+            {title}
+        </Typography>
+        {stat}
+    </ArrayGroupHeaderRow>
+);
 
 const CardTitle: React.FC<{ title: string; subtitle?: string }> = ({ title, subtitle }) => (
     <RowBody className="hub-menu__row-body">
@@ -159,6 +227,11 @@ const CardTitle: React.FC<{ title: string; subtitle?: string }> = ({ title, subt
         )}
     </RowBody>
 );
+
+/** Column wrapper that binds a {@link HubMenuGroupHeader} to the strip below it
+    so the pair reads as ONE menu item. Exported for feature-owned strips that
+    can't use {@link HubMenuArrayItem}'s built-in header (Word Search's). */
+export const HubMenuGroup = ArrayGroup;
 
 /** Large rounded icon tile (right side of a hub card). Exported for feature
     strips that build their own cards but want the identical icon treatment. */
@@ -243,20 +316,28 @@ export interface HubMenuArraySubItem {
 
 interface HubMenuArrayItemProps {
     items: HubMenuArraySubItem[];
+    /** Optional group name shown above the strip (e.g. the game's title). When
+        omitted the strip renders bare, exactly as before. */
+    headerTitle?: string;
+    /** Optional aggregate stat for the group header — a stat that describes the
+        WHOLE group rather than any one sub-card (e.g. a game's total wins).
+        Ignored unless `headerTitle` is given. */
+    headerStat?: ReactNode;
     className?: string;
 }
 
 /** A menu item that fans out into a horizontally-scrolling strip of smaller
     (70%-width) sub-cards instead of one full-width row — e.g. Bubble Match's
     3 difficulty levels. Desktop gets click-and-drag panning via useDragScroll;
-    touch/trackpad scroll natively. */
-export const HubMenuArrayItem: React.FC<HubMenuArrayItemProps> = ({ items, className }) => {
+    touch/trackpad scroll natively. Optionally topped by a group header carrying
+    the group's name + an aggregate stat. */
+export const HubMenuArrayItem: React.FC<HubMenuArrayItemProps> = ({ items, headerTitle, headerStat, className }) => {
     const slideNavigate = useSlideNavigate();
     const scrollRef = useRef<HTMLDivElement | null>(null);
     useDragScroll(scrollRef);
 
-    return (
-        <ArrayScroll ref={scrollRef} className={className ?? "hub-menu__array-item"}>
+    const strip = (
+        <ArrayScroll ref={scrollRef} className={headerTitle ? "hub-menu__array-item-scroll" : className ?? "hub-menu__array-item"}>
             {items.map((item) => {
                 const handleClick = (e: React.MouseEvent) => {
                     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
@@ -279,5 +360,15 @@ export const HubMenuArrayItem: React.FC<HubMenuArrayItemProps> = ({ items, class
                 );
             })}
         </ArrayScroll>
+    );
+
+    // No header → keep the bare strip so existing callers are byte-identical.
+    if (!headerTitle) return strip;
+
+    return (
+        <ArrayGroup className={className ?? "hub-menu__array-group"}>
+            <HubMenuGroupHeader title={headerTitle} stat={headerStat} />
+            {strip}
+        </ArrayGroup>
     );
 };

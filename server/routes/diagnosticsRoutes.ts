@@ -23,7 +23,6 @@ const router = Router();
 // telemetry from the browser (see src/utils/perfDiagnostics.ts). Used to diagnose
 // the prod-only "buttons take 1–2s before working" lag on the mobile-demo
 // footer/decks.
-// @ts-ignore
 router.post('/api/diagnostics/perf', diagnosticsLimiter, (req, res) => {
   try {
     const body = req.body || {};
@@ -71,7 +70,6 @@ router.post('/api/diagnostics/perf', diagnosticsLimiter, (req, res) => {
 // from the client error boundary + global error/unhandledrejection listeners.
 // The CLIENT scrubs tokens/PII before sending (see src/utils/errorReporting.ts);
 // we additionally cap field lengths here.
-// @ts-ignore
 router.post('/api/diagnostics/error', diagnosticsLimiter, (req, res) => {
   try {
     const body = req.body || {};

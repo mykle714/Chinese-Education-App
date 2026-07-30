@@ -39,7 +39,7 @@ export interface PlacedTemplatePayload {
   filledPlaceholderIds: string[];
 }
 
-/** Response for GET /api/night-market/layout. */
+/** Response for GET /api/nightMarket/layout. */
 export interface UserLayoutResponse {
   layout: PlacedTemplatePayload[];
 }
@@ -77,15 +77,15 @@ export class NightMarketWorldService {
    * {@link seedHubIfAbsent}), recomputes+persists each placement's active version from live
    * conditions, then materializes every placement into a {@link PlacedTemplatePayload}.
    */
-  async getUserLayout(userId: string): Promise<UserLayoutResponse> {
+  async getUserLayout(userId: string, language: string): Promise<UserLayoutResponse> {
     // First-load safety net: guarantee every user has a hub, even pre-existing accounts that
     // predate the account-creation seed (see seedHubIfAbsent — deprecated-on-arrival).
-    await this.seedHubIfAbsent(userId);
+    await this.seedHubIfAbsent(userId, language);
 
-    const placements = await this.placementDAL.findPlacementsByUser(userId);
+    const placements = await this.placementDAL.findPlacementsByUser(userId, language);
 
     // Group occupants by placement so each placement's filled-slot set is its own.
-    const occupants = await this.placementDAL.findOccupantsByUser(userId);
+    const occupants = await this.placementDAL.findOccupantsByUser(userId, language);
     const filledByPlacement = new Map<string, Set<string>>();
     for (const occ of occupants) {
       const set = filledByPlacement.get(occ.placedTemplateId) ?? new Set<string>();
@@ -213,10 +213,10 @@ export class NightMarketWorldService {
    * (organic first-load coverage or a one-time backfill), DELETE this branch — new accounts get
    * their hub at creation and never reach here. Do not treat this as load-bearing runtime logic.
    */
-  private async seedHubIfAbsent(userId: string): Promise<void> {
-    const count = await this.placementDAL.countPlacementsByUser(userId);
+  private async seedHubIfAbsent(userId: string, language: string): Promise<void> {
+    const count = await this.placementDAL.countPlacementsByUser(userId, language);
     if (count === 0) {
-      await this.seedHubPlacement(userId);
+      await this.seedHubPlacement(userId, language);
     }
   }
 
@@ -226,7 +226,7 @@ export class NightMarketWorldService {
    * net above. The UNIQUE (userId, offsetCol, offsetRow) index makes a duplicate origin seed a
    * loud error rather than silent double-placement, so callers must only seed a user once.
    */
-  async seedHubPlacement(userId: string): Promise<void> {
-    await this.placementDAL.insertPlacement(userId, NIGHT_MARKET_HUB_TEMPLATE_NAME, 0, 0, 0);
+  async seedHubPlacement(userId: string, language: string): Promise<void> {
+    await this.placementDAL.insertPlacement(userId, language, NIGHT_MARKET_HUB_TEMPLATE_NAME, 0, 0, 0);
   }
 }

@@ -9,7 +9,7 @@ import { dictTableForLanguage } from '../dal/shared/dictTable.js';
 import { vetTableForLanguage, vetReadFrom, UTCM_USERS_JOIN, UTCM_CATEGORY_EXPR, UTCM_CATEGORY_SELECT, typeCategoryExpr } from '../dal/shared/vetTable.js';
 import { computeTypeCategory } from '../utils/masteryCompute.js';
 import { DICT_COLS, DICT_JOIN } from '../dal/shared/dictJoin.js';
-import { ttsService } from './TTSService.js';
+import type { TTSService } from './TTSService.js';
 import {
   generateWordSearchGrid,
   type GridCell,
@@ -82,7 +82,10 @@ export class OnDeckVocabService {
     private dictionaryService: DictionaryService,
     // Used only by Word Search, to bound the filler pool to the user's estimated
     // difficulty level (and below) — see getWordSearchGrid.
-    private starterPacksService: StarterPacksService
+    private starterPacksService: StarterPacksService,
+    // Card audio pre-warm (see the hasAudio field on VocabEntry). Injected rather
+    // than imported as a singleton so the composition root owns its lifetime.
+    private ttsService: TTSService
   ) {}
 
   // Per-category cooldown after a correct mark: a card that was recently marked
@@ -284,6 +287,17 @@ export class OnDeckVocabService {
       const fresh: VocabEntry[] = [];
       const stale: VocabEntry[] = [];
       for (const row of result.rows) {
+        // Stamp the row with the bucket it was actually drawn from. The loop key is
+        // the per-mark-type game category (Unfamiliar/Target/Comfortable/Mastered) —
+        // distinct from the row's `category`, which UTCM_CATEGORY_SELECT fills with
+        // the goal-blended OVERALL utcm level. Match Speed keys its client-side card
+        // buffer off this, and needs it to stay truthful when the fill loops in
+        // getGameVocabPool top a short bucket up from the fallback order: the card
+        // carries the label of the queue it came out of, not the one that was asked
+        // for. See docs/MATCH_SPEED_GAME.md § Backend change.
+        // `categories` is a caller-supplied list of FlashcardCategory values typed
+        // loosely as string[], hence the assertion.
+        row.gameCategory = category as VocabEntry['gameCategory'];
         (this.isCardGameEligible(row, markType, now) ? fresh : stale).push(row);
       }
       eligible[category] = fresh;
@@ -361,7 +375,7 @@ export class OnDeckVocabService {
   private async enrichEntriesPipeline(entries: VocabEntry[], language: string): Promise<VocabEntry[]> {
     const withExampleMeta = await this.dictionaryService.enrichExampleSentencesMetadataBatch(entries, language);
     const withLongDefMeta = await this.dictionaryService.enrichLongDefinitionMetadataBatch(withExampleMeta, language);
-    const withDefsApproval = await this.dictionaryService.enrichDefinitionsApprovalBatch(withLongDefMeta, language);
+    const withDefsApproval = await this.dictionaryService.enrichFieldApprovalsBatch(withLongDefMeta, language);
     return this.dictionaryService.enrichEntriesWithSynonymMetadata(withDefsApproval, language);
   }
 
@@ -1366,7 +1380,7 @@ export class OnDeckVocabService {
         // Pass tone-marked pinyin so the audio matches the displayed pronunciation
         // (and polyphones cache separately). buildPinyinSsml inside TTSService
         // gracefully falls back to plain text if the pinyin doesn't align.
-        const result = await ttsService.synthesize(entry.entryKey, ttsLang, entry.pronunciation);
+        const result = await this.ttsService.synthesize(entry.entryKey, ttsLang, entry.pronunciation);
         entry.hasAudio = true;
         // Stamp the column when it's still NULL — covers new synths and any
         // pre-existing disk-cached rows that never went through the controller.

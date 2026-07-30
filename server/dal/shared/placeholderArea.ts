@@ -38,6 +38,54 @@ export const PLACEHOLDER_SIZES: ReadonlyArray<{ w: number; h: number }> = [
   { w: 10, h: 4 },
 ] as const;
 
+/**
+ * Spans of ONE occupant slot unit (one occupant/house footprint): 4×5 or its 5×4 transpose.
+ * Mirror of the client constants.
+ */
+export const PLACEHOLDER_UNIT_SHORT = 4;
+/** See {@link PLACEHOLDER_UNIT_SHORT}. Also the axis length the units are tiled along. */
+export const PLACEHOLDER_UNIT_LONG = 5;
+
+/**
+ * Split an authored placeholder area into its UNIT SLOTS (4×5 / 5×4 each): a 4×5 or 5×4 area is
+ * one unit, a 4×10 is two stacked along isoY, a 10×4 is two side-by-side along isoX.
+ *
+ * ONE UNLOCK OCCUPIES ONE UNIT — `nightmarketunlocks.placeholderAreaId` stores a UNIT's anchor id,
+ * so a double-sized area fills one half at a time instead of both at once. The first unit's anchor
+ * equals the parent area's, so pre-split occupant rows still read as "first unit filled".
+ *
+ * Mirror of the client fn (`src/engine/market/placeholderArea.ts#placeholderUnitSlots`); the guard
+ * test `src/__tests__/placeholderAreaSync.test.ts` fails if the two tilings drift.
+ */
+export function placeholderUnitSlots(area: PlaceholderArea): PlaceholderArea[] {
+  const alongRow = area.w === PLACEHOLDER_UNIT_SHORT;
+  const w = alongRow ? PLACEHOLDER_UNIT_SHORT : PLACEHOLDER_UNIT_LONG;
+  const h = alongRow ? PLACEHOLDER_UNIT_LONG : PLACEHOLDER_UNIT_SHORT;
+  const count = Math.max(1, Math.floor((alongRow ? area.h : area.w) / PLACEHOLDER_UNIT_LONG));
+
+  return Array.from({ length: count }, (_, i) =>
+    alongRow
+      ? { col: area.col, row: area.row + i * PLACEHOLDER_UNIT_LONG, w, h }
+      : { col: area.col + i * PLACEHOLDER_UNIT_LONG, row: area.row, w, h },
+  );
+}
+
+/** Every unit slot of every area, flattened — one template's full occupant-slot pool. Mirror of the client fn. */
+export function placeholderUnitSlotsOf(areas: readonly PlaceholderArea[]): PlaceholderArea[] {
+  return areas.flatMap(placeholderUnitSlots);
+}
+
+/** The unit slot covering the cell (col,row), or undefined — the id an unlock keys on. Mirror of the client fn. */
+export function placeholderUnitSlotAt(
+  areas: readonly PlaceholderArea[],
+  col: number,
+  row: number,
+): PlaceholderArea | undefined {
+  const area = placeholderAreaAt(areas, col, row);
+  if (!area) return undefined;
+  return placeholderUnitSlots(area).find((u) => placeholderCoversCell(u, col, row));
+}
+
 /** Whether two placeholder areas share any cell (axis-aligned rectangle overlap). */
 export function placeholderAreasOverlap(a: PlaceholderArea, b: PlaceholderArea): boolean {
   return a.col < b.col + b.w && b.col < a.col + a.w && a.row < b.row + b.h && b.row < a.row + a.h;

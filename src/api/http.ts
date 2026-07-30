@@ -12,12 +12,20 @@
  * What it adds over raw fetch:
  *   - base-URL prefixing (API_BASE_URL) so callers pass just the path,
  *   - querystring building from a `params` object,
- *   - JSON request/response handling,
+ *   - JSON request/response handling (a FormData body is passed through untouched so
+ *     the browser can set its own multipart boundary),
  *   - `credentials: 'include'` (cookie auth) on every request,
+ *   - the `Authorization: Bearer` header, read at CALL TIME via authHeader() so a
+ *     silent token refresh never changes a caller's function identity (see
+ *     utils/authHeader.ts and CLAUDE.md "Never reload on token refresh"),
  *   - throw-on-non-2xx with an ApiError that mirrors axios's `err.response.data`
  *     shape, so the error bodies callers already read keep working.
+ *
+ * Callers should therefore NOT pass an Authorization header themselves, and should
+ * NOT list `token` in the deps of a callback that calls these functions.
  */
 import { API_BASE_URL } from '../constants';
+import { authHeader } from '../utils/authHeader';
 
 /** Query params; null/undefined values are omitted from the querystring. */
 export type QueryParams = Record<string, string | number | boolean | null | undefined>;
@@ -76,14 +84,22 @@ async function request<T>(
   options: RequestOptions = {}
 ): Promise<T> {
   const hasBody = body !== undefined;
+  // FormData (file upload) must go over the wire untouched: the browser sets its own
+  // multipart Content-Type WITH the boundary parameter, so we must neither stringify
+  // the body nor declare a Content-Type ourselves.
+  const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
   const res = await fetch(buildUrl(path, options.params), {
     method,
     credentials: 'include', // cookie-based auth (matches the retired axios client)
     headers: {
-      ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
+      ...(hasBody && !isFormData ? { 'Content-Type': 'application/json' } : {}),
+      // Read fresh on every call — never captured in a closure. Returns {} when
+      // there is no usable token, in which case the request falls back to the
+      // httpOnly access-token cookie that `credentials: 'include'` already sends.
+      ...authHeader(),
       ...options.headers,
     },
-    body: hasBody ? JSON.stringify(body) : undefined,
+    body: !hasBody ? undefined : isFormData ? (body as FormData) : JSON.stringify(body),
     signal: options.signal,
   });
 
@@ -112,5 +128,27 @@ export const apiPut = <T>(path: string, body?: unknown, options?: RequestOptions
 export const apiPatch = <T>(path: string, body?: unknown, options?: RequestOptions): Promise<T> =>
   request<T>('PATCH', path, body, options);
 
-export const apiDelete = <T>(path: string, options?: RequestOptions): Promise<T> =>
-  request<T>('DELETE', path, undefined, options);
+/**
+ * DELETE. Accepts an optional body — a few endpoints require one (e.g.
+ * `/api/auth/deleteAccount` takes the confirming password), which is legal HTTP and
+ * which `fetch` supports.
+ */
+export const apiDelete = <T>(path: string, body?: unknown, options?: RequestOptions): Promise<T> =>
+  request<T>('DELETE', path, body, options);
+
+/**
+ * Run an api* call, substituting `fallback` for the generic "Request failed with status N"
+ * message that ApiError produces when the error body carries no `error` field.
+ *
+ * Exists because ~every hand-rolled call site used to spell this out as
+ * `throw new Error(data?.error || 'Failed to ...')`. The server's own `error` text always
+ * wins; the fallback is only the last resort. See docs/ARCHITECTURE_REVIEW.md finding 5.
+ */
+export async function withFallback<T>(call: Promise<T>, fallback: string): Promise<T> {
+  try {
+    return await call;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : '';
+    throw new Error(!message || /^Request failed with status/.test(message) ? fallback : message);
+  }
+}

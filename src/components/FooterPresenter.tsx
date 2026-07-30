@@ -5,6 +5,7 @@ import MobileFooter, {
     FLOATING_FOOTER_INSET,
     type FooterTab,
 } from "./MobileFooter";
+import { routeFooterTab } from "../routes/routeMeta";
 
 // Persistent footer layer. The floating footer pill is rendered ONCE here (inside
 // MobileDemoFrame) rather than inside each page, so it is **omitted from the
@@ -13,37 +14,16 @@ import MobileFooter, {
 // card as you move between footer-bearing and footerless routes. See
 // docs/LEAF_NODE_PAGES.md.
 //
-// Which routes show the footer (and which tab is active) is the single source of
-// truth below. Footerless routes (every leaf page, login, games, etc.) are absent
-// from the map → the footer slides out.
-
-const FOOTER_ROUTES: Record<string, FooterTab> = {
-    "/": "home",
-    "/flashcards/decks": "flashcards",
-    "/discover": "discover",
-    "/account": "account",
-    "/games": "home",
-    "/community": "home",
-    "/flashcards/mastered": "flashcards",
-    // Dictionary, Reader and Compare are node pages reached from the Home menu, so
-    // they keep the Home tab.
-    "/dictionary": "home",
-    "/reader": "home",
-    "/compare": "home",
-};
-
-// Footer-bearing NODE pages reached via a parameterized path (e.g.
-// /discover/sort/:language). Matched by prefix since the exact pathname carries a
-// language / word / id segment. Keep in sync with NODE_PREFIXES in
-// utils/pageTransition.ts. The card-detail cdps keep the tab of where they're
-// reached from: saved-card cdp → Flashcards, dictionary cdp → Home.
-const FOOTER_ROUTE_PREFIXES: Array<[string, FooterTab]> = [
-    ["/discover/sort/", "discover"],
-    ["/discover/quick-mark/", "discover"],
-    ["/discover/skipped/", "discover"],
-    ["/flashcards/card/", "flashcards"],
-    ["/dictionary/card/", "home"],
-];
+// Which routes show the footer, and which tab is active, comes from the `footerTab`
+// field in src/routes/registry.ts — the same row that decides the route's component,
+// shell and page transition. A route with no `footerTab` is footerless (every leaf
+// page, /reader/:id, login, the games) → the footer slides out.
+//
+// This file used to own two hand-maintained tables (FOOTER_ROUTES and a
+// FOOTER_ROUTE_PREFIXES prefix list) carrying an explicit "Keep in sync with
+// NODE_PREFIXES in utils/pageTransition.ts" comment. Parameterized routes are now
+// matched with React Router's own matchPath rather than by `startsWith`.
+// See docs/ARCHITECTURE_REVIEW.md finding 4.
 
 // Match the page-slide feel so the footer and pages decelerate together.
 const DURATION_MS = 340;
@@ -55,8 +35,7 @@ const HIDDEN_OFFSET = FLOATING_FOOTER_INSET + FLOATING_FOOTER_HEIGHT + 16;
 
 const FooterPresenter: React.FC = () => {
     const { pathname } = useLocation();
-    const activePage =
-        FOOTER_ROUTES[pathname] ?? FOOTER_ROUTE_PREFIXES.find(([prefix]) => pathname.startsWith(prefix))?.[1];
+    const activePage = routeFooterTab(pathname);
     const visible = activePage !== undefined;
 
     // Keep showing the last active tab while sliding OUT, so the pill doesn't

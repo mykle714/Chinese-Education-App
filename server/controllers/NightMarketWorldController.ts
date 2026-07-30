@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { NightMarketWorldService } from '../services/NightMarketWorldService.js';
 import { requireUserId, handleControllerError } from '../utils/controllerUtils.js';
+import { resolveLanguage } from '../utils/language.js';
 
 /**
  * Night Market World Controller — the runtime LAYOUT read endpoint.
@@ -14,15 +15,21 @@ export class NightMarketWorldController {
   constructor(private worldService: NightMarketWorldService) {}
 
   /**
-   * Return the authenticated user's rendered template layout. Seeds the origin hub on first
-   * load if the user has none (safety net inside the service). GET /api/night-market/layout
+   * Return the authenticated user's rendered template layout FOR ONE LANGUAGE. Seeds that
+   * language's origin hub on first load if it has none (safety net inside the service).
+   * GET /api/nightMarket/layout?language=<lang>
+   *
+   * Each (user, language) is an independent market (migration 136), so the language selects
+   * which market is returned; an unsupported/absent param falls back to 'zh', matching the
+   * market every pre-migration placement was backfilled into.
    */
   async getLayout(req: Request, res: Response): Promise<void> {
     try {
       const userId = requireUserId(req, res);
       if (!userId) return;
 
-      const result = await this.worldService.getUserLayout(userId);
+      const language = resolveLanguage(req.query.language);
+      const result = await this.worldService.getUserLayout(userId, language);
       res.json(result);
     } catch (error) {
       handleControllerError(error, res, 'NightMarketWorldController.getLayout');

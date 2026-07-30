@@ -1,8 +1,25 @@
-import { PaginationOptions, PaginatedResult, ITransaction } from '../../types/dal.js';
+import { PaginationOptions, ITransaction } from '../../types/dal.js';
 
 /**
- * Base interface for all Data Access Layer implementations
- * Provides common CRUD operations that every entity should support
+ * The generic CRUD surface shared by the DALs that key on a single-column primary
+ * key in a single table — currently `UserDAL` and `VocabEntryDAL`.
+ *
+ * ── Why this is short ──────────────────────────────────────────────────────────
+ * It used to declare 13 methods. Seven of them (`findAllPaginated`, `count`,
+ * `createMany`, `findByIds`, `exists`, `updateWithTransaction`,
+ * `deleteWithTransaction`) had ZERO call sites anywhere in the server — they were
+ * speculative surface area that every implementer had to carry. They were removed
+ * rather than kept "in case", because an unused generic method on a base class is
+ * also an unused generic SQL statement: `findAllPaginated` on a per-language table,
+ * for instance, would have silently read the wrong table.
+ *
+ * Anything genuinely generic that a future DAL needs can be added back here with
+ * its first real caller.
+ *
+ * NOT every DAL implements this. A DAL whose identity is not "one table, one
+ * primary key" — `DictionaryDAL` above all, which resolves its table per language
+ * via `dictTableForLanguage()` — implements only its own interface. See
+ * docs/ARCHITECTURE_REVIEW.md finding 1.
  */
 export interface IBaseDAL<T, TCreate, TUpdate> {
   // Basic CRUD operations
@@ -12,19 +29,6 @@ export interface IBaseDAL<T, TCreate, TUpdate> {
   update(id: string | number, data: TUpdate): Promise<T>;
   delete(id: string | number): Promise<boolean>;
 
-  // Paginated operations
-  findAllPaginated(options: PaginationOptions): Promise<PaginatedResult<T>>;
-  count(): Promise<number>;
-
-  // Transaction support
+  // Transaction support (used by the registration flow: user + refresh token in one tx)
   createWithTransaction(data: TCreate, transaction: ITransaction): Promise<T>;
-  updateWithTransaction(id: string | number, data: TUpdate, transaction: ITransaction): Promise<T>;
-  deleteWithTransaction(id: string | number, transaction: ITransaction): Promise<boolean>;
-
-  // Bulk operations
-  createMany(data: TCreate[]): Promise<T[]>;
-  findByIds(ids: (string | number)[]): Promise<T[]>;
-
-  // Utility operations
-  exists(id: string | number): Promise<boolean>;
 }

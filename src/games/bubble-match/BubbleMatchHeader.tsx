@@ -2,9 +2,13 @@ import React from "react";
 import { Button, IconButton, useTheme } from "@mui/material";
 import RestartAltRoundedIcon from "@mui/icons-material/RestartAltRounded";
 import MinutePointsFireBadge from "../../minutePoints/MinutePointsFireBadge";
+import { isLatinScriptLang } from "../../components/ForeignText";
+import type { Language } from "../../types";
 import { SIZE } from "../../theme/scale";
 
 interface BubbleMatchHeaderControlsProps {
+    /** Active run language — gates the pinyin toggle (see the component comment). */
+    language: Language;
     showPinyin: boolean;
     onTogglePinyin: () => void;
     autoplayChinese: boolean;
@@ -22,8 +26,15 @@ interface BubbleMatchHeaderControlsProps {
  * Bubble Match is a LEAF PAGE (see docs/LEAF_NODE_PAGES.md), so the header bar +
  * down-arrow back button come from LeafPage/LeafPageHeader; this component just
  * fills LeafPage's `rightContent` slot.
+ *
+ * LANGUAGE GATING: the pinyin toggle is HIDDEN, not merely inert, for Latin-script
+ * languages. `ForeignText` renders Spanish as plain text and ignores the flag
+ * entirely, so leaving the button on screen would ship a control that visibly does
+ * nothing. Added alongside Match Speed, which has the same requirement — see
+ * docs/MATCH_SPEED_GAME.md § Language scope.
  */
 const BubbleMatchHeaderControls: React.FC<BubbleMatchHeaderControlsProps> = ({
+    language,
     showPinyin,
     onTogglePinyin,
     autoplayChinese,
@@ -32,6 +43,7 @@ const BubbleMatchHeaderControls: React.FC<BubbleMatchHeaderControlsProps> = ({
 }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
+    const showPinyinControls = !isLatinScriptLang(language);
 
     const toggleSx = (active: boolean) => ({
         minWidth: "unset",
@@ -68,15 +80,17 @@ const BubbleMatchHeaderControls: React.FC<BubbleMatchHeaderControlsProps> = ({
                     <RestartAltRoundedIcon fontSize="small" />
                 </IconButton>
             )}
-            <Button
-                className="pinyin-toggle-btn"
-                variant={showPinyin ? "contained" : "text"}
-                size="small"
-                onClick={onTogglePinyin}
-                sx={toggleSx(showPinyin)}
-            >
-                pinyin
-            </Button>
+            {showPinyinControls && (
+                <Button
+                    className="pinyin-toggle-btn"
+                    variant={showPinyin ? "contained" : "text"}
+                    size="small"
+                    onClick={onTogglePinyin}
+                    sx={toggleSx(showPinyin)}
+                >
+                    pinyin
+                </Button>
+            )}
             <Button
                 className="autoplay-toggle-btn"
                 variant={autoplayChinese ? "contained" : "text"}

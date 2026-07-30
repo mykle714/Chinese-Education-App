@@ -22,6 +22,7 @@
  */
 
 import { computeSpriteStrips } from './isometric';
+import { placeholderUnitSlots } from './placeholderArea';
 
 /** Native `House.png` frame size (square). */
 export const HOUSE_TEX_SIZE = 160;
@@ -85,20 +86,20 @@ export const HOUSE_STRIPS = {
  *   - **4×10** → TWO no-flip houses STACKED along isoY (row, row+5).
  *   - **10×4** → TWO flipped houses SIDE-BY-SIDE along isoX (col, col+5).
  *
- * A house's long side is {@link HOUSE_FOOTPRINT_Y} (5); the area axis that is a multiple of 5 is
- * the one the houses run along. `w === HOUSE_FOOTPRINT_X` (4) ⇒ no-flip houses tiled up the isoY
- * (row) axis; otherwise (`w` is 5 or 10) ⇒ flipped houses tiled along the isoX (col) axis. With
- * `PLACEHOLDER_SIZES` fixed this always yields 1–2 houses that exactly cover the area (the floor
- * division is a defensive floor for any off-menu size).
+ * The TILING ITSELF is not computed here — it is {@link ./placeholderArea placeholderUnitSlots},
+ * the same split the unlock economy uses to decide slot identity (one unit = one unlock), so the
+ * art can never disagree with what the server considers occupied. This function only adds the
+ * `flip`: a house's long side is {@link HOUSE_FOOTPRINT_Y} (5), so an area whose isoX span is
+ * {@link HOUSE_FOOTPRINT_X} (4) holds no-flip houses running up the isoY axis, and otherwise
+ * (`w` is 5 or 10) flipped houses running along the isoX axis.
+ *
+ * NOTE this returns a house for EVERY unit of the area regardless of occupancy — callers that
+ * render live occupants pass an already-per-unit slot (so they get exactly one house); the
+ * editor's preview passes whole authored areas to show a fully occupied slot.
  */
 export function occupantHousesForArea(
   area: { col: number; row: number; w: number; h: number },
 ): Array<{ col: number; row: number; flip: boolean }> {
   const flip = area.w !== HOUSE_FOOTPRINT_X;
-  const count = Math.max(1, Math.floor((flip ? area.w : area.h) / HOUSE_FOOTPRINT_Y));
-  return Array.from({ length: count }, (_, i) =>
-    flip
-      ? { col: area.col + i * HOUSE_FOOTPRINT_Y, row: area.row, flip: true }
-      : { col: area.col, row: area.row + i * HOUSE_FOOTPRINT_Y, flip: false },
-  );
+  return placeholderUnitSlots(area).map((unit) => ({ col: unit.col, row: unit.row, flip }));
 }

@@ -4,7 +4,7 @@ import { MINUTE_POINTS_CONFIG } from '../constants';
 // timer locally so it survives a tab refresh.
 export interface MinutePointsStorage {
   todaysMinutePointsMilli: number; // Milliseconds of active time accumulated today
-  totalMinutePoints: number;       // Lifetime fallback when the server is unreachable
+  totalMinutePoints: number;       // This language's NET balance; offline fallback when the server is unreachable
   lastActivity: string;            // ISO timestamp of last activity
 }
 

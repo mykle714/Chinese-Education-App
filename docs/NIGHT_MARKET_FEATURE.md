@@ -2,7 +2,14 @@
 
 ## Overview
 
-The Night Market is a visual reward system tied to work points. As users study and accumulate work points (1 point = 1 minute of active study), they unlock items that populate a personal night market scene. Each user's market is unique because unlocks are randomly selected from a pool and persisted for the life of the account.
+The Night Market is a visual reward system tied to **minute points** (`users.totalMinutePoints`
+— 1 minute point ≈ 60s of active study; see [MINUTE_POINTS_SYSTEM.md](./MINUTE_POINTS_SYSTEM.md)).
+As users study and accumulate minute points they unlock **occupants** that populate a personal
+night market scene. Each user's market is unique because the map grows by tiling templates onto
+their own continent as they earn.
+
+> **Terminology:** this feature is driven by *minute points* throughout. Older docs
+> (`WORK_POINTS_*.md`) call the same accumulator "work points" — that name is retired.
 
 > **Layout authoring:** the map itself is assembled from prebuilt rectangular
 > templates tiled together — see [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md)
@@ -151,16 +158,60 @@ makes its top face coincide with the surface and drops its 16px wall below to fo
 visible slab rim. **Single elevation:** grass sits FLUSH on the dirt surface (no height
 step), so the grass↔dirt transition is drawn purely by the flat boundary overlays.
 
-**Pixel-art rendering:** terrain textures use nearest-neighbour filtering; the camera
-zoom is clamped to **integers** (`MarketEngineViewer`, default 3), so upscaling stays
-crisp with no fractional resampling. The Pixi `<Application>` sets `antialias={false}`.
+**Pixel-art rendering:** terrain textures use nearest-neighbour filtering, and the camera comes to
+rest on its **zoom ladder** (see "Camera (pan / zoom)" below) so upscaling stays crisp with no
+fractional resampling. The Pixi `<Application>` sets `antialias={false}`.
+
+### Camera (pan / zoom)
+
+*Code: `src/engine/market/cameraZoom.ts` (whole file — the pure math);
+`src/hooks/useCameraControls.ts` (whole file — the React host: state, listeners, settle tween);
+`MarketEngineViewer.tsx` (`CRISP_FLOOR`/`MAX_ZOOM`/`ZOOM_STEP` + the `useCameraControls({…})` call);
+`TemplateSandboxViewer.tsx` and `TemplateEditorViewer.tsx` (same constants + call). Tests:
+`src/__tests__/cameraZoom.test.ts`.*
+
+**All three camera surfaces share one host hook.** nmp, nms and nme previously carried three
+near-identical copies of `applyZoomAtPoint` + `handleWheel` + the `ready` mount latch, differing
+only in floor / step / cap. They now differ only in the options object they pass:
+
+| Surface | `crispFloor` | `ladderStep` | `maxZoom` | `initialZoom` | Pinch | Fit-derived sub-floor |
+|---|---|---|---|---|---|---|
+| nmp (`MarketEngineViewer`) | 0.5 | 0.5 | 8 | 1 | ✅ | ✅ (`computeMinZoom` over `placements`) |
+| nms (`TemplateSandboxViewer`) | 1 | 1 | 10 | 3 | — | ✅ (`computeMinZoom` over `items`) |
+| nme (`TemplateEditorViewer`) | 1 | 1 | 10 | 3 | — | — (fixed authored board) |
+
+**Smooth during the gesture, crisp at rest.** Every input event moves the zoom **continuously** —
+any float in `[minZoom, maxZoom]`, no rung quantisation. When the gesture goes quiet (finger lift,
+or `WHEEL_IDLE_MS` = 160ms of wheel silence) the camera **settles**: a `ZOOM_SETTLE_MS` = 140ms
+ease-out tween onto the nearest ladder rung, about the same focal point the gesture used. Crispness
+is therefore paid for once, at rest, instead of on every frame.
+
+> This replaced a per-event snap, which discarded a pinch's intermediate finger travel entirely and
+> promoted each of a trackpad's ~50 events/sec to a whole ladder step.
+
+**Zoom moves geometrically, never additively.** Zoom is a scale factor, so equal *ratios* read as
+equal motion. `zoomForWheel` multiplies by `WHEEL_ZOOM_PER_NOTCH` (1.5) per 100px of delta —
+`wheelDeltaPixels` first normalises Firefox's line-mode and page-mode deltas — and the settle tween
+interpolates in log space (`lerpZoom`). The old additive ladder made 0.5→1 a +100% lurch and 7.5→8
+a +6.7% nudge from identical input. This also removed the separate sub-floor wheel constants
+(`SUB_FLOOR_ZOOM_FACTOR` / `SUB_UNIT_ZOOM_FACTOR`): one geometric formula now covers both regimes.
+
+**Focal-point pinning** lives in `panAfterZoom` — the pan correction that keeps the world point
+under the cursor (or the pinch midpoint) fixed across a zoom change. The hook routes gesture moves
+*and* settle-tween frames through the single `applyZoomAtPoint` write path, so the two can never
+disagree. The pinch midpoint is captured **once** at gesture start, not re-derived per move — a
+moving midpoint would turn a two-finger slide into a pan and fight the scene's own drag-to-pan.
+
+**Drag-to-pan is deliberately NOT in the hook.** Each surface reads pointer drags inside its own
+Pixi scene, where it already arbitrates against tile painting / template dragging / placement mode.
+Those scenes push their result back in through `setPan`.
 
 ### Zoom-out floor scales with the world
 
-*Code: `src/engine/market/cameraFit.ts` (whole file); `MarketEngineViewer.tsx`
-(`CRISP_FLOOR`/`SUB_FLOOR_ZOOM_FACTOR`, `applyZoomAtPoint`, `handleWheel`,
-`SceneProps.onFootprintsChange`); `TemplateSandboxViewer.tsx` (same three, integer ladder). Tests:
-`src/__tests__/cameraFit.test.ts`.*
+*Code: `src/engine/market/cameraFit.ts` (whole file); `src/hooks/useCameraControls.ts`
+(`resolveMinZoom`, the `minZoomFor` option); `MarketEngineViewer.tsx` (`CRISP_FLOOR`, the
+`minZoomFor` closure, `SceneProps.onFootprintsChange`); `TemplateSandboxViewer.tsx` (same, integer
+ladder). Tests: `src/__tests__/cameraFit.test.ts`.*
 
 The camera's zoom-out limit is **derived from world size**, not fixed. `computeMinZoom(footprints,
 viewportW, viewportH, crispFloor)` takes every placement's board rectangle, projects it through
@@ -170,17 +221,245 @@ clamped to `[ABSOLUTE_MIN_ZOOM = 0.05, crispFloor]`. Because the result never ex
 (nmp `0.5`, nms `1`), **small worlds behave exactly as before**; a continent that has tiled out far
 enough to no longer fit may keep pulling back.
 
-Zoom stays on the crisp ladder (nmp half-steps, nms integers) at/above `crispFloor`. **Below** it
-the value is **continuous** — the ladder has no rungs left there — and the wheel steps
-multiplicatively by `0.8` per notch, so passing under the floor is gradual rather than a single
-jump to the fitted minimum. Art below the crisp floor is fractionally resampled (blurrier); that is
-the deliberate trade for seeing a large market whole.
+The camera settles onto the crisp ladder (nmp half-steps, nms integers) at/above `crispFloor`.
+**Below** it there is nothing to settle onto — the ladder has no rungs left there — so
+`useCameraControls.startSettle` returns early and the value simply stays wherever the gesture left
+it. Art below the crisp floor is fractionally resampled (blurrier); that is the deliberate trade for
+seeing a large market whole.
 
-The floor is recomputed **lazily at gesture time** from the live element size (refs, no resize
-listener or state), so window resizes and placement edits are picked up without re-render churn.
+The floor is recomputed **lazily at gesture time** from the live element size (the `minZoomFor`
+closure, read through a ref — no resize listener or state), so window resizes and placement edits
+are picked up without re-render churn.
 nmp fetches its layout inside `NightMarketScene` but owns zoom in the outer component, so the scene
 reports its `placements` upward via `onFootprintsChange`; nms already has `items` in the camera
-host and needs no plumbing.
+host and needs no plumbing. nmp additionally runs a `ResizeObserver` — not for the floor, which stays
+lazy, but to re-run the pan clamp, whose inputs move without the pan moving (see below).
+
+### Pan clamp (nmp only)
+
+*Code: `src/engine/market/cameraFit.ts` (`clampPan`);
+`src/hooks/useCameraControls.ts` (the `clampPan` option, `setPan`, `reclampPan`, the
+zoom-before-pan commit order in `applyZoomAtPoint`); `MarketEngineViewer.tsx` (the `clampPan`
+closure, `refreshCameraLimits`, the `ResizeObserver` effect). Tests:
+`src/__tests__/cameraFit.test.ts` § `clampPan`.*
+
+The market cannot be dragged off screen. The rule is **"the screen centre stays inside the placement
+bbox"** — nothing about where the world's far edges land. `clampPan(pan, footprints, zoom)` inverts
+the camera transform (`container.x = viewportW/2 + pan.x`, `scale = zoom`) at the screen centre:
+
+```
+centreX = −pan.x / zoom          →   pan.x ∈ [−maxX·zoom, −minX·zoom]
+centreY = −pan.y / zoom          →   pan.y ∈ [−maxY·zoom, −minY·zoom]
+```
+
+**The viewport cancels out**, so the clamp takes no viewport at all — one `Math.min`/`Math.max` per
+axis. And since `minX ≤ maxX` by construction the interval can never cross, so there is no degenerate
+case: the bbox is simply the set of points the camera may look at. The clamp is **non-elastic** — no
+rubber-band tween.
+
+> Superseded the original "bbox must keep covering the viewport, with 12% overshoot" rule, which
+> needed the viewport, a `PAN_SLACK` constant, and a snap-to-centre fallback for the crossed interval
+> that arose whenever the world was smaller than the viewport (the usual case at the zoom floor).
+> ⚠️ The trade: at the zoom floor the centre may now roam the bbox, so the market can sit off-centre
+> while fully visible. Shrink the bbox inside `clampPan` if it should stay nearer the middle.
+
+The clamp lives on the **one pan write path** (`useCameraControls.setPan`), so scene drag handlers,
+the focal-point zoom correction, and the settle tween all get it without knowing about it. Two
+consequences worth remembering:
+
+- `applyZoomAtPoint` commits the **zoom before the pan**, because the limits are zoom-dependent;
+  clamping against the outgoing scale would fight the focal-point correction on that frame.
+- Nothing notices when the clamp's *inputs* move but the pan does not, so `reclampPan()` is called
+  explicitly on world load and on resize (`refreshCameraLimits`).
+
+**nms/nme are deliberately unclamped** (they pass no `clampPan`): authoring requires dragging into
+empty space to place a template at a distant offset.
+
+### Default ground apron
+
+*Code: `src/features/nightmarket/GroundBackdropLayer.tsx` (whole file);
+`src/engine/market/farmTerrain.ts` (`padTerrainField` + its `boundless` flag, `TerrainField.apron`,
+`buildEditorField`'s `isLightGrass` + `window` culling); `src/engine/market/cameraFit.ts`
+(`visibleCellWindow`, `WINDOW_MARGIN_CELLS`, `WINDOW_QUANTUM_CELLS`);
+`src/engine/market/isometric.ts` (`CellWindow`); `TemplateTerrainLayer.tsx` (`apronPad`/`cullWindow`
+props); `MarketEngineViewer.tsx` (`APRON_RING_CELLS`, the `<GroundBackdropLayer>` mount, the
+`cullWindow` memo). Tests: `src/engine/market/__tests__/terrainApron.test.ts`.*
+
+nmp renders **default ground — tallDirt slab + lightGrass cap — across the whole viewable area**, so
+the camera never sees bare background past the market's edge. The ground is at the market's own
+elevation and shares its light-grass membership, so `fieldEdge` autotiles flat across the boundary:
+**the market is no longer a floating island**, and no plateau rim is drawn anywhere on screen. An
+interior hole in an L-shaped layout becomes ordinary ground for the same reason.
+
+It is built from **two pieces**:
+
+| Piece | Extent | Cost |
+|---|---|---|
+| Real autotiled tiles (`TemplateTerrainLayer`) | market + `APRON_RING_CELLS` (4) ring | one to four sprites per cell |
+| `GroundBackdropLayer` | the entire viewport, at any zoom | **one** `TilingSprite` |
+
+`padTerrainField(field, w, h, pad, boundless)` grows the field outward and marks the ring `apron` —
+in-field ground that no template painted. `buildEditorField` reads `apron` into both `kind` and
+`grassNeighbours`, which removes the seam where template grass meets the surrounding ground.
+`boundless` then makes `contains` true *everywhere* while the returned span still bounds what is
+drawn, so the ring's own outer cells also autotile as interior `center` tiles — no cliff at the
+ring's edge either.
+
+**Why the backdrop is pixel-exact.** Every interior ground cell resolves to the same two sprites
+(`center` slab + `center` cap), so the rendered ground is exactly periodic. The iso screen lattice is
+generated by `(W/2, −H/2)` and `(−W/2, −H/2)`, which contains `(W, 0)` and `(0, H)` — so a
+`TILE_WIDTH × TILE_HEIGHT` window of the infinite uniform ground is a valid repeating unit.
+`generateMotif` composites a 9×9 patch of the real tileset art and keeps one period from its middle
+(anchored at a known cell corner); `tilePosition` re-phases it against the camera each frame so the
+backdrop's diamonds line up cell-for-cell with the real tiles.
+
+**The art is 32×32, not 32×16.** `FARM_TILE_PX` is 32 while `TILE_HEIGHT` is 16: each source tile is
+a 32×32 cell holding a 32×16 diamond plus 16px of vertical body. The two families put the diamond in
+*opposite* halves — `lightGrass_center` is transparent in rows 0–15 with its diamond in rows 16–31,
+`tallDirt_center` has its diamond top at rows 0–15 and its cliff body below. Bottom-centre anchoring
+at `y` therefore lands the grass diamond in `[y − TILE_HEIGHT, y]`, and drawing the slab at
+`y + TILE_HEIGHT` lands *its* diamond top in the same band, which is why the cap covers the slab top
+exactly and the slab's remaining cliff band shows below. **That band is the motif crop.** Anything
+that assumes the art is 32×16 will crop the transparent half and bake an invisible backdrop.
+
+**Painter's order inside the bake.** The patch is composited **far → near** (`col + row` descending),
+mirroring the scene's `z = −(col + row)`. Iterating `col`/`row` naively paints far cells over near
+ones, letting a slab's cliff band cover the cap in front of it.
+
+**Canvas2D, not `renderer.generateTexture`.** The bake used to go through the Pixi renderer, which
+made static art depend on WebGL state, `Application` init ordering, `renderer.resolution` (2 on
+HiDPI resamples pixel art) and `Matrix.shared`. Every one of those failure modes yields a *blank*
+texture, and a blank backdrop is pixel-identical to a missing one — the bug cannot be seen. The bake
+now composites on a 2D canvas: synchronous, resolution-exact, independent of the renderer lifecycle,
+and readable back with `getImageData` so `generateMotif` **fails loudly** when the result is not
+fully opaque (fully transparent → `console.error` + no layer; partly → `console.error` naming the
+hole count, since a hole in the bottom-most layer repeats as a see-through dot grid).
+
+> ⚠️ The motif duplicates `EditorTerrainLayer`'s sprite stack (slab at `y + TILE_HEIGHT`, cap at `y`,
+> both bottom-centre anchored). That layer is the source of truth — change its anchors and the motif
+> drifts, showing a seam at the ring boundary.
+
+> ⚠️ **One-way derivation.** The bbox behind `computeMinZoom` and `clampPan` is built from **template
+> placements only** — never from the surrounding ground. Feeding it back in would enlarge the
+> pannable area, which would demand more ground, which would enlarge it again, without bound. nmp
+> keeps `footprintsRef` placements-only for exactly this reason.
+
+**Rejected: sizing the ring to the camera's reach.** The first cut had no backdrop and instead
+computed a worst-case pad (`apronCells`, since deleted) covering the zoom-out floor at a clamp limit
+— correct, and unusable: ~94 cells per side for a portrait phone, ~200×200 cells, 40k+ sprites. The
+backdrop replaces that entire calculation with one quad. See "Terrain performance" below.
+
+**Culling** still bounds iteration for markets that outgrow the viewport on their own.
+`visibleCellWindow(pan, zoom, w, h)` inverts the camera transform at the viewport's four **corners**
+(the iso basis is rotated, so the cell extremes are the corners, not the edges), pads by
+`WINDOW_MARGIN_CELLS`, and snaps outward to `WINDOW_QUANTUM_CELLS` — so the window changes every few
+cells of travel rather than every dragged pixel, and `TemplateTerrainLayer` can memoise on its four
+numbers. Culling limits **iteration only**: `inField`/`apron` are still consulted at full extent, so
+a tile at the window's edge autotiles against its real neighbours and no phantom rim appears at the
+cut (the test asserts a windowed tile is identical to its uncelled counterpart).
+
+### Terrain performance (why the scene is split and memoised)
+
+*Code: `MarketEngineViewer.tsx` (`PedestrianTicker`); `EditorTerrainLayer.tsx`,
+`TemplateTerrainLayer.tsx`, `PlaceholderHouseLayer.tsx` (the `memo()` exports).*
+
+The terrain is by far the app's largest React element tree — one to four `pixiSprite` elements per
+ground cell. Two rules keep it off the frame budget, and **both** are required:
+
+1. **The frame counter lives in a leaf.** `PedestrianTicker` owns the `useTick` + `setFrame` that
+   drives the pedestrian FSM, so a frame re-renders ~a dozen ped sprites. It used to live in
+   `NightMarketScene`, which meant React reconciled the whole terrain **60 times a second**.
+2. **The terrain layers are `memo()`-ised.** A scene re-render for any *other* reason — a pan, a
+   zoom — would otherwise still rebuild the terrain tree. This depends on stable props: `tiles` is
+   memoised inside `TemplateTerrainLayer`, and `cullWindow` is quantised so its identity rarely
+   changes.
+
+⚠️ Do not hoist the ticker back into the scene, and do not drop the memos: either one alone leaves
+the other's cost in place.
+
+**Measuring it (`nmpPerf.ts`).** nmp's cost is not readable from the source — how many cells the
+*loaded* market spans, whether a layer is rebuilding per frame, and the real frame time on the target
+device are all runtime facts. `nmpPerf` reports them to the console every 2s and is **on by default
+in dev** (`import.meta.env.DEV`); `localStorage.setItem('nmpPerf','1')` forces it on in a production
+build, `'0'` forces it off anywhere. What to read:
+
+| Line | Question it answers |
+|---|---|
+| `frame: … mean (…fps), worst …ms` | Is it actually slow, and is it a steady cost or a spike? |
+| `world-cells` | Is the authored market genuinely enormous? |
+| `window-cells` | How much of it the camera can see — i.e. what the terrain actually builds |
+| `terrain-tiles` / `terrain-sprites` | Cells built vs. Pixi children emitted (a cell emits 1–4) |
+| `… (rebuilt N× in the last 2s)` | **The key diagnostic.** N ≈ 120 means memoisation is broken; N ≈ 1 means the count itself is the cost |
+| `backdrop: motif W×H, holes N` | Whether the ground motif baked at all, and whether it is opaque |
+
+### Layer translucency (zoom-peel)
+
+*Code: `src/engine/market/layerTranslucency.ts` (whole file);
+`src/features/nightmarket/CameraZoomContext.tsx` (whole file);
+`HouseStripSprites.tsx` (`fadeSlot` prop, the `alpha` const, `alpha=` on each strip);
+`MarketEngineViewer.tsx` + `TemplateSandboxViewer.tsx` (the `<CameraZoomProvider>` wrapping each
+scene container's children). Tests: `src/engine/market/__tests__/layerTranslucency.test.ts`.*
+
+**On nmp and nms, zooming IN ghosts a building's outer layers**, peeling the shell open so the
+player can see what is inside. Zoomed out a building should read as a solid silhouette; zoomed in,
+an opaque roof or sign is exactly what is in the way.
+
+> Since the cameras went continuous (see "Camera (pan / zoom)"), the smoothstep ramp in
+> `alphaForSlot` runs **per frame** during a pinch rather than across a handful of ladder notches —
+> the shell now dissolves smoothly instead of popping at each rung.
+
+**The layer vocabulary is the existing `RenderSlot`** (`background | entity | foreground | overlay`,
+`nightMarketRegistry.ts`) — deliberately NOT a parallel enum. A layered asset declares each
+sub-image's slot once in `StandLayer.slot`, and that one declaration drives **both** its depth
+ordering (`RENDER_SLOT_Z`) and its fade behaviour (`SLOT_FADE`). Slot order is back-to-front, so
+"outermost peels first" is just "later slots get lower thresholds":
+
+| Slot | Contents | Fades at zoom | Settles at |
+|---|---|---|---|
+| `overlay` | tall signs, floating effects | **3** (over a 1-zoom window) | `GHOST_ALPHA` = 0.25 |
+| `foreground` | counters, **roofs** | **4** (over a 1-zoom window) | `GHOST_ALPHA` = 0.25 |
+| `entity` | humans, merchants | **never** | — |
+| `background` | shadows, floor details, back walls | **never** | — |
+
+`entity`/`background` never fade — they are what peeling the shell is meant to reveal. The residual
+0.25 (rather than 0) keeps the isometric silhouette legible: a fully transparent wall reads as a
+*missing* wall. `alphaForSlot(slot, zoom)` eases between the two ends with a smoothstep so the
+handful of intermediate ladder notches land on a curve rather than a kinked line.
+
+> ⚠️ **Thresholds are ABSOLUTE zoom values, not multiples of a surface's default framing.** The two
+> cameras have different ladders — nmp runs 0.5–8 defaulting to 1×, nms runs 1–10 defaulting to 3×
+> — so one table behaves differently on each: on nmp the shell is solid at the default view and
+> peels as you push in, while nms's default 3× view already sits at the `overlay` threshold. That is
+> an accepted trade for having a single table with no per-surface bias constants to keep in sync. To
+> change it, retune `SLOT_FADE` rather than adding a per-surface offset.
+
+**Zoom plumbing.** Zoom previously never left the camera hosts (local state, spent only as `scale`
+on the root container), but the fade is needed at the sprite *leaves*, 2–4 components down and
+behind components shared by all three house surfaces. `CameraZoomProvider` publishes it; any leaf
+opts in via `useCameraZoom()`. The provider emits **no display object**, so the layers it wraps stay
+direct children of the scene container and keep taking part in its single global z-sort.
+
+**Publishers are the two player-facing cameras only** — `MarketEngineViewer` (nmp) and
+`TemplateSandboxViewer` (nms). The authoring surfaces (`TemplateEditorViewer`/nme, the Load gallery
+thumbnails) publish nothing, so `useCameraZoom()` falls back to its neutral `1` and their art stays
+fully opaque — an author placing a slot needs to see the occupant solidly. The peel is therefore
+opt-in per surface rather than something each authoring tool must suppress. Note the editor's
+`PlaceholderOccupantHouses` is reached from nms too (nms renders `TemplateMaskOverlays` inside its
+provider), so the same component correctly peels on nms and stays solid in nme.
+
+**Current state — test assets.** `House.png` is unlayered: one flat image. It must sort in the
+`entity` slot (so pedestrians interleave with its near-left/near-right wings correctly, see the
+sprite-strip section above), but what it *depicts* is a roof-and-walls shell. `HouseStripSprites`
+therefore takes a `fadeSlot` prop defaulting to `'foreground'`, decoupling "what depth am I" from
+"what layer am I" so the peel is visible on the placeholder art today without lying about the
+sprite's depth. **When the real layered assets land, each layer passes one honest `slot` and the
+`fadeSlot` override falls away.** Alpha is applied per strip rather than to a wrapping container —
+a container would re-parent the strips out of the global sort — and since the strips are
+anchor-aligned edge-to-edge with no overlapping pixels, that composites identically to whole-sprite
+alpha with no double-blended seams.
+
+**Not yet wired:** `StandLayer[]` is declared in the registry but has no renderer. When one is
+written it should call `alphaForSlot(layer.slot, useCameraZoom())` and gets the peel for free.
 
 **Debug overlays (nmp):** the page's right-edge toggle column (`NightMarketEnginePage.tsx`)
 drives per-overlay `DebugFlags` on `MarketEngineViewer`, all rendered inside the scene
@@ -259,32 +538,48 @@ where a future authored layout re-attaches.
 
 ## Architecture
 
+The scene is **read** by the layout endpoint; unlocks are **written** by the minute-points
+tick — the client never asks for an unlock.
+
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Frontend                                   │
-│                                                                   │
-│  MarketViewerPage ──▶ useNightMarket() ──▶ GET/POST /api/...    │
-│       │                     │                                     │
-│       ▼                     ▼                                     │
-│  MarketViewer       nightMarketRegistry                          │
-│  (canvas render)    (asset definitions)                          │
-└──────────────────────────────┬────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────┐
+│                        Frontend                                    │
+│                                                                    │
+│  NightMarketEnginePage ──▶ GET /api/nightMarket/layout            │
+│       │                                                            │
+│       ▼                                                            │
+│  MarketEngineViewer  (Pixi render of placements + occupants)      │
+└──────────────────────────────┬─────────────────────────────────────┘
                                │
-┌──────────────────────────────▼────────────────────────────────────┐
-│                        Backend                                     │
-│                                                                   │
-│  NightMarketController                                           │
-│       │                                                           │
-│       ▼                                                           │
-│  NightMarketService  ──▶  nightMarketRegistry (asset pool)       │
-│       │                                                           │
-│       ▼                                                           │
-│  NightMarketDAL  ──▶  nightmarketunlocks table                   │
-│       │                                                           │
-│       ▼                                                           │
-│  UserDAL.getTotalWorkPoints()  (threshold verification)          │
-└───────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────▼─────────────────────────────────────┐
+│                        Backend — READ path                          │
+│                                                                    │
+│  NightMarketWorldController ──▶ NightMarketWorldService            │
+│       (seeds the origin hub; recompute-on-read version selection)  │
+│                               │                                    │
+├───────────────────────────────┼────────────────────────────────────┤
+│                        Backend — WRITE path (unlocks)               │
+│                                                                    │
+│  UserMinutePointsService.incrementMinutePoints                     │
+│       │  (best-effort, every earned minute)                        │
+│       ▼                                                            │
+│  NightMarketPlacementService.grantUnlocks / reconcileUnlocks       │
+│       │        ▲                                                   │
+│       │        └── unlocksForMinutes()  (dal/shared/unlockSchedule) │
+│       ▼                                                            │
+│  ensureFreeSlot ─── none free ──▶ spawnTemplate (loop, free)      │
+│       │  (lazy: growth ONLY when an arriving unlock  │             │
+│       ▼   finds no free UNIT slot)                   │             │
+│  insert occupant into that slot (one per unit)    │                 │
+│       │                                          │                 │
+│       ▼                                          ▼                 │
+│  INightMarketPlacementDAL ──▶ nightmarketunlocks (occupants)       │
+│                            └─▶ nightmarkettemplatelocations        │
+└────────────────────────────────────────────────────────────────────┘
 ```
+
+> The legacy `NightMarketController → NightMarketService → NightMarketDAL` chain still
+> exists but is a retired stub (see *Unlock Flow*).
 
 ---
 
@@ -292,24 +587,35 @@ where a future authored layout re-attaches.
 
 ### `nightmarketunlocks` Table
 
+One row = **one occupant placed into one placeholder slot** of a placed template
+(migrations 47 → 112/113/114; 113 repurposed the table and wiped it).
+
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | id | UUID | PRIMARY KEY, DEFAULT gen_random_uuid() | Unique identifier |
-| userId | UUID | NOT NULL, FK → users(id) ON DELETE CASCADE | Owner of the unlock |
-| assetId | VARCHAR(100) | NOT NULL | Key into the asset registry |
-| unlockType | VARCHAR(20) | NOT NULL, DEFAULT 'stall' | Type of unlock (stall, person, etc.) |
-| unlockOrder | INTEGER | NOT NULL, DEFAULT 0 | 0 = base set, 1+ = earned unlocks |
-| createdAt | TIMESTAMPTZ | DEFAULT CURRENT_TIMESTAMP | When the unlock was granted |
+| userId | UUID | NOT NULL, FK → users(id) ON DELETE CASCADE | Owner of the occupant |
+| placedTemplateId | UUID | NOT NULL, FK → nightmarkettemplatelocations(id) ON DELETE CASCADE | The placement this occupant sits in |
+| placeholderAreaId | VARCHAR(40) | NOT NULL | The slot within that placement — SW-corner anchor id `"col_row"` |
+| assetId | VARCHAR(100) | NOT NULL | Currently always the generic `occupant-generic`; the real stand catalog is a later visual slice |
+| unlockType | VARCHAR(20) | NOT NULL, DEFAULT 'stall' | ⚠️ **vestigial** — legacy asset-economy column, no longer read |
+| unlockOrder | INTEGER | NOT NULL, DEFAULT 0 | ⚠️ **vestigial** — legacy asset-economy column, no longer read |
+| createdAt | TIMESTAMPTZ | DEFAULT CURRENT_TIMESTAMP | When the occupant was granted (decay trims the NEWEST first) |
 
 **Indexes:**
-- `UNIQUE (userId, assetId)` — prevents duplicate unlocks
-- `(userId, unlockOrder)` — fast ordered retrieval per user
+- `UNIQUE (placedTemplateId, placeholderAreaId)` — one occupant per slot
+- `(placedTemplateId)` — fast "which slots of this placement are filled"
+- The legacy `UNIQUE (userId, assetId)` and `(userId, unlockOrder)` indexes were **dropped
+  by migration 114** — under the generic-asset model every occupant shares one `assetId`,
+  so the unique index would have capped each user at a single occupant.
 
 ---
 
-## Asset Registry
+## Asset Registry (legacy)
 
-All unlockable items are defined in TypeScript config files (not in the database). This keeps asset management in code alongside the image files.
+⚠️ The registry belongs to the **retired** asset-unlock economy and no longer drives what a
+user owns. Occupants are all tagged `occupant-generic` today; the real stand-asset catalog
+and occupant→stand rendering are a later visual slice
+([NIGHT_MARKET_TEMPLATE_RUNTIME_PLAN.md](./NIGHT_MARKET_TEMPLATE_RUNTIME_PLAN.md)).
 
 **Asset files live at:** `src/assets/` (imported as Vite modules, not served from `public/`)
 
@@ -318,43 +624,104 @@ All unlockable items are defined in TypeScript config files (not in the database
 - Frontend: `src/engine/market/nightMarketRegistry.ts`
 
 **Exports:**
-- `NIGHT_MARKET_BASE_SET` — items every user receives automatically (unlockOrder = 0)
-- `NIGHT_MARKET_UNLOCK_POOL` — items available for random unlock as users earn points
-- `NIGHT_MARKET_CONFIG` — constants (e.g., `POINTS_PER_UNLOCK = 60`)
+- `NIGHT_MARKET_BASE_SET` — legacy: items every user used to receive automatically
+- `NIGHT_MARKET_UNLOCK_POOL` — legacy: the random-pull pool
+- `NIGHT_MARKET_CONFIG` — legacy constants (e.g., `POINTS_PER_UNLOCK = 60`). **Not** the
+  live curve — that is `unlocksForMinutes` in `server/dal/shared/unlockSchedule.ts`.
 
 Each asset definition includes: `assetId`, `unlockType`, `displayName`, `description`, `imagePath`, `x`, `y`, `zIndex`, `scale`.
 
 ---
 
-## Unlock Flow
+## Unlock Flow (current — occupant model)
 
-### Threshold Calculation
-- 1 unlock per 60 accumulated work points
-- Allowed unlocks = `floor(totalWorkPoints / 60)`
-- Base set items (unlockOrder = 0) do not count toward the earned unlock limit
+**Canonical spec:** [NIGHT_MARKET_TEMPLATES.md § Unlock economy](./NIGHT_MARKET_TEMPLATES.md#unlock-economy-minutes--unlocks).
+Summarised here:
 
-### Sequence
-1. Frontend detects `accumulativeWorkPoints >= nextThreshold` via `useNightMarket()` hook
-2. User triggers unlock (e.g., taps an unlock button)
-3. Frontend calls `POST /api/night-market/unlock`
-4. Server verifies `totalWorkPoints` against `earnedUnlockCount * POINTS_PER_UNLOCK`
-5. Server filters the unlock pool to exclude already-owned assets
-6. Server picks a random item from the remaining pool
-7. Server persists the selection in `nightmarketunlocks` with `unlockOrder = earnedCount + 1`
-8. Server returns the new unlock to the frontend
-9. Frontend adds the new item to the scene
+### ⚠️ One market PER (user, language) — migration 136
 
-### Base Set Seeding
-On the first call to `GET /api/night-market/unlocks`, if the user has no unlock records, the service bulk-inserts all `NIGHT_MARKET_BASE_SET` items with `unlockOrder = 0`.
+A user studying two languages has **two completely independent markets**. Each has its own
+placements, its own occupants, its own starter hub at `(0,0)`, and its own coordinate space;
+studying Spanish grows the Spanish market and never touches the Chinese one.
+
+- `nightmarkettemplatelocations.language` and `nightmarketunlocks.language` (both backfilled
+  to `'zh'`, since the market predates multi-language) carry the dimension.
+- **Every** placement DAL method is `(userId, language)`-scoped. A query filtering on `userId`
+  alone mixes two markets' geometry into one coordinate space and renders templates on top of
+  each other — this is the single easiest way to break the market, so do not add one.
+- The SW-corner uniqueness guard is `UNIQUE (userId, language, offsetCol, offsetRow)`.
+  Migration 112's user-wide version had to be widened: two markets legitimately both have a
+  hub at `(0,0)`, and the old index made seeding the second language's hub a hard 23505.
+- The layout read takes the language: `GET /api/nightMarket/layout?language=<lang>`. The
+  client (`useMarketWorld`) keys its load effect on the selected language so switching
+  language re-fetches the other market.
+- A language's market is seeded lazily: `NightMarketWorldService.getUserLayout` plants that
+  language's hub the first time it is opened. Only the account's *initial* language gets a
+  hub at signup.
+
+### Entitlement is a pure function of THAT LANGUAGE's minute points
+- `unlocksForMinutes(netMinutePoints)` in `server/dal/shared/unlockSchedule.ts` is the
+  **source of truth**: an explicit breakpoint table below 60 minutes (1/2/3 min → 1/2/3
+  unlocks, tapering to 4- then 5-minute gaps, reaching 17 unlocks at 60 minutes), then a
+  steady state of `17 + floor((m − 60) / 60)` — **+1 unlock per hour** beyond minute 60.
+- It is an **entitlement**, not a ledger: losing minute points takes unlocks back.
+- The hourly decay cron (`database/cron/expire-stale-streaks.sql`) hard-codes the same
+  breakpoints in SQL — **change one, change the other**.
+
+### Sequence (push-based; no user-facing unlock button)
+1. `UserMinutePointsService.incrementMinutePoints` earns a minute and calls
+   `NightMarketPlacementService.grantUnlocks` best-effort.
+2. `grantUnlocks` computes `target = unlocksForMinutes(m)` and compares to the user's
+   current occupant count.
+3. While under target it takes the **first free UNIT slot** across existing placements
+   (`ensureFreeSlot` → `findFreeSlot`) and occupies it. One unlock = one occupant footprint,
+   so a 4×10/10×4 area fills in two steps — see
+   [§ One unlock = one unit slot](./NIGHT_MARKET_TEMPLATES.md#one-unlock--one-unit-slot-not-one-authored-area).
+4. **Lazy spawn.** Only when no free slot remains does it grow: **spawn templates until one
+   exposes a free placeholder** (`spawnTemplate` + the anchor algorithm), capped at
+   `MAX_CONSECUTIVE_SPAWNS_PER_GRANT` (8) consecutive slot-less spawns per pass — see
+   [§ Spawning until a free placeholder exists](./NIGHT_MARKET_TEMPLATES.md#spawning-until-a-free-placeholder-exists).
+   Spawning is **free** — it never consumes an unlock — and the unlock that triggered it then
+   fills the new template's first slot. Nothing is placed ahead of demand; see
+   [§ Lazy spawn](./NIGHT_MARKET_TEMPLATES.md#lazy-spawn-templates-are-placed-only-when-an-unlock-needs-one).
+5. Occupants are inserted into `nightmarketunlocks` with `placedTemplateId` +
+   `placeholderAreaId` (a **unit** anchor id), tagged with the generic `occupant-generic` asset id.
+
+The pass is **idempotent** — safe on every tick, and a capped/blocked pass simply resumes
+on the next one.
+
+### Decay
+`reconcileUnlocks(userId, language, net)` handles a *dropped* balance **for one market**:
+delete that market's newest surplus occupants, then `pruneDanglingTemplates(userId, language)`
+removes placements left empty **and** weakly attached (never the hub, never an opposing-side
+corridor). The hourly cron does the same in SQL, partitioned by `(userId, language)` — decaying
+a neglected Spanish market must never delete a Chinese occupant.
+
+### Seeding
+Each language's origin hub is planted at `(0,0)` by
+`NightMarketWorldService.seedHubPlacement(userId, language)` — at signup for the account's
+initial language, and lazily on first layout load for any language opened later. There is no
+base-set asset seeding.
+
+### ⚠️ Retired: the legacy asset-unlock economy
+The old flow — a base set of assets plus `floor(totalPoints / 60)` random pulls from
+`NIGHT_MARKET_UNLOCK_POOL`, driven by a user-tapped `POST /api/nightMarket/unlock` — was
+**retired 2026-07-17**. Migrations 112/113 repurposed `nightmarketunlocks` for the occupant
+model (113 wiped the table). `NightMarketService` is a stub: `getUnlocks` returns an empty
+shape and `unlockNext` throws. Delete it once the client stops calling those endpoints.
 
 ---
 
 ## API Endpoints
 
+Registered in `server/routes/nightMarketRoutes.ts`.
+
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/night-market/unlocks` | Get all unlocked items for the authenticated user. Seeds base set on first call. |
-| POST | `/api/night-market/unlock` | Unlock the next random item. Returns 400 if insufficient points or pool exhausted. |
+| GET | `/api/nightMarket/layout` | **Live.** The user's rendered template layout (placements + occupants). Seeds the origin hub on first load. |
+| POST | `/api/nightMarket/dev/adjustMinutes` | **Live, dev tool.** Emit an artificial ±N minute signal and reconcile the market. Template-authors only (403 otherwise). |
+| GET | `/api/nightMarket/unlocks` | ⚠️ Retired — returns a stable empty shape so the old client doesn't error. |
+| POST | `/api/nightMarket/unlock` | ⚠️ Retired — always rejects (`ValidationError`). |
 
 ---
 
@@ -382,17 +749,29 @@ On the first call to `GET /api/night-market/unlocks`, if the user has no unlock 
 
 | File | Role |
 |------|------|
-| `server/types/nightMarket.ts` | TypeScript interfaces for unlocks and API responses |
-| `server/config/nightMarketRegistry.ts` | Server-side asset registry (base set + unlock pool) |
-| `src/engine/market/nightMarketRegistry.ts` | Frontend asset registry (same data) |
-| `database/migrations/47-create-night-market-unlocks.sql` | Table creation migration |
-| `server/dal/interfaces/INightMarketDAL.ts` | DAL interface |
-| `server/dal/implementations/NightMarketDAL.ts` | DAL implementation |
-| `server/services/NightMarketService.ts` | Business logic (unlock verification, random selection, base set seeding) |
-| `server/controllers/NightMarketController.ts` | HTTP request/response handling |
-| `src/features/nightmarket/useNightMarket.ts` | Frontend hook for fetching unlocks and triggering new unlocks |
+| `server/dal/shared/unlockSchedule.ts` | **Source of truth** for the minutes→unlocks curve (`UNLOCK_BREAKPOINTS`, `unlocksForMinutes`) |
+| `server/services/NightMarketPlacementService.ts` | Grant/decay of occupants: `grantUnlocks` (fill one UNIT slot per unlock, growing lazily only when none is free), `ensureFreeSlot`/`findFreeSlot`/`placeUnlock`, `reconcileUnlocks`, `pruneDanglingTemplates` |
+| `server/dal/implementations/NightMarketPlacementDAL.ts` | Occupant + placement persistence |
+| `server/services/UserMinutePointsService.ts` | Calls `grantUnlocks` best-effort after each earned minute |
+| `database/cron/expire-stale-streaks.sql` | Hourly decay; **hard-copies the unlock breakpoints in SQL** — keep in sync |
+| `server/types/nightMarket.ts` | TypeScript interfaces for occupants/placements and API responses |
+| `database/migrations/47-create-night-market-unlocks.sql` | Original table creation (asset-unlock era) |
+| `database/migrations/112…114` | Placements table; repurpose unlocks → occupants (destructive); drop legacy indexes |
+| `server/config/nightMarketRegistry.ts` | ⚠️ Legacy server-side asset registry (base set + unlock pool) |
+| `src/engine/market/nightMarketRegistry.ts` | ⚠️ Legacy frontend asset registry (same data) |
+| `server/dal/interfaces/INightMarketDAL.ts` | ⚠️ Legacy DAL interface |
+| `server/dal/implementations/NightMarketDAL.ts` | ⚠️ Legacy DAL implementation |
+| `server/services/NightMarketService.ts` | ⚠️ Retired stub — empty `getUnlocks`, throwing `unlockNext` |
+| `server/controllers/NightMarketController.ts` | HTTP handling for the two retired endpoints |
+| `src/features/nightmarket/useNightMarket.ts` | ⚠️ Legacy hook still calling the retired endpoints |
 | `src/features/nightmarket/NightMarketEnginePage.tsx` | Page component — builds layers from unlocks + registry, hosts debug toggles |
 | `src/features/nightmarket/MarketEngineViewer.tsx` | Pixi (`@pixi/react`) canvas renderer with pan/zoom and tap interaction |
+| `src/engine/market/cameraZoom.ts` | Pure camera-zoom math — geometric wheel mapping, ladder snap, focal-point pan, settle easing (see "Camera (pan / zoom)") |
+| `src/hooks/useCameraControls.ts` | The one pan/zoom host hook shared by nmp / nms / nme — state, gesture listeners, settle tween, the pan clamp |
+| `src/engine/market/cameraFit.ts` | Pure camera-limit math from world size — zoom-out floor, pan clamp, visible-cell window (see "Zoom-out floor", "Pan clamp", "Default ground apron") |
+| `src/features/nightmarket/GroundBackdropLayer.tsx` | The infinite default ground — one tiling quad of the generated tallDirt+lightGrass motif (see "Default ground apron") |
+| `src/engine/market/layerTranslucency.ts` | Pure fade table + `alphaForSlot(slot, zoom)` — the zoom-peel policy (see "Layer translucency") |
+| `src/features/nightmarket/CameraZoomContext.tsx` | Publishes the camera's live zoom to sprite leaves; `useCameraZoom()` |
 
 ## Known Bugs
 

@@ -1,4 +1,3 @@
-import { ITransaction } from '../../types/dal.js';
 import { UserMinutePoints } from '../../types/minutePoints.js';
 
 export interface IUserMinutePointsDAL {
@@ -29,8 +28,14 @@ export interface IUserMinutePointsDAL {
   findInRange(userId: string, language: string, startDate: string, endDate: string): Promise<UserMinutePoints[]>;
   getFirstActivityDate(userId: string, language: string): Promise<string | null>;
 
-  // Day total summed across ALL languages — used by the global streak/leaderboard.
+  // Day total summed across ALL languages — used by the global streak check.
   getMinutesForDate(userId: string, streakDate: string): Promise<number>;
+
+  // Batch form of the above: many users × many dates in ONE grouped query, returned
+  // as userId → streakDate → minutes. Used by the leaderboard, which needs today's
+  // and yesterday's totals for every ranked user and must not issue 2N round trips.
+  // Absent pairs mean "no minutes recorded"; callers default with `?? 0`.
+  getMinutesForDatesByUser(userIds: string[], streakDates: string[]): Promise<Map<string, Map<string, number>>>;
 
   // Day total for a single language — used by the per-language fire badge.
   getMinutesForDateAndLanguage(userId: string, streakDate: string, language: string): Promise<number>;
@@ -38,16 +43,8 @@ export interface IUserMinutePointsDAL {
   // Lifetime total for a single language — used by the home screen "total study time".
   getTotalMinutesForLanguage(userId: string, language: string): Promise<number>;
 
-  // GLOBAL gross minutes earned across ALL languages (Σ minutesEarned, ignoring penalties).
-  // The "lifetime earned" figure; pairs with the penalty-debited net (users.totalMinutePoints).
-  getGrossMinutesEarned(userId: string): Promise<number>;
+  // NOTE: lifetime-earned is NOT served from this table. It is the maintained per-language
+  // counter user_language_minute_totals."lifetimeMinutesEarned" (migrations 133 then 134),
+  // read via IUserLanguageTotalsDAL — summing the ledger grew with account age.
 
-  // Transaction-aware variant
-  addMinutesForDateWithTransaction(
-    userId: string,
-    streakDate: string,
-    language: string,
-    delta: number,
-    transaction: ITransaction
-  ): Promise<{ previousMinutes: number; newMinutes: number }>;
 }

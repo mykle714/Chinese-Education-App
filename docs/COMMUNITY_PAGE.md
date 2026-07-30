@@ -1,7 +1,7 @@
 # Community Page — Shareable Advanced Card-Icon Layouts
 
 > Status: **implemented**. Backed by migration 86 (`community_layout_votes`), the
-> `/api/community/*` endpoints, and the `src/pages/CommunityPage/` UI. Reached from the Home
+> `/api/community/*` endpoints, and the `src/features/community/` UI. Reached from the Home
 > hub (`/community`).
 
 ## What it is
@@ -31,7 +31,7 @@ CJK-segment mode (`GET /api/dictionary/segment`) for multi-character Chinese inp
 [DICTIONARY_NUMBERED_PINYIN_SEARCH.md](./DICTIONARY_NUMBERED_PINYIN_SEARCH.md)).
 Instead of rendering dictionary-entry cards, each matched `DictionaryEntry` heads a
 `CommunityFeedRow` scoped to that one word (`entryKey = word1`) via `POST
-/api/community/entry-feed` — "highest rated designs for this entry," ranked by this-week votes
+/api/community/entryFeed` — "highest rated designs for this entry," ranked by this-week votes
 the same way as the Top feed. An entry with no shared designs still renders, with
 `CommunityFeedRow`'s empty-hint. While the search term is non-empty
 (`CommunityPage`'s `searchActive`), the two default feeds are hidden so the search results are
@@ -97,7 +97,7 @@ the whole page.
   toolbar) is a **toggle**: tap to vote (`POST /vote`), tap again to unvote (`POST /unvote`), once
   per design per week. **Color encodes state — GREY = not voted, COLORED (blue) = voted.** Design
   previews always render in full color (the vote state lives on the button, not by dimming the
-  card). The client learns its voted set from `GET /api/community/my-votes` on load; `votedKeys`
+  card). The client learns its voted set from `GET /api/community/myVotes` on load; `votedKeys`
   is lifted to `CommunityPage` so a toggle in either feed reflects on the button in both.
   **Both the voted state and the count are parent-owned shared stores** (a design can appear in
   more than one row simultaneously — e.g. both feeds, or a search row): alongside `votedKeys`,
@@ -162,7 +162,7 @@ Indexed per table (`idx_vocabentries_{zh,es}_author`) for the feed dedupe groupi
 | Controller | `server/controllers/CommunityLayoutController.ts` | request parsing (exclude arrays, page clamp, language resolution) |
 | Routes | `server/routes/gamesRoutes.ts` (`/api/community/*`); wired in `server/dal/setup.ts` | |
 | Types | `server/types/community.ts`, client `src/types.ts` (`CommunityDesign`, `VotedDesignKey`, `VoteResult`, `ApplyDesignResult`, `designKey`) | |
-| Client | `src/pages/CommunityPage/` — `CommunityPage`, `CommunitySearchBar`, `CommunityFeedRow`, `CommunityDesignCard`, `CommunityDesignZoom`, `ApplyDesignButton`, `VoteButton`, `CommunityCardView`, `communityApi.ts` | |
+| Client | `src/features/community/` — `CommunityPage`, `CommunitySearchBar`, `CommunityFeedRow`, `CommunityDesignCard`, `CommunityDesignZoom`, `ApplyDesignButton`, `VoteButton`, `CommunityCardView`, `communityApi.ts` | |
 | Menu/route | `src/pages/HomePage.tsx` (`community` HubMenuRow), `src/App.tsx` (`/community`) | |
 
 The read-only design render (`CommunityCardView.tsx`) reuses the same `CardIconLayer` + cpcd
@@ -180,13 +180,13 @@ language.
 
 | Method & path | Body | Returns |
 |---|---|---|
-| `POST /api/community/learning-feed` | `{ language?, excludeAuthors[], excludeKeys[], limit? }` | `{ designs: CommunityDesign[] }` |
-| `POST /api/community/top-feed` | `{ language?, excludeAuthors[], excludeKeys[], limit? }` | `{ designs: CommunityDesign[] }` |
-| `POST /api/community/entry-feed` | `{ entryKey, language?, excludeAuthors[], excludeKeys[], limit? }` | `{ designs: CommunityDesign[] }` |
-| `GET  /api/community/my-votes` | — | `{ votes: VotedDesignKey[] }` |
+| `POST /api/community/learningFeed` | `{ language?, excludeAuthors[], excludeKeys[], limit? }` | `{ designs: CommunityDesign[] }` |
+| `POST /api/community/topFeed` | `{ language?, excludeAuthors[], excludeKeys[], limit? }` | `{ designs: CommunityDesign[] }` |
+| `POST /api/community/entryFeed` | `{ entryKey, language?, excludeAuthors[], excludeKeys[], limit? }` | `{ designs: CommunityDesign[] }` |
+| `GET  /api/community/myVotes` | — | `{ votes: VotedDesignKey[] }` |
 | `POST /api/community/vote` | `{ ownerUserId, entryKey, language? }` | `{ result: 'recorded' \| 'already-voted' }` |
 | `POST /api/community/unvote` | `{ ownerUserId, entryKey, language? }` | `{ removed: boolean }` (deletes this week's vote) |
-| `POST /api/community/apply-design` | `{ ownerUserId, entryKey, language?, override? }` | `{ result: 'applied' \| 'added-and-applied' \| 'would-override' }` |
+| `POST /api/community/applyDesign` | `{ ownerUserId, entryKey, language?, override? }` | `{ result: 'applied' \| 'added-and-applied' \| 'would-override' }` |
 
 `limit` is clamped to `[1, 30]` (default 10). Feeds exclude the viewer's own rows
 (`ve."userId" <> viewer`) **and** anything the viewer authored

@@ -37,11 +37,17 @@
  * A SINGLE-component character (parts 木) likewise contributes 1 reveal: its only part is
  * also its last, so the ladder goes straight to the character and 木 is never shown alone.
  *
- * Reveals are distributed ROUND-ROBIN across characters, matching the pinyin row's
- * `distributeRevealTiers`: every character's 1st part is spent before any character's
- * 2nd, so a two-character word opens up evenly instead of solving left-to-right. The
- * character-reveal step sits in the tier of that character's LAST part, so a short
- * character can be fully revealed while a longer one still shows parts.
+ * Reveals are distributed in TWO PHASES, each round-robin across characters (matching
+ * the pinyin row's `distributeRevealTiers`: every character's 1st part is spent before
+ * any character's 2nd, so a word opens up evenly instead of solving left-to-right):
+ *
+ *   PHASE 1 — every character's NON-FINAL parts. Nobody gets their answer while any
+ *             character still has a part left to give, so the cheap shape-nudges are
+ *             exhausted board-wide before the ladder starts handing out answers.
+ *   PHASE 2 — the final step of each character, which reveals THE CHARACTER ITSELF.
+ *
+ * So 银行 (钅+ 艮 / atomic) spends 钅 before revealing either character, and 想相人
+ * shows 木 目 / 木 before any of the three collapses to its character.
  *
  * Once every character is revealed the word is fully spelled out, and `WordSearchPage`'s
  * `useHint` advances to the existing yellow grid-location reveal exactly as it does when
@@ -50,9 +56,14 @@
  * Depended on by: WordSearchHintRow.tsx, WordSearchPage.tsx.
  * Documented in: docs/WORD_SEARCH_GAME.md §5a.
  */
+import { HINT_REMAINDER_MARK } from "./constants";
 
-/** Placeholder shown for a character that is not yet fully revealed. */
-export const COMPONENT_BLANK = "_";
+/**
+ * Placeholder shown for a character that is not yet fully revealed — the SAME
+ * one-character "there's more" dash the pinyin mask uses, so both boards speak
+ * the same visual language (see `HINT_REMAINDER_MARK`).
+ */
+export const COMPONENT_BLANK = HINT_REMAINDER_MARK;
 
 /**
  * Per-character components for a word, tolerating boards saved before
@@ -84,27 +95,48 @@ export function countComponentUnits(entryKey: string, charComponents?: string[][
 }
 
 /**
- * How many reveals each character has received, distributing `revealCount`
- * round-robin across characters. A character whose ladder is already exhausted is
- * skipped without consuming a reveal, so leftover reveals flow to the characters
- * that still have something to show.
+ * How many part-reveals one character's ladder holds BEFORE its character step: every
+ * component except the last (whose step is spent on the character itself). Atomic and
+ * single-part characters have none — they go straight to their character step.
+ */
+function partialCapacity(parts: string[]): number {
+    return Math.max(parts.length - 1, 0);
+}
+
+/**
+ * How many reveals each character has received, distributing `revealCount` across
+ * characters in two round-robin phases: first every character's non-final parts, then
+ * the character-reveal steps. A character whose current phase is already exhausted is
+ * skipped without consuming a reveal, so leftover reveals flow to the characters that
+ * still have something to show.
  *
- * Mirrors `distributeRevealTiers` in WordSearchHintRow.tsx (the pinyin equivalent).
+ * Mirrors `distributeRevealTiers` in WordSearchHintRow.tsx (the pinyin equivalent),
+ * with the extra phase split so no character is answered while parts remain elsewhere.
  */
 export function distributeComponentReveals(unitsPerChar: string[][], revealCount: number): number[] {
     const revealed = unitsPerChar.map(() => 0);
-    const capacity = unitsPerChar.map(ladderCapacity);
-    const maxTiers = capacity.reduce((max, n) => Math.max(max, n), 0);
+    const partials = unitsPerChar.map(partialCapacity);
+    const maxTiers = partials.reduce((max, n) => Math.max(max, n), 0);
 
     let remaining = revealCount;
+
+    // Phase 1: spend every character's non-final parts, one tier at a time.
     for (let tier = 0; tier < maxTiers && remaining > 0; tier++) {
         for (let i = 0; i < unitsPerChar.length && remaining > 0; i++) {
-            if (capacity[i] > tier) {
+            if (partials[i] > tier) {
                 revealed[i] = tier + 1;
                 remaining--;
             }
         }
     }
+
+    // Phase 2: only once no parts are left anywhere does the ladder start revealing
+    // characters, left to right (each character's final step costs exactly one reveal).
+    for (let i = 0; i < unitsPerChar.length && remaining > 0; i++) {
+        revealed[i] = ladderCapacity(unitsPerChar[i]);
+        remaining--;
+    }
+
     return revealed;
 }
 

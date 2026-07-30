@@ -70,10 +70,13 @@ export class UserController {
    * (e.g. the hub template is not authored yet) must NOT fail account creation —
    * NightMarketWorldService's first-load safety net will seed it on the user's first market load.
    */
-  private async seedNightMarketHub(userId: string | undefined): Promise<void> {
+  private async seedNightMarketHub(userId: string | undefined, language: string): Promise<void> {
     if (!userId) return;
     try {
-      await this.nightMarketWorldService.seedHubPlacement(userId);
+      // Seeds the hub for the account's INITIAL language only. Markets are per-language
+      // (migration 136); a second language's hub is seeded lazily by the world service's
+      // first-load safety net the first time that market is opened.
+      await this.nightMarketWorldService.seedHubPlacement(userId, language);
     } catch (seedError) {
       console.error('[UserController] Night Market hub seed failed (non-fatal):', seedError);
     }
@@ -93,7 +96,7 @@ export class UserController {
         password
       });
 
-      await this.seedNightMarketHub(newUser.id);
+      await this.seedNightMarketHub(newUser.id, newUser.selectedLanguage || 'zh');
 
       res.status(201).json(newUser);
     } catch (error) {
@@ -185,7 +188,7 @@ export class UserController {
   /**
    * Post-login hook — invoked by the client immediately after a successful
    * login or session restore. Body: { tz?: IANA }. Returns 204.
-   * POST /api/auth/on-login
+   * POST /api/auth/onLogin
    */
   async onLogin(req: Request, res: Response): Promise<void> {
     try {
@@ -276,7 +279,7 @@ export class UserController {
 
   /**
    * Update the account's display preferences.
-   * PUT /api/users/display-settings — Body: { showSegmentSpaces?: boolean }
+   * PUT /api/users/displaySettings — Body: { showSegmentSpaces?: boolean }
    * See docs/EXAMPLE_SENTENCES.md.
    */
   async updateDisplaySettings(req: Request, res: Response): Promise<void> {
@@ -376,7 +379,7 @@ export class UserController {
 
   /**
    * Delete user account
-   * DELETE /api/auth/delete-account
+   * DELETE /api/auth/deleteAccount
    */
   async deleteAccount(req: Request, res: Response): Promise<void> {
     try {
@@ -420,7 +423,7 @@ export class UserController {
 
   /**
    * Change user password
-   * POST /api/auth/change-password
+   * POST /api/auth/changePassword
    */
   async changePassword(req: Request, res: Response): Promise<void> {
     try {
@@ -508,7 +511,7 @@ export class UserController {
 
   /**
    * Get total minute points and current streak for a user
-   * GET /api/users/:id/total-minute-points
+   * GET /api/users/:id/totalMinutePoints
    */
   async getTotalMinutePoints(req: Request, res: Response): Promise<void> {
     try {
@@ -535,7 +538,7 @@ export class UserController {
         password
       });
 
-      await this.seedNightMarketHub(newUser.id);
+      await this.seedNightMarketHub(newUser.id, newUser.selectedLanguage || 'zh');
 
       res.status(201).json(newUser);
     } catch (error) {

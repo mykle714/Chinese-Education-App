@@ -31,7 +31,7 @@ export interface UseNightMarketReturn {
   isLoading: boolean;
   /** Error message if fetch/unlock failed */
   error: string | null;
-  /** Work points needed for the next unlock */
+  /** Minute points needed for the next unlock */
   nextThreshold: number;
   /** Total items available in the unlock pool */
   totalUnlockable: number;
@@ -50,7 +50,13 @@ export interface UseNightMarketReturn {
 /**
  * Hook for managing night market unlock data.
  * Fetches unlocked items on mount, provides unlock functionality,
- * and derives canUnlock from current work points.
+ * and derives canUnlock from current minute points.
+ *
+ * ⚠️ LEGACY — it drives the retired asset-unlock endpoints (`GET /api/nightMarket/unlocks`
+ * returns an empty shape; `POST /api/nightMarket/unlock` always rejects). The live economy is
+ * push-based: minutes grant occupants server-side via
+ * `NightMarketPlacementService.grantUnlocks`, and the scene is read from
+ * `GET /api/nightMarket/layout`. See docs/NIGHT_MARKET_FEATURE.md § "Unlock Flow".
  */
 export function useNightMarket(): UseNightMarketReturn {
   const [unlocks, setUnlocks] = useState<NightMarketUnlock[]>([]);
@@ -71,7 +77,7 @@ export function useNightMarket(): UseNightMarketReturn {
       setIsLoading(true);
       setError(null);
 
-      const response = await fetch(`${API_BASE_URL}/api/night-market/unlocks`, {
+      const response = await fetch(`${API_BASE_URL}/api/nightMarket/unlocks`, {
         method: 'GET',
         credentials: 'include',
         headers: {
@@ -110,7 +116,7 @@ export function useNightMarket(): UseNightMarketReturn {
       setIsUnlocking(true);
       setError(null);
 
-      const response = await fetch(`${API_BASE_URL}/api/night-market/unlock`, {
+      const response = await fetch(`${API_BASE_URL}/api/nightMarket/unlock`, {
         method: 'POST',
         credentials: 'include',
         headers: {

@@ -91,6 +91,14 @@ Populates enrichment data for existing Chinese vocab entries.
 docker-compose exec backend-local node server/scripts/backfill/chinese/backfill-enrichment.js
 ```
 
+## Related documents
+
+- [newDictionaryEntriesBackfillInstructions.md](./newDictionaryEntriesBackfillInstructions.md)
+  — the per-script catalog and required run ORDER for enriching newly-discoverable
+  `dictionaryentries_zh` rows. Note that marking a row discoverable is only legal via
+  the `/mark-discoverable` skill (CLAUDE.md); that document describes what the skill's
+  pipeline runs.
+
 ## Data Structure Examples
 
 ### Synonyms

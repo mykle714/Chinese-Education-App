@@ -4,29 +4,24 @@
  */
 
 import type { VocabEntry, VocabLookupResponse, DictionaryEntry } from '../types';
-import { API_BASE_URL } from '../constants';
-import { authHeader } from './authHeader';
 import { getCachedEntries, cacheEntries, getCachedDictionaryEntries, cacheDictionaryEntries } from './vocabCache';
+import { apiDelete, apiPatch, apiPost, apiPut } from '../api/http';
+import { vocabLog } from './vocabDebug';
 
 /**
  * Fetches vocabulary entries by tokens with cache integration
- * @param tokens Array of tokens to look up
- * @param token JWT authentication token. Optional — omit it (or pass null) to read
  *   the LIVE token at call time via `authHeader()`, which keeps the caller's
  *   callback identity stable across silent token refreshes (see authHeader.ts and
  *   CLAUDE.md "Never reload on token refresh").
  * @returns Promise resolving to both personal and dictionary entries
  */
-export async function fetchVocabEntriesByTokens(
-  tokens: string[],
-  token?: string | null
-): Promise<VocabLookupResponse> {
+export async function fetchVocabEntriesByTokens(tokens: string[]): Promise<VocabLookupResponse> {
   if (!tokens || tokens.length === 0) {
-    console.log('[VOCAB-CLIENT] 📝 No tokens provided for vocabulary lookup');
+    vocabLog('📝 No tokens provided for vocabulary lookup');
     return { personalEntries: [], dictionaryEntries: [] };
   }
 
-  console.log(`[VOCAB-CLIENT] 🔍 Starting vocab lookup for ${tokens.length} tokens:`, {
+  vocabLog(`🔍 Starting vocab lookup for ${tokens.length} tokens:`, {
     totalTokens: tokens.length,
     sampleTokens: tokens.slice(0, 10), // Show first 10 tokens as sample
     allTokens: tokens.length <= 20 ? tokens : `${tokens.slice(0, 20).join(', ')}... (+${tokens.length - 20} more)`
@@ -36,7 +31,7 @@ export async function fetchVocabEntriesByTokens(
   const { foundEntries: cachedPersonalEntries, missingTokens: personalMissingTokens } = getCachedEntries(tokens);
   const { foundEntries: cachedDictEntries, missingTokens: dictMissingTokens } = getCachedDictionaryEntries(tokens);
   
-  console.log(`[VOCAB-CLIENT] 🎯 Cache analysis:`, {
+  vocabLog(`🎯 Cache analysis:`, {
     totalRequested: tokens.length,
     personalCacheHits: tokens.length - personalMissingTokens.length,
     dictionaryCacheHits: tokens.length - dictMissingTokens.length,
@@ -51,14 +46,14 @@ export async function fetchVocabEntriesByTokens(
   
   // If all tokens are cached in both caches, return immediately
   if (tokensNeedingFetch.length === 0) {
-    console.log(`[VOCAB-CLIENT] ✅ Complete cache hit: All ${tokens.length} tokens found in both caches`);
+    vocabLog(`✅ Complete cache hit: All ${tokens.length} tokens found in both caches`);
     return {
       personalEntries: cachedPersonalEntries,
       dictionaryEntries: cachedDictEntries
     };
   }
 
-  console.log(`[VOCAB-CLIENT] 🌐 Preparing API request for ${tokensNeedingFetch.length} missing tokens:`, {
+  vocabLog(`🌐 Preparing API request for ${tokensNeedingFetch.length} missing tokens:`, {
     tokensToFetch: tokensNeedingFetch.length <= 15 ? tokensNeedingFetch : `${tokensNeedingFetch.slice(0, 15).join(', ')}... (+${tokensNeedingFetch.length - 15} more)`,
     requestSize: `${JSON.stringify({ tokens: tokensNeedingFetch }).length} bytes`,
     missingFromPersonalCache: personalMissingTokens.length,
@@ -68,34 +63,26 @@ export async function fetchVocabEntriesByTokens(
   try {
     const requestStart = performance.now();
     
-    // Fetch missing tokens from API
-    const response = await fetch(`${API_BASE_URL}/api/vocabEntries/by-tokens`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : authHeader()),
-      },
-      credentials: 'include',
-      body: JSON.stringify({ tokens: tokensNeedingFetch }),
-    });
-
-    const requestTime = performance.now() - requestStart;
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      console.error(`[VOCAB-CLIENT] ❌ API request failed:`, {
-        status: response.status,
-        statusText: response.statusText,
-        error: errorData.error,
-        requestTime: `${requestTime.toFixed(2)}ms`,
-        tokensRequested: tokensNeedingFetch.length
+    // Fetch missing tokens from API. apiPost supplies the base URL, credentials and
+    // the live Authorization header, and throws ApiError (carrying the server's error
+    // body) on a non-2xx — so the hand-rolled envelope and !ok branch are gone.
+    let responseData: VocabLookupResponse;
+    try {
+      responseData = await apiPost<VocabLookupResponse>('/api/vocabEntries/byTokens', {
+        tokens: tokensNeedingFetch,
       });
-      throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+    } catch (err) {
+      console.error(`[VOCAB-CLIENT] ❌ API request failed:`, {
+        error: err instanceof Error ? err.message : err,
+        requestTime: `${(performance.now() - requestStart).toFixed(2)}ms`,
+        tokensRequested: tokensNeedingFetch.length,
+      });
+      throw err;
     }
 
-    const responseData: VocabLookupResponse = await response.json();
+    const requestTime = performance.now() - requestStart;
     
-    console.log(`[VOCAB-CLIENT] 📥 API response received:`, {
+    vocabLog(`📥 API response received:`, {
       requestTime: `${requestTime.toFixed(2)}ms`,
       tokensRequested: tokensNeedingFetch.length,
       personalEntriesReceived: responseData.personalEntries.length,
@@ -123,7 +110,7 @@ export async function fetchVocabEntriesByTokens(
     cacheDictionaryEntries(dictTokenEntries);
     
     // Log caching statistics
-    console.log(`[VOCAB-CLIENT] 💾 Caching complete:`, {
+    vocabLog(`💾 Caching complete:`, {
       personalTokensCached: Object.keys(personalTokenEntries).length,
       personalEntriesCached: Object.values(personalTokenEntries).reduce((sum, entries) => sum + entries.length, 0),
       dictionaryTokensCached: Object.keys(dictTokenEntries).length,
@@ -165,30 +152,13 @@ export async function fetchVocabEntriesByTokens(
 /**
  * Creates a new vocabulary entry and updates cache
  * @param entryData Entry data to create
- * @param token JWT authentication token
  * @returns Promise resolving to created entry
  */
 export async function createVocabEntry(
   entryData: { entryKey: string; difficulty?: string },
-  token: string
 ): Promise<VocabEntry> {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/vocabEntries`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-      credentials: 'include',
-      body: JSON.stringify(entryData),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    const newEntry: VocabEntry = await response.json();
+    const newEntry = await apiPost<VocabEntry>('/api/vocabEntries', entryData);
     
     // Update cache with new entry
     const { addCachedEntry } = await import('./vocabCache');
@@ -205,31 +175,14 @@ export async function createVocabEntry(
  * Updates a vocabulary entry and updates cache
  * @param entryId ID of entry to update
  * @param entryData Updated entry data
- * @param token JWT authentication token
  * @returns Promise resolving to updated entry
  */
 export async function updateVocabEntry(
   entryId: number,
   entryData: { entryKey: string; difficulty?: string },
-  token: string
 ): Promise<VocabEntry> {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/vocabEntries/${entryId}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-      credentials: 'include',
-      body: JSON.stringify(entryData),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    const updatedEntry: VocabEntry = await response.json();
+    const updatedEntry = await apiPut<VocabEntry>(`/api/vocabEntries/${entryId}`, entryData);
     
     // Update cache with modified entry
     const { updateCachedEntry } = await import('./vocabCache');
@@ -245,23 +198,11 @@ export async function updateVocabEntry(
 /**
  * Deletes a vocabulary entry and removes from cache
  * @param entryId ID of entry to delete
- * @param token JWT authentication token
  * @returns Promise resolving to success status
  */
-export async function deleteVocabEntry(entryId: number, token: string): Promise<boolean> {
+export async function deleteVocabEntry(entryId: number): Promise<boolean> {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/vocabEntries/${entryId}`, {
-      method: 'DELETE',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
-      credentials: 'include',
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
-    }
+    await apiDelete(`/api/vocabEntries/${entryId}`);
 
     // Remove from cache
     const { removeCachedEntry } = await import('./vocabCache');
@@ -277,13 +218,9 @@ export async function deleteVocabEntry(entryId: number, token: string): Promise<
 /**
  * Handles bulk import operations and invalidates cache
  * @param file CSV file to import
- * @param token JWT authentication token
  * @returns Promise resolving to import results
  */
-export async function importVocabFromCSV(
-  file: File,
-  token: string
-): Promise<{
+export interface ImportCsvResult {
   message: string;
   results: {
     total: number;
@@ -292,26 +229,16 @@ export async function importVocabFromCSV(
     skipped: number;
     errors: unknown[];
   };
-}> {
+}
+
+export async function importVocabFromCSV(file: File): Promise<ImportCsvResult> {
   try {
     const formData = new FormData();
     formData.append('file', file);
 
-    const response = await fetch(`${API_BASE_URL}/api/vocabEntries/import`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
-      credentials: 'include',
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    const result = await response.json();
+    // FormData passes through src/api/http.ts untouched so the browser sets its own
+    // multipart boundary.
+    const result = await apiPost<ImportCsvResult>('/api/vocabEntries/import', formData);
     
     // Invalidate cache after bulk import
     const { invalidateCache, CacheInvalidationReason } = await import('./vocabCache');
@@ -337,30 +264,16 @@ export async function importVocabFromCSV(
 export async function saveSelectedSense(
   entryId: number,
   selectedSense: string | null,
-  token: string | null
 ): Promise<{ id: number; selectedSense: string | null }> {
-  const response = await fetch(`${API_BASE_URL}/api/vocabEntries/${entryId}/selected-sense`, {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    credentials: 'include',
-    body: JSON.stringify({ selectedSense }),
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
-  }
-
-  return response.json();
+  return apiPatch<{ id: number; selectedSense: string | null }>(
+    `/api/vocabEntries/${entryId}/selectedSense`,
+    { selectedSense },
+  );
 }
 
 /**
  * Estimates the number of API calls needed for a given set of tokens
  * Useful for performance monitoring and user feedback
- * @param tokens Array of tokens to analyze
  * @returns Estimation object with cache hit/miss information
  */
 export function estimateApiCalls(tokens: string[]): {
@@ -387,4 +300,29 @@ export function estimateApiCalls(tokens: string[]): {
     apiCallsNeeded: missingTokens.length > 0 ? 1 : 0, // Single API call for all missing tokens
     cacheHitRate: tokens.length > 0 ? (cachedTokens / tokens.length) * 100 : 0
   };
+}
+
+/**
+ * Add a discoverable word to the user's "Learn Now" bucket.
+ *
+ * NOTE ON NAMING: the endpoint, the returned status, and this function keep the
+ * internal `library` name because they are backend contracts; only the user-facing
+ * copy says "Learn Now" (CLAUDE.md § Terminology: "Learn Now" cards).
+ *
+ * Takes no `token` — apiPost supplies the header at call time, so callers can omit
+ * `token` from their dependency arrays (CLAUDE.md ⛔ "Never reload on token refresh").
+ * Extracted from the two call sites that had hand-rolled the same POST: the flp
+ * entry panel and the dictionary cdp.
+ */
+export async function addToLibrary(
+  entryKey: string,
+  // Optional to match VocabEntry.language, which is optional. When undefined the key
+  // is omitted from the body and the server falls back to the user's selected
+  // language — the same behaviour the two hand-rolled call sites had.
+  language: string | undefined
+): Promise<{ status: 'added' | 'already-in-library' }> {
+  return apiPost<{ status: 'added' | 'already-in-library' }>(
+    '/api/vocabEntries/addToLibrary',
+    { entryKey, language }
+  );
 }

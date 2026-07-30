@@ -11,7 +11,7 @@ import {
     type MasteryGoals,
 } from "../../utils/masteryCompute";
 import { SIZE, WEIGHT } from "../../theme/scale";
-import { FC_FONT } from "./FlashcardsLearnPage/constants";
+import { FC_FONT } from "./constants";
 
 /**
  * cdp mastery progress bar (docs/MASTERY_REWORK.md).

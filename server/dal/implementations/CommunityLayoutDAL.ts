@@ -1,5 +1,5 @@
 import { ICommunityLayoutDAL } from '../interfaces/ICommunityLayoutDAL.js';
-import { dbManager } from '../base/DatabaseManager.js';
+import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
 import { ValidationError } from '../../types/dal.js';
 import { CommunityDesign, VotedDesignKey, VoteResult } from '../../types/community.js';
 import { vetReadFrom, vetTableForLanguage } from '../shared/vetTable.js';
@@ -36,6 +36,15 @@ const AUTHOR_JOIN = `LEFT JOIN users author_u ON author_u.id = ${AUTHOR_OF_VE}`;
  * across pages, giving the infinite-scroll no-duplicates contract.
  */
 export class CommunityLayoutDAL implements ICommunityLayoutDAL {
+
+  /**
+   * The connection manager, injected so the DAL can be substituted in a test.
+   * Defaults to the process-wide singleton, so `new CommunityLayoutDAL()` at the composition
+   * root (dal/setup.ts) keeps working unchanged.
+   * See docs/CORRECTNESS_AND_PERFORMANCE_REVIEW.md finding 2.
+   */
+  constructor(protected readonly dbManager: DatabaseManager = defaultDbManager) {}
+
   // Shared SELECT list for a feed row: design identity + det render fields + this-week tally.
   // `$1` is always the viewer's id (also the `u` row), so the correlated vote-count subquery's
   // ${WEEK_BOUNDARY} resolves against the viewer's timezone.
@@ -95,7 +104,7 @@ export class CommunityLayoutDAL implements ICommunityLayoutDAL {
     if (!viewerUserId) throw new ValidationError('viewerUserId is required');
     const libTable = vetTableForLanguage(language);
 
-    const result = await dbManager.executeQuery<CommunityDesign>(async (client) => {
+    const result = await this.dbManager.executeQuery<CommunityDesign>(async (client) => {
       return await client.query(`
         SELECT * FROM (
         SELECT
@@ -140,7 +149,7 @@ export class CommunityLayoutDAL implements ICommunityLayoutDAL {
     if (!viewerUserId) throw new ValidationError('viewerUserId is required');
     const libTable = vetTableForLanguage(language);
 
-    const result = await dbManager.executeQuery<CommunityDesign>(async (client) => {
+    const result = await this.dbManager.executeQuery<CommunityDesign>(async (client) => {
       return await client.query(`
         SELECT * FROM (
         SELECT
@@ -184,7 +193,7 @@ export class CommunityLayoutDAL implements ICommunityLayoutDAL {
     if (!entryKey) throw new ValidationError('entryKey is required');
     const libTable = vetTableForLanguage(language);
 
-    const result = await dbManager.executeQuery<CommunityDesign>(async (client) => {
+    const result = await this.dbManager.executeQuery<CommunityDesign>(async (client) => {
       return await client.query(`
         SELECT * FROM (
         SELECT
@@ -218,7 +227,7 @@ export class CommunityLayoutDAL implements ICommunityLayoutDAL {
   async getMyVotesThisWeek(viewerUserId: string): Promise<VotedDesignKey[]> {
     if (!viewerUserId) throw new ValidationError('viewerUserId is required');
 
-    const result = await dbManager.executeQuery<VotedDesignKey>(async (client) => {
+    const result = await this.dbManager.executeQuery<VotedDesignKey>(async (client) => {
       return await client.query(`
         SELECT DISTINCT v."ownerUserId" AS "ownerUserId", v."entryKey" AS "entryKey", v.language AS language
         FROM community_layout_votes v
@@ -244,7 +253,7 @@ export class CommunityLayoutDAL implements ICommunityLayoutDAL {
     // Insert iff no vote by this voter for this design exists since the voter's week boundary.
     // The single statement is race-safe enough for this use (the worst case under a double-tap
     // is two rows in the same week, which the tally tolerates and the UI greys after the first).
-    const result = await dbManager.executeQuery<{ id: number }>(async (client) => {
+    const result = await this.dbManager.executeQuery<{ id: number }>(async (client) => {
       return await client.query(`
         INSERT INTO community_layout_votes ("voterUserId", "ownerUserId", "entryKey", language)
         -- Explicit casts: with bound params in an INSERT...SELECT, pg otherwise deduces
@@ -279,7 +288,7 @@ export class CommunityLayoutDAL implements ICommunityLayoutDAL {
 
     // Delete this voter's vote(s) for the design within the current week (the toggle/unvote).
     // `USING users u` brings the voter's timezone into scope for ${WEEK_BOUNDARY}.
-    const result = await dbManager.executeQuery<{ id: number }>(async (client) => {
+    const result = await this.dbManager.executeQuery<{ id: number }>(async (client) => {
       return await client.query(`
         DELETE FROM community_layout_votes clv
         USING users u
@@ -304,7 +313,7 @@ export class CommunityLayoutDAL implements ICommunityLayoutDAL {
 
     // COALESCE(author, "userId") (migration 119): a legacy/unattributed row is treated as
     // authored by its owner, so a copy of it still carries a stable author forward.
-    const result = await dbManager.executeQuery<{ iconLayout: unknown[] | null; author: string }>(async (client) => {
+    const result = await this.dbManager.executeQuery<{ iconLayout: unknown[] | null; author: string }>(async (client) => {
       return await client.query(`
         SELECT "iconLayout", COALESCE(author, "userId") AS author FROM ${table}
         WHERE "userId" = $1 AND "entryKey" = $2 AND language = $3
@@ -322,7 +331,7 @@ export class CommunityLayoutDAL implements ICommunityLayoutDAL {
     if (!viewerUserId) throw new ValidationError('viewerUserId is required');
     const table = vetTableForLanguage(language);
 
-    const result = await dbManager.executeQuery<{ id: number; iconLayout: unknown[] | null }>(async (client) => {
+    const result = await this.dbManager.executeQuery<{ id: number; iconLayout: unknown[] | null }>(async (client) => {
       return await client.query(`
         SELECT id, "iconLayout" FROM ${table}
         WHERE "userId" = $1 AND "entryKey" = $2 AND language = $3

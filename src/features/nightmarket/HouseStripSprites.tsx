@@ -3,6 +3,8 @@ import { Rectangle, Texture } from 'pixi.js';
 import type { RenderSlot } from '../../engine/market/nightMarketRegistry';
 import { computeLayerZ } from '../../engine/market/isometric';
 import { HOUSE_ANCHOR, HOUSE_STRIPS } from '../../engine/market/house';
+import { alphaForSlot } from '../../engine/market/layerTranslucency';
+import { useCameraZoom } from './CameraZoomContext';
 
 /**
  * HouseStripSprites — the ONE house renderer. Draws a single `House.png` at a foot cell as a row
@@ -22,6 +24,14 @@ import { HOUSE_ANCHOR, HOUSE_STRIPS } from '../../engine/market/house';
  *
  * Sprites are emitted FLAT (direct children of the caller's `sortableChildren` container) so the
  * strips interleave with terrain, decor and pedestrians rather than sorting only among themselves.
+ *
+ * ZOOM-PEEL. Every strip carries the alpha its layer's slot has at the current camera zoom
+ * ({@link ../../engine/market/layerTranslucency alphaForSlot}), so the building's shell ghosts out
+ * as the camera closes in. Alpha is applied PER STRIP rather than to a wrapping container on
+ * purpose — a container would need its own `alpha` AND would re-parent the strips out of the
+ * caller's global sort, breaking the interleaving described above. Since the strips are
+ * anchor-aligned edge-to-edge (no overlapping pixels), per-strip alpha composites identically to
+ * whole-sprite alpha with no double-blended seams.
  */
 
 /**
@@ -53,8 +63,20 @@ interface HouseStripSpritesProps {
   row: number;
   /** Horizontally mirrored house (footprint transposes to 5×4). */
   flip?: boolean;
-  /** Render slot for every strip. */
+  /** Render slot for every strip — drives DEPTH (`computeLayerZ`). */
   slot: RenderSlot;
+  /**
+   * Slot the zoom-peel fade is looked up under, when it must differ from the depth `slot`.
+   *
+   * These are the same axis for a properly LAYERED asset — a real building declares each
+   * sub-image's slot once and both depth and fade follow from it. `House.png` is a TEST asset with
+   * no layers: it is a single flat image that has to sort in the `entity` slot (so pedestrians
+   * interleave with its wings correctly), yet what it depicts is a roof-and-walls shell, i.e.
+   * `foreground` material. Hence the default below — it lets the peel be seen on the placeholder
+   * art today without lying about the sprite's depth. When the layered assets land, each layer
+   * passes a single honest `slot` and this override falls away.
+   */
+  fadeSlot?: RenderSlot;
   /** Flat z added to every strip (surface-specific lifts; keeps relative strip order intact). */
   zBase?: number;
   /** Disambiguates strip keys when several houses render in one parent. */
@@ -62,10 +84,16 @@ interface HouseStripSpritesProps {
 }
 
 export default function HouseStripSprites(
-  { texture, screenX, screenY, col, row, flip = false, slot, zBase = 0, keyPrefix }: HouseStripSpritesProps,
+  {
+    texture, screenX, screenY, col, row, flip = false, slot,
+    fadeSlot = 'foreground', zBase = 0, keyPrefix,
+  }: HouseStripSpritesProps,
 ) {
   const textures = useMemo(() => stripTexturesFor(texture), [texture]);
   const strips = flip ? HOUSE_STRIPS.flipped : HOUSE_STRIPS.normal;
+  // Zoom-peel: one alpha for the whole house, recomputed only when the camera's zoom changes
+  // (the ladder is stepped, so this is a handful of re-renders per gesture, not per frame).
+  const alpha = alphaForSlot(fadeSlot, useCameraZoom());
 
   return (
     <>
@@ -80,6 +108,7 @@ export default function HouseStripSprites(
           y={screenY}
           anchor={{ x: flip ? 1 : 0, y: HOUSE_ANCHOR.y }}
           scale={{ x: flip ? -1 : 1, y: 1 }}
+          alpha={alpha}
           zIndex={zBase + computeLayerZ(col + s.footIsoX, row + s.footIsoY, slot)}
           eventMode="none"
         />

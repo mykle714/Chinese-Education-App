@@ -4,7 +4,7 @@ import { SpeakerButton } from "./FlashcardsLearnPage/FlashCardSection";
 import ValidateFlagButtons from "../../components/ValidateFlagButtons";
 import { buildSentencePronunciation } from "./FlashcardsLearnPage/sentencePronunciation";
 import { renderEnglishWithVocabUnderline } from "./exampleSentenceText";
-import { FC_FONT } from "./FlashcardsLearnPage/constants";
+import { FC_FONT } from "./constants";
 import { SIZE, LEADING } from "../../theme/scale";
 import { aiGeneratedSurfaceSx } from "../../theme/aiGeneratedStyling";
 import { AiGeneratedBadge } from "../../components/AiGeneratedBadge";
@@ -104,37 +104,50 @@ const ExampleSentenceList: React.FC<ExampleSentenceListProps> = ({
               label="AI GENERATED"
             />
           )}
-          {vocabWord && language && index < EXAMPLE_SENTENCE_FIELDS.length && (
-            // Mirrors the speaker button's absolute corner placement, opposite side.
-            // Validator-only (docs/DATA_VALIDATION_SYSTEM.md) — renders nothing for
-            // everyone else.
+          {/* Top-right action cluster — the validator Approve/Flag pair and the
+              speaker sit on ONE absolutely-positioned row so they read as a single
+              group of controls in the corner (the validate buttons used to live in
+              the opposite corner). Out of flow on purpose: it floats OVER the card
+              and must never change the card's measured size, so a validator's view
+              lays out identically to everyone else's.
+              zIndex keeps the row above SegmentedSentenceDisplay's position:relative
+              root, which would otherwise paint over (and steal clicks from) it
+              because it follows in DOM order. */}
+          {(onSpeakSentence || (vocabWord && language && index < EXAMPLE_SENTENCE_FIELDS.length)) && (
             <Box
-              className="example-sentence-validate"
-              sx={{ position: "absolute", top: 0, left: 0, zIndex: 2, padding: "4px" }}
+              className="example-sentence-actions"
+              sx={{
+                position: "absolute",
+                top: 0,
+                right: 0,
+                zIndex: 2,
+                padding: "4px",
+                display: "flex",
+                alignItems: "center",
+                gap: "2px",
+              }}
             >
-              <ValidateFlagButtons
-                word1={vocabWord}
-                language={language}
-                field={EXAMPLE_SENTENCE_FIELDS[index]}
-                alreadyApproved={isHumanApproved}
-              />
-            </Box>
-          )}
-          {onSpeakSentence && (
-            // zIndex keeps the speaker above SegmentedSentenceDisplay's
-            // position:relative root, which would otherwise paint over (and
-            // steal clicks from) this absolutely-positioned button because it
-            // follows in DOM order.
-            <Box
-              className="example-sentence-speaker"
-              sx={{ position: "absolute", top: 0, right: 0, zIndex: 2, padding: "4px" }}
-            >
-              <SpeakerButton
-                onClick={() =>
-                  onSpeakSentence(sentence.foreignText, buildSentencePronunciation(sentence))
-                }
-                isLoading={speakingKey === sentence.foreignText}
-              />
+              {vocabWord && language && index < EXAMPLE_SENTENCE_FIELDS.length && (
+                // Validator-only (docs/DATA_VALIDATION_SYSTEM.md) — renders nothing
+                // for everyone else, leaving the speaker alone in the corner.
+                <ValidateFlagButtons
+                  className="example-sentence-validate"
+                  word1={vocabWord}
+                  language={language}
+                  field={EXAMPLE_SENTENCE_FIELDS[index]}
+                  alreadyApproved={isHumanApproved}
+                />
+              )}
+              {onSpeakSentence && (
+                <Box className="example-sentence-speaker">
+                  <SpeakerButton
+                    onClick={() =>
+                      onSpeakSentence(sentence.foreignText, buildSentencePronunciation(sentence))
+                    }
+                    isLoading={speakingKey === sentence.foreignText}
+                  />
+                </Box>
+              )}
             </Box>
           )}
           <SegmentedSentenceDisplay

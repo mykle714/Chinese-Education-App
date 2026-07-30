@@ -5,7 +5,6 @@ import { FactCheck as FactCheckIcon } from "@mui/icons-material";
 import NodePage from "../../components/NodePage";
 import MinutePointsFireBadge from "../../minutePoints/MinutePointsFireBadge";
 import { useAuth } from "../../AuthContext";
-import { API_BASE_URL } from "../../constants";
 import type { Text } from "../../types";
 
 // Extracted components
@@ -17,6 +16,7 @@ import DeleteDocumentDialog from "./DeleteDocumentDialog";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useSlideNavigate } from "../../hooks/useSlideNavigate";
 import { downloadValidationDoc } from "./validationApi";
+import { apiGet } from "../../api/http";
 
 // READER DOCUMENT LIST — the `/reader` NODE page (docs/LEAF_NODE_PAGES.md § Reader):
 // keeps the footer (Home tab stays active, same as Games/Dictionary), LEFT back
@@ -30,7 +30,7 @@ function ReaderPage() {
     usePageTitle("Reader");
     const navigate = useNavigate();
     const slideNavigate = useSlideNavigate();
-    const { token, user, isAuthenticated } = useAuth();
+    const { user, isAuthenticated } = useAuth();
 
     const [texts, setTexts] = useState<Text[]>([]);
     const [loading, setLoading] = useState(true);
@@ -50,18 +50,7 @@ function ReaderPage() {
         const fetchTexts = async () => {
             try {
                 setLoading(true);
-                const response = await fetch(`${API_BASE_URL}/api/texts`, {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                    },
-                    credentials: 'include',
-                });
-
-                if (!response.ok) {
-                    throw new Error('Failed to fetch texts');
-                }
-
-                const textsData = await response.json();
+                const textsData = await apiGet<Text[]>('/api/texts');
                 setTexts(textsData);
             } catch (err) {
                 console.error('Error fetching texts:', err);
@@ -72,7 +61,7 @@ function ReaderPage() {
             }
         };
 
-        if (token) {
+        if (isAuthenticated) {
             fetchTexts();
         }
     // Keyed on the STABLE auth identity, not `token` — a silent access-token
@@ -111,33 +100,27 @@ function ReaderPage() {
 
     const handleDialogSuccess = useCallback(async () => {
         try {
-            const response = await fetch(`${API_BASE_URL}/api/texts`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                },
-                credentials: 'include',
-            });
-            if (response.ok) {
-                setTexts(await response.json());
-            }
+            setTexts(await apiGet<Text[]>('/api/texts'));
         } catch (err) {
             console.error('Error reloading texts:', err);
         }
-    }, [token]);
+        // No deps: apiGet reads the bearer token itself at call time, so this callback's
+        // identity is stable across silent token refreshes.
+    }, []);
 
     // Download a fresh entry+field to validate. It is added to the list but NOT
     // auto-opened — the validator picks it from the list when ready
     // (docs/DATA_VALIDATION_SYSTEM.md).
     const handleDownloadValidation = useCallback(async () => {
         try {
-            await downloadValidationDoc(token, user?.selectedLanguage || 'zh');
+            await downloadValidationDoc(user?.selectedLanguage || 'zh');
             await handleDialogSuccess(); // refresh list so the new doc appears
             setValidationMsg('Added a new entry to validate to your list');
         } catch (err) {
             console.error('Error downloading validation entry:', err);
             setValidationMsg(err instanceof Error ? err.message : 'Failed to download an entry to validate');
         }
-    }, [token, user?.selectedLanguage, handleDialogSuccess]);
+    }, [user?.selectedLanguage, handleDialogSuccess]);
 
     const headerRightContent = isAuthenticated ? (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>

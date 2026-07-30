@@ -91,7 +91,13 @@ server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-long-defin
 server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-longdef-citations.js --words=未来,摸脉
 server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-example-sentences.js --words=未来,摸脉
 server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-classifier.js --words=未来,摸脉
+server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-breakdown-senses.js --words=未来,摸脉
+server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-breakdown-elaboration.js --words=未来,摸脉
 ```
+
+**The two breakdown steps are no-ops on single-character words.** Both carry
+`when: 'multiChar'` in the manifest and gate on `char_length(word1) > 1`, so a
+single-char batch will report "0 entries" — that is correct, not a failure.
 
 **`backfill-cluster-definitions` must run BEFORE `backfill-long-definitions`.** Long-definitions writes ONE definition per SENSE, keyed by the cluster's `sense` label (docs/DEFINITION_CLUSTERS.md), so it takes its sense list straight from `definitionClusters` and **skips any row that isn't clustered yet** (`definitionClusters IS NOT NULL` is in its WHERE clause). This is why long-definitions moved after clustering in the sequence above.
 
@@ -110,6 +116,12 @@ server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-classifier
 **Scan the `backfill-longdef-citations` output for `⚠ CITATION REVIEW <word> (id=...)` lines.** A run is flagged when the model returned no usable translation for it (or returned a `zh` that doesn't match the run character-for-character, which would never join back to the rendered part). Those runs are simply left untranslated and keep the per-segment popup — a quality nit fixable with `--words=<word>`, not a blocker. A run skipped for being a det headword is NOT flagged: that is the intended outcome, not a failure.
 
 **Scan the `backfill-long-definitions` output for `⚠ LONGDEF REVIEW <word> (id=...): <reason>` lines and surface them too.** A definition is flagged when it still cites the headword — or an ordinary compound containing it (说 → 学说) — in Chinese after one automatic repair pass. Rule 4 forbids that (the learner gains nothing from being shown the word they are already looking at), but the LLM validator/chooser enforce it unreliably, so the check is deterministic in the script. The flagged text IS written, so these are quality nits to fix by re-running `--words=<word>` or hand-editing, not blockers.
+
+**`backfill-breakdown-senses` must run AFTER `backfill-dictionary-breakdown` AND `backfill-breakdown-elaboration` after BOTH.** The chain is generate → sense-correct → judge. `backfill-dictionary-breakdown` glosses each component character with its GLOBAL lead gloss (`definitions[0]`), which is frequently the wrong sense inside the compound (会议 → 会 as "can"). The sense-tagger replaces those with the correct `definitionClusters` sense, and only then is it meaningful to ask whether the breakdown needs explaining. Both sit at the END of the sequence because both read text that earlier steps can still rewrite. ⚠️ **The sense-tagger has a cross-row dependency the ordering cannot enforce**: it reads `definitionClusters` off the COMPONENT CHARACTERS' own det rows, so a component that has not itself been through `backfill-cluster-definitions` is carried through unchanged (no `sense`) and healed on a later re-run. That is a soft miss, not a failure.
+
+**`backfill-breakdown-elaboration` writes NULL for most words, and that is the intended answer.** It judges whether a word's breakdown is opaque enough to need a sentence of explanation (东西 east+west = "thing"), and stays silent — NULL — for the ~70% of words whose parts plainly add up. **NULL therefore does NOT mean "the step didn't run"**: done-ness lives in the `enrichmentLog` stamp under `chinese/backfill-breakdown-elaboration`, which is written for every decided row including the NULL ones. Do not add a `breakdownElaboration IS NOT NULL` check to the §A4 verification query — it would read a correct run as a failure. See docs/BREAKDOWN_FEATURE_IMPLEMENTATION.md § 5c.
+
+**Scan the `backfill-breakdown-elaboration` output for `⚠ BREAKDOWN ELABORATION REVIEW <word>` lines.** A word is flagged when the model's answer was unparseable, or still over its character budget after one shortening retry. Those rows are left **unwritten AND unstamped** on purpose, so a later run retries them rather than freezing in a truncated sentence — they will simply reappear as pending in the next `oracle-plan` round. Same for `⚠ BREAKDOWN SENSE REVIEW` from the tagger.
 
 **Scan the `backfill-cluster-definitions` output for `⚠ CLUSTER REVIEW <word> (id=...): <reason>` lines and surface every one of them to the user for human review.** It self-flags any sense it is even slightly unsure about (uncertain readings/heteronyms, borderline split/merge calls, low-confidence ordering, etc.). These are the cases most likely to need a manual fix (e.g. a wrong heteronym reading) before `/data-deploy` — and a wrong cluster here now also feeds a wrong `sense` into the example sentences downstream.
 

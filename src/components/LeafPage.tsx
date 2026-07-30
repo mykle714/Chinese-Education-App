@@ -15,6 +15,11 @@ import { COLORS } from "../theme/colors";
 //     (mounting the destination beneath) while a clone of this page slides DOWN
 //     away on top, so the incoming page is already there beneath it.
 //   • Motion: slides UP into place on enter, DOWN out on exit (vertical axis).
+//   • SIDEWAYS pages (`hideHeader`) suppress the header and take the exit-aware
+//     back handler through the render-prop form of `children`, so they can draw
+//     the header inside their own rotated stage. Everything else — the slide,
+//     the clone-on-exit, the no-footer rule — is unchanged. Speed Reading is the
+//     only such page today; see docs/SPEED_READING_GAME.md § Sideways rendering.
 //
 // The whole surface is absolutely positioned to fill MobileDemoFrame (which is
 // position:relative + overflow:hidden), so the slide stays inside the phone card.
@@ -37,6 +42,16 @@ const Body = styled(Box)(() => ({
     width: "100%",
 }));
 
+/** Render-prop form of `children`, for pages that draw their own header. */
+interface LeafPageChildApi {
+    /**
+     * The exit-aware back handler — runs the slide-down and THEN `onBack`.
+     * A page that hides the header must wire this to its own back control, or
+     * there is no way off the page.
+     */
+    onBack: () => void;
+}
+
 interface LeafPageProps {
     title: string;
     // Where the back arrow goes. Invoked AFTER the slide-down completes.
@@ -47,7 +62,17 @@ interface LeafPageProps {
     contentSx?: SxProps<Theme>;
     contentClassName?: string;
     className?: string;
-    children: ReactNode;
+    /**
+     * Suppress the built-in header. Only for pages that render their own — a
+     * SIDEWAYS game, whose header has to sit inside the rotated stage rather
+     * than upright at the top of a portrait screen.
+     */
+    hideHeader?: boolean;
+    /**
+     * Static content, or a function receiving the exit-aware back handler (the
+     * form `hideHeader` pages need).
+     */
+    children: ReactNode | ((api: LeafPageChildApi) => ReactNode);
 }
 
 const LeafPage: React.FC<LeafPageProps> = ({
@@ -58,6 +83,7 @@ const LeafPage: React.FC<LeafPageProps> = ({
     contentSx,
     contentClassName,
     className,
+    hideHeader = false,
     children,
 }) => {
     const { surfaceRef, style, exit } = usePageSlide({ axis: "y" });
@@ -73,9 +99,11 @@ const LeafPage: React.FC<LeafPageProps> = ({
             style={style}
             sx={surfaceColor ? { backgroundColor: surfaceColor } : undefined}
         >
-            <LeafPageHeader title={title} onBack={handleBack} rightContent={rightContent} />
+            {!hideHeader && (
+                <LeafPageHeader title={title} onBack={handleBack} rightContent={rightContent} />
+            )}
             <Body className={contentClassName} sx={contentSx}>
-                {children}
+                {typeof children === "function" ? children({ onBack: handleBack }) : children}
             </Body>
         </Surface>
     );

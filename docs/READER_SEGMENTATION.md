@@ -17,7 +17,7 @@ Parent doc: [USER_DOCUMENT_FEATURE_SUMMARY.md](./USER_DOCUMENT_FEATURE_SUMMARY.m
 | Client util (pure) | `src/features/reader/documentSegmentation.ts` — gsa port, span computation, navigation |
 | Client feature | `ReaderPage.tsx` (span memo) → `TextArea.tsx` (arrow keys) / `useTextSelection.ts` (auto select) / `ReaderTapOverlay.tsx` (tap gestures) |
 | Server (canonical algorithm) | `server/dal/shared/segmentString.ts` — `segmentWithDict` et al. (est enrichment) |
-| Server (data source) | `POST /api/vocabEntries/by-tokens` (`VocabEntryController.getEntriesByTokens`) |
+| Server (data source) | `POST /api/vocabEntries/byTokens` (`VocabEntryController.getEntriesByTokens`) |
 
 There is **no segmentation API call**: segmentation runs entirely client-side on
 data the reader already loads.
@@ -28,7 +28,7 @@ data the reader already loads.
    extracts **every 1–4-character substring** of the document
    (`processDocumentForTokens`, `src/utils/tokenUtils.ts` — the client mirror of the
    server's `getAllSubstrings(maxLen=4)`) and fetches matching rows via
-   `POST /api/vocabEntries/by-tokens` → `loadedDictionaryCards` (det rows incl.
+   `POST /api/vocabEntries/byTokens` → `loadedDictionaryCards` (det rows incl.
    `frequencyScore` + `matchException`) and `loadedPersonalCards` (vet rows).
 2. `ReaderPage.tsx` memoizes the segmentation
    (`segmentSpans` `useMemo`, keyed on `selectedText?.content` + the two card

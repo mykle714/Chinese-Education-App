@@ -1,5 +1,5 @@
 import { IGameAssetDAL } from '../interfaces/IGameAssetDAL.js';
-import { dbManager } from '../base/DatabaseManager.js';
+import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
 import { GameAsset } from '../../types/games.js';
 import { ValidationError } from '../../types/dal.js';
 
@@ -8,10 +8,19 @@ import { ValidationError } from '../../types/dal.js';
  * Asset binaries themselves live on disk under server/public/games/<gameId>/.
  */
 export class GameAssetDAL implements IGameAssetDAL {
+
+  /**
+   * The connection manager, injected so the DAL can be substituted in a test.
+   * Defaults to the process-wide singleton, so `new GameAssetDAL()` at the composition
+   * root (dal/setup.ts) keeps working unchanged.
+   * See docs/CORRECTNESS_AND_PERFORMANCE_REVIEW.md finding 2.
+   */
+  constructor(protected readonly dbManager: DatabaseManager = defaultDbManager) {}
+
   async listByGameId(gameId: string): Promise<GameAsset[]> {
     if (!gameId) throw new ValidationError('gameId is required');
 
-    const result = await dbManager.executeQuery<GameAsset>(async (client) => {
+    const result = await this.dbManager.executeQuery<GameAsset>(async (client) => {
       return await client.query(`
         SELECT id, "gameId", "assetId", "displayName", "imagePath", "metadata", "createdAt"
         FROM gameassets
@@ -34,7 +43,7 @@ export class GameAssetDAL implements IGameAssetDAL {
     if (!asset.assetId) throw new ValidationError('assetId is required');
     if (!asset.imagePath) throw new ValidationError('imagePath is required');
 
-    const result = await dbManager.executeQuery<GameAsset>(async (client) => {
+    const result = await this.dbManager.executeQuery<GameAsset>(async (client) => {
       return await client.query(`
         INSERT INTO gameassets ("gameId", "assetId", "displayName", "imagePath", "metadata")
         VALUES ($1, $2, $3, $4, $5)

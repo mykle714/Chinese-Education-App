@@ -1,6 +1,8 @@
+import { useEffect } from "react";
 import { Box, Container, Typography } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import Message from "../components/Message";
+import { useAuth } from "../AuthContext";
 import LeafPage from "../components/LeafPage";
 import { useMinutePoints } from "../minutePoints/useMinutePoints";
 import TimeDisplay from "../components/TimeDisplay";
@@ -10,13 +12,24 @@ import LeaderboardPlaceholder from "../components/LeaderboardPlaceholder";
 import { usePageTitle } from "../hooks/usePageTitle";
 
 // Tester Dashboard — the former landing page content (study time, streak, monthly
-// calendar, leaderboard). Reached from the Home menu; the back arrow returns there.
+// calendar, leaderboard). Reached from the Home menu (the row is validator-only, see
+// HomePage.tsx); the back arrow returns there.
 function TesterDashboardPage() {
     usePageTitle("Tester Dashboard");
     const navigate = useNavigate();
+    const { user, isAuthenticated } = useAuth();
+
+    // Validator-only surface (users.isValidator, migration 104). Once auth resolves,
+    // bounce non-validators to Home so a deep link / stale bookmark can't reach it.
+    // The data shown is the caller's own minute-point data, so this is a UX gate, not
+    // a security boundary — the underlying endpoints stay user-scoped.
+    useEffect(() => {
+        if (isAuthenticated && user && !user.isValidator) navigate("/", { replace: true });
+    }, [isAuthenticated, user, navigate]);
+
     const {
         accumulativeMinutePoints, // NET balance → big converted-time number
-        grossMinutesEarned,       // GROSS lifetime earned → small caption
+        lifetimeMinutesEarned,       // GROSS lifetime earned → small caption
         currentStreak
     } = useMinutePoints();
 
@@ -48,7 +61,7 @@ function TesterDashboardPage() {
                                 )}
 
                                 {/* Total Study Time Display */}
-                                <TimeDisplay netMinutes={accumulativeMinutePoints} grossMinutes={grossMinutesEarned} />
+                                <TimeDisplay netMinutes={accumulativeMinutePoints} grossMinutes={lifetimeMinutesEarned} />
 
                                 {/* Streak Counter */}
                                 <StreakCounter currentStreak={currentStreak} />

@@ -64,7 +64,7 @@ export const useCalendarMinutePoints = (initialYearMonth?: string): UseCalendarM
     setError(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/users/minute-points/calendar/${yearMonth}?language=${encodeURIComponent(language)}`, {
+      const response = await fetch(`${API_BASE_URL}/api/users/minutePoints/calendar/${yearMonth}?language=${encodeURIComponent(language)}`, {
         method: 'GET',
         credentials: 'include',
         headers: {

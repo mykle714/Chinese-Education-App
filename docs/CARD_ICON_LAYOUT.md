@@ -139,20 +139,31 @@ surface, expressed as a `TextTonePair` (`src/utils/cardTextColor.ts`):
 | Surface | Pair | dark / light |
 |---|---|---|
 | Foreign-word glyphs | `DEFAULT_TEXT_TONES` | `#000000` / `#FFFFFF` |
-| dd (flp card faces + eip header gloss), **all languages** | `DD_TONES` | `#5A5A60` / `#b8b8bc` |
+| dd (flp card faces + eip header gloss), **zh** | `DEFAULT_TEXT_TONES` | `#000000` / `#FFFFFF` |
+| dd (flp card faces + eip header gloss), **non-zh (es, …)** | `DD_TONES` | `#5A5A60` / `#b8b8bc` |
 
-The dd is de-emphasized one step off full contrast in whichever direction the surface runs —
-it is supporting text beside the headword, not the headword itself. `DD_TONES` is mirrored by
-the `flashcard.dd` theme token (`src/contexts/ThemeContext.tsx`), which selects one of the
-same two values per card theme (dark card theme → light tone, light/blue/green → dark tone)
-for the `theme`/unset case — **keep the token values and `DD_TONES` in sync**.
+For non-Chinese languages the dd is de-emphasized one step off full contrast in whichever
+direction the surface runs — it is supporting text beside the headword, not the headword
+itself. `DD_TONES` is mirrored by the `flashcard.dd` theme token
+(`src/contexts/ThemeContext.tsx`), which selects one of the same two values per card theme
+(dark card theme → light tone, light/blue/green → dark tone) for the `theme`/unset case —
+**keep the token values and `DD_TONES` in sync**.
+
+**Chinese is excluded from the de-emphasis:** a zh face pairs the gloss with hanzi and
+tone-colored pinyin, and greying the gloss there read as disabled next to that visual weight.
+zh dds therefore keep the pre-`dd`-token behavior — `flashcard.onSurface` for the `theme` case
+and pure black/white for an explicit Contrast pick. The language branch lives in one place,
+`ddTextColor(language, mode, palette)` (`src/utils/cardTextColor.ts`), used by both dd surfaces
+so the card face and the eip header can't drift.
 
 Written together with `iconLayout` by the same `PATCH …/icon-layout`. Types `TextColorMode` /
 `TextColors` live in `src/types.ts` + `server/types/index.ts`; the resolver
 `resolveTextColor(mode, tones?)` lives in `src/utils/cardTextColor.ts` (returns `undefined`
 for `theme` so callers keep their theme-aware default; `tones` defaults to
-`DEFAULT_TEXT_TONES`). Call sites: `FlashCardSection.tsx:116` (foreign) and `:226` (dd, the
-only tone-pair-aware site), `MiniVocabCard.tsx:49-50`.
+`DEFAULT_TEXT_TONES`). Call sites: `FlashCardSection.tsx:116` (foreign) and `:231` (dd, via
+`ddTextColor`), `InfoCardPanelBody.tsx` entry header (dd, via `ddTextColor`, theme case only —
+it does not apply the per-card Contrast pick), `MiniVocabCard.tsx:49-50` (uses the default
+black/white pair for its English line — a known inconsistency with the dd surfaces above).
 
 **Per-card card background fill — `cardColor` text** on both vet tables (migration
 `database/migrations/94-add-card-color-to-vocabentries.sql`). A raw CSS hex string (NOT a
@@ -258,7 +269,7 @@ When the picker opens it pre-fills its search box with the card's English meanin
    every flashcard read with ~48 rows); it's fetched on demand instead.
 
 **Flow:** entering edit mode (`enterEdit` in `FlashcardsLearnPage.tsx`) fires
-`fetchDefaultIconResults` (fire-and-forget) → `POST /api/icons8/default-results`. The server
+`fetchDefaultIconResults` (fire-and-forget) → `POST /api/icons8/defaultResults`. The server
 (`Icons8DAL.getOrWarmDefaultIconResults`) resolves the det row (es prefers the saved-pos row,
 mirroring `DICT_JOIN`), returns `defaultIconResults` on a hit, or on a miss runs **one** live
 icons8 search with the client-supplied `term`, writes it back to det, and returns it. The page
@@ -1028,9 +1039,9 @@ undoable; text lock IS part of the snapshot, unlike the orthogonal icon lock), a
 |---|---|---|
 | `GET /api/icons8?offset=&limit=` | yes (existing) | List downloaded/cached icons (the browse-all state when the search box is empty); returns `{ icons: [{ id, name }], total, hasMore }`. |
 | `GET /api/icons8/search?term=&offset=&limit=` | yes | Proxy the live icons8 v7 search; returns `{ icons: [{ id, name }], hasMore }`. |
-| `POST /api/icons8/default-results` | yes | Body `{ language, entryKey, pos?, term }`. Return (and cache on first call, on det `defaultIconResults`) the first page of the card's default-query results: `{ icons: [{ id, name }] }`. Warms the picker so it renders instantly on open. |
+| `POST /api/icons8/defaultResults` | yes | Body `{ language, entryKey, pos?, term }`. Return (and cache on first call, on det `defaultIconResults`) the first page of the card's default-query results: `{ icons: [{ id, name }] }`. Warms the picker so it renders instantly on open. |
 | `POST /api/icons8/:iconId/ensure` | yes | Download + cache the icon's SVG into the `icons8` table if missing (so `/api/icons8/<id>/image` can serve it). Idempotent. |
-| `PATCH /api/vocabEntries/:id/icon-layout` | yes | Body `{ iconLayout: Item[] \| null, snapConfig?: {move,rotate,resize} \| null, textColors?: {foreign,english} \| null, textLayout?: {foreign?,english?} \| null }`. Persist or clear the layout **and** the per-card snap toggles, Contrast text colors, **and movable-text placement** for the caller's vet row. `snapConfig` / `textColors` / `textLayout` omitted = leave that column untouched (community copy path); `null` = clear; object = set. Echoes back `{ id, iconLayout, snapConfig, textColors, textLayout }`. |
+| `PATCH /api/vocabEntries/:id/iconLayout` | yes | Body `{ iconLayout: Item[] \| null, snapConfig?: {move,rotate,resize} \| null, textColors?: {foreign,english} \| null, textLayout?: {foreign?,english?} \| null }`. Persist or clear the layout **and** the per-card snap toggles, Contrast text colors, **and movable-text placement** for the caller's vet row. `snapConfig` / `textColors` / `textLayout` omitted = leave that column untouched (community copy path); `null` = clear; object = set. Echoes back `{ id, iconLayout, snapConfig, textColors, textLayout }`. |
 | `GET /api/icons8/:iconId/image` | no (existing) | Serves cached icon bytes. Unchanged ([Icons8Controller.ts](../server/controllers/Icons8Controller.ts)). |
 
 **Search filters** mirror the representative-icon backfill exactly:
@@ -1075,12 +1086,31 @@ SnapConfig | null`, and `TextColors` (`{foreign,english}` of `TextColorMode =
 (the card background fill, migration 94) on the `VocabEntry` interface, in both
 `server/types/index.ts` and client `src/types.ts`. `SnapConfig` is re-exported from
 `CardIconCanvas.tsx`. The Contrast color resolver `resolveTextColor` and the tone pairs
-(`TextTonePair`, `DEFAULT_TEXT_TONES`, `DD_TONES`) live in
+(`TextTonePair`, `DEFAULT_TEXT_TONES`, `DD_TONES`) plus the per-language dd helper
+`ddTextColor` live in
 `src/utils/cardTextColor.ts`; the card-fill palette + resolver (`CARD_COLOR_OPTIONS` /
 `resolveCardColor`) live in `src/utils/cardColor.ts`, with the server's allow-list
 `CARD_COLOR_VALUES` in `server/types/index.ts` (kept in sync by hand).
 
 ## Dependencies / cross-references
+
+- **Editor module location** — the whole fie lives under **`src/cardIcons/editor/`**:
+  `useCardIconEditor.ts` (all editor state + actions), `CardIconCanvas.tsx`,
+  `CardEditToolbar.tsx`, `CardIconOrderList.tsx`, `useToolbarMenus.ts`,
+  `toolbarDropdownSelector.ts`. It used to sit in
+  `src/features/flashcards/FlashcardsLearnPage/`, but the editor is consumed by **two**
+  pages (flp and the cdp `VocabCardDetailPage`), so owning it from one page's folder was
+  wrong — `features/<x>/` is for code exclusive to that feature. It now sits beside the
+  rest of the icon subsystem (`cardIconLayout.ts`, `cardTextLayout.ts`, `cardIconApi.ts`).
+  See [ARCHITECTURE_REVIEW.md](./ARCHITECTURE_REVIEW.md) finding 7.
+- **Client API — `src/cardIcons/cardIconApi.ts`** (`listIcons8`, `searchIcons8`,
+  `ensureIcon8`, `fetchDefaultIconResults`, `saveIconLayout`). Every call goes through the
+  shared transport `src/api/http.ts`; **none of these functions takes a `token`**, and
+  neither does `useCardIconEditor`. Threading the token through was what pulled it into
+  `useCallback` dep arrays (`IconPickerDialog`'s `fetchPage`, the editor's save/reset
+  callbacks), where a silent ~15-minute refresh re-created the callback and re-ran the
+  effects that depend on it — the failure mode CLAUDE.md's "Never reload/reset a page on a
+  silent token refresh" rule exists to prevent.
 
 - Default-icon rendering: `FlashCardSection.tsx` `CardFaceSide` →
   `CardIconLayer` + `defaultLayoutForIcon` (`cardIconLayout.ts`). `CardImage` in that

@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { API_BASE_URL } from "../../../constants";
-import { CARD_FLY_OUT_MS } from "./constants";
+import { markFlashcard, undoFlashcardMark } from "../../../api/flashcards";
+import { CARD_FLY_OUT_MS } from "../constants";
 import type {
     VocabEntry,
     MarkCardResult,
     LastMarkUndoSnapshot,
     SideOneLanguage,
     MarkType,
-} from "./types";
+} from "../types";
 
 // Which mark type a flp review produces (docs/MASTERY_REWORK.md): an English-first
 // prompt asks the learner to PRODUCE the foreign word; any other (foreign-first)
@@ -148,7 +149,7 @@ export function useWorkingLoop({
                 if (selectedCategory) params.set("category", selectedCategory);
                 if (mode) params.set("mode", mode);
                 const query = params.toString();
-                const url = `${API_BASE_URL}/api/onDeck/distributed-working-loop${query ? `?${query}` : ""}`;
+                const url = `${API_BASE_URL}/api/onDeck/distributedWorkingLoop${query ? `?${query}` : ""}`;
 
                 const response = await fetch(url, { credentials: "include" });
 
@@ -213,38 +214,21 @@ export function useWorkingLoop({
         retryCount = 0
     ): Promise<MarkCardResult | null> => {
         try {
-            const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-            const headers: HeadersInit = {
-                "Content-Type": "application/json",
-                "x-user-timezone": userTimeZone,
-            };
-            if (token && token !== "null" && token !== "undefined") {
-                headers["Authorization"] = `Bearer ${token}`;
-            }
-
-            const response = await fetch(`${API_BASE_URL}/api/flashcards/mark`, {
-                method: "POST",
-                headers,
-                credentials: "include",
-                // `mode` lets the server cap the replacement card to the mode's
-                // allowed categories (and return newCard:null when exhausted).
-                body: JSON.stringify({ cardId, isCorrect, type: markType, excludeIds, mode: mode ?? undefined }),
+            // `mode` lets the server cap the replacement card to the mode's
+            // allowed categories (and return newCard:null when exhausted).
+            const data = await markFlashcard({
+                cardId,
+                isCorrect,
+                type: markType,
+                excludeIds,
+                mode: mode ?? undefined,
             });
 
-            if (!response.ok) {
-                throw new Error("Failed to mark card");
-            }
-
-            const data = await response.json();
-            if (!data?.markTimestamp) {
-                throw new Error("Mark response missing mark timestamp");
-            }
-
             return {
-                newCard: data.newCard || null,
+                newCard: data.newCard,
                 markTimestamp: data.markTimestamp,
                 markType,
-                displacedMark: data.displacedMark || null,
+                displacedMark: data.displacedMark,
             };
         } catch (err) {
             if (retryCount < 3) {
@@ -256,7 +240,9 @@ export function useWorkingLoop({
             setError("Failed to save progress. Please check your connection.");
             return null;
         }
-    }, [token, mode]);
+        // No `token` dep: markFlashcard reads the header at call time, so this
+        // callback's identity survives a silent refresh (CLAUDE.md ⛔ rule).
+    }, [mode]);
 
     const handleCardDismiss = useCallback(async (direction: "left" | "right") => {
         if (workingLoop.length === 0 || isAnimating) return;
@@ -363,31 +349,14 @@ export function useWorkingLoop({
             setIsUndoing(true);
             setError(null);
 
-            const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-            const headers: HeadersInit = {
-                "Content-Type": "application/json",
-                "x-user-timezone": userTimeZone,
-            };
-            if (token && token !== "null" && token !== "undefined") {
-                headers["Authorization"] = `Bearer ${token}`;
-            }
-
-            const response = await fetch(`${API_BASE_URL}/api/flashcards/undo-last-mark`, {
-                method: "POST",
-                headers,
-                credentials: "include",
-                body: JSON.stringify({
-                    cardId: lastMarkUndoSnapshot.cardId,
-                    markTimestamp: lastMarkUndoSnapshot.markTimestamp,
-                    markType: lastMarkUndoSnapshot.markType,
-                    displacedMark: lastMarkUndoSnapshot.displacedMark,
-                }),
+            // ApiError carries the server's `error` field as its message, which is
+            // what the hand-rolled version reconstructed from the response body.
+            await undoFlashcardMark({
+                cardId: lastMarkUndoSnapshot.cardId,
+                markTimestamp: lastMarkUndoSnapshot.markTimestamp,
+                markType: lastMarkUndoSnapshot.markType,
+                displacedMark: lastMarkUndoSnapshot.displacedMark,
             });
-
-            if (!response.ok) {
-                const responseData = await response.json().catch(() => null);
-                throw new Error(responseData?.error || "Failed to undo last mark");
-            }
 
             setWorkingLoop(lastMarkUndoSnapshot.workingLoop);
             setCurrentIndex(lastMarkUndoSnapshot.currentIndex);
@@ -404,7 +373,8 @@ export function useWorkingLoop({
         } finally {
             setIsUndoing(false);
         }
-    }, [lastMarkUndoSnapshot, isAnimating, isUndoing, token, cardDragRef]);
+        // No `token` dep — see the note on markCard above.
+    }, [lastMarkUndoSnapshot, isAnimating, isUndoing, cardDragRef]);
 
     return {
         workingLoop,

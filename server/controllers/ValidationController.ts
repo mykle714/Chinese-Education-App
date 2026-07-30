@@ -4,8 +4,12 @@ import { Language, ValidationField } from '../types/index.js';
 import { ValidationError, NotFoundError } from '../types/dal.js';
 
 const VALID_LANGUAGES = new Set<Language>(['zh', 'es']);
+// Every field the INLINE endpoints (entry-submit / entry-status) accept. The
+// Reader-document queue picks its own, narrower set server-side (see
+// ValidationService.composeValidationDoc), so this list is deliberately the wider one.
 const VALID_FIELDS = new Set<ValidationField>([
   'definitions', 'exampleSentence0', 'exampleSentence1', 'exampleSentence2',
+  'partsOfSpeech', 'difficulty', 'frequencyScore',
 ]);
 
 /**
@@ -74,7 +78,7 @@ export class ValidationController {
   /**
    * Submit an approval or flag directly against a dictionary entry's field, with no
    * downloaded Reader document — the inline Approve/Flag buttons on the est/definition
-   * UI (only shown to validators). POST /api/validation/entry-submit
+   * UI (only shown to validators). POST /api/validation/entrySubmit
    * { word1: string, language: 'zh'|'es', field: ValidationField, action: 'approve'|'flag' }
    */
   async submitEntryValidation(req: Request, res: Response): Promise<void> {
@@ -114,7 +118,7 @@ export class ValidationController {
   /**
    * Undo the calling validator's own inline vote on a field — the "press the
    * filled icon again" affordance, leaving no signal in the DB.
-   * DELETE /api/validation/entry-submit?word1=&language=&field=
+   * DELETE /api/validation/entrySubmit?word1=&language=&field=
    */
   async clearEntryValidation(req: Request, res: Response): Promise<void> {
     try {
@@ -150,7 +154,7 @@ export class ValidationController {
    * The calling validator's own current vote on a field ('approve' | 'flag' | null)
    * — lets the inline Approve/Flag buttons show the right icon filled on mount,
    * instead of only after a same-session action.
-   * GET /api/validation/entry-status?word1=&language=&field=
+   * GET /api/validation/entryStatus?word1=&language=&field=
    */
   async getEntryValidationStatus(req: Request, res: Response): Promise<void> {
     try {

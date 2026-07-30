@@ -182,19 +182,19 @@ Searches the user's vocab entries.
 - **Query params:** `query` (string, min 2 chars)
 - **Response:** `VocabEntry[]`
 
-### `GET /api/onDeck/library-cards`
+### `GET /api/onDeck/libraryCards`
 Returns all library cards (`starterPackBucket = 'library'`).
 - **Response:** `VocabEntry[]`
 
-### `GET /api/onDeck/mastered-library-cards` / `non-mastered-library-cards`
+### `GET /api/onDeck/masteredLibraryCards` / `non-mastered-library-cards`
 Returns library cards filtered by mastery status.
 - **Response:** `VocabEntry[]`
 
-### `GET /api/onDeck/distributed-working-loop`
+### `GET /api/onDeck/distributedWorkingLoop`
 Returns the distributed working loop (shuffled blend of cards from multiple categories).
 - **Response:** `VocabEntry[]` (also includes `relatedWords`)
 
-### `GET /api/starter-packs/:language`
+### `GET /api/starterPacks/:language`
 Returns unsorted discoverable cards for the given language (up to 50).
 - **Response:** `DiscoverCard[]` (includes enriched `exampleSentences`)
 

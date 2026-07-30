@@ -5,12 +5,16 @@
  * occupants; the hourly decay cron trims occupants back down when minutes are debited.
  *
  * LAYER: dep-free shared constant (same `server/dal/shared/*` family as the other mirrors). No
- * DB, no imports. SOURCE OF TRUTH for the schedule; two consumers must stay in sync:
+ * DB, no imports. THE ONLY PLACE THE SCHEDULE IS WRITTEN DOWN. Both consumers derive from it:
  *   • the grant flow — NightMarketPlacementService.grantUnlocks (imports this directly);
- *   • the decay cron — database/cron/expire-stale-streaks.sql hard-codes the same breakpoints
- *     (SQL can't import TS), guarded by the note there.
- * If you change a breakpoint here, change it in the cron SQL too. (No client mirror exists yet —
- * nothing on the client computes unlocks; add one only when a UI needs the curve.)
+ *   • the decay cron — database/cron/expire-stale-streaks.sql calls the SQL function
+ *     `nightmarket_unlocks_for_minutes(int)`, whose body is GENERATED from the table below by
+ *     {@link ./unlockScheduleSql renderUnlocksForMinutesSql} into a marked block in that file.
+ *     The cron SQL carries NO breakpoint numbers of its own; `npm run gen:unlock-schedule-sql`
+ *     rewrites the block and `src/__tests__/unlockScheduleSqlSync.test.ts` fails if it is stale.
+ * So a breakpoint change here is a one-file edit + a regenerate — never a hand-sync.
+ * (No client mirror exists — nothing on the client computes unlocks; add one only when a UI
+ * needs the curve, and derive it from this module.)
  */
 
 /**
@@ -41,11 +45,11 @@ export const UNLOCK_BREAKPOINTS: ReadonlyArray<readonly [minMinutes: number, unl
 ];
 
 /** First minute threshold covered by the steady-state formula (the last explicit breakpoint). */
-const STEADY_STATE_MINUTES = 60;
+export const STEADY_STATE_MINUTES = 60;
 /** Unlock count at {@link STEADY_STATE_MINUTES}; the formula counts up from here. */
-const STEADY_STATE_UNLOCKS = 17;
+export const STEADY_STATE_UNLOCKS = 17;
 /** Steady state: one extra unlock per this many minutes beyond {@link STEADY_STATE_MINUTES}. */
-const MINUTES_PER_STEADY_UNLOCK = 60;
+export const MINUTES_PER_STEADY_UNLOCK = 60;
 
 /**
  * The number of unlocks (placeholder occupants) a user with `minutePoints` lifetime minutes is

@@ -2,7 +2,7 @@ import React from "react";
 import { Box } from "@mui/material";
 import { SIZE, WEIGHT } from "../../theme/scale";
 import { FONTS } from "../../theme/fonts";
-import { HINT_ACCENT_COLOR, LETTER_HINT_BLANK_WIDTH } from "./constants";
+import { HINT_ACCENT_COLOR, HINT_REMAINDER_MARK } from "./constants";
 import { wordToPinyinUnits } from "./pinyinUnits";
 import { buildComponentReveals } from "./componentUnits";
 import type { PlacedWord } from "./types";
@@ -48,12 +48,12 @@ function distributeRevealTiers(syllableUnits: string[][], revealCount: number): 
 }
 
 /**
- * Build the hangman-style mask: one "island" of underscores per Chinese
- * character (so the island count openly gives away the word's character
- * count — that's intentional), each island padded to a FIXED
- * `LETTER_HINT_BLANK_WIDTH` (3) underscores regardless of that syllable's
- * real unit count, so a syllable's own length stays hidden until its units
- * are actually revealed. `revealCount` units are distributed round-robin
+ * Build the mask: one "island" per Chinese character (so the island count
+ * openly gives away the word's character count — that's intentional), each
+ * unfinished island closed with a single `HINT_REMAINDER_MARK` ("—") meaning
+ * "more to come", with no indication of HOW much: a syllable's own length
+ * stays hidden until its units are actually revealed.
+ * `revealCount` units are distributed round-robin
  * across islands via `distributeRevealTiers` (see above) rather than filling
  * one island completely before the next.
  */
@@ -63,7 +63,7 @@ function buildMask(syllableUnits: string[][], revealCount: number): string {
         .map((units, i) => {
             const revealed = revealedPerSyllable[i];
             if (revealed >= units.length) return units.join("");
-            return `${units.slice(0, revealed).join("")}${"_".repeat(LETTER_HINT_BLANK_WIDTH)}`;
+            return `${units.slice(0, revealed).join("")}${HINT_REMAINDER_MARK}`;
         })
         .join(" ");
 }

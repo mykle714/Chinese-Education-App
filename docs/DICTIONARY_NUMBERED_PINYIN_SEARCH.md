@@ -38,14 +38,14 @@ word1/pronunciation/definitions search) if:
 |---|---|---|
 | Parsing + SQL | `server/dal/implementations/DictionaryDAL.ts` (`buildNumberedPinyinPattern`, used in `searchByWord1`) | token → regex, `~*` match against `"numberedPinyin"` |
 | Controller/Service | `server/controllers/DictionaryController.ts`, `server/services/DictionaryService.ts` | unchanged — the parsing is entirely inside the DAL query |
-| Client | `src/hooks/useDictionarySearch.ts` | shared debounce + segment-vs-search fetch, used by `DictionaryPage.tsx` and `src/pages/CommunityPage/CommunitySearchBar.tsx` |
+| Client | `src/hooks/useDictionarySearch.ts` | shared debounce + segment-vs-search fetch, used by `DictionaryPage.tsx` and `src/features/community/CommunitySearchBar.tsx` |
 
 ## Dependencies / cross-references
 
 - Numbered-pinyin column format/backfill: `server/scripts/backfill/chinese/backfill-numbered-pinyin.js`.
 - CJK-segment mode (the other branch `useDictionarySearch` can take): `GET
   /api/dictionary/segment`, [greedySegmentation.md](./greedySegmentation.md).
-- Consumers: `src/pages/DictionaryPage.tsx`, `src/pages/CommunityPage/CommunitySearchBar.tsx`
+- Consumers: `src/features/dictionary/DictionaryPage.tsx`, `src/features/community/CommunitySearchBar.tsx`
   (see [COMMUNITY_PAGE.md](./COMMUNITY_PAGE.md)).
 - Spaceless-pinyin + AI synthetic-entry fallback that builds on this matcher (design):
   [DICTIONARY_AI_FALLBACK_SEARCH.md](./DICTIONARY_AI_FALLBACK_SEARCH.md).

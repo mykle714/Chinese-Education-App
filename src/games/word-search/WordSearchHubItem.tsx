@@ -8,13 +8,15 @@ import { useAuth } from "../../AuthContext";
 import { useSlideNavigate } from "../../hooks/useSlideNavigate";
 import { useDragScroll } from "../../hooks/useDragScroll";
 import { cardBaseSx } from "../../components/hubMenuCardBase";
-import { HubMenuCardTitle, HubMenuRowIconTile } from "../../components/HubMenu";
+import { HubMenuCardTitle, HubMenuRowIconTile, HubMenuGroup, HubMenuGroupHeader, HubMenuStatBadge } from "../../components/HubMenu";
+import { useGameWins } from "../../hooks/useGameWins";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
 import type { GameDef } from "../types";
 import { loadGameState, clearGameState, type SavedWordSearchState } from "./gameStateStorage";
-import { MODE_CONFIGS, TOTAL_WORDS, formatTimeMs, modeLabel, type WordSearchMode } from "./constants";
+import { GAME_KEY, MODE_CONFIGS, TOTAL_WORDS, modeLabel, type WordSearchMode } from "./constants";
+import { formatTimeMs } from "../../utils/timeUtils";
 
 /**
  * Word Search's Games-hub fan-out — a horizontally-scrolling strip of the two
@@ -87,6 +89,11 @@ const WordSearchHubItem: React.FC<WordSearchHubItemProps> = ({ game, icon, class
     const slideNavigate = useSlideNavigate();
     const scrollRef = useRef<HTMLDivElement | null>(null);
     useDragScroll(scrollRef);
+
+    // Game-wide lifetime win count for the group header. Word Search logs every
+    // completion under one level bucket, so this is already mode-agnostic; the
+    // mode sub-cards carry no count of their own (see docs/HUB_MENU_SYSTEM.md).
+    const { totalWins } = useGameWins(GAME_KEY);
 
     // Saved board (read once on mount). Both modes share this one slot; null when
     // there's nothing to resume. Erasing it (✕) sets this back to null, which
@@ -175,150 +182,157 @@ const WordSearchHubItem: React.FC<WordSearchHubItemProps> = ({ game, icon, class
 
     return (
         <>
-            <Strip ref={scrollRef} className={className ?? "word-search-hub"}>
-                {resumeTransitions((style, saved) => (
-                    <AnimatedResumeShell
-                        className="word-search-hub__resume"
-                        onClick={handleResume}
-                        style={style}
-                        sx={{
-                            ...cardBaseSx,
-                            // A true 1:1 square: flexBasis (animated above) is the
-                            // width, aspectRatio makes height follow it, and
-                            // alignSelf:center stops the flex row from stretching it
-                            // to the (taller) mode cards' height — which would make
-                            // it a rectangle and clip the stats. Tighter padding
-                            // than a mode card so the four stat lines fit the square.
-                            flexGrow: 0,
-                            flexShrink: 0,
-                            // min-width:auto (the flex default) would floor the
-                            // collapse at the content's min-content width; 0 lets
-                            // the width animate cleanly to nothing. border-box folds
-                            // the padding INTO the animated flexBasis so a 0% basis
-                            // is a truly 0-width card (content-box would leave the
-                            // horizontal padding behind as a ~20px stump).
-                            minWidth: 0,
-                            // minHeight:0 too: with aspectRatio, min-height:auto
-                            // (the default) floors the height at the stats' content
-                            // height, and the 1:1 ratio then floors the WIDTH to
-                            // match — leaving a stump. 0 frees both.
-                            minHeight: 0,
-                            boxSizing: "border-box",
-                            alignSelf: "center",
-                            aspectRatio: "1 / 1",
-                            padding: 0,
-                            overflow: "hidden",
-                            cursor: "pointer",
-                            backgroundColor: RESUME_CARD_COLOR,
-                        }}
-                    >
-                        {/* All content lives in an absolutely-inset layer so it
-                            contributes NO in-flow width to the flex item — that lets
-                            the card's animated width collapse cleanly to 0 on erase
-                            (in-flow text would otherwise floor it at its min-content
-                            width). The layer fills the square when open and is
-                            clipped by the card's overflow:hidden as it shrinks. */}
-                        <Box
-                            className="word-search-hub__resume-inner"
+            <HubMenuGroup className={className ?? "word-search-hub"}>
+                <HubMenuGroupHeader
+                    className="word-search-hub__header"
+                    title={game.title}
+                    stat={<HubMenuStatBadge variant="header" count={totalWins} />}
+                />
+                <Strip ref={scrollRef} className="word-search-hub__strip">
+                    {resumeTransitions((style, saved) => (
+                        <AnimatedResumeShell
+                            className="word-search-hub__resume"
+                            onClick={handleResume}
+                            style={style}
                             sx={{
-                                position: "absolute",
-                                inset: 0,
-                                display: "flex",
-                                flexDirection: "column",
-                                // Left-aligned + vertically centered, like a real hub
-                                // card (title top-left, details below) rather than a
-                                // centered stat block.
-                                justifyContent: "center",
-                                alignItems: "flex-start",
-                                gap: 0.5,
-                                padding: "14px 16px",
+                                ...cardBaseSx,
+                                // A true 1:1 square: flexBasis (animated above) is the
+                                // width, aspectRatio makes height follow it, and
+                                // alignSelf:center stops the flex row from stretching it
+                                // to the (taller) mode cards' height — which would make
+                                // it a rectangle and clip the stats. Tighter padding
+                                // than a mode card so the four stat lines fit the square.
+                                flexGrow: 0,
+                                flexShrink: 0,
+                                // min-width:auto (the flex default) would floor the
+                                // collapse at the content's min-content width; 0 lets
+                                // the width animate cleanly to nothing. border-box folds
+                                // the padding INTO the animated flexBasis so a 0% basis
+                                // is a truly 0-width card (content-box would leave the
+                                // horizontal padding behind as a ~20px stump).
+                                minWidth: 0,
+                                // minHeight:0 too: with aspectRatio, min-height:auto
+                                // (the default) floors the height at the stats' content
+                                // height, and the 1:1 ratio then floors the WIDTH to
+                                // match — leaving a stump. 0 frees both.
+                                minHeight: 0,
+                                boxSizing: "border-box",
+                                alignSelf: "center",
+                                aspectRatio: "1 / 1",
+                                padding: 0,
                                 overflow: "hidden",
+                                cursor: "pointer",
+                                backgroundColor: RESUME_CARD_COLOR,
                             }}
                         >
-                            {confirmingErase ? (
-                                // Delete-confirmation FACE — the ✕ flips the square to
-                                // this in-place prompt instead of erasing immediately.
-                                <>
-                                    <Typography
-                                        className="word-search-hub__delete-title"
-                                        sx={{ fontSize: SIZE.bodyLg, fontWeight: WEIGHT.medium, color: COLORS.onSurface, fontFamily: FONTS.sans, lineHeight: LEADING.normal }}
-                                    >
-                                        Delete saved game?
-                                    </Typography>
-                                    <Box sx={{ display: "flex", gap: 0.75, mt: 0.25, width: "100%" }}>
-                                        <Button
-                                            className="word-search-hub__delete-cancel"
-                                            onClick={cancelErase}
-                                            size="small"
-                                            sx={{ minWidth: 0, flex: 1, px: 1, py: 0.25, textTransform: "none", fontSize: SIZE.body, color: COLORS.textSecondary }}
+                            {/* All content lives in an absolutely-inset layer so it
+                                contributes NO in-flow width to the flex item — that lets
+                                the card's animated width collapse cleanly to 0 on erase
+                                (in-flow text would otherwise floor it at its min-content
+                                width). The layer fills the square when open and is
+                                clipped by the card's overflow:hidden as it shrinks. */}
+                            <Box
+                                className="word-search-hub__resume-inner"
+                                sx={{
+                                    position: "absolute",
+                                    inset: 0,
+                                    display: "flex",
+                                    flexDirection: "column",
+                                    // Left-aligned + vertically centered, like a real hub
+                                    // card (title top-left, details below) rather than a
+                                    // centered stat block.
+                                    justifyContent: "center",
+                                    alignItems: "flex-start",
+                                    gap: 0.5,
+                                    padding: "14px 16px",
+                                    overflow: "hidden",
+                                }}
+                            >
+                                {confirmingErase ? (
+                                    // Delete-confirmation FACE — the ✕ flips the square to
+                                    // this in-place prompt instead of erasing immediately.
+                                    <>
+                                        <Typography
+                                            className="word-search-hub__delete-title"
+                                            sx={{ fontSize: SIZE.bodyLg, fontWeight: WEIGHT.medium, color: COLORS.onSurface, fontFamily: FONTS.sans, lineHeight: LEADING.normal }}
                                         >
-                                            Cancel
-                                        </Button>
-                                        <Button
-                                            className="word-search-hub__delete-confirm"
-                                            onClick={confirmErase}
-                                            variant="contained"
-                                            color="error"
+                                            Delete saved game?
+                                        </Typography>
+                                        <Box sx={{ display: "flex", gap: 0.75, mt: 0.25, width: "100%" }}>
+                                            <Button
+                                                className="word-search-hub__delete-cancel"
+                                                onClick={cancelErase}
+                                                size="small"
+                                                sx={{ minWidth: 0, flex: 1, px: 1, py: 0.25, textTransform: "none", fontSize: SIZE.body, color: COLORS.textSecondary }}
+                                            >
+                                                Cancel
+                                            </Button>
+                                            <Button
+                                                className="word-search-hub__delete-confirm"
+                                                onClick={confirmErase}
+                                                variant="contained"
+                                                color="error"
+                                                size="small"
+                                                sx={{ minWidth: 0, flex: 1, px: 1, py: 0.25, textTransform: "none", fontSize: SIZE.body }}
+                                            >
+                                                Delete
+                                            </Button>
+                                        </Box>
+                                    </>
+                                ) : (
+                                    // Normal resume FACE.
+                                    <>
+                                        <IconButton
+                                            className="word-search-hub__resume-erase"
                                             size="small"
-                                            sx={{ minWidth: 0, flex: 1, px: 1, py: 0.25, textTransform: "none", fontSize: SIZE.body }}
+                                            aria-label="Delete saved game"
+                                            onClick={armErase}
+                                            sx={{ position: "absolute", top: 8, right: 8, p: 0.25, color: COLORS.textSecondary }}
                                         >
-                                            Delete
-                                        </Button>
-                                    </Box>
-                                </>
-                            ) : (
-                                // Normal resume FACE.
-                                <>
-                                    <IconButton
-                                        className="word-search-hub__resume-erase"
-                                        size="small"
-                                        aria-label="Delete saved game"
-                                        onClick={armErase}
-                                        sx={{ position: "absolute", top: 8, right: 8, p: 0.25, color: COLORS.textSecondary }}
-                                    >
-                                        <CloseIcon sx={{ fontSize: 18 }} />
-                                    </IconButton>
-                                    {/* "Resume" styled exactly like a hub-card title
-                                        (matches HubMenuCardTitle: bodyLg / medium / onSurface). */}
-                                    <Typography
-                                        className="word-search-hub__resume-title"
-                                        sx={{ fontSize: SIZE.bodyLg, fontWeight: WEIGHT.medium, color: COLORS.onSurface, fontFamily: FONTS.sans, lineHeight: LEADING.normal, whiteSpace: "nowrap" }}
-                                    >
-                                        Resume
-                                    </Typography>
-                                    {/* Timer + found count inlined on one row to save
-                                        vertical space; mode on its own line below. */}
-                                    <Typography
-                                        className="word-search-hub__resume-stats"
-                                        sx={{ fontSize: SIZE.body, color: COLORS.textSecondary, fontFamily: FONTS.sans, lineHeight: LEADING.normal, whiteSpace: "nowrap" }}
-                                    >
-                                        ⏱ {formatTimeMs(saved.elapsedMs)} · {saved.found.length}/{TOTAL_WORDS}
-                                    </Typography>
-                                    <Typography
-                                        className="word-search-hub__resume-mode"
-                                        sx={{ fontSize: SIZE.body, fontWeight: WEIGHT.medium, color: COLORS.onSurface, fontFamily: FONTS.sans, lineHeight: LEADING.normal, whiteSpace: "nowrap" }}
-                                    >
-                                        {modeLabel(saved.mode)}
-                                    </Typography>
-                                </>
-                            )}
-                        </Box>
-                    </AnimatedResumeShell>
-                ))}
+                                            <CloseIcon sx={{ fontSize: 18 }} />
+                                        </IconButton>
+                                        {/* "Resume" styled exactly like a hub-card title
+                                            (matches HubMenuCardTitle: bodyLg / medium / onSurface). */}
+                                        <Typography
+                                            className="word-search-hub__resume-title"
+                                            sx={{ fontSize: SIZE.bodyLg, fontWeight: WEIGHT.medium, color: COLORS.onSurface, fontFamily: FONTS.sans, lineHeight: LEADING.normal, whiteSpace: "nowrap" }}
+                                        >
+                                            Resume
+                                        </Typography>
+                                        {/* Timer + found count inlined on one row to save
+                                            vertical space; mode on its own line below. */}
+                                        <Typography
+                                            className="word-search-hub__resume-stats"
+                                            sx={{ fontSize: SIZE.body, color: COLORS.textSecondary, fontFamily: FONTS.sans, lineHeight: LEADING.normal, whiteSpace: "nowrap" }}
+                                        >
+                                            ⏱ {formatTimeMs(saved.elapsedMs)} · {saved.found.length}/{TOTAL_WORDS}
+                                        </Typography>
+                                        <Typography
+                                            className="word-search-hub__resume-mode"
+                                            sx={{ fontSize: SIZE.body, fontWeight: WEIGHT.medium, color: COLORS.onSurface, fontFamily: FONTS.sans, lineHeight: LEADING.normal, whiteSpace: "nowrap" }}
+                                        >
+                                            {modeLabel(saved.mode)}
+                                        </Typography>
+                                    </>
+                                )}
+                            </Box>
+                        </AnimatedResumeShell>
+                    ))}
 
-                {MODE_CONFIGS.map((cfg) => (
-                    <ModeCard
-                        key={`${game.gameId}-${cfg.mode}`}
-                        to={game.route}
-                        onClick={(e) => handleModeClick(e, cfg.mode)}
-                        bgcolor={WORD_SEARCH_MODE_COLORS[cfg.mode] ?? game.bgColor}
-                        className={`word-search-hub__mode-card word-search-hub__mode-card--${cfg.mode}`}
-                    >
-                        <HubMenuCardTitle title={game.title} subtitle={cfg.label} />
-                        <HubMenuRowIconTile className="word-search-hub__mode-icon">{icon}</HubMenuRowIconTile>
-                    </ModeCard>
-                ))}
-            </Strip>
+                    {MODE_CONFIGS.map((cfg) => (
+                        <ModeCard
+                            key={`${game.gameId}-${cfg.mode}`}
+                            to={game.route}
+                            onClick={(e) => handleModeClick(e, cfg.mode)}
+                            bgcolor={WORD_SEARCH_MODE_COLORS[cfg.mode] ?? game.bgColor}
+                            className={`word-search-hub__mode-card word-search-hub__mode-card--${cfg.mode}`}
+                        >
+                            <HubMenuCardTitle title={game.title} subtitle={cfg.label} />
+                            <HubMenuRowIconTile className="word-search-hub__mode-icon">{icon}</HubMenuRowIconTile>
+                        </ModeCard>
+                    ))}
+                </Strip>
+            </HubMenuGroup>
 
             <Dialog
                 className="word-search-hub__confirm-dialog"

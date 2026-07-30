@@ -1,7 +1,8 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, memo, useEffect, useMemo, useState } from 'react';
 import { Assets, Texture } from 'pixi.js';
 import { isoToScreen, computeLayerZ, TILE_HEIGHT, ORIGIN_ZERO, type CellOrigin } from '../../engine/market/isometric';
 import { freeFarmTileset } from '../../engine/market/freeFarmTileset';
+import nmpPerf from './nmpPerf';
 import {
   resolveTileSurfaceUrls,
   resolveTileDarkSurfaceUrls,
@@ -27,17 +28,26 @@ import {
  * this layer in a per-placement container: that would re-isolate the z-sort.
  */
 
+/**
+ * Skip the tallDirt slab on cells where it is provably invisible (see `EditorTile.slabHidden`).
+ * Halves the sprite count on ordinary grass. Flip to false to isolate a suspected ground artifact.
+ */
+const HIDE_OCCLUDED_SLABS = true;
+
 interface TileDraw {
   key: string;
   x: number;
   y: number;
-  dirtUrl: string;
+  /** null when the slab is fully occluded and was skipped. */
+  dirtUrl: string | null;
   dirtZ: number;
   /** Light/dark grass surface sprites. */
   surfaceUrls: string[];
   darkSurfaceUrls: string[];
   surfaceZ: number;
   darkSurfaceZ: number;
+  /** True when the slab was skipped as occluded. */
+  hideSlab: boolean;
   /** Painted decor sprite (null for none), drawn on top of the finished tile. */
   decorUrl: string | null;
   decorZ: number;
@@ -47,9 +57,12 @@ function buildDraws(tiles: EditorTile[], origin: CellOrigin): { draws: TileDraw[
   const urls = new Set<string>();
   const draws: TileDraw[] = [];
   for (const t of tiles) {
-    const dirtUrl = freeFarmTileset.getTallDirt(t.fieldEdge);
-    if (!dirtUrl) continue;
-    urls.add(dirtUrl);
+    // A fully-occluded slab is skipped outright (see EditorTile.slabHidden) — on ordinary grass that
+    // is half of all sprites. Set HIDE_OCCLUDED_SLABS to false to rule this out as a visual suspect.
+    const hideSlab = HIDE_OCCLUDED_SLABS && t.slabHidden;
+    const dirtUrl = hideSlab ? null : (freeFarmTileset.getTallDirt(t.fieldEdge) ?? null);
+    if (!hideSlab && !dirtUrl) continue; // no slab art for this rim variant — skip the cell entirely
+    if (dirtUrl) urls.add(dirtUrl);
 
     const surfaceUrls = resolveTileSurfaceUrls(t);
     const darkSurfaceUrls = resolveTileDarkSurfaceUrls(t);
@@ -69,6 +82,7 @@ function buildDraws(tiles: EditorTile[], origin: CellOrigin): { draws: TileDraw[
       x: screenX,
       y: screenY,
       dirtUrl,
+      hideSlab,
       dirtZ: z - 0.5,
       surfaceUrls,
       darkSurfaceUrls,
@@ -82,10 +96,17 @@ function buildDraws(tiles: EditorTile[], origin: CellOrigin): { draws: TileDraw[
     });
   }
 
+  // Diagnostic: `sprites` is the real Pixi cost (a cell emits 1–4), and the REBUILD COUNT tells us
+  // whether the memoisation is actually holding — see ./nmpPerf.
+  nmpPerf.count('terrain-tiles', tiles.length);
+  nmpPerf.count('terrain-sprites', draws.reduce(
+    (n, d) => n + (d.hideSlab ? 0 : 1) + d.surfaceUrls.length + d.darkSurfaceUrls.length + (d.decorUrl ? 1 : 0),
+    0,
+  ));
   return { draws, urls };
 }
 
-export default function EditorTerrainLayer(
+function EditorTerrainLayer(
   { tiles, origin = ORIGIN_ZERO }: { tiles: EditorTile[]; origin?: CellOrigin },
 ) {
   // Keyed on the origin's NUMBERS, not the object — callers build `{col,row}` inline each
@@ -123,18 +144,20 @@ export default function EditorTerrainLayer(
   return (
     <>
       {draws.map((d) => {
-        const dirt = textures.get(d.dirtUrl);
-        if (!dirt) return null;
+        const dirt = d.dirtUrl ? textures.get(d.dirtUrl) : null;
+        if (!dirt && !d.hideSlab) return null; // slab expected but its texture is not loaded yet
         return (
           <Fragment key={d.key}>
-            <pixiSprite
-              texture={dirt}
-              x={d.x}
-              y={d.y + TILE_HEIGHT}
-              anchor={{ x: 0.5, y: 1 }}
-              zIndex={d.dirtZ}
-              eventMode="none"
-            />
+            {dirt && (
+              <pixiSprite
+                texture={dirt}
+                x={d.x}
+                y={d.y + TILE_HEIGHT}
+                anchor={{ x: 0.5, y: 1 }}
+                zIndex={d.dirtZ}
+                eventMode="none"
+              />
+            )}
             {d.surfaceUrls.map((u, i) => {
               const tex = textures.get(u);
               if (!tex) return null;
@@ -181,3 +204,11 @@ export default function EditorTerrainLayer(
     </>
   );
 }
+
+/**
+ * MEMOISED — this is the heaviest element tree in the app (one to four `pixiSprite` elements per
+ * ground cell, thousands of cells). nmp's scene re-renders every animation frame to advance the
+ * pedestrians, so without this the whole terrain was reconciled at 60fps and the market crawled.
+ * Callers MUST pass a stable `tiles` array (memoise the `buildEditorField` call) for this to bite.
+ */
+export default memo(EditorTerrainLayer);

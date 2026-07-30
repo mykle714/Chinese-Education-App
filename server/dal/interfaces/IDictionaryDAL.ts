@@ -1,13 +1,26 @@
-import { DictionaryEntry, DictionaryEntryCreateData, AiDictionaryCacheRow, WordComparisonRow, DefinitionCluster, LongDefinitionCitation } from '../../types/index.js';
+import { DictionaryEntry, DictionaryEntryCreateData, AiDictionaryCacheRow, WordComparisonRow, DefinitionCluster, LongDefinitionCitation, EntryApprovalFlags } from '../../types/index.js';
 import type { LongDefinitionValue } from '../../utils/definitions.js';
-import { IBaseDAL } from './IBaseDAL.js';
+import type { Language } from '../../types/index.js';
 
 /**
- * Dictionary Data Access Layer Interface
- * Extends base DAL with dictionary-specific operations
- * Note: Dictionary entries are read-only after import, so update operations are not used
+ * Dictionary Data Access Layer Interface.
+ *
+ * Deliberately does NOT extend `IBaseDAL`. Dictionary data lives in per-language
+ * tables (`dictionaryentries_zh` / `dictionaryentries_es`, see CLAUDE.md), so the
+ * generic "one table, one primary key" CRUD surface is not meaningful here: every
+ * operation must be told which language it is acting on. The implementation used to
+ * inherit that surface bound permanently to the Chinese table.
+ * See docs/ARCHITECTURE_REVIEW.md finding 1.
+ *
+ * Note: dictionary entries are read-only after import, so update/delete are not part
+ * of this interface at all — only the import path creates rows.
  */
-export interface IDictionaryDAL extends IBaseDAL<DictionaryEntry, DictionaryEntryCreateData, Partial<DictionaryEntryCreateData>> {
+export interface IDictionaryDAL {
+  /**
+   * Create a dictionary entry. Used only by the import scripts.
+   */
+  create(data: DictionaryEntryCreateData): Promise<DictionaryEntry>;
+
   /**
    * Find dictionary entry by word1 (primary word form)
    */
@@ -39,9 +52,10 @@ export interface IDictionaryDAL extends IBaseDAL<DictionaryEntry, DictionaryEntr
   ): Promise<{ entries: DictionaryEntry[], total: number }>;
 
   /**
-   * Get total count of dictionary entries
+   * Total number of entries in ONE language's dictionary table. The language is
+   * explicit because there is no single "the dictionary" to count.
    */
-  getTotalCount(): Promise<number>;
+  getTotalCount(language: Language): Promise<number>;
 
   /**
    * Read a cached AI-synthesized dictionary entry by exact query key (migration 97).
@@ -127,16 +141,17 @@ export interface IDictionaryDAL extends IBaseDAL<DictionaryEntry, DictionaryEntr
   }>(entries: T[], language?: string): Promise<T[]>;
 
   /**
-   * Attach `definitionsApproved: boolean` to each entry — TRUE iff a validator
-   * approved the 'definitions' field (partsOfSpeech + definitions[] + longDefinition,
-   * bundled as one unit) and it still matches the entry's current raw det data.
+   * Attach the four entry-level approval flags (`EntryApprovalFlags`) to each entry —
+   * each TRUE iff a validator approved that field and the approval still matches the
+   * entry's current raw det data. `definitions` is the definitions[] + longDefinition
+   * bundle; `partsOfSpeech` / `difficulty` / `frequencyScore` are one column each.
    * See docs/DATA_VALIDATION_SYSTEM.md.
    *
    * @param entries - Array of objects carrying word1 and/or entryKey (the headword)
    * @param language - Language filter for dictionary lookups
    */
-  enrichDefinitionsApprovalBatch<T extends {
+  enrichFieldApprovalsBatch<T extends {
     word1?: string;
     entryKey?: string;
-  }>(entries: T[], language?: string): Promise<Array<T & { definitionsApproved: boolean }>>;
+  }>(entries: T[], language?: string): Promise<Array<T & EntryApprovalFlags>>;
 }

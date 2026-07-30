@@ -8,7 +8,13 @@ import {
 import { ValidationError, NotFoundError } from '../types/dal.js';
 import { dbManager } from '../dal/base/DatabaseManager.js';
 import { TextService } from './TextService.js';
-import { composeDefinitionsBody, composeExampleSentenceBody } from '../utils/validationBodyFormat.js';
+import {
+  composeDefinitionsBody,
+  composeDifficultyBody,
+  composeExampleSentenceBody,
+  composeFrequencyScoreBody,
+  composePartsOfSpeechBody,
+} from '../utils/validationBodyFormat.js';
 import { longDefToDisplayString, type LongDefinitionValue } from '../utils/definitions.js';
 
 /**
@@ -44,11 +50,16 @@ const TABLE_BY_LANGUAGE: Record<Language, string> = {
 };
 
 // Human-readable subtitle for each validation field, used as the document description.
+// The inline-only fields carry a label too so any future admin/report surface can name
+// them, even though DOC_QUEUE_FIELDS never hands them to composeValidationDoc.
 const FIELD_LABEL: Record<ValidationField, string> = {
-  definitions: 'Definitions & Parts of Speech',
+  definitions: 'Definitions',
   exampleSentence0: 'Example Sentence 1',
   exampleSentence1: 'Example Sentence 2',
   exampleSentence2: 'Example Sentence 3',
+  partsOfSpeech: 'Parts of Speech',
+  difficulty: 'Difficulty',
+  frequencyScore: 'Commonality',
 };
 
 // Minimal shape of a det row we read while composing a validation document.
@@ -62,7 +73,15 @@ interface DetFieldRow {
   // es/legacy rows (migration 70). composeBody normalizes it via longDefToDisplayString.
   longDefinition: LongDefinitionValue | null;
   exampleSentences: Array<{ foreignText?: unknown; english?: unknown }> | null;
+  difficulty: number | null;
+  frequencyScore: number | null;
 }
+
+// The columns every det-row read for validation needs — shared by the id-keyed
+// (document) and word1-keyed (inline) loaders so the two can never drift apart.
+const DET_FIELD_COLUMNS =
+  `id, word1, pronunciation, "partsOfSpeech", definitions, "longDefinition", ` +
+  `"exampleSentences", difficulty, "frequencyScore"`;
 
 export class ValidationService {
   constructor(
@@ -94,6 +113,12 @@ export class ValidationService {
     // four candidate fields; keep only populated ones this user has not yet
     // validated (checked against the `validations` table, joined by entry id +
     // language), preferring the least-validated field (random tiebreak).
+    //
+    // Deliberately only the four DOC-QUEUE fields: partsOfSpeech / difficulty /
+    // frequencyScore are single-line values, far better reviewed inline on the card's
+    // meta strip than as a downloaded Reader document, so they are excluded here.
+    // 'definitions' no longer requires partsOfSpeech — migration 132 split POS out of
+    // the bundle, so a row with definitions + longDefinition but no POS is now eligible.
     const pick = await dbManager.executeQuery<{ id: number; field: ValidationField }>(
       async (client) =>
         client.query(
@@ -103,7 +128,7 @@ export class ValidationService {
                        WHERE val."entryId" = d.id AND val.language = $2 AND val.field = f.field) AS n_val
              FROM ${table} d
              CROSS JOIN LATERAL (VALUES
-               ('definitions',      d."partsOfSpeech" IS NOT NULL AND jsonb_array_length(d.definitions) > 0 AND d."longDefinition" IS NOT NULL),
+               ('definitions',      jsonb_array_length(d.definitions) > 0 AND d."longDefinition" IS NOT NULL),
                ('exampleSentence0', jsonb_array_length(d."exampleSentences") > 0),
                ('exampleSentence1', jsonb_array_length(d."exampleSentences") > 1),
                ('exampleSentence2', jsonb_array_length(d."exampleSentences") > 2)
@@ -368,7 +393,7 @@ export class ValidationService {
   private async getDetFieldRow(table: string, entryId: number): Promise<DetFieldRow | null> {
     const result = await dbManager.executeQuery<DetFieldRow>(async (client) =>
       client.query(
-        `SELECT id, word1, pronunciation, "partsOfSpeech", definitions, "longDefinition", "exampleSentences"
+        `SELECT ${DET_FIELD_COLUMNS}
            FROM ${table} WHERE id = $1`,
         [entryId]
       )
@@ -381,7 +406,7 @@ export class ValidationService {
     const table = this.tableFor(language);
     const result = await dbManager.executeQuery<DetFieldRow>(async (client) =>
       client.query(
-        `SELECT id, word1, pronunciation, "partsOfSpeech", definitions, "longDefinition", "exampleSentences"
+        `SELECT ${DET_FIELD_COLUMNS}
            FROM ${table} WHERE word1 = $1 AND language = $2 AND discoverable = TRUE`,
         [word1, language]
       )
@@ -399,11 +424,13 @@ export class ValidationService {
   private composeBody(entry: DetFieldRow, field: ValidationField): string {
     if (field === 'definitions') {
       return composeDefinitionsBody({
-        partsOfSpeech: entry.partsOfSpeech,
         definitions: entry.definitions,
         longDefinition: entry.longDefinition,
       });
     }
+    if (field === 'partsOfSpeech') return composePartsOfSpeechBody(entry.partsOfSpeech);
+    if (field === 'difficulty') return composeDifficultyBody(entry.difficulty);
+    if (field === 'frequencyScore') return composeFrequencyScoreBody(entry.frequencyScore);
 
     const index = Number(field.slice('exampleSentence'.length));
     const sentence = (entry.exampleSentences || [])[index] ?? null;
@@ -412,13 +439,22 @@ export class ValidationService {
     );
   }
 
-  /** Mirrors composeValidationDoc's SQL eligibility check, applied to an already-loaded row. */
+  /**
+   * Is there anything to review? Mirrors composeValidationDoc's SQL eligibility check
+   * for the doc-queue fields, and is the ONLY populated-check for the three inline-only
+   * fields (partsOfSpeech / difficulty / frequencyScore), which never go through that SQL.
+   */
   private isFieldPopulated(entry: DetFieldRow, field: ValidationField): boolean {
     if (field === 'definitions') {
       // longDefinition is raw JSONB — an empty array/object is "present" to a truthiness
       // check but renders as nothing, so test the composed text instead.
-      return !!entry.partsOfSpeech?.length && !!entry.definitions?.length && !!longDefToDisplayString(entry.longDefinition);
+      return !!entry.definitions?.length && !!longDefToDisplayString(entry.longDefinition);
     }
+    if (field === 'partsOfSpeech') return !!entry.partsOfSpeech?.length;
+    // 0 is not a valid level/score on either scale (1–6 / 1–5), so a plain null-check
+    // is enough — but be explicit rather than relying on truthiness.
+    if (field === 'difficulty') return entry.difficulty != null;
+    if (field === 'frequencyScore') return entry.frequencyScore != null;
     const index = Number(field.slice('exampleSentence'.length));
     return (entry.exampleSentences?.length ?? 0) > index;
   }

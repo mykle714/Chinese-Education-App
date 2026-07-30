@@ -13,30 +13,33 @@
 // We also arm the skip-enter latch so the real page mounts in its FINAL position
 // (static) — otherwise its own usePageSlide enter would offset the snapshot the VT
 // captures, double-sliding it.
+//
+// ── Where the classification lives ────────────────────────────────────────────
+// In `src/routes/routeMeta.ts`, with every other per-route fact. This file used to
+// keep its own three tables (NODE_ROUTES / NODE_PREFIXES / LEAF_EXACT) hand-synced
+// with FooterPresenter and Layout — and they had already drifted:
+// `/games/word-search` was missing from LEAF_EXACT, so it silently lost the
+// slide-up that Bubble Match got. See docs/ARCHITECTURE_REVIEW.md finding 4.
+
+import { routeChrome } from "../routes/routeMeta";
 
 export type SlideDir = "up" | "right";
 
-// Node pages (keep footer, slide from the right). Everything else that slides is a
-// leaf (slide up). Keep in sync with LeafPage/NodePage usage + FooterPresenter.
-const NODE_ROUTES = new Set<string>(["/games", "/flashcards/mastered", "/dictionary", "/reader", "/compare"]);
-// Node pages reached via a parameterized path (matched by prefix). The two
-// card-detail routes are footer-bearing node pages: the saved-card cdp
-// (/flashcards/card/:id) and the read-only dictionary cdp (/dictionary/card/:word).
-// /reader/:id is the one FOOTERLESS exception (see docs/LEAF_NODE_PAGES.md §
-// Reader) — it still slides in from the right like every other node page.
-const NODE_PREFIXES = ["/discover/skipped/", "/discover/sort/", "/discover/quick-mark/", "/flashcards/card/", "/dictionary/card/", "/reader/"];
-const LEAF_EXACT = new Set<string>([
-    "/tester-dashboard",
-    "/settings",
-    "/night-market",
-    "/games/bubble-match",
-]);
-
+/**
+ * The slide direction for navigating INTO `to`, or null when that route does not
+ * slide (footer-tab destinations, auth pages, the 404).
+ *
+ * Accepts a raw `to` value — querystring and hash are stripped by `findRoute`.
+ */
 export function routeSlideDir(to: string): SlideDir | null {
-    const path = to.split(/[?#]/)[0];
-    if (NODE_ROUTES.has(path) || NODE_PREFIXES.some((p) => path.startsWith(p))) return "right";
-    if (LEAF_EXACT.has(path)) return "up";
-    return null;
+    switch (routeChrome(to)) {
+        case "leaf":
+            return "up";
+        case "node":
+            return "right";
+        default:
+            return null;
+    }
 }
 
 // True when the browser supports the View Transitions API.

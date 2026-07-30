@@ -34,7 +34,7 @@ interface UseDictionarySearchResult {
   aiError: boolean;                  // the last AI ask failed to complete (network/server error) — retryable
   aiLimitReached: boolean;           // server returned 429: user hit the daily AI-lookup cap
   aiLimitMessage: string | null;     // the server's user-facing limit message (when aiLimitReached)
-  askAi: () => void;                 // fire POST /api/dictionary/ai-entry for the current term
+  askAi: () => void;                 // fire POST /api/dictionary/aiEntry for the current term
 }
 
 /**
@@ -194,7 +194,7 @@ export function useDictionarySearch(
     setAskingAi(true);
     setAiNoMatch(false);
     setAiError(false);
-    fetch(`${API_BASE_URL}/api/dictionary/ai-entry`, {
+    fetch(`${API_BASE_URL}/api/dictionary/aiEntry`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeader() },
       credentials: "include",

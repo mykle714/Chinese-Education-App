@@ -24,7 +24,7 @@
  */
 
 import {
-  placeholderAreaAt,
+  placeholderUnitSlotAt,
   placeholderCoveredCells,
   type PlaceholderArea,
 } from './placeholderArea.js';
@@ -155,12 +155,18 @@ export function borderStreetCells(street: Set<string>, width: number, height: nu
   return out;
 }
 
-/** Find the authored area id covering any of an island's cells. Mirror of the client helper. */
+/**
+ * Find the id of the UNIT SLOT covering any of an island's cells. Mirror of the client helper.
+ *
+ * Resolves to a unit, not the authored area, because an unlock occupies one unit — a condition
+ * painted on the far half of a double-sized area must only be satisfied once THAT half is
+ * occupied. For single-sized areas the unit and the area are the same rect, so the id is unchanged.
+ */
 function areaIdForIsland(island: CellIsland, areas: readonly PlaceholderArea[]): string | undefined {
   for (const key of island.cells) {
     const [col, row] = parseCell(key);
-    const area = placeholderAreaAt(areas, col, row);
-    if (area) return placeholderAreaId(area);
+    const unit = placeholderUnitSlotAt(areas, col, row);
+    if (unit) return placeholderAreaId(unit);
   }
   return undefined;
 }

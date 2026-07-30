@@ -108,7 +108,7 @@ export class VocabEntryController {
   /**
    * Add a dictionary entry to the user's library. Idempotent across already-in-library,
    * skip, and unsorted states (see VocabEntryService.addToLibrary).
-   * POST /api/vocabEntries/add-to-library
+   * POST /api/vocabEntries/addToLibrary
    * Body: { entryKey, language }
    * Response: { status: 'added' | 'already-in-library', vocabEntryId }
    */
@@ -163,7 +163,7 @@ export class VocabEntryController {
 
   /**
    * Persist (or clear) a custom flashcard icon arrangement for one vet row.
-   * PATCH /api/vocabEntries/:id/icon-layout
+   * PATCH /api/vocabEntries/:id/iconLayout
    *   body: { iconLayout: Item[] | null, snapConfig?: {...} | null, textColors?: {...} | null,
    *           textLayout?: {...} | null, cardColor?: string | null }
    * See docs/CARD_ICON_LAYOUT.md.
@@ -238,7 +238,7 @@ export class VocabEntryController {
 
   /**
    * Persist (or clear) the learner's chosen definition-cluster sense for one vet row.
-   * PATCH /api/vocabEntries/:id/selected-sense
+   * PATCH /api/vocabEntries/:id/selectedSense
    *   body: { selectedSense: string | null }
    * `selectedSense` is the cluster's `sense` label; null clears it (default/starred sense).
    * See docs/DEFINITION_CLUSTERS.md.
@@ -393,7 +393,7 @@ export class VocabEntryController {
 
   /**
    * Get vocabulary entries by tokens for reader feature
-   * POST /api/vocabEntries/by-tokens
+   * POST /api/vocabEntries/byTokens
    */
   async getEntriesByTokens(req: Request, res: Response): Promise<void> {
     const requestStart = performance.now();

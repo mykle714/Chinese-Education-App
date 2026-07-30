@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Box, Typography, Button, Tooltip, Snackbar, Alert,
+  Box, Typography, Button, Snackbar, Alert,
   MenuItem, FormControl, Select, InputLabel,
   Dialog, DialogTitle, DialogContent, DialogActions,
 } from '@mui/material';
@@ -37,7 +37,7 @@ import {
   type SandboxPlacement, type SandboxHouseMode,
 } from './templateSandboxApi';
 // Toolbar chrome shared with the Template Editor so both authoring tools look/feel identical.
-import { HotkeyBadge, headerBtnSx, paletteBtnSx } from './editorButtonStyles';
+import { PaletteButton, toolGroupSx, headerActionsSx, headerBtnSx } from './editorButtonStyles';
 
 /**
  * TemplateSandboxPage — desktop-only Template Sandbox tool
@@ -83,13 +83,6 @@ const HOUSE_MODE_LABEL: Record<SandboxHouseMode, string> = {
   placeholder: 'Placeholder areas tinted, no houses',
   none: 'No houses, no placeholder tint',
 };
-
-/** Panel wrapper tinting a toolbar group with its accent (mirrors the editor's tool groups). */
-const toolGroupSx = (accent: string) => ({
-  display: 'flex', flexDirection: 'row', gap: 0.75, p: 0.75, borderRadius: 1.5,
-  backgroundColor: `rgba(${accent},0.14)`,
-  border: `1px solid rgba(${accent},0.4)`,
-});
 
 function TemplateSandboxPage() {
   usePageTitle();
@@ -552,164 +545,127 @@ function TemplateSandboxPage() {
               Each group's tint matches its accent, exactly as in the template editor's palette.
               The hotkeys are badged here and dispatched in the keydown effect above — keep the
               two in sync. */}
-          <Box className="template-sandbox-header-actions" sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+          <Box className="template-sandbox-header-actions" sx={headerActionsSx}>
             {/* View-wide (not selection-scoped): the cell grid, with a red line every 4 cells. */}
             <Box className="template-sandbox-tool-group template-sandbox-tool-group-view" sx={toolGroupSx(VIEW_ACCENT)}>
-              <Tooltip title={showGrid ? 'Hide the cell grid (G)' : 'Show the cell grid — red line every 4 cells (G)'} placement="bottom">
-                <Button
-                  className="template-sandbox-grid-btn"
-                  variant={showGrid ? 'contained' : 'outlined'} size="small"
-                  onClick={() => setShowGrid((v) => !v)}
-                  sx={paletteBtnSx(showGrid, VIEW_ACCENT)}
-                >
-                  <GridOnIcon fontSize="small" />
-                  <HotkeyBadge label="G" />
-                </Button>
-              </Tooltip>
+              <PaletteButton
+                className="template-sandbox-grid-btn"
+                title={showGrid ? 'Hide the cell grid (G)' : 'Show the cell grid — red line every 4 cells (G)'}
+                placement="bottom" hotkey="G" active={showGrid} accent={VIEW_ACCENT}
+                onClick={() => setShowGrid((v) => !v)}
+              >
+                <GridOnIcon fontSize="small" />
+              </PaletteButton>
 
               {/* The street-walkability tint, on EVERY placement — the sandbox otherwise previews
                   the finished look, but street alignment across seams is what tiling is judged on. */}
-              <Tooltip title={showStreet ? 'Hide the street mask (S)' : 'Show the street mask on every template (S)'} placement="bottom">
-                <Button
-                  className="template-sandbox-street-btn"
-                  variant={showStreet ? 'contained' : 'outlined'} size="small"
-                  onClick={() => setShowStreet((v) => !v)}
-                  sx={paletteBtnSx(showStreet, VIEW_ACCENT)}
-                >
-                  <RouteIcon fontSize="small" />
-                  <HotkeyBadge label="S" />
-                </Button>
-              </Tooltip>
+              <PaletteButton
+                className="template-sandbox-street-btn"
+                title={showStreet ? 'Hide the street mask (S)' : 'Show the street mask on every template (S)'}
+                placement="bottom" hotkey="S" active={showStreet} accent={VIEW_ACCENT}
+                onClick={() => setShowStreet((v) => !v)}
+              >
+                <RouteIcon fontSize="small" />
+              </PaletteButton>
             </Box>
 
             {/* Selection-scoped actions — all disabled until a tile is selected. */}
             <Box className="template-sandbox-tool-group template-sandbox-tool-group-selection" sx={toolGroupSx(SELECTION_ACCENT)}>
               {/* Per-instance version CYCLER: steps to this template name's next version and
                   wraps. Reads out the current version in its face, so no dropdown is needed. */}
-              <Tooltip
+              <PaletteButton
+                className="template-sandbox-version-btn"
                 title={selected
                   ? `Version ${selected.activeVersion}${selected.activeVersion === 0 ? ' (base)' : ''} of ${selectedVersions.length} — cycle to the next (V)`
                   : 'Select a template to switch its version'}
-                placement="bottom"
+                placement="bottom" hotkey="V" accent={SELECTION_ACCENT}
+                disabled={!selected || selectedVersions.length < 2}
+                onClick={handleCycleVersion}
               >
-                <span>
-                  <Button
-                    className="template-sandbox-version-btn" variant="outlined" size="small"
-                    onClick={handleCycleVersion} disabled={!selected || selectedVersions.length < 2}
-                    sx={paletteBtnSx(false, SELECTION_ACCENT)}
-                  >
-                    <Typography component="span" sx={{ fontSize: '0.8125rem', fontWeight: WEIGHT.bold, lineHeight: 1 }}>
-                      {selected ? `v${selected.activeVersion}` : 'v–'}
-                    </Typography>
-                    <HotkeyBadge label="V" />
-                  </Button>
-                </span>
-              </Tooltip>
+                <Typography component="span" sx={{ fontSize: '0.8125rem', fontWeight: WEIGHT.bold, lineHeight: 1 }}>
+                  {selected ? `v${selected.activeVersion}` : 'v–'}
+                </Typography>
+              </PaletteButton>
 
               {/* Tri-state CYCLE (not a toggle): houses → placeholder tint → nothing. The icon
                   names the CURRENT state; 'all' and 'placeholder' both count as lit. */}
-              <Tooltip title={`${HOUSE_MODE_LABEL[selectedHouseMode]} — cycle (H)`} placement="bottom">
-                <span>
-                  <Button
-                    className={`template-sandbox-houses-btn template-sandbox-houses-btn--${selectedHouseMode}`}
-                    variant={selectedHouseMode === 'none' ? 'outlined' : 'contained'} size="small"
-                    onClick={handleCycleHouseMode} disabled={!selected}
-                    sx={paletteBtnSx(!!selected && selectedHouseMode !== 'none', SELECTION_ACCENT)}
-                  >
-                    {selectedHouseMode === 'all' ? <HomeIcon fontSize="small" />
-                      : selectedHouseMode === 'placeholder' ? <HighlightAltIcon fontSize="small" />
-                      : <HomeOutlinedIcon fontSize="small" />}
-                    <HotkeyBadge label="H" />
-                  </Button>
-                </span>
-              </Tooltip>
+              <PaletteButton
+                className={`template-sandbox-houses-btn template-sandbox-houses-btn--${selectedHouseMode}`}
+                title={`${HOUSE_MODE_LABEL[selectedHouseMode]} — cycle (H)`}
+                placement="bottom" hotkey="H" accent={SELECTION_ACCENT}
+                active={!!selected && selectedHouseMode !== 'none'}
+                disabled={!selected}
+                onClick={handleCycleHouseMode}
+              >
+                {selectedHouseMode === 'all' ? <HomeIcon fontSize="small" />
+                  : selectedHouseMode === 'placeholder' ? <HighlightAltIcon fontSize="small" />
+                  : <HomeOutlinedIcon fontSize="small" />}
+              </PaletteButton>
 
               {/* Disabled for the hub — it is pinned to the origin and can never be unlocked. */}
-              <Tooltip
+              <PaletteButton
+                className="template-sandbox-lock-btn"
                 title={selectedIsHub
                   ? 'The night market hub is pinned to the origin — it cannot be unlocked'
                   : selected?.locked
                     ? 'Unlock so this template can be dragged (L)'
                     : 'Lock this template so it cannot be dragged (L)'}
-                placement="bottom"
+                placement="bottom" hotkey="L" accent={SELECTION_ACCENT}
+                active={!!selected?.locked}
+                disabled={!selected || selectedIsHub}
+                onClick={handleToggleLock}
               >
-                <span>
-                  <Button
-                    className="template-sandbox-lock-btn"
-                    variant={selected?.locked ? 'contained' : 'outlined'} size="small"
-                    onClick={handleToggleLock} disabled={!selected || selectedIsHub}
-                    sx={paletteBtnSx(!!selected?.locked, SELECTION_ACCENT)}
-                  >
-                    {selected?.locked ? <LockIcon fontSize="small" /> : <LockOpenIcon fontSize="small" />}
-                    <HotkeyBadge label="L" />
-                  </Button>
-                </span>
-              </Tooltip>
+                {selected?.locked ? <LockIcon fontSize="small" /> : <LockOpenIcon fontSize="small" />}
+              </PaletteButton>
 
               {/* Deletes immediately — no confirmation (the sandbox is a scratch surface).
                   Disabled for the hub, which is a permanent fixture of the surface. */}
-              <Tooltip
+              <PaletteButton
+                className="template-sandbox-delete-btn"
                 title={selectedIsHub
                   ? 'The night market hub is a permanent fixture — it cannot be deleted'
                   : 'Delete the selected template from the sandbox (D)'}
-                placement="bottom"
+                placement="bottom" hotkey="D" accent={DESTRUCTIVE_ACCENT}
+                disabled={!selected || selectedIsHub}
+                onClick={handleDelete}
               >
-                <span>
-                  <Button
-                    className="template-sandbox-delete-btn" variant="outlined" size="small"
-                    onClick={handleDelete} disabled={!selected || selectedIsHub}
-                    sx={paletteBtnSx(false, DESTRUCTIVE_ACCENT)}
-                  >
-                    <DeleteForeverIcon fontSize="small" />
-                    <HotkeyBadge label="D" />
-                  </Button>
-                </span>
-              </Tooltip>
+                <DeleteForeverIcon fontSize="small" />
+              </PaletteButton>
             </Box>
 
             {/* Whole-layout actions. */}
             <Box className="template-sandbox-tool-group template-sandbox-tool-group-layout" sx={toolGroupSx(LAYOUT_ACCENT)}>
-              <Tooltip title="Add a template to the sandbox (A)" placement="bottom">
-                <Button
-                  className="template-sandbox-add-btn" variant="outlined" size="small"
-                  onClick={openPicker}
-                  sx={paletteBtnSx(false, LAYOUT_ACCENT)}
-                >
-                  <AddIcon fontSize="small" />
-                  <HotkeyBadge label="A" />
-                </Button>
-              </Tooltip>
+              <PaletteButton
+                className="template-sandbox-add-btn"
+                title="Add a template to the sandbox (A)"
+                placement="bottom" hotkey="A" accent={LAYOUT_ACCENT}
+                onClick={openPicker}
+              >
+                <AddIcon fontSize="small" />
+              </PaletteButton>
 
               {/* Runs the live runtime growth algorithm one step (server-side) and places its pick. */}
-              <Tooltip
+              <PaletteButton
+                className="template-sandbox-iterate-btn"
                 title="Iterate — place the template the live growth algorithm would place next (I)"
-                placement="bottom"
+                placement="bottom" hotkey="I" accent={LAYOUT_ACCENT}
+                disabled={iterating}
+                onClick={handleIterate}
               >
-                <span>
-                  <Button
-                    className="template-sandbox-iterate-btn" variant="outlined" size="small"
-                    onClick={handleIterate} disabled={iterating}
-                    sx={paletteBtnSx(false, LAYOUT_ACCENT)}
-                  >
-                    <AutoAwesomeMotionIcon fontSize="small" />
-                    <HotkeyBadge label="I" />
-                  </Button>
-                </span>
-              </Tooltip>
+                <AutoAwesomeMotionIcon fontSize="small" />
+              </PaletteButton>
 
               {/* The only confirmed action here — it destroys every tile's position/version/settings.
                   Deliberately has NO hotkey for the same reason (see the keydown effect). */}
-              <Tooltip title="Reset the sandbox — clear every template back to just the locked hub at the origin" placement="bottom">
-                <span>
-                  <Button
-                    className="template-sandbox-clear-btn" variant="outlined" size="small"
-                    onClick={handleClear} disabled={isFreshlyCleared}
-                    sx={paletteBtnSx(false, DESTRUCTIVE_ACCENT)}
-                  >
-                    <LayersClearIcon fontSize="small" />
-                  </Button>
-                </span>
-              </Tooltip>
+              <PaletteButton
+                className="template-sandbox-clear-btn"
+                title="Reset the sandbox — clear every template back to just the locked hub at the origin"
+                placement="bottom" accent={DESTRUCTIVE_ACCENT}
+                disabled={isFreshlyCleared}
+                onClick={handleClear}
+              >
+                <LayersClearIcon fontSize="small" />
+              </PaletteButton>
             </Box>
           </Box>
         </Box>

@@ -833,8 +833,8 @@ async function testDictionaryLookup() {
         console.log('✅ Logged in\n');
         
         // Test vocabulary lookup
-        console.log('🔍 Testing /api/vocabEntries/by-tokens...');
-        const response = await fetch(`${API_BASE_URL}/api/vocabEntries/by-tokens`, {
+        console.log('🔍 Testing /api/vocabEntries/byTokens...');
+        const response = await fetch(`${API_BASE_URL}/api/vocabEntries/byTokens`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

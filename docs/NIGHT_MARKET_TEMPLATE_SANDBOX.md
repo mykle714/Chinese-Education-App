@@ -20,10 +20,11 @@ is a self-contained multi-template renderer.
 
 All header controls are **editor-style 40×40 icon buttons with a corner hotkey badge**, grouped by
 scope and tinted per group (view · selection · layout) — the same chrome as the template editor's
-palette, shared via `src/features/nightmarket/editorButtonStyles.tsx` (`HotkeyBadge`,
-`paletteBtnSx`, `headerBtnSx`). Every button has a **bare-key hotkey**, dispatched by the keydown
-effect in `TemplateSandboxPage.tsx`; hotkeys are suppressed while the picker overlay is open or
-focus is in a text field. Keep the badges and that effect in sync.
+palette, shared via `src/features/nightmarket/editorButtonStyles.tsx` (see
+[Shared toolbar chrome](#shared-toolbar-chrome-editorbuttonstylestsx) below). Every button has a
+**bare-key hotkey**, dispatched by the keydown effect in `TemplateSandboxPage.tsx`; hotkeys are
+suppressed while the picker overlay is open or focus is in a text field. Keep the badges and that
+effect in sync.
 
 | Key | Action | Group |
 |---|---|---|
@@ -39,6 +40,40 @@ focus is in a text field. Keep the badges and that effect in sync.
 
 **Clear deliberately has no hotkey**: it destroys the entire layout, so it must stay a considered
 click behind its confirmation, never a stray keypress.
+
+### Shared toolbar chrome (`editorButtonStyles.tsx`)
+
+`src/features/nightmarket/editorButtonStyles.tsx` is the **single source** of button styling for
+both authoring tools (nme = Template Editor, nms = Template Sandbox). Nothing in either page may
+style a toolbar button inline.
+
+| Export | Layer | Use |
+|---|---|---|
+| `PaletteButton` | component | **The only way to render a square icon button.** Wraps Tooltip + span + `Button` + `HotkeyBadge`. |
+| `HotkeyBadge` | component | Corner hotkey label; supplied automatically by `PaletteButton`'s `hotkey` prop. |
+| `paletteBtnSx(active, accent?)` | style | The 40×40 box. Applied by `PaletteButton`; call directly only in a new shared component. |
+| `toolGroupSx(accent?)` | style | The accent-tinted panel around one group. No accent → the dimmer neutral group (view toggles). |
+| `headerBtnSx` / `headerBtnDangerSx` / `headerBtnPrimarySx` | style | Text buttons floating over the dark scene: normal / destructive (red) / primary (yellow, e.g. Save). |
+| `headerActionsSx` | style | The header's button row — wraps to a second line instead of squeezing its buttons. |
+| `DEFAULT_ACCENT` | constant | Palette yellow, the fallback accent. |
+
+**Sizing contract** (why the file exists — these rules fix the buttons that used to resize
+inconsistently):
+
+1. **Palette buttons are pinned to exactly 40×40** — `flex: '0 0 auto'` plus matching
+   `min`/`max` width and height. A crowded row overflows; it never shrinks a button.
+   (`paletteBtnSx` previously set `minWidth: 0`, so a direct flex child could squash below 40px
+   while a `<span>`-wrapped sibling could not — the two laid out differently in the same row.)
+2. **Every palette button gets the same `<span>` wrapper**, whether or not it can be disabled.
+   The span keeps the tooltip alive over a disabled button *and* keeps the flex item identical
+   across states, so toggling `disabled` never changes layout.
+3. **No `contained` variant anywhere in this chrome.** MUI's `contained` and `outlined` have
+   different padding (4/10 vs 3/9 + a 1px border) and `contained` adds a box-shadow, so
+   `variant={active ? 'contained' : 'outlined'}` shifted the icon ~1px and changed the button's
+   weight on every toggle. Active state is expressed **only** through `paletteBtnSx` colours.
+4. **Header buttons are locked to 32px tall with `whiteSpace: 'nowrap'`** — a long label
+   ("Delete Template") can no longer wrap to two lines and stand taller than its neighbours. The
+   editor's version `Select` matches that same 32px so it sits on the row's baseline.
 
 ### The hub is a permanent fixture
 
@@ -79,7 +114,7 @@ Code: `TemplateSandboxPage.selectedIsHub` / `pickableEntries` / `isFreshlyCleare
   The template rides the cursor as a translucent **ghost** (green footprint outline, the Add
   accent), footprint **centred on the pointer** (an author aims at the middle of a template, not at
   its SW corner), snapped to whole cells. The **first click drops it**, and only then is the row
-  created — `POST /api/nightmarket-sandbox` fires on the DROP, so an abandoned pick persists
+  created — `POST /api/nightMarketSandbox` fires on the DROP, so an abandoned pick persists
   nothing. **Escape** cancels. **Panning still works** while placing: a left-drag pans and the
   ghost keeps tracking the cursor; a drop only fires on a release that travelled ≤ `DROP_SLOP_PX`
   (4 px), so framing the shot never drops the tile by accident. For the duration, tile selection,
@@ -100,7 +135,9 @@ Code: `TemplateSandboxPage.selectedIsHub` / `pickableEntries` / `isFreshlyCleare
   the handful of versions a name has and keeps the toolbar uniform.)
 - **Lock / Unlock** (`L`, enabled when selected **and not the hub**) toggles the selected tile's
   `locked` flag. A **locked** tile cannot be dragged (its selection outline turns red and a 🔒 shows
-  in the subtitle); it can still be selected, version-switched, and deleted. Persisted
+  in the subtitle); it can still be selected, version-switched, and deleted. A left-drag that
+  *starts* on a locked tile **selects it and then pans the camera** — locked placements behave like
+  scenery the camera can be dragged across, not dead zones that swallow the gesture. Persisted
   (migration 117), so the lock survives reloads. **The hub can never be unlocked** — see
   "The hub is a permanent fixture" above.
 - **Houses** (`H`, enabled when selected) **cycles** `settings.houseMode` for the selected tile
@@ -132,7 +169,7 @@ Code: `TemplateSandboxPage.selectedIsHub` / `pickableEntries` / `isFreshlyCleare
   **Disabled only when the sandbox is *already* just the hub at the origin**
   (`TemplateSandboxPage.isFreshlyCleared`) — deliberately **not** "disabled when empty": an empty
   sandbox still has a reset to perform, namely seeding the hub.
-  Server: `DELETE /api/nightmarket-sandbox` → `NightMarketSandboxService.clearPlacements` →
+  Server: `DELETE /api/nightMarketSandbox` → `NightMarketSandboxService.clearPlacements` →
   `NightMarketSandboxDAL.deleteAllForUser` (scoped to the caller) + `seedHub`. The response is
   `{ deleted, placement }`; the client renders the returned hub row directly (no refetch).
 - **Iterate** (`I`) runs the **live runtime growth algorithm one step** over the sandbox layout and
@@ -153,16 +190,16 @@ Code: `TemplateSandboxPage.selectedIsHub` / `pickableEntries` / `isFreshlyCleare
   unlike hand-dropped ones, which start unlocked. The position is the algorithm's answer, so a
   stray drag would quietly turn the preview into a hand-made layout that the *next* Iterate then
   plans against. Press `L` on the tile to unlock and move it.
-  Server: `POST /api/nightmarket-sandbox/iterate` → `NightMarketSandboxService.iteratePlacement` →
+  Server: `POST /api/nightMarketSandbox/iterate` → `NightMarketSandboxService.iteratePlacement` →
   `NightMarketSandboxDAL.insert(..., locked = true)` (the `locked` param defaults to `false`, which
-  is what the hand-drop `POST /api/nightmarket-sandbox` path uses).
+  is what the hand-drop `POST /api/nightMarketSandbox` path uses).
 
   **Decision trace (browser + server console).** Iterate — and *only* Iterate — passes
   `{ trace: true }` to `planNextPlacement` (`NightMarketSandboxService.iteratePlacement`), which
   collects the planner's full reasoning. Authoring needs to see *why* an anchor lost, which the
   summary `template-match-not-found` warning cannot say. The lines have **two sinks**:
   - the **server console**, under the `[NightMarket:placement]` tag (`emit` in `planNextPlacement`);
-  - the **author's devtools console** — `POST /api/nightmarket-sandbox/iterate` returns
+  - the **author's devtools console** — `POST /api/nightMarketSandbox/iterate` returns
     `{ placement, trace: string[] }` (on BOTH outcomes; the failing one is when it matters most) and
     `iterateSandboxPlacement` (`src/features/nightmarket/templateSandboxApi.ts`) prints it as a
     **collapsed console group** labelled with the outcome. The client is a dumb printer: the server
@@ -206,7 +243,8 @@ Code: `TemplateSandboxPage.selectedIsHub` / `pickableEntries` / `isFreshlyCleare
   Code: `SandboxGridOverlay` + `visibleGridBounds` in
   `src/features/nightmarket/TemplateSandboxViewer.tsx`; toggle state + button in
   `src/features/nightmarket/TemplateSandboxPage.tsx` (`.template-sandbox-grid-btn`).
-- **Pan** — left-drag empty space, or middle/right-drag anywhere. **Zoom** — mouse wheel
+- **Pan** — left-drag empty space **or a locked tile** (which also selects it), or middle/right-drag
+  anywhere. **Zoom** — mouse wheel
   (integer steps). Same camera model as the template editor viewer.
 
 ### Deleting a template from the catalog also clears it here
@@ -268,9 +306,9 @@ from the runtime table intentionally dropped.
   catalog is global).
 - **Controller** `server/controllers/NightMarketSandboxController.ts` — thin; maps
   `DALError.statusCode` (403/400/404) to the response.
-- **Routes** `server/routes/nightMarketSandboxRoutes.ts` — `GET /api/nightmarket-sandbox`,
-  `POST /api/nightmarket-sandbox`, `PATCH …/:id/position`, `PATCH …/:id/version`,
-  `PATCH …/:id/lock`, `PATCH …/:id/settings`, `POST …/iterate`, `DELETE /api/nightmarket-sandbox`
+- **Routes** `server/routes/nightMarketSandboxRoutes.ts` — `GET /api/nightMarketSandbox`,
+  `POST /api/nightMarketSandbox`, `PATCH …/:id/position`, `PATCH …/:id/version`,
+  `PATCH …/:id/lock`, `PATCH …/:id/settings`, `POST …/iterate`, `DELETE /api/nightMarketSandbox`
   (clear all — registered **before** the `:id` delete), `DELETE …/:id`. All `authenticateToken`. Wired in `server/dal/setup.ts`
   + `server/server.ts`.
 - **Cascade wiring:** the sandbox DAL is injected into `NightMarketTemplateService`
@@ -295,8 +333,9 @@ or `'none'`. The sandbox drives it from the placement's `settings.houseMode`
 (`SandboxItem.houseMode`): `'all'` → houses everywhere, `'placeholder'` → no houses but
 `showPlaceholder` tint on, `'none'` → neither — all independent of the version's condition cells; the communal and condition tints never show. Hit-testing inverts the projection to a **global** cell (`localToGlobalCell`,
 the editor's `localToCell` minus bounds) and returns the front-most placement whose footprint
-contains it. Left-drag on a tile moves it (cell-snapped, committed on release); left-drag on
-empty / middle / right pans. A `SelectionOutline` draws the selected footprint's four diamond
+contains it. Left-drag on an **unlocked** tile moves it (cell-snapped, committed on release);
+left-drag on empty space, on a **locked** tile (selecting it as a side effect), or with
+middle / right pans. A `SelectionOutline` draws the selected footprint's four diamond
 edges in the save-yellow accent. When `pendingItem` is set (placement mode) the left button is
 taken over entirely: `onDown` starts a pan, `onMoveEvt` tracks `hoverCell` (even mid-pan, so the
 ghost stays under the pointer), and `onUp` converts a ≤ `DROP_SLOP_PX` release into
@@ -346,6 +385,14 @@ Cancel; the picker is an overlay (`TemplateLoadGallery`
 
 ### Client API — `src/features/nightmarket/templateSandboxApi.ts`
 
+Every function here goes through the shared transport `src/api/http.ts` (base URL,
+`Authorization` read fresh at call time, `credentials: 'include'`, throw-on-non-2xx via
+`ApiError`, with `withFallback` supplying this module's wording for an error body that
+carries no `error` field). The module holds **no raw `fetch`** and **no `token` parameter** —
+callers must not list a token in a dependency array (CLAUDE.md "Never reload/reset a page on a
+silent token refresh"; [ARCHITECTURE_REVIEW.md](./ARCHITECTURE_REVIEW.md) finding 5). Paths are
+camelCase and must stay in step with `server/routes/nightMarketSandboxRoutes.ts`.
+
 `listSandboxPlacements`, `addSandboxPlacement`, `moveSandboxPlacement`,
 `setSandboxPlacementVersion`, `setSandboxPlacementLock`, `setSandboxPlacementSettings`,
 `removeSandboxPlacement`, `clearSandboxPlacements`, `iterateSandboxPlacement` + the `SandboxPlacement` / `SandboxSettings` types and
@@ -375,6 +422,10 @@ Cancel; the picker is an overlay (`TemplateLoadGallery`
   (`TemplateMaskOverlays`), `TemplateLoadGallery.tsx`, `templateEditorApi.ts`
   (`listTemplateGallery`/`loadTemplate`/`definitionToMasks`),
   `src/engine/market/{isometric,farmTerrain}.ts`.
+- Toolbar chrome: `src/features/nightmarket/editorButtonStyles.tsx` (`PaletteButton`,
+  `HotkeyBadge`, `paletteBtnSx`, `toolGroupSx`, `headerBtnSx`, `headerBtnDangerSx`,
+  `headerBtnPrimarySx`, `headerActionsSx`, `DEFAULT_ACCENT`) — also consumed by
+  `TemplateEditorPage.tsx`; see § Shared toolbar chrome above.
 - Cross-template depth: `src/engine/market/isometric.ts` (`CellOrigin`, `ORIGIN_ZERO`,
   `computeLayerZ`), `EditorTerrainLayer.tsx` (`origin` prop → `buildDraws`),
   `TemplateEditorViewer.tsx` (`OverlayDepthMode`, `cellTintZ`, `MaskTintOverlay`/`MaskTintCell`,

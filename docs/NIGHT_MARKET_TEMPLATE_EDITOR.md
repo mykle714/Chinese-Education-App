@@ -364,6 +364,18 @@ runs the **rename gate** (a name must be free UNLESS it equals `loadedName`); na
 locked with >1 version, dims are locked above version 0. Bounces non-validators to Home
 (UX gate; the backend is the real boundary).
 
+#### Toolbar chrome — `src/features/nightmarket/editorButtonStyles.tsx`
+The editor styles **no button inline**. Every square tool button is a `PaletteButton` (fixed
+40×40, tooltip + hotkey badge built in), every tool group box is `toolGroupSx(accent?)`, and
+every header text button is `headerBtnSx` / `headerBtnDangerSx` (Delete Version, Delete
+Template) / `headerBtnPrimarySx` (Save) inside a `headerActionsSx` row. The header version
+`Select` is hand-styled to the same 32px height as those buttons.
+
+The same module dresses the Template Sandbox, so the two tools stay one visual system. Its
+sizing contract — why palette buttons can never shrink, why every one of them carries a `<span>`
+wrapper, and why nothing here uses MUI's `contained` variant — is documented once in
+[NIGHT_MARKET_TEMPLATE_SANDBOX.md](./NIGHT_MARKET_TEMPLATE_SANDBOX.md) § Shared toolbar chrome.
+
 ### Client API — `src/features/nightmarket/templateEditorApi.ts`
 `checkTemplateNameAvailable(name)`, `listTemplates()` (one summary **per name** with
 `versionCount` — now unused on the client after the gallery replaced the text dropdown; the
@@ -410,11 +422,11 @@ re-fingerprinting). Uses `authHeader()` + `API_BASE_URL`.
 - **Controller** `server/controllers/NightMarketTemplateController.ts` — maps
   `DALError.statusCode` (403/400/404) to the response.
 - **Routes** `server/routes/nightMarketTemplateRoutes.ts` — `GET
-  /api/nightmarket-templates` (list per name), `GET …/name-available?name=`, `GET
+  /api/nightMarketTemplates` (list per name), `GET …/name-available?name=`, `GET
   …/suggest-name` (→ `{ name }`, a free default), `GET …/load?name=&version=` (load one
-  version), `POST /api/nightmarket-templates` (save/upsert with `version`), `DELETE
-  /api/nightmarket-templates/version?name=&version=` (delete ONE version — registered
-  before the bare DELETE), `DELETE /api/nightmarket-templates?name=` (delete whole name).
+  version), `POST /api/nightMarketTemplates` (save/upsert with `version`), `DELETE
+  /api/nightMarketTemplates/version?name=&version=` (delete ONE version — registered
+  before the bare DELETE), `DELETE /api/nightMarketTemplates?name=` (delete whole name).
   The `name-available` +
   `suggest-name` + `load` routes are static paths (no `/:id`), registered after the bare
   list route. Wired in `server/dal/setup.ts` + `server/server.ts`.
@@ -474,7 +486,10 @@ promote-to-code step) is a downstream decision.
 - View/page: `src/features/nightmarket/HouseStripSprites.tsx` (the shared strip-sliced house
   renderer used by all three house surfaces),
   `src/features/nightmarket/{EditorTerrainLayer,TemplateEditorViewer,TemplateEditorPage}.tsx`,
-  `templateEditorApi.ts`.
+  `templateEditorApi.ts`,
+  `src/features/nightmarket/editorButtonStyles.tsx` (toolbar chrome shared with the sandbox —
+  `PaletteButton`, `HotkeyBadge`, `paletteBtnSx`, `toolGroupSx`, `headerBtnSx`,
+  `headerBtnDangerSx`, `headerBtnPrimarySx`, `headerActionsSx`).
 - Routing/nav: `src/App.tsx` (`/night-market/template-editor`),
   `src/pages/HomePage.tsx` (validator-gated hub row).
 - Backend: `server/services/NightMarketTemplateService.ts`,

@@ -91,7 +91,11 @@ const EMPTY_FIELD: TerrainField = { originCol: 0, originRow: 0, contains: () => 
  *   (it is NOT the rotating access token the CLAUDE.md reload rule warns against).
  */
 export function useMarketWorld(reloadToken = 0): UseMarketWorldResult {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
+  // Markets are per-language (migration 136): the selected language picks WHICH market
+  // to render, and a change must re-fetch — otherwise the previous language's world stays
+  // on screen. Keyed on the language value, never on `token` (CLAUDE.md token rule).
+  const language: string = user?.selectedLanguage || 'zh';
   const [state, setState] = useState<MarketWorldState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -105,7 +109,7 @@ export function useMarketWorld(reloadToken = 0): UseMarketWorldResult {
       try {
         // The server returns the user's persisted placements (each with its resolved
         // activeVersion + loaded definition) and seeds the origin hub on first load.
-        const placements = await loadUserLayout();
+        const placements = await loadUserLayout(language);
         if (cancelled) return;
         if (placements.length === 0) {
           // Should not happen (the server always seeds the hub), but guard so the render
@@ -172,7 +176,7 @@ export function useMarketWorld(reloadToken = 0): UseMarketWorldResult {
       cancelled = true;
     };
     // Keyed on the stable auth identity + the manual reloadToken — see the TOKEN RULE note above.
-  }, [isAuthenticated, reloadToken]);
+  }, [isAuthenticated, language, reloadToken]);
 
   return {
     world: state?.world ?? null,

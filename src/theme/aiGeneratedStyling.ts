@@ -21,6 +21,7 @@ export const aiGeneratedSurfaceSx = {
 } as const;
 
 // Text color to pair with aiGeneratedSurfaceSx when a surface needs to recolor its
-// own label/value text to match (e.g. overriding a solid-fill pill's white text —
-// see the HSK/difficulty pill in VocabCardBadges).
+// own label/value text to match — e.g. overriding a solid-fill pill's white text.
+// Currently unused: the last caller (the cdp HSK pill) became a meta-strip chip
+// that keeps its normal onSurface text.
 export const aiGeneratedTextColor = COLORS.yellowMain;

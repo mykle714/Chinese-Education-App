@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authenticateToken } from '../authMiddleware.js';
 import { validationController } from '../dal/setup.js';
+import { handle } from './asyncHandler.js';
 
 /**
  * Data-validation routes — /api/validation/*
@@ -11,36 +12,21 @@ import { validationController } from '../dal/setup.js';
 const router = Router();
 
 // Download (compose) a new validation document for the authenticated validator.
-// @ts-ignore
-router.post('/api/validation/download', authenticateToken, async (req, res) => {
-  await validationController.downloadValidationDoc(req, res);
-});
+router.post('/api/validation/download', authenticateToken, handle(validationController.downloadValidationDoc, validationController));
 
 // Submit an approval or flag for a validation document.
-// @ts-ignore
-router.post('/api/validation/:textId/submit', authenticateToken, async (req, res) => {
-  await validationController.submitValidation(req, res);
-});
+router.post('/api/validation/:textId/submit', authenticateToken, handle(validationController.submitValidation, validationController));
 
 // Submit an approval or flag directly against a dictionary entry's field — the
 // inline Approve/Flag buttons on the est/definition UI, no document involved.
 // A repeat call from the same validator overwrites their prior vote in place.
-// @ts-ignore
-router.post('/api/validation/entry-submit', authenticateToken, async (req, res) => {
-  await validationController.submitEntryValidation(req, res);
-});
+router.post('/api/validation/entrySubmit', authenticateToken, handle(validationController.submitEntryValidation, validationController));
 
 // Undo the calling validator's own inline vote, leaving no signal in the DB.
-// @ts-ignore
-router.delete('/api/validation/entry-submit', authenticateToken, async (req, res) => {
-  await validationController.clearEntryValidation(req, res);
-});
+router.delete('/api/validation/entrySubmit', authenticateToken, handle(validationController.clearEntryValidation, validationController));
 
 // The calling validator's own current vote on a field, so the inline buttons
 // can render the right icon filled on mount (not just after a same-session action).
-// @ts-ignore
-router.get('/api/validation/entry-status', authenticateToken, async (req, res) => {
-  await validationController.getEntryValidationStatus(req, res);
-});
+router.get('/api/validation/entryStatus', authenticateToken, handle(validationController.getEntryValidationStatus, validationController));
 
 export default router;

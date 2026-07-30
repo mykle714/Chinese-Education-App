@@ -6,6 +6,7 @@
  * Spec: docs/HANDWRITING_RECOGNITION.md ("Completion tracking / stars").
  */
 import { API_BASE_URL } from "../../constants";
+import { apiPost } from '../../api/http';
 
 function authHeaders(token: string | null): HeadersInit {
   return token ? { Authorization: `Bearer ${token}` } : {};
@@ -32,15 +33,7 @@ export async function recordCompletion(
   language: string,
   entryKey: string,
   level: string,
-  token: string | null,
 ): Promise<string[]> {
-  const res = await fetch(`${API_BASE_URL}/api/handwriting/completions`, {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json", ...authHeaders(token) },
-    body: JSON.stringify({ language, entryKey, level }),
-  });
-  if (!res.ok) throw new Error(`record completion failed: HTTP ${res.status}`);
-  const data = await res.json();
+  const data = await apiPost<{ completedLevels?: string[] }>(`/api/handwriting/completions`, { language, entryKey, level });
   return Array.isArray(data?.completedLevels) ? data.completedLevels : [];
 }

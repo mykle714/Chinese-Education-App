@@ -1,4 +1,4 @@
-import { TILE_WIDTH, TILE_HEIGHT, isoToScreen } from './isometric';
+import { TILE_WIDTH, TILE_HEIGHT, isoToScreen, type CellWindow } from './isometric';
 
 /**
  * cameraFit — derive a camera's ZOOM-OUT floor from how big the rendered world actually is.
@@ -15,6 +15,16 @@ import { TILE_WIDTH, TILE_HEIGHT, isoToScreen } from './isometric';
  * footprint bbox fits the viewport.
  *
  * The zoom-IN cap is deliberately NOT derived here; it is a legibility choice, not a size one.
+ *
+ * The same bbox drives two derived quantities, in a deliberate one-way order:
+ *
+ *   placements → footprintScreenBounds → computeMinZoom  (the zoom-out floor)
+ *                                     → clampPan         (the pan limits)
+ *
+ * ⚠️ INVARIANT: the bbox is built from TEMPLATE PLACEMENTS ONLY — never from the default ground the
+ * terrain layer pads around them. Feeding that back in would enlarge the pannable area, which would
+ * demand more ground, which would enlarge it again: an unbounded loop. Placements in, camera limits
+ * out; the ground is downstream of the camera and never upstream of it.
  */
 
 /** A template placement reduced to its board rectangle in GLOBAL cell space. */
@@ -116,4 +126,120 @@ export function computeMinZoom(
   if (!bounds) return crispFloor;
   const fit = fitZoomForBounds(bounds, viewportW, viewportH);
   return Math.max(ABSOLUTE_MIN_ZOOM, Math.min(crispFloor, fit));
+}
+
+// ─── Pan clamp ────────────────────────────────────────────────────────────────
+
+export interface Pan {
+  x: number;
+  y: number;
+}
+
+/**
+ * Clamp `pan` so the point under the SCREEN CENTRE stays inside the placement bbox.
+ *
+ * The camera transform both hosts use is `container.x = viewportW/2 + pan.x` with `scale = zoom`,
+ * so camera-local `worldX` lands on screen at `viewportW/2 + pan.x + worldX·zoom`. Solving that for
+ * the world point sitting at the screen centre (`screenX = viewportW/2`) gives
+ *
+ *   centreX = −pan.x / zoom          centreY = −pan.y / zoom
+ *
+ * — the viewport size cancels out entirely. Requiring `minX ≤ centreX ≤ maxX` therefore inverts to a
+ * pan interval that needs no viewport at all:
+ *
+ *   pan.x ∈ [−maxX·zoom, −minX·zoom]      pan.y ∈ [−maxY·zoom, −minY·zoom]
+ *
+ * Because `minX ≤ maxX` by construction, that interval can never cross — so unlike the previous
+ * "bbox must cover the viewport" rule there is no degenerate case to special-case, and no
+ * snap-to-centre fallback. The bbox is the set of points the camera may look at, full stop.
+ *
+ * ⚠️ CONSEQUENCE: at the zoom floor (where the whole world already fits) the centre may still roam
+ * the bbox, so the market can be pushed off-centre even while fully visible — the old rule pinned it
+ * centred there. That is the intended trade for a rule that is one line of arithmetic per axis and
+ * independent of viewport size. Shrink the bbox here if the market should stay closer to centre.
+ *
+ * @returns the clamped pan (the input object is never mutated), or `pan` unchanged when there is
+ *   nothing placed / the zoom is degenerate.
+ */
+export function clampPan(pan: Pan, items: CellFootprint[], zoom: number): Pan {
+  const bounds = footprintScreenBounds(items);
+  if (!bounds || zoom <= 0) return pan;
+
+  return {
+    x: Math.min(-bounds.minX * zoom, Math.max(-bounds.maxX * zoom, pan.x)),
+    y: Math.min(-bounds.minY * zoom, Math.max(-bounds.maxY * zoom, pan.y)),
+  };
+}
+
+// ─── Apron sizing: REMOVED ────────────────────────────────────────────────────
+//
+// An `apronCells()` here used to size the default-ground pad to the camera's worst-case reach (the
+// zoom-out floor at a clamp limit). It was correct and unusable: ~200×200 cells, 40k+ sprites. The
+// ground apron is now a small fixed ring of real tiles plus one tiling quad that covers the rest of
+// the viewport for constant cost, so there is nothing left to size — see
+// features/nightmarket/GroundBackdropLayer.tsx.
+
+// ─── Visible-cell window (culling) ────────────────────────────────────────────
+
+export type { CellWindow };
+
+/**
+ * Cells to pad the visible window by. Covers (a) tall sprites whose anchor cell is off-screen but
+ * whose art reaches in, and (b) the quantisation step below, so a drag never exposes an unbuilt
+ * edge before the window snaps forward.
+ */
+const WINDOW_MARGIN_CELLS = 10;
+
+/**
+ * Quantisation step for the window edges, in cells. Without it the window would change on every
+ * dragged pixel and rebuild the tile field each frame; snapping to a coarse grid means a rebuild
+ * only every `STEP` cells of travel. Must stay well under {@link WINDOW_MARGIN_CELLS}.
+ */
+const WINDOW_QUANTUM_CELLS = 8;
+
+/**
+ * The cell-space window currently on screen, for terrain culling.
+ *
+ * Inverse of the camera transform: the viewport's four screen corners map back to camera-local px
+ * (`(screen − viewportW/2 − pan)/zoom`), then to cell space. Because the iso basis is rotated, the
+ * cell-space extremes come from the CORNERS of the screen rect, not from its edges — hence all four
+ * are converted and min/maxed rather than transforming two points.
+ *
+ * The result is padded by {@link WINDOW_MARGIN_CELLS} and snapped outward to
+ * {@link WINDOW_QUANTUM_CELLS}, so callers can memoise on its four numbers and rebuild rarely.
+ */
+export function visibleCellWindow(
+  pan: Pan,
+  zoom: number,
+  viewportW: number,
+  viewportH: number,
+): CellWindow {
+  const halfW = TILE_WIDTH / 2;
+  const halfH = TILE_HEIGHT / 2;
+
+  let minCol = Infinity, maxCol = -Infinity, minRow = Infinity, maxRow = -Infinity;
+  for (const [sx, sy] of [[0, 0], [viewportW, 0], [0, viewportH], [viewportW, viewportH]] as const) {
+    // Screen px → camera-local (unscaled) px.
+    const localX = (sx - viewportW / 2 - pan.x) / zoom;
+    const localY = (sy - viewportH / 2 - pan.y) / zoom;
+    // Camera-local px → cell space (inverse of isoToScreen).
+    const u = localX / halfW;   // = col − row
+    const v = localY / halfH;   // = −(col + row)
+    const col = (u - v) / 2;
+    const row = (-u - v) / 2;
+    if (col < minCol) minCol = col;
+    if (col > maxCol) maxCol = col;
+    if (row < minRow) minRow = row;
+    if (row > maxRow) maxRow = row;
+  }
+
+  const snapDown = (n: number) => Math.floor((n - WINDOW_MARGIN_CELLS) / WINDOW_QUANTUM_CELLS) * WINDOW_QUANTUM_CELLS;
+  const snapUp = (n: number) => Math.ceil((n + WINDOW_MARGIN_CELLS) / WINDOW_QUANTUM_CELLS) * WINDOW_QUANTUM_CELLS;
+
+  return {
+    minCol: snapDown(minCol),
+    maxCol: snapUp(maxCol),
+    minRow: snapDown(minRow),
+    maxRow: snapUp(maxRow),
+  };
 }

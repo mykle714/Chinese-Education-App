@@ -1,7 +1,7 @@
 /**
  * Word Search — shared types.
  *
- * Mirrors the payload from GET /api/onDeck/word-search-grid (server-side grid
+ * Mirrors the payload from GET /api/onDeck/wordSearchGrid (server-side grid
  * generation lives in server/services/wordSearchGrid.ts). See
  * docs/WORD_SEARCH_GAME.md.
  */
@@ -60,7 +60,7 @@ export interface BonusWord {
     definition: string;
 }
 
-/** Shape returned by GET /api/onDeck/word-search-grid. */
+/** Shape returned by GET /api/onDeck/wordSearchGrid. */
 export interface WordSearchResponse {
     grid: GridCell[][] | null; // null when !sufficient
     words: PlacedWord[];

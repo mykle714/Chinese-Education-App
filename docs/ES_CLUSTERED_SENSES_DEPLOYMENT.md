@@ -36,7 +36,7 @@
 - `server/services/StarterPacksService.ts` — ~8 `isEs` POS branches removed across supply,
   hydrate, insert, undo and skipped-list paths.
 - `server/dal/implementations/Icons8DAL.ts`, `IIcons8DAL.ts`, `Icons8Controller.ts`,
-  `src/cardIcons/cardIconApi.ts` — the `/api/icons8/default-results` body no longer carries
+  `src/cardIcons/cardIconApi.ts` — the `/api/icons8/defaultResults` body no longer carries
   `pos`. **Old clients that still send it are fine** (the field is ignored), so there is no
   client/server version coupling to sequence.
 - `src/components/PosBadge.tsx` + `.css` — **deleted**; usages removed from `SortCardsPage`

@@ -14,6 +14,11 @@
 
 This document describes the implementation of multi-language support for Japanese, Korean, and Vietnamese dictionaries in addition to the existing Chinese (Mandarin) support.
 
+> **Historical:** [MULTI_LANGUAGE_STATUS.md](./MULTI_LANGUAGE_STATUS.md) describes the
+> pre-migration-57 *unified* `dictionaryentries` table. That architecture no longer
+> exists (dictionary data is split per language — see CLAUDE.md). It is linked here so
+> the old model is findable when reading old migrations, not as current guidance.
+
 ## Languages Supported
 
 - **Chinese (zh)**: Using CC-CEDICT dictionary (~120,000 entries)

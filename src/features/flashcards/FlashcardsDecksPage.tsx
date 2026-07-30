@@ -156,7 +156,7 @@ const FlashcardsDecksPage: React.FC = () => {
                 setLoading(true);
                 setError(null);
 
-                const response = await fetch(`${API_BASE_URL}/api/onDeck/non-mastered-library-cards`, {
+                const response = await fetch(`${API_BASE_URL}/api/onDeck/nonMasteredLibraryCards`, {
                     credentials: 'include',
                     headers: { 'Authorization': `Bearer ${token}` },
                 });
@@ -254,7 +254,7 @@ const FlashcardsDecksPage: React.FC = () => {
         // Refetch non-mastered library cards
         try {
             setLoading(true);
-            const response = await fetch(`${API_BASE_URL}/api/onDeck/non-mastered-library-cards`, {
+            const response = await fetch(`${API_BASE_URL}/api/onDeck/nonMasteredLibraryCards`, {
                 credentials: 'include',
                 headers: { 'Authorization': `Bearer ${token}` },
             });

@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { OnDeckVocabService, type StudyMode } from '../services/OnDeckVocabService.js';
 import { requireUserId, getUserLanguage, handleControllerError } from '../utils/controllerUtils.js';
-import { MarkType } from '../types/index.js';
+import { MarkType, MARK_TYPES } from '../types/index.js';
 
 /**
  * OnDeck Vocabulary Controller
@@ -12,7 +12,7 @@ export class OnDeckVocabController {
 
   /**
    * Get all library cards (vocab entries from *-library OnDeck sets)
-   * GET /api/onDeck/library-cards
+   * GET /api/onDeck/libraryCards
    */
   getLibraryCards = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -29,7 +29,7 @@ export class OnDeckVocabController {
 
   /**
    * Get mastered library cards (library cards with category = 'Mastered')
-   * GET /api/onDeck/mastered-library-cards
+   * GET /api/onDeck/masteredLibraryCards
    */
   getMasteredLibraryCards = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -46,7 +46,7 @@ export class OnDeckVocabController {
 
   /**
    * Get non-mastered library cards (library cards without category = 'Mastered')
-   * GET /api/onDeck/non-mastered-library-cards
+   * GET /api/onDeck/nonMasteredLibraryCards
    */
   getNonMasteredLibraryCards = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -63,7 +63,7 @@ export class OnDeckVocabController {
 
   /**
    * Get distributed working loop (1 Mastered, 2 Comfortable, 2 Unfamiliar, 5 Target by default).
-   * GET /api/onDeck/distributed-working-loop?category=<optional>&mode=<easy|hard|optional>
+   * GET /api/onDeck/distributedWorkingLoop?category=<optional>&mode=<easy|hard|optional>
    * The optional `mode` swaps in a difficulty-targeted distribution (see MODE_CONFIGS).
    */
   getDistributedWorkingLoop = async (req: Request, res: Response): Promise<void> => {
@@ -85,7 +85,7 @@ export class OnDeckVocabController {
 
   /**
    * Get per-category library card counts (Unfamiliar / Target / Comfortable / Mastered).
-   * GET /api/onDeck/category-counts
+   * GET /api/onDeck/categoryCounts
    */
   getCategoryCounts = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -104,8 +104,12 @@ export class OnDeckVocabController {
   private static readonly GAME_POOL_CATEGORIES = ['Unfamiliar', 'Target', 'Comfortable', 'Mastered'];
 
   /**
-   * Build the bubble-match game pool.
-   * GET /api/onDeck/game-pool?Unfamiliar=2&Target=10&Comfortable=6&Mastered=2
+   * Build a game's card pool.
+   * GET /api/onDeck/gamePool?markType=recognition&Unfamiliar=2&Target=10&Comfortable=6&Mastered=2
+   *
+   * `markType` selects which mastery track buckets and cools the candidates —
+   * `recognition` (Bubble Match), `reading` (Speed Reading), `production`, or `writing`.
+   * Every caller passes it explicitly; see the parameterization note below.
    * Defaults to 2 Unfamiliar + 10 Target + 6 Comfortable + 2 Mastered (20 total)
    * when no recognised category params are supplied. The service tops the pool
    * up to its total from fallback buckets when a quota can't be met, so this is
@@ -156,13 +160,25 @@ export class OnDeckVocabController {
       const rawNeed = parseInt(String(req.query.need ?? ''), 10);
       const need = Number.isFinite(rawNeed) && rawNeed >= 0 ? rawNeed : undefined;
 
+      // Which mastery track this caller's game exercises. A game's pool must be
+      // bucketed by the mark type it actually EMITS (not the goal-blended overall
+      // category) and must honor that type's cooldown — otherwise a card just
+      // answered correctly comes straight back, while a card weak in the relevant
+      // track is treated as strong because some other track is healthy.
+      // See docs/MASTERY_REWORK.md § "Games select by their own mark type".
+      //
+      // This used to be hardcoded to 'recognition' back when Bubble Match was the
+      // only caller. Speed Reading emits READING marks, so the endpoint is parameterized
+      // and every caller passes `markType` explicitly — the default below is a
+      // safety net for a malformed request, not a supported calling convention.
+      const rawMarkType = String(req.query.markType ?? '');
+      const markType: MarkType = MARK_TYPES.includes(rawMarkType as MarkType)
+        ? (rawMarkType as MarkType)
+        : 'recognition';
+
       const language = await getUserLanguage(userId);
-      // Bubble Match emits recognition marks, so its pool is bucketed by each
-      // card's RECOGNITION mark history (not the goal-blended overall category) and
-      // honors the recognition per-type cooldown. See docs/MASTERY_REWORK.md
-      // § "Games select by their own mark type".
       const pool = await this.onDeckVocabService.getGameVocabPool(
-        userId, language, distribution, 'recognition', { need, excludeIds, avoidIds }
+        userId, language, distribution, markType, { need, excludeIds, avoidIds }
       );
       res.json(pool);
     } catch (error: any) {
@@ -172,7 +188,7 @@ export class OnDeckVocabController {
 
   /**
    * Build the Word Search game grid.
-   * GET /api/onDeck/word-search-grid?Unfamiliar=2&Target=10&Comfortable=6&Mastered=2
+   * GET /api/onDeck/wordSearchGrid?Unfamiliar=2&Target=10&Comfortable=6&Mastered=2
    * Same requested distribution + fallback semantics as the bubble-match pool,
    * plus a substring de-dup pass and snaking grid generation. Returns
    * { grid, words, rows, cols, total, available, sufficient, reason? }.

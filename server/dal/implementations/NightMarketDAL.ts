@@ -1,5 +1,5 @@
 import { INightMarketDAL } from '../interfaces/INightMarketDAL.js';
-import { dbManager } from '../base/DatabaseManager.js';
+import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
 import { NightMarketUnlock } from '../../types/nightMarket.js';
 import { ValidationError } from '../../types/dal.js';
 
@@ -15,6 +15,15 @@ import { ValidationError } from '../../types/dal.js';
 export class NightMarketDAL implements INightMarketDAL {
 
   /**
+   * The connection manager, injected so the DAL can be substituted in a test.
+   * Defaults to the process-wide singleton, so `new NightMarketDAL()` at the composition
+   * root (dal/setup.ts) keeps working unchanged.
+   * See docs/CORRECTNESS_AND_PERFORMANCE_REVIEW.md finding 2.
+   */
+  constructor(protected readonly dbManager: DatabaseManager = defaultDbManager) {}
+
+
+  /**
    * Legacy read: all unlock rows for a user, ordered by unlockOrder.
    * The old value columns still exist on the table, so this SELECT is still valid; it is
    * retained for back-compat/debugging but is no longer on the live request path.
@@ -24,7 +33,7 @@ export class NightMarketDAL implements INightMarketDAL {
       throw new ValidationError('User ID is required');
     }
 
-    const result = await dbManager.executeQuery<NightMarketUnlock>(async (client) => {
+    const result = await this.dbManager.executeQuery<NightMarketUnlock>(async (client) => {
       return await client.query(`
         SELECT id, "userId", "assetId", "unlockType", "unlockOrder", "createdAt"
         FROM nightmarketunlocks

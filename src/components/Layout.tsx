@@ -2,12 +2,12 @@ import { type ReactNode, useEffect, useRef } from "react";
 import { Box } from "@mui/material";
 import { useLocation } from "react-router-dom";
 import MobileDemoFrame from "./MobileDemoFrame";
-import { GAME_ROUTES } from "../games/registry";
+import { routeShell } from "../routes/routeMeta";
 import { clearSkipNextEnter } from "../hooks/usePageSlide";
 import {
     isDictionarySpacePath,
     resetDictionaryBrowseState,
-} from "../pages/dictionaryBrowseState";
+} from "../features/dictionary/dictionaryBrowseState";
 
 interface LayoutProps {
     children: ReactNode;
@@ -50,36 +50,15 @@ function Layout({ children }: LayoutProps) {
         wasInDictionarySpace.current = nowInSpace;
     }, [location.pathname]);
 
-    // Routes that live inside the shared phone-frame surface (MobileDemoFrame).
-    // Adding a page here is all that's needed to opt it into the frame. Game
-    // routes are derived from the registry so new games need no edits.
-    const MOBILE_DEMO_PATHS = [
-        "/",
-        "/flashcards/decks",
-        "/flashcards/mastered",
-        "/account",
-        "/flashcards/learn",
-        "/discover",
-        "/games",
-        "/community",
-        // Home-menu child pages also render inside the phone frame.
-        "/night-market",
-        "/reader",
-        "/dictionary",
-        "/compare",
-        "/tester-dashboard",
-        // Settings opens from the Account header gear as a leaf (slide-up sheet).
-        "/settings",
-        ...GAME_ROUTES,
-    ];
-    const isMobileDemoPage =
-        MOBILE_DEMO_PATHS.includes(location.pathname) ||
-        location.pathname.startsWith("/discover/sort/") ||
-        location.pathname.startsWith("/discover/quick-mark/") ||
-        location.pathname.startsWith("/discover/skipped/") ||
-        location.pathname.startsWith("/flashcards/card/") ||
-        location.pathname.startsWith("/dictionary/card/") ||
-        location.pathname.startsWith("/reader/");
+    // Which shell this route renders inside comes from the `shell` field in
+    // src/routes/registry.ts — the same row that decides the route's component,
+    // footer tab and page transition.
+    //
+    // This used to be a hand-maintained MOBILE_DEMO_PATHS array plus six
+    // `startsWith` checks for the parameterized routes; parameterized patterns are
+    // now matched with React Router's own matchPath.
+    // See docs/ARCHITECTURE_REVIEW.md finding 4.
+    const isMobileDemoPage = routeShell(location.pathname) === "frame";
 
     if (isMobileDemoPage) {
         return <MobileDemoFrame>{children}</MobileDemoFrame>;

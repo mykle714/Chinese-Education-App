@@ -1,7 +1,7 @@
 import { Box, Typography, useTheme } from "@mui/material";
 import ForeignText from "../../../components/ForeignText";
 import { stripParentheses } from "../../../utils/definitionUtils";
-import { FC_FONT } from "./constants";
+import { FC_FONT } from "../constants";
 import { SIZE } from "../../../theme/scale";
 
 export interface InfoCardBlockButtonProps {
@@ -35,10 +35,11 @@ function InfoCardBlockButton({
     const fc = theme.palette.flashcard;
     const clickable = !!onClick;
 
-    // Fixed-side square (aspect-ratio 1) so a row of these reads as a uniform grid
-    // regardless of glyph count or gloss length; content is centered and clipped
-    // if it can't fit.
-    const side = "116px";
+    // The button fills its grid cell and derives its height from aspect-ratio 1/1.
+    // Uniform sizing comes from the container's equal-width grid tracks (see the
+    // breakdown-grid in InfoCardPanelBody / VocabCardDetailBody), NOT from a fixed
+    // side here — that way every button is identical, including a partly-filled
+    // last row. Content is centered and clipped if it can't fit.
 
     return (
         <Box
@@ -51,10 +52,9 @@ function InfoCardBlockButton({
                 alignItems: "center",
                 justifyContent: "center",
                 gap: "6px",
-                width: side,
-                height: side,
+                width: "100%",
+                minWidth: 0,
                 aspectRatio: "1 / 1",
-                flexShrink: 0,
                 overflow: "hidden",
                 padding: "8px",
                 background: "transparent",

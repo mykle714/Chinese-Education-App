@@ -145,7 +145,7 @@ For adding a completely new language:
 → See [docs/MINUTE_POINTS_SYSTEM.md](./docs/MINUTE_POINTS_SYSTEM.md)
 
 #### Inactivity penalty cron (prod only)
-An hourly Postgres cron on the prod server (a) breaks stale streaks (mirroring `UserMinutePointsService.newDayOperation`) and (b) debits 10 minute points per local day of continued inactivity from any user with `totalMinutePoints > 0`, until they hit zero. Not installed on dev.
+An hourly Postgres cron on the prod server. For each **(user, language)** balance that has gone a full local day below the 3-minute threshold, it breaks that language's streak and debits an **escalating** penalty by consecutive missed day (`3, 15, 30, 60, 90, 120`, then wipe the remainder at day 7+), floored at 0, and decays the user's Night Market occupants to match. Penalties are per language (migration 134): keeping up Chinese does not shield neglected Spanish. Never touches `lifetimeMinutesEarned` (gross is monotonic). Not installed on dev.
 → See [docs/STREAK_EXPIRATION_CRON.md](./docs/STREAK_EXPIRATION_CRON.md)
 
 ### Flashcards & Review History
@@ -211,6 +211,24 @@ An hourly Postgres cron on the prod server (a) breaks stale streaks (mirroring `
 ### Deploying
 Use the `/deploy` skill. It contains the full deployment procedure, server details, and migration steps.
 
+#### ⚠️ Nonstandard deploys need a temp runbook committed alongside the change
+If a change cannot be shipped by running `/deploy` as-is — an expand/contract migration
+pair where the DROP must wait for the new code, a migration that must be held back from
+`migrate.sh`, a cron/crontab change, a required manual backfill, an ordering constraint
+between the DB and the code, anything needing a pre-deploy dump — then **write a temporary
+runbook in `docs/` and commit it with the change**. Name it `docs/<FEATURE>_DEPLOY_RUNBOOK.md`.
+The agent doing the deploy is not the agent that wrote the code and cannot infer these steps
+from the diff.
+
+The runbook must state: the exact **step order**, which migrations are safe to auto-run vs.
+held back, **copy-pasteable verification SQL with the expected result**, what to do when a
+check fails, the rollback path, and any user-visible behaviour change to expect. Mark it
+**TEMPORARY** at the top with a "delete once verified on prod" note, and say plainly whether
+it has been deployed yet. Delete the file once prod is verified.
+
+Current open runbooks:
+- [docs/PER_LANGUAGE_MINUTES_DEPLOY_RUNBOOK.md](./docs/PER_LANGUAGE_MINUTES_DEPLOY_RUNBOOK.md) — per-language minute points (migrations 133→135); **not yet on prod**
+
 ### Data Deployment (syncing `dictionaryentries_zh` to prod)
 → See [docs/DATA_DEPLOYMENT_GUIDE.md](./docs/DATA_DEPLOYMENT_GUIDE.md)
 
@@ -266,6 +284,10 @@ For contribution guidelines:
 
 For design guidelines:
 → See [docs/designGuidelines.md](./docs/designGuidelines.md)
+
+For layering rules (where a file goes, and which layer may do what):
+→ Server: [docs/BACKEND_LAYERING.md](./docs/BACKEND_LAYERING.md) — Controller/Service/DAL, "a service does not write SQL", the transaction exception, camelCase API paths, `migrate.sh`
+→ Client: [docs/FRONTEND_LAYERING.md](./docs/FRONTEND_LAYERING.md) — `features/` ÷ `pages/` ownership, engine has no back-edge to features, all server calls via `src/api/http.ts`, **no API function takes a `token`**
 
 ## How to Use This Guide
 

@@ -70,7 +70,11 @@ const SCRIPT_VERSION = 4; // bump when this script's logic/prompt changes (v4: r
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // run-log: track duration, version, words/mode, and token usage/cost
-const { stampEntries, accrueUsage, staleClause } = initRunLog({ script: 'spanish/backfill-frequency-score', version: SCRIPT_VERSION, anthropic });
+const { stampEntries, accrueUsage, staleClause, validatedClause } = initRunLog({ script: 'spanish/backfill-frequency-score', version: SCRIPT_VERSION, anthropic });
+// This script writes BOTH columns in one pass, so a validator review of EITHER chip
+// protects the row (migration 132, docs/DATA_VALIDATION_SYSTEM.md). Coarser than the
+// zh side, where the two columns have separate scripts and separate guards.
+const validatedFilter = `AND ${validatedClause(['frequencyScore', 'difficulty'], 'dictionaryentries_es')}`;
 
 const { isSpotCheck, isBatch } = parseBackfillArgs();
 const isRandom = process.argv.includes('--random');
@@ -234,6 +238,7 @@ async function run() {
       FROM dictionaryentries_es
       WHERE language = 'es'
         AND discoverable = TRUE
+        ${validatedFilter}
         AND (("frequencyScore" IS NULL OR "difficulty" IS NULL)${isStale ? ` OR ${staleClause()}` : ''})
       ORDER BY ${isRandom ? 'RANDOM()' : 'id ASC'}
       ${isSpotCheck ? `LIMIT ${spotCheckLimit}` : ''}

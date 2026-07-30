@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authenticateToken } from '../authMiddleware.js';
 import { dictionaryController } from '../dal/setup.js';
+import { handle } from './asyncHandler.js';
 
 /**
  * Dictionary routes — /api/dictionary/*
@@ -10,45 +11,24 @@ import { dictionaryController } from '../dal/setup.js';
 const router = Router();
 
 // Search dictionary entries with pagination
-// @ts-ignore
-router.get('/api/dictionary/search', authenticateToken, async (req, res) => {
-  await dictionaryController.search(req, res);
-});
+router.get('/api/dictionary/search', authenticateToken, handle(dictionaryController.search, dictionaryController));
 
 // Segment input text via GSA and return dictionary entries grouped by segment
-// @ts-ignore
-router.get('/api/dictionary/segment', authenticateToken, async (req, res) => {
-  await dictionaryController.segmentSearch(req, res);
-});
+router.get('/api/dictionary/segment', authenticateToken, handle(dictionaryController.segmentSearch, dictionaryController));
 
 // Generate an AI synthetic dictionary entry for a pinyin query with no real match ("AI" button)
-// @ts-ignore
-router.post('/api/dictionary/ai-entry', authenticateToken, async (req, res) => {
-  await dictionaryController.aiEntry(req, res);
-});
+router.post('/api/dictionary/aiEntry', authenticateToken, handle(dictionaryController.aiEntry, dictionaryController));
 
 // Generate (or return cached) a comparison paragraph for two words (eip Compare tab)
-// @ts-ignore
-router.post('/api/dictionary/compare', authenticateToken, async (req, res) => {
-  await dictionaryController.compare(req, res);
-});
+router.post('/api/dictionary/compare', authenticateToken, handle(dictionaryController.compare, dictionaryController));
 
 // Lookup dictionary term by exact match
-// @ts-ignore
-router.get('/api/dictionary/lookup/:term', authenticateToken, async (req, res) => {
-  await dictionaryController.lookupTerm(req, res);
-});
+router.get('/api/dictionary/lookup/:term', authenticateToken, handle(dictionaryController.lookupTerm, dictionaryController));
 
 // Get total dictionary entry count
-// @ts-ignore
-router.get('/api/dictionary/count', authenticateToken, async (req, res) => {
-  await dictionaryController.getCount(req, res);
-});
+router.get('/api/dictionary/count', authenticateToken, handle(dictionaryController.getCount, dictionaryController));
 
 // Paginated "used in" list for a single character (infinite scroll on the eip/cdp Used In list)
-// @ts-ignore
-router.get('/api/dictionary/used-in', authenticateToken, async (req, res) => {
-  await dictionaryController.usedIn(req, res);
-});
+router.get('/api/dictionary/usedIn', authenticateToken, handle(dictionaryController.usedIn, dictionaryController));
 
 export default router;

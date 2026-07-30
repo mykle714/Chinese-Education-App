@@ -30,7 +30,7 @@ export class NightMarketService {
   ) {}
 
   /**
-   * Legacy endpoint (GET /api/night-market/unlocks). The asset-unlock economy is retired
+   * Legacy endpoint (GET /api/nightMarket/unlocks). The asset-unlock economy is retired
    * (see class header), so this returns a stable empty response — no seeding, no table
    * read — purely to keep the old client from erroring. Superseded by the engine viewer's
    * layout render + the Slice-4 occupant economy.
@@ -44,7 +44,7 @@ export class NightMarketService {
   }
 
   /**
-   * Legacy endpoint (POST /api/night-market/unlock). Retired: it can no longer write the
+   * Legacy endpoint (POST /api/nightMarket/unlock). Retired: it can no longer write the
    * old asset-unlock shape into the repurposed `nightmarketunlocks` table. Rejects with a
    * clear message; the occupant-model grant flow replaces it in Slice 4.
    */

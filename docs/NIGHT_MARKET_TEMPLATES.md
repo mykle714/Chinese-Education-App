@@ -431,9 +431,11 @@ server-side, at spawn time** and is never recomputed on the client.
   growth catalog, so the anchor algorithm can never stitch a second hub onto the
   continent. (Before this guard the growth path could re-pick the hub, producing
   duplicate-hub layouts.)
-- Spawning only happens when the existing continent is **full** (no free
-  placeholder), so every placed template has settled on an active version and anchors
-  are matched against the **live, currently-rendered** edges — no speculation (see
+- Spawning only happens when the existing continent is **full** (no free unit slot) **and**
+  an unlock has arrived that needs one — never speculatively
+  (see [Lazy spawn](#lazy-spawn-templates-are-placed-only-when-an-unlock-needs-one)). Every placed
+  template has therefore settled on an active version and anchors are matched against the
+  **live, currently-rendered** edges — no speculation (see
   [Template versions](#template-versions--full-snapshots)).
 - Templates are **never rotated**, so an edge only ever mates with its opposite
   cardinal (`east↔west`, `north↔south`); candidate lookup is complement-direction +
@@ -733,41 +735,135 @@ study). Earning minutes grants unlocks; losing minutes takes them back.
 
 ### Schedule
 
-| Total minute points ≥ | Total unlocks | Notes |
-|---|---|---|
-| 0 | 0 | **hub only** — the default origin template |
-| 1 | 1 | |
-| 2 | 2 | |
-| 3 | 3 | early unlocks are 1 minute apart |
-| 5 | 4 | |
-| 7 | 5 | |
-| 10 | 6 | |
-| 14 | 7 | |
-| 18 | 8 | |
-| 22 | 9 | mid unlocks are 4 minutes apart |
-| 26 | 10 | |
-| 30 | 11 | |
-| 34 | 12 | |
-| 38 | 13 | |
-| 42 | 14 | |
-| 47 | 15 | 5 minutes apart |
-| 52 | 16 | |
-| 60 | 17 | |
-| 60 + 60·k | 17 + k | **steady state: +1 unlock per hour** beyond minute 60 |
+The threshold ladder is **not reproduced here** — it would be a fourth copy that silently
+rots. It lives in exactly one place:
 
-For `m ≥ 60`: `unlocks(m) = 17 + floor((m − 60) / 60)`. Below 60 the thresholds are
-the explicit list above. The threshold list lives as a **static constant in code**:
-`server/dal/shared/unlockSchedule.ts` (`UNLOCK_BREAKPOINTS` + `unlocksForMinutes`) is the
-**source of truth**. The hourly decay cron (`database/cron/expire-stale-streaks.sql`) hard-codes
-the same breakpoints as a SQL `CASE` (SQL can't import TS) — keep the two in sync. The grant flow
-(`NightMarketPlacementService.grantUnlocks`) is invoked best-effort from
-`UserMinutePointsService.incrementMinutePoints` after each earned minute; it is **idempotent**
-(fills up to `unlocks(m)`, no-op when already there). Occupants currently carry a **generic
-`assetId`** — the real stand-asset catalog (and occupant→stand rendering) is a later visual slice.
+> **`server/dal/shared/unlockSchedule.ts`** — `UNLOCK_BREAKPOINTS` (the explicit low-end
+> thresholds) + `unlocksForMinutes(m)` (the curve, including the steady state).
 
-Each granted unlock triggers the placement flow in
-[Tiling & Placement](#tiling--placement) (fill a free placeholder, or spawn a new
-template when none are free).
+Shape of the curve, for orientation: the first few unlocks are **1 minute apart**, the
+spacing widens to 4 then 5 minutes, and past the last explicit breakpoint it settles into a
+**steady state of +1 unlock per hour** (`unlocks(m) = STEADY_STATE_UNLOCKS +
+floor((m − STEADY_STATE_MINUTES) / MINUTES_PER_STEADY_UNLOCK)`). Read the constant for the
+numbers.
+
+#### Both consumers derive from that one table
+
+| Consumer | How it gets the schedule |
+|---|---|
+| Grant flow — `NightMarketPlacementService.grantUnlocks` | imports `unlocksForMinutes` directly |
+| Hourly decay cron — `database/cron/expire-stale-streaks.sql` | calls the SQL function `nightmarket_unlocks_for_minutes(int)`, whose body is **generated** from the TS table |
+
+The cron **states no breakpoints of its own**. `server/dal/shared/unlockScheduleSql.ts`
+renders the `CREATE OR REPLACE FUNCTION` and `npm run gen:unlock-schedule-sql`
+(`server/scripts/generate-unlock-schedule-sql.ts`) writes it into a marked
+`-- >>> BEGIN GENERATED …` block in the cron file; the cron re-runs that `CREATE OR REPLACE`
+every tick, so **redeploying the cron file is the whole install** — no migration.
+`src/__tests__/unlockScheduleSqlSync.test.ts` fails the build if the block is stale *or* if
+the rendered curve disagrees with `unlocksForMinutes`.
+
+**To change a breakpoint:** edit `UNLOCK_BREAKPOINTS`, run `npm run gen:unlock-schedule-sql`,
+redeploy the cron file. Nothing else.
+
+The grant flow is invoked best-effort from `UserMinutePointsService.incrementMinutePoints`
+after each earned minute; it is **idempotent** (fills up to `unlocks(m)`, no-op when already
+there). Occupants currently carry a **generic `assetId`** — the real stand-asset catalog (and
+occupant→stand rendering) is a later visual slice.
+
+#### One unlock = one UNIT SLOT (not one authored area)
+
+An authored placeholder area is not necessarily one occupant. The drop sizes
+([Placeholder areas](#placeholder-areas)) are **4×5, 5×4, 4×10, 10×4**, and the two big ones
+hold **two** occupant footprints. The unit of unlocking is that footprint — a **unit slot**:
+
+| Authored area | Unit slots (unlocks) |
+|---|---|
+| 4×5 | 1 |
+| 5×4 | 1 |
+| 4×10 | 2 — stacked along isoY (`row`, `row+5`) |
+| 10×4 | 2 — side by side along isoX (`col`, `col+5`) |
+
+`nightmarketunlocks.placeholderAreaId` therefore stores a **unit's** anchor id (`"col_row"`),
+not the parent area's, and the whole pipeline agrees on that id: the slot picker
+(`findFreeSlot`), the render tagging (`filledPlaceholderIds` → `stitchWorld` → one
+`PlacedPlaceholder` per unit → one house per filled unit), and version-condition mapping
+(`areaIdForIsland` resolves to the unit under the condition island, so a condition painted on
+the far half of a 10×4 only fires once *that* half is occupied).
+
+- **Code.** `placeholderUnitSlots` / `placeholderUnitSlotsOf` / `placeholderUnitSlotAt` in
+  `src/engine/market/placeholderArea.ts` (source of truth) + `server/dal/shared/placeholderArea.ts`
+  (server mirror, since the server can't import the client engine). The tiling is single-sourced
+  from there — `occupantHousesForArea` in `src/engine/market/house.ts` only adds the sprite flip —
+  and `src/__tests__/placeholderAreaSync.test.ts` asserts the two copies split every drop size
+  identically.
+- **The first unit inherits the parent anchor**, so occupant rows written before this split
+  still read as "first unit filled" — no migration was needed.
+
+*Previously* an occupant was keyed to the whole authored area, so **one** unlock lit up **both**
+houses of a 4×10/10×4 area at once. On a hub whose only area is 10×4 that meant a single earned
+minute appeared to fill the entire template.
+
+Each granted unlock **occupies exactly one free unit slot** — it never spends
+itself on growing the continent. Growth is free but **on demand**: it happens only when the
+unlock that needs the slot finds none
+(see [Lazy spawn](#lazy-spawn-templates-are-placed-only-when-an-unlock-needs-one)).
+
+#### Lazy spawn: templates are placed only when an unlock needs one
+
+The continent **never carries a template the user has not earned anything on**. A template is
+placed at the exact moment an unlock has nowhere to go, and that same unlock then occupies a
+slot in it. This is the *lazy*-spawn model (decision 2026-07-29):
+
+1. An unlock arrives (entitlement rose above the current occupant count).
+2. If a free unit slot exists anywhere on the continent, the unlock takes it — **no growth**.
+3. Only if there is none: grow the continent (see
+   [Spawning until a free placeholder exists](#spawning-until-a-free-placeholder-exists)),
+   then the same unlock fills the first slot of the new template. Its remaining unit slots
+   stay empty and light up one at a time as later unlocks arrive.
+
+So a newly placed template arrives with exactly **one** occupant — the one that paid for it —
+and never with zero (nothing unearned is on screen) or with all its slots lit (that was the
+[unit-slot bug](#one-unlock--one-unit-slot-not-one-authored-area)).
+
+*Briefly, in between,* the spawn was **eager**: one extra `ensureFreeSlot` ran after the
+entitlement loop so the next template stood ready and completely empty before it was earned.
+That was reverted — it placed templates ahead of demand, which reads as the market growing on
+its own.
+
+Growth is free either way (it never consumes an unlock), so the invariant
+**`occupantCount === unlocks(m)`** holds and decay, the cron's `unlocks(m)` target, and the
+schedule are all untouched by this model.
+
+- **Code.** `NightMarketPlacementService.grantUnlocks` — a single loop: `ensureFreeSlot`
+  (grows only when nothing is free) → insert the occupant. Nothing runs after the loop.
+  `findFreeSlot` is the shared read-only occupancy probe; `placeUnlock` is a non-growing fill.
+- **Unseeded accounts.** With **zero** placements there is no anchor to grow from, so
+  `ensureFreeSlot` returns without spawning and leaves it to the hub seed — otherwise every
+  minute tick before seeding would log a failed spawn.
+
+#### Spawning until a free placeholder exists
+
+A spawn is **not** guaranteed to produce a slot: not every template carries placeholder
+areas (pure street/decoration pieces exist), and the anchor algorithm picks by geometry,
+not by slot count. So growth **keeps spawning until a spawned template exposes a free
+placeholder** — the extra spawns are the continent growing to make room, and they are as
+free as the first.
+
+- **Termination.** Every spawn strictly grows the continent, so the hunt ends as soon as
+  the catalog offers a placeholder-bearing mate. Two hard stops bound it:
+  - `spawnTemplate` returns `null` (no legal placement at any exposed anchor — already
+    logged as `template-match-not-found`), or
+  - `MAX_CONSECUTIVE_SPAWNS_PER_GRANT` (**8**) consecutive slot-less spawns, which logs
+    `[NightMarket] grant-spawn-cap …` and ends the pass.
+- **Nothing is lost at the cap.** `grantUnlocks` is idempotent and entitlement is a pure
+  function of minutes, so the unfilled remainder is simply re-attempted on the next
+  minute tick.
+- **Code.** `NightMarketPlacementService.ensureFreeSlot` (the spawn loop) +
+  `MAX_CONSECUTIVE_SPAWNS_PER_GRANT` in the same file. A capped pass leaves the continent full
+  and the user below entitlement; the next tick's loop retries the growth from scratch.
+
+*Previously* the pass stopped after a single slot-less spawn, silently stranding the user
+below their entitlement until a later tick happened to spawn a template with slots.
 
 ### Losing minutes removes unlocks
 
@@ -1082,6 +1178,23 @@ Code this doc will depend on / drive once implemented:
   [Version selection rule](#version-selection-rule)).
 - `server/dal/shared/versionSelection.ts` — `boardCells` lives here (single source; the layout
   read, `templatePlacement.ts` and `continentSeal.ts` all use it).
+- `src/engine/market/templateDefinition.ts` — **owns `TemplateDefinitionPayload`**, the
+  serialized `definition` shape (terrain1/terrain2/street/communal/placeholder/condition/decor).
+  It lives in the engine because it is the engine's INPUT contract: `templateStitch` and the
+  pedestrian / street-recovery tests consume a definition and must not depend on the authoring
+  UI that produces one. `src/features/nightmarket/templateEditorApi.ts` re-exports it, so the
+  feature-side import path is unchanged. (Previously declared in `templateEditorApi.ts`, which
+  made `src/engine/` import from `src/features/` — a layering inversion; see
+  [ARCHITECTURE_REVIEW.md](./ARCHITECTURE_REVIEW.md) finding 9.)
+- `src/features/nightmarket/templateEditorApi.ts` — the catalog client
+  (`listTemplates` / `listTemplateGallery` / `loadTemplate` / `suggestTemplateName` /
+  `checkTemplateNameAvailable` / `submitTemplate` / `deleteTemplate` /
+  `deleteTemplateVersion`) plus the mask↔definition converters (`masksToDefinition` /
+  `definitionToMasks`). Every call goes through the shared transport `src/api/http.ts`
+  (base URL, `Authorization` read fresh at call time, throw-on-non-2xx) — it holds no raw
+  `fetch` and takes no `token`. Paths are camelCase (`/api/nightMarketTemplates/...`,
+  `/nameAvailable`, `/suggestName`) and must stay in step with
+  `server/routes/nightMarketTemplateRoutes.ts`.
 - `src/engine/market/tileGraph.ts` — tile graph built from placed-template cells.
 - **New street-recovery module** — greedy maximal-rectangle cover of the stitched
   street mask → `Street[]` + `intersectingStreets` (see

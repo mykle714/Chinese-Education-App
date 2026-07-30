@@ -12,6 +12,17 @@ export const GAME_DISTRIBUTION: Record<string, number> = Object.fromEntries(
 /** Total target words in a board (sum of the distribution) = 10. */
 export const TOTAL_WORDS = Object.values(GAME_DISTRIBUTION).reduce((a, b) => a + b, 0);
 
+/** This game's key in the shared `wins` table (see useGameWins / migration 78).
+    Lifted out of WordSearchPage so the hub item reads the same bucket the page
+    writes. Word Search logs every completion under level 1 regardless of mode —
+    pinyin/no-pinyin deliberately share one bucket, so its hub count is already a
+    whole-game total. */
+export const GAME_KEY = "wordSearch";
+
+/** The single `wins.level` bucket every Word Search completion is logged under
+    (the table's level column is required, but this game has no levels). */
+export const WIN_LEVEL = 1;
+
 /**
  * Word Search ships as two separate Games-hub entries (like Bubble Match's
  * difficulty levels), NOT one game with an in-game pinyin toggle: a "Pinyin"
@@ -68,12 +79,17 @@ export const HINT_COST = 1;
 export const HINT_ACCENT_COLOR = "#FB8C00";
 
 /**
- * Trailing underscore count in a per-character hint island for a syllable
- * whose Bopomofo reveal isn't yet complete — always `LETTER_HINT_BLANK_WIDTH`,
- * regardless of how many units have been revealed or the syllable's actual
- * unit count, so the island never leaks how many units remain. See §5a.
+ * Trailing mark on a hint island that still has something hidden — "there is
+ * more to this character, it just isn't shown yet". Used by BOTH currencies
+ * (the pinyin mask and the No-Pinyin component reveals).
+ *
+ * It is exactly ONE character, and deliberately a dash rather than underscores:
+ * a run of underscores reads as a hangman blank-per-letter, so a fixed 3-wide
+ * "___" (what this used to be) implied a 3-unit remainder that was usually
+ * wrong. A single em dash carries no count at all — which is the honest signal,
+ * since the island must never leak how many units are left. See §5a.
  */
-export const LETTER_HINT_BLANK_WIDTH = 3;
+export const HINT_REMAINDER_MARK = "—";
 
 /**
  * cpcd size for each grid cell. `sm` (32px column) for now; 10 rows with pinyin
@@ -145,15 +161,8 @@ export function medalForTime(seconds: number): { medal: Medal; emoji: string } {
     return { medal: tier.medal, emoji: tier.emoji };
 }
 
-/** `m:ss` from a millisecond duration. Shared by the in-game HUD timer
- *  (WordSearchPage) and the Games-hub resume card (WordSearchHubItem) so both
- *  render the count-up clock identically. */
-export function formatTimeMs(ms: number): string {
-    const total = Math.floor(ms / 1000);
-    const m = Math.floor(total / 60);
-    const s = total % 60;
-    return `${m}:${s.toString().padStart(2, "0")}`;
-}
+// NOTE: `formatTimeMs` used to live here. It moved to src/utils/timeUtils.ts when
+// Match Speed became a third caller — import it from there.
 
 /** Human-readable subtitle for a mode slug (e.g. "Pinyin"), or the raw slug if
  *  unknown. Used by the resume card to name the saved board's mode. */

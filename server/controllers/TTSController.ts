@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { ttsService } from '../services/TTSService.js';
+import type { TTSService } from '../services/TTSService.js';
 import db from '../db.js';
 import { dictTableForLanguage } from '../dal/shared/dictTable.js';
 
@@ -15,6 +15,13 @@ import { dictTableForLanguage } from '../dal/shared/dictTable.js';
  * stream MP3 back. Browser caches it forever via immutable Cache-Control.
  */
 export class TTSController {
+  /**
+   * Constructor-injected like every other controller. This class used to import a
+   * module-level `ttsService` singleton and export itself as one, which made both
+   * invisible from dal/setup.ts and impossible to substitute in a test.
+   */
+  constructor(private ttsService: TTSService) {}
+
   async synthesize(req: Request, res: Response): Promise<void> {
     try {
       const body = req.body || {};
@@ -43,7 +50,7 @@ export class TTSController {
       // Map short language code → BCP-47 TTS tag. Expand here as new langs get TTS.
       const ttsLang = language === 'zh' ? 'zh-CN' : language;
 
-      const result = await ttsService.synthesize(text, ttsLang, pronunciation);
+      const result = await this.ttsService.synthesize(text, ttsLang, pronunciation);
 
       // Best-effort: stamp the matching det row(s) so we can later query "which
       // det rows have cached audio". Matched by (word1, language) since the client
@@ -75,5 +82,3 @@ export class TTSController {
     }
   }
 }
-
-export const ttsController = new TTSController();

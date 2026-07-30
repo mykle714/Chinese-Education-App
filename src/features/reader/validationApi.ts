@@ -1,19 +1,16 @@
-import { API_BASE_URL } from "../../constants";
+import { apiPost } from "../../api/http";
 import type { Text } from "../../types";
 
 // Shared by both reader surfaces (the list's download button and the open
 // document's) — see docs/DATA_VALIDATION_SYSTEM.md. Composes a fresh validation
-// document server-side and returns it, or throws with the server's error message.
-export async function downloadValidationDoc(token: string | null, language: string): Promise<Text> {
-    const response = await fetch(`${API_BASE_URL}/api/validation/download`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ language }),
-    });
-    const data = await response.json();
-    if (!response.ok) {
-        throw new Error(data?.error || 'Failed to download an entry to validate');
-    }
-    return data as Text;
+// document server-side and returns it.
+//
+// Goes through src/api/http.ts, which supplies the base URL, JSON envelope,
+// credentials and the live Authorization header — so this takes no `token`
+// parameter and a silent refresh cannot change a caller's identity. A non-2xx
+// throws ApiError whose message is the server's `error` field, which is what the
+// hand-rolled version reconstructed by hand.
+// See docs/ARCHITECTURE_REVIEW.md finding 5.
+export async function downloadValidationDoc(language: string): Promise<Text> {
+    return apiPost<Text>("/api/validation/download", { language });
 }

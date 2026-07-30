@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Snackbar, Alert } from "@mui/material";
-import { FC_FONT } from "./constants";
+import { FC_FONT } from "../constants";
 
 interface TooManyTabsSnackbarProps {
     // Counter from useEipTabs that ticks up each time a tab push is rejected

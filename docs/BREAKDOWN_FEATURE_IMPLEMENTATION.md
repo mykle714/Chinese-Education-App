@@ -97,6 +97,53 @@ Breakdown enrichment is two ordered passes over `dictionaryentries_zh.breakdown`
   writes, verbose).
 - Usage: `docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-breakdown-senses.js`
 
+**5c. Elaborate the non-obvious breakdowns (AI)** —
+`server/scripts/backfill/chinese/backfill-breakdown-elaboration.js`
+(column added by `database/migrations/130-add-breakdown-elaboration-to-zh.sql`)
+- After 5a+5b the breakdown is CORRECT, but for a minority of words it is still
+  MISLEADING when read bare: the component glosses do not add up to the word.
+  东西 reads "east + west" but means "thing"; 马虎 reads "horse + tiger" but means
+  "careless"; 沙发 reads "sand + emit" and is really a transcription of "sofa".
+  This pass asks the model to make exactly one call per word — *does this breakdown
+  need explaining?* — and to write a single sentence only when the answer is yes.
+- **Writes** `dictionaryentries_zh."breakdownElaboration"` (text, nullable).
+- ⚠️ **NULL is a real answer, not "not yet computed."** "Straightforward, nothing to
+  add" is the expected majority verdict (~70% of a random 20-entry calibration
+  sample), so the column
+  cannot double as a done-gate. Evaluated-ness lives in the per-entry
+  `enrichmentLog` stamp (migration 68) under `chinese/backfill-breakdown-elaboration`,
+  written for every decided row **including the NULL ones**; the script's default
+  WHERE gate reads that stamp, never `breakdownElaboration IS NULL`. Any future
+  consumer asking "which rows still need judging?" must do the same.
+- **Elaboration criteria** (deliberately narrow — see the system prompt): elaborate
+  only for idiomatic / figurative / fossilized / abbreviated / phonetically-transcribed
+  words, or where one character has drifted far from its shown gloss. Compositional
+  words (会议, 火车, 老师) and mild metaphor a learner follows unaided stay NULL. If
+  the origin is unknown or disputed, the model is told to prefer NULL over inventing
+  folk etymology.
+- **Length budget**: `50 chars × char_length(word1)` (2-char word → 100, 4-char
+  chengyu → 200) as a HARD CEILING, plus a soft target at half that which the model is
+  told to aim for. The soft target exists because stating only the ceiling turns it
+  into a target — the first calibration run returned 93/100, 99/100 and 199/200
+  characters with two answers over the cap. Enforcement is in the script, not a CHECK
+  constraint: an over-budget answer is retried ONCE with the overage quoted back, and
+  a second over-budget answer is left **unwritten and unstamped** (⚠ review line) so a
+  later run retries it — prose is never truncated mid-sentence. The retry is told a
+  limit of HALF the real ceiling, because a model asked for "at most 100" reliably
+  returns 101–102 and those near-misses were being discarded outright; aiming it low
+  means even a sizeable overshoot still clears the true cap.
+- Human-review lines use the marker `⚠ BREAKDOWN ELABORATION REVIEW` (same stdout
+  convention as the clusterer and 5b).
+- **Depends on** 5a (breakdown must exist) and, for a trustworthy judgment, 5b (the
+  glosses judged must be the in-context senses, not the global lead glosses).
+- Flags: `--words=东西,马虎`, `--all`, `--force` (re-decide stamped rows; a verdict that
+  flips back to straightforward CLEARS the stale elaboration), `--stale` (re-decide
+  rows stamped below `SCRIPT_VERSION`), `--limit=N`, `--spot-check` (5 random entries,
+  NO writes, verbose).
+- Usage: `docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-breakdown-elaboration.js`
+- **No consumer yet** — nothing in the det read path or the bt UI reads this column as
+  of migration 130; it is populated ahead of the display work.
+
 ## Data Flow
 
 ### Creating New Chinese Vocab Entry:
@@ -107,7 +154,7 @@ Breakdown enrichment is two ordered passes over `dictionaryentries_zh.breakdown`
 5. Client receives entry with breakdown included
 
 ### Fetching Flashcards:
-1. Client requests flashcards from `/api/onDeck/distributed-working-loop`
+1. Client requests flashcards from `/api/onDeck/distributedWorkingLoop`
 2. Server queries `vocabentries` table
 3. Breakdown column is automatically included in response
 4. Client receives `VocabEntry` objects with breakdown field populated

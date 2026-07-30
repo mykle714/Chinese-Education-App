@@ -3,6 +3,7 @@ import { IUserMinutePointsDAL } from '../dal/interfaces/IUserMinutePointsDAL.js'
 import { IWinsDAL } from '../dal/interfaces/IWinsDAL.js';
 import { LeaderboardEntry, LeaderboardResponse } from '../types/leaderboard.js';
 import { ValidationError } from '../types/dal.js';
+import { addDaysToDateString } from '../utils/streakDate.js';
 
 /**
  * Leaderboard Service.
@@ -26,48 +27,58 @@ export class LeaderboardService {
         return { success: true, data: [], totalUsers: 0 };
       }
 
-      // For "today" / "yesterday" minute totals we use the server's UTC-day notion.
-      // The leaderboard rendering doesn't need to be 4 AM-bounded — that's a streak concern.
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const todayStr = today.toISOString().split('T')[0];
+      // Hide users with no accumulated points from the leaderboard entirely.
+      // Filtering FIRST (it used to happen after the per-user minute lookups) means
+      // the minutes query below only covers users who will actually be rendered.
+      const rankedUsers = usersWithPoints.filter((user) => user.totalMinutePoints > 0);
 
-      const yesterday = new Date(today);
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStr = yesterday.toISOString().split('T')[0];
+      if (rankedUsers.length === 0) {
+        return { success: true, data: [], totalUsers: 0 };
+      }
 
-      // Weekly-achievement counts for every user in a single grouped query
-      // (avoids an N+1 lookup inside the per-user loop below). "This week" = the
-      // distinct (game, level) wins since each user's local week boundary.
-      const weeklyAchievementCounts = await this.winsDAL.getWeeklyCountsByUser();
+      // For "today" / "yesterday" minute totals we use the server's own calendar day.
+      // The leaderboard rendering doesn't need to be 4 AM-bounded — that's a streak
+      // concern — but the label must still be built from LOCAL date parts. The previous
+      // `setHours(0,0,0,0)` + `toISOString()` pairing mixed the two: it snapped to local
+      // midnight and then re-read that instant in UTC, which lands on the previous day
+      // for any server at a positive UTC offset. `streakDateOf` formats in a named tz,
+      // and `addDaysToDateString` steps the label as a string, so neither can drift.
+      // 'en-CA' formats as YYYY-MM-DD, which is exactly the streakDate label format,
+      // and formatting (rather than instant-arithmetic) keeps it in the server's tz.
+      // Not streakDateOf(): that applies the 4 AM shift, which is deliberately not
+      // wanted here. addDaysToDateString steps the label as a string, so the
+      // today→yesterday step cannot drift across a DST boundary.
+      const todayStr = new Intl.DateTimeFormat('en-CA').format(new Date());
+      const yesterdayStr = addDaysToDateString(todayStr, -1);
 
-      const leaderboardEntries: LeaderboardEntry[] = [];
+      // Both remaining lookups are single grouped queries keyed by user — no per-user
+      // round trips. "This week" = the distinct (game, level) wins since each user's
+      // local week boundary. See docs/CORRECTNESS_AND_PERFORMANCE_REVIEW.md finding 1.
+      const [weeklyAchievementCounts, minutesByUser] = await Promise.all([
+        this.winsDAL.getWeeklyCountsByUser(),
+        this.userMinutePointsDAL.getMinutesForDatesByUser(
+          rankedUsers.map((user) => user.userId),
+          [todayStr, yesterdayStr]
+        ),
+      ]);
 
-      for (const user of usersWithPoints) {
-        const todaysMinutes = await this.userMinutePointsDAL.getMinutesForDate(user.userId, todayStr);
-        const yesterdaysMinutes = await this.userMinutePointsDAL.getMinutesForDate(user.userId, yesterdayStr);
-
-        leaderboardEntries.push({
+      const rankedEntries: LeaderboardEntry[] = rankedUsers.map((user) => {
+        // Absent (user, date) pairs mean "no minutes recorded" — see the DAL's note.
+        const userMinutes = minutesByUser.get(user.userId);
+        return {
           userId: user.userId,
           email: user.email,
           name: user.name,
           accumulativeMinutePoints: user.totalMinutePoints,
           // Hide streak from non-public users.
           currentStreak: user.isPublic ? user.currentStreak : null,
-          todaysMinutes,
-          yesterdaysMinutes,
+          todaysMinutes: userMinutes?.get(todayStr) ?? 0,
+          yesterdaysMinutes: userMinutes?.get(yesterdayStr) ?? 0,
           weeklyAchievements: weeklyAchievementCounts.get(user.userId) ?? 0,
           avatarIconId: user.avatarIconId,
           rank: 0,
-        });
-      }
-
-      // Hide users with no accumulated points from the leaderboard entirely.
-      // Done before sorting/ranking so rank numbers, totalUsers, and pagination
-      // all reflect only the users actually shown.
-      const rankedEntries = leaderboardEntries.filter(
-        (entry) => entry.accumulativeMinutePoints > 0
-      );
+        };
+      });
 
       // Sort by yesterday's minutes (desc), tiebreaker = total minute points.
       rankedEntries.sort((a, b) => {

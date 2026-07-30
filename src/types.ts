@@ -1,477 +1,138 @@
-// Frontend types for the vocabulary learning application
+/**
+ * Frontend type module.
+ *
+ * Everything that CROSSES THE WIRE is defined once in `server/contracts/wire.ts`
+ * and re-exported here, so `src/**` keeps importing from `"../types"` exactly as
+ * before. Reaching into `server/` is deliberate and one-directional: the backend
+ * Docker build context is `./server`, so the contract cannot live at the repo root
+ * without changing the deployment; the frontend image copies the whole repo, so this
+ * direction works. The server owns the contract; the client conforms to it.
+ *
+ * What remains declared here is client-only: view models and the det-fallback
+ * widenings that have no server counterpart.
+ *
+ * Before this consolidation the two modules re-declared 29 types, 6 of which had
+ * drifted — the client's `DictionaryEntry` was missing 21 fields. See
+ * docs/ARCHITECTURE_REVIEW.md finding 2.
+ */
 
-// Language type for multi-language support.
-// Only Chinese and Spanish are user-selectable for now; ja/ko/vi are not yet
-// supported (their per-language dictionary tables don't exist — see CLAUDE.md).
-export type Language = 'zh' | 'es';
+import type {
+  DictionaryEntryBase,
+  TextBase,
+  VocabEntryBase,
+} from "../server/contracts/wire";
 
-// Language display names
-export const LANGUAGE_NAMES: Record<Language, string> = {
-  zh: 'Chinese (Mandarin)',
-  es: 'Spanish'
-};
+// ─── The wire contract, re-exported verbatim ────────────────────────────────────
+export type {
+  AiDictionaryEntry,
+  ApiResponse,
+  ApplyDesignResult,
+  BreakdownMap,
+  CommunityDesign,
+  DefinitionCluster,
+  DifficultyLevel,
+  DiscoverCard,
+  DiscoverFetchResponse,
+  DiscoverNextPackResponse,
+  DiscoverSortBucket,
+  DiscoverSortResponse,
+  DistractorChar,
+  EntryApprovalFlags,
+  ExampleSentence,
+  ExampleSentenceDefinitionPronunciationOverride,
+  FlashcardCategory,
+  IconLayoutItem,
+  Language,
+  LongDefinitionCitation,
+  LongDefinitionPart,
+  LongDefinitionSenseView,
+  MarkType,
+  NumberLabel,
+  ParticleOrClassifierInfo,
+  RelatedWord,
+  ReviewMark,
+  SegmentMetadata,
+  ShortDefinitionPronunciationOverride,
+  SnapConfig,
+  SortPack,
+  StarterPackBucket,
+  TenseLabel,
+  TextBlock,
+  TextColorMode,
+  TextColors,
+  TextLayout,
+  TextLayoutItem,
+  TypedMarkHistory,
+  UsedInItem,
+  UserProfile,
+  ValidationField,
+  VoteResult,
+  VotedDesignKey,
+  WordComparisonResult,
+} from "../server/contracts/wire";
 
-// Generalized difficulty band stored in dictionaryentries_*.difficulty (drives the
-// discover band). One 1..6 integer scale for every language; the column is a
-// smallint (migration 92, finishing migration 79's intent), so these are NUMBERS:
-//   - zh: 1..6 — these ARE HSK levels (1 = HSK1 .. 6 = HSK6); the UI re-adds an
-//     "HSK n" badge for zh.
-//   - es: 1..6  (learner-acquisition difficulty, 1=easiest)
-export type DifficultyLevel = 1 | 2 | 3 | 4 | 5 | 6;
+export {
+  CARD_COLOR_VALUES,
+  ENTRY_LEVEL_VALIDATION_FIELDS,
+  FLASHCARD_CATEGORY,
+  FLASHCARD_CATEGORIES,
+  ICON_LAYOUT_MAX_ITEMS,
+  LANGUAGES,
+  LANGUAGE_NAMES,
+  MARK_TYPES,
+  MARK_WINDOW_SIZE,
+  NO_APPROVALS,
+} from "../server/contracts/wire";
 
-// Particle or classifier annotation for a segment in example sentence metadata
-export interface ParticleOrClassifierInfo {
-  type: 'particle' | 'classifier';
-  definition: string;
-}
+// ─── Client narrowings of the wire contract ─────────────────────────────────────
 
-// One ordered piece of a long definition split into English prose vs. embedded Chinese.
-// `text` parts render as plain prose; `foreign` parts carry the same segmentation payload
-// as an example sentence so they render as cpcd with the hover/tap popup. Computed by the
-// server (enrichLongDefinitionMetadataBatch); mirrors the server LongDefinitionPart type.
-export type LongDefinitionPart =
-  | { type: 'text'; value: string }
-  | {
-      type: 'foreign';
-      foreignText: string;
-      _segments: string[];
-      segmentMetadata: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo; wordForms?: Record<string, string> }>;
-      // English translation of the WHOLE run (det `longDefinitionCitations`, migration 126;
-      // comparison-cache `citations`, migration 127 — attached server-side). Present flips the
-      // run's rendering from per-segment popups to a whole-run highlight showing this text;
-      // absent (un-backfilled entries, older cached comparisons) keeps the per-segment popup.
-      translation?: string | null;
-    };
+/**
+ * The user shape the client holds. Identical to the wire profile — the client has no
+ * fields of its own, and critically no `password` (the old `src/types.ts` User
+ * declared one, which never crossed the wire).
+ *
+ * This is now the ONLY client-side User. `AuthContext.tsx` previously kept a private,
+ * non-exported `interface User` that was the only one with the current field set;
+ * it imports this instead.
+ */
+export type { UserProfile as User } from "../server/contracts/wire";
 
-// One sense's extended definition, as sent by the server (zh only). `longDefinition` is
-// stored per SENSE (docs/DEFINITION_CLUSTERS.md), and the sense picker is optimistic —
-// no refetch — so the server ships EVERY sense with its own `parts` and the client picks
-// the one the card is on via `resolveLongDefinitionForSense` (src/utils/definitionUtils.ts).
-// Mirrors the server LongDefinitionSenseView type.
-export interface LongDefinitionSenseView {
-  sense: string;                        // cluster `sense` label — matches definitionClusters/selectedSense
-  pos?: string | null;
-  definition: string;
-  parts?: LongDefinitionPart[] | null;
-}
-
-// Flashcard Category type for spaced repetition
-export type FlashcardCategory = 'Unfamiliar' | 'Target' | 'Comfortable' | 'Mastered';
-
-// The four mastery mark types (docs/MASTERY_REWORK.md). Mirror of the server enum.
-export type MarkType = 'recognition' | 'production' | 'reading' | 'writing';
-export const MARK_TYPES: readonly MarkType[] = ['recognition', 'production', 'reading', 'writing'] as const;
-
-export interface ReviewMark {
-  timestamp: string;
-  isCorrect: boolean;
-}
-
-// Per-card typed mark streams (vet."typedMarkHistory", migration 101): each type
-// keeps its <=8 most-recent marks.
-export type TypedMarkHistory = Partial<Record<MarkType, ReviewMark[]>>;
-
-// Starter pack bucket type
-export type StarterPackBucket = 'library' | 'skip';
-
-// One "used in" suggestion: a multi-char word containing a single-char headword.
-// vet-first (user's own entries) then det-fallback; vocabEntryId === null ⇒ det fallback.
-export interface UsedInItem {
-  vocabEntryId: number | null;
-  entryKey: string;
-  pronunciation: string | null;
-  definition: string | null;
-  frequencyScore: number | null;
+/**
+ * Dictionary entry as the CLIENT receives it. `createdAt` arrives as an ISO string,
+ * and the server's transient `longDefinitionRaw` carrier is dropped before send, so
+ * it is absent here by construction.
+ */
+export interface DictionaryEntry extends DictionaryEntryBase {
+  createdAt: string;
 }
 
 /**
- * One placed icon in a custom flashcard icon arrangement (vet."iconLayout", migration
- * 82; see docs/CARD_ICON_LAYOUT.md). Coordinates are NORMALIZED (fractions of the
- * rendered card size) so a saved layout survives the card being shown at different
- * pixel sizes across viewports.
+ * Canonical VocabEntry model for the whole frontend (flashcards, card detail,
+ * discover, dictionary adapters).
+ *
+ * It is a SUPERSET in optionality: a server-sourced vet row carries identity fields
+ * (userId/language/starterPackBucket), while a synthetic det-fallback entry from
+ * `dictEntryAdapter` omits them — so `VocabEntryBase` leaves those optional and the
+ * server narrows them to required rather than the other way around.
  */
-export interface IconLayoutItem {
-  iconId: string;   // icons8 natural key; rendered via /api/icons8/<id>/image
-  x: number;        // icon CENTER as a fraction of card WIDTH  [0..1]
-  y: number;        // icon CENTER as a fraction of card HEIGHT [0..1]
-  scale: number;    // multiplier on the base icon box (~0.28 * cardWidth); clamped ~[0.25, 3]
-  rotation: number; // degrees
-  z: number;        // paint order (higher = front)
-  flipX?: boolean;  // horizontal mirror (the "mirror" toolbar action); omitted/false = not mirrored
-  locked?: boolean; // when true the icon ignores canvas translate/resize/rotate gestures (the "lock" toolbar action); omitted/false = freely editable
-}
-
-/** Max icons allowed in one custom arrangement (mirrors the server cap). */
-export const ICON_LAYOUT_MAX_ITEMS = 12;
-
-/**
- * Per-card snap toggles for the flashcard icon editor (vet."snapConfig", migration 88;
- * see docs/CARD_ICON_LAYOUT.md). Each flag quantizes one editor gesture to a discrete
- * increment (move grid / 22.5° rotation / 5%-of-width size). NULL on the row = all off.
- */
-export interface SnapConfig {
-  move: boolean;
-  rotate: boolean;
-  resize: boolean;
+export interface VocabEntry extends VocabEntryBase {
+  createdAt: string;
 }
 
 /**
- * Which back-face text block a movable-text placement targets (vet."textLayout",
- * migration 91; see docs/CARD_ICON_LAYOUT.md). `foreign` = the Chinese/Spanish word
- * glyphs (+ pinyin); `english` = the English definition.
+ * Reader document as the client receives it. Identical to the wire shape — aliased
+ * rather than re-declared so it stays that way.
  */
-export type TextBlock = 'foreign' | 'english';
+export type Text = TextBase;
 
-/**
- * One movable text block's placement (vet."textLayout", migration 91). Coordinates are
- * NORMALIZED (fractions of the rendered card size) like IconLayoutItem, so a saved layout
- * survives the card being shown at different pixel sizes. Unlike icons there is no iconId,
- * no flipX (mirrored text is unreadable), and no z (text always paints ABOVE the icon
- * layer). See docs/CARD_ICON_LAYOUT.md.
- */
-export interface TextLayoutItem {
-  x: number;        // block CENTER as a fraction of card WIDTH  [0..1]
-  y: number;        // block CENTER as a fraction of card HEIGHT [0..1]
-  scale: number;    // multiplier on the block's base font size; clamped ~[0.5, 3]
-  rotation: number; // degrees
-  locked?: boolean; // when true the block ignores canvas translate/resize/rotate gestures (the "lock" toolbar action); omitted/false = freely editable
-}
-
-/**
- * Per-card movable-text placement for the two back-face text blocks (vet."textLayout",
- * migration 91; see docs/CARD_ICON_LAYOUT.md). Each block is optional — an absent block
- * renders at its default lower-third spot. NULL on the row = both blocks at default.
- */
-export interface TextLayout {
-  foreign?: TextLayoutItem;
-  english?: TextLayoutItem;
-}
-
-/**
- * One side of a per-card text-color override (vet."textColors", migration 89). 'theme'
- * follows the device/app theme (the default), 'dark' forces black, 'light' forces white.
- */
-export type TextColorMode = 'theme' | 'dark' | 'light';
-
-/**
- * Per-card flashcard text-color overrides (vet."textColors", migration 89; see
- * docs/CARD_ICON_LAYOUT.md). `foreign` colors the foreign-word GLYPHS (the Chinese
- * characters / Spanish word) — the pinyin overlay is never affected; `english` colors the
- * English definition. NULL on the row = both 'theme'.
- */
-export interface TextColors {
-  foreign: TextColorMode;
-  english: TextColorMode;
-}
-
-/**
- * A community-shared advanced card-icon design surfaced on the Community page
- * (docs/COMMUNITY_PAGE.md). Identity = (ownerUserId, entryKey, language). Carries just enough
- * det fields to render the read-only mini card / zoom.
- */
-export interface CommunityDesign {
-  ownerUserId: string;
-  ownerName?: string | null;
-  /** Who DESIGNED the layout (the owner when unattributed) — feeds dedupe + credit by this. */
-  authorUserId: string;
-  /** The author's display name; null if that account is gone (fall back to ownerName). */
-  authorName?: string | null;
-  entryKey: string;
-  language: Language;
-  iconLayout: IconLayoutItem[] | null;
-  pronunciation?: string | null;
-  tone?: string | null;
-  script?: string | null;
-  definition?: string | null;
-  /** Votes since the viewer's current week boundary. */
-  voteCountThisWeek: number;
-  /** Whether the viewer already has this word saved (drives the apply-button label). */
-  inLibrary: boolean;
-}
-
-/** A design the viewer voted on this week (identity key only) — used to grey voted designs. */
-export interface VotedDesignKey {
-  ownerUserId: string;
-  entryKey: string;
-  language: Language;
-}
-
-export type VoteResult = 'recorded' | 'already-voted';
-export type ApplyDesignResult = 'applied' | 'added-and-applied' | 'would-override';
+// ─── Client-only view models ────────────────────────────────────────────────────
 
 /** Composite key for a design within one language feed (ownerUserId|entryKey). */
 export const designKey = (d: { ownerUserId: string; entryKey: string }) =>
   `${d.ownerUserId}|${d.entryKey}`;
 
-// Canonical VocabEntry model shared across the whole frontend (flashcards,
-// card detail, discover, dictionary adapters, etc.). It is a superset: a
-// server-sourced vet row carries identity fields (userId/language) and synonym
-// metadata, while a synthetic det-fallback entry from dictEntryAdapter omits
-// them — so those identity fields are optional rather than required.
-export interface VocabEntry {
-  id: number;
-  userId?: string;            // absent on det-fallback (non-vet) entries
-  entryKey: string;
-  definition?: string | null;  // det.definitions[0] — joined from dictionaryentries at read time
-  longDefinition?: string | null;
-  longDefinitionParts?: LongDefinitionPart[] | null;  // Computed at runtime: the CURRENT sense's longDefinition split into English + cpcd-able Chinese runs
-  longDefinitionSenses?: LongDefinitionSenseView[] | null;  // Computed at runtime (zh): every sense's definition + parts; resolve with resolveLongDefinitionForSense. NULL for es/legacy per-POS rows.
-  // Server-computed (enrichDefinitionsApprovalBatch): TRUE iff a validator approved
-  // the 'definitions' field (partsOfSpeech + definitions[] + longDefinition, bundled
-  // as one validation unit) and it still matches the det data (docs/DATA_VALIDATION_SYSTEM.md).
-  // Falsy ⇒ the longDefinition block and the partsOfSpeech ("Type") chip render the
-  // AI-generated treatment. Absent on det-fallback (dictionary lookup) VocabEntry
-  // adapters that don't carry it through — treat as falsy there too.
-  definitionsApproved?: boolean;
-  language?: Language;         // absent on det-fallback entries
-  script?: string;
-  pronunciation?: string | null;
-  tone?: string | null;
-  difficulty?: DifficultyLevel | null;
-  partsOfSpeech?: string[] | null;
-  frequencyScore?: number | null;  // 1=almost never spoken … 5=constant in daily speech
-  definitionClusters?: DefinitionCluster[] | null;  // Orthogonal sense clusters (zh; migration 90) — see docs/DEFINITION_CLUSTERS.md
-  selectedSense?: string | null;  // Per-card chosen cluster `sense` label (vet column, migration 99). NULL = default/starred sense. Absent on det-fallback entries (dictionary cdp). See docs/DEFINITION_CLUSTERS.md
-  category?: FlashcardCategory;  // utcm level, derived server-side from typedMarkHistory + the account's goals (migration 101)
-  typedMarkHistory?: TypedMarkHistory;  // Per-type mark streams (migration 101); drives the cdp progress bar. See docs/MASTERY_REWORK.md
-  // flp face-steering (docs/MASTERY_REWORK.md § Per-type cooldown): the flp mark
-  // types ('recognition'/'production') currently off cooldown, stamped by the
-  // server when this card is offered in the working loop. useWorkingLoop's
-  // sideOneForCard uses it to pick the shown face. Absent ⇒ not flp-routed.
-  readyMarkTypes?: MarkType[];
-  starterPackBucket?: StarterPackBucket | null;
-  breakdown?: Record<string, { definition: string; pronunciation?: string; sense?: string }> | null;
-  synonyms?: string[];
-  synonymsMetadata?: Record<string, { definition: string; pronunciation: string }> | null; // Computed at runtime by server
-  iconId?: string | null;  // Representative icons8 icon joined from det; rendered via <img src="/api/icons8/<iconId>/image">
-  iconLayout?: IconLayoutItem[] | null;  // Custom flashcard icon arrangement (vet column, migration 82). NULL = use the default centered iconId. See docs/CARD_ICON_LAYOUT.md
-  snapConfig?: SnapConfig | null;  // Per-card icon-editor snap toggles (vet column, migration 88). NULL = all off. See docs/CARD_ICON_LAYOUT.md
-  textColors?: TextColors | null;  // Per-card flashcard text-color overrides (vet column, migration 89). NULL = both 'theme'. See docs/CARD_ICON_LAYOUT.md
-  textLayout?: TextLayout | null;  // Per-card movable-text placement for the two back-face text blocks (vet column, migration 91). NULL = default lower-third layout. See docs/CARD_ICON_LAYOUT.md
-  cardColor?: string | null;  // Per-card flashcard background fill (CSS hex, vet column, migration 94). NULL = follow theme. See docs/CARD_ICON_LAYOUT.md
-  exampleSentences?: Array<{
-    foreignText: string;
-    english: string;
-    sense?: string;            // Exact definitionClusters sense label the target word carries in this sentence (zh only)
-    segments?: string[];       // Authoritative GSA segmentation from the tagging pass; read path renders these verbatim (falls back to live GSA when absent)
-    partOfSpeechDict?: Record<string, string>;  // POS tag per GSA segment; absent on det-adapter entries
-    numberDict?: Record<string, 'singular' | 'plural'>;  // Grammatical number per noun segment; selects the plural English form in the segment popup
-    tenseDict?: Record<string, 'past' | 'present' | 'future'>;  // Tense per verb segment; selects the verb's inflected English form in the segment popup (per-verb: a sentence can mix tenses)
-    senseDict?: Record<string, string>;        // definitionClusters sense label per segment; resolves each segment's dd = ddt(matching cluster)
-    translatedVocab?: string;  // English word/phrase in the translation corresponding to the vocab word
-    _segments?: string[];
-    segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; particleOrClassifier?: ParticleOrClassifierInfo; wordForms?: Record<string, string> }>;
-    humanApproved?: boolean;   // Server-computed: TRUE iff a validator approved this exact sentence content (validations row, action='approve') and it still matches the det data (docs/DATA_VALIDATION_SYSTEM.md). Falsy ⇒ est renders the AI-generated styling
-  }>;
-  relatedWords?: Array<{ id: number; entryKey: string; pronunciation: string | null; definition: string | null }>;
-  // Single-char zh only: up to 5 multi-char words containing this character (vet-first, det-fallback).
-  usedIn?: UsedInItem[] | null;
-  // Set by the server after pre-warming the TTS cache for this card. `false`
-  // means synthesis errored; the client should fall back to Web Speech. Absent
-  // means the server didn't run a prewarm — treat as truthy.
-  hasAudio?: boolean;
-  // Whether the source det row is marked discoverable (appears in vocab
-  // discovery). Carried through dictEntryAdapter so the dictionary EIP can hide
-  // the "+ to Learn Now" button for undiscoverable lookups. Absent on real vet
-  // rows (already in the library by definition).
-  discoverable?: boolean;
-  createdAt: string;
-}
-
-// Manual per-entry override for display fields; mirrors server ShortDefinitionPronunciationOverride
-export interface ShortDefinitionPronunciationOverride {
-  definition?: string | null;    // Replaces computed shortDefinition
-  pronunciation?: string | null; // Replaces DictionaryEntry.pronunciation (space-separated, e.g. "fēng kuáng")
-}
-
-// Manual per-entry override for example sentence segment popups; mirrors server ExampleSentenceDefinitionPronunciationOverride
-export interface ExampleSentenceDefinitionPronunciationOverride {
-  definition?: string | null;    // Shown verbatim in the segment popup instead of context-matched definition
-  pronunciation?: string | null; // Shown verbatim in the segment popup instead of stored pronunciation
-}
-
-// Dictionary Entry type for multi-language dictionaries
-export interface DictionaryEntry {
-  id: number;
-  language: Language;
-  word1: string;          // Primary word (simplified/kanji/hangul/word)
-  word2: string | null;   // Secondary word (traditional/kana/hanja/null)
-  pronunciation: string | null; // Pronunciation — may be overridden by shortDefinitionPronunciationOverride.pronunciation
-  numberedPinyin?: string | null;
-  tone?: string | null;
-  partsOfSpeech?: string[] | null;
-  frequencyScore?: number | null;  // 1=almost never spoken … 5=constant in daily speech
-  matchException?: string[] | null; // Multi-char tokens this entry suppresses during gsa segmentation (zh det column, already sent by /by-tokens; consumed by src/features/reader/documentSegmentation.ts)
-  definitions: string[]; // Array of definition strings (flat cache)
-  definitionClusters?: DefinitionCluster[] | null;  // Orthogonal sense clusters (zh; migration 90) — see docs/DEFINITION_CLUSTERS.md
-  selectedSense?: string | null;  // Attached at read time by GET /api/dictionary/lookup: the REQUESTING user's saved sense pick for this word (vet.selectedSense) when they have it as a card, so an eip drill-in shows the same dd as their flashcard. Absent when they have no card for it. See docs/DEFINITION_CLUSTERS.md
-  shortDefinitionPronunciationOverride?: ShortDefinitionPronunciationOverride | null; // Raw override object from DB
-  shortDefinition?: string | null;
-  longDefinition?: string | null;
-  longDefinitionParts?: LongDefinitionPart[] | null;  // Computed at runtime: the CURRENT sense's longDefinition split into English + cpcd-able Chinese runs
-  longDefinitionSenses?: LongDefinitionSenseView[] | null;  // Computed at runtime (zh): every sense's definition + parts; resolve with resolveLongDefinitionForSense. NULL for es/legacy per-POS rows.
-  // Server-computed (enrichDefinitionsApprovalBatch): TRUE iff a validator approved
-  // the 'definitions' field and it still matches the det data (docs/DATA_VALIDATION_SYSTEM.md).
-  definitionsApproved?: boolean;
-  discoverable?: boolean;  // Whether the entry appears in vocab discovery (set during data import). Undiscoverable entries are lookup-only.
-  createdAt: string;
-}
-
-// Display-only AI-synthesized dictionary entry (docs/DICTIONARY_AI_FALLBACK_SEARCH.md) — surfaced
-// when a pinyin query matches no real det row. Rendered as an unclickable orange card; it is NOT a
-// real DictionaryEntry (no id / metadata). `source: 'ai'` tags its provenance.
-export interface AiDictionaryEntry {
-  word1: string;
-  pronunciation: string;  // tone-marked pinyin
-  definition: string;     // one concise, complete gloss (no length cap)
-  source: 'ai';
-}
-
-// One orthogonal sense cluster within an entry's `definitionClusters`
-// (zh: migration 90; es: migration 123). Glosses sharing one core meaning are grouped and ordered
-// prototypical→vernacular within the cluster; clusters are mutually orthogonal.
-// ("vernacular" here means plainness of WORDING within a gloss list — unrelated to
-// `frequencyScore`, which measures how often the sense comes up in conversation.)
-// See docs/DEFINITION_CLUSTERS.md.
-export interface DefinitionCluster {
-  sense: string;                  // short English label for the shared meaning
-  reading: string | null;         // zh: numbered pinyin for THIS sense (heteronyms differ, e.g. 会计 → "kuai4"). NULL for es — Spanish pronunciation is not per-sense.
-  pos: string[] | null;           // part(s) of speech for this sense (always an array; single-POS senses are a 1-element array)
-  // es only (NULL for zh): grammatical gender of THIS sense. Spanish's hard sense
-  // boundary is pos + gender the way Chinese's is `reading` — gender carries distinct
-  // meaning (cura/m "priest" vs cura/f "cure"), so the two never share a cluster.
-  // Migration 121 folded the old per-gender det ROWS into these clusters.
-  gender?: string | null;
-  frequencyScore: number | null; // 1–5 conversation frequency, scored independently per cluster
-  glosses: string[];              // verbatim source glosses, ordered prototypical→vernacular
-}
-
-// Discover Card type — a curated DictionaryEntry shaped for the sort-cards UI
-export interface DiscoverCard {
-  id: number;               // dictionaryEntry.id — sent in sort POST
-  entryKey: string;         // word1
-  definition: string;       // definitions[0]
-  pronunciation?: string | null;
-  tone?: string | null;
-  language: Language;
-  word2?: string | null;
-  script?: string | null;
-  difficulty?: DifficultyLevel | null;
-  // Everyday-conversation frequency for the whole entry (1 = almost never spoken
-  // … 5 = constant in daily speech). Drives the sort-flow supply ordering (most
-  // frequent first)
-  // and the frequency-dots badge on the mini card.
-  frequencyScore?: number | null;
-  breakdown?: Record<string, { definition: string; pronunciation?: string; sense?: string }> | null;
-  synonyms?: string[] | null;
-  exampleSentences?: Array<{
-    foreignText: string;
-    english: string;
-    sense?: string;            // Exact definitionClusters sense label the target word carries in this sentence (zh only)
-    segments?: string[];       // Authoritative GSA segmentation from the tagging pass; read path renders these verbatim (falls back to live GSA when absent)
-    partOfSpeechDict: Record<string, string>;  // POS tag per GSA segment (from the tagging pass)
-    numberDict?: Record<string, 'singular' | 'plural'>;  // Grammatical number per noun segment; selects the plural English form in the segment popup
-    tenseDict?: Record<string, 'past' | 'present' | 'future'>;  // Tense per verb segment; selects the verb's inflected English form in the segment popup (per-verb: a sentence can mix tenses)
-    senseDict?: Record<string, string>;        // definitionClusters sense label per segment; resolves each segment's dd = ddt(matching cluster)
-    _segments?: string[];
-    segmentMetadata?: Record<string, { pronunciation?: string; definition?: string; wordForms?: Record<string, string> }>;
-    humanApproved?: boolean;   // Server-computed: TRUE iff a validator approved this exact sentence content (validations row, action='approve') and it still matches the det data (docs/DATA_VALIDATION_SYSTEM.md). Falsy ⇒ est renders the AI-generated styling
-  }> | null;
-  // Optional icons8 icon assigned to this entry (icons8Id); the client renders
-  // the icon via <img src="/api/icons8/<iconId>/image">. Null when no icon assigned.
-  iconId?: string | null;
-  // Sort-pack card state (set by the pack supply). `sorted` → the user already has a
-  // library row for this card: it renders locked with a "sorted!" watermark and is not
-  // draggable. `skipped` → currently in discover_skips but shown inside an authored
-  // pack, so it is draggable again.
-  sorted?: boolean;
-  skipped?: boolean;
-}
-
-/**
- * A sort pack: the on-deck unit of the discover sort flow — up to 3 cards to sort.
- * Authored packs come from the sort_packs table; system fallback packs-of-1 are
- * built on the fly. No sentence is shown in this flow.
- */
-export interface SortPack {
-  packKey: string;            // "pack:<id>" (authored) | "single:<cardId>" (fallback)
-  packId: number | null;      // sort_packs.id for authored; null for fallback singles
-  level: number;
-  cards: DiscoverCard[];
-}
-
-// GET /api/starter-packs/:language response shape — the initial FIFO queue fill.
-// The CLIENT owns adaptive leveling after this call (docs §6, rewritten); the server
-// only seeds a cold-start level when the request omits one.
-export interface DiscoverFetchResponse {
-  packs: SortPack[];  // the client holds a short FIFO queue of packs (on-deck + buffer)
-  exhausted: boolean; // true only when the whole discoverable dictionary is sorted
-  level: number;      // the level supply was centered on — echoed back so a level-less (cold-start) request can seed the client's running target; never displayed as a number
-}
-
-// POST /api/starter-packs/next-pack response: one replacement pack for the FIFO tail,
-// requested when the on-deck pack completes.
-export interface DiscoverNextPackResponse {
-  nextPack: SortPack | null; // null when exhausted
-  exhausted: boolean;
-  level: number; // echoes the level the request centered on (see DiscoverFetchResponse)
-}
-
-// POST /api/starter-packs/sort response (pack mode, per-card). The client owns its
-// pack queue AND its own adaptive target level (docs §6, rewritten), so there is
-// nothing level-related for the server to return here.
-export interface DiscoverSortResponse {
-  success: boolean;
-  bucket: string;
-}
-
-// Combined vocab lookup response
+/** Combined vocab lookup response. */
 export interface VocabLookupResponse {
   personalEntries: VocabEntry[];
   dictionaryEntries: DictionaryEntry[];
-}
-
-// User model type
-export interface User {
-  id: string; // uniqueidentifier in SQL
-  email: string;
-  name: string;
-  password?: string; // Not returned to client
-  isPublic?: boolean;
-  isValidator?: boolean; // Whether user may download/validate dictionary entries (migration 104)
-  isTemplateAuthor?: boolean; // Whether user may author Night Market templates (migration 115); distinct from isValidator
-  selectedLanguage?: Language;
-  createdAt?: Date;
-}
-
-// Which field of a dictionary entry a validation document targets (migration 104).
-export type ValidationField =
-  | 'definitions'
-  | 'exampleSentence0'
-  | 'exampleSentence1'
-  | 'exampleSentence2';
-
-// Text model type for reader feature
-export interface Text {
-  id: string;
-  userId?: string | null; // uniqueidentifier in SQL, nullable for system texts
-  title: string;
-  description: string;
-  content: string;
-  language: Language;
-  characterCount: number;
-  isUserCreated: boolean; // Flag to distinguish user-created from system texts
-  // Validation-doc linkage (migration 104). NULL/undefined ⇒ ordinary user document.
-  // validationEntryId is the SERIAL integer id of the reviewed det row.
-  validationEntryId?: number | null;
-  validationLanguage?: Language | null;
-  validationField?: ValidationField | null;
-  createdAt: string;
-}
-
-// API response type
-export interface ApiResponse<T> {
-  data?: T;
-  error?: string;
-  code?: string;
 }

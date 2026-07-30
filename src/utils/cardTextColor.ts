@@ -31,16 +31,42 @@ export const DEFAULT_TEXT_TONES: TextTonePair = {
 };
 
 /**
- * dd tones (flp card faces + the eip header gloss), all languages. The English gloss is
- * supporting text next to the headword, so it sits one step off full contrast in whichever
- * direction the surface runs — dark grey on a light card, muted light grey on a dark one.
+ * dd tones (flp card faces + the eip header gloss) for the DE-EMPHASIZED languages. The
+ * English gloss is supporting text next to the headword, so it sits one step off full
+ * contrast in whichever direction the surface runs — dark grey on a light card, muted light
+ * grey on a dark one.
  * Mirrored by the `flashcard.dd` theme token (src/contexts/ThemeContext.tsx), which picks one
  * of these two per card theme for the 'theme' (unset) case; keep the two in sync.
+ *
+ * NOT used for Chinese: zh dds render at full contrast (see `ddTextColor`).
  */
 export const DD_TONES: TextTonePair = {
   dark: "#5A5A60",
   light: "#b8b8bc",
 };
+
+/**
+ * The dd's color on a flashcard surface, for one entry's language + Contrast pick.
+ *
+ * Chinese is deliberately excluded from the de-emphasized dd treatment: a zh card face pairs
+ * the gloss with hanzi (plus tone-colored pinyin), and greying the gloss there made it read as
+ * disabled next to that much visual weight. So zh keeps the pre-dd-token behavior — full
+ * contrast `onSurface`, and pure black/white for an explicit Contrast pick. Every other
+ * language uses the softer `dd` token / DD_TONES pair.
+ *
+ * Single source of truth for both dd surfaces (flp card face + eip header gloss) so the two
+ * can't drift. Callers: src/features/flashcards/FlashcardsLearnPage/FlashCardSection.tsx
+ * (EnglishBlock), .../InfoCardPanelBody.tsx (entry header).
+ */
+export function ddTextColor(
+  language: string | null | undefined,
+  mode: TextColorMode | undefined | null,
+  palette: { onSurface: string; dd: string },
+): string {
+  const fullContrast = language === "zh";
+  const tones = fullContrast ? DEFAULT_TEXT_TONES : DD_TONES;
+  return resolveTextColor(mode, tones) ?? (fullContrast ? palette.onSurface : palette.dd);
+}
 
 /**
  * Map a text-color setting to a CSS color, or `undefined` for 'theme' (the caller should

@@ -15,7 +15,6 @@ import {
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 import ClearIcon from "@mui/icons-material/Clear";
-import { useAuth } from "../AuthContext";
 import { COLORS } from "../theme/colors";
 import { FONTS } from "../theme/fonts";
 import { SIZE, WEIGHT } from "../theme/scale";
@@ -90,8 +89,6 @@ function IconPickerDialog({
     onRemove,
     removeLabel = "Remove",
 }: IconPickerDialogProps) {
-    const { token } = useAuth();
-
     const [term, setTerm] = useState("");
     const [icons, setIcons] = useState<IconItem[]>([]);
     const [hasMore, setHasMore] = useState(false);
@@ -121,9 +118,12 @@ function IconPickerDialog({
     const fetchPage = useCallback(
         (activeTerm: string, offset: number) =>
             activeTerm
-                ? searchIcons8(token, activeTerm, offset, PAGE_SIZE)
-                : listIcons8(token, offset, PAGE_SIZE),
-        [token]
+                ? searchIcons8(activeTerm, offset, PAGE_SIZE)
+                : listIcons8(offset, PAGE_SIZE),
+        // No deps: cardIconApi reads the bearer token itself at call time, so this
+        // callback's identity no longer churns on a silent ~15-min token refresh
+        // (which would otherwise re-run the load effect and reset the icon grid).
+        []
     );
 
     // Fetch the next page for the active term. Guarded against overlapping fires.
@@ -230,7 +230,7 @@ function IconPickerDialog({
         try {
             // Download-on-select: cache the SVG into our DB so it can be served from our
             // own image endpoint (idempotent for icons already in the catalog).
-            await ensureIcon8(token, id);
+            await ensureIcon8(id);
             await onPick(id);
             onClose();
         } catch (err) {

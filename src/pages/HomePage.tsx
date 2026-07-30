@@ -54,7 +54,11 @@ function HomePage() {
         // Standalone home for the eip's Compare surface (docs/WORD_COMPARE_FEATURE.md) — same
         // CompareWorkspace component, reached without going through a flashcard.
         { key: "compare", to: "/compare", title: "Compare Words", subtitle: "See how two similar words differ", icon: <CompareArrowsIcon sx={iconSx} />, bgColor: COLORS.greenAccent },
-        { key: "tester-dashboard", to: "/tester-dashboard", title: "Tester Dashboard", subtitle: "Study time, streak, and activity", icon: <DashboardIcon sx={iconSx} />, bgColor: COLORS.blueAccent },
+        // Validator-only: the tester dashboard (study time, streak, activity). Hidden from
+        // ordinary learners; the page itself also bounces non-validators back here.
+        ...(user?.isValidator
+            ? [{ key: "tester-dashboard", to: "/tester-dashboard", title: "Tester Dashboard", subtitle: "Study time, streak, and activity", icon: <DashboardIcon sx={iconSx} />, bgColor: COLORS.blueAccent } as HomeMenuItem]
+            : []),
         // Template-author-only: the Night Market template authoring editor (desktop-only).
         ...(user?.isTemplateAuthor
             ? [{ key: "template-editor", to: "/night-market/template-editor", title: "Template Editor", subtitle: "Author Night Market templates", icon: <GridViewIcon sx={iconSx} />, bgColor: COLORS.purpleAccent } as HomeMenuItem]

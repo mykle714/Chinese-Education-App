@@ -135,8 +135,12 @@ download_dictionaries() {
     print_info "Verifying dictionary files..."
     MISSING_FILES=0
     
-    if [ ! -f "$PROJECT_ROOT/cedict_ts.u8" ]; then
-        print_warning "Chinese dictionary not found: cedict_ts.u8"
+    # NOTE: check server/cedict_ts.u8, not the repo-root copy. docker-compose mounts
+    # ./server as /app, so the import below reads /app/cedict_ts.u8 = server/cedict_ts.u8.
+    # This used to test the root copy — a DIFFERENT file — so the check could pass while
+    # the import failed, or vice versa. See docs/CORRECTNESS_AND_PERFORMANCE_REVIEW.md 5d.
+    if [ ! -f "$PROJECT_ROOT/server/cedict_ts.u8" ]; then
+        print_warning "Chinese dictionary not found: server/cedict_ts.u8"
         MISSING_FILES=$((MISSING_FILES + 1))
     fi
     
@@ -166,7 +170,8 @@ download_dictionaries() {
 import_chinese() {
     print_header "Importing Chinese Dictionary (CC-CEDICT)"
     
-    if [ ! -f "$PROJECT_ROOT/cedict_ts.u8" ]; then
+    # Same path as the import call below (./server is mounted at /app).
+    if [ ! -f "$PROJECT_ROOT/server/cedict_ts.u8" ]; then
         print_warning "Chinese dictionary file not found, skipping..."
         return
     fi

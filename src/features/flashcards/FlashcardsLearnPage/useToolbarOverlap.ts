@@ -1,6 +1,6 @@
 import { useState, useLayoutEffect, type RefObject } from "react";
 import { CARD_SLOT_TOP_PAD, CARD_SLOT_VPAD_SUM } from "./styled";
-import { CARD_EDIT_ANIM_MS } from "./CardEditToolbar";
+import { CARD_EDIT_ANIM_MS } from "../../../cardIcons/editor/CardEditToolbar";
 
 // Breathing room (px) required between the advanced toolbar's bottom edge and the card's top
 // before we consider them "overlapping" — so we push slightly BEFORE they literally touch.

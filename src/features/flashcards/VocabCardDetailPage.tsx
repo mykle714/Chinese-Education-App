@@ -18,20 +18,20 @@ import { clearWritingDraft } from "../../components/handwriting/writingDraftStor
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
 import { useTTS, useAutoSpeakEntry, SLOW_SENTENCE_RATE } from "../../hooks/useTTS";
-import { useAuth } from "../../AuthContext";
 import { COLORS } from "../../theme/colors";
 import { CardFaceSide, ChineseBlock, EnglishBlock } from "./FlashcardsLearnPage/FlashCardSection";
 import { measureDefaultEnglishCenterY } from "../../cardIcons/cardTextLayout";
 import { isAdvancedLayout } from "../../cardIcons/cardIconLayout";
-import { CARD_BASE_WIDTH, CARD_BASE_HEIGHT, FC_FONT } from "./FlashcardsLearnPage/constants";
-import { useCardIconEditor } from "./FlashcardsLearnPage/useCardIconEditor";
-import CardIconCanvas from "./FlashcardsLearnPage/CardIconCanvas";
-import CardEditToolbar, { CARD_EDIT_ANIM_MS, CARD_EDIT_ANIM_EASING, TOOLBAR_DROPDOWN_SELECTOR } from "./FlashcardsLearnPage/CardEditToolbar";
+import { CARD_BASE_WIDTH, CARD_BASE_HEIGHT, FC_FONT } from "./constants";
+import { useCardIconEditor } from "../../cardIcons/editor/useCardIconEditor";
+import CardIconCanvas from "../../cardIcons/editor/CardIconCanvas";
+import CardEditToolbar, { CARD_EDIT_ANIM_MS, CARD_EDIT_ANIM_EASING, TOOLBAR_DROPDOWN_SELECTOR } from "../../cardIcons/editor/CardEditToolbar";
 import { VocabCardBadges, VocabCardSections } from "./VocabCardDetailBody";
 import { getBreakdownItems } from "../../utils/breakdownUtils";
 import { useOpenWordCard } from "../../hooks/useOpenWordCard";
 import MasteryProgressBar from "./MasteryProgressBar";
 import ForeignText from "../../components/ForeignText";
+import { apiGet } from '../../api/http';
 
 // Padded content column. The outer NodePage/MobileTabScreen scroll area owns the
 // scroll + floating-footer clearance, so this box does NOT scroll itself — it just
@@ -52,7 +52,6 @@ const VocabCardDetailPage: React.FC = () => {
     const navigate = useNavigate();
     const theme = useTheme();
     const fc = theme.palette.flashcard;
-    const { token } = useAuth();
     const { settings } = useFlashcardLearnSettings();
     const { showPinyinColor, slowExampleSentences } = settings;
     // cdp always shows pinyin regardless of the flp pinyin toggle — pinyin is
@@ -153,7 +152,7 @@ const VocabCardDetailPage: React.FC = () => {
         undoAdv,
         redoAdv,
         pushAdvHistory,
-    } = useCardIconEditor({ currentEntry: entry, nextEntry: null, token });
+    } = useCardIconEditor({ currentEntry: entry, nextEntry: null });
 
     // A sense pick updates the in-sync display index AND persists the chosen cluster's `sense`
     // LABEL for this saved card (index 0 = default/starred → stored as null). Same contract as
@@ -178,13 +177,7 @@ const VocabCardDetailPage: React.FC = () => {
         const fetchEntry = async () => {
             try {
                 setLoading(true);
-                const response = await fetch(`${API_BASE_URL}/api/vocabEntries/${id}`, {
-                    credentials: "include",
-                });
-                if (!response.ok) {
-                    throw new Error("Failed to fetch card");
-                }
-                const data = await response.json();
+                const data = await apiGet<VocabEntry>(`/api/vocabEntries/${id}`);
                 setEntry(data);
             } catch (err: unknown) {
                 setError(err instanceof Error ? err.message : "Failed to load card");

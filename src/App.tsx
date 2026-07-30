@@ -1,43 +1,42 @@
+import { Suspense, createElement } from "react";
 import { Routes, Route } from "react-router-dom";
 import { AuthProvider } from "./AuthContext";
 import { ConfirmationProvider } from "./contexts/ConfirmationContext";
 import { ThemeContextProvider } from "./contexts/ThemeContext";
 import { VocabularyUpdateProvider } from "./contexts/VocabularyUpdateContext";
 import Layout from "./components/Layout";
-import HomePage from "./pages/HomePage";
-import CommunityPage from "./pages/CommunityPage/CommunityPage";
-import EntriesPage from "./pages/EntriesPage";
-import EntryDetailPage from "./pages/EntryDetailPage";
-import EditEntryPage from "./pages/EditEntryPage";
-import ProfilePage from "./pages/ProfilePage";
-import AccountPage from "./pages/AccountPage";
-import SettingsPage from "./pages/SettingsPage";
-import NotFoundPage from "./pages/NotFoundPage";
-import FlashcardsPage from "./features/flashcards/FlashcardsPage";
-import FlashcardsLearnPage from "./features/flashcards/FlashcardsLearnPage";
-import FlashcardsDecksPage from "./features/flashcards/FlashcardsDecksPage";
-import ReaderPage from "./features/reader/ReaderPage";
-import ReaderDocumentPage from "./features/reader/ReaderDocumentPage";
-import NightMarketEnginePage from "./features/nightmarket/NightMarketEnginePage";
-import TemplateEditorPage from "./features/nightmarket/TemplateEditorPage";
-import TemplateSandboxPage from "./features/nightmarket/TemplateSandboxPage";
-import DictionaryPage from "./pages/DictionaryPage";
-import ComparePage from "./pages/ComparePage";
-import DictionaryCardDetailPage from "./pages/DictionaryCardDetailPage";
-import DiscoverPage from "./pages/DiscoverPage";
-import TesterDashboardPage from "./pages/TesterDashboardPage";
-import SortCardsPage from "./pages/SortCardsPage";
-import QuickMarkPage from "./pages/QuickMarkPage";
-import SkippedCardsPage from "./pages/SkippedCardsPage";
-import VocabCardDetailPage from "./features/flashcards/VocabCardDetailPage";
-import MasteredCardsPage from "./features/flashcards/MasteredCardsPage";
-import { Suspense, createElement } from "react";
-import GamesPage from "./pages/GamesPage";
-import { GAME_REGISTRY } from "./games/registry";
-import LoginPage from "./pages/LoginPage";
-import RegisterPage from "./pages/RegisterPage";
 import ProtectedRoute from "./components/ProtectedRoute";
+import { APP_ROUTES, type AppRoute } from "./routes/registry";
 import { useBlockZoom } from "./hooks/useBlockZoom";
+
+/**
+ * Render one registry row as a <Route>.
+ *
+ * The whole route table used to be written out inline here — 30 hand-written
+ * <Route> blocks, 25 of which had to remember to pass `allowPublic`, plus four
+ * comment blocks explaining why that flag was present. All of it now derives from
+ * src/routes/registry.ts. See docs/ARCHITECTURE_REVIEW.md finding 4.
+ */
+function renderRoute(route: AppRoute) {
+  // Lazy (code-split) components need a Suspense boundary. The fallback is
+  // intentionally null so the parent MobileDemoFrame stays visible during the
+  // brief fetch instead of flashing a spinner inside the phone card.
+  const page = route.lazy ? (
+    <Suspense fallback={null}>{createElement(route.Component)}</Suspense>
+  ) : (
+    createElement(route.Component)
+  );
+
+  // 'open' routes mount with no auth wrapper at all (login, register, 404).
+  const element =
+    route.access === "open" ? (
+      page
+    ) : (
+      <ProtectedRoute requireFullAccount={route.access === "account"}>{page}</ProtectedRoute>
+    );
+
+  return <Route key={route.path} path={route.path} element={element} />;
+}
 
 function App() {
   // App-wide: disable pinch / double-tap zoom (mobile-first UI, zoom is never
@@ -50,170 +49,7 @@ function App() {
         <VocabularyUpdateProvider>
           <ConfirmationProvider>
             <Layout>
-              <Routes>
-                <Route path="/" element={
-                  <ProtectedRoute allowPublic>
-                    <HomePage />
-                  </ProtectedRoute>
-                } />
-                <Route path="/login" element={<LoginPage />} />
-                <Route path="/register" element={<RegisterPage />} />
-                <Route path="/entries" element={
-                  <ProtectedRoute>
-                    <EntriesPage />
-                  </ProtectedRoute>
-                } />
-                <Route path="/entries/:id" element={
-                  <ProtectedRoute>
-                    <EntryDetailPage />
-                  </ProtectedRoute>
-                } />
-                <Route path="/edit/:id" element={
-                  <ProtectedRoute>
-                    <EditEntryPage />
-                  </ProtectedRoute>
-                } />
-                <Route path="/flashcards" element={
-                  <ProtectedRoute>
-                    <FlashcardsPage />
-                  </ProtectedRoute>
-                } />
-                <Route path="/flashcards/learn" element={
-                  <ProtectedRoute allowPublic>
-                    <FlashcardsLearnPage />
-                  </ProtectedRoute>
-                } />
-                <Route path="/flashcards/decks" element={
-                  <ProtectedRoute allowPublic>
-                    <FlashcardsDecksPage />
-                  </ProtectedRoute>
-                } />
-                <Route path="/flashcards/mastered" element={
-                  <ProtectedRoute allowPublic>
-                    <MasteredCardsPage />
-                  </ProtectedRoute>
-                } />
-                <Route path="/reader" element={
-                  <ProtectedRoute allowPublic>
-                    <ReaderPage />
-                  </ProtectedRoute>
-                } />
-                <Route path="/reader/:id" element={
-                  <ProtectedRoute allowPublic>
-                    <ReaderDocumentPage />
-                  </ProtectedRoute>
-                } />
-                <Route path="/dictionary" element={
-                  <ProtectedRoute allowPublic>
-                    <DictionaryPage />
-                  </ProtectedRoute>
-                } />
-                <Route path="/dictionary/card/:word" element={
-                  <ProtectedRoute allowPublic>
-                    <DictionaryCardDetailPage />
-                  </ProtectedRoute>
-                } />
-                {/* Standalone home for the word-compare feature (docs/WORD_COMPARE_FEATURE.md),
-                    reached from the Home hub. `allowPublic` like every other Home-hub node page:
-                    without it ProtectedRoute bounces public/demo accounts straight back to "/",
-                    so the hub button would silently do nothing for them. The compare request
-                    itself is still auth-gated + rate-limited server-side. */}
-                <Route path="/compare" element={
-                  <ProtectedRoute allowPublic>
-                    <ComparePage />
-                  </ProtectedRoute>
-                } />
-                <Route path="/discover" element={
-                  <ProtectedRoute allowPublic>
-                    <DiscoverPage />
-                  </ProtectedRoute>
-                } />
-                <Route path="/tester-dashboard" element={
-                  <ProtectedRoute allowPublic>
-                    <TesterDashboardPage />
-                  </ProtectedRoute>
-                } />
-                <Route path="/discover/sort/:language" element={
-                  <ProtectedRoute allowPublic>
-                    <SortCardsPage />
-                  </ProtectedRoute>
-                } />
-                <Route path="/discover/quick-mark/:language" element={
-                  <ProtectedRoute allowPublic>
-                    <QuickMarkPage />
-                  </ProtectedRoute>
-                } />
-                <Route path="/discover/skipped/:language" element={
-                  <ProtectedRoute allowPublic>
-                    <SkippedCardsPage />
-                  </ProtectedRoute>
-                } />
-                <Route path="/flashcards/card/:id" element={
-                  <ProtectedRoute allowPublic>
-                    <VocabCardDetailPage />
-                  </ProtectedRoute>
-                } />
-                <Route path="/community" element={
-                  <ProtectedRoute allowPublic>
-                    <CommunityPage />
-                  </ProtectedRoute>
-                } />
-                <Route path="/games" element={
-                  <ProtectedRoute allowPublic>
-                    <GamesPage />
-                  </ProtectedRoute>
-                } />
-                {/* Per-game routes, derived from GAME_REGISTRY. Each game's
-                    page component is lazily loaded; the Suspense fallback is
-                    intentionally null so the parent MobileDemoFrame stays
-                    visible during the brief code-split fetch. */}
-                {GAME_REGISTRY.map((g) => (
-                  <Route
-                    key={g.gameId}
-                    path={g.route}
-                    element={
-                      <ProtectedRoute allowPublic={!g.requiresAuth}>
-                        <Suspense fallback={null}>
-                          {createElement(g.Component)}
-                        </Suspense>
-                      </ProtectedRoute>
-                    }
-                  />
-                ))}
-                <Route path="/night-market" element={
-                  <ProtectedRoute allowPublic>
-                    <NightMarketEnginePage />
-                  </ProtectedRoute>
-                } />
-                {/* Template-author-only editor. Gated by isTemplateAuthor (migration 115;
-                    the page bounces non-authors; the backend enforces it too), so
-                    allowPublic — a template author may be a public account, and the
-                    generic isPublic redirect must not pre-empt the author gate. */}
-                <Route path="/night-market/template-editor" element={
-                  <ProtectedRoute allowPublic>
-                    <TemplateEditorPage />
-                  </ProtectedRoute>
-                } />
-                {/* Template-author-only sandbox (desktop-only) — freely tile catalog templates.
-                    Same gate/allowPublic rationale as the editor route above. */}
-                <Route path="/night-market/template-sandbox" element={
-                  <ProtectedRoute allowPublic>
-                    <TemplateSandboxPage />
-                  </ProtectedRoute>
-                } />
-                <Route path="/profile" element={
-                  <ProtectedRoute>
-                    <ProfilePage />
-                  </ProtectedRoute>
-                } />
-                <Route path="/account" element={
-                  <ProtectedRoute allowPublic>
-                    <AccountPage />
-                  </ProtectedRoute>
-                } />
-                <Route path="/settings" element={<SettingsPage />} />
-                <Route path="*" element={<NotFoundPage />} />
-              </Routes>
+              <Routes>{APP_ROUTES.map(renderRoute)}</Routes>
             </Layout>
           </ConfirmationProvider>
         </VocabularyUpdateProvider>

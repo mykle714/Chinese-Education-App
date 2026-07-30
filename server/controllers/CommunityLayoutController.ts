@@ -11,12 +11,12 @@ const DEFAULT_PAGE = 10;
 /**
  * HTTP layer for the Community page (docs/COMMUNITY_PAGE.md).
  *
- * POST /api/community/learning-feed { language?, excludeAuthors[], excludeKeys[], limit? }
- * POST /api/community/top-feed      { language?, excludeAuthors[], excludeKeys[], limit? }
- * POST /api/community/entry-feed    { entryKey, language?, excludeAuthors[], excludeKeys[], limit? }
- * GET  /api/community/my-votes
+ * POST /api/community/learningFeed { language?, excludeAuthors[], excludeKeys[], limit? }
+ * POST /api/community/topFeed      { language?, excludeAuthors[], excludeKeys[], limit? }
+ * POST /api/community/entryFeed    { entryKey, language?, excludeAuthors[], excludeKeys[], limit? }
+ * GET  /api/community/myVotes
  * POST /api/community/vote          { ownerUserId, entryKey, language? }
- * POST /api/community/apply-design  { ownerUserId, entryKey, language?, override? }
+ * POST /api/community/applyDesign  { ownerUserId, entryKey, language?, override? }
  *
  * Feeds are POST (not GET) so the growing exclude lists aren't bound by URL length.
  * `excludeAuthors`/`excludeKeys` are parallel arrays naming already-shown (authorUserId, entryKey)
@@ -45,7 +45,7 @@ export class CommunityLayoutController {
     return { excludeAuthors: authors.slice(0, n), excludeKeys: keys.slice(0, n), limit };
   }
 
-  /** POST /api/community/learning-feed */
+  /** POST /api/community/learningFeed */
   async learningFeed(req: Request, res: Response): Promise<void> {
     try {
       const userId = requireUserId(req, res);
@@ -59,7 +59,7 @@ export class CommunityLayoutController {
     }
   }
 
-  /** POST /api/community/top-feed */
+  /** POST /api/community/topFeed */
   async topFeed(req: Request, res: Response): Promise<void> {
     try {
       const userId = requireUserId(req, res);
@@ -73,7 +73,7 @@ export class CommunityLayoutController {
     }
   }
 
-  /** POST /api/community/entry-feed — designs for one word, ranked by votes this week. */
+  /** POST /api/community/entryFeed — designs for one word, ranked by votes this week. */
   async entryFeed(req: Request, res: Response): Promise<void> {
     try {
       const userId = requireUserId(req, res);
@@ -92,7 +92,7 @@ export class CommunityLayoutController {
     }
   }
 
-  /** GET /api/community/my-votes — design keys the viewer voted on this week. */
+  /** GET /api/community/myVotes — design keys the viewer voted on this week. */
   async myVotes(req: Request, res: Response): Promise<void> {
     try {
       const userId = requireUserId(req, res);
@@ -140,7 +140,7 @@ export class CommunityLayoutController {
     }
   }
 
-  /** POST /api/community/apply-design */
+  /** POST /api/community/applyDesign */
   async applyDesign(req: Request, res: Response): Promise<void> {
     try {
       const userId = requireUserId(req, res);

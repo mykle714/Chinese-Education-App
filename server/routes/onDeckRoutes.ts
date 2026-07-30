@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authenticateToken } from '../authMiddleware.js';
 import { onDeckVocabController } from '../dal/setup.js';
+import { handle } from './asyncHandler.js';
 
 /**
  * OnDeck vocab set routes — /api/onDeck/*
@@ -12,45 +13,24 @@ import { onDeckVocabController } from '../dal/setup.js';
 const router = Router();
 
 // Get all library cards (vocab entries from *-library OnDeck sets)
-// @ts-ignore
-router.get('/api/onDeck/library-cards', authenticateToken, async (req, res) => {
-  await onDeckVocabController.getLibraryCards(req, res);
-});
+router.get('/api/onDeck/libraryCards', authenticateToken, handle(onDeckVocabController.getLibraryCards, onDeckVocabController));
 
 // Get mastered library cards (library cards with category = 'Mastered')
-// @ts-ignore
-router.get('/api/onDeck/mastered-library-cards', authenticateToken, async (req, res) => {
-  await onDeckVocabController.getMasteredLibraryCards(req, res);
-});
+router.get('/api/onDeck/masteredLibraryCards', authenticateToken, handle(onDeckVocabController.getMasteredLibraryCards, onDeckVocabController));
 
 // Get non-mastered library cards (library cards without category = 'Mastered')
-// @ts-ignore
-router.get('/api/onDeck/non-mastered-library-cards', authenticateToken, async (req, res) => {
-  await onDeckVocabController.getNonMasteredLibraryCards(req, res);
-});
+router.get('/api/onDeck/nonMasteredLibraryCards', authenticateToken, handle(onDeckVocabController.getNonMasteredLibraryCards, onDeckVocabController));
 
 // Get distributed working loop (1 Mastered, 2 Comfortable, 2 Unfamiliar, 5 Target)
-// @ts-ignore
-router.get('/api/onDeck/distributed-working-loop', authenticateToken, async (req, res) => {
-  await onDeckVocabController.getDistributedWorkingLoop(req, res);
-});
+router.get('/api/onDeck/distributedWorkingLoop', authenticateToken, handle(onDeckVocabController.getDistributedWorkingLoop, onDeckVocabController));
 
 // Per-category library card counts (drives the decks page bucket counts)
-// @ts-ignore
-router.get('/api/onDeck/category-counts', authenticateToken, async (req, res) => {
-  await onDeckVocabController.getCategoryCounts(req, res);
-});
+router.get('/api/onDeck/categoryCounts', authenticateToken, handle(onDeckVocabController.getCategoryCounts, onDeckVocabController));
 
 // Bubble-match game pool (15 Target + 10 Comfortable by default)
-// @ts-ignore
-router.get('/api/onDeck/game-pool', authenticateToken, async (req, res) => {
-  await onDeckVocabController.getGamePool(req, res);
-});
+router.get('/api/onDeck/gamePool', authenticateToken, handle(onDeckVocabController.getGamePool, onDeckVocabController));
 
 // Word Search game grid (2 Unfamiliar + 10 Target + 6 Comfortable + 2 Mastered by default)
-// @ts-ignore
-router.get('/api/onDeck/word-search-grid', authenticateToken, async (req, res) => {
-  await onDeckVocabController.getWordSearchGrid(req, res);
-});
+router.get('/api/onDeck/wordSearchGrid', authenticateToken, handle(onDeckVocabController.getWordSearchGrid, onDeckVocabController));
 
 export default router;

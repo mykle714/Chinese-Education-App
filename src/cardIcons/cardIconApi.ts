@@ -1,56 +1,37 @@
 // Thin client for the custom card icon layout endpoints (docs/CARD_ICON_LAYOUT.md).
-// All are auth-gated; the caller passes the bearer token from useAuth().
+//
+// All are auth-gated, but NONE of these functions takes a `token`: every call goes through
+// src/api/http.ts, which reads the bearer token fresh at call time (authHeader()). Threading
+// the token through the signature was what pulled it into caller dependency arrays, where a
+// silent ~15-min refresh re-ran effects — see CLAUDE.md "Never reload/reset a page on a
+// silent token refresh" and docs/ARCHITECTURE_REVIEW.md finding 5.
 
-import { API_BASE_URL } from "../constants";
 import type { IconLayoutItem, SnapConfig, TextColors, TextLayout } from "../types";
+import { apiGet, apiPost, apiPatch } from '../api/http';
 
 export interface IconSearchItem { id: string; name: string }
 interface IconSearchPage { icons: IconSearchItem[]; hasMore: boolean }
-
-function authHeaders(token: string | null): HeadersInit {
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
 
 /**
  * List the icons we've already downloaded+cached into our DB (the catalog), paged.
  * Used by the icon picker's empty-query state to browse all downloaded icons.
  * Shape matches searchIcons8 (icons + hasMore) so the picker can treat both uniformly.
  */
-export async function listIcons8(
-  token: string | null,
-  offset: number,
-  limit: number
-): Promise<IconSearchPage> {
-  const url = `${API_BASE_URL}/api/icons8?offset=${offset}&limit=${limit}`;
-  const res = await fetch(url, { credentials: "include", headers: authHeaders(token) });
-  if (!res.ok) throw new Error(`Failed to load icons (${res.status})`);
-  return res.json();
+export function listIcons8(offset: number, limit: number): Promise<IconSearchPage> {
+  return apiGet<IconSearchPage>("/api/icons8", { params: { offset, limit } });
 }
 
 /** Live icons8 search for the add-icon dialog. Returns ids+names + a hasMore flag. */
-export async function searchIcons8(
-  token: string | null,
-  term: string,
-  offset: number,
-  limit: number
-): Promise<IconSearchPage> {
-  const url = `${API_BASE_URL}/api/icons8/search?term=${encodeURIComponent(term)}&offset=${offset}&limit=${limit}`;
-  const res = await fetch(url, { credentials: "include", headers: authHeaders(token) });
-  if (!res.ok) throw new Error(`Icon search failed (${res.status})`);
-  return res.json();
+export function searchIcons8(term: string, offset: number, limit: number): Promise<IconSearchPage> {
+  return apiGet<IconSearchPage>("/api/icons8/search", { params: { term, offset, limit } });
 }
 
 /**
  * Download + cache an icon's SVG into our DB so /api/icons8/<id>/image can serve it.
  * Called when a user selects a search result. Idempotent.
  */
-export async function ensureIcon8(token: string | null, iconId: string): Promise<void> {
-  const res = await fetch(`${API_BASE_URL}/api/icons8/${encodeURIComponent(iconId)}/ensure`, {
-    method: "POST",
-    credentials: "include",
-    headers: authHeaders(token),
-  });
-  if (!res.ok) throw new Error(`Failed to add icon (${res.status})`);
+export async function ensureIcon8(iconId: string): Promise<void> {
+  await apiPost<unknown>(`/api/icons8/${encodeURIComponent(iconId)}/ensure`);
 }
 
 /**
@@ -61,17 +42,9 @@ export async function ensureIcon8(token: string | null, iconId: string): Promise
  * client-computed default query (iconSearchTerm). See docs/CARD_ICON_LAYOUT.md.
  */
 export async function fetchDefaultIconResults(
-  token: string | null,
   params: { language: string; entryKey: string; term: string }
 ): Promise<IconSearchItem[]> {
-  const res = await fetch(`${API_BASE_URL}/api/icons8/default-results`, {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json", ...authHeaders(token) },
-    body: JSON.stringify(params),
-  });
-  if (!res.ok) throw new Error(`Failed to load default icons (${res.status})`);
-  const data: { icons: IconSearchItem[] } = await res.json();
+  const data = await apiPost<{ icons: IconSearchItem[] }>(`/api/icons8/defaultResults`, params);
   return data.icons;
 }
 
@@ -82,8 +55,7 @@ export async function fetchDefaultIconResults(
  * all five together (they persist per card; see docs/CARD_ICON_LAYOUT.md); pass `null` for
  * any of them on reset-to-default to clear it.
  */
-export async function saveIconLayout(
-  token: string | null,
+export function saveIconLayout(
   vetId: number,
   layout: IconLayoutItem[] | null,
   snapConfig: SnapConfig | null,
@@ -91,12 +63,7 @@ export async function saveIconLayout(
   textLayout: TextLayout | null,
   cardColor: string | null
 ): Promise<{ id: number; iconLayout: IconLayoutItem[] | null; snapConfig: SnapConfig | null; textColors: TextColors | null; textLayout: TextLayout | null; cardColor: string | null }> {
-  const res = await fetch(`${API_BASE_URL}/api/vocabEntries/${vetId}/icon-layout`, {
-    method: "PATCH",
-    credentials: "include",
-    headers: { "Content-Type": "application/json", ...authHeaders(token) },
-    body: JSON.stringify({ iconLayout: layout, snapConfig, textColors, textLayout, cardColor }),
+  return apiPatch(`/api/vocabEntries/${vetId}/iconLayout`, {
+    iconLayout: layout, snapConfig, textColors, textLayout, cardColor,
   });
-  if (!res.ok) throw new Error(`Failed to save layout (${res.status})`);
-  return res.json();
 }

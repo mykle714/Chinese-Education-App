@@ -137,7 +137,8 @@ With new code live and **all data still legacy**, confirm the legacy path render
 1. Open a saved zh card's eip → **Definition** tab. Text must appear, correctly formatted,
    with `pos: …` blocks separated by blank lines for multi-POS words.
 2. Open a dictionary lookup cdp for a zh word → Definition box populated.
-3. As a validator account, open a "Definitions & Parts of Speech" validation doc and hit
+3. As a validator account, open a "Definitions" validation doc (subtitled "Definitions &
+   Parts of Speech" before migration 132 split POS into its own field) and hit
    **Approve**. This must return 200 — that path calls `longDefToDisplayString` on the raw
    column, and a regression there previously produced a 500 on every Approve.
 

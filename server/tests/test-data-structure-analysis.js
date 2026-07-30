@@ -87,7 +87,7 @@ async function analyzeDataStructure() {
     
     const specificTokens = ['今天', '咖啡店', '春节', '太极拳', '市中心'];
     
-    const tokenResponse = await fetch(`${API_BASE_URL}/api/vocabEntries/by-tokens`, {
+    const tokenResponse = await fetch(`${API_BASE_URL}/api/vocabEntries/byTokens`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${authToken}`,

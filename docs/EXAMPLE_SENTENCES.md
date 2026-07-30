@@ -116,7 +116,7 @@ speaker button had each drifted onto only the eip):
 
 - **eip Examples tab** — `InfoCardPanelBody.tsx` (`effectiveTab === 1`).
 - **cdp** (read-only dictionary cdp + saved-card cdp) — `VocabCardDetailBody.tsx`
-  (`VocabCardSections`), threaded from `pages/DictionaryCardDetailPage.tsx` and
+  (`VocabCardSections`), threaded from `features/dictionary/DictionaryCardDetailPage.tsx` and
   `features/flashcards/VocabCardDetailPage.tsx`.
 
 Each per-sentence card carries: a top-right `SpeakerButton` (gated on
@@ -148,7 +148,7 @@ use it. `ExampleSentenceList` just never passes it.)
 |---|---|
 | Column | `users."showSegmentSpaces"` (migration 129) |
 | Read path | `UserDAL.findById` select list (`server/dal/implementations/UserDAL.ts:91`); `User` / `UserUpdateData` in `server/types/index.ts` |
-| Write path | `PUT /api/users/display-settings` → `UserController.updateDisplaySettings` → `UserService.updateDisplaySettings` (`server/routes/userRoutes.ts`) |
+| Write path | `PUT /api/users/displaySettings` → `UserController.updateDisplaySettings` → `UserService.updateDisplaySettings` (`server/routes/userRoutes.ts`) |
 | Client state | `AuthContext` `User.showSegmentSpaces` + `updateDisplaySettings()` (`src/AuthContext.tsx`) |
 | Toggle UI | Settings page → **Display** section (`settings-page__display-section` / `settings-page__segment-spaces-row`, `src/pages/SettingsPage.tsx`), a `Paper` + `Switch` row matching the Narration section. **Chinese only** — rendered when `(user.selectedLanguage ?? 'zh') === 'zh'`, because Latin-script sentences always render spaced (`SegmentedSentenceDisplay`'s `isLatin` branch) so the switch would be a no-op for Spanish. `selectedLanguage` is nullable with a `'zh'` DB default, hence the `??`. |
 | Consumer | `ExampleSentenceList` reads `useAuth().user?.showSegmentSpaces` directly |

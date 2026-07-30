@@ -12,7 +12,7 @@ export class NightMarketTemplateController {
   constructor(private readonly service: NightMarketTemplateService) {}
 
   /**
-   * GET /api/nightmarket-templates/name-available?name=...
+   * GET /api/nightMarketTemplates/nameAvailable?name=...
    * → { available: boolean } — backs the editor Properties-popup name check.
    */
   async checkNameAvailable(req: Request, res: Response): Promise<void> {
@@ -31,7 +31,7 @@ export class NightMarketTemplateController {
   }
 
   /**
-   * GET /api/nightmarket-templates/suggest-name → { name: string }
+   * GET /api/nightMarketTemplates/suggestName → { name: string }
    * A free default name ("template{index}") to pre-fill a fresh template.
    */
   async suggestName(req: Request, res: Response): Promise<void> {
@@ -49,7 +49,7 @@ export class NightMarketTemplateController {
   }
 
   /**
-   * GET /api/nightmarket-templates → { templates: TemplateSummary[] }
+   * GET /api/nightMarketTemplates → { templates: TemplateSummary[] }
    * Name-ordered summaries for the editor's Load dropdown.
    */
   async listTemplates(req: Request, res: Response): Promise<void> {
@@ -67,7 +67,7 @@ export class NightMarketTemplateController {
   }
 
   /**
-   * GET /api/nightmarket-templates/gallery → { templates: TemplateGalleryEntry[] }
+   * GET /api/nightMarketTemplates/gallery → { templates: TemplateGalleryEntry[] }
    * One entry per name (with the FULL definition of its most-conditions version) for the
    * editor's visual Load gallery.
    */
@@ -86,7 +86,7 @@ export class NightMarketTemplateController {
   }
 
   /**
-   * GET /api/nightmarket-templates/load?name=...&version=... → { template } | 404
+   * GET /api/nightMarketTemplates/load?name=...&version=... → { template } | 404
    * Full definition (+ availableVersions) for loading one version into the editor.
    */
   async getTemplate(req: Request, res: Response): Promise<void> {
@@ -107,7 +107,7 @@ export class NightMarketTemplateController {
   }
 
   /**
-   * POST /api/nightmarket-templates  { name, version, width, height, definition }
+   * POST /api/nightMarketTemplates  { name, version, width, height, definition }
    * → 200 { template, overwritten } — upsert by (name, version).
    */
   async saveTemplate(req: Request, res: Response): Promise<void> {
@@ -126,7 +126,7 @@ export class NightMarketTemplateController {
   }
 
   /**
-   * DELETE /api/nightmarket-templates?name=... → { deleted: true } | 404
+   * DELETE /api/nightMarketTemplates?name=... → { deleted: true } | 404
    * Hard-deletes the WHOLE template (every version of the name).
    */
   async deleteTemplate(req: Request, res: Response): Promise<void> {
@@ -145,7 +145,7 @@ export class NightMarketTemplateController {
   }
 
   /**
-   * DELETE /api/nightmarket-templates/version?name=...&version=... → { deleted: true } | 404
+   * DELETE /api/nightMarketTemplates/version?name=...&version=... → { deleted: true } | 404
    * Hard-deletes a SINGLE version. Version 0 is rejected (400) — use the name-level
    * delete for the base (see NightMarketTemplateService.deleteTemplateVersion).
    */

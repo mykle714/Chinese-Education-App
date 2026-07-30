@@ -46,7 +46,10 @@ const SCRIPT_VERSION = 2; // bump when this script's logic/prompt changes (v2: r
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // run-log: track duration, version, words/mode, and token usage/cost
-const { stampEntries, staleClause } = initRunLog({ script: 'chinese/backfill-frequency-score', version: SCRIPT_VERSION, anthropic: anthropic });
+const { stampEntries, staleClause, validatedClause } = initRunLog({ script: 'chinese/backfill-frequency-score', version: SCRIPT_VERSION, anthropic: anthropic });
+// Never overwrite a score a validator has approved/flagged via the card's
+// "Commonality" chip (migration 132, docs/DATA_VALIDATION_SYSTEM.md).
+const validatedFilter = `AND ${validatedClause(['frequencyScore'], 'dictionaryentries_zh')}`;
 
 const isSpotCheck = process.argv.includes('--spot-check');
 const isRandom = process.argv.includes('--random');
@@ -90,6 +93,7 @@ async function run() {
       FROM dictionaryentries_zh
       WHERE language = 'zh'
         ${discoverableGate}
+        ${validatedFilter}
         AND ${scoreGate}
         ${wordsFilter}
       ORDER BY ${isRandom ? 'RANDOM()' : 'id ASC'}

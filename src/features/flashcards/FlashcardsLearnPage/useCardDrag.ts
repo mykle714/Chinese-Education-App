@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { CARD_DISMISS_THRESHOLD_VW, CARD_DRAG_SENSITIVITY, CARD_FLIP_MS } from "./constants";
+import { CARD_DISMISS_THRESHOLD_VW, CARD_DRAG_SENSITIVITY, CARD_FLIP_MS } from "../constants";
 
 interface UseCardDragReturn {
     cardRef: React.RefObject<HTMLDivElement | null>;

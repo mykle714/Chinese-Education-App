@@ -234,7 +234,11 @@ async function run() {
       `breakdown <> 'null'::jsonb`,
     ];
     const params = [];
-    if (!ALL) conds.push('discoverable = TRUE');
+    // A --words run targets exactly those rows, INCLUDING not-yet-discoverable ones —
+    // that is how the lazy-enrichment worker and /oracle-backfill drive this step for a
+    // word being brought up to discoverable. Untargeted full-table runs keep the gate.
+    // (Same convention as backfill-classifier.js; --all forces the gate off outright.)
+    if (!ALL && !targetWords?.length) conds.push('discoverable = TRUE');
     // Default: skip rows already sense-tagged. --stale ALSO re-tags rows stamped below
     // the current SCRIPT_VERSION; --force re-tags everything.
     if (!FORCE) {

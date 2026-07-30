@@ -18,7 +18,7 @@ export const MINUTE_POINTS_CONFIG = {
 };
 
 // Abuse limit on the dictionary AI-fallback ("AI" pill). Max COMPLETED model calls a
-// single user may make per local streak-day; over this, POST /api/dictionary/ai-entry
+// single user may make per local streak-day; over this, POST /api/dictionary/aiEntry
 // returns HTTP 429. Cache hits don't count. See docs/DICTIONARY_AI_FALLBACK_SEARCH.md
 // and dictionary_ai_usage (migration 99).
 export const DICTIONARY_AI_DAILY_LIMIT = parseInt(process.env.DICTIONARY_AI_DAILY_LIMIT || '10');

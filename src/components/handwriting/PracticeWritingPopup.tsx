@@ -348,7 +348,7 @@ export default function PracticeWritingPopup({
 
     // Award the star only when EVERY character is correct in one Verify.
     if (allCorrect && !completedLevels.has(spec.mode)) {
-      recordCompletion("zh", character, spec.mode, token)
+      recordCompletion("zh", character, spec.mode)
         .then(onLevelsChange)
         .catch((e) => console.warn("✍️ failed to record completion", e));
     }

@@ -1,5 +1,5 @@
 import { ISortPacksDAL } from '../interfaces/ISortPacksDAL.js';
-import { dbManager } from '../base/DatabaseManager.js';
+import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
 import { SortPackRow } from '../../types/sortPacks.js';
 import { ValidationError } from '../../types/dal.js';
 
@@ -11,6 +11,15 @@ import { ValidationError } from '../../types/dal.js';
  * table, and builds fallback packs-of-1. See docs/SORT_PACKS_IMPLEMENTATION.md §3.
  */
 export class SortPacksDAL implements ISortPacksDAL {
+
+  /**
+   * The connection manager, injected so the DAL can be substituted in a test.
+   * Defaults to the process-wide singleton, so `new SortPacksDAL()` at the composition
+   * root (dal/setup.ts) keeps working unchanged.
+   * See docs/CORRECTNESS_AND_PERFORMANCE_REVIEW.md finding 2.
+   */
+  constructor(protected readonly dbManager: DatabaseManager = defaultDbManager) {}
+
   /** Map a DB row (quoted camelCase columns) to the SortPackRow shape. */
   private _mapRow(row: any): SortPackRow {
     return {
@@ -32,7 +41,7 @@ export class SortPacksDAL implements ISortPacksDAL {
     if (!language) throw new ValidationError('language is required');
     if (limit <= 0) return [];
 
-    const result = await dbManager.executeQuery<any>(async (client) => {
+    const result = await this.dbManager.executeQuery<any>(async (client) => {
       // $1 language, $2 EXACT level, $3 excludePackIds, $4 limit. excludePackIds passed
       // as an int[] and excluded with != ALL so an empty array is a no-op. The service
       // calls this once per level (nearest-first) so level is honored strictly.
@@ -53,7 +62,7 @@ export class SortPacksDAL implements ISortPacksDAL {
   async listByLanguage(language: string): Promise<SortPackRow[]> {
     if (!language) throw new ValidationError('language is required');
 
-    const result = await dbManager.executeQuery<any>(async (client) => {
+    const result = await this.dbManager.executeQuery<any>(async (client) => {
       return await client.query(`
         SELECT id, language, level, "packOrder", "entryIds", "entryWords"
         FROM sort_packs

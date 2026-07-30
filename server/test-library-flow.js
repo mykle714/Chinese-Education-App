@@ -1,6 +1,6 @@
 /**
  * Test script to debug library card flow
- * Tests: /api/starter-packs/sort → /api/onDeck/library-cards
+ * Tests: /api/starterPacks/sort → /api/onDeck/libraryCards
  */
 
 const API_BASE_URL = 'http://localhost:5000';
@@ -85,7 +85,7 @@ async function testLibraryFlow() {
 
     // Step 3: Sort card to library
     console.log('\n📝 Step 3: Sorting card to library...');
-    const sortResponse = await fetch(`${API_BASE_URL}/api/starter-packs/sort`, {
+    const sortResponse = await fetch(`${API_BASE_URL}/api/starterPacks/sort`, {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
@@ -109,7 +109,7 @@ async function testLibraryFlow() {
 
     // Step 4: Fetch library cards
     console.log('\n📝 Step 4: Fetching library cards...');
-    const libraryResponse = await fetch(`${API_BASE_URL}/api/onDeck/library-cards`, {
+    const libraryResponse = await fetch(`${API_BASE_URL}/api/onDeck/libraryCards`, {
       headers: { 'Cookie': cookies || '' }
     });
 

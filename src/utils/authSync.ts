@@ -12,7 +12,7 @@ import { getBrowserTimezone } from '../minutePoints/minutePointsSync';
 
 export async function notifyLogin(token?: string | null): Promise<void> {
   try {
-    await fetch(`${API_BASE_URL}/api/auth/on-login`, {
+    await fetch(`${API_BASE_URL}/api/auth/onLogin`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -23,6 +23,25 @@ of that, a **leaf page renders no footer**, and the back arrow is the sole exit.
 The wrapper owns the exit: tapping back plays the slide-down, then runs the
 caller's `onBack`. Vertical slide (sheet-style presentation).
 
+#### `hideHeader` — sideways pages draw their own header
+A **landscape** leaf page cannot use the built-in header: an upright header on a
+rotated game is unreadable. `LeafPage` therefore accepts `hideHeader`, which
+suppresses `LeafPageHeader` and switches `children` to a **render-prop** form:
+
+```tsx
+<LeafPage title="…" onBack={…} hideHeader>
+    {({ onBack }) => ( /* draw LeafPageHeader yourself, inside your stage */ )}
+</LeafPage>
+```
+
+The `onBack` handed back is the **exit-aware** one — it plays the slide-down and
+then runs the caller's `onBack`. A `hideHeader` page **must** wire it to its own
+back control, or the page has no exit, which breaks the leaf archetype's core
+rule. Everything else (no footer, the slide, the clone-on-exit) is unchanged.
+
+Only Speed Reading uses this today —
+see [SPEED_READING_GAME.md](./SPEED_READING_GAME.md) § Sideways rendering.
+
 ### Node page — hub still in lateral nav
 A node keeps the footer so the user can jump laterally (footer tabs) without
 backing out. It uses the left arrow and a horizontal slide. The slide-**out** to
@@ -158,7 +177,7 @@ Every other route (all leaf pages, login, etc.) is absent → the footer slides 
 ### Dictionary browse-state persistence
 
 `DictionaryPage`'s query, pagination page, and scroll position are held in an
-in-memory singleton, `dictionaryBrowseState` (`src/pages/dictionaryBrowseState.ts`),
+in-memory singleton, `dictionaryBrowseState` (`src/features/dictionary/dictionaryBrowseState.ts`),
 so the list ⇄ card-detail (cdp) drill-in restores where the user was. The state is
 seeded into `useDictionarySearch` via its `initial` argument and kept in sync by
 effects in `DictionaryPage.tsx`.
@@ -199,7 +218,7 @@ single-char **Used In** rows and the example-sentence segments tappable by passi
 
 | Surface | Handler | Target |
 |---|---|---|
-| Read-only dictionary cdp | `DictionaryCardDetailPage.handleWordOpen` (`src/pages/DictionaryCardDetailPage.tsx:97`) | always `/dictionary/card/:word` — browsing the dictionary never jumps into the editable deck surface |
+| Read-only dictionary cdp | `DictionaryCardDetailPage.handleWordOpen` (`src/features/dictionary/DictionaryCardDetailPage.tsx:97`) | always `/dictionary/card/:word` — browsing the dictionary never jumps into the editable deck surface |
 | Saved-card cdp | `useOpenWordCard` (`src/hooks/useOpenWordCard.ts`), wired in `VocabCardDetailPage.tsx` | the learner's own `/flashcards/card/:id` when a vet row exists for that word, else `/dictionary/card/:word` |
 
 `useOpenWordCard` resolves word → saved-card id through

@@ -22,18 +22,24 @@ import { nightMarketPlacementService } from '../../dal/setup.js';
 async function main(): Promise<void> {
   // Users penalized in their current local day (4 AM-bounded, per their stored tz) — the exact set
   // the SQL cron just decayed. Mirrors the cron's own local-day arithmetic.
-  const { recordset: users } = await dbManager.executeQuery<{ id: string }>(async (client) =>
+  //
+  // Penalties are per (user, language) since migration 134, and markets are per (user, language)
+  // since migration 136 — so this prunes one MARKET per penalized language row. No DISTINCT: a
+  // user whose zh and es were both penalized has two independent markets, each needing its own
+  // prune pass.
+  const { recordset: markets } = await dbManager.executeQuery<{ id: string; language: string }>(async (client) =>
     client.query(`
-      SELECT id
-      FROM users
-      WHERE "lastPenaltyDate" = ((now() AT TIME ZONE COALESCE(timezone, 'UTC')) - INTERVAL '4 hours')::date
+      SELECT u.id, t.language
+      FROM users u
+      JOIN user_language_minute_totals t ON t."userId" = u.id
+      WHERE t."lastPenaltyDate" = ((now() AT TIME ZONE COALESCE(u.timezone, 'UTC')) - INTERVAL '4 hours')::date
     `),
   );
 
   let usersPruned = 0;
   let templatesRemoved = 0;
-  for (const u of users) {
-    const { removedIds } = await nightMarketPlacementService.pruneDanglingTemplates(u.id);
+  for (const m of markets) {
+    const { removedIds } = await nightMarketPlacementService.pruneDanglingTemplates(m.id, m.language);
     if (removedIds.length > 0) {
       usersPruned++;
       templatesRemoved += removedIds.length;
@@ -42,7 +48,7 @@ async function main(): Promise<void> {
 
   console.log(
     `[NightMarket] prune-dangling-templates ${new Date().toISOString()} ` +
-      `candidates=${users.length} users_pruned=${usersPruned} templates_removed=${templatesRemoved}`,
+      `candidates=${markets.length} markets_pruned=${usersPruned} templates_removed=${templatesRemoved}`,
   );
 }
 

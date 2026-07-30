@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { IDictionaryDAL } from '../dal/interfaces/IDictionaryDAL.js';
-import { DictionaryEntry, VocabEntry, AiDictionaryEntry, WordComparisonResult, LongDefinitionPart, LongDefinitionCitation, DefinitionCluster } from '../types/index.js';
+import { DictionaryEntry, VocabEntry, AiDictionaryEntry, WordComparisonResult, LongDefinitionPart, LongDefinitionCitation, DefinitionCluster, EntryApprovalFlags } from '../types/index.js';
+import type { Language } from '../types/index.js';
 import type { LongDefinitionValue } from '../utils/definitions.js';
 import { ValidationError, RateLimitError } from '../types/dal.js';
 import { getAllSubstrings, buildDictMap, buildExcludeSet, segmentWithDict } from '../dal/shared/segmentString.js';
@@ -735,10 +736,12 @@ ${citationRule}`;
   }
 
   /**
-   * Get total count of dictionary entries
+   * Total number of entries in ONE language's dictionary table. The language is
+   * explicit because dictionary data is split per language (CLAUDE.md) — there is no
+   * single "the dictionary" to count.
    */
-  async getTotalCount(): Promise<number> {
-    return await this.dictionaryDAL.getTotalCount();
+  async getTotalCount(language: Language): Promise<number> {
+    return await this.dictionaryDAL.getTotalCount(language);
   }
 
   /**
@@ -1035,17 +1038,18 @@ Respond with only the definition text — no quotes, no extra text.`;
   }
 
   /**
-   * Attach `definitionsApproved: boolean` to each entry (validated 'definitions'
-   * field, docs/DATA_VALIDATION_SYSTEM.md). Delegates to the DAL batch method.
+   * Attach the four entry-level approval flags (definitions / partsOfSpeech /
+   * difficulty / frequencyScore — docs/DATA_VALIDATION_SYSTEM.md) to each entry.
+   * Delegates to the DAL batch method.
    *
    * @param entries - Objects carrying word1 and/or entryKey (the headword)
    * @param language - Language filter (default: 'zh')
    */
-  async enrichDefinitionsApprovalBatch<T extends {
+  async enrichFieldApprovalsBatch<T extends {
     word1?: string;
     entryKey?: string;
-  }>(entries: T[], language: string = 'zh'): Promise<Array<T & { definitionsApproved: boolean }>> {
-    return this.dictionaryDAL.enrichDefinitionsApprovalBatch(entries, language);
+  }>(entries: T[], language: string = 'zh'): Promise<Array<T & EntryApprovalFlags>> {
+    return this.dictionaryDAL.enrichFieldApprovalsBatch(entries, language);
   }
 
   async enrichEntriesWithSynonymMetadata(entries: VocabEntry[], language: string = 'zh'): Promise<VocabEntry[]> {

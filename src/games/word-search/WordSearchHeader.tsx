@@ -1,6 +1,5 @@
 import React from "react";
 import { Button, IconButton, useTheme } from "@mui/material";
-import RestartAltIcon from "@mui/icons-material/RestartAlt";
 import SettingsIcon from "@mui/icons-material/Settings";
 import MinutePointsFireBadge from "../../minutePoints/MinutePointsFireBadge";
 import { SIZE } from "../../theme/scale";
@@ -11,15 +10,15 @@ interface WordSearchHeaderControlsProps {
     hintReady: boolean;
     /** Spend a hint (reveal the next pinyin unit of the least-hinted unfound word). */
     onHint: () => void;
-    /** Discard the current board and load a fresh one. */
-    onRestart: () => void;
     /** Open the settings sheet (pinyin display + timer visibility). */
     onSettingsClick: () => void;
 }
 
 /**
- * Right-side header controls for Word Search: a restart button, a hint
- * button, and the settings cog. Pinyin display and timer visibility used to
+ * Right-side header controls for Word Search: a hint button and the settings
+ * cog. (A restart/RestartAlt button used to sit to the left of the hint button;
+ * it was removed — a mid-game board is now only discarded by finishing it, or by
+ * starting a fresh game from the Games hub.) Pinyin display and timer visibility used to
  * live here as toggle buttons — they now live in the settings sheet (see
  * WordSearchSettingsDialog), mirroring flp's "quick controls in the header,
  * everything else behind the cog" split. Ends with the minute-points fire
@@ -32,7 +31,6 @@ interface WordSearchHeaderControlsProps {
 const WordSearchHeaderControls: React.FC<WordSearchHeaderControlsProps> = ({
     hintReady,
     onHint,
-    onRestart,
     onSettingsClick,
 }) => {
     const theme = useTheme();
@@ -54,15 +52,6 @@ const WordSearchHeaderControls: React.FC<WordSearchHeaderControlsProps> = ({
 
     return (
         <>
-            <IconButton
-                className="word-search__restart-btn"
-                size="small"
-                sx={{ color: fc.onSurface }}
-                onClick={onRestart}
-                aria-label="Restart board"
-            >
-                <RestartAltIcon />
-            </IconButton>
             {/* Hint: greyed out (disabled) until the meter reaches HINT_COST and
                 at least one word is still unfound. Reveals one pinyin unit at
                 a time — see WordSearchHintRow / pinyinUnits.ts. */}

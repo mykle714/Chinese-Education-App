@@ -1,7 +1,7 @@
 import { PoolClient, QueryResult } from 'pg';
 import { BaseDAL } from '../base/BaseDAL.js';
 import { IVocabEntryDAL } from '../interfaces/IVocabEntryDAL.js';
-import { dbManager } from '../base/DatabaseManager.js';
+import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
 import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, UsedInItem, IconLayoutItem, SnapConfig, TextColors, TextLayout, TypedMarkHistory, DefinitionCluster } from '../../types/index.js';
 import { resolveDisplayDefinition } from '../../utils/definitions.js';
 import { ValidationError, NotFoundError, BulkResult, ITransaction, DALError } from '../../types/dal.js';
@@ -14,7 +14,7 @@ import { vetTableForLanguage, vetReadFrom, VET_PHYSICAL_TABLES } from '../shared
  * Handles all database operations for VocabEntry entities including bulk operations
  */
 export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, VocabEntryUpdateData> implements IVocabEntryDAL {
-  constructor() {
+  constructor(dbManager: DatabaseManager = defaultDbManager) {
     // NOTE: `vocabentries` is split per language (migration 66) into
     // vocabentries_zh / vocabentries_es. There is no single physical vet table, so
     // every read/write below routes explicitly via shared/vetTable.js. The base

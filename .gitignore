@@ -63,3 +63,8 @@ server/backups/
 # so the LGPL data never enters this repo or ships to a client. See
 # server/scripts/backfill/chinese/lib/decompose.js.
 data/hanzi/cache/
+
+# Ad-hoc debugging screenshots at the repo root (docs/ images are still tracked).
+/screenshot*.png
+# Downloaded installer binaries — fetch from upstream instead of committing.
+/*.deb

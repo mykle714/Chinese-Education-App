@@ -1,6 +1,6 @@
-import { BaseDAL } from '../base/BaseDAL.js';
 import { IDictionaryDAL } from '../interfaces/IDictionaryDAL.js';
-import { dbManager } from '../base/DatabaseManager.js';
+import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
+import type { Language } from '../../types/index.js';
 import { DictionaryEntry, DictionaryEntryCreateData, ParticleClassifierEntry, DefinitionCluster } from '../../types/index.js';
 import { ValidationError } from '../../types/dal.js';
 import { resolveShortDefinition, resolveLongDefinition, type LongDefinitionValue, type LongDefinitionSense } from '../../utils/definitions.js';
@@ -11,7 +11,33 @@ import { segmentPinyin } from '../../utils/pinyinSegment.js';
 import { dictTableForLanguage } from '../shared/dictTable.js';
 import { AiDictionaryCacheRow, WordComparisonRow } from '../../types/index.js';
 import { sanitizeDocumentContent } from '../../utils/sanitizeContent.js';
-import { composeDefinitionsBody, composeExampleSentenceBody } from '../../utils/validationBodyFormat.js';
+import {
+  composeDefinitionsBody,
+  composeDifficultyBody,
+  composeExampleSentenceBody,
+  composeFrequencyScoreBody,
+  composePartsOfSpeechBody,
+} from '../../utils/validationBodyFormat.js';
+import {
+  ENTRY_LEVEL_VALIDATION_FIELDS,
+  NO_APPROVALS,
+  type EntryApprovalFlags,
+  type ValidationField,
+} from '../../types/index.js';
+
+/**
+ * The raw det columns enrichFieldApprovalsBatch must read fresh to rebuild each
+ * entry-level field's approval body. Kept next to the enricher's SELECT so the two
+ * stay in step.
+ */
+interface EntryApprovalRawColumns {
+  word1: string;
+  partsOfSpeech: string[] | null;
+  definitions: string[] | null;
+  longDefinition: string | null;
+  difficulty: number | null;
+  frequencyScore: number | null;
+}
 
 // Standard column list for all dictionary SELECT queries
 const DICTIONARY_COLUMNS = `
@@ -137,9 +163,31 @@ function buildTokenPinyinPattern(tokens: string[], requireDigit: boolean): strin
  * Dictionary Data Access Layer implementation
  * Handles all database operations for CC-CEDICT dictionary entries
  */
-export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreateData, Partial<DictionaryEntryCreateData>> implements IDictionaryDAL {
-  constructor() {
-    super(dbManager, 'dictionaryentries_zh', 'id');
+export class DictionaryDAL implements IDictionaryDAL {
+  /**
+   * The connection manager. Held directly rather than inherited.
+   *
+   * This class used to `extends BaseDAL<...>` and call
+   * `super(dbManager, 'dictionaryentries_zh', 'id')`, which bound every INHERITED
+   * method to the Chinese table. Dictionary data is split per language
+   * (`dictionaryentries_zh` / `dictionaryentries_es` — see CLAUDE.md), and every
+   * real query in this file resolves its table through `dictTableForLanguage()`, so
+   * none of those inherited methods was ever correct here. None was ever called
+   * either, which is why nothing broke — but `dictionaryDAL.findById(id)` for a
+   * Spanish entry would have read the wrong table with no type error and no runtime
+   * error. Detaching from BaseDAL removes the trap.
+   *
+   * See docs/ARCHITECTURE_REVIEW.md finding 1.
+   */
+  protected readonly dbManager: DatabaseManager;
+
+  /**
+   * Injected so the DAL can be substituted in a test; defaults to the process-wide
+   * singleton so `new DictionaryDAL()` at the composition root is unchanged.
+   * See docs/CORRECTNESS_AND_PERFORMANCE_REVIEW.md finding 2.
+   */
+  constructor(dbManager: DatabaseManager = defaultDbManager) {
+    this.dbManager = dbManager;
   }
 
   /**
@@ -486,10 +534,16 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
     const limitPlaceholder = `$${baseParams.length + 1}`;
     const offsetPlaceholder = `$${baseParams.length + 2}`;
 
+    // Resolved per language like every other query here. This used to read
+    // `this.tableName` — BaseDAL's constructor argument, permanently
+    // 'dictionaryentries_zh' — so a Spanish search would have scanned the Chinese
+    // table for `language = 'es'` and always returned nothing.
+    const table = dictTableForLanguage(language as Language);
+
     const countResult = await this.dbManager.executeQuery<any>(async (client) => {
       return await client.query(`
         SELECT COUNT(*) as count
-        FROM ${this.tableName}
+        FROM ${table}
         WHERE language = $1 AND (
           ${orClause}
         )
@@ -499,7 +553,7 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
     const entriesResult = await this.dbManager.executeQuery<any>(async (client) => {
       return await client.query(`
         SELECT ${DICTIONARY_COLUMNS}
-        FROM ${this.tableName}
+        FROM ${table}
         WHERE language = $1 AND (
           ${orClause}
         )
@@ -632,11 +686,16 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
   }
 
   /**
-   * Get total count of dictionary entries
+   * Total number of entries in ONE language's dictionary table.
+   *
+   * Takes the language explicitly. It previously counted `this.tableName`, which
+   * BaseDAL pinned to `dictionaryentries_zh`, so `GET /api/dictionary/count`
+   * reported the Chinese total to Spanish users too.
    */
-  async getTotalCount(): Promise<number> {
+  async getTotalCount(language: Language): Promise<number> {
+    const table = dictTableForLanguage(language);
     const result = await this.dbManager.executeQuery<{ count: string }>(async (client) => {
-      return await client.query(`SELECT COUNT(*) as count FROM ${this.tableName}`);
+      return await client.query(`SELECT COUNT(*) as count FROM ${table}`);
     });
 
     return parseInt(result.recordset[0].count, 10);
@@ -817,106 +876,117 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
   }
 
   /**
-   * Attach `definitionsApproved: boolean` to each entry: TRUE iff a validator
-   * approved the 'definitions' field (docs/DATA_VALIDATION_SYSTEM.md) and it still
-   * matches the entry's CURRENT raw det data. Unlike the example-sentence flag, this
-   * is bundled as ONE unit across three columns (`partsOfSpeech` + `definitions` +
-   * `longDefinition` — mirroring `ValidationService.composeBody`'s 'definitions'
-   * branch): editing or regenerating ANY of the three invalidates the whole approval.
+   * Attach the four ENTRY-LEVEL approval flags to each entry — `definitionsApproved`,
+   * `partsOfSpeechApproved`, `difficultyApproved`, `frequencyScoreApproved` — each TRUE
+   * iff a validator approved that `validations` field (docs/DATA_VALIDATION_SYSTEM.md)
+   * AND the approval still matches the entry's CURRENT raw det data. Falsy ⇒ the client
+   * renders that surface with the AI-generated treatment.
+   *
+   * "Entry-level" distinguishes these from the per-sentence `humanApproved` flag: they
+   * describe the entry as a whole, so they can all be resolved from one raw-column read
+   * plus one `validations` read, regardless of batch size.
+   *
+   * `definitions` stays a BUNDLE of two columns (`definitions` + `longDefinition`,
+   * mirroring ValidationService.composeBody) — regenerating either invalidates the whole
+   * approval. `partsOfSpeech` used to be a third column in that bundle; migration 132
+   * split it into its own field so POS churn no longer invalidates a definitions review
+   * (and vice versa).
    *
    * Independent of enrichExampleSentencesMetadataBatch (no exampleSentences
    * precondition) — callers chain it alongside enrichLongDefinitionMetadataBatch.
    * Reads the RAW det columns fresh (not the caller's already-transformed
    * `longDefinition` display string) so the comparison matches composeBody exactly.
    */
-  async enrichDefinitionsApprovalBatch<T extends {
+  async enrichFieldApprovalsBatch<T extends {
     word1?: string;
     entryKey?: string;
-  }>(entries: T[], language: string = 'zh'): Promise<Array<T & { definitionsApproved: boolean }>> {
+  }>(entries: T[], language: string = 'zh'): Promise<Array<T & EntryApprovalFlags>> {
     const words = [...new Set(
       entries.map(e => e.word1 ?? e.entryKey).filter((w): w is string => !!w)
     )];
-    if (words.length === 0) return entries.map(e => ({ ...e, definitionsApproved: false }));
+    if (words.length === 0) return entries.map(e => ({ ...e, ...NO_APPROVALS }));
 
     const table = dictTableForLanguage(language);
-    const rawResult = await this.dbManager.executeQuery<{
-      word1: string;
-      partsOfSpeech: string[] | null;
-      definitions: string[] | null;
-      longDefinition: string | null;
-    }>(
+    const rawResult = await this.dbManager.executeQuery<EntryApprovalRawColumns>(
       async (client) =>
         client.query(
-          `SELECT word1, "partsOfSpeech", definitions, "longDefinition"
+          `SELECT word1, "partsOfSpeech", definitions, "longDefinition", difficulty, "frequencyScore"
              FROM ${table} WHERE word1 = ANY($1) AND language = $2`,
           [words, language]
         )
     );
     const rawByWord = new Map(rawResult.recordset.map(r => [r.word1, r]));
-    const approvedByWord = await this.fetchApprovedDefinitionsContents(words, language);
+    const approvedByWord = await this.fetchApprovedEntryFieldContents(words, language);
 
     return entries.map(entry => {
       const word = entry.word1 ?? entry.entryKey;
       const raw = word ? rawByWord.get(word) : undefined;
-      const definitionsApproved = raw
-        ? this.isDefinitionsHumanApproved(approvedByWord.get(word!), raw)
-        : false;
-      return { ...entry, definitionsApproved };
+      if (!raw) return { ...entry, ...NO_APPROVALS };
+      const approved = approvedByWord.get(word!);
+      // One rebuild-and-compare per field: the stored approval is only still valid if
+      // the formatter run over TODAY's column value reproduces it byte-for-byte.
+      const matches = (field: ValidationField, body: string) =>
+        !!approved?.get(field)?.has(sanitizeDocumentContent(body));
+      return {
+        ...entry,
+        definitionsApproved: matches('definitions', composeDefinitionsBody(raw)),
+        partsOfSpeechApproved: matches('partsOfSpeech', composePartsOfSpeechBody(raw.partsOfSpeech)),
+        difficultyApproved: matches('difficulty', composeDifficultyBody(raw.difficulty)),
+        frequencyScoreApproved: matches('frequencyScore', composeFrequencyScoreBody(raw.frequencyScore)),
+      };
     });
   }
 
   /**
-   * Batch-fetch human-APPROVED 'definitions' bodies, keyed by headword. Mirrors
-   * fetchApprovedSentenceContents but for the single `field = 'definitions'`
-   * (no per-index stripping — the whole composed body is compared as one unit).
+   * Batch-fetch human-APPROVED bodies for the entry-level fields, keyed by headword
+   * then by field. Mirrors fetchApprovedSentenceContents but covers all four
+   * entry-level fields in ONE query (they share a join and a batch), and keeps them
+   * bucketed per field so a `definitions` approval can never satisfy a `partsOfSpeech`
+   * comparison. A field's bucket is a Set because different validators may have
+   * approved different revisions of the same field — any one matching today's data
+   * counts as approved.
    */
-  private async fetchApprovedDefinitionsContents(
+  private async fetchApprovedEntryFieldContents(
     words: string[],
     language: string
-  ): Promise<Map<string, Set<string>>> {
-    const approvedByWord = new Map<string, Set<string>>();
+  ): Promise<Map<string, Map<ValidationField, Set<string>>>> {
+    const approvedByWord = new Map<string, Map<ValidationField, Set<string>>>();
     if (words.length === 0) return approvedByWord;
 
     const table = dictTableForLanguage(language);
-    const result = await this.dbManager.executeQuery<{ word1: string; content: string | null }>(
+    const result = await this.dbManager.executeQuery<{
+      word1: string;
+      field: ValidationField;
+      content: string | null;
+    }>(
       async (client) =>
         client.query(
-          `SELECT d.word1, val.content
+          `SELECT d.word1, val.field, val.content
              FROM validations val
              JOIN ${table} d ON d.id = val."entryId" AND d.language = val.language
             WHERE val.language = $1
               AND val.action = 'approve'
-              AND val.field = 'definitions'
-              AND d.word1 = ANY($2)`,
-          [language, words]
+              AND val.field = ANY($2)
+              AND d.word1 = ANY($3)`,
+          [language, ENTRY_LEVEL_VALIDATION_FIELDS, words]
         )
     );
 
     for (const row of result.recordset) {
       if (row.content == null) continue; // flags carry no content
-      let contents = approvedByWord.get(row.word1);
+      let byField = approvedByWord.get(row.word1);
+      if (!byField) {
+        byField = new Map<ValidationField, Set<string>>();
+        approvedByWord.set(row.word1, byField);
+      }
+      let contents = byField.get(row.field);
       if (!contents) {
         contents = new Set<string>();
-        approvedByWord.set(row.word1, contents);
+        byField.set(row.field, contents);
       }
       contents.add(row.content);
     }
     return approvedByWord;
-  }
-
-  /**
-   * Rebuilds the exact 'definitions' pretty body (composeDefinitionsBody — the same
-   * formatter ValidationService uses to compose the doc a validator reads) from the
-   * CURRENT raw det columns and compares against the stored approval content, run
-   * through the same (idempotent) sanitizeDocumentContent used on the write path.
-   */
-  private isDefinitionsHumanApproved(
-    approvedContents: Set<string> | undefined,
-    raw: { partsOfSpeech: string[] | null; definitions: string[] | null; longDefinition: string | null }
-  ): boolean {
-    if (!approvedContents || approvedContents.size === 0) return false;
-    const body = composeDefinitionsBody(raw);
-    return approvedContents.has(sanitizeDocumentContent(body));
   }
 
   /**
@@ -1243,12 +1313,18 @@ export class DictionaryDAL extends BaseDAL<DictionaryEntry, DictionaryEntryCreat
   }
 
   /**
-   * Override create to handle JSON stringification of definitions
+   * Insert a dictionary entry into ITS LANGUAGE's table. Used only by the import
+   * scripts; `definitions` arrives already JSON-stringified.
+   *
+   * The target table comes from `data.language`, not from a constructor argument —
+   * this used to write to `this.tableName` (always `dictionaryentries_zh`), so an
+   * `es` create would have silently landed in the Chinese table.
    */
   async create(data: DictionaryEntryCreateData): Promise<DictionaryEntry> {
+    const table = dictTableForLanguage(data.language);
     const result = await this.dbManager.executeQuery<any>(async (client) => {
       return await client.query(`
-        INSERT INTO ${this.tableName} (language, word1, word2, pronunciation, definitions)
+        INSERT INTO ${table} (language, word1, word2, pronunciation, definitions)
         VALUES ($1, $2, $3, $4, $5)
         RETURNING ${DICTIONARY_COLUMNS}
       `, [

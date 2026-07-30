@@ -25,8 +25,10 @@
  * the grass↔dirt and light↔dark transitions are drawn purely by boundary overlays,
  * not by a cliff.
  *
- * Referenced by: src/features/nightmarket/FarmTerrainLayer.tsx (consumer),
- * docs/NIGHT_MARKET_FEATURE.md (Terrain rendering section).
+ * Referenced by: src/features/nightmarket/TemplateTerrainLayer.tsx and
+ * templateEditorApi.ts (EditorMasks), docs/NIGHT_MARKET_FEATURE.md (Terrain
+ * rendering section). The older FarmTerrainLayer consumer was deleted when the
+ * template renderer superseded it.
  */
 
 import {
@@ -37,6 +39,7 @@ import {
 } from './freeFarmTileset';
 import { PLANK_VARIATIONS } from './walkway';
 import type { PlaceholderArea } from './placeholderArea';
+import type { CellWindow } from './isometric';
 
 /**
  * Field dimensions in tiles. Shared by the terrain view ({@link FarmTerrainLayer})
@@ -662,6 +665,18 @@ export interface EditorTile extends FarmTile {
    * spriteless tint and does not suppress decor (family decor coexists with a street).
    */
   decorUrl: string | null;
+  /**
+   * True when this cell's tallDirt slab is FULLY HIDDEN and can be skipped — halving the sprite
+   * count over a field of ordinary grass.
+   *
+   * The slab covers its own diamond plus a `TILE_HEIGHT` cliff band below it. Both are occluded when:
+   *   (a) the cell has a grass cap of its own (`kind === 'grass'`), which covers the diamond, AND
+   *   (b) its S, W and SW neighbours are in-field, whose tiles between them cover the band and all
+   *       sort ABOVE this slab (`z = −(col + row)`, so a nearer cell always wins).
+   *
+   * A dirt cell must keep its slab — the slab's top face IS its visible surface.
+   */
+  slabHidden: boolean;
 }
 
 /**
@@ -692,6 +707,65 @@ export interface TerrainField {
   originRow: number;
   /** Whether a GLOBAL cell belongs to the field (runtime: union of placement footprints). */
   contains: (col: number, row: number) => boolean;
+  /**
+   * Whether a GLOBAL cell is APRON — in-field ground that no template painted, i.e. the default
+   * surface nmp pads around the market so the viewport is never bare (see {@link padTerrainField}).
+   * Apron cells render as the default tallDirt + lightGrass and take part in the light-grass
+   * autotiling, so template grass meets them seamlessly. Omitted ⇒ no apron (editor/sandbox).
+   */
+  apron?: (col: number, row: number) => boolean;
+}
+
+/**
+ * Grow `field` outward by `pad` cells on every side, making the padded ring APRON: default ground
+ * that carries no painted masks. The returned span/origin replace the caller's, so
+ * {@link buildEditorField} paints the enlarged field.
+ *
+ * Every cell in the padded rectangle becomes in-field — including holes INSIDE the original
+ * silhouette (the empty corner of an L-shaped layout). That is intentional: with a default ground
+ * apron the market is no longer a floating island, so an interior gap should read as ordinary
+ * ground rather than as a hole punched through to the background.
+ *
+ * `boundless` decouples MEMBERSHIP from what is DRAWN: `contains` becomes true everywhere, while
+ * the returned span still bounds iteration to the padded ring. That is what lets nmp draw a thin
+ * ring of real autotiled tiles and leave the rest of the viewport to the flat
+ * {@link ../../features/nightmarket/GroundBackdropLayer} — the ring's outermost cells still see
+ * ground on all sides, so they autotile as interior `center` tiles and match the backdrop exactly
+ * instead of drawing a plateau cliff at the ring's edge. Without it, `pad` would have to cover the
+ * camera's entire zoomed-out reach (tens of thousands of cells).
+ *
+ * `pad = 0` returns the field unchanged (no apron predicate), preserving the pre-apron behavior.
+ */
+export function padTerrainField(
+  field: TerrainField,
+  width: number,
+  height: number,
+  pad: number,
+  boundless = false,
+): { field: TerrainField; width: number; height: number } {
+  if (pad <= 0) return { field, width, height };
+
+  const originCol = field.originCol - pad;
+  const originRow = field.originRow - pad;
+  const paddedWidth = width + pad * 2;
+  const paddedHeight = height + pad * 2;
+  const inPaddedRect = (col: number, row: number) =>
+    col >= originCol && col < originCol + paddedWidth &&
+    row >= originRow && row < originRow + paddedHeight;
+
+  return {
+    width: paddedWidth,
+    height: paddedHeight,
+    field: {
+      originCol,
+      originRow,
+      contains: boundless ? () => true : inPaddedRect,
+      // Apron = in-field but outside the original silhouette. Composes with an already-padded field
+      // so re-padding never loses the earlier apron.
+      apron: (col, row) =>
+        (boundless || inPaddedRect(col, row)) && (!field.contains(col, row) || !!field.apron?.(col, row)),
+    },
+  };
 }
 
 export function buildEditorField(
@@ -699,6 +773,7 @@ export function buildEditorField(
   height: number,
   masks: EditorMasks,
   field?: TerrainField,
+  window?: CellWindow,
 ): EditorTile[] {
   const originCol = field?.originCol ?? 0;
   const originRow = field?.originRow ?? 0;
@@ -708,6 +783,12 @@ export function buildEditorField(
   // footprint-union test so ground paints only inside the real continent shape (and rims it).
   const inField =
     field?.contains ?? ((x: number, y: number) => x >= 0 && x < width && y >= 0 && y < height);
+  // Apron cells carry no painted masks, so they take the DEFAULT surface: tallDirt slab + light
+  // grass cap. Folding them into the light-grass membership (not just `kind`) is what makes a
+  // template's painted grass autotile continuously into the surrounding ground instead of
+  // stopping at a hard boundary.
+  const isApron = field?.apron ?? (() => false);
+  const isLightGrass = (x: number, y: number) => isTerrain1(x, y) || isApron(x, y);
   // The stored decor url for a cell, before plank autotiling. The street mask does not
   // suppress decor (it is a spriteless tint; family decor coexists with a street).
   const rawDecorAt = (x: number, y: number) => masks.decor.get(key(x, y)) ?? null;
@@ -727,8 +808,16 @@ export function buildEditorField(
   const tiles: EditorTile[] = [];
   // Iterate the GLOBAL window [origin, origin+span); skip cells outside the field silhouette so a
   // non-rectangular continent (or the empty corner of an L-shaped layout) gets no phantom ground.
-  for (let isoX = originCol; isoX < originCol + width; isoX++) {
-    for (let isoY = originRow; isoY < originRow + height; isoY++) {
+  // CULLING: `window` (when given) intersects that range down to what the camera can actually see,
+  // which is what keeps an apron-padded field affordable — cost tracks the viewport, not the world.
+  // Note the culling is on ITERATION only: `inField` is still consulted at full extent, so a tile
+  // at the window's edge autotiles against its real neighbours and no phantom rim appears there.
+  const startCol = Math.max(originCol, window?.minCol ?? -Infinity);
+  const endCol = Math.min(originCol + width - 1, window?.maxCol ?? Infinity);
+  const startRow = Math.max(originRow, window?.minRow ?? -Infinity);
+  const endRow = Math.min(originRow + height - 1, window?.maxRow ?? Infinity);
+  for (let isoX = startCol; isoX <= endCol; isoX++) {
+    for (let isoY = startRow; isoY <= endRow; isoY++) {
       if (!inField(isoX, isoY)) continue;
       const fieldEdge = freeFarmTileset.pickLandmassEdge({
         n: inField(isoX, isoY + 1),
@@ -739,12 +828,18 @@ export function buildEditorField(
       tiles.push({
         isoX,
         isoY,
-        kind: isTerrain1(isoX, isoY) ? 'grass' : 'dirt',
+        kind: isLightGrass(isoX, isoY) ? 'grass' : 'dirt',
         darkGrass: isTerrain2(isoX, isoY),
         fieldEdge,
-        grassNeighbours: neighbourOccupancy(isoX, isoY, isTerrain1),
+        grassNeighbours: neighbourOccupancy(isoX, isoY, isLightGrass),
         darkGrassNeighbours: neighbourOccupancy(isoX, isoY, isTerrain2),
         decorUrl: decorAt(isoX, isoY),
+        // See EditorTile.slabHidden. S = isoY−1, W = isoX−1, SW = both.
+        slabHidden:
+          isLightGrass(isoX, isoY) &&
+          inField(isoX, isoY - 1) &&
+          inField(isoX - 1, isoY) &&
+          inField(isoX - 1, isoY - 1),
       });
     }
   }

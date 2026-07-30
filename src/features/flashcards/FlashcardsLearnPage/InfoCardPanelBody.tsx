@@ -2,14 +2,12 @@ import React, { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, use
 import { Box, IconButton, Typography, useTheme } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
-import { resolveDisplayDefinition, resolveLongDefinitionForSense } from "../../../utils/definitionUtils";
+import { resolveDisplayDefinition } from "../../../utils/definitionUtils";
 import ForeignText, { type CPCDSize } from "../../../components/ForeignText";
 import PracticeWritingButton from "../../../components/handwriting/PracticeWritingButton";
-import LongDefinitionDisplay from "../../../components/LongDefinitionDisplay";
-import FrequencyScoreDots from "../../../components/FrequencyScoreDots";
-import { aiGeneratedSurfaceSx } from "../../../theme/aiGeneratedStyling";
-import InfoCardBlockButton from "./InfoCardBlockButton";
-import UsedInPaginatedList from "../UsedInPaginatedList";
+import { ddTextColor } from "../../../utils/cardTextColor";
+import InfoCardTabContent from "./InfoCardTabContent";
+import { tabAvailability } from "./infoCardTabAvailability";
 import {
     InfoSheetEntryHeader,
     InfoSheetTabStrip,
@@ -21,12 +19,11 @@ import {
     TAB_SWIPE_AXIS_LOCK_PX,
     TAB_SWIPE_COMMIT_RATIO,
     TAB_SWIPE_TRANSITION,
-} from "./constants";
-import { SIZE, WEIGHT, TRACKING } from "../../../theme/scale";
+} from "../constants";
+import { SIZE, WEIGHT } from "../../../theme/scale";
 import { SpeakerButton } from "./FlashCardSection";
-import ExampleSentenceList from "../ExampleSentenceList";
 import { isHorizontalGestureClaimed } from "../../../utils/segmentScrubLock";
-import type { VocabEntry, BreakdownItem, UsedInItem } from "./types";
+import type { VocabEntry, BreakdownItem, UsedInItem } from "../types";
 
 // Resting track offset for a tab: the track is (N·100%) wide with N equal
 // panes, so showing tab k means shifting the track left by exactly k panes,
@@ -141,30 +138,13 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
     const theme = useTheme();
     const fc = theme.palette.flashcard;
 
-    // The long definition is stored per sense (zh) — render the one this card is on. The
-    // tab's entry snapshot is re-seeded (useEipTabs.syncEntry) whenever the flashcard's
-    // sense picker changes `selectedSense`, so no index override is needed here: resolving
-    // from the entry keeps the panel in lockstep with the card underneath it.
-    const { longDefinition, longDefinitionParts } = currentEntry
-        ? resolveLongDefinitionForSense(currentEntry)
-        : { longDefinition: null, longDefinitionParts: null };
+    // Per-tab emptiness + the entry-derived values the tab bodies render. Derived ONCE
+    // and shared with InfoCardTabContent so the greyed-out tab labels and the panes
+    // can never disagree. See InfoCardTabContent.tsx.
+    const avail = tabAvailability(currentEntry, breakdownItems);
+    const { breakdownTabLabel } = avail;
 
-    // Tab content availability — order matches TAB_LABELS: definition, examples, breakdown
-    const definitionTabHasContent = !!(
-        longDefinition ||
-        currentEntry?.difficulty ||
-        (currentEntry?.partsOfSpeech?.length ?? 0) > 0
-    );
-    const examplesTabHasContent = !!(currentEntry?.exampleSentences?.length);
-    // Single-char zh cards swap the breakdown tab for a "used in" list (see usedIn enrichment in OnDeckVocabService).
-    const isSingleChar = !!currentEntry && [...currentEntry.entryKey].length === 1;
-    const usedInItems: UsedInItem[] = (isSingleChar && currentEntry?.usedIn) ? currentEntry.usedIn : [];
-    const breakdownTabHasContent = isSingleChar
-        ? usedInItems.length > 0
-        : breakdownItems.length > 0;
-    const breakdownTabLabel = isSingleChar ? "used in" : TAB_LABELS[2];
-
-    const tabIsEmpty = [!definitionTabHasContent, !examplesTabHasContent, !breakdownTabHasContent];
+    const tabIsEmpty = [!avail.definition, !avail.examples, !avail.breakdown];
 
     // --- Swipe-to-change-tab ------------------------------------------------
     // All three tab panes are ALWAYS mounted side by side on a permanent
@@ -311,17 +291,17 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                     // Still ambiguous. Block SheetPanel from seeing this
                     // event too, not just events after the axis is decided —
                     // otherwise a few px of pre-lock vertical noise leaks
-                    // into SheetPanel's own touchmove handler, which shrinks
-                    // the sheet slightly AND sets its internal
-                    // `touchConsumedAny` flag. If the gesture then resolves
-                    // "x" here, SheetPanel's touchend handler (which we don't
-                    // otherwise touch) reads that leftover flag + the
-                    // now-slightly-shorter height as "user dragged the sheet
-                    // down and released," and DISMISSES the panel out from
-                    // under the swipe. Blocking from the very first event
-                    // avoids this entirely: SheetPanel's touchConsumedAny
-                    // simply never gets set for a gesture that turns out
-                    // horizontal. (No preventDefault yet — if this resolves
+                    // into SheetPanel's own touchmove handler, which locks its
+                    // gesture into "resize" mode and shrinks the sheet by those
+                    // few px. If the gesture then resolves "x" here, SheetPanel
+                    // never sees another move but still gets the touchend, and
+                    // reads "resize mode + height now a hair below the default
+                    // stop" as "user dragged the sheet down and released" —
+                    // DISMISSING the panel out from under the swipe. Blocking
+                    // from the very first event avoids this entirely:
+                    // SheetPanel's gestureMode simply never gets set for a
+                    // gesture that turns out horizontal, and its touchend
+                    // handler no-ops on a null mode. (No preventDefault yet — if this resolves
                     // "y", we want the browser's native vertical scroll, if
                     // any, to engage normally from its own first event.)
                     e.stopPropagation();
@@ -401,180 +381,6 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Definition / examples / breakdown-or-used-in content for one tab
-    // index — rendered once per tab into that tab's permanently-mounted pane
-    // on the slide track.
-    const renderTabContent = (tabIndex: number): React.ReactNode => {
-        if (tabIndex === 0) {
-            return definitionTabHasContent ? (
-                <Box className="mobile-demo-definition-wrapper" sx={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-                    {(longDefinition || longDefinitionParts?.length) && (
-                        <LongDefinitionDisplay
-                            className="mobile-demo-long-definition-text"
-                            longDefinition={longDefinition}
-                            longDefinitionParts={longDefinitionParts}
-                            showPinyin={showPinyin}
-                            showPinyinColor={showPinyinColor}
-                            onSegmentOpen={onExampleSegmentClick}
-                            aiGenerated={!currentEntry?.definitionsApproved}
-                            word1={currentEntry?.entryKey}
-                            language={currentEntry?.language}
-                            sx={{
-                                fontSize: SIZE.body,
-                                color: fc.onSurface,
-                                fontFamily: FC_FONT,
-                                lineHeight: 1.6,
-                            }}
-                        />
-                    )}
-                    {(currentEntry?.difficulty || (currentEntry?.partsOfSpeech?.length ?? 0) > 0 || currentEntry?.frequencyScore != null) && (
-                        <Box
-                            className="mobile-demo-definition-meta-strip"
-                            sx={{
-                                display: "flex",
-                                gap: "18px",
-                                alignItems: "center",
-                                padding: "10px 0",
-                                borderTop: `1px solid ${fc.border}`,
-                                borderBottom: `1px solid ${fc.border}`,
-                            }}
-                        >
-                            {/* HSK meta: only for zh, whose 1–6 difficulty integers ARE HSK
-                                levels; es uses the same scale but it is not an HSK label. */}
-                            {currentEntry?.language === 'zh' && currentEntry.difficulty && (
-                                // HSK/difficulty is AI-classified (backfill-hsk-level.js) with no
-                                // validation field, so it always carries the AI-generated box (no
-                                // badge — a small value chip, like the Type chip below).
-                                <Box
-                                    className="mobile-demo-hsk-chip--ai-generated"
-                                    sx={{ display: "flex", flexDirection: "column", gap: "3px", ...aiGeneratedSurfaceSx, borderRadius: "8px", padding: "4px 8px" }}
-                                >
-                                    <Typography sx={{ fontSize: SIZE.micro, fontWeight: WEIGHT.bold, color: fc.textSecondary, letterSpacing: TRACKING.caps, textTransform: "uppercase", fontFamily: FC_FONT }}>
-                                        HSK
-                                    </Typography>
-                                    <Typography sx={{ fontSize: SIZE.body, fontWeight: WEIGHT.semibold, color: fc.onSurface, fontFamily: FC_FONT, whiteSpace: "nowrap" }}>
-                                        {`HSK ${currentEntry.difficulty}`}
-                                    </Typography>
-                                </Box>
-                            )}
-                            {(currentEntry?.partsOfSpeech?.length ?? 0) > 0 && (
-                                <Box
-                                    className={currentEntry?.definitionsApproved ? undefined : "mobile-demo-pos-chip--ai-generated"}
-                                    sx={{
-                                        display: "flex",
-                                        flexDirection: "column",
-                                        gap: "3px",
-                                        // Orange border/tint only (no badge) when the definitions
-                                        // bundle hasn't been human-approved (docs/DATA_VALIDATION_SYSTEM.md).
-                                        ...(currentEntry?.definitionsApproved ? {} : { ...aiGeneratedSurfaceSx, borderRadius: "8px", padding: "4px 8px" }),
-                                    }}
-                                >
-                                    <Typography sx={{ fontSize: SIZE.micro, fontWeight: WEIGHT.bold, color: fc.textSecondary, letterSpacing: TRACKING.caps, textTransform: "uppercase", fontFamily: FC_FONT }}>
-                                        Type
-                                    </Typography>
-                                    <Typography sx={{ fontSize: SIZE.body, fontWeight: WEIGHT.semibold, color: fc.onSurface, fontFamily: FC_FONT }}>
-                                        {currentEntry!.partsOfSpeech!.join(', ')}
-                                    </Typography>
-                                </Box>
-                            )}
-                            {currentEntry?.frequencyScore != null && (
-                                // frequencyScore is AI-scored (backfill-frequency-score.js) with no
-                                // validation field, so it always carries the AI-generated box (no
-                                // badge — a small value chip, like the Type chip above).
-                                <Box
-                                    className="mobile-demo-frequency-meta mobile-demo-frequency-meta--ai-generated"
-                                    sx={{ display: "flex", flexDirection: "column", gap: "3px", ...aiGeneratedSurfaceSx, borderRadius: "8px", padding: "4px 8px" }}
-                                >
-                                    <Typography sx={{ fontSize: SIZE.micro, fontWeight: WEIGHT.bold, color: fc.textSecondary, letterSpacing: TRACKING.caps, textTransform: "uppercase", fontFamily: FC_FONT }}>
-                                        Commonality
-                                    </Typography>
-                                    <Box className="mobile-demo-frequency-dots" sx={{ display: "flex", alignItems: "center", gap: "5px", height: 19 }}>
-                                        <FrequencyScoreDots
-                                            score={currentEntry.frequencyScore!}
-                                            filledColor={fc.onSurface}
-                                            emptyBorderColor={fc.border}
-                                        />
-                                        <Typography sx={{ fontSize: SIZE.micro, fontWeight: WEIGHT.bold, color: fc.onSurface, fontFamily: FC_FONT, lineHeight: 1 }}>
-                                            {currentEntry.frequencyScore}/5
-                                        </Typography>
-                                    </Box>
-                                </Box>
-                            )}
-                        </Box>
-                    )}
-                </Box>
-            ) : (
-                <Box className="mobile-demo-tab-empty" sx={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 2 }}>
-                    <Typography sx={{ fontSize: SIZE.body, color: fc.textSecondary, textAlign: "center", fontFamily: FC_FONT }}>
-                        No definition available for this card
-                    </Typography>
-                </Box>
-            );
-        }
-
-        if (tabIndex === 1) {
-            // Examples — shared est renderer (see ExampleSentenceList).
-            return examplesTabHasContent ? (
-                <ExampleSentenceList
-                    sentences={currentEntry!.exampleSentences!}
-                    vocabWord={currentEntry?.entryKey}
-                    language={currentEntry?.language}
-                    showPinyin={showPinyin}
-                    showPinyinColor={showPinyinColor}
-                    onSegmentOpen={onExampleSegmentClick}
-                    onSpeakSentence={onSpeakSentence}
-                    speakingKey={speakingKey}
-                />
-            ) : (
-                <Box className="mobile-demo-tab-empty" sx={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 2 }}>
-                    <Typography sx={{ fontSize: SIZE.body, color: fc.textSecondary, textAlign: "center", fontFamily: FC_FONT }}>
-                        No example sentences available
-                    </Typography>
-                </Box>
-            );
-        }
-
-        // tabIndex === 2: Breakdown (multi-char) or Used In (single-char)
-        return breakdownTabHasContent ? (
-            <Box className="mobile-demo-breakdown-wrapper" sx={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-                {isSingleChar ? (
-                    // Infinite-scroll list: seeds from the card's ≤4 preview (usedInItems),
-                    // pages the rest via /api/dictionary/used-in.
-                    <UsedInPaginatedList
-                        character={currentEntry!.entryKey}
-                        language={currentEntry!.language ?? 'zh'}
-                        initialItems={usedInItems}
-                        showPinyin={showPinyin}
-                        showPinyinColor={showPinyinColor}
-                        onItemClick={onUsedInItemClick}
-                        rowClassName="mobile-demo-used-in-row-button"
-                    />
-                ) : (
-                    <Box sx={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
-                        {breakdownItems.map((item, index) => (
-                            <InfoCardBlockButton
-                                key={index}
-                                className="mobile-demo-breakdown-row-button"
-                                character={item.character}
-                                pinyin={item.pinyin}
-                                definition={item.definition}
-                                showPinyin={showPinyin}
-                                showPinyinColor={showPinyinColor}
-                                onClick={onBreakdownItemClick ? () => onBreakdownItemClick(item) : undefined}
-                            />
-                        ))}
-                    </Box>
-                )}
-            </Box>
-        ) : (
-            <Box className="mobile-demo-tab-empty" sx={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 2 }}>
-                <Typography sx={{ fontSize: SIZE.body, color: fc.textSecondary, textAlign: "center", fontFamily: FC_FONT }}>
-                    {isSingleChar ? "No words use this character yet" : "Breakdown not available for this card"}
-                </Typography>
-            </Box>
-        );
-    };
-
     return (
         <Box
             ref={rootRef}
@@ -628,9 +434,12 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                         sx={{
                             fontSize: SIZE.bodyLg,
                             fontWeight: WEIGHT.medium,
-                            // Matches the flp card face: the dd is de-emphasized one step off
-                            // `onSurface` (dark grey on light card themes) via the `dd` token.
-                            color: fc.dd,
+                            // Matches the flp card face via the shared dd color helper: zh
+                            // renders at full contrast, other languages are de-emphasized one
+                            // step off `onSurface` via the `dd` token.
+                            // (No Contrast pick is applied here — as before, this header
+                            // follows the card theme only, not the per-card override.)
+                            color: ddTextColor(currentEntry.language, undefined, fc),
                             fontFamily: FC_FONT,
                             lineHeight: 1.3,
                             flex: 1,
@@ -821,7 +630,19 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                                 touchAction: scrollTouchAction,
                             }}
                         >
-                            {renderTabContent(index)}
+                            <InfoCardTabContent
+                                tabIndex={index}
+                                currentEntry={currentEntry}
+                                breakdownItems={breakdownItems}
+                                avail={avail}
+                                showPinyin={showPinyin}
+                                showPinyinColor={showPinyinColor}
+                                onBreakdownItemClick={onBreakdownItemClick}
+                                onUsedInItemClick={onUsedInItemClick}
+                                onExampleSegmentClick={onExampleSegmentClick}
+                                onSpeakSentence={onSpeakSentence}
+                                speakingKey={speakingKey}
+                            />
                         </Box>
                     ))}
                 </Box>

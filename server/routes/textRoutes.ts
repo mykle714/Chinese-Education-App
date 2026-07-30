@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authenticateToken } from '../authMiddleware.js';
 import { textController } from '../dal/setup.js';
+import { handle } from './asyncHandler.js';
 
 /**
  * Text (user document) routes — /api/texts/*
@@ -11,39 +12,21 @@ import { textController } from '../dal/setup.js';
 const router = Router();
 
 // Get all texts for authenticated user
-// @ts-ignore
-router.get('/api/texts', authenticateToken, async (req, res) => {
-  await textController.getAllTexts(req, res);
-});
+router.get('/api/texts', authenticateToken, handle(textController.getAllTexts, textController));
 
 // Get text statistics for authenticated user
-// @ts-ignore
-router.get('/api/texts/stats', authenticateToken, async (req, res) => {
-  await textController.getUserTextStats(req, res);
-});
+router.get('/api/texts/stats', authenticateToken, handle(textController.getUserTextStats, textController));
 
 // Get a specific text by ID
-// @ts-ignore
-router.get('/api/texts/:id', authenticateToken, async (req, res) => {
-  await textController.getTextById(req, res);
-});
+router.get('/api/texts/:id', authenticateToken, handle(textController.getTextById, textController));
 
 // Create new text document
-// @ts-ignore
-router.post('/api/texts', authenticateToken, async (req, res) => {
-  await textController.createText(req, res);
-});
+router.post('/api/texts', authenticateToken, handle(textController.createText, textController));
 
 // Update text document
-// @ts-ignore
-router.put('/api/texts/:id', authenticateToken, async (req, res) => {
-  await textController.updateText(req, res);
-});
+router.put('/api/texts/:id', authenticateToken, handle(textController.updateText, textController));
 
 // Delete text document
-// @ts-ignore
-router.delete('/api/texts/:id', authenticateToken, async (req, res) => {
-  await textController.deleteText(req, res);
-});
+router.delete('/api/texts/:id', authenticateToken, handle(textController.deleteText, textController));
 
 export default router;

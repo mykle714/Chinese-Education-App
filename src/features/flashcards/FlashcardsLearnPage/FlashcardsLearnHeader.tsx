@@ -7,7 +7,7 @@ import SettingsIcon from "@mui/icons-material/Settings";
 import BrushIcon from "@mui/icons-material/Brush";
 import PageHeader from "../../../components/PageHeader";
 import MinutePointsFireBadge from "../../../minutePoints/MinutePointsFireBadge";
-import type { LastMarkUndoSnapshot } from "./types";
+import type { LastMarkUndoSnapshot } from "../types";
 import { SIZE } from "../../../theme/scale";
 
 interface FlashcardsLearnHeaderProps {

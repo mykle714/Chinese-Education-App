@@ -37,7 +37,13 @@ export function dictionaryEntryToVocabEntry(dict: DictionaryEntry): VocabEntry {
         // Every sense's long definition (zh), so the drill-in resolves the same sense as the
         // dd above — carried for the same reason as definitionClusters/selectedSense.
         longDefinitionSenses: dict.longDefinitionSenses ?? null,
+        // Entry-level validator-approval flags — carried through so a drilled-in
+        // dictionary eip renders the same approved/AI-generated treatment the
+        // flashcard does (docs/DATA_VALIDATION_SYSTEM.md).
         definitionsApproved: dict.definitionsApproved ?? false,
+        partsOfSpeechApproved: dict.partsOfSpeechApproved ?? false,
+        difficultyApproved: dict.difficultyApproved ?? false,
+        frequencyScoreApproved: dict.frequencyScoreApproved ?? false,
         partsOfSpeech: dict.partsOfSpeech ?? null,
         frequencyScore: dict.frequencyScore ?? null,
         difficulty: (anyDict.difficulty as DifficultyLevel | null | undefined) ?? null,

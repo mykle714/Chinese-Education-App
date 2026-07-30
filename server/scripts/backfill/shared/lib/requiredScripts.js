@@ -4,7 +4,7 @@
  * LAYER: data-enrichment (backfill) utility layer.
  *
  * ONE source of truth for the completeness check + the on-first-sort worker
- * (docs/DISCOVER_LAZY_ENRICHMENT.md §5). `REQUIRED_SCRIPTS_ZH` mirrors the 14-step zh
+ * (docs/DISCOVER_LAZY_ENRICHMENT.md §5). `REQUIRED_SCRIPTS_ZH` mirrors the 16-step zh
  * pipeline in `.claude/commands/mark-discoverable.md` §A; `REQUIRED_SCRIPTS_ES` mirrors
  * the 8-step es pipeline in §B3. `id` MUST match the `script:` id each backfill passes
  * to initRunLog (that is the key it stamps into `enrichmentLog`).
@@ -21,7 +21,10 @@
  *     If a validator has approved/flagged one, the script self-skips it via
  *     `validatedClause`, so the worker must NOT run the step on that row and must
  *     NOT wait for its stamp — the human-reviewed content is authoritative.
- *       process-defs / parts-of-speech / long-definitions / longdef-citations → 'definitions'
+ *       process-defs / long-definitions / longdef-citations → 'definitions'
+ *       parts-of-speech   → 'partsOfSpeech'  (split out of the bundle by migration 132)
+ *       hsk-level         → 'difficulty'
+ *       frequency-score   → 'frequencyScore' (es: also 'difficulty', one script writes both)
  *       example-sentences → 'exampleSentence0..2'
  *     (These mirror the scripts' own validatedClause calls — see each script.)
  *
@@ -49,14 +52,14 @@ export const REQUIRED_SCRIPTS_ZH = [
   { id: 'chinese/backfill-numbered-pinyin',           when: 'always',    version: 1, deterministic: true },
   { id: 'chinese/backfill-dictionary-breakdown',      when: 'multiChar', version: 1 },
   { id: 'chinese/backfill-process-definitions-array', when: 'multiDef',  version: 3, validationFields: ['definitions'] },
-  { id: 'chinese/backfill-parts-of-speech',           when: 'always',    version: 2, validationFields: ['definitions'] },
+  { id: 'chinese/backfill-parts-of-speech',           when: 'always',    version: 2, validationFields: ['partsOfSpeech'] },
   // Icon search keys off definitions[0] (the dd), so it must follow the two steps that
   // can still rewrite/reorder `definitions`. Shared across languages (--lang defaults to
   // zh), hence the un-prefixed id — it lives at scripts/backfill/backfill-icons.js.
   { id: 'backfill-icons',                             when: 'always',    version: 1, deterministic: true },
   { id: 'chinese/backfill-word-forms',                when: 'always',    version: 3 },
-  { id: 'chinese/backfill-hsk-level',                 when: 'always',    version: 2 },
-  { id: 'chinese/backfill-frequency-score',           when: 'always',    version: 2 },
+  { id: 'chinese/backfill-hsk-level',                 when: 'always',    version: 2, validationFields: ['difficulty'] },
+  { id: 'chinese/backfill-frequency-score',           when: 'always',    version: 2, validationFields: ['frequencyScore'] },
   { id: 'chinese/backfill-cluster-definitions',       when: 'always',    version: 5 },
   // Long-definitions writes ONE definition per (SENSE, POS) PAIR, taking its senses (and the
   // `sense` labels it keys on) plus each sense's POS list from `definitionClusters` — so it
@@ -68,6 +71,23 @@ export const REQUIRED_SCRIPTS_ZH = [
   { id: 'chinese/backfill-longdef-citations',         when: 'always',    version: 2, validationFields: ['definitions'] },
   { id: 'chinese/backfill-example-sentences',         when: 'always',    version: 6, validationFields: ['exampleSentence0', 'exampleSentence1', 'exampleSentence2'] },
   { id: 'chinese/backfill-classifier',                when: 'nounPos',   version: 2 },
+  // ── the breakdown chain (multi-char rows only) ──────────────────────────────
+  // Placed LAST, after everything that can still rewrite `definitions`: the sense-tagger
+  // reads the component characters' `definitionClusters` and the elaboration judge is
+  // shown this row's finalized `definitions`, so an earlier slot would judge text that a
+  // later step then changes. They also have no consumer downstream in the pipeline, so
+  // nothing else waits on them.
+  //
+  // ⚠️ CROSS-ROW DEPENDENCY the manifest cannot express: backfill-breakdown-senses reads
+  // `definitionClusters` off the COMPONENT CHARACTERS' OWN det rows, not off this row.
+  // Manifest ordering only sequences steps WITHIN one row, so a late slot does not
+  // guarantee the components are clustered. An un-clustered component is carried through
+  // unchanged (no `sense`) and healed on a later re-run — see the script header.
+  { id: 'chinese/backfill-breakdown-senses',          when: 'multiChar', version: 1 },
+  // Judges the sense-tagged glosses, so it MUST follow the tagger. Writes NULL for the
+  // majority ("breakdown is straightforward") and stamps every row it decides, so its
+  // done-state lives in this stamp — never in `breakdownElaboration IS NULL`.
+  { id: 'chinese/backfill-breakdown-elaboration',     when: 'multiChar', version: 1 },
 ];
 
 /**
@@ -109,7 +129,9 @@ export const REQUIRED_SCRIPTS_ES = [
   // Language-shared script at scripts/backfill/backfill-icons.js — pass --lang=es.
   // Un-prefixed id because it stamps the same key for every language.
   { id: 'backfill-icons',                               when: 'always',         version: 1, deterministic: true },
-  { id: 'spanish/backfill-frequency-score',             when: 'always',         version: 4 },
+  // Writes BOTH `frequencyScore` and `difficulty` in one pass, so a review of either
+  // chip protects the row — mirrors the script's own validatedClause.
+  { id: 'spanish/backfill-frequency-score',             when: 'always',         version: 4, validationFields: ['frequencyScore', 'difficulty'] },
   { id: 'spanish/backfill-cluster-definitions',         when: 'always',         version: 1 },
   { id: 'spanish/backfill-long-definitions',            when: 'always',         version: 2, validationFields: ['definitions'] },
   { id: 'spanish/backfill-example-sentences',           when: 'always',         version: 1, validationFields: ['exampleSentence0', 'exampleSentence1', 'exampleSentence2'] },

@@ -3,13 +3,13 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { Box, Slide, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
 import DelayedCircularProgress from "../../../components/DelayedCircularProgress";
 import { useAuth } from "../../../AuthContext";
-import { API_BASE_URL } from "../../../constants";
+import { addToLibrary } from "../../../utils/vocabApi";
 import { ContentArea, MoreInfoPill } from "./styled";
-import { FC_FONT } from "./constants";
+import { FC_FONT } from "../constants";
 import { SIZE, WEIGHT, TRACKING } from "../../../theme/scale";
 import { useCardDrag } from "./useCardDrag";
 import { useWorkingLoop, type CardDragControls, type StudyMode } from "./useWorkingLoop";
-import { useCardIconEditor } from "./useCardIconEditor";
+import { useCardIconEditor } from "../../../cardIcons/editor/useCardIconEditor";
 import { useToolbarOverlap } from "./useToolbarOverlap";
 import FlashcardsLearnHeader from "./FlashcardsLearnHeader";
 import InfoCardSection from "./InfoCardSection";
@@ -18,9 +18,9 @@ import { useEipTabs } from "./useEipTabs";
 import EipTabStrip from "./EipTabStrip";
 import TooManyTabsSnackbar from "./TooManyTabsSnackbar";
 import FlashCardSection, { ChineseBlock, EnglishBlock } from "./FlashCardSection";
-import CardIconCanvas from "./CardIconCanvas";
+import CardIconCanvas from "../../../cardIcons/editor/CardIconCanvas";
 import { measureDefaultEnglishCenterY } from "../../../cardIcons/cardTextLayout";
-import CardEditToolbar, { CARD_EDIT_ANIM_MS, CARD_EDIT_ANIM_EASING, TOOLBAR_DROPDOWN_SELECTOR } from "./CardEditToolbar";
+import CardEditToolbar, { CARD_EDIT_ANIM_MS, CARD_EDIT_ANIM_EASING, TOOLBAR_DROPDOWN_SELECTOR } from "../../../cardIcons/editor/CardEditToolbar";
 import IconPickerDialog from "../../../components/IconPickerDialog";
 import { iconSearchTerm, resolveSelectedSenseIndex, resolveDisplayDefinition } from "../../../utils/definitionUtils";
 import SheetPanel, { type SheetPanelBodyHandle } from "./SheetPanel";
@@ -39,7 +39,7 @@ import { clearWritingDraft } from "../../../components/handwriting/writingDraftS
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useTTS, SLOW_SENTENCE_RATE } from "../../../hooks/useTTS";
 import { useFlashcardLearnSettings } from "../../../hooks/useFlashcardLearnSettings";
-import type { VocabEntry } from "./types";
+import type { VocabEntry } from "../types";
 
 const FlashcardsLearnPage: React.FC = () => {
     usePageTitle("Learn");
@@ -193,7 +193,7 @@ const FlashcardsLearnPage: React.FC = () => {
         undoAdv,
         redoAdv,
         pushAdvHistory,
-    } = useCardIconEditor({ currentEntry, nextEntry, token });
+    } = useCardIconEditor({ currentEntry, nextEntry });
 
     // ── Toolbar-overlap push-down gate ────────────────────────────────────────
     // The advanced-edit push-down slides the card down to clear the three-row toolbar, but we
@@ -263,7 +263,7 @@ const FlashcardsLearnPage: React.FC = () => {
     // and clears every tab (see closeEip). The active tab owns its own selected
     // sub-tab, so the page no longer tracks a separate selectedTab.
     const eipStripRef = useRef<HTMLDivElement | null>(null);
-    const eip = useEipTabs({ apiBaseUrl: API_BASE_URL, token, stripRef: eipStripRef });
+    const eip = useEipTabs({ stripRef: eipStripRef });
 
     const openEicSheet = () => {
         if (!displayCurrentEntry) return;
@@ -308,17 +308,9 @@ const FlashcardsLearnPage: React.FC = () => {
     const libraryKeyOf = (entry: VocabEntry) => `${entry.language}:${entry.entryKey}`;
     const handleAddToLibrary = useCallback(async (entry: VocabEntry) => {
         try {
-            const res = await fetch(`${API_BASE_URL}/api/vocabEntries/add-to-library`, {
-                method: 'POST',
-                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({ entryKey: entry.entryKey, language: entry.language }),
-            });
-            if (!res.ok) {
-                setAddToLibSnack('Failed to add to Learn Now');
-                return;
-            }
-            const data: { status: 'added' | 'already-in-library' } = await res.json();
+            // 'library' is the internal/API name for what the UI calls "Learn Now"
+            // (see CLAUDE.md § Terminology) — the endpoint path stays as-is.
+            const data = await addToLibrary(entry.entryKey, entry.language);
             setAddToLibSnack(data.status === 'already-in-library' ? 'Already in Learn Now' : 'Added to Learn Now');
             // Either status means the word is now in the library — hide its Add button.
             setAddedLibraryKeys((prev) => {
@@ -330,7 +322,8 @@ const FlashcardsLearnPage: React.FC = () => {
             console.error('Failed to add to library:', err);
             setAddToLibSnack('Failed to add to Learn Now');
         }
-    }, [token]);
+        // No `token` dep: apiPost reads the header at call time (CLAUDE.md ⛔ rule).
+    }, []);
 
     // The card editor and the EIP can't coexist — entering edit mode dismisses the
     // panel (and the More Info pill is disabled while editing, see MoreInfoPill below).

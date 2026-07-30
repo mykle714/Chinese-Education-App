@@ -2,32 +2,36 @@ import { createContext, useContext, useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { API_BASE_URL } from './constants';
-import type { Language } from './types';
+// `User` is the shared wire contract (server/contracts/wire.ts → UserProfile). This
+// file used to declare a PRIVATE, non-exported `interface User` that was the only one
+// of the app's three User declarations with the current field set — see
+// docs/ARCHITECTURE_REVIEW.md finding 2.
+import type { Language, User } from './types';
+import { apiPost, apiPut, apiDelete } from './api/http';
 import { setFetchInterceptorHandlers, setupFetchInterceptor } from './utils/fetchInterceptor';
 import { setRefreshHandlers, attemptTokenRefresh, endServerSession } from './utils/tokenRefresh';
 import { notifyLogin } from './utils/authSync';
 import * as authStorage from './utils/authStorage';
 import { authLog, authError, tokenPreview, readBodySafely, rateLimitInfo } from './utils/authDebug';
 
-// Define the User type
-interface User {
-    id: string;
-    email: string;
-    name: string;
-    isPublic?: boolean;
-    isValidator?: boolean; // Gates the Reader "Validate" button + validation endpoints (migration 104)
-    isTemplateAuthor?: boolean; // Gates the Night Market template editor + its save endpoints (migration 115); distinct from isValidator
-    selectedLanguage?: Language;
-    // icons8 id of the chosen profile avatar; null/undefined => name-initial fallback.
-    avatarIconId?: string | null;
-    // Mastery goal opt-ins (docs/MASTERY_REWORK.md). Recognition + Production are
-    // always goals; these two are the account's optional extras.
-    readingGoal?: boolean;
-    writingGoal?: boolean;
-    // Display preference (migration 129, docs/EXAMPLE_SENTENCES.md): render a real
-    // gap between word segments in segmented sentences. Account-level so the eip
-    // and the cdp can never disagree, and it follows the user across devices.
-    showSegmentSpaces?: boolean;
+/**
+ * The subset of the profile that account settings can PATCH. Each key maps to one
+ * `PUT /api/users/<endpoint>` route; `updateProfile` below sends the patch and mirrors
+ * it into local user state.
+ */
+type ProfilePatch = Partial<
+    Pick<User, 'selectedLanguage' | 'avatarIconId' | 'readingGoal' | 'writingGoal' | 'showSegmentSpaces'>
+>;
+
+/**
+ * Is the in-memory access token usable?
+ *
+ * This predicate was copy-pasted inline at five call sites. `'null'` / `'undefined'`
+ * are guarded as STRINGS because a stringified null used to be persisted to storage;
+ * the length check rejects any other junk that is too short to be a JWT.
+ */
+function isUsableToken(token: string | null): boolean {
+    return !!token && token !== 'null' && token !== 'undefined' && token.length > 10;
 }
 
 // Define the AuthContext type
@@ -120,8 +124,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
         const checkAuth = async () => {
             // Only proceed if we have a valid token
-            if (token && token !== 'null' && token !== 'undefined' && token.length > 10) {
+            if (isUsableToken(token)) {
                 try {
+                    // Deliberately a RAW fetch, not apiGet: this call decides whether the
+                    // session is alive, and its non-ok branch must be handled here rather
+                    // than routed through the interceptor's refresh-and-retry.
                     const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
                         headers: {
                             'Authorization': `Bearer ${token}`
@@ -306,194 +313,87 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
     };
 
-    // Delete account function
-    const deleteAccount = async (password: string) => {
+    /**
+     * Run an authenticated account mutation: assert a usable token, call `fn`, and
+     * funnel any failure into `error` state before rethrowing.
+     *
+     * The token check is a UX guard, not the security boundary — every one of these
+     * endpoints authenticates server-side. It exists so a logged-out click reports
+     * "You must be logged in to …" instead of bouncing off a 401.
+     */
+    const withAuth = async <T,>(action: string, fn: () => Promise<T>): Promise<T> => {
         setError(null);
         try {
-            if (!token || token === 'null' || token === 'undefined' || token.length <= 10) {
-                throw new Error('You must be logged in to delete your account');
+            if (!isUsableToken(token)) {
+                throw new Error(`You must be logged in to ${action}`);
             }
+            return await fn();
+        } catch (err: unknown) {
+            // ApiError's message is already derived from the server's `error` field.
+            setError(err instanceof Error ? err.message : `Failed to ${action}`);
+            throw err;
+        }
+    };
 
-            const response = await fetch(`${API_BASE_URL}/api/auth/delete-account`, {
-                method: 'DELETE',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                credentials: 'include',
-                body: JSON.stringify({ password })
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Failed to delete account');
-            }
-
+    // Delete account function
+    const deleteAccount = async (password: string) =>
+        withAuth('delete your account', async () => {
+            await apiDelete('/api/auth/deleteAccount', { password });
             // Clear local state and redirect
             authStorage.clearToken();
             setToken(null);
             setUser(null);
             navigate('/login');
-        } catch (error: unknown) {
-            setError(error instanceof Error ? error.message : 'Failed to delete account');
-            throw error;
-        }
-    };
+        });
 
-    // Change password function
-    const changePassword = async (currentPassword: string, newPassword: string) => {
-        setError(null);
-        try {
-            if (!token || token === 'null' || token === 'undefined' || token.length <= 10) {
-                throw new Error('You must be logged in to change your password');
-            }
-
-            const response = await fetch(`${API_BASE_URL}/api/auth/change-password`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                credentials: 'include', // Include cookies for new DAL architecture
-                body: JSON.stringify({ currentPassword, newPassword })
+    // Change password function. Returns nothing: both call sites (ProfilePage,
+    // SettingsPage) only await it, and the refreshed user is applied here.
+    const changePassword = async (currentPassword: string, newPassword: string): Promise<void> =>
+        withAuth('change your password', async () => {
+            const data = await apiPost<{ user: User }>('/api/auth/changePassword', {
+                currentPassword,
+                newPassword,
             });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Failed to change password');
-            }
-
-            const data = await response.json();
             setUser(data.user);
-            return data;
-        } catch (error: unknown) {
-            setError(error instanceof Error ? error.message : 'Failed to change password');
-            throw error;
-        }
-    };
+        });
 
-    // Update preferred language function
-    const updateLanguage = async (language: Language) => {
-        setError(null);
-        try {
-            if (!token || token === 'null' || token === 'undefined' || token.length <= 10) {
-                throw new Error('You must be logged in to update your language preference');
-            }
+    /**
+     * The one account-settings write path.
+     *
+     * `updateLanguage` / `updateAvatar` / `updateGoals` / `updateDisplaySettings` were
+     * four ~30-line functions differing ONLY in URL, payload and error string — see
+     * docs/ARCHITECTURE_REVIEW.md finding 5. They are now four one-liners over this.
+     * Each PUT still hits its own endpoint (the routes validate different fields), and
+     * the local user state is patched optimistically with the same object that was sent.
+     */
+    const updateProfile = async (endpoint: string, action: string, patch: ProfilePatch) =>
+        withAuth(action, async () => {
+            await apiPut(`/api/users/${endpoint}`, patch);
+            setUser((current) => (current ? { ...current, ...patch } : current));
+        });
 
-            const response = await fetch(`${API_BASE_URL}/api/users/language`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                credentials: 'include',
-                body: JSON.stringify({ selectedLanguage: language })
-            });
+    const updateLanguage = (language: Language) =>
+        updateProfile('language', 'update your language preference', { selectedLanguage: language });
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Failed to update language preference');
-            }
+    /** Persist the chosen avatar (an icons8 id) or clear it (null). */
+    const updateAvatar = (avatarIconId: string | null) =>
+        updateProfile('avatar', 'update your avatar', { avatarIconId });
 
-            const data = await response.json();
-            setUser({ ...user!, selectedLanguage: language });
-            return data;
-        } catch (error: unknown) {
-            setError(error instanceof Error ? error.message : 'Failed to update language preference');
-            throw error;
-        }
-    };
+    /**
+     * Toggle the account's Reading / Writing mastery goals (docs/MASTERY_REWORK.md).
+     * Enabling a goal can demote some Mastered cards to Comfortable (the pbh math
+     * reweights across more goal tracks) — surfaced in the account settings copy.
+     */
+    const updateGoals = (goals: { readingGoal?: boolean; writingGoal?: boolean }) =>
+        updateProfile('goals', 'update your goals', goals);
 
-    // Persist the user's chosen avatar (an icons8 id) or clear it (null). Mirrors
-    // updateLanguage: PUT to the server, then optimistically patch local user state.
-    const updateAvatar = async (avatarIconId: string | null) => {
-        setError(null);
-        try {
-            if (!token || token === 'null' || token === 'undefined' || token.length <= 10) {
-                throw new Error('You must be logged in to update your avatar');
-            }
-
-            const response = await fetch(`${API_BASE_URL}/api/users/avatar`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                credentials: 'include',
-                body: JSON.stringify({ avatarIconId })
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.error || 'Failed to update avatar');
-            }
-
-            setUser({ ...user!, avatarIconId });
-        } catch (error: unknown) {
-            setError(error instanceof Error ? error.message : 'Failed to update avatar');
-            throw error;
-        }
-    };
-
-    // Toggle the account's Reading / Writing mastery goals (docs/MASTERY_REWORK.md).
-    // Enabling a goal can demote some Mastered cards to Comfortable (the pbh math
-    // reweights across more goal tracks) — surfaced in the account settings copy.
-    const updateGoals = async (goals: { readingGoal?: boolean; writingGoal?: boolean }) => {
-        setError(null);
-        try {
-            if (!token || token === 'null' || token === 'undefined' || token.length <= 10) {
-                throw new Error('You must be logged in to update your goals');
-            }
-
-            const response = await fetch(`${API_BASE_URL}/api/users/goals`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${token}`,
-                },
-                credentials: 'include',
-                body: JSON.stringify(goals)
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.error || 'Failed to update goals');
-            }
-
-            setUser({ ...user!, ...goals });
-        } catch (error: unknown) {
-            setError(error instanceof Error ? error.message : 'Failed to update goals');
-            throw error;
-        }
-    };
-
-    // Toggle the account's display preferences (currently just word spacing in
-    // segmented sentences — docs/EXAMPLE_SENTENCES.md). Purely cosmetic, so unlike
-    // updateGoals it has no downstream effect on mastery data.
-    const updateDisplaySettings = async (settings: { showSegmentSpaces?: boolean }) => {
-        setError(null);
-        try {
-            if (!token || token === 'null' || token === 'undefined' || token.length <= 10) {
-                throw new Error('You must be logged in to update your display settings');
-            }
-
-            const response = await fetch(`${API_BASE_URL}/api/users/display-settings`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${token}`,
-                },
-                credentials: 'include',
-                body: JSON.stringify(settings)
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.error || 'Failed to update display settings');
-            }
-
-            setUser({ ...user!, ...settings });
-        } catch (error: unknown) {
-            setError(error instanceof Error ? error.message : 'Failed to update display settings');
-            throw error;
-        }
-    };
+    /**
+     * Toggle the account's display preferences (currently just word spacing in
+     * segmented sentences — docs/EXAMPLE_SENTENCES.md). Purely cosmetic, so unlike
+     * updateGoals it has no downstream effect on mastery data.
+     */
+    const updateDisplaySettings = (settings: { showSegmentSpaces?: boolean }) =>
+        updateProfile('displaySettings', 'update your display settings', settings);
 
     const value = {
         user,

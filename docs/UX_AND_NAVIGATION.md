@@ -12,6 +12,7 @@ specific doc.
 | **App navigation structure** | [NAVIGATION.md](./NAVIGATION.md) | No hamburger/sidebar; nav is the footer tabs (Flashcards / Discover / Home / Account) + the `/` Home menu + back-arrow drill-ins. Settings + Logout live on the Account page. |
 | **Scrollable footer-tab layout** | [MOBILE_TAB_SCREEN_LAYOUT.md](./MOBILE_TAB_SCREEN_LAYOUT.md) | Every scrollable footer-tab page uses `MobileTabScreen` (header scrolls away inside the scroll area; bottom nav is a floating pill). Home, Decks, Discover, Games hub, Account use it. |
 | **Drill-in page archetypes** | [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) | Two back-arrow archetypes. **Leaf** (`LeafPage`): down arrow, no footer, back-arrow-only exit, slides up/down. **Node** (`NodePage`): left arrow, keeps footer, slides in/out to the right. Rule of thumb: no footer ⇒ leaf, has footer ⇒ node. |
+| **eip bottom-sheet gestures** | [EIP_SHEET_GESTURES.md](./EIP_SHEET_GESTURES.md) | `SheetPanel`'s height model: three stops (0 / default / max) with the default height as the floor, one snap rule, the resize-vs-scroll mode lock, and release momentum that stops at the default height instead of dismissing. |
 | **Discover surface** | [DISCOVER_FLOW.md](./DISCOVER_FLOW.md) | Two-level Discover surface: the `/discover` hub menu (footer tab) → `/discover/sort/:language` drag-to-sort page (back-arrow header, no footer). |
 
 ---

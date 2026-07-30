@@ -111,7 +111,7 @@ export class Icons8Controller {
   }
 
   /**
-   * POST /api/icons8/default-results
+   * POST /api/icons8/defaultResults
    *   body: { language, entryKey, term }
    *   returns: { icons: [{ id, name }] } — the cached first page of the default
    *   icon-search for this word, warming the cache (one live icons8 search) on a miss.

@@ -10,6 +10,7 @@
  */
 
 import type { VocabEntry, DictionaryEntry } from '../types.js';
+import { vocabLog } from './vocabDebug';
 
 // ─── Shared Types ────────────────────────────────────────────────────────────
 
@@ -87,7 +88,7 @@ class LocalStorageCacheManager<T> {
       const cache: CacheShape<T> = JSON.parse(raw);
 
       if (!cache.metadata || cache.metadata.version !== CACHE_VERSION) {
-        console.log(`${this.logPrefix} Version mismatch, invalidating`);
+        vocabLog(`${this.logPrefix} version mismatch, invalidating`);
         this.invalidate(CacheInvalidationReason.VERSION_MISMATCH);
         return null;
       }
@@ -157,7 +158,7 @@ class LocalStorageCacheManager<T> {
 
     if (hits > 0) {
       this.save(cache);
-      console.log(`${this.logPrefix} ${hits}/${tokens.length} tokens cached (${(hits / tokens.length * 100).toFixed(1)}%)`);
+      vocabLog(`${this.logPrefix} ${hits}/${tokens.length} tokens cached (${(hits / tokens.length * 100).toFixed(1)}%)`);
     }
 
     return { foundEntries, missingTokens };
@@ -182,7 +183,7 @@ class LocalStorageCacheManager<T> {
     cache.metadata.totalTokens = Object.keys(cache.data).length;
 
     this.save(cache);
-    console.log(`${this.logPrefix} Cached ${newCount} entries for ${Object.keys(tokenEntries).length} tokens`);
+    vocabLog(`${this.logPrefix} cached ${newCount} entries for ${Object.keys(tokenEntries).length} tokens`);
   }
 
   /**
@@ -191,7 +192,7 @@ class LocalStorageCacheManager<T> {
   invalidate(reason: CacheInvalidationReason): void {
     try {
       localStorage.removeItem(this.key);
-      console.log(`${this.logPrefix} Invalidated: ${reason}`);
+      vocabLog(`${this.logPrefix} invalidated: ${reason}`);
     } catch (error) {
       console.error(`${this.logPrefix} Error invalidating:`, error);
     }
@@ -239,7 +240,7 @@ class LocalStorageCacheManager<T> {
       .reduce((sum, e) => sum + e.entries.length, 0);
 
     this.save(cache);
-    console.log(`${this.logPrefix} Cleanup: removed ${toRemove} token buckets`);
+    vocabLog(`${this.logPrefix} cleanup: removed ${toRemove} token buckets`);
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────

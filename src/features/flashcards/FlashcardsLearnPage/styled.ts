@@ -1,6 +1,6 @@
 import { Box, Card, Typography } from "@mui/material";
 import { styled, alpha } from "@mui/material/styles";
-import { CORRECT_COLOR, INCORRECT_COLOR, FC_FONT } from "./constants";
+import { CORRECT_COLOR, INCORRECT_COLOR, FC_FONT } from "../constants";
 import { FONTS } from "../../../theme/fonts";
 import { SIZE, WEIGHT } from "../../../theme/scale";
 
@@ -190,7 +190,8 @@ export const DefinitionText = styled(Typography)(({ theme }) => ({
     fontFamily: FC_FONT,
 }));
 
-// Info-tab metadata row: HSK pill + POS chips, centered above the long definition.
+// Info-tab metadata row: category/POS chips, centered above the long definition.
+// (HSK/difficulty no longer rides here — it is a chip in the definition meta strip.)
 export const MetadataChipRow = styled(Box)(() => ({
     display: "flex",
     flexWrap: "wrap",
@@ -198,18 +199,6 @@ export const MetadataChipRow = styled(Box)(() => ({
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 10,
-}));
-
-export const HskPill = styled(Box)(({ theme }) => ({
-    backgroundColor: theme.palette.flashcard.hskPill,
-    color: "#FFFFFF",
-    fontFamily: FC_FONT,
-    fontSize: SIZE.micro,
-    fontWeight: WEIGHT.semibold,
-    letterSpacing: "0.02em",
-    padding: "3px 8px",
-    borderRadius: 999,
-    lineHeight: 1,
 }));
 
 export const PosChip = styled(Box)(({ theme }) => ({

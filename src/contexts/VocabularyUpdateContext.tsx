@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useCallback } from 'react';
 import type { VocabEntry } from '../types';
 import { addCachedEntry, updateCachedEntry, removeCachedEntry } from '../utils/vocabCache';
+import { vocabLog } from '../utils/vocabDebug';
 
 interface VocabularyUpdateContextType {
     addVocabEntry: (entry: VocabEntry) => void;
@@ -29,7 +30,7 @@ export const VocabularyUpdateProvider: React.FC<VocabularyUpdateProviderProps> =
 
     // Add vocabulary entry
     const addVocabEntry = useCallback((entry: VocabEntry) => {
-        console.log('[VOCAB-UPDATE] Adding vocabulary entry:', {
+        vocabLog('Adding vocabulary entry:', {
             id: entry.id,
             entryKey: entry.entryKey,
             definition: entry.definition
@@ -50,7 +51,7 @@ export const VocabularyUpdateProvider: React.FC<VocabularyUpdateProviderProps> =
 
     // Update vocabulary entry
     const updateVocabEntry = useCallback((entry: VocabEntry) => {
-        console.log('[VOCAB-UPDATE] Updating vocabulary entry:', {
+        vocabLog('Updating vocabulary entry:', {
             id: entry.id,
             entryKey: entry.entryKey,
             definition: entry.definition
@@ -71,7 +72,7 @@ export const VocabularyUpdateProvider: React.FC<VocabularyUpdateProviderProps> =
 
     // Remove vocabulary entry
     const removeVocabEntry = useCallback((entryId: number) => {
-        console.log('[VOCAB-UPDATE] Removing vocabulary entry:', { entryId });
+        vocabLog('Removing vocabulary entry:', { entryId });
 
         // Update cache
         removeCachedEntry(entryId);
@@ -88,7 +89,7 @@ export const VocabularyUpdateProvider: React.FC<VocabularyUpdateProviderProps> =
 
     // Bulk add vocabulary entries (for CSV imports)
     const bulkAddVocabEntries = useCallback((entries: VocabEntry[]) => {
-        console.log('[VOCAB-UPDATE] Bulk adding vocabulary entries:', {
+        vocabLog('Bulk adding vocabulary entries:', {
             count: entries.length,
             sampleEntries: entries.slice(0, 3).map(e => ({ id: e.id, entryKey: e.entryKey }))
         });

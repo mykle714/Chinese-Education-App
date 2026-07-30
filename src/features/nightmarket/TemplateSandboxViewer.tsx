@@ -5,9 +5,11 @@ import type { FederatedPointerEvent } from 'pixi.js';
 import { Box } from '@mui/material';
 import { isoToScreen, TILE_WIDTH, TILE_HEIGHT } from '../../engine/market/isometric';
 import { computeMinZoom } from '../../engine/market/cameraFit';
+import { useCameraControls } from '../../hooks/useCameraControls';
 import { buildEditorField, type EditorMasks } from '../../engine/market/farmTerrain';
 import EditorTerrainLayer from './EditorTerrainLayer';
 import { TemplateMaskOverlays } from './TemplateEditorViewer';
+import { CameraZoomProvider } from './CameraZoomContext';
 import type { SandboxHouseMode } from './templateSandboxApi';
 
 // Register Pixi.js classes as pixiContainer / pixiSprite / pixiGraphics / pixiText.
@@ -46,15 +48,15 @@ extend({ Container, Sprite, Graphics, Text });
  * and persistence; this component is a pure renderer + gesture source.
  */
 
-// Whole-number zoom keeps the pixel-art crisp (nearest-neighbour, no fractional resampling), so
-// CRISP_FLOOR is the smallest zoom the sandbox uses while a world still fits on screen. Once the
-// placed continent outgrows the viewport at 1×, the floor drops BELOW it continuously — see
-// {@link computeMinZoom} — trading crispness for the ability to see the whole layout.
+// Whole-number zoom keeps the pixel-art crisp (nearest-neighbour, no fractional resampling), so the
+// camera settles onto the integer ladder between gestures (see {@link useCameraControls} — the zoom is
+// continuous while the wheel is moving and only lands on a rung at rest). CRISP_FLOOR is the bottom
+// rung. Once the placed continent outgrows the viewport at 1×, the floor drops BELOW it
+// continuously — see {@link computeMinZoom} — trading crispness for seeing the whole layout.
 const CRISP_FLOOR = 1;
 const MAX_ZOOM = 10;
 const DEFAULT_ZOOM = 3;
-/** Multiplicative wheel step used below {@link CRISP_FLOOR}, where integer steps no longer exist. */
-const SUB_UNIT_ZOOM_FACTOR = 0.8;
+const ZOOM_STEP = 1;
 
 /** One placed template, prepared with its render inputs (tiles/masks) for the active version. */
 export interface SandboxItem {
@@ -433,10 +435,15 @@ function SandboxScene({
         const gc = globalCellFromEvent(e);
         const hit = gc ? hitTest(gc) : null;
         if (hit && gc && hit.locked) {
-          // A locked tile is still selectable (so it can be unlocked/deleted) but never dragged;
-          // consume the gesture so the camera doesn't pan under it either.
+          // A locked tile is still selectable (so it can be unlocked/deleted) but never dragged.
+          // The drag itself falls through to a PAN, so a locked placement behaves like scenery the
+          // camera can be dragged across rather than a dead zone that swallows the gesture.
           onSelectRef.current(hit.id);
-          gesture.current.mode = 'none';
+          gesture.current.mode = 'pan';
+          gesture.current.startX = e.global.x;
+          gesture.current.startY = e.global.y;
+          gesture.current.origPanX = panRef.current.x;
+          gesture.current.origPanY = panRef.current.y;
         } else if (hit && gc) {
           onSelectRef.current(hit.id);
           gesture.current.mode = 'move';
@@ -544,19 +551,24 @@ function SandboxScene({
   return (
     // sortableChildren: the single global depth sort over EVERY placement's sprites.
     <pixiContainer x={cx} y={cy} scale={zoom} sortableChildren>
-      {items.map((item) => (
-        <PlacedTemplate
-          key={item.id}
-          item={item}
-          dragOffset={drag && drag.id === item.id ? drag : undefined}
-          showStreet={showStreet}
-        />
-      ))}
-      {gridBounds && <SandboxGridOverlay bounds={gridBounds} />}
-      {selected && <SelectionOutline item={selected} dragOffset={dragForSelected} />}
-      {/* Placement mode — the picked template riding the cursor (nothing until the pointer has
-          been over the canvas, so it can't appear parked at a stale position). */}
-      {pendingItem && hoverCell && <GhostTemplate pending={pendingItem} cell={hoverCell} />}
+      {/* Context only — emits no display object, so every placement's sprites stay DIRECT children
+          of this container and keep taking part in its single global depth sort. Publishes the
+          camera zoom so building layers can ghost out on zoom-in (layerTranslucency). */}
+      <CameraZoomProvider zoom={zoom}>
+        {items.map((item) => (
+          <PlacedTemplate
+            key={item.id}
+            item={item}
+            dragOffset={drag && drag.id === item.id ? drag : undefined}
+            showStreet={showStreet}
+          />
+        ))}
+        {gridBounds && <SandboxGridOverlay bounds={gridBounds} />}
+        {selected && <SelectionOutline item={selected} dragOffset={dragForSelected} />}
+        {/* Placement mode — the picked template riding the cursor (nothing until the pointer has
+            been over the canvas, so it can't appear parked at a stale position). */}
+        {pendingItem && hoverCell && <GhostTemplate pending={pendingItem} cell={hoverCell} />}
+      </CameraZoomProvider>
     </pixiContainer>
   );
 }
@@ -585,89 +597,23 @@ function TemplateSandboxViewer({
   items, selectedId, onSelect, onMove, showGrid = false, showStreet = false,
   pendingItem = null, onPendingDrop,
 }: TemplateSandboxViewerProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(DEFAULT_ZOOM);
-  const [ready, setReady] = useState(false);
-
-  const panRef = useRef(pan); panRef.current = pan;
-  const zoomRef = useRef(zoom); zoomRef.current = zoom;
-
-  useEffect(() => { if (containerRef.current) setReady(true); }, []);
-
-  // Seat the origin cell a little below the translucent header on first mount, so the SW corner
-  // of a template dropped at (0,0) is comfortably in view.
-  const HEADER_CLEARANCE = 60;
-  const didCentre = useRef(false);
-  useEffect(() => {
-    if (!ready || didCentre.current) return;
-    didCentre.current = true;
-    const next = { x: 0, y: HEADER_CLEARANCE };
-    panRef.current = next;
-    setPan(next);
-  }, [ready]);
-
   // Placements change on every drag/add/remove, so the fit-derived floor is read lazily from a ref
   // at gesture time (against the CURRENT element size) rather than recomputed into state on resize.
   const itemsRef = useRef(items); itemsRef.current = items;
-  const minZoomFor = useCallback((el: HTMLDivElement) => (
-    computeMinZoom(itemsRef.current, el.clientWidth, el.clientHeight, CRISP_FLOOR)
-  ), []);
 
-  const applyZoomAtPoint = useCallback((focalX: number, focalY: number, rawZoom: number) => {
-    const el = containerRef.current;
-    if (!el) return;
-    // At/above the crisp floor zoom stays on whole numbers; below it (a continent too big to fit
-    // at 1×) any fractional value down to the fitted floor is allowed.
-    const minZoom = minZoomFor(el);
-    const newZoom = rawZoom >= CRISP_FLOOR
-      ? Math.min(MAX_ZOOM, Math.round(rawZoom))
-      : Math.max(minZoom, rawZoom);
-    if (newZoom === zoomRef.current) return;
-    const ratio = newZoom / zoomRef.current;
-    const w = el.clientWidth;
-    const h = el.clientHeight;
-    const newPan = {
-      x: (focalX - w / 2) * (1 - ratio) + panRef.current.x * ratio,
-      y: (focalY - h / 2) * (1 - ratio) + panRef.current.y * ratio,
-    };
-    zoomRef.current = newZoom;
-    panRef.current = newPan;
-    setZoom(newZoom);
-    setPan(newPan);
-  }, [minZoomFor]);
+  // Seat the origin cell a little below the translucent header, so the SW corner of a template
+  // dropped at (0,0) is comfortably in view.
+  const HEADER_CLEARANCE = 60;
 
-  const handleWheel = useCallback((e: WheelEvent) => {
-    e.preventDefault();
-    const el = containerRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const current = zoomRef.current;
-    const zoomingIn = e.deltaY < 0;
-    // Integer ladder at/above the crisp floor, geometric ladder below it (there are no whole
-    // numbers left down there, and a fixed −1 step would jump straight to the fitted floor).
-    let next: number;
-    if (zoomingIn) {
-      next = current < CRISP_FLOOR ? Math.min(CRISP_FLOOR, current / SUB_UNIT_ZOOM_FACTOR) : current + 1;
-    } else {
-      next = current > CRISP_FLOOR ? current - 1 : current * SUB_UNIT_ZOOM_FACTOR;
-    }
-    applyZoomAtPoint(e.clientX - rect.left, e.clientY - rect.top, next);
-  }, [applyZoomAtPoint]);
-
-  // Suppress the context menu so right-drag pan doesn't pop one.
-  const handleContextMenu = useCallback((e: MouseEvent) => { e.preventDefault(); }, []);
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    el.addEventListener('wheel', handleWheel, { passive: false });
-    el.addEventListener('contextmenu', handleContextMenu);
-    return () => {
-      el.removeEventListener('wheel', handleWheel);
-      el.removeEventListener('contextmenu', handleContextMenu);
-    };
-  }, [handleWheel, handleContextMenu, ready]);
+  const { containerRef, pan, zoom, setPan, ready } = useCameraControls({
+    crispFloor: CRISP_FLOOR,
+    maxZoom: MAX_ZOOM,
+    ladderStep: ZOOM_STEP,
+    initialZoom: DEFAULT_ZOOM,
+    initialPan: { x: 0, y: HEADER_CLEARANCE },
+    minZoomFor: (el) => computeMinZoom(itemsRef.current, el.clientWidth, el.clientHeight, CRISP_FLOOR),
+    suppressContextMenu: true,
+  });
 
   return (
     <Box

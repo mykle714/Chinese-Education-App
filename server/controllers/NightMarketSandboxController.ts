@@ -11,7 +11,7 @@ import { NightMarketSandboxService } from '../services/NightMarketSandboxService
 export class NightMarketSandboxController {
   constructor(private readonly service: NightMarketSandboxService) {}
 
-  /** GET /api/nightmarket-sandbox → { placements: TemplateSandboxRow[] } */
+  /** GET /api/nightMarketSandbox → { placements: TemplateSandboxRow[] } */
   async listPlacements(req: Request, res: Response): Promise<void> {
     try {
       const userId = (req as any).user?.userId;
@@ -26,7 +26,7 @@ export class NightMarketSandboxController {
     }
   }
 
-  /** POST /api/nightmarket-sandbox { templateName, activeVersion, offsetCol, offsetRow } → { placement } */
+  /** POST /api/nightMarketSandbox { templateName, activeVersion, offsetCol, offsetRow } → { placement } */
   async addPlacement(req: Request, res: Response): Promise<void> {
     try {
       const userId = (req as any).user?.userId;
@@ -42,7 +42,7 @@ export class NightMarketSandboxController {
     }
   }
 
-  /** PATCH /api/nightmarket-sandbox/:id/position { offsetCol, offsetRow } → { placement } */
+  /** PATCH /api/nightMarketSandbox/:id/position { offsetCol, offsetRow } → { placement } */
   async movePlacement(req: Request, res: Response): Promise<void> {
     try {
       const userId = (req as any).user?.userId;
@@ -58,7 +58,7 @@ export class NightMarketSandboxController {
     }
   }
 
-  /** PATCH /api/nightmarket-sandbox/:id/version { activeVersion } → { placement } */
+  /** PATCH /api/nightMarketSandbox/:id/version { activeVersion } → { placement } */
   async setPlacementVersion(req: Request, res: Response): Promise<void> {
     try {
       const userId = (req as any).user?.userId;
@@ -74,7 +74,7 @@ export class NightMarketSandboxController {
     }
   }
 
-  /** PATCH /api/nightmarket-sandbox/:id/lock { locked } → { placement } */
+  /** PATCH /api/nightMarketSandbox/:id/lock { locked } → { placement } */
   async setPlacementLock(req: Request, res: Response): Promise<void> {
     try {
       const userId = (req as any).user?.userId;
@@ -90,7 +90,7 @@ export class NightMarketSandboxController {
     }
   }
 
-  /** PATCH /api/nightmarket-sandbox/:id/settings { settings: {...} } → { placement } (merge patch) */
+  /** PATCH /api/nightMarketSandbox/:id/settings { settings: {...} } → { placement } (merge patch) */
   async setPlacementSettings(req: Request, res: Response): Promise<void> {
     try {
       const userId = (req as any).user?.userId;
@@ -106,7 +106,7 @@ export class NightMarketSandboxController {
     }
   }
 
-  /** DELETE /api/nightmarket-sandbox/:id → { deleted: true } */
+  /** DELETE /api/nightMarketSandbox/:id → { deleted: true } */
   async removePlacement(req: Request, res: Response): Promise<void> {
     try {
       const userId = (req as any).user?.userId;
@@ -122,7 +122,7 @@ export class NightMarketSandboxController {
   }
 
   /**
-   * POST /api/nightmarket-sandbox/iterate → { placement, trace } | { placement: null, trace }
+   * POST /api/nightMarketSandbox/iterate → { placement, trace } | { placement: null, trace }
    * Steps the live growth algorithm once over the author's sandbox layout. A null placement is a
    * successful "nothing legal fits anywhere" answer, not an error — the client reports it.
    *
@@ -147,7 +147,7 @@ export class NightMarketSandboxController {
   }
 
   /**
-   * DELETE /api/nightmarket-sandbox → { deleted: <count>, placement } — RESETS the caller's whole
+   * DELETE /api/nightMarketSandbox → { deleted: <count>, placement } — RESETS the caller's whole
    * sandbox: every placement is removed and the starter hub is reseeded locked at the origin. The
    * seeded row rides back so the client can render the post-reset state without a refetch.
    */

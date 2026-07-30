@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authenticateToken } from '../authMiddleware.js';
 import { authLimiter, refreshLimiter } from '../middleware/rateLimits.js';
 import { userController } from '../dal/setup.js';
+import { handle } from './asyncHandler.js';
 
 /**
  * Auth routes — /api/auth/*
@@ -16,54 +17,30 @@ import { userController } from '../dal/setup.js';
 const router = Router();
 
 // Register a new user
-// @ts-ignore
-router.post('/api/auth/register', authLimiter, async (req, res) => {
-  await userController.register(req, res);
-});
+router.post('/api/auth/register', authLimiter, handle(userController.register, userController));
 
 // Login user
-// @ts-ignore
-router.post('/api/auth/login', authLimiter, async (req, res) => {
-  await userController.login(req, res);
-});
+router.post('/api/auth/login', authLimiter, handle(userController.login, userController));
 
 // Logout user — revokes the refresh token server-side, then clears both cookies.
-// @ts-ignore
-router.post('/api/auth/logout', async (req, res) => {
-  await userController.logout(req, res);
-});
+router.post('/api/auth/logout', handle(userController.logout, userController));
 
 // Refresh access token — exchanges the refresh-token cookie for a new access
 // token (with refresh-token rotation). Deliberately NOT behind authenticateToken:
 // the access token is expired by design at this point, so the refresh cookie is
 // the credential the handler validates.
-// @ts-ignore
-router.post('/api/auth/refresh', refreshLimiter, async (req, res) => {
-  await userController.refresh(req, res);
-});
+router.post('/api/auth/refresh', refreshLimiter, handle(userController.refresh, userController));
 
 // Post-login hook — refresh tz and any other client-supplied session context
-// @ts-ignore
-router.post('/api/auth/on-login', authenticateToken, async (req, res) => {
-  await userController.onLogin(req, res);
-});
+router.post('/api/auth/onLogin', authenticateToken, handle(userController.onLogin, userController));
 
 // Get current authenticated user
-// @ts-ignore
-router.get('/api/auth/me', authenticateToken, async (req, res) => {
-  await userController.getCurrentUser(req, res);
-});
+router.get('/api/auth/me', authenticateToken, handle(userController.getCurrentUser, userController));
 
 // Change user password
-// @ts-ignore
-router.post('/api/auth/change-password', authenticateToken, async (req, res) => {
-  await userController.changePassword(req, res);
-});
+router.post('/api/auth/changePassword', authenticateToken, handle(userController.changePassword, userController));
 
 // Delete user account
-// @ts-ignore
-router.delete('/api/auth/delete-account', authenticateToken, async (req, res) => {
-  await userController.deleteAccount(req, res);
-});
+router.delete('/api/auth/deleteAccount', authenticateToken, handle(userController.deleteAccount, userController));
 
 export default router;

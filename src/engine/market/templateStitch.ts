@@ -1,5 +1,5 @@
-import type { TemplateDefinitionPayload } from '../../features/nightmarket/templateEditorApi';
-import { placeholderAreaId, type PlaceholderArea } from './placeholderArea';
+import type { TemplateDefinitionPayload } from './templateDefinition';
+import { placeholderAreaId, placeholderUnitSlots, type PlaceholderArea } from './placeholderArea';
 import type { EditorMasks } from './farmTerrain';
 import { freeFarmTileset } from './freeFarmTileset';
 
@@ -29,15 +29,20 @@ export interface PlacedTemplate {
   /** The loaded version's definition (cells in LOCAL coords). */
   def: TemplateDefinitionPayload;
   /**
-   * LOCAL anchor ids ("col_row") of the placeholder slots an occupant currently fills in THIS
+   * LOCAL anchor ids ("col_row") of the placeholder UNIT SLOTS an occupant currently fills in THIS
    * placement (the server's `filledPlaceholderIds`). Used only to tag each {@link PlacedPlaceholder}
-   * with `filled` so the render layer can draw an occupant (houses) in filled slots. Omit/empty ⇒
-   * every slot renders empty.
+   * with `filled` so the render layer can draw an occupant (a house) in filled slots. Omit/empty ⇒
+   * every slot renders empty. Ids are per UNIT, not per authored area — see
+   * {@link ./placeholderArea placeholderUnitSlots}.
    */
   filledPlaceholderIds?: string[];
 }
 
-/** A placeholder occupant slot, its area translated into GLOBAL coords + its owning template. */
+/**
+ * One placeholder occupant slot — a UNIT slot (one occupant footprint, 4×5 or 5×4), translated
+ * into GLOBAL coords, plus its owning template. An authored 4×10/10×4 area yields TWO of these
+ * because it holds two independently-unlockable occupants.
+ */
 export interface PlacedPlaceholder {
   templateName: string;
   area: PlaceholderArea;
@@ -91,17 +96,20 @@ export function stitchWorld(placed: PlacedTemplate[]): StitchedWorld {
       world.decor.set(localToGlobal(p, cell), stem);
     }
 
-    // Placeholder areas: translate the near-corner anchor by the placement offset (w/h
-    // are spans, unchanged). Tag each with its owning template name + whether it's filled.
-    // `filled` is matched on the LOCAL anchor id (pre-translation), since the server keys
-    // occupants by each placement's own local "col_row" ids.
+    // Placeholder slots: each authored area is first split into its UNIT slots (one occupant
+    // footprint each — a 4×10/10×4 area is two independently-unlockable slots), then the near-corner
+    // anchor is translated by the placement offset (w/h are spans, unchanged). Tag each with its
+    // owning template name + whether it's filled. `filled` is matched on the LOCAL unit anchor id
+    // (pre-translation), since the server keys occupants by each placement's own local "col_row" ids.
     const filledIds = new Set(p.filledPlaceholderIds ?? []);
     for (const area of def.placeholder ?? []) {
-      world.placeholders.push({
-        templateName: p.name,
-        area: { col: p.offsetCol + area.col, row: p.offsetRow + area.row, w: area.w, h: area.h },
-        filled: filledIds.has(placeholderAreaId(area)),
-      });
+      for (const unit of placeholderUnitSlots(area)) {
+        world.placeholders.push({
+          templateName: p.name,
+          area: { col: p.offsetCol + unit.col, row: p.offsetRow + unit.row, w: unit.w, h: unit.h },
+          filled: filledIds.has(placeholderAreaId(unit)),
+        });
+      }
     }
   }
 

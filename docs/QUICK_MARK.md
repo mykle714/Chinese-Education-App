@@ -26,7 +26,7 @@ It reuses the exact same two bucket effects as Sort Cards (§4), so it introduce
 
 `useDiscoverNavigation` (`src/hooks/useDiscoverNavigation.ts`) exposes
 `quickMarkPath` / `goToQuickMark()`, language-keyed exactly like `sortPath`. The
-route is registered in `src/App.tsx`. `DiscoverPage` (`src/pages/DiscoverPage.tsx`)
+route is registered in `src/App.tsx`. `DiscoverPage` (`src/features/discover/DiscoverPage.tsx`)
 renders the `HubMenuRow` as the **second** row — between Sort Cards and Skipped Cards
 (purple `COLORS.purpleAccent`, `PlaylistAddCheckIcon`).
 
@@ -48,7 +48,7 @@ Legend:     ○ skip/none    ✓ Add to Learn Now    Ⓜ Mastered
 - **Header** (`NodePage.headerExtraActions`): **Clear** and **Save** buttons plus
   the `MinutePointsFireBadge` (mirrors SortCardsPage's header actions).
 - **Level bar**: the same HSK/difficulty `Chip`+`Menu` dropdown as
-  `SortCardsPage` (`src/pages/SortCardsPage.tsx:836-882`) **minus the `Auto`
+  `SortCardsPage` (`src/features/discover/SortCardsPage.tsx:836-882`) **minus the `Auto`
   menu item** — Quick Mark is always a concrete level. Label is `HSK N` for zh,
   `Level N` otherwise (`difficultyLabel`).
 - **Legend**: a static row explaining the three indicator states (§3).
@@ -146,7 +146,7 @@ Returns `{ cards: DiscoverCard[], level, hasMore }` (`DiscoverCard`, `src/types.
 
 - **Save** (header button): reconciles every **touched** card (its `marks` entry) to
   its on-screen mark in one request. Endpoint:
-  `POST /api/starter-packs/quick-mark-batch`
+  `POST /api/starterPacks/quickMarkBatch`
   `Body: { language, marks: { cardId, state: 'empty'|'library'|'already-learned' }[] }`
   Server (`quickMarkBatch`), per mark: `library`/`already-learned` → `sortCard(…, { packId: null })`
   (the lightweight pack-mode return path — writes the vet row + clears any skip, no
@@ -191,20 +191,20 @@ spacer the last card row overlaps the floating footer pill by ~50px.
 | Route/nav        | `useDiscoverNavigation` (quickMarkPath), `App` route, `DiscoverPage` row |
 | Page (view)      | `QuickMarkPage` (`NodePage` + level dropdown + legend + grid)          |
 | Component        | `QuickMarkCard` (mini-card geometry + frequency badge + 3-state badge)|
-| HTTP route       | `POST /api/starter-packs/quick-mark-batch`, `GET …/:language/quick-mark` |
+| HTTP route       | `POST /api/starterPacks/quickMarkBatch`, `GET …/:language/quickMark` |
 | Controller       | `StarterPacksController` (new handlers)                                |
 | Service          | `StarterPacksService.listQuickMarkCards`, `.quickMarkBatch`           |
 | DAL / DB         | **unchanged** — reuses vet rows + existing bucket effects              |
 
 ## 8. Referenced code
 
-- `src/pages/QuickMarkPage.tsx` — the page (level dropdown, legend, grid, Save/Clear, keyset infinite scroll)
+- `src/features/discover/QuickMarkPage.tsx` — the page (level dropdown, legend, grid, Save/Clear, keyset infinite scroll)
 - `src/components/QuickMarkCard.tsx` + `src/components/quickMarkState.ts` — the 3-state card + cycle helper
 - `src/components/MiniVocabCardGrid.tsx` — the shared grid; `renderCard` + `footer` + `staggerReveal` props added for Quick Mark. `staggerReveal` renders all cards at once and fans the first 15 in by a per-card animation-delay (instead of the paced batch reveal, which stepped as "3, then a batch, then the rest").
 - `server/services/StarterPacksService.ts` — `listQuickMarkCards`, `quickMarkBatch` (reuse `sortCard` / `undoSort`)
 - `server/controllers/StarterPacksController.ts` — `getQuickMarkCards`, `quickMarkBatch`
 - `server/routes/starterPacksRoutes.ts` — the two Quick Mark routes
-- `src/hooks/useDiscoverNavigation.ts`, `src/pages/DiscoverPage.tsx`, `src/App.tsx` — hub + route wiring
+- `src/hooks/useDiscoverNavigation.ts`, `src/features/discover/DiscoverPage.tsx`, `src/App.tsx` — hub + route wiring
 - `src/components/Layout.tsx` (`isMobileDemoPage`), `src/components/FooterPresenter.tsx`, `src/utils/pageTransition.ts` — the three route gates that give the page its phone frame, nav footer (Discover tab), and node-page slide
 - `src/components/MobileFooter.tsx` `FooterSpacer` — the explicit bottom clearance the grid renders below its cards
 

@@ -19,6 +19,10 @@ import onDeckRoutes from './routes/onDeckRoutes.js';
 import starterPacksRoutes from './routes/starterPacksRoutes.js';
 import dictionaryRoutes from './routes/dictionaryRoutes.js';
 import gamesRoutes from './routes/gamesRoutes.js';
+import speedReadingRoutes from './routes/speedReadingRoutes.js';
+import nightMarketRoutes from './routes/nightMarketRoutes.js';
+import communityRoutes from './routes/communityRoutes.js';
+import leaderboardRoutes from './routes/leaderboardRoutes.js';
 import mediaRoutes from './routes/mediaRoutes.js';
 import handwritingRoutes from './routes/handwritingRoutes.js';
 import diagnosticsRoutes from './routes/diagnosticsRoutes.js';
@@ -97,7 +101,14 @@ app.use(nightMarketSandboxRoutes);
 app.use(onDeckRoutes);
 app.use(starterPacksRoutes);
 app.use(dictionaryRoutes);
+// Speed Reading's specific /api/games/speedReading/* namespace goes BEFORE the
+// generic /api/games/:gameId/* framework routes, so a future parameterized route
+// can never shadow it.
+app.use(speedReadingRoutes);
 app.use(gamesRoutes);
+app.use(nightMarketRoutes);
+app.use(communityRoutes);
+app.use(leaderboardRoutes);
 app.use(mediaRoutes);
 app.use(handwritingRoutes);
 app.use(diagnosticsRoutes);

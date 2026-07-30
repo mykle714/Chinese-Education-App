@@ -17,52 +17,125 @@ minute points (default `3`).
 
 ### Database
 
-`users` columns:
-- `totalMinutePoints INTEGER` — the **NET** lifetime balance: `Σ minutesEarned − Σ penaltyMinutes`,
-  floored at 0 (earning credits it; the inactivity cron + the author dev tool debit it). Drives the
-  Night Market unlock count (see
-  [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md#unlock-economy-minutes--unlocks)): a
-  threshold schedule maps this value to how many unlocks the user has, and debits remove unlocks
-  when it drops.
+`users` columns (minute-points related):
+- `lastMinutePointIncrement TIMESTAMP` — last successful tick (rate limit). Stays on
+  `users`: the limit is one tick per user, not per language.
+- `timezone` — the 4 AM local-day boundary, shared by all of a user's languages.
 
-**Two display quantities (GROSS vs NET).** The UI distinguishes:
-- **NET** = `users.totalMinutePoints` (above) — the penalty-debited balance; drives unlocks and is
-  the prominent "Current Balance" number on the tester dashboard + the nmp minutes badge. Drops on
-  penalty/loss.
-- **GROSS** = `Σ minutesEarned` across ALL languages (`UserMinutePointsDAL.getGrossMinutesEarned`,
-  a cheap on-read aggregate — no stored column) — lifetime earned, ignoring penalties; only grows.
-  Shown as the secondary "N total minutes earned" caption.
-They are EQUAL for a never-penalized user and DIVERGE (gross > net) once any penalty lands.
-- `lastMinutePointIncrement TIMESTAMP` — last successful tick (rate limit).
-- `currentStreak INTEGER NOT NULL DEFAULT 0`.
-- `lastStreakDate DATE` — last streak day the user satisfied the threshold. Advanced **only** by the increment path; the penalty cron never moves it (the escalating penalty derives its tier from `today − lastStreakDate`).
+**Balances and streaks are NOT on `users`.** Migration 134 moved every counter and the
+streak to one row per (user, language). Migration 135 dropped the old global columns
+(`totalMinutePoints`, `lifetimeMinutesEarned`, `currentStreak`, `lastStreakDate`,
+`lastPenaltyDate`).
+
+`user_language_minute_totals` (PK = `userId, language`):
+- `netMinutePoints INTEGER` — **NET** balance for this language: earns raise it, penalties
+  lower it (floored at 0).
+- `lifetimeMinutesEarned INTEGER` — **GROSS** lifetime earned for this language.
+  **Monotonic** — nothing ever lowers it.
+- `currentStreak INTEGER` — consecutive qualifying days for this language.
+- `lastStreakDate DATE` — last day this language **on its own** reached
+  `RETENTION_MINUTES`. Advanced only by the earn path; the penalty cron never moves it
+  (it derives the escalating tier from `today − lastStreakDate`).
+- `lastPenaltyDate DATE` — per-language once-per-local-day idempotency guard for the cron.
+
+Invariant: **`lifetimeMinutesEarned >= netMinutePoints`** in every row. They are EQUAL for
+a never-penalized language and DIVERGE once a penalty lands.
+
+**Two display quantities (GROSS vs NET),** both now per language:
+- **NET** — the prominent "Current Balance" number on the tester dashboard + the nmp
+  minutes badge. Drops on penalty/loss.
+- **GROSS** — the secondary "N total minutes earned" caption. Only grows.
+
+### Why per language
+
+Two independent reasons, one per column family:
+- **Counters.** The per-language study total was the last figure still computed as a SUM
+  over the whole `userminutepoints` history (`getTotalMinutesForLanguage`), so its cost
+  grew with account age. As a counter it is O(1). (Migration 133 had already done this for
+  the global gross; 134 finished the job by making every counter per-language.)
+- **Streak/penalty.** A learner studying two languages keeps and loses each language's
+  streak on its own merits. Neglecting Spanish penalizes Spanish only.
+
+### ⚠️ Semantic change: the threshold is per language
+
+The daily `RETENTION_MINUTES` threshold used to be evaluated on the day's total summed
+**across** languages — any 3 minutes kept the single global streak alive. It is now
+evaluated **per language**: 3 minutes of zh advance the zh streak and nothing else. A user
+splitting 2 minutes zh + 2 minutes es previously advanced their streak and now advances
+neither.
+
+### Counters are maintained, never aggregated
+
+Which counter a write moves is decided by **which DAL method the caller reaches for**:
+
+| Event | Method | NET | GROSS |
+|---|---|---|---|
+| Study tick +1 (`UserMinutePointsService.ts:73`) | `UserLanguageTotalsDAL.creditEarnedMinutes` | ↑ | ↑ |
+| Author adjust `+delta` | `UserLanguageTotalsDAL.creditEarnedMinutes` | ↑ | ↑ |
+| Author adjust `−delta` | `UserLanguageTotalsDAL.adjustNetMinutes` | ↓ floored | — |
+| Hourly penalty cron | `expire-stale-streaks.sql` | ↓ floored | — |
+
+`creditEarnedMinutes` bumps both columns in a **single UPSERT**, so there is no window
+where one moved and the other did not; it rejects negative input, which is what makes it
+safe to bind gross to it. `adjustNetMinutes` deliberately touches net only — a penalty
+must never lower gross.
+
+### Global rollups (the two consumers that are still global)
+
+- The **night-market unlock entitlement** reads Σ net across languages
+  (`UserMinutePointsService.getGlobalNet`). The market has no language dimension yet —
+  `nightmarketunlocks` and `nightmarkettemplatelocations` are keyed on `userId` alone — so
+  per-language entitlement is **Phase 2**.
+- The **leaderboard** (test-only) rolls up in SQL inside
+  `UserDAL.getPublicUsersWithTotalPoints`: `SUM(netMinutePoints)` and
+  `MAX(currentStreak)` (the user's best language streak).
+
+Both aggregate over one row per language — bounded by language count, never by account age.
 
 `userminutepoints` (PK = `userId, streakDate, language`):
 - `language VARCHAR(10) NOT NULL DEFAULT 'zh'` — the language the minute was earned studying (migration 62). One row per `(streakDate, language)`.
 - `minutesEarned INTEGER` — sum across all of the user's devices, for that language.
-- `penaltyMinutes INTEGER` — minutes deducted by the escalating inactivity penalty, stamped on the missed day (`today − 1`), attributed to the user's `selectedLanguage` at penalty time. Written **only** by the cron.
+- `penaltyMinutes INTEGER` — minutes deducted by the escalating inactivity penalty, stamped on the missed day (`today − 1`), attributed to **the language actually penalized** (migration 134; it used to be a guess at the user's `selectedLanguage`). Written by the cron and by the author dev tool's −N path.
 - `lastSyncTimestamp`, `updatedAt` — bookkeeping timestamps.
 
 There is **no** device fingerprint and **no** longest-streak field.
 
-**Language scoping (migration 62).** Minutes are partitioned by language so the
-home screen and the fire badge show the count for the user's *selected* language.
-The **streak stays global**: `users.currentStreak` / `lastStreakDate` /
-`totalMinutePoints` are not language-scoped, studying *any* language keeps the
-streak alive, and the daily threshold is evaluated on the day's total **summed
-across all languages**. Only the *displayed* per-language counts come from
-`userminutepoints` filtered by language.
+**Why the per-day ledger stays.** With every counter now maintained per language, the
+obvious next thought is to drop `userminutepoints` entirely. Don't — it is the sole
+backing for four things a counter cannot reproduce:
+
+| Consumer | Needs from the ledger |
+|---|---|
+| Per-language threshold crossing (`UserMinutePointsService.ts:78`) | this language's minutes on the current day |
+| Study calendar, tdp (`getCalendar`) | per-day `minutesEarned` + `penaltyMinutes` for any past month |
+| Per-language fire badge (`getTodayMinutes`) | today's minutes for one language |
+| Calendar `hasData` bound (`getFirstActivityDate`) | first activity date for the language |
+
+Every one is bounded to a single day or a single month and hits the PK's leading `userId`
+column, so none grows with account age the way the retired lifetime `SUM` did. Row growth
+is ~365 per user per language per year, which is not a scaling concern at this size.
+
+Note the ledger and the counters are **independent writes**, not derived from one another
+— the reconstruction `Σ minutesEarned − Σ penaltyMinutes` is NOT guaranteed to equal
+`netMinutePoints` (migration 134's backfill notes document why historical data diverges).
+Treat `user_language_minute_totals` as authoritative for balances and the ledger as
+authoritative for per-day history.
+
+**Language scoping (migrations 62 → 134).** Migration 62 partitioned the day ledger by
+language while the streak and balance stayed global. Migration 134 finished the job:
+balances, streaks, and penalties are all per language now, and nothing about minute points
+is global except the two rollups listed above.
 
 ### Server
 
 - `server/utils/streakDate.ts` — `streakDateOf(timestamp, tz)`, plus tz validation and date-arithmetic helpers.
-- `UserMinutePointsService.incrementMinutePoints` — adds 1 minute to the row for the **client-supplied `language`** (the language the client actually accrued for; falls back to `selectedLanguage` then `'zh'` when an old client omits it), then advances the **global** streak when the day's cross-language total crosses `RETENTION_MINUTES`. Rate-limited to ~one call per 59 seconds. Attributing from the payload rather than re-reading `selectedLanguage` avoids crediting the wrong language when `selectedLanguage` has raced ahead of an in-flight increment.
+- `UserMinutePointsService.incrementMinutePoints` — adds 1 minute to the row for the **client-supplied `language`** (the language the client actually accrued for; falls back to `selectedLanguage` then `'zh'` when an old client omits it), then advances **that language's** streak when **that language's** day total crosses `RETENTION_MINUTES` (per-language since migration 134 — it used to be the cross-language sum advancing one global streak). Rate-limited to ~one call per 59 seconds. Attributing from the payload rather than re-reading `selectedLanguage` avoids crediting the wrong language when `selectedLanguage` has raced ahead of an in-flight increment.
 - `UserMinutePointsService.getCalendar(userId, language, yearMonth)` — returns one row per day for the requested month and language, zero-filled.
-- `UserMinutePointsService.getLanguageSummary(userId, language, timestamp, tz)` — returns `{ totalMinutePoints (GLOBAL net), grossMinutesEarned (GLOBAL gross), todayMinutes (per-language, fire badge), currentStreak (global) }`. Backs `GET /api/users/minute-points/summary`. **NOTE:** `totalMinutePoints` here previously returned the per-LANGUAGE gross earned (a misnomer that also made the client unlock check disagree with the server's global-net grant); it now returns the true `users.totalMinutePoints` (net), and gross is a separate field.
-- `UserMinutePointsService.adjustMinutesForAuthor(userId, delta, timestamp, tz)` — **template-author-only** dev tool (`POST /api/night-market/dev/adjust-minutes`, gated on `isTemplateAuthor`, 403 otherwise, NOT rate-limited). `delta > 0` adds to today's `minutesEarned` + credits net; `delta < 0` adds `|delta|` to today's `penaltyMinutes` (gross intact) + debits net (floored); then reconciles the night market (`NightMarketPlacementService.reconcileUnlocks` — grant on +, decay on −; decay also prunes empty dangling templates). Backs the nmp ±1/±5/±30 + Submit buttons. See docs/NIGHT_MARKET_TEMPLATE_RUNTIME_PLAN.md.
-- DAL split: `getMinutesForDate` sums across **all** languages (global streak + leaderboard); `getMinutesForDateAndLanguage` / `getTotalMinutesForLanguage` are the per-language reads.
+- `UserMinutePointsService.getLanguageSummary(userId, language, timestamp, tz)` — returns `{ totalMinutePoints (this language's net), lifetimeMinutesEarned (this language's gross), todayMinutes (fire badge), currentStreak (this language's streak) }`. Backs `GET /api/users/minutePoints/summary`. **Every field is language-scoped** since migration 134; the field NAMES are unchanged because they are the client contract, only their scope moved. A language the user has never studied has no row and correctly returns all zeros.
+- `UserMinutePointsService.adjustMinutesForAuthor(userId, delta, timestamp, tz)` — **template-author-only** dev tool (`POST /api/nightMarket/dev/adjustMinutes`, gated on `isTemplateAuthor`, 403 otherwise, NOT rate-limited). `delta > 0` adds to today's `minutesEarned` + credits **both** counters; `delta < 0` adds `|delta|` to today's `penaltyMinutes` (gross intact) + debits net only (floored); then reconciles the night market (`NightMarketPlacementService.reconcileUnlocks` — grant on +, decay on −; decay also prunes empty dangling templates). Backs the nmp ±1/±5/±30 + Submit buttons. See docs/NIGHT_MARKET_TEMPLATE_RUNTIME_PLAN.md.
+- DAL split: the day ledger (`IUserMinutePointsDAL`) serves per-day/per-month reads; the counters (`IUserLanguageTotalsDAL`) serve balances and streaks. `getMinutesForDate` still sums a day across all languages but is now used only by the test-only leaderboard — the streak threshold reads the single-language day total returned by `addMinutesForDate`.
 - `database/cron/expire-stale-streaks.sql` — hourly Postgres cron, the **sole authority for streak breaks and point penalties**. For each user below the threshold (`today − lastStreakDate ≥ 2`, in the user's stored tz, 4 AM-bounded), it debits an **escalating** penalty by consecutive missed day (`3, 15, 30, 60, 90, 120`, then wipe the remainder on day 7+) from `totalMinutePoints`, resets `currentStreak = 0`, and stamps the debited amount as `penaltyMinutes` on the missed day (`today − 1`). Once per user per local day (`lastPenaltyDate` guard). See `docs/STREAK_EXPIRATION_CRON.md`.
-- `UserController.onLogin` — post-login hook (`POST /api/auth/on-login`). Today: refreshes `users.timezone` from the client so the cron has an up-to-date tz for every active user.
+- `UserController.onLogin` — post-login hook (`POST /api/auth/onLogin`). Today: refreshes `users.timezone` from the client so the cron has an up-to-date tz for every active user.
 - `LeaderboardService` — masks `currentStreak` to `null` for non-public users.
 
 ### Client
@@ -70,7 +143,7 @@ across all languages**. Only the *displayed* per-language counts come from
 - `useMinutePoints` (hook) — local accumulating timer + reads the per-language server summary (`fetchLanguageSummary`). Scoped to `user.selectedLanguage`; re-seeds today/total/streak when the language changes. localStorage is keyed by `(userId, language)`. The timer runs only while `isActive`, which `useActivityDetection` sets on the first `click`/`keydown`/`touchstart`/`pointerdown` and holds for `ACTIVITY_TIMEOUT_MS` (15s) after the last interaction. **Auto-active on game entry:** for pages matching `MINUTE_POINTS_AUTO_ACTIVE_PAGES` (`/games/*`, see `src/constants.ts`) the hook calls `recordActivity()` on mount so accrual starts immediately, without waiting for the first tap; other eligible pages (flashcards, reader) still require an interaction.
 - `useCalendarMinutePoints` (hook) — fetches the calendar endpoint with `?language=`, derives `isToday`/`hasData` in browser tz.
 - `minutePointsSync.incrementMinutePoint(language, token)` — POSTs `{ timestamp, tz, language }`; `language` is the hook's accrual language (`languageRef.current`), matching the badge/localStorage it just incremented optimistically. `fetchLanguageSummary` GETs `/summary?language&tz&timestamp`. The tz is taken from `Intl.DateTimeFormat().resolvedOptions().timeZone`.
-- `authSync.notifyLogin` — fired from `AuthContext` after login and session restore; POSTs `{ tz }` to `/api/auth/on-login` so `users.timezone` stays fresh even for users who don't earn points.
+- `authSync.notifyLogin` — fired from `AuthContext` after login and session restore; POSTs `{ tz }` to `/api/auth/onLogin` so `users.timezone` stays fresh even for users who don't earn points.
 - `MonthlyCalendar` / `StreakCounter` / `LeaderboardPlaceholder` — UI surfaces.
 - `MinutePointsBadge` — fire-icon badge on `/flashcards`, `/flashcards/learn`, `/reader`.
 
@@ -93,12 +166,12 @@ on each call.
 
 | Method | Endpoint | Body / params | Notes |
 |---|---|---|---|
-| GET  | `/api/users/:id/total-minute-points`            | —                              | `{ totalMinutePoints, currentStreak }` — **global** accumulator (leaderboard); no longer called by the client hook |
-| GET  | `/api/users/minute-points/summary`              | query: `language`, `tz`, `timestamp` | `{ totalMinutePoints (global NET), grossMinutesEarned (global GROSS), todayMinutes (per-language), currentStreak (global) }` |
-| POST | `/api/night-market/dev/adjust-minutes`          | body: `{ delta, timestamp, tz }` | **template-author only (403)** — artificial ±N minute signal; returns `{ totalMinutePoints, grossMinutesEarned }`; reconciles the market |
-| POST | `/api/users/minute-points/increment`            | `{ timestamp, tz, language? }` | Adds 1 to the payload `language` (falls back to `selectedLanguage`); may advance the global streak |
-| GET  | `/api/users/minute-points/calendar/:yearMonth`  | path: `YYYY-MM`; query: `language` | Dense per-day list (one language) with `minutesEarned` and `penaltyMinutes` |
-| POST | `/api/auth/on-login`                            | `{ tz }`                       | Post-login bookkeeping (currently: refresh `users.timezone`) |
+| GET  | `/api/users/:id/totalMinutePoints`            | —                              | `{ totalMinutePoints, currentStreak }` — cross-language rollup (Σ net, MAX streak) computed in `UserService`; no longer called by the client hook |
+| GET  | `/api/users/minutePoints/summary`              | query: `language`, `tz`, `timestamp` | `{ totalMinutePoints (NET), lifetimeMinutesEarned (GROSS), todayMinutes, currentStreak }` — **all four scoped to `language`** |
+| POST | `/api/nightMarket/dev/adjustMinutes`          | body: `{ delta, timestamp, tz }` | **template-author only (403)** — artificial ±N minute signal; returns `{ totalMinutePoints, lifetimeMinutesEarned }`; reconciles the market |
+| POST | `/api/users/minutePoints/increment`            | `{ timestamp, tz, language? }` | Adds 1 to the payload `language` (falls back to `selectedLanguage`); may advance THAT language's streak |
+| GET  | `/api/users/minutePoints/calendar/:yearMonth`  | path: `YYYY-MM`; query: `language` | Dense per-day list (one language) with `minutesEarned` and `penaltyMinutes` |
+| POST | `/api/auth/onLogin`                            | `{ tz }`                       | Post-login bookkeeping (currently: refresh `users.timezone`) |
 | GET  | `/api/leaderboard`                              | —                              | `currentStreak` is `null` for non-public users |
 
 ## Streak break flow
@@ -107,7 +180,22 @@ on each call.
 2. User skips 12/11 entirely.
 3. At the next `HH:01` after the user's local 4 AM on 12/12, the hourly Postgres cron (`expire-stale-streaks.sql`) sweeps every user with `totalMinutePoints > 0` and `today_local - lastStreakDate >= 2`.
 4. For each match it computes `tier = today_local - lastStreakDate - 1` (here `1`, the first missed day) and debits the tier penalty (`3` min): stamps `penaltyMinutes` on **2024-12-11** (the missed day = `today − 1`), resets `currentStreak = 0`, debits from `totalMinutePoints` (floored at 0), and stamps `lastPenaltyDate = today_local` for idempotency. `lastStreakDate` is **left unchanged**, so 12/13 escalates to tier 2 (`15` min), 12/14 to tier 3 (`30`), etc., resetting only when the user hits the threshold again.
-5. The cron reads `users.timezone` directly; the client keeps that column fresh via `/api/auth/on-login` and `/api/users/minute-points/increment`.
+5. The cron reads `users.timezone` directly; the client keeps that column fresh via `/api/auth/onLogin` and `/api/users/minutePoints/increment`.
+
+## Related documents
+
+- [PUBLIC_PRIVATE_USERS_IMPLEMENTATION.md](./PUBLIC_PRIVATE_USERS_IMPLEMENTATION.md) —
+  the `users.isPublic` flag that gates what the leaderboard reveals. The leaderboard
+  aggregate itself lives in `server/services/LeaderboardService.ts`; `isPublic` masks
+  `currentStreak` only, never the minute totals.
+- **Superseded history** — the two documents below describe the system under its former
+  "work points" name (renamed to minute points in migration 48). They are kept for the
+  reasoning behind the sync design, NOT as a description of current behaviour; where
+  they disagree with this file, this file wins.
+  - [WORK_POINTS_SYNC_IMPLEMENTATION.md](./WORK_POINTS_SYNC_IMPLEMENTATION.md) — the
+    daily-boundary client↔server sync.
+  - [WORK_POINTS_DISPLAY_UPDATE_IMPLEMENTATION.md](./WORK_POINTS_DISPLAY_UPDATE_IMPLEMENTATION.md)
+    — making the counter update without a refresh.
 
 ## Configuration
 

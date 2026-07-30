@@ -1,21 +1,18 @@
 import { Request, Response } from 'express';
-import { LeaderboardService } from '../services/LeaderboardService.js';
-import { userDAL, userMinutePointsDAL, winsDAL } from '../dal/setup.js';
+import type { LeaderboardService } from '../services/LeaderboardService.js';
 
 /**
  * Leaderboard Controller
  * Handles HTTP requests for leaderboard operations
  */
 export class LeaderboardController {
-  private leaderboardService: LeaderboardService;
-
-  constructor() {
-    this.leaderboardService = new LeaderboardService(
-      userDAL,
-      userMinutePointsDAL,
-      winsDAL
-    );
-  }
+  /**
+   * Constructor-injected like every other controller. This class used to `new` its
+   * own service inside its constructor AND import the DALs straight from
+   * dal/setup.js — a controller→setup→controller cycle that also made the wiring
+   * invisible from the composition root (docs/ARCHITECTURE_REVIEW.md finding 8).
+   */
+  constructor(private leaderboardService: LeaderboardService) {}
 
   /**
    * GET /api/leaderboard
@@ -144,6 +141,3 @@ export class LeaderboardController {
     }
   };
 }
-
-// Export a singleton instance
-export const leaderboardController = new LeaderboardController();

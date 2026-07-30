@@ -19,10 +19,10 @@ export function getBrowserTimezone(): string {
 
 /** Per-language snapshot powering the home screen + fire badge. */
 export interface LanguageMinuteSummary {
-  totalMinutePoints: number;   // GLOBAL penalty-debited NET balance (users.totalMinutePoints); drives unlocks + the prominent number. Decays on loss.
-  grossMinutesEarned: number;  // GLOBAL lifetime minutes earned (Σ minutesEarned, all languages), ignoring penalties; only grows. gross ≥ net.
+  totalMinutePoints: number;   // THIS LANGUAGE's penalty-debited NET balance; the prominent number. Decays on loss.
+  lifetimeMinutesEarned: number;  // THIS LANGUAGE's lifetime minutes earned, ignoring penalties; only grows. gross ≥ net. Server-side this is the user_language_minute_totals counter (migration 134), not a sum over the day ledger.
   todayMinutes: number;        // minutes earned today (4 AM-local day) for this language (fire badge)
-  currentStreak: number;       // GLOBAL streak (not language-scoped)
+  currentStreak: number;       // THIS LANGUAGE's streak (per-language since migration 134)
 }
 
 /**
@@ -41,7 +41,7 @@ export async function fetchLanguageSummary(
       tz: getBrowserTimezone(),
       timestamp: new Date().toISOString(),
     });
-    const response = await fetch(`${API_BASE_URL}/api/users/minute-points/summary?${params.toString()}`, {
+    const response = await fetch(`${API_BASE_URL}/api/users/minutePoints/summary?${params.toString()}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       credentials: 'include',
     });
@@ -62,7 +62,7 @@ export async function incrementMinutePoint(
   token?: string | null
 ): Promise<{ success: boolean; message: string }> {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/users/minute-points/increment`, {
+    const response = await fetch(`${API_BASE_URL}/api/users/minutePoints/increment`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

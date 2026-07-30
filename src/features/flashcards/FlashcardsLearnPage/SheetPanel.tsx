@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useLayoutEffect, useEffect, useImperativeHandle, forwardRef } from "react";
+import React, { useCallback, useRef, useLayoutEffect, useEffect, useImperativeHandle, forwardRef } from "react";
 import { Box } from "@mui/material";
 import { useDrag } from "@use-gesture/react";
 import { EicScrim, InfoSheetContainer, InfoSheetGrabber } from "./styled";
@@ -52,28 +52,51 @@ interface SheetPanelProps {
     tabStrip?: React.ReactNode;
 }
 
-// Sheet snaps to one of three stops on drag release: max height, the default
-// (open) height, or 0 height. Anything released below the default height snaps
-// to 0 and dismisses after the shrink animation; at or above it, the sheet
-// snaps to the nearer of {default, max}. There is no resting stop below the
-// default height — the default height is the floor.
+// ---------------------------------------------------------------------------
+// Geometry + motion constants
+// ---------------------------------------------------------------------------
+
+// Sheet height as a fraction of the parent (screen) height.
+const MAX_HEIGHT_RATIO = 0.92;
+const DEFAULT_HEIGHT_RATIO = 0.6;
+
+// Duration of every snap/dismiss animation.
 const SNAP_DURATION_MS = 220;
 
 // Multiplier applied to every vertical delta that resizes the sheet (grabber /
 // tab-strip drag, touch resize, wheel resize, and release momentum — which
-// inherits the scaling through applyDelta). >1 makes the panel travel further
+// inherits the scaling through applyResize). >1 makes the panel travel further
 // than the finger for the same gesture; 1 is 1:1 tracking. Content scrolling is
 // deliberately NOT scaled — only the resize path — so scrolling still feels
 // native.
 const RESIZE_SENSITIVITY = 1.1;
 
+// Release velocity is measured over the most recent slice of the gesture, not
+// over its whole life, so a slow drag that ends in a quick flick still flings.
+// A release that lands more than this long after the last move is treated as a
+// stationary release (velocity 0) — the finger was resting when it lifted.
+const VELOCITY_WINDOW_MS = 90;
+
+// Below this release speed (px/ms) there is no fling — the sheet just snaps.
+const FLING_MIN_VELOCITY = 0.05;
+// Momentum ends once it decays below this speed (px/ms).
+const MOMENTUM_MIN_VELOCITY = 0.02;
+// Per-frame decay, expressed at 60fps and rescaled by the real frame time.
+const MOMENTUM_DECAY_PER_FRAME = 0.95;
+// Frame-time cap for momentum integration. A long frame (GC, a heavy re-render,
+// an app switch) must not teleport the sheet or nuke the velocity in one step —
+// which is exactly how a fling used to "lose its momentum" on a janky frame.
+const MOMENTUM_MAX_FRAME_MS = 32;
+
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
 // Shared 3-stop snap rule used by every release path (grabber drag, touch
 // release, momentum decay): below default → dismiss (0); at or above it →
-// whichever of {default, max} is nearer.
+// whichever of {default, max} is nearer. The default height is the floor —
+// there is no resting stop between 0 and it.
 function computeSnapTarget(h: number, defaultH: number, maxH: number): number {
     if (h < defaultH) return 0;
-    const stops = [defaultH, maxH];
-    return stops.reduce((best, s) => (Math.abs(s - h) < Math.abs(best - h) ? s : best));
+    return Math.abs(defaultH - h) <= Math.abs(maxH - h) ? defaultH : maxH;
 }
 
 // Module-level set of currently mounted panel depths. The window-level wheel
@@ -91,25 +114,109 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     tabStrip,
 }, ref) => {
     const sheetContainerRef = useRef<HTMLDivElement | null>(null);
-    // Sheet height in px. null until measured after first render.
-    const [sheetHeight, setSheetHeight] = useState<number | null>(null);
-    // Ref kept in sync with state so the drag handler always reads the latest value.
-    const sheetHeightRef = useRef<number | null>(null);
-    const dragStartHeightRef = useRef<number>(0);
-    // Parent container height used as the cap for resize drags.
-    const parentHeightRef = useRef<number>(0);
-    // The height the sheet opens to (its default/open extent). Doubles as both
-    // the middle snap stop and the dismiss floor: any release below this height
-    // snaps to 0 rather than springing back up.
-    const defaultHeightRef = useRef<number>(0);
-    // True only while a release-snap animation is playing.
-    const [isSnapping, setIsSnapping] = useState(false);
-    // Flag set when the chosen snap target is 0; the transitionend handler
-    // reads this to know it should call handleClose after the shrink finishes.
-    const pendingDismissRef = useRef(false);
+    // ---- Height model -----------------------------------------------------
+    // The sheet's height is driven IMPERATIVELY (heightRef + a direct write to
+    // element.style.height), never through React state. Two reasons:
+    //  1. Perf: callers pass `children` as a render function (see
+    //     InfoCardSection), so a state update here re-renders the entire eip
+    //     body — every touchmove and every momentum frame. Those long frames
+    //     were what made flings stutter and die early.
+    //  2. Correctness: only one code path owns the height, so a re-render can
+    //     never resurrect a stale height mid-gesture.
+    // `height` is deliberately absent from the JSX style prop, so React has no
+    // record of it and will never overwrite what we write here.
+    const heightRef = useRef(0);
+    // Height the current grabber drag started from; null until that drag makes
+    // its first real movement (see bindHeaderDrag).
+    const dragStartHeightRef = useRef<number | null>(null);
+    // Parent container height; the cap and the default stop derive from it.
+    const parentHeightRef = useRef(0);
+    // The height the sheet opens to. Doubles as the middle snap stop and the
+    // dismiss floor: any release below this height snaps to 0 instead of
+    // springing back up.
+    const defaultHeightRef = useRef(0);
+    const momentumRafRef = useRef<number | null>(null);
+    const dismissTimerRef = useRef<number | null>(null);
+    // True from the moment a dismiss animation starts; makes dismiss idempotent
+    // and lets input handlers ignore events while the sheet is on its way out.
+    const dismissingRef = useRef(false);
+    // Latest onClose, read from timers without re-binding them.
+    const onCloseRef = useRef(onClose);
+    onCloseRef.current = onClose;
 
-    // Play an open animation from 0 → target height on first render. The
-    // panel's own open height is a fixed 60% of the parent (screen) height
+    const maxHeight = useCallback(() => parentHeightRef.current * MAX_HEIGHT_RATIO, []);
+
+    // The single writer for the sheet's height. `animate` turns the CSS height
+    // transition on for this write and off for every other one — so grabbing a
+    // snapping sheet mid-animation immediately returns to 1:1 finger tracking
+    // instead of trailing the finger by the snap duration.
+    const writeHeight = useCallback((h: number, animate = false) => {
+        heightRef.current = h;
+        const el = sheetContainerRef.current;
+        if (!el) return;
+        el.style.transition = animate ? `height ${SNAP_DURATION_MS}ms ease-out` : "none";
+        el.style.height = `${h}px`;
+    }, []);
+
+    // Stop any in-flight height animation at exactly the height that is on
+    // screen right now, and return it. A gesture must take over from what the
+    // user sees, not from an animation's not-yet-reached target. Called on a
+    // gesture's first real movement rather than at touch-down, so a plain tap
+    // never interrupts the open animation.
+    const freezeHeight = useCallback(() => {
+        const el = sheetContainerRef.current;
+        const h = el ? el.getBoundingClientRect().height : heightRef.current;
+        writeHeight(h);
+        return h;
+    }, [writeHeight]);
+
+    const stopMomentum = useCallback(() => {
+        if (momentumRafRef.current !== null) {
+            cancelAnimationFrame(momentumRafRef.current);
+            momentumRafRef.current = null;
+        }
+    }, []);
+
+    // Shrink to 0, then unmount. The close fires on a timer rather than
+    // transitionend: the duration is ours, and a timer can't be missed if the
+    // element is interrupted or the transition never fires.
+    const dismiss = useCallback(() => {
+        if (dismissingRef.current) return;
+        dismissingRef.current = true;
+        stopMomentum();
+        writeHeight(0, true);
+        dismissTimerRef.current = window.setTimeout(() => {
+            dismissTimerRef.current = null;
+            onCloseRef.current();
+        }, SNAP_DURATION_MS + 20);
+    }, [stopMomentum, writeHeight]);
+
+    // The one release rule, shared by every path that ends a gesture (grabber
+    // drag release, touch release, momentum decay, momentum hitting a stop).
+    const settle = useCallback(() => {
+        const target = computeSnapTarget(heightRef.current, defaultHeightRef.current, maxHeight());
+        if (target === 0) {
+            dismiss();
+            return;
+        }
+        if (target !== heightRef.current) writeHeight(target, true);
+    }, [dismiss, maxHeight, writeHeight]);
+
+    // Grow/shrink by a raw gesture delta (positive = grow). `minH` is the floor
+    // for THIS caller: a live finger may drag all the way to 0 (that's how you
+    // dismiss), while momentum floors at the default height so a fling can
+    // never close the panel on its own. Returns false when the delta was fully
+    // absorbed by a boundary, which every caller treats as a hard stop.
+    const applyResize = useCallback((rawDy: number, minH: number): boolean => {
+        const h = heightRef.current;
+        const next = clamp(h + rawDy * RESIZE_SENSITIVITY, minH, maxHeight());
+        if (next === h) return false;
+        writeHeight(next);
+        return true;
+    }, [maxHeight, writeHeight]);
+
+    // Play the open animation from 0 → target height on first render. The
+    // panel's own open height is a fixed fraction of the parent (screen) height
     // rather than content-measured, so it's consistent across all eip tabs
     // regardless of how much content a given tab renders. Child panels that
     // pass initialHeight still match the parent panel's live height instead.
@@ -117,83 +224,58 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
         if (!sheetContainerRef.current) return;
         const parentH = sheetContainerRef.current.parentElement?.clientHeight ?? window.innerHeight;
         parentHeightRef.current = parentH;
-        const targetHeight = initialHeight != null ? Math.min(initialHeight, parentH * 0.92) : parentH * 0.6;
+        const targetHeight = initialHeight != null
+            ? Math.min(initialHeight, parentH * MAX_HEIGHT_RATIO)
+            : parentH * DEFAULT_HEIGHT_RATIO;
         defaultHeightRef.current = targetHeight;
-        sheetHeightRef.current = 0;
-        setSheetHeight(0);
-        requestAnimationFrame(() => {
-            setIsSnapping(true);
-            sheetHeightRef.current = targetHeight;
-            setSheetHeight(targetHeight);
-        });
+        // Written before paint, so the sheet never flashes at its natural height.
+        writeHeight(0);
+        requestAnimationFrame(() => writeHeight(targetHeight, true));
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    // Cancel in-flight work if the panel is unmounted from the outside (e.g.
+    // scrim tap, parent state change) while a fling or dismiss is running.
+    useEffect(() => () => {
+        stopMomentum();
+        if (dismissTimerRef.current !== null) window.clearTimeout(dismissTimerRef.current);
+    }, [stopMomentum]);
+
     useImperativeHandle(ref, () => ({
-        getCurrentHeight: () => sheetHeightRef.current,
+        getCurrentHeight: () => heightRef.current,
     }), []);
 
-    const handleClose = useCallback(() => {
-        onClose();
-    }, [onClose]);
-
-    // Drag the grabber to resize the sheet. Snap-on-release to {0, initial, max}.
+    // Drag the grabber / tab strip / entry header to resize the sheet.
     const bindHeaderDrag = useDrag(
         ({ first, last, tap, movement: [, my] }) => {
             // A tap on the header is not a resize gesture — skip the
             // snap-on-release logic so clicking the EIP header doesn't
             // collapse an expanded sheet back to its initial height.
-            if (tap) return;
+            if (tap || dismissingRef.current) return;
             if (first) {
-                dragStartHeightRef.current = sheetHeightRef.current ?? 0;
-                setIsSnapping(false);
+                stopMomentum();
+                dragStartHeightRef.current = null;
             }
-            const maxH = parentHeightRef.current * 0.92;
-            const newH = dragStartHeightRef.current - my * RESIZE_SENSITIVITY;
-            const clampedH = Math.max(0, Math.min(maxH, newH));
-            if (!last) {
-                sheetHeightRef.current = clampedH;
-                setSheetHeight(clampedH);
-                return;
+            if (dragStartHeightRef.current === null) {
+                // Nothing has moved yet — leave any open/snap animation alone.
+                if (my === 0) return;
+                dragStartHeightRef.current = freezeHeight();
             }
-            const target = computeSnapTarget(clampedH, defaultHeightRef.current, maxH);
-            if (target === 0) pendingDismissRef.current = true;
-            setIsSnapping(true);
-            sheetHeightRef.current = target;
-            setSheetHeight(target);
+            // Absolute tracking from the gesture's start height (useDrag gives
+            // cumulative movement), so the sheet can't drift over a long drag.
+            writeHeight(clamp(dragStartHeightRef.current - my * RESIZE_SENSITIVITY, 0, maxHeight()));
+            if (last) {
+                dragStartHeightRef.current = null;
+                settle();
+            }
         },
         { axis: "y", filterTaps: true }
     );
 
-    // After a snap-to-0, dismiss the sheet once the height transition ends.
-    useEffect(() => {
-        if (!isSnapping) return;
-        const el = sheetContainerRef.current;
-        if (!el) return;
-        const finish = () => {
-            setIsSnapping(false);
-            if (pendingDismissRef.current) {
-                pendingDismissRef.current = false;
-                handleClose();
-            }
-        };
-        const onEnd = (e: TransitionEvent) => {
-            if (e.propertyName !== "height") return;
-            finish();
-        };
-        el.addEventListener("transitionend", onEnd);
-        const timeout = window.setTimeout(finish, SNAP_DURATION_MS + 80);
-        return () => {
-            el.removeEventListener("transitionend", onEnd);
-            window.clearTimeout(timeout);
-        };
-    }, [isSnapping, handleClose]);
-
-    // Couple content scroll to sheet resize. See InfoCardSection's prior
-    // implementation comments — behavior is preserved exactly here.
-    // Depends on bodyKey so that swapping the mounted body (e.g. info ↔
-    // compare tab) re-binds these listeners to the new root/scroll nodes
-    // instead of staying attached to the unmounted previous body.
+    // Couple content scroll to sheet resize, for both wheel (desktop) and touch.
+    // Depends on bodyKey so that swapping the mounted body (e.g. info ↔ compare
+    // tab) re-binds these listeners to the new root/scroll nodes instead of
+    // staying attached to the unmounted previous body.
     useEffect(() => {
         const root = bodyRef.current?.root ?? null;
         const scrollEl = bodyRef.current?.scroll ?? null;
@@ -206,234 +288,155 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
             return depth === max;
         };
 
-        // `rawDy` is the gesture delta in px; the sheet moves by that delta
-        // scaled by RESIZE_SENSITIVITY. Sign (and therefore the grow/shrink
-        // branch chosen) is unaffected since the multiplier is positive.
-        const applyDelta = (rawDy: number): boolean => {
-            const dy = rawDy * RESIZE_SENSITIVITY;
-            const maxH = parentHeightRef.current * 0.92;
-            const h = sheetHeightRef.current ?? 0;
-            const st = scrollEl.scrollTop;
-            if (dy > 0) {
-                if (h < maxH) {
-                    const next = Math.min(h + dy, maxH);
-                    sheetHeightRef.current = next;
-                    setSheetHeight(next);
-                    return true;
-                }
-                return false;
-            }
-            if (dy < 0) {
-                if (st > 0) return false;
-                if (h > 0) {
-                    const next = Math.max(h + dy, 0);
-                    sheetHeightRef.current = next;
-                    setSheetHeight(next);
-                    return true;
-                }
-            }
-            return false;
-        };
-
+        // --- Wheel (desktop) ------------------------------------------------
+        // deltaY > 0 (scroll down) grows the sheet; deltaY < 0 shrinks it once
+        // the content is scrolled to its top. A wheel gesture has no release,
+        // so crossing below the default height dismisses immediately rather
+        // than waiting for a snap decision.
         const onWheel = (e: WheelEvent) => {
             if (!isTopmost()) return;
-            if (pendingDismissRef.current) {
+            if (dismissingRef.current) {
                 e.preventDefault();
                 return;
             }
             const dy = e.deltaY;
-            if (dy < 0) {
-                const st = scrollEl.scrollTop;
-                const h = sheetHeightRef.current ?? 0;
-                if (st === 0 && h > 0) {
-                    // Shrink path bypasses applyDelta, so scale here too.
-                    const next = Math.max(h + dy * RESIZE_SENSITIVITY, 0);
-                    const dismissThreshold = defaultHeightRef.current;
-                    if (next < dismissThreshold) {
-                        sheetHeightRef.current = 0;
-                        setSheetHeight(0);
-                        pendingDismissRef.current = true;
-                        setIsSnapping(true);
-                        e.preventDefault();
-                        return;
-                    }
-                    sheetHeightRef.current = next;
-                    setSheetHeight(next);
-                    e.preventDefault();
-                    return;
-                }
-                return;
-            }
-            if (applyDelta(dy)) e.preventDefault();
+            // Shrinking is only allowed from the top of the content; otherwise
+            // let the content scroll normally.
+            if (dy < 0 && scrollEl.scrollTop > 0) return;
+            if (!applyResize(dy, 0)) return;
+            e.preventDefault();
+            if (heightRef.current < defaultHeightRef.current) dismiss();
         };
 
+        // --- Touch ----------------------------------------------------------
+        // Recent (y, t) samples, trimmed to VELOCITY_WINDOW_MS, used to measure
+        // release velocity. Sampling a short window (instead of smoothing the
+        // whole gesture) is what makes a quick flick at the end of a slow drag
+        // actually fling — the old exponential average dragged the flick's
+        // speed down toward the slow motion that preceded it.
+        let samples: { y: number; t: number }[] = [];
         let lastTouchY: number | null = null;
-        let lastTouchTime = 0;
-        let velocity = 0;
-        // The mode this touch gesture is locked into on its first committed
-        // move. Once set, the gesture cannot cross over between resizing the
-        // panel and scrolling the content — a resize that reaches the max
-        // height is a hard stop; the user must lift and start a fresh gesture
-        // to begin scrolling the content. The release-momentum mode inherits
-        // this lock too (see onTouchEnd).
+        // The mode this gesture is locked into on its first committed move.
+        // Once set, the gesture cannot cross over between resizing the panel
+        // and scrolling the content — a resize that reaches a boundary is a
+        // hard stop; the user must lift and start a fresh gesture to scroll.
+        // The release momentum inherits this lock.
         let gestureMode: "resize" | "scroll" | null = null;
-        let momentumRaf: number | null = null;
 
-        const stopMomentum = () => {
-            if (momentumRaf !== null) {
-                cancelAnimationFrame(momentumRaf);
-                momentumRaf = null;
-            }
+        // Signed release speed in px/ms (positive = swipe up = grow), measured
+        // across the retained sample window. Returns 0 if the finger was
+        // effectively parked when it lifted.
+        const releaseVelocity = (endTime: number): number => {
+            if (samples.length < 2) return 0;
+            const last = samples[samples.length - 1];
+            if (endTime - last.t > VELOCITY_WINDOW_MS) return 0;
+            const first = samples[0];
+            const dt = last.t - first.t;
+            if (dt <= 0) return 0;
+            return (first.y - last.y) / dt;
         };
 
         const onTouchStart = (e: TouchEvent) => {
             if (e.touches.length !== 1) return;
             stopMomentum();
             lastTouchY = e.touches[0].clientY;
-            lastTouchTime = e.timeStamp;
-            velocity = 0;
+            samples = [{ y: lastTouchY, t: e.timeStamp }];
             gestureMode = null;
         };
+
         const onTouchMove = (e: TouchEvent) => {
-            if (lastTouchY === null || e.touches.length !== 1) return;
+            if (lastTouchY === null || e.touches.length !== 1 || dismissingRef.current) return;
             const y = e.touches[0].clientY;
-            const t = e.timeStamp;
-            const dy = lastTouchY - y;
-            const dt = t - lastTouchTime;
-            if (dt > 0) {
-                const inst = dy / dt;
-                velocity = velocity * 0.6 + inst * 0.4;
-            }
+            const dy = lastTouchY - y; // positive = finger moved up
             lastTouchY = y;
-            lastTouchTime = t;
-            // Lock the gesture to a single mode on its first committed move so
-            // it can't cross over between resizing and content-scrolling. A
-            // resize that later hits the max/min boundary swallows the delta
-            // rather than spilling into a content scroll — mirrors the
-            // momentum mode-lock in onTouchEnd. Mode is chosen the same way
-            // momentum picks its mode: grow only resizes while there's room to
-            // grow; an upward pull only resizes once the content is at its top.
+            samples.push({ y, t: e.timeStamp });
+            // Keep the window, but always keep enough samples to measure with.
+            while (samples.length > 2 && e.timeStamp - samples[1].t > VELOCITY_WINDOW_MS) samples.shift();
+
+            // Lock the gesture to a single mode on its first committed move:
+            // an upward pull grows the sheet while there's room to grow, and
+            // only scrolls once the sheet is maxed; a downward pull scrolls
+            // while the content is off its top, and only shrinks at the top.
             if (gestureMode === null && dy !== 0) {
-                const maxH = parentHeightRef.current * 0.92;
-                const h = sheetHeightRef.current ?? 0;
-                const st = scrollEl.scrollTop;
-                if (dy > 0) gestureMode = h < maxH ? "resize" : "scroll";
-                else gestureMode = st > 0 ? "scroll" : (h > 0 ? "resize" : "scroll");
+                // Take over from the height that is actually on screen — the
+                // sheet may still be mid open/snap animation.
+                const h = freezeHeight();
+                if (dy > 0) gestureMode = h < maxHeight() ? "resize" : "scroll";
+                else gestureMode = scrollEl.scrollTop > 0 ? "scroll" : "resize";
             }
             if (gestureMode === "scroll") {
                 scrollEl.scrollTop += dy;
-                e.preventDefault();
-                return;
+            } else {
+                // A live finger may drag all the way down to 0 — that is the
+                // dismiss gesture. Hitting a boundary swallows the delta rather
+                // than spilling over into a content scroll.
+                applyResize(dy, 0);
             }
-            // resize mode: grow/shrink the panel. If applyDelta rejects (panel
-            // sitting at the max or min boundary) swallow the delta — the
-            // boundary is a hard stop for this gesture, never a handoff to
-            // content scroll.
-            applyDelta(dy);
             e.preventDefault();
         };
-        const onTouchEnd = () => {
+
+        const onTouchEnd = (e: TouchEvent) => {
+            // Ignore the lift of a second finger; only the last one releases.
+            if (e.touches.length > 0) return;
+            const mode = gestureMode;
+            const velocity = releaseVelocity(e.timeStamp);
             lastTouchY = null;
-            const hOnRelease = sheetHeightRef.current ?? 0;
-            const releaseMode = gestureMode;
-            const wasResizing = releaseMode === "resize";
+            samples = [];
             gestureMode = null;
-            if (wasResizing && hOnRelease < defaultHeightRef.current) {
-                // Below the default (open) height on release → animate to 0 and
-                // dismiss, mirroring the grabber-drag snap rule.
-                sheetHeightRef.current = 0;
-                setSheetHeight(0);
-                pendingDismissRef.current = true;
-                setIsSnapping(true);
-                velocity = 0;
+            if (mode === null || dismissingRef.current) return;
+
+            if (mode === "resize" && heightRef.current < defaultHeightRef.current) {
+                // Dragged below the default height and released → dismiss.
+                // This is the ONLY way a swipe closes the panel; momentum never
+                // carries it below the default height (see startMomentum).
+                dismiss();
                 return;
             }
-            if (Math.abs(velocity) < 0.05) {
-                velocity = 0;
-                // No momentum to carry the release into a fling — snap the
-                // resting height to whichever of {default, max} is nearer,
-                // mirroring the grabber-drag snap rule.
-                if (wasResizing) {
-                    const target = computeSnapTarget(hOnRelease, defaultHeightRef.current, parentHeightRef.current * 0.92);
-                    if (target !== hOnRelease) {
-                        sheetHeightRef.current = target;
-                        setIsSnapping(true);
-                        setSheetHeight(target);
-                    }
-                }
+            if (Math.abs(velocity) < FLING_MIN_VELOCITY) {
+                if (mode === "resize") settle();
                 return;
             }
-            let v = velocity;
+            startMomentum(velocity, mode);
+        };
+
+        // Release momentum, locked to the gesture's mode so a fling can never
+        // cross over between resizing and scrolling:
+        //  - "resize": the panel keeps growing/shrinking, floored at the DEFAULT
+        //    height. A downward fling therefore coasts to the default height and
+        //    stops there; it cannot dismiss. Growing stops dead at the max.
+        //  - "scroll": the content keeps scrolling and stops at its own bounds;
+        //    inertia never spills into a panel resize.
+        const startMomentum = (initialVelocity: number, mode: "resize" | "scroll") => {
+            let v = initialVelocity;
             let lastFrame = performance.now();
-            // Momentum inherits the live gesture's locked mode so a fling can
-            // never cross over between resize and scroll:
-            // - "resize": panel is growing/shrinking. Stop momentum if applyDelta
-            //   stops consuming (panel hit max or top of content), instead of
-            //   transferring inertia into native scroll. This is what makes a
-            //   grow-fling stop dead at the maxed screen instead of running on
-            //   into the content.
-            // - "scroll": content is scrolling. Stop momentum if scrollTop hits
-            //   the top boundary, instead of transferring inertia into a panel
-            //   shrink. The user must initiate a fresh gesture to cross over.
-            const maxH = parentHeightRef.current * 0.92;
-            const momentumMode = releaseMode;
-            if (momentumMode === null) {
-                velocity = 0;
-                return;
-            }
             const step = (now: number) => {
-                const dt = now - lastFrame;
+                momentumRafRef.current = null;
+                // Cap the integration step so one janky frame can't teleport the
+                // sheet or wipe out the whole fling.
+                const dt = Math.min(now - lastFrame, MOMENTUM_MAX_FRAME_MS);
                 lastFrame = now;
                 const dy = v * dt;
-                if (momentumMode === "resize") {
-                    if (!applyDelta(dy)) {
-                        // Hit the resize boundary — pause inertia here.
-                        momentumRaf = null;
+                if (mode === "resize") {
+                    // Momentum floors at the default height — the fling stops
+                    // there instead of running on into a dismiss.
+                    if (!applyResize(dy, defaultHeightRef.current)) {
+                        settle();
                         return;
                     }
                 } else {
-                    // Scroll-mode momentum: never resize the panel; stop at the
-                    // content-top boundary.
-                    if (v < 0 && scrollEl.scrollTop <= 0) {
-                        momentumRaf = null;
-                        return;
-                    }
-                    scrollEl.scrollTop += dy;
-                    if (v < 0 && scrollEl.scrollTop <= 0) {
-                        scrollEl.scrollTop = 0;
-                        momentumRaf = null;
-                        return;
-                    }
+                    const before = scrollEl.scrollTop;
+                    scrollEl.scrollTop = before + dy;
+                    // Hit the top or bottom of the content — nothing moved.
+                    if (scrollEl.scrollTop === before) return;
                 }
-                if ((sheetHeightRef.current ?? 0) < defaultHeightRef.current && v < 0) {
-                    sheetHeightRef.current = 0;
-                    setSheetHeight(0);
-                    pendingDismissRef.current = true;
-                    setIsSnapping(true);
-                    momentumRaf = null;
+                v *= Math.pow(MOMENTUM_DECAY_PER_FRAME, dt / 16);
+                if (Math.abs(v) < MOMENTUM_MIN_VELOCITY) {
+                    if (mode === "resize") settle();
                     return;
                 }
-                v *= Math.pow(0.95, dt / 16);
-                if (Math.abs(v) < 0.02) {
-                    momentumRaf = null;
-                    // Momentum petered out mid-flight — snap the resting height
-                    // to whichever of {default, max} is nearer, mirroring the
-                    // grabber-drag snap rule (below-default dismiss is already
-                    // handled above, each frame, while shrinking).
-                    if (momentumMode === "resize") {
-                        const h = sheetHeightRef.current ?? 0;
-                        const target = computeSnapTarget(h, defaultHeightRef.current, maxH);
-                        if (target !== h) {
-                            sheetHeightRef.current = target;
-                            setIsSnapping(true);
-                            setSheetHeight(target);
-                        }
-                    }
-                    return;
-                }
-                momentumRaf = requestAnimationFrame(step);
+                momentumRafRef.current = requestAnimationFrame(step);
             };
-            momentumRaf = requestAnimationFrame(step);
+            momentumRafRef.current = requestAnimationFrame(step);
         };
 
         window.addEventListener("wheel", onWheel, { passive: false });
@@ -455,19 +458,15 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
 
     const stackZ = depth * 2;
     const scrimStyle: React.CSSProperties = depth > 0 ? { zIndex: 10 + stackZ } : {};
-    const sheetStyle: React.CSSProperties = sheetHeight !== null
-        ? {
-            height: sheetHeight,
-            transition: isSnapping ? `height ${SNAP_DURATION_MS}ms ease-out` : "none",
-            ...(depth > 0 ? { zIndex: 11 + stackZ } : {}),
-        }
-        : (depth > 0 ? { zIndex: 11 + stackZ } : {});
+    // NOTE: no `height` key here on purpose — height is owned imperatively by
+    // writeHeight (see the height-model comment above).
+    const sheetStyle: React.CSSProperties = depth > 0 ? { zIndex: 11 + stackZ } : {};
 
     return (
         <>
             <EicScrim
                 className="mobile-demo-eic-scrim"
-                onClick={handleClose}
+                onClick={onClose}
                 style={scrimStyle}
             />
             <InfoSheetContainer

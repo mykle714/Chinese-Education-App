@@ -51,14 +51,14 @@ export interface NightMarketAssetDef {
   scale: number;           // default render scale for sub-layers (1.0 = original size)
 }
 
-/** Response for GET /api/night-market/unlocks */
+/** Response for GET /api/nightMarket/unlocks */
 export interface NightMarketUnlocksResponse {
   unlocks: NightMarketUnlock[];
   nextThreshold: number;   // work points needed for next unlock
   totalUnlockable: number; // total items in the unlock pool
 }
 
-/** Response for POST /api/night-market/unlock */
+/** Response for POST /api/nightMarket/unlock */
 export interface NightMarketNewUnlockResponse {
   unlock: NightMarketUnlock;
   nextThreshold: number;   // work points needed for the unlock after this one
@@ -76,6 +76,7 @@ export interface NightMarketNewUnlockResponse {
 export interface TemplatePlacementRow {
   id: string;              // UUID primary key
   userId: string;          // FK to users
+  language: string;        // which language market this placement belongs to (migration 136)
   templateName: string;    // catalog key: nightmarkettemplatedefinitions.name (name, not a version)
   activeVersion: number;   // persisted rendered version (chosen by the version selector)
   offsetCol: number;       // SW-corner isoX offset (col → +isoX = east)

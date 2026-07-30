@@ -1,8 +1,13 @@
-import { API_BASE_URL } from '../../constants';
-import { authHeader } from '../../utils/authHeader';
+import { apiGet, apiPost, apiDelete, withFallback } from '../../api/http';
 import type { EditorMasks } from '../../engine/market/farmTerrain';
 import { freeFarmTileset } from '../../engine/market/freeFarmTileset';
 import { isValidPlaceholderSize, type PlaceholderArea } from '../../engine/market/placeholderArea';
+import type { TemplateDefinitionPayload } from '../../engine/market/templateDefinition';
+
+// The definition payload is the ENGINE's input contract, so it is declared there
+// (see engine/market/templateDefinition.ts). Re-exported here because this module is
+// where every feature-side caller already imports it from.
+export type { TemplateDefinitionPayload };
 
 /**
  * Client API for the Night Market template editor
@@ -17,28 +22,6 @@ import { isValidPlaceholderSize, type PlaceholderArea } from '../../engine/marke
  * (`useMarketWorld`) loads it by name.
  */
 export const NIGHT_MARKET_HUB_TEMPLATE_NAME = 'night-market-hub';
-
-/** The serialized `definition` shape stored on a template row (stems for decor). */
-export interface TemplateDefinitionPayload {
-  /** Terrain-1 mask cells (currently rendered as light grass). */
-  terrain1: string[];
-  /** Terrain-2 mask cells (currently rendered as dark grass, over terrain 1). */
-  terrain2: string[];
-  /** Street-walkable cells — a walkability class, rendered as a spriteless tint. */
-  street: string[];
-  /** Communal-walkable cells (parks/plazas) — a walkability class, no sprite. */
-  communal: string[];
-  /**
-   * Placeholder AREAS (occupant slots) — fixed-size dropped rectangles ({col,row,w,h}), an
-   * override overlay with no sprite. Shared across versions (owned by version 0). Legacy rows
-   * stored a flat `string[]` cell mask; those load as NO areas (must be re-dropped — see
-   * definitionToMasks).
-   */
-  placeholder: PlaceholderArea[];
-  /** Condition-mask cells — a per-version override overlay, no sprite. */
-  condition: string[];
-  decor: Record<string, string>;
-}
 
 /** A Load-dropdown summary row — one entry PER NAME (no heavy definition). */
 export interface TemplateSummary {
@@ -137,14 +120,23 @@ export function definitionToMasks(def: TemplateDefinitionPayload): EditorMasks {
   };
 }
 
+/**
+ * Every call below goes through src/api/http.ts (base URL, Authorization read fresh at
+ * call time, `credentials: 'include'`, throw-on-non-2xx). A non-2xx raises an ApiError
+ * whose `message` is already the server's `error` field; `withFallback` only supplies a
+ * message for the rare error body that carries none, preserving the wording callers used
+ * to get from the hand-rolled `data?.error || '...'` chain.
+ * See docs/ARCHITECTURE_REVIEW.md finding 5.
+ *
+ * Paths are camelCase (`/api/nightMarketTemplates/...`) and must stay in step with
+ * server/routes/nightMarketTemplateRoutes.ts.
+ */
 /** List all templates (name-ordered) for the Load dropdown. */
 export async function listTemplates(): Promise<TemplateSummary[]> {
-  const res = await fetch(`${API_BASE_URL}/api/nightmarket-templates`, {
-    headers: { ...authHeader() },
-    credentials: 'include',
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.error || 'Failed to list templates');
+  const data = await withFallback(
+    apiGet<{ templates?: TemplateSummary[] }>('/api/nightMarketTemplates'),
+    'Failed to list templates',
+  );
   return data.templates ?? [];
 }
 
@@ -154,23 +146,21 @@ export async function listTemplates(): Promise<TemplateSummary[]> {
  * {@link listTemplates} (it carries definitions), so it backs the gallery, not the dropdown.
  */
 export async function listTemplateGallery(): Promise<TemplateGalleryEntry[]> {
-  const res = await fetch(`${API_BASE_URL}/api/nightmarket-templates/gallery`, {
-    headers: { ...authHeader() },
-    credentials: 'include',
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.error || 'Failed to list template gallery');
+  const data = await withFallback(
+    apiGet<{ templates?: TemplateGalleryEntry[] }>('/api/nightMarketTemplates/gallery'),
+    'Failed to list template gallery',
+  );
   return data.templates ?? [];
 }
 
 /** Load one template version (full definition + availableVersions) by name+version. */
 export async function loadTemplate(name: string, version = 0): Promise<LoadedTemplate> {
-  const res = await fetch(
-    `${API_BASE_URL}/api/nightmarket-templates/load?name=${encodeURIComponent(name)}&version=${version}`,
-    { headers: { ...authHeader() }, credentials: 'include' },
+  const data = await withFallback(
+    apiGet<{ template: LoadedTemplate }>('/api/nightMarketTemplates/load', {
+      params: { name, version },
+    }),
+    'Failed to load template',
   );
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.error || 'Failed to load template');
   return data.template;
 }
 
@@ -179,23 +169,21 @@ export async function loadTemplate(name: string, version = 0): Promise<LoadedTem
  * integer) to pre-fill a fresh template in the Properties popup. Validator-gated server-side.
  */
 export async function suggestTemplateName(): Promise<string> {
-  const res = await fetch(`${API_BASE_URL}/api/nightmarket-templates/suggest-name`, {
-    headers: { ...authHeader() },
-    credentials: 'include',
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.error || 'Failed to suggest template name');
+  const data = await withFallback(
+    apiGet<{ name: string }>('/api/nightMarketTemplates/suggestName'),
+    'Failed to suggest template name',
+  );
   return data.name;
 }
 
 /** Whether `name` is free. Backs the Properties-popup rename gate. */
 export async function checkTemplateNameAvailable(name: string): Promise<boolean> {
-  const res = await fetch(
-    `${API_BASE_URL}/api/nightmarket-templates/name-available?name=${encodeURIComponent(name)}`,
-    { headers: { ...authHeader() }, credentials: 'include' },
+  const data = await withFallback(
+    apiGet<{ available?: boolean }>('/api/nightMarketTemplates/nameAvailable', {
+      params: { name },
+    }),
+    'Failed to check template name',
   );
-  const data = await res.json();
-  if (!res.ok) throw new Error(data?.error || 'Failed to check template name');
   return !!data.available;
 }
 
@@ -216,34 +204,29 @@ export async function submitTemplate(input: {
   description: string | null;
   masks: EditorMasks;
 }): Promise<{ overwritten: boolean; version: number }> {
-  const res = await fetch(`${API_BASE_URL}/api/nightmarket-templates`, {
-    method: 'POST',
-    headers: { ...authHeader(), 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify({
-      name: input.name,
-      version: input.version,
-      width: input.width,
-      height: input.height,
-      description: input.description,
-      definition: masksToDefinition(input.masks),
-    }),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.error || 'Failed to submit template');
+  const data = await withFallback(
+    apiPost<{ overwritten?: boolean; template?: { version?: number } }>(
+      '/api/nightMarketTemplates',
+      {
+        name: input.name,
+        version: input.version,
+        width: input.width,
+        height: input.height,
+        description: input.description,
+        definition: masksToDefinition(input.masks),
+      },
+    ),
+    'Failed to submit template',
+  );
   return { overwritten: !!data.overwritten, version: data.template?.version ?? input.version };
 }
 
 /** Hard-delete a WHOLE template (all versions of the name). Throws with the server message on failure. */
 export async function deleteTemplate(name: string): Promise<void> {
-  const res = await fetch(
-    `${API_BASE_URL}/api/nightmarket-templates?name=${encodeURIComponent(name)}`,
-    { method: 'DELETE', headers: { ...authHeader() }, credentials: 'include' },
+  await withFallback(
+    apiDelete<unknown>('/api/nightMarketTemplates', undefined, { params: { name } }),
+    'Failed to delete template',
   );
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data?.error || 'Failed to delete template');
-  }
 }
 
 /**
@@ -251,12 +234,10 @@ export async function deleteTemplate(name: string): Promise<void> {
  * base — delete the whole template instead). Throws with the server message on failure.
  */
 export async function deleteTemplateVersion(name: string, version: number): Promise<void> {
-  const res = await fetch(
-    `${API_BASE_URL}/api/nightmarket-templates/version?name=${encodeURIComponent(name)}&version=${version}`,
-    { method: 'DELETE', headers: { ...authHeader() }, credentials: 'include' },
+  await withFallback(
+    apiDelete<unknown>('/api/nightMarketTemplates/version', undefined, {
+      params: { name, version },
+    }),
+    'Failed to delete template version',
   );
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data?.error || 'Failed to delete template version');
-  }
 }

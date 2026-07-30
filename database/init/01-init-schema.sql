@@ -94,7 +94,7 @@ CREATE TABLE IF NOT EXISTS validations (
     id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     "entryId"         INTEGER      NOT NULL,   -- dictionaryentries_<language>.id
     language          VARCHAR(10)  NOT NULL,
-    field             VARCHAR(50)  NOT NULL,   -- definitions | exampleSentence0..2
+    field             VARCHAR(50)  NOT NULL,   -- definitions | exampleSentence0..2 | partsOfSpeech | difficulty | frequencyScore (last 3 inline-only, migration 132)
     "validatorUserId" UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     "validatorName"   TEXT         NOT NULL,
     action            VARCHAR(20)  NOT NULL CHECK (action IN ('approve','flag')),

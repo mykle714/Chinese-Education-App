@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../AuthContext";
-import { API_BASE_URL } from "../constants";
+import { apiGet, apiPost } from "../api/http";
 
 /** Shape returned by GET /api/users/me/wins. */
 interface WinsResponse {
@@ -14,23 +14,24 @@ interface WinsResponse {
  * out of BubbleMatchPage so the Games hub can show the same badges on its
  * level sub-cards without duplicating the fetch — both call this with the
  * same `gameKey`.
+ *
+ * Two granularities are exposed on purpose (see docs/HUB_MENU_SYSTEM.md):
+ *   - `clearedLevels` / `lifetimeWins` — per level/mode, keyed by level number.
+ *   - `totalWins` — the game-wide sum, which is what the hub now DISPLAYS as a
+ *     single "×N" on the strip's group header. Per-level counts stay available
+ *     for callers that want them, but no UI renders them today.
  */
 export function useGameWins(gameKey: string) {
-    const { token } = useAuth();
+    const { isAuthenticated } = useAuth();
     const [clearedLevels, setClearedLevels] = useState<Set<number>>(new Set());
     const [lifetimeWins, setLifetimeWins] = useState<Record<number, number>>({});
 
     useEffect(() => {
-        if (!token) return;
+        if (!isAuthenticated) return;
         let cancelled = false;
         (async () => {
             try {
-                const res = await fetch(`${API_BASE_URL}/api/users/me/wins`, {
-                    credentials: "include",
-                    headers: { Authorization: `Bearer ${token}` },
-                });
-                if (!res.ok) return;
-                const data: WinsResponse = await res.json();
+                const data = await apiGet<WinsResponse>("/api/users/me/wins");
                 if (cancelled) return;
 
                 const levels = (data.weekly ?? [])
@@ -52,7 +53,11 @@ export function useGameWins(gameKey: string) {
         return () => {
             cancelled = true;
         };
-    }, [token, gameKey]);
+    // Keyed on isAuthenticated — the STABLE auth identity — not the raw `token`,
+    // which rotates every ~15 min. Keying on `token` re-ran this effect on every
+    // silent refresh, wiping and refetching the badges mid-session.
+    // See CLAUDE.md "Never reload on token refresh".
+    }, [isAuthenticated, gameKey]);
 
     // Log one win for the given level. Fire-and-forget, with an optimistic local
     // update so the ⭐/×N reflect it immediately (the server is the source of
@@ -61,19 +66,18 @@ export function useGameWins(gameKey: string) {
         (level: number) => {
             setClearedLevels((prev) => new Set(prev).add(level));
             setLifetimeWins((prev) => ({ ...prev, [level]: (prev[level] ?? 0) + 1 }));
-            const headers: HeadersInit = { "Content-Type": "application/json" };
-            if (token && token !== "null" && token !== "undefined") {
-                headers["Authorization"] = `Bearer ${token}`;
-            }
-            fetch(`${API_BASE_URL}/api/users/me/wins`, {
-                method: "POST",
-                headers,
-                credentials: "include",
-                body: JSON.stringify({ game: gameKey, level }),
-            }).catch((err) => console.error(`[useGameWins] win L${level} record failed:`, err));
+            apiPost("/api/users/me/wins", { game: gameKey, level })
+                .catch((err) => console.error(`[useGameWins] win L${level} record failed:`, err));
         },
-        [token, gameKey]
+        // No `token` dep: apiPost reads the header at call time, so this callback's
+        // identity survives a silent refresh.
+        [gameKey]
     );
 
-    return { clearedLevels, lifetimeWins, recordWin };
+    // Game-wide lifetime total, aggregated across every level/mode bucket. This
+    // is the number the Games hub shows — a player thinks in "I've won Bubble
+    // Match 12 times", not "4 on Easy, 5 on Medium, 3 on Hard".
+    const totalWins = Object.values(lifetimeWins).reduce((sum, n) => sum + n, 0);
+
+    return { clearedLevels, lifetimeWins, totalWins, recordWin };
 }

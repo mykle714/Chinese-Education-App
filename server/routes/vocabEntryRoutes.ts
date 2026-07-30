@@ -2,6 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { authenticateToken } from '../authMiddleware.js';
 import { vocabEntryController } from '../dal/setup.js';
+import { handle } from './asyncHandler.js';
 
 /**
  * Vocab entry routes — /api/vocabEntries/*
@@ -23,78 +24,42 @@ const upload = multer({
 });
 
 // Get all vocab entries
-// @ts-ignore
-router.get('/api/vocabEntries', authenticateToken, async (req, res) => {
-  await vocabEntryController.getAllEntries(req, res);
-});
+router.get('/api/vocabEntries', authenticateToken, handle(vocabEntryController.getAllEntries, vocabEntryController));
 
 // Get paginated vocab entries
-// @ts-ignore
-router.get('/api/vocabEntries/paginated', authenticateToken, async (req, res) => {
-  await vocabEntryController.getPaginatedEntries(req, res);
-});
+router.get('/api/vocabEntries/paginated', authenticateToken, handle(vocabEntryController.getPaginatedEntries, vocabEntryController));
 
 // Search vocab entries
-// @ts-ignore
-router.get('/api/vocabEntries/search', authenticateToken, async (req, res) => {
-  await vocabEntryController.searchEntries(req, res);
-});
+router.get('/api/vocabEntries/search', authenticateToken, handle(vocabEntryController.searchEntries, vocabEntryController));
 
 // Create new vocab entry
-// @ts-ignore
-router.post('/api/vocabEntries', authenticateToken, async (req, res) => {
-  await vocabEntryController.createEntry(req, res);
-});
+router.post('/api/vocabEntries', authenticateToken, handle(vocabEntryController.createEntry, vocabEntryController));
 
 // Add a dictionary entry to the user's library (idempotent; handles already-in-library,
 // skip → library, and unsorted → library). Used by the dictionary EIP "+" button.
-// @ts-ignore
-router.post('/api/vocabEntries/add-to-library', authenticateToken, async (req, res) => {
-  await vocabEntryController.addToLibrary(req, res);
-});
+router.post('/api/vocabEntries/addToLibrary', authenticateToken, handle(vocabEntryController.addToLibrary, vocabEntryController));
 
 // Import vocab entries from CSV file
-// @ts-ignore
-router.post('/api/vocabEntries/import', authenticateToken, upload.single('file'), async (req, res) => {
-  await vocabEntryController.importFromCSV(req, res);
-});
+router.post('/api/vocabEntries/import', authenticateToken, upload.single('file'), handle(vocabEntryController.importFromCSV, vocabEntryController));
 
 // Get vocab entries by tokens
-// @ts-ignore
-router.post('/api/vocabEntries/by-tokens', authenticateToken, async (req, res) => {
-  await vocabEntryController.getEntriesByTokens(req, res);
-});
+router.post('/api/vocabEntries/byTokens', authenticateToken, handle(vocabEntryController.getEntriesByTokens, vocabEntryController));
 
 // Get vocab entry by ID
-// @ts-ignore
-router.get('/api/vocabEntries/:id', authenticateToken, async (req, res) => {
-  await vocabEntryController.getEntryById(req, res);
-});
+router.get('/api/vocabEntries/:id', authenticateToken, handle(vocabEntryController.getEntryById, vocabEntryController));
 
 // Update vocab entry
-// @ts-ignore
-router.put('/api/vocabEntries/:id', authenticateToken, async (req, res) => {
-  await vocabEntryController.updateEntry(req, res);
-});
+router.put('/api/vocabEntries/:id', authenticateToken, handle(vocabEntryController.updateEntry, vocabEntryController));
 
 // Persist (or clear) a custom flashcard icon arrangement for one vet row.
 // body: { iconLayout: Item[] | null }. See docs/CARD_ICON_LAYOUT.md.
-// @ts-ignore
-router.patch('/api/vocabEntries/:id/icon-layout', authenticateToken, async (req, res) => {
-  await vocabEntryController.updateIconLayout(req, res);
-});
+router.patch('/api/vocabEntries/:id/iconLayout', authenticateToken, handle(vocabEntryController.updateIconLayout, vocabEntryController));
 
 // Persist (or clear) the chosen definition-cluster sense for one vet row.
 // body: { selectedSense: string | null }. See docs/DEFINITION_CLUSTERS.md.
-// @ts-ignore
-router.patch('/api/vocabEntries/:id/selected-sense', authenticateToken, async (req, res) => {
-  await vocabEntryController.updateSelectedSense(req, res);
-});
+router.patch('/api/vocabEntries/:id/selectedSense', authenticateToken, handle(vocabEntryController.updateSelectedSense, vocabEntryController));
 
 // Delete vocab entry
-// @ts-ignore
-router.delete('/api/vocabEntries/:id', authenticateToken, async (req, res) => {
-  await vocabEntryController.deleteEntry(req, res);
-});
+router.delete('/api/vocabEntries/:id', authenticateToken, handle(vocabEntryController.deleteEntry, vocabEntryController));
 
 export default router;

@@ -1,5 +1,5 @@
 import { IRefreshTokenDAL } from '../interfaces/IRefreshTokenDAL.js';
-import { dbManager } from '../base/DatabaseManager.js';
+import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
 import { RefreshToken } from '../../types/index.js';
 import { ValidationError } from '../../types/dal.js';
 
@@ -9,6 +9,15 @@ import { ValidationError } from '../../types/dal.js';
  * rotation / reuse-detection policy lives in UserService.
  */
 export class RefreshTokenDAL implements IRefreshTokenDAL {
+
+  /**
+   * The connection manager, injected so the DAL can be substituted in a test.
+   * Defaults to the process-wide singleton, so `new RefreshTokenDAL()` at the composition
+   * root (dal/setup.ts) keeps working unchanged.
+   * See docs/CORRECTNESS_AND_PERFORMANCE_REVIEW.md finding 2.
+   */
+  constructor(protected readonly dbManager: DatabaseManager = defaultDbManager) {}
+
   async create(params: {
     userId: string;
     tokenHash: string;
@@ -19,7 +28,7 @@ export class RefreshTokenDAL implements IRefreshTokenDAL {
     if (!params.tokenHash) throw new ValidationError('tokenHash is required');
     if (!params.expiresAt) throw new ValidationError('expiresAt is required');
 
-    const result = await dbManager.executeQuery<RefreshToken>(async (client) => {
+    const result = await this.dbManager.executeQuery<RefreshToken>(async (client) => {
       return await client.query(`
         INSERT INTO refresh_tokens ("userId", "tokenHash", "expiresAt", "userAgent")
         VALUES ($1, $2, $3, $4)
@@ -33,7 +42,7 @@ export class RefreshTokenDAL implements IRefreshTokenDAL {
   async findByHash(tokenHash: string): Promise<RefreshToken | null> {
     if (!tokenHash) throw new ValidationError('tokenHash is required');
 
-    const result = await dbManager.executeQuery<RefreshToken>(async (client) => {
+    const result = await this.dbManager.executeQuery<RefreshToken>(async (client) => {
       return await client.query(`
         SELECT id, "userId", "tokenHash", "expiresAt", "createdAt", "revokedAt", "replacedByHash", "userAgent"
         FROM refresh_tokens
@@ -47,7 +56,7 @@ export class RefreshTokenDAL implements IRefreshTokenDAL {
   async revoke(tokenHash: string, replacedByHash: string | null): Promise<void> {
     if (!tokenHash) throw new ValidationError('tokenHash is required');
 
-    await dbManager.executeQuery(async (client) => {
+    await this.dbManager.executeQuery(async (client) => {
       // Only stamp revokedAt the first time; preserve the original revoke moment
       // (and replacedByHash) if this row was already retired.
       return await client.query(`
@@ -62,7 +71,7 @@ export class RefreshTokenDAL implements IRefreshTokenDAL {
   async revokeAllForUser(userId: string): Promise<number> {
     if (!userId) throw new ValidationError('userId is required');
 
-    const result = await dbManager.executeQuery(async (client) => {
+    const result = await this.dbManager.executeQuery(async (client) => {
       return await client.query(`
         UPDATE refresh_tokens
         SET "revokedAt" = now()

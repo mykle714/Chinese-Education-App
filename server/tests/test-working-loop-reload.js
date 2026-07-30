@@ -2,7 +2,7 @@
 // that the server returns a same-category replacement card each time.
 //
 // NOTE: This mutates the test user's mark history. Optionally rewinds via
-// /api/flashcards/undo-last-mark at the end. Safe to rerun.
+// /api/flashcards/undoLastMark at the end. Safe to rerun.
 //
 // Usage (from /home/cow):  node server/tests/test-working-loop-reload.js
 
@@ -30,7 +30,7 @@ async function login(user) {
 }
 
 async function getWorkingLoop(token) {
-  const res = await fetch(`${API_URL}/api/onDeck/distributed-working-loop`, {
+  const res = await fetch(`${API_URL}/api/onDeck/distributedWorkingLoop`, {
     headers: {
       Authorization: `Bearer ${token}`,
       'x-user-timezone': TIMEZONE,
@@ -56,7 +56,7 @@ async function markCard(token, cardId, isCorrect, excludeIds) {
 }
 
 async function undoLastMark(token, cardId, markTimestamp, displacedMark) {
-  const res = await fetch(`${API_URL}/api/flashcards/undo-last-mark`, {
+  const res = await fetch(`${API_URL}/api/flashcards/undoLastMark`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

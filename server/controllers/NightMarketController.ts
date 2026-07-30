@@ -11,7 +11,7 @@ export class NightMarketController {
   /**
    * Get all unlocked items for the authenticated user.
    * ⚠️ Legacy asset-unlock economy is retired (see NightMarketService); this now returns a
-   * stable empty response. GET /api/night-market/unlocks
+   * stable empty response. GET /api/nightMarket/unlocks
    */
   async getUnlocks(req: Request, res: Response): Promise<void> {
     try {
@@ -28,7 +28,7 @@ export class NightMarketController {
   /**
    * Unlock the next random item.
    * Returns 400 if insufficient work points or pool is exhausted.
-   * POST /api/night-market/unlock
+   * POST /api/nightMarket/unlock
    */
   async unlockNext(req: Request, res: Response): Promise<void> {
     try {

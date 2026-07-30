@@ -169,13 +169,13 @@ internal helper for fallback-card selection). Algorithm:
 
 | Method | Route | Body / params | Returns |
 |---|---|---|---|
-| GET  | `/api/starter-packs/:language` | — | `{ packs: SortPack[], exhausted, level }` |
-| POST | `/api/starter-packs/sort` | `{ cardId, bucket, language, packId?, lastInPack? }` | `{ success, level }` (+ marks pack seen when `lastInPack`) |
-| POST | `/api/starter-packs/skip-pack` | `{ cardIds[], language, packId? }` | `{ nextPack, exhausted, level }` |
-| POST | `/api/starter-packs/next-pack` | `{ language, excludeIds[] }` | `{ nextPack, exhausted, level }` |
-| POST | `/api/starter-packs/undo` | `{ cardId, bucket, language, packId? }` | `{ success }` |
-| GET  | `/api/starter-packs/:language/skipped` | — | `DiscoverCard[]` |
-| POST | `/api/starter-packs/:language/recycle-skips` | — | `{ recycled: number }` |
+| GET  | `/api/starterPacks/:language` | — | `{ packs: SortPack[], exhausted, level }` |
+| POST | `/api/starterPacks/sort` | `{ cardId, bucket, language, packId?, lastInPack? }` | `{ success, level }` (+ marks pack seen when `lastInPack`) |
+| POST | `/api/starterPacks/skipPack` | `{ cardIds[], language, packId? }` | `{ nextPack, exhausted, level }` |
+| POST | `/api/starterPacks/nextPack` | `{ language, excludeIds[] }` | `{ nextPack, exhausted, level }` |
+| POST | `/api/starterPacks/undo` | `{ cardId, bucket, language, packId? }` | `{ success }` |
+| GET  | `/api/starterPacks/:language/skipped` | — | `DiscoverCard[]` |
+| POST | `/api/starterPacks/:language/recycleSkips` | — | `{ recycled: number }` |
 
 `bucket` stays `already-learned` | `library` (skip no longer flows through `/sort`).
 `VALID_LANGUAGES` validation pattern reused.
@@ -186,7 +186,7 @@ internal helper for fallback-card selection). Algorithm:
 Add `SortPack`; extend `DiscoverCard` with `sorted?: boolean` / `skipped?: boolean`.
 Replace `DiscoverFetchResponse.cards` with `packs`.
 
-### 5.2 `src/pages/SortCardsPage.tsx`
+### 5.2 `src/features/discover/SortCardsPage.tsx`
 - FIFO is now a **queue of packs** (target 2: on-deck + buffer).
 - Render: up to **3 resized draggable cards** (no sentence band — removed). Autoplay
   is pack-level, not per-pickup: an effect keyed on `currentPack.packKey` narrates
@@ -213,7 +213,7 @@ Replace `DiscoverFetchResponse.cards` with `packs`.
 ### 5.4 Navigation wiring
 - `src/hooks/useDiscoverNavigation.ts`: add `skippedPath` = `/discover/skipped/{language}`
   + `goToSkipped()`.
-- `src/pages/DiscoverPage.tsx`: add a "Skipped Cards" `HubMenuRow` → `skippedPath`.
+- `src/features/discover/DiscoverPage.tsx`: add a "Skipped Cards" `HubMenuRow` → `skippedPath`.
 - `src/App.tsx`: register `/discover/skipped/:language` → `SkippedCardsPage`. Both
   Sort Cards and Skipped Cards are **node pages** (keep the footer): registered in
   `pageTransition.ts` `NODE_PREFIXES` and covered by `Layout.tsx`'s phone-frame check.
@@ -249,8 +249,8 @@ Replace `DiscoverFetchResponse.cards` with `packs`.
 
 - `server/services/StarterPacksService.ts` — supply, leveling, sort/undo (rework).
 - `server/controllers/StarterPacksController.ts` + `server/routes/starterPacksRoutes.ts` — routes.
-- `src/pages/SortCardsPage.tsx` — pack UI rework.
-- `src/pages/DiscoverPage.tsx`, `src/hooks/useDiscoverNavigation.ts`, `src/App.tsx` — nav.
+- `src/features/discover/SortCardsPage.tsx` — pack UI rework.
+- `src/features/discover/DiscoverPage.tsx`, `src/hooks/useDiscoverNavigation.ts`, `src/App.tsx` — nav.
 - `src/features/flashcards/MasteredCardsPage.tsx` — template for `SkippedCardsPage`.
 - `src/types.ts` (`DiscoverCard`, `DiscoverFetchResponse`, new `SortPack`).
 - `database/migrations/131-seed-zh-sort-packs.sql` — the zh pack seed (§2.1); the only

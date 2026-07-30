@@ -1,6 +1,6 @@
 import { labelIslands, type CellIsland } from './placeholderIslands';
 import {
-  placeholderAreaAt,
+  placeholderUnitSlotAt,
   placeholderCoveredCells,
   type PlaceholderArea,
 } from './placeholderArea';
@@ -145,12 +145,19 @@ export function analyzeConditions(input: ConditionAnalysisInput): ConditionAnaly
   return { islands, conditionCount: islands.length };
 }
 
-/** Find the authored area id covering any of an island's cells (the min cell first). */
+/**
+ * Find the id of the UNIT SLOT covering any of an island's cells (the min cell first).
+ *
+ * A unit, not the authored area: one unlock occupies one unit ({@link ./placeholderArea
+ * placeholderUnitSlots}), so a condition painted on the far half of a double-sized 4×10/10×4 area
+ * must only count as satisfied once THAT half is occupied. Single-sized areas are one unit, so
+ * their id is unchanged.
+ */
 function areaIdForIsland(island: CellIsland, areas: readonly PlaceholderArea[]): string | undefined {
   for (const key of island.cells) {
     const [col, row] = key.split(',').map(Number);
-    const area = placeholderAreaAt(areas, col, row);
-    if (area) return placeholderAreaId(area);
+    const unit = placeholderUnitSlotAt(areas, col, row);
+    if (unit) return placeholderAreaId(unit);
   }
   return undefined;
 }

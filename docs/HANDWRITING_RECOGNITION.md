@@ -266,6 +266,32 @@ character is top-1-correct in one Verify (a partial pass awards nothing).
 
 ### Stroke-order background rendering — Hanzi Writer (display only)
 
+> **Second consumer of this stroke data (BUILT):** the **Speed Reading** game
+> renders its two word options from the same `hanzi-writer-data` glyph corpus,
+> through its own static `GlyphSvg` component
+> (`src/components/handwriting/GlyphSvg.tsx`) rather than a Hanzi Writer instance
+> — the options need no animation and there are up to 8 glyphs on screen at once.
+> See [SPEED_READING_GAME.md](./SPEED_READING_GAME.md).
+>
+> - **Anything that changes the pinned `hanzi-writer-data` version affects both.**
+>   `GlyphSvg` pins `@2.0.1` on its CDN fallback rather than tracking `@latest`.
+> - **The CDN fallback in `loadCharData.ts` is the PRODUCTION path**, not a
+>   rare-miss path. `import('hanzi-writer-data/<char>.json')` is a bare specifier
+>   with a dynamic segment, which Rollup cannot statically analyze — it survives
+>   the build as a runtime bare-specifier `import()` that no browser can resolve,
+>   so the local branch always throws in prod and the CDN always carries the
+>   glyph. (Confirmed in `dist/`: no per-character chunks are emitted.) Deleting
+>   that fallback as "dead code" would break the grey guide in production while
+>   leaving it working in `vite dev`. `GlyphSvg` carries the same fallback for the
+>   same reason.
+> - **A third consumer once existed** — the Mandela game's offline pipeline, which
+>   corrupted this corpus to author deliberately-wrong glyphs and shipped a
+>   median-based stroke classifier (`strokeTaxonomy.ts`) to do it. It was removed
+>   in full. Nothing in the repo interprets what a stroke *is* any more, only how
+>   to draw it; if the writing drill ever wants per-stroke feedback ("your 竖
+>   should have a hook") rather than whole-character grading, that classifier is
+>   in the git history.
+
 **Decision: use Hanzi Writer for the grey guide only; never for capture or
 grading.** Hanzi Writer renders the greyed character outline + stroke-order
 animation off the same `makemeahanzi` data we already use, so it owns the

@@ -51,7 +51,7 @@ The application supports learning in multiple languages with a unified vocabular
 
 ### Dictionary Lookups
 - Dictionary lookups support language-aware filtering
-- API endpoint `/api/vocabEntries/by-tokens` returns entries for requested language
+- API endpoint `/api/vocabEntries/byTokens` returns entries for requested language
 - Frontend caches dictionary entries per language for performance
 
 ### Vocabulary Management
@@ -80,7 +80,7 @@ The application supports learning in multiple languages with a unified vocabular
 
 ### Language-Aware Vocabulary Lookup
 ```
-POST /api/vocabEntries/by-tokens
+POST /api/vocabEntries/byTokens
 Request: { tokens: string[] }
 Response: {
   personalEntries: VocabEntry[],

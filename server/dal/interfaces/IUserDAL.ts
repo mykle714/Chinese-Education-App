@@ -19,12 +19,9 @@ export interface IUserDAL extends IBaseDAL<User, UserCreateData, UserUpdateData>
   // Batch operations
   findUsersCreatedAfter(date: Date): Promise<User[]>;
 
-  // Total minute points operations
-  getTotalMinutePoints(userId: string): Promise<{ totalMinutePoints: number; currentStreak: number }>;
-  updateTotalMinutePoints(userId: string, totalPoints: number): Promise<boolean>;
-  incrementTotalMinutePoints(userId: string, pointsToAdd: number): Promise<boolean>;
-  // Signed adjust of totalMinutePoints, floored at 0; returns the new balance (author minute-adjust tool).
-  adjustTotalMinutePoints(userId: string, delta: number): Promise<number>;
+  // Minute-points counters and streak state are NOT on `users` — they live per
+  // (userId, language) in user_language_minute_totals (migration 134). See
+  // IUserLanguageTotalsDAL. The leaderboard rollups above aggregate them.
 
   // Minute point increment rate limiting
   updateLastMinutePointIncrement(userId: string, timestamp: Date): Promise<boolean>;
@@ -33,9 +30,8 @@ export interface IUserDAL extends IBaseDAL<User, UserCreateData, UserUpdateData>
   // cron can compute "today" in each user's local 4 AM-bounded day.
   updateTimezoneIfChanged(userId: string, timezone: string): Promise<void>;
 
-  // Streak operations
-  getUserStreakInfo(userId: string): Promise<{ currentStreak: number; lastStreakDate: string | null }>;
-  setStreak(userId: string, currentStreak: number, lastStreakDate: string): Promise<boolean>;
+  // Streak operations live on IUserLanguageTotalsDAL — streaks are per-language
+  // since migration 134 (a live zh streak can coexist with a broken es one).
   // NOTE: streak-break / inactivity penalties are applied exclusively by the SQL
   // cron (database/cron/expire-stale-streaks.sql), not from application code.
 

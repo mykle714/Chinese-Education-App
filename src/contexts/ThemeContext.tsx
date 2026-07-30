@@ -4,6 +4,10 @@ import { CssBaseline } from '@mui/material';
 import { FONTS } from '../theme/fonts';
 import { SIZE, WEIGHT, LEADING, TRACKING } from '../theme/scale';
 import { DD_TONES } from '../utils/cardTextColor';
+// The neutral surface/ink tokens this file restates verbatim. Only the values whose
+// SEMANTIC name matches the token are pulled from here — see the note below on the
+// several palettes that share values by coincidence.
+import { COLORS } from '../theme/colors';
 
 // Per-surface color tokens for the flashcard learn page.
 // All 19 fields must be defined for every theme — no optional fields.
@@ -160,7 +164,7 @@ const createAppTheme = (mode: ThemeMode): Theme => {
                         background:         '#F9F7F2',
                         flashCard:          '#BACFE6',
                         border:             'rgba(92,92,102,0.18)',
-                        onSurface:          '#1C1C1E',
+                        onSurface:          COLORS.onSurface,
                         dd:                 DD_TONES.dark,
                         textSecondary:      '#8A8480',
                         toggleActiveBg:     '#C8D9EF',   // old light-blue surface, now the accent
@@ -208,7 +212,7 @@ const createAppTheme = (mode: ThemeMode): Theme => {
                         background:         '#F9F7F2',
                         flashCard:          '#CCDFC5',
                         border:             'rgba(92,92,102,0.18)',
-                        onSurface:          '#1C1C1E',
+                        onSurface:          COLORS.onSurface,
                         dd:                 DD_TONES.dark,
                         textSecondary:      '#8A8480',
                         toggleActiveBg:     '#BDD9B5',   // old light-green surface, now the accent
@@ -252,12 +256,12 @@ const createAppTheme = (mode: ThemeMode): Theme => {
                         primary: '#333333',
                         secondary: 'rgba(0, 0, 0, 0.6)',
                     },
-                    eic: { header: '#F2F2F4' },
+                    eic: { header: COLORS.header },
                     flashcard: {
-                        background:         '#FAFAFB',
-                        flashCard:          '#D8D8DC',
+                        background:         COLORS.background,
+                        flashCard:          COLORS.card,
                         border:             'rgba(92,92,102,0.18)',
-                        onSurface:          '#1C1C1E',
+                        onSurface:          COLORS.onSurface,
                         dd:                 DD_TONES.dark,
                         textSecondary:      '#6E6E73',
                         toggleActiveBg:     '#5C5C66',
@@ -267,9 +271,9 @@ const createAppTheme = (mode: ThemeMode): Theme => {
                         moreInfoPill:       'rgba(255,255,255,0.6)',
                         audioBtn:           'rgba(29,27,32,0.06)',
                         grabber:            'rgba(29,27,32,0.18)',
-                        tabUnderline:       '#1C1C1E',
+                        tabUnderline:       COLORS.onSurface,
                         imagePlaceholder:   '#ffffff',
-                        hskPill:            '#779BE7',
+                        hskPill:            COLORS.hskChip,
                         cardShadow:         '2px 4px 4px rgba(0,0,0,0.25)',
                         cardShadowSubtle:   '1px 2px 3px rgba(0,0,0,0.15)',
                         sheetShadow:        '0 -8px 32px rgba(0,0,0,0.18)',

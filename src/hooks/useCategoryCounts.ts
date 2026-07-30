@@ -25,7 +25,7 @@ export function useCategoryCounts(): CategoryCountsResult {
         if (!token) return;
         (async () => {
             try {
-                const response = await fetch(`${API_BASE_URL}/api/onDeck/category-counts`, {
+                const response = await fetch(`${API_BASE_URL}/api/onDeck/categoryCounts`, {
                     credentials: "include",
                     headers: { Authorization: `Bearer ${token}` },
                 });

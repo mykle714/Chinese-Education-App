@@ -459,7 +459,7 @@ export class VocabEntryService {
     // The entry carries its own language, so use it for every dictionary lookup.
     const [withExampleMeta] = await this.dictionaryService.enrichExampleSentencesMetadataBatch([entry], entry.language);
     const [withLongDefMeta] = await this.dictionaryService.enrichLongDefinitionMetadataBatch([withExampleMeta], entry.language);
-    const [withDefsApproval] = await this.dictionaryService.enrichDefinitionsApprovalBatch([withLongDefMeta], entry.language);
+    const [withDefsApproval] = await this.dictionaryService.enrichFieldApprovalsBatch([withLongDefMeta], entry.language);
     const [enriched] = await this.dictionaryService.enrichEntriesWithSynonymMetadata([withDefsApproval], entry.language);
 
     // Enrich with related words (library words sharing characters, zh only)
@@ -498,7 +498,7 @@ export class VocabEntryService {
     // Enrich with computed example sentences and synonym metadata
     const withExampleMeta = await this.dictionaryService.enrichExampleSentencesMetadataBatch(entries, language);
     const withLongDefMeta = await this.dictionaryService.enrichLongDefinitionMetadataBatch(withExampleMeta, language);
-    const withDefsApproval = await this.dictionaryService.enrichDefinitionsApprovalBatch(withLongDefMeta, language);
+    const withDefsApproval = await this.dictionaryService.enrichFieldApprovalsBatch(withLongDefMeta, language);
     const enrichedEntries = await this.dictionaryService.enrichEntriesWithSynonymMetadata(withDefsApproval, language);
 
     return {
@@ -524,7 +524,7 @@ export class VocabEntryService {
     const results = await this.vocabEntryDAL.searchEntries(userId, searchTerm.trim(), language, limit);
     const withExampleMeta = await this.dictionaryService.enrichExampleSentencesMetadataBatch(results, language);
     const withLongDefMeta = await this.dictionaryService.enrichLongDefinitionMetadataBatch(withExampleMeta, language);
-    const withDefsApproval = await this.dictionaryService.enrichDefinitionsApprovalBatch(withLongDefMeta, language);
+    const withDefsApproval = await this.dictionaryService.enrichFieldApprovalsBatch(withLongDefMeta, language);
     return await this.dictionaryService.enrichEntriesWithSynonymMetadata(withDefsApproval, language);
   }
 
@@ -536,7 +536,7 @@ export class VocabEntryService {
     const entries = await this.vocabEntryDAL.findByDifficultyLevel(userId, difficulty);
     const withExampleMeta = await this.dictionaryService.enrichExampleSentencesMetadataBatch(entries, 'zh');
     const withLongDefMeta = await this.dictionaryService.enrichLongDefinitionMetadataBatch(withExampleMeta, 'zh');
-    const withDefsApproval = await this.dictionaryService.enrichDefinitionsApprovalBatch(withLongDefMeta, 'zh');
+    const withDefsApproval = await this.dictionaryService.enrichFieldApprovalsBatch(withLongDefMeta, 'zh');
     return await this.dictionaryService.enrichEntriesWithSynonymMetadata(withDefsApproval, 'zh');
   }
 

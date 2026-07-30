@@ -7,6 +7,8 @@ import { API_BASE_URL } from "../../constants";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useTTS } from "../../hooks/useTTS";
 import { useBlockEdgeSwipe } from "../../hooks/useBlockEdgeSwipe";
+import { useGameWins } from "../../hooks/useGameWins";
+import { markFlashcard } from "../../api/flashcards";
 import { authHeader } from "../../utils/authHeader";
 import LeafPage from "../../components/LeafPage";
 import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
@@ -19,15 +21,13 @@ import WordSearchHintBar from "./WordSearchHintBar";
 import GameEndPopup from "../runtime/GameEndPopup";
 import { useWordSearchSettings } from "./useWordSearchSettings";
 import { saveGameState, loadGameState, clearGameState, type SavedWordSearchState } from "./gameStateStorage";
-import { GRID_QUERY, TOTAL_WORDS, HINT_BAR_UNITS, HINT_COST, medalForTime, modeConfigFor, formatTimeMs } from "./constants";
+import { GAME_KEY, WIN_LEVEL, GRID_QUERY, TOTAL_WORDS, HINT_BAR_UNITS, HINT_COST, medalForTime, modeConfigFor } from "./constants";
+import { formatTimeMs } from "../../utils/timeUtils";
 import { countPinyinUnits } from "./pinyinUnits";
 import { countComponentUnits } from "./componentUnits";
 import type { BonusWord, PlacedWord, WordSearchResponse } from "./types";
 
 type Phase = "loading" | "blocked" | "playing" | "won";
-
-/** Win-log key for Word Search completions (shared `wins` table). */
-const GAME_KEY = "wordSearch";
 
 /**
  * Word Search — page shell + game-flow state machine.
@@ -48,11 +48,15 @@ const WordSearchPage: React.FC = () => {
     const location = useLocation();
     const theme = useTheme();
     const fc = theme.palette.flashcard;
-    const { token, user } = useAuth();
+    const { user } = useAuth();
     const userId = user?.id;
     const tts = useTTS();
     const { settings: wsSettings, update: updateWsSettings } = useWordSearchSettings();
     const { showTimer } = wsSettings;
+    // Win logging goes through the shared hook (same one Bubble Match and the
+    // Games hub use) instead of a hand-rolled POST — one place owns the `wins`
+    // endpoint contract and the optimistic local update.
+    const { recordWin } = useGameWins(GAME_KEY);
 
     // The board mode ("pinyin" / "no-pinyin") is chosen on the Games hub (one
     // sub-card each — see GamesPage) and passed in via nav `state.mode`; there's
@@ -112,6 +116,12 @@ const WordSearchPage: React.FC = () => {
     // (its popup has no auto-dismiss, so it's easy to re-trigger) doesn't
     // re-award — a different bonus word still grants its own unit.
     const rewardedBonusWordsRef = useRef<Set<string>>(new Set());
+    // Every word that has EVER received a hint on this board (any reveal step —
+    // pinyin/component units OR the yellow location reveal). Finding one of these
+    // does NOT emit a flashcard mark: the player was shown part of the answer, so
+    // it isn't evidence of recall and would inflate mastery. A ref, not state,
+    // because nothing renders from it — only `markWordFound` reads it.
+    const hintedWordsRef = useRef<Set<string>>(new Set());
 
     // Tapping anywhere that isn't a grid cell deselects the in-progress word.
     const handleBackgroundPointerDown = useCallback((e: React.PointerEvent) => {
@@ -224,6 +234,7 @@ const WordSearchPage: React.FC = () => {
             hintRevealCount: s.hintRevealCount,
             hintLocationRevealed: s.hintLocationRevealed,
             rewardedBonusWords: [...rewardedBonusWordsRef.current],
+            hintedWords: [...hintedWordsRef.current],
         });
     }, [userId, mode]);
 
@@ -235,7 +246,7 @@ const WordSearchPage: React.FC = () => {
             // on the reading track, Pinyin on production (docs/MASTERY_REWORK.md
             // § Per-type cooldown). `mode` is set once on mount, so capturing it in
             // this empty-deps callback is stable.
-            const res = await fetch(`${API_BASE_URL}/api/onDeck/word-search-grid?${GRID_QUERY}&mode=${mode ?? ""}`, {
+            const res = await fetch(`${API_BASE_URL}/api/onDeck/wordSearchGrid?${GRID_QUERY}&mode=${mode ?? ""}`, {
                 credentials: "include",
                 headers: authHeader(),
             });
@@ -289,6 +300,7 @@ const WordSearchPage: React.FC = () => {
         setHintLocationRevealed(false);
         setHintShakeNonce(0);
         rewardedBonusWordsRef.current = new Set();
+        hintedWordsRef.current = new Set();
         setElapsedMs(0);
         setFinalMs(0);
         setPopupMinimized(false);
@@ -314,6 +326,8 @@ const WordSearchPage: React.FC = () => {
         setHintLocationRevealed(saved.hintLocationRevealed);
         setHintShakeNonce(0);
         rewardedBonusWordsRef.current = new Set(saved.rewardedBonusWords);
+        // Older snapshots predate hint-tracking — treat them as "nothing hinted".
+        hintedWordsRef.current = new Set(saved.hintedWords ?? []);
         setFinalMs(0);
         setPopupMinimized(false);
         stopTimer();
@@ -420,46 +434,29 @@ const WordSearchPage: React.FC = () => {
         tts.unlockAudio();
     }, [tts]);
 
-    // Log one Word Search completion (fire-and-forget), mirroring Bubble Match.
-    const recordWin = useCallback(() => {
-        const headers: HeadersInit = { "Content-Type": "application/json" };
-        if (token && token !== "null" && token !== "undefined") {
-            headers["Authorization"] = `Bearer ${token}`;
-        }
-        fetch(`${API_BASE_URL}/api/users/me/wins`, {
-            method: "POST",
-            headers,
-            credentials: "include",
-            body: JSON.stringify({ game: GAME_KEY, level: 1 }),
-        }).catch((err) => console.error("[WordSearch] win record failed:", err));
-    }, [token]);
 
     // Record a flashcard review mark for a found word's vet entry, reusing the
     // same endpoint flp's working loop and Bubble Match call. Fire-and-forget:
     // the game never blocks on it, and a failure only logs.
     const markWordFound = useCallback((word: PlacedWord) => {
-        const headers: HeadersInit = { "Content-Type": "application/json" };
-        if (token && token !== "null" && token !== "undefined") {
-            headers["Authorization"] = `Bearer ${token}`;
-        }
-        fetch(`${API_BASE_URL}/api/flashcards/mark`, {
-            method: "POST",
-            headers,
-            credentials: "include",
-            // Board mode decides the mark type (docs/MASTERY_REWORK.md): the "Pinyin"
-            // board is a production drill; the "No Pinyin" board is a reading drill
-            // (recognizing the characters without the pinyin crutch). Word Search only
-            // ever emits POSITIVE marks — a found word is a correct answer.
-            // excludeIds empty: the game doesn't use the replacement card the
-            // endpoint returns, so there's nothing to dedupe against.
-            body: JSON.stringify({
-                cardId: word.id,
-                isCorrect: true,
-                type: mode === "no-pinyin" ? "reading" : "production",
-                excludeIds: [],
-            }),
+        // A word that was hinted on this board earns NO mark at all (not even a
+        // negative one): the reveal handed the player part of the answer, so the
+        // find says nothing about recall in either direction. See §5a.
+        if (hintedWordsRef.current.has(word.entryKey)) return;
+        // Board mode decides the mark type (docs/MASTERY_REWORK.md): the "Pinyin"
+        // board is a production drill; the "No Pinyin" board is a reading drill
+        // (recognizing the characters without the pinyin crutch). Word Search only
+        // ever emits POSITIVE marks — a found word is a correct answer.
+        // excludeIds defaults to []: the game doesn't use the replacement card the
+        // endpoint returns, so there's nothing to dedupe against.
+        markFlashcard({
+            cardId: word.id,
+            isCorrect: true,
+            type: mode === "no-pinyin" ? "reading" : "production",
         }).catch((err) => console.error(`[WordSearch] mark failed → card ${word.id}:`, err));
-    }, [token, mode]);
+        // No `token` dep — markFlashcard reads the header at call time, so this
+        // callback's identity is stable across a silent refresh (CLAUDE.md ⛔ rule).
+    }, [mode]);
 
     // Play a word's narration (guarded by the TTS enabled flag). Shared by the
     // find-time play below and the grid's tap-to-replay / blue-match plays; the
@@ -542,6 +539,7 @@ const WordSearchPage: React.FC = () => {
                 return;
             }
             if (hintUnits < HINT_COST) return;
+            hintedWordsRef.current.add(current.entryKey);
             if (hintRevealCount < totalRevealUnits(current)) {
                 setHintRevealCount((c) => c + 1);
             } else {
@@ -555,6 +553,7 @@ const WordSearchPage: React.FC = () => {
         const unfound = data.words.filter((w) => !found.has(w.entryKey));
         if (unfound.length === 0) return;
         const pick = unfound[Math.floor(Math.random() * unfound.length)];
+        hintedWordsRef.current.add(pick.entryKey);
         setHintEntryKey(pick.entryKey);
         setHintRevealCount(1);
         setHintLocationRevealed(false);
@@ -569,14 +568,17 @@ const WordSearchPage: React.FC = () => {
             const ms = startRef.current ? Date.now() - startRef.current : elapsedMs;
             setFinalMs(ms);
             setPopupMinimized(false);
-            recordWin();
+            // Every completion logs under level 1 — Word Search's two modes
+            // deliberately share one wins bucket (see GAME_KEY in ./constants).
+            recordWin(WIN_LEVEL);
             if (userId) clearGameState(userId);
             setPhase("won");
         }
     }, [found, phase, data, elapsedMs, stopTimer, recordWin, userId]);
 
-    // Discard the current board (win-screen "Play Again", or the header
-    // restart button mid-game) and load a fresh one.
+    // Discard the current board and load a fresh one. Only reachable from the
+    // win screen's "Play Again" now — the header restart button was removed, so
+    // a board in progress can no longer be thrown away mid-game.
     const resetBoard = useCallback(async () => {
         if (userId) clearGameState(userId);
         tts.unlockAudio();
@@ -732,7 +734,6 @@ const WordSearchPage: React.FC = () => {
                     <WordSearchHeaderControls
                         hintReady={phase === "playing" && canUseHint()}
                         onHint={useHint}
-                        onRestart={resetBoard}
                         onSettingsClick={() => setSettingsOpen(true)}
                     />
                 }

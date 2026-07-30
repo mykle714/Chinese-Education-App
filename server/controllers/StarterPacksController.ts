@@ -31,7 +31,7 @@ export class StarterPacksController {
   /**
    * Get the initial sort-pack queue for a language (the client holds a short FIFO queue
    * of PACKS — the service default fills 2: on-deck + one buffer).
-   * GET /api/starter-packs/:language?level=<1-6>&mode=auto|manual
+   * GET /api/starterPacks/:language?level=<1-6>&mode=auto|manual
    * `level` is the level to center supply on: the client's own adaptive target (auto,
    * docs §6 rewritten) or its dropdown pin (manual). Omit `level` on a brand-new
    * session's first call so the server seeds a cold-start estimate. `mode=manual`
@@ -61,9 +61,9 @@ export class StarterPacksController {
 
   /**
    * Refill one pack after the client's on-deck pack completes (the FIFO tail).
-   * POST /api/starter-packs/next-pack
+   * POST /api/starterPacks/nextPack
    * Body: { language: string, excludePackKeys?: string[], level?: number, mode?: 'auto' | 'manual' }
-   * `level`/`mode` mean the same as on GET /api/starter-packs/:language — the client
+   * `level`/`mode` mean the same as on GET /api/starterPacks/:language — the client
    * always has a level to send by the time it calls this (either its adaptive target,
    * already updated from the completing pack's signal, or its dropdown pin).
    * Response: { nextPack: SortPack | null, exhausted: boolean, level: number }
@@ -94,7 +94,7 @@ export class StarterPacksController {
   /**
    * Skip a whole pack: defers all remaining unsorted cards at once (each recorded
    * individually) and marks an authored pack seen.
-   * POST /api/starter-packs/skip-pack
+   * POST /api/starterPacks/skipPack
    * Body: { cardIds: number[], language: string, packId?: number | null }
    * Response: { success: true }
    */
@@ -124,7 +124,7 @@ export class StarterPacksController {
 
   /**
    * List the user's currently-skipped words for a language (Skipped page grid).
-   * GET /api/starter-packs/:language/skipped
+   * GET /api/starterPacks/:language/skipped
    * Response: DiscoverCard[]
    */
   getSkipped = async (req: Request, res: Response): Promise<void> => {
@@ -147,7 +147,7 @@ export class StarterPacksController {
 
   /**
    * Recycle ALL of the user's skips for a language back into the sort supply.
-   * POST /api/starter-packs/:language/recycle-skips
+   * POST /api/starterPacks/:language/recycleSkips
    * Response: { recycled: number }
    */
   recycleSkips = async (req: Request, res: Response): Promise<void> => {
@@ -171,7 +171,7 @@ export class StarterPacksController {
   /**
    * Quick Mark bulk-triage supply (docs/QUICK_MARK.md §5): one keyset-paginated page of
    * not-yet-sorted discoverable words at an exact level, ordered by vernacular score.
-   * GET /api/starter-packs/:language/quick-mark?level=<1-6>&cursorScore=<n|empty>&cursorId=<n>
+   * GET /api/starterPacks/:language/quickMark?level=<1-6>&cursorScore=<n|empty>&cursorId=<n>
    * `level` omitted → the service seeds from the user's adaptive frontier estimate.
    * `cursorId` present → resume after that card (cursorScore empty = the NULL-score tail).
    * Response: { cards: DiscoverCard[], level: number, hasMore: boolean }
@@ -209,7 +209,7 @@ export class StarterPacksController {
   /**
    * Quick Mark batch save (docs/QUICK_MARK.md §6): reconcile every marked card's vet
    * state to its on-screen mark in one request.
-   * POST /api/starter-packs/quick-mark-batch
+   * POST /api/starterPacks/quickMarkBatch
    * Body: { language: string, marks: { cardId: number, state: 'empty'|'library'|'already-learned' }[] }
    * Response: { success: true, applied: number }
    */
@@ -239,7 +239,7 @@ export class StarterPacksController {
 
   /**
    * Get user's progress on a starter pack
-   * GET /api/starter-packs/:language/progress
+   * GET /api/starterPacks/:language/progress
    */
   getProgress = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -263,7 +263,7 @@ export class StarterPacksController {
    * Sort a card into a bucket. The response carries the single replacement card for
    * the client's FIFO tail (a sort always shrinks the queue by one), so there is no
    * separate "load more" call.
-   * POST /api/starter-packs/sort
+   * POST /api/starterPacks/sort
    * Body: { cardId: number, bucket: string, language: string, excludeIds?: number[] }
    * Response: { success, message, bucket, nextCard: DiscoverCard | null, exhausted }
    */
@@ -309,7 +309,7 @@ export class StarterPacksController {
   /**
    * Undo last card sort. The client passes the bucket it sorted into so the service
    * reverses the exact trace (skip → discover_skips row; otherwise → vet row).
-   * POST /api/starter-packs/undo
+   * POST /api/starterPacks/undo
    * Body: { cardId: number, bucket: string, language: string }
    */
   undoSort = async (req: Request, res: Response): Promise<void> => {

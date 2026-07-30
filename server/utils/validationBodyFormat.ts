@@ -14,7 +14,6 @@
 import { longDefToDisplayString, type LongDefinitionValue } from './definitions.js';
 
 export interface DefinitionsRawFields {
-  partsOfSpeech: string[] | null;
   definitions: string[] | null;
   // Raw det column: for zh this is a JSONB array of per-sense objects (and for older
   // rows / Spanish, a JSONB object keyed by POS — migration 70), NOT a plain string.
@@ -30,7 +29,6 @@ export interface ExampleSentenceReviewableFields {
 }
 
 export function composeDefinitionsBody(raw: DefinitionsRawFields): string {
-  const pos = raw.partsOfSpeech?.length ? raw.partsOfSpeech.join(', ') : '(none)';
   const defs = raw.definitions?.length
     ? raw.definitions.map((d, i) => `${i + 1}. ${d}`).join('\n')
     : '(none)';
@@ -41,7 +39,7 @@ export function composeDefinitionsBody(raw: DefinitionsRawFields): string {
   // so this deliberately shows EVERY sense — unlike the learner surfaces, which show only
   // the picked sense (resolveLongDefinition).
   const long = longDefToDisplayString(raw.longDefinition)?.trim() || '(none)';
-  return `Parts of Speech: ${pos}\n\nDefinitions:\n${defs}\n\nLong Definition:\n${long}`;
+  return `Definitions:\n${defs}\n\nLong Definition:\n${long}`;
 }
 
 export function composeExampleSentenceBody(sentence: ExampleSentenceReviewableFields | null): string {
@@ -49,4 +47,31 @@ export function composeExampleSentenceBody(sentence: ExampleSentenceReviewableFi
   const foreign = typeof sentence.foreignText === 'string' ? sentence.foreignText : '';
   const english = typeof sentence.english === 'string' ? sentence.english : '';
   return `Sentence:\n${foreign}\n\nTranslation:\n${english}`;
+}
+
+/**
+ * `partsOfSpeech` used to be the first block of composeDefinitionsBody; migration 132
+ * split it into its own validation field so a validator can endorse the POS tags
+ * without also endorsing the (much longer, much more churn-prone) definitions bundle.
+ * The body text is deliberately byte-identical to the old prefix so migration 132 can
+ * lift it out of existing `definitions` approvals and re-file it as a POS approval.
+ */
+export function composePartsOfSpeechBody(partsOfSpeech: string[] | null): string {
+  const pos = partsOfSpeech?.length ? partsOfSpeech.join(', ') : '(none)';
+  return `Parts of Speech: ${pos}`;
+}
+
+/**
+ * The 1–6 difficulty level (zh's integers ARE HSK levels; other languages share the
+ * scale under the neutral "Difficulty" name). Deliberately language-agnostic — the
+ * body is a freshness FINGERPRINT compared byte-for-byte against the stored approval,
+ * so baking the "HSK" prefix in would only add a way for zh and es to disagree.
+ */
+export function composeDifficultyBody(difficulty: number | null): string {
+  return `Difficulty: ${difficulty ?? '(none)'}`;
+}
+
+/** The 1–5 everyday-conversation frequency score, surfaced to users as "Commonality". */
+export function composeFrequencyScoreBody(frequencyScore: number | null): string {
+  return `Commonality: ${frequencyScore ?? '(none)'}/5`;
 }

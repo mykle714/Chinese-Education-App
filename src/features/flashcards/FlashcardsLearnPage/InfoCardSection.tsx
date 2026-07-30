@@ -2,7 +2,7 @@ import { useRef, forwardRef } from "react";
 import SheetPanel, { type SheetPanelHandle } from "./SheetPanel";
 import InfoCardPanelBody, { type InfoCardPanelBodyHandle } from "./InfoCardPanelBody";
 import CompareWorkspace from "../../../components/CompareWorkspace";
-import type { VocabEntry, BreakdownItem, UsedInItem } from "./types";
+import type { VocabEntry, BreakdownItem, UsedInItem } from "../types";
 import type { CompareEipTab } from "./useEipTabs";
 import type { LongDefinitionPart } from "../../../types";
 

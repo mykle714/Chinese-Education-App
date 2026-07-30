@@ -43,7 +43,10 @@ export const TILE_WIDTH = 32;
 
 /**
  * Height of one isometric tile in pixels (vertical span of the diamond).
- * 2:1 dimetric → exactly half the width (16px), matching the pack's 32×16 art.
+ * 2:1 dimetric → exactly half the width (16px). NOTE: this is the DIAMOND's vertical span, not the
+ * source art's height — the free-farm pack ships 32×32 tiles (`FARM_TILE_PX`) in which the 32×16
+ * diamond occupies one half and the other half is vertical body/cliff. See the "Default ground
+ * apron" section of docs/NIGHT_MARKET_FEATURE.md for which half, per tile family.
  */
 export const TILE_HEIGHT = TILE_WIDTH / 2; // 16px
 
@@ -97,6 +100,19 @@ export interface CellOrigin {
 
 /** The identity origin — local space IS global space (single-template surfaces). */
 export const ORIGIN_ZERO: CellOrigin = { col: 0, row: 0 };
+
+/**
+ * An INCLUSIVE cell-space rectangle. Lives here (rather than in the terrain or camera module)
+ * because it is the shared currency between them: the camera derives one from what is on screen
+ * ({@link ../cameraFit visibleCellWindow}) and the terrain builder consumes it to cull iteration
+ * ({@link ../farmTerrain buildEditorField}).
+ */
+export interface CellWindow {
+  minCol: number;
+  maxCol: number;
+  minRow: number;
+  maxRow: number;
+}
 
 /**
  * Compute z-index for a pedestrian. Same painter's rule as computeLayerZ;

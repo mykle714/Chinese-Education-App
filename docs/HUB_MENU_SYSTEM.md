@@ -27,6 +27,23 @@ A menu item is one of:
   sub-cards are anchors (`RouterLink`), `useDragScroll` also cancels the
   container's native `dragstart` — otherwise the browser would drag the
   link's URL on desktop mouse-drag and hijack the pointer (`src/hooks/useDragScroll.ts`).
+  Optionally topped by a **group header** (`headerTitle` + `headerStat`), in
+  which case header and strip are wrapped in one `HubMenuGroup` flex column
+  (`gap: 8`) so the pair counts as a single item inside `MenuList`'s 28px gap.
+
+### Group header (`HubMenuGroupHeader`, `HubMenu.tsx`)
+
+A header line above a fan-out strip: uppercase group name (`SIZE.body` /
+`WEIGHT.bold` / `COLORS.textSecondary`, letter-spaced, ellipsized) on the left, an
+optional aggregate stat node on the right. Its `padding: 0 10%` matches
+`ArrayScroll`'s inset and `HubMenuRow`'s centered 80% width, so the title aligns
+with the first sub-card's left edge and the stat with a full-width row's right edge.
+
+**Rule: a stat that describes the whole group belongs on this header, never on a
+sub-card.** A count pinned to a sub-card reads as *that card's* score. Both
+`HubMenuArrayItem` (via `headerTitle`/`headerStat`) and feature-owned strips (via
+the exported `HubMenuGroup` + `HubMenuGroupHeader`, used by `WordSearchHubItem`)
+render the identical header.
 
 Both card types accept a `state` prop, forwarded to the underlying
 `RouterLink`/`useSlideNavigate` call as React Router navigation state (used to
@@ -96,7 +113,10 @@ re-deriving them, three pieces are exported:
 The rest of this section describes Bubble Match; Word Search's mode buttons
 follow the same shape (title + sub-card subtitle, one shared route, choice via
 nav state, per-sub-card hardcoded color `WORD_SEARCH_MODE_COLORS` — now living
-in `WordSearchHubItem.tsx`) but have no stat badges.
+in `WordSearchHubItem.tsx`). Its mode sub-cards carry no badges; its win count
+lives on its group header, which it renders itself from `HubMenuGroup` +
+`HubMenuGroupHeader` (`WordSearchHubItem.tsx`, keyed by `GAME_KEY` /
+`WIN_LEVEL` in `src/games/word-search/constants.ts`).
 
 - All 3 sub-cards share the game's title ("Bubble Match") with the level name
   as the subtitle, and link to the same route (`/games/bubble-match`); the
@@ -104,12 +124,22 @@ in `WordSearchHubItem.tsx`) but have no stat badges.
 - Per-level background color is hardcoded in `GamesPage.tsx`
   (`BUBBLE_MATCH_LEVEL_COLORS`): green (Chill) → yellow (Hustle) → red
   (Torture).
-- Each sub-card's `cornerBadge` is a `HubMenuStatBadge` showing the weekly ⭐
-  (cleared this week) and the lifetime win count (`×N`), sourced from
-  `useGameWins` (`src/hooks/useGameWins.ts`) — the same hook `BubbleMatchPage`
-  uses for its own in-run badges, both keyed by `GAME_KEY` ("bubbleMatch",
+- Win stats come from `useGameWins` (`src/hooks/useGameWins.ts`) — the same hook
+  `BubbleMatchPage` uses to record wins, both keyed by `GAME_KEY` ("bubbleMatch",
   exported from `constants.ts`). One fetch/record-win implementation, read by
-  both surfaces.
+  both surfaces. It exposes two granularities:
+  - `clearedLevels` / `lifetimeWins` — **per level**, keyed by level number.
+  - `totalWins` — the **game-wide** sum across every level bucket.
+- The two are rendered at the granularity they describe:
+  - **Group header** (`headerStat`): `<HubMenuStatBadge variant="header" count={totalWins} />`
+    — the game-wide `×N`. A player thinks "I've won Bubble Match 12 times", not
+    "4 Easy + 5 Medium + 3 Hard".
+  - **Each sub-card's `cornerBadge`**: `<HubMenuStatBadge starred={clearedLevels.has(level)} />`
+    — the weekly ⭐ only, which *is* genuinely per-level ("you cleared THIS level
+    this week"). No per-level count is displayed anywhere today.
+- `HubMenuStatBadge` takes a `variant`: `"card"` (default, translucent white —
+  reads on a pastel card) or `"header"` (`COLORS.rowHoverBg` tint — reads on the
+  plain page background, where translucent white would vanish).
 
 `BubbleMatchPage` no longer has an in-game level picker. Its old `"start"`
 phase (description text + level buttons) is gone; the flow is now

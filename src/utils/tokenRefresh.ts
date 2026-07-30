@@ -14,10 +14,25 @@ import { API_BASE_URL } from '../constants';
 import * as authStorage from './authStorage';
 import { authLog, authError, tokenPreview } from './authDebug';
 
-// Capture the native fetch at module-eval time — this runs before
-// setupFetchInterceptor() patches window.fetch (that happens in a useEffect),
-// so refresh requests are never themselves intercepted (no recursion).
-const nativeFetch: typeof fetch = window.fetch.bind(window);
+// The unpatched fetch, captured at MODULE-EVAL time.
+//
+// Why capture it: setupFetchInterceptor() replaces window.fetch (from a useEffect)
+// so every request gets transparent refresh-and-retry on a 401. The refresh request
+// itself must NOT go through that — a failing refresh would re-enter the
+// interceptor, which would await the very in-flight promise it is trying to
+// resolve, and hang. Module eval runs before any useEffect, so this binding is
+// always the original.
+//
+// The `typeof window` guard is what makes this module importable without a DOM.
+// It used to be a bare `window.fetch.bind(window)`, which threw
+// `ReferenceError: window is not defined` the moment ANY module in this import
+// subtree was loaded by a Node test runner — that is why the route registry could
+// not be unit-tested. The guard keeps the eager capture (so the no-recursion
+// guarantee is unchanged) and simply falls back to the global fetch off-DOM.
+const nativeFetch: typeof fetch =
+  typeof window !== 'undefined'
+    ? window.fetch.bind(window)
+    : globalThis.fetch.bind(globalThis);
 
 // Set by AuthContext so a refreshed token can flow back into React state.
 let onAccessTokenRefreshed: ((token: string) => void) | null = null;

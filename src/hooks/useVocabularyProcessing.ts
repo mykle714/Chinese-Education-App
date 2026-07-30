@@ -1,7 +1,9 @@
 import { useState, useCallback } from "react";
+import { useAuth } from "../AuthContext";
 import { processDocumentForTokens, estimateTokenCount } from "../utils/tokenUtils";
 import { fetchVocabEntriesByTokens } from "../utils/vocabApi";
 import type { VocabEntry, DictionaryEntry } from "../types";
+import { vocabLog } from '../utils/vocabDebug';
 
 // Text interface for TypeScript
 interface Text {
@@ -31,8 +33,7 @@ interface UseVocabularyProcessingReturn {
  * Automatically handles token lists > 1000 by splitting into batches
  */
 async function fetchVocabInBatches(
-    tokens: string[],
-    authToken: string
+    tokens: string[]
 ): Promise<{ personalEntries: VocabEntry[], dictionaryEntries: DictionaryEntry[] }> {
     if (tokens.length === 0) {
         return { personalEntries: [], dictionaryEntries: [] };
@@ -40,7 +41,7 @@ async function fetchVocabInBatches(
 
     // If tokens fit in one batch, fetch directly
     if (tokens.length <= 1000) {
-        return await fetchVocabEntriesByTokens(tokens, authToken);
+        return await fetchVocabEntriesByTokens(tokens);
     }
 
     // Split into batches of 1000
@@ -50,7 +51,7 @@ async function fetchVocabInBatches(
         batches.push(tokens.slice(i, i + batchSize));
     }
 
-    console.log(`[VOCAB-BATCH-HELPER] 📦 Batching ${tokens.length} tokens:`, {
+    vocabLog(`📦 Batching ${tokens.length} tokens:`, {
         totalTokens: tokens.length,
         batchSize: batchSize,
         batchCount: batches.length,
@@ -65,16 +66,16 @@ async function fetchVocabInBatches(
         const batch = batches[i];
         const batchStart = performance.now();
 
-        console.log(`[VOCAB-BATCH-HELPER] 🚀 Processing batch ${i + 1}/${batches.length}:`, {
+        vocabLog(`🚀 Processing batch ${i + 1}/${batches.length}:`, {
             batchIndex: i + 1,
             batchSize: batch.length,
             sampleTokens: batch.slice(0, 10)
         });
 
-        const batchResult = await fetchVocabEntriesByTokens(batch, authToken);
+        const batchResult = await fetchVocabEntriesByTokens(batch);
         const batchTime = performance.now() - batchStart;
 
-        console.log(`[VOCAB-BATCH-HELPER] ✅ Batch ${i + 1}/${batches.length} completed:`, {
+        vocabLog(`✅ Batch ${i + 1}/${batches.length} completed:`, {
             batchTime: `${batchTime.toFixed(2)}ms`,
             personalEntriesFound: batchResult.personalEntries.length,
             dictionaryEntriesFound: batchResult.dictionaryEntries.length
@@ -92,7 +93,7 @@ async function fetchVocabInBatches(
         new Map(allDictionaryEntries.map(entry => [entry.id, entry])).values()
     );
 
-    console.log(`[VOCAB-BATCH-HELPER] ✅ Batching complete:`, {
+    vocabLog(`✅ Batching complete:`, {
         totalBatches: batches.length,
         personalEntriesTotal: uniquePersonalEntries.length,
         dictionaryEntriesTotal: uniqueDictionaryEntries.length
@@ -104,7 +105,15 @@ async function fetchVocabInBatches(
     };
 }
 
-export function useVocabularyProcessing(token: string | null): UseVocabularyProcessingReturn {
+/**
+ * Takes no `token`: the underlying lookup (fetchVocabEntriesByTokens) supplies its
+ * own Authorization header at call time, so this hook only needs the STABLE
+ * auth-presence flag. It used to accept the raw token and list it in both callbacks'
+ * dependency arrays, which re-created them on every ~15-minute silent refresh —
+ * see CLAUDE.md "Never reload on token refresh".
+ */
+export function useVocabularyProcessing(): UseVocabularyProcessingReturn {
+    const { isAuthenticated } = useAuth();
     // Vocabulary processing state
     const [loadedPersonalCards, setLoadedPersonalCards] = useState<VocabEntry[]>([]);
     const [loadedDictionaryCards, setLoadedDictionaryCards] = useState<DictionaryEntry[]>([]);
@@ -116,8 +125,8 @@ export function useVocabularyProcessing(token: string | null): UseVocabularyProc
 
     // Process document for vocabulary tokens
     const processDocumentVocabulary = useCallback(async (text: Text) => {
-        if (!token) {
-            console.log('[VOCAB-CLIENT] ⚠️ No authentication token available for vocabulary processing');
+        if (!isAuthenticated) {
+            vocabLog('⚠️ Not signed in — skipping vocabulary processing');
             return;
         }
 
@@ -127,7 +136,7 @@ export function useVocabularyProcessing(token: string | null): UseVocabularyProc
         const needsVocabLoading = loadedPersonalCards.length === 0 && loadedDictionaryCards.length === 0;
 
         if (isAlreadyProcessed && !needsVocabLoading) {
-            console.log(`[VOCAB-CLIENT] 📋 Document already processed and cards populated:`, {
+            vocabLog(`📋 Document already processed and cards populated:`, {
                 documentId: text.id,
                 documentTitle: text.title,
                 personalCardsCount: loadedPersonalCards.length,
@@ -141,7 +150,7 @@ export function useVocabularyProcessing(token: string | null): UseVocabularyProc
             setProcessingVocab(true);
             setVocabError(null);
 
-            console.log(`[VOCAB-CLIENT] 🔄 Starting document processing:`, {
+            vocabLog(`🔄 Starting document processing:`, {
                 documentId: text.id,
                 documentTitle: text.title,
                 contentLength: text.content.length,
@@ -160,7 +169,7 @@ export function useVocabularyProcessing(token: string | null): UseVocabularyProc
 
             const tokenExtractionTime = performance.now() - processingStart;
 
-            console.log(`[VOCAB-CLIENT] 🔍 Token extraction completed:`, {
+            vocabLog(`🔍 Token extraction completed:`, {
                 documentId: text.id,
                 extractionTime: `${tokenExtractionTime.toFixed(2)}ms`,
                 uniqueTokensFound: tokenCount,
@@ -176,7 +185,7 @@ export function useVocabularyProcessing(token: string | null): UseVocabularyProc
             });
 
             if (tokens.length === 0) {
-                console.log(`[VOCAB-CLIENT] 📝 No tokens found in document:`, {
+                vocabLog(`📝 No tokens found in document:`, {
                     documentId: text.id,
                     contentPreview: text.content.substring(0, 100) + '...',
                     reason: 'No non-English characters detected'
@@ -186,7 +195,7 @@ export function useVocabularyProcessing(token: string | null): UseVocabularyProc
                 return;
             }
 
-            console.log(`[VOCAB-CLIENT] 🚀 Initiating vocabulary lookup:`, {
+            vocabLog(`🚀 Initiating vocabulary lookup:`, {
                 documentId: text.id,
                 tokensToLookup: tokens.length,
                 allTokens: tokens.length <= 30 ? tokens : `${tokens.slice(0, 30).join(', ')}... (+${tokens.length - 30} more)`
@@ -194,12 +203,12 @@ export function useVocabularyProcessing(token: string | null): UseVocabularyProc
 
             // Fetch vocabulary entries for tokens (with automatic batching)
             const vocabLookupStart = performance.now();
-            const vocabEntries = await fetchVocabInBatches(tokens, token);
+            const vocabEntries = await fetchVocabInBatches(tokens);
             const vocabLookupTime = performance.now() - vocabLookupStart;
 
             const totalProcessingTime = performance.now() - processingStart;
 
-            console.log(`[VOCAB-CLIENT] 📚 Vocabulary lookup completed:`, {
+            vocabLog(`📚 Vocabulary lookup completed:`, {
                 documentId: text.id,
                 lookupTime: `${vocabLookupTime.toFixed(2)}ms`,
                 totalProcessingTime: `${totalProcessingTime.toFixed(2)}ms`,
@@ -221,7 +230,7 @@ export function useVocabularyProcessing(token: string | null): UseVocabularyProc
             // Mark document as processed in session state
             setProcessedDocuments(prev => new Set(prev).add(text.id));
 
-            console.log(`[VOCAB-CLIENT] ✅ Document processing complete:`, {
+            vocabLog(`✅ Document processing complete:`, {
                 documentId: text.id,
                 documentTitle: text.title,
                 totalTime: `${totalProcessingTime.toFixed(2)}ms`,
@@ -242,12 +251,12 @@ export function useVocabularyProcessing(token: string | null): UseVocabularyProc
         } finally {
             setProcessingVocab(false);
         }
-    }, [token, processedDocuments, loadedPersonalCards.length, loadedDictionaryCards.length]);
+    }, [isAuthenticated, processedDocuments, loadedPersonalCards.length, loadedDictionaryCards.length]);
 
     // Process only new tokens added to a document (incremental processing with batching)
     const processDocumentVocabularyIncremental = useCallback(async (oldText: Text, newText: Text) => {
-        if (!token) {
-            console.log('[VOCAB-CLIENT] ⚠️ No authentication token available for incremental vocabulary processing');
+        if (!isAuthenticated) {
+            vocabLog('⚠️ Not signed in — skipping incremental vocabulary processing');
             return;
         }
 
@@ -255,7 +264,7 @@ export function useVocabularyProcessing(token: string | null): UseVocabularyProc
             setProcessingVocab(true);
             setVocabError(null);
 
-            console.log(`[VOCAB-CLIENT] 🔄 Starting incremental document processing:`, {
+            vocabLog(`🔄 Starting incremental document processing:`, {
                 documentId: newText.id,
                 documentTitle: newText.title,
                 oldContentLength: oldText.content.length,
@@ -274,7 +283,7 @@ export function useVocabularyProcessing(token: string | null): UseVocabularyProc
 
             const tokenExtractionTime = performance.now() - processingStart;
 
-            console.log(`[VOCAB-CLIENT] 🔍 Token diff analysis completed:`, {
+            vocabLog(`🔍 Token diff analysis completed:`, {
                 documentId: newText.id,
                 extractionTime: `${tokenExtractionTime.toFixed(2)}ms`,
                 oldTokenCount: oldTokens.size,
@@ -285,7 +294,7 @@ export function useVocabularyProcessing(token: string | null): UseVocabularyProc
             });
 
             if (addedTokens.length === 0) {
-                console.log(`[VOCAB-CLIENT] ✅ No new tokens to process:`, {
+                vocabLog(`✅ No new tokens to process:`, {
                     documentId: newText.id,
                     reason: 'All tokens already processed',
                     totalTime: `${(performance.now() - processingStart).toFixed(2)}ms`
@@ -298,10 +307,10 @@ export function useVocabularyProcessing(token: string | null): UseVocabularyProc
 
             // Fetch vocabulary for new tokens (with automatic batching)
             const vocabLookupStart = performance.now();
-            const newVocabEntries = await fetchVocabInBatches(addedTokens, token);
+            const newVocabEntries = await fetchVocabInBatches(addedTokens);
             const vocabLookupTime = performance.now() - vocabLookupStart;
 
-            console.log(`[VOCAB-CLIENT] 📚 New vocabulary lookup completed:`, {
+            vocabLog(`📚 New vocabulary lookup completed:`, {
                 documentId: newText.id,
                 lookupTime: `${vocabLookupTime.toFixed(2)}ms`,
                 tokensRequested: addedTokens.length,
@@ -339,7 +348,7 @@ export function useVocabularyProcessing(token: string | null): UseVocabularyProc
 
             const totalTime = performance.now() - processingStart;
 
-            console.log(`[VOCAB-CLIENT] ✅ Incremental processing complete:`, {
+            vocabLog(`✅ Incremental processing complete:`, {
                 documentId: newText.id,
                 documentTitle: newText.title,
                 totalTime: `${totalTime.toFixed(2)}ms`,
@@ -362,7 +371,7 @@ export function useVocabularyProcessing(token: string | null): UseVocabularyProc
         } finally {
             setProcessingVocab(false);
         }
-    }, [token, loadedPersonalCards, loadedDictionaryCards]);
+    }, [isAuthenticated, loadedPersonalCards, loadedDictionaryCards]);
 
     return {
         loadedPersonalCards,

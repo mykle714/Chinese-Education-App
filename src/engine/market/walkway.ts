@@ -11,12 +11,11 @@
  * The pack authors caps only on those two far iso faces (the near S/W faces are
  * never visible), mirroring the landmass edge rule in {@link freeFarmTileset}.
  *
- * It does NOT render — the view ({@link ../../features/nightmarket/WalkwayLayer})
- * paints each {@link WalkwayTile} as a single raised plank slab, the same way
- * {@link ../../features/nightmarket/FarmTerrainLayer} paints the tallDirt slabs.
+ * It does NOT render. Its original view layer (WalkwayLayer) was superseded by the
+ * template-driven renderer and deleted; this module is retained as the walkway
+ * GEOMETRY solver, consumed by the template pipeline.
  *
- * Referenced by: src/features/nightmarket/WalkwayLayer.tsx (consumer),
- * docs/NIGHT_MARKET_FEATURE.md (Terrain rendering section).
+ * Referenced by: docs/NIGHT_MARKET_FEATURE.md (Terrain rendering section).
  */
 
 import { freeFarmTileset, type WalkwayDirection } from './freeFarmTileset';

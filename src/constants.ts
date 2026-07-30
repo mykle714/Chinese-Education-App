@@ -16,7 +16,9 @@ export const MINUTE_POINTS_ELIGIBLE_PAGES = [
   '/reader',
   '/discover/sort',
   '/games/bubble-match',
-  '/games/word-search'
+  '/games/word-search',
+  '/games/match-speed',
+  '/games/speed-reading'
 ];
 
 // Subset of eligible pages that should start accruing time on entry, WITHOUT

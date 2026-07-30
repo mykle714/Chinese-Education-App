@@ -285,6 +285,22 @@ hub card look via the exported `cardBaseSx`
 - Word Search no longer reads the shared `useFlashcardLearnSettings`
   pinyin/colorless toggles; that hook is gone from `WordSearchPage`.
 
+#### Group header + win count
+
+The strip is topped by a `HubMenuGroupHeader` (wrapped with it in a
+`HubMenuGroup`, both from `HubMenu.tsx`) carrying the game title and a
+`HubMenuStatBadge variant="header"` with the **aggregate lifetime win count** —
+`totalWins` from `useGameWins(GAME_KEY)`. The mode sub-cards carry no badge of
+their own: a count on one of them would read as that mode's score.
+
+Win logging goes through the same hook. `WordSearchPage` calls
+`recordWin(WIN_LEVEL)` on completion (it previously hand-rolled its own
+`POST /api/users/me/wins`); `GAME_KEY` (`"wordSearch"`) and `WIN_LEVEL` (`1`) now
+live in `constants.ts` so the page and the hub item share them. Word Search has no
+levels — **every completion in either mode lands in the one `level: 1` bucket**,
+so its hub count is inherently whole-game. See
+[HUB_MENU_SYSTEM.md § Group header](./HUB_MENU_SYSTEM.md).
+
 #### Resume card (leading 1:1 square)
 
 When a saved board exists, `WordSearchHubItem` **prepends a 1:1 square card**
@@ -314,7 +330,7 @@ Vertical stack inside the standard leaf-page content area:
 
 ```
 ┌─────────────────────────────┐
-│ header (down-arrow · restart · hint · settings cog · fire badge)
+│ header (down-arrow · hint · settings cog · fire badge)
 ├─────────────────────────────┤
 │  10 English glosses, 1–2 compact lines              │  ← "Lv1 Chill" type style
 ├─────────────────────────────┤
@@ -349,9 +365,12 @@ Vertical stack inside the standard leaf-page content area:
 
 `WordSearchHeader.tsx` fills the leaf-page `rightContent` slot with, left→right:
 
-- **Restart button** (`word-search__restart-btn`) — discards the current board
-  (clearing any saved-game snapshot, see §5b) and loads a fresh one, via the
-  same `resetBoard` used by the win-screen "Play Again" button.
+- ~~**Restart button** (`word-search__restart-btn`)~~ — **REMOVED.** A restart
+  icon used to sit leftmost and discard the in-progress board via `resetBoard`.
+  `resetBoard` still exists in `WordSearchPage.tsx`, but its only caller is now
+  the win-screen "Play Again" button: a board in progress can no longer be
+  thrown away from the header, only finished or left (it stays parked in the
+  saved slot, §5b, resumable from the hub).
 - **Hint button** (`word-search__hint-btn`) — spends a hint; greyed out
   (disabled) until the hint meter reaches `HINT_COST`. See §5a.
 - **Settings cog** (`word-search__settings-btn`) — opens `WordSearchSettingsDialog`,
@@ -554,7 +573,7 @@ A lightweight, client-only assist layer (no server/DB involvement). State lives 
 the pinyin→units split lives in `pinyinUnits.ts`, the matching gloss tint lives
 in `WordSearchWordList.tsx`, and the grid-side yellow location reveal + shake
 live in `WordSearchGrid.tsx`; tunables are in `constants.ts`
-(`HINT_BAR_UNITS = 8`, `HINT_COST = 1`, `LETTER_HINT_BLANK_WIDTH = 3`,
+(`HINT_BAR_UNITS = 8`, `HINT_COST = 1`, `HINT_REMAINDER_MARK = "—"`,
 `HINT_ACCENT_COLOR`).
 
 Revealing a word's grid **location** was too easy a hint (v1's cell-pulse
@@ -578,13 +597,16 @@ hint nudges recall without handing over the answer.
 - **Display row (`WordSearchHintRow.tsx`):** sits between the English gloss
   list and the grid. **Blank by default** — nothing renders here until the
   player's first hint spend. Once a hint has picked a word, the row shows a
-  mask built by `buildMask`: **one underscore "island" per Chinese
+  mask built by `buildMask`: **one "island" per Chinese
   character** in the word (space-separated, one per `pinyin` syllable) — so
   the island count openly gives away the word's **character count**, by
-  design. Each island is padded to a **fixed `LETTER_HINT_BLANK_WIDTH` (3)
-  underscores** regardless of that syllable's real unit count, so a
-  syllable's own unit count stays hidden until its units are actually
-  revealed. Units are distributed **round-robin across characters**
+  design. An island that still has something hidden ends in a **single
+  `HINT_REMAINDER_MARK` ("—")**, meaning only "there's more to this
+  character" — so a syllable's own unit count stays hidden until its units
+  are actually revealed. (This used to be a fixed 3 underscores, which read as
+  a hangman blank-per-letter and so implied a 3-unit remainder that was
+  usually wrong; the dash carries no count. The same mark is the No-Pinyin
+  board's `COMPONENT_BLANK`, §5a-ii.) Units are distributed **round-robin across characters**
   (`distributeRevealTiers`), not filled one island at a time: every
   character's 1st unit is given out before any character's 2nd, then every
   2nd before any 3rd, wrapping until the word is fully spelled out — a
@@ -630,6 +652,17 @@ hint nudges recall without handing over the answer.
   re-tracing the same bonus word again (its popup has no auto-dismiss, so
   that's easy to do) does **not** re-award, but a *different* bonus word still
   earns its own unit.
+- **A hinted word earns NO flashcard mark.** Every word that receives a hint on
+  this board — any reveal step, unit or location — is recorded in
+  `hintedWordsRef` (`WordSearchPage.tsx`), and `markWordFound` returns early for
+  those words: no `POST /api/flashcards/mark` at all, not a negative one. The
+  player was shown part of the answer, so the find is no evidence of recall in
+  either direction and would otherwise inflate the mode's Reading/Production
+  track (see [MASTERY_REWORK.md](./MASTERY_REWORK.md)). The set is reset per
+  board in `startBoard` and round-trips through the save slot as
+  `SavedWordSearchState.hintedWords` (optional — pre-existing snapshots restore
+  as "nothing hinted"), so a paused-and-resumed board doesn't forget it cheated.
+  Hint-unit awards and the win are unaffected — only the mark is withheld.
 - **Clearing:** when the actively-hinted word is found (matched by `entryKey`
   in `onFound`), `hintEntryKey`/`hintRevealCount`/`hintLocationRevealed` all
   reset — the row, the gloss tint, and the grid's yellow highlight all clear
@@ -676,17 +709,30 @@ Code: `componentUnits.ts` (the counterpart to `pinyinUnits.ts`),
   list the player still has to assemble. Consequences: an **atomic** character
   (人, 口, 木, 行 — empty array) contributes exactly 1 reveal, and a
   **single-part** character contributes 1 as well, going straight to the
-  character without ever showing its lone part. Reveals are distributed
-  **round-robin across characters** (same posture as `distributeRevealTiers`), so
-  a short character can finish while a longer one still shows parts:
+  character without ever showing its lone part.
+- **Reveals are distributed in two round-robin phases** (`distributeComponentReveals`),
+  each phase using the same tier walk as `distributeRevealTiers`:
+  1. **All non-final parts of every character**, cheapest tier first — so no
+     character is answered while any character in the word still has a part left
+     to give.
+  2. **The character-reveal steps**, left to right.
+
+  The total reveal count is unchanged (`countComponentUnits` still sums
+  `max(parts.length, 1)`); only the order shifts, so the meter economics are the
+  same and only the ladder's shape changes:
 
   ```
   想     _  →  木_  →  木目_  →  想
   相     _  →  木_  →  相
   人     _  →  人
-  银行   _ _  →  钅_ _  →  钅_ 行  →  银 行
-  会议   _ _  →  会 _  →  会 讠_  →  会 议
+  银行   _ _  →  钅_ _  →  银 _  →  银 行
+  会议   _ _  →  人_ _  →  人_ 讠_  →  会 讠_  →  会 议
+  想相人  _ _ _  →  木_ _ _  →  木_ 木_ _  →  木目_ 木_ _  →  想 木_ _  →  想 相 _  →  想 相 人
   ```
+
+  Note 银行: 钅 (银's only non-final part) is spent before 银 or the atomic 行 is
+  answered — previously 行 was revealed at tier 1, handing over a whole character
+  while a shape hint was still unspent.
 
 - ⚠️ **Font dependency.** index.html loads Noto Sans SC from Google Fonts, which
   subsets CJK by character **frequency, not by Unicode block**. Component glyphs
@@ -767,7 +813,7 @@ fresh rather than silently resuming their own board.
   auto-resumes the timer). **Mode button** (`resume: false`/absent) → always
   `fetchGrid()` + `startBoard`, never a silent resume. (If a resume intent finds
   no save — erased between hub and page — it falls through to a fresh board.)
-- **Cleared** on win, by the restart button / "Play Again" (`resetBoard`), by
+- **Cleared** on win, by "Play Again" (`resetBoard`), by
   the resume card's ✕, and when the hub's confirm dialog approves starting a new
   game over an existing save.
 
@@ -797,7 +843,8 @@ Frontend (`src/games/word-search/`):
   threshold line (§5a).
 - `WordSearchHintRow.tsx` — the hint display row between the gloss list and the
   grid. Renders whichever currency the board spends (`currency` prop): the
-  Pinyin board's fixed-width underscore islands, hangman-style (`buildMask`;
+  Pinyin board's per-syllable islands closed with a single `HINT_REMAINDER_MARK`
+  dash (`buildMask`;
   §5a), or the No Pinyin board's component glyphs in a line, collapsing to the
   character once its parts run out (§5a-ii).
 - `pinyinUnits.ts` — splits a tone-marked pinyin syllable into its phonetic
@@ -806,9 +853,10 @@ Frontend (`src/games/word-search/`):
   `WordSearchPage`'s reveal-cap check (§5a).
 - `componentUnits.ts` — the No Pinyin counterpart to `pinyinUnits.ts`: turns a
   word's `charComponents` into the per-character reveal ladder (every part, then
-  the character itself), distributed round-robin across characters
+  the character itself), distributed round-robin across characters in two phases
+  — all non-final parts word-wide, then the character reveals
   (`countComponentUnits` / `buildComponentReveals`; §5a-ii).
-- `WordSearchHeader.tsx` — restart button + hint button + settings cog + fire
+- `WordSearchHeader.tsx` — hint button + settings cog + fire
   badge (LeafPage `rightContent`); the timer toggle lives in the settings
   dialog (see §3 Header controls). Pinyin is no longer a toggle — it's fixed by
   the launched hub mode (§3).
@@ -820,16 +868,19 @@ Frontend (`src/games/word-search/`):
 - `WordSearchHubItem.tsx` — the Games-hub strip (rendered by `GamesPage.tsx`):
   the two mode buttons (start-fresh, with a confirm dialog when a save exists)
   plus the prepended 1:1 resume card (timer / X·10 / mode + ✕ erase, with the
-  react-spring collapse animation). Owns the saved-board read + confirm state.
-  See §3.
+  react-spring collapse animation), under a `HubMenuGroupHeader` carrying the
+  game title + the aggregate lifetime win count (`useGameWins(GAME_KEY).totalWins`).
+  Owns the saved-board read + confirm state. See §3.
 - `gameStateStorage.ts` — `saveGameState`/`loadGameState`/`clearGameState`
   (each takes just `(userId, …)`), the **single-slot** (mode-agnostic key,
   `mode` stored in the payload) localStorage save/resume layer for the one
   in-progress board. See §5b.
 - `constants.ts` — grid query, `CELL_SIZE`, medal thresholds, hint tunables
-  (`HINT_BAR_UNITS`, `HINT_COST`, `LETTER_HINT_BLANK_WIDTH`, `HINT_ACCENT_COLOR`),
-  and the pinyin-mode config (`WordSearchMode`, `MODE_CONFIGS`, `modeConfigFor`;
-  see §3); re-exports `GAME_DISTRIBUTION` from bubble-match.
+  (`HINT_BAR_UNITS`, `HINT_COST`, `HINT_REMAINDER_MARK`, `HINT_ACCENT_COLOR`),
+  the pinyin-mode config (`WordSearchMode`, `MODE_CONFIGS`, `modeConfigFor`;
+  see §3), and the `wins`-table keys `GAME_KEY` / `WIN_LEVEL` (shared by
+  `WordSearchPage`'s `recordWin` and the hub item's count; see §3);
+  re-exports `GAME_DISTRIBUTION` from bubble-match.
 - `types.ts` — `GridCell`, `PlacedWord`, `WordSearchResponse`, `Medal`.
 - `src/games/registry.ts` — registers the `word-search` `GameDef`.
 - `src/constants.ts` — `/games/word-search` added to `MINUTE_POINTS_ELIGIBLE_PAGES`.
@@ -857,7 +908,7 @@ Server:
   §2 Output payload). Grid dims: `WORD_SEARCH_ROWS`/`WORD_SEARCH_COLS`.
 - `server/controllers/OnDeckVocabController.ts` — `getWordSearchGrid` handler
   (parses the distribution query, defaults to 2/10/6/2).
-- `server/routes/onDeckRoutes.ts` — `GET /api/onDeck/word-search-grid`.
+- `server/routes/onDeckRoutes.ts` — `GET /api/onDeck/wordSearchGrid`.
 
 ## 7. Dependencies / cross-references
 

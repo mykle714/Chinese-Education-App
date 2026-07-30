@@ -1,5 +1,5 @@
 import { IIcons8DAL, Icons8Asset, Icons8Page, Icons8ListItem } from '../interfaces/IIcons8DAL.js';
-import { dbManager } from '../base/DatabaseManager.js';
+import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
 import { ValidationError } from '../../types/dal.js';
 import { getIconById, searchIcons } from '../../services/Icons8FetchService.js';
 import { dictTableForLanguage } from '../shared/dictTable.js';
@@ -10,10 +10,19 @@ import { dictTableForLanguage } from '../shared/dictTable.js';
  * via a backfill script, not the request path.
  */
 export class Icons8DAL implements IIcons8DAL {
+
+  /**
+   * The connection manager, injected so the DAL can be substituted in a test.
+   * Defaults to the process-wide singleton, so `new Icons8DAL()` at the composition
+   * root (dal/setup.ts) keeps working unchanged.
+   * See docs/CORRECTNESS_AND_PERFORMANCE_REVIEW.md finding 2.
+   */
+  constructor(protected readonly dbManager: DatabaseManager = defaultDbManager) {}
+
   async getAssetById(icons8Id: string): Promise<Icons8Asset | null> {
     if (!icons8Id) throw new ValidationError('icons8Id is required');
 
-    const result = await dbManager.executeQuery<Icons8Asset>(async (client) => {
+    const result = await this.dbManager.executeQuery<Icons8Asset>(async (client) => {
       // Only return rows that actually have bytes — an icon row can exist as
       // metadata-only (assetBytes NULL) before it has been downloaded.
       return await client.query(`
@@ -29,7 +38,7 @@ export class Icons8DAL implements IIcons8DAL {
   async iconExists(icons8Id: string): Promise<boolean> {
     if (!icons8Id) throw new ValidationError('icons8Id is required');
 
-    const result = await dbManager.executeQuery<{ exists: boolean }>(async (client) => {
+    const result = await this.dbManager.executeQuery<{ exists: boolean }>(async (client) => {
       // Mirror getAssetById: only downloaded icons (assetBytes NOT NULL) are pickable.
       return await client.query(`
         SELECT EXISTS (
@@ -47,7 +56,7 @@ export class Icons8DAL implements IIcons8DAL {
     const safeLimit = Math.min(Math.max(Math.trunc(limit) || 0, 1), 100);
     const safeOffset = Math.max(Math.trunc(offset) || 0, 0);
 
-    const result = await dbManager.executeQuery<{ icons8id: string; name: string; total: string }>(async (client) => {
+    const result = await this.dbManager.executeQuery<{ icons8id: string; name: string; total: string }>(async (client) => {
       // Window-function COUNT(*) OVER () returns the full match count alongside the
       // page slice in one round-trip (avoids a separate COUNT query). Stable order:
       // name then id, so offset paging never skips/repeats across requests.
@@ -83,7 +92,7 @@ export class Icons8DAL implements IIcons8DAL {
 
     const assetBytes = Buffer.from(svg, 'utf8');
 
-    await dbManager.executeQuery(async (client) => {
+    await this.dbManager.executeQuery(async (client) => {
       // Column mapping mirrors the backfill's insertIcons8Row (see migration 71).
       // getById lacks the search-only metadata (isColor/isExplicit/authorId), so we
       // store what it provides and leave those NULL/false. On conflict we may have a
@@ -137,7 +146,7 @@ export class Icons8DAL implements IIcons8DAL {
     // migration 123 — so the cache lands on THE row for this word. The Spanish branch
     // used to take a `pos` argument and order by an exact-pos match, mirroring dictJoin,
     // to pick among a word's several rows; there is only one row to pick now.
-    const row = await dbManager.executeQuery<{ id: number; cached: Icons8ListItem[] | null }>(
+    const row = await this.dbManager.executeQuery<{ id: number; cached: Icons8ListItem[] | null }>(
       async (client) => {
         return await client.query(
           `SELECT id, "defaultIconResults" AS cached
@@ -165,7 +174,7 @@ export class Icons8DAL implements IIcons8DAL {
     const slim: Icons8ListItem[] = icons.map((i) => ({ id: i.id, name: i.name }));
 
     // Write the response back to the resolved det row so the next open is instant.
-    await dbManager.executeQuery(async (client) =>
+    await this.dbManager.executeQuery(async (client) =>
       client.query(
         `UPDATE ${table} SET "defaultIconResults" = $1::jsonb WHERE id = $2`,
         [JSON.stringify(slim), det.id]

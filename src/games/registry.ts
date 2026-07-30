@@ -34,6 +34,26 @@ export const GAME_REGISTRY: GameDef[] = [
         Component: lazy(() => import("./word-search/WordSearchPage")),
         bgColor: COLORS.purpleAccent,
     },
+    {
+        gameId: "match-speed",
+        title: "Match Speed",
+        subtitle: "Match words to meanings against a 60-second clock",
+        route: "/games/match-speed",
+        Component: lazy(() => import("./match-speed/MatchSpeedPage")),
+        bgColor: COLORS.greenAccent,
+    },
+    {
+        gameId: "speed-reading",
+        title: "Speed Reading",
+        subtitle: "Read the clue, tap the matching word before the clock runs out",
+        route: "/games/speed-reading",
+        Component: lazy(() => import("./speed-reading/SpeedReadingPage")),
+        bgColor: COLORS.blueAccent,
+        // zh-only: a round is built by substituting ONE character of the
+        // headword, which presupposes a character-based script. See
+        // GameDef.languages.
+        languages: ["zh"],
+    },
 ];
 
 /** Routes for every registered game; consumed by `MOBILE_DEMO_PATHS`. */

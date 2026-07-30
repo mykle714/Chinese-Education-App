@@ -21,8 +21,8 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
    used by Discover + Games hubs) of secondary destinations:
    **Night Market**, **Games**, **Community**, **Reader**, **Dictionary**,
    **Compare Words** (`/compare` — see
-   [WORD_COMPARE_FEATURE.md](./WORD_COMPARE_FEATURE.md)), **Tester Dashboard**
-   (plus two template-author-only rows).
+   [WORD_COMPARE_FEATURE.md](./WORD_COMPARE_FEATURE.md))
+   (plus a validator-only **Tester Dashboard** row and two template-author-only rows).
 
 3. **Back-arrow drill-ins** — every page reached from a hub has a common header
    with a back button. These come in two archetypes (see
@@ -65,6 +65,22 @@ The drawer's two global controls moved onto `AccountPage`:
 `/tester-dashboard` (`TesterDashboardPage`) holds the **former landing-page**
 content (study time, streak, monthly calendar, leaderboard). The old `/` landing
 is now the Home menu.
+
+**Validator-gated.** The surface is for testers/curators, not ordinary learners,
+so it is gated on `users.isValidator` (migration 104, see
+[DATA_VALIDATION_SYSTEM.md](./DATA_VALIDATION_SYSTEM.md)) in two places, mirroring
+the `isTemplateAuthor` gate on the Night Market template editor:
+
+- `src/pages/HomePage.tsx` — the `tester-dashboard` hub row is spread in only when
+  `user?.isValidator`, so non-validators never see the entry point.
+- `src/pages/TesterDashboardPage.tsx` — a `useEffect` bounces a resolved,
+  non-validator user to `/` (`replace: true`), covering deep links and bookmarks.
+
+The route in `src/App.tsx` stays `allowPublic` on purpose: a validator may be a
+public account, and the generic `isPublic` redirect must not pre-empt the
+validator gate. This is a **UX gate, not a security boundary** — the page only
+renders the caller's own minute-point data, and those endpoints remain
+user-scoped server-side.
 
 ## Related
 

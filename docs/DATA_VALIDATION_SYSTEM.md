@@ -14,7 +14,10 @@ table so future backfills never clobber human-reviewed fields.
 Introduced by **migration 104** (`database/migrations/104-add-validation-system.sql`),
 simplified by **migration 106** (`database/migrations/106-simplify-validator-content.sql`
 — dropped the edit/suggest/revert flow, `validations.content` nullable, dropped
-`texts.validationOriginalContent`).
+`texts.validationOriginalContent`), and widened by **migration 132**
+(`database/migrations/132-split-parts-of-speech-validation-field.sql` — split
+`partsOfSpeech` out of the definitions bundle and added `difficulty` +
+`frequencyScore`, so all three meta-strip chips are independently reviewable).
 
 > **Why a separate table (not a det column):** `dictionaryentries_{zh,es}` are
 > `TRUNCATE`+restored wholesale on every prod data deploy
@@ -27,17 +30,39 @@ simplified by **migration 106** (`database/migrations/106-simplify-validator-con
 
 ## Field model
 
-A validation document targets exactly one **field** of an entry:
+A validation targets exactly one **field** of an entry. Seven exist; the last three
+are **inline-only** (never handed out by the Reader-document queue — they are
+single-line values, better reviewed on the card's meta strip than as a document):
 
-| `validationField` | Doc subtitle (description) | Source columns |
-|---|---|---|
-| `definitions` | "Definitions & Parts of Speech" | `partsOfSpeech` + `definitions[]` + `longDefinition` |
-| `exampleSentence0/1/2` | "Example Sentence 1/2/3" | `exampleSentences[N]` (`foreignText` + `english`) |
+| `validationField` | Label | Source column(s) | Body (`validationBodyFormat.ts`) | Paths |
+|---|---|---|---|---|
+| `definitions` | "Definitions" | `definitions[]` + `longDefinition` | `composeDefinitionsBody` | doc + inline |
+| `exampleSentence0/1/2` | "Example Sentence 1/2/3" | `exampleSentences[N]` (`foreignText` + `english`) | `composeExampleSentenceBody` | doc + inline |
+| `partsOfSpeech` | "Parts of Speech" | `partsOfSpeech` | `composePartsOfSpeechBody` | inline only |
+| `difficulty` | "Difficulty" | `difficulty` | `composeDifficultyBody` | inline only |
+| `frequencyScore` | "Commonality" | `frequencyScore` | `composeFrequencyScoreBody` | inline only |
 
-Only **populated** fields are eligible. `definitions` requires all three columns
-present; `exampleSentenceN` requires `exampleSentences` to have index `N`.
-The `ValidationField` union is declared in both `server/types/index.ts` and
-`src/types.ts`.
+Only **populated** fields are eligible: `definitions` requires both its columns,
+`exampleSentenceN` requires `exampleSentences` to have index `N`, and each of the
+three single-column fields requires a non-null value. The doc-queue check is the
+`CROSS JOIN LATERAL (VALUES …)` in `ValidationService.composeValidationDoc`; the
+inline check is `ValidationService.isFieldPopulated`, which is the ONLY check the
+three inline-only fields ever pass through. The `ValidationField` union is declared
+in both `server/types/index.ts` and `src/types.ts`, and the inline endpoints'
+allow-list is `VALID_FIELDS` in `server/controllers/ValidationController.ts`.
+
+> **Why POS is its own field (migration 132).** `definitions` used to bundle three
+> columns and open its body with `Parts of Speech: …`. That forced a validator to
+> endorse the POS tags and the long definition together, and — because the read path
+> revalidates an approval by rebuilding the body byte-for-byte — any regeneration of
+> `longDefinition` silently invalidated the POS review too. Splitting them means each
+> chip's approval survives the other's churn. Migration 132 preserves history rather
+> than resetting it: every pre-existing `definitions` record is **re-filed as a second
+> `partsOfSpeech` record** (approvals carry the extracted `Parts of Speech: …` line,
+> which is byte-identical to what `composePartsOfSpeechBody` now emits; flags carry
+> NULL content, as flags always do), and the POS block is then stripped from the
+> remaining `definitions` approvals so they still match the new composer. Both steps
+> are idempotent.
 
 Granularity is **per (entry, field)**: a user may validate an entry's example
 sentence and, separately, its definitions bundle. Each (user, entry, field) has at
@@ -46,6 +71,20 @@ Approve/Flag" below), a validator may switch it (approve ↔ flag) or clear it
 entirely; the Reader-document path (`submitValidation`) still rejects a repeat
 submit for the same (user, entry, field), since the underlying document is
 auto-deleted after the first action.
+
+### Adding another validatable field
+
+`validations.field` is a free-text `VARCHAR(50)` with no CHECK constraint, so a new
+field needs **no DDL**. It does need, in order: the `ValidationField` union in both
+type files; `VALID_FIELDS` (controller); `FIELD_LABEL`, `DET_FIELD_COLUMNS`,
+`DetFieldRow`, `composeBody`, `isFieldPopulated` (`ValidationService`); a formatter
+in `validationBodyFormat.ts`; `ENTRY_LEVEL_VALIDATION_FIELDS` + `EntryApprovalFlags`
+(`server/types/index.ts`) and the matching branch in
+`DictionaryDAL.enrichFieldApprovalsBatch` if the client needs a read-path flag; a
+client mount point for `ValidateFlagButtons`; and a `validatedClause` guard in every
+backfill that writes the column (plus its `validationFields` entry in
+`requiredScripts.js`). Add it to the doc-queue `VALUES` list only if a downloaded
+document is the right review surface for it.
 
 ---
 
@@ -198,10 +237,25 @@ icon buttons render directly on the est (example sentences) and long-definition
 surfaces, wherever a validator is already looking at an entry — flashcard eip tabs,
 the cdp, the dictionary card detail. Hidden entirely for non-validators.
 
-- **`src/components/ValidateFlagButtons.tsx`** — the shared control. Props:
+> **The icon pair itself lives in `ValidateFlagButtonsView.tsx`.** The
+> presentation (icon pair, fill-on-a-disc styling, per-icon spinner,
+> `stopPropagation` handling) is split from `ValidateFlagButtons`, which owns the
+> `/api/validation/entry*` calls and the validator gate. Det-entry fields are the
+> only validation surface in the app.
+>
+> A second surface briefly existed — approve/flag on an authored wrong glyph for
+> the Mandela game — with its own table and endpoints. That game's levels 2 and 3
+> were removed in full; see [SPEED_READING_GAME.md](./SPEED_READING_GAME.md). The
+> container/presentational split is kept because it reads well, not because a
+> second consumer is coming.
+
+- **`src/components/ValidateFlagButtons.tsx`** — the det-field wrapper. Props:
   `word1`, `language`, `field` (a `ValidationField`), `alreadyApproved` (the
-  caller's `sentence.humanApproved` / `entry.definitionsApproved` — used only as
-  a pre-fetch fallback, see below).
+  caller's matching read-path flag — `sentence.humanApproved`,
+  `entry.definitionsApproved`, `entry.partsOfSpeechApproved`, … — used only as a
+  pre-fetch fallback, see below), and `dense` (compact variant: smaller icons, no
+  button padding — used by the meta-strip chips, where a full-size icon button would
+  be taller than the chip it annotates).
   **Both icons always render together, Approve on the LEFT and Flag on the
   RIGHT** (`CheckCircleOutline`/`CheckCircle`, `FlagOutlined`/`Flag`; styled like
   `SpeakerButton` — small, `stopPropagation` so a tap doesn't bubble into an
@@ -214,11 +268,11 @@ the cdp, the dictionary card detail. Hidden entirely for non-validators.
   (it's driven by `myVote`, which is set on the request's success), so green =
   "approval sent" and orange = "flag sent". All three interactions hit
   `ValidationService.submitEntryValidation`/`clearEntryValidation`/
-  `getEntryValidationStatus` via `/api/validation/entry-submit` (POST/DELETE) and
-  `/api/validation/entry-status` (GET), all through `src/api/http.ts`
+  `getEntryValidationStatus` via `/api/validation/entrySubmit` (POST/DELETE) and
+  `/api/validation/entryStatus` (GET), all through `src/api/http.ts`
   (`apiPost`/`apiDelete`/`apiGet` — cookie auth, no manual token plumbing):
   1. **Mount**: `!user?.isValidator` → renders `null`. Otherwise GETs
-     `/api/validation/entry-status` for this validator's own vote (`myVote`) on
+     `/api/validation/entryStatus` for this validator's own vote (`myVote`) on
      this (word1, language, field) — this is what makes the filled icon survive a
      reload, unlike the old session-only `done` flag. While that fetch is in
      flight, `alreadyApproved` is used as a fallback to avoid a flash of empty
@@ -230,13 +284,15 @@ the cdp, the dictionary card detail. Hidden entirely for non-validators.
      vote and **switches** an existing one (approve ↔ flag) in one call. `myVote`
      updates optimistically-after-success to the new action.
   3. **Tap the icon that IS the current vote** → sends `DELETE
-     /api/validation/entry-submit` (query params `word1`/`language`/`field`),
+     /api/validation/entrySubmit` (query params `word1`/`language`/`field`),
      which removes just this validator's row — **un-voting**, leaving no signal in
      the DB. `myVote` resets to `null` and both icons return to outline.
   A per-icon `CircularProgress` shows while its own request is in flight;
   the other icon stays interactive.
 - **est**: `ExampleSentenceList.tsx` renders one `ValidateFlagButtons` per sentence
-  (top-left corner, mirroring the speaker button's top-right), `field` =
+  inside the card's **top-right action cluster** (`.example-sentence-actions` — one
+  absolutely-positioned flex row holding the validate pair and then the speaker, so
+  the corner reads as a single group of controls), `field` =
   `exampleSentence${index}` for `index < 3` (the field model's only 3 slots) —
   `EXAMPLE_SENTENCE_FIELDS` lookup array, `alreadyApproved={sentence.humanApproved}`
   (the same flag that also drives the AI-generated badge/tint on this sentence, so
@@ -255,8 +311,23 @@ the cdp, the dictionary card detail. Hidden entirely for non-validators.
   `entry.entryKey`/`entry.language`). **Not** wired from `CompareWorkspace.tsx` — its
   `LongDefinitionDisplay` renders the AI word-comparison paragraph
   (docs/WORD_COMPARE_FEATURE.md), which has no backing det field at all.
+- **Meta-strip chips** (migration 132): `src/features/flashcards/MetaChipLabel.tsx`
+  renders a chip's uppercase caption followed by a `dense` `ValidateFlagButtons` for
+  that chip's own field (`difficulty` / `partsOfSpeech` / `frequencyScore`), with
+  `alreadyApproved` = the chip's read-path flag. Used by both `VocabCardDetailBody.tsx`
+  and `InfoCardPanelBody.tsx` (they differ only in the `classPrefix` prop), each
+  passing `entry.entryKey` / `entry.language`; the buttons are skipped when `language`
+  is absent (det-fallback entries). The pair is an absolutely-positioned overlay in
+  the chip's **top-right corner** with no surface of its own — styled exactly like the
+  est cards' corner buttons, floating over the chip without displacing its text. Each
+  parent chip therefore carries `position: relative`. Non-validators see the plain caption exactly as
+  before, since `ValidateFlagButtons` renders `null` for them. It is a MODULE-level
+  component on purpose — declaring it inside a parent's render body would make it a
+  new component type every render, remounting the buttons and re-firing their status
+  fetch. These three fields have **no** Reader-document path — this is their only
+  review surface.
 - **`ValidationService.submitEntryValidation`** (server) — the method behind
-  `POST /api/validation/entry-submit`: looks up the det row fresh by `(word1,
+  `POST /api/validation/entrySubmit`: looks up the det row fresh by `(word1,
   language, discoverable=TRUE)` (the client never knows/sends the det surrogate
   id; shared helper `getDetFieldRowByWord1`), checks the field is populated
   (`isFieldPopulated`, mirrors `composeValidationDoc`'s SQL eligibility check),
@@ -266,11 +337,11 @@ the cdp, the dictionary card detail. Hidden entirely for non-validators.
   their prior vote instead of being rejected. No `texts` row is created or
   touched by this path at all.
 - **`ValidationService.clearEntryValidation`** — the method behind `DELETE
-  /api/validation/entry-submit`: resolves the det row the same way, then deletes
+  /api/validation/entrySubmit`: resolves the det row the same way, then deletes
   only the calling validator's `validations` row for (entry, field). A no-op
   (not an error) if they never voted.
 - **`ValidationService.getEntryValidationStatus`** — the method behind `GET
-  /api/validation/entry-status`: resolves the det row the same way, then returns
+  /api/validation/entryStatus`: resolves the det row the same way, then returns
   this validator's own current `action` (`'approve' | 'flag' | null`) for
   (entry, field). Used on `ValidateFlagButtons` mount so the filled icon survives
   a page reload.
@@ -280,13 +351,22 @@ the cdp, the dictionary card detail. Hidden entirely for non-validators.
 ## Read-path surfacing: approval flags + AI-generated styling
 
 Approvals feed back into the learner-facing UI: every AI-written field tells the
-user whether a human has vouched for it. Two independent read-time flags cover the
-two validation field groups (Field model table above):
+user whether a human has vouched for it. Five read-time flags cover the validation
+fields (Field model table above), split by granularity:
 
 | Flag | Covers | Set by |
 |---|---|---|
 | `humanApproved` (per-sentence) | one `exampleSentences[N]` element | `DictionaryDAL.enrichExampleSentencesMetadataBatch` |
-| `definitionsApproved` (per-entry) | `partsOfSpeech` + `definitions[]` + `longDefinition`, bundled as one unit | `DictionaryDAL.enrichDefinitionsApprovalBatch` |
+| `definitionsApproved` (per-entry) | `definitions[]` + `longDefinition`, bundled as one unit | `DictionaryDAL.enrichFieldApprovalsBatch` |
+| `partsOfSpeechApproved` (per-entry) | `partsOfSpeech` | ″ |
+| `difficultyApproved` (per-entry) | `difficulty` | ″ |
+| `frequencyScoreApproved` (per-entry) | `frequencyScore` | ″ |
+
+The four per-entry flags are one type, `EntryApprovalFlags`
+(`server/types/index.ts`), resolved together by a single enricher — they describe
+the entry as a whole, so one raw-column read plus one `validations` read answers all
+four regardless of batch size. `ENTRY_LEVEL_VALIDATION_FIELDS` (same file) is the
+list that enricher queries with; it must stay in step with the interface.
 
 Both share the same shape: a batched query joins `validations` back to the det
 table by `entryId` (keyed by `word1` — vet-joined entries carry `entryKey` = det
@@ -305,14 +385,22 @@ uses to compose the doc, so they always agree byte-for-byte.
   Index-agnostic (no label/index in the body) so reordering `exampleSentences`
   doesn't orphan an exact approval. Declared on the `exampleSentences` element type
   in `server/types/index.ts` and `src/types.ts`.
-- **`definitionsApproved`** (helpers `fetchApprovedDefinitionsContents` +
-  `isDefinitionsHumanApproved`): rebuilds `composeDefinitionsBody` from the entry's
-  **raw** det columns (fetched fresh, not the caller's already-transformed
-  `longDefinition` display string) and compares the whole thing as one unit —
-  editing or regenerating ANY of the three columns invalidates the approval for all
-  of them. Independent of `enrichExampleSentencesMetadataBatch` (no
-  `exampleSentences` precondition); callers chain it alongside
-  `enrichLongDefinitionMetadataBatch`. Declared as a top-level field on
+- **The four `EntryApprovalFlags`** (`DictionaryDAL.enrichFieldApprovalsBatch`, helper
+  `fetchApprovedEntryFieldContents`): one query fetches every approving `validations`
+  row for the batch across all four entry-level fields, bucketed **per field** (so a
+  `definitions` approval can never satisfy a `partsOfSpeech` comparison); a second
+  fetches the entry's **raw** det columns (fresh, not the caller's already-transformed
+  `longDefinition` display string). Each flag then rebuilds its own formatter's body
+  from those raw columns and looks it up in that field's bucket. `definitionsApproved`
+  is still compared as one unit across two columns — regenerating either invalidates
+  it — while the other three each hinge on one column, so POS/difficulty/commonality
+  churn no longer clears each other (or the definitions review). A field's bucket is a
+  Set because different validators may have approved different revisions; any one
+  matching today's data counts. Independent of
+  `enrichExampleSentencesMetadataBatch` (no `exampleSentences` precondition); callers
+  chain it alongside `enrichLongDefinitionMetadataBatch`
+  (`VocabEntryService`, `OnDeckVocabService`, `DictionaryController`, via
+  `DictionaryService.enrichFieldApprovalsBatch`). Declared as top-level fields on
   `DictionaryEntry`/`VocabEntry` in `server/types/index.ts` and `src/types.ts` (and
   threaded through `dictEntryAdapter.ts` for the flp det-fallback path).
 - Both comparisons run the current body through `sanitizeDocumentContent`
@@ -330,14 +418,48 @@ uses to compose the doc, so they always agree byte-for-byte.
 - `LongDefinitionDisplay.tsx` takes an `aiGenerated` prop; when true (i.e. the
   caller passes `!entry.definitionsApproved`) it wraps the rendered long definition
   in the full treatment (border/tint + badge).
-- The **Type** (partsOfSpeech) chip in `VocabCardDetailBody.tsx` and
-  `InfoCardPanelBody.tsx` gets **only** `aiGeneratedSurfaceSx` (border/tint, no
-  badge) when `!entry.definitionsApproved` — a lighter mark since the chip is a
-  small, glanceable value rather than a block of prose.
+- The **three meta-strip chips** in `VocabCardDetailBody.tsx` and
+  `InfoCardPanelBody.tsx` each get **only** `aiGeneratedSurfaceSx` (border/tint, no
+  badge) when their OWN flag is falsy — a lighter mark since a chip is a small,
+  glanceable value rather than a block of prose. Before migration 132 only the POS
+  chip was ever clearable (off `definitionsApproved`) and the other two were
+  permanently AI-marked, having no validation field at all.
+
+  | Chip label | Value | Field | Flag |
+  |---|---|---|---|
+  | **Difficulty** | `HSK N` for zh, bare `N` otherwise | `difficulty` | `difficultyApproved` |
+  | **Parts of Speech** | `partsOfSpeech.join(', ')` | `partsOfSpeech` | `partsOfSpeechApproved` |
+  | **Commonality** | 5-dot meter + `N/5` | `frequencyScore` | `frequencyScoreApproved` |
+
+  The labels were previously "HSK"/"Level", "Type" and "Commonality". Only the zh
+  *value* still names HSK — the label is language-neutral, and the eip mirror renders
+  the Difficulty chip for zh only.
+
+  **Strip layout (both twins).** The strip is a two-row column, not one flex line:
+  row 1 (`*-definition-meta-row`) holds **Difficulty + Commonality**, centered; row 2
+  holds **Parts of Speech** alone at `width: 100%` with centered text, because the
+  comma-joined POS list is the longest of the three values. Row 1 is skipped entirely
+  when neither of its chips has data, so its column gap never opens above a lone POS
+  row.
+
+> **Placement rule: the buttons never change layout.** Every inline
+> `ValidateFlagButtons` mount — est cards, the long-definition block, the three meta
+> chips — is absolutely positioned OUT OF FLOW in its element's top-right corner,
+> with no surface or background of its own. A validator must see the same layout as
+> everyone else; a control that only some accounts render must not be allowed to
+> widen, heighten, or reflow the element it annotates, or displace any of its text.
+> When adding a new mount point, position it, don't inline it.
 
 All three surfaces (eip Definition tab, cdp) inherit this automatically since
 `VocabCardDetailBody`/`InfoCardPanelBody` are the shared components behind both
 card-detail pages.
+
+> **Note on the twin strips.** The cdp and eip meta strips render the same three
+> chips with the same flags and the same AI treatment, differing only in the eip's
+> zh-only Difficulty gate and in their class-name prefix. Their captions come from
+> ONE shared component, `src/features/flashcards/MetaChipLabel.tsx`; the surrounding
+> chip boxes are still hand-maintained twins, so a fuller `DefinitionMetaStrip`
+> extraction remains available if they drift again.
 
 ---
 
@@ -370,8 +492,16 @@ Applied to the recurring AI writers:
 
 | Field group | `validatedClause([...], table)` | Scripts (zh + es) |
 |---|---|---|
-| Definitions bundle | `['definitions']` | zh: `backfill-parts-of-speech`, `backfill-process-definitions-array`, `backfill-split-semicolon-definitions`, `backfill-expand-abbreviations`<br>es: `backfill-process-definitions-array`, `backfill-long-definitions`, `backfill-split-semicolon-definitions`, `backfill-expand-abbreviations` |
+| Definitions bundle | `['definitions']` | zh: `backfill-process-definitions-array`, `backfill-long-definitions`, `backfill-longdef-citations`, `backfill-split-semicolon-definitions`, `backfill-expand-abbreviations`<br>es: `backfill-process-definitions-array`, `backfill-long-definitions`, `backfill-split-semicolon-definitions`, `backfill-expand-abbreviations` |
 | Example sentences | `['exampleSentence0','exampleSentence1','exampleSentence2']` | `backfill-example-sentences` (both languages) |
+| Parts of speech | `['partsOfSpeech']` | zh: `backfill-parts-of-speech` (es has no POS step — POS is a by-product of clustering since migration 123) |
+| Difficulty | `['difficulty']` | zh: `backfill-hsk-level` |
+| Commonality + difficulty | `['frequencyScore','difficulty']` | zh: `backfill-frequency-score` guards on `['frequencyScore']` alone; **es**: `backfill-frequency-score` writes BOTH columns in one pass, so a review of either chip protects the row |
+
+The manifest in `server/scripts/backfill/shared/lib/requiredScripts.js` mirrors these
+per-script `validationFields`, so the lazy-enrichment worker skips (and does not wait
+for) a step whose field a validator has already reviewed. Its exported
+`VALIDATION_FIELDS` is derived from the manifest, so it picks up new fields for free.
 
 The two deterministic cleanups (`split-semicolon-definitions`, `expand-abbreviations`)
 are the ones that most need the guard: unlike the AI steps they scan their det table
@@ -415,28 +545,34 @@ regeneration loop and a validator's work — treat it as load-bearing.
 ## Key files
 
 - Migrations: `database/migrations/104-add-validation-system.sql`,
-  `database/migrations/106-simplify-validator-content.sql`
+  `database/migrations/106-simplify-validator-content.sql`,
+  `database/migrations/120-drop-validations-validator-fk.sql`,
+  `database/migrations/132-split-parts-of-speech-validation-field.sql`
 - Service/controller/routes: `server/services/ValidationService.ts`,
   `server/controllers/ValidationController.ts`, `server/routes/validationRoutes.ts`
   (mounted in `server/server.ts`; wired in `server/dal/setup.ts`)
-- Shared body formatter: `server/utils/validationBodyFormat.ts`
-  (`composeDefinitionsBody`, `composeExampleSentenceBody`)
+- Shared body formatters: `server/utils/validationBodyFormat.ts`
+  (`composeDefinitionsBody`, `composeExampleSentenceBody`, `composePartsOfSpeechBody`,
+  `composeDifficultyBody`, `composeFrequencyScoreBody`)
 - Sanitizer: `server/utils/sanitizeContent.ts`
-- Types: `server/types/index.ts` (`ValidationField`, `ValidationRecord`,
+- Types: `server/types/index.ts` (`ValidationField`, `ENTRY_LEVEL_VALIDATION_FIELDS`,
+  `EntryApprovalFlags`/`NO_APPROVALS`, `ValidationRecord`,
   `Text.validation*`, `User.isValidator`) + `src/types.ts` (`ValidationField`,
   `Text.validation*`, `User.isValidator`), `src/AuthContext.tsx`
 - Reader UI: `src/features/reader/ReaderPage.tsx`, `src/features/reader/ReaderDocumentPage.tsx`,
   `src/features/reader/TextHeader.tsx`, `src/features/reader/TextSidebar.tsx`,
   `src/features/reader/validationApi.ts`
-- Inline Approve/Flag UI: `src/components/ValidateFlagButtons.tsx`,
+- Inline Approve/Flag UI: `src/components/ValidateFlagButtonsView.tsx` (shared
+  presentation) + `src/components/ValidateFlagButtons.tsx` (det-field wrapper),
   `src/api/http.ts` (`apiPost`/`apiDelete`/`apiGet`), wired from `src/features/flashcards/ExampleSentenceList.tsx`
   and `src/components/LongDefinitionDisplay.tsx` (via `src/features/flashcards/VocabCardDetailBody.tsx` +
-  `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx`)
+  `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx`), and
+  `src/features/flashcards/MetaChipLabel.tsx` (the three meta-strip chips)
 - Backfill guard: `server/scripts/backfill/run-log.js` (`validatedClause`)
 - Read-path surfacing: `server/dal/implementations/DictionaryDAL.ts`
   (`fetchApprovedSentenceContents`/`isSentenceHumanApproved` for `humanApproved`;
-  `fetchApprovedDefinitionsContents`/`isDefinitionsHumanApproved` for
-  `definitionsApproved`), `src/features/flashcards/ExampleSentenceList.tsx`,
+  `enrichFieldApprovalsBatch`/`fetchApprovedEntryFieldContents` for the four
+  `EntryApprovalFlags`), `src/features/flashcards/ExampleSentenceList.tsx`,
   `src/components/LongDefinitionDisplay.tsx`, `src/features/flashcards/VocabCardDetailBody.tsx`,
   `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx`,
   `src/theme/aiGeneratedStyling.ts` + `src/components/AiGeneratedBadge.tsx` (shared

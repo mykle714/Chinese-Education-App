@@ -1,35 +1,16 @@
 import { Request, Response } from 'express';
 import { UserMinutePointsService } from '../services/UserMinutePointsService.js';
 import { requireUserId, handleControllerError } from '../utils/controllerUtils.js';
+import { resolveLanguage, resolveOptionalLanguage } from '../utils/language.js';
 import { Language } from '../types/index.js';
 
 // Languages whose minutes we track. Mirrors the server `Language` union
 // (only zh/es are user-selectable today; ja/ko/vi are not yet enabled).
-const SUPPORTED_LANGUAGES: Language[] = ['zh', 'es'];
-
-/** Coerce a query param to a supported language, falling back to 'zh'. */
-function resolveLanguage(raw: unknown): Language {
-  return SUPPORTED_LANGUAGES.includes(raw as Language) ? (raw as Language) : 'zh';
-}
-
-/**
- * Coerce an increment-request language to a supported one, or `undefined` when
- * absent/unrecognized. Unlike resolveLanguage, this does NOT default to 'zh' —
- * a missing language should fall through to the user's selectedLanguage in the
- * service, not silently credit Chinese.
- */
-function resolveIncrementLanguage(raw: unknown): Language | undefined {
-  return SUPPORTED_LANGUAGES.includes(raw as Language) ? (raw as Language) : undefined;
-}
-
-/**
- * UserMinutePoints Controller — HTTP handlers for minute-point operations.
- */
 export class UserMinutePointsController {
   constructor(private userMinutePointsService: UserMinutePointsService) {}
 
   /**
-   * POST /api/users/minute-points/increment
+   * POST /api/users/minutePoints/increment
    * Body: { timestamp: ISO-8601, tz: IANA, language?: <supported> }
    * The earned minute is attributed to the client-supplied language (what the
    * user was actually studying); falls back to selectedLanguage if omitted.
@@ -48,7 +29,7 @@ export class UserMinutePointsController {
       await this.userMinutePointsService.incrementMinutePoints(userId, {
         timestamp,
         tz,
-        language: resolveIncrementLanguage(language),
+        language: resolveOptionalLanguage(language),
       });
       res.status(204).end();
     } catch (error) {
@@ -57,10 +38,10 @@ export class UserMinutePointsController {
   }
 
   /**
-   * POST /api/night-market/dev/adjust-minutes  (template-author only)
+   * POST /api/nightMarket/dev/adjustMinutes  (template-author only)
    * Body: { delta: integer, timestamp: ISO-8601, tz: IANA }
    * Emits an artificial earn (+) or loss (−) minute signal and reconciles the night market.
-   * Returns { totalMinutePoints (net), grossMinutesEarned }.
+   * Returns { totalMinutePoints (net), lifetimeMinutesEarned (gross) }.
    */
   async adjustMinutesForAuthor(req: Request, res: Response): Promise<void> {
     try {
@@ -85,7 +66,7 @@ export class UserMinutePointsController {
   }
 
   /**
-   * GET /api/users/minute-points/calendar/:yearMonth?language=<lang>
+   * GET /api/users/minutePoints/calendar/:yearMonth?language=<lang>
    * Calendar is scoped to one language (defaults to 'zh').
    */
   async getCalendar(req: Request, res: Response): Promise<void> {
@@ -108,7 +89,7 @@ export class UserMinutePointsController {
   }
 
   /**
-   * GET /api/users/minute-points/summary?language=<lang>&tz=<IANA>&timestamp=<ISO>
+   * GET /api/users/minutePoints/summary?language=<lang>&tz=<IANA>&timestamp=<ISO>
    * Per-language lifetime total + today's minutes, plus the global current streak.
    * Powers the home screen and the fire badge for the selected language.
    */

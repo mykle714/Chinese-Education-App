@@ -76,3 +76,23 @@ export const formatTimeBreakdown = (breakdown: TimeBreakdown): string => {
   const lastPart = parts.pop();
   return `${parts.join(', ')} and ${lastPart}`;
 };
+
+/**
+ * `m:ss` from a millisecond duration.
+ *
+ * Shared by every game clock so they all render identically: Word Search's
+ * count-UP HUD timer and its Games-hub resume card (WordSearchPage /
+ * WordSearchHubItem) and Match Speed's count-DOWN run clock (MatchSpeedHeader).
+ * Hoisted here out of `src/games/word-search/constants.ts` when Match Speed
+ * became the third caller — a game-agnostic formatter has no business living in
+ * one game's tunables file. Direction is the caller's concern; this only formats
+ * a non-negative duration.
+ *
+ * Referenced by docs/WORD_SEARCH_GAME.md and docs/MATCH_SPEED_GAME.md.
+ */
+export function formatTimeMs(ms: number): string {
+  const total = Math.floor(Math.max(0, ms) / 1000);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}

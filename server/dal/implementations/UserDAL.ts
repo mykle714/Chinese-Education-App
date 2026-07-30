@@ -1,7 +1,7 @@
 import { PoolClient } from 'pg';
 import { BaseDAL } from '../base/BaseDAL.js';
 import { IUserDAL } from '../interfaces/IUserDAL.js';
-import { dbManager } from '../base/DatabaseManager.js';
+import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
 import { User, UserCreateData, UserUpdateData } from '../../types/index.js';
 import { NotFoundError, ValidationError } from '../../types/dal.js';
 
@@ -10,7 +10,7 @@ import { NotFoundError, ValidationError } from '../../types/dal.js';
  * Handles all database operations for User entities
  */
 export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> implements IUserDAL {
-  constructor() {
+  constructor(dbManager: DatabaseManager = defaultDbManager) {
     super(dbManager, 'Users', 'id'); // Use proper table name with camelCase columns
   }
 
@@ -168,96 +168,8 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
     return result;
   }
 
-  /**
-   * Get total minute points and current streak for a user
-   */
-  async getTotalMinutePoints(userId: string): Promise<{ totalMinutePoints: number; currentStreak: number }> {
-    if (!userId) {
-      throw new ValidationError('User ID is required');
-    }
 
-    const result = await this.dbManager.executeQuery<{ totalminutepoints: number; currentstreak: number }>(async (client) => {
-      return await client.query(
-        'SELECT "totalMinutePoints" as totalminutepoints, "currentStreak" as currentstreak FROM Users WHERE id = $1',
-        [userId]
-      );
-    });
 
-    if (result.recordset.length === 0) {
-      throw new NotFoundError(`User with ID ${userId} not found`);
-    }
-
-    return {
-      totalMinutePoints: result.recordset[0].totalminutepoints || 0,
-      currentStreak: result.recordset[0].currentstreak || 0
-    };
-  }
-
-  /**
-   * Update total minute points for a user
-   */
-  async updateTotalMinutePoints(userId: string, totalPoints: number): Promise<boolean> {
-    if (!userId) {
-      throw new ValidationError('User ID is required');
-    }
-    if (totalPoints < 0) {
-      throw new ValidationError('Total points cannot be negative');
-    }
-
-    const result = await this.dbManager.executeQuery(async (client) => {
-      return await client.query('UPDATE Users SET "totalMinutePoints" = $1 WHERE id = $2', [totalPoints, userId]);
-    });
-
-    return result.rowsAffected > 0;
-  }
-
-  /**
-   * Increment total minute points for a user
-   */
-  async incrementTotalMinutePoints(userId: string, pointsToAdd: number): Promise<boolean> {
-    if (!userId) {
-      throw new ValidationError('User ID is required');
-    }
-    if (pointsToAdd < 0) {
-      throw new ValidationError('Points to add cannot be negative');
-    }
-
-    const result = await this.dbManager.executeQuery(async (client) => {
-      return await client.query(
-        'UPDATE Users SET "totalMinutePoints" = "totalMinutePoints" + $1 WHERE id = $2',
-        [pointsToAdd, userId]
-      );
-    });
-
-    return result.rowsAffected > 0;
-  }
-
-  /**
-   * Adjust totalMinutePoints (the NET balance) by a SIGNED delta, floored at 0 — the general
-   * form of incrementTotalMinutePoints that also allows debits without underflowing. Returns the
-   * resulting balance. Used by the author minute-adjust tool (a −N debit floors like the penalty
-   * cron's GREATEST(0, …)); the study-tick +1 path keeps using incrementTotalMinutePoints.
-   */
-  async adjustTotalMinutePoints(userId: string, delta: number): Promise<number> {
-    if (!userId) {
-      throw new ValidationError('User ID is required');
-    }
-
-    const result = await this.dbManager.executeQuery<{ totalminutepoints: number }>(async (client) => {
-      return await client.query(
-        `UPDATE Users
-         SET "totalMinutePoints" = GREATEST(0, "totalMinutePoints" + $1)
-         WHERE id = $2
-         RETURNING "totalMinutePoints" AS totalminutepoints`,
-        [delta, userId]
-      );
-    });
-
-    if (result.recordset.length === 0) {
-      throw new NotFoundError(`User with ID ${userId} not found`);
-    }
-    return result.recordset[0].totalminutepoints ?? 0;
-  }
 
   /**
    * Update last minute-point increment timestamp for rate limiting.
@@ -327,14 +239,22 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
       name: string;
       totalminutepoints: number;
     }>(async (client) => {
+      // Balances are per-(user,language) since migration 134, so the cross-language
+      // total is rolled up here. The aggregate is over one row per language the user
+      // studies (a handful), NOT over the userminutepoints day ledger — it does not
+      // grow with account age.
       return await client.query(`
         SELECT
-          id,
-          email,
-          name,
-          COALESCE("totalMinutePoints", 0) as totalminutepoints
-        FROM Users
-        ORDER BY "totalMinutePoints" DESC NULLS LAST, "createdAt" ASC
+          u.id,
+          u.email,
+          u.name,
+          COALESCE(t.net, 0) as totalminutepoints
+        FROM Users u
+        LEFT JOIN (
+          SELECT "userId", SUM("netMinutePoints") AS net
+          FROM user_language_minute_totals GROUP BY "userId"
+        ) t ON t."userId" = u.id
+        ORDER BY totalminutepoints DESC NULLS LAST, u."createdAt" ASC
       `);
     });
 
@@ -360,17 +280,29 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
       ispublic: boolean;
       avatariconid: string | null;
     }>(async (client) => {
+      // Per-language balances/streaks (migration 134) rolled up for the single global
+      // row the leaderboard renders. `net` sums across languages (equivalent to the old
+      // users."totalMinutePoints"); `streak` takes the user's BEST language streak,
+      // since there is no longer one global streak and showing the highest is the
+      // charitable read of "this user's streak". Aggregated over one row per language,
+      // so the cost is bounded by language count rather than account age.
       return await client.query(`
         SELECT
-          id,
-          email,
-          name,
-          COALESCE("totalMinutePoints", 0) as totalminutepoints,
-          COALESCE("currentStreak", 0) as currentstreak,
-          "isPublic" as ispublic,
-          "avatarIconId" as avatariconid
-        FROM Users
-        ORDER BY "totalMinutePoints" DESC NULLS LAST, "createdAt" ASC
+          u.id,
+          u.email,
+          u.name,
+          COALESCE(t.net, 0) as totalminutepoints,
+          COALESCE(t.streak, 0) as currentstreak,
+          u."isPublic" as ispublic,
+          u."avatarIconId" as avatariconid
+        FROM Users u
+        LEFT JOIN (
+          SELECT "userId",
+                 SUM("netMinutePoints") AS net,
+                 MAX("currentStreak")   AS streak
+          FROM user_language_minute_totals GROUP BY "userId"
+        ) t ON t."userId" = u.id
+        ORDER BY totalminutepoints DESC NULLS LAST, u."createdAt" ASC
       `);
     });
 
@@ -385,54 +317,6 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
     }));
   }
 
-  /**
-   * Get streak info for a user.
-   */
-  async getUserStreakInfo(userId: string): Promise<{ currentStreak: number; lastStreakDate: string | null }> {
-    if (!userId) {
-      throw new ValidationError('User ID is required');
-    }
 
-    const result = await this.dbManager.executeQuery<{ currentstreak: number; laststreakdate: string | null }>(async (client) => {
-      return await client.query(
-        `SELECT
-           "currentStreak" as currentstreak,
-           to_char("lastStreakDate", 'YYYY-MM-DD') as laststreakdate
-         FROM Users WHERE id = $1`,
-        [userId]
-      );
-    });
-
-    if (result.recordset.length === 0) {
-      throw new NotFoundError(`User with ID ${userId} not found`);
-    }
-
-    return {
-      currentStreak: result.recordset[0].currentstreak || 0,
-      lastStreakDate: result.recordset[0].laststreakdate || null
-    };
-  }
-
-  /**
-   * Set the user's currentStreak to a specific value and stamp lastStreakDate.
-   * Used by the increment-on-threshold-cross path.
-   */
-  async setStreak(userId: string, currentStreak: number, lastStreakDate: string): Promise<boolean> {
-    if (!userId) {
-      throw new ValidationError('User ID is required');
-    }
-    if (currentStreak < 0) {
-      throw new ValidationError('Streak cannot be negative');
-    }
-
-    const result = await this.dbManager.executeQuery(async (client) => {
-      return await client.query(
-        'UPDATE Users SET "currentStreak" = $1, "lastStreakDate" = $2 WHERE id = $3',
-        [currentStreak, lastStreakDate, userId]
-      );
-    });
-
-    return result.rowsAffected > 0;
-  }
 
 }

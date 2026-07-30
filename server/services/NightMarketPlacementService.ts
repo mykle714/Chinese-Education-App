@@ -5,6 +5,7 @@ import {
   NIGHT_MARKET_HUB_TEMPLATE_NAME,
 } from './NightMarketTemplateService.js';
 import { placeholderAreaId } from '../dal/shared/versionSelection.js';
+import { placeholderUnitSlotsOf } from '../dal/shared/placeholderArea.js';
 import { sealsContinent, type SealPlacement } from '../dal/shared/continentSeal.js';
 import { unlocksForMinutes } from '../dal/shared/unlockSchedule.js';
 import { prunableDanglingPlacements, type PruneRect } from '../dal/shared/templatePrune.js';
@@ -30,6 +31,20 @@ const GENERIC_OCCUPANT_ASSET_ID = 'occupant-generic';
 
 /** Log prefix for the opt-in placement decision trace (nms Iterate). Grep-able in `docker logs`. */
 const TRACE_TAG = '[NightMarket:placement]';
+
+/**
+ * Safety cap on how many templates {@link NightMarketPlacementService.ensureFreeSlot} may spawn
+ * back-to-back while hunting for one that exposes a free placeholder slot.
+ *
+ * Not every template carries placeholder areas (pure street/decoration pieces exist), so a single
+ * spawn is NOT guaranteed to produce a slot — the grant loop keeps growing the continent until one
+ * does. Each spawn makes real progress (the continent strictly grows), so the loop terminates on
+ * its own once the catalog offers a placeholder-bearing template; this cap only bounds the
+ * pathological case where the anchor algorithm can only ever mate slot-less templates, which would
+ * otherwise balloon a user's continent inside one tick. Hitting it logs and defers the remaining
+ * entitlement to the next tick (grants are idempotent, so nothing is lost).
+ */
+const MAX_CONSECUTIVE_SPAWNS_PER_GRANT = 8;
 
 /**
  * Render one {@link SpawnTraceEvent} to human-readable console lines. Lives here (service layer),
@@ -148,10 +163,13 @@ export interface PlacedSlot {
  * and resolves template geometry via {@link NightMarketTemplateService}; the spawn geometry itself
  * is the pure {@link ../dal/shared/templatePlacement} engine.
  *
- * Three entry points:
- *   • {@link grantUnlocks} — idempotent reconcile: fill slots (spawning as needed) up to the
- *     schedule's entitlement for the user's current minutes. Safe to call on every minute tick.
- *   • {@link placeUnlock} — fill exactly one free slot across all placements (null when full).
+ * Entry points:
+ *   • {@link grantUnlocks} — idempotent reconcile: fill unit slots up to the schedule's entitlement
+ *     for the user's current minutes, growing the continent ONLY when an unlock finds no free slot
+ *     (lazy spawn). Safe to call on every minute tick.
+ *   • {@link ensureFreeSlot} — guarantee a free slot exists, growing the continent if it doesn't.
+ *   • {@link placeUnlock} — fill exactly one free slot across all placements (null when full; does
+ *     not grow the continent).
  *   • {@link spawnTemplate} — run the anchor algorithm once and persist the new placement.
  *
  * Version selection is NOT this service's job: it inserts/omits occupant rows and appends
@@ -171,21 +189,21 @@ export class NightMarketPlacementService {
    * future live balance change. `grantUnlocks` is the grant-only half (still called every study
    * tick, where the balance only rises). Returns the resulting occupant count.
    */
-  async reconcileUnlocks(userId: string, netMinutePoints: number): Promise<{ target: number; total: number }> {
+  async reconcileUnlocks(userId: string, language: string, netMinutePoints: number): Promise<{ target: number; total: number }> {
     const target = unlocksForMinutes(netMinutePoints);
-    const current = await this.placementDAL.countOccupantsByUser(userId);
+    const current = await this.placementDAL.countOccupantsByUser(userId, language);
 
     if (current > target) {
       // Over entitlement (points were lost) → trim the surplus occupants, then prune any template
       // that decay left empty AND weakly attached (see pruneDanglingTemplates). Emptying a stall can
       // strand its whole template on the fringe; we shrink the continent to match the lost content.
-      await this.placementDAL.deleteSurplusOccupants(userId, target);
-      await this.pruneDanglingTemplates(userId);
+      await this.placementDAL.deleteSurplusOccupants(userId, language, target);
+      await this.pruneDanglingTemplates(userId, language);
       return { target, total: target };
     }
 
     // At/under entitlement → the grant path fills/spawns up to target (no-op when already there).
-    const result = await this.grantUnlocks(userId, netMinutePoints);
+    const result = await this.grantUnlocks(userId, language, netMinutePoints);
     return { target, total: result.total };
   }
 
@@ -212,12 +230,12 @@ export class NightMarketPlacementService {
    * zero here by the empty rule). Returns the ids removed. NOTE: this deliberately REVERSES the old
    * "placements are append-only, never removed" invariant (migration 112 / streak-cron docs).
    */
-  async pruneDanglingTemplates(userId: string): Promise<{ removedIds: string[] }> {
-    const placements = await this.placementDAL.findPlacementsByUser(userId);
+  async pruneDanglingTemplates(userId: string, language: string): Promise<{ removedIds: string[] }> {
+    const placements = await this.placementDAL.findPlacementsByUser(userId, language);
     if (placements.length === 0) return { removedIds: [] };
 
     // Per-placement occupant count (empty test) — group the user's occupants by placement.
-    const occupants = await this.placementDAL.findOccupantsByUser(userId);
+    const occupants = await this.placementDAL.findOccupantsByUser(userId, language);
     const occCount = new Map<string, number>();
     for (const o of occupants) {
       occCount.set(o.placedTemplateId, (occCount.get(o.placedTemplateId) ?? 0) + 1);
@@ -248,36 +266,54 @@ export class NightMarketPlacementService {
   }
 
   /**
-   * Reconcile a user's occupant count up to their entitlement `unlocks(totalMinutePoints)`. Fills
-   * free placeholder slots first; when none remain, spawns a new template and fills into it. Each
-   * loop iteration makes guaranteed progress (a fill, or a spawn+fill, or a break), so it always
-   * terminates — a spawn that can't grow the continent, or a spawned template with no free slot,
-   * stops the pass. Idempotent: when already at/above target it does nothing. GRANT-ONLY — use
-   * {@link reconcileUnlocks} when the balance may have DROPPED (it also decays).
+   * Reconcile a user's occupant count up to their entitlement `unlocks(netMinutePoints)`.
+   *
+   * LAZY-SPAWN MODEL (decision 2026-07-29, docs/NIGHT_MARKET_TEMPLATES.md § "Unlock economy").
+   * The continent grows ONLY on demand: a template is placed at the moment an unlock needs a slot
+   * and the continent has none left, and that same unlock then occupies a slot in the new template.
+   * Nothing is placed speculatively — the continent never carries a template the user has not yet
+   * earned something on. Growing is still FREE (it never consumes an unlock), so the invariant
+   * `occupantCount === unlocks(m)` holds and nothing about decay, the cron's `unlocks(m)` target, or
+   * the schedule is involved.
+   *
+   * The pass is therefore just: while under target, `ensureFreeSlot` (which spawns only when nothing
+   * is free) → occupy that slot. Nothing runs after the loop.
+   *
+   * (An earlier build spawned EAGERLY — one extra pass after the loop so the next template stood
+   * ready and empty before it was earned. That was reverted: it put unearned templates on screen.
+   * With one unlock per UNIT slot, a freshly spawned template still fills up gradually — its first
+   * unit is taken by the unlock that triggered the spawn, and the rest light up one at a time.)
+   *
+   * Each iteration makes guaranteed progress (a fill, or a break), so it always terminates; only an
+   * impossible spawn (no legal placement) or the spawn cap stops the pass early. Idempotent: when
+   * already at target it does nothing, and a deferred pass simply resumes on the next tick.
+   * GRANT-ONLY — use {@link reconcileUnlocks} when the balance may have DROPPED (it also decays).
    */
-  async grantUnlocks(userId: string, totalMinutePoints: number): Promise<GrantResult> {
-    const target = unlocksForMinutes(totalMinutePoints);
-    let current = await this.placementDAL.countOccupantsByUser(userId);
+  async grantUnlocks(userId: string, language: string, netMinutePoints: number): Promise<GrantResult> {
+    const target = unlocksForMinutes(netMinutePoints);
+    let current = await this.placementDAL.countOccupantsByUser(userId, language);
 
     let granted = 0;
     let spawned = 0;
 
     while (current < target) {
-      // Prefer backfilling an existing free slot before growing the continent.
-      const filled = await this.placeUnlock(userId);
-      if (filled) {
-        current++;
-        granted++;
-        continue;
+      // Growth on demand: this spawns ONLY when the continent has no free unit slot left — the
+      // unlock about to be placed is what pays for (well, triggers) the new template.
+      const vacancy = await this.ensureFreeSlot(userId, language, current, target);
+      spawned += vacancy.spawned;
+      if (!vacancy.slot) {
+        // No legal spawn, or the cap burned on slot-less templates (both already logged). Stop the
+        // pass; the next tick retries (grants are idempotent and the entitlement gap persists).
+        break;
       }
 
-      // Continent is full → grow it, then fill the fresh template's first slot.
-      const row = await this.spawnTemplate(userId);
-      if (!row) break; // no legal spawn (logged in spawnTemplate) — can't grant further
-
-      spawned++;
-      const filledAfter = await this.placeUnlock(userId);
-      if (!filledAfter) break; // spawned template exposed no free slot — avoid an infinite loop
+      await this.placementDAL.insertOccupant(
+        userId,
+        language,
+        vacancy.slot.placementId,
+        vacancy.slot.placeholderAreaId,
+        GENERIC_OCCUPANT_ASSET_ID,
+      );
       current++;
       granted++;
     }
@@ -286,24 +322,91 @@ export class NightMarketPlacementService {
   }
 
   /**
-   * Fill the FIRST free placeholder slot across the user's placements (placement creation order,
-   * then the template's stored area order — deterministic). Inserts the occupant and returns the
-   * slot, or `null` when every slot is occupied (the caller then spawns).
+   * Guarantee the continent exposes at least one free placeholder slot, growing it if it does not,
+   * and return that slot (`null` when growth is impossible or capped).
+   *
+   * A spawn is NOT guaranteed to produce a slot: not every template carries placeholder areas (pure
+   * street/decoration pieces exist) and the anchor algorithm picks by geometry, not slot count. So
+   * this keeps spawning until a slot appears, bounded by {@link MAX_CONSECUTIVE_SPAWNS_PER_GRANT} —
+   * every spawn strictly grows the continent, so the hunt ends as soon as the catalog offers a
+   * placeholder-bearing mate. `current`/`target` are for the cap log only.
    */
-  async placeUnlock(userId: string): Promise<PlacedSlot | null> {
-    const placements = await this.placementDAL.findPlacementsByUser(userId);
-    const filled = await this.filledByPlacement(userId);
+  async ensureFreeSlot(
+    userId: string,
+    language: string,
+    current?: number,
+    target?: number,
+  ): Promise<{ slot: PlacedSlot | null; spawned: number }> {
+    let slot = await this.findFreeSlot(userId, language);
+    let spawned = 0;
+
+    // Nothing placed yet (an account whose starter hub has not been seeded — seeding happens on
+    // account creation / first layout read): there is no anchor to grow from, so spawning could only
+    // fail noisily every tick. Leave it to the seed; the next pass grows normally.
+    if (!slot && (await this.placementDAL.countPlacementsByUser(userId, language)) === 0) {
+      return { slot: null, spawned: 0 };
+    }
+
+    while (!slot && spawned < MAX_CONSECUTIVE_SPAWNS_PER_GRANT) {
+      const row = await this.spawnTemplate(userId, language);
+      if (!row) break; // no legal spawn (logged in spawnTemplate) — can't grow further
+      spawned++;
+      slot = await this.findFreeSlot(userId, language);
+    }
+
+    if (!slot && spawned >= MAX_CONSECUTIVE_SPAWNS_PER_GRANT) {
+      console.warn(
+        `[NightMarket] grant-spawn-cap user=${userId.substring(0, 8)}… ` +
+          `spawned=${spawned} without exposing a free placeholder slot; ` +
+          `current=${current ?? '?'} target=${target ?? '?'} — deferring the remaining entitlement`,
+      );
+    }
+
+    return { slot, spawned };
+  }
+
+  /**
+   * Fill the FIRST free placeholder slot across the user's placements. Thin wrapper over
+   * {@link findFreeSlot} + occupant insert; does NOT grow the continent, so it returns `null` when
+   * every slot is occupied. (The grant loop uses {@link ensureFreeSlot} + insert directly so it
+   * doesn't re-scan for the slot it was just handed.)
+   */
+  async placeUnlock(userId: string, language: string): Promise<PlacedSlot | null> {
+    const slot = await this.findFreeSlot(userId, language);
+    if (!slot) return null;
+    await this.placementDAL.insertOccupant(
+      userId,
+      language,
+      slot.placementId,
+      slot.placeholderAreaId,
+      GENERIC_OCCUPANT_ASSET_ID,
+    );
+    return slot;
+  }
+
+  /**
+   * The FIRST free placeholder slot across the user's placements (placement creation order, then
+   * the template's stored area order, then each area's unit order — deterministic), or `null` when
+   * every slot is occupied. Read-only: this is the "is there room?" probe both {@link placeUnlock}
+   * and {@link ensureFreeSlot} share, so occupancy is decided in exactly one place.
+   *
+   * ONE UNLOCK = ONE UNIT SLOT. An authored area is split by
+   * {@link ../dal/shared/placeholderArea placeholderUnitSlots} into
+   * occupant-sized (4×5 / 5×4) units, so a double-sized 4×10/10×4 area is TWO slots that fill one
+   * at a time. Iterating whole areas here is what used to make a single earned minute occupy both
+   * halves of such an area at once.
+   */
+  private async findFreeSlot(userId: string, language: string): Promise<PlacedSlot | null> {
+    const placements = await this.placementDAL.findPlacementsByUser(userId, language);
+    const filled = await this.filledByPlacement(userId, language);
     const scoringCache = new Map<string, VersionScoringInputs>();
 
     for (const p of placements) {
       const scoring = await this.scoringFor(p.templateName, scoringCache);
       const occupied = filled.get(p.id) ?? new Set<string>();
-      for (const area of scoring.placeholderAreas) {
-        const areaId = placeholderAreaId(area);
-        if (!occupied.has(areaId)) {
-          await this.placementDAL.insertOccupant(userId, p.id, areaId, GENERIC_OCCUPANT_ASSET_ID);
-          return { placementId: p.id, placeholderAreaId: areaId };
-        }
+      for (const unit of placeholderUnitSlotsOf(scoring.placeholderAreas)) {
+        const slotId = placeholderAreaId(unit);
+        if (!occupied.has(slotId)) return { placementId: p.id, placeholderAreaId: slotId };
       }
     }
 
@@ -316,11 +419,11 @@ export class NightMarketPlacementService {
    * activeVersion 0 — recompute-on-read settles its real version). Emits a `template-match-not-found`
    * log for each failed anchor. Returns the new placement row, or `null` when no legal spawn exists.
    */
-  async spawnTemplate(userId: string): Promise<TemplatePlacementRow | null> {
-    const placements = await this.placementDAL.findPlacementsByUser(userId);
+  async spawnTemplate(userId: string, language: string): Promise<TemplatePlacementRow | null> {
+    const placements = await this.placementDAL.findPlacementsByUser(userId, language);
     // Real occupants matter to the seal guard: a filled slot can flip a placement to a version
     // whose street mask closes an edge, so the simulation must see the live fill state.
-    const filled = await this.filledByPlacement(userId);
+    const filled = await this.filledByPlacement(userId, language);
     const { plan, failures, placed } = await this.planNextPlacement(placements, filled);
 
     // Structured diagnostics — one line per anchor that yielded no legal candidate (spec logging).
@@ -335,7 +438,7 @@ export class NightMarketPlacementService {
     }
 
     if (!plan) return null;
-    return this.placementDAL.insertPlacement(userId, plan.templateName, plan.version, plan.offsetCol, plan.offsetRow);
+    return this.placementDAL.insertPlacement(userId, language, plan.templateName, plan.version, plan.offsetCol, plan.offsetRow);
   }
 
   /**
@@ -502,8 +605,8 @@ export class NightMarketPlacementService {
   // ── internals ───────────────────────────────────────────────────────────────────────────
 
   /** Group a user's occupants into `placementId → Set<placeholderAreaId>` (the filled slots). */
-  private async filledByPlacement(userId: string): Promise<Map<string, Set<string>>> {
-    const occupants = await this.placementDAL.findOccupantsByUser(userId);
+  private async filledByPlacement(userId: string, language: string): Promise<Map<string, Set<string>>> {
+    const occupants = await this.placementDAL.findOccupantsByUser(userId, language);
     const filled = new Map<string, Set<string>>();
     for (const o of occupants) {
       const set = filled.get(o.placedTemplateId) ?? new Set<string>();

@@ -47,6 +47,10 @@ export interface SavedWordSearchState {
     hintRevealCount: number;
     hintLocationRevealed: boolean;
     rewardedBonusWords: string[];
+    /** Words that received a hint on this board — they earn no flashcard mark when
+     *  found (see WordSearchPage's `markWordFound`). Optional: snapshots written
+     *  before hint-tracking existed simply restore as "nothing hinted". */
+    hintedWords?: string[];
 }
 
 /** Persist the in-progress board so it survives a page exit / app backgrounding. */

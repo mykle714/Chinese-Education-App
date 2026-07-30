@@ -20,7 +20,9 @@ import { useEffect } from "react";
  *     ~300ms, BUT ONLY when that tap lands on non-interactive content. Preventing a
  *     `touchend` also cancels the synthetic `click`, so suppressing it over a control
  *     would swallow rapid button/menu taps (undo/redo spam, snap toggles, …); controls
- *     already block double-tap zoom via their own `touch-action`. See `isInteractiveTarget`.
+ *     already block double-tap zoom via their own `touch-action`. Game boards are covered
+ *     by that same reasoning and are recognised by their `touch-action: none` rather than
+ *     by their cursor. See `isInteractiveTarget`.
  *
  * This complements (does not replace) the per-surface `touch-action: none`/
  * `pan-y` already used across the app — those handle single-element gestures;
@@ -64,6 +66,20 @@ export function useBlockZoom(active = true): void {
                 )
             ) {
                 return true;
+            }
+            // A surface that already declares `touch-action: none` cannot double-tap
+            // zoom in the first place, so there is nothing here to suppress — only a
+            // click to preserve. This check exists because the `cursor` heuristic
+            // below is not sufficient on its own: it inspects the DEEPEST touched
+            // node, and a tappable container can easily contain children that set
+            // their own non-pointer cursor. Match Speed hit exactly that — its cards
+            // are `<Box onClick cursor="pointer">` but a tap lands inside CPCDRow,
+            // whose character cells render `cursor: default` unless individually
+            // interactive. Every rapid tap on a card was therefore judged
+            // non-interactive and had its click cancelled. `touch-action` is not an
+            // inherited property, so walk ancestors rather than reading the target.
+            for (let node: Element | null = el; node; node = node.parentElement) {
+                if (window.getComputedStyle(node).touchAction === "none") return true;
             }
             return window.getComputedStyle(el).cursor === "pointer";
         };

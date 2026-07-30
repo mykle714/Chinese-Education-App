@@ -14,7 +14,7 @@
  *     example-sentence tagging pass (partOfSpeechDict), which documents lack.
  *
  * Data flow: useVocabularyProcessing already fetches det rows for every
- * 1–4-char substring of the document (POST /api/vocabEntries/by-tokens →
+ * 1–4-char substring of the document (POST /api/vocabEntries/byTokens →
  * DICTIONARY_COLUMNS includes frequencyScore + matchException), so the gsa
  * runs entirely on data the reader has in memory — no extra requests.
  *

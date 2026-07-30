@@ -2,6 +2,7 @@ import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
+import { IUserLanguageTotalsDAL } from '../dal/interfaces/IUserLanguageTotalsDAL.js';
 import { IRefreshTokenDAL } from '../dal/interfaces/IRefreshTokenDAL.js';
 import { User, UserCreateData, UserLoginData, AuthResponse, Language } from '../types/index.js';
 import { ValidationError, DuplicateError, NotFoundError, DALError } from '../types/dal.js';
@@ -51,7 +52,10 @@ export interface RefreshResult {
 export class UserService {
   constructor(
     private userDAL: IUserDAL,
-    private refreshTokenDAL: IRefreshTokenDAL
+    private refreshTokenDAL: IRefreshTokenDAL,
+    // Per-(user,language) counters + streaks (migration 134). Needed because the
+    // global figures this service still exposes are now rollups, not stored columns.
+    private userLanguageTotalsDAL: IUserLanguageTotalsDAL
   ) {}
 
   /**
@@ -440,28 +444,28 @@ export class UserService {
   }
 
   /**
-   * Get total minute points and current streak for a user
+   * Cross-language rollup of a user's balance and streak, for the legacy
+   * `GET /api/users/:id/totalMinutePoints` endpoint.
+   *
+   * Both figures are per-language since migration 134, so there is no single stored
+   * value to return: `totalMinutePoints` sums the languages (equivalent to the old
+   * global counter) and `currentStreak` reports the user's BEST language streak.
+   * Summed in application code over one row per language — bounded by language count,
+   * not account age.
+   *
+   * Prefer `UserMinutePointsService.getLanguageSummary` for anything user-facing; it
+   * returns the figures for the language actually being studied.
    */
   async getTotalMinutePoints(userId: string): Promise<{ totalMinutePoints: number; currentStreak: number }> {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
 
-    return await this.userDAL.getTotalMinutePoints(userId);
-  }
-
-  /**
-   * Increment total minute points for a user (used during daily sync)
-   */
-  async incrementTotalMinutePoints(userId: string, pointsToAdd: number): Promise<boolean> {
-    if (!userId) {
-      throw new ValidationError('User ID is required');
-    }
-    if (pointsToAdd < 0) {
-      throw new ValidationError('Points to add must be positive');
-    }
-
-    return await this.userDAL.incrementTotalMinutePoints(userId, pointsToAdd);
+    const rows = await this.userLanguageTotalsDAL.findAllForUser(userId);
+    return {
+      totalMinutePoints: rows.reduce((sum, r) => sum + r.netMinutePoints, 0),
+      currentStreak: rows.reduce((max, r) => Math.max(max, r.currentStreak), 0),
+    };
   }
 
   /**

@@ -10,8 +10,9 @@ export const GAME_KEY = "bubbleMatch";
  * Bubble Match — tunable constants.
  *
  * Everything here is meant to be adjusted while balancing the game. The level
- * table is the main lever: pair counts sum to GAME_DISTRIBUTION's total so a
- * single shuffled pool is split across levels with no repeats.
+ * table (LEVEL_CONFIGS) is the main lever: every level plays the SAME full pool
+ * of TOTAL_PAIRS cards, so difficulty comes only from how fast the bubbles
+ * launch and how fast the ceiling drops.
  */
 
 // Launch config: how many cards the "Play" button targets from each bucket.
@@ -28,7 +29,8 @@ export const GAME_DISTRIBUTION: Record<string, number> = {
 };
 
 // Total pairs in a full run (sum of GAME_DISTRIBUTION). Every game uses them all
-// — 20 pairs → 40 bubbles. The level only changes launch cadence + duration.
+// — 20 pairs → 40 bubbles. The level only changes launch cadence + ceiling-shrink
+// speed; there is no per-level pair count and no clock (see LEVEL_CONFIGS).
 export const TOTAL_PAIRS = Object.values(GAME_DISTRIBUTION).reduce((a, b) => a + b, 0);
 
 // Floor for a "Play Again" board. That replay keeps the pairs the player failed
@@ -48,9 +50,10 @@ export const MAX_AVOID_IDS = 200;
 // Three independently-playable difficulty levels. Higher levels launch the
 // 40 bubbles faster AND drop the ceiling faster once they're all out, so the
 // field jams quicker. There is no clock — the only loss is the field over-packing
-// under the descending ceiling. Levels do NOT chain — the player picks one from
-// the start screen and plays it on its own; clearing a harder level also banks
-// every easier level's weekly badge. The old second tier (interval ≈ 1425 ms)
+// under the descending ceiling. Levels do NOT chain — the player picks one on the
+// GAMES HUB (one HubMenuArrayItem sub-card per entry below; there is no in-game
+// picker) and plays it on its own; clearing a harder level also banks every easier
+// level's weekly badge. The old second tier (interval ≈ 1425 ms)
 // was dropped, leaving Chill / Hustle / Torture.
 export const LEVEL_CONFIGS: LevelConfig[] = [
     { level: 1, label: "Chill", launchIntervalMs: 1800, shrinkSpeedPxPerSec: 9 },

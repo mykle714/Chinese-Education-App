@@ -32,6 +32,47 @@ import { adjustAuthorMinutes } from './nightMarketLayoutApi';
  * former demo stalls + walking pedestrians were removed; the unlock economy
  * (minute-points → unlocks) still runs, ready to drive an authored layout later.
  */
+const MINUTES_PER_HOUR = 60;
+const MINUTES_PER_DAY = 24 * MINUTES_PER_HOUR;
+
+/**
+ * Format a raw minute-points balance as a coarse "2d 3h 5m" duration for the
+ * bottom-left badge. Leading zero units are dropped (90 → "1h 30m") so the pill
+ * stays short, but a zero *middle* unit is kept (1500 → "1d 1h 0m") to avoid the
+ * ambiguous-looking "1d 0m". A balance under an hour renders as plain minutes,
+ * and 0/negative balances render as "0m".
+ */
+function formatMinutesAsDuration(totalMinutes: number): string {
+  const safeMinutes = Math.max(0, Math.floor(totalMinutes));
+  const days = Math.floor(safeMinutes / MINUTES_PER_DAY);
+  const hours = Math.floor((safeMinutes % MINUTES_PER_DAY) / MINUTES_PER_HOUR);
+  const minutes = safeMinutes % MINUTES_PER_HOUR;
+
+  const parts: string[] = [];
+  if (days > 0) parts.push(`${days}d`);
+  if (days > 0 || hours > 0) parts.push(`${hours}h`);
+  parts.push(`${minutes}m`);
+  return parts.join(' ');
+}
+
+/**
+ * The author minute-adjust tool's step buttons, ordered left-to-right (negatives first).
+ * `amt` is always MINUTES — it is what gets sent to `/api/nightMarket/dev/adjustMinutes` and
+ * what accumulates into `pendingDelta`; `label` is display-only, so the hour-sized steps read
+ * as "1h"/"6h" instead of an opaque "+60"/"+360". The hour-sized steps mirror the unlock
+ * schedule (docs/NIGHT_MARKET_TEMPLATES.md § Unlock economy), where 60 minutes is the
+ * steady-state breakpoint of one unlock per hour; the ±1 step is the finest grain the
+ * economy has, for walking the early breakpoints one unlock — one placeholder — at a time.
+ */
+const AUTHOR_MINUTE_STEPS: ReadonlyArray<{ amt: number; label: string }> = [
+  { amt: -6 * MINUTES_PER_HOUR, label: '6h' },
+  { amt: -MINUTES_PER_HOUR, label: '1h' },
+  { amt: -1, label: '1' },
+  { amt: 1, label: '1' },
+  { amt: MINUTES_PER_HOUR, label: '1h' },
+  { amt: 6 * MINUTES_PER_HOUR, label: '6h' },
+];
+
 function NightMarketEnginePage() {
   usePageTitle('Night Market Engine');
   const navigate = useNavigate();
@@ -265,7 +306,7 @@ function NightMarketEnginePage() {
           variant="body2"
           sx={{ color: 'white', fontWeight: WEIGHT.bold, textShadow: '1px 1px 2px rgba(0,0,0,0.8)' }}
         >
-          {shownMinutes} min
+          {formatMinutesAsDuration(shownMinutes)}
         </Typography>
       </Box>
 
@@ -288,7 +329,12 @@ function NightMarketEnginePage() {
             flexWrap: 'wrap',
           }}
         >
-          {([-30, -5, -1, 1, 5, 30] as const).map((amt) => (
+          {/* Step sizes track the unlock schedule's shape (docs/NIGHT_MARKET_TEMPLATES.md
+              § Unlock economy): 15 = a few mid-curve unlocks, 60 = the steady-state breakpoint
+              (1 unlock/hour), 360 = six hours, enough to grow the continent in one press. The
+              hour-sized steps are LABELLED in hours (1h / 6h) because "+360" reads as an opaque
+              minute count; `amt` stays in minutes — the label is display-only. */}
+          {AUTHOR_MINUTE_STEPS.map(({ amt, label }) => (
             <Button
               key={amt}
               className={`night-market-engine-author-tool-btn night-market-engine-author-tool-btn-${amt > 0 ? 'plus' : 'minus'}${Math.abs(amt)}`}
@@ -296,7 +342,8 @@ function NightMarketEnginePage() {
               size="small"
               onClick={() => setPendingDelta((d) => d + amt)}
               sx={{
-                minWidth: 44,
+                // Widened from 44 so the 4-glyph labels (+360 / −360) don't wrap or clip.
+                minWidth: 52,
                 height: 32,
                 p: 0,
                 fontWeight: WEIGHT.bold,
@@ -305,7 +352,7 @@ function NightMarketEnginePage() {
                 '&:hover': { backgroundColor: amt > 0 ? 'rgba(76,175,80,1)' : 'rgba(211,47,47,1)' },
               }}
             >
-              {amt > 0 ? `+${amt}` : amt}
+              {amt > 0 ? `+${label}` : `-${label}`}
             </Button>
           ))}
           <Box

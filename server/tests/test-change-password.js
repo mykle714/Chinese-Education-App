@@ -44,7 +44,7 @@ async function testChangePassword() {
     console.log('\nAttempting to change password...');
     const newPassword = 'NewPassword123';
     
-    const changePasswordResponse = await fetch(`${API_URL}/api/auth/change-password`, {
+    const changePasswordResponse = await fetch(`${API_URL}/api/auth/changePassword`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -91,7 +91,7 @@ async function testChangePassword() {
     
     // Step 4: Change the password back to the original
     console.log('\nChanging password back to the original...');
-    const revertPasswordResponse = await fetch(`${API_URL}/api/auth/change-password`, {
+    const revertPasswordResponse = await fetch(`${API_URL}/api/auth/changePassword`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -214,9 +214,9 @@ The VocabEntries table includes a tag system with the following design principle
 
 ### Minute Points & Streak
 
-- `GET /api/users/:id/total-minute-points` - Get a user's total lifetime minute points and current streak
-- `POST /api/users/minute-points/increment` - Add 1 minute point. Body: `{ timestamp, tz }`. Server resolves the streak day from the timezone.
-- `GET /api/users/minute-points/calendar/:yearMonth` - Calendar data (per-day minutes earned + penalties) for the given YYYY-MM
+- `GET /api/users/:id/totalMinutePoints` - Get a user's total lifetime minute points and current streak
+- `POST /api/users/minutePoints/increment` - Add 1 minute point. Body: `{ timestamp, tz }`. Server resolves the streak day from the timezone.
+- `GET /api/users/minutePoints/calendar/:yearMonth` - Calendar data (per-day minutes earned + penalties) for the given YYYY-MM
 - Streak breaks are detected server-side by the hourly Postgres cron at `database/cron/expire-stale-streaks.sql` (see `docs/STREAK_EXPIRATION_CRON.md`). The client no longer has a `/new-day` endpoint.
 
 ## Navigation and Page Transitions

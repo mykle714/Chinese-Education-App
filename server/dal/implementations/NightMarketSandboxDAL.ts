@@ -1,5 +1,5 @@
 import { INightMarketSandboxDAL } from '../interfaces/INightMarketSandboxDAL.js';
-import { dbManager } from '../base/DatabaseManager.js';
+import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
 import { TemplateSandboxRow, TemplateSandboxSettings } from '../../types/nightMarket.js';
 import { ValidationError } from '../../types/dal.js';
 
@@ -15,13 +15,22 @@ import { ValidationError } from '../../types/dal.js';
  */
 export class NightMarketSandboxDAL implements INightMarketSandboxDAL {
 
+  /**
+   * The connection manager, injected so the DAL can be substituted in a test.
+   * Defaults to the process-wide singleton, so `new NightMarketSandboxDAL()` at the composition
+   * root (dal/setup.ts) keeps working unchanged.
+   * See docs/CORRECTNESS_AND_PERFORMANCE_REVIEW.md finding 2.
+   */
+  constructor(protected readonly dbManager: DatabaseManager = defaultDbManager) {}
+
+
   private static readonly COLS =
     'id, "userId", "templateName", "activeVersion", "offsetCol", "offsetRow", locked, settings, "createdAt"';
 
   async findByUser(userId: string): Promise<TemplateSandboxRow[]> {
     if (!userId) throw new ValidationError('User ID is required');
 
-    const result = await dbManager.executeQuery<TemplateSandboxRow>(async (client) => {
+    const result = await this.dbManager.executeQuery<TemplateSandboxRow>(async (client) => {
       return await client.query(
         `SELECT ${NightMarketSandboxDAL.COLS}
          FROM nightmarkettemplatesandbox
@@ -38,7 +47,7 @@ export class NightMarketSandboxDAL implements INightMarketSandboxDAL {
     if (!userId) throw new ValidationError('User ID is required');
     if (!id) throw new ValidationError('Placement ID is required');
 
-    const result = await dbManager.executeQuery<TemplateSandboxRow>(async (client) => {
+    const result = await this.dbManager.executeQuery<TemplateSandboxRow>(async (client) => {
       return await client.query(
         `SELECT ${NightMarketSandboxDAL.COLS}
          FROM nightmarkettemplatesandbox
@@ -61,7 +70,7 @@ export class NightMarketSandboxDAL implements INightMarketSandboxDAL {
     if (!userId) throw new ValidationError('User ID is required');
     if (!templateName) throw new ValidationError('Template name is required');
 
-    const result = await dbManager.executeQuery<TemplateSandboxRow>(async (client) => {
+    const result = await this.dbManager.executeQuery<TemplateSandboxRow>(async (client) => {
       return await client.query(
         `INSERT INTO nightmarkettemplatesandbox
            ("userId", "templateName", "activeVersion", "offsetCol", "offsetRow", "locked")
@@ -85,7 +94,7 @@ export class NightMarketSandboxDAL implements INightMarketSandboxDAL {
 
     // `locked = false` guard: a locked placement can never be moved (server-side backstop for the
     // client's drag block). A locked or missing row returns no record → the service surfaces it.
-    const result = await dbManager.executeQuery<TemplateSandboxRow>(async (client) => {
+    const result = await this.dbManager.executeQuery<TemplateSandboxRow>(async (client) => {
       return await client.query(
         `UPDATE nightmarkettemplatesandbox
          SET "offsetCol" = $3, "offsetRow" = $4
@@ -102,7 +111,7 @@ export class NightMarketSandboxDAL implements INightMarketSandboxDAL {
     if (!userId) throw new ValidationError('User ID is required');
     if (!id) throw new ValidationError('Placement ID is required');
 
-    const result = await dbManager.executeQuery<TemplateSandboxRow>(async (client) => {
+    const result = await this.dbManager.executeQuery<TemplateSandboxRow>(async (client) => {
       return await client.query(
         `UPDATE nightmarkettemplatesandbox
          SET "activeVersion" = $3
@@ -119,7 +128,7 @@ export class NightMarketSandboxDAL implements INightMarketSandboxDAL {
     if (!userId) throw new ValidationError('User ID is required');
     if (!id) throw new ValidationError('Placement ID is required');
 
-    const result = await dbManager.executeQuery<TemplateSandboxRow>(async (client) => {
+    const result = await this.dbManager.executeQuery<TemplateSandboxRow>(async (client) => {
       return await client.query(
         `UPDATE nightmarkettemplatesandbox
          SET locked = $3
@@ -141,7 +150,7 @@ export class NightMarketSandboxDAL implements INightMarketSandboxDAL {
     if (!id) throw new ValidationError('Placement ID is required');
 
     // MERGE (`||`) rather than replace, so a partial patch never drops the other settings keys.
-    const result = await dbManager.executeQuery<TemplateSandboxRow>(async (client) => {
+    const result = await this.dbManager.executeQuery<TemplateSandboxRow>(async (client) => {
       return await client.query(
         `UPDATE nightmarkettemplatesandbox
          SET settings = settings || $3::jsonb
@@ -158,7 +167,7 @@ export class NightMarketSandboxDAL implements INightMarketSandboxDAL {
     if (!userId) throw new ValidationError('User ID is required');
     if (!id) throw new ValidationError('Placement ID is required');
 
-    const result = await dbManager.executeQuery(async (client) => {
+    const result = await this.dbManager.executeQuery(async (client) => {
       return await client.query(
         'DELETE FROM nightmarkettemplatesandbox WHERE "userId" = $1 AND id = $2',
         [userId, id],
@@ -171,7 +180,7 @@ export class NightMarketSandboxDAL implements INightMarketSandboxDAL {
   async deleteAllForUser(userId: string): Promise<number> {
     if (!userId) throw new ValidationError('User ID is required');
 
-    const result = await dbManager.executeQuery(async (client) => {
+    const result = await this.dbManager.executeQuery(async (client) => {
       return await client.query(
         'DELETE FROM nightmarkettemplatesandbox WHERE "userId" = $1',
         [userId],
@@ -186,7 +195,7 @@ export class NightMarketSandboxDAL implements INightMarketSandboxDAL {
 
     // Deliberately NOT scoped to a user: the catalog template is global, so deleting it removes
     // every author's sandbox placement of that name.
-    const result = await dbManager.executeQuery(async (client) => {
+    const result = await this.dbManager.executeQuery(async (client) => {
       return await client.query(
         'DELETE FROM nightmarkettemplatesandbox WHERE "templateName" = $1',
         [templateName],

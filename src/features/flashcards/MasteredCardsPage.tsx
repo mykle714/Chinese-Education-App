@@ -43,7 +43,7 @@ const MasteredCardsPage: React.FC = () => {
                 setLoading(true);
                 setError(null);
 
-                const response = await fetch(`${API_BASE_URL}/api/onDeck/mastered-library-cards`, {
+                const response = await fetch(`${API_BASE_URL}/api/onDeck/masteredLibraryCards`, {
                     credentials: "include",
                     headers: { Authorization: `Bearer ${token}` },
                 });

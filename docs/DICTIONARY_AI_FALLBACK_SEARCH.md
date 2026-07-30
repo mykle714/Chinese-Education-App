@@ -45,7 +45,7 @@ Given a search term, results are resolved in this order; the first stage that yi
    │                                                   note (no button — the AI already checked)
    │                     · empty hit, stale (>3 mo) → treat as a miss (offer the AI button again)
    │                     · miss           → if the term is valid pinyin, offer the "AI" button
-   └─ AI button tap →    POST /api/dictionary/ai-entry → Sonnet → write cache → render orange card
+   └─ AI button tap →    POST /api/dictionary/aiEntry → Sonnet → write cache → render orange card
                          (a network/server failure surfaces `aiError` — the button stays for retry)
 ```
 
@@ -134,7 +134,7 @@ modes. Net: a blue results pill, optionally followed by an orange **AI** pill.
 
 ### Endpoint
 
-`POST /api/dictionary/ai-entry` (auth required) — body `{ term, language, tz }`:
+`POST /api/dictionary/aiEntry` (auth required) — body `{ term, language, tz }`:
 
 1. Guard: `term` ≥2 chars and a supported language — `zh` (pinyin / Han / English), or `es`
    (non-CJK English / Spanish). Else return null.
@@ -270,7 +270,7 @@ is simply never offered. Set it in `server/.env` / `server/.env.docker` / `serve
 All logic lives in the shared **`src/hooks/useDictionarySearch.ts`** so both consumers get it:
 
 - New returned fields: `aiEntry` (the synthetic entry or null), `canAskAi` (server-computed gate),
-  `askingAi` (loading), and `askAi()` (fires `POST /api/dictionary/ai-entry`, then surfaces the
+  `askingAi` (loading), and `askAi()` (fires `POST /api/dictionary/aiEntry`, then surfaces the
   result).
 - The server `GET /api/dictionary/search` response gains `canAskAi: boolean` and an optional
   `aiCacheEntry` (a fresh non-empty cache hit, auto-shown without a button).
@@ -304,10 +304,10 @@ All logic lives in the shared **`src/hooks/useDictionarySearch.ts`** so both con
 | DAL iface | `server/dal/interfaces/IDictionaryDAL.ts` | new method signatures (incl. `getAiUsageCount`/`incrementAiUsage`) |
 | Service | `server/services/DictionaryService.ts` | `qualifiesForAiFallback(term, language)` (`/search` button gate — ≥2-char non-CJK zh/es); `buildAiSystemPrompt(language)` (per-language zh/es prompt); `generateAiEntry(term, language, userId, usageDate)` (dedicated Sonnet client + prompt caching + `web_search` tool w/ pause_turn loop + validation; accepts pinyin / Chinese / English for zh, English / Spanish for es; **daily-limit gate + increment**); `resolveAiCache` + `resolveChineseAiFallback` (staleness check) |
 | Controller | `server/controllers/DictionaryController.ts` | `aiEntry` handler (computes `usageDate` from `tz`; maps `RateLimitError` → 429); thread `canAskAi`/`aiEntry` through both `search` (pinyin) and `segmentSearch` (Chinese no-complete-match) |
-| Routes | `server/routes/dictionaryRoutes.ts` | `POST /api/dictionary/ai-entry` |
+| Routes | `server/routes/dictionaryRoutes.ts` | `POST /api/dictionary/aiEntry` |
 | Types | `server/types/*`, client `src/types.ts` | `DictionaryEntry.source?: 'ai'`; AI-entry response types |
 | Client hook | `src/hooks/useDictionarySearch.ts` | `aiEntry`, `canAskAi`, `askAi()` (sends `tz`); `aiLimitReached` + `aiLimitMessage` (429) |
-| Client UI | `src/pages/DictionaryPage.tsx` | orange unclickable card + inline orange "AI" pill; daily-limit note; results-count pill → blue, segment-count prefix removed |
+| Client UI | `src/features/dictionary/DictionaryPage.tsx` | orange unclickable card + inline orange "AI" pill; daily-limit note; results-count pill → blue, segment-count prefix removed |
 | Client UI | `src/components/AiDictionaryEntryCard.tsx` | orange synthetic card; headword font chosen from its script (CJK vs Latin) so es words render in the Latin UI font |
 | Theme | `src/theme/colors.ts` (`COLORS.yellowMain` `#FF8E47`) | orange for AI cards (existing token) |
 

@@ -5,8 +5,9 @@ import { dictionaryEntryToVocabEntry } from "../../../utils/dictEntryAdapter";
 import { getBreakdownItems } from "../../../utils/breakdownUtils";
 import type { DictionaryEntry, LongDefinitionPart } from "../../../types";
 import type { CompareState } from "../../../components/CompareWorkspace";
-import type { VocabEntry, BreakdownItem } from "./types";
+import type { VocabEntry, BreakdownItem } from "../types";
 import { FONTS } from "../../../theme/fonts";
+import { apiGet } from "../../../api/http";
 
 // A normal word tab — one looked-up dictionary entry with its own definition/examples/breakdown
 // sub-tabs (rendered by InfoCardPanelBody).
@@ -43,10 +44,12 @@ export type EipTab = EntryEipTab | CompareEipTab;
 const COMPARE_TAB_LABEL = "Compare";
 
 interface UseEipTabsOptions {
-    apiBaseUrl: string;
-    token?: string | null;
     // Ref to the EipTabStripContainer. Its clientWidth is the budget for fitting tabs.
     stripRef: RefObject<HTMLDivElement | null>;
+    // NOTE: no `apiBaseUrl` / `token`. Both were dropped when the dictionary lookup
+    // moved onto src/api/http.ts, which owns the base URL and reads the Authorization
+    // header at call time. Passing the token in is what pulled it into the callback's
+    // dependency array — see CLAUDE.md "Never reload on token refresh".
 }
 
 // All five tone colors (tones 1–4 + neutral 0). Used to assign each new tab a
@@ -107,7 +110,7 @@ function buildCompareTab(slotA: VocabEntry, usedColors: Set<string>): CompareEip
     };
 }
 
-export function useEipTabs({ apiBaseUrl, token, stripRef }: UseEipTabsOptions) {
+export function useEipTabs({ stripRef }: UseEipTabsOptions) {
     const [tabs, setTabs] = useState<EipTab[]>([]);
     const [activeIndex, setActiveIndex] = useState(0);
     // Latches to true the moment a 2nd tab is first added and stays true for
@@ -203,16 +206,11 @@ export function useEipTabs({ apiBaseUrl, token, stripRef }: UseEipTabsOptions) {
 
         latestRequestRef.current = entryKey;
         try {
-            const headers: HeadersInit = {};
-            if (token) headers.Authorization = `Bearer ${token}`;
-            const res = await fetch(
-                `${apiBaseUrl}/api/dictionary/lookup/${encodeURIComponent(entryKey)}`,
-                { headers, credentials: "include" }
+            const dictData = await apiGet<DictionaryEntry>(
+                `/api/dictionary/lookup/${encodeURIComponent(entryKey)}`
             );
-            if (!res.ok) return;
             // Drop stale responses — a newer tap superseded this one.
             if (latestRequestRef.current !== entryKey) return;
-            const dictData: DictionaryEntry = await res.json();
             const adapted = dictionaryEntryToVocabEntry(dictData);
             setTabs(prev => {
                 // Re-check dedupe in case the user double-tapped during fetch.
@@ -232,7 +230,10 @@ export function useEipTabs({ apiBaseUrl, token, stripRef }: UseEipTabsOptions) {
         } catch (err) {
             console.error(`Failed to look up dictionary entry "${entryKey}":`, err);
         }
-    }, [apiBaseUrl, token, tabs, stripRef]);
+        // No `token` dep: apiGet reads the header at call time, so this callback's
+        // identity survives a silent refresh (CLAUDE.md ⛔ rule). A non-2xx now throws
+        // and is handled by the catch below, where the old code returned early.
+    }, [tabs, stripRef]);
 
     // Re-seed an already-open entry tab from a fresher copy of the same word. Tabs hold a
     // SNAPSHOT of the entry, so a change made outside the panel while it is open (today:

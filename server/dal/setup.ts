@@ -3,7 +3,7 @@ import { UserDAL } from './implementations/UserDAL.js';
 import { RefreshTokenDAL } from './implementations/RefreshTokenDAL.js';
 import { VocabEntryDAL } from './implementations/VocabEntryDAL.js';
 import { UserMinutePointsDAL } from './implementations/UserMinutePointsDAL.js';
-import { UserLanguageTotalsDAL } from './implementations/UserLanguageTotalsDAL.js';
+import { UserLanguagePointsDAL } from './implementations/UserLanguagePointsDAL.js';
 import { DictionaryDAL } from './implementations/DictionaryDAL.js';
 import { UserService } from '../services/UserService.js';
 import { VocabEntryService } from '../services/VocabEntryService.js';
@@ -60,8 +60,9 @@ const userDAL = new UserDAL();
 const refreshTokenDAL = new RefreshTokenDAL();
 const vocabEntryDAL = new VocabEntryDAL();
 const userMinutePointsDAL = new UserMinutePointsDAL();
-// Per-(user,language) counters + streak state; replaced the global counters on `users` (migration 134).
-const userLanguageTotalsDAL = new UserLanguageTotalsDAL();
+// Per-(user, language) wallet + streak state, plus the monotonic gross counter
+// (migrations 130 and 134, docs/PER_LANGUAGE_STREAKS.md). Replaced the global counters on `users`.
+const userLanguagePointsDAL = new UserLanguagePointsDAL();
 const dictionaryDAL = new DictionaryDAL();
 const sortPacksDAL = new SortPacksDAL();
 const nightMarketDAL = new NightMarketDAL();
@@ -76,7 +77,7 @@ const communityLayoutDAL = new CommunityLayoutDAL();
 const speedReadingDAL = new SpeedReadingDAL();
 
 // Service instances (with DI)
-const userService = new UserService(userDAL, refreshTokenDAL, userLanguageTotalsDAL);
+const userService = new UserService(userDAL, refreshTokenDAL);
 const dictionaryService = new DictionaryService(dictionaryDAL);
 const vocabEntryService = new VocabEntryService(vocabEntryDAL, userDAL, dictionaryService);
 // Request-time (validator-gated) trigger for the zh discover lazy-enrichment pipeline
@@ -101,13 +102,14 @@ const nightMarketPlacementService = new NightMarketPlacementService(nightMarketP
 // Constructed after the placement service — the sandbox's Iterate action reuses its growth planner.
 const nightMarketSandboxService = new NightMarketSandboxService(nightMarketSandboxDAL, userDAL, nightMarketPlacementService);
 // Constructed after the placement service so the grant hook can be wired in.
-const userMinutePointsService = new UserMinutePointsService(userMinutePointsDAL, userLanguageTotalsDAL, userDAL, nightMarketPlacementService);
+const userMinutePointsService = new UserMinutePointsService(userMinutePointsDAL, userDAL, userLanguagePointsDAL, nightMarketPlacementService);
 const gameAssetService = new GameAssetService(gameAssetDAL);
 const gameProgressService = new GameProgressService(gameProgressDAL);
 // Community shared-layout feeds + votes; reuses vocabEntryService for the apply-to-card flow.
 const communityLayoutService = new CommunityLayoutService(communityLayoutDAL, vocabEntryService);
-// Read-only aggregate over three DALs; streak is masked for non-public users.
-const leaderboardService = new LeaderboardService(userDAL, userMinutePointsDAL, winsDAL);
+// Read-only aggregate over four DALs; streak is masked for non-public users. Deliberately
+// cross-language: it ranks on Σ per-language wallets and shows the best per-language streak.
+const leaderboardService = new LeaderboardService(userDAL, userMinutePointsDAL, userLanguagePointsDAL, winsDAL);
 // Provider-pluggable text-to-speech with an on-disk cache. No DB dependencies, but it
 // is constructed HERE rather than as a module singleton so every service has one
 // lifetime owner (docs/ARCHITECTURE_REVIEW.md finding 8).
@@ -146,7 +148,7 @@ export {
   refreshTokenDAL,
   vocabEntryDAL,
   userMinutePointsDAL,
-  userLanguageTotalsDAL,
+  userLanguagePointsDAL,
   dictionaryDAL,
   sortPacksDAL,
   userService,

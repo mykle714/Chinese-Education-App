@@ -46,21 +46,7 @@ export interface CalendarResponse {
   userFirstActivityDate: string | null;
 }
 
-/**
- * Per-(user, language) minute-points counters and streak state
- * (`user_language_minute_totals`, migration 134). Every figure here is scoped to
- * ONE language: a user studying zh and es has two independent balances, two
- * streaks, and two penalty schedules.
- *
- * Invariant: `lifetimeMinutesEarned >= netMinutePoints` — gross is monotonic and
- * penalties lower net only.
- */
-export interface UserLanguageTotals {
-  userId: string;
-  language: string;
-  netMinutePoints: number;       // NET: earns up, penalties down, floored at 0. Drives this language's unlocks.
-  lifetimeMinutesEarned: number; // GROSS: monotonic lifetime earned for this language.
-  currentStreak: number;         // Consecutive qualifying days for this language.
-  lastStreakDate: string | null; // YYYY-MM-DD — last day this language alone hit RETENTION_MINUTES.
-  lastPenaltyDate: string | null;// YYYY-MM-DD — per-language idempotency guard for the hourly cron.
-}
+// NOTE: the per-(user, language) wallet/streak/gross record is NOT declared here — it is
+// `LanguageProgress` in server/dal/interfaces/IUserLanguagePointsDAL.ts, next to the DAL that
+// owns `user_language_points` (migrations 130 + 134). This file keeps only the day-ledger and
+// calendar shapes.

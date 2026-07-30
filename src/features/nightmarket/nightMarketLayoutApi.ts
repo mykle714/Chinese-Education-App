@@ -37,9 +37,10 @@ export interface UserLayoutResponse {
 
 /**
  * Fetch the authenticated user's rendered template layout FOR ONE LANGUAGE. Each
- * (user, language) is an independent market with its own placements and starter hub
- * (migration 136), so the language selects which market is returned — callers must
- * re-fetch when the selected language changes or the previous market keeps rendering.
+ * (user, language) is an independent market with its own placements and starter hub, funded by
+ * that language's own wallet (migration 130, docs/PER_LANGUAGE_STREAKS.md), so the language
+ * selects which market is returned — callers must re-fetch when the selected language changes
+ * or the previous market keeps rendering.
  *
  * The token is read live inside src/api/http.ts so a silent refresh doesn't require
  * re-creating the caller (CLAUDE.md token rule) — callers must key their load effect on a

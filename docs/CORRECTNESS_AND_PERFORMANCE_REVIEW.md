@@ -124,7 +124,8 @@ for (const user of usersWithPoints) {
 3. **Work is discarded.** Line 68 filters to `accumulativeMinutePoints > 0` *after* the
    loop, so minutes are fetched for every zero-point user and then thrown away.
 
-`getPublicUsersWithTotalPoints` (`server/dal/implementations/UserDAL.ts:353`) returns
+`getLeaderboardRoster` (`server/dal/implementations/UserDAL.ts`, formerly
+`getPublicUsersWithTotalPoints` before migration 130 moved the points off `users`) returns
 **all** users, not only public ones — the `isPublic` flag is used later only to mask
 `currentStreak`. So N is the full user table.
 

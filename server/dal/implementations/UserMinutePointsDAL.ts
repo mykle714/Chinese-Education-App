@@ -240,8 +240,8 @@ export class UserMinutePointsDAL implements IUserMinutePointsDAL {
   // `SELECT SUM("minutesEarned") ... WHERE "userId" = $1`. It was the only read of
   // this table not bounded to a single day or month, so its cost grew linearly with
   // account age. It is now the maintained per-language counter
-  // user_language_minute_totals."lifetimeMinutesEarned" (migrations 133 then 134);
-  // read it via IUserLanguageTotalsDAL.
+  // user_language_points."lifetimeMinutesEarned" (migration 134);
+  // read it via IUserLanguagePointsDAL.
 
   async getFirstActivityDate(userId: string, language: string): Promise<string | null> {
     if (!userId) throw new ValidationError('User ID is required');

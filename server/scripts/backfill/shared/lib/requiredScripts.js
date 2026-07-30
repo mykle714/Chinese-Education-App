@@ -125,7 +125,7 @@ export const REQUIRED_SCRIPTS_ZH = [
 export const REQUIRED_SCRIPTS_ES = [
   { id: 'spanish/backfill-split-semicolon-definitions', when: 'esSemicolonDef', version: 1, deterministic: true, validationFields: ['definitions'] },
   { id: 'spanish/backfill-expand-abbreviations',        when: 'esAbbrevDef',    version: 1, deterministic: true, validationFields: ['definitions'] },
-  { id: 'spanish/backfill-process-definitions-array',   when: 'multiDef',       version: 3, validationFields: ['definitions'] },
+  { id: 'spanish/backfill-process-definitions-array',   when: 'multiDef',       version: 4, validationFields: ['definitions'] },
   // Language-shared script at scripts/backfill/backfill-icons.js — pass --lang=es.
   // Un-prefixed id because it stamps the same key for every language.
   { id: 'backfill-icons',                               when: 'always',         version: 1, deterministic: true },

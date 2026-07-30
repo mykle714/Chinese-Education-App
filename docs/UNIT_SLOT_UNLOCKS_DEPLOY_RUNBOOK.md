@@ -25,14 +25,20 @@ Two coupled changes ship together:
 
 1. **Deploy the code as usual** (`/deploy`). Nothing about the deploy is special for the app.
 2. **Redeploy the cron SQL** — `database/cron/expire-stale-streaks.sql` — to wherever prod's copy
-   lives, and leave the crontab/pg_cron schedule alone. This file is the *entire* install of the
+   lives, and leave the crontab/pg_cron schedule alone. **This step is now MANDATORY, not
+   optional:** the same commit makes the cron per-language (migration 130 dropped the `users`
+   columns the old copy reads), so an un-redeployed cron errors every tick. See
+   [PER_LANGUAGE_MINUTES_DEPLOY_RUNBOOK.md](./PER_LANGUAGE_MINUTES_DEPLOY_RUNBOOK.md). This file is the *entire* install of the
    new SQL function: it runs `CREATE OR REPLACE FUNCTION nightmarket_unlocks_for_minutes(int)`
    inside its own transaction on **every tick**, then calls it.
    - Order does not matter relative to step 1 (the app never calls the SQL function; the cron
      never calls the app).
-   - If step 2 is forgotten, the **old** cron file keeps running with its old inline `CASE` — the
-     decay targets stay correct (same numbers), so nothing breaks; the mirror simply isn't gone
-     yet. Not urgent, but finish it.
+   - ⚠️ If step 2 is forgotten, the **old** cron file errors on every tick: it selects
+     `users."totalMinutePoints"` / `"currentStreak"` / `"lastStreakDate"` / `"lastPenaltyDate"`,
+     which migration 130 dropped. The whole transaction aborts, so **no** inactivity penalty and
+     **no** occupant decay is applied until it is replaced — silently, apart from the cron log.
+     Check `docker logs` for one clean `inactivity-cron` NOTICE (or a quiet BEGIN/DO/COMMIT) after
+     the first tick. This used to be a harmless "finish it later" step; it no longer is.
 
 ## Verification SQL
 
@@ -71,12 +77,12 @@ Then confirm no market is over-occupied relative to entitlement (should return *
 
 ```sql
 SELECT n."userId", n.language, count(*) AS occupants,
-       nightmarket_unlocks_for_minutes(t."netMinutePoints") AS entitled
+       nightmarket_unlocks_for_minutes(p."totalMinutePoints") AS entitled
 FROM nightmarketunlocks n
-JOIN user_language_minute_totals t
-  ON t."userId" = n."userId" AND t.language = n.language
-GROUP BY n."userId", n.language, t."netMinutePoints"
-HAVING count(*) > nightmarket_unlocks_for_minutes(t."netMinutePoints");
+JOIN user_language_points p
+  ON p."userId" = n."userId" AND p.language = n.language
+GROUP BY n."userId", n.language, p."totalMinutePoints"
+HAVING count(*) > nightmarket_unlocks_for_minutes(p."totalMinutePoints");
 ```
 
 ## User-visible change to expect

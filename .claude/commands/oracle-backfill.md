@@ -59,7 +59,10 @@ curl -s https://api.anthropic.com/api/oauth/usage \
 `five_hour.utilization` is a **percentage** (the dollar fields are always null on
 this plan). Note `resets_at`; budget rounds against the time left; stop at ~95%.
 
-3. Confirm the word batch with the user before the first write of the run.
+3. **Do not confirm the word batch with the user.** The planner curates and ranks
+   every batch (§3/§3b); invoking this skill is standing authorization to enrich
+   whatever it selects, for the whole run. Take the first batch and go straight to
+   §2 → §4 — no pre-write check-in, no per-round batch approval.
 
 ## 2. Back up prod det — every run, no exceptions
 
@@ -115,8 +118,8 @@ server/scripts/backfill/run-prod.sh scripts/backfill/check-manifest-sync.js
 Drift where the *script* is ahead of the manifest is the dangerous direction: rows
 stamped at the older version read as current, so the planner never re-runs them.
 
-For **new** words, take the planner's candidates to the user, then follow
-`/mark-discoverable` §A1 → A1.5 (**do not skip the cedict most-popular-reading
+For **new** words, take the planner's candidates directly (no user check-in) and
+follow `/mark-discoverable` §A1 → A1.5 (**do not skip the cedict most-popular-reading
 check**) → A2 before enriching. For es use §B1–B2.
 
 > **Never bypass a script's own row selection.** Even when the planner names a
@@ -231,6 +234,32 @@ Four es-specific things to know:
   is punctuation and abbreviations (`&`, `&c.`, `'tamo'`). §B1 requires confirming the
   word list with the user anyway; do that before authoring a single prompt.
 
+**es target selection (no planner):** the goal is to backfill the *whole* table, so
+**any incomplete entry is a suitable target** — there is no curated batch to wait on.
+Work in this priority order, falling through as each drains:
+
+1. **Incomplete discoverable rows first** — already-shipped es rows missing any of
+   `longDefinition` / `exampleSentences` / `vernacularScore` (or `partsOfSpeech`).
+   These are live to learners *now* with holes, so healing them is the highest value:
+   ```sql
+   SELECT id, word1, pos FROM dictionaryentries_es
+   WHERE language='es' AND discoverable
+     AND ("partsOfSpeech" IS NULL OR "longDefinition" IS NULL
+          OR "exampleSentences" IS NULL OR "vernacularScore" IS NULL)
+   ORDER BY word1;
+   ```
+   Run only the steps whose column is null (each script's `doneGate` also skips the
+   rest), in §B3 order.
+2. **Then new rows, in any order** — pick non-discoverable rows to enrich and ship.
+   Follow §B1 (inspect POS/gender senses, flag junk/vulgar/rare senses to drop) →
+   §B2 (set `discoverable` on the canonical id) → §B3 full pipeline. Prefer common,
+   clean headwords; drop any word whose only sense is vulgar/explicit or unresolvably
+   rare rather than shipping it (note dropped words for the report).
+
+`sortable` does not exist on the es table (it is a zh-only, migration-110 column), so
+the §3b pre-pass and `promote-sortable.js` do **not** apply to Spanish — for es a row
+is either incomplete-discoverable, a new candidate, or done.
+
 Per script, three steps:
 
 ```bash
@@ -322,8 +351,8 @@ final report:
 - The backlog is large, or the burn rate implies many more rounds.
 - You found a bug, an inefficiency, or work that will need redoing (e.g. unstamped
   rows). Record it; do not stop to fix it, and do not stop to ask whether to fix it.
-- You want to check in, summarize progress, or confirm the batch again. The batch
-  was confirmed once in §1; that authorization covers the whole run.
+- You want to check in, summarize progress, or confirm the batch. Batches are never
+  confirmed with the user (§1.3); invoking the skill authorizes the whole run.
 - Quality self-doubt about authoring and reviewing your own answers. That tension is
   inherent to oracle mode and is disclosed in the report — it is not a stop condition.
 - A round finished cleanly and it feels like a natural place to hand back. It isn't.

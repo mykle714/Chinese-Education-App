@@ -1,11 +1,14 @@
 import { Request, Response } from 'express';
 import { UserMinutePointsService } from '../services/UserMinutePointsService.js';
 import { requireUserId, handleControllerError } from '../utils/controllerUtils.js';
-import { resolveLanguage, resolveOptionalLanguage } from '../utils/language.js';
-import { Language } from '../types/index.js';
+import { resolveLanguage, resolveWriteLanguage } from '../utils/languageParam.js';
 
-// Languages whose minutes we track. Mirrors the server `Language` union
-// (only zh/es are user-selectable today; ja/ko/vi are not yet enabled).
+/**
+ * UserMinutePoints Controller — HTTP handlers for minute-point operations.
+ *
+ * Every response here is scoped to ONE language (migration 130): there is no global
+ * wallet or global streak left to return. See docs/PER_LANGUAGE_STREAKS.md.
+ */
 export class UserMinutePointsController {
   constructor(private userMinutePointsService: UserMinutePointsService) {}
 
@@ -29,7 +32,7 @@ export class UserMinutePointsController {
       await this.userMinutePointsService.incrementMinutePoints(userId, {
         timestamp,
         tz,
-        language: resolveOptionalLanguage(language),
+        language: resolveWriteLanguage(language),
       });
       res.status(204).end();
     } catch (error) {
@@ -90,8 +93,9 @@ export class UserMinutePointsController {
 
   /**
    * GET /api/users/minutePoints/summary?language=<lang>&tz=<IANA>&timestamp=<ISO>
-   * Per-language lifetime total + today's minutes, plus the global current streak.
-   * Powers the home screen and the fire badge for the selected language.
+   * That language's lifetime total, today's minutes, NET wallet and streak — every
+   * figure scoped to the one language (migration 130). Powers the home screen and the
+   * fire badge for the selected language.
    */
   async getSummary(req: Request, res: Response): Promise<void> {
     try {

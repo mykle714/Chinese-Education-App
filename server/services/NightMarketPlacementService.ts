@@ -163,6 +163,11 @@ export interface PlacedSlot {
  * and resolves template geometry via {@link NightMarketTemplateService}; the spawn geometry itself
  * is the pure {@link ../dal/shared/templatePlacement} engine.
  *
+ * SCOPE: every entry point addresses ONE MARKET — a (userId, language) pair. Since migration 130
+ * each language grows its own continent funded by its own wallet (docs/PER_LANGUAGE_STREAKS.md), so
+ * studying Spanish never fills a Chinese stall. The `language` threaded through here is always the
+ * language whose minutes moved.
+ *
  * Entry points:
  *   • {@link grantUnlocks} — idempotent reconcile: fill unit slots up to the schedule's entitlement
  *     for the user's current minutes, growing the continent ONLY when an unlock finds no free slot
@@ -234,7 +239,9 @@ export class NightMarketPlacementService {
     const placements = await this.placementDAL.findPlacementsByUser(userId, language);
     if (placements.length === 0) return { removedIds: [] };
 
-    // Per-placement occupant count (empty test) — group the user's occupants by placement.
+    // Per-placement occupant count (empty test) — group this market's occupants by placement.
+    // Adjacency is computed within ONE language's continent: markets do not touch each other, so a
+    // Spanish placement is never a "neighbour" of a Chinese one.
     const occupants = await this.placementDAL.findOccupantsByUser(userId, language);
     const occCount = new Map<string, number>();
     for (const o of occupants) {
@@ -429,7 +436,7 @@ export class NightMarketPlacementService {
     // Structured diagnostics — one line per anchor that yielded no legal candidate (spec logging).
     for (const failure of failures) {
       console.warn(
-        `[NightMarket] template-match-not-found user=${userId.substring(0, 8)}… ` +
+        `[NightMarket] template-match-not-found user=${userId.substring(0, 8)}… lang=${language} ` +
           `reason=${failure.reason}` +
           (failure.edge ? ` anchor=${failure.edge}/${failure.width}@dist${failure.originDistance}` : '') +
           (failure.sealedCandidates ? ` sealedCandidates=${failure.sealedCandidates}` : '') +
@@ -604,7 +611,7 @@ export class NightMarketPlacementService {
 
   // ── internals ───────────────────────────────────────────────────────────────────────────
 
-  /** Group a user's occupants into `placementId → Set<placeholderAreaId>` (the filled slots). */
+  /** Group ONE MARKET's occupants into `placementId → Set<placeholderAreaId>` (the filled slots). */
   private async filledByPlacement(userId: string, language: string): Promise<Map<string, Set<string>>> {
     const occupants = await this.placementDAL.findOccupantsByUser(userId, language);
     const filled = new Map<string, Set<string>>();

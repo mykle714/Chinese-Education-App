@@ -2,7 +2,6 @@ import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
-import { IUserLanguageTotalsDAL } from '../dal/interfaces/IUserLanguageTotalsDAL.js';
 import { IRefreshTokenDAL } from '../dal/interfaces/IRefreshTokenDAL.js';
 import { User, UserCreateData, UserLoginData, AuthResponse, Language } from '../types/index.js';
 import { ValidationError, DuplicateError, NotFoundError, DALError } from '../types/dal.js';
@@ -52,10 +51,7 @@ export interface RefreshResult {
 export class UserService {
   constructor(
     private userDAL: IUserDAL,
-    private refreshTokenDAL: IRefreshTokenDAL,
-    // Per-(user,language) counters + streaks (migration 134). Needed because the
-    // global figures this service still exposes are now rollups, not stored columns.
-    private userLanguageTotalsDAL: IUserLanguageTotalsDAL
+    private refreshTokenDAL: IRefreshTokenDAL
   ) {}
 
   /**
@@ -443,30 +439,11 @@ export class UserService {
     return await this.userDAL.findAll();
   }
 
-  /**
-   * Cross-language rollup of a user's balance and streak, for the legacy
-   * `GET /api/users/:id/totalMinutePoints` endpoint.
-   *
-   * Both figures are per-language since migration 134, so there is no single stored
-   * value to return: `totalMinutePoints` sums the languages (equivalent to the old
-   * global counter) and `currentStreak` reports the user's BEST language streak.
-   * Summed in application code over one row per language — bounded by language count,
-   * not account age.
-   *
-   * Prefer `UserMinutePointsService.getLanguageSummary` for anything user-facing; it
-   * returns the figures for the language actually being studied.
-   */
-  async getTotalMinutePoints(userId: string): Promise<{ totalMinutePoints: number; currentStreak: number }> {
-    if (!userId) {
-      throw new ValidationError('User ID is required');
-    }
-
-    const rows = await this.userLanguageTotalsDAL.findAllForUser(userId);
-    return {
-      totalMinutePoints: rows.reduce((sum, r) => sum + r.netMinutePoints, 0),
-      currentStreak: rows.reduce((max, r) => Math.max(max, r.currentStreak), 0),
-    };
-  }
+  // NOTE: getTotalMinutePoints() was removed by migration 130 along with its endpoint
+  // (GET /api/users/:id/total-minute-points). Wallet + streak are per-language now, so there
+  // is no single figure to roll up here; user-facing callers use
+  // UserMinutePointsService.getLanguageSummary, and the leaderboard uses
+  // IUserLanguagePointsDAL.getTotalsForAllUsers(). See docs/PER_LANGUAGE_STREAKS.md.
 
   /**
    * Post-login bookkeeping. Today: refresh users.timezone so the hourly

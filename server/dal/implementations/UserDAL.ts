@@ -3,7 +3,7 @@ import { BaseDAL } from '../base/BaseDAL.js';
 import { IUserDAL } from '../interfaces/IUserDAL.js';
 import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
 import { User, UserCreateData, UserUpdateData } from '../../types/index.js';
-import { NotFoundError, ValidationError } from '../../types/dal.js';
+import { ValidationError } from '../../types/dal.js';
 
 /**
  * User Data Access Layer implementation
@@ -168,9 +168,6 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
     return result;
   }
 
-
-
-
   /**
    * Update last minute-point increment timestamp for rate limiting.
    * Only called after a successful increment.
@@ -230,79 +227,32 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
   }
 
   /**
-   * Get all users with their total minute points (used for admin/non-leaderboard queries)
+   * Leaderboard roster: identity + isPublic for every user, no points.
+   *
+   * Since migration 130 wallets are per-language, so ranking cannot be expressed as
+   * an ORDER BY on this table any more. The caller joins
+   * IUserLanguagePointsDAL.getTotalsForAllUsers() (one grouped query) and sorts on
+   * the summed wallet; `isPublic` lets it mask streak from non-public users at the
+   * response layer. Ordering here is stable-by-signup only, purely so the join
+   * output is deterministic before the caller re-sorts.
    */
-  async getAllUsersWithTotalPoints(): Promise<Array<{ userId: string; email: string; name: string; totalMinutePoints: number }>> {
+  async getLeaderboardRoster(): Promise<Array<{ userId: string; email: string; name: string; isPublic: boolean; avatarIconId: string | null }>> {
     const result = await this.dbManager.executeQuery<{
       id: string;
       email: string;
       name: string;
-      totalminutepoints: number;
-    }>(async (client) => {
-      // Balances are per-(user,language) since migration 134, so the cross-language
-      // total is rolled up here. The aggregate is over one row per language the user
-      // studies (a handful), NOT over the userminutepoints day ledger — it does not
-      // grow with account age.
-      return await client.query(`
-        SELECT
-          u.id,
-          u.email,
-          u.name,
-          COALESCE(t.net, 0) as totalminutepoints
-        FROM Users u
-        LEFT JOIN (
-          SELECT "userId", SUM("netMinutePoints") AS net
-          FROM user_language_minute_totals GROUP BY "userId"
-        ) t ON t."userId" = u.id
-        ORDER BY totalminutepoints DESC NULLS LAST, u."createdAt" ASC
-      `);
-    });
-
-    return result.recordset.map(row => ({
-      userId: row.id,
-      email: row.email,
-      name: row.name,
-      totalMinutePoints: row.totalminutepoints || 0
-    }));
-  }
-
-  /**
-   * Get all users that participate in the leaderboard with their totals + streak.
-   * Returns isPublic so callers can mask streak from non-public users at the response layer.
-   */
-  async getPublicUsersWithTotalPoints(): Promise<Array<{ userId: string; email: string; name: string; totalMinutePoints: number; currentStreak: number; isPublic: boolean; avatarIconId: string | null }>> {
-    const result = await this.dbManager.executeQuery<{
-      id: string;
-      email: string;
-      name: string;
-      totalminutepoints: number;
-      currentstreak: number;
       ispublic: boolean;
       avatariconid: string | null;
     }>(async (client) => {
-      // Per-language balances/streaks (migration 134) rolled up for the single global
-      // row the leaderboard renders. `net` sums across languages (equivalent to the old
-      // users."totalMinutePoints"); `streak` takes the user's BEST language streak,
-      // since there is no longer one global streak and showing the highest is the
-      // charitable read of "this user's streak". Aggregated over one row per language,
-      // so the cost is bounded by language count rather than account age.
       return await client.query(`
         SELECT
-          u.id,
-          u.email,
-          u.name,
-          COALESCE(t.net, 0) as totalminutepoints,
-          COALESCE(t.streak, 0) as currentstreak,
-          u."isPublic" as ispublic,
-          u."avatarIconId" as avatariconid
-        FROM Users u
-        LEFT JOIN (
-          SELECT "userId",
-                 SUM("netMinutePoints") AS net,
-                 MAX("currentStreak")   AS streak
-          FROM user_language_minute_totals GROUP BY "userId"
-        ) t ON t."userId" = u.id
-        ORDER BY totalminutepoints DESC NULLS LAST, u."createdAt" ASC
+          id,
+          email,
+          name,
+          "isPublic" as ispublic,
+          "avatarIconId" as avatariconid
+        FROM Users
+        ORDER BY "createdAt" ASC
       `);
     });
 
@@ -310,13 +260,9 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
       userId: row.id,
       email: row.email,
       name: row.name,
-      totalMinutePoints: row.totalminutepoints || 0,
-      currentStreak: row.currentstreak || 0,
       isPublic: row.ispublic === true,
       avatarIconId: row.avatariconid ?? null
     }));
   }
-
-
 
 }

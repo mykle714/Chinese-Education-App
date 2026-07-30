@@ -1,5 +1,11 @@
 # Night Market Feature
 
+> **One market per language since migration 130.** `nightmarkettemplatelocations`
+> and `nightmarketunlocks` both carry a `language`; corner-uniqueness is
+> `(userId, language, offsetCol, offsetRow)`. Each language's continent is funded by
+> that language's own wallet, and every placement/layout call is scoped to a
+> `(userId, language)` pair. See [PER_LANGUAGE_STREAKS.md](./PER_LANGUAGE_STREAKS.md).
+
 ## Overview
 
 The Night Market is a visual reward system tied to **minute points** (`users.totalMinutePoints`
@@ -638,7 +644,7 @@ Each asset definition includes: `assetId`, `unlockType`, `displayName`, `descrip
 **Canonical spec:** [NIGHT_MARKET_TEMPLATES.md § Unlock economy](./NIGHT_MARKET_TEMPLATES.md#unlock-economy-minutes--unlocks).
 Summarised here:
 
-### ⚠️ One market PER (user, language) — migration 136
+### ⚠️ One market PER (user, language) — migration 130
 
 A user studying two languages has **two completely independent markets**. Each has its own
 placements, its own occupants, its own starter hub at `(0,0)`, and its own coordinate space;

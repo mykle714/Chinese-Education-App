@@ -76,7 +76,9 @@ export interface NightMarketNewUnlockResponse {
 export interface TemplatePlacementRow {
   id: string;              // UUID primary key
   userId: string;          // FK to users
-  language: string;        // which language market this placement belongs to (migration 136)
+  language: string;        // which MARKET this placement belongs to (migration 130) — each
+                           // language grows its own layout, so the corner-uniqueness index is
+                           // (userId, language, offsetCol, offsetRow)
   templateName: string;    // catalog key: nightmarkettemplatedefinitions.name (name, not a version)
   activeVersion: number;   // persisted rendered version (chosen by the version selector)
   offsetCol: number;       // SW-corner isoX offset (col → +isoX = east)

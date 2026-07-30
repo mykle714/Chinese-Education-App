@@ -73,13 +73,15 @@ export class NightMarketWorldService {
   ) {}
 
   /**
-   * The user's rendered layout. Seeds the origin hub if the user has no placements (see
+   * ONE MARKET's rendered layout — the user's continent for `language`. Seeds the origin hub if
+   * that market has no placements (see
    * {@link seedHubIfAbsent}), recomputes+persists each placement's active version from live
    * conditions, then materializes every placement into a {@link PlacedTemplatePayload}.
    */
   async getUserLayout(userId: string, language: string): Promise<UserLayoutResponse> {
-    // First-load safety net: guarantee every user has a hub, even pre-existing accounts that
-    // predate the account-creation seed (see seedHubIfAbsent — deprecated-on-arrival).
+    // First-load safety net: guarantee every user has a hub IN THIS MARKET, even pre-existing
+    // accounts that predate the account-creation seed (see seedHubIfAbsent). Since migration 130
+    // each language has its own continent, so each also gets its own hub on first read.
     await this.seedHubIfAbsent(userId, language);
 
     const placements = await this.placementDAL.findPlacementsByUser(userId, language);
@@ -222,9 +224,10 @@ export class NightMarketWorldService {
 
   /**
    * Canonical hub seed: insert the origin hub placement (name = hub constant, offset (0,0),
-   * version 0). Called once at account creation (permanent path) and by the first-load safety
-   * net above. The UNIQUE (userId, offsetCol, offsetRow) index makes a duplicate origin seed a
-   * loud error rather than silent double-placement, so callers must only seed a user once.
+   * version 0) for ONE MARKET. Called once at account creation (permanent path) and by the
+   * first-load safety net above. The UNIQUE (userId, language, offsetCol, offsetRow) index makes a
+   * duplicate origin seed a loud error rather than silent double-placement, so callers must only
+   * seed a given (user, language) once — but every language legitimately gets its own hub at (0,0).
    */
   async seedHubPlacement(userId: string, language: string): Promise<void> {
     await this.placementDAL.insertPlacement(userId, language, NIGHT_MARKET_HUB_TEMPLATE_NAME, 0, 0, 0);

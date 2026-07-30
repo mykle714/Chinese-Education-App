@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { LeaderboardService } from '../services/LeaderboardService.js';
 import type { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import type { IUserMinutePointsDAL } from '../dal/interfaces/IUserMinutePointsDAL.js';
+import type { IUserLanguagePointsDAL, UserPointsTotals } from '../dal/interfaces/IUserLanguagePointsDAL.js';
 import type { IWinsDAL } from '../dal/interfaces/IWinsDAL.js';
 
 /**
@@ -19,37 +20,58 @@ import type { IWinsDAL } from '../dal/interfaces/IWinsDAL.js';
  * now takes an injected `dbManager` and can be substituted (finding 2).
  */
 
+/**
+ * One fixture user. `total`/`streak` are what the leaderboard should REPORT, which since
+ * migration 130 no longer comes from `users` — the roster carries identity only and the figures
+ * come from a grouped read over user_language_points. `makeUsers` therefore splits each row into
+ * the two sources the service actually consults, and `total`/`streak` stand for the user's
+ * cross-language Σ wallet and MAX streak respectively.
+ */
 type MinuteRow = { userId: string; total: number; streak: number; isPublic: boolean };
 
 function makeUsers(rows: MinuteRow[]) {
-  return rows.map((r) => ({
-    userId: r.userId,
-    email: `${r.userId}@example.com`,
-    name: r.userId,
-    totalMinutePoints: r.total,
-    currentStreak: r.streak,
-    isPublic: r.isPublic,
-    avatarIconId: null,
-  }));
+  return rows;
 }
 
-/** Builds a service whose three DALs are spies over fixed data. */
+/** Builds a service whose four DALs are spies over fixed data. */
 function makeService(
-  users: ReturnType<typeof makeUsers>,
+  users: MinuteRow[],
   minutes: Map<string, Map<string, number>> = new Map(),
   weekly: Map<string, number> = new Map()
 ) {
   const getMinutesForDatesByUser = vi.fn().mockResolvedValue(minutes);
   const getMinutesForDate = vi.fn().mockResolvedValue(0);
 
-  const userDAL = { getPublicUsersWithTotalPoints: vi.fn().mockResolvedValue(users) } as unknown as IUserDAL;
+  // Identity + isPublic only — no points live on `users` any more.
+  const roster = users.map((r) => ({
+    userId: r.userId,
+    email: `${r.userId}@example.com`,
+    name: r.userId,
+    isPublic: r.isPublic,
+    avatarIconId: null,
+  }));
+
+  // A user at zero is represented by an ABSENT row, exactly as the real grouped query does
+  // (rows are created lazily on the first earned minute), so this also pins that
+  // "no row" and "zero points" are treated identically.
+  const totals = new Map<string, UserPointsTotals>(
+    users
+      .filter((r) => r.total > 0 || r.streak > 0)
+      .map((r) => [r.userId, { userId: r.userId, totalMinutePoints: r.total, bestStreak: r.streak }])
+  );
+
+  const getTotalsForAllUsers = vi.fn().mockResolvedValue(totals);
+
+  const userDAL = { getLeaderboardRoster: vi.fn().mockResolvedValue(roster) } as unknown as IUserDAL;
   const minutePointsDAL = { getMinutesForDatesByUser, getMinutesForDate } as unknown as IUserMinutePointsDAL;
+  const languagePointsDAL = { getTotalsForAllUsers } as unknown as IUserLanguagePointsDAL;
   const winsDAL = { getWeeklyCountsByUser: vi.fn().mockResolvedValue(weekly) } as unknown as IWinsDAL;
 
   return {
-    service: new LeaderboardService(userDAL, minutePointsDAL, winsDAL),
+    service: new LeaderboardService(userDAL, minutePointsDAL, languagePointsDAL, winsDAL),
     getMinutesForDatesByUser,
     getMinutesForDate,
+    getTotalsForAllUsers,
   };
 }
 
@@ -58,7 +80,7 @@ const TODAY = new Intl.DateTimeFormat('en-CA').format(new Date());
 
 describe('LeaderboardService.getLeaderboard', () => {
   it('issues ONE batched minutes query, never a per-user lookup', async () => {
-    const { service, getMinutesForDatesByUser, getMinutesForDate } = makeService(
+    const { service, getMinutesForDatesByUser, getMinutesForDate, getTotalsForAllUsers } = makeService(
       makeUsers([
         { userId: 'a', total: 100, streak: 3, isPublic: true },
         { userId: 'b', total: 50, streak: 1, isPublic: true },
@@ -71,6 +93,9 @@ describe('LeaderboardService.getLeaderboard', () => {
     expect(getMinutesForDatesByUser).toHaveBeenCalledTimes(1);
     // The N+1 regression guard: the single-row method must not be reached at all.
     expect(getMinutesForDate).not.toHaveBeenCalled();
+    // Same guard for the per-language wallets: one grouped read for everybody, never
+    // a getProgress()/getAllProgress() per user inside the render loop.
+    expect(getTotalsForAllUsers).toHaveBeenCalledTimes(1);
   });
 
   it('asks only for users that will be rendered, and for exactly two dates', async () => {

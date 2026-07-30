@@ -17,15 +17,13 @@ CREATE TABLE IF NOT EXISTS users (
     name                       VARCHAR(100) NOT NULL,
     password                   VARCHAR(255) NOT NULL,
     "selectedLanguage"         VARCHAR(10) DEFAULT 'zh',
-    -- Two global (all-language) minute-points counters, kept in step by the DAL:
-    --   "totalMinutePoints"     NET   — earns up, penalties down, floored at 0.
-    --                                   Drives the night-market unlock entitlement.
-    --   "lifetimeMinutesEarned" GROSS — monotonic; only the earn path raises it.
-    -- Invariant: lifetimeMinutesEarned >= totalMinutePoints. They diverge exactly for
-    -- users the penalty cron has debited. Gross is a counter (not a SUM over
-    -- userminutepoints) so it costs O(1) to read regardless of account age.
+    -- ⚠️ Baseline only. Migration 130 DROPS "totalMinutePoints" (along with
+    -- "currentStreak"/"lastStreakDate"/"lastPenaltyDate") and moves the wallet +
+    -- streak state to user_language_points, keyed (userId, language); migration 134
+    -- then adds the monotonic gross counter "lifetimeMinutesEarned" to that same
+    -- table. A DB built from this file is expected to be brought forward by
+    -- migrate.sh, so the column below is the pre-130 shape, not the current one.
     "totalMinutePoints"        INTEGER DEFAULT 0,
-    "lifetimeMinutesEarned"    INTEGER NOT NULL DEFAULT 0,
     "lastMinutePointIncrement" TIMESTAMP,
     "isPublic"                 BOOLEAN DEFAULT TRUE,
     "isValidator"              BOOLEAN NOT NULL DEFAULT FALSE,

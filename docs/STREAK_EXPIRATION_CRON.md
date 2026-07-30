@@ -1,5 +1,15 @@
 # Inactivity Penalty Cron (prod only)
 
+> **PER-LANGUAGE since migration 130.** Every piece of state below is keyed
+> `(userId, language)` in **`user_language_points`**, not on `users`. A user
+> studying `zh` and `es` has two independent penalty tracks, and a lapse in both
+> debits both on the same tick. Wherever this document says `lastStreakDate`,
+> `lastPenaltyDate`, `currentStreak` or `totalMinutePoints`, read
+> `user_language_points.<column>` — those four columns were **dropped from
+> `users`** by migration 130. `users.timezone` is unchanged: the local-day
+> boundary belongs to the person, not the language.
+> Design: [PER_LANGUAGE_STREAKS.md](./PER_LANGUAGE_STREAKS.md).
+
 An hourly Postgres cron. It debits minute points from users who fall below the
 `RETENTION_MINUTES` (3-min) streak threshold, on an **escalating schedule** that
 grows with each consecutive missed local day, and — in the **same transaction** —
@@ -11,9 +21,9 @@ Branch 2). Two crontab lines, installed together by `database/cron/install-cron.
 ## Branch 1 — Escalating penalty
 
 A user "misses" a day when they do not reach the 3-min threshold that local day.
-Missing is tracked purely by that language's `"lastStreakDate"` in
-`user_language_minute_totals` — the last local day the language **on its own** hit the
-threshold, advanced **only** by the minute-points increment path and **never** by this cron. The number of consecutive full missed days is therefore
+Missing is tracked purely by `user_language_points.lastStreakDate` — the last local day
+the language **on its own** hit the threshold (it is no longer a cross-language sum),
+advanced **only** by the minute-points increment path and **never** by this cron. The number of consecutive full missed days is therefore
 derived, not stored:
 
 ```
@@ -30,11 +40,11 @@ tier = today_local - lastStreakDate - 1     (# of full missed days)
 | 6 | 120 | 318 |
 | 7+ | **all remaining → 0** | — |
 
-**Per (user, language) since migration 134.** The unit of penalty is a language balance, not a user: each language derives its own tier from its own `lastStreakDate`, so one tick can penalize several of a user's languages independently, and keeping up Chinese no longer shields neglected Spanish.
+**Per (user, language) since migration 130.** The unit of penalty is a language balance, not a user: each language derives its own tier from its own `lastStreakDate`, so one tick can penalize several of a user's languages independently, and keeping up Chinese no longer shields neglected Spanish.
 
 Each tick, at most once per (user, language) per local day (guarded by that row's `"lastPenaltyDate"`):
 
-- debit the tier penalty from that language's `"netMinutePoints"`, floored at 0;
+- debit the tier penalty from that language's `"totalMinutePoints"`, floored at 0;
 - stamp the **actual** amount removed (`total − new_total`) as `penaltyMinutes` on
   the just-completed missed day (`today_local − 1`), so the calendar shows the real
   deduction even when a small balance underflows the nominal tier;
@@ -46,8 +56,8 @@ Each tick, at most once per (user, language) per local day (guarded by that row'
 migration 134). Gross is monotonic by definition — it records what the user *earned*, which a
 penalty does not undo — so a penalty moves the NET counter only, and the two numbers diverge by
 exactly the total penalized amount. If you add a new debit path here or anywhere else, debit
-`"netMinutePoints"` alone; in the DAL that means `UserLanguageTotalsDAL.adjustNetMinutes`, never
-`creditEarnedMinutes` (which credits both). See
+`"totalMinutePoints"` alone; in the DAL that means `UserLanguagePointsDAL.adjustPoints`, never
+`incrementPoints` (which credits both). See
 [MINUTE_POINTS_SYSTEM.md](./MINUTE_POINTS_SYSTEM.md) § Database.
 
 Because the tier is derived from `lastStreakDate` (which the cron never moves),
@@ -56,10 +66,13 @@ the gap grows by exactly one each continued local day, so the penalty climbs
 threshold again** (the increment path sets `lastStreakDate = that day`, driving
 `tier` back below 1 and out of scope).
 
-**Exemptions.** Language rows with `"netMinutePoints" = 0` (nothing to debit) and rows for a
-language that has never hit the threshold (`"lastStreakDate" IS NULL` — no reference day to
-escalate from) are out of scope. Both are evaluated per language, so a user can be exempt in
-one language and penalized in another on the same tick.
+**Exemptions.** A (user, language) pair with `totalMinutePoints = 0` (nothing to
+debit) or that has never hit the threshold (`lastStreakDate IS NULL` — no
+reference day to escalate from) is out of scope. The second condition is what
+implements the **"only languages ever studied"** rule: a language enters the
+penalty system the first time it reaches 3 minutes, and a language you have never
+touched is never penalized. Both conditions are evaluated per language, so a user can be
+exempt in one language and penalized in another on the same tick.
 
 > **This cron is the sole authority for streak breaks and INACTIVITY penalties.** No
 > application code debits points for inactivity (`UserDAL.applyStreakPenalty` was removed
@@ -67,8 +80,8 @@ one language and penalized in another on the same tick.
 > code: the **template-author dev tool** (`UserMinutePointsService.adjustMinutesForAuthor`
 > via the re-introduced `UserMinutePointsDAL.addPenaltyMinutesForDate`) stamps an
 > *artificial* penalty when an author clicks the nmp −N button — a deliberate test signal,
-> not an inactivity penalty. It also debits that language's `"netMinutePoints"` (floored, like
-> this cron) and reconciles the night market. As of migration 134 it stamps the **actually
+> not an inactivity penalty. It also debits that language's `"totalMinutePoints"` (floored, like
+> this cron) and reconciles the night market. As of migration 130 it stamps the **actually
 > removed** amount rather than the requested one, matching this cron — the old behaviour is why
 > historical ledger data can reconstruct to a negative balance. See docs/NIGHT_MARKET_TEMPLATE_RUNTIME_PLAN.md.
 
@@ -82,16 +95,17 @@ one language and penalized in another on the same tick.
 
 ## Branch 2 — Night Market occupant decay
 
-Because Branch 1 *lowers* `"netMinutePoints"`, this branch (same transaction, four
-data-modifying CTEs: `user_new_totals` → `decay_targets` → `decay_ranked` → `decay_delete`)
-trims each penalized user's Night Market **occupants** (`nightmarketunlocks` rows) down to
-their new entitlement `target = unlocks(new GLOBAL total)`.
+Because Branch 1 *lowers* `totalMinutePoints`, this branch (same transaction, three
+data-modifying CTEs: `decay_targets` → `decay_ranked` → `decay_delete`) trims each
+penalized **(user, language)** pair's Night Market **occupants** (`nightmarketunlocks` rows) down to their
+new entitlement `target = unlocks(new_total)`:
 
-**The entitlement is PER (user, language) since migration 136.** `nightmarketunlocks` and
+**The entitlement is PER (user, language) since migration 130.** `nightmarketunlocks` and
 `nightmarkettemplatelocations` both carry `language`, so each penalized language decays its **own**
 market from its **own** post-debit balance (`final.new_total`) — matching what the application
 grant path feeds `grantUnlocks(userId, language, net)`. Decaying Spanish must never delete a
-Chinese occupant, which is why every join in the branch carries the language.
+Chinese occupant, which is why every join in the branch carries the language and `decay_ranked`
+partitions by `(userId, language)`.
 
 1. `decay_targets` computes each penalized language's `target` by calling the SQL function
    **`nightmarket_unlocks_for_minutes(new_total)`**. The cron restates **no breakpoints of its
@@ -121,7 +135,10 @@ That is an iterative rectangle-adjacency computation that is impractical in plpg
 lives in TypeScript (`NightMarketPlacementService.pruneDanglingTemplates`, pure core in
 `server/dal/shared/templatePrune.ts`) and runs as **compiled JS inside `cow-backend-prod`**
 (`node dist/scripts/night-market/prune-dangling-templates.js`; the prod image has no tsx).
-It targets exactly the users this SQL just penalized, via `user_language_minute_totals."lastPenaltyDate"` (per-language since migration 134), `DISTINCT`-ed back to one prune pass per user because pruning is a whole-market operation. The live
+It targets exactly the **(user, language) pairs** this SQL just penalized via
+`user_language_points.lastPenaltyDate`, pruning each market separately — no `DISTINCT`, because
+a market is per (user, language) and each penalized language needs its own pass. A failure on one
+pair is caught and logged so it cannot abort the rest of the run. The live
 author minute-loss tool reaches the same prune through
 `NightMarketPlacementService.reconcileUnlocks`. This **reverses** the former "placements are
 append-only, never removed" invariant. See
@@ -139,19 +156,20 @@ stored `users.timezone`.
   hard-coded in the SQL — keep all three in sync.
 - **Schema dependencies**:
   - `users.timezone` — migration `50-add-user-timezone.sql`
-  - `user_language_minute_totals."lastPenaltyDate"` — migration `134-…`; superseded the global
-    `users.lastPenaltyDate` from migration `54-add-user-last-penalty-date.sql`, dropped by `135-…`
-  - `user_language_minute_totals` — migration `134-create-user-language-minute-totals.sql`:
-    reads `"netMinutePoints"`, `"lastStreakDate"`, `"lastPenaltyDate"`; writes the first plus
-    `"currentStreak"`/`"lastPenaltyDate"`. The global equivalents on `users` were dropped by
-    migration `135-drop-global-minute-counters.sql`.
-  - `user_language_minute_totals."lifetimeMinutesEarned"` — a **deliberate non-dependency**: the
-    cron reads and writes it nowhere, and must keep doing so.
+  - `user_language_points.lastPenaltyDate`, `.lastStreakDate`, `.currentStreak`,
+    `.totalMinutePoints` — migration `130-per-language-streaks.sql` (these moved off `users`,
+    which had them from migrations `54`/earlier; the same migration drops the global columns).
+    Reads all four; writes `.totalMinutePoints`, `.currentStreak`, `.lastPenaltyDate` — never
+    `.lastStreakDate`, which is what makes the tier gap grow by one per continued missed day.
+  - `user_language_points."lifetimeMinutesEarned"` — migration `134-add-lifetime-minutes-earned.sql`,
+    and a **deliberate non-dependency**: the cron reads and writes it nowhere, and must keep
+    doing so, because gross is monotonic.
+  - `users.selectedLanguage`
   - `userminutepoints.language` (+ 3-col PK) — migration `62-add-language-to-userminutepoints.sql`
 - **Still user-level (not per language)**: `users.timezone` only (the 4 AM boundary is shared by
-  all of a user's languages). The night-market decay target became per-language with migration
-  `136-add-language-to-night-market.sql`, which added `language` to `nightmarketunlocks` +
-  `nightmarkettemplatelocations`.
+  all of a user's languages). The night-market decay target became per-language in the same
+  migration `130-per-language-streaks.sql`, which added `language` to `nightmarketunlocks` +
+  `nightmarkettemplatelocations` and widened their corner/lookup indexes to include it.
 - **Refresh path for `users.timezone`**: written by the client on (a) every
   successful login or session restore via `POST /api/auth/onLogin`
   (`UserController.onLogin`), and (b) every minute-points increment via
@@ -174,7 +192,7 @@ psql "$DATABASE_URL" -f database/cron/expire-stale-streaks.sql
 ## Prod adoption (one-time, after `/deploy`)
 
 1. **Verify migrations applied.** `/deploy` runs them automatically; confirm
-   `users.timezone` and `user_language_minute_totals."lastPenaltyDate"` exist.
+   `users.timezone` and `user_language_points."lastPenaltyDate"` exist.
 
 2. **Let timezones backfill organically.** Existing rows default to `'UTC'` and
    get rewritten the next time the user hits the minute-points endpoint.
@@ -225,9 +243,9 @@ SELECT
   (((now() AT TIME ZONE u.timezone) - INTERVAL '4 hours')::date
     - t."lastStreakDate"::date - 1) AS tier,
   COUNT(*)
-FROM user_language_minute_totals t
+FROM user_language_points t
 JOIN users u ON u.id = t."userId"
-WHERE t."netMinutePoints" > 0
+WHERE t."totalMinutePoints" > 0
   AND t."lastStreakDate" IS NOT NULL
   AND (((now() AT TIME ZONE u.timezone) - INTERVAL '4 hours')::date
        - t."lastStreakDate"::date) >= 2
@@ -235,7 +253,7 @@ GROUP BY 1, 2 ORDER BY 1, 2;
 ```
 
 If the high-tier count is nontrivial and you want to avoid retroactive wipes,
-seed `"lastPenaltyDate" = today_local` on the affected `user_language_minute_totals` rows before the first tick
+seed `"lastPenaltyDate" = today_local` on the affected `user_language_points` rows before the first tick
 (this only defers, not cancels — they still escalate from the next local day).
 
 ## Risks to weigh

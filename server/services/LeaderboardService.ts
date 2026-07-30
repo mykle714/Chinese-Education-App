@@ -1,5 +1,6 @@
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import { IUserMinutePointsDAL } from '../dal/interfaces/IUserMinutePointsDAL.js';
+import { IUserLanguagePointsDAL } from '../dal/interfaces/IUserLanguagePointsDAL.js';
 import { IWinsDAL } from '../dal/interfaces/IWinsDAL.js';
 import { LeaderboardEntry, LeaderboardResponse } from '../types/leaderboard.js';
 import { ValidationError } from '../types/dal.js';
@@ -8,6 +9,14 @@ import { addDaysToDateString } from '../utils/streakDate.js';
 /**
  * Leaderboard Service.
  *
+ * DELIBERATELY GLOBAL, unlike the rest of the minute-points domain. Wallets and
+ * streaks are per-language since migration 130 (docs/PER_LANGUAGE_STREAKS.md), but
+ * the board stays a single cross-language ranking:
+ *   • rank on the SUM of each user's per-language wallets;
+ *   • show the MAX of their per-language streaks ("best streak").
+ * Splitting the board per language would fragment an already-small user base, and
+ * a learner's standing should reflect all the study they did, not just one track.
+ *
  * Note: streak is hidden (null) for users with isPublic = false. This is the only
  * field gated on isPublic — totals and minutes are still public.
  */
@@ -15,22 +24,33 @@ export class LeaderboardService {
   constructor(
     private userDAL: IUserDAL,
     private userMinutePointsDAL: IUserMinutePointsDAL,
+    private userLanguagePointsDAL: IUserLanguagePointsDAL,
     private winsDAL: IWinsDAL
   ) {}
 
   async getLeaderboard(): Promise<LeaderboardResponse> {
     try {
-      // Returns ALL users plus their isPublic flag; we mask streak for non-public ones below.
-      const usersWithPoints = await this.userDAL.getPublicUsersWithTotalPoints();
+      // Roster = identity + isPublic only; since migration 130 the points no longer live on
+      // `users`, so the wallet/streak totals come from a second grouped query over
+      // user_language_points. Two queries, both O(1) in the number of users — never
+      // getAllProgress() in a per-user loop. We mask streak for non-public users below.
+      const [roster, totalsByUser] = await Promise.all([
+        this.userDAL.getLeaderboardRoster(),
+        this.userLanguagePointsDAL.getTotalsForAllUsers(),
+      ]);
 
-      if (usersWithPoints.length === 0) {
+      if (roster.length === 0) {
         return { success: true, data: [], totalUsers: 0 };
       }
 
       // Hide users with no accumulated points from the leaderboard entirely.
       // Filtering FIRST (it used to happen after the per-user minute lookups) means
       // the minutes query below only covers users who will actually be rendered.
-      const rankedUsers = usersWithPoints.filter((user) => user.totalMinutePoints > 0);
+      // A user with no user_language_points row has never studied, so absent == 0 points
+      // and they drop out here — the same outcome the old `totalMinutePoints > 0` had.
+      const rankedUsers = roster.filter(
+        (user) => (totalsByUser.get(user.userId)?.totalMinutePoints ?? 0) > 0
+      );
 
       if (rankedUsers.length === 0) {
         return { success: true, data: [], totalUsers: 0 };
@@ -65,13 +85,17 @@ export class LeaderboardService {
       const rankedEntries: LeaderboardEntry[] = rankedUsers.map((user) => {
         // Absent (user, date) pairs mean "no minutes recorded" — see the DAL's note.
         const userMinutes = minutesByUser.get(user.userId);
+        // Non-null by construction: rankedUsers only kept users with a positive total,
+        // which requires a row. The ?? 0 keeps the types honest without a non-null assertion.
+        const totals = totalsByUser.get(user.userId);
         return {
           userId: user.userId,
           email: user.email,
           name: user.name,
-          accumulativeMinutePoints: user.totalMinutePoints,
-          // Hide streak from non-public users.
-          currentStreak: user.isPublic ? user.currentStreak : null,
+          // Σ of the user's per-language wallets (see the class note on why the board is global).
+          accumulativeMinutePoints: totals?.totalMinutePoints ?? 0,
+          // Hide streak from non-public users. Best = MAX across the user's languages.
+          currentStreak: user.isPublic ? (totals?.bestStreak ?? 0) : null,
           todaysMinutes: userMinutes?.get(todayStr) ?? 0,
           yesterdaysMinutes: userMinutes?.get(yesterdayStr) ?? 0,
           weeklyAchievements: weeklyAchievementCounts.get(user.userId) ?? 0,

@@ -1,12 +1,11 @@
 import { IUserMinutePointsDAL } from '../dal/interfaces/IUserMinutePointsDAL.js';
-import { IUserLanguageTotalsDAL } from '../dal/interfaces/IUserLanguageTotalsDAL.js';
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
+import { IUserLanguagePointsDAL } from '../dal/interfaces/IUserLanguagePointsDAL.js';
 import { NightMarketPlacementService } from './NightMarketPlacementService.js';
 import {
   MinutePointsIncrementRequest,
   CalendarResponse,
   CalendarDay,
-  UserLanguageTotals,
 } from '../types/minutePoints.js';
 import { ValidationError, NotFoundError, DALError } from '../types/dal.js';
 import { STREAK_CONFIG } from '../constants.js';
@@ -19,22 +18,29 @@ import {
 /**
  * UserMinutePoints Service.
  *
- * Streak day = a 4 AM-bounded calendar day in the user's local timezone.
- * Increment ticks the streak the moment a user crosses STREAK_CONFIG.RETENTION_MINUTES
- * for the current streak day.
+ * LAYER: service. Owns the study-time economy: earning minutes, crossing the daily
+ * threshold, and reconciling the night market that minutes fund.
  *
- * Streak breaks (gap ≥ 2 days since lastStreakDate) are handled exclusively by
- * the hourly Postgres cron at database/cron/expire-stale-streaks.sql — it
- * stamps the penalty row and rolls users.lastStreakDate / currentStreak /
- * totalMinutePoints forward.
+ * EVERYTHING HERE IS PER-LANGUAGE (migration 130, docs/PER_LANGUAGE_STREAKS.md).
+ * The wallet, the streak and the penalty schedule are keyed (userId, language) in
+ * user_language_points; a user studying zh and es has two independent tracks that
+ * never read or write each other's state. Three minutes of Spanish no longer keeps
+ * a Chinese streak alive.
+ *
+ * Streak day = a 4 AM-bounded calendar day in the user's local timezone. The
+ * timezone stays a property of the PERSON (users.timezone) — only the progress it
+ * bounds is per-language.
+ *
+ * Streak breaks (gap ≥ 2 days since that language's lastStreakDate) are handled
+ * exclusively by the hourly Postgres cron at database/cron/expire-stale-streaks.sql
+ * — it stamps the penalty row and rolls that language's lastStreakDate /
+ * currentStreak / totalMinutePoints forward.
  */
 export class UserMinutePointsService {
   constructor(
     private userMinutePointsDAL: IUserMinutePointsDAL,
-    // Per-(user,language) counters + streak state (migration 134). Every balance and
-    // streak lives here; `users` no longer carries a global one.
-    private userLanguageTotalsDAL: IUserLanguageTotalsDAL,
     private userDAL: IUserDAL,
+    private userLanguagePointsDAL: IUserLanguagePointsDAL,
     // Optional: the night-market grant flow. When present, earning a minute reconciles the
     // user's unlock entitlement (fill slots / spawn templates). Best-effort — a failure here
     // must never break the minute-point increment, so the call is wrapped + swallowed below.
@@ -75,42 +81,42 @@ export class UserMinutePointsService {
     // "today" in this user's local 4 AM-bounded day. No-op when tz is unchanged.
     await this.userDAL.updateTimezoneIfChanged(userId, tz);
 
-    // Day ledger (drives the calendar + the threshold check below) and the language's
-    // counters (net + gross, one statement) are separate writes: the ledger is per-day,
-    // the counters are per-language lifetime.
-    const { previousMinutes, newMinutes } =
-      await this.userMinutePointsDAL.addMinutesForDate(userId, streakDate, language, 1);
+    await this.userMinutePointsDAL.addMinutesForDate(userId, streakDate, language, 1);
 
-    const totals = await this.userLanguageTotalsDAL.creditEarnedMinutes(userId, language, 1);
+    const totalMinutePoints = await this.userLanguagePointsDAL.incrementPoints(userId, language, 1);
 
-    // The threshold is PER LANGUAGE (migration 134): 3 minutes of zh advance the zh
-    // streak and nothing else. `addMinutesForDate` already returned this language's
-    // before/after day totals, so no second query is needed — and note this is the
-    // single-language row, NOT the cross-language sum the global streak used to read.
+    // The streak is PER-LANGUAGE: only minutes in THIS language can advance THIS
+    // language's streak. Decide the threshold crossing on the single language row
+    // we just bumped, never on the cross-language sum.
+    const newMinutes = await this.userMinutePointsDAL.getMinutesForDateAndLanguage(
+      userId,
+      streakDate,
+      language
+    );
+    const previousMinutes = newMinutes - 1;
+
     const crossedThreshold =
       previousMinutes < STREAK_CONFIG.RETENTION_MINUTES &&
       newMinutes >= STREAK_CONFIG.RETENTION_MINUTES;
 
     if (crossedThreshold) {
-      await this.advanceStreakForDate(userId, language, streakDate, totals);
+      await this.advanceStreakForDate(userId, language, streakDate);
       console.log(`[MINUTE-POINTS-SERVICE] 🔥 ${language} streak advanced for user ${userId.substring(0, 8)}... on ${streakDate}`);
     }
 
     await this.userDAL.updateLastMinutePointIncrement(userId, now);
 
-    // Reconcile the night-market unlock entitlement (best-effort). The grant flow fills
-    // placeholder slots / spawns templates; it is idempotent (no-ops when already at
-    // target) so calling it every tick is cheap when no new threshold was crossed. A
-    // failure here must not surface to the study loop, so it is caught and logged only.
-    //
-    // Scoped to THIS LANGUAGE's market (migration 136): each language grows its own market
-    // from its own balance. `totals.netMinutePoints` is the value the credit above just
-    // returned, so this needs no extra read and cannot race with a concurrent tick.
+    // Reconcile THIS LANGUAGE's night-market unlock entitlement against its new wallet
+    // (best-effort). Each language grows its own market, so the grant is scoped to the
+    // language whose minute we just banked. The grant flow fills placeholder slots /
+    // spawns templates; it is idempotent (no-ops when already at target) so calling it
+    // every tick is cheap when no new threshold was crossed. A failure here must not
+    // surface to the study loop, so it is caught and logged only.
     if (this.nightMarketPlacementService) {
       try {
-        await this.nightMarketPlacementService.grantUnlocks(userId, language, totals.netMinutePoints);
+        await this.nightMarketPlacementService.grantUnlocks(userId, language, totalMinutePoints);
       } catch (err) {
-        console.error(`[MINUTE-POINTS-SERVICE] night-market grant failed for user ${userId.substring(0, 8)}…`, err);
+        console.error(`[MINUTE-POINTS-SERVICE] night-market grant failed for user ${userId.substring(0, 8)}… (${language})`, err);
       }
     }
   }
@@ -118,15 +124,15 @@ export class UserMinutePointsService {
   /**
    * AUTHOR-ONLY minute nudge (the nmp ±1/±5/±30 buttons — docs/NIGHT_MARKET_TEMPLATE_RUNTIME_PLAN.md).
    * Emits an artificial earn or loss signal so a template author can exercise the unlock economy
-   * without waiting on real study time. Everything is scoped to the author's SELECTED language
-   * (migration 134) — the nudge moves that language's balance, not a global one:
-   *   • delta > 0 → adds to today's `minutesEarned` AND credits both counters (NET ↑, GROSS ↑).
-   *   • delta < 0 → adds the actually-removed amount to today's `penaltyMinutes` (GROSS unchanged)
-   *     AND debits net (floored at 0) — the same shape as the real penalty cron, which is why
-   *     GROSS stays put and the two dashboard numbers diverge.
-   * Then reconciles the night market to the new NET (grant on +, decay on −). Gated on
-   * users.isTemplateAuthor (403). NOT rate-limited (unlike the +1 study path). Returns the fresh
-   * per-language NET + GROSS so the client can update both numbers immediately.
+   * without waiting on real study time:
+   *   • delta > 0 → adds to today's `minutesEarned` (GROSS ↑) AND credits totalMinutePoints (NET ↑).
+   *   • delta < 0 → adds |delta| to today's `penaltyMinutes` (GROSS unchanged) AND debits
+   *     totalMinutePoints (NET ↓, floored at 0) — the same shape as the real penalty cron, which is
+   *     why GROSS stays put and the two dashboard numbers diverge.
+   * Then reconciles that language's night market to the new NET (grant on +, decay on −).
+   * Gated on users.isTemplateAuthor (403). NOT rate-limited (unlike the +1 study path).
+   * Returns the fresh NET balance + gross for THAT LANGUAGE so the client can update both
+   * numbers immediately. All of it is scoped to users.selectedLanguage.
    */
   async adjustMinutesForAuthor(
     userId: string,
@@ -147,43 +153,44 @@ export class UserMinutePointsService {
     await this.userDAL.updateTimezoneIfChanged(userId, resolvedTz);
 
     if (delta > 0) {
-      // Earn signal: gross + net both rise for this language.
+      // Earn signal: gross + net both rise. One statement bumps both counters on the
+      // language's user_language_points row, so the pair cannot drift (migration 134).
       await this.userMinutePointsDAL.addMinutesForDate(userId, streakDate, language, delta);
-      await this.userLanguageTotalsDAL.creditEarnedMinutes(userId, language, delta);
+      await this.userLanguagePointsDAL.incrementPoints(userId, language, delta);
     } else if (delta < 0) {
       // Loss signal: penalty rises (gross intact), net falls floored at 0.
       //
       // Stamp the amount ACTUALLY removed, not the requested amount. Debiting 30 from a
       // balance of 1 removes 1, and stamping 30 would leave the ledger claiming penalties
-      // the user never paid — which is exactly how the pre-migration-134 data ended up
-      // reconstructing to a negative balance (see migration 134's backfill notes). The
-      // hourly cron has always stamped `total − new_total`; this path now matches it.
+      // the user never paid, so reconstructing a balance from the ledger would go negative.
+      // The hourly cron has always stamped `total − new_total`; this path now matches it.
       const requested = -delta;
-      const before = await this.userLanguageTotalsDAL.find(userId, language);
-      const actuallyRemoved = Math.min(requested, before?.netMinutePoints ?? 0);
+      const before = await this.userLanguagePointsDAL.getProgress(userId, language);
+      const actuallyRemoved = Math.min(requested, before.totalMinutePoints);
 
       if (actuallyRemoved > 0) {
         await this.userMinutePointsDAL.addPenaltyMinutesForDate(userId, streakDate, language, actuallyRemoved);
       }
-      await this.userLanguageTotalsDAL.adjustNetMinutes(userId, language, -requested);
+      // Still pass the full request: adjustPoints floors at 0 itself, so this is a no-op
+      // beyond the floor and keeps the DAL the single owner of the flooring rule.
+      await this.userLanguagePointsDAL.adjustPoints(userId, language, -requested);
     }
 
-    // Both counters for the adjusted language come back in one row read.
-    const after = await this.userLanguageTotalsDAL.find(userId, language);
+    // Both of this language's counters come back in one row read — no unbounded SUM over
+    // the day ledger (that is what migration 134's counter replaced).
+    const after = await this.userLanguagePointsDAL.getProgress(userId, language);
 
-    // Make the market match the new balance. Unlike the passive study-tick grant, this is an
-    // explicit author action, so a reconcile failure is allowed to surface (not swallowed).
-    // Scoped to THIS LANGUAGE's market. reconcileUnlocks both grants and DECAYS, which is why
-    // the author's −N path needs it where the study tick only ever grants.
+    // Make THIS LANGUAGE's market match its new net balance. Unlike the passive study-tick
+    // grant, this is an explicit author action, so a reconcile failure is allowed to surface
+    // (not swallowed). reconcileUnlocks both grants and DECAYS, which is why the author's
+    // −N path needs it where the study tick only ever grants.
     if (this.nightMarketPlacementService && delta !== 0) {
-      await this.nightMarketPlacementService.reconcileUnlocks(userId, language, after?.netMinutePoints ?? 0);
+      await this.nightMarketPlacementService.reconcileUnlocks(userId, language, after.totalMinutePoints);
     }
 
-    // Field names are the API contract the nmp author panel reads; they now carry this
-    // LANGUAGE's figures rather than global ones.
     return {
-      totalMinutePoints: after?.netMinutePoints ?? 0,
-      lifetimeMinutesEarned: after?.lifetimeMinutesEarned ?? 0,
+      totalMinutePoints: after.totalMinutePoints,
+      lifetimeMinutesEarned: after.lifetimeMinutesEarned,
     };
   }
 
@@ -241,16 +248,17 @@ export class UserMinutePointsService {
   }
 
   /**
-   * Lifetime minutes the user has earned studying `language` (GROSS — penalties never
-   * lower it). Powers the home screen's "total study time" for the selected language.
+   * Lifetime minutes the user has earned studying `language` — GROSS, ignoring
+   * penalties, so it only ever grows. Powers the home screen's "total study time".
+   * (Distinct from user_language_points.totalMinutePoints, which is the same
+   * language's penalty-debited NET wallet; the two DIVERGE once penalised.)
    *
-   * Reads the maintained per-language counter as of migration 134. This was the last
-   * figure still computed as a SUM over the user's whole `userminutepoints` history, so
-   * its cost grew with account age; it is now O(1).
+   * Reads the maintained counter, NOT a SUM over the day ledger: that SUM was the one
+   * aggregate in this system whose cost grew with account age. See migration 134.
    */
   async getTotalForLanguage(userId: string, language: string): Promise<number> {
-    const totals = await this.userLanguageTotalsDAL.find(userId, language);
-    return totals?.lifetimeMinutesEarned ?? 0;
+    const { lifetimeMinutesEarned } = await this.userLanguagePointsDAL.getProgress(userId, language);
+    return lifetimeMinutesEarned;
   }
 
   /**
@@ -264,19 +272,23 @@ export class UserMinutePointsService {
   }
 
   /**
-   * One-shot snapshot for the client's minute-points hook. **Every figure is scoped to
-   * `language`** as of migration 134 — switching languages in the UI now switches the
-   * whole panel, not just the fire badge:
-   *   • totalMinutePoints — this language's penalty-debited NET balance. Decays on loss.
-   *   • lifetimeMinutesEarned — this language's GROSS lifetime earned; only ever grows.
-   *     gross ≥ net, and they DIFFER once this language has been penalised.
-   *   • todayMinutes — this language's minutes on the current streak day (fire badge).
-   *   • currentStreak — THIS LANGUAGE's streak. Previously one global streak kept alive
-   *     by any language; a user can now hold a live zh streak and a broken es one.
+   * One-shot snapshot for the client's minute-points hook. EVERY figure is scoped to
+   * `language` — since migration 130 there is no global balance or global streak:
+   *   • totalMinutePoints — that language's penalty-debited NET wallet
+   *     (user_language_points.totalMinutePoints); drives ITS night-market unlocks and the
+   *     prominent "current balance" number. Decays when the language is neglected.
+   *   • lifetimeMinutesEarned — that language's lifetime minutes earned, ignoring penalties;
+   *     only ever grows. Shown as the secondary "total earned" figure. gross ≥ net, and they
+   *     DIFFER once that language has been penalised. Read from the migration-134 counter,
+   *     not summed over the ledger.
+   *   • todayMinutes — that language's minutes today (the fire badge).
+   *   • currentStreak — that language's streak.
    *
-   * Two round trips: the day ledger for `todayMinutes` (inherently per-day) and one
-   * counter row for the rest. The field names are unchanged because they are the API
-   * contract the client hook reads; only their scope changed.
+   * Switching languages therefore swaps the entire snapshot, which is the intended UX:
+   * each language shows its own independent progress.
+   *
+   * Two queries, not three: the wallet, the streak and the gross counter all live on the
+   * same user_language_points row, so one getProgress() serves all three.
    */
   async getLanguageSummary(
     userId: string,
@@ -284,17 +296,15 @@ export class UserMinutePointsService {
     timestamp: string,
     tz: string
   ): Promise<{ totalMinutePoints: number; lifetimeMinutesEarned: number; todayMinutes: number; currentStreak: number }> {
-    const [todayMinutes, totals] = await Promise.all([
+    const [todayMinutes, progress] = await Promise.all([
       this.getTodayMinutes(userId, language, timestamp, tz),
-      this.userLanguageTotalsDAL.find(userId, language),
+      this.userLanguagePointsDAL.getProgress(userId, language),
     ]);
-    // A user who has never earned in this language has no row yet — that is a legitimate
-    // zero state (they are about to earn their first minute), not an error.
     return {
-      totalMinutePoints: totals?.netMinutePoints ?? 0,
-      lifetimeMinutesEarned: totals?.lifetimeMinutesEarned ?? 0,
+      totalMinutePoints: progress.totalMinutePoints,
+      lifetimeMinutesEarned: progress.lifetimeMinutesEarned,
       todayMinutes,
-      currentStreak: totals?.currentStreak ?? 0,
+      currentStreak: progress.currentStreak,
     };
   }
 
@@ -303,36 +313,34 @@ export class UserMinutePointsService {
   // ─────────────────────────────────────────────────────────────
 
   /**
-   * Advance ONE language's streak after that language crossed its daily threshold for
-   * `streakDate`. Continues if the language's previous streak day was yesterday;
-   * otherwise restarts at 1.
-   *
-   * Per-language as of migration 134: a user can hold a live zh streak and a broken es
-   * one simultaneously, and each advances only on its own qualifying days. `totals` is
-   * the row the caller's credit just returned, so the prior streak state needs no re-read.
+   * Update ONE LANGUAGE's currentStreak after it crossed the daily threshold for
+   * `streakDate`. Continues if that language's previous streak day was yesterday;
+   * otherwise restarts at 1. Other languages are untouched.
    */
   private async advanceStreakForDate(
     userId: string,
     language: string,
-    streakDate: string,
-    totals: UserLanguageTotals
+    streakDate: string
   ): Promise<void> {
+    const info = await this.userLanguagePointsDAL.getProgress(userId, language);
     let newStreak: number;
 
-    if (!totals.lastStreakDate) {
+    if (!info.lastStreakDate) {
+      // First time this language has ever hit the threshold. This is also the moment
+      // it becomes eligible for the penalty cron, which skips lastStreakDate IS NULL.
       newStreak = 1;
-    } else if (totals.lastStreakDate === streakDate) {
+    } else if (info.lastStreakDate === streakDate) {
       // Already credited for today. (Shouldn't happen given the threshold guard, but harmless.)
       return;
-    } else if (daysBetween(totals.lastStreakDate, streakDate) === 1) {
-      newStreak = totals.currentStreak + 1;
+    } else if (daysBetween(info.lastStreakDate, streakDate) === 1) {
+      newStreak = info.currentStreak + 1;
     } else {
-      // Gap > 1 day means the user came back after a break before the
+      // Gap > 1 day means the user came back to this language after a break before the
       // hourly streak-expiration cron noticed. Treat this as a fresh streak.
       newStreak = 1;
     }
 
-    await this.userLanguageTotalsDAL.setStreak(userId, language, newStreak, streakDate);
+    await this.userLanguagePointsDAL.setStreak(userId, language, newStreak, streakDate);
   }
 
   private parseTimestamp(input: string): Date {

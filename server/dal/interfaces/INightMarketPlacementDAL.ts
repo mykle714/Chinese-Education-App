@@ -1,23 +1,31 @@
 import { TemplatePlacementRow, PlacementOccupant } from '../../types/nightMarket.js';
 
 /**
- * Night Market PLACEMENT Data Access Layer interface (migrations 112/113).
+ * Night Market PLACEMENT Data Access Layer interface (migrations 112/113; language
+ * dimension added by 130).
  *
- * Persistence for the per-user template LAYOUT: which catalog template (by name) a user has
- * dropped where (`nightmarkettemplatelocations`), plus the occupants filling each placement's
- * placeholder slots (`nightmarketunlocks` joined by placement). This is the read side the
- * runtime renders; the write side (spawn/place) is built by the Slice-3/4 placement service.
+ * Persistence for the per-user, per-LANGUAGE template LAYOUT: which catalog template (by name) a
+ * user has dropped where (`nightmarkettemplatelocations`), plus the occupants filling each
+ * placement's placeholder slots (`nightmarketunlocks` joined by placement). This is the read side
+ * the runtime renders; the write side (spawn/place) is built by the Slice-3/4 placement service.
+ *
+ * SCOPE: every method below addresses ONE MARKET — a (userId, language) pair. Each language grows
+ * its own market funded by its own wallet (docs/PER_LANGUAGE_STREAKS.md). The two exceptions are
+ * `updateActiveVersion` and `deletePlacements`, which key off globally-unique placement ids.
  *
  * Distinct from INightMarketDAL (the retired legacy asset-unlock reads).
  */
 export interface INightMarketPlacementDAL {
-  /** All placements for a user, in chronological placement order (createdAt ASC). */
+  /** All placements in one market, in chronological placement order (createdAt ASC). */
   findPlacementsByUser(userId: string, language: string): Promise<TemplatePlacementRow[]>;
 
-  /** How many placements a user has — drives the "seed the hub if absent" check. */
+  /**
+   * How many placements this market has — drives the "seed the hub if absent" check.
+   * Counted per language, so each language seeds its own hub on first study.
+   */
   countPlacementsByUser(userId: string, language: string): Promise<number>;
 
-  /** Insert one placement; returns the created row (id/createdAt filled by the DB). */
+  /** Insert one placement into a market; returns the created row (id/createdAt filled by the DB). */
   insertPlacement(
     userId: string,
     language: string,
@@ -28,19 +36,19 @@ export interface INightMarketPlacementDAL {
   ): Promise<TemplatePlacementRow>;
 
   /**
-   * All occupants across one language market's placements (unlocks joined to their placement).
-   * Read to compute each placement's filled-placeholder set.
+   * All occupants across one market's placements (unlocks joined to their placement). Read to
+   * compute each placement's filled-placeholder set.
    */
   findOccupantsByUser(userId: string, language: string): Promise<PlacementOccupant[]>;
 
-  /** How many occupants a user has in ONE language's market — the grant/decay economy count. */
+  /** How many occupants this market has — the grant/decay economy count for that language. */
   countOccupantsByUser(userId: string, language: string): Promise<number>;
 
   /**
    * Place one occupant into a placement's placeholder slot (the grant flow's write). `userId` and
-   * `language` are the placement's owner/market (both denormalized onto the unlock row, NOT NULL).
-   * The UNIQUE (placedTemplateId, placeholderAreaId) index makes a double-fill of the same slot a
-   * loud error, not a silent dup.
+   * `language` are the placement's owner + market, denormalized onto the unlock row (both NOT NULL)
+   * so the decay cron can partition without a join. The UNIQUE (placedTemplateId,
+   * placeholderAreaId) index makes a double-fill of the same slot a loud error, not a silent dup.
    */
   insertOccupant(
     userId: string,
@@ -51,9 +59,9 @@ export interface INightMarketPlacementDAL {
   ): Promise<void>;
 
   /**
-   * Decay: keep the `keep` OLDEST occupants across a user's placements and delete the rest (newest
-   * first). Used when the user's entitlement drops below their occupant count. Returns how many
-   * were deleted. This removes OCCUPANTS only; the decay caller then prunes any template left
+   * Decay: keep the `keep` OLDEST occupants in ONE MARKET and delete the rest (newest first). Used
+   * when that language's entitlement drops below its occupant count; other languages' markets are
+   * untouched. Returns how many were deleted. This removes OCCUPANTS only; the decay caller then prunes any template left
    * empty + dangling (deletePlacements / pruneDanglingTemplates). (The hourly cron does the same
    * occupant trim in SQL, but removes RANDOM occupants; this live path removes newest-first so the
    * tester tool is predictable.)

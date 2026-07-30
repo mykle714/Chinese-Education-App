@@ -50,7 +50,8 @@ router.post('/api/users/me/wins', authenticateToken, handle(winsController.recor
 // Get user by ID (kept after the literal paths above)
 router.get('/api/users/:id', authenticateToken, handle(userController.getUserById, userController));
 
-// Get total minute points for a user
-router.get('/api/users/:id/totalMinutePoints', authenticateToken, handle(userController.getTotalMinutePoints, userController));
+// NOTE: GET /api/users/:id/totalMinutePoints was removed by migration 130 — wallets are
+// per-language now, so there is no single total to return. Use
+// GET /api/users/minutePoints/summary?language=… (UserMinutePointsController.getSummary).
 
 export default router;

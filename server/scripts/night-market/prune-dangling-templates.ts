@@ -7,9 +7,12 @@
  * (NightMarketPlacementService.pruneDanglingTemplates). This script runs that pass for every user
  * the cron just penalized, so the geometry stays single-sourced with the live author-tool path.
  *
- * "Just penalized" = `users.lastPenaltyDate` equals the user's current local day (the SQL cron
- * stamps exactly that on debit). Re-running within the same day is a safe no-op — the prune is
- * idempotent once a user has nothing left to cull.
+ * "Just penalized" = `user_language_points.lastPenaltyDate` equals that user's current local day
+ * (the SQL cron stamps exactly that on debit). Since migration 130 penalties are per-(user,
+ * language), so the candidate set is PAIRS, not users: a Spanish lapse prunes only the Spanish
+ * continent. The local-day boundary still comes from `users.timezone` — it belongs to the person.
+ * Re-running within the same day is a safe no-op — the prune is idempotent once a market has
+ * nothing left to cull.
  *
  * LAYER: operational script (prod cron). Run AFTER the SQL cron in the same crontab entry:
  *   tsx server/scripts/night-market/prune-dangling-templates.ts
@@ -20,35 +23,45 @@ import { dbManager } from '../../dal/base/DatabaseManager.js';
 import { nightMarketPlacementService } from '../../dal/setup.js';
 
 async function main(): Promise<void> {
-  // Users penalized in their current local day (4 AM-bounded, per their stored tz) — the exact set
-  // the SQL cron just decayed. Mirrors the cron's own local-day arithmetic.
-  //
-  // Penalties are per (user, language) since migration 134, and markets are per (user, language)
-  // since migration 136 — so this prunes one MARKET per penalized language row. No DISTINCT: a
-  // user whose zh and es were both penalized has two independent markets, each needing its own
-  // prune pass.
-  const { recordset: markets } = await dbManager.executeQuery<{ id: string; language: string }>(async (client) =>
-    client.query(`
-      SELECT u.id, t.language
-      FROM users u
-      JOIN user_language_minute_totals t ON t."userId" = u.id
-      WHERE t."lastPenaltyDate" = ((now() AT TIME ZONE COALESCE(u.timezone, 'UTC')) - INTERVAL '4 hours')::date
-    `),
+  // (user, language) pairs penalized in that user's current local day (4 AM-bounded, per their
+  // stored tz) — the exact set the SQL cron just decayed. Mirrors the cron's own local-day
+  // arithmetic, joining users only for the timezone.
+  const { recordset: pairs } = await dbManager.executeQuery<{ userid: string; language: string }>(
+    async (client) =>
+      client.query(`
+        SELECT p."userId" AS userid, p.language
+        FROM user_language_points p
+        JOIN users u ON u.id = p."userId"
+        WHERE p."lastPenaltyDate"
+              = ((now() AT TIME ZONE COALESCE(u.timezone, 'UTC')) - INTERVAL '4 hours')::date
+      `),
   );
 
-  let usersPruned = 0;
+  let marketsPruned = 0;
   let templatesRemoved = 0;
-  for (const m of markets) {
-    const { removedIds } = await nightMarketPlacementService.pruneDanglingTemplates(m.id, m.language);
-    if (removedIds.length > 0) {
-      usersPruned++;
-      templatesRemoved += removedIds.length;
+  for (const pair of pairs) {
+    // One market at a time. A failure on one pair must not abort the rest of the cron run, so each
+    // is caught and logged individually rather than rejecting the whole loop.
+    try {
+      const { removedIds } = await nightMarketPlacementService.pruneDanglingTemplates(
+        pair.userid,
+        pair.language,
+      );
+      if (removedIds.length > 0) {
+        marketsPruned++;
+        templatesRemoved += removedIds.length;
+      }
+    } catch (err) {
+      console.error(
+        `[NightMarket] prune failed for user=${pair.userid.substring(0, 8)}… lang=${pair.language}:`,
+        err,
+      );
     }
   }
 
   console.log(
     `[NightMarket] prune-dangling-templates ${new Date().toISOString()} ` +
-      `candidates=${markets.length} markets_pruned=${usersPruned} templates_removed=${templatesRemoved}`,
+      `candidates=${pairs.length} markets_pruned=${marketsPruned} templates_removed=${templatesRemoved}`,
   );
 }
 

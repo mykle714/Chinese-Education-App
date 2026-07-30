@@ -3,7 +3,8 @@ import { WEIGHT } from '../theme/scale';
 import { convertMinutesToTimeFormat, formatTimeBreakdown } from "../utils/timeUtils";
 
 interface TimeDisplayProps {
-    /** NET balance (penalty-debited, users.totalMinutePoints) — the BIG converted-time number. Can drop when penalized. */
+    /** NET balance for the selected language (penalty-debited, user_language_points.totalMinutePoints)
+     *  — the BIG converted-time number. Can drop when that language is neglected. */
     netMinutes: number;
     /** GROSS lifetime minutes earned (Σ minutesEarned, ignoring penalties) — the small caption. Only grows; ≥ netMinutes. */
     grossMinutes: number;

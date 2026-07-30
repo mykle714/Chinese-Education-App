@@ -509,20 +509,9 @@ export class UserController {
     }
   }
 
-  /**
-   * Get total minute points and current streak for a user
-   * GET /api/users/:id/totalMinutePoints
-   */
-  async getTotalMinutePoints(req: Request, res: Response): Promise<void> {
-    try {
-      const { id } = req.params;
-
-      const result = await this.userService.getTotalMinutePoints(id);
-      res.json(result);
-    } catch (error) {
-      this.handleError(error, res);
-    }
-  }
+  // NOTE: GET /api/users/:id/totalMinutePoints was removed by migration 130. There is no single
+  // "total minute points" any more — each language has its own wallet. The client reads
+  // GET /api/users/minutePoints/summary?language=… instead. See docs/PER_LANGUAGE_STREAKS.md.
 
   /**
    * Create new user (admin function)

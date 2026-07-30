@@ -16,7 +16,7 @@ import { getMinutePointsPaused } from './minutePointsPause';
 
 export interface UseMinutePointsReturn {
   currentPoints: number;
-  /** THIS LANGUAGE's penalty-debited NET balance — the prominent "current balance" number; decays on loss. Per-language since migration 134. */
+  /** THIS LANGUAGE's penalty-debited NET balance — the prominent "current balance" number; decays on loss. Per-language since migration 130 (user_language_points). */
   accumulativeMinutePoints: number;
   /** THIS LANGUAGE's lifetime minutes earned, ignoring penalties; only grows. gross ≥ net. Shown as the secondary "total earned" figure. */
   lifetimeMinutesEarned: number;
@@ -288,7 +288,7 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
 
         incrementMinutePoint(languageRef.current, tokenRef.current).then((result) => {
           if (result.success && wasAtThreshold) {
-            // The streak is per-language (migration 134); the summary returns this
+            // The streak is per-language (migration 130); the summary returns this
             // language's streak, which is the one the badge shows.
             fetchLanguageSummary(languageRef.current, tokenRef.current).then((data) => {
               if (data) {

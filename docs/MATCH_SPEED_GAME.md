@@ -106,6 +106,41 @@ on that: `pointerdown` cannot be suppressed this way at all.
 
 **Do not "simplify" this back to `onClick`.**
 
+#### Two-finger (multi-touch) taps
+
+**Multi-touch is supported and intentional.** A player may press a foreign card and
+its gloss *at the same time*, with two fingers; both select, and the pair resolves
+as one match attempt on the second contact. `MatchSpeedCard`'s `onPointerDown`
+therefore checks only `e.button !== 0` (secondary *mouse* buttons) and deliberately
+**does not check `e.isPrimary`**, which would drop every finger after the first.
+
+The gate on this working is not the event filter — it is **where `handleTap` reads
+its state from.** Two "simultaneous" contacts still arrive as two sequential
+`pointerdown` events inside a *single* task, so React has not re-rendered between
+them and both handler invocations close over the *same* render's `selectedId` and
+slot arrays. With state reads, finger B would see "nothing selected" and simply
+overwrite finger A's selection — no attempt, no score. So:
+
+| Mutable state | Read in `handleTap` via | Why |
+|---|---|---|
+| Selection | `selectedIdRef.current` (mirror of `selectedId`, written by `setSelected`) | Finger B must see finger A's selection |
+| The board / the tapped card | `findCard` → `boardRef.current` | Finger B must see the `exiting` flag finger A just set, or a matched pair could be scored twice |
+| Wrong-flash ids | `setWrongIds(prev => …)` (append, never replace) | A second wrong attempt must not cancel the first's flash |
+
+`handleTap` re-resolves its argument (`findCard(tapped.id)`) instead of trusting the
+`BoardCard` captured at render, for exactly that `exiting` reason. Its dependency
+array intentionally omits `selectedId`, `foreignSlots` and `englishSlots`.
+
+**Rule for future edits: nothing inside `handleTap` may read game state from a
+`useState` value.** Adding one silently breaks two-finger play while leaving
+one-finger play perfectly healthy, which makes it very hard to notice.
+
+*Accepted trade-off:* a stray second contact (a resting thumb over a card in the
+opposite column) is now a real match attempt and can cost an `incorrect` mark,
+where previously it was ignored. This was chosen over the alternative of accepting
+non-primary contacts only in the opposite column, because the two-finger grab is
+the natural fast gesture for this game and half-allowing it is harder to explain.
+
 #### Selection outranks every other visual state
 
 `visualState` (`MatchSpeedBoard.tsx`) resolves `selected` **before** `wrong`. The
@@ -734,6 +769,7 @@ it reads from.
 | Timer format | `src/utils/timeUtils.ts` (`formatTimeMs`) — shared with Word Search |
 | End popup, cleanup | `src/games/runtime/GameEndPopup.tsx`; `src/games/bubble-match/BubbleStage.tsx` (`cleanupMode`, `revealed`) |
 | Page shell, header | `src/components/LeafPage.tsx`; `src/games/word-search/WordSearchHeader.tsx` + `WordSearchSettingsDialog.tsx` (the cog-sheet pattern this header follows); `src/hooks/useBlockEdgeSwipe.ts` |
+| Two-finger (multi-touch) taps | `src/games/match-speed/MatchSpeedCard.tsx` (the card `Box`'s `onPointerDown`); `src/games/match-speed/MatchSpeedBoard.tsx` (`selectedIdRef` / `setSelected`, `findCard`, `handleTap`) |
 | Card sizing (2:1) | `src/games/match-speed/MatchSpeedBoard.tsx` (`gridElRef` / `cardHeight` measurement block); `constants.ts` (`CARD_ASPECT`, `ROW_GAP_PX`, `COL_GAP_PX`) |
 | Registry, minute points | `src/games/registry.ts`; `src/constants.ts:13-31` |
 | Win badge | `src/hooks/useGameWins.ts` |

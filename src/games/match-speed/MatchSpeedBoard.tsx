@@ -149,6 +149,20 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
 
     /** The currently selected card's id, or null. */
     const [selectedId, setSelectedId] = useState<string | null>(null);
+    // Ref mirror of `selectedId`, for the same reason `boardRef` mirrors the board:
+    // MULTI-TOUCH. Two fingers landing "at the same time" still arrive as two
+    // sequential pointerdown events inside ONE task, so React has not re-rendered
+    // between them and both handlers would close over the same stale `selectedId`
+    // — the second finger would see "nothing selected" and merely overwrite the
+    // first's selection instead of completing the match. Reading selection from a
+    // ref makes each tap see the previous tap's effect synchronously.
+    const selectedIdRef = useRef<string | null>(null);
+    /** Set the selection in the ref (synchronous, for the next tap) and in state
+     *  (for the render). Never call setSelectedId directly. */
+    const setSelected = useCallback((id: string | null) => {
+        selectedIdRef.current = id;
+        setSelectedId(id);
+    }, []);
     /** Card ids flashing red from a wrong attempt. */
     const [wrongIds, setWrongIds] = useState<string[]>([]);
     /** Cleanup mode only: the partner card being highlighted light green. */
@@ -282,15 +296,37 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
         [updateBoard]
     );
 
-    /** Look a card up by id across both columns. */
+    /** Look a card up by id across both columns.
+     *
+     *  Reads the REF, not the rendered slots: with multi-touch, the second finger of
+     *  a simultaneous pair must see the board as the first finger left it (e.g. a
+     *  card already flagged `exiting` by the match that finger A just completed),
+     *  and the rendered slots are a frame behind. */
     const findCard = useCallback(
         (id: string): BoardCard | null =>
-            [...foreignSlots, ...englishSlots].find((s) => s?.id === id) ?? null,
-        [foreignSlots, englishSlots]
+            [...boardRef.current.foreign, ...boardRef.current.english].find((s) => s?.id === id) ??
+            null,
+        []
     );
 
+    /**
+     * One card tap.
+     *
+     * MULTI-TOUCH SAFE: every read of mutable game state inside this function goes
+     * through a ref (`selectedIdRef`, `boardRef` via `findCard`), never through the
+     * render-time `selectedId` / slot arrays. That is what lets two fingers landing
+     * in the same frame resolve as one match attempt — see the `selectedIdRef`
+     * comment above and docs/MATCH_SPEED_GAME.md § Two-finger (multi-touch) taps.
+     */
     const handleTap = useCallback(
-        (card: BoardCard) => {
+        (tapped: BoardCard) => {
+            // Re-resolve the card against the live board. The `tapped` object came
+            // from the last render, so its `exiting` flag can be stale by the width
+            // of one frame — which is exactly the window a second finger lands in
+            // after the first completed a match on this pair.
+            const card = findCard(tapped.id);
+            if (!card) return; // already removed from the board
+            const selectedId = selectedIdRef.current;
             // TEMPORARY DIAGNOSTIC (dev only) — chasing "cards visible but taps do
             // nothing during a refill". Logs that the click actually reached the
             // handler and, if it no-ops, exactly which guard ate it. Remove once the
@@ -312,7 +348,7 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
             // partner clears the pair. No marks, no score, no refill.
             if (cleanupMode) {
                 if (selectedId === card.id) {
-                    setSelectedId(null);
+                    setSelected(null);
                     setHintedId(null);
                     return;
                 }
@@ -320,14 +356,14 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
                 if (selected && selected.side !== card.side && selected.pairId === card.pairId) {
                     markPairExiting(card.pairId);
                     later(() => removePair(card.pairId), POP_DURATION_MS);
-                    setSelectedId(null);
+                    setSelected(null);
                     setHintedId(null);
                     return;
                 }
-                setSelectedId(card.id);
+                setSelected(card.id);
                 // Reveal the partner rather than punishing the miss — cleanup is
                 // for studying the words the run left behind.
-                const partner = [...foreignSlots, ...englishSlots].find(
+                const partner = [...boardRef.current.foreign, ...boardRef.current.english].find(
                     (s) => s?.pairId === card.pairId && s.id !== card.id
                 );
                 setHintedId(partner?.id ?? null);
@@ -337,7 +373,7 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
             // ---- Live play -----------------------------------------------------
             // Tapping the selected card deselects it.
             if (selectedId === card.id) {
-                setSelectedId(null);
+                setSelected(null);
                 return;
             }
             const selected = selectedId ? findCard(selectedId) : null;
@@ -347,7 +383,7 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
             // selection. Making it an attempt would spend a wrong mark on a tap
             // the player couldn't possibly have meant as a guess.
             if (!selected || selected.side === card.side) {
-                setSelectedId(card.id);
+                setSelected(card.id);
                 return;
             }
 
@@ -357,7 +393,7 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
                 onMatch(foreignEntry);
                 markPairExiting(card.pairId);
                 later(() => removePair(card.pairId), POP_DURATION_MS);
-                setSelectedId(null);
+                setSelected(null);
                 return;
             }
 
@@ -368,20 +404,24 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
             // The board stays live throughout the flash; taps are not swallowed.
             onMiss(foreignEntry);
             const flashing = [selected.id, card.id];
-            setWrongIds(flashing);
-            setSelectedId(null);
+            // Appended, not replaced: with multi-touch a second wrong attempt can
+            // land while the first is still flashing, and overwriting would cancel
+            // the earlier flash mid-way. Each attempt's cleanup below removes only
+            // its own ids.
+            setWrongIds((prev) => [...prev.filter((id) => !flashing.includes(id)), ...flashing]);
+            setSelected(null);
             later(
                 () => setWrongIds((prev) => prev.filter((id) => !flashing.includes(id))),
                 WRONG_FEEDBACK_MS
             );
         },
         [
+            // Deliberately NOT `selectedId` or the slot arrays: those are read via
+            // refs, which is what keeps this callback stable and multi-touch-correct.
             frozen,
             cleanupMode,
-            selectedId,
             findCard,
-            foreignSlots,
-            englishSlots,
+            setSelected,
             markPairExiting,
             removePair,
             later,

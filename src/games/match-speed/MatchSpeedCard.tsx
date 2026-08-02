@@ -164,10 +164,17 @@ const MatchSpeedCard: React.FC<MatchSpeedCardProps> = ({
             // pointerdown cannot be suppressed that way, and it is also simply the
             // right event here: this is a reaction-time game, so a selection should
             // land the instant the finger does, not on release.
+            // MULTI-TOUCH IS ALLOWED: `e.isPrimary` is deliberately NOT checked, so
+            // a two-finger grab (foreign word + its gloss pressed together) lands
+            // both selections and resolves as one match attempt. The board is what
+            // makes that safe — it reads selection and slots from refs, so the
+            // second finger sees the first finger's effect even though React has
+            // not re-rendered between the two events. Do not add an `isPrimary`
+            // guard back without also re-reading MatchSpeedBoard's selectedIdRef.
             onPointerDown={(e) => {
-                // Primary contact only — ignore secondary mouse buttons and the
-                // extra fingers of a multi-touch, which are never a deliberate tap.
-                if (!e.isPrimary || e.button !== 0) return;
+                // Left button only. On touch/pen `button` is 0 for the contact
+                // itself, so this rejects nothing but secondary MOUSE buttons.
+                if (e.button !== 0) return;
                 onTap(card);
             }}
             sx={{
